@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="prismGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="40%" stop-color="#5b8def"/>
+      <stop offset="100%" stop-color="#4a5ae5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="rgba(139,92,246,0.22)"/>
+      <stop offset="100%" stop-color="rgba(139,92,246,0)"/>
+    </radialGradient>
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(34,211,238,0.6)"/>
+      <stop offset="100%" stop-color="rgba(34,211,238,0)"/>
+    </radialGradient>
+    <clipPath id="rounded">
+      <rect x="0" y="0" width="48" height="48" rx="9" ry="9"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <rect width="48" height="48" fill="#0a0a14"/>
+    <circle cx="24" cy="20" r="30" fill="url(#glow)"/>
+
+    <!-- 外圈轨道 -->
+    <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="0.5" stroke-dasharray="3 6"/>
+
+    <!-- 径向连接线 -->
+    <line x1="33.52627944162883" y1="18.5" x2="42.2" y2="13.5" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+    <line x1="33.52627944162883" y1="29.5" x2="42.2" y2="34.5" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+    <line x1="24" y1="35" x2="24.0" y2="44.0" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+    <line x1="14.473720558371173" y1="29.5" x2="5.8" y2="34.5" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+    <line x1="14.473720558371175" y1="18.5" x2="5.8" y2="13.5" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+    <line x1="23.999999999999996" y1="13" x2="24.0" y2="4.0" stroke="url(#prismGrad)" stroke-width="1.2" opacity="0.5"/>
+
+    <!-- 主六边形 -->
+    <path d="M33.52627944162883,18.5 L33.52627944162883,29.5 L24,35 L14.473720558371173,29.5 L14.473720558371175,18.5 L23.999999999999996,13 Z" fill="url(#prismGrad)" opacity="0.32" stroke="url(#prismGrad)" stroke-width="2"/>
+
+    <!-- 内部分隔线（3条） -->
+    <line x1="24" y1="24" x2="20.2" y2="17.5" stroke="rgba(255,255,255,0.22)" stroke-width="0.7"/>
+    <line x1="24" y1="24" x2="24" y2="13" stroke="rgba(255,255,255,0.22)" stroke-width="0.7"/>
+    <line x1="24" y1="24" x2="27.8" y2="17.5" stroke="rgba(255,255,255,0.22)" stroke-width="0.7"/>
+
+    <!-- 中心火花 -->
+    <circle cx="24" cy="24" r="4" fill="url(#nodeGlow)"/>
+    <circle cx="24" cy="24" r="2" fill="#22d3ee"/>
+
+    <!-- 径向终端节点 -->
+    <circle cx="42.2" cy="13.5" r="3.5" fill="url(#nodeGlow)"/><circle cx="42.2" cy="13.5" r="1.8" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="42.2" cy="34.5" r="3.5" fill="url(#nodeGlow)"/><circle cx="42.2" cy="34.5" r="1.8" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="24.0" cy="44.0" r="3.5" fill="url(#nodeGlow)"/><circle cx="24.0" cy="44.0" r="1.8" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="5.8" cy="34.5" r="3.5" fill="url(#nodeGlow)"/><circle cx="5.8" cy="34.5" r="1.8" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="5.8" cy="13.5" r="3.5" fill="url(#nodeGlow)"/><circle cx="5.8" cy="13.5" r="1.8" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="24.0" cy="4.0" r="3.5" fill="url(#nodeGlow)"/><circle cx="24.0" cy="4.0" r="1.8" fill="#22d3ee" opacity="0.85"/>
+  </g>
+</svg>

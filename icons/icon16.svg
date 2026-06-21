@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="prismGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="40%" stop-color="#5b8def"/>
+      <stop offset="100%" stop-color="#4a5ae5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="rgba(139,92,246,0.25)"/>
+      <stop offset="100%" stop-color="rgba(139,92,246,0)"/>
+    </radialGradient>
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(34,211,238,0.6)"/>
+      <stop offset="100%" stop-color="rgba(34,211,238,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="16" height="16" fill="#0a0a14"/>
+  <circle cx="8" cy="7" r="8" fill="url(#glow)"/>
+
+  <!-- 主六边形 -->
+  <path d="M11.897114317029974,5.75 L11.897114317029974,10.25 L8,12.5 L4.102885682970026,10.25 L4.102885682970026,5.75 L7.999999999999999,3.5 Z" fill="url(#prismGrad)" opacity="0.45" stroke="url(#prismGrad)" stroke-width="1.8"/>
+
+  <!-- 中心火花 -->
+  <circle cx="8" cy="8" r="1.5" fill="url(#nodeGlow)"/>
+  <circle cx="8" cy="8" r="0.8" fill="#22d3ee"/>
+</svg>

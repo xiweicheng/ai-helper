@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Helper - 配置</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f5f7fa;
+      padding: 30px;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+      padding: 30px;
+    }
+    h1 {
+      text-align: center;
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #888;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #555;
+    }
+    label .hint {
+      font-weight: normal;
+      color: #999;
+      font-size: 12px;
+    }
+    label .info-icon {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      line-height: 16px;
+      text-align: center;
+      background: #667eea;
+      color: white;
+      border-radius: 50%;
+      font-size: 11px;
+      cursor: help;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input[type="text"]:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    textarea {
+      resize: vertical;
+      min-height: 80px;
+      height: 120px;
+    }
+    .btn {
+      padding: 12px 30px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      width: 100%;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+    .status {
+      margin-top: 20px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      display: none;
+    }
+    .status.success {
+      background: #f0fff4;
+      color: #38a169;
+      border: 1px solid #c6f6d5;
+      display: block;
+    }
+    .status.error {
+      background: #fff5f5;
+      color: #e53e3e;
+      border: 1px solid #fed7d7;
+      display: block;
+    }
+    .info-box {
+      background: #ebf8ff;
+      border: 1px solid #bee3f8;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .info-box h3 {
+      color: #2b6cb0;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .info-box p {
+      font-size: 13px;
+      color: #4a5568;
+      line-height: 1.6;
+    }
+    .info-box code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+    }
+    .warning-box {
+      background: #fefcbf;
+      border: 1px solid #faf089;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .warning-box h3 {
+      color: #975a16;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .warning-box p {
+      font-size: 13px;
+      color: #744210;
+      line-height: 1.6;
+    }
+    .config-details {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      font-size: 13px;
+      color: #4a5568;
+      line-height: 1.6;
+    }
+    .config-details strong {
+      color: #166534;
+    }
+    
+    /* Toast 提示样式 */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    
+    .toast {
+      background: #333;
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 200px;
+      justify-content: center;
+      transform: translateY(-20px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    
+    .toast.toast-show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    
+    .toast.success {
+      background: #2d8a4e;
+    }
+    
+    .toast.error {
+      background: #d9534f;
+    }
+    
+    .toast.warning {
+      background: #f0ad4e;
+      color: #333;
+    }
+    
+    .toast.info {
+      background: #5bc0de;
+    }
+    
+    @keyframes toastFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .model-selector {
+      position: relative;
+    }
+    .model-selector input {
+      width: 100%;
+      padding: 12px 40px 12px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: white;
+    }
+    .model-selector input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    .model-selector::after {
+      content: '▼';
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      color: #999;
+      pointer-events: none;
+    }
+    .model-dropdown {
+      position: absolute;
+      top: calc(100% + 5px);
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      display: none;
+      overflow: hidden;
+    }
+    .model-dropdown.show {
+      display: block;
+    }
+    .model-option {
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      color: #333;
+      cursor: pointer;
+      transition: background 0.2s;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .model-option:last-child {
+      border-bottom: none;
+    }
+    .model-option:hover {
+      background: #f5f7fa;
+    }
+    .model-option.selected {
+      color: #667eea;
+      font-weight: 500;
+      background: #f0f4ff;
+    }
+    .model-option .delete-model-btn {
+      background: none;
+      border: none;
+      color: #e53e3e;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 4px;
+      line-height: 1;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+      display: none;
+    }
+    .model-option:hover .delete-model-btn {
+      display: inline-block;
+      opacity: 1;
+    }
+    .model-option .delete-model-btn:hover {
+      opacity: 1;
+      color: #c53030;
+    }
+    .token-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .token-input-wrapper input {
+      width: 100%;
+      padding: 12px 45px 12px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .token-input-wrapper input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    .toggle-token-btn {
+      position: absolute;
+      right: 8px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      color: #999;
+      transition: color 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .toggle-token-btn:hover {
+      color: #667eea;
+    }
+    
+    /* 工具配置样式 */
+    .tools-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .tools-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .tools-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .tool-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+    }
+    
+    .tool-item:hover {
+      border-color: #667eea;
+    }
+    
+    .tool-item input[type="checkbox"] {
+      margin-top: 3px;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: #667eea;
+    }
+    
+    .tool-item-content {
+      flex: 1;
+    }
+    
+    .tool-item-name {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+    }
+    
+    .tool-item-desc {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.4;
+    }
+    
+    .tool-item-name code {
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      color: #667eea;
+    }
+    
+    /* 系统提示词容器样式 */
+    .system-prompt-wrapper {
+      position: relative;
+    }
+    
+    .reset-system-prompt-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(102, 126, 234, 0.1);
+      border: none;
+      cursor: pointer;
+      padding: 6px 8px;
+      color: #667eea;
+      transition: all 0.2s;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    
+    .reset-system-prompt-btn:hover {
+      background: rgba(102, 126, 234, 0.2);
+    }
+    
+    /* ReAct 配置样式 */
+    .react-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .react-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .react-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .react-config-item {
+      margin-bottom: 15px;
+    }
+    
+    .react-config-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    
+    .react-config-item .hint-text {
+      font-size: 12px;
+      color: #999;
+      font-weight: normal;
+    }
+    
+    .react-config-item input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    .react-config-item input[type="number"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    
+    .react-config-item .range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #999;
+      margin-top: 3px;
+    }
+    
+    .react-config-item .unit {
+      font-size: 12px;
+      color: #888;
+      margin-left: 4px;
+    }
+    
+    /* 对话配置样式 */
+    .chat-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .chat-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .chat-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .chat-config-item {
+      margin-bottom: 15px;
+    }
+    
+    .chat-config-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    
+    .chat-config-item .hint-text {
+      font-size: 12px;
+      color: #999;
+      font-weight: normal;
+    }
+    
+    .chat-config-item input[type="number"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    .chat-config-item input[type="number"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    
+    .chat-config-item .range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #999;
+      margin-top: 3px;
+    }
+    
+    .chat-config-item .unit {
+      font-size: 12px;
+      color: #888;
+      margin-left: 4px;
+    }
+    
+    /* 开关标签样式 */
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    
+    .toggle-label input[type="checkbox"] {
+      width: 40px;
+      height: 22px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #e0e0e0;
+      border-radius: 11px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    
+    .toggle-label input[type="checkbox"]::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    .toggle-label input[type="checkbox"]:checked {
+      background: #667eea;
+    }
+    
+    .toggle-label input[type="checkbox"]:checked::before {
+      transform: translateX(18px);
+    }
+    
+    .toggle-label .toggle-text {
+      font-weight: 500;
+      color: #333;
+    }
+    
+    /* 工具栏配置样式 */
+    .toolbar-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .toolbar-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .toolbar-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .toolbar-tools-list {
+      margin-top: 15px;
+    }
+    
+    .tool-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: #fafafa;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    
+    .tool-item:hover {
+      border-color: #667eea;
+      background: #f5f7ff;
+    }
+    
+    .tool-item .tool-drag-handle {
+      cursor: grab;
+      color: #bbb;
+      display: flex;
+      align-items: center;
+      padding: 2px 4px;
+      flex-shrink: 0;
+      font-size: 14px;
+      letter-spacing: -2px;
+      user-select: none;
+    }
+    
+    .tool-item .tool-drag-handle:active {
+      cursor: grabbing;
+    }
+    
+    .tool-item.dragging {
+      opacity: 0.4;
+    }
+    
+    .tool-item.drag-over {
+      border-color: #667eea;
+      background: #edf0ff;
+    }
+    
+    .tool-item .tool-order-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    
+    .tool-item .tool-order-btn {
+      width: 20px;
+      height: 16px;
+      border: none;
+      background: transparent;
+      color: #999;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      border-radius: 3px;
+      padding: 0;
+      line-height: 1;
+    }
+    
+    .tool-item .tool-order-btn:hover {
+      background: #e0e0e0;
+      color: #333;
+    }
+    
+    .tool-item .tool-order-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    
+    .tool-item .tool-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .tool-item .tool-name {
+      font-weight: 500;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    .tool-item .tool-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      font-weight: 400;
+    }
+    
+    .tool-item .tool-badge.builtin {
+      background: #e8f0fe;
+      color: #667eea;
+    }
+    
+    .tool-item .tool-badge.custom {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    .tool-item .tool-prompt-preview {
+      font-size: 12px;
+      color: #888;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 300px;
+    }
+    
+    .tool-item .tool-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    
+    .tool-item .tool-action-btn {
+      padding: 4px 8px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+      background: transparent;
+      color: #888;
+    }
+    
+    .tool-item .tool-action-btn:hover {
+      background: #e0e0e0;
+      color: #333;
+    }
+    
+    .tool-item .tool-action-btn.danger:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #555;
+      border: 1px dashed #ccc;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    
+    .btn-secondary:hover {
+      background: #e8e8e8;
+      border-color: #667eea;
+      color: #667eea;
+    }
+    
+    .btn-cancel {
+      background: #f0f0f0;
+      color: #555;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    
+    .btn-cancel:hover {
+      background: #e0e0e0;
+    }
+    
+    .domain-blocklist-section {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .domain-blocklist-title {
+      font-size: 15px;
+      color: #667eea;
+      margin-bottom: 4px;
+    }
+    
+    .domain-add-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .domain-add-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .domain-add-input:focus {
+      border-color: #667eea;
+    }
+    
+    .domain-blocklist-list {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .domain-blocklist-empty {
+      padding: 16px;
+      text-align: center;
+      color: #bbb;
+      font-size: 13px;
+    }
+    
+    .domain-blocklist-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: #fafafa;
+      font-size: 13px;
+      color: #333;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    
+    .domain-blocklist-item:hover {
+      border-color: #667eea;
+      background: #f5f7ff;
+    }
+    
+    .domain-blocklist-item-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      margin-right: 8px;
+    }
+    
+    .domain-blocklist-item-remove {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 8px;
+      border: none;
+      background: transparent;
+      color: #bbb;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
+    
+    .domain-blocklist-item-remove:hover {
+      color: #e53e3e;
+      background: #fff5f5;
+    }
+    
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    }
+    
+    .modal-content h3 {
+      margin-bottom: 16px;
+      color: #333;
+      font-size: 16px;
+    }
+    
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    
+    .modal-header h3 {
+      margin-bottom: 0;
+      color: #333;
+      font-size: 16px;
+    }
+    
+    .modal-close-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #999;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.15s;
+      padding: 0;
+      line-height: 1;
+    }
+    
+    .modal-close-btn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    
+    /* 工具栏数量输入框保持和 ReAct/Chat 数字输入框一致 */
+    #toolbarMaxVisible {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    #toolbarMaxVisible:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+
+    /* Tab 导航样式 */
+    .tab-nav {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid #e0e0e0;
+      padding-bottom: 0;
+    }
+    .tab-nav-btn {
+      padding: 10px 20px;
+      border: none;
+      background: transparent;
+      color: #888;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+      font-family: inherit;
+      border-radius: 8px 8px 0 0;
+    }
+    .tab-nav-btn:hover {
+      color: #555;
+      background: #f5f5f5;
+    }
+    .tab-nav-btn.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      font-weight: 500;
+    }
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1><img src="icons/icon48.png" width="24" height="24" alt="AI Helper" style="vertical-align: -4px; margin-right: 8px;">AI Helper 配置</h1>
+    <p class="subtitle">网页智能助手 - OpenAI 兼容接口</p>
+
+    <div class="tab-nav">
+      <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
+      <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
+      <button class="tab-nav-btn" data-tab="react">ReAct</button>
+      <button class="tab-nav-btn" data-tab="chat">对话</button>
+    </div>
+
+    <div class="tab-panel active" data-tab="basic">
+    <div class="form-group">
+      <label for="apiBase">API Base URL <span class="hint">（可选，有默认值）</span></label>
+      <input type="text" id="apiBase" placeholder="https://api.deepseek.com">
+    </div>
+
+    <div class="form-group">
+      <label>API Key <span class="hint" style="color: #e53e3e;">（必填）</span><span class="info-icon" title="请从您使用的大模型平台获取对应的 API Key，并在此配置中填写。请妥善保管您的 API Key，避免泄露。">ⓘ</span></label>
+      <div class="token-input-wrapper">
+        <input type="password" id="apiKey" class="token-input" placeholder="请输入您的 API Key">
+        <button type="button" id="toggleToken" class="toggle-token-btn" title="显示/隐藏 API Key">
+          <svg class="icon-eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg class="icon-eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>模型名称 <span class="hint">（可选，可从列表选择或自定义输入）</span></label>
+      <div class="model-selector">
+        <input type="text" id="modelInput" placeholder="请输入模型名称或从下方选择" value="deepseek-v4-pro">
+        <div class="model-dropdown" id="modelDropdown">
+          <div class="model-option selected" data-value="deepseek-v4-pro">deepseek-v4-pro</div>
+          <div class="model-option" data-value="deepseek-v4-flash">deepseek-v4-flash</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="systemPrompt">系统提示词 <span class="hint">（可选，留空则使用默认值）</span></label>
+      <div class="system-prompt-wrapper">
+        <button type="button" id="resetSystemPromptBtn" class="reset-system-prompt-btn" title="重置为默认值">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+        </button>
+        <textarea id="systemPrompt" rows="15" style="padding-right: 40px;"></textarea>
+      </div>
+      <p style="font-size: 12px; color: #999; margin-top: 5px;">
+        💡 提示：系统提示词用于定义 AI 助手的行为和角色。
+      </p>
+    </div>
+
+    </div><!-- /tab-basic -->
+
+    <!-- 工具栏配置区域 -->
+    <div class="tab-panel" data-tab="toolbar">
+    <div class="toolbar-config">
+      <h2>🔧 工具栏设置</h2>
+      <p class="subtitle">管理划词工具栏的按钮和顺序</p>
+
+      <div class="form-group">
+        <label for="toolbarMaxVisible">工具栏直接显示数量 <span class="hint">（超出部分收入"⋯"下拉菜单）</span></label>
+        <input type="number" id="toolbarMaxVisible" min="1" max="5" value="4" placeholder="4">
+        <div class="range-labels">
+          <span>最小: 1</span>
+          <span>最大: 5</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="toolbarIconOnly">
+          <span class="toggle-text">工具栏图标精简模式（仅显示图标，不显示文字）</span>
+        </label>
+      </div>
+
+      <div class="toolbar-tools-list" id="toolbarToolsList">
+        <!-- 工具列表动态渲染 -->
+      </div>
+
+      <button class="btn btn-secondary" id="addCustomToolBtn" style="width: 100%; margin-top: 10px; margin-bottom: 12px;">
+        ＋ 添加自定义工具
+      </button>
+
+      <!-- 域名屏蔽列表 -->
+      <div class="domain-blocklist-section">
+        <h3 class="domain-blocklist-title">域名屏蔽</h3>
+        <p class="subtitle" style="margin-top: 2px;">在此添加需要屏蔽工具栏的域名，屏蔽后该域名下不再显示划词工具栏</p>
+        <div class="domain-add-row">
+          <input type="text" id="domainAddInput" placeholder="例如：example.com（不含 http/https）" class="domain-add-input">
+          <button class="btn btn-primary" id="domainAddBtn" style="width: auto; flex-shrink: 0;">添加</button>
+        </div>
+        <div class="domain-blocklist-list" id="domainBlocklistList">
+          <!-- 动态渲染 -->
+        </div>
+      </div>
+
+      <!-- 自定义工具编辑弹窗 -->
+      <div class="modal-overlay" id="toolEditModal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="toolEditModalTitle">添加自定义工具</h3>
+            <button class="modal-close-btn" id="toolEditClose" title="关闭">✕</button>
+          </div>
+          <div class="form-group">
+            <label for="toolEditName">工具名称</label>
+            <input type="text" id="toolEditName" placeholder="例如：润色、改写、代码审查" maxlength="10">
+          </div>
+          <div class="form-group">
+            <label for="toolEditPrompt">系统提示词 <span class="hint">（定义该工具的行为）</span></label>
+            <textarea id="toolEditPrompt" rows="4" placeholder="例如：你是一个文本润色助手，请将用户输入的内容润色得更流畅、更专业。"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-cancel" id="toolEditCancel">取消</button>
+            <button class="btn btn-primary" id="toolEditSave" style="width: auto;">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /tab-toolbar -->
+
+    <!-- ReAct 配置区域 -->
+    <div class="tab-panel" data-tab="react">
+    <div class="react-config">
+      <h2>⚙️ ReAct 循环配置</h2>
+      <p class="subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
+      
+      <div class="react-config-item">
+        <label>
+          最大循环次数
+          <span class="hint-text">（复杂任务可适当增加）</span>
+        </label>
+        <input type="number" id="reactMaxIterations" min="1" max="100" value="5" placeholder="5">
+        <div class="range-labels">
+          <span>最小: 1</span>
+          <span>最大: 100</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          API 请求超时
+          <span class="hint-text">（单次 API 调用的最长等待时间）</span>
+        </label>
+        <input type="number" id="reactApiTimeout" min="10" max="600" step="5" value="60" placeholder="60">
+        <span class="unit">秒 (s)</span>
+        <div class="range-labels">
+          <span>最小: 10秒</span>
+          <span>最大: 10分钟</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          整体循环超时
+          <span class="hint-text">（整个 ReAct 循环的最长执行时间）</span>
+        </label>
+        <input type="number" id="reactLoopTimeout" min="1" max="30" step="1" value="5" placeholder="5">
+        <span class="unit">分钟 (min)</span>
+        <div class="range-labels">
+          <span>最小: 1分钟</span>
+          <span>最大: 30分钟</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          工具执行超时
+          <span class="hint-text">（单个工具执行的最长等待时间）</span>
+        </label>
+        <input type="number" id="reactToolTimeout" min="5" max="600" step="5" value="30" placeholder="30">
+        <span class="unit">秒 (s)</span>
+        <div class="range-labels">
+          <span>最小: 5秒</span>
+          <span>最大: 10分钟</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          澄清等待超时
+          <span class="hint-text">（用户澄清/选择的最长等待时间）</span>
+        </label>
+        <input type="number" id="reactClarifyTimeout" min="1" max="10" step="1" value="3" placeholder="3">
+        <span class="unit">分钟 (min)</span>
+        <div class="range-labels">
+          <span>最小: 1分钟</span>
+          <span>最大: 10分钟</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          API 重试次数
+          <span class="hint-text">（网络错误或服务异常时的重试次数）</span>
+        </label>
+        <input type="number" id="reactApiRetryCount" min="0" max="10" step="1" value="3" placeholder="3">
+        <span class="unit">次</span>
+        <div class="range-labels">
+          <span>最小: 0（不重试）</span>
+          <span>最大: 10次</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          API 重试基础延迟
+          <span class="hint-text">（每次重试的起始等待时间，指数递增）</span>
+        </label>
+        <input type="number" id="reactApiRetryBaseDelay" min="500" max="30000" step="500" value="1000" placeholder="1000">
+        <span class="unit">毫秒 (ms)</span>
+        <div class="range-labels">
+          <span>最小: 500ms</span>
+          <span>最大: 30000ms</span>
+        </div>
+      </div>
+      
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 配置说明</h3>
+        <p>
+          <strong>ReAct 循环</strong>是 AI 助手进行多步推理和工具调用的核心机制。<br>
+          • <strong>循环次数</strong>：决定 AI 可以进行多少轮推理-行动循环<br>
+          • <strong>超时设置</strong>：防止长时间等待或无限循环<br>
+          • <strong>澄清等待</strong>：用户澄清时间不计入整体循环超时（暂停计时）<br>
+          • 建议根据网络状况和任务复杂度调整这些参数
+        </p>
+      </div>
+    </div>
+
+    </div><!-- /tab-react -->
+
+    <!-- 对话配置区域 -->
+    <div class="tab-panel" data-tab="chat">
+    <div class="chat-config">
+      <h2>💬 对话配置</h2>
+      <p class="subtitle">控制对话历史和消息存储的行为参数</p>
+      
+      <div class="chat-config-item">
+        <label>
+          最大输入历史记录数
+          <span class="hint-text">（保存的用户输入历史条数）</span>
+        </label>
+        <input type="number" id="chatMaxInputHistory" min="10" max="100" value="20" placeholder="20">
+        <span class="unit">条</span>
+        <div class="range-labels">
+          <span>最小: 10</span>
+          <span>最大: 100</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          最大保留对话轮数
+          <span class="hint-text">（对话历史中保留的最大消息对数）</span>
+        </label>
+        <input type="number" id="chatMaxHistoryMessages" min="10" max="200" value="50" placeholder="50">
+        <span class="unit">轮</span>
+        <div class="range-labels">
+          <span>最小: 10</span>
+          <span>最大: 200</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          单条消息最大字符数
+          <span class="hint-text">（超过此长度将被截断）</span>
+        </label>
+        <input type="number" id="chatMaxMessageLength" min="1000" max="50000" step="1000" value="5000" placeholder="5000">
+        <span class="unit">字符</span>
+        <div class="range-labels">
+          <span>最小: 1000</span>
+          <span>最大: 50000</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          记忆历史限制条数
+          <span class="hint-text">（调用大模型时携带的最近记忆条数，需启用记忆才生效；置空表示不限制）</span>
+        </label>
+        <input type="number" id="chatMaxMemoryMessages" min="1" max="400" placeholder="不限制">
+        <span class="unit">条</span>
+        <div class="range-labels">
+          <span>最小: 1</span>
+          <span>最大: 400</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label class="toggle-label">
+          <input type="checkbox" id="enableExecutionLog">
+          <span class="toggle-text">启用执行日志</span>
+          <span class="hint-text">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
+        </label>
+      </div>
+      
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 配置说明</h3>
+        <p>
+          <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
+          • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
+          • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
+          • <strong>消息长度</strong>：防止过长消息占用过多存储空间<br>
+          • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
+          • 建议根据实际需求平衡存储成本和使用体验
+        </p>
+      </div>
+    </div>
+    </div><!-- /tab-chat -->
+
+    <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
+
+    <div class="config-details" id="configDetails">
+      💡 提示：保存配置后，新配置将立即生效
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+  
+  <!-- Toast 提示容器 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="src/options/index.js"></script>
+</body>
+</html>

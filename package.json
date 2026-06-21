@@ -1,0 +1,17 @@
+{
+  "name": "ai-helper",
+  "version": "1.0.0",
+  "description": "AI Helper Chrome Extension",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/fix-build.js",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.7.0",
+    "sharp": "^0.35.2",
+    "vite": "^8.0.0",
+    "vite-plugin-static-copy": "^4.1.1"
+  }
+}

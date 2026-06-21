@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "AI Helper - 网页智能助手",
+  "version": "1.0.0",
+  "description": "选中文本内容直接发起API调用，获取智能结果展示",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "sidePanel",
+    "scripting",
+    "bookmarks",
+    "history",
+    "downloads",
+    "notifications",
+    "tabs",
+    "cookies",
+    "alarms",
+    "pageCapture",
+    "debugger",
+    "browsingData",
+    "tabGroups"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "libs/marked.min.js",
+        "libs/qrcode.min.js",
+        "assets/content.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "css": [
+        "styles/styles.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "service-worker-loader.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "side_panel": {
+    "default_path": "side_panel.html"
+  },
+  "action": {
+    "default_title": "AI Helper",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "assets/content.js",
+        "assets/background.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}

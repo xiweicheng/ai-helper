@@ -1,0 +1,1682 @@
+// content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
+
+// ==================== SVG 图标 ====================
+const ICONS = {
+  search: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
+  explain: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17h8v-2.3c1.8-1.2 3-3.3 3-5.7a7 7 0 0 0-7-7Z"/></svg>`,
+  translate: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+  summary: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>`,
+  copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  close: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+  sparkle: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`,
+  lock: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  unlock: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`,
+  copyLarge: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+  grip: `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="8" cy="6" r="1.5"/><circle cx="16" cy="6" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="8" cy="18" r="1.5"/><circle cx="16" cy="18" r="1.5"/></svg>`,
+  send: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+  more: `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>`,
+  gear: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+  refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
+  block: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+  eyeOff: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+};
+
+// ==================== DOM 元素 ====================
+let toolbarEl = null;
+let resultPanelEl = null;
+let isToolbarVisible = false;
+let isAskMode = false; // 问问AI 输入框模式
+let askSavedSelectedText = ''; // 进入问问模式时保存的选中文本
+let askSavedRange = null; // 进入问问模式时保存的选中范围
+let askSavedLeft = ''; // 进入问问模式时保存的工具栏 left 值
+let isResultVisible = false;
+let isResultLocked = false;
+let resultRawContent = '';     // 回答原始文本（不含追问）
+let savedActionText = '';      // 触发工具操作时的选中文本（用于继续提问）
+let lastActionType = '';       // 上次操作类型（用于重新生成）
+let lastActionCustomPrompt = ''; // 上次操作的自定义系统提示词
+let currentSelectedText = '';
+let enableSelectionQuery = false;
+let blockedDomains = []; // 域名屏蔽列表
+let toolbarTemporarilyHidden = false; // 临时隐藏（页面刷新后恢复）
+let suppressNextClick = false;
+let lastPanelPos = { x: 0, y: 0 };  // 保存面板位置，避免工具栏隐藏后无法获取
+let pendingSelection = null;  // 鼠标拖动选中时暂存，抬起时再显示工具栏
+let toolbarTools = null;  // 工具栏工具配置缓存
+let toolbarMaxVisible = 4;  // 直接显示的工具数量
+let toolbarIconOnly = false; // 图标精简模式
+let overflowDropdownEl = null;  // 溢出下拉菜单
+
+// 拖拽状态
+let dragState = null;
+
+// 通用拖拽实现
+function makeDraggable(element, handleSelector) {
+  const handle = handleSelector ? element.querySelector(handleSelector) : element;
+  if (!handle) return;
+  
+  handle.style.cursor = 'grab';
+  
+  handle.addEventListener('mousedown', (e) => {
+    // 不拦截按钮点击
+    if (e.target.closest('button')) return;
+    // 右键不拖拽
+    if (e.button !== 0) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rect = element.getBoundingClientRect();
+    dragState = {
+      el: element,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      pointerId: e.pointerId || 0
+    };
+    
+    handle.style.cursor = 'grabbing';
+    element.style.transition = 'none';
+  });
+}
+
+// 全局拖拽事件
+document.addEventListener('mousemove', (e) => {
+  if (!dragState) return;
+  
+  const dx = e.clientX - dragState.startX;
+  const dy = e.clientY - dragState.startY;
+  
+  let newLeft = dragState.startLeft + dx;
+  let newTop = dragState.startTop + dy;
+  
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const rect = dragState.el.getBoundingClientRect();
+  
+  newLeft = Math.max(0, Math.min(newLeft, viewportWidth - rect.width));
+  newTop = Math.max(0, Math.min(newTop, viewportHeight - rect.height));
+  
+  dragState.el.style.left = newLeft + 'px';
+  dragState.el.style.top = newTop + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  if (!dragState) return;
+  
+  // 恢复 transition
+  dragState.el.style.transition = '';
+  
+  // 恢复 cursor
+  const handle = dragState.el.querySelector('.aih-result-header') || dragState.el;
+  handle.style.cursor = 'grab';
+  
+  dragState = null;
+});
+
+// 检查扩展上下文是否还有效
+function isExtensionValid() {
+  try {
+    return !!(chrome && chrome.runtime && chrome.runtime.id);
+  } catch {
+    return false;
+  }
+}
+
+// ==================== 样式注入 ====================
+function injectStyles() {
+  if (document.getElementById('aih-selection-toolbar-styles')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'aih-selection-toolbar-styles';
+  style.textContent = `
+    #aih-selection-toolbar {
+      position: fixed;
+      z-index: 2147483647;
+      display: none;
+      align-items: center;
+      gap: 1px;
+      padding: 4px 6px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid #e8e8e8;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      opacity: 0;
+      transform: translateY(2px);
+      white-space: nowrap;
+    }
+    #aih-selection-toolbar.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #aih-selection-toolbar .aih-tb-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 4px 6px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #333;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      outline: none;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    #aih-selection-toolbar .aih-tb-btn:hover {
+      background: #f0f0f0;
+    }
+    #aih-selection-toolbar .aih-tb-btn:active {
+      background: #e4e4e4;
+    }
+    #aih-selection-toolbar .aih-tb-btn .aih-tb-icon {
+      display: flex;
+      align-items: center;
+    }
+    #aih-selection-toolbar .aih-tb-divider {
+      width: 1px;
+      height: 14px;
+      background: #e0e0e0;
+      margin: 0 1px;
+      flex-shrink: 0;
+    }
+    #aih-selection-toolbar .aih-tb-grip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 2px;
+      color: #bbb;
+      cursor: grab;
+      flex-shrink: 0;
+      border-radius: 6px;
+      transition: color 0.15s;
+    }
+    #aih-selection-toolbar .aih-tb-grip:hover {
+      color: #666;
+    }
+    #aih-selection-toolbar .aih-tb-grip:active {
+      cursor: grabbing;
+    }
+    #aih-selection-toolbar .aih-tb-btn.primary {
+      background: #3b82f6;
+      color: #fff;
+      font-weight: 500;
+    }
+    #aih-selection-toolbar .aih-tb-btn.primary:hover {
+      background: #2563eb;
+    }
+    #aih-selection-toolbar .aih-tb-btn.primary .aih-tb-icon {
+      color: #fff;
+    }
+    
+    /* 溢出下拉菜单 */
+    .aih-overflow-dropdown {
+      position: fixed;
+      z-index: 2147483646;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid #e8e8e8;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06);
+      padding: 4px;
+      min-width: 140px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+    .aih-overflow-dropdown .aih-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #333;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+      outline: none;
+      font-family: inherit;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .aih-overflow-dropdown .aih-dropdown-item:hover {
+      background: #f0f0f0;
+    }
+    .aih-overflow-dropdown .aih-dropdown-item .aih-tb-icon {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* 下拉菜单分隔线 */
+    .aih-overflow-dropdown .aih-dropdown-divider {
+      height: 1px;
+      background: #e8e8e8;
+      margin: 4px 8px;
+    }
+    /* 下拉菜单设置按钮 */
+    .aih-overflow-dropdown .aih-dropdown-settings {
+      color: #555;
+    }
+    .aih-overflow-dropdown .aih-dropdown-settings:hover {
+      background: #f0f0f0;
+      color: #667eea;
+    }
+    
+    /* 问问AI 内联输入框 */
+    #aih-selection-toolbar .aih-tb-buttons {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+    }
+    #aih-selection-toolbar .aih-tb-ask-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+      width: 84px;
+      flex-shrink: 0;
+      transition: width 0.2s ease;
+    }
+    #aih-selection-toolbar .aih-tb-ask-input {
+      width: 44px;
+      padding: 4px 6px;
+      border: none;
+      background: transparent;
+      color: #333;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      line-height: 1.4;
+      transition: width 0.2s ease;
+    }
+    #aih-selection-toolbar .aih-tb-ask-input::placeholder {
+      color: #bbb;
+    }
+    #aih-selection-toolbar .aih-tb-ask-send {
+      flex-shrink: 0;
+      padding: 4px 6px;
+      border-radius: 0;
+    }
+    /* ask 模式：工具栏宽度限制 360px，输入框撑满 */
+    #aih-selection-toolbar.aih-ask-mode {
+      max-width: 360px;
+    }
+    #aih-selection-toolbar.aih-ask-mode .aih-tb-ask-wrap {
+      flex: 1;
+      width: auto;
+    }
+    #aih-selection-toolbar.aih-ask-mode .aih-tb-ask-input {
+      flex: 1;
+      width: auto;
+    }
+    #aih-selection-toolbar.aih-ask-mode .aih-tb-buttons {
+      display: none;
+    }
+    
+    /* 结果面板 */
+    #aih-selection-result {
+      position: fixed;
+      z-index: 2147483647;
+      display: none;
+      flex-direction: column;
+      width: 420px;
+      max-width: 92vw;
+      max-height: 520px;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid #e8e8e8;
+      border-radius: 14px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
+      color: #333;
+      overflow: hidden;
+      animation: aih-panel-in 0.2s ease-out;
+    }
+    @keyframes aih-panel-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    #aih-selection-result .aih-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fafafa;
+      font-size: 15px;
+      color: #555;
+      font-weight: 600;
+    }
+    #aih-selection-result .aih-result-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    #aih-selection-result .aih-result-lock,
+    #aih-selection-result .aih-result-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #999;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      padding: 0;
+    }
+    #aih-selection-result .aih-result-lock:hover,
+    #aih-selection-result .aih-result-close:hover {
+      background: #e8e8e8;
+      color: #555;
+    }
+    #aih-selection-result .aih-result-lock.locked {
+      color: #3b82f6;
+    }
+    #aih-selection-result .aih-result-body {
+      padding: 12px 14px;
+      word-break: break-word;
+    }
+    #aih-selection-result .aih-result-body p {
+      margin: 0 0 8px;
+    }
+    #aih-selection-result .aih-result-body p:last-child {
+      margin-bottom: 0;
+    }
+    #aih-selection-result .aih-result-body pre {
+      background: #f5f5f5;
+      padding: 10px 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+      margin: 8px 0;
+    }
+    #aih-selection-result .aih-result-body code {
+      font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+      font-size: 0.9em;
+      background: #f0f0f0;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    #aih-selection-result .aih-result-body pre code {
+      background: none;
+      padding: 0;
+    }
+    #aih-selection-result .aih-result-body ul, 
+    #aih-selection-result .aih-result-body ol {
+      padding-left: 20px;
+      margin: 8px 0;
+    }
+    #aih-selection-result .aih-result-body li {
+      margin-bottom: 4px;
+    }
+    #aih-selection-result .aih-result-body h1,
+    #aih-selection-result .aih-result-body h2,
+    #aih-selection-result .aih-result-body h3,
+    #aih-selection-result .aih-result-body h4 {
+      margin: 12px 0 6px;
+      font-weight: 600;
+    }
+    #aih-selection-result .aih-result-body h1 { font-size: 1.3em; }
+    #aih-selection-result .aih-result-body h2 { font-size: 1.15em; }
+    #aih-selection-result .aih-result-body h3 { font-size: 1.05em; }
+    #aih-selection-result .aih-result-body blockquote {
+      border-left: 3px solid #3b82f6;
+      margin: 8px 0;
+      padding: 4px 12px;
+      color: #666;
+      background: #f8f9fa;
+      border-radius: 0 4px 4px 0;
+    }
+    #aih-selection-result .aih-result-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 13px;
+    }
+    #aih-selection-result .aih-result-body th,
+    #aih-selection-result .aih-result-body td {
+      border: 1px solid #e0e0e0;
+      padding: 6px 10px;
+      text-align: left;
+    }
+    #aih-selection-result .aih-result-body th {
+      background: #f5f5f5;
+      font-weight: 600;
+    }
+    #aih-selection-result .aih-result-body a {
+      color: #3b82f6;
+      text-decoration: none;
+    }
+    #aih-selection-result .aih-result-body a:hover {
+      text-decoration: underline;
+    }
+    #aih-selection-result .aih-result-body hr {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 12px 0;
+    }
+    #aih-selection-result .aih-result-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 14px;
+      color: #888;
+      font-size: 13px;
+    }
+    #aih-selection-result .aih-result-scroll {
+      flex: 1 1 0%;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    #aih-selection-result .aih-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #e0e0e0;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: aih-spin 0.8s linear infinite;
+    }
+    @keyframes aih-spin {
+      to { transform: rotate(360deg); }
+    }
+    #aih-selection-result .aih-result-error {
+      padding: 16px 14px;
+      color: #e53e3e;
+      font-size: 13px;
+    }
+    #aih-selection-result .aih-result-footer {
+      display: flex;
+      gap: 6px;
+      padding: 8px 14px;
+      background: #fafafa;
+    }
+    #aih-selection-result .aih-result-footer-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #666;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      outline: none;
+      font-family: inherit;
+    }
+    #aih-selection-result .aih-result-footer-btn:hover {
+      background: #e8e8e8;
+      color: #333;
+    }
+    #aih-selection-result .aih-result-footer-btn .aih-tb-icon {
+      display: flex;
+      align-items: center;
+    }
+    /* 推荐追问 */
+    #aih-selection-result .aih-result-suggestions {
+      padding: 10px 14px;
+      border-top: 1px solid #f0f0f0;
+    }
+    #aih-selection-result .aih-suggestions-label {
+      font-size: 11px;
+      color: #999;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    #aih-selection-result .aih-suggestions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    #aih-selection-result .aih-suggestion-chip {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 7px 10px;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
+      background: #fafafa;
+      color: #333;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.4;
+    }
+    #aih-selection-result .aih-suggestion-chip:hover {
+      background: #eff6ff;
+      border-color: #3b82f6;
+      color: #2563eb;
+    }
+    /* 追问输入框 */
+    #aih-selection-result .aih-result-followup {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      padding: 8px 14px;
+      border-top: 1px solid #f0f0f0;
+    }
+    #aih-selection-result .aih-followup-wrap {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+      transition: border-color 0.15s;
+    }
+    #aih-selection-result .aih-followup-wrap:focus-within {
+      border-color: #3b82f6;
+    }
+    #aih-selection-result .aih-followup-input {
+      flex: 1;
+      padding: 6px 8px;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      color: #333;
+    }
+    #aih-selection-result .aih-followup-input::placeholder {
+      color: #bbb;
+    }
+    #aih-selection-result .aih-followup-send {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      padding: 6px 8px;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: #3b82f6;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    #aih-selection-result .aih-followup-send:hover {
+      color: #2563eb;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// ==================== 工具栏工具加载 ====================
+const DEFAULT_TOOLS = [
+  { id: 'ai-search',  name: 'AI搜索', systemPrompt: '使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。', builtin: true, order: 0 },
+  { id: 'explain',   name: '解释',   systemPrompt: '对选中的内容进行解释说明，帮助理解其含义。', builtin: true, order: 1 },
+  { id: 'translate', name: '翻译',   systemPrompt: '将选中的内容翻译成中文。', builtin: true, order: 2 },
+  { id: 'summary',   name: '总结',   systemPrompt: '对选中的内容进行归纳总结，提炼关键要点。', builtin: true, order: 3 },
+  { id: 'copy',      name: '复制',   systemPrompt: '将选中内容复制到剪贴板。', builtin: true, order: 99 }
+];
+
+function loadToolbarTools() {
+  return new Promise((resolve) => {
+    if (toolbarTools) {
+      resolve(toolbarTools);
+      return;
+    }
+    chrome.storage.local.get(['toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly'], (result) => {
+      const rawTools = (result.toolbarTools && result.toolbarTools.length > 0) 
+        ? result.toolbarTools 
+        : DEFAULT_TOOLS;
+      // 内置工具始终使用默认的 systemPrompt
+      const defaultMap = new Map(DEFAULT_TOOLS.map(t => [t.id, t]));
+      toolbarTools = rawTools.map(t => {
+        if (t.builtin && defaultMap.has(t.id)) {
+          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt };
+        }
+        return t;
+      });
+      toolbarMaxVisible = result.toolbarMaxVisible || 4;
+      toolbarIconOnly = result.toolbarIconOnly || false;
+      resolve(toolbarTools);
+    });
+  });
+}
+
+function refreshToolbarCache() {
+  toolbarTools = null;
+  toolbarIconOnly = false;
+  loadToolbarTools();
+}
+
+function getToolIcon(toolId) {
+  const iconMap = {
+    'ai-search': ICONS.search,
+    'explain': ICONS.explain,
+    'translate': ICONS.translate,
+    'summary': ICONS.summary,
+    'copy': ICONS.copy,
+  };
+  return iconMap[toolId] || ICONS.sparkle;
+}
+
+function createOverflowDropdown() {
+  if (overflowDropdownEl) return;
+  
+  overflowDropdownEl = document.createElement('div');
+  overflowDropdownEl.id = 'aih-overflow-dropdown';
+  overflowDropdownEl.className = 'aih-overflow-dropdown';
+  overflowDropdownEl.style.display = 'none';
+  document.body.appendChild(overflowDropdownEl);
+  
+  document.addEventListener('click', (e) => {
+    if (overflowDropdownEl && overflowDropdownEl.style.display === 'block') {
+      if (!overflowDropdownEl.contains(e.target) && !e.target.closest('.aih-tb-btn-overflow')) {
+        overflowDropdownEl.style.display = 'none';
+      }
+    }
+  });
+}
+
+function renderOverflowDropdown(overflowTools) {
+  if (!overflowDropdownEl) createOverflowDropdown();
+  
+  let itemsHtml = overflowTools.map(tool => {
+    const icon = getToolIcon(tool.id);
+    return `<button class="aih-dropdown-item" data-action="${tool.id}">
+      <span class="aih-tb-icon">${icon}</span>${tool.name}
+    </button>`;
+  }).join('');
+  
+  itemsHtml += `<div class="aih-dropdown-divider"></div>`;
+  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-settings" title="打开配置页面">
+    <span class="aih-tb-icon">${ICONS.gear}</span>设置
+  </button>`;
+  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-hide" title="暂时隐藏直到页面刷新">
+    <span class="aih-tb-icon">${ICONS.eyeOff}</span>本次临时禁用
+  </button>`;
+  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-block" title="在此网站禁用工具栏">
+    <span class="aih-tb-icon">${ICONS.block}</span>在此网站禁用
+  </button>`;
+  
+  overflowDropdownEl.innerHTML = itemsHtml;
+  
+  overflowDropdownEl._clickHandler = (e) => {
+    if (e.target.closest('.aih-dropdown-settings')) {
+      e.stopPropagation();
+      overflowDropdownEl.style.display = 'none';
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbar' }).catch(() => {});
+      return;
+    }
+    
+    if (e.target.closest('.aih-dropdown-block')) {
+      e.stopPropagation();
+      e.preventDefault();
+      overflowDropdownEl.style.display = 'none';
+      blockCurrentDomain();
+      return;
+    }
+    
+    if (e.target.closest('.aih-dropdown-hide')) {
+      e.stopPropagation();
+      e.preventDefault();
+      overflowDropdownEl.style.display = 'none';
+      toolbarTemporarilyHidden = true;
+      hideToolbar();
+      hideResultPanel();
+      currentSelectedText = '';
+      return;
+    }
+    
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    overflowDropdownEl.style.display = 'none';
+    handleAction(btn.dataset.action, currentSelectedText);
+  };
+  overflowDropdownEl.addEventListener('click', overflowDropdownEl._clickHandler);
+}
+
+// ==================== 工具栏创建 ====================
+async function createToolbar() {
+  if (toolbarEl) return;
+  
+  await loadToolbarTools();
+  // AI搜索固定在最前，复制固定在最后，均不参与排序
+  const tools = [...toolbarTools].sort((a, b) => a.order - b.order);
+  const aiSearchTool = tools.find(t => t.id === 'ai-search');
+  const configurableTools = tools.filter(t => t.id !== 'ai-search' && t.id !== 'copy');
+  const visibleTools = configurableTools.slice(0, toolbarMaxVisible - 1); // 留一位给AI搜索
+  const overflowTools = configurableTools.slice(toolbarMaxVisible - 1);
+  
+  toolbarEl = document.createElement('div');
+  toolbarEl.id = 'aih-selection-toolbar';
+  
+  let buttonsHtml = `<span class="aih-tb-buttons">`;
+  buttonsHtml += `<span class="aih-tb-grip" title="拖拽移动">${ICONS.grip}</span>`;
+  
+  const iconMode = toolbarIconOnly; // 图标精简模式：仅显示图标
+  
+  // AI搜索固定在第一个，始终显示
+  if (aiSearchTool) {
+    buttonsHtml += `<button class="aih-tb-btn primary" data-action="ai-search" title="AI 搜索">
+      <span class="aih-tb-icon">${ICONS.search}</span>${iconMode ? '' : 'AI搜索'}
+    </button>`;
+  }
+  
+  visibleTools.forEach((tool) => {
+    const icon = getToolIcon(tool.id);
+    buttonsHtml += `<button class="aih-tb-btn" data-action="${tool.id}" title="${tool.name}">
+      <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : tool.name}
+    </button>`;
+  });
+  
+  // 如果有溢出工具，添加"更多"按钮（放在复制按钮前面）
+  if (overflowTools.length > 0) {
+    buttonsHtml += `<button class="aih-tb-btn aih-tb-btn-overflow" title="更多工具">
+      <span class="aih-tb-icon">${ICONS.more}</span>
+    </button>`;
+    renderOverflowDropdown(overflowTools);
+  }
+  
+  // 复制按钮固定在最后
+  buttonsHtml += `<button class="aih-tb-btn" data-action="copy" title="复制选中内容">
+    <span class="aih-tb-icon">${ICONS.copy}</span>${iconMode ? '' : '复制'}
+  </button>`;
+  buttonsHtml += `</span>`; // close .aih-tb-buttons
+  
+  // 问问AI 输入框（紧凑内联形态）
+  buttonsHtml += `<span class="aih-tb-ask-wrap">
+    <input type="text" class="aih-tb-ask-input" placeholder="问问..." />
+    <button class="aih-tb-btn aih-tb-ask-send" title="发送">
+      <span class="aih-tb-icon">${ICONS.send}</span>
+    </button>
+  </span>`;
+  
+  toolbarEl.innerHTML = buttonsHtml;
+  
+  toolbarEl.addEventListener('click', (e) => {
+    if (e.target.closest('.aih-tb-btn-overflow')) {
+      e.stopPropagation();
+      const btn = e.target.closest('.aih-tb-btn-overflow');
+      const rect = btn.getBoundingClientRect();
+      if (overflowDropdownEl) {
+        overflowDropdownEl.style.display = 
+          overflowDropdownEl.style.display === 'block' ? 'none' : 'block';
+        overflowDropdownEl.style.top = (rect.bottom + 4) + 'px';
+        overflowDropdownEl.style.left = (rect.right - 160) + 'px';
+      }
+      return;
+    }
+    
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    e.stopPropagation();
+    
+    const action = btn.dataset.action;
+    handleAction(action, currentSelectedText);
+  });
+  
+  document.body.appendChild(toolbarEl);
+  
+  // 问问AI 输入框事件
+  const askInput = toolbarEl.querySelector('.aih-tb-ask-input');
+  const askSend = toolbarEl.querySelector('.aih-tb-ask-send');
+  const buttonsWrap = toolbarEl.querySelector('.aih-tb-buttons');
+  
+  const doSend = () => {
+    const val = askInput.value.trim();
+    if (val) {
+      const savedText = askSavedSelectedText; // 先保存，exitAskMode 会清空
+      exitAskMode();
+      askInput.value = '';
+      sendToSidePanelInputWithContext(val, savedText);
+      hideToolbar();
+    }
+  };
+  
+  const enterAskMode = () => {
+    if (isAskMode) return;
+    isAskMode = true;
+    // 保存当前选中的文本和范围
+    askSavedSelectedText = currentSelectedText || '';
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      askSavedRange = selection.getRangeAt(0).cloneRange();
+    }
+    // 保存展开前右侧边缘位置，展开后使用 width 直接限制为 360px
+    const oldRight = toolbarEl.getBoundingClientRect().right;
+    askSavedLeft = toolbarEl.style.left;
+    toolbarEl.classList.add('aih-ask-mode');
+    toolbarEl.style.width = '360px';
+    // 调整 left 使右侧位置保持不变
+    const newLeft = Math.max(8, oldRight - 360);
+    toolbarEl.style.left = newLeft + 'px';
+    
+    // 恢复选中高亮，并聚焦输入框（双重 rAF 确保 DOM 更新完成）
+    requestAnimationFrame(() => {
+      if (askSavedRange) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(askSavedRange);
+      }
+      requestAnimationFrame(() => {
+        askInput.focus();
+      });
+    });
+  };
+  
+  const exitAskMode = () => {
+    if (!isAskMode) return;
+    isAskMode = false;
+    askSavedSelectedText = '';
+    askSavedRange = null;
+    toolbarEl.classList.remove('aih-ask-mode');
+    toolbarEl.style.width = '';
+    // 恢复原始 left 位置
+    if (askSavedLeft) {
+      toolbarEl.style.left = askSavedLeft;
+      askSavedLeft = '';
+    }
+  };
+  
+  askInput.addEventListener('focus', () => {
+    // 如果还没展开（mousedown 没来得及处理），补调
+    if (!isAskMode) enterAskMode();
+  });
+  
+  // mousedown 提前展开工具栏，阻止原生聚焦避免 DOM 变化时失焦
+  askInput.addEventListener('mousedown', (e) => {
+    if (!isAskMode) {
+      e.preventDefault(); // 阻止原生 focus
+      enterAskMode();
+    }
+  });
+  
+  askInput.addEventListener('blur', () => {
+    // 延迟检查，以便点击发送按钮时能触发 doSend
+    setTimeout(() => {
+      if (isAskMode && !toolbarEl.contains(document.activeElement)) {
+        exitAskMode();
+        hideToolbar();
+      }
+    }, 150);
+  });
+  
+  askInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      exitAskMode();
+      askInput.blur();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      doSend();
+    }
+  });
+  
+  askSend.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // 防止 blur 先触发
+    e.stopPropagation();
+    doSend();
+  });
+  
+  makeDraggable(toolbarEl, '.aih-tb-grip');
+}
+
+// ==================== 结果面板 ====================
+function createResultPanel() {
+  if (resultPanelEl) return;
+  
+  resultPanelEl = document.createElement('div');
+  resultPanelEl.id = 'aih-selection-result';
+  resultPanelEl.innerHTML = `
+    <div class="aih-result-header">
+      <span>${ICONS.sparkle} AI 回答</span>
+      <div class="aih-result-header-actions">
+        <button class="aih-result-lock" title="锁定窗口">${ICONS.unlock}</button>
+        <button class="aih-result-close" title="关闭">${ICONS.close}</button>
+      </div>
+    </div>
+    <div class="aih-result-scroll">
+      <div class="aih-result-body"></div>
+      <div class="aih-result-footer">
+        <button class="aih-result-footer-btn" data-action="copy-result" title="复制全部内容">
+          <span class="aih-tb-icon">${ICONS.copyLarge}</span>复制
+        </button>
+        <button class="aih-result-footer-btn" data-action="regenerate-result" title="重新生成答案">
+          <span class="aih-tb-icon">${ICONS.refresh}</span>重新生成
+        </button>
+      </div>
+      <div class="aih-result-suggestions" style="display:none;">
+        <div class="aih-suggestions-label">💡 推荐追问</div>
+        <div class="aih-suggestions-list"></div>
+      </div>
+    </div>
+    <div class="aih-result-followup">
+      <span class="aih-followup-wrap">
+        <input type="text" class="aih-followup-input" placeholder="继续提问..." />
+        <button class="aih-followup-send" title="发送到侧边栏">${ICONS.send}</button>
+      </span>
+    </div>
+  `;
+  
+  resultPanelEl.querySelector('.aih-result-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    hideResultPanel();
+  });
+  
+  resultPanelEl.querySelector('.aih-result-lock').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleResultLock();
+  });
+  
+  resultPanelEl.querySelector('.aih-result-footer').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const action = e.target.closest('[data-action]')?.dataset?.action;
+    if (action === 'regenerate-result') {
+      if (!lastActionType || !savedActionText) return;
+      sendToAI(lastActionType, savedActionText, lastActionCustomPrompt);
+    } else if (action === 'copy-result') {
+      copyResultContent();
+    }
+  });
+  
+  // 追问输入框事件
+  const followupInput = resultPanelEl.querySelector('.aih-followup-input');
+  const followupSend = resultPanelEl.querySelector('.aih-followup-send');
+  
+  followupSend.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const text = followupInput.value.trim();
+    if (text) {
+      sendToSidePanelInput(text);
+      followupInput.value = '';
+    }
+  });
+  
+  followupInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const text = followupInput.value.trim();
+      if (text) {
+        sendToSidePanelInput(text);
+        followupInput.value = '';
+      }
+    }
+  });
+  
+  // 推荐追问点击事件（委托在 suggestions-list 上）
+  resultPanelEl.querySelector('.aih-suggestions-list').addEventListener('click', (e) => {
+    const chip = e.target.closest('.aih-suggestion-chip');
+    if (!chip) return;
+    e.stopPropagation();
+    const question = chip.dataset.question;
+    if (question) {
+      sendToSidePanelInput(question);
+    }
+  });
+  
+  document.body.appendChild(resultPanelEl);
+  
+  // 结果面板通过标题栏拖拽
+  makeDraggable(resultPanelEl, '.aih-result-header');
+}
+
+function showResultPanel(x, y, content, suggestions = []) {
+  if (!resultPanelEl) return;
+  
+  // 确保面板始终在 body 最末尾，处于最顶层
+  document.body.appendChild(resultPanelEl);
+  
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  resultPanelEl.style.display = 'flex';
+  resultPanelEl.style.left = '-9999px';
+  resultPanelEl.style.top = '-9999px';
+  
+  const body = resultPanelEl.querySelector('.aih-result-body');
+  body.innerHTML = content;
+  
+  // 渲染推荐追问
+  const suggestionsEl = resultPanelEl.querySelector('.aih-result-suggestions');
+  const suggestionsList = resultPanelEl.querySelector('.aih-suggestions-list');
+  if (suggestions.length > 0 && suggestionsEl && suggestionsList) {
+    suggestionsList.innerHTML = suggestions.map(s => 
+      `<button class="aih-suggestion-chip" data-question="${escapeHtml(s)}">${escapeHtml(s)}</button>`
+    ).join('');
+    suggestionsEl.style.display = 'block';
+  } else if (suggestionsEl) {
+    suggestionsEl.style.display = 'none';
+  }
+  
+  requestAnimationFrame(() => {
+    const rect = resultPanelEl.getBoundingClientRect();
+    const panelWidth = rect.width || 420;
+    const panelHeight = Math.min(rect.height || 200, 520);
+
+    let left = x - panelWidth / 2;
+    if (left < 8) left = 8;
+    if (left + panelWidth > viewportWidth - 8) left = viewportWidth - panelWidth - 8;
+    
+    let top = y - panelHeight - 8;
+    if (top < 8) {
+      top = y + 8;
+    }
+    
+    resultPanelEl.style.left = left + 'px';
+    resultPanelEl.style.top = top + 'px';
+    resultPanelEl.style.maxHeight = Math.min(520, viewportHeight - top - 16) + 'px';
+    
+    isResultVisible = true;
+    
+    // 再次确保在最顶层（防止 requestAnimationFrame 期间有其他元素插入）
+    document.body.appendChild(resultPanelEl);
+  });
+}
+
+function showResultLoading(x, y) {
+  if (!resultPanelEl) return;
+  
+  // 保存面板位置，后续显示结果时复用
+  lastPanelPos = { x, y };
+  
+  // 重置锁定状态
+  isResultLocked = false;
+  updateLockButton();
+  
+  // 隐藏推荐追问区域
+  const suggestionsEl = resultPanelEl.querySelector('.aih-result-suggestions');
+  if (suggestionsEl) suggestionsEl.style.display = 'none';
+  
+  // 清空追问输入框
+  const followupInput = resultPanelEl.querySelector('.aih-followup-input');
+  if (followupInput) followupInput.value = '';
+  
+  // 确保面板始终在 body 最末尾，处于最顶层
+  document.body.appendChild(resultPanelEl);
+  
+  resultPanelEl.style.display = 'flex';
+  
+  const body = resultPanelEl.querySelector('.aih-result-body');
+  body.innerHTML = `<div class="aih-result-loading"><div class="aih-spinner"></div>AI 正在思考...</div>`;
+  
+  positionPanel(resultPanelEl, x, y);
+  isResultVisible = true;
+  
+  hideToolbar();
+}
+
+function showResultError(x, y, errorMsg) {
+  if (!resultPanelEl) return;
+  
+  // 重置锁定状态
+  isResultLocked = false;
+  resultRawContent = '';
+  updateLockButton();
+  
+  // 确保面板始终在 body 最末尾，处于最顶层
+  document.body.appendChild(resultPanelEl);
+  
+  resultPanelEl.style.display = 'flex';
+  
+  const body = resultPanelEl.querySelector('.aih-result-body');
+  body.innerHTML = `<div class="aih-result-error">请求失败: ${escapeHtml(errorMsg)}</div>`;
+  
+  positionPanel(resultPanelEl, x, y);
+  isResultVisible = true;
+}
+
+function positionPanel(panel, x, y) {
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  panel.style.left = '-9999px';
+  panel.style.top = '-9999px';
+  
+  requestAnimationFrame(() => {
+    const rect = panel.getBoundingClientRect();
+    const panelWidth = rect.width || 420;
+    const panelHeight = Math.min(rect.height || 200, 520);
+    
+    let left = x - panelWidth / 2;
+    if (left < 8) left = 8;
+    if (left + panelWidth > viewportWidth - 8) left = viewportWidth - panelWidth - 8;
+    
+    let top = y - panelHeight - 8;
+    if (top < 8) {
+      top = y + 8;
+    }
+    
+    panel.style.left = left + 'px';
+    panel.style.top = top + 'px';
+    panel.style.maxHeight = Math.min(520, viewportHeight - top - 16) + 'px';
+    
+    // 再次确保在最顶层（防止 requestAnimationFrame 期间有其他元素插入）
+    document.body.appendChild(panel);
+  });
+}
+
+function hideResultPanel() {
+  if (!resultPanelEl) return;
+  resultPanelEl.style.display = 'none';
+  isResultVisible = false;
+  isResultLocked = false;
+  resultRawContent = '';
+  updateLockButton();
+}
+
+function toggleResultLock() {
+  isResultLocked = !isResultLocked;
+  updateLockButton();
+}
+
+function updateLockButton() {
+  if (!resultPanelEl) return;
+  const lockBtn = resultPanelEl.querySelector('.aih-result-lock');
+  if (!lockBtn) return;
+  if (isResultLocked) {
+    lockBtn.innerHTML = ICONS.lock;
+    lockBtn.classList.add('locked');
+    lockBtn.title = '解除锁定';
+  } else {
+    lockBtn.innerHTML = ICONS.unlock;
+    lockBtn.classList.remove('locked');
+    lockBtn.title = '锁定窗口';
+  }
+}
+
+function copyResultContent() {
+  const text = resultRawContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showCopyToast();
+  }).catch(err => {
+    console.error('[SelectionToolbar] 复制结果失败:', err);
+  });
+}
+
+function sendToSidePanelInput(text) {
+  if (!text || !isExtensionValid()) return;
+  
+  const selText = currentSelectedText || savedActionText || '';
+  chrome.runtime.sendMessage({
+    type: 'DIRECT_SEND',
+    text: text,
+    selectedText: selText
+  }).catch(err => {
+    console.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
+  });
+}
+
+function sendToSidePanelInputWithContext(text, selectedText) {
+  if (!text || !isExtensionValid()) return;
+  
+  chrome.runtime.sendMessage({
+    type: 'DIRECT_SEND',
+    text: text,
+    selectedText: selectedText || ''
+  }).catch(err => {
+    console.error('[SelectionToolbar] 发送到侧边栏失败:', err);
+  });
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ==================== 显示/隐藏 ====================
+function showToolbar(x, y) {
+  if (!toolbarEl || !currentSelectedText || isResultVisible) return;
+  
+  // 确保工具栏始终在 body 最末尾，处于最顶层
+  document.body.appendChild(toolbarEl);
+  
+  const viewportWidth = window.innerWidth;
+  
+  toolbarEl.style.display = 'flex';
+  
+  requestAnimationFrame(() => {
+    const rect = toolbarEl.getBoundingClientRect();
+    const toolbarWidth = rect.width || 300;
+    const toolbarHeight = rect.height || 40;
+    
+    let left = x - toolbarWidth / 2;
+    if (left < 8) left = 8;
+    if (left + toolbarWidth > viewportWidth - 8) left = viewportWidth - toolbarWidth - 8;
+    
+    let top = y - toolbarHeight - 10;
+    if (top < 8) {
+      top = y + 10;
+    }
+    
+    toolbarEl.style.left = left + 'px';
+    toolbarEl.style.top = top + 'px';
+    
+    if (!isToolbarVisible) {
+      toolbarEl.classList.add('show');
+      isToolbarVisible = true;
+    }
+  });
+}
+
+function hideToolbar() {
+  if (!toolbarEl || !isToolbarVisible) return;
+  
+  if (isAskMode) {
+    isAskMode = false;
+    askSavedSelectedText = '';
+    askSavedRange = null;
+    toolbarEl.classList.remove('aih-ask-mode');
+    toolbarEl.style.width = '';
+    if (askSavedLeft) {
+      toolbarEl.style.left = askSavedLeft;
+      askSavedLeft = '';
+    }
+  }
+  
+  toolbarEl.classList.remove('show');
+  toolbarEl.style.display = 'none';
+  isToolbarVisible = false;
+}
+
+// 获取工具栏当前的屏幕位置（用于结果面板定位）
+function getToolbarPosition() {
+  if (!toolbarEl) return { x: 0, y: 0 };
+  const rect = toolbarEl.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top };
+}
+
+function getPanelCenter(panel) {
+  const rect = panel.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top };
+}
+
+// ==================== 选中检测 ====================
+function onSelectionChange() {
+  if (!enableSelectionQuery) return;
+  // 检查当前域名是否被屏蔽
+  if (blockedDomains.length > 0 && blockedDomains.includes(window.location.hostname)) return;
+  // 检查是否临时隐藏
+  if (toolbarTemporarilyHidden) return;
+  
+  const selection = window.getSelection();
+  const text = selection ? selection.toString().trim() : '';
+  
+  if (!text || text.length < 2) {
+    if (!isAskMode) hideToolbar();
+    currentSelectedText = '';
+    pendingSelection = null;
+    return;
+  }
+  
+  const maxLength = 5000;
+  const displayText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+  
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const editable = container.nodeType === Node.TEXT_NODE 
+      ? container.parentElement.closest('[contenteditable], input, textarea')
+      : container.closest && container.closest('[contenteditable], input, textarea');
+    
+    if (editable instanceof HTMLElement) {
+      if (editable.tagName === 'INPUT' || editable.tagName === 'TEXTAREA') {
+        hideToolbar();
+        currentSelectedText = '';
+        pendingSelection = null;
+        return;
+      }
+    }
+  }
+  
+  if (text === currentSelectedText && isToolbarVisible) return;
+  
+  currentSelectedText = displayText;
+  
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    if (rect.width === 0 && rect.height === 0) return;
+    
+    // 暂存选中位置，等鼠标抬起时再显示工具栏
+    pendingSelection = {
+      x: rect.left + rect.width / 2,
+      y: rect.top
+    };
+  }
+}
+
+// ==================== 点击外部隐藏 ====================
+function onDocumentClick(e) {
+  // 结果面板可见时，点击外部关闭结果面板（锁定时不关闭）
+  if (isResultVisible && resultPanelEl) {
+    if (!resultPanelEl.contains(e.target) && !isResultLocked) {
+      hideResultPanel();
+    }
+    return;
+  }
+  
+  if (!isToolbarVisible) return;
+  if (!toolbarEl) return;
+  
+  if (isAskMode) return; // 输入框模式下不关闭
+  
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    return;
+  }
+  
+  if (toolbarEl.contains(e.target)) return;
+  
+  hideToolbar();
+}
+
+function onMouseUp() {
+  suppressNextClick = true;
+  
+  // 鼠标抬起时，如果有暂存的选中位置，显示工具栏
+  if (pendingSelection && currentSelectedText) {
+    showToolbar(pendingSelection.x, pendingSelection.y);
+    pendingSelection = null;
+  }
+}
+
+// ==================== 滚动/缩放时隐藏 ====================
+function onScrollOrResize() {
+  if (isAskMode) return;
+  if (isToolbarVisible) hideToolbar();
+}
+
+// ==================== 操作处理 ====================
+function handleAction(action, text) {
+  if (!text) return;
+  
+  savedActionText = text; // 保存用于继续提问时带入选中的内容
+  if (action === 'copy') {
+    copySelectedText(text);
+    hideToolbar();
+    return;
+  }
+  
+  lastActionType = action;
+  lastActionCustomPrompt = '';
+  
+  const BUILTIN_ACTIONS = ['ai-search', 'explain', 'translate', 'summary'];
+  if (BUILTIN_ACTIONS.includes(action)) {
+    sendToAI(action, text);
+    return;
+  }
+  
+  // 自定义工具
+  const tool = toolbarTools.find(t => t.id === action);
+  if (tool) {
+    lastActionCustomPrompt = tool.systemPrompt || '';
+    sendToAI(action, text, tool.systemPrompt);
+  }
+}
+
+function copySelectedText(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showCopyToast();
+  }).catch(err => {
+    console.error('[SelectionToolbar] 复制失败:', err);
+  });
+}
+
+function showCopyToast() {
+  const oldToast = document.getElementById('aih-copy-toast');
+  if (oldToast) oldToast.remove();
+  
+  const toast = document.createElement('div');
+  toast.id = 'aih-copy-toast';
+  toast.textContent = '已复制';
+  toast.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 2147483647;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    pointer-events: none;
+    animation: aih-toast-in 0.2s ease-out, aih-toast-out 0.2s 1s ease-in forwards;
+  `;
+  
+  if (!document.getElementById('aih-toast-anim')) {
+    const anim = document.createElement('style');
+    anim.id = 'aih-toast-anim';
+    anim.textContent = `
+      @keyframes aih-toast-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+      @keyframes aih-toast-out { from { opacity: 1; } to { opacity: 0; } }
+    `;
+    document.head.appendChild(anim);
+  }
+  
+  document.body.appendChild(toast);
+  // 确保 toast 在最顶层
+  toast.style.zIndex = '2147483647';
+  setTimeout(() => toast.remove(), 1300);
+}
+
+function sendToAI(action, text, customSystemPrompt) {
+  if (!isExtensionValid()) {
+    console.warn('[SelectionToolbar] 扩展上下文已失效，请刷新页面');
+    return;
+  }
+  
+  const actionLabels = {
+    'ai-search': `搜索并分析以下内容：\n\n${text}`,
+    'explain': `用1-3句话简洁解释以下内容，不需要展开说明。\n\n${text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3`,
+    'translate': `翻译以下内容，只输出翻译结果：\n\n${text}`,
+    'summary': `用3-5个要点总结以下内容，每条要点一句话。\n\n${text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3`
+  };
+  
+  const message = customSystemPrompt ? `请处理以下内容：\n\n${text}` : (actionLabels[action] || text);
+  
+  // AI搜索：打开侧边栏，不显示浮动面板
+  if (action === 'ai-search') {
+    hideToolbar();
+    
+    // 清除页面选中文本，避免 Side Panel 的 setInterval 重复检测到选中内容
+    window.getSelection().removeAllRanges();
+    
+    chrome.runtime.sendMessage({
+      type: 'SELECTION_TOOLBAR_ACTION',
+      action: action,
+      text: text,
+      prompt: message
+    }).catch(err => {
+      console.error('[SelectionToolbar] 发送消息失败:', err);
+    });
+    return;
+  }
+  
+  createResultPanel();
+  
+  const actionTitles = {
+    'ai-search': 'AI搜索',
+    'explain': '解释',
+    'translate': '翻译',
+    'summary': '总结'
+  };
+  let panelTitle = actionTitles[action];
+  if (!panelTitle && toolbarTools) {
+    const tool = toolbarTools.find(t => t.id === action);
+    panelTitle = tool ? tool.name : 'AI 回答';
+  }
+  const titleSpan = resultPanelEl.querySelector('.aih-result-header span');
+  if (titleSpan) {
+    titleSpan.innerHTML = `${ICONS.sparkle} ${panelTitle || 'AI 回答'}`;
+  }
+  
+  const pos = isResultVisible && resultPanelEl
+    ? getPanelCenter(resultPanelEl)
+    : getToolbarPosition();
+  showResultLoading(pos.x, pos.y);
+  
+  chrome.runtime.sendMessage({
+    type: 'SELECTION_TOOLBAR_ACTION',
+    action: action,
+    text: text,
+    prompt: message,
+    systemPrompt: customSystemPrompt || ''
+  }).catch(err => {
+    console.error('[SelectionToolbar] 发送消息失败:', err);
+    showResultError(pos.x, pos.y, err.message);
+  });
+}
+
+// ==================== 监听 AI 响应 ====================
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isExtensionValid()) return;
+  
+  if (message.type === 'SELECTION_TOOLBAR_RESULT') {
+    if (message.error) {
+      resultRawContent = '';
+      showResultError(lastPanelPos.x, lastPanelPos.y, message.error);
+    } else {
+      const rawContent = message.content || '无响应';
+      
+      // 解析 ---SUGGESTIONS--- 分隔符，分离回答和追问
+      let answerContent = rawContent;
+      resultRawContent = rawContent;
+      let suggestions = [];
+      const suggestIdx = rawContent.indexOf('---SUGGESTIONS---');
+      if (suggestIdx !== -1) {
+        answerContent = rawContent.substring(0, suggestIdx).trim();
+        resultRawContent = answerContent;  // 复制时只复制回答部分
+        const suggestBlock = rawContent.substring(suggestIdx + '---SUGGESTIONS---'.length);
+        suggestions = suggestBlock
+          .split('\n')
+          .map(s => s.replace(/^[\d]+[\.\、\s]+/, '').trim())  // 去掉序号前缀
+          .filter(s => s.length > 0)
+          .slice(0, 3);
+      }
+      
+      // 使用 marked 解析 Markdown 内容
+      const htmlContent = typeof marked !== 'undefined' 
+        ? marked.parse(answerContent) 
+        : escapeHtml(answerContent).replace(/\n/g, '<br>');
+      showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
+    }
+  }
+});
+
+// ==================== 域名屏蔽 ====================
+function blockCurrentDomain() {
+  const hostname = window.location.hostname;
+  chrome.storage.local.get(['blockedDomains'], (result) => {
+    const list = result.blockedDomains || [];
+    if (!list.includes(hostname)) {
+      list.push(hostname);
+      chrome.storage.local.set({ blockedDomains: list }, () => {
+        blockedDomains = list;
+        hideToolbar();
+        hideResultPanel();
+        currentSelectedText = '';
+      });
+    }
+  });
+}
+
+// ==================== 监听开关状态变化 ====================
+function loadToggleState() {
+  if (!isExtensionValid()) return;
+  
+  chrome.storage.local.get(['enableSelectionQuery', 'blockedDomains'], (result) => {
+    enableSelectionQuery = !!(result.enableSelectionQuery);
+    blockedDomains = result.blockedDomains || [];
+    console.log('[SelectionToolbar] 开关状态:', enableSelectionQuery ? '已启用' : '已禁用', '屏蔽域名:', blockedDomains.length);
+  });
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (!isExtensionValid()) return;
+  
+  if (areaName === 'local' && changes.enableSelectionQuery) {
+    enableSelectionQuery = !!(changes.enableSelectionQuery.newValue);
+    if (!enableSelectionQuery) {
+      hideToolbar();
+      hideResultPanel();
+      currentSelectedText = '';
+    }
+  }
+  
+  if (areaName === 'local' && changes.blockedDomains) {
+    blockedDomains = changes.blockedDomains.newValue || [];
+  }
+  
+  if (areaName === 'local' && (changes.toolbarTools || changes.toolbarMaxVisible)) {
+    refreshToolbarCache();
+  }
+});
+
+// ==================== 导出的启动/停止函数 ====================
+export function initSelectionToolbar() {
+  injectStyles();
+  createToolbar();
+  createResultPanel();
+  loadToggleState();
+  
+  document.addEventListener('selectionchange', onSelectionChange);
+  document.addEventListener('click', onDocumentClick, true);
+  document.addEventListener('mouseup', onMouseUp, true);
+  window.addEventListener('scroll', onScrollOrResize, true);
+  window.addEventListener('resize', onScrollOrResize);
+  
+  console.log('[SelectionToolbar] 初始化完成');
+}
+
+export function destroySelectionToolbar() {
+  document.removeEventListener('selectionchange', onSelectionChange);
+  document.removeEventListener('click', onDocumentClick, true);
+  document.removeEventListener('mouseup', onMouseUp, true);
+  window.removeEventListener('scroll', onScrollOrResize, true);
+  window.removeEventListener('resize', onScrollOrResize);
+  
+  hideToolbar();
+  hideResultPanel();
+  
+  if (toolbarEl) {
+    toolbarEl.remove();
+    toolbarEl = null;
+  }
+  if (resultPanelEl) {
+    resultPanelEl.remove();
+    resultPanelEl = null;
+  }
+  
+  const style = document.getElementById('aih-selection-toolbar-styles');
+  if (style) style.remove();
+}

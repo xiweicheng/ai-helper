@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="prismGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="40%" stop-color="#5b8def"/>
+      <stop offset="100%" stop-color="#4a5ae5"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="rgba(139,92,246,0.2)"/>
+      <stop offset="100%" stop-color="rgba(139,92,246,0)"/>
+    </radialGradient>
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="rgba(34,211,238,0.6)"/>
+      <stop offset="100%" stop-color="rgba(34,211,238,0)"/>
+    </radialGradient>
+    <clipPath id="rounded">
+      <rect x="0" y="0" width="128" height="128" rx="23" ry="23"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <rect width="128" height="128" fill="#0a0a14"/>
+    <circle cx="64" cy="54" r="90" fill="url(#glow)"/>
+
+    <!-- 外圈轨道圆环 -->
+    <circle cx="64" cy="64" r="64" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="0.5"/>
+    <circle cx="64" cy="64" r="50" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="0.4" stroke-dasharray="4 8"/>
+
+    <!-- 径向连接线 -->
+    <line x1="88.24871130596429" y1="50" x2="120" y2="29.000000000000004" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+    <line x1="88.24871130596429" y1="78" x2="120" y2="99" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+    <line x1="64" y1="92" x2="64" y2="120" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+    <line x1="39.751288694035715" y1="78" x2="8" y2="99" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+    <line x1="39.75128869403572" y1="50" x2="8" y2="28.999999999999996" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+    <line x1="63.99999999999999" y1="36" x2="63.999999999999986" y2="8" stroke="url(#prismGrad)" stroke-width="1" opacity="0.45"/>
+
+    <!-- 次级六边形轨道（旋转30°，更小） -->
+    <path d="M79.5884572681199,55 L79.5884572681199,73 L64,82 L48.411542731880104,73 L48.411542731880104,55 L64,46 Z" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="0.5" transform="rotate(30,64,64)"/>
+
+    <!-- 主六边形棱柱 -->
+    <path d="M88.24871130596429,50 L88.24871130596429,78 L64,92 L39.751288694035715,78 L39.75128869403572,50 L63.99999999999999,36 Z" fill="url(#prismGrad)" opacity="0.22" stroke="url(#prismGrad)" stroke-width="1.5"/>
+
+    <!-- 六边形内部分隔线（6条，形成三角面） -->
+    <line x1="64" y1="64" x2="72.49" y2="59.10" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+    <line x1="64" y1="64" x2="72.49" y2="68.90" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+    <line x1="64" y1="64" x2="64.00" y2="73.80" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+    <line x1="64" y1="64" x2="55.51" y2="68.90" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+    <line x1="64" y1="64" x2="55.51" y2="59.10" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+    <line x1="64" y1="64" x2="64.00" y2="54.20" stroke="rgba(255,255,255,0.2)" stroke-width="0.6"/>
+
+    <!-- 中心 AI 火花 -->
+    <circle cx="64" cy="64" r="5" fill="url(#nodeGlow)"/>
+    <circle cx="64" cy="64" r="2.3" fill="#22d3ee"/>
+
+    <!-- 径向终端节点 -->
+    <circle cx="120.0" cy="29.0" r="5" fill="url(#nodeGlow)"/><circle cx="120.0" cy="29.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="120.0" cy="99.0" r="5" fill="url(#nodeGlow)"/><circle cx="120.0" cy="99.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="64.0" cy="120.0" r="5" fill="url(#nodeGlow)"/><circle cx="64.0" cy="120.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="8.0" cy="99.0" r="5" fill="url(#nodeGlow)"/><circle cx="8.0" cy="99.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="8.0" cy="29.0" r="5" fill="url(#nodeGlow)"/><circle cx="8.0" cy="29.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+    <circle cx="64.0" cy="8.0" r="5" fill="url(#nodeGlow)"/><circle cx="64.0" cy="8.0" r="2.2" fill="#22d3ee" opacity="0.85"/>
+
+    <!-- 次级中间节点 -->
+    <circle cx="92.0" cy="64.0" r="1.8" fill="#5b8def" opacity="0.45"/>
+    <circle cx="50.0" cy="88.2" r="1.8" fill="#5b8def" opacity="0.45"/>
+    <circle cx="50.0" cy="39.8" r="1.8" fill="#5b8def" opacity="0.45"/>
+  </g>
+</svg>
