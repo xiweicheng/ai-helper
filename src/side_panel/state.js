@@ -53,6 +53,7 @@ export let clarifyTimeoutValue = 180000;
 // 消息目录状态
 export let messageTocContainer = null;
 export let isMouseOverToc = false;
+export let tocHideTimer = null;
 
 // 划词问答弹出菜单状态
 export let lastSelectedText = '';
@@ -132,6 +133,8 @@ export default {
   set messageTocContainer(v) { messageTocContainer = v; },
   get isMouseOverToc() { return isMouseOverToc; },
   set isMouseOverToc(v) { isMouseOverToc = v; },
+  get tocHideTimer() { return tocHideTimer; },
+  set tocHideTimer(v) { tocHideTimer = v; },
   get lastSelectedText() { return lastSelectedText; },
   set lastSelectedText(v) { lastSelectedText = v; },
   get currentSelectionRange() { return currentSelectionRange; },

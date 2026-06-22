@@ -55,6 +55,11 @@ export function handleMouseOut(event) {
   // 如果目标是目录容器，取消标记
   if (event.target.closest('.message-toc-container')) {
     state.isMouseOverToc = false;
+    // 清除可能存在的延迟隐藏定时器
+    if (state.tocHideTimer) {
+      clearTimeout(state.tocHideTimer);
+      state.tocHideTimer = null;
+    }
     return;
   }
   
@@ -70,9 +75,20 @@ export function handleMouseOut(event) {
     }
   }
   
-  // 如果鼠标不在目录区域内，隐藏目录
+  // 如果鼠标不在目录区域内，延迟隐藏目录（给用户时间移动到目录）
   if (!state.isMouseOverToc) {
-    hideMessageToc();
+    // 清除之前的定时器
+    if (state.tocHideTimer) {
+      clearTimeout(state.tocHideTimer);
+    }
+    // 延迟 800ms 隐藏目录，让用户有充足时间将鼠标移动到目录区域
+    state.tocHideTimer = setTimeout(() => {
+      // 再次检查鼠标是否已经进入目录区域
+      if (!state.isMouseOverToc) {
+        hideMessageToc();
+      }
+      state.tocHideTimer = null;
+    }, 800);
   }
 }
 
@@ -141,6 +157,18 @@ export function showMessageToc(messageDiv, headings) {
   // 添加到页面
   document.body.appendChild(container);
   state.messageTocContainer = container;
+
+  // 动态调整容器位置：让容器左边界对齐消息的右边界，消除消息到目录之间的间隙
+  const messageRect = messageDiv.getBoundingClientRect();
+  // 容器默认 CSS 为 right: 0; width: 280px，其默认左边界 = viewportWidth - 280
+  const defaultContainerLeft = window.innerWidth - 280;
+  // 如果消息右边界在容器左边界左侧（存在间隙），则扩展容器左边界以覆盖间隙
+  if (messageRect.right < defaultContainerLeft) {
+    container.style.left = messageRect.right + 'px';
+    container.style.right = '0';
+    // 移除固定宽度，改用 left/right 拉伸
+    container.style.width = 'auto';
+  }
   
   // 绑定事件
   const toggle = container.querySelector('.message-toc-toggle');
@@ -190,6 +218,12 @@ export function showMessageToc(messageDiv, headings) {
  * 隐藏目录
  */
 export function hideMessageToc() {
+  // 清除可能存在的延迟隐藏定时器
+  if (state.tocHideTimer) {
+    clearTimeout(state.tocHideTimer);
+    state.tocHideTimer = null;
+  }
+  
   if (state.messageTocContainer) {
     state.messageTocContainer.remove();
     state.messageTocContainer = null;
