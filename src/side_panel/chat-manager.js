@@ -714,12 +714,12 @@ function renderExecutionTimeline(executionLog) {
       nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务)</span>`;
     }
     
-    if (isApiCall && entry.apiRequest) {
+    if ((isApiCall || isPreselect) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
       }
-      if (entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
+      if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
         info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
       }
       if (info.length > 0) {
@@ -800,12 +800,12 @@ function renderExecutionLogForPanel(executionLog) {
       nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
-    if (isApiCall && entry.apiRequest) {
+    if ((isApiCall || isPreselect) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
       }
-      if (entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
+      if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
         info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
       }
       if (info.length > 0) {
@@ -836,12 +836,22 @@ function renderExecutionLogForPanel(executionLog) {
             </div>
             ` : ''}
             
-            ${entry.action ? `
+            ${!isPreselect && entry.action ? `
             <div class="timeline-section">
               <div class="section-title">⚡ 工具调用</div>
               <div class="section-content">
                 <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
                 <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+              </div>
+            </div>
+            ` : ''}
+            
+            ${isPreselect && entry.action?.params?.selected ? `
+            <div class="timeline-section">
+              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-content">
+                <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+                <strong>数量:</strong> ${entry.action.params.selected.length} 个
               </div>
             </div>
             ` : ''}
@@ -861,6 +871,7 @@ function renderExecutionLogForPanel(executionLog) {
                 ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
                 ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
                 ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
               </div>
             </div>
             ` : ''}
@@ -870,6 +881,7 @@ function renderExecutionLogForPanel(executionLog) {
               <div class="section-title">📤 API 响应</div>
               <div class="section-content">
                 ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
                 ${entry.apiResponse.tokenUsage ? `
                   <strong>Token 使用:</strong><br>
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
