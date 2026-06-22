@@ -2285,26 +2285,31 @@
     /* 选中文本浮动菜单样式 */
     .selection-floating-menu {
       position: absolute;
-      background: white;
-      border: 1px solid #e0e0e0;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(200, 200, 200, 0.4);
+      border-radius: 12px;
+      box-shadow: 
+        0 4px 16px rgba(0, 0, 0, 0.1),
+        0 8px 32px rgba(0, 0, 0, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
       z-index: 2000;
       display: none;
-      min-width: 150px;
-      max-height: 300px;
+      min-width: 180px;
+      max-height: 320px;
       overflow-y: auto;
-      animation: menuFadeIn 0.15s ease-out;
+      animation: menuFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
     
     @keyframes menuFadeIn {
       from {
         opacity: 0;
-        transform: translateY(-5px);
+        transform: translateY(-8px) scale(0.95);
       }
       to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
       }
     }
     
@@ -2313,49 +2318,72 @@
     }
     
     .selection-floating-menu .menu-header {
-      padding: 8px 12px;
-      font-size: 11px;
-      color: #888;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #666;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
       font-weight: 500;
+      letter-spacing: 0.3px;
     }
     
     .selection-floating-menu .menu-item {
-      padding: 8px 12px;
+      padding: 10px 14px;
       font-size: 13px;
       color: #333;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: all 0.15s ease;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 12px;
+      position: relative;
+    }
+    
+    .selection-floating-menu .menu-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 0;
+      background: linear-gradient(180deg, #4f46e5, #7c3aed);
+      border-radius: 0 3px 3px 0;
+      transition: height 0.15s ease;
     }
     
     .selection-floating-menu .menu-item:hover {
-      background: #f5f7fa;
+      background: linear-gradient(90deg, rgba(79, 70, 229, 0.06), rgba(79, 70, 229, 0.02));
+      padding-left: 16px;
+    }
+    
+    .selection-floating-menu .menu-item:hover::before {
+      height: 16px;
     }
     
     .selection-floating-menu .menu-item:first-child {
-      border-top-left-radius: 8px;
-      border-top-right-radius: 8px;
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
     }
     
     .selection-floating-menu .menu-item:last-child {
-      border-bottom-left-radius: 8px;
-      border-bottom-right-radius: 8px;
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
     }
     
     .selection-floating-menu .menu-item-code {
-      font-family: 'Consolas', 'Monaco', monospace;
+      font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
       font-size: 11px;
-      color: #999;
-      background: #f0f0f0;
-      padding: 2px 6px;
-      border-radius: 3px;
+      color: #888;
+      background: rgba(0, 0, 0, 0.04);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
     }
     
     .selection-floating-menu .menu-empty {
-      padding: 15px;
+      padding: 18px;
       text-align: center;
       color: #999;
       font-size: 13px;
