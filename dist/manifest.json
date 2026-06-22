@@ -30,14 +30,13 @@
   },
   "content_scripts": [
     {
+      "js": [
+        "libs/marked.min.js",
+        "libs/qrcode.min.js",
+        "assets/content.js"
+      ],
       "matches": [
         "<all_urls>"
-      ],
-      "js": [
-        "vendor/crx-content-css-0-loader.js",
-        "libs/qrcode.min.js-loader.js",
-        "libs/marked.min.js-loader.js",
-        "src/content/index.js-loader.js"
       ],
       "css": [
         "styles/styles.css"
@@ -72,8 +71,8 @@
         "<all_urls>"
       ],
       "resources": [
-        "**/*",
-        "*"
+        "assets/content.js",
+        "assets/background.js"
       ],
       "use_dynamic_url": false
     }
