@@ -745,6 +745,286 @@ function renderExecutionTimeline(executionLog) {
 function renderExecutionLogForPanel(executionLog) {
   const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   
+  // 检测是否有任务组信息
+  const hasTaskGroups = sortedLog.some(entry => entry.taskGroup);
+  
+  if (!hasTaskGroups) {
+    // 如果没有任务组信息，使用原来的渲染方式
+    return renderExecutionLogOriginal(sortedLog);
+  }
+  
+  // 按任务组分组
+  const taskGroups = new Map();
+  let currentTaskGroup = null;
+  let mainTasks = [];
+  
+  sortedLog.forEach(entry => {
+    if (entry.taskGroup) {
+      if (!taskGroups.has(entry.taskGroup)) {
+        taskGroups.set(entry.taskGroup, {
+          groupId: entry.taskGroup,
+          groupIndex: entry.taskGroupIndex,
+          groupName: entry.taskGroupName,
+          entries: [],
+          status: entry.status
+        });
+      }
+      taskGroups.get(entry.taskGroup).entries.push(entry);
+      if (entry.status) {
+        taskGroups.get(entry.taskGroup).status = entry.status;
+      }
+    } else {
+      mainTasks.push(entry);
+    }
+  });
+  
+  // 渲染主任务日志（不在任何任务组中的日志）
+  let result = renderMainTasks(mainTasks, sortedLog.length);
+  
+  // 渲染任务组
+  taskGroups.forEach((group, groupId) => {
+    const groupStatus = group.status || 'processing';
+    const statusIcon = groupStatus === 'success' ? '✓' : (groupStatus === 'failed' ? '✗' : '○');
+    const statusClass = groupStatus;
+    
+    result += `
+      <div class="task-group-container" data-group-id="${groupId}">
+        <div class="task-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <div class="task-group-line"></div>
+          <div class="task-group-dot ${statusClass}">
+            ${statusIcon}
+          </div>
+          <div class="task-group-content">
+            <div class="task-group-title">
+              <span class="task-group-expand-icon">▼</span>
+              <span class="task-group-icon">📁</span>
+              <span class="task-group-index">${group.groupIndex}</span>
+              <span class="task-group-name">${escapeHtml(group.groupName)}</span>
+              <span class="task-group-count">(${group.entries.length} 步骤)</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-group-timeline">
+          ${renderTaskGroupEntries(group.entries, sortedLog.length)}
+        </div>
+      </div>
+    `;
+  });
+  
+  return result;
+}
+
+/**
+ * 渲染主任务日志（不在任务组中的日志）
+ */
+function renderMainTasks(mainTasks, totalCount) {
+  if (mainTasks.length === 0) return '';
+  
+  let result = '';
+  
+  result += `
+    <div class="main-tasks-container">
+      <div class="main-tasks-header">
+        <div class="main-tasks-line"></div>
+        <div class="main-tasks-dot processing">
+          ◉
+        </div>
+        <div class="main-tasks-content">
+          <div class="main-tasks-title">
+            <span class="main-tasks-icon">🏠</span>
+            <span class="main-tasks-name">主任务</span>
+            <span class="main-tasks-count">(${mainTasks.length} 步骤)</span>
+          </div>
+        </div>
+      </div>
+      <div class="main-tasks-timeline">
+  `;
+  
+  mainTasks.forEach((entry, index) => {
+    result += renderSingleEntry(entry, index, totalCount);
+  });
+  
+  result += `
+      </div>
+    </div>
+  `;
+  
+  return result;
+}
+
+/**
+ * 渲染任务组内的日志条目
+ */
+function renderTaskGroupEntries(entries, totalCount) {
+  let result = '';
+  entries.forEach((entry, index) => {
+    result += renderSingleEntry(entry, index, totalCount);
+  });
+  return result;
+}
+
+/**
+ * 渲染单个日志条目
+ */
+function renderSingleEntry(entry, index, totalCount) {
+  const isSubtask = entry.nodeType === 'subtask';
+  const isToolExec = entry.nodeType === 'tool_exec';
+  const isApiCall = entry.nodeType === 'api_call';
+  const isPreselect = entry.nodeType === 'preselect';
+  const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
+  
+  let indentClass = '';
+  let nodeIcon = '';
+  
+  if (isPreselect) {
+    nodeIcon = '📡';
+  } else if (isPlanTask) {
+    indentClass = 'plan-task-level';
+    nodeIcon = '📋';
+  } else if (isSubtask) {
+    indentClass = 'subtask-level';
+    nodeIcon = '🔀';
+  } else if (isToolExec) {
+    indentClass = 'tool-level';
+    nodeIcon = '🔧';
+  } else if (isApiCall) {
+    indentClass = 'api-level';
+    nodeIcon = '📡';
+  } else if (isToolExec) {
+    nodeIcon = '⚡';
+  } else if (isApiCall) {
+    nodeIcon = '📡';
+  }
+  
+  let statusIcon = '○';
+  let statusClass = entry.status || 'processing';
+  if (entry.status === 'success') {
+    statusIcon = '✓';
+  } else if (entry.status === 'failed') {
+    statusIcon = '✗';
+  }
+  
+  let nodeName = escapeHtml(entry.nodeName || '未知节点');
+  
+  if (entry.subtaskCount) {
+    nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
+  }
+  
+  if ((isApiCall || isPreselect) && entry.apiRequest) {
+    const info = [];
+    if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
+      info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
+    }
+    if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
+      info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
+    }
+    if (info.length > 0) {
+      nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
+    }
+  }
+  
+  return `
+    <div class="timeline-item ${indentClass}">
+      <div class="timeline-line"></div>
+      <div class="timeline-dot ${statusClass}">
+        ${statusIcon}
+      </div>
+      <div class="timeline-content">
+        <div class="timeline-header">
+          <span class="expand-icon">▼</span>
+          <span class="node-icon">${nodeIcon}</span>
+          <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
+          <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
+          <span class="duration-badge" title="耗时">${formatDuration(entry.duration)}</span>
+        </div>
+        
+        <div class="timeline-details">
+          ${entry.thought && entry.thought.trim() ? `
+          <div class="timeline-section">
+            <div class="section-title">💡 思考</div>
+            <div class="section-content">${escapeHtml(entry.thought)}</div>
+          </div>
+          ` : ''}
+          
+          ${!isPreselect && entry.action ? `
+          <div class="timeline-section">
+            <div class="section-title">⚡ 工具调用</div>
+            <div class="section-content">
+              <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
+              <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+            </div>
+          </div>
+          ` : ''}
+          
+          ${isPreselect && entry.action?.params?.selected ? `
+          <div class="timeline-section">
+            <div class="section-title">🔍 筛选结果</div>
+            <div class="section-content">
+              <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+              <strong>数量:</strong> ${entry.action.params.selected.length} 个
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.observation ? `
+          <div class="timeline-section">
+            <div class="section-title">📝 观察结果</div>
+            <div class="section-content">${escapeHtml(entry.observation)}</div>
+          </div>
+          ` : ''}
+          
+          ${entry.apiRequest ? `
+          <div class="timeline-section">
+            <div class="section-title">📡 API 请求</div>
+            <div class="section-content">
+              ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+              ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+              ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
+              ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+              ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.apiResponse ? `
+          <div class="timeline-section">
+            <div class="section-title">📤 API 响应</div>
+            <div class="section-content">
+              ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+              ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+              ${entry.apiResponse.tokenUsage ? `
+                <strong>Token 使用:</strong><br>
+                - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+              ` : ''}
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.error ? `
+          <div class="timeline-section error">
+            <div class="section-title">❌ 错误信息</div>
+            <div class="section-content">${escapeHtml(entry.error)}</div>
+          </div>
+          ` : ''}
+          
+          ${entry.result ? `
+          <div class="timeline-section">
+            <div class="section-title">✅ 子任务结果</div>
+            <div class="section-content">${escapeHtml(entry.result)}</div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 原来的日志渲染方式（保留用于没有任务组的场景）
+ */
+function renderExecutionLogOriginal(sortedLog) {
   let result = '';
   let currentSubtaskIndex = null;
   

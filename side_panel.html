@@ -3717,6 +3717,180 @@
       animation: spin 0.8s linear infinite;
     }
 
+    /* ========== 任务组样式 ========== */
+    .task-group-container {
+      margin: 8px 0;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .task-group-container.collapsed .task-group-timeline {
+      display: none;
+    }
+
+    .task-group-container.collapsed .task-group-expand-icon {
+      transform: rotate(-90deg);
+    }
+
+    .task-group-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s ease;
+    }
+
+    .task-group-header:hover {
+      background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+    }
+
+    .task-group-line {
+      width: 2px;
+      height: 24px;
+      background: rgba(255, 255, 255, 0.3);
+      margin-right: 12px;
+    }
+
+    .task-group-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .task-group-dot.success {
+      background: #48bb78;
+    }
+
+    .task-group-dot.failed {
+      background: #e53e3e;
+    }
+
+    .task-group-dot.processing {
+      background: transparent;
+      border: 2px solid white;
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .task-group-content {
+      flex: 1;
+    }
+
+    .task-group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .task-group-expand-icon {
+      transition: transform 0.2s ease;
+      font-size: 10px;
+    }
+
+    .task-group-icon {
+      font-size: 16px;
+    }
+
+    .task-group-index {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .task-group-name {
+      flex: 1;
+    }
+
+    .task-group-count {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    .task-group-timeline {
+      padding: 8px 12px;
+      background: #f8f9fa;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    /* 主任务容器样式 */
+    .main-tasks-container {
+      margin: 8px 0;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .main-tasks-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f0f0f0;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .main-tasks-line {
+      width: 2px;
+      height: 24px;
+      background: #ccc;
+      margin-right: 12px;
+    }
+
+    .main-tasks-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+      background: #667eea;
+      color: white;
+    }
+
+    .main-tasks-content {
+      flex: 1;
+    }
+
+    .main-tasks-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .main-tasks-icon {
+      font-size: 16px;
+    }
+
+    .main-tasks-count {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .main-tasks-timeline {
+      padding: 8px 12px;
+      background: #fafafa;
+    }
+
     @keyframes spin {
       to {
         transform: rotate(360deg);

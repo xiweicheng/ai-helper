@@ -518,52 +518,133 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
 }
 
 /**
+ * 子任务执行配置常量
+ */
+const SUBTASK_CONFIG = {
+  DEFAULT_FAILURE_STRATEGY: 'continue',
+  DEFAULT_MAX_RETRIES: 1,
+  DEFAULT_MAX_PARALLEL: 3
+};
+
+/**
  * 执行子任务序列
  * 支持顺序执行、并行执行和条件执行策略
+ * 支持失败策略、重试机制和回滚机制
  */
 export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, parentExecutionLog, globalIteration = { value: 0 }) {
-  const { subtasks = [], strategy = 'sequential', taskDescription } = subtaskPlan;
-  const results = [];
+  const { 
+    subtasks = [], 
+    strategy = 'sequential', 
+    taskDescription,
+    failureStrategy = SUBTASK_CONFIG.DEFAULT_FAILURE_STRATEGY,
+    maxRetries = SUBTASK_CONFIG.DEFAULT_MAX_RETRIES,
+    maxParallel = SUBTASK_CONFIG.DEFAULT_MAX_PARALLEL
+  } = subtaskPlan;
   
-  console.log('[Background] 开始执行子任务，策略:', strategy, '数量:', subtasks.length);
+  const results = [];
+  const completedSubtasks = []; // 记录已成功完成的子任务，用于回滚
+  
+  console.log('[Background] 开始执行子任务，策略:', strategy, '失败策略:', failureStrategy, '最大重试:', maxRetries, '数量:', subtasks.length);
   
   // 按依赖关系排序（拓扑排序）
-  const sortedSubtasks = sortSubtasksByDependencies(subtasks);
+  const sortedSubtasks = strategy === 'dependency' 
+    ? sortSubtasksByDependencies(subtasks) 
+    : subtasks;
   
   // 筛选每个子任务需要的工具
   const toolSets = await prepareToolSetsForSubtasks(sortedSubtasks);
   
-  if (strategy === 'sequential') {
-    // 顺序执行
-    for (let i = 0; i < sortedSubtasks.length; i++) {
-      const subtask = sortedSubtasks[i];
-      const subtaskTools = toolSets[subtask.id] || [];
+  /**
+   * 回滚已完成的子任务
+   */
+  async function rollbackCompletedTasks() {
+    console.log('[Background] 开始回滚已完成的子任务');
+    
+    // 逆序回滚
+    for (let i = completedSubtasks.length - 1; i >= 0; i--) {
+      const { subtask, result } = completedSubtasks[i];
       
-      console.log(`[Background] 执行子任务 ${i + 1}/${sortedSubtasks.length}: ${subtask.name}`);
-      
-      // 添加子任务开始日志
-      const subtaskLogId = crypto.randomUUID();
-      parentExecutionLog.push({
-        id: subtaskLogId,
-        iteration: 0,
-        timestamp: new Date().toISOString(),
-        status: 'processing',
-        nodeType: 'subtask',
-        nodeName: `子任务 ${i + 1}: ${subtask.name}`,
-        subtaskId: subtask.id,
-        subtaskName: subtask.name,
-        subtaskIndex: i
-      });
-      
-      // 发送子任务开始状态
-      chrome.runtime.sendMessage({
-        type: 'EXECUTION_STATUS_UPDATE',
-        nodeName: `子任务 ${i + 1}: ${subtask.name}`,
-        status: 'processing',
-        executionLog: [...parentExecutionLog]
-      }).catch(err => {});
-      
+      if (typeof subtask.rollback === 'function') {
+        try {
+          console.log(`[Background] 回滚子任务: ${subtask.name}`);
+          await subtask.rollback(result);
+          
+          // 记录回滚日志
+          parentExecutionLog.push({
+            id: crypto.randomUUID(),
+            iteration: 0,
+            timestamp: new Date().toISOString(),
+            status: 'rolledback',
+            nodeType: 'subtask',
+            nodeName: `子任务 ${subtask.name} (已回滚)`,
+            subtaskId: subtask.id,
+            subtaskName: subtask.name
+          });
+          
+          chrome.runtime.sendMessage({
+            type: 'EXECUTION_STATUS_UPDATE',
+            nodeName: `子任务 ${subtask.name} (已回滚)`,
+            status: 'rolledback',
+            executionLog: [...parentExecutionLog]
+          }).catch(err => {});
+          
+        } catch (rollbackError) {
+          console.error('[Background] 回滚失败:', rollbackError.message);
+          parentExecutionLog.push({
+            id: crypto.randomUUID(),
+            iteration: 0,
+            timestamp: new Date().toISOString(),
+            status: 'rollback_failed',
+            nodeType: 'subtask',
+            nodeName: `子任务 ${subtask.name} (回滚失败)`,
+            subtaskId: subtask.id,
+            subtaskName: subtask.name,
+            error: rollbackError.message
+          });
+        }
+      }
+    }
+  }
+  
+  /**
+   * 执行单个子任务（带重试逻辑）
+   */
+  async function executeSingleSubtask(subtask, subtaskTools, subtaskIndex) {
+    const subtaskLogId = crypto.randomUUID();
+    const taskGroup = `subtask_group_${subtaskIndex}`;
+    let lastError = null;
+    
+    // 添加子任务开始日志（包含任务组信息）
+    parentExecutionLog.push({
+      id: subtaskLogId,
+      iteration: 0,
+      timestamp: new Date().toISOString(),
+      status: 'processing',
+      nodeType: 'subtask',
+      nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
+      subtaskId: subtask.id,
+      subtaskName: subtask.name,
+      subtaskIndex: subtaskIndex,
+      taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+      taskGroupIndex: subtaskIndex + 1,
+      taskGroupName: subtask.name,
+      isSubtask: true
+    });
+    
+    // 发送子任务开始状态
+    chrome.runtime.sendMessage({
+      type: 'EXECUTION_STATUS_UPDATE',
+      nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
+      status: 'processing',
+      executionLog: [...parentExecutionLog],
+      taskGroup: taskGroup
+    }).catch(err => {});
+    
+    // 重试循环
+    for (let retry = 0; retry <= maxRetries; retry++) {
       try {
+        console.log(`[Background] 执行子任务 ${subtaskIndex + 1}/${sortedSubtasks.length}: ${subtask.name} (尝试 ${retry + 1}/${maxRetries + 1})`);
+        
         // 为子任务创建独立的消息上下文
         const subtaskMessages = [
           {
@@ -592,15 +673,20 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
                 ...childLog,
                 subtaskId: subtask.id,
                 subtaskName: subtask.name,
-                subtaskIndex: i
+                subtaskIndex: subtaskIndex,
+                taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+                taskGroupIndex: subtaskIndex + 1,
+                taskGroupName: subtask.name,
+                isSubtask: true
               });
             });
             
             chrome.runtime.sendMessage({
               type: 'EXECUTION_STATUS_UPDATE',
-              nodeName: `子任务 ${i + 1}: ${subtask.name}`,
+              nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
               status: 'processing',
-              executionLog: mergedLog
+              executionLog: mergedLog,
+              taskGroup: taskGroup
             }).catch(err => {});
           },
           globalIteration
@@ -613,7 +699,11 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
               ...childLog,
               subtaskId: subtask.id,
               subtaskName: subtask.name,
-              subtaskIndex: i
+              subtaskIndex: subtaskIndex,
+              taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+              taskGroupIndex: subtaskIndex + 1,
+              taskGroupName: subtask.name,
+              isSubtask: true
             });
           });
         }
@@ -632,66 +722,155 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
         // 发送子任务完成状态（包含完整的执行日志）
         chrome.runtime.sendMessage({
           type: 'EXECUTION_STATUS_UPDATE',
-          nodeName: `子任务 ${i + 1}: ${subtask.name} (完成)`,
+          nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`,
           status: 'success',
-          executionLog: [...parentExecutionLog]
+          executionLog: [...parentExecutionLog],
+          taskGroup: taskGroup
         }).catch(err => {});
         
-        results.push({
+        // 记录已完成的子任务（用于回滚）
+        completedSubtasks.push({ subtask, result: subtaskResult });
+        
+        return {
+          success: true,
           subtaskId: subtask.id,
           subtaskName: subtask.name,
           result: subtaskResult.content,
           executionLog: subtaskResult.executionLog || [],
-          success: true
-        });
+          retryCount: retry
+        };
         
       } catch (error) {
-        // 将子任务内部的执行日志合并到父执行日志中（即使失败也要记录）
-        if (error.executionLog && error.executionLog.length > 0) {
-          error.executionLog.forEach(childLog => {
-            parentExecutionLog.push({
-              ...childLog,
-              subtaskId: subtask.id,
-              subtaskName: subtask.name,
-              subtaskIndex: i
-            });
-          });
-        }
+        lastError = error;
+        console.warn(`[Background] 子任务 ${subtask.name} 尝试 ${retry + 1} 失败:`, error.message);
         
-        // 更新子任务日志为失败
-        const logIndex = parentExecutionLog.findIndex(log => log.id === subtaskLogId);
-        if (logIndex !== -1) {
-          parentExecutionLog[logIndex] = {
-            ...parentExecutionLog[logIndex],
+        if (retry >= maxRetries) {
+          // 重试次数用尽，记录失败
+          if (error.executionLog && error.executionLog.length > 0) {
+            error.executionLog.forEach(childLog => {
+              parentExecutionLog.push({
+                ...childLog,
+                subtaskId: subtask.id,
+                subtaskName: subtask.name,
+                subtaskIndex: subtaskIndex,
+                taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+                taskGroupIndex: subtaskIndex + 1,
+                taskGroupName: subtask.name,
+                isSubtask: true
+              });
+            });
+          }
+          
+          // 更新子任务日志为失败
+          const logIndex = parentExecutionLog.findIndex(log => log.id === subtaskLogId);
+          if (logIndex !== -1) {
+            parentExecutionLog[logIndex] = {
+              ...parentExecutionLog[logIndex],
+              status: 'failed',
+              duration: Date.now() - new Date(parentExecutionLog[logIndex].timestamp).getTime(),
+              error: error.message,
+              retryCount: retry + 1
+            };
+          }
+          
+          // 发送子任务失败状态
+          chrome.runtime.sendMessage({
+            type: 'EXECUTION_STATUS_UPDATE',
+            nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`,
             status: 'failed',
-            duration: Date.now() - new Date(parentExecutionLog[logIndex].timestamp).getTime(),
-            error: error.message
+            executionLog: [...parentExecutionLog],
+            taskGroup: taskGroup
+          }).catch(err => {});
+          
+          return {
+            success: false,
+            subtaskId: subtask.id,
+            subtaskName: subtask.name,
+            result: error.message,
+            executionLog: error.executionLog || [],
+            retryCount: retry + 1,
+            error: error
           };
         }
         
-        // 发送子任务失败状态（包含完整的执行日志）
-        chrome.runtime.sendMessage({
-          type: 'EXECUTION_STATUS_UPDATE',
-          nodeName: `子任务 ${i + 1}: ${subtask.name} (失败)`,
-          status: 'failed',
-          executionLog: [...parentExecutionLog]
-        }).catch(err => {});
-        
-        results.push({
-          subtaskId: subtask.id,
-          subtaskName: subtask.name,
-          result: error.message,
-          executionLog: error.executionLog || [],
-          success: false
-        });
-        
-        // 如果是顺序执行，遇到失败可以选择继续或停止
-        // 这里选择继续执行剩余子任务
+        // 等待一段时间后重试
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retry)));
       }
     }
+  }
+  
+  if (strategy === 'sequential' || strategy === 'dependency') {
+    // 顺序执行
+    for (let i = 0; i < sortedSubtasks.length; i++) {
+      const subtask = sortedSubtasks[i];
+      const subtaskTools = toolSets[subtask.id] || [];
+      
+      const result = await executeSingleSubtask(subtask, subtaskTools, i);
+      results.push(result);
+      
+      if (!result.success) {
+        console.log(`[Background] 子任务 ${subtask.name} 失败，失败策略: ${failureStrategy}`);
+        
+        if (failureStrategy === 'stop') {
+          // 停止执行并回滚
+          console.log('[Background] 执行回滚');
+          await rollbackCompletedTasks();
+          return results;
+        }
+        
+        // continue 或 skip：继续执行剩余子任务
+      }
+    }
+  } else if (strategy === 'parallel') {
+    // 并行执行
+    console.log('[Background] 并行执行子任务，最大并发数:', maxParallel);
+    
+    const executing = [];
+    const resultsMap = new Map();
+    
+    for (let i = 0; i < sortedSubtasks.length; i++) {
+      // 如果达到最大并行数，等待一个完成
+      if (executing.length >= maxParallel) {
+        const completed = await Promise.race(executing);
+        const idx = executing.indexOf(completed);
+        if (idx > -1) executing.splice(idx, 1);
+      }
+      
+      const subtask = sortedSubtasks[i];
+      const subtaskTools = toolSets[subtask.id] || [];
+      
+      const promise = executeSingleSubtask(subtask, subtaskTools, i).then(result => {
+        resultsMap.set(subtask.id, result);
+        return result;
+      });
+      
+      executing.push(promise);
+    }
+    
+    // 等待所有任务完成
+    await Promise.all(executing);
+    
+    // 按原始顺序返回结果
+    let hasFailed = false;
+    sortedSubtasks.forEach(subtask => {
+      const result = resultsMap.get(subtask.id);
+      if (result) {
+        results.push(result);
+        
+        if (!result.success) {
+          hasFailed = true;
+        }
+      }
+    });
+    
+    // 如果有失败且策略是 stop，执行回滚
+    if (hasFailed && failureStrategy === 'stop') {
+      console.log('[Background] 并行执行中发生失败，执行回滚');
+      await rollbackCompletedTasks();
+    }
   } else {
-    // 并行执行或其他策略暂未实现，降级为顺序执行
-    console.warn('[Background] 并行/条件执行策略暂未实现，降级为顺序执行');
+    // 未知策略，降级为顺序执行
+    console.warn(`[Background] 未知执行策略: ${strategy}，降级为顺序执行`);
     return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tabId, apiParams, parentExecutionLog, globalIteration);
   }
   
