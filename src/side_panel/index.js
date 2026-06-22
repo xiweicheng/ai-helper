@@ -211,41 +211,7 @@ function setSelectedContext(text, prefix = '📌 已选中') {
   }
 }
 
-// ==================== 划词问答 - 高亮和浮动菜单 ====================
-
-function createHighlightElement(range) {
-  const span = document.createElement('span');
-  span.className = 'selection-highlight';
-  span.id = 'temp-selection-highlight';
-
-  try {
-    range.surroundContents(span);
-    return span;
-  } catch (e) {
-    console.log('[SidePanel] 无法直接高亮，使用其他方式');
-    return null;
-  }
-}
-
-function removeHighlightElement() {
-  if (state.selectedHighlightElement) {
-    try {
-      const parent = state.selectedHighlightElement.parentNode;
-      if (parent && parent.insertBefore && parent.removeChild) {
-        while (state.selectedHighlightElement.firstChild) {
-          parent.insertBefore(state.selectedHighlightElement.firstChild, state.selectedHighlightElement);
-        }
-        parent.removeChild(state.selectedHighlightElement);
-        if (typeof parent.normalize === 'function') {
-          parent.normalize();
-        }
-      }
-    } catch (e) {
-      console.log('[SidePanel] 移除高亮失败:', e);
-    }
-    state.selectedHighlightElement = null;
-  }
-}
+// ==================== 划词问答 - 浮动菜单 ====================
 
 function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   if (!state.enableSelectionQuery) {
@@ -324,7 +290,9 @@ window.hideFloatingMenu = function() {
   if (selectionFloatingMenu) {
     selectionFloatingMenu.classList.remove('show');
   }
-  removeHighlightElement();
+  
+  state.lastSelectedText = '';
+  state.currentSelectionRange = null;
 };
 
 // ==================== 划词问答 - 点击处理 ====================
@@ -703,8 +671,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             state.lastSelectedText = selectedText;
             state.currentSelectionRange = selection.getRangeAt(0).cloneRange();
 
-            state.selectedHighlightElement = createHighlightElement(state.currentSelectionRange);
-
             setSelectedContext(selectedText);
 
             showFloatingMenu(selection, selectedText, state.lastMouseX, state.lastMouseY);
@@ -832,12 +798,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       promptDropdown.classList.remove('show');
       hidePromptSelector();
     }
+    
     if (selectionFloatingMenu && !selectionFloatingMenu.contains(e.target)) {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !chatContainerEl.contains(selection.anchorNode)) {
+      const isClickInsideChat = chatContainerEl.contains(e.target);
+      const isSelectionInsideChat = selection && !selection.isCollapsed && chatContainerEl.contains(selection.anchorNode);
+      
+      if (!isClickInsideChat || !isSelectionInsideChat) {
         window.hideFloatingMenu();
-        state.lastSelectedText = '';
-        state.currentSelectionRange = null;
       }
     }
   });

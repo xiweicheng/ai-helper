@@ -58,7 +58,6 @@ export let tocHideTimer = null;
 // 划词问答弹出菜单状态
 export let lastSelectedText = '';
 export let currentSelectionRange = null;
-export let selectedHighlightElement = null;
 export let lastMouseX = 0;
 export let lastMouseY = 0;
 
@@ -139,8 +138,6 @@ export default {
   set lastSelectedText(v) { lastSelectedText = v; },
   get currentSelectionRange() { return currentSelectionRange; },
   set currentSelectionRange(v) { currentSelectionRange = v; },
-  get selectedHighlightElement() { return selectedHighlightElement; },
-  set selectedHighlightElement(v) { selectedHighlightElement = v; },
   get lastMouseX() { return lastMouseX; },
   set lastMouseX(v) { lastMouseX = v; },
   get lastMouseY() { return lastMouseY; },
