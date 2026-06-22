@@ -210,11 +210,14 @@ export function getApiParams() {
  * 加载对话配置
  */
 export function loadChatConfig() {
-  chrome.runtime.sendMessage({ type: 'GET_CHAT_CONFIG' }, (response) => {
-    if (response) {
-      state.chatConfig = response;
-      console.log('[SidePanel] 对话配置已加载:', state.chatConfig);
-    }
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: 'GET_CHAT_CONFIG' }, (response) => {
+      if (response) {
+        state.chatConfig = response;
+        console.log('[SidePanel] 对话配置已加载:', state.chatConfig);
+      }
+      resolve(response);
+    });
   });
 }
 

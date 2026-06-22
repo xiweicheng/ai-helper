@@ -59,7 +59,7 @@ function makeDraggable(element, handleSelector) {
   
   handle.addEventListener('mousedown', (e) => {
     // 不拦截按钮点击
-    if (e.target.closest('button')) return;
+    if (e.target.closest('[role="button"]')) return;
     // 右键不拖拽
     if (e.button !== 0) return;
     
@@ -174,6 +174,9 @@ function injectStyles() {
       outline: none;
       white-space: nowrap;
       line-height: 1;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #aih-selection-toolbar .aih-tb-btn:hover {
       background: #f0f0f0;
@@ -252,6 +255,9 @@ function injectStyles() {
       font-family: inherit;
       white-space: nowrap;
       text-align: left;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .aih-overflow-dropdown .aih-dropdown-item:hover {
       background: #f0f0f0;
@@ -296,7 +302,8 @@ function injectStyles() {
       transition: width 0.2s ease;
     }
     #aih-selection-toolbar .aih-tb-ask-input {
-      width: 44px;
+      flex: 1;
+      min-width: 0;
       padding: 4px 6px;
       border: none;
       background: transparent;
@@ -305,7 +312,8 @@ function injectStyles() {
       font-family: inherit;
       outline: none;
       line-height: 1.4;
-      transition: width 0.2s ease;
+      transition: flex 0.2s ease;
+      box-sizing: border-box;
     }
     #aih-selection-toolbar .aih-tb-ask-input::placeholder {
       color: #bbb;
@@ -388,6 +396,9 @@ function injectStyles() {
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
       padding: 0;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #aih-selection-result .aih-result-lock:hover,
     #aih-selection-result .aih-result-close:hover {
@@ -530,6 +541,9 @@ function injectStyles() {
       transition: background 0.15s, color 0.15s;
       outline: none;
       font-family: inherit;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #aih-selection-result .aih-result-footer-btn:hover {
       background: #e8e8e8;
@@ -570,6 +584,9 @@ function injectStyles() {
       outline: none;
       font-family: inherit;
       line-height: 1.4;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #aih-selection-result .aih-suggestion-chip:hover {
       background: #eff6ff;
@@ -622,6 +639,9 @@ function injectStyles() {
       color: #3b82f6;
       cursor: pointer;
       transition: color 0.15s;
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
     }
     #aih-selection-result .aih-followup-send:hover {
       color: #2563eb;
@@ -704,21 +724,21 @@ function renderOverflowDropdown(overflowTools) {
   
   let itemsHtml = overflowTools.map(tool => {
     const icon = getToolIcon(tool.id);
-    return `<button class="aih-dropdown-item" data-action="${tool.id}">
+    return `<div class="aih-dropdown-item" role="button" tabindex="0" data-action="${tool.id}">
       <span class="aih-tb-icon">${icon}</span>${tool.name}
-    </button>`;
+    </div>`;
   }).join('');
   
   itemsHtml += `<div class="aih-dropdown-divider"></div>`;
-  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-settings" title="打开配置页面">
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-settings" role="button" tabindex="0" title="打开配置页面">
     <span class="aih-tb-icon">${ICONS.gear}</span>设置
-  </button>`;
-  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-hide" title="暂时隐藏直到页面刷新">
+  </div>`;
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-hide" role="button" tabindex="0" title="暂时隐藏直到页面刷新">
     <span class="aih-tb-icon">${ICONS.eyeOff}</span>本次临时禁用
-  </button>`;
-  itemsHtml += `<button class="aih-dropdown-item aih-dropdown-block" title="在此网站禁用工具栏">
+  </div>`;
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-block" role="button" tabindex="0" title="在此网站禁用工具栏">
     <span class="aih-tb-icon">${ICONS.block}</span>在此网站禁用
-  </button>`;
+  </div>`;
   
   overflowDropdownEl.innerHTML = itemsHtml;
   
@@ -756,6 +776,17 @@ function renderOverflowDropdown(overflowTools) {
     handleAction(btn.dataset.action, currentSelectedText);
   };
   overflowDropdownEl.addEventListener('click', overflowDropdownEl._clickHandler);
+  
+  // 键盘支持：Enter/Space 触发点击
+  overflowDropdownEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const target = e.target.closest('[role="button"]');
+      if (target) {
+        e.preventDefault();
+        target.click();
+      }
+    }
+  });
 }
 
 // ==================== 工具栏创建 ====================
@@ -780,38 +811,38 @@ async function createToolbar() {
   
   // AI搜索固定在第一个，始终显示
   if (aiSearchTool) {
-    buttonsHtml += `<button class="aih-tb-btn primary" data-action="ai-search" title="AI 搜索">
+    buttonsHtml += `<div class="aih-tb-btn primary" role="button" tabindex="0" data-action="ai-search" title="AI 搜索">
       <span class="aih-tb-icon">${ICONS.search}</span>${iconMode ? '' : 'AI搜索'}
-    </button>`;
+    </div>`;
   }
   
   visibleTools.forEach((tool) => {
     const icon = getToolIcon(tool.id);
-    buttonsHtml += `<button class="aih-tb-btn" data-action="${tool.id}" title="${tool.name}">
+    buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="${tool.id}" title="${tool.name}">
       <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : tool.name}
-    </button>`;
+    </div>`;
   });
   
   // 如果有溢出工具，添加"更多"按钮（放在复制按钮前面）
   if (overflowTools.length > 0) {
-    buttonsHtml += `<button class="aih-tb-btn aih-tb-btn-overflow" title="更多工具">
+    buttonsHtml += `<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
       <span class="aih-tb-icon">${ICONS.more}</span>
-    </button>`;
+    </div>`;
     renderOverflowDropdown(overflowTools);
   }
   
   // 复制按钮固定在最后
-  buttonsHtml += `<button class="aih-tb-btn" data-action="copy" title="复制选中内容">
+  buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="复制选中内容">
     <span class="aih-tb-icon">${ICONS.copy}</span>${iconMode ? '' : '复制'}
-  </button>`;
+  </div>`;
   buttonsHtml += `</span>`; // close .aih-tb-buttons
   
   // 问问AI 输入框（紧凑内联形态）
   buttonsHtml += `<span class="aih-tb-ask-wrap">
     <input type="text" class="aih-tb-ask-input" placeholder="问问..." />
-    <button class="aih-tb-btn aih-tb-ask-send" title="发送">
+    <div class="aih-tb-btn aih-tb-ask-send" role="button" tabindex="0" title="发送">
       <span class="aih-tb-icon">${ICONS.send}</span>
-    </button>
+    </div>
   </span>`;
   
   toolbarEl.innerHTML = buttonsHtml;
@@ -836,6 +867,17 @@ async function createToolbar() {
     
     const action = btn.dataset.action;
     handleAction(action, currentSelectedText);
+  });
+  
+  // 键盘支持：Enter/Space 触发点击
+  toolbarEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const target = e.target.closest('[role="button"]');
+      if (target && !target.classList.contains('aih-tb-ask-send')) {
+        e.preventDefault();
+        target.click();
+      }
+    }
   });
   
   document.body.appendChild(toolbarEl);
@@ -956,19 +998,19 @@ function createResultPanel() {
     <div class="aih-result-header">
       <span>${ICONS.sparkle} AI 回答</span>
       <div class="aih-result-header-actions">
-        <button class="aih-result-lock" title="锁定窗口">${ICONS.unlock}</button>
-        <button class="aih-result-close" title="关闭">${ICONS.close}</button>
+        <div class="aih-result-lock" role="button" tabindex="0" title="锁定窗口">${ICONS.unlock}</div>
+        <div class="aih-result-close" role="button" tabindex="0" title="关闭">${ICONS.close}</div>
       </div>
     </div>
     <div class="aih-result-scroll">
       <div class="aih-result-body"></div>
       <div class="aih-result-footer">
-        <button class="aih-result-footer-btn" data-action="copy-result" title="复制全部内容">
+        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="copy-result" title="复制全部内容">
           <span class="aih-tb-icon">${ICONS.copyLarge}</span>复制
-        </button>
-        <button class="aih-result-footer-btn" data-action="regenerate-result" title="重新生成答案">
+        </div>
+        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="regenerate-result" title="重新生成答案">
           <span class="aih-tb-icon">${ICONS.refresh}</span>重新生成
-        </button>
+        </div>
       </div>
       <div class="aih-result-suggestions" style="display:none;">
         <div class="aih-suggestions-label">💡 推荐追问</div>
@@ -978,7 +1020,7 @@ function createResultPanel() {
     <div class="aih-result-followup">
       <span class="aih-followup-wrap">
         <input type="text" class="aih-followup-input" placeholder="继续提问..." />
-        <button class="aih-followup-send" title="发送到侧边栏">${ICONS.send}</button>
+        <div class="aih-followup-send" role="button" tabindex="0" title="发送到侧边栏">${ICONS.send}</div>
       </span>
     </div>
   `;
@@ -1039,6 +1081,17 @@ function createResultPanel() {
     }
   });
   
+  // 键盘支持：Enter/Space 触发点击
+  resultPanelEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const target = e.target.closest('[role="button"]');
+      if (target) {
+        e.preventDefault();
+        target.click();
+      }
+    }
+  });
+  
   document.body.appendChild(resultPanelEl);
   
   // 结果面板通过标题栏拖拽
@@ -1066,7 +1119,7 @@ function showResultPanel(x, y, content, suggestions = []) {
   const suggestionsList = resultPanelEl.querySelector('.aih-suggestions-list');
   if (suggestions.length > 0 && suggestionsEl && suggestionsList) {
     suggestionsList.innerHTML = suggestions.map(s => 
-      `<button class="aih-suggestion-chip" data-question="${escapeHtml(s)}">${escapeHtml(s)}</button>`
+      `<div class="aih-suggestion-chip" role="button" tabindex="0" data-question="${escapeHtml(s)}">${escapeHtml(s)}</div>`
     ).join('');
     suggestionsEl.style.display = 'block';
   } else if (suggestionsEl) {
@@ -1258,6 +1311,7 @@ function showToolbar(x, y) {
   document.body.appendChild(toolbarEl);
   
   const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
   
   toolbarEl.style.display = 'flex';
   
@@ -1270,9 +1324,16 @@ function showToolbar(x, y) {
     if (left < 8) left = 8;
     if (left + toolbarWidth > viewportWidth - 8) left = viewportWidth - toolbarWidth - 8;
     
+    // 首选位置：选中内容上方
     let top = y - toolbarHeight - 10;
+    // 如果上方空间不够，放到下方
     if (top < 8) {
       top = y + 10;
+    }
+    // 最终兜底：确保工具栏一定在可视区域内
+    if (top < 8) top = 8;
+    if (top + toolbarHeight > viewportHeight - 8) {
+      top = viewportHeight - toolbarHeight - 8;
     }
     
     toolbarEl.style.left = left + 'px';
@@ -1408,8 +1469,26 @@ function onMouseUp() {
   }
 }
 
-// ==================== 滚动/缩放时隐藏 ====================
+// ==================== 滚动/缩放时的处理 ====================
 function onScrollOrResize() {
+  if (isAskMode) return;
+  
+  if (!isToolbarVisible) return;
+  
+  // 滚动时：尝试根据当前选中内容重新定位工具栏
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0 && currentSelectedText) {
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      showToolbar(rect.left + rect.width / 2, rect.top);
+      return;
+    }
+  }
+  // 选中内容完全滚出可视区域时，隐藏工具栏
+  hideToolbar();
+}
+function onResize() {
   if (isAskMode) return;
   if (isToolbarVisible) hideToolbar();
 }
@@ -1653,7 +1732,7 @@ export function initSelectionToolbar() {
   document.addEventListener('click', onDocumentClick, true);
   document.addEventListener('mouseup', onMouseUp, true);
   window.addEventListener('scroll', onScrollOrResize, true);
-  window.addEventListener('resize', onScrollOrResize);
+  window.addEventListener('resize', onResize);
   
   console.log('[SelectionToolbar] 初始化完成');
 }
@@ -1663,7 +1742,7 @@ export function destroySelectionToolbar() {
   document.removeEventListener('click', onDocumentClick, true);
   document.removeEventListener('mouseup', onMouseUp, true);
   window.removeEventListener('scroll', onScrollOrResize, true);
-  window.removeEventListener('resize', onScrollOrResize);
+  window.removeEventListener('resize', onResize);
   
   hideToolbar();
   hideResultPanel();

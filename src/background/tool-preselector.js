@@ -4,18 +4,46 @@ import { getStoredConfig } from './config.js';
 import { fetchWithRetry } from './tool-executor.js';
 
 /**
- * 从消息列表中提取用户问题摘要
+ * 截断过长内容
  */
-function extractUserQuestion(messages) {
-  // 取最后一条 user 角色的消息
+function truncateContent(content, maxLen = 2000) {
+  const str = typeof content === 'string' ? content : JSON.stringify(content);
+  return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
+}
+
+/**
+ * 从消息列表中提取最后一条用户消息（当前问题）
+ */
+function extractLastUserQuestion(messages) {
   const userMessages = messages.filter(m => m.role === 'user');
   if (userMessages.length === 0) return '';
-  const lastUserMsg = userMessages[userMessages.length - 1];
-  const content = typeof lastUserMsg.content === 'string'
-    ? lastUserMsg.content
-    : JSON.stringify(lastUserMsg.content);
-  // 截断过长的内容，保留前 2000 字
-  return content.length > 2000 ? content.substring(0, 2000) + '...' : content;
+  return truncateContent(userMessages[userMessages.length - 1].content);
+}
+
+/**
+ * 提取最近对话历史（排除 system/tool 消息），用于工具预筛选时提供上下文
+ * 最多保留最近 HISTORY_COUNT 条 user+assistant 交替消息
+ */
+const HISTORY_COUNT = 4;
+
+function extractHistoryContext(messages) {
+  // 排除 system、tool 角色，只保留 user 和 assistant
+  const dialogMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+  if (dialogMessages.length === 0) return [];
+
+  // 最后一条 user 消息是当前问题，不包含在历史中
+  const lastUserIdx = dialogMessages.map((m, i) => ({ m, i })).filter(x => x.m.role === 'user').pop()?.i;
+  if (lastUserIdx === undefined) return [];
+
+  // 取最后一条 user 消息之前的最近 HISTORY_COUNT 条消息作为历史上下文
+  const historyBefore = dialogMessages.slice(0, lastUserIdx);
+  const recentHistory = historyBefore.slice(-HISTORY_COUNT);
+
+  // 截断每条历史消息的内容，防止 token 过多
+  return recentHistory.map(m => ({
+    role: m.role,
+    content: truncateContent(m.content, 1000)
+  }));
 }
 
 /**
@@ -73,15 +101,16 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'skip', params: { reason: '工具数量少', toolCount: totalCount } }, duration: 1 })] };
   }
 
-  const userQuestion = extractUserQuestion(messages);
+  const userQuestion = extractLastUserQuestion(messages);
   if (!userQuestion) {
     console.warn('[ToolPreselector] 无法提取用户问题，使用全量工具');
     return { type: 'tools', tools, executionLog: [createEntry('failed', { error: '无法提取用户问题' })] };
   }
 
+  const historyContext = extractHistoryContext(messages);
   const systemPrompt = buildPreselectPrompt(tools);
 
-  console.log(`[ToolPreselector] 开始预筛选，全量工具: ${totalCount} 个`);
+  console.log(`[ToolPreselector] 开始预筛选，全量工具: ${totalCount} 个，携带历史消息: ${historyContext.length} 条`);
 
   const startTime = Date.now();
 
@@ -89,12 +118,15 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     const config = await getStoredConfig();
     const apiUrl = `${config.apiBase}/chat/completions`;
 
+    const apiMessages = [
+      { role: 'system', content: systemPrompt },
+      ...historyContext,
+      { role: 'user', content: `用户问题：${userQuestion}` }
+    ];
+
     const requestBody = {
       model: model || config.modelName,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `用户问题：${userQuestion}` }
-      ],
+      messages: apiMessages,
       stream: false,
       temperature: 0.1,
       max_tokens: 1024
@@ -158,7 +190,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
               name: 'preselect',
               params: { selected: selectedTools.map(t => t.function.name) }
             },
-            apiRequest: { model: requestBody.model, messageCount: 2, toolCount: totalCount },
+            apiRequest: { model: requestBody.model, messageCount: apiMessages.length, toolCount: totalCount },
             apiResponse: { toolCountAfter: selectedTools.length },
             duration
           })]

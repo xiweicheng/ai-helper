@@ -85,6 +85,9 @@ function initMemoryLimitDropdown() {
 
   if (!dropdown || !label) return;
 
+  // 立即用当前状态刷新标签（避免 loadChatConfig 完成前显示空值）
+  updateMemoryLimitLabel();
+
   label.addEventListener('click', toggleMemoryLimitDropdown);
 
   const options = dropdown.querySelectorAll('.memory-limit-option');
@@ -1272,8 +1275,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ==================== 模块初始化 ====================
 
-// 页面加载时获取配置
-loadChatConfig();
+// 页面加载时获取配置，加载后刷新记忆限制标签
+loadChatConfig().then(() => updateMemoryLimitLabel());
 
 // 初始化记忆限制标签点击事件
 document.addEventListener('DOMContentLoaded', () => {
