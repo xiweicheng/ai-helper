@@ -488,6 +488,51 @@ export async function executeClarifyQuestion(args, toolCallId) {
       timeout: clarifyTimeout  // 传递超时时间给前端显示倒计时
     };
     
+    let timeoutId = null;
+    let clarifyResponseHandler = null;
+    
+    /**
+     * 清理函数：确保监听器和计时器都被正确清理
+     */
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (clarifyResponseHandler) {
+        chrome.runtime.onMessage.removeListener(clarifyResponseHandler);
+        clarifyResponseHandler = null;
+      }
+    };
+    
+    /**
+     * 处理澄清响应
+     */
+    const handleResponse = (msg) => {
+      if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
+        cleanup();
+        
+        console.log('[Background] 收到澄清响应:', msg);
+        
+        const { selectedOption, customInput, additionalInfo } = msg;
+        
+        let result = '';
+        if (selectedOption >= 0 && options[selectedOption]) {
+          result = `已选择: ${options[selectedOption]}`;
+        } else if (customInput && customInput.trim()) {
+          result = `自定义输入: ${customInput.trim()}`;
+        } else {
+          result = '未提供澄清信息';
+        }
+        
+        if (additionalInfo && additionalInfo.trim()) {
+          result += `\n补充说明: ${additionalInfo.trim()}`;
+        }
+        
+        resolve(result);
+      }
+    };
+    
     // 发送消息到 Side Panel 显示澄清弹窗
     chrome.runtime.sendMessage({
       type: 'SHOW_CLARIFY_DIALOG',
@@ -495,6 +540,7 @@ export async function executeClarifyQuestion(args, toolCallId) {
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 发送澄清消息失败:', chrome.runtime.lastError.message);
+        cleanup(); // 确保清理
         resolve({ 
           success: false, 
           error: '无法显示澄清对话框: ' + chrome.runtime.lastError.message,
@@ -506,8 +552,10 @@ export async function executeClarifyQuestion(args, toolCallId) {
       console.log('[Background] 澄清对话框已发送到 Side Panel，超时:', clarifyTimeout, 'ms');
       
       // 设置超时处理（使用配置的澄清超时时间）
-      const timeout = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.error('[Background] 澄清对话框超时');
+        cleanup(); // 确保清理
+        
         // 通知前端倒计时结束
         chrome.runtime.sendMessage({
           type: 'CLARIFY_TIMEOUT',
@@ -522,30 +570,8 @@ export async function executeClarifyQuestion(args, toolCallId) {
       }, clarifyTimeout);
       
       // 监听用户的澄清响应
-      const clarifyResponseHandler = (msg, sender, sendResponse) => {
-        if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
-          clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(clarifyResponseHandler);
-          
-          console.log('[Background] 收到澄清响应:', msg);
-          
-          const { selectedOption, customInput, additionalInfo } = msg;
-          
-          let result = '';
-          if (selectedOption >= 0 && options[selectedOption]) {
-            result = `已选择: ${options[selectedOption]}`;
-          } else if (customInput && customInput.trim()) {
-            result = `自定义输入: ${customInput.trim()}`;
-          } else {
-            result = '未提供澄清信息';
-          }
-          
-          if (additionalInfo && additionalInfo.trim()) {
-            result += `\n补充说明: ${additionalInfo.trim()}`;
-          }
-          
-          resolve(result);
-        }
+      clarifyResponseHandler = (msg, sender, sendResponse) => {
+        handleResponse(msg);
       };
       
       chrome.runtime.onMessage.addListener(clarifyResponseHandler);

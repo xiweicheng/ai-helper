@@ -5,6 +5,32 @@ import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-
 import { preselectTools } from './tool-preselector.js';
 
 /**
+ * 创建带执行日志的错误
+ */
+function createErrorWithLog(message, executionLog) {
+  const error = new Error(message);
+  error.executionLog = executionLog;
+  return error;
+}
+
+/**
+ * 带超时控制的 Promise 执行器
+ * 使用 Promise.race 确保超时能正确捕获
+ */
+async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
+  const timeoutPromise = new Promise((_, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(createErrorWithLog(errorMessage, executionLog));
+    }, timeoutMs);
+    
+    // 确保清理
+    promise.then(() => clearTimeout(timeoutId)).catch(() => clearTimeout(timeoutId));
+  });
+  
+  return Promise.race([promise, timeoutPromise]);
+}
+
+/**
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
@@ -25,7 +51,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
     return fullToolsCache;
   }
   
-  resetReactCancel();
+  resetReactCancel(tabId);
   setCurrentReactTabId(tabId);
   
   const config = await getStoredConfig();
@@ -69,18 +95,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
   const loopStartTime = Date.now();
   let totalPausedDuration = 0;  // 累计暂停时长（澄清等待时间不计入）
   let pauseStartTime = null;    // 暂停开始时刻
-  
-  // 创建带执行日志的错误
-  const createErrorWithLog = (message) => {
-    const error = new Error(message);
-    error.executionLog = executionLog;
-    return error;
-  };
-  
-  // 设置整体超时计时器（初始值）
-  let loopTimeoutId = setTimeout(() => {
-    throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-  }, loopTimeout);
+  let isPaused = false;         // 是否处于暂停状态
   
   // 发送初始状态
   sendExecutionStatusUpdate('准备开始执行...', 'processing');
@@ -89,50 +104,46 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
    * 暂停整体循环超时计时（用于澄清工具）
    */
   function pauseLoopTimer() {
-    if (pauseStartTime === null) {
+    if (!isPaused) {
       pauseStartTime = Date.now();
-      clearTimeout(loopTimeoutId);
-      loopTimeoutId = null;
+      isPaused = true;
       console.log('[Background] 整体循环超时已暂停');
     }
+  }
+  
+  /**
+   * 计算当前剩余超时时间
+   */
+  function getRemainingTime() {
+    const elapsedTime = Date.now() - loopStartTime;
+    return loopTimeout + totalPausedDuration - elapsedTime;
   }
   
   /**
    * 恢复整体循环超时计时
    */
   function resumeLoopTimer() {
-    if (pauseStartTime !== null) {
+    if (isPaused && pauseStartTime !== null) {
       const pauseDuration = Date.now() - pauseStartTime;
       totalPausedDuration += pauseDuration;
       pauseStartTime = null;
+      isPaused = false;
       
-      // 计算剩余超时时间（原始超时 + 累计暂停时长 - 已运行时间）
-      const elapsedTime = Date.now() - loopStartTime;
-      const remainingTime = loopTimeout + totalPausedDuration - elapsedTime;
-      
-      if (remainingTime <= 0) {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-      }
-      
-      // 重新设置计时器
-      loopTimeoutId = setTimeout(() => {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-      }, remainingTime);
-      
-      console.log('[Background] 整体循环超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(remainingTime / 1000), 's');
+      console.log('[Background] 整体循环超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(getRemainingTime() / 1000), 's');
     }
   }
   
   try {
     while (iteration < maxIterations) {
-      if (isCancelled()) {
-        throw createErrorWithLog('ReAct 循环已被用户取消');
+      if (isCancelled(tabId)) {
+        throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
       }
       
+      // 检查超时（使用动态调整后的超时时间）
       const elapsedTime = Date.now() - loopStartTime;
       const adjustedTimeout = loopTimeout + totalPausedDuration;
       if (elapsedTime > adjustedTimeout) {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
+        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`, executionLog);
       }
       
       iteration++;
@@ -489,7 +500,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
       
       const content = assistantMessage?.content || '';
       console.log('[Background] ReAct 循环完成，最终内容长度:', content.length);
-      if (loopTimeoutId) clearTimeout(loopTimeoutId);
       
       // 发送完成状态
       sendExecutionStatusUpdate('执行完成', 'success');
@@ -501,8 +511,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
     const error = new Error(`ReAct 循环超过最大迭代次数 (${maxIterations})`);
     error.executionLog = executionLog;
     throw error;
-  } finally {
-    if (loopTimeoutId) clearTimeout(loopTimeoutId);
+  } catch (error) {
+    // 重新抛出错误，保持错误处理流程
+    throw error;
   }
 }
 

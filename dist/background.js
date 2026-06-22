@@ -2,9 +2,11 @@ import { D as DEFAULT_API_BASE, a as DEFAULT_MODEL, b as DEFAULT_REACT_CONFIG, c
 
 // background/state.js - 状态管理和取消控制
 
-// ReAct 循环取消控制
-let isReactCancelled = false;
-let currentReactTabId = null;
+// ReAct 循环取消控制 - 使用 Map 支持多标签页
+const cancelledTabs = new Map(); // tabId -> boolean
+
+// 当前活跃的 ReAct 循环标签页（用于取消所有）
+let activeReactTabId = null;
 
 // 当前对话的 API 调用计数器（每次对话重置）
 let currentDialogApiCallCount = 0;
@@ -23,25 +25,60 @@ function getDialogApiCallCount() {
 }
 
 /**
- * 取消当前 ReAct 循环
+ * 取消指定标签页的 ReAct 循环
+ * @param {number|null} tabId - 标签页ID，为null时取消所有标签页的循环
  */
 function cancelReactLoop(tabId) {
-  if (currentReactTabId === tabId || tabId === null) {
-    isReactCancelled = true;
+  if (tabId === null) {
+    // 取消所有标签页的循环
+    cancelledTabs.clear();
+    console.log('[Background] 所有标签页的 ReAct 循环已取消');
+  } else {
+    cancelledTabs.set(tabId, true);
     console.log('[Background] ReAct 循环已取消，tabId:', tabId);
   }
 }
 
 /**
- * 重置取消状态
+ * 重置指定标签页的取消状态
+ * @param {number} tabId - 标签页ID
  */
-function resetReactCancel() {
-  isReactCancelled = false;
-  currentReactTabId = null;
+function resetReactCancel(tabId) {
+  if (tabId !== undefined) {
+    cancelledTabs.delete(tabId);
+    console.log('[Background] 标签页取消状态已重置，tabId:', tabId);
+  }
 }
 
-function isCancelled() { return isReactCancelled; }
-function setCurrentReactTabId(id) { currentReactTabId = id; }
+/**
+ * 检查指定标签页的 ReAct 循环是否已取消
+ * @param {number} tabId - 标签页ID
+ * @returns {boolean}
+ */
+function isCancelled(tabId) {
+  if (tabId === undefined) {
+    // 如果没有提供tabId，检查活跃标签页
+    return activeReactTabId !== null && cancelledTabs.get(activeReactTabId) === true;
+  }
+  return cancelledTabs.get(tabId) === true;
+}
+
+/**
+ * 设置当前活跃的 ReAct 循环标签页
+ * @param {number} tabId - 标签页ID
+ */
+function setActiveReactTabId(tabId) {
+  activeReactTabId = tabId;
+  // 重置该标签页的取消状态
+  if (tabId !== null) {
+    cancelledTabs.delete(tabId);
+  }
+}
+
+// 为了向后兼容，保留原有的函数名
+function setCurrentReactTabId(id) { 
+  setActiveReactTabId(id); 
+}
 
 // background/config.js - 配置管理
 
@@ -588,6 +625,51 @@ async function executeClarifyQuestion(args, toolCallId) {
       timeout: clarifyTimeout  // 传递超时时间给前端显示倒计时
     };
     
+    let timeoutId = null;
+    let clarifyResponseHandler = null;
+    
+    /**
+     * 清理函数：确保监听器和计时器都被正确清理
+     */
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (clarifyResponseHandler) {
+        chrome.runtime.onMessage.removeListener(clarifyResponseHandler);
+        clarifyResponseHandler = null;
+      }
+    };
+    
+    /**
+     * 处理澄清响应
+     */
+    const handleResponse = (msg) => {
+      if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
+        cleanup();
+        
+        console.log('[Background] 收到澄清响应:', msg);
+        
+        const { selectedOption, customInput, additionalInfo } = msg;
+        
+        let result = '';
+        if (selectedOption >= 0 && options[selectedOption]) {
+          result = `已选择: ${options[selectedOption]}`;
+        } else if (customInput && customInput.trim()) {
+          result = `自定义输入: ${customInput.trim()}`;
+        } else {
+          result = '未提供澄清信息';
+        }
+        
+        if (additionalInfo && additionalInfo.trim()) {
+          result += `\n补充说明: ${additionalInfo.trim()}`;
+        }
+        
+        resolve(result);
+      }
+    };
+    
     // 发送消息到 Side Panel 显示澄清弹窗
     chrome.runtime.sendMessage({
       type: 'SHOW_CLARIFY_DIALOG',
@@ -595,6 +677,7 @@ async function executeClarifyQuestion(args, toolCallId) {
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 发送澄清消息失败:', chrome.runtime.lastError.message);
+        cleanup(); // 确保清理
         resolve({ 
           success: false, 
           error: '无法显示澄清对话框: ' + chrome.runtime.lastError.message,
@@ -606,8 +689,10 @@ async function executeClarifyQuestion(args, toolCallId) {
       console.log('[Background] 澄清对话框已发送到 Side Panel，超时:', clarifyTimeout, 'ms');
       
       // 设置超时处理（使用配置的澄清超时时间）
-      const timeout = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         console.error('[Background] 澄清对话框超时');
+        cleanup(); // 确保清理
+        
         // 通知前端倒计时结束
         chrome.runtime.sendMessage({
           type: 'CLARIFY_TIMEOUT',
@@ -622,30 +707,8 @@ async function executeClarifyQuestion(args, toolCallId) {
       }, clarifyTimeout);
       
       // 监听用户的澄清响应
-      const clarifyResponseHandler = (msg, sender, sendResponse) => {
-        if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
-          clearTimeout(timeout);
-          chrome.runtime.onMessage.removeListener(clarifyResponseHandler);
-          
-          console.log('[Background] 收到澄清响应:', msg);
-          
-          const { selectedOption, customInput, additionalInfo } = msg;
-          
-          let result = '';
-          if (selectedOption >= 0 && options[selectedOption]) {
-            result = `已选择: ${options[selectedOption]}`;
-          } else if (customInput && customInput.trim()) {
-            result = `自定义输入: ${customInput.trim()}`;
-          } else {
-            result = '未提供澄清信息';
-          }
-          
-          if (additionalInfo && additionalInfo.trim()) {
-            result += `\n补充说明: ${additionalInfo.trim()}`;
-          }
-          
-          resolve(result);
-        }
+      clarifyResponseHandler = (msg, sender, sendResponse) => {
+        handleResponse(msg);
       };
       
       chrome.runtime.onMessage.addListener(clarifyResponseHandler);
@@ -2757,6 +2820,15 @@ async function preselectTools(messages, model, tools, apiParams = {}, callCount 
 // background/react-loop.js - ReAct 推理循环与 API 调用
 
 /**
+ * 创建带执行日志的错误
+ */
+function createErrorWithLog(message, executionLog) {
+  const error = new Error(message);
+  error.executionLog = executionLog;
+  return error;
+}
+
+/**
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
@@ -2777,7 +2849,7 @@ async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskCont
     return fullToolsCache;
   }
   
-  resetReactCancel();
+  resetReactCancel(tabId);
   setCurrentReactTabId(tabId);
   
   const config = await getStoredConfig();
@@ -2821,18 +2893,7 @@ async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskCont
   const loopStartTime = Date.now();
   let totalPausedDuration = 0;  // 累计暂停时长（澄清等待时间不计入）
   let pauseStartTime = null;    // 暂停开始时刻
-  
-  // 创建带执行日志的错误
-  const createErrorWithLog = (message) => {
-    const error = new Error(message);
-    error.executionLog = executionLog;
-    return error;
-  };
-  
-  // 设置整体超时计时器（初始值）
-  let loopTimeoutId = setTimeout(() => {
-    throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-  }, loopTimeout);
+  let isPaused = false;         // 是否处于暂停状态
   
   // 发送初始状态
   sendExecutionStatusUpdate('准备开始执行...', 'processing');
@@ -2841,50 +2902,46 @@ async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskCont
    * 暂停整体循环超时计时（用于澄清工具）
    */
   function pauseLoopTimer() {
-    if (pauseStartTime === null) {
+    if (!isPaused) {
       pauseStartTime = Date.now();
-      clearTimeout(loopTimeoutId);
-      loopTimeoutId = null;
+      isPaused = true;
       console.log('[Background] 整体循环超时已暂停');
     }
+  }
+  
+  /**
+   * 计算当前剩余超时时间
+   */
+  function getRemainingTime() {
+    const elapsedTime = Date.now() - loopStartTime;
+    return loopTimeout + totalPausedDuration - elapsedTime;
   }
   
   /**
    * 恢复整体循环超时计时
    */
   function resumeLoopTimer() {
-    if (pauseStartTime !== null) {
+    if (isPaused && pauseStartTime !== null) {
       const pauseDuration = Date.now() - pauseStartTime;
       totalPausedDuration += pauseDuration;
       pauseStartTime = null;
+      isPaused = false;
       
-      // 计算剩余超时时间（原始超时 + 累计暂停时长 - 已运行时间）
-      const elapsedTime = Date.now() - loopStartTime;
-      const remainingTime = loopTimeout + totalPausedDuration - elapsedTime;
-      
-      if (remainingTime <= 0) {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-      }
-      
-      // 重新设置计时器
-      loopTimeoutId = setTimeout(() => {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
-      }, remainingTime);
-      
-      console.log('[Background] 整体循环超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(remainingTime / 1000), 's');
+      console.log('[Background] 整体循环超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(getRemainingTime() / 1000), 's');
     }
   }
   
   try {
     while (iteration < maxIterations) {
-      if (isCancelled()) {
-        throw createErrorWithLog('ReAct 循环已被用户取消');
+      if (isCancelled(tabId)) {
+        throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
       }
       
+      // 检查超时（使用动态调整后的超时时间）
       const elapsedTime = Date.now() - loopStartTime;
       const adjustedTimeout = loopTimeout + totalPausedDuration;
       if (elapsedTime > adjustedTimeout) {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`);
+        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`, executionLog);
       }
       
       iteration++;
@@ -3241,7 +3298,6 @@ async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskCont
       
       const content = assistantMessage?.content || '';
       console.log('[Background] ReAct 循环完成，最终内容长度:', content.length);
-      if (loopTimeoutId) clearTimeout(loopTimeoutId);
       
       // 发送完成状态
       sendExecutionStatusUpdate('执行完成', 'success');
@@ -3253,8 +3309,9 @@ async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskCont
     const error = new Error(`ReAct 循环超过最大迭代次数 (${maxIterations})`);
     error.executionLog = executionLog;
     throw error;
-  } finally {
-    if (loopTimeoutId) clearTimeout(loopTimeoutId);
+  } catch (error) {
+    // 重新抛出错误，保持错误处理流程
+    throw error;
   }
 }
 
