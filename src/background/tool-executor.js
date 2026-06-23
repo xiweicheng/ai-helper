@@ -411,7 +411,7 @@ function executeSearchConversationMemory(args, toolCallId) {
   console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope);
 
   return new Promise((resolve) => {
-    const storageKeys = ['chatHistory'];
+    const storageKeys = ['sessions'];
     if (searchScope === 'all_sessions') {
       storageKeys.push('conversationSessions');
     }
@@ -420,27 +420,38 @@ function executeSearchConversationMemory(args, toolCallId) {
       // 收集所有可搜索的消息
       let allMessages = [];
 
-      // 当前会话消息
-      const chatHistory = result.chatHistory || [];
-      chatHistory.forEach((msg, idx) => {
-        if (msg.content) {
-          allMessages.push({
-            session: '当前会话',
-            index: idx,
-            role: msg.role,
-            content: msg.content
-          });
-        }
-      });
+      // 多会话机制：从 sessions 中读取活跃会话的消息
+      const sessionsData = result.sessions;
+      if (sessionsData && sessionsData.list) {
+        const activeSessionId = sessionsData.activeSessionId;
+        const sessionsToSearch = searchScope === 'all_sessions'
+          ? sessionsData.list                               // 所有活跃会话
+          : sessionsData.list.filter(s => s.id === activeSessionId);  // 仅当前会话
 
-      // 历史会话消息
+        sessionsToSearch.forEach((session) => {
+          const isActive = session.id === activeSessionId;
+          const label = isActive ? '当前会话' : (session.title || `会话 ${session.id?.slice(0, 8)}`);
+          (session.messageHistory || []).forEach((msg, idx) => {
+            if (msg.content) {
+              allMessages.push({
+                session: label,
+                index: idx,
+                role: msg.role,
+                content: msg.content
+              });
+            }
+          });
+        });
+      }
+
+      // 归档会话消息
       if (searchScope === 'all_sessions' && result.conversationSessions) {
-        const sessions = result.conversationSessions.sessions || [];
-        sessions.forEach((session) => {
+        const archiveSessions = result.conversationSessions.sessions || [];
+        archiveSessions.forEach((session) => {
           (session.messages || []).forEach((msg, idx) => {
             if (msg.content) {
               allMessages.push({
-                session: session.title || `会话 ${session.id?.slice(0, 8)}`,
+                session: `[归档] ${session.title || `会话 ${session.id?.slice(0, 8)}`}`,
                 index: idx,
                 role: msg.role,
                 content: msg.content

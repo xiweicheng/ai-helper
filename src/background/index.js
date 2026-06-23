@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, setActiveReactSessionId } from './state.js';
+import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools } from './tool-executor.js';
 import { reactLoop, callApiNonStream } from './react-loop.js';
@@ -41,15 +41,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CALL_API') {
     const { messages, model, useTools, tabId, apiParams, sessionId } = message;
     
-    // 设置活跃会话 ID（用于取消控制）
-    if (sessionId) {
-      setActiveReactSessionId(sessionId);
-    }
+    // 重置当前会话的 API 调用计数器
+    resetDialogApiCallCount(sessionId);
     
-    // 重置当前对话的 API 调用计数器
-    resetDialogApiCallCount();
-    
-    console.log('[Background] 收到 CALL_API 消息，useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
+    console.log('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
     
     const apiCall = useTools 
       ? (async () => {
@@ -58,14 +53,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
             console.log('[Background] 没有可用工具，跳过预筛选，直接普通对话');
-            return callApiNonStream(messages, model, apiParams);
+            return callApiNonStream(messages, model, apiParams, sessionId);
           }
 
           console.log('[Background] 获取到工具列表，数量:', tools.length, '工具:', tools.map(t => t.function.name));
 
           // 预筛选工具：通过前置规划调用减少不必要的工具传递
-          // 先递增计数器，让预筛选也能显示正确的调用次数
-          const preselectCount = incrementDialogApiCallCount();
+          const preselectCount = incrementDialogApiCallCount(sessionId);
           const preselection = await preselectTools(messages, model, tools, apiParams, preselectCount);
 
           // 发送预筛选完成状态，让实时日志面板也能看到这个步骤
@@ -95,13 +89,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
 
-          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, null, null, { value: 1 }, preselectLog);
+          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
             executionLog: reactResult.executionLog || preselectLog
           };
         })()
-      : callApiNonStream(messages, model, apiParams);
+      : callApiNonStream(messages, model, apiParams, sessionId);
     
     apiCall
       .then(result => {

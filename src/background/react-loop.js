@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getCurrentReactTabId, setCurrentReactTabId, setActiveReactSessionId, getActiveReactSessionId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { preselectTools } from './tool-preselector.js';
@@ -34,7 +34,7 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
-export async function reactLoop(messages, model, tools, tabId, apiParams = {}, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = []) {
+export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = []) {
   let iteration = 0;
   let currentMessages = [...messages];
   
@@ -51,7 +51,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
     return fullToolsCache;
   }
   
-  resetReactCancel(tabId);
+  resetReactCancel(sessionId || tabId);
   setCurrentReactTabId(tabId);
   
   const config = await getStoredConfig();
@@ -85,8 +85,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
         executionLog: logSnapshot
       };
       
-      // 携带 sessionId（如果可用）
-      const sessionId = getActiveReactSessionId();
       if (sessionId) {
         msg.sessionId = sessionId;
       }
@@ -143,13 +141,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
   
   try {
     while (iteration < maxIterations) {
-      if (isCancelled(tabId)) {
-        throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
-      }
-      
-      // 也检查 sessionId 取消状态（用于多会话并行场景）
-      const currentSessionId = getActiveReactSessionId();
-      if (currentSessionId && isCancelled(currentSessionId)) {
+      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
         throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
       }
       
@@ -162,7 +154,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
       
       iteration++;
       // 递增 API 调用计数器（预筛选已经用了第1次）
-      incrementDialogApiCallCount();
+      incrementDialogApiCallCount(sessionId);
       const remainingTime = adjustedTimeout - elapsedTime;
       console.log(`[Background] ReAct 循环第 ${iteration} 次，剩余时间: ${Math.round(remainingTime / 1000)}s (已暂停: ${Math.round(totalPausedDuration / 1000)}s)`);
       
@@ -193,7 +185,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
       
       // 添加 API 调用开始的日志节点（状态为 processing）
       const apiLogId = crypto.randomUUID();
-      const currentCount = getDialogApiCallCount();
+      const currentCount = getDialogApiCallCount(sessionId);
       
       // 如果工具集中包含 plan_task，展开为全量工具，确保任务拆解时模型能感知所有可用工具
       const hasPlanTask = tools.some(t => t.function?.name === 'plan_task');
@@ -349,7 +341,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
           if (toolName === 'clarify_question') {
             pauseLoopTimer();
             chrome.runtime.sendMessage({
-              type: 'CLARIFY_START'
+              type: 'CLARIFY_START',
+              ...(sessionId ? { sessionId } : {})
             }).catch(err => {
               console.log('[Background] 发送 CLARIFY_START 消息失败:', err.message);
             });
@@ -364,7 +357,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
             if (toolName === 'clarify_question') {
               resumeLoopTimer();
               chrome.runtime.sendMessage({
-                type: 'CLARIFY_END'
+                type: 'CLARIFY_END',
+                ...(sessionId ? { sessionId } : {})
               }).catch(err => {
                 console.log('[Background] 发送 CLARIFY_END 消息失败:', err.message);
               });
@@ -374,7 +368,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
               try {
                 const fullTools = await getTools();
                 if (fullTools.length > 5) {
-                  const rePreselectCount = incrementDialogApiCallCount();
+                  const rePreselectCount = incrementDialogApiCallCount(sessionId);
                   const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams, rePreselectCount);
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
@@ -431,7 +425,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
               sendExecutionStatusUpdate('任务规划完成', 'success');
               
               // 开始执行子任务
-              const subtaskResults = await executeSubtasks(subtaskPlan, model, tabId, apiParams, executionLog, globalIteration);
+              const subtaskResults = await executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration);
               
               // 将所有子任务结果添加到消息历史（作为系统消息，而非工具消息）
               const subtaskSummary = subtaskResults.map((result, idx) => 
@@ -483,7 +477,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
             if (toolName === 'clarify_question') {
               resumeLoopTimer();
               chrome.runtime.sendMessage({
-                type: 'CLARIFY_END'
+                type: 'CLARIFY_END',
+                ...(sessionId ? { sessionId } : {})
               }).catch(err => {
                 console.log('[Background] 发送 CLARIFY_END 消息失败:', err.message);
               });
@@ -545,7 +540,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, parentExecutionLog, globalIteration = { value: 0 }) {
+export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -599,7 +594,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
             type: 'EXECUTION_STATUS_UPDATE',
             nodeName: `子任务 ${subtask.name} (已回滚)`,
             status: 'rolledback',
-            executionLog: [...parentExecutionLog]
+            executionLog: [...parentExecutionLog],
+            ...(sessionId ? { sessionId } : {})
           }).catch(err => {});
           
         } catch (rollbackError) {
@@ -651,7 +647,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
       nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
       status: 'processing',
       executionLog: [...parentExecutionLog],
-      taskGroup: taskGroup
+      taskGroup: taskGroup,
+      ...(sessionId ? { sessionId } : {})
     }).catch(err => {});
     
     // 重试循环
@@ -678,6 +675,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
           subtaskTools, 
           tabId, 
           apiParams,
+          sessionId,
           { subtaskId: subtask.id, subtaskName: subtask.name },
           (subtaskLog) => {
             // 实时回调：将子任务日志合并到父日志并发送更新
@@ -700,7 +698,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
               nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
               status: 'processing',
               executionLog: mergedLog,
-              taskGroup: taskGroup
+              taskGroup: taskGroup,
+              ...(sessionId ? { sessionId } : {})
             }).catch(err => {});
           },
           globalIteration
@@ -739,7 +738,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
           nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`,
           status: 'success',
           executionLog: [...parentExecutionLog],
-          taskGroup: taskGroup
+          taskGroup: taskGroup,
+          ...(sessionId ? { sessionId } : {})
         }).catch(err => {});
         
         // 记录已完成的子任务（用于回滚）
@@ -793,7 +793,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
             nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`,
             status: 'failed',
             executionLog: [...parentExecutionLog],
-            taskGroup: taskGroup
+            taskGroup: taskGroup,
+            ...(sessionId ? { sessionId } : {})
           }).catch(err => {});
           
           return {
@@ -885,7 +886,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, pare
   } else {
     // 未知策略，降级为顺序执行
     console.warn(`[Background] 未知执行策略: ${strategy}，降级为顺序执行`);
-    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tabId, apiParams, parentExecutionLog, globalIteration);
+    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration);
   }
   
   return results;
@@ -1009,7 +1010,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 /**
  * 调用 OpenAI 兼容 API（非流式，简单模式）
  */
-export function callApiNonStream(messages, model, apiParams = {}) {
+export function callApiNonStream(messages, model, apiParams = {}, _sessionId = null) {
   return getStoredConfig().then(config => {
     const apiUrl = `${config.apiBase}/chat/completions`;
 
