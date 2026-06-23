@@ -1474,6 +1474,33 @@
       background: #ff3344;
     }
     
+    .modal-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #333;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 20px;
+      box-sizing: border-box;
+    }
+    
+    .modal-input:focus {
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    
+    .modal-btn.primary {
+      background: #667eea;
+      color: white;
+    }
+    
+    .modal-btn.primary:hover {
+      background: #5568d3;
+    }
+    
     /* 工具调用状态样式 */
     .tool-call-status {
       align-self: flex-start;
@@ -4299,6 +4326,32 @@
       <div class="clarify-footer">
         <button class="clarify-btn cancel" id="clarifyCancelBtn">取消</button>
         <button class="clarify-btn confirm" id="clarifyConfirmBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 会话重命名弹窗 -->
+  <div class="modal-overlay" id="sessionRenameModal" style="z-index: 4000;">
+    <div class="modal-container">
+      <button class="prompt-modal-close" id="sessionRenameCloseBtn" title="关闭">×</button>
+      <div class="modal-title">重命名会话</div>
+      <input type="text" class="modal-input" id="sessionRenameInput" placeholder="请输入会话名称" maxlength="50">
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="sessionRenameCancelBtn">取消</button>
+        <button class="modal-btn primary" id="sessionRenameConfirmBtn">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 会话删除确认弹窗 -->
+  <div class="modal-overlay" id="sessionDeleteModal" style="z-index: 4000;">
+    <div class="modal-container">
+      <button class="prompt-modal-close" id="sessionDeleteCloseBtn" title="关闭">×</button>
+      <div class="modal-title">确认删除</div>
+      <div class="modal-message" id="sessionDeleteMessage">确定要删除该会话吗？此操作不可撤销。</div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="sessionDeleteCancelBtn">取消</button>
+        <button class="modal-btn confirm" id="sessionDeleteConfirmBtn">删除</button>
       </div>
     </div>
   </div>

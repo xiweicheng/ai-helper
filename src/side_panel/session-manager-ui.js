@@ -70,7 +70,6 @@ export async function renderSessionTabs() {
     const newSession = await createSession();
     state.activeSessionId = newSession.id;
     state.messageHistory = [];
-    // 通知上层重建消息区域
     document.dispatchEvent(new CustomEvent('session-switched', {
       detail: { sessionId: newSession.id }
     }));
@@ -87,7 +86,6 @@ async function handleSessionSwitch(sessionId) {
   const result = await switchToSession(sessionId);
   if (!result) return;
 
-  // 更新内存中的状态
   const sessionsData = await loadSessions();
   state.sessions = sessionsData.list;
   state.activeSessionId = sessionId;
@@ -102,7 +100,6 @@ async function handleSessionSwitch(sessionId) {
     state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
   }
 
-  // 通知上层重建消息区域
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId }
   }));
@@ -131,6 +128,99 @@ function updateUIControls() {
   }
 }
 
+// ==================== 自定义弹窗 ====================
+
+/**
+ * 显示会话重命名弹窗
+ */
+function showRenameModal(session) {
+  const modal = document.getElementById('sessionRenameModal');
+  const input = document.getElementById('sessionRenameInput');
+  const confirmBtn = document.getElementById('sessionRenameConfirmBtn');
+  const cancelBtn = document.getElementById('sessionRenameCancelBtn');
+  const closeBtn = document.getElementById('sessionRenameCloseBtn');
+
+  if (!modal || !input) return;
+
+  input.value = session.title;
+  input.focus();
+  input.select();
+
+  const cleanup = () => {
+    modal.classList.remove('show');
+    confirmBtn.removeEventListener('click', onConfirm);
+    cancelBtn.removeEventListener('click', onCancel);
+    closeBtn.removeEventListener('click', onCancel);
+  };
+
+  const onConfirm = () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== session.title) {
+      renameSession(session.id, newTitle).then(() => {
+        renderSessionTabs();
+      });
+    }
+    cleanup();
+  };
+
+  const onCancel = () => {
+    cleanup();
+  };
+
+  confirmBtn.addEventListener('click', onConfirm);
+  cancelBtn.addEventListener('click', onCancel);
+  closeBtn.addEventListener('click', onCancel);
+
+  // 回车键确认
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      onConfirm();
+    } else if (e.key === 'Escape') {
+      onCancel();
+    }
+  };
+
+  modal.classList.add('show');
+}
+
+/**
+ * 显示会话删除确认弹窗
+ */
+function showDeleteModal(session, onDeleted) {
+  const modal = document.getElementById('sessionDeleteModal');
+  const messageEl = document.getElementById('sessionDeleteMessage');
+  const confirmBtn = document.getElementById('sessionDeleteConfirmBtn');
+  const cancelBtn = document.getElementById('sessionDeleteCancelBtn');
+  const closeBtn = document.getElementById('sessionDeleteCloseBtn');
+
+  if (!modal || !messageEl) return;
+
+  messageEl.textContent = `确定要删除会话"${session.title}"吗？此操作不可撤销。`;
+
+  const cleanup = () => {
+    modal.classList.remove('show');
+    confirmBtn.removeEventListener('click', onConfirm);
+    cancelBtn.removeEventListener('click', onCancel);
+    closeBtn.removeEventListener('click', onCancel);
+  };
+
+  const onConfirm = async () => {
+    await deleteSession(session.id);
+    if (onDeleted) await onDeleted();
+    cleanup();
+  };
+
+  const onCancel = () => {
+    cleanup();
+  };
+
+  confirmBtn.addEventListener('click', onConfirm);
+  cancelBtn.addEventListener('click', onCancel);
+  closeBtn.addEventListener('click', onCancel);
+
+  modal.classList.add('show');
+}
+
 /**
  * 显示右键菜单
  */
@@ -143,42 +233,31 @@ function showTabContextMenu(event, session) {
   menu.style.left = event.clientX + 'px';
   menu.style.top = event.clientY + 'px';
 
+  // 重命名
   const renameItem = createMenuItem('重命名', () => {
-    const newTitle = prompt('请输入新名称:', session.title);
-    if (newTitle && newTitle.trim()) {
-      renameSession(session.id, newTitle.trim()).then(() => {
-        renderSessionTabs();
-      });
-    }
     menu.remove();
+    showRenameModal(session);
   });
   menu.appendChild(renameItem);
 
-  if (session.id !== state.activeSessionId) {
-    const deleteItem = createMenuItem('删除', () => {
-      if (confirm('确定要删除会话 "' + session.title + '" 吗？此操作不可撤销。')) {
-        deleteSession(session.id).then(async () => {
-          if (session.id === state.activeSessionId) {
-            // 不会发生此情况，因为当前活跃会话不能删除
-          }
-          // 重新加载以获取最新的 activeSessionId
-          const sessionsData = await loadSessions();
-          state.activeSessionId = sessionsData.activeSessionId;
-          state.sessions = sessionsData.list;
-          const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
-          if (active) {
-            state.messageHistory = active.messageHistory || [];
-          } else {
-            state.messageHistory = [];
-          }
-          document.dispatchEvent(new CustomEvent('session-switched'));
-          renderSessionTabs();
-        });
+  // 删除
+  const deleteItem = createMenuItem('删除', () => {
+    menu.remove();
+    showDeleteModal(session, async () => {
+      const sessionsData = await loadSessions();
+      state.activeSessionId = sessionsData.activeSessionId;
+      state.sessions = sessionsData.list;
+      const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+      if (active) {
+        state.messageHistory = active.messageHistory || [];
+      } else {
+        state.messageHistory = [];
       }
-      menu.remove();
-    }, 'danger');
-    menu.appendChild(deleteItem);
-  }
+      document.dispatchEvent(new CustomEvent('session-switched'));
+      renderSessionTabs();
+    });
+  }, 'danger');
+  menu.appendChild(deleteItem);
 
   document.body.appendChild(menu);
 
