@@ -92,6 +92,7 @@ export function executeTool(toolCall, tabId) {
     pin_tab: (a) => executePinTab(a, toolCallId),
     group_tabs: (a) => executeGroupTabs(a, toolCallId),
     record_network: (a) => executeRecordNetwork(a, toolCallId),
+    search_conversation_memory: (a) => executeSearchConversationMemory(a, toolCallId),
   };
 
   // Content Script 委派的工具：toolName → [messageType, payloadBuilder(args)]
@@ -393,6 +394,118 @@ export function executeSearchHistory(args, toolCallId) {
         formattedResults.map((h, i) => `${i+1}. ${h.title}\n   URL: ${h.url}\n   最后访问: ${h.lastVisitTime}\n   访问次数: ${h.visitCount}`).join('\n\n');
       
       console.log('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
+      resolve(resultText);
+    });
+  });
+}
+
+/**
+ * 执行对话记忆搜索
+ * 搜索当前会话和/或历史会话中的对话记录
+ */
+function executeSearchConversationMemory(args, toolCallId) {
+  const query = (args.query || '').toLowerCase();
+  const maxResults = args.maxResults || 5;
+  const searchScope = args.searchScope || 'current_session';
+
+  console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope);
+
+  return new Promise((resolve) => {
+    const storageKeys = ['chatHistory'];
+    if (searchScope === 'all_sessions') {
+      storageKeys.push('conversationSessions');
+    }
+
+    chrome.storage.local.get(storageKeys, (result) => {
+      // 收集所有可搜索的消息
+      let allMessages = [];
+
+      // 当前会话消息
+      const chatHistory = result.chatHistory || [];
+      chatHistory.forEach((msg, idx) => {
+        if (msg.content) {
+          allMessages.push({
+            session: '当前会话',
+            index: idx,
+            role: msg.role,
+            content: msg.content
+          });
+        }
+      });
+
+      // 历史会话消息
+      if (searchScope === 'all_sessions' && result.conversationSessions) {
+        const sessions = result.conversationSessions.sessions || [];
+        sessions.forEach((session) => {
+          (session.messages || []).forEach((msg, idx) => {
+            if (msg.content) {
+              allMessages.push({
+                session: session.title || `会话 ${session.id?.slice(0, 8)}`,
+                index: idx,
+                role: msg.role,
+                content: msg.content
+              });
+            }
+          });
+        });
+      }
+
+      if (allMessages.length === 0) {
+        resolve('未找到任何对话记录。');
+        return;
+      }
+
+      // 关键词匹配搜索（分词 + 包含匹配）
+      const keywords = query.split(/\s+/).filter(k => k.length > 0);
+      const scoredMessages = allMessages.map(msg => {
+        const contentLower = msg.content.toLowerCase();
+        let score = 0;
+
+        // 精确匹配整句加分
+        if (contentLower.includes(query)) {
+          score += 10;
+        }
+
+        // 每个关键词匹配加分
+        for (const kw of keywords) {
+          if (contentLower.includes(kw)) {
+            score += 3;
+          }
+          // 关键词出现次数加权
+          const count = (contentLower.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+          score += count * 0.5;
+        }
+
+        // 标题/引用标记等更相关
+        if (contentLower.includes('[引用内容]') || contentLower.includes('[选中内容]')) {
+          score += 1;
+        }
+
+        return { ...msg, score };
+      });
+
+      // 按分数排序，过滤零分
+      const relevant = scoredMessages
+        .filter(m => m.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxResults);
+
+      if (relevant.length === 0) {
+        resolve(`未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`);
+        return;
+      }
+
+      // 格式化结果
+      const resultText = `找到 ${relevant.length} 条相关对话记录：\n\n` +
+        relevant.map((m, i) => {
+          // 截断过长内容
+          const contentPreview = m.content.length > 500
+            ? m.content.substring(0, 500) + '...'
+            : m.content;
+          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
+        }).join('\n\n---\n\n');
+
+      console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
       resolve(resultText);
     });
   });

@@ -1875,6 +1875,34 @@ export const BUILTIN_TOOLS = [
         required: ['action']
       }
     }
+  },
+  {
+    id: 'search_conversation_memory',
+    type: 'function',
+    function: {
+      name: 'search_conversation_memory',
+      description: '搜索之前的对话记录。当你需要回顾用户之前提到过的信息、之前的决策、或者用户说"之前聊过""上次说的""记得之前"等内容时，应主动调用此工具检索相关上下文。当用户的问题涉及之前讨论过的内容、你需要回顾历史上下文才能准确回答时，也请使用此工具。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: '搜索关键词或自然语言描述，用于匹配历史对话内容。可以是具体的关键词，也可以是语义描述'
+          },
+          maxResults: {
+            type: 'integer',
+            description: '最多返回多少条相关消息，默认为5',
+            default: 5
+          },
+          searchScope: {
+            type: 'string',
+            description: '搜索范围：current_session（仅当前会话）或 all_sessions（所有历史会话），默认 current_session',
+            enum: ['current_session', 'all_sessions']
+          }
+        },
+        required: ['query']
+      }
+    }
   }
 ];
 
@@ -1952,6 +1980,7 @@ export const TOOL_CATEGORY_MAP = {
   pin_tab: 'tab_management',
   group_tabs: 'tab_management',
   record_network: 'debug_dev',
+  search_conversation_memory: 'memory',
 };
 
 /**

@@ -21,9 +21,10 @@ export const TOOL_CATEGORY_NAMES = {
     'media_process': '📷 媒体处理',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'system_integration': '⚙️ 系统集成'
+    'system_integration': '⚙️ 系统集成',
+    'memory': '🧠 记忆检索'
 };
 
 export const CATEGORY_ORDER = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
                      'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration'];
+                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];

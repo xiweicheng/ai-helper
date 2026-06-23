@@ -123,6 +123,11 @@ export function saveChatHistory() {
 }
 
 export function clearChatHistory() {
+  // 在清除之前，将当前会话归档到历史会话记录中
+  if (state.messageHistory && state.messageHistory.length > 0) {
+    archiveCurrentSession();
+  }
+  
   state.messageHistory = [];
   chrome.storage.local.remove(['chatHistory', 'scrollPosition'], () => {
     const chatContainer = document.getElementById('chatContainer');
@@ -134,6 +139,50 @@ export function clearChatHistory() {
       </div>
     `;
     console.log('[SidePanel] 对话历史已清除');
+  });
+}
+
+/**
+ * 归档当前会话到历史会话记录中
+ */
+function archiveCurrentSession() {
+  if (!state.messageHistory || state.messageHistory.length === 0) return;
+
+  chrome.storage.local.get(['conversationSessions'], (result) => {
+    const sessions = result.conversationSessions?.sessions || [];
+
+    // 生成会话标题：取第一条用户消息的前50个字符
+    const firstUserMsg = state.messageHistory.find(m => m.role === 'user');
+    const title = firstUserMsg
+      ? firstUserMsg.content.substring(0, 50).replace(/\n/g, ' ')
+      : '未命名会话';
+
+    const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+    
+    // 只保存每轮对话的精简信息（去除 executionLog 以节省空间）
+    const sanitizedMessages = state.messageHistory.map(msg => ({
+      role: msg.role,
+      content: msg.content?.substring(0, 3000) || ''  // 最多3000字符
+    }));
+
+    sessions.push({
+      id: sessionId,
+      title: title,
+      createdAt: new Date().toISOString(),
+      messages: sanitizedMessages
+    });
+
+    // 最多保留20个历史会话，超出时删除最旧的
+    const maxSessions = 20;
+    if (sessions.length > maxSessions) {
+      sessions.splice(0, sessions.length - maxSessions);
+    }
+
+    chrome.storage.local.set({
+      conversationSessions: { sessions }
+    }, () => {
+      console.log('[SidePanel] 当前会话已归档，会话标题:', title, '总历史会话数:', sessions.length);
+    });
   });
 }
 
