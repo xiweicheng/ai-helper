@@ -148,11 +148,14 @@ export function clearChatHistory() {
 function archiveCurrentSession() {
   if (!state.messageHistory || state.messageHistory.length === 0) return;
 
+  // 在异步操作前拍快照，避免回调时 state.messageHistory 已被清空
+  const snapshot = [...state.messageHistory];
+
   chrome.storage.local.get(['conversationSessions'], (result) => {
     const sessions = result.conversationSessions?.sessions || [];
 
     // 生成会话标题：取第一条用户消息的前50个字符
-    const firstUserMsg = state.messageHistory.find(m => m.role === 'user');
+    const firstUserMsg = snapshot.find(m => m.role === 'user');
     const title = firstUserMsg
       ? firstUserMsg.content.substring(0, 50).replace(/\n/g, ' ')
       : '未命名会话';
@@ -160,7 +163,7 @@ function archiveCurrentSession() {
     const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
     
     // 只保存每轮对话的精简信息（去除 executionLog 以节省空间）
-    const sanitizedMessages = state.messageHistory.map(msg => ({
+    const sanitizedMessages = snapshot.map(msg => ({
       role: msg.role,
       content: msg.content?.substring(0, 3000) || ''  // 最多3000字符
     }));
