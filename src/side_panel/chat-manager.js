@@ -663,12 +663,8 @@ function getStatusText(status) {
 }
 
 function renderExecutionTimeline(executionLog) {
-  console.log('[SidePanel] renderExecutionTimeline 被调用，日志数量:', executionLog.length);
-  executionLog.forEach((entry, i) => {
-    console.log(`[SidePanel] 日志条目 ${i}:`, entry.nodeType, entry.nodeName, entry.status);
-  });
-  
   const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const totalCount = sortedLog.length;
   
   let result = '';
   let currentSubtaskIndex = null;
@@ -678,22 +674,33 @@ function renderExecutionTimeline(executionLog) {
     const isToolExec = entry.nodeType === 'tool_exec';
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
+    const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
       currentSubtaskIndex = entry.subtaskIndex;
     }
     
     let indentClass = '';
-    let prefix = '';
-    if (isSubtask) {
+    let nodeIcon = '';
+    
+    if (isPreselect) {
+      nodeIcon = '📡';
+    } else if (isPlanTask) {
+      indentClass = 'plan-task-level';
+      nodeIcon = '📋';
+    } else if (isSubtask) {
       indentClass = 'subtask-level';
-      prefix = '🔀';
+      nodeIcon = '🔀';
     } else if (isToolExec && currentSubtaskIndex !== null) {
       indentClass = 'tool-level';
-      prefix = '🔧';
+      nodeIcon = '🔧';
     } else if (isApiCall && currentSubtaskIndex !== null) {
       indentClass = 'api-level';
-      prefix = '📡';
+      nodeIcon = '📡';
+    } else if (isToolExec) {
+      nodeIcon = '⚡';
+    } else if (isApiCall) {
+      nodeIcon = '📡';
     }
     
     let statusIcon = '○';
@@ -711,7 +718,7 @@ function renderExecutionTimeline(executionLog) {
     }
     
     if (entry.subtaskCount) {
-      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务)</span>`;
+      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
     if ((isApiCall || isPreselect) && entry.apiRequest) {
@@ -728,12 +735,98 @@ function renderExecutionTimeline(executionLog) {
     }
     
     result += `
-      <div class="realtime-timeline-item ${indentClass}" data-status="${entry.status || 'processing'}" data-node-type="${entry.nodeType || ''}">
-        <div class="realtime-timeline-dot ${statusClass}">${statusIcon}</div>
-        <div class="realtime-timeline-content">
-          <span class="realtime-node-name">${prefix} ${nodeName}</span>
-          <span class="realtime-duration">${formatDuration(entry.duration || 0)}</span>
-          ${entry.error ? `<span class="realtime-error">${escapeHtml(entry.error)}</span>` : ''}
+      <div class="timeline-item ${indentClass}" data-status="${entry.status || 'processing'}" data-node-type="${entry.nodeType || ''}">
+        <div class="timeline-line"></div>
+        <div class="timeline-dot ${statusClass}">
+          ${statusIcon}
+        </div>
+        <div class="timeline-content">
+          <div class="timeline-header">
+            <span class="expand-icon">▼</span>
+            <span class="node-icon">${nodeIcon}</span>
+            <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
+            <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
+            <span class="duration-badge" title="耗时">${formatDuration(entry.duration || 0)}</span>
+          </div>
+          
+          <div class="timeline-details">
+            ${entry.thought && entry.thought.trim() ? `
+            <div class="timeline-section">
+              <div class="section-title">💡 思考</div>
+              <div class="section-content">${escapeHtml(entry.thought)}</div>
+            </div>
+            ` : ''}
+            
+            ${!isPreselect && entry.action ? `
+            <div class="timeline-section">
+              <div class="section-title">⚡ 工具调用</div>
+              <div class="section-content">
+                <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
+                <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+              </div>
+            </div>
+            ` : ''}
+            
+            ${isPreselect && entry.action?.params?.selected ? `
+            <div class="timeline-section">
+              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-content">
+                <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+                <strong>数量:</strong> ${entry.action.params.selected.length} 个
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.observation ? `
+            <div class="timeline-section">
+              <div class="section-title">📝 观察结果</div>
+              <div class="section-content">${escapeHtml(entry.observation)}</div>
+            </div>
+            ` : ''}
+            
+            ${entry.apiRequest ? `
+            <div class="timeline-section">
+              <div class="section-title">📡 API 请求</div>
+              <div class="section-content">
+                ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+                ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+                ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
+                ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.apiResponse ? `
+            <div class="timeline-section">
+              <div class="section-title">📤 API 响应</div>
+              <div class="section-content">
+                ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+                ${entry.apiResponse.tokenUsage ? `
+                  <strong>Token 使用:</strong><br>
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                ` : ''}
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.error ? `
+            <div class="timeline-section error">
+              <div class="section-title">❌ 错误信息</div>
+              <div class="section-content">${escapeHtml(entry.error)}</div>
+            </div>
+            ` : ''}
+            
+            ${entry.result ? `
+            <div class="timeline-section">
+              <div class="section-title">✅ 子任务结果</div>
+              <div class="section-content">${escapeHtml(entry.result)}</div>
+            </div>
+            ` : ''}
+          </div>
         </div>
       </div>
     `;
@@ -1195,14 +1288,13 @@ function renderExecutionLogOriginal(sortedLog) {
 }
 
 function updateRealtimeExecutionLogPanel(status) {
-  const panel = document.querySelector('.realtime-execution-log-panel');
+  const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
   
-  console.log('[SidePanel] updateRealtimeExecutionLogPanel 被调用，状态:', status.nodeName, '日志数量:', status.executionLog?.length);
-  
-  const executionValue = panel.querySelector('.realtime-execution-value');
-  if (executionValue) {
-    executionValue.textContent = status.nodeName || '处理中...';
+  // 更新"执行中"节点名称
+  const executingNode = panel.querySelector('.realtime-executing-node');
+  if (executingNode) {
+    executingNode.textContent = status.nodeName || '处理中...';
   }
   
   const executionLog = status.executionLog || [];
@@ -1212,145 +1304,193 @@ function updateRealtimeExecutionLogPanel(status) {
   const subtaskCount = executionLog.filter(entry => entry.nodeType === 'subtask').length;
   const completedSubtasks = executionLog.filter(entry => entry.nodeType === 'subtask' && entry.status === 'success').length;
   
-  const statTotal = panel.querySelector('.realtime-stat-total');
-  const statSuccess = panel.querySelector('.realtime-stat-success');
-  const statFailed = panel.querySelector('.realtime-stat-failed');
-  const statSubtask = panel.querySelector('.realtime-stat-subtask');
+  // 更新统计数字
+  const comboValue = panel.querySelector('.combo-value');
+  const statSuccess = panel.querySelector('.combo-stat.success .stat-value');
+  const statFailed = panel.querySelector('.combo-stat.failed .stat-value');
+  const statSubtask = panel.querySelector('.combo-stat.subtask');
   
-  if (statTotal) {
-    statTotal.querySelector('.stat-count-mini').textContent = totalCount;
-  }
-  if (statSuccess) {
-    statSuccess.querySelector('.stat-count-mini').textContent = successCount;
-  }
-  if (statFailed) {
-    statFailed.querySelector('.stat-count-mini').textContent = failedCount;
-  }
+  if (comboValue) comboValue.textContent = totalCount;
+  if (statSuccess) statSuccess.textContent = successCount;
+  if (statFailed) statFailed.textContent = failedCount;
   if (statSubtask) {
     if (subtaskCount > 0) {
-      statSubtask.style.display = 'flex';
-      statSubtask.querySelector('.stat-count-mini').textContent = `${completedSubtasks}/${subtaskCount}`;
+      statSubtask.style.display = '';
+      statSubtask.querySelector('.stat-value').textContent = `${completedSubtasks}/${subtaskCount}`;
     } else {
       statSubtask.style.display = 'none';
     }
   }
   
-  const timeline = panel.querySelector('.realtime-log-timeline');
-  timeline.innerHTML = executionLog.length > 0 ? renderExecutionTimeline(executionLog) : '<div class="realtime-waiting-message">等待执行中...</div>';
+  // 更新 timeline
+  const timeline = panel.querySelector('.timeline');
+  timeline.innerHTML = executionLog.length > 0
+    ? renderExecutionTimeline(executionLog)
+    : '<div class="realtime-waiting-message">等待执行中...</div>';
   
-  const timelineWrapper = panel.querySelector('.realtime-log-timeline-wrapper');
-  if (timelineWrapper) {
-    timelineWrapper.scrollTop = timelineWrapper.scrollHeight;
-  }
+  // 自动滚动到底部
+  timeline.scrollTop = timeline.scrollHeight;
 }
 
 function showRealtimeExecutionLogPanel(loadingId) {
+  const existingPanel = document.querySelector('.execution-log-panel.realtime-mode');
+  if (existingPanel) {
+    existingPanel.remove();
+  }
+  
   const panel = document.createElement('div');
-  panel.className = 'realtime-execution-log-panel';
+  panel.className = 'execution-log-panel realtime-mode';
   
   panel.innerHTML = `
-    <div class="realtime-log-container">
-      <div class="realtime-log-header">
-        <div class="realtime-log-title">
-          <svg viewBox="0 0 1024 1024">
-            <path d="M512 5.12C230.4 5.12 5.12 230.4 5.12 512s225.28 506.88 506.88 506.88 506.88-225.28 506.88-506.88S793.6 5.12 512 5.12z m0 92.16c107.52 0 215.04 46.08 291.84 122.88s122.88 184.32 122.88 291.84-46.08 215.04-122.88 291.84-184.32 122.88-291.84 122.88-215.04-46.08-291.84-122.88-122.88-184.32-122.88-291.84 46.08-215.04 122.88-291.84S404.48 97.28 512 97.28zM430.08 327.68h-5.12c-5.12 0-5.12 5.12-5.12 5.12v353.28l5.12 5.12h20.48l250.88-168.96s5.12 0 5.12-5.12V512v-5.12s0-5.12-5.12-5.12l-256-168.96c-5.12 0-5.12 0-10.24-5.12z" fill="#707070"></path>
+    <div class="log-container">
+      <div class="log-header">
+        <div class="log-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
           <h3>实时执行日志</h3>
         </div>
-        <div class="realtime-log-close">
+        <div class="log-close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </div>
       </div>
-      <div class="realtime-log-content">
-        <div class="realtime-header-bar">
-          <div class="realtime-current-execution">
-            <span class="realtime-execution-label">当前执行:</span>
-            <span class="realtime-execution-value">准备中...</span>
+      
+      <div class="log-summary">
+        <div class="realtime-executing-indicator">
+          <span class="realtime-pulse-dot"></span>
+          <span class="realtime-executing-label">执行中:</span>
+          <span class="realtime-executing-node">准备中...</span>
+        </div>
+        <div class="summary-combo">
+          <div class="combo-main">
+            <span class="combo-icon">◉</span>
+            <span class="combo-label">总节点</span>
+            <span class="combo-value">0</span>
           </div>
-          <div class="realtime-stat-summary-inline">
-            <span class="realtime-stat-item-mini realtime-stat-total">
-              <span class="stat-icon">◉</span>
-              <span class="stat-text-mini">总节点</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span class="realtime-stat-item-mini realtime-stat-success" data-status="success">
+          <div class="combo-stats">
+            <div class="combo-stat success" data-status="success">
               <span class="stat-icon">✓</span>
-              <span class="stat-text-mini">成功</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span>|</span>
-            <span class="realtime-stat-item-mini realtime-stat-failed" data-status="failed">
+              <span class="stat-label">成功</span>
+              <span class="stat-value">0</span>
+            </div>
+            <div class="combo-stat failed" data-status="failed">
               <span class="stat-icon">✗</span>
-              <span class="stat-text-mini">失败</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span class="realtime-stat-item-mini realtime-stat-subtask" data-status="subtask" style="display:none">
+              <span class="stat-label">失败</span>
+              <span class="stat-value">0</span>
+            </div>
+            <div class="combo-stat subtask" data-status="subtask" style="display:none">
               <span class="stat-icon">🔀</span>
-              <span class="stat-text-mini">子任务</span>
-              <span class="stat-count-mini">0/0</span>
-            </span>
+              <span class="stat-label">子任务</span>
+              <span class="stat-value">0/0</span>
+            </div>
           </div>
         </div>
-        <div class="realtime-log-timeline-wrapper">
-          <div class="realtime-log-timeline">
-            <div class="realtime-waiting-message">等待执行中...</div>
-          </div>
+        <div class="summary-actions">
+          <button class="toggle-expand-btn" title="展开全部节点">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="7 13 12 18 17 13"></polyline>
+              <polyline points="7 6 12 11 17 6"></polyline>
+            </svg>
+          </button>
         </div>
+      </div>
+      
+      <div class="timeline">
+        <div class="realtime-waiting-message">等待执行中...</div>
       </div>
     </div>
   `;
   
   document.body.appendChild(panel);
   
-  const closeBtn = panel.querySelector('.realtime-log-close');
+  // 关闭按钮
+  const closeBtn = panel.querySelector('.log-close');
   closeBtn.addEventListener('click', () => {
     panel.remove();
   });
   
+  // 点击遮罩关闭
   panel.addEventListener('click', (e) => {
     if (e.target === panel) {
       panel.remove();
     }
   });
   
-  panel.addEventListener('click', (e) => {
-    const target = e.target.closest('.realtime-stat-item-mini[data-status]');
-    if (target) {
-      const status = target.dataset.status;
-      const isActive = target.classList.contains('active');
-      
-      panel.querySelectorAll('.realtime-stat-item-mini[data-status]').forEach(item => {
-        item.classList.remove('active');
-      });
-      
-      if (!isActive) {
-        target.classList.add('active');
-        
-        panel.querySelectorAll('.realtime-timeline-item').forEach(timelineItem => {
-          if (status === 'subtask') {
-            const nodeType = timelineItem.dataset.nodeType;
-            if (nodeType === 'subtask') {
-              timelineItem.style.display = '';
-            } else {
-              timelineItem.style.display = 'none';
-            }
-          } else {
-            const itemStatus = timelineItem.dataset.status;
-            if (itemStatus === status) {
-              timelineItem.style.display = '';
-            } else {
-              timelineItem.style.display = 'none';
-            }
-          }
-        });
+  // 展开/收起全部
+  const toggleExpandBtn = panel.querySelector('.toggle-expand-btn');
+  let isExpanded = false;
+  toggleExpandBtn.addEventListener('click', () => {
+    isExpanded = !isExpanded;
+    const timelineContents = panel.querySelectorAll('.timeline-content');
+    timelineContents.forEach(content => {
+      if (isExpanded) {
+        content.classList.add('expanded');
       } else {
-        panel.querySelectorAll('.realtime-timeline-item').forEach(timelineItem => {
-          timelineItem.style.display = '';
-        });
+        content.classList.remove('expanded');
       }
+    });
+    
+    const svg = toggleExpandBtn.querySelector('svg');
+    if (isExpanded) {
+      svg.innerHTML = '<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>';
+      toggleExpandBtn.setAttribute('title', '收起全部节点');
+    } else {
+      svg.innerHTML = '<polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline>';
+      toggleExpandBtn.setAttribute('title', '展开全部节点');
+    }
+  });
+  
+  // 单条展开/收起（事件委托）
+  panel.addEventListener('click', (e) => {
+    const header = e.target.closest('.timeline-header');
+    if (header) {
+      const content = header.parentElement;
+      content.classList.toggle('expanded');
+    }
+  });
+  
+  // 按状态筛选
+  panel.addEventListener('click', (e) => {
+    const target = e.target.closest('.combo-stat[data-status]');
+    if (!target) return;
+    
+    const status = target.dataset.status;
+    const isActive = target.classList.contains('active');
+    
+    panel.querySelectorAll('.combo-stat[data-status]').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    const timelineItems = panel.querySelectorAll('.timeline-item');
+    
+    if (!isActive) {
+      target.classList.add('active');
+      
+      timelineItems.forEach(timelineItem => {
+        if (status === 'subtask') {
+          const nodeType = timelineItem.dataset.nodeType;
+          if (nodeType === 'subtask') {
+            timelineItem.style.display = '';
+          } else {
+            timelineItem.style.display = 'none';
+          }
+        } else {
+          const dot = timelineItem.querySelector('.timeline-dot');
+          if (dot && dot.classList.contains(status)) {
+            timelineItem.style.display = '';
+          } else {
+            timelineItem.style.display = 'none';
+          }
+        }
+      });
+    } else {
+      timelineItems.forEach(timelineItem => {
+        timelineItem.style.display = '';
+      });
     }
   });
   
@@ -1360,7 +1500,7 @@ function showRealtimeExecutionLogPanel(loadingId) {
 }
 
 function toggleRealtimeExecutionLog(loadingId) {
-  const existingPanel = document.querySelector('.realtime-execution-log-panel');
+  const existingPanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (existingPanel) {
     existingPanel.remove();
     return;
@@ -1415,7 +1555,7 @@ function updateExecutionStatus(loadingId, nodeName, status, executionLog) {
     state.currentExecutionStatus.status = status;
   }
   
-  const realtimePanel = document.querySelector('.realtime-execution-log-panel');
+  const realtimePanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (realtimePanel) {
     updateRealtimeExecutionLogPanel(state.currentExecutionStatus);
   }
@@ -1526,7 +1666,7 @@ export function removeLoadingMessage(loadingId) {
   
   state.currentExecutionStatus = null;
   
-  const realtimePanel = document.querySelector('.realtime-execution-log-panel');
+  const realtimePanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (realtimePanel) {
     realtimePanel.remove();
   }
