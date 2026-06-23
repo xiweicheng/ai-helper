@@ -777,6 +777,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 加载保存的对话历史
   loadChatHistory();
 
+  // 监听会话切换事件（由 session-manager-ui.js 触发）
+  document.addEventListener('session-switched', () => {
+    const chatContainerEl = document.getElementById('chatContainer');
+    if (!chatContainerEl) return;
+
+    chatContainerEl.innerHTML = '';
+
+    if (!state.messageHistory || state.messageHistory.length === 0) {
+      const welcomeDiv = document.createElement('div');
+      welcomeDiv.className = 'welcome-message';
+      welcomeDiv.innerHTML = `
+        <div class="icon-wrapper">
+          <div class="icon">💬</div>
+        </div>
+        <h2>开始对话</h2>
+        <p>输入您的问题，AI 助手将为您解答</p>
+      `;
+      chatContainerEl.appendChild(welcomeDiv);
+    } else {
+      state.messageHistory.forEach(msg => {
+        addMessage(msg.role, msg.content, false, msg.executionLog || []);
+      });
+      renderMermaidCharts();
+    }
+  });
+
   // 模型选项点击事件（现在在tempDropdown内）
   document.querySelectorAll('.model-option').forEach(option => {
     option.addEventListener('click', (e) => {

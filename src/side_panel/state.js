@@ -5,6 +5,8 @@
 export let isGenerating = false;
 export let messageHistory = [];
 export let currentModel = 'deepseek-v4-pro';
+export let activeSessionId = null;   // 当前活跃会话 ID
+export let sessions = [];             // 所有会话列表缓存
 export let useTools = true;
 export let isolateChat = true;
 export let enableSelectionQuery = false;
@@ -78,6 +80,10 @@ export default {
   set messageHistory(v) { messageHistory = v; },
   get currentModel() { return currentModel; },
   set currentModel(v) { currentModel = v; },
+  get activeSessionId() { return activeSessionId; },
+  set activeSessionId(v) { activeSessionId = v; },
+  get sessions() { return sessions; },
+  set sessions(v) { sessions = v; },
   get useTools() { return useTools; },
   set useTools(v) { useTools = v; },
   get isolateChat() { return isolateChat; },

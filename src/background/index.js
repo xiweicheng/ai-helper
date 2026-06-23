@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, setActiveReactSessionId } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools } from './tool-executor.js';
 import { reactLoop, callApiNonStream } from './react-loop.js';
@@ -28,13 +28,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // 监听来自 popup/side_panel 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CANCEL_REACT') {
-    const { tabId } = message;
-    cancelReactLoop(tabId);
+    const { tabId, sessionId } = message;
+    // 优先使用 sessionId，兼容旧版 tabId
+    if (sessionId) {
+      cancelReactLoop(sessionId);
+    } else {
+      cancelReactLoop(tabId);
+    }
     return false;
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId } = message;
+    
+    // 设置活跃会话 ID（用于取消控制）
+    if (sessionId) {
+      setActiveReactSessionId(sessionId);
+    }
     
     // 重置当前对话的 API 调用计数器
     resetDialogApiCallCount();
@@ -66,6 +76,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             status: 'success',
             executionLog: preselection.executionLog
           };
+          if (sessionId) {
+            statusUpdate.sessionId = sessionId;
+          }
           console.log('[Background] 发送预筛选状态更新:', statusUpdate);
           chrome.runtime.sendMessage(statusUpdate).then(() => {
             console.log('[Background] 预筛选状态更新发送成功');
@@ -99,6 +112,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
+          sessionId: sessionId,
           content: content,
           executionLog: executionLog
         }).catch(err => {
@@ -111,6 +125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const executionLog = error.executionLog || [];
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
+          sessionId: sessionId,
           error: error.message || 'API 调用失败',
           executionLog: executionLog
         }).catch(err => {

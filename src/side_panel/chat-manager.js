@@ -5,6 +5,8 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession } from './session-manager.js';
+import { renderSessionTabs } from './session-manager-ui.js';
 
 // ============================================================
 // 辅助函数（仅在模块内使用）
@@ -62,60 +64,61 @@ export function clearSelectedContext() {
 // ============================================================
 
 export async function loadChatHistory() {
-  chrome.storage.local.get(['chatHistory', 'scrollPosition'], (result) => {
-    if (result.chatHistory && result.chatHistory.length > 0) {
-      state.messageHistory = result.chatHistory;
-      state.messageHistory.forEach(msg => {
-        addMessage(msg.role, msg.content, false, msg.executionLog || []);
-      });
-      const welcomeMessage = document.querySelector('.welcome-message');
-      if (welcomeMessage) {
-        welcomeMessage.remove();
-      }
-      
-      renderMermaidCharts();
-      
+  const sessionsData = await loadSessions();
+  
+  if (sessionsData.activeSessionId && sessionsData.list.length > 0) {
+    state.activeSessionId = sessionsData.activeSessionId;
+    state.sessions = sessionsData.list;
+    
+    const activeSession = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+    if (activeSession) {
+      state.messageHistory = activeSession.messageHistory || [];
+      state.currentModel = activeSession.model || state.currentModel;
+      state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
+      state.enabledTools = activeSession.enabledTools || state.enabledTools;
+      state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
+      state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
+    }
+    
+    state.messageHistory.forEach(msg => {
+      addMessage(msg.role, msg.content, false, msg.executionLog || []);
+    });
+    
+    const welcomeMessage = document.querySelector('.welcome-message');
+    if (welcomeMessage && state.messageHistory.length > 0) {
+      welcomeMessage.remove();
+    }
+    
+    renderMermaidCharts();
+    
+    chrome.storage.local.get(['scrollPosition'], (result) => {
       if (result.scrollPosition !== undefined) {
         setTimeout(() => {
           const chatContainerEl = document.getElementById('chatContainer');
           chatContainerEl.scrollTop = result.scrollPosition;
         }, 100);
       }
+    });
+    
+    renderSessionTabs();
+  } else {
+    // 首次打开：自动创建默认会话并渲染标签栏
+    await createSession();
+    
+    const refreshedData = await loadSessions();
+    if (refreshedData.activeSessionId) {
+      state.activeSessionId = refreshedData.activeSessionId;
+      state.sessions = refreshedData.list;
     }
-  });
+    
+    renderSessionTabs();
+  }
 }
 
 export function saveChatHistory() {
-  const trimmedHistory = state.messageHistory.slice(-state.chatConfig.maxHistoryMessages);
-  
-  const sanitizedHistory = trimmedHistory.map(msg => ({
-    role: msg.role,
-    content: msg.content.substring(0, state.chatConfig.maxMessageLength),
-    executionLog: msg.executionLog || []
-  }));
-  
   try {
-    chrome.storage.local.set({ chatHistory: sanitizedHistory }, (error) => {
-      if (chrome.runtime.lastError) {
-        console.error('[SidePanel] 保存对话历史失败:', chrome.runtime.lastError.message);
-        if (state.messageHistory.length > 5) {
-          state.messageHistory = state.messageHistory.slice(-5);
-          const reducedHistory = state.messageHistory.map(msg => ({
-            role: msg.role,
-            content: msg.content.substring(0, 2000),
-            executionLog: msg.executionLog || []
-          }));
-          chrome.storage.local.set({ chatHistory: reducedHistory }, () => {
-            if (chrome.runtime.lastError) {
-              console.error('[SidePanel] 再次保存失败:', chrome.runtime.lastError.message);
-            } else {
-              console.log('[SidePanel] 截断后保存成功，消息数:', reducedHistory.length);
-            }
-          });
-        }
-      } else {
-        console.log('[SidePanel] 对话历史已保存，消息数:', sanitizedHistory.length);
-      }
+    saveCurrentSession().catch(err => {
+      console.error('[SidePanel] 保存当前会话失败:', err);
     });
   } catch (e) {
     console.error('[SidePanel] 保存对话历史异常:', e);
@@ -123,70 +126,27 @@ export function saveChatHistory() {
 }
 
 export function clearChatHistory() {
-  // 在清除之前，将当前会话归档到历史会话记录中
   if (state.messageHistory && state.messageHistory.length > 0) {
-    archiveCurrentSession();
+    archiveCurrentSession().then(() => {
+      state.messageHistory = [];
+      const chatContainer = document.getElementById('chatContainer');
+      if (chatContainer) {
+        chatContainer.innerHTML = '';
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'welcome-message';
+        welcomeDiv.innerHTML = `
+          <div class="icon-wrapper">
+            <div class="icon">💬</div>
+          </div>
+          <h2>开始对话</h2>
+          <p>输入您的问题，AI 助手将为您解答</p>
+        `;
+        chatContainer.appendChild(welcomeDiv);
+      }
+      chrome.storage.local.remove('scrollPosition');
+      renderSessionTabs();
+    });
   }
-  
-  state.messageHistory = [];
-  chrome.storage.local.remove(['chatHistory', 'scrollPosition'], () => {
-    const chatContainer = document.getElementById('chatContainer');
-    chatContainer.innerHTML = `
-      <div class="welcome-message">
-        <div class="icon">💬</div>
-        <h2>开始对话</h2>
-        <p>输入您的问题，AI 助手将为您解答</p>
-      </div>
-    `;
-    console.log('[SidePanel] 对话历史已清除');
-  });
-}
-
-/**
- * 归档当前会话到历史会话记录中
- */
-function archiveCurrentSession() {
-  if (!state.messageHistory || state.messageHistory.length === 0) return;
-
-  // 在异步操作前拍快照，避免回调时 state.messageHistory 已被清空
-  const snapshot = [...state.messageHistory];
-
-  chrome.storage.local.get(['conversationSessions'], (result) => {
-    const sessions = result.conversationSessions?.sessions || [];
-
-    // 生成会话标题：取第一条用户消息的前50个字符
-    const firstUserMsg = snapshot.find(m => m.role === 'user');
-    const title = firstUserMsg
-      ? firstUserMsg.content.substring(0, 50).replace(/\n/g, ' ')
-      : '未命名会话';
-
-    const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
-    
-    // 只保存每轮对话的精简信息（去除 executionLog 以节省空间）
-    const sanitizedMessages = snapshot.map(msg => ({
-      role: msg.role,
-      content: msg.content?.substring(0, 3000) || ''  // 最多3000字符
-    }));
-
-    sessions.push({
-      id: sessionId,
-      title: title,
-      createdAt: new Date().toISOString(),
-      messages: sanitizedMessages
-    });
-
-    // 最多保留20个历史会话，超出时删除最旧的
-    const maxSessions = 20;
-    if (sessions.length > maxSessions) {
-      sessions.splice(0, sessions.length - maxSessions);
-    }
-
-    chrome.storage.local.set({
-      conversationSessions: { sessions }
-    }, () => {
-      console.log('[SidePanel] 当前会话已归档，会话标题:', title, '总历史会话数:', sessions.length);
-    });
-  });
 }
 
 export function exportChatHistory() {
@@ -1664,12 +1624,16 @@ export function addLoadingMessage() {
       if (loadingText) {
         loadingText.textContent = '停止中...';
       }
-      chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null });
+      chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null, sessionId: state.activeSessionId });
     });
   }
   
   // 始终同步注册执行日志监听器，避免竞态（storage.get 是异步的）
   state.executionLogListener = (message, sender, sendResponse) => {
+    // 过滤：只处理属于当前会话或没有 sessionId 的消息（兼容）
+    if (message.sessionId && message.sessionId !== state.activeSessionId) {
+      return false;
+    }
     if (message.type === 'EXECUTION_STATUS_UPDATE') {
       console.log('[SidePanel] 收到执行状态更新:', message.nodeName, message.status, '日志数量:', message.executionLog?.length);
       updateExecutionStatus(loadingId, message.nodeName, message.status, message.executionLog);
@@ -1736,7 +1700,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       removeListener();
       chrome.runtime.sendMessage({
         type: 'CANCEL_REACT',
-        tabId: state.currentTabId
+        tabId: state.currentTabId,
+        sessionId: state.activeSessionId
       }).catch(err => {
         console.log('[SidePanel] 发送取消请求失败:', err.message);
       });
@@ -1781,7 +1746,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           removeListener();
           chrome.runtime.sendMessage({
             type: 'CANCEL_REACT',
-            tabId: state.currentTabId
+            tabId: state.currentTabId,
+            sessionId: state.activeSessionId
           }).catch(err => {
             console.log('[SidePanel] 发送取消请求失败:', err.message);
           });
@@ -1797,6 +1763,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
 
     const listener = (message) => {
       console.log('[SidePanel] 收到消息:', message);
+      
+      // 过滤：只处理属于当前会话或没有 sessionId 的消息（兼容）
+      if (message.sessionId && message.sessionId !== state.activeSessionId) {
+        return false;
+      }
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
         executionLog = message.executionLog || [];
@@ -1839,9 +1810,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       chrome.runtime.onMessage.removeListener(listener);
     };
 
-    console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
+    console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
     chrome.runtime.sendMessage({
       type: 'CALL_API',
+      sessionId: state.activeSessionId,
       messages: messages,
       model: model,
       useTools: useTools,

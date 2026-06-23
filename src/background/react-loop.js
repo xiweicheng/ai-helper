@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getCurrentReactTabId, setCurrentReactTabId, setActiveReactSessionId, getActiveReactSessionId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { preselectTools } from './tool-preselector.js';
@@ -78,12 +78,20 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
         onLogUpdate(logSnapshot);
       }
       
-      chrome.runtime.sendMessage({
+      const msg = {
         type: 'EXECUTION_STATUS_UPDATE',
         nodeName: nodeName,
         status: status,
         executionLog: logSnapshot
-      }).catch(err => {
+      };
+      
+      // 携带 sessionId（如果可用）
+      const sessionId = getActiveReactSessionId();
+      if (sessionId) {
+        msg.sessionId = sessionId;
+      }
+      
+      chrome.runtime.sendMessage(msg).catch(err => {
         console.log('[Background] 发送执行状态更新失败:', err.message);
       });
     } catch (e) {
@@ -136,6 +144,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, t
   try {
     while (iteration < maxIterations) {
       if (isCancelled(tabId)) {
+        throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+      }
+      
+      // 也检查 sessionId 取消状态（用于多会话并行场景）
+      const currentSessionId = getActiveReactSessionId();
+      if (currentSessionId && isCancelled(currentSessionId)) {
         throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
       }
       
