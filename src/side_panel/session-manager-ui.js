@@ -20,9 +20,12 @@ export async function renderSessionTabs() {
   state.activeSessionId = sessionsData.activeSessionId;
 
   const tabsContainer = document.getElementById('sessionTabs');
-  if (!tabsContainer) return;
+  const scrollContainer = document.getElementById('sessionTabsScroll');
+  const addWrapper = document.getElementById('sessionTabsAddWrapper');
+  if (!tabsContainer || !scrollContainer || !addWrapper) return;
 
-  tabsContainer.innerHTML = '';
+  scrollContainer.innerHTML = '';
+  addWrapper.innerHTML = '';
 
   sessionsData.list.forEach(session => {
     const tab = document.createElement('div');
@@ -57,10 +60,10 @@ export async function renderSessionTabs() {
       showTabContextMenu(e, session);
     });
 
-    tabsContainer.appendChild(tab);
+    scrollContainer.appendChild(tab);
   });
 
-  // 新建按钮
+  // 新建按钮（固定在右侧）
   const addBtn = document.createElement('div');
   addBtn.className = 'session-tab-add';
   addBtn.title = '新建会话';
@@ -75,7 +78,10 @@ export async function renderSessionTabs() {
     }));
     renderSessionTabs();
   });
-  tabsContainer.appendChild(addBtn);
+  addWrapper.appendChild(addBtn);
+
+  // 鼠标滚轮水平滚动支持
+  bindWheelScroll(scrollContainer);
 }
 
 /**
@@ -106,6 +112,14 @@ async function handleSessionSwitch(sessionId) {
 
   renderSessionTabs();
   updateUIControls();
+
+  // 滚动到当前活跃标签
+  setTimeout(() => {
+    const activeTab = document.querySelector('.session-tab.active');
+    if (activeTab) {
+      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, 50);
 }
 
 /**
@@ -126,6 +140,23 @@ function updateUIControls() {
   if (tempDisplay && state.temperature !== undefined) {
     tempDisplay.textContent = state.temperature.toFixed(2);
   }
+}
+
+// 鼠标滚轮水平滚动支持
+const wheelScrollBindings = new WeakSet();
+
+function bindWheelScroll(el) {
+  if (wheelScrollBindings.has(el)) return;
+  wheelScrollBindings.add(el);
+
+  el.addEventListener('wheel', (e) => {
+    // 如果已经可以垂直滚动（内容没溢出），不做处理
+    if (el.scrollWidth <= el.clientWidth) return;
+
+    // 将垂直滚轮转换为水平滚动
+    e.preventDefault();
+    el.scrollLeft += e.deltaY;
+  }, { passive: false });
 }
 
 // ==================== 自定义弹窗 ====================

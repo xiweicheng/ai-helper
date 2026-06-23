@@ -901,23 +901,41 @@
     .session-tabs {
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
+      gap: 0;
       background: #f0f2f5;
       border-bottom: 1px solid #e0e0e0;
-      overflow-x: auto;
-      overflow-y: hidden;
       flex-shrink: 0;
       min-height: 36px;
     }
     
-    .session-tabs::-webkit-scrollbar {
+    .session-tabs-scroll {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      flex: 1;
+      min-width: 0;
+      scroll-behavior: smooth;
+    }
+    
+    .session-tabs-scroll::-webkit-scrollbar {
       height: 2px;
     }
     
-    .session-tabs::-webkit-scrollbar-thumb {
+    .session-tabs-scroll::-webkit-scrollbar-thumb {
       background: #c0c0c0;
       border-radius: 2px;
+    }
+    
+    .session-tabs-add-wrapper {
+      flex-shrink: 0;
+      padding: 4px 10px 4px 4px;
+      background: #f0f2f5;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
     }
     
     .session-tab {
@@ -4036,7 +4054,10 @@
   </div>
   
   <!-- 会话标签栏 -->
-  <div class="session-tabs" id="sessionTabs"></div>
+  <div class="session-tabs" id="sessionTabs">
+    <div class="session-tabs-scroll" id="sessionTabsScroll"></div>
+    <div class="session-tabs-add-wrapper" id="sessionTabsAddWrapper"></div>
+  </div>
   
   <div class="chat-container" id="chatContainer">
     <div class="welcome-message">
