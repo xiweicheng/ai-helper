@@ -112,13 +112,14 @@ function renderToolsPopupList() {
     'media_process': '📷 媒体处理',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'system_integration': '⚙️ 系统集成'
+    'system_integration': '⚙️ 系统集成',
+    'memory': '🧠 记忆检索'
   };
   
   // 优化后的分类排序（按使用频率和逻辑顺序）
   const categoryOrder = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
                          'tab_management', 'bookmark_history', 'storage_management', 
-                         'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration'];
+                         'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
   
   categoryOrder.forEach(category => {
     const tools = groupedTools[category];
@@ -279,7 +280,7 @@ function getVisibleTools() {
 function updateAllCategoryCounts() {
   const categories = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
                      'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration'];
+                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
   categories.forEach(category => {
     updateCategoryCount(category);
   });
@@ -288,7 +289,7 @@ function updateAllCategoryCounts() {
 function updateCategoryBadges() {
   const categories = ['all', 'page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
                      'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration'];
+                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
   
   categories.forEach(category => {
     const badge = document.getElementById('badge-' + category);
