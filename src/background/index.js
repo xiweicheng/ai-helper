@@ -204,14 +204,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
           });
         }
-        
-        chrome.runtime.sendMessage({
-          type: 'API_COMPLETE',
-          content: content,
-          executionLog: executionLog
-        }).catch(() => {
-          console.warn('[Background] 发送 API_COMPLETE 失败（可能 Side Panel 未打开）');
-        });
       } catch (error) {
         console.error('[Background] 选中文本工具栏 API 失败:', error);
         
@@ -221,11 +213,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             error: error.message || 'API 调用失败'
           }).catch(() => {});
         }
-        
-        chrome.runtime.sendMessage({
-          type: 'API_ERROR',
-          error: error.message || 'API 调用失败'
-        }).catch(() => {});
       }
     });
     

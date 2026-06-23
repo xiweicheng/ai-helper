@@ -31,9 +31,9 @@
   "content_scripts": [
     {
       "js": [
-        "libs/marked.min.js",
-        "libs/qrcode.min.js",
-        "assets/content.js"
+        "assets/qrcode.min.js-M_spxmhg.js",
+        "assets/marked.min.js-loader-DIzAvnSW.js",
+        "assets/index.js-loader-DUl30paG.js"
       ],
       "matches": [
         "<all_urls>"
@@ -71,8 +71,13 @@
         "<all_urls>"
       ],
       "resources": [
-        "assets/content.js",
-        "assets/background.js"
+        "assets/qrcode.min.js-M_spxmhg.js",
+        "assets/qrcode.min.js-M_spxmhg.js.map",
+        "assets/marked.min.js-DmAuB-Fk.js",
+        "assets/marked.min.js-DmAuB-Fk.js.map",
+        "assets/content-DDLPscL7.js",
+        "assets/content-DDLPscL7.js.map",
+        "assets/index.js-WOpunZJM.js"
       ],
       "use_dynamic_url": false
     }
