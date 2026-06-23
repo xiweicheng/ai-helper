@@ -350,7 +350,7 @@ export function addMermaidControls(container) {
   // 缩放状态
   let scale = 1;
   const MIN_SCALE = 0.3;
-  const MAX_SCALE = 3;
+  const MAX_SCALE = 10;
   const SCALE_STEP = 0.15;
   
   // 保存原始的 mermaid 源代码（优先使用 data-raw-code 属性中保存的原始代码）

@@ -1,18 +1,19 @@
 // options/toolbar-config.js - 工具栏配置管理
 
-import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_MAX_VISIBLE, DEFAULT_TOOLBAR_ICON_ONLY } from './constants.js';
+import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_MAX_VISIBLE, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR } from './constants.js';
 
 let editingToolIndex = -1; // -1 表示新增，>=0 表示编辑
 
 // 加载工具栏工具列表
 export function loadToolbarTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly'], (result) => {
+    chrome.storage.local.get(['toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly', 'enableSelectionToolbar'], (result) => {
       const rawTools = (result.toolbarTools && result.toolbarTools.length > 0)
         ? result.toolbarTools
         : [...DEFAULT_TOOLBAR_TOOLS];
       const maxVisible = result.toolbarMaxVisible || DEFAULT_TOOLBAR_MAX_VISIBLE;
       const iconOnly = result.toolbarIconOnly !== undefined ? result.toolbarIconOnly : DEFAULT_TOOLBAR_ICON_ONLY;
+      const enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? result.enableSelectionToolbar : DEFAULT_ENABLE_SELECTION_TOOLBAR;
       
       // 内置工具始终使用默认的 systemPrompt（防止旧数据缺失）
       const defaultMap = new Map(DEFAULT_TOOLBAR_TOOLS.map(t => [t.id, t]));
@@ -26,6 +27,8 @@ export function loadToolbarTools() {
       document.getElementById('toolbarMaxVisible').value = maxVisible;
       const iconOnlyCheckbox = document.getElementById('toolbarIconOnly');
       if (iconOnlyCheckbox) iconOnlyCheckbox.checked = iconOnly;
+      const enableToolbarCheckbox = document.getElementById('enableSelectionToolbar');
+      if (enableToolbarCheckbox) enableToolbarCheckbox.checked = enableSelectionToolbar;
       resolve(tools);
     });
   });
@@ -145,6 +148,7 @@ function initToolDragAndDrop() {
 export function saveToolbarConfig() {
   const maxVisible = parseInt(document.getElementById('toolbarMaxVisible').value) || DEFAULT_TOOLBAR_MAX_VISIBLE;
   const iconOnly = document.getElementById('toolbarIconOnly')?.checked || false;
+  const enableSelectionToolbar = document.getElementById('enableSelectionToolbar')?.checked !== false;
   
   chrome.storage.local.get(['toolbarTools'], (result) => {
     const tools = result.toolbarTools || [...DEFAULT_TOOLBAR_TOOLS];
@@ -152,7 +156,8 @@ export function saveToolbarConfig() {
     chrome.storage.local.set({
       toolbarTools: tools,
       toolbarMaxVisible: Math.max(1, Math.min(5, maxVisible)),
-      toolbarIconOnly: iconOnly
+      toolbarIconOnly: iconOnly,
+      enableSelectionToolbar: enableSelectionToolbar
     }, () => {
       console.log('[Options] 工具栏配置已保存');
     });

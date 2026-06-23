@@ -168,6 +168,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   
+  // 选中内容工具栏开关变更
+  const enableSelectionToolbarCheckbox = document.getElementById('enableSelectionToolbar');
+  if (enableSelectionToolbarCheckbox) {
+    enableSelectionToolbarCheckbox.addEventListener('change', function() {
+      saveToolbarConfig();
+    });
+  }
+  
   // 工具栏工具列表事件委托
   document.getElementById('toolbarToolsList').addEventListener('click', function(e) {
     const btn = e.target.closest('[data-action]');
