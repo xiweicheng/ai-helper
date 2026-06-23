@@ -69,6 +69,127 @@ ${toolList}
 }
 
 /**
+ * 从模型返回的文本中健壮地提取工具名称 JSON 数组
+ *
+ * 支持的格式：
+ * 1. 纯 JSON 数组：["tool1", "tool2"]
+ * 2. JSON 代码块：```json\n["tool1"]\n```
+ * 3. 无标记代码块：```\n["tool1"]\n```
+ * 4. 文本中夹带 JSON：需要 ["tool1", "tool2"] 来完成
+ * 5. 首尾有空白字符的情况
+ *
+ * @param {string} text - 模型返回的原始文本
+ * @returns {Array|null} 解析成功的工具名称数组，失败返回 null
+ */
+function extractToolListFromResponse(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  // 策略1: 提取 ```json ... ``` 或 ``` ... ``` 代码块中的 JSON
+  const fencedMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fencedMatch) {
+    const inner = fencedMatch[1].trim();
+    const result = tryParseJson(inner);
+    if (result) {
+      console.log('[ToolPreselector] 从代码块中提取 JSON 成功');
+      return result;
+    }
+  }
+
+  // 策略2: 查找文本中的 JSON 数组（以 [ 开头、] 结尾的最大匹配）
+  // 从第一个 [ 开始，找到对应的 ]
+  const firstBracket = text.indexOf('[');
+  if (firstBracket !== -1) {
+    // 从第一个 [ 开始，尝试找到配对的 ]
+    let depth = 0;
+    let lastBracket = -1;
+    for (let i = firstBracket; i < text.length; i++) {
+      if (text[i] === '[') depth++;
+      if (text[i] === ']') {
+        depth--;
+        if (depth === 0) {
+          lastBracket = i;
+          break;
+        }
+      }
+    }
+
+    if (lastBracket !== -1) {
+      const jsonCandidate = text.substring(firstBracket, lastBracket + 1);
+      const result = tryParseJson(jsonCandidate);
+      if (result) {
+        console.log('[ToolPreselector] 从文本中提取 JSON 数组成功');
+        return result;
+      }
+    }
+  }
+
+  // 策略3: 正则匹配 JSON 数组（作为兜底，也尝试用 /\[[\s\S]*?\]/ 在多次 [... 出现时能更保守地提取）
+  const arrayMatches = text.match(/\[[\s\S]*?\]/g);
+  if (arrayMatches) {
+    for (const candidate of arrayMatches) {
+      const result = tryParseJson(candidate);
+      if (result) {
+        console.log('[ToolPreselector] 通过正则提取 JSON 数组成功');
+        return result;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 尝试解析 JSON，支持常见的格式错误修复
+ *
+ * @param {string} jsonStr - JSON 字符串
+ * @returns {Array|null} 解析成功的数组，失败返回 null
+ */
+function tryParseJson(jsonStr) {
+  if (!jsonStr || typeof jsonStr !== 'string') return null;
+
+  const trimmed = jsonStr.trim();
+
+  // 首先尝试直接解析
+  try {
+    const result = JSON.parse(trimmed);
+    if (Array.isArray(result)) return result;
+  } catch {
+    // 直接解析失败，尝试修复常见问题
+  }
+
+  // 修复1: 移除尾部多余逗号 (如 ["a", "b",])
+  try {
+    const fixed = trimmed.replace(/,\s*\]/g, ']');
+    const result = JSON.parse(fixed);
+    if (Array.isArray(result)) return result;
+  } catch {
+    // 继续尝试其他修复
+  }
+
+  // 修复2: 确保所有元素都是字符串，给非字符串元素加引号
+  try {
+    const fixed = trimmed.replace(/\[([\s\S]*)\]/g, (_, inner) => {
+      const items = inner.split(',').map(item => {
+        const t = item.trim();
+        // 如果已经有引号（单引号或双引号），保持不变
+        if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+          return t;
+        }
+        // 否则加上双引号
+        return `"${t}"`;
+      });
+      return `[${items.join(', ')}]`;
+    });
+    const result = JSON.parse(fixed);
+    if (Array.isArray(result)) return result;
+  } catch {
+    // 所有修复都失败
+  }
+
+  return null;
+}
+
+/**
  * 预筛选工具：通过一次轻量 API 调用让大模型判断需要哪些工具
  *
  * 对于简单问题，模型会直接回答，无需二次调用。
@@ -149,61 +270,56 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     }
 
     const data = await response.json();
-    const content = (data.choices?.[0]?.message?.content || '').trim();
+    const rawContent = (data.choices?.[0]?.message?.content || '').trim();
 
-    console.log('[ToolPreselector] 大模型返回:', content);
+    console.log('[ToolPreselector] 大模型返回:', rawContent);
 
-    // 尝试从返回内容中提取 JSON 数组
-    const jsonMatch = content.match(/^\s*\[.*\]\s*$/s);
-    if (jsonMatch) {
-      // 内容看起来是 JSON 数组，尝试解析为工具列表
-      try {
-        const selectedNames = JSON.parse(content);
+    // 健壮的 JSON 提取，支持多种格式
+    const extractedJson = extractToolListFromResponse(rawContent);
 
-        if (!Array.isArray(selectedNames)) {
-          console.warn('[ToolPreselector] 返回的不是数组，当作直接回答');
-          return { type: 'answer', content, executionLog: [createEntry('success', { thought: content, duration })] };
-        }
+    if (extractedJson) {
+      const selectedNames = extractedJson;
 
-        if (selectedNames.length === 0) {
-          console.warn('[ToolPreselector] 返回空工具数组，使用全量工具');
-          return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '模型返回空数组' } }, duration })] };
-        }
-
-        const selectedTools = tools.filter(t =>
-          selectedNames.includes(t.function.name)
-        );
-
-        if (selectedTools.length === 0) {
-          console.warn('[ToolPreselector] 筛选后工具为空，使用全量工具');
-          return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '筛选结果无匹配' } }, duration })] };
-        }
-
-        console.log(`[ToolPreselector] 预筛选完成: ${totalCount} → ${selectedTools.length} 个工具`,
-          selectedTools.map(t => t.function.name));
-
-        return {
-          type: 'tools',
-          tools: selectedTools,
-          executionLog: [createEntry('success', {
-            action: {
-              name: 'preselect',
-              params: { selected: selectedTools.map(t => t.function.name) }
-            },
-            apiRequest: { model: requestBody.model, messageCount: apiMessages.length, toolCount: totalCount },
-            apiResponse: { toolCountAfter: selectedTools.length },
-            duration
-          })]
-        };
-      } catch {
-        console.warn('[ToolPreselector] JSON 解析失败，当作直接回答');
-        return { type: 'answer', content, executionLog: [createEntry('success', { thought: content, duration })] };
+      if (!Array.isArray(selectedNames)) {
+        console.warn('[ToolPreselector] 提取的结果不是数组，当作直接回答');
+        return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
       }
+
+      if (selectedNames.length === 0) {
+        console.warn('[ToolPreselector] 返回空工具数组，使用全量工具');
+        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '模型返回空数组' } }, duration })] };
+      }
+
+      const selectedTools = tools.filter(t =>
+        selectedNames.includes(t.function.name)
+      );
+
+      if (selectedTools.length === 0) {
+        console.warn('[ToolPreselector] 筛选后工具为空，使用全量工具');
+        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '筛选结果无匹配' } }, duration })] };
+      }
+
+      console.log(`[ToolPreselector] 预筛选完成: ${totalCount} → ${selectedTools.length} 个工具`,
+        selectedTools.map(t => t.function.name));
+
+      return {
+        type: 'tools',
+        tools: selectedTools,
+        executionLog: [createEntry('success', {
+          action: {
+            name: 'preselect',
+            params: { selected: selectedTools.map(t => t.function.name) }
+          },
+          apiRequest: { model: requestBody.model, messageCount: apiMessages.length, toolCount: totalCount },
+          apiResponse: { toolCountAfter: selectedTools.length },
+          duration
+        })]
+      };
     }
 
-    // 不是 JSON 数组，当作直接回答
+    // 无法提取 JSON 数组，当作直接回答
     console.log('[ToolPreselector] 模型直接回答，无需二次调用');
-    return { type: 'answer', content, executionLog: [createEntry('success', { thought: content, duration })] };
+    return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
   } catch (error) {
     const duration = Date.now() - startTime;
     console.warn('[ToolPreselector] 预筛选异常，使用全量工具:', error.message);
