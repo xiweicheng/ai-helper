@@ -527,7 +527,7 @@ function executeSearchConversationMemory(args, toolCallId) {
  */
 export function executeCaptureScreenshot(args, toolCallId) {
   const format = args.format || 'jpeg';
-  const quality = args.quality || 80;
+  const quality = args.quality !== undefined ? parseInt(args.quality, 10) : 80;
   
   console.log('[Background] 执行标签页截图:', 'format=', format, 'quality=', quality);
   
@@ -727,8 +727,8 @@ export function executeShowNotification(args, toolCallId) {
       title: title,
       message: message,
       iconUrl: icon || 'icons/icon128.png',
-      silent: silent,
-      requireInteraction: requireInteraction
+      silent: silent === true || silent === 'true',
+      requireInteraction: requireInteraction === true || requireInteraction === 'true'
     };
     
     chrome.notifications.create(notificationOptions, (notificationId) => {
@@ -1124,7 +1124,10 @@ export function executeGetTabs(args, toolCallId) {
  */
 export function executeManageCookies(args, toolCallId) {
   return new Promise((resolve) => {
-    const { action, name, value, domain, path = '/', secure = false, httpOnly = false, expirationDate } = args;
+    const { action, name, value, domain, path = '/', secure: rawSecure = false, httpOnly: rawHttpOnly = false, expirationDate: rawExpirationDate } = args;
+    const secure = rawSecure === true || rawSecure === 'true';
+    const httpOnly = rawHttpOnly === true || rawHttpOnly === 'true';
+    const expirationDate = rawExpirationDate !== undefined ? parseFloat(rawExpirationDate) : undefined;
     
     const getCurrentDomain = (callback) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -1221,7 +1224,7 @@ export function executeManageCookies(args, toolCallId) {
  */
 export function executeScheduleTask(args, toolCallId) {
   return new Promise((resolve) => {
-    const { action, name, delayInMinutes, periodInMinutes, scheduledTime, taskData } = args;
+    const { action, name, delayInMinutes: rawDelay, periodInMinutes: rawPeriod, scheduledTime, taskData } = args;
     
     switch (action) {
       case 'create':
@@ -1232,10 +1235,13 @@ export function executeScheduleTask(args, toolCallId) {
         
         const alarmInfo = {};
         
-        if (periodInMinutes !== undefined) {
+        const periodInMinutes = rawPeriod !== undefined ? parseFloat(rawPeriod) : undefined;
+        const delayInMinutes = rawDelay !== undefined ? parseFloat(rawDelay) : undefined;
+        
+        if (periodInMinutes !== undefined && !isNaN(periodInMinutes)) {
           alarmInfo.periodInMinutes = periodInMinutes;
         }
-        if (delayInMinutes !== undefined) {
+        if (delayInMinutes !== undefined && !isNaN(delayInMinutes)) {
           alarmInfo.delayInMinutes = delayInMinutes;
         }
         if (scheduledTime) {
@@ -2108,7 +2114,9 @@ export function executeClearPageData(args, toolCallId) {
  * 调整浏览器窗口大小
  */
 export function executeResizeWindow(args, toolCallId) {
-  const { width, height } = args;
+  const { width: rawWidth, height: rawHeight } = args;
+  const width = rawWidth !== undefined ? parseInt(rawWidth, 10) : undefined;
+  const height = rawHeight !== undefined ? parseInt(rawHeight, 10) : undefined;
 
   return new Promise((resolve) => {
     chrome.windows.getCurrent((currentWindow) => {
