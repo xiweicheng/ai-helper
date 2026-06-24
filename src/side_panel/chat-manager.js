@@ -306,12 +306,16 @@ export async function sendMessage() {
       content = result.content;
       executionLog = result.executionLog || [];
     } catch (errorResult) {
-      removeLoadingMessage(loadingId);
-      
-      // 用户主动取消不显示为错误
+      // 用户主动取消：显示取消记录，但不作为错误
       if (errorResult.message === '任务已被用户停止') {
-        return; // 不添加错误消息到聊天记录
+        removeLoadingMessage(loadingId);
+        addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
+        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        saveChatHistory();
+        return;
       }
+      
+      removeLoadingMessage(loadingId);
       
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
@@ -1714,6 +1718,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (timeoutId) clearTimeout(timeoutId);
       removeListener();
       state.pendingCancelApi = null;
+      // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
+      if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
+        errorResult.executionLog = executionLog;
+      } else if (executionLog.length > 0) {
+        // 两者都有时，以本地为准（后台最新快照）
+        errorResult.executionLog = executionLog;
+      }
       reject(errorResult);
     };
     state.pendingCancelApi = cancelApi;
