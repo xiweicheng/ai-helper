@@ -235,8 +235,8 @@ export function saveConfig() {
     showToast('❌ 最大保留对话轮数必须在 10-200 之间', 'error');
     return;
   }
-  if (chatMaxMessageLength < 1000 || chatMaxMessageLength > 50000) {
-    showToast('❌ 单条消息最大字符数必须在 1000-50000 之间', 'error');
+  if (chatMaxMessageLength < 1000 || chatMaxMessageLength > 200000) {
+    showToast('❌ 单条消息最大字符数必须在 1000-200000 之间', 'error');
     return;
   }
   if (chatMaxMemoryMessages !== null && (chatMaxMemoryMessages < 1 || chatMaxMemoryMessages > 400)) {

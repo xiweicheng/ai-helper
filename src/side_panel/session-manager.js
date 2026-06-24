@@ -88,12 +88,11 @@ export async function saveCurrentSession() {
   currentSession.temperature = state.temperature;
   currentSession.topP = state.topP;
   
-  // 裁剪消息历史
+  // 裁剪消息历史（仅限制消息条数，不再截断单条消息内容）
   const maxMessages = state.chatConfig.maxHistoryMessages || 50;
-  const maxLen = state.chatConfig.maxMessageLength || 5000;
   currentSession.messageHistory = state.messageHistory.slice(-maxMessages).map(msg => ({
     role: msg.role,
-    content: (msg.content || '').substring(0, maxLen),
+    content: msg.content || '',
     executionLog: msg.executionLog || []
   }));
   
@@ -233,7 +232,7 @@ export async function archiveCurrentSession() {
   
   const sanitizedMessages = state.messageHistory.map(msg => ({
     role: msg.role,
-    content: (msg.content || '').substring(0, 3000)
+    content: msg.content || ''
   }));
   
   // 保存到 conversationSessions

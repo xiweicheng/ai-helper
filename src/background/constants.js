@@ -19,7 +19,7 @@ export const DEFAULT_REACT_CONFIG = {
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,        // 最大输入历史记录数 (10-100)
   maxHistoryMessages: 50,     // 最大保留对话轮数 (10-200)
-  maxMessageLength: 5000,     // 单条消息最大字符数 (1000-50000)
+  maxMessageLength: 100000,   // 单条消息最大字符数（仅作上限参考，不再截断存储）
   maxMemoryMessages: null     // 记忆历史限制条数，null表示不限制
 };
 

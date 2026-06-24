@@ -24,7 +24,7 @@ export let inputHistoryIndex = -1;
 export let chatConfig = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 5000,
+  maxMessageLength: 100000,
   maxMemoryMessages: null
 };
 
