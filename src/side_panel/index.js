@@ -780,7 +780,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听会话切换事件（由 session-manager-ui.js 触发）
   document.addEventListener('session-switched', () => {
     const chatContainerEl = document.getElementById('chatContainer');
+    const sendBtn = document.getElementById('sendBtn');
+    const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
+
+    // 切换会话时重置生成状态，确保新会话的输入框可用
+    state.isGenerating = false;
+    if (sendBtn) sendBtn.disabled = false;
+    if (userInput) userInput.focus();
 
     chatContainerEl.innerHTML = '';
 
@@ -801,6 +808,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       renderMermaidCharts();
     }
+
+    // 如果切回的会话有正在执行的后台任务，显示加载状态
+    const hasPendingTask = state.pendingCallApiSessionIds.has(state.activeSessionId) && !!state.pendingCancelApi;
+    console.log('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', state.activeSessionId, 'hasCancelApi:', !!state.pendingCancelApi);
+    if (hasPendingTask) {
+      console.log('[SidePanel] 切回有后台任务的会话，显示加载状态');
+      const loadingId = addLoadingMessage();
+      state.substituteLoadingIds.set(state.activeSessionId, loadingId);
+    }
+
+    // 恢复该会话的滚动位置
+    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.get([scrollKey], (result) => {
+      if (result[scrollKey] !== undefined) {
+        setTimeout(() => {
+          const el = document.getElementById('chatContainer');
+          if (el) el.scrollTop = result[scrollKey];
+        }, 150);
+      }
+    });
   });
 
   // 模型选项点击事件（现在在tempDropdown内）
@@ -1010,7 +1037,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   chatContainerEl.addEventListener('scroll', () => {
-    chrome.storage.local.set({ scrollPosition: chatContainerEl.scrollTop });
+    const key = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.set({ [key]: chatContainerEl.scrollTop });
   });
 
   // 清除对话历史按钮

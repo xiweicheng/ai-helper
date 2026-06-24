@@ -50,6 +50,12 @@ export let executionLogListener = null;
 // 当前 API 调用的取消函数，用于停止按钮立即终止（同时 reject Promise 并清理 listener）
 export let pendingCancelApi = null;
 
+// 记录有 pending callApi 的会话 ID 集合（支持多会话同时有后台任务）
+export let pendingCallApiSessionIds = new Set();
+
+// 切换回原会话后，重新创建的加载指示器 ID 集合（按 sessionId 索引）
+export let substituteLoadingIds = new Map();
+
 // 问题澄清对话框状态
 export let currentClarifyToolCallId = null;
 export let clarifyTimerInterval = null;
@@ -133,6 +139,10 @@ export default {
   set executionLogListener(v) { executionLogListener = v; },
   get pendingCancelApi() { return pendingCancelApi; },
   set pendingCancelApi(v) { pendingCancelApi = v; },
+  get pendingCallApiSessionIds() { return pendingCallApiSessionIds; },
+  set pendingCallApiSessionIds(v) { pendingCallApiSessionIds = v; },
+  get substituteLoadingIds() { return substituteLoadingIds; },
+  set substituteLoadingIds(v) { substituteLoadingIds = v; },
   get currentClarifyToolCallId() { return currentClarifyToolCallId; },
   set currentClarifyToolCallId(v) { currentClarifyToolCallId = v; },
   get clarifyTimerInterval() { return clarifyTimerInterval; },

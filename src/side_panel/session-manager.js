@@ -75,3 +75,12 @@ export async function archiveCurrentSession() {
 export async function restoreArchivedSession(archivedId) {
   return store.restoreArchivedSession(archivedId);
 }
+
+/**
+ * 将一条消息追加到指定会话的历史中（用于切换会话后保存后台任务结果）
+ * @param {string} sessionId 目标会话 ID
+ * @param {Object} message 消息对象 { role, content, executionLog }
+ */
+export async function appendMessageToSession(sessionId, message) {
+  return store.appendMessageToSession(sessionId, message);
+}

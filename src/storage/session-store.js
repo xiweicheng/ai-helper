@@ -108,6 +108,30 @@ export async function createSession() {
 }
 
 /**
+ * 将一条消息追加到指定会话的消息历史中
+ * 用于切换会话后，后台任务仍在执行时保存任务结果
+ * @param {string} sessionId 目标会话 ID
+ * @param {Object} message 消息对象 { role, content, executionLog }
+ */
+export async function appendMessageToSession(sessionId, message) {
+  const session = await idb.getSession(sessionId);
+  if (!session) return false;
+
+  session.messageHistory = session.messageHistory || [];
+  session.messageHistory.push({
+    role: message.role,
+    content: message.content || '',
+    executionLog: message.executionLog || [],
+  });
+
+  session.updatedAt = new Date().toISOString();
+  session.isGenerating = false;
+
+  await idb.putSession(session);
+  return true;
+}
+
+/**
  * 生成唯一会话 ID
  */
 function generateSessionId() {

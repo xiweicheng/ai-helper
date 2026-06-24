@@ -5,7 +5,7 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
-import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession } from './session-manager.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 
 // ============================================================
@@ -91,11 +91,12 @@ export async function loadChatHistory() {
     
     renderMermaidCharts();
     
-    chrome.storage.local.get(['scrollPosition'], (result) => {
-      if (result.scrollPosition !== undefined) {
+    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.get([scrollKey], (result) => {
+      if (result[scrollKey] !== undefined) {
         setTimeout(() => {
           const chatContainerEl = document.getElementById('chatContainer');
-          chatContainerEl.scrollTop = result.scrollPosition;
+          chatContainerEl.scrollTop = result[scrollKey];
         }, 100);
       }
     });
@@ -143,7 +144,7 @@ export function clearChatHistory() {
         `;
         chatContainer.appendChild(welcomeDiv);
       }
-      chrome.storage.local.remove('scrollPosition');
+      chrome.storage.local.remove('scrollPosition_' + (state.activeSessionId || 'default'));
       renderSessionTabs();
     });
   }
@@ -264,6 +265,7 @@ export async function sendMessage() {
   state.isGenerating = true;
   sendBtn.disabled = true;
 
+  const mySessionId = state.activeSessionId;
   const loadingId = addLoadingMessage();
 
   const model = state.currentModel;
@@ -306,9 +308,23 @@ export async function sendMessage() {
       content = result.content;
       executionLog = result.executionLog || [];
     } catch (errorResult) {
+      // 检查是否已切换到其他会话
+      if (state.activeSessionId !== mySessionId) {
+        // 保存结果到原会话的历史中，不修改当前 DOM
+        if (errorResult.message === '任务已被用户停止') {
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        } else {
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [] });
+        }
+        removeLoadingMessage(loadingId);
+        state.substituteLoadingIds.delete(mySessionId);
+        return;
+      }
+      
       // 用户主动取消：显示取消记录，但不作为错误
       if (errorResult.message === '任务已被用户停止') {
         removeLoadingMessage(loadingId);
+        state.substituteLoadingIds.delete(mySessionId);
         addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
         state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
         saveChatHistory();
@@ -316,6 +332,7 @@ export async function sendMessage() {
       }
       
       removeLoadingMessage(loadingId);
+      state.substituteLoadingIds.delete(mySessionId);
       
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
@@ -329,7 +346,21 @@ export async function sendMessage() {
       throw errorResult;
     }
     
+    // 检查是否已切换到其他会话（成功路径）
+    if (state.activeSessionId !== mySessionId) {
+      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog });
+      removeLoadingMessage(loadingId);
+      state.substituteLoadingIds.delete(mySessionId);
+      return;
+    }
+    
     removeLoadingMessage(loadingId);
+    
+    // 清理切回会话时创建的替代加载指示器
+    if (state.substituteLoadingIds.has(mySessionId)) {
+      removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+      state.substituteLoadingIds.delete(mySessionId);
+    }
     
     const messageDiv = addMessage('assistant', content, true, executionLog);
     
@@ -1709,6 +1740,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
   
+  // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
+  const mySessionId = state.activeSessionId;
+  
   return new Promise((resolve, reject) => {
     let executionLog = [];
     const timeoutSeconds = Math.round(timeoutMs / 1000);
@@ -1718,6 +1752,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (timeoutId) clearTimeout(timeoutId);
       removeListener();
       state.pendingCancelApi = null;
+      state.pendingCallApiSessionIds.delete(mySessionId);
       // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
       if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
         errorResult.executionLog = executionLog;
@@ -1728,6 +1763,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       reject(errorResult);
     };
     state.pendingCancelApi = cancelApi;
+    state.pendingCallApiSessionIds.add(mySessionId);
+    console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
     let timeoutId = setTimeout(() => {
       cancelApi({
@@ -1795,8 +1832,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     const listener = (message) => {
       console.log('[SidePanel] 收到消息:', message);
       
-      // 过滤：只处理属于当前会话或没有 sessionId 的消息（兼容）
-      if (message.sessionId && message.sessionId !== state.activeSessionId) {
+      // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
+      // 使用捕获的 mySessionId 而非 state.activeSessionId，确保切换会话后仍能收到本会话的响应
+      if (message.sessionId && message.sessionId !== mySessionId) {
         return false;
       }
       
@@ -1818,6 +1856,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'API_COMPLETE') {
         if (timeoutId) clearTimeout(timeoutId);
         state.pendingCancelApi = null;
+        state.pendingCallApiSessionIds.delete(mySessionId);
         chrome.runtime.onMessage.removeListener(listener);
         resolve({ 
           content: message.content, 
@@ -1827,6 +1866,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       } else if (message.type === 'API_ERROR') {
         if (timeoutId) clearTimeout(timeoutId);
         state.pendingCancelApi = null;
+        state.pendingCallApiSessionIds.delete(mySessionId);
         chrome.runtime.onMessage.removeListener(listener);
         reject({
           message: message.error,
