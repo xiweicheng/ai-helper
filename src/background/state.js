@@ -4,6 +4,9 @@
 // ReAct 循环取消控制
 const cancelledSessions = new Map(); // sessionId -> boolean
 
+// 每个会话的 AbortController，用于中断正在进行的 fetch 请求
+const sessionAbortControllers = new Map(); // sessionId -> AbortController
+
 // 每个会话的 API 调用计数器
 const dialogApiCallCounts = new Map(); // sessionId -> count
 
@@ -54,9 +57,21 @@ export function cancelReactLoop(sessionIdOrTabId) {
   if (sessionIdOrTabId === null) {
     cancelledSessions.clear();
     cancelledTabs.clear();
+    // 取消所有正在进行的 fetch 请求
+    for (const [id, controller] of sessionAbortControllers) {
+      controller.abort();
+      console.log('[Background] 已取消会话的 fetch 请求，sessionId:', id);
+    }
+    sessionAbortControllers.clear();
     console.log('[Background] 所有会话的 ReAct 循环已取消');
   } else {
     cancelledSessions.set(sessionIdOrTabId, true);
+    // 立即中断该会话正在进行的 fetch 请求
+    const controller = sessionAbortControllers.get(sessionIdOrTabId);
+    if (controller) {
+      controller.abort();
+      console.log('[Background] 已取消会话的 fetch 请求，sessionId:', sessionIdOrTabId);
+    }
     console.log('[Background] ReAct 循环已取消，sessionId:', sessionIdOrTabId);
   }
 }
@@ -72,8 +87,26 @@ export function resetReactCancel(sessionIdOrTabId) {
 
   if (sessionIdOrTabId !== undefined) {
     cancelledSessions.delete(sessionIdOrTabId);
+    sessionAbortControllers.delete(sessionIdOrTabId);
     console.log('[Background] 会话取消状态已重置，sessionId:', sessionIdOrTabId);
   }
+}
+
+/**
+ * 获取或创建指定会话的 AbortController
+ * 每次调用都会创建新的 AbortController（旧的会被替换）
+ * @param {string} sessionId
+ * @returns {AbortController}
+ */
+export function getOrCreateAbortController(sessionId) {
+  // 先清理旧的 controller
+  const old = sessionAbortControllers.get(sessionId);
+  if (old) {
+    old.abort();
+  }
+  const controller = new AbortController();
+  sessionAbortControllers.set(sessionId, controller);
+  return controller;
 }
 
 /**

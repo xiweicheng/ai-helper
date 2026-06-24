@@ -308,6 +308,11 @@ export async function sendMessage() {
     } catch (errorResult) {
       removeLoadingMessage(loadingId);
       
+      // 用户主动取消不显示为错误
+      if (errorResult.message === '任务已被用户停止') {
+        return; // 不添加错误消息到聊天记录
+      }
+      
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
       
@@ -1624,7 +1629,15 @@ export function addLoadingMessage() {
       if (loadingText) {
         loadingText.textContent = '停止中...';
       }
+      // 发送取消消息到后台
       chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null, sessionId: state.activeSessionId });
+      // 立即清理前端状态：调用 cancelApi 会 reject Promise 并清理 listener 和 timeout
+      if (state.pendingCancelApi) {
+        state.pendingCancelApi({
+          message: '任务已被用户停止',
+          executionLog: state.currentExecutionStatus?.executionLog || []
+        });
+      }
     });
   }
   
@@ -1696,18 +1709,27 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     let executionLog = [];
     const timeoutSeconds = Math.round(timeoutMs / 1000);
     
-    let timeoutId = setTimeout(() => {
+    // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
+    const cancelApi = (errorResult) => {
+      if (timeoutId) clearTimeout(timeoutId);
       removeListener();
+      state.pendingCancelApi = null;
+      reject(errorResult);
+    };
+    state.pendingCancelApi = cancelApi;
+    
+    let timeoutId = setTimeout(() => {
+      cancelApi({
+        message: `请求超时（${timeoutSeconds}秒）`,
+        executionLog: executionLog
+      });
+      // 同时通知后台取消（超时场景）
       chrome.runtime.sendMessage({
         type: 'CANCEL_REACT',
         tabId: state.currentTabId,
         sessionId: state.activeSessionId
       }).catch(err => {
         console.log('[SidePanel] 发送取消请求失败:', err.message);
-      });
-      reject({
-        message: `请求超时（${timeoutSeconds}秒）`,
-        executionLog: executionLog
       });
     }, timeoutMs);
     
@@ -1734,8 +1756,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         const remainingTime = timeoutMs + totalPausedDuration - elapsedTime;
         
         if (remainingTime <= 0) {
-          removeListener();
-          reject({
+          cancelApi({
             message: `请求超时（${timeoutSeconds}秒）`,
             executionLog: executionLog
           });
@@ -1743,17 +1764,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         }
         
         timeoutId = setTimeout(() => {
-          removeListener();
+          cancelApi({
+            message: `请求超时（${timeoutSeconds}秒）`,
+            executionLog: executionLog
+          });
           chrome.runtime.sendMessage({
             type: 'CANCEL_REACT',
             tabId: state.currentTabId,
             sessionId: state.activeSessionId
           }).catch(err => {
             console.log('[SidePanel] 发送取消请求失败:', err.message);
-          });
-          reject({
-            message: `请求超时（${timeoutSeconds}秒）`,
-            executionLog: executionLog
           });
         }, remainingTime);
         
@@ -1786,6 +1806,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'API_COMPLETE') {
         if (timeoutId) clearTimeout(timeoutId);
+        state.pendingCancelApi = null;
         chrome.runtime.onMessage.removeListener(listener);
         resolve({ 
           content: message.content, 
@@ -1794,6 +1815,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         return false;
       } else if (message.type === 'API_ERROR') {
         if (timeoutId) clearTimeout(timeoutId);
+        state.pendingCancelApi = null;
         chrome.runtime.onMessage.removeListener(listener);
         reject({
           message: message.error,

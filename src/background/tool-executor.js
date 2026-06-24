@@ -1,6 +1,7 @@
 // background/tool-executor.js - 工具定义与执行
 import { BUILTIN_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
+import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration } from '../storage/db.js';
 
 /**
  * 获取启用的工具列表
@@ -403,123 +404,107 @@ export function executeSearchHistory(args, toolCallId) {
  * 执行对话记忆搜索
  * 搜索当前会话和/或历史会话中的对话记录
  */
-function executeSearchConversationMemory(args, toolCallId) {
+async function executeSearchConversationMemory(args, toolCallId) {
   const query = (args.query || '').toLowerCase();
   const maxResults = parseInt(args.maxResults, 10) || 5;
   const searchScope = args.searchScope || 'current_session';
 
   console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope);
 
-  return new Promise((resolve) => {
-    const storageKeys = ['sessions'];
+  try {
+    // 确保从 chrome.storage 迁移完成
+    await ensureMigration();
+
+    // 收集所有可搜索的消息
+    let allMessages = [];
+
+    // 活跃会话消息
+    let activeFilter = null;
+    if (searchScope !== 'all_sessions') {
+      activeFilter = await getActiveSessionId();
+    }
+    const activeMessages = await searchActiveSessionsMessages(activeFilter);
+    allMessages = activeMessages.map((m) => ({
+      session: m.sessionLabel,
+      index: m.index,
+      role: m.role,
+      content: m.content,
+    }));
+
+    // 归档会话消息（仅在 all_sessions 时）
     if (searchScope === 'all_sessions') {
-      storageKeys.push('conversationSessions');
+      const archivedMessages = await getArchivedSessionsMessages();
+      archivedMessages.forEach((m) => {
+        allMessages.push({
+          session: m.sessionLabel,
+          index: m.index,
+          role: m.role,
+          content: m.content,
+        });
+      });
     }
 
-    chrome.storage.local.get(storageKeys, (result) => {
-      // 收集所有可搜索的消息
-      let allMessages = [];
+    if (allMessages.length === 0) {
+      return '未找到任何对话记录。';
+    }
 
-      // 多会话机制：从 sessions 中读取活跃会话的消息
-      const sessionsData = result.sessions;
-      if (sessionsData && sessionsData.list) {
-        const activeSessionId = sessionsData.activeSessionId;
-        const sessionsToSearch = searchScope === 'all_sessions'
-          ? sessionsData.list                               // 所有活跃会话
-          : sessionsData.list.filter(s => s.id === activeSessionId);  // 仅当前会话
+    // 关键词匹配搜索（分词 + 包含匹配）
+    const keywords = query.split(/\s+/).filter((k) => k.length > 0);
+    const scoredMessages = allMessages.map((msg) => {
+      const contentLower = msg.content.toLowerCase();
+      let score = 0;
 
-        sessionsToSearch.forEach((session) => {
-          const isActive = session.id === activeSessionId;
-          const label = isActive ? '当前会话' : (session.title || `会话 ${session.id?.slice(0, 8)}`);
-          (session.messageHistory || []).forEach((msg, idx) => {
-            if (msg.content) {
-              allMessages.push({
-                session: label,
-                index: idx,
-                role: msg.role,
-                content: msg.content
-              });
-            }
-          });
-        });
+      // 精确匹配整句加分
+      if (contentLower.includes(query)) {
+        score += 10;
       }
 
-      // 归档会话消息
-      if (searchScope === 'all_sessions' && result.conversationSessions) {
-        const archiveSessions = result.conversationSessions.sessions || [];
-        archiveSessions.forEach((session) => {
-          (session.messages || []).forEach((msg, idx) => {
-            if (msg.content) {
-              allMessages.push({
-                session: `[归档] ${session.title || `会话 ${session.id?.slice(0, 8)}`}`,
-                index: idx,
-                role: msg.role,
-                content: msg.content
-              });
-            }
-          });
-        });
-      }
-
-      if (allMessages.length === 0) {
-        resolve('未找到任何对话记录。');
-        return;
-      }
-
-      // 关键词匹配搜索（分词 + 包含匹配）
-      const keywords = query.split(/\s+/).filter(k => k.length > 0);
-      const scoredMessages = allMessages.map(msg => {
-        const contentLower = msg.content.toLowerCase();
-        let score = 0;
-
-        // 精确匹配整句加分
-        if (contentLower.includes(query)) {
-          score += 10;
+      // 每个关键词匹配加分
+      for (const kw of keywords) {
+        if (contentLower.includes(kw)) {
+          score += 3;
         }
-
-        // 每个关键词匹配加分
-        for (const kw of keywords) {
-          if (contentLower.includes(kw)) {
-            score += 3;
-          }
-          // 关键词出现次数加权
-          const count = (contentLower.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-          score += count * 0.5;
-        }
-
-        // 标题/引用标记等更相关
-        if (contentLower.includes('[引用内容]') || contentLower.includes('[选中内容]')) {
-          score += 1;
-        }
-
-        return { ...msg, score };
-      });
-
-      // 按分数排序，过滤零分
-      const relevant = scoredMessages
-        .filter(m => m.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxResults);
-
-      if (relevant.length === 0) {
-        resolve(`未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`);
-        return;
+        // 关键词出现次数加权
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const count = (contentLower.match(new RegExp(escaped, 'g')) || []).length;
+        score += count * 0.5;
       }
 
-      // 格式化结果
-      const resultText = `找到 ${relevant.length} 条相关对话记录：\n\n` +
-        relevant.map((m, i) => {
-          // 截断过长内容
-          const contentPreview = m.content.length > 500
-            ? m.content.substring(0, 500) + '...'
-            : m.content;
-          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
-        }).join('\n\n---\n\n');
+      // 标题/引用标记等更相关
+      if (contentLower.includes('[引用内容]') || contentLower.includes('[选中内容]')) {
+        score += 1;
+      }
 
-      console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
-      resolve(resultText);
+      return { ...msg, score };
     });
-  });
+
+    // 按分数排序，过滤零分
+    const relevant = scoredMessages
+      .filter((m) => m.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+
+    if (relevant.length === 0) {
+      return `未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`;
+    }
+
+    // 格式化结果
+    const resultText =
+      `找到 ${relevant.length} 条相关对话记录：\n\n` +
+      relevant
+        .map((m, i) => {
+          const contentPreview =
+            m.content.length > 500 ? m.content.substring(0, 500) + '...' : m.content;
+          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
+        })
+        .join('\n\n---\n\n');
+
+    console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
+    return resultText;
+  } catch (err) {
+    console.error('[Background] 对话记忆搜索失败:', err);
+    return `搜索对话记录时出错: ${err.message}`;
+  }
 }
 
 /**
@@ -755,21 +740,37 @@ export function executeShowNotification(args, toolCallId) {
 
 /**
  * 带超时控制的 fetch 请求
+ * @param {string} url
+ * @param {Object} options - fetch options（可包含外部 signal）
+ * @param {number} timeoutMs
  */
 export async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   
+  // 如果有外部 signal，需要同时监听外部取消和超时
+  const externalSignal = options?.signal;
+  
   try {
+    // 组合内部超时 signal 和外部 signal
+    let combinedSignal = controller.signal;
+    if (externalSignal) {
+      combinedSignal = AbortSignal.any([controller.signal, externalSignal]);
+    }
+    
     const response = await fetch(url, {
       ...options,
-      signal: controller.signal
+      signal: combinedSignal
     });
     clearTimeout(timeoutId);
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
+      // 如果是外部取消导致的，直接抛出原始 AbortError（fetchWithRetry 不会重试）
+      if (externalSignal?.aborted) {
+        throw error;
+      }
       throw new Error(`请求超时 (${timeoutMs}ms)`);
     }
     throw error;
@@ -1369,14 +1370,6 @@ export function executePlanTask(args, toolCallId) {
     planId: toolCallId || crypto.randomUUID(),
     createdAt: new Date().toISOString()
   };
-  
-  // 保存当前任务规划到临时存储
-  chrome.storage.local.set({ 
-    [`current_plan_${planSummary.planId}`]: planSummary,
-    lastPlanTimestamp: Date.now()
-  }, () => {
-    console.log('[Background] 任务规划已保存');
-  });
   
   // 格式化返回结果
   const formatResult = () => {

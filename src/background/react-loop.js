@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { preselectTools } from './tool-preselector.js';
@@ -53,6 +53,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   
   resetReactCancel(sessionId || tabId);
   setCurrentReactTabId(tabId);
+  
+  // 为当前会话创建 AbortController，用于用户取消时中断 fetch 请求
+  const abortController = sessionId ? getOrCreateAbortController(sessionId) : null;
+  const abortSignal = abortController?.signal;
   
   const config = await getStoredConfig();
   const reactConfig = config.reactConfig;
@@ -240,7 +244,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             'Authorization': `Bearer ${config.apiKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(requestBody)
+          body: JSON.stringify(requestBody),
+          signal: abortSignal
         }, apiTimeout, reactConfig.apiRetryCount, reactConfig.apiRetryBaseDelay, (retryAttempt, retryError) => {
           console.warn(`[Background] API 重试 ${retryAttempt} 次后:`, retryError.message);
         });
@@ -1015,8 +1020,12 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 /**
  * 调用 OpenAI 兼容 API（非流式，简单模式）
  */
-export function callApiNonStream(messages, model, apiParams = {}, _sessionId = null) {
+export function callApiNonStream(messages, model, apiParams = {}, sessionId = null) {
   return getStoredConfig().then(config => {
+    // 获取 AbortController 以支持用户取消
+    const abortController = sessionId ? getOrCreateAbortController(sessionId) : null;
+    const abortSignal = abortController?.signal;
+
     const apiUrl = `${config.apiBase}/chat/completions`;
 
     console.log('[Background] 发送非流式 API 请求到:', apiUrl);
@@ -1047,7 +1056,8 @@ export function callApiNonStream(messages, model, apiParams = {}, _sessionId = n
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      signal: abortSignal
     });
   })
   .then(async response => {

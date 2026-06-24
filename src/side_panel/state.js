@@ -47,6 +47,9 @@ export const collapsedCategories = {};
 export let currentExecutionStatus = null;
 export let executionLogListener = null;
 
+// 当前 API 调用的取消函数，用于停止按钮立即终止（同时 reject Promise 并清理 listener）
+export let pendingCancelApi = null;
+
 // 问题澄清对话框状态
 export let currentClarifyToolCallId = null;
 export let clarifyTimerInterval = null;
@@ -128,6 +131,8 @@ export default {
   set currentExecutionStatus(v) { currentExecutionStatus = v; },
   get executionLogListener() { return executionLogListener; },
   set executionLogListener(v) { executionLogListener = v; },
+  get pendingCancelApi() { return pendingCancelApi; },
+  set pendingCancelApi(v) { pendingCancelApi = v; },
   get currentClarifyToolCallId() { return currentClarifyToolCallId; },
   set currentClarifyToolCallId(v) { currentClarifyToolCallId = v; },
   get clarifyTimerInterval() { return clarifyTimerInterval; },
