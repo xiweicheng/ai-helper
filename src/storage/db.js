@@ -47,6 +47,16 @@ function openDB() {
 let dbPromise = null;
 
 /**
+ * 重置数据库连接缓存（用于 Service Worker 重启后恢复）
+ */
+function resetDBConnection() {
+  if (dbPromise) {
+    dbPromise = null;
+    console.log('[IDB] 数据库连接已重置');
+  }
+}
+
+/**
  * 获取数据库实例（缓存单例）
  */
 function getDB() {
@@ -57,29 +67,57 @@ function getDB() {
 }
 
 /**
- * 通用事务包装器
+ * 通用事务包装器（带连接恢复重试）
  * @param {string} storeName - objectStore 名称
  * @param {'readonly'|'readwrite'} mode
  * @param {function(IDBObjectStore, function): void} callback
+ * @param {boolean} [isRetry=false] - 是否为重试调用（内部使用）
  * @returns {Promise<any>}
  */
-function withStore(storeName, mode, callback) {
+function withStore(storeName, mode, callback, isRetry = false) {
   return getDB().then((db) => {
     return new Promise((resolve, reject) => {
+      let settled = false;
+
       const tx = db.transaction(storeName, mode);
       const store = tx.objectStore(storeName);
 
-      callback(store, resolve);
+      callback(store, (result) => {
+        settled = true;
+        resolve(result);
+      });
 
       tx.oncomplete = () => {
-        // 如果 callback 里直接调了 resolve，这里不再重复 resolve
+        // 如果 callback 里直接调了 resolve，这里不重复操作
       };
+
       tx.onerror = (event) => {
-        console.error(`[IDB] 事务错误 (${storeName}):`, event.target.error);
-        reject(event.target.error);
+        if (settled) return;
+        const err = event.target.error || new Error(`Transaction error on ${storeName}`);
+        console.error(`[IDB] 事务错误 (${storeName}):`, err);
+
+        if (!isRetry) {
+          // Service Worker 重启后连接可能已关闭，重置并重试一次
+          resetDBConnection();
+          withStore(storeName, mode, callback, true)
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(err);
+        }
       };
+
       tx.onabort = () => {
-        reject(new Error(`Transaction aborted on ${storeName}`));
+        if (settled) return;
+
+        if (!isRetry) {
+          resetDBConnection();
+          withStore(storeName, mode, callback, true)
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(new Error(`Transaction aborted on ${storeName}`));
+        }
       };
     });
   });

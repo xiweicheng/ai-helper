@@ -43,7 +43,7 @@ export async function renderSessionTabs() {
     titleSpan.textContent = session.title || '新会话';
     tab.appendChild(titleSpan);
 
-    if (session.isGenerating) {
+    if (session.isGenerating || state.generatingSessionIds.has(session.id)) {
       const indicator = document.createElement('span');
       indicator.className = 'session-tab-indicator';
       tab.appendChild(indicator);

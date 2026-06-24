@@ -38,6 +38,20 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   let iteration = 0;
   let currentMessages = [...messages];
   
+  // ReAct 循环消息上限：防止工具输出过大导致 token 超限
+  const MAX_REACT_MESSAGES = 40;
+  const trimMessages = () => {
+    if (currentMessages.length > MAX_REACT_MESSAGES) {
+      // 保留第一条 system 消息 + 最近的消息
+      const oldLen = currentMessages.length;
+      const firstMsg = currentMessages[0]?.role === 'system' ? 1 : 0;
+      const keep = MAX_REACT_MESSAGES - firstMsg;
+      const trimmed = currentMessages.slice(-keep);
+      currentMessages = firstMsg ? [currentMessages[0], ...trimmed] : trimmed;
+      console.log(`[Background] ReAct 消息截断: ${oldLen} → ${currentMessages.length} 条`);
+    }
+  };
+  
   const executionLog = [...initialLog];
   let currentSubtaskIndex = null;
   let subtaskPlan = null;
@@ -55,7 +69,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   setCurrentReactTabId(tabId);
   
   // 为当前会话创建 AbortController，用于用户取消时中断 fetch 请求
-  const abortController = sessionId ? getOrCreateAbortController(sessionId) : null;
+  // 子任务场景（有 taskContext）不 abort 旧的 controller，避免并行子任务互相杀死
+  const abortController = sessionId ? getOrCreateAbortController(sessionId, !taskContext) : null;
   const abortSignal = abortController?.signal;
   
   const config = await getStoredConfig();
@@ -332,6 +347,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         console.log('[Background] 收到工具调用:', assistantMessage.tool_calls);
         
         currentMessages.push(assistantMessage);
+        trimMessages();
         
         for (const toolCall of assistantMessage.tool_calls) {
           // 在每个工具执行前检查是否已取消
@@ -421,6 +437,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 }),
                 tool_call_id: toolCall.id
               });
+              trimMessages();
               
               // 更新工具执行日志
               const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
@@ -460,6 +477,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 role: 'system',
                 content: `以下是拆解后子任务的执行结果，请进行总结：\n\n${subtaskSummary}`
               });
+              trimMessages();
               
               // 继续下一轮循环，让模型总结子任务结果
               continue;
@@ -472,6 +490,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
+            trimMessages();
             
             console.log('[Background] 工具执行结果长度:', toolResultStr.length, '内容预览:', toolResultStr.substring(0, 200));
             
@@ -1041,19 +1060,20 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
   // 其他工具使用正常超时
   console.log(`[Background] 工具 ${toolName} 使用超时: ${timeoutMs}ms`);
   
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error(`工具执行超时 (${timeoutMs}ms): ${toolName}`));
     }, timeoutMs);
-    
-    try {
-      const result = await executeTool(toolCall, tabId);
-      clearTimeout(timeoutId);
-      resolve(result);
-    } catch (error) {
-      clearTimeout(timeoutId);
-      reject(error);
-    }
+
+    executeTool(toolCall, tabId)
+      .then(result => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch(error => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
   });
 }
 

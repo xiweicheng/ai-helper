@@ -161,7 +161,12 @@ export async function switchToSession(sessionId) {
   state.enabledTools = targetSession.enabledTools || state.enabledTools;
   state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
-  state.isGenerating = targetSession.isGenerating || false;
+  // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
+  if (targetSession.isGenerating) {
+    state.generatingSessionIds.add(sessionId);
+  } else {
+    state.generatingSessionIds.delete(sessionId);
+  }
 
   return targetSession;
 }

@@ -96,13 +96,15 @@ export function resetReactCancel(sessionIdOrTabId) {
  * 获取或创建指定会话的 AbortController
  * 每次调用都会创建新的 AbortController（旧的会被替换）
  * @param {string} sessionId
+ * @param {boolean} [abortOld=true] - 是否 abort 旧的 controller。子任务场景应传 false
  * @returns {AbortController}
  */
-export function getOrCreateAbortController(sessionId) {
-  // 先清理旧的 controller
-  const old = sessionAbortControllers.get(sessionId);
-  if (old) {
-    old.abort();
+export function getOrCreateAbortController(sessionId, abortOld = true) {
+  if (abortOld) {
+    const old = sessionAbortControllers.get(sessionId);
+    if (old) {
+      old.abort();
+    }
   }
   const controller = new AbortController();
   sessionAbortControllers.set(sessionId, controller);

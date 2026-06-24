@@ -2,7 +2,7 @@
 // 同时导出命名 let 绑定（供 named import 使用）和 default 对象（供 import state 使用）
 // default 对象通过 getter/setter 代理到同名 let 变量，确保两种导入方式共享同一份数据
 
-export let isGenerating = false;
+export let generatingSessionIds = new Set();  // Set of sessionIds currently generating
 export let messageHistory = [];
 export let currentModel = 'deepseek-v4-pro';
 export let activeSessionId = null;   // 当前活跃会话 ID
@@ -47,8 +47,8 @@ export const collapsedCategories = {};
 export let currentExecutionStatus = null;
 export let executionLogListener = null;
 
-// 当前 API 调用的取消函数，用于停止按钮立即终止（同时 reject Promise 并清理 listener）
-export let pendingCancelApi = null;
+// 当前 API 调用的取消函数，按 sessionId 隔离，防止多会话并行时互相覆盖
+export let pendingCancelApiMap = new Map();
 
 // 记录有 pending callApi 的会话 ID 集合（支持多会话同时有后台任务）
 export let pendingCallApiSessionIds = new Set();
@@ -83,8 +83,12 @@ export let isScrolling = false;
 // 使用方式: import state from './state.js'; state.xxx = value;
 // ============================================================
 export default {
-  get isGenerating() { return isGenerating; },
-  set isGenerating(v) { isGenerating = v; },
+  get isGenerating() { return generatingSessionIds.has(activeSessionId); },
+  set isGenerating(v) { 
+    if (v) generatingSessionIds.add(activeSessionId); 
+    else generatingSessionIds.delete(activeSessionId);
+  },
+  get generatingSessionIds() { return generatingSessionIds; },
   get messageHistory() { return messageHistory; },
   set messageHistory(v) { messageHistory = v; },
   get currentModel() { return currentModel; },
@@ -137,8 +141,15 @@ export default {
   set currentExecutionStatus(v) { currentExecutionStatus = v; },
   get executionLogListener() { return executionLogListener; },
   set executionLogListener(v) { executionLogListener = v; },
-  get pendingCancelApi() { return pendingCancelApi; },
-  set pendingCancelApi(v) { pendingCancelApi = v; },
+  get pendingCancelApi() { return pendingCancelApiMap.get(activeSessionId) || null; },
+  set pendingCancelApi(v) {
+    if (v === null) {
+      pendingCancelApiMap.delete(activeSessionId);
+    } else {
+      pendingCancelApiMap.set(activeSessionId, v);
+    }
+  },
+  get pendingCancelApiMap() { return pendingCancelApiMap; },
   get pendingCallApiSessionIds() { return pendingCallApiSessionIds; },
   set pendingCallApiSessionIds(v) { pendingCallApiSessionIds = v; },
   get substituteLoadingIds() { return substituteLoadingIds; },

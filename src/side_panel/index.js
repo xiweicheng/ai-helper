@@ -11,7 +11,8 @@ import {
   sendMessage, clearChatHistory, exportChatHistory,
   showModal, hideModal, loadChatHistory, saveChatHistory,
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
-  callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend
+  callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
+  restorePendingSessionsFromStorage
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -336,6 +337,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   sendBtn.disabled = true;
 
   const loadingId = addLoadingMessage();
+  const mySessionId = state.activeSessionId;
 
   const model = state.currentModel;
 
@@ -403,7 +405,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
   } catch (error) {
   } finally {
-    state.isGenerating = false;
+    state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     const userInput = document.getElementById('userInput');
     userInput.focus();
@@ -418,6 +420,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 获取当前激活的 Tab ID
   await getCurrentActiveTabId();
+
+  // 恢复持久化的 pendingCallApiSessionIds（Side Panel 重开后不丢失后台任务状态）
+  await restorePendingSessionsFromStorage();
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {
@@ -686,15 +691,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 10);
   });
 
-  // 定时检查页面选中内容（每500ms检查一次）
+  // 定时检查页面选中内容（仅在 enableSelectionQuery 开启时生效）
   let pageLastSelectedText = '';
+  let selectionCheckInterval = null;
 
-  setInterval(async () => {
+  async function performSelectionCheck() {
     try {
-      if (!state.enableSelectionQuery) {
-        return;
-      }
-
       const tabs = await new Promise((resolve) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => resolve(tabs));
       });
@@ -727,7 +729,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (e) {
     }
-  }, 500);
+  }
+
+  function refreshSelectionInterval() {
+    if (selectionCheckInterval) {
+      clearInterval(selectionCheckInterval);
+      selectionCheckInterval = null;
+    }
+    if (state.enableSelectionQuery) {
+      selectionCheckInterval = setInterval(performSelectionCheck, 500);
+    }
+  }
+
+  // 初始启动
+  refreshSelectionInterval();
+
+  // 监听配置变化：enableSelectionQuery 改变时动态启停轮询
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && 'enableSelectionQuery' in changes) {
+      state.enableSelectionQuery = changes.enableSelectionQuery.newValue;
+      refreshSelectionInterval();
+    }
+  });
 
   // 加载保存的模型选择和自定义模型
   chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory'], (result) => {
@@ -784,8 +807,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
 
-    // 切换会话时重置生成状态，确保新会话的输入框可用
-    state.isGenerating = false;
+    // 切换会话时不再重置全局 isGenerating（现在是按会话隔离的 Set）
+    // UI 元素重置即可，新会话的输入框默认可用
     if (sendBtn) sendBtn.disabled = false;
     if (userInput) userInput.focus();
 

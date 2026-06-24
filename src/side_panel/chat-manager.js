@@ -9,6 +9,28 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs } from './session-manager-ui.js';
 
 // ============================================================
+// pendingCallApiSessionIds 持久化帮助函数
+// 防止 Side Panel 重开后丢失后台任务状态
+// ============================================================
+
+const PENDING_SESSIONS_KEY = 'pendingCallApiSessions';
+
+export function syncPendingSessionsToStorage() {
+  chrome.storage.session.set({ [PENDING_SESSIONS_KEY]: [...state.pendingCallApiSessionIds] }).catch(() => {});
+}
+
+export async function restorePendingSessionsFromStorage() {
+  try {
+    const result = await chrome.storage.session.get([PENDING_SESSIONS_KEY]);
+    if (result[PENDING_SESSIONS_KEY] && Array.isArray(result[PENDING_SESSIONS_KEY])) {
+      state.pendingCallApiSessionIds = new Set(result[PENDING_SESSIONS_KEY]);
+    }
+  } catch (e) {
+    // 忽略恢复错误
+  }
+}
+
+// ============================================================
 // 辅助函数（仅在模块内使用）
 // ============================================================
 
@@ -341,8 +363,6 @@ export async function sendMessage() {
       
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
       
-      saveChatHistory();
-      
       throw errorResult;
     }
     
@@ -368,11 +388,12 @@ export async function sendMessage() {
     
     state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
     
-    saveChatHistory();
-    
   } catch (error) {
+    console.error('[SidePanel] sendMessage 异常:', error?.message || error);
   } finally {
-    state.isGenerating = false;
+    // 合并在此处统一保存，减少 IndexedDB 写入次数
+    saveChatHistory();
+    state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
   }
@@ -1751,8 +1772,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     const cancelApi = (errorResult) => {
       if (timeoutId) clearTimeout(timeoutId);
       removeListener();
-      state.pendingCancelApi = null;
+      state.pendingCancelApiMap.delete(mySessionId);
       state.pendingCallApiSessionIds.delete(mySessionId);
+      syncPendingSessionsToStorage();
       // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
       if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
         errorResult.executionLog = executionLog;
@@ -1764,6 +1786,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     };
     state.pendingCancelApi = cancelApi;
     state.pendingCallApiSessionIds.add(mySessionId);
+    syncPendingSessionsToStorage();
     console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
     let timeoutId = setTimeout(() => {
@@ -1855,8 +1878,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'API_COMPLETE') {
         if (timeoutId) clearTimeout(timeoutId);
-        state.pendingCancelApi = null;
+        state.pendingCancelApiMap.delete(mySessionId);
         state.pendingCallApiSessionIds.delete(mySessionId);
+        syncPendingSessionsToStorage();
         chrome.runtime.onMessage.removeListener(listener);
         resolve({ 
           content: message.content, 
@@ -1865,8 +1889,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         return false;
       } else if (message.type === 'API_ERROR') {
         if (timeoutId) clearTimeout(timeoutId);
-        state.pendingCancelApi = null;
+        state.pendingCancelApiMap.delete(mySessionId);
         state.pendingCallApiSessionIds.delete(mySessionId);
+        syncPendingSessionsToStorage();
         chrome.runtime.onMessage.removeListener(listener);
         reject({
           message: message.error,

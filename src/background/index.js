@@ -89,6 +89,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
 
+          // 重置 API 调用计数器，让 reactLoop 从第1次开始计数（预筛选已单独记录）
+          resetDialogApiCallCount(sessionId);
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,

@@ -32,7 +32,7 @@ export function getTools() {
 /**
  * 执行工具调用
  */
-export function executeTool(toolCall, tabId) {
+export async function executeTool(toolCall, tabId) {
   const { name, arguments: argsStr, id, function: functionObj, index } = toolCall;
   
   // 兼容不同的工具调用格式
