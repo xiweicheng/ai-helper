@@ -218,7 +218,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         const requestBody = {
           model: model || config.modelName,
           messages: filteredMessages,
-          tools: apiTools,
+          tools: apiTools.map(t => {
+            const { id, ...clean } = t;
+            return clean;
+          }),
           stream: false
         };
         
