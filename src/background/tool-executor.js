@@ -92,8 +92,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     mute_tab: (a) => executeMuteTab(a, toolCallId),
     pin_tab: (a) => executePinTab(a, toolCallId),
     group_tabs: (a) => executeGroupTabs(a, toolCallId),
-    record_network: (a) => executeRecordNetwork(a, toolCallId),
-    search_conversation_memory: (a) => executeSearchConversationMemory(a, toolCallId),
+    record_network: (a) => executeRecordNetwork(a, toolCallId, sessionId),
+    search_conversation_memory: (a) => executeSearchConversationMemory(a, toolCallId, sessionId),
   };
 
   // Content Script 委派的工具：toolName → [messageType, payloadBuilder(args)]
@@ -404,12 +404,12 @@ export function executeSearchHistory(args, toolCallId) {
  * 执行对话记忆搜索
  * 搜索当前会话和/或历史会话中的对话记录
  */
-async function executeSearchConversationMemory(args, toolCallId) {
+async function executeSearchConversationMemory(args, toolCallId, sessionId = null) {
   const query = (args.query || '').toLowerCase();
   const maxResults = parseInt(args.maxResults, 10) || 5;
   const searchScope = args.searchScope || 'current_session';
 
-  console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope);
+  console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope, 'sessionId=', sessionId);
 
   try {
     // 确保从 chrome.storage 迁移完成
@@ -418,10 +418,10 @@ async function executeSearchConversationMemory(args, toolCallId) {
     // 收集所有可搜索的消息
     let allMessages = [];
 
-    // 活跃会话消息
+    // 活跃会话消息：使用传入的 sessionId，避免多会话切换时读到错误会话
     let activeFilter = null;
     if (searchScope !== 'all_sessions') {
-      activeFilter = await getActiveSessionId();
+      activeFilter = sessionId || await getActiveSessionId();
     }
     const activeMessages = await searchActiveSessionsMessages(activeFilter);
     allMessages = activeMessages.map((m) => ({
@@ -2443,21 +2443,29 @@ export function executeGroupTabs(args, toolCallId) {
 /**
  * 网络录制工具
  * 使用 chrome.debugger API 捕获网络请求
+ * 按 sessionId 隔离，支持多会话并行录制
  */
-const networkRecordingState = {
-  active: false,
-  tabId: null,
-  requests: [],
-  startTime: null,
-  eventHandler: null
-};
+const networkRecordingStateMap = new Map(); // sessionId -> { active, tabId, requests, startTime, eventHandler }
 
-function createDebuggerEventHandler() {
+function getRecordingState(sessionId) {
+  if (!networkRecordingStateMap.has(sessionId)) {
+    networkRecordingStateMap.set(sessionId, {
+      active: false,
+      tabId: null,
+      requests: [],
+      startTime: null,
+      eventHandler: null
+    });
+  }
+  return networkRecordingStateMap.get(sessionId);
+}
+
+function createDebuggerEventHandler(recordingState) {
   return (source, method, params) => {
-    if (!networkRecordingState.active) return;
+    if (!recordingState.active) return;
 
     if (method === 'Network.requestWillBeSent') {
-      networkRecordingState.requests.push({
+      recordingState.requests.push({
         requestId: params.requestId,
         url: params.request?.url || '',
         method: params.request?.method || 'GET',
@@ -2468,7 +2476,7 @@ function createDebuggerEventHandler() {
         responseReceived: false
       });
     } else if (method === 'Network.responseReceived') {
-      const existing = networkRecordingState.requests.find(r => r.requestId === params.requestId);
+      const existing = recordingState.requests.find(r => r.requestId === params.requestId);
       if (existing) {
         existing.status = params.response?.status || null;
         existing.statusText = params.response?.statusText || null;
@@ -2480,24 +2488,26 @@ function createDebuggerEventHandler() {
   };
 }
 
-export function executeRecordNetwork(args, toolCallId) {
+export function executeRecordNetwork(args, toolCallId, sessionId = null) {
   const { action } = args;
+  const effectiveSessionId = sessionId || 'default';
+  const recordingState = getRecordingState(effectiveSessionId);
 
   return new Promise((resolve) => {
     if (action === 'status') {
       resolve({
         success: true,
         action: 'status',
-        active: networkRecordingState.active,
-        requestCount: networkRecordingState.requests.length,
-        startTime: networkRecordingState.startTime,
+        active: recordingState.active,
+        requestCount: recordingState.requests.length,
+        startTime: recordingState.startTime,
         tool_call_id: toolCallId
       });
       return;
     }
 
     if (action === 'start') {
-      if (networkRecordingState.active) {
+      if (recordingState.active) {
         resolve({
           success: false,
           error: '网络录制已在运行中',
@@ -2526,13 +2536,13 @@ export function executeRecordNetwork(args, toolCallId) {
             return;
           }
 
-          networkRecordingState.active = true;
-          networkRecordingState.tabId = tabId;
-          networkRecordingState.requests = [];
-          networkRecordingState.startTime = Date.now();
-          networkRecordingState.eventHandler = createDebuggerEventHandler();
+          recordingState.active = true;
+          recordingState.tabId = tabId;
+          recordingState.requests = [];
+          recordingState.startTime = Date.now();
+          recordingState.eventHandler = createDebuggerEventHandler(recordingState);
 
-          chrome.debugger.onEvent.addListener(networkRecordingState.eventHandler);
+          chrome.debugger.onEvent.addListener(recordingState.eventHandler);
 
           chrome.debugger.sendCommand({ tabId }, 'Network.enable', {}, () => {
             if (chrome.runtime.lastError) {
@@ -2553,7 +2563,7 @@ export function executeRecordNetwork(args, toolCallId) {
     }
 
     if (action === 'stop') {
-      if (!networkRecordingState.active) {
+      if (!recordingState.active) {
         resolve({
           success: false,
           error: '没有正在进行的网络录制',
@@ -2563,21 +2573,21 @@ export function executeRecordNetwork(args, toolCallId) {
         return;
       }
 
-      const tabId = networkRecordingState.tabId;
-      const requests = [...networkRecordingState.requests];
+      const tabId = recordingState.tabId;
+      const requests = [...recordingState.requests];
       const requestCount = requests.length;
 
       // 移除事件监听
-      if (networkRecordingState.eventHandler) {
-        chrome.debugger.onEvent.removeListener(networkRecordingState.eventHandler);
+      if (recordingState.eventHandler) {
+        chrome.debugger.onEvent.removeListener(recordingState.eventHandler);
       }
 
       // 重置状态
-      networkRecordingState.active = false;
-      networkRecordingState.tabId = null;
-      networkRecordingState.requests = [];
-      networkRecordingState.startTime = null;
-      networkRecordingState.eventHandler = null;
+      recordingState.active = false;
+      recordingState.tabId = null;
+      recordingState.requests = [];
+      recordingState.startTime = null;
+      recordingState.eventHandler = null;
 
       chrome.debugger.detach({ tabId }, () => {
         if (chrome.runtime.lastError) {

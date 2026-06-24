@@ -1842,7 +1842,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           chrome.runtime.sendMessage({
             type: 'CANCEL_REACT',
             tabId: state.currentTabId,
-            sessionId: state.activeSessionId
+            sessionId: mySessionId
           }).catch(err => {
             console.log('[SidePanel] 发送取消请求失败:', err.message);
           });
