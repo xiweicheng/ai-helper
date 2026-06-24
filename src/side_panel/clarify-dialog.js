@@ -106,10 +106,29 @@ export function stopClarifyTimer() {
 export function showClarifyDialog(data) {
   console.log('[SidePanel] 显示澄清对话框:', data);
   
-  const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true, toolCallId, timeout = 180000 } = data;
+  const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true, toolCallId, timeout = 180000, sessionId } = data;
   
-  // 保存工具调用ID
+  // 保存工具调用ID和所属会话ID
   state.currentClarifyToolCallId = toolCallId;
+  state.currentClarifySessionId = sessionId || null;
+  
+  // 查找并显示所属会话名称
+  const sessionNameEl = document.getElementById('clarifySessionName');
+  if (sessionNameEl) {
+    if (sessionId && state.sessions) {
+      const session = state.sessions.find(s => s.id === sessionId);
+      if (session) {
+        sessionNameEl.textContent = `会话: ${session.title}`;
+        sessionNameEl.style.display = 'block';
+      } else {
+        sessionNameEl.textContent = `会话: ${sessionId.substring(0, 8)}...`;
+        sessionNameEl.style.display = 'block';
+      }
+    } else {
+      sessionNameEl.textContent = '';
+      sessionNameEl.style.display = 'none';
+    }
+  }
   
   // 使用推荐选项作为默认选中项
   // 如果没有指定推荐选项，默认使用第一个选项
@@ -204,6 +223,7 @@ export function hideClarifyDialog() {
     overlay.classList.remove('show');
   }
   state.currentClarifyToolCallId = null;
+  state.currentClarifySessionId = null;
   stopClarifyTimer();  // 停止倒计时
   console.log('[SidePanel] 澄清对话框已隐藏');
 }
@@ -315,7 +335,9 @@ export function initClarifyEvents() {
   // 监听来自 background.js 的澄清请求
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_CLARIFY_DIALOG') {
-      console.log('[SidePanel] 收到澄清请求:', message);
+      console.log('[SidePanel] 收到澄清请求:', message, '当前激活会话:', state.activeSessionId);
+      
+      // 澄清弹窗始终显示（因为后台 ReAct 循环被阻塞），通过会话名称区分归属
       showClarifyDialog(message.data);
       sendResponse({ success: true });
     } else if (message.type === 'PLAY_NOTIFICATION_SOUND') {
@@ -324,6 +346,13 @@ export function initClarifyEvents() {
       sendResponse({ success: true });
     } else if (message.type === 'CLARIFY_TIMEOUT') {
       console.log('[SidePanel] 收到澄清超时通知:', message);
+      
+      // 只处理当前显示的澄清会话的超时
+      if (message.sessionId && state.currentClarifySessionId && message.sessionId !== state.currentClarifySessionId) {
+        console.log('[SidePanel] 澄清超时来自其他会话，忽略');
+        return;
+      }
+      
       // 更新倒计时显示为超时状态
       const timerElement = document.getElementById('clarifyTimer');
       const timerTextElement = document.getElementById('clarifyTimerText');

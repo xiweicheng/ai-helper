@@ -56,10 +56,11 @@ export let pendingCallApiSessionIds = new Set();
 // 切换回原会话后，重新创建的加载指示器 ID 集合（按 sessionId 索引）
 export let substituteLoadingIds = new Map();
 
-// 问题澄清对话框状态
+// 澄清对话框相关状态
 export let currentClarifyToolCallId = null;
+export let currentClarifySessionId = null;  // 当前澄清所属的会话 ID
 export let clarifyTimerInterval = null;
-export let clarifyTimeoutValue = 180000;
+export let clarifyTimeoutValue = 180000;  // 默认 3 分钟
 
 // 消息目录状态
 export let messageTocContainer = null;
@@ -156,6 +157,8 @@ export default {
   set substituteLoadingIds(v) { substituteLoadingIds = v; },
   get currentClarifyToolCallId() { return currentClarifyToolCallId; },
   set currentClarifyToolCallId(v) { currentClarifyToolCallId = v; },
+  get currentClarifySessionId() { return currentClarifySessionId; },
+  set currentClarifySessionId(v) { currentClarifySessionId = v; },
   get clarifyTimerInterval() { return clarifyTimerInterval; },
   set clarifyTimerInterval(v) { clarifyTimerInterval = v; },
   get clarifyTimeoutValue() { return clarifyTimeoutValue; },

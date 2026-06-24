@@ -386,7 +386,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           let toolResult;
           try {
             // 使用带超时的工具执行（澄清工具不设置外层超时）
-            toolResult = await executeToolWithTimeout(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout);
+            toolResult = await executeToolWithTimeout(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId);
             
             // 如果是澄清工具，恢复整体循环超时计时
             if (toolName === 'clarify_question') {
@@ -1045,7 +1045,7 @@ export async function prepareToolSetsForSubtasks(subtasks) {
  * 带超时控制的工具执行
  * 注意：clarify_question 工具已在外层暂停整体循环超时，此处不设置额外超时
  */
-export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTimeoutMs, clarifyTimeoutMs) {
+export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTimeoutMs, clarifyTimeoutMs, sessionId = null) {
   const toolName = toolCall.function?.name || toolCall.name;
   
   // clarify_question 工具：
@@ -1054,7 +1054,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
   // 3. 此处不设置外层超时，直接执行
   if (toolName === 'clarify_question') {
     console.log(`[Background] 澄清工具直接执行，无外层超时（整体循环超时已暂停）`);
-    return executeTool(toolCall, tabId);
+    return executeTool(toolCall, tabId, sessionId);
   }
   
   // 其他工具使用正常超时
@@ -1065,7 +1065,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
       reject(new Error(`工具执行超时 (${timeoutMs}ms): ${toolName}`));
     }, timeoutMs);
 
-    executeTool(toolCall, tabId)
+    executeTool(toolCall, tabId, sessionId)
       .then(result => {
         clearTimeout(timeoutId);
         resolve(result);

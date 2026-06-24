@@ -32,7 +32,7 @@ export function getTools() {
 /**
  * 执行工具调用
  */
-export async function executeTool(toolCall, tabId) {
+export async function executeTool(toolCall, tabId, sessionId = null) {
   const { name, arguments: argsStr, id, function: functionObj, index } = toolCall;
   
   // 兼容不同的工具调用格式
@@ -70,7 +70,7 @@ export async function executeTool(toolCall, tabId) {
     search_bookmarks: (a) => executeSearchBookmarks(a, toolCallId),
     search_history: (a) => executeSearchHistory(a, toolCallId),
     capture_tab_screenshot: (a) => executeCaptureScreenshot(a, toolCallId),
-    clarify_question: (a) => executeClarifyQuestion(a, toolCallId),
+    clarify_question: (a) => executeClarifyQuestion(a, toolCallId, sessionId),
     show_notification: (a) => executeShowNotification(a, toolCallId),
     fetch_url: (a) => executeFetchUrl(a, toolCallId),
     open_tab: (a) => executeOpenTab(a, toolCallId),
@@ -577,10 +577,10 @@ export function triggerScreenshotDownload(dataUrl, format) {
  * 通过 Side Panel 弹窗让用户选择或输入澄清信息
  * 注意：此工具需要用户交互，使用独立的澄清超时配置
  */
-export async function executeClarifyQuestion(args, toolCallId) {
+export async function executeClarifyQuestion(args, toolCallId, sessionId = null) {
   const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true } = args;
   
-  console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId);
+  console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   
   // 获取配置以使用合适的超时时间
   const config = await getStoredConfig();
@@ -594,7 +594,8 @@ export async function executeClarifyQuestion(args, toolCallId) {
       allowCustomInput,
       allowAdditionalInfo,
       toolCallId,
-      timeout: clarifyTimeout  // 传递超时时间给前端显示倒计时
+      timeout: clarifyTimeout,  // 传递超时时间给前端显示倒计时
+      sessionId  // 携带 sessionId 让前端知道是哪个会话的澄清
     };
     
     let timeoutId = null;
@@ -645,6 +646,7 @@ export async function executeClarifyQuestion(args, toolCallId) {
     // 发送消息到 Side Panel 显示澄清弹窗
     chrome.runtime.sendMessage({
       type: 'SHOW_CLARIFY_DIALOG',
+      sessionId,
       data: clarifyData
     }, (response) => {
       if (chrome.runtime.lastError) {
@@ -668,7 +670,8 @@ export async function executeClarifyQuestion(args, toolCallId) {
         // 通知前端倒计时结束
         chrome.runtime.sendMessage({
           type: 'CLARIFY_TIMEOUT',
-          toolCallId: toolCallId
+          toolCallId: toolCallId,
+          sessionId
         }).catch(() => {});
         
         resolve({ 
