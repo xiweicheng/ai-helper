@@ -236,7 +236,7 @@ export function executeTool(toolCall, tabId) {
  */
 export function executeSearchBookmarks(args, toolCallId) {
   const query = args.query || '';
-  const maxResults = args.maxResults || 10;
+  const maxResults = parseInt(args.maxResults, 10) || 10;
   
   console.log('[Background] 执行书签搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults);
   
@@ -341,7 +341,7 @@ export function executeSearchBookmarks(args, toolCallId) {
  */
 export function executeSearchHistory(args, toolCallId) {
   const query = args.query || '';
-  const maxResults = args.maxResults || 10;
+  const maxResults = parseInt(args.maxResults, 10) || 10;
   const startTime = args.startTime || null;
   const endTime = args.endTime || null;
   
@@ -405,7 +405,7 @@ export function executeSearchHistory(args, toolCallId) {
  */
 function executeSearchConversationMemory(args, toolCallId) {
   const query = (args.query || '').toLowerCase();
-  const maxResults = args.maxResults || 5;
+  const maxResults = parseInt(args.maxResults, 10) || 5;
   const searchScope = args.searchScope || 'current_session';
 
   console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope);
@@ -1001,7 +1001,8 @@ export function executeDownloadFile(args, toolCallId) {
  * 打开新标签页
  */
 export function executeOpenTab(args, toolCallId) {
-  const { url, active = true } = args;
+  const { url, active: rawActive = true } = args;
+  const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
   
   console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active);
   
@@ -1026,7 +1027,8 @@ export function executeOpenTab(args, toolCallId) {
  * 切换到指定标签页
  */
 export function executeSwitchTab(args, toolCallId) {
-  const { tabId } = args;
+  const { tabId: rawTabId } = args;
+  const tabId = parseInt(rawTabId, 10);
   
   console.log('[Background] 切换标签页:', 'tabId=', tabId);
   
@@ -1051,7 +1053,8 @@ export function executeSwitchTab(args, toolCallId) {
  * 关闭指定标签页
  */
 export function executeCloseTab(args, toolCallId) {
-  const { tabId } = args;
+  const { tabId: rawTabId } = args;
+  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
   
   console.log('[Background] 关闭标签页:', 'tabId=', tabId);
   
@@ -2201,7 +2204,8 @@ export function executeNavigateBackForward(args, toolCallId) {
  * 重新加载标签页
  */
 export function executeReloadTab(args, toolCallId) {
-  const { tabId, bypassCache = false } = args;
+  const { tabId: rawTabId, bypassCache = false } = args;
+  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
 
   return new Promise((resolve) => {
     const doReload = (targetTabId) => {
@@ -2289,7 +2293,8 @@ export function executeMuteTab(args, toolCallId) {
  * 固定/取消固定标签页
  */
 export function executePinTab(args, toolCallId) {
-  const { tabId, pinned } = args;
+  const { tabId: rawTabId, pinned } = args;
+  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
 
   return new Promise((resolve) => {
     if (pinned === undefined) {
@@ -2335,7 +2340,8 @@ export function executePinTab(args, toolCallId) {
  * 标签页分组
  */
 export function executeGroupTabs(args, toolCallId) {
-  const { tabIds, title, color } = args;
+  const { tabIds: rawTabIds, title, color } = args;
+  const tabIds = Array.isArray(rawTabIds) ? rawTabIds.map(id => parseInt(id, 10)) : rawTabIds;
 
   return new Promise((resolve) => {
     if (!tabIds || !Array.isArray(tabIds) || tabIds.length === 0) {
