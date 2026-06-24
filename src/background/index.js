@@ -114,7 +114,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        console.error('[Background] API 调用失败:', error);
+        const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
+        if (isAborted) {
+          console.log('[Background] API 调用已被用户取消');
+        } else {
+          console.error('[Background] API 调用失败:', error.message || error);
+        }
         // 获取 executionLog（如果可用）
         const executionLog = error.executionLog || [];
         chrome.runtime.sendMessage({

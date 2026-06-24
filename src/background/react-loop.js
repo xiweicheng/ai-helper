@@ -267,7 +267,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           throw new Error('API 响应不是有效的 JSON: ' + parseError.message);
         }
       } catch (error) {
-        console.error('[Background] API 调用失败:', error);
+        // 区分用户取消（AbortError）和真正的 API 错误
+        const isAborted = error.name === 'AbortError';
+        if (isAborted) {
+          console.log('[Background] API 调用已被用户取消');
+        } else {
+          console.error('[Background] API 调用失败:', error.message || error);
+        }
         
         // 更新 API 调用日志状态为失败
         const apiLogIndex = executionLog.findIndex(log => log.id === apiLogId);
@@ -275,7 +281,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           executionLog[apiLogIndex] = {
             ...executionLog[apiLogIndex],
             duration: Date.now() - apiCallStartTime,
-            status: 'failed',
+            status: isAborted ? 'cancelled' : 'failed',
             apiRequest: {
               ...executionLog[apiLogIndex].apiRequest,
               model: model || config.modelName,
@@ -284,11 +290,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               messageCount: filteredMessages.length,
               toolCount: apiTools.length
             },
-            error: error.message
+            error: isAborted ? '用户取消' : error.message
           };
         }
         
-        throw createErrorWithLog(error.message);
+        throw createErrorWithLog(isAborted ? '请求已被用户取消' : error.message);
       }
       
       // 更新成功的 API 调用日志
@@ -328,6 +334,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         currentMessages.push(assistantMessage);
         
         for (const toolCall of assistantMessage.tool_calls) {
+          // 在每个工具执行前检查是否已取消
+          if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+            throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+          }
+          
           const toolName = toolCall.function?.name || toolCall.name;
           const toolStartTime = Date.now();
           
@@ -434,6 +445,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration);
+              
+              // 子任务执行完毕后检查是否已被取消
+              if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+                throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+              }
               
               // 将所有子任务结果添加到消息历史（作为系统消息，而非工具消息）
               const subtaskSummary = subtaskResults.map((result, idx) => 
@@ -661,6 +677,12 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
+      // 每次重试前检查是否已取消
+      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+        console.log('[Background] 子任务重试已被用户取消');
+        throw createErrorWithLog('ReAct 循环已被用户取消', parentExecutionLog);
+      }
+      
       try {
         console.log(`[Background] 执行子任务 ${subtaskIndex + 1}/${sortedSubtasks.length}: ${subtask.name} (尝试 ${retry + 1}/${maxRetries + 1})`);
         
@@ -825,6 +847,12 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
   if (strategy === 'sequential' || strategy === 'dependency') {
     // 顺序执行
     for (let i = 0; i < sortedSubtasks.length; i++) {
+      // 在每个子任务执行前检查是否已取消
+      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+        console.log('[Background] 子任务执行已被用户取消');
+        return results;
+      }
+      
       const subtask = sortedSubtasks[i];
       const subtaskTools = toolSets[subtask.id] || [];
       
@@ -843,6 +871,12 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
         
         // continue 或 skip：继续执行剩余子任务
       }
+      
+      // 每个子任务完成后检查是否已取消
+      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+        console.log('[Background] 子任务执行已被用户取消');
+        return results;
+      }
     }
   } else if (strategy === 'parallel') {
     // 并行执行
@@ -852,6 +886,12 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     const resultsMap = new Map();
     
     for (let i = 0; i < sortedSubtasks.length; i++) {
+      // 在每个子任务执行前检查是否已取消
+      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
+        console.log('[Background] 子任务并行执行已被用户取消');
+        return results;
+      }
+      
       // 如果达到最大并行数，等待一个完成
       if (executing.length >= maxParallel) {
         const completed = await Promise.race(executing);
@@ -1079,7 +1119,11 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
     return content;
   })
   .catch(error => {
-    console.error('[Background] API 调用失败:', error);
+    if (error.name === 'AbortError') {
+      console.log('[Background] API 调用已被用户取消');
+    } else {
+      console.error('[Background] API 调用失败:', error.message || error);
+    }
     throw error;
   });
 }
