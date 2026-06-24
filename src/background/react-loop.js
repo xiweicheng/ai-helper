@@ -934,17 +934,18 @@ export function sortSubtasksByDependencies(subtasks) {
 export async function prepareToolSetsForSubtasks(subtasks) {
   const allTools = await getTools();
   const toolSets = {};
-  const allToolNames = allTools.map(t => t.function.name);
-  const allToolIds = allTools.map(t => t.id);
+  const allToolNames = allTools.map(t => t.function?.name).filter(Boolean);
+  const allToolIds = allTools.map(t => t.id).filter(Boolean);
   
   subtasks.forEach(subtask => {
     const requiredToolNames = subtask.requiredTools || [];
     if (requiredToolNames.length > 0) {
       // 只选择子任务需要的工具（按工具名称或ID匹配，忽略大小写）
       toolSets[subtask.id] = allTools.filter(tool => {
-        const toolName = tool.function.name.toLowerCase();
-        const toolId = tool.id.toLowerCase();
+        const toolName = (tool.function?.name || '').toLowerCase();
+        const toolId = (tool.id || '').toLowerCase();
         return requiredToolNames.some(req => {
+          if (typeof req !== 'string') return false;
           const reqLower = req.toLowerCase();
           return toolName === reqLower || toolId === reqLower;
         });
@@ -952,9 +953,10 @@ export async function prepareToolSetsForSubtasks(subtasks) {
       
       // 检查是否有工具未匹配到
       const unmatchedTools = requiredToolNames.filter(req => {
+        if (typeof req !== 'string') return false;
         const reqLower = req.toLowerCase();
-        return !allToolNames.some(name => name.toLowerCase() === reqLower) &&
-               !allToolIds.some(id => id.toLowerCase() === reqLower);
+        return !allToolNames.some(name => (name || '').toLowerCase() === reqLower) &&
+               !allToolIds.some(id => (id || '').toLowerCase() === reqLower);
       });
       
       if (unmatchedTools.length > 0) {
