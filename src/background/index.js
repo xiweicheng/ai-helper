@@ -94,7 +94,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
-            executionLog: reactResult.executionLog || preselectLog
+            executionLog: reactResult.executionLog || preselectLog,
+            reflectionScore: reactResult.reflectionScore
           };
         })()
       : callApiNonStream(messages, model, apiParams, sessionId);
@@ -104,13 +105,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // 兼容两种返回格式：{ content, executionLog } 或直接返回 content
         const content = result.content !== undefined ? result.content : result;
         const executionLog = result.executionLog || [];
+        const reflectionScore = result.reflectionScore;
         
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId: sessionId,
           content: content,
-          executionLog: executionLog
+          executionLog: executionLog,
+          reflectionScore: reflectionScore
         }).catch(err => {
           console.warn('[Background] 发送回传消息失败:', err);
         });

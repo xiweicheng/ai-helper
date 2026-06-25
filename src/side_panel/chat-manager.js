@@ -323,12 +323,13 @@ export async function sendMessage() {
     }
 
     const apiParams = await getApiParams();
-    let content, executionLog;
+    let content, executionLog, reflectionScore;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
+      reflectionScore = result.reflectionScore;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -359,16 +360,16 @@ export async function sendMessage() {
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
       
-      const messageDiv = addMessage('assistant', content, true, executionLog);
+      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
       
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
       
       throw errorResult;
     }
     
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
-      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog });
+      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
       return;
@@ -382,11 +383,11 @@ export async function sendMessage() {
       state.substituteLoadingIds.delete(mySessionId);
     }
     
-    const messageDiv = addMessage('assistant', content, true, executionLog);
+    const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
     
     await renderMessageMermaid(messageDiv);
     
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
     
   } catch (error) {
     console.error('[SidePanel] sendMessage 异常:', error?.message || error);
@@ -507,7 +508,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = []) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -617,25 +618,45 @@ export function addMessage(role, content, scroll = true, executionLog = []) {
     exportMenuContainer.appendChild(exportDropdown);
     footer.appendChild(exportMenuContainer);
     
-    if (executionLog && executionLog.length > 0) {
-      chrome.storage.local.get('enableExecutionLog', (result) => {
-        if (result.enableExecutionLog) {
-          const logBtn = document.createElement('button');
-          logBtn.className = 'execution-log-btn';
-          logBtn.title = '执行日志';
-          logBtn.innerHTML = [
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
-            '<circle cx="12" cy="12" r="10"></circle>',
-            '<polyline points="12 6 12 12 16 14"></polyline>',
-            '</svg>'
-          ].join('');
-          logBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showExecutionLog(executionLog);
-          });
-          footer.appendChild(logBtn);
-        }
-      });
+    const hasExecutionLog = executionLog && executionLog.length > 0;
+    const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
+
+    // 绑定事件委托（首次调用时执行一次）
+    bindExecutionLogDelegate();
+
+    if (hasExecutionLog) {
+      // 执行日志按钮（合并反思评分）
+      const logBtn = document.createElement('button');
+      logBtn.className = 'execution-log-btn';
+      logBtn.type = 'button';
+      logBtn.title = '执行日志';
+      logBtn.innerHTML = [
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
+        '<circle cx="12" cy="12" r="10"></circle>',
+        '<polyline points="12 6 12 12 16 14"></polyline>',
+        '</svg>'
+      ].join('');
+
+      if (hasReflection) {
+        logBtn.classList.add('has-reflection');
+        const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
+        const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
+        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10`;
+        logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`);
+      }
+
+      footer.appendChild(logBtn);
+    } else if (hasReflection) {
+      // 无执行日志但存在反思评分，独立显示评分徽章
+      const scoreBadge = document.createElement('button');
+      scoreBadge.className = 'execution-log-btn has-reflection';
+      scoreBadge.type = 'button';
+      const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
+      scoreBadge.classList.add(scoreColor);
+      const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
+      scoreBadge.title = `AI 自我评估: ${reflectionScore}/10`;
+      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
+      footer.appendChild(scoreBadge);
     }
     
     messageDiv.appendChild(footer);
@@ -718,6 +739,41 @@ export function addMessage(role, content, scroll = true, executionLog = []) {
 }
 
 // ============================================================
+// 事件委托：执行日志按钮点击
+// ============================================================
+let executionLogDelegateBound = false;
+
+function bindExecutionLogDelegate() {
+  if (executionLogDelegateBound) return;
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+  
+  chatContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.execution-log-btn');
+    if (!btn) return;
+    
+    const messageEl = btn.closest('.message');
+    if (!messageEl) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rawLog = messageEl.dataset.executionLog;
+    if (!rawLog) return;
+    
+    try {
+      const log = JSON.parse(rawLog);
+      console.log('[chat-manager] 执行日志按钮点击(委托), entries:', log.length);
+      showExecutionLog(log);
+    } catch (err) {
+      console.error('[chat-manager] 解析 executionLog 失败:', err);
+    }
+  });
+  
+  executionLogDelegateBound = true;
+}
+
+// ============================================================
 // Re-export renderMessageMermaid from markdown-render.js
 // ============================================================
 export { renderMessageMermaid };
@@ -747,6 +803,7 @@ function renderExecutionTimeline(executionLog) {
     const isToolExec = entry.nodeType === 'tool_exec';
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
+    const isReflection = entry.nodeType === 'reflection';
     const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
@@ -756,7 +813,9 @@ function renderExecutionTimeline(executionLog) {
     let indentClass = '';
     let nodeIcon = '';
     
-    if (isPreselect) {
+    if (isReflection) {
+      nodeIcon = '🎯';
+    } else if (isPreselect) {
       nodeIcon = '📡';
     } else if (isPlanTask) {
       indentClass = 'plan-task-level';
@@ -783,6 +842,9 @@ function renderExecutionTimeline(executionLog) {
     } else if (entry.status === 'failed') {
       statusIcon = '✗';
     }
+    if (isReflection) {
+      statusClass = `reflection ${statusClass}`;
+    }
     
     let nodeName = escapeHtml(entry.nodeName || '未知节点');
     
@@ -794,7 +856,7 @@ function renderExecutionTimeline(executionLog) {
       nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
-    if ((isApiCall || isPreselect) && entry.apiRequest) {
+    if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
@@ -897,6 +959,63 @@ function renderExecutionTimeline(executionLog) {
             <div class="timeline-section">
               <div class="section-title">✅ 子任务结果</div>
               <div class="section-content">${escapeHtml(entry.result)}</div>
+            </div>
+            ` : ''}
+            
+            ${isReflection ? `
+            <div class="timeline-section reflection-details">
+              ${entry.prompt ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 评估提示词</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.rawContent ? `
+              <div class="timeline-section">
+                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.apiResponse?.tokenUsage ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 Token 使用</div>
+                <div class="section-content">
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                </div>
+              </div>
+              ` : ''}
+              ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              ` : ''}
+              ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+              <div class="reflection-dimensions">
+                ${Object.entries(entry.dimensions).map(([key, val]) => `
+                  <div class="dimension-item">
+                    <span class="dim-label">${key}</span>
+                    <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                    <span class="dim-score">${val}/10</span>
+                  </div>
+                `).join('')}
+              </div>
+              ` : ''}
+              ${entry.issues && entry.issues.length > 0 ? `
+              <div class="section-title">📋 发现的问题</div>
+              <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.suggestions && entry.suggestions.length > 0 ? `
+              <div class="section-title">💡 改进建议</div>
+              <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.action?.decision ? `
+              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              ` : ''}
+              ${entry.useful !== undefined ? `
+              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ` : ''}
             </div>
             ` : ''}
           </div>
@@ -1037,12 +1156,16 @@ function renderSingleEntry(entry, index, totalCount) {
   const isToolExec = entry.nodeType === 'tool_exec';
   const isApiCall = entry.nodeType === 'api_call';
   const isPreselect = entry.nodeType === 'preselect';
+  const isReflection = entry.nodeType === 'reflection';
   const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
   
   let indentClass = '';
   let nodeIcon = '';
   
-  if (isPreselect) {
+  if (isReflection) {
+    indentClass = 'reflection-level';
+    nodeIcon = '🎯';
+  } else if (isPreselect) {
     nodeIcon = '📡';
   } else if (isPlanTask) {
     indentClass = 'plan-task-level';
@@ -1068,6 +1191,9 @@ function renderSingleEntry(entry, index, totalCount) {
     statusIcon = '✓';
   } else if (entry.status === 'failed') {
     statusIcon = '✗';
+  }
+  if (isReflection) {
+    statusClass = `reflection ${statusClass}`;
   }
   
   let nodeName = escapeHtml(entry.nodeName || '未知节点');
@@ -1181,6 +1307,41 @@ function renderSingleEntry(entry, index, totalCount) {
             <div class="section-content">${escapeHtml(entry.result)}</div>
           </div>
           ` : ''}
+          
+          ${isReflection ? `
+          <div class="timeline-section reflection-details">
+            ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+            <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+            ` : ''}
+            ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+            <div class="reflection-dimensions">
+              ${Object.entries(entry.dimensions).map(([key, val]) => `
+                <div class="dimension-item">
+                  <span class="dim-label">${key}</span>
+                  <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                  <span class="dim-score">${val}/10</span>
+                </div>
+              `).join('')}
+            </div>
+            ` : ''}
+            ${entry.issues && entry.issues.length > 0 ? `
+            <div class="section-title">📋 发现的问题</div>
+            <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+            ` : ''}
+            ${entry.suggestions && entry.suggestions.length > 0 ? `
+            <div class="section-title">💡 改进建议</div>
+            <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+            ` : ''}
+            ${entry.action?.decision ? `
+            <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+            ` : ''}
+            ${entry.useful !== undefined ? `
+            <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+            ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+            ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+            ` : ''}
+          </div>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -1199,6 +1360,7 @@ function renderExecutionLogOriginal(sortedLog) {
     const isToolExec = entry.nodeType === 'tool_exec';
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
+    const isReflection = entry.nodeType === 'reflection';
     const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
@@ -1208,7 +1370,9 @@ function renderExecutionLogOriginal(sortedLog) {
     let indentClass = '';
     let nodeIcon = '';
     
-    if (isPreselect) {
+    if (isReflection) {
+      nodeIcon = '🎯';
+    } else if (isPreselect) {
       nodeIcon = '📡';
     } else if (isPlanTask) {
       indentClass = 'plan-task-level';
@@ -1246,7 +1410,7 @@ function renderExecutionLogOriginal(sortedLog) {
       nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
-    if ((isApiCall || isPreselect) && entry.apiRequest) {
+    if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
@@ -1349,6 +1513,63 @@ function renderExecutionLogOriginal(sortedLog) {
             <div class="timeline-section">
               <div class="section-title">✅ 子任务结果</div>
               <div class="section-content">${escapeHtml(entry.result)}</div>
+            </div>
+            ` : ''}
+            
+            ${isReflection ? `
+            <div class="timeline-section reflection-details">
+              ${entry.prompt ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 评估提示词</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.rawContent ? `
+              <div class="timeline-section">
+                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.apiResponse?.tokenUsage ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 Token 使用</div>
+                <div class="section-content">
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                </div>
+              </div>
+              ` : ''}
+              ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              ` : ''}
+              ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+              <div class="reflection-dimensions">
+                ${Object.entries(entry.dimensions).map(([key, val]) => `
+                  <div class="dimension-item">
+                    <span class="dim-label">${key}</span>
+                    <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                    <span class="dim-score">${val}/10</span>
+                  </div>
+                `).join('')}
+              </div>
+              ` : ''}
+              ${entry.issues && entry.issues.length > 0 ? `
+              <div class="section-title">📋 发现的问题</div>
+              <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.suggestions && entry.suggestions.length > 0 ? `
+              <div class="section-title">💡 改进建议</div>
+              <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.action?.decision ? `
+              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              ` : ''}
+              ${entry.useful !== undefined ? `
+              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ` : ''}
             </div>
             ` : ''}
           </div>
@@ -1884,7 +2105,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         chrome.runtime.onMessage.removeListener(listener);
         resolve({ 
           content: message.content, 
-          executionLog: message.executionLog || executionLog 
+          executionLog: message.executionLog || executionLog,
+          reflectionScore: message.reflectionScore
         });
         return false;
       } else if (message.type === 'API_ERROR') {
@@ -1940,6 +2162,8 @@ function showExecutionLog(executionLog) {
   const subtaskCount = executionLog.filter(entry => entry.nodeType === 'subtask').length;
   const completedSubtasks = executionLog.filter(entry => entry.nodeType === 'subtask' && entry.status === 'success').length;
   const planTaskCount = executionLog.filter(entry => entry.nodeType === 'tool_exec' && entry.action?.name === 'plan_task' && entry.status === 'success').length;
+  const reflectionEntries = executionLog.filter(entry => entry.nodeType === 'reflection');
+  const postReflection = reflectionEntries.find(e => e.reflectionType === 'post');
   
   panel.innerHTML = `
     <div class="log-container">
@@ -1991,6 +2215,13 @@ function showExecutionLog(executionLog) {
               <span class="stat-icon">🔀</span>
               <span class="stat-label">子任务</span>
               <span class="stat-value">${completedSubtasks}/${subtaskCount}</span>
+            </div>
+            ` : ''}
+            ${postReflection ? `
+            <div class="combo-stat reflection" title="质量评估: ${postReflection.overallScore}/10">
+              <span class="stat-icon">🔍</span>
+              <span class="stat-label">评分</span>
+              <span class="stat-value">${postReflection.overallScore}/10</span>
             </div>
             ` : ''}
           </div>

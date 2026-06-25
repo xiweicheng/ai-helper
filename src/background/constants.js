@@ -15,6 +15,38 @@ export const DEFAULT_REACT_CONFIG = {
   apiRetryBaseDelay: 1000     // API 重试基础延迟 (ms) (500-30000)，指数退避
 };
 
+// 反思配置默认值
+export const DEFAULT_REFLECTION_CONFIG = {
+  enabled: true,              // 是否启用反思（可整体关闭）
+  postReflection: {
+    enabled: true,            // 主循环后置反思
+    maxRounds: 1,             // 最大反思轮数（0=不反思）
+    qualityThreshold: 7,      // 质量评分阈值（1-10），低于此值重新执行
+    refineThreshold: 5,       // 修订阈值（1-10），低于此值直接修订而非重新执行
+    model: null,              // 反思用模型，null=使用当前模型
+    temperature: 0.3,         // 反思时 temperature
+    maxTokens: 2048           // 反思响应最大 token
+  },
+  subtaskReflection: {
+    enabled: false,           // 子任务反思（默认关闭）
+    onlyForComplexSubtasks: true, // 仅标记为 complex 的子任务
+    maxRounds: 1,
+    dimensions: ['completeness', 'relevance'], // 简化维度
+    model: null,
+    temperature: 0.3,
+    maxTokens: 1024
+  },
+  toolReflection: {
+    enabled: true,            // 工具级反思
+    triggerOnError: true,     // 工具返回错误时触发
+    triggerOnEmpty: true,     // 工具返回空结果时触发
+    triggerOnOversized: true, // 工具返回结果过大时触发
+    oversizeThreshold: 50000, // 结果大小阈值（字符）
+    triggerOnConsecutiveFails: 3, // 连续 N 次工具失败触发
+    maxPerIteration: 2        // 每轮迭代最多触发工具反思次数
+  }
+};
+
 // 对话配置默认值
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,        // 最大输入历史记录数 (10-100)

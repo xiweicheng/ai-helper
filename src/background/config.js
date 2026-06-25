@@ -1,6 +1,6 @@
 // background/config.js - 配置管理
 
-import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG } from './constants.js';
+import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 
 /**
  * 获取存储的配置
@@ -11,7 +11,8 @@ export function getStoredConfig() {
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
       'reactApiRetryCount', 'reactApiRetryBaseDelay',
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength'
+      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength',
+      'reflectionConfig'
     ], (result) => {
       resolve({
         apiBase: result.apiBase || DEFAULT_API_BASE,
@@ -26,7 +27,9 @@ export function getStoredConfig() {
           toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
           clarifyTimeout: result.reactClarifyTimeout || DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: result.reactApiRetryCount !== undefined ? result.reactApiRetryCount : DEFAULT_REACT_CONFIG.apiRetryCount,
-          apiRetryBaseDelay: result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay
+          apiRetryBaseDelay: result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
+          // 反思配置（从 storage 读取，否则使用默认值）
+          reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
         },
         // 对话配置项
         chatConfig: {

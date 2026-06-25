@@ -3205,6 +3205,38 @@
       height: 14px;
     }
     
+    /* 反思评分徽章（合并到执行日志按钮内） */
+    .execution-log-btn.has-reflection {
+      gap: 2px;
+    }
+    
+    .execution-log-btn .reflection-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 0 4px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+    }
+    
+    .execution-log-btn .reflection-badge.score-high {
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+    }
+    
+    .execution-log-btn .reflection-badge.score-mid {
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.1);
+    }
+    
+    .execution-log-btn .reflection-badge.score-low {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+    }
+    
     /* 执行日志面板样式 */
     .execution-log-panel {
       position: fixed;
@@ -3539,6 +3571,21 @@
       animation: spin 0.8s linear infinite;
     }
     
+    .execution-log-panel .timeline-dot.reflection.success {
+      background: #6366f1;
+    }
+    
+    .execution-log-panel .timeline-dot.reflection.failed {
+      background: #9333ea;
+    }
+    
+    .execution-log-panel .timeline-dot.reflection.processing {
+      background: transparent;
+      border: 2px solid #6366f1;
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+    }
+    
     .execution-log-panel .timeline-content {
       background: #fafafa;
       border-radius: 10px;
@@ -3642,6 +3689,70 @@
       margin-top: 4px;
       white-space: pre-wrap;
       word-break: break-all;
+    }
+    
+    /* 反思维度评分条 */
+    .execution-log-panel .reflection-details {
+      border-left: 3px solid #6366f1;
+      padding-left: 12px;
+      margin-top: 8px;
+    }
+    
+    .execution-log-panel .reflection-dimensions {
+      margin: 8px 0;
+    }
+    
+    .execution-log-panel .dimension-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+    
+    .execution-log-panel .dim-label {
+      width: 70px;
+      color: #666;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    
+    .execution-log-panel .dim-bar {
+      flex: 1;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .execution-log-panel .dim-fill {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    
+    .execution-log-panel .dim-score {
+      width: 30px;
+      color: #6366f1;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    
+    /* 反思统计项 */
+    .execution-log-panel .combo-stat.reflection {
+      cursor: default;
+    }
+    
+    .execution-log-panel .combo-stat.reflection .stat-icon {
+      color: #6366f1;
+    }
+    
+    .execution-log-panel .combo-stat.reflection:hover {
+      background: rgba(99, 102, 241, 0.08);
+      border-radius: 6px;
     }
     
     /* ========== 实时模式覆盖样式（执行中面板） ========== */
