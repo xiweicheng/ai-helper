@@ -891,7 +891,7 @@
       flex: 1;
       overflow-x: hidden;
       overflow-y: auto;
-      padding: 15px;
+      padding: 11px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -987,6 +987,42 @@
     @keyframes sessionPulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(1.3); }
+    }
+    
+    .session-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      margin-left: 2px;
+      margin-right: -6px;
+      border-radius: 50%;
+      font-size: 12px;
+      line-height: 1;
+      color: #999;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+      flex-shrink: 0;
+    }
+    
+    .session-tab:hover .session-tab-close {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .session-tab-close:hover {
+      color: #e53e3e;
+      background: rgba(229, 62, 62, 0.1);
+    }
+    
+    .session-tab.active .session-tab-close {
+      background: transparent;
+    }
+    
+    .session-tab.active .session-tab-close:hover {
+      background: rgba(229, 62, 62, 0.1);
     }
     
     .session-tab-add {

@@ -43,6 +43,29 @@ export async function renderSessionTabs() {
     titleSpan.textContent = session.title || '新会话';
     tab.appendChild(titleSpan);
 
+    // 关闭按钮（hover 时显示）
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'session-tab-close';
+    closeBtn.innerHTML = '&#10005;';
+    closeBtn.title = '关闭会话';
+    closeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      showDeleteModal(session, async () => {
+        const sessionsData = await loadSessions();
+        state.activeSessionId = sessionsData.activeSessionId;
+        state.sessions = sessionsData.list;
+        const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+        if (active) {
+          state.messageHistory = active.messageHistory || [];
+        } else {
+          state.messageHistory = [];
+        }
+        document.dispatchEvent(new CustomEvent('session-switched'));
+        renderSessionTabs();
+      });
+    });
+    tab.appendChild(closeBtn);
+
     if (session.isGenerating || state.generatingSessionIds.has(session.id)) {
       const indicator = document.createElement('span');
       indicator.className = 'session-tab-indicator';
