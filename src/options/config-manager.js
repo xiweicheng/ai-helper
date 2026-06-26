@@ -511,14 +511,21 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     &nbsp;&nbsp;最大轮数: ${reflection.postReflection?.maxRounds ?? '-'} 轮<br>
     &nbsp;&nbsp;质量阈值: ${reflection.postReflection?.qualityThreshold ?? '-'} /10<br>
     &nbsp;&nbsp;修订阈值: ${reflection.postReflection?.refineThreshold ?? '-'} /10<br>
+    &nbsp;&nbsp;反思模型: ${reflection.postReflection?.model || '使用当前模型'}<br>
+    &nbsp;&nbsp;温度系数: ${reflection.postReflection?.temperature ?? '-'}<br>
+    &nbsp;&nbsp;最大 Token: ${reflection.postReflection?.maxTokens ?? '-'}<br>
     工具级反思: ${reflection.toolReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
     &nbsp;&nbsp;触发条件: 错误${reflection.toolReflection?.triggerOnError ? '✓' : '✗'} / 空${reflection.toolReflection?.triggerOnEmpty ? '✓' : '✗'} / 过大${reflection.toolReflection?.triggerOnOversized ? '✓' : '✗'}<br>
+    &nbsp;&nbsp;过大阈值: ${reflection.toolReflection?.oversizeThreshold ?? '-'} 字符<br>
     &nbsp;&nbsp;连续失败触发: ${reflection.toolReflection?.triggerOnConsecutiveFails ?? '-'} 次<br>
     &nbsp;&nbsp;每轮上限: ${reflection.toolReflection?.maxPerIteration ?? '-'} 次<br>
     子任务反思: ${reflection.subtaskReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
     &nbsp;&nbsp;仅复杂子任务: ${reflection.subtaskReflection?.onlyForComplexSubtasks ? '✓' : '✗'}<br>
     &nbsp;&nbsp;最大轮数: ${reflection.subtaskReflection?.maxRounds ?? '-'} 轮<br>
     &nbsp;&nbsp;评估维度: ${(reflection.subtaskReflection?.dimensions || []).join(', ') || '-'}<br>
+    &nbsp;&nbsp;反思模型: ${reflection.subtaskReflection?.model || '使用当前模型'}<br>
+    &nbsp;&nbsp;温度系数: ${reflection.subtaskReflection?.temperature ?? '-'}<br>
+    &nbsp;&nbsp;最大 Token: ${reflection.subtaskReflection?.maxTokens ?? '-'}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>对话配置：</strong><br>
     输入历史记录数: ${chat.maxInputHistory} 条<br>

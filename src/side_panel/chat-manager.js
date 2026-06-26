@@ -284,6 +284,7 @@ export async function sendMessage() {
   saveChatHistory();
   
   addToInputHistory(text);
+  state.inputHistoryIndex = -1;
 
   userInput.value = '';
   userInput.style.height = 'auto';
@@ -632,6 +633,11 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const hasExecutionLog = executionLog && executionLog.length > 0;
     const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
+    
+    // 计算反思轮数（postReflection 类型的成功节点数量）
+    const reflectionRounds = executionLog 
+      ? executionLog.filter(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.status === 'success').length 
+      : 0;
 
     // 绑定事件委托（首次调用时执行一次）
     bindExecutionLogDelegate();
@@ -654,7 +660,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
         const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
         const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
-        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10${wasRevised ? '（已修订）' : ''}`;
+        const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
+        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10${roundsTag}${wasRevised ? '（已修订）' : ''}`;
         logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`);
       }
 

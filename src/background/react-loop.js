@@ -528,7 +528,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               sendExecutionStatusUpdate('任务规划完成', 'success');
               
               // 开始执行子任务
-              const subtaskResults = await executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration);
+              const subtaskResults = await executeSubtasks(
+                subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration,
+                reactConfig.reflection, config
+              );
               
               // 子任务执行完毕后检查是否已被取消
               if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
@@ -673,7 +676,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }) {
+export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -884,13 +887,69 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
         // 记录已完成的子任务（用于回滚）
         completedSubtasks.push({ subtask, result: subtaskResult });
         
+        // 子任务反思：对子任务结果进行质量评估
+        let finalResult = subtaskResult.content;
+        let subtaskReflectionScore = null;
+        
+        if (reflectionConfig?.enabled && reflectionConfig?.subtaskReflection?.enabled) {
+          const subtaskReflectConfig = reflectionConfig.subtaskReflection;
+          
+          // 检查是否应该触发子任务反思
+          const isComplexSubtask = subtask.complexity === 'complex' || 
+                                   subtaskResult.content.length > 500 || 
+                                   (subtaskResult.executionLog && subtaskResult.executionLog.length > 3);
+          
+          const shouldReflectSubtask = !subtaskReflectConfig.onlyForComplexSubtasks || isComplexSubtask;
+          
+          if (shouldReflectSubtask && subtaskReflectConfig.maxRounds > 0) {
+            console.log(`[Background] 子任务 ${subtask.name} 触发反思，复杂度: ${isComplexSubtask ? '复杂' : '普通'}`);
+            
+            const reflectionResult = await reflectOnSubtask(
+              subtaskMessages, 
+              subtaskResult.content, 
+              subtaskResult.executionLog || [],
+              model,
+              config,
+              subtaskReflectConfig,
+              tabId,
+              subtask.name,
+              parentExecutionLog
+            );
+            
+            // 如果反思有修订，使用修订后的结果
+            if (reflectionResult.refinedContent) {
+              finalResult = reflectionResult.refinedContent;
+              console.log(`[Background] 子任务 ${subtask.name} 反思后已修订`);
+            }
+            
+            subtaskReflectionScore = reflectionResult.score;
+            
+            // 将反思日志添加到父日志
+            if (reflectionResult.reflectionLog) {
+              reflectionResult.reflectionLog.forEach(log => {
+                parentExecutionLog.push({
+                  ...log,
+                  subtaskId: subtask.id,
+                  subtaskName: subtask.name,
+                  subtaskIndex: subtaskIndex,
+                  taskGroup: taskGroup,
+                  taskGroupIndex: subtaskIndex + 1,
+                  taskGroupName: subtask.name,
+                  isSubtask: true
+                });
+              });
+            }
+          }
+        }
+        
         return {
           success: true,
           subtaskId: subtask.id,
           subtaskName: subtask.name,
-          result: subtaskResult.content,
+          result: finalResult,
           executionLog: subtaskResult.executionLog || [],
-          retryCount: retry
+          retryCount: retry,
+          reflectionScore: subtaskReflectionScore
         };
         
       } catch (error) {
@@ -1693,5 +1752,135 @@ ${toolResultStr.substring(0, 2000)}
   } catch (error) {
     console.warn('[Background] 工具反思调用失败:', error.message);
     return null;
+  }
+}
+
+/**
+ * 子任务反思：对子任务执行结果进行质量评估
+ */
+async function reflectOnSubtask(messages, result, executionLog, model, config, subtaskReflectConfig, tabId, subtaskName, parentExecutionLog) {
+  const startTime = Date.now();
+  const reflectionLog = [];
+  
+  // 构建评估维度
+  const dimensions = subtaskReflectConfig.dimensions || ['completeness', 'relevance'];
+  const dimensionsDesc = {
+    completeness: '任务是否完整完成',
+    relevance: '结果是否与任务目标相关',
+    accuracy: '结果是否准确无误',
+    efficiency: '执行过程是否高效'
+  };
+  
+  const dimensionPrompts = dimensions.map(d => `- ${d}: ${dimensionsDesc[d] || d}`).join('\n');
+  
+  const prompt = `你正在评估一个子任务的执行结果。
+
+子任务名称：${subtaskName}
+
+执行结果：
+${result.substring(0, 2000)}${result.length > 2000 ? '...(已截断)' : ''}
+
+请按以下维度评估（每项 1-10 分）：
+${dimensionPrompts}
+
+以 JSON 格式输出评估结果（不要包含 markdown 代码块）：
+{
+  "overallScore": 8,
+  "dimensions": {
+    "completeness": 9,
+    "relevance": 8
+  },
+  "issues": ["发现的问题1", "发现的问题2"],
+  "suggestions": ["改进建议1"],
+  "refinedAnswer": null  // 如果需要修订，在此提供修订后的答案
+}`;
+
+  try {
+    const apiUrl = `${config.apiBase}/chat/completions`;
+    const reflectionModel = subtaskReflectConfig.model || model || config.modelName;
+    
+    const response = await fetchWithRetry(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: reflectionModel,
+        messages: [
+          { role: 'system', content: '你是一个严格的质量评估者。请以 JSON 格式输出评估结果，不要包含 markdown 代码块标记。' },
+          { role: 'user', content: prompt }
+        ],
+        stream: false,
+        temperature: subtaskReflectConfig.temperature || 0.3,
+        max_tokens: subtaskReflectConfig.maxTokens || 1024
+      })
+    }, 30000, 1, 1000);
+
+    if (!response.ok) {
+      throw new Error(`Subtask reflection API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content || '';
+    const parsed = parseReflectionResult(rawContent);
+    const duration = Date.now() - startTime;
+
+    // 记录反思日志
+    reflectionLog.push({
+      id: crypto.randomUUID(),
+      iteration: 0,
+      timestamp: new Date().toISOString(),
+      status: 'success',
+      nodeType: 'reflection',
+      nodeName: `子任务反思: ${subtaskName}`,
+      reflectionType: 'subtask',
+      overallScore: parsed.overallScore,
+      dimensions: parsed.dimensions,
+      issues: parsed.issues,
+      suggestions: parsed.suggestions,
+      prompt,
+      rawContent,
+      apiRequest: {
+        model: reflectionModel,
+        messageCount: 2,
+        temperature: subtaskReflectConfig.temperature || 0.3,
+        maxTokens: subtaskReflectConfig.maxTokens || 1024
+      },
+      apiResponse: {
+        tokenUsage: data.usage || null
+      },
+      duration
+    });
+
+    console.log(`[Background] 子任务反思完成: ${subtaskName}, 评分: ${parsed.overallScore}/10, 耗时: ${duration}ms`);
+
+    return {
+      score: parsed.overallScore,
+      refinedContent: parsed.refinedAnswer && parsed.refinedAnswer !== result ? parsed.refinedAnswer : null,
+      reflectionLog
+    };
+
+  } catch (error) {
+    console.warn('[Background] 子任务反思失败:', error.message);
+    const duration = Date.now() - startTime;
+    
+    reflectionLog.push({
+      id: crypto.randomUUID(),
+      iteration: 0,
+      timestamp: new Date().toISOString(),
+      status: 'failed',
+      nodeType: 'reflection',
+      nodeName: `子任务反思: ${subtaskName}`,
+      reflectionType: 'subtask',
+      error: error.message,
+      duration
+    });
+
+    return {
+      score: null,
+      refinedContent: null,
+      reflectionLog
+    };
   }
 }

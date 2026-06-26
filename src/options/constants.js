@@ -1,5 +1,8 @@
 // options/constants.js - 常量定义
 
+// 从 background/constants.js 导入反思配置，确保一致性
+import { DEFAULT_REFLECTION_CONFIG } from '../background/constants.js';
+
 // 预设模型列表
 export const PRESET_MODELS = [
   'deepseek-v4-pro',
@@ -58,34 +61,5 @@ export const DEFAULT_CHAT_CONFIG = {
   enableExecutionLog: false  // 默认关闭执行日志
 };
 
-// 反思配置默认值
-export const DEFAULT_REFLECTION_CONFIG = {
-  enabled: true,
-  postReflection: {
-    enabled: true,
-    maxRounds: 1,
-    qualityThreshold: 7,
-    refineThreshold: 5,
-    model: null,
-    temperature: 0.3,
-    maxTokens: 2048
-  },
-  subtaskReflection: {
-    enabled: false,
-    onlyForComplexSubtasks: true,
-    maxRounds: 1,
-    dimensions: ['completeness', 'relevance'],
-    model: null,
-    temperature: 0.3,
-    maxTokens: 1024
-  },
-  toolReflection: {
-    enabled: true,
-    triggerOnError: true,
-    triggerOnEmpty: true,
-    triggerOnOversized: true,
-    oversizeThreshold: 50000,
-    triggerOnConsecutiveFails: 3,
-    maxPerIteration: 2
-  }
-};
+// 导出从 background/constants.js 导入的反思配置
+export { DEFAULT_REFLECTION_CONFIG };
