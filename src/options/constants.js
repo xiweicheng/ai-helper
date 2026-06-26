@@ -57,3 +57,35 @@ export const DEFAULT_CHAT_CONFIG = {
   maxMemoryMessages: null,   // 记忆历史限制条数，null表示不限制
   enableExecutionLog: false  // 默认关闭执行日志
 };
+
+// 反思配置默认值
+export const DEFAULT_REFLECTION_CONFIG = {
+  enabled: true,
+  postReflection: {
+    enabled: true,
+    maxRounds: 1,
+    qualityThreshold: 7,
+    refineThreshold: 5,
+    model: null,
+    temperature: 0.3,
+    maxTokens: 2048
+  },
+  subtaskReflection: {
+    enabled: false,
+    onlyForComplexSubtasks: true,
+    maxRounds: 1,
+    dimensions: ['completeness', 'relevance'],
+    model: null,
+    temperature: 0.3,
+    maxTokens: 1024
+  },
+  toolReflection: {
+    enabled: true,
+    triggerOnError: true,
+    triggerOnEmpty: true,
+    triggerOnOversized: true,
+    oversizeThreshold: 50000,
+    triggerOnConsecutiveFails: 3,
+    maxPerIteration: 2
+  }
+};

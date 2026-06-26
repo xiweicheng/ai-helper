@@ -1041,6 +1041,234 @@
     .tab-panel.active {
       display: block;
     }
+    
+    .reflection-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .reflection-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .reflection-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .reflection-section {
+      background: #fafafa;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .reflection-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #ddd;
+    }
+    
+    .reflection-section-title {
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .reflection-section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .reflection-section-toggle label {
+      margin-bottom: 0;
+    }
+    
+    .reflection-config-item {
+      margin-bottom: 12px;
+    }
+    
+    .reflection-config-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .reflection-config-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-weight: 500;
+      color: #555;
+      font-size: 13px;
+    }
+    
+    .reflection-config-item .hint-text {
+      font-size: 11px;
+      color: #999;
+      font-weight: normal;
+    }
+    
+    .reflection-config-item input[type="number"],
+    .reflection-config-item input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s;
+    }
+    
+    .reflection-config-item input[type="number"]:focus,
+    .reflection-config-item input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+    
+    .reflection-config-item .unit {
+      font-size: 11px;
+      color: #888;
+      margin-left: 4px;
+    }
+    
+    .reflection-config-item .range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+    
+    .reflection-section.collapsible {
+      cursor: pointer;
+    }
+    
+    .reflection-section.collapsible .reflection-section-header:hover {
+      background: rgba(102, 126, 234, 0.05);
+      border-radius: 6px;
+    }
+    
+    .reflection-section.collapsed .reflection-section-content {
+      display: none;
+    }
+    
+    .reflection-section-icon {
+      font-size: 12px;
+      transition: transform 0.2s;
+      display: inline-block;
+      margin-right: 4px;
+    }
+    
+    .reflection-section.collapsed .reflection-section-icon {
+      transform: rotate(-90deg);
+    }
+    
+    .reflection-section.disabled {
+      opacity: 0.5;
+    }
+    
+    .reflection-section.disabled .reflection-section-content {
+      display: none;
+    }
+    
+    .reflection-config.disabled {
+      opacity: 0.6;
+    }
+    
+    .reflection-config.disabled .reflection-section {
+      display: none;
+    }
+    
+    .reflection-config.disabled .reflection-main-toggle {
+      display: flex;
+    }
+    
+    .reflection-toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+    
+    .reflection-toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .reflection-toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 20px;
+    }
+    
+    .reflection-toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    
+    .reflection-toggle-switch input:checked + .reflection-toggle-slider {
+      background-color: #667eea;
+    }
+    
+    .reflection-toggle-switch input:focus + .reflection-toggle-slider {
+      box-shadow: 0 0 1px #667eea;
+    }
+    
+    .reflection-toggle-switch input:checked + .reflection-toggle-slider:before {
+      transform: translateX(16px);
+    }
+    
+    .reflection-toggle-text {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+    
+    .reflection-main-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8eefd 100%);
+      border-radius: 10px;
+      border: 1px solid #d0d9f0;
+    }
+    
+    .reflection-main-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 0;
+      font-weight: 600;
+      color: #333;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -1052,6 +1280,7 @@
       <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
       <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
       <button class="tab-nav-btn" data-tab="react">ReAct</button>
+      <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
     </div>
 
@@ -1292,6 +1521,212 @@
     </div>
 
     </div><!-- /tab-react -->
+
+    <!-- 反思配置区域 -->
+    <div class="tab-panel" data-tab="reflection">
+    <div class="reflection-config" id="reflectionConfig">
+      <h2>🎯 AI 自我反思配置</h2>
+      <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
+      
+      <div class="reflection-main-toggle">
+        <label>
+          <input type="checkbox" id="reflectionEnabled" checked>
+          <span>启用反思功能</span>
+        </label>
+      </div>
+      
+      <div class="reflection-section" id="postReflectionSection" data-toggle="postReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">📝 后置反思（循环结束后评估质量）</span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="postReflectionEnabled" checked>
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label>
+              最大反思轮数
+              <span class="hint-text">（0=不反思，1-3轮）</span>
+            </label>
+            <input type="number" id="reflectionPostMaxRounds" min="0" max="3" value="1" placeholder="1">
+            <div class="range-labels">
+              <span>0（关闭）</span>
+              <span>3</span>
+            </div>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              质量评分阈值
+              <span class="hint-text">（低于此值重新执行，1-10分）</span>
+            </label>
+            <input type="number" id="reflectionPostQualityThreshold" min="1" max="10" value="7" placeholder="7">
+            <span class="unit">/10</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              修订阈值
+              <span class="hint-text">（低于此值直接修订而非重新执行，1-10分）</span>
+            </label>
+            <input type="number" id="reflectionPostRefineThreshold" min="1" max="10" value="5" placeholder="5">
+            <span class="unit">/10</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              反思模型
+              <span class="hint-text">（留空使用当前模型）</span>
+            </label>
+            <input type="text" id="reflectionPostModel" placeholder="使用当前模型">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              温度系数
+              <span class="hint-text">（反思时的随机性，0-1）</span>
+            </label>
+            <input type="number" id="reflectionPostTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大 Token
+              <span class="hint-text">（反思响应的最大 token 数）</span>
+            </label>
+            <input type="number" id="reflectionPostMaxTokens" min="256" max="8192" step="256" value="2048" placeholder="2048">
+          </div>
+        </div>
+      </div>
+
+      <div class="reflection-section" id="toolReflectionSection" data-toggle="toolReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">🔧 工具级反思（工具执行后评估结果）</span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="toolReflectionEnabled" checked>
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnError" checked>
+              <span class="toggle-text">工具返回错误时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnEmpty" checked>
+              <span class="toggle-text">工具返回空结果时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnOversized" checked>
+              <span class="toggle-text">工具返回结果过大时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              结果大小阈值
+              <span class="hint-text">（超过此字符数视为过大）</span>
+            </label>
+            <input type="number" id="toolReflectionOversizeThreshold" min="1000" max="200000" step="1000" value="50000" placeholder="50000">
+            <span class="unit">字符</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              连续失败触发次数
+              <span class="hint-text">（连续 N 次工具失败后触发反思）</span>
+            </label>
+            <input type="number" id="toolReflectionConsecutiveFails" min="1" max="10" value="3" placeholder="3">
+            <span class="unit">次</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              每轮最多触发次数
+              <span class="hint-text">（单轮迭代中工具反思的上限）</span>
+            </label>
+            <input type="number" id="toolReflectionMaxPerIteration" min="1" max="5" value="2" placeholder="2">
+            <span class="unit">次</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="reflection-section collapsible" id="subtaskReflectionSection" data-toggle="subtaskReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">
+            <span class="reflection-section-icon">▶</span>
+            📋 子任务反思（高级）
+          </span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="subtaskReflectionEnabled">
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="subtaskReflectionOnlyComplex" checked>
+              <span class="toggle-text">仅对复杂子任务生效</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大反思轮数
+              <span class="hint-text">（0=不反思）</span>
+            </label>
+            <input type="number" id="subtaskReflectionMaxRounds" min="0" max="3" value="1" placeholder="1">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              评估维度
+              <span class="hint-text">（逗号分隔，如：completeness,relevance）</span>
+            </label>
+            <input type="text" id="subtaskReflectionDimensions" value="completeness,relevance" placeholder="completeness,relevance">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              反思模型
+              <span class="hint-text">（留空使用当前模型）</span>
+            </label>
+            <input type="text" id="subtaskReflectionModel" placeholder="使用当前模型">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              温度系数
+              <span class="hint-text">（反思时的随机性，0-1）</span>
+            </label>
+            <input type="number" id="subtaskReflectionTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大 Token
+              <span class="hint-text">（反思响应的最大 token 数）</span>
+            </label>
+            <input type="number" id="subtaskReflectionMaxTokens" min="256" max="4096" step="256" value="1024" placeholder="1024">
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 反思配置说明</h3>
+        <p>
+          <strong>后置反思</strong>：在 ReAct 循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。<br>
+          <strong>工具级反思</strong>：在每次工具调用后，AI 会检查执行结果是否符合预期，遇到错误或异常时自动调整策略。<br>
+          <strong>子任务反思</strong>：对于复杂任务拆解后的子任务进行单独评估，默认关闭。<br>
+          • 提高质量阈值会减少反思次数，但可能降低结果质量<br>
+          • 降低温度系数会使反思更保守、更一致<br>
+          • 启用反思会增加 API 调用次数，建议根据需求权衡
+        </p>
+      </div>
+    </div>
+    </div><!-- /tab-reflection -->
 
     <!-- 对话配置区域 -->
     <div class="tab-panel" data-tab="chat">

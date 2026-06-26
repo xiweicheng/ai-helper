@@ -1,6 +1,6 @@
 // options/config-manager.js - 配置管理与状态
 
-import { PRESET_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG } from './constants.js';
+import { PRESET_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 
 // Re-export PRESET_MODELS so index.js can use it
 export { PRESET_MODELS };
@@ -117,7 +117,8 @@ export function loadConfig() {
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay',
-    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog'
+    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
+    'reflectionConfig'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -164,11 +165,69 @@ export function loadConfig() {
     document.getElementById('enableExecutionLog').checked = 
       result.enableExecutionLog || DEFAULT_CHAT_CONFIG.enableExecutionLog;
     
+    // 加载反思配置
+    const reflection = result.reflectionConfig || DEFAULT_REFLECTION_CONFIG;
+    document.getElementById('reflectionEnabled').checked = reflection.enabled !== false;
+    document.getElementById('postReflectionEnabled').checked = reflection.postReflection?.enabled !== false;
+    document.getElementById('reflectionPostMaxRounds').value = reflection.postReflection?.maxRounds ?? DEFAULT_REFLECTION_CONFIG.postReflection.maxRounds;
+    document.getElementById('reflectionPostQualityThreshold').value = reflection.postReflection?.qualityThreshold ?? DEFAULT_REFLECTION_CONFIG.postReflection.qualityThreshold;
+    document.getElementById('reflectionPostRefineThreshold').value = reflection.postReflection?.refineThreshold ?? DEFAULT_REFLECTION_CONFIG.postReflection.refineThreshold;
+    document.getElementById('reflectionPostModel').value = reflection.postReflection?.model || '';
+    document.getElementById('reflectionPostTemperature').value = reflection.postReflection?.temperature ?? DEFAULT_REFLECTION_CONFIG.postReflection.temperature;
+    document.getElementById('reflectionPostMaxTokens').value = reflection.postReflection?.maxTokens ?? DEFAULT_REFLECTION_CONFIG.postReflection.maxTokens;
+    
+    document.getElementById('toolReflectionEnabled').checked = reflection.toolReflection?.enabled !== false;
+    document.getElementById('toolReflectionTriggerOnError').checked = reflection.toolReflection?.triggerOnError !== false;
+    document.getElementById('toolReflectionTriggerOnEmpty').checked = reflection.toolReflection?.triggerOnEmpty !== false;
+    document.getElementById('toolReflectionTriggerOnOversized').checked = reflection.toolReflection?.triggerOnOversized !== false;
+    document.getElementById('toolReflectionOversizeThreshold').value = reflection.toolReflection?.oversizeThreshold ?? DEFAULT_REFLECTION_CONFIG.toolReflection.oversizeThreshold;
+    document.getElementById('toolReflectionConsecutiveFails').value = reflection.toolReflection?.triggerOnConsecutiveFails ?? DEFAULT_REFLECTION_CONFIG.toolReflection.triggerOnConsecutiveFails;
+    document.getElementById('toolReflectionMaxPerIteration').value = reflection.toolReflection?.maxPerIteration ?? DEFAULT_REFLECTION_CONFIG.toolReflection.maxPerIteration;
+    
+    document.getElementById('subtaskReflectionEnabled').checked = reflection.subtaskReflection?.enabled === true;
+    document.getElementById('subtaskReflectionOnlyComplex').checked = reflection.subtaskReflection?.onlyForComplexSubtasks !== false;
+    document.getElementById('subtaskReflectionMaxRounds').value = reflection.subtaskReflection?.maxRounds ?? DEFAULT_REFLECTION_CONFIG.subtaskReflection.maxRounds;
+    document.getElementById('subtaskReflectionDimensions').value = (reflection.subtaskReflection?.dimensions || DEFAULT_REFLECTION_CONFIG.subtaskReflection.dimensions).join(',');
+    document.getElementById('subtaskReflectionModel').value = reflection.subtaskReflection?.model || '';
+    document.getElementById('subtaskReflectionTemperature').value = reflection.subtaskReflection?.temperature ?? DEFAULT_REFLECTION_CONFIG.subtaskReflection.temperature;
+    document.getElementById('subtaskReflectionMaxTokens').value = reflection.subtaskReflection?.maxTokens ?? DEFAULT_REFLECTION_CONFIG.subtaskReflection.maxTokens;
+    
+    // 更新反思配置区域可见性
+    function updateReflectionVisibility() {
+      const reflectionConfig = document.getElementById('reflectionConfig');
+      const reflectionEnabled = document.getElementById('reflectionEnabled');
+      
+      if (reflectionConfig) {
+        if (!reflectionEnabled || !reflectionEnabled.checked) {
+          reflectionConfig.classList.add('disabled');
+        } else {
+          reflectionConfig.classList.remove('disabled');
+        }
+      }
+      
+      function updateModule(moduleId, toggleId) {
+        const module = document.getElementById(moduleId);
+        const toggle = document.getElementById(toggleId);
+        if (module && toggle) {
+          if (!toggle.checked) {
+            module.classList.add('disabled');
+          } else {
+            module.classList.remove('disabled');
+          }
+        }
+      }
+      
+      updateModule('postReflectionSection', 'postReflectionEnabled');
+      updateModule('toolReflectionSection', 'toolReflectionEnabled');
+      updateModule('subtaskReflectionSection', 'subtaskReflectionEnabled');
+    }
+    
     // 先加载自定义模型到下拉列表，再更新选中状态
     loadCustomModels(() => {
       if (result.modelName) {
         updateModelSelection(result.modelName);
       }
+      updateReflectionVisibility();
     });
   });
 }
@@ -195,6 +254,72 @@ export function saveConfig() {
   const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
   const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
+  
+  // 获取反思配置
+  const reflectionConfig = {
+    enabled: document.getElementById('reflectionEnabled').checked,
+    postReflection: {
+      enabled: document.getElementById('postReflectionEnabled').checked,
+      maxRounds: parseInt(document.getElementById('reflectionPostMaxRounds').value) || DEFAULT_REFLECTION_CONFIG.postReflection.maxRounds,
+      qualityThreshold: parseInt(document.getElementById('reflectionPostQualityThreshold').value) || DEFAULT_REFLECTION_CONFIG.postReflection.qualityThreshold,
+      refineThreshold: parseInt(document.getElementById('reflectionPostRefineThreshold').value) || DEFAULT_REFLECTION_CONFIG.postReflection.refineThreshold,
+      model: document.getElementById('reflectionPostModel').value.trim() || null,
+      temperature: parseFloat(document.getElementById('reflectionPostTemperature').value) || DEFAULT_REFLECTION_CONFIG.postReflection.temperature,
+      maxTokens: parseInt(document.getElementById('reflectionPostMaxTokens').value) || DEFAULT_REFLECTION_CONFIG.postReflection.maxTokens
+    },
+    toolReflection: {
+      enabled: document.getElementById('toolReflectionEnabled').checked,
+      triggerOnError: document.getElementById('toolReflectionTriggerOnError').checked,
+      triggerOnEmpty: document.getElementById('toolReflectionTriggerOnEmpty').checked,
+      triggerOnOversized: document.getElementById('toolReflectionTriggerOnOversized').checked,
+      oversizeThreshold: parseInt(document.getElementById('toolReflectionOversizeThreshold').value) || DEFAULT_REFLECTION_CONFIG.toolReflection.oversizeThreshold,
+      triggerOnConsecutiveFails: parseInt(document.getElementById('toolReflectionConsecutiveFails').value) || DEFAULT_REFLECTION_CONFIG.toolReflection.triggerOnConsecutiveFails,
+      maxPerIteration: parseInt(document.getElementById('toolReflectionMaxPerIteration').value) || DEFAULT_REFLECTION_CONFIG.toolReflection.maxPerIteration
+    },
+    subtaskReflection: {
+      enabled: document.getElementById('subtaskReflectionEnabled').checked,
+      onlyForComplexSubtasks: document.getElementById('subtaskReflectionOnlyComplex').checked,
+      maxRounds: parseInt(document.getElementById('subtaskReflectionMaxRounds').value) || DEFAULT_REFLECTION_CONFIG.subtaskReflection.maxRounds,
+      dimensions: document.getElementById('subtaskReflectionDimensions').value.trim().split(',').map(d => d.trim()).filter(d => d),
+      model: document.getElementById('subtaskReflectionModel').value.trim() || null,
+      temperature: parseFloat(document.getElementById('subtaskReflectionTemperature').value) || DEFAULT_REFLECTION_CONFIG.subtaskReflection.temperature,
+      maxTokens: parseInt(document.getElementById('subtaskReflectionMaxTokens').value) || DEFAULT_REFLECTION_CONFIG.subtaskReflection.maxTokens
+    }
+  };
+  
+  // 验证反思配置范围
+  if (reflectionConfig.postReflection.maxRounds < 0 || reflectionConfig.postReflection.maxRounds > 3) {
+    showToast('❌ 后置反思最大轮数必须在 0-3 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.postReflection.qualityThreshold < 1 || reflectionConfig.postReflection.qualityThreshold > 10) {
+    showToast('❌ 质量评分阈值必须在 1-10 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.postReflection.refineThreshold < 1 || reflectionConfig.postReflection.refineThreshold > 10) {
+    showToast('❌ 修订阈值必须在 1-10 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.postReflection.temperature < 0 || reflectionConfig.postReflection.temperature > 1) {
+    showToast('❌ 反思温度系数必须在 0-1 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.postReflection.maxTokens < 256 || reflectionConfig.postReflection.maxTokens > 8192) {
+    showToast('❌ 反思最大 Token 必须在 256-8192 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.toolReflection.oversizeThreshold < 1000 || reflectionConfig.toolReflection.oversizeThreshold > 200000) {
+    showToast('❌ 工具反思结果大小阈值必须在 1000-200000 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.toolReflection.triggerOnConsecutiveFails < 1 || reflectionConfig.toolReflection.triggerOnConsecutiveFails > 10) {
+    showToast('❌ 连续失败触发次数必须在 1-10 之间', 'error');
+    return;
+  }
+  if (reflectionConfig.toolReflection.maxPerIteration < 1 || reflectionConfig.toolReflection.maxPerIteration > 5) {
+    showToast('❌ 每轮最多触发次数必须在 1-5 之间', 'error');
+    return;
+  }
   
   // 验证 ReAct 配置范围
   if (reactMaxIterations < 1 || reactMaxIterations > 100) {
@@ -274,7 +399,9 @@ export function saveConfig() {
     chatMaxHistoryMessages: chatMaxHistoryMessages,
     chatMaxMessageLength: chatMaxMessageLength,
     chatMaxMemoryMessages: chatMaxMemoryMessages,
-    enableExecutionLog: enableExecutionLog
+    enableExecutionLog: enableExecutionLog,
+    // 反思配置
+    reflectionConfig: reflectionConfig
   }, function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
@@ -296,7 +423,7 @@ export function saveConfig() {
         maxMessageLength: chatMaxMessageLength,
         maxMemoryMessages: chatMaxMemoryMessages,
         enableExecutionLog: enableExecutionLog
-      });
+      }, reflectionConfig);
     }
   });
 }
@@ -349,12 +476,13 @@ export function initStatus() {
 }
 
 // 更新配置详情显示
-export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig) {
+export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig) {
   const details = document.getElementById('configDetails');
   const base = apiBase || 'https://api.deepseek.com';
   const model = modelName || 'deepseek-v4-pro';
   const react = reactConfig || DEFAULT_REACT_CONFIG;
   const chat = chatConfig || DEFAULT_CHAT_CONFIG;
+  const reflection = reflectionConfig || DEFAULT_REFLECTION_CONFIG;
   
   const formatTime = (ms) => {
     if (ms >= 60000) {
@@ -376,6 +504,21 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig)
     澄清等待超时: ${formatTime(react.clarifyTimeout)}<br>
     API 重试次数: ${react.apiRetryCount} 次<br>
     API 重试基础延迟: ${react.apiRetryBaseDelay}ms<br>
+    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
+    <strong>反思配置：</strong><br>
+    反思功能: ${reflection.enabled ? '✅ 启用' : '❌ 关闭'}<br>
+    后置反思: ${reflection.postReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
+    &nbsp;&nbsp;最大轮数: ${reflection.postReflection?.maxRounds ?? '-'} 轮<br>
+    &nbsp;&nbsp;质量阈值: ${reflection.postReflection?.qualityThreshold ?? '-'} /10<br>
+    &nbsp;&nbsp;修订阈值: ${reflection.postReflection?.refineThreshold ?? '-'} /10<br>
+    工具级反思: ${reflection.toolReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
+    &nbsp;&nbsp;触发条件: 错误${reflection.toolReflection?.triggerOnError ? '✓' : '✗'} / 空${reflection.toolReflection?.triggerOnEmpty ? '✓' : '✗'} / 过大${reflection.toolReflection?.triggerOnOversized ? '✓' : '✗'}<br>
+    &nbsp;&nbsp;连续失败触发: ${reflection.toolReflection?.triggerOnConsecutiveFails ?? '-'} 次<br>
+    &nbsp;&nbsp;每轮上限: ${reflection.toolReflection?.maxPerIteration ?? '-'} 次<br>
+    子任务反思: ${reflection.subtaskReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
+    &nbsp;&nbsp;仅复杂子任务: ${reflection.subtaskReflection?.onlyForComplexSubtasks ? '✓' : '✗'}<br>
+    &nbsp;&nbsp;最大轮数: ${reflection.subtaskReflection?.maxRounds ?? '-'} 轮<br>
+    &nbsp;&nbsp;评估维度: ${(reflection.subtaskReflection?.dimensions || []).join(', ') || '-'}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>对话配置：</strong><br>
     输入历史记录数: ${chat.maxInputHistory} 条<br>

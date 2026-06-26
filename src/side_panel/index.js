@@ -254,12 +254,13 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
 
   const estimatedMenuHeight = 40 + menuPrompts.length * 36;
   const estimatedMenuWidth = 180;
+  const menuOffset = 30;
 
-  let top = mouseY - bodyRect.top - estimatedMenuHeight - 10;
+  let top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
   let left = mouseX - bodyRect.left - 20;
 
   if (top < bodyRect.top + 10) {
-    top = mouseY - bodyRect.top + 15;
+    top = mouseY - bodyRect.top + menuOffset;
   }
 
   if (left < bodyRect.left + 10) {
@@ -267,16 +268,16 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   }
 
   if (left + estimatedMenuWidth > bodyRect.right - 10) {
-    left = mouseX - bodyRect.left - estimatedMenuWidth - 10;
+    left = mouseX - bodyRect.left - estimatedMenuWidth - menuOffset;
     if (left < bodyRect.left + 10) {
       left = mouseX - bodyRect.left + 20;
     }
   }
 
   if (top + estimatedMenuHeight > bodyRect.bottom - 10) {
-    top = mouseY - bodyRect.top - estimatedMenuHeight - 10;
+    top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
     if (top < bodyRect.top + 10) {
-      top = mouseY - bodyRect.top + 15;
+      top = mouseY - bodyRect.top + menuOffset;
     }
   }
 
@@ -1119,6 +1120,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (enableToolsBtn) {
       enableToolsBtn.checked = state.useTools;
     }
+
+    refreshSelectionInterval();
   });
 
   isolateChatBtn.addEventListener('change', () => {

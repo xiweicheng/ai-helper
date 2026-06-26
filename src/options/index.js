@@ -271,6 +271,76 @@ document.addEventListener('DOMContentLoaded', async function() {
     currentTools = result.tools;
     persistAndRender();
   });
+  
+  // 子任务反思区域折叠/展开
+  const subtaskReflectionSection = document.getElementById('subtaskReflectionSection');
+  if (subtaskReflectionSection) {
+    subtaskReflectionSection.addEventListener('click', function(e) {
+      if (e.target.closest('.reflection-section-toggle') || e.target.closest('.reflection-config-item')) return;
+      this.classList.toggle('collapsed');
+    });
+  }
+  
+  // 反思总开关控制
+  const reflectionEnabled = document.getElementById('reflectionEnabled');
+  const reflectionConfig = document.getElementById('reflectionConfig');
+  
+  function updateReflectionSectionVisibility() {
+    if (!reflectionConfig) return;
+    
+    if (!reflectionEnabled || !reflectionEnabled.checked) {
+      reflectionConfig.classList.add('disabled');
+    } else {
+      reflectionConfig.classList.remove('disabled');
+    }
+  }
+  
+  function updateReflectionModuleVisibility(moduleId, toggleId) {
+    const module = document.getElementById(moduleId);
+    const toggle = document.getElementById(toggleId);
+    
+    if (!module || !toggle) return;
+    
+    if (!toggle.checked) {
+      module.classList.add('disabled');
+    } else {
+      module.classList.remove('disabled');
+    }
+  }
+  
+  if (reflectionEnabled) {
+    reflectionEnabled.addEventListener('change', updateReflectionSectionVisibility);
+  }
+  
+  // 后置反思开关控制
+  const postReflectionEnabled = document.getElementById('postReflectionEnabled');
+  if (postReflectionEnabled) {
+    postReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
+    });
+  }
+  
+  // 工具级反思开关控制
+  const toolReflectionEnabled = document.getElementById('toolReflectionEnabled');
+  if (toolReflectionEnabled) {
+    toolReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
+    });
+  }
+  
+  // 子任务反思开关控制
+  const subtaskReflectionEnabled = document.getElementById('subtaskReflectionEnabled');
+  if (subtaskReflectionEnabled) {
+    subtaskReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
+    });
+  }
+  
+  // 初始化时更新可见性
+  updateReflectionSectionVisibility();
+  updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
+  updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
+  updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
 });
 
 // 持久化并重新渲染
