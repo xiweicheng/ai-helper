@@ -177,7 +177,6 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     page_to_json:              ['PAGE_TO_JSON',              a => ({ selector: a.selector, maxItems: a.maxItems })],
     find_similar_elements:     ['FIND_SIMILAR_ELEMENTS',     a => ({ selector: a.selector, maxResults: a.maxResults })],
     get_iframe_content:        ['GET_IFRAME_CONTENT',        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength })],
-    run_javascript:            ['RUN_JAVASCRIPT',            a => ({ code: a.code, timeout: a.timeout })],
     inject_css:                ['INJECT_CSS',                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode })],
     find_text_on_page:         ['FIND_TEXT_ON_PAGE',         a => ({ query: a.query, caseSensitive: a.caseSensitive, highlight: a.highlight })],
     get_page_language:         ['GET_PAGE_LANGUAGE',         a => ({})],

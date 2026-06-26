@@ -100,26 +100,10 @@ function renderToolsPopupList() {
   });
   
   // 分类名称映射（用于显示）
-  const categoryNames = {
-    'page_interaction': '🖱️ 页面交互',
-    'form_operation': '📝 表单操作',
-    'info_extract': '📄 信息提取',
-    'page_analysis': '🔍 页面分析',
-    'tab_management': '📑 标签页管理',
-    'bookmark_history': '🔖 书签历史',
-    'storage_management': '💾 存储管理',
-    'network_request': '🌐 网络请求',
-    'media_process': '📷 媒体处理',
-    'debug_dev': '🔧 调试开发',
-    'ai_collaboration': '🤖 AI协作',
-    'system_integration': '⚙️ 系统集成',
-    'memory': '🧠 记忆检索'
-  };
+  const categoryNames = TOOL_CATEGORY_NAMES;
   
   // 优化后的分类排序（按使用频率和逻辑顺序）
-  const categoryOrder = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
-                         'tab_management', 'bookmark_history', 'storage_management', 
-                         'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
+  const categoryOrder = CATEGORY_ORDER;
   
   categoryOrder.forEach(category => {
     const tools = groupedTools[category];

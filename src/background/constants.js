@@ -1694,22 +1694,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'run_javascript',
-    type: 'function',
-    function: {
-      name: 'run_javascript',
-      description: '在页面上下文中执行任意 JavaScript 代码并返回结果。支持异步（Promise）结果。⚠️ 请谨慎使用',
-      parameters: {
-        type: 'object',
-        properties: {
-          code: { type: 'string', description: '要执行的 JavaScript 代码' },
-          timeout: { type: 'integer', description: '异步执行超时毫秒数，默认5000', default: 5000 }
-        },
-        required: ['code']
-      }
-    }
-  },
-  {
     id: 'inject_css',
     type: 'function',
     function: {
