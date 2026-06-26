@@ -418,8 +418,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               try {
                 const fullTools = await getTools();
                 if (fullTools.length > 5) {
-                  const rePreselectCount = incrementDialogApiCallCount(sessionId);
-                  const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams, rePreselectCount);
+                  const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams);
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
                     console.log('[Background] 澄清后工具重新筛选完成:', tools.map(t => t.function.name));
@@ -438,21 +437,36 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             const toolResultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
 
             // 工具级反思：检查工具结果是否有异常
-            const toolFailCount = executionLog.filter(
-              e => e.nodeType === 'tool_exec' && e.status === 'failed' && e.iteration === iteration
-            ).length;
+            // 修复：计算真正"连续"的失败数（从最近一次成功往后数）
+            const allToolEntries = executionLog
+              .filter(e => e.nodeType === 'tool_exec' && e.iteration === iteration)
+              .sort((a, b) => executionLog.indexOf(a) - executionLog.indexOf(b));
+            let consecutiveFailCount = 0;
+            for (let i = allToolEntries.length - 1; i >= 0; i--) {
+              if (allToolEntries[i].status === 'failed') {
+                consecutiveFailCount++;
+              } else {
+                break;
+              }
+            }
             const reflectionConfig = reactConfig.reflection;
-            if (shouldTriggerToolReflection(toolResultStr, toolFailCount, reflectionConfig)) {
+            const toolReflectionCount = executionLog.filter(
+              e => e.nodeType === 'reflection' && e.reflectionType === 'tool'
+            ).length;
+            const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
+            const withinFrequencyLimit = toolReflectionCount < maxPerIteration;
+
+            let toolReflectionNote = '';
+            if (withinFrequencyLimit && shouldTriggerToolReflection(toolResultStr, consecutiveFailCount, reflectionConfig)) {
               const toolReflection = await reflectOnToolResult(
                 toolName, toolResultStr,
                 JSON.parse(toolCall.function?.arguments || '{}'),
                 config, model, reflectionConfig, executionLog, iteration
               );
-              
+
               if (toolReflection) {
-                // 记录工具级反思日志
                 const toolReflectionId = crypto.randomUUID();
-                executionLog.push({
+                const toolReflectionEntry = {
                   id: toolReflectionId,
                   iteration,
                   timestamp: new Date().toISOString(),
@@ -463,8 +477,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   useful: toolReflection.useful,
                   reasoning: toolReflection.reasoning,
                   suggestion: toolReflection.suggestion
-                });
+                };
+                executionLog.push(toolReflectionEntry);
                 console.log(`[Background] 工具反思: ${toolName} - ${toolReflection.useful ? '有用' : '无效'} - ${toolReflection.reasoning}`);
+
+                // 将反思建议附加到工具结果消息中（不注入system消息，避免破坏tool_calls序列）
+                if (!toolReflection.useful && toolReflection.suggestion) {
+                  toolReflectionNote = `\n\n【反思提醒】工具"${toolName}"的返回结果被评估为无帮助（${toolReflection.reasoning}）。建议：${toolReflection.suggestion}。请在后续步骤中考虑调整策略。`;
+                }
               }
             }
             
@@ -474,13 +494,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               console.log('[Background] 收到任务规划结果:', JSON.stringify(subtaskPlan));
               
               // 先添加 plan_task 工具的响应消息（必须先响应工具调用）
+              const planTaskContent = JSON.stringify({
+                success: true,
+                message: `任务规划完成，已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
+                data: subtaskPlan
+              }) + toolReflectionNote;
               currentMessages.push({
                 role: 'tool',
-                content: JSON.stringify({
-                  success: true,
-                  message: `任务规划完成，已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
-                  data: subtaskPlan
-                }),
+                content: planTaskContent,
                 tool_call_id: toolCall.id
               });
               trimMessages();
@@ -531,7 +552,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             
             currentMessages.push({
               role: 'tool',
-              content: toolResultStr,
+              content: toolResultStr + toolReflectionNote,
               tool_call_id: toolCall.id,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
@@ -612,12 +633,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         if (reflectionResult.reflectionLog && reflectionResult.reflectionLog.length > 0) {
           executionLog.push(...reflectionResult.reflectionLog);
         }
-        
+
         sendExecutionStatusUpdate('执行完成', 'success');
-        return { 
-          content: reflectionResult.content, 
+        return {
+          content: reflectionResult.content,
           executionLog,
-          reflectionScore: reflectionResult.overallScore 
+          reflectionScore: reflectionResult.overallScore,
+          wasRevised: reflectionResult.wasRevised
         };
       }
       
@@ -1279,9 +1301,9 @@ function shouldTriggerToolReflection(toolResultStr, failCountInIteration, reflec
 }
 
 /**
- * 构建后置反思 Prompt
+ * 构建后置反思 Prompt（增强版：包含完整执行详情）
  */
-function buildReflectionPrompt(messages, answer, executionLog) {
+function buildReflectionPrompt(messages, answer, executionLog, round = 1) {
   // 提取用户问题
   const userMessages = messages.filter(m => m.role === 'user');
   const userQuestion = userMessages.length > 0
@@ -1290,33 +1312,62 @@ function buildReflectionPrompt(messages, answer, executionLog) {
         : JSON.stringify(userMessages[userMessages.length - 1].content))
     : '未知';
 
-  // 构建执行摘要
-  const toolsUsed = executionLog
-    .filter(e => e.nodeType === 'tool_exec')
-    .map(e => `${e.action?.name || e.nodeName} (${e.status})`);
+  // 构建详细执行摘要
   const apiCalls = executionLog.filter(e => e.nodeType === 'api_call').length;
-  const summary = `API 调用 ${apiCalls} 次，工具执行 ${toolsUsed.length} 次：${toolsUsed.join(', ') || '无'}`;
+  const toolEntries = executionLog.filter(e => e.nodeType === 'tool_exec');
+  const toolDetails = toolEntries.map(e => {
+    const params = e.action?.params || {};
+    const paramsStr = Object.keys(params).length > 0 ? `参数: ${JSON.stringify(params)}` : '';
+    const obs = e.observation ? `结果摘要: ${String(e.observation).substring(0, 200)}` : '';
+    const status = e.status === 'success' ? '✅' : '❌';
+    return `  ${status} ${e.action?.name || e.nodeName} ${paramsStr} ${obs}`.trim();
+  }).join('\n');
+
+  const toolSummary = toolEntries.length > 0
+    ? toolEntries.map(e => `${e.action?.name || e.nodeName} (${e.status})`).join(', ')
+    : '无';
+
+  const planTasks = executionLog.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'plan_task');
+  const subtaskInfo = planTasks.length > 0
+    ? `，已拆解 ${planTasks[0].subtaskCount || 0} 个子任务`
+    : '';
+
+  const toolReflectionEntries = executionLog.filter(e => e.nodeType === 'reflection' && e.reflectionType === 'tool');
+  const toolReflectionSummary = toolReflectionEntries.length > 0
+    ? toolReflectionEntries.map(e => {
+        const useful = e.useful ? '✅有用' : '⚠️无效';
+        return `  ${useful} - ${e.nodeName}: ${e.reasoning || ''} ${e.suggestion ? `(建议: ${e.suggestion})` : ''}`;
+      }).join('\n')
+    : '无';
+
+  const summary = `API 调用 ${apiCalls} 次${subtaskInfo}。`;
 
   // 截断答案
   const truncatedAnswer = answer.length > 3000 ? answer.substring(0, 3000) + '...' : answer;
 
-  return `请评估以下 AI 助手对用户问题的回答质量。
+  return `请严格评估以下 AI 助手对用户问题的回答质量${round > 1 ? `（这是第 ${round} 轮评估，上一轮的修订答案见下方"最终回答"）` : ''}。
 
 ## 用户问题
 ${userQuestion}
 
-## 执行过程摘要
+## 执行过程概览
 ${summary}
+
+## 工具执行详情（包含参数和结果摘要）
+${toolDetails || '无工具调用'}
+
+## 工具反思记录（反思节点）
+${toolReflectionSummary}
 
 ## AI 助手的最终回答
 ${truncatedAnswer}
 
 ## 评估维度（每项 1-10 分）
-1. completeness（完整性）：是否完全回答了用户的问题？
-2. accuracy（准确性）：信息是否准确可靠？
-3. relevance（相关性）：回答是否紧贴用户需求？
-4. toolUsage（工具使用）：工具选择和参数是否合理？
-5. efficiency（执行效率）：是否有不必要的步骤或重复操作？
+1. completeness（完整性）：是否完全回答了用户的问题，有无遗漏？
+2. accuracy（准确性）：信息是否准确可靠，有无幻觉或错误？
+3. relevance（相关性）：回答是否紧贴用户需求，有没有跑题？
+4. toolUsage（工具使用）：工具选择是否合适，参数是否合理？参考上述工具执行详情判断。
+5. efficiency（效率）：是否有不必要的步骤或重复操作？
 
 请以严格的 JSON 格式输出（不要包含 markdown 代码块标记）：
 {
@@ -1328,9 +1379,9 @@ ${truncatedAnswer}
     "toolUsage": 8,
     "efficiency": 8
   },
-  "issues": ["问题描述1", "问题描述2"],
-  "suggestions": ["改进建议1", "改进建议2"],
-  "refinedAnswer": "如果回答需要修订，输出修订后的完整回答；否则设为 null"
+  "issues": ["具体问题1", "具体问题2"],
+  "suggestions": ["具体改进建议1", "具体改进建议2"],
+  "refinedAnswer": "如果回答有明显缺陷，输出修订后的完整回答（必须完整，不能只输出修改部分）；否则设为 null"
 }`;
 }
 
@@ -1380,20 +1431,32 @@ function parseReflectionResult(rawContent) {
 }
 
 /**
- * 后置反思：对 ReAct 循环的最终答案进行质量评估
+ * 后置反思：对 ReAct 循环的最终答案进行质量评估（多轮修订循环）
  *
- * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null }}
+ * 决策逻辑：
+ *   score >= qualityThreshold(7)  → passed，使用原答案（或 refinedAnswer）
+ *   score >= refineThreshold(5)  → revised，使用 refinedAnswer（标记为已修订）
+ *   score < refineThreshold(5)   → needs_improvement
+ *     - 有 refinedAnswer → revised，使用修订答案，issues 中加入"经反思修订"说明
+ *     - 无 refinedAnswer → needs_improvement，issues 中加入"建议重新执行"建议
+ *   第二轮（maxRounds>=2）：对修订答案再做一次评估
+ *
+ * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null, wasRevised: boolean }}
  */
 async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext) {
-  const reflectionLog = [];
   const postConfig = reflectionConfig.postReflection;
 
   if (postConfig.maxRounds < 1) {
-    return { content: answer, reflectionLog: [], status: 'skipped', overallScore: null };
+    return { content: answer, reflectionLog: [], status: 'skipped', overallScore: null, wasRevised: false };
   }
 
-  const reflectionId = crypto.randomUUID();
+  const reflectionLog = [];
+  const maxRounds = Math.max(1, postConfig.maxRounds);
   const startTime = Date.now();
+  let currentContent = answer;
+  let bestScore = null;
+  let bestDecision = 'passed';
+  let wasRevised = false;
 
   sendStatusUpdate('质量评估', 'processing');
 
@@ -1401,94 +1464,144 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
     const apiUrl = `${config.apiBase}/chat/completions`;
     const reflectionModel = postConfig.model || model || config.modelName;
 
-    const prompt = buildReflectionPrompt(messages, answer, executionLog);
+    for (let round = 1; round <= maxRounds; round++) {
+      const roundStartTime = Date.now();
+      const roundId = crypto.randomUUID();
 
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: reflectionModel,
-        messages: [
-          { role: 'system', content: '你是严格的质量评估者。请以 JSON 格式输出评估结果，不要包含 markdown 代码块标记。' },
-          { role: 'user', content: prompt }
-        ],
-        stream: false,
-        temperature: postConfig.temperature,
-        max_tokens: postConfig.maxTokens
-      })
-    }, 30000, 1, 1000);
+      // 如果是第 2 轮，使用上一轮的修订答案作为反思对象
+      const prompt = buildReflectionPrompt(messages, currentContent, executionLog, round);
 
-    if (!response.ok) {
-      throw new Error(`Reflection API error: ${response.status}`);
+      const response = await fetchWithRetry(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: reflectionModel,
+          messages: [
+            { role: 'system', content: '你是严格的质量评估者。请以 JSON 格式输出评估结果，不要包含 markdown 代码块标记。' },
+            { role: 'user', content: prompt }
+          ],
+          stream: false,
+          temperature: postConfig.temperature,
+          max_tokens: postConfig.maxTokens
+        })
+      }, 30000, 1, 1000);
+
+      if (!response.ok) {
+        throw new Error(`Reflection API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content || '';
+      const parsed = parseReflectionResult(rawContent);
+      const duration = Date.now() - roundStartTime;
+
+      bestScore = parsed.overallScore;
+
+      // 决策
+      let decision;
+      let applyContent = currentContent;
+
+      if (parsed.overallScore >= postConfig.qualityThreshold) {
+        decision = 'passed';
+        applyContent = parsed.refinedAnswer || currentContent;
+        // 即使通过，如果模型主动修订了也用修订版
+        if (parsed.refinedAnswer && parsed.refinedAnswer !== currentContent) {
+          wasRevised = true;
+        }
+      } else if (parsed.overallScore >= postConfig.refineThreshold) {
+        decision = 'revised';
+        if (parsed.refinedAnswer) {
+          applyContent = parsed.refinedAnswer;
+          wasRevised = true;
+        }
+      } else {
+        // 低于 refineThreshold
+        if (parsed.refinedAnswer) {
+          decision = 'revised';
+          applyContent = parsed.refinedAnswer;
+          wasRevised = true;
+          // 标记这是低分修订
+          parsed.issues = parsed.issues || [];
+          if (!parsed.issues.some(i => i.includes('反思修订'))) {
+            parsed.issues.unshift('⚠️ 原答案评分过低，已由反思修订');
+          }
+        } else {
+          decision = 'needs_improvement';
+          parsed.suggestions = parsed.suggestions || [];
+          if (!parsed.suggestions.some(s => s.includes('重新执行') || s.includes('retry'))) {
+            parsed.suggestions.push('建议：重新执行任务，基于反思问题调整工具选择和执行策略');
+          }
+        }
+      }
+
+      const decisionLabel = decision === 'passed' ? '通过' : decision === 'revised' ? '已修订' : '需改进';
+
+      reflectionLog.push({
+        id: roundId,
+        iteration: globalIteration?.value || 0,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        nodeType: 'reflection',
+        nodeName: `质量评估 ${round}/${maxRounds}`,
+        reflectionType: 'post',
+        round,
+        overallScore: parsed.overallScore,
+        dimensions: parsed.dimensions,
+        issues: parsed.issues,
+        suggestions: parsed.suggestions,
+        prompt,
+        rawContent,
+        apiRequest: {
+          model: reflectionModel,
+          messageCount: 2,
+          temperature: postConfig.temperature,
+          maxTokens: postConfig.maxTokens
+        },
+        apiResponse: {
+          tokenUsage: data.usage || null
+        },
+        action: {
+          decision,
+          refinedAnswer: parsed.refinedAnswer && parsed.refinedAnswer !== currentContent ? parsed.refinedAnswer : null
+        },
+        duration
+      });
+
+      // 如果通过且不需要修订，提前结束
+      if (decision === 'passed') {
+        currentContent = applyContent;
+        break;
+      }
+
+      // 下一轮使用修订后的答案
+      currentContent = applyContent;
     }
 
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || '';
-    const parsed = parseReflectionResult(rawContent);
-    const duration = Date.now() - startTime;
+    const totalDuration = Date.now() - startTime;
+    const lastEntry = reflectionLog[reflectionLog.length - 1];
+    const finalScore = bestScore ?? lastEntry?.overallScore;
+    const finalDecision = bestDecision || lastEntry?.action?.decision || 'passed';
+    const decisionLabel = finalDecision === 'passed' ? '通过' : finalDecision === 'revised' ? '已修订' : '需改进';
 
-    // 决策
-    let decision;
-    let finalContent = answer;
+    sendStatusUpdate(`质量评估: ${finalScore}/10 (${decisionLabel})`, 'success');
+    console.log(`[Background] 反思完成: 评分 ${finalScore}/10, 决策: ${decisionLabel}, 修订: ${wasRevised}, 总耗时: ${totalDuration}ms`);
 
-    if (parsed.overallScore >= postConfig.qualityThreshold) {
-      decision = 'passed';
-      finalContent = parsed.refinedAnswer || answer;
-    } else if (parsed.overallScore >= postConfig.refineThreshold) {
-      decision = 'revised';
-      finalContent = parsed.refinedAnswer || answer;
-    } else {
-      decision = 'needs_improvement';
-      finalContent = parsed.refinedAnswer || answer;
-    }
-
-    const decisionLabel = decision === 'passed' ? '通过' : decision === 'revised' ? '已修订' : '需改进';
-
-    reflectionLog.push({
-      id: reflectionId,
-      iteration: globalIteration?.value || 0,
-      timestamp: new Date().toISOString(),
-      status: 'success',
-      nodeType: 'reflection',
-      nodeName: `质量评估`,
-      reflectionType: 'post',
-      round: 1,
-      overallScore: parsed.overallScore,
-      dimensions: parsed.dimensions,
-      issues: parsed.issues,
-      suggestions: parsed.suggestions,
-      prompt,
-      rawContent,
-      apiRequest: {
-        model: reflectionModel,
-        messageCount: 2,
-        temperature: postConfig.temperature,
-        maxTokens: postConfig.maxTokens
-      },
-      apiResponse: {
-        tokenUsage: data.usage || null
-      },
-      action: {
-        decision,
-        refinedAnswer: decision === 'revised' ? parsed.refinedAnswer : null
-      },
-      duration
-    });
-
-    sendStatusUpdate(`质量评估: ${parsed.overallScore}/10 (${decisionLabel})`, 'success');
-
-    console.log(`[Background] 反思完成: 评分 ${parsed.overallScore}/10, 决策: ${decisionLabel}`);
-
-    return { content: finalContent, reflectionLog, status: decision, overallScore: parsed.overallScore };
+    return {
+      content: currentContent,
+      reflectionLog,
+      status: finalDecision,
+      overallScore: finalScore,
+      wasRevised
+    };
 
   } catch (error) {
     console.warn('[Background] 反思 API 调用失败:', error.message);
     const duration = Date.now() - startTime;
     reflectionLog.push({
-      id: reflectionId,
+      id: crypto.randomUUID(),
       iteration: globalIteration?.value || 0,
       timestamp: new Date().toISOString(),
       status: 'failed',
@@ -1498,7 +1611,7 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
       error: error.message,
       duration
     });
-    return { content: answer, reflectionLog, status: 'reflection_failed', overallScore: null };
+    return { content: answer, reflectionLog, status: 'reflection_failed', overallScore: null, wasRevised: false };
   }
 }
 

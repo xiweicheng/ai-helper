@@ -59,14 +59,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log('[Background] 获取到工具列表，数量:', tools.length, '工具:', tools.map(t => t.function.name));
 
           // 预筛选工具：通过前置规划调用减少不必要的工具传递
-          const preselectCount = incrementDialogApiCallCount(sessionId);
-          const preselection = await preselectTools(messages, model, tools, apiParams, preselectCount);
+          const preselection = await preselectTools(messages, model, tools, apiParams);
 
           // 发送预筛选完成状态，让实时日志面板也能看到这个步骤
-          const currentCount = preselectCount;
           const statusUpdate = {
             type: 'EXECUTION_STATUS_UPDATE',
-            nodeName: `API调用 (第${currentCount}次)（🔍工具预筛选）`,
+            nodeName: '工具预筛选',
             status: 'success',
             executionLog: preselection.executionLog
           };
@@ -89,13 +87,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
 
-          // 重置 API 调用计数器，让 reactLoop 从第1次开始计数（预筛选已单独记录）
-          resetDialogApiCallCount(sessionId);
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
             executionLog: reactResult.executionLog || preselectLog,
-            reflectionScore: reactResult.reflectionScore
+            reflectionScore: reactResult.reflectionScore,
+            wasRevised: reactResult.wasRevised || false
           };
         })()
       : callApiNonStream(messages, model, apiParams, sessionId);
@@ -106,6 +103,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const content = result.content !== undefined ? result.content : result;
         const executionLog = result.executionLog || [];
         const reflectionScore = result.reflectionScore;
+        const wasRevised = result.wasRevised || false;
         
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         chrome.runtime.sendMessage({
@@ -113,7 +111,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sessionId: sessionId,
           content: content,
           executionLog: executionLog,
-          reflectionScore: reflectionScore
+          reflectionScore: reflectionScore,
+          wasRevised: wasRevised
         }).catch(err => {
           console.warn('[Background] 发送回传消息失败:', err);
         });

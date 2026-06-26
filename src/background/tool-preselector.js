@@ -211,7 +211,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     iteration: 0,
     timestamp: now,
     nodeType: 'preselect',
-    nodeName: `API调用 (第${callCount}次)（🔍工具预筛选）`,
+    nodeName: '工具预筛选',
     ...extra,
     status
   });

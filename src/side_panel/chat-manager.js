@@ -103,7 +103,15 @@ export async function loadChatHistory() {
     }
     
     state.messageHistory.forEach(msg => {
-      addMessage(msg.role, msg.content, false, msg.executionLog || []);
+      // 从 executionLog 中检测是否有 revised 决策
+      let wasRevised = msg.wasRevised;
+      if (!wasRevised && msg.executionLog) {
+        try {
+          const logs = typeof msg.executionLog === 'string' ? JSON.parse(msg.executionLog) : msg.executionLog;
+          wasRevised = logs.some(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.action?.decision === 'revised');
+        } catch {}
+      }
+      addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
     });
     
     const welcomeMessage = document.querySelector('.welcome-message');
@@ -323,13 +331,14 @@ export async function sendMessage() {
     }
 
     const apiParams = await getApiParams();
-    let content, executionLog, reflectionScore;
+    let content, executionLog, reflectionScore, wasRevised = false;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
+      wasRevised = result.wasRevised || false;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -369,7 +378,7 @@ export async function sendMessage() {
     
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
-      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
+      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
       return;
@@ -383,11 +392,11 @@ export async function sendMessage() {
       state.substituteLoadingIds.delete(mySessionId);
     }
     
-    const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
+    const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
     
     await renderMessageMermaid(messageDiv);
     
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
     
   } catch (error) {
     console.error('[SidePanel] sendMessage 异常:', error?.message || error);
@@ -508,7 +517,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -519,6 +528,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   messageDiv.dataset.rawContent = content;
   
   messageDiv.dataset.executionLog = JSON.stringify(executionLog);
+  if (wasRevised) {
+    messageDiv.dataset.wasRevised = 'true';
+  }
   
   if (role === 'assistant') {
     messageDiv.innerHTML = formatMessageContent(content);
@@ -641,8 +653,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         logBtn.classList.add('has-reflection');
         const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
         const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
-        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10`;
-        logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`);
+        const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
+        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10${wasRevised ? '（已修订）' : ''}`;
+        logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`);
       }
 
       footer.appendChild(logBtn);
@@ -657,6 +670,14 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       scoreBadge.title = `AI 自我评估: ${reflectionScore}/10`;
       scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
       footer.appendChild(scoreBadge);
+    } else if (executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed')) {
+      // 反思 API 失败：显示警告提示
+      const warnBadge = document.createElement('button');
+      warnBadge.className = 'execution-log-btn has-reflection score-low';
+      warnBadge.type = 'button';
+      warnBadge.title = '反思评估失败（点击查看执行日志）';
+      warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
+      footer.appendChild(warnBadge);
     }
     
     messageDiv.appendChild(footer);
@@ -816,7 +837,7 @@ function renderExecutionTimeline(executionLog) {
     if (isReflection) {
       nodeIcon = '🎯';
     } else if (isPreselect) {
-      nodeIcon = '📡';
+      nodeIcon = '🔍';
     } else if (isPlanTask) {
       indentClass = 'plan-task-level';
       nodeIcon = '📋';
@@ -1373,7 +1394,7 @@ function renderExecutionLogOriginal(sortedLog) {
     if (isReflection) {
       nodeIcon = '🎯';
     } else if (isPreselect) {
-      nodeIcon = '📡';
+      nodeIcon = '🔍';
     } else if (isPlanTask) {
       indentClass = 'plan-task-level';
       nodeIcon = '📋';
@@ -2219,7 +2240,7 @@ function showExecutionLog(executionLog) {
             ` : ''}
             ${postReflection ? `
             <div class="combo-stat reflection" title="质量评估: ${postReflection.overallScore}/10">
-              <span class="stat-icon">🔍</span>
+              <span class="stat-icon">🎯</span>
               <span class="stat-label">评分</span>
               <span class="stat-value">${postReflection.overallScore}/10</span>
             </div>

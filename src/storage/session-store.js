@@ -65,6 +65,8 @@ export async function saveCurrentSession() {
     role: msg.role,
     content: msg.content || '',
     executionLog: msg.executionLog || [],
+    reflectionScore: msg.reflectionScore,
+    wasRevised: msg.wasRevised || false,
   }));
 
   currentSession.updatedAt = new Date().toISOString();
@@ -122,6 +124,8 @@ export async function appendMessageToSession(sessionId, message) {
     role: message.role,
     content: message.content || '',
     executionLog: message.executionLog || [],
+    reflectionScore: message.reflectionScore,
+    wasRevised: message.wasRevised || false,
   });
 
   session.updatedAt = new Date().toISOString();

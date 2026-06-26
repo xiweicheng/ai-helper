@@ -29,6 +29,44 @@ export function getTools() {
   });
 }
 
+function tryParseToolArgs(argsStr) {
+  if (!argsStr || typeof argsStr !== 'string') return null;
+  
+  const trimmed = argsStr.trim();
+  if (!trimmed) return null;
+  
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    console.warn('[Background] 工具参数直接解析失败，尝试修复...');
+  }
+  
+  let fixed = trimmed;
+  
+  fixed = fixed.replace(/,\s*\}/g, '}');
+  fixed = fixed.replace(/,\s*\]/g, ']');
+  
+  fixed = fixed.replace(/"([^"]+)":\s*([a-zA-Z\u4e00-\u9fa5][a-zA-Z0-9\u4e00-\u9fa5_]*)/g, '"$1": "$2"');
+  
+  fixed = fixed.replace(/:\s*(\{[\s\S]*\})/g, (match, value) => {
+    try {
+      JSON.parse(value);
+      return match;
+    } catch {
+      return match;
+    }
+  });
+  
+  try {
+    const result = JSON.parse(fixed);
+    console.log('[Background] 工具参数修复解析成功:', result);
+    return result;
+  } catch (e) {
+    console.error('[Background] 工具参数修复解析也失败:', e);
+    return null;
+  }
+}
+
 /**
  * 执行工具调用
  */
@@ -45,7 +83,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   // 解析参数
   if (functionObj && functionObj.arguments) {
     try {
-      const parsed = JSON.parse(functionObj.arguments);
+      const parsed = tryParseToolArgs(functionObj.arguments);
       args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', functionObj.arguments);
@@ -55,7 +93,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     args = argsStr || {};
   } else if (typeof argsStr === 'string') {
     try {
-      args = JSON.parse(argsStr);
+      const parsed = tryParseToolArgs(argsStr);
+      args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
