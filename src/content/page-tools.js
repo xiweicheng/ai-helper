@@ -222,34 +222,6 @@ export function getElementValue(el) {
   return '';
 }
 
-/**
- * 获取指定选择器的元素内容
- */
-export function getElementBySelector(selector) {
-  try {
-    if (!selector) {
-      return { success: false, error: '选择器不能为空' };
-    }
-    
-    const cleanedSelector = selector.trim().replace(/[`'"“”''""``]/g, '');
-    
-    const element = document.querySelector(cleanedSelector);
-    if (!element) {
-      return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
-    }
-    return {
-      success: true,
-      data: {
-        tagName: element.tagName,
-        className: element.className,
-        text: element.innerText ? element.innerText.substring(0, 5000) : '',
-        html: element.innerHTML ? element.innerHTML.substring(0, 5000) : ''
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
 /**
  * 获取用户选中的内容
@@ -839,14 +811,102 @@ export function extractImages(options = {}) {
  */
 export function searchInPage(options = {}) {
   try {
-    const { pattern, caseSensitive = false, contextLength = 50, maxResults = 20, highlight = false } = options;
+    const { query, pattern, mode = 'plain', caseSensitive = false, contextLength = 50, maxResults = 20, highlight = false } = options;
     
-    if (!pattern) {
-      return { success: false, error: '需要提供搜索模式' };
+    const searchPattern = query || pattern;
+    
+    if (!searchPattern) {
+      return { success: false, error: '需要提供搜索关键词' };
+    }
+    
+    if (mode === 'plain') {
+      const found = window.find(searchPattern, caseSensitive, false, true, false, true, false);
+      
+      let count = 0;
+      const matches = [];
+      
+      try {
+        const sel = window.getSelection();
+        const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+        
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+        const flags = caseSensitive ? 'g' : 'gi';
+        const escaped = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, flags);
+        const bodyText = document.body.innerText;
+        
+        let globalIndex = 0;
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          const nodeText = node.textContent;
+          const nodeMatches = nodeText.match(regex);
+          if (nodeMatches) {
+            for (const m of nodeMatches) {
+              if (matches.length >= maxResults) break;
+              const idx = bodyText.indexOf(m, globalIndex);
+              const start = Math.max(0, idx - contextLength);
+              const end = Math.min(bodyText.length, idx + m.length + contextLength);
+              matches.push({
+                match: m,
+                position: idx,
+                context: bodyText.substring(start, end),
+                lineNumber: bodyText.substring(0, idx).split('\n').length
+              });
+              count++;
+              globalIndex = idx + m.length;
+            }
+          }
+          if (matches.length >= maxResults) break;
+        }
+        
+        if (savedRange) {
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+      } catch (e) {
+        count = found ? 1 : 0;
+      }
+      
+      if (highlight && count > 0) {
+        removeHighlights();
+        const highlightStyle = document.createElement('style');
+        highlightStyle.id = 'ai-helper-highlight-style';
+        highlightStyle.textContent = `
+          .ai-helper-search-highlight {
+            background-color: #ffff00;
+            color: #000;
+            padding: 1px 2px;
+            border-radius: 2px;
+          }
+        `;
+        document.head.appendChild(highlightStyle);
+        
+        const flags2 = caseSensitive ? 'g' : 'gi';
+        const escaped2 = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        document.body.innerHTML = document.body.innerHTML.replace(
+          new RegExp(escaped2, flags2),
+          '<span class="ai-helper-search-highlight">$&</span>'
+        );
+      }
+      
+      return {
+        success: true,
+        query: searchPattern,
+        mode: 'plain',
+        found,
+        total: count,
+        matches: matches,
+        highlighted: highlight
+      };
     }
     
     const flags = caseSensitive ? 'g' : 'gi';
-    const regex = new RegExp(pattern, flags);
+    const regex = new RegExp(searchPattern, flags);
     
     const bodyText = document.body.innerText;
     const matches = [];
@@ -883,14 +943,15 @@ export function searchInPage(options = {}) {
       document.head.appendChild(highlightStyle);
       
       document.body.innerHTML = document.body.innerHTML.replace(
-        new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags),
+        new RegExp(searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags),
         '<span class="ai-helper-search-highlight">$&</span>'
       );
     }
     
     return {
       success: true,
-      pattern: pattern,
+      pattern: searchPattern,
+      mode: 'regex',
       total: matches.length,
       matches: matches,
       highlighted: highlight

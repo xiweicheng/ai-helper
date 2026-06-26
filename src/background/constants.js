@@ -141,24 +141,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'get_element_by_selector',
-    type: 'function',
-    function: {
-      name: 'get_element_by_selector',
-      description: '获取指定 CSS 选择器的元素内容',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: 'CSS 选择器，如 #content, .article, h1 等'
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
     id: 'get_selected_content',
     type: 'function',
     function: {
@@ -418,13 +400,13 @@ export const BUILTIN_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_to',
-      description: '滚动到指定位置，支持滚动到元素、页面顶部、页面底部或指定坐标。适用于加载更多内容或定位到特定区域',
+      description: '滚动到指定位置，支持滚动到元素、页面顶部、页面底部或指定坐标。滚动到元素时可指定对齐方式。适用于加载更多内容或定位到特定区域',
       parameters: {
         type: 'object',
         properties: {
           target: {
             type: 'string',
-            description: '滚动目标：selector（元素选择器）、top（顶部）、bottom（底部）、coordinates（坐标）',
+            description: '滚动目标：selector（元素选择器，默认）、top（顶部）、bottom（底部）、coordinates（坐标）',
             enum: ['selector', 'top', 'bottom', 'coordinates'],
             default: 'selector'
           },
@@ -441,6 +423,12 @@ export const BUILTIN_TOOLS = [
             type: 'integer',
             description: 'Y坐标（当target为coordinates时使用）',
             default: 0
+          },
+          align: {
+            type: 'string',
+            description: '元素对齐方式（仅target=selector时生效）：start（顶部）、center（居中）、end（底部）、nearest（最近）',
+            enum: ['start', 'center', 'end', 'nearest'],
+            default: 'center'
           },
           behavior: {
             type: 'string',
@@ -791,28 +779,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'drag_and_drop',
-    type: 'function',
-    function: {
-      name: 'drag_and_drop',
-      description: '模拟拖拽操作（从源元素拖到目标元素）。⚠️ 实验性：受浏览器安全策略限制，手动创建的拖拽事件无法传递真实的 dataTransfer 数据，大多数网页拖拽功能可能无法触发。仅对简单的事件冒泡型拖拽交互可能生效',
-      parameters: {
-        type: 'object',
-        properties: {
-          sourceSelector: {
-            type: 'string',
-            description: '源元素CSS选择器'
-          },
-          targetSelector: {
-            type: 'string',
-            description: '目标元素CSS选择器'
-          }
-        },
-        required: ['sourceSelector', 'targetSelector']
-      }
-    }
-  },
-  {
     id: 'file_upload',
     type: 'function',
     function: {
@@ -840,35 +806,6 @@ export const BUILTIN_TOOLS = [
           }
         },
         required: ['selector', 'fileName', 'fileContent']
-      }
-    }
-  },
-  {
-    id: 'scroll_into_view',
-    type: 'function',
-    function: {
-      name: 'scroll_into_view',
-      description: '将指定元素滚动到可视区域。确保目标元素可见后再操作，避免click失败',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: '目标元素CSS选择器'
-          },
-          align: {
-            type: 'string',
-            description: '对齐方式：start（顶部）、center（居中）、end（底部）、nearest（最近）',
-            enum: ['start', 'center', 'end', 'nearest'],
-            default: 'center'
-          },
-          smooth: {
-            type: 'boolean',
-            description: '是否平滑滚动',
-            default: true
-          }
-        },
-        required: ['selector']
       }
     }
   },
@@ -1014,19 +951,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'color_picker',
-    type: 'function',
-    function: {
-      name: 'color_picker',
-      description: '从页面任意位置取色（基于EyeDropper API）。用于设计还原检查、主题色提取',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: []
-      }
-    }
-  },
-  {
     id: 'diff_page',
     type: 'function',
     function: {
@@ -1047,39 +971,6 @@ export const BUILTIN_TOOLS = [
           }
         },
         required: []
-      }
-    }
-  },
-  {
-    id: 'text_to_speech',
-    type: 'function',
-    function: {
-      name: 'text_to_speech',
-      description: '将文本转为语音播放（基于Web Speech API）。用于朗读文章、无障碍场景',
-      parameters: {
-        type: 'object',
-        properties: {
-          text: {
-            type: 'string',
-            description: '要朗读的文本'
-          },
-          lang: {
-            type: 'string',
-            description: '语言，如zh-CN、en-US',
-            default: 'zh-CN'
-          },
-          rate: {
-            type: 'number',
-            description: '语速（0.1-10），默认1',
-            default: 1
-          },
-          pitch: {
-            type: 'number',
-            description: '音调（0-2），默认1',
-            default: 1
-          }
-        },
-        required: ['text']
       }
     }
   },
@@ -1176,13 +1067,19 @@ export const BUILTIN_TOOLS = [
     type: 'function',
     function: {
       name: 'search_in_page',
-      description: '正则搜索页面文本，返回匹配位置及上下文',
+      description: '在当前页面搜索文本，支持普通文本和正则表达式两种模式，并可高亮匹配结果。默认使用普通文本模式，效率更高',
       parameters: {
         type: 'object',
         properties: {
-          pattern: {
+          query: {
             type: 'string',
-            description: '搜索模式（支持正则表达式）'
+            description: '搜索关键词'
+          },
+          mode: {
+            type: 'string',
+            enum: ['plain', 'regex'],
+            description: '搜索模式：plain（普通文本，默认）、regex（正则表达式）',
+            default: 'plain'
           },
           caseSensitive: {
             type: 'boolean',
@@ -1205,34 +1102,7 @@ export const BUILTIN_TOOLS = [
             default: false
           }
         },
-        required: ['pattern']
-      }
-    }
-  },
-  {
-    id: 'video_control',
-    type: 'function',
-    function: {
-      name: 'video_control',
-      description: '控制页面视频播放（播放、暂停、快进、音量调节等）',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['play', 'pause', 'toggle', 'stop', 'seek', 'volume', 'mute', 'speed', 'fullscreen'],
-            description: '操作类型'
-          },
-          selector: {
-            type: 'string',
-            description: '视频元素选择器，默认第一个视频'
-          },
-          value: {
-            type: 'number',
-            description: '参数值（seek为时间秒数，volume为0-1，speed为播放速度）'
-          }
-        },
-        required: ['action']
+        required: ['query']
       }
     }
   },
@@ -1362,39 +1232,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'shadow_dom_query',
-    type: 'function',
-    function: {
-      name: 'shadow_dom_query',
-      description: '穿透Shadow DOM查询元素，支持Web Components页面自动化',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: 'CSS选择器'
-          },
-          deep: {
-            type: 'boolean',
-            description: '是否深度遍历所有Shadow DOM，默认true',
-            default: true
-          },
-          maxDepth: {
-            type: 'integer',
-            description: '最大遍历深度，默认5',
-            default: 5
-          },
-          maxResults: {
-            type: 'integer',
-            description: '最大返回数量，默认50',
-            default: 50
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
     id: 'schedule_task',
     type: 'function',
     function: {
@@ -1430,37 +1267,6 @@ export const BUILTIN_TOOLS = [
           }
         },
         required: ['action']
-      }
-    }
-  },
-  {
-    id: 'execute_workflow',
-    type: 'function',
-    function: {
-      name: 'execute_workflow',
-      description: '执行预定义的工作流（多步骤自动化编排）',
-      parameters: {
-        type: 'object',
-        properties: {
-          workflow: {
-            type: 'object',
-            description: '工作流定义对象'
-          },
-          workflowName: {
-            type: 'string',
-            description: '已保存的工作流名称（与workflow二选一）'
-          },
-          variables: {
-            type: 'object',
-            description: '工作流变量（键值对）'
-          },
-          debug: {
-            type: 'boolean',
-            description: '是否开启调试模式，输出详细日志',
-            default: false
-          }
-        },
-        required: []
       }
     }
   },
@@ -1526,76 +1332,6 @@ export const BUILTIN_TOOLS = [
           }
         },
         required: ['taskDescription', 'subtasks']
-      }
-    }
-  },
-  {
-    id: 'manage_user_scripts',
-    type: 'function',
-    function: {
-      name: 'manage_user_scripts',
-      description: '管理用户自定义脚本（类似Tampermonkey）',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['create', 'get', 'list', 'update', 'delete', 'run'],
-            description: '操作类型'
-          },
-          name: {
-            type: 'string',
-            description: '脚本名称'
-          },
-          code: {
-            type: 'string',
-            description: '脚本代码（create/update操作必需）'
-          },
-          matchPatterns: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '匹配URL模式列表'
-          },
-          runAt: {
-            type: 'string',
-            enum: ['document_start', 'document_end', 'document_idle'],
-            description: '脚本注入时机，默认document_idle',
-            default: 'document_idle'
-          }
-        },
-        required: ['action']
-      }
-    }
-  },
-  {
-    id: 'compare_urls',
-    type: 'function',
-    function: {
-      name: 'compare_urls',
-      description: '对比两个URL页面的内容差异',
-      parameters: {
-        type: 'object',
-        properties: {
-          url1: {
-            type: 'string',
-            description: '第一个URL'
-          },
-          url2: {
-            type: 'string',
-            description: '第二个URL'
-          },
-          compareTextOnly: {
-            type: 'boolean',
-            description: '是否仅对比文本内容，默认true',
-            default: true
-          },
-          ignoreWhitespace: {
-            type: 'boolean',
-            description: '是否忽略空白差异，默认true',
-            default: true
-          }
-        },
-        required: ['url1', 'url2']
       }
     }
   },
@@ -1707,23 +1443,6 @@ export const BUILTIN_TOOLS = [
           injectMode: { type: 'string', enum: ['style', 'inline'], description: '注入模式：style（创建style标签）或inline（逐元素设置内联样式）', default: 'style' }
         },
         required: ['css']
-      }
-    }
-  },
-  {
-    id: 'find_text_on_page',
-    type: 'function',
-    function: {
-      name: 'find_text_on_page',
-      description: '使用浏览器原生查找功能搜索页面文本，比 DOM 搜索更高效，并能高亮匹配结果',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: '搜索关键词' },
-          caseSensitive: { type: 'boolean', description: '是否区分大小写', default: false },
-          highlight: { type: 'boolean', description: '是否高亮搜索结果', default: true }
-        },
-        required: ['query']
       }
     }
   },
@@ -1926,7 +1645,6 @@ export const BUILTIN_TOOLS = [
 export const TOOL_CATEGORY_MAP = {
   click_element: 'page_interaction',
   hover_element: 'page_interaction',
-  drag_and_drop: 'page_interaction',
   fill_form: 'form_operation',
   keyboard_input: 'form_operation',
   file_upload: 'form_operation',
@@ -1936,7 +1654,6 @@ export const TOOL_CATEGORY_MAP = {
   search_in_page: 'info_extract',
   get_full_html: 'page_analysis',
   query_interactive_elements: 'page_analysis',
-  get_element_by_selector: 'page_analysis',
   extract_table: 'page_analysis',
   extract_links: 'page_analysis',
   extract_forms: 'page_analysis',
@@ -1953,22 +1670,15 @@ export const TOOL_CATEGORY_MAP = {
   manage_cookies: 'storage_management',
   manage_storage: 'storage_management',
   fetch_url: 'network_request',
-  compare_urls: 'network_request',
   capture_tab_screenshot: 'media_process',
   screenshot_element: 'media_process',
   page_to_pdf: 'media_process',
-  text_to_speech: 'media_process',
-  video_control: 'media_process',
   generate_qrcode: 'media_process',
   diff_page: 'debug_dev',
   performance_audit: 'debug_dev',
-  shadow_dom_query: 'debug_dev',
-  color_picker: 'debug_dev',
   clarify_question: 'ai_collaboration',
   highlight_text: 'ai_collaboration',
   schedule_task: 'ai_collaboration',
-  execute_workflow: 'ai_collaboration',
-  manage_user_scripts: 'ai_collaboration',
   plan_task: 'ai_collaboration',
   copy_to_clipboard: 'system_integration',
   paste_from_clipboard: 'system_integration',
@@ -1976,15 +1686,12 @@ export const TOOL_CATEGORY_MAP = {
   download_file: 'system_integration',
   get_browser_info: 'system_integration',
   scroll_to: 'system_integration',
-  scroll_into_view: 'system_integration',
   wait_for_element: 'system_integration',
   watch_element: 'system_integration',
   page_to_json: 'page_analysis',
   find_similar_elements: 'page_analysis',
   get_iframe_content: 'page_analysis',
-  run_javascript: 'debug_dev',
   inject_css: 'debug_dev',
-  find_text_on_page: 'info_extract',
   get_page_language: 'info_extract',
   read_accessibility_tree: 'info_extract',
   set_zoom: 'page_interaction',

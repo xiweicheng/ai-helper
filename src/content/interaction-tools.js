@@ -142,7 +142,7 @@ export function fillForm(fields, waitTime = 500) {
  */
 export function scrollToPosition(options) {
   try {
-    const { target = 'selector', selector, x = 0, y = 0, behavior = 'smooth' } = options;
+    const { target = 'selector', selector, x = 0, y = 0, behavior = 'smooth', align = 'center' } = options;
     
     if (target === 'top') {
       window.scrollTo({ top: 0, left: 0, behavior });
@@ -155,7 +155,7 @@ export function scrollToPosition(options) {
       if (!element) {
         return { success: false, error: `未找到元素: ${selector}` };
       }
-      element.scrollIntoView({ behavior, block: 'center' });
+      element.scrollIntoView({ behavior, block: align });
     } else {
       return { success: false, error: '无效的滚动目标或缺少选择器' };
     }
@@ -451,27 +451,6 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
   }
 }
 
-/**
- * 滚动到元素可见
- */
-export function scrollIntoView(selector, align = 'center', smooth = true) {
-  try {
-    const el = document.querySelector(selector);
-    
-    if (!el) {
-      return { success: false, error: `未找到元素: ${selector}` };
-    }
-    
-    el.scrollIntoView({
-      behavior: smooth ? 'smooth' : 'auto',
-      block: align
-    });
-    
-    return { success: true, message: `已滚动到元素: ${selector}` };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
 /**
  * 监听元素变化

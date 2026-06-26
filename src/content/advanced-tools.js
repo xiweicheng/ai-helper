@@ -611,48 +611,6 @@ export function injectCss(css, targetSelector = null, injectMode = 'style') {
   }
 }
 
-export function findTextOnPage(query, caseSensitive = false, highlight = true) {
-  try {
-    if (!query || typeof query !== 'string') {
-      return { success: false, error: 'query 参数必须是非空字符串' };
-    }
-
-    const found = window.find(query, caseSensitive, false, true, false, true, false);
-
-    let count = 0;
-    if (highlight && found) {
-      try {
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          const walker = document.createTreeWalker(
-            document.body,
-            NodeFilter.SHOW_TEXT,
-            null,
-            false
-          );
-          const flags = caseSensitive ? 'g' : 'gi';
-          const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
-          while (walker.nextNode()) {
-            const node = walker.currentNode;
-            const matches = node.textContent.match(regex);
-            if (matches) {
-              count += matches.length;
-            }
-          }
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }
-      } catch (e) {
-        count = found ? 1 : 0;
-      }
-    }
-
-    return { success: true, found, count: count || (found ? 1 : 0) };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
 export function setZoom(level) {
   try {

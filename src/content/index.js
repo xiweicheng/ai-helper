@@ -2,7 +2,7 @@
 
 import {
   getPageText, getFullHtml, queryInteractiveElements, generateUniqueSelector,
-  getElementText, getElementValue, getElementBySelector, getSelectedContent,
+  getElementText, getElementValue, getSelectedContent,
   extractTable, copyToClipboard, pasteFromClipboard, hoverElement,
   extractMetadata, highlightText, extractLinks, extractForms,
   getElementSelector, extractImages, searchInPage, pageToMarkdown, removeHighlights,
@@ -11,14 +11,14 @@ import {
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement, keyboardInput,
-  dragAndDrop, fileUpload, scrollIntoView, watchElement, manageStorage,
+  dragAndDrop, fileUpload, watchElement, manageStorage,
   getElementRect, getComputedStyleTool, getComputedStyle, pickColor,
   diffPage, textToSpeech
 } from './interaction-tools.js';
 
 import {
   videoControl, generateQRCode, performanceAudit, screenshotElement,
-  shadowDomQuery, pageToPdf, runJavascript, injectCss, findTextOnPage, setZoom
+  shadowDomQuery, pageToPdf, runJavascript, injectCss, setZoom
 } from './advanced-tools.js';
 
 import { initSelectionToolbar } from './selection-toolbar.js';
@@ -51,12 +51,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 查询可交互元素
   if (message.type === 'QUERY_INTERACTIVE_ELEMENTS') {
     const result = queryInteractiveElements(message);
-    sendResponse(result);
-  }
-  
-  // 获取指定元素
-  if (message.type === 'GET_ELEMENT') {
-    const result = getElementBySelector(message.selector);
     sendResponse(result);
   }
   
@@ -149,12 +143,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 文件上传
   if (message.type === 'FILE_UPLOAD') {
     const result = fileUpload(message.selector, message.fileName, message.fileContent, message.fileType);
-    sendResponse(result);
-  }
-  
-  // 滚动到元素可见
-  if (message.type === 'SCROLL_INTO_VIEW') {
-    const result = scrollIntoView(message.selector, message.align, message.smooth);
     sendResponse(result);
   }
   
@@ -299,12 +287,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 注入 CSS
   if (message.type === 'INJECT_CSS') {
     const result = injectCss(message.css, message.targetSelector, message.injectMode);
-    sendResponse(result);
-  }
-  
-  // 原生查找页面文本
-  if (message.type === 'FIND_TEXT_ON_PAGE') {
-    const result = findTextOnPage(message.query, message.caseSensitive, message.highlight);
     sendResponse(result);
   }
   
