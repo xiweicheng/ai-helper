@@ -1685,6 +1685,106 @@ export const BUILTIN_TOOLS = [
         required: ['prototypeId']
       }
     }
+  },
+  // ========== 本地 Agent 工具 ==========
+  {
+    id: 'agent_read_file',
+    type: 'function',
+    function: {
+      name: 'agent_read_file',
+      description: '通过本地 Agent 读取本地文件系统的文件内容。需要先在设置中完成 Agent 配对，确保 Agent 服务正在运行。只能读取 Agent 工作目录及其白名单目录内的文件。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '文件的绝对路径或相对于工作目录的路径'
+          }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    id: 'agent_write_file',
+    type: 'function',
+    function: {
+      name: 'agent_write_file',
+      description: '通过本地 Agent 将内容写入本地文件系统的文件。会覆盖已有文件或创建新文件。需要先配对 Agent，只能写入 Agent 工作目录及其白名单目录内的文件。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '文件的绝对路径或相对于工作目录的路径'
+          },
+          content: {
+            type: 'string',
+            description: '要写入的文件内容'
+          }
+        },
+        required: ['path', 'content']
+      }
+    }
+  },
+  {
+    id: 'agent_list_dir',
+    type: 'function',
+    function: {
+      name: 'agent_list_dir',
+      description: '通过本地 Agent 列出本地文件系统目录的内容（文件和子目录）。需要先配对 Agent。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '目录的绝对路径或相对于工作目录的路径，默认为当前工作目录',
+            default: '.'
+          }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    id: 'agent_delete_file',
+    type: 'function',
+    function: {
+      name: 'agent_delete_file',
+      description: '通过本地 Agent 删除本地文件系统的文件或目录。需要先配对 Agent。这是不可逆操作，删除的文件无法从回收站恢复。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '要删除的文件或目录路径'
+          }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    id: 'agent_exec_command',
+    type: 'function',
+    function: {
+      name: 'agent_exec_command',
+      description: '通过本地 Agent 执行系统命令。适用场景：npm install、git 操作、运行脚本、编译构建等。危险命令（如 rm -rf /）会被自动拦截，敏感命令（如 sudo、全局安装）需要用户确认后才执行。命令的输出和错误会实时返回。',
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: '要执行的系统命令，如 "npm install", "git status", "ls -la" 等'
+          },
+          cwd: {
+            type: 'string',
+            description: '命令执行的工作目录（可选），默认为 Agent 的工作目录'
+          }
+        },
+        required: ['command']
+      }
+    }
   }
 ];
 
@@ -1771,6 +1871,11 @@ export const TOOL_CATEGORY_MAP = {
   search_conversation_memory: 'memory',
   preview_ui_prototype: 'ai_collaboration',
   get_ui_prototype: 'ai_collaboration',
+  agent_read_file: 'system_integration',
+  agent_write_file: 'system_integration',
+  agent_list_dir: 'system_integration',
+  agent_delete_file: 'system_integration',
+  agent_exec_command: 'system_integration',
 };
 
 // 从 TOOL_CATEGORY_MAP 动态派生分类顺序列表（单一数据源，无需手动维护）
@@ -1846,6 +1951,11 @@ export const TOOL_EXECUTION_MAP = {
   get_page_language: 'content_script',
   read_accessibility_tree: 'content_script',
   set_zoom: 'content_script',
+  agent_read_file: 'background',
+  agent_write_file: 'background',
+  agent_list_dir: 'background',
+  agent_delete_file: 'background',
+  agent_exec_command: 'background',
 };
 
 // 可并行执行的工具（只读操作，无副作用）
@@ -1872,6 +1982,8 @@ export const CONFIRMATION_REQUIRED_TOOLS = new Set([
   'mute_tab',
   'pin_tab',
   'group_tabs',
+  'agent_delete_file',
+  'agent_exec_command',
 ]);
 
 /**

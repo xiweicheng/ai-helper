@@ -2,6 +2,7 @@
 import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
+import * as AgentClient from './local-agent-client.js';
 
 /**
  * 获取启用的工具列表
@@ -270,6 +271,11 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     search_conversation_memory: executeSearchConversationMemory,
     preview_ui_prototype: executePreviewUiPrototype,
     get_ui_prototype: executeGetUiPrototype,
+    agent_read_file: executeAgentReadFile,
+    agent_write_file: executeAgentWriteFile,
+    agent_list_dir: executeAgentListDir,
+    agent_delete_file: executeAgentDeleteFile,
+    agent_exec_command: executeAgentExecCommand,
   };
 
   // Content Script 工具：toolName → payloadBuilder(args)
@@ -2353,4 +2359,112 @@ export async function executeGetUiPrototype(args, toolCallId, sessionId = null) 
       tool_call_id: toolCallId 
     };
   }
+}
+
+// ========== 本地 Agent 工具处理函数 ==========
+
+/**
+ * Agent 文件读取
+ */
+async function executeAgentReadFile(args, toolCallId) {
+  const { path } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.readFile(path);
+  if (result.success) {
+    return { success: true, content: result.content, size: result.size, path: result.path, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件写入
+ */
+async function executeAgentWriteFile(args, toolCallId) {
+  const { path, content } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (content === undefined || content === null) return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.writeFile(path, content);
+  if (result.success) {
+    return { success: true, message: `文件已写入: ${result.path} (${result.size} 字节)`, path: result.path, size: result.size, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 目录列表
+ */
+async function executeAgentListDir(args, toolCallId) {
+  const { path } = args;
+  
+  const result = await AgentClient.listDir(path || '.');
+  if (result.success) {
+    const files = result.entries?.filter(e => e.type === 'file') || [];
+    const dirs = result.entries?.filter(e => e.type === 'directory') || [];
+    const text = `目录 "${result.path}" 包含 ${result.entries?.length || 0} 个项目:\n` +
+      `  📁 ${dirs.length} 个目录\n` +
+      `  📄 ${files.length} 个文件\n\n` +
+      (result.entries || []).map(e => `  ${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.type === 'file' ? ` (${e.size} 字节)` : ''}`).join('\n');
+    return { success: true, content: text, path: result.path, entries: result.entries, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件删除
+ */
+async function executeAgentDeleteFile(args, toolCallId) {
+  const { path } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.deleteFile(path);
+  if (result.success) {
+    return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 命令执行
+ * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
+ */
+async function executeAgentExecCommand(args, toolCallId, sessionId) {
+  const { command, cwd } = args;
+  if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
+  
+  // 发起命令执行请求
+  const result = await AgentClient.execCommand(command, cwd);
+  
+  // 黑名单拦截
+  if (result.level === 'deny' || !result.success) {
+    return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+  }
+  
+  // 灰名单 - 需要确认
+  if (result.level === 'confirm') {
+    return {
+      success: true,
+      level: 'confirm',
+      message: `⚠️ 命令需要确认: ${result.reason}\n\n命令: ${command}\n\n请在确认弹窗中决定是否执行。`,
+      reason: result.reason,
+      command,
+      cwd,
+      tool_call_id: toolCallId
+    };
+  }
+  
+  // 普通命令 - 已开始执行，返回 execId 和 WS URL 供前端连接
+  if (result.level === 'allow') {
+    return {
+      success: true,
+      level: 'allow',
+      execId: result.execId,
+      wsUrl: result.wsUrl,
+      message: `命令已开始执行: ${command}`,
+      tool_call_id: toolCallId
+    };
+  }
+  
+  return { success: false, error: '未知的命令执行状态', tool_call_id: toolCallId };
 }

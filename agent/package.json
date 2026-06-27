@@ -1,0 +1,19 @@
+{
+  "name": "ai-helper-local-agent",
+  "version": "1.0.0",
+  "description": "AI Helper 本地 Agent 代理，提供文件读写和系统命令执行能力",
+  "type": "module",
+  "bin": {
+    "ai-helper-agent": "./bin/agent.js"
+  },
+  "scripts": {
+    "start": "node bin/agent.js start",
+    "stop": "node bin/agent.js stop"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  },
+  "keywords": ["ai-helper", "local-agent", "chrome-extension"],
+  "license": "MIT"
+}

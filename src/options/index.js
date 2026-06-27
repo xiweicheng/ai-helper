@@ -37,7 +37,7 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'chat'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -354,6 +354,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
   updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
   updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
+
+  // ==================== Agent 配置 ====================
+  initAgentConfig();
 });
 
 // 持久化并重新渲染
@@ -362,4 +365,157 @@ function persistAndRender() {
     renderToolbarToolsList(currentTools);
     saveToolbarConfig();
   });
+}
+
+// ==================== Agent 配置函数 ====================
+
+/**
+ * 初始化 Agent 配置界面
+ */
+function initAgentConfig() {
+  const agentUrlInput = document.getElementById('agentUrl');
+  const pairCodeInput = document.getElementById('agentPairCode');
+  const connectBtn = document.getElementById('agentConnectBtn');
+  const disconnectBtn = document.getElementById('agentDisconnectBtn');
+  const statusDot = document.getElementById('agentStatusDot');
+  const statusText = document.getElementById('agentStatusText');
+  const agentStatus = document.getElementById('agentStatus');
+  const pairCodeGroup = document.getElementById('pairCodeGroup');
+  const disconnectGroup = document.getElementById('disconnectGroup');
+  const agentInfo = document.getElementById('agentInfo');
+  const agentWorkdirEl = document.getElementById('agentWorkdir');
+
+  if (!agentUrlInput || !connectBtn) return;
+
+  /**
+   * 更新连接状态 UI
+   */
+  function updateStatusUI(status, message, workdir) {
+    agentStatus.className = 'agent-status ' + status;
+    statusText.textContent = message;
+    
+    if (status === 'connected') {
+      pairCodeGroup.style.display = 'none';
+      disconnectGroup.style.display = '';
+      agentStatus.className = 'agent-status connected';
+      
+      if (workdir) {
+        agentInfo.style.display = '';
+        agentWorkdirEl.textContent = '工作目录: ' + workdir;
+      }
+    } else if (status === 'checking') {
+      agentStatus.className = 'agent-status checking';
+    } else {
+      pairCodeGroup.style.display = '';
+      disconnectGroup.style.display = 'none';
+      agentInfo.style.display = 'none';
+      agentStatus.className = 'agent-status disconnected';
+    }
+  }
+
+  /**
+   * 检查 Agent 连接状态
+   */
+  async function checkAgentStatus() {
+    updateStatusUI('checking', '正在检查连接...');
+    
+    const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+    const storedUrl = result.agentUrl;
+    const storedToken = result.agentToken;
+
+    if (!storedUrl || !storedToken) {
+      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+      agentUrlInput.value = storedUrl || 'http://127.0.0.1:18910';
+      return;
+    }
+
+    agentUrlInput.value = storedUrl;
+
+    try {
+      const response = await fetch(`${storedUrl}/api/status`, {
+        headers: { 'Authorization': `Bearer ${storedToken}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        updateStatusUI('connected', `已连接 - Agent v${data.version}`, data.workdir);
+      } else {
+        updateStatusUI('disconnected', '连接失败 - Token 已失效，请重新配对');
+      }
+    } catch {
+      updateStatusUI('disconnected', '无法连接到 Agent - 请确认 Agent 服务已启动');
+    }
+  }
+
+  /**
+   * 连接 Agent
+   */
+  async function connectToAgent() {
+    const url = agentUrlInput.value.trim() || 'http://127.0.0.1:18910';
+    const code = pairCodeInput.value.trim();
+
+    if (!code || code.length !== 4) {
+      showToast('请输入4位配对码', 'warning');
+      return;
+    }
+
+    updateStatusUI('checking', '正在配对...');
+    connectBtn.disabled = true;
+    connectBtn.textContent = '配对中...';
+
+    try {
+      const response = await fetch(`${url}/api/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, extensionId: chrome.runtime.id })
+      });
+      const data = await response.json();
+
+      if (data.success && data.token) {
+        await chrome.storage.local.set({ agentUrl: url, agentToken: data.token });
+        pairCodeInput.value = '';
+        updateStatusUI('connected', '配对成功');
+        showToast('✅ 配对成功！Agent 已连接', 'success');
+        
+        // 获取完整状态
+        const statusResp = await fetch(`${url}/api/status`, {
+          headers: { 'Authorization': `Bearer ${data.token}` }
+        });
+        if (statusResp.ok) {
+          const statusData = await statusResp.json();
+          updateStatusUI('connected', `已连接 - Agent v${statusData.version}`, statusData.workdir);
+        }
+      } else {
+        updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
+        showToast('❌ ' + (data.error || '配对失败'), 'error');
+      }
+    } catch (err) {
+      updateStatusUI('disconnected', '连接失败 - 请确认 Agent 服务已启动');
+      showToast('❌ 无法连接到 Agent: ' + err.message, 'error');
+    } finally {
+      connectBtn.disabled = false;
+      connectBtn.textContent = '连接';
+    }
+  }
+
+  /**
+   * 断开 Agent 连接
+   */
+  async function disconnectAgent() {
+    await chrome.storage.local.remove(['agentUrl', 'agentToken']);
+    pairCodeInput.value = '';
+    updateStatusUI('disconnected', '已断开连接');
+    showToast('已断开 Agent 连接', 'info');
+  }
+
+  // 绑定事件
+  connectBtn.addEventListener('click', connectToAgent);
+  disconnectBtn.addEventListener('click', disconnectAgent);
+
+  // 回车键快速配对
+  pairCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') connectToAgent();
+  });
+
+  // 启动时检查状态
+  checkAgentStatus();
 }

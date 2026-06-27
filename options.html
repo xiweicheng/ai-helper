@@ -1269,6 +1269,60 @@
       color: #333;
       cursor: pointer;
     }
+
+    /* Agent 配置样式 */
+    .agent-config {
+      margin-top: 0;
+    }
+    .agent-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    .agent-config .subtitle {
+      margin-bottom: 20px;
+    }
+    .agent-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .agent-status.connected {
+      background: #f0fff4;
+      border: 1px solid #c6f6d5;
+      color: #38a169;
+    }
+    .agent-status.disconnected {
+      background: #fff5f5;
+      border: 1px solid #fed7d7;
+      color: #e53e3e;
+    }
+    .agent-status.checking {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      color: #d69e2e;
+    }
+    .agent-status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .agent-info {
+      padding: 10px 14px;
+      background: #f0f4ff;
+      border: 1px solid #d0d9f0;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #4a5568;
+    }
   </style>
 </head>
 <body>
@@ -1282,6 +1336,7 @@
       <button class="tab-nav-btn" data-tab="react">ReAct</button>
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
+      <button class="tab-nav-btn" data-tab="agent">本地Agent</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -1852,6 +1907,59 @@
       </div>
     </div>
     </div><!-- /tab-chat -->
+
+    <!-- 本地Agent配置区域 -->
+    <div class="tab-panel" data-tab="agent">
+    <div class="agent-config">
+      <h2>🖥️ 本地 Agent 配置</h2>
+      <p class="subtitle">连接本地 Agent 服务，实现文件读写和系统命令执行</p>
+
+      <div class="agent-status" id="agentStatus">
+        <span class="agent-status-dot" id="agentStatusDot"></span>
+        <span id="agentStatusText">未连接</span>
+      </div>
+
+      <div class="agent-info" id="agentInfo" style="display:none;">
+        <span id="agentWorkdir"></span>
+      </div>
+
+      <div class="form-group">
+        <label>Agent 地址 <span class="hint">（本地 Agent 服务的 HTTP 地址）</span></label>
+        <input type="text" id="agentUrl" placeholder="http://127.0.0.1:18910" value="http://127.0.0.1:18910">
+      </div>
+
+      <div class="form-group" id="pairCodeGroup">
+        <label>配对码 <span class="hint">（在 Agent 终端窗口中查看）</span></label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="agentPairCode" placeholder="4位配对码" maxlength="4" style="flex: 1; text-align: center; font-size: 20px; letter-spacing: 8px;" autocomplete="off">
+          <button class="btn btn-primary" id="agentConnectBtn" style="width: auto; flex-shrink: 0; min-width: 80px;">连接</button>
+        </div>
+      </div>
+
+      <div class="form-group" id="disconnectGroup" style="display:none;">
+        <button class="btn btn-primary" id="agentDisconnectBtn" style="background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);">断开连接</button>
+      </div>
+
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 使用说明</h3>
+        <p>
+          1. 在终端中启动 Agent：<code>cd agent && node bin/agent.js start</code><br>
+          2. Agent 启动后会显示 4 位配对码<br>
+          3. 在此页面填入配对码并点击"连接"<br>
+          4. 配对成功后，AI 对话中即可使用 agent_* 系列工具操作本地文件系统<br>
+        </p>
+      </div>
+
+      <div class="warning-box" style="margin-top: 10px;">
+        <h3>⚠️ 安全提示</h3>
+        <p>
+          Agent 服务仅监听 127.0.0.1，外部网络无法访问。<br>
+          文件操作限制在配置的工作目录内，不可越权访问。<br>
+          危险命令（如 rm -rf /）会被自动拦截。
+        </p>
+      </div>
+    </div>
+    </div><!-- /tab-agent -->
 
     <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
 
