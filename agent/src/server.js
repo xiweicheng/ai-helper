@@ -6,7 +6,9 @@ import { join } from 'path';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
-import { executeCommand, addWsClient, killProcess, getRunningProcesses } from './executor.js';
+import { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses } from './executor.js';
+
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 
 /**
  * JSON 响应辅助
@@ -22,16 +24,36 @@ function jsonResponse(res, status, data) {
 }
 
 /**
- * 解析请求 body
+ * 解析请求 body（带大小限制）
  */
 function parseBody(req) {
-  return new Promise((resolve) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
+  return new Promise((resolve, reject) => {
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+    if (contentLength > MAX_BODY_SIZE) {
+      reject(new Error('请求体过大'));
+      return;
+    }
+
+    const chunks = [];
+    let totalSize = 0;
+
+    req.on('data', (chunk) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        reject(new Error('请求体过大'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
     req.on('end', () => {
+      const body = Buffer.concat(chunks).toString();
       try { resolve(JSON.parse(body)); }
       catch { resolve({}); }
     });
+
+    req.on('error', () => reject(new Error('读取请求失败')));
   });
 }
 
@@ -61,19 +83,19 @@ export function startServer() {
 
     // 配对
     if (req.method === 'POST' && pathname === '/api/pair') {
-      const body = await parseBody(req);
+      let body;
+      try { body = await parseBody(req); }
+      catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
       const result = handlePairRequest(body.code, body.extensionId);
       return jsonResponse(res, result.success ? 200 : 400, result);
     }
 
-    // 健康检查
+    // 健康检查（不含敏感信息）
     if (req.method === 'GET' && pathname === '/api/status') {
       return jsonResponse(res, 200, {
         success: true,
         version: '1.0.0',
-        pairCode: getCurrentPairCode(),
-        workdir: config.workdir,
-        runningProcesses: getRunningProcesses()
+        running: true
       });
     }
 
@@ -90,9 +112,23 @@ export function startServer() {
 
     const maxSize = config.fileMaxSize;
 
-    // === 文件操作 ===
+    // 认证后的状态信息（含敏感信息）
+    if (req.method === 'GET' && pathname === '/api/status/detail') {
+      return jsonResponse(res, 200, {
+        success: true,
+        version: '1.0.0',
+        pairCode: getCurrentPairCode(),
+        workdir: config.workdir,
+        runningProcesses: getRunningProcesses()
+      });
+    }
+
     if (req.method === 'POST') {
-      const body = await parseBody(req);
+      let body;
+      try { body = await parseBody(req); }
+      catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
+
+      // === 文件操作 ===
 
       // 读取文件
       if (pathname === '/api/fs/read') {
@@ -127,8 +163,8 @@ export function startServer() {
           const fullPath = join(check.resolved, name);
           try {
             const s = statSync(fullPath);
-            return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size };
-          } catch { return { name, type: 'unknown', size: 0 }; }
+            return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size, mtime: s.mtimeMs };
+          } catch { return { name, type: 'unknown', size: 0, mtime: 0 }; }
         });
         return jsonResponse(res, 200, { success: true, entries, path: check.resolved });
       }
@@ -151,25 +187,52 @@ export function startServer() {
 
       // 发起命令执行
       if (pathname === '/api/exec') {
-        const { command, cwd } = body;
+        const { command, cwd, wait, force } = body;
         if (!command) return jsonResponse(res, 400, { success: false, error: '缺少 command 参数' });
-        const cmdCheck = checkCommand(command);
+
+        // 校验 cwd
+        let resolvedCwd = cwd || config.workdir;
+        const cwdCheck = checkPath(resolvedCwd);
+        if (!cwdCheck.allowed) {
+          return jsonResponse(res, 403, { success: false, error: '执行目录校验失败: ' + cwdCheck.reason });
+        }
+
+        // 安全检查
+        const cmdCheck = checkCommand(command, force);
         if (cmdCheck.level === 'deny') {
           return jsonResponse(res, 403, { success: false, error: cmdCheck.reason, level: 'deny' });
         }
         if (cmdCheck.level === 'confirm') {
           return jsonResponse(res, 200, { success: true, level: 'confirm', reason: cmdCheck.reason, command, cwd });
         }
-        const execId = executeCommand(command, cwd, null, null);
-        return jsonResponse(res, 200, { success: true, level: 'allow', execId, wsUrl: `ws://${host}:${port}/ws/exec/${execId}?token=${token}` });
-      }
 
-      // 确认执行（灰名单命令）
-      if (pathname === '/api/exec/confirm') {
-        const { command, cwd } = body;
-        if (!command) return jsonResponse(res, 400, { success: false, error: '缺少 command 参数' });
-        const execId = executeCommand(command, cwd, null, null);
-        return jsonResponse(res, 200, { success: true, execId, wsUrl: `ws://${host}:${port}/ws/exec/${execId}?token=${token}` });
+        // 同步等待模式（用于扩展端获取完整输出）
+        if (wait) {
+          try {
+            const result = await executeCommandSync(command, resolvedCwd);
+            return jsonResponse(res, 200, {
+              success: true,
+              level: 'allow',
+              execId: result.execId,
+              exitCode: result.exitCode,
+              stdout: result.stdout || '',
+              stderr: result.stderr || '',
+              killed: result.killed,
+              error: result.error
+            });
+          } catch (err) {
+            return jsonResponse(res, 500, { success: false, error: `命令执行异常: ${err.message}` });
+          }
+        }
+
+        // 异步模式（返回 execId，适用于 WebSocket 场景）
+        const execId = executeCommand(command, resolvedCwd, null, null);
+        return jsonResponse(res, 200, {
+          success: true,
+          level: 'allow',
+          execId,
+          wsUrl: `ws://${host}:${port}/ws/exec/${execId}`
+        });
       }
 
       // 停止命令
@@ -179,7 +242,7 @@ export function startServer() {
       }
     }
 
-    // 运行中进程列表
+    // 运行中进程列表（需认证）
     if (req.method === 'GET' && pathname === '/api/exec/running') {
       return jsonResponse(res, 200, { success: true, processes: getRunningProcesses() });
     }
@@ -191,15 +254,14 @@ export function startServer() {
   // ==================== WebSocket Server ====================
   const wss = new WebSocketServer({ noServer: true });
 
-  // 在 HTTP upgrade 时处理 WS 连接
   server.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url, `http://${host}:${port}`);
     const pathParts = url.pathname.split('/');
-    // /ws/exec/<execId>
+
     if (pathParts[1] === 'ws' && pathParts[2] === 'exec') {
       const execId = pathParts[3];
 
-      // Token 验证
+      // Token 验证（从 Authorization header 或 query param）
       const authHeader = request.headers.authorization;
       let token = null;
       if (authHeader && authHeader.startsWith('Bearer ')) {

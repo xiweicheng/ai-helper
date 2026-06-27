@@ -423,21 +423,36 @@ function initAgentConfig() {
     const storedUrl = result.agentUrl;
     const storedToken = result.agentToken;
 
-    if (!storedUrl || !storedToken) {
+    if (!storedUrl) {
       updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
-      agentUrlInput.value = storedUrl || 'http://127.0.0.1:18910';
+      agentUrlInput.value = 'http://127.0.0.1:18910';
       return;
     }
 
     agentUrlInput.value = storedUrl;
 
     try {
-      const response = await fetch(`${storedUrl}/api/status`, {
-        headers: { 'Authorization': `Bearer ${storedToken}` }
-      });
+      const response = await fetch(`${storedUrl}/api/status`);
       if (response.ok) {
         const data = await response.json();
-        updateStatusUI('connected', `已连接 - Agent v${data.version}`, data.workdir);
+        if (!storedToken) {
+          updateStatusUI('disconnected', 'Agent 在线 - 请填入配对码完成配对');
+          return;
+        }
+        // 获取详细信息（含工作目录）
+        try {
+          const detailResp = await fetch(`${storedUrl}/api/status/detail`, {
+            headers: { 'Authorization': `Bearer ${storedToken}` }
+          });
+          if (detailResp.ok) {
+            const detailData = await detailResp.json();
+            updateStatusUI('connected', `已连接 - Agent v${data.version}`, detailData.workdir);
+          } else {
+            updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+          }
+        } catch {
+          updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+        }
       } else {
         updateStatusUI('disconnected', '连接失败 - Token 已失效，请重新配对');
       }
@@ -477,7 +492,7 @@ function initAgentConfig() {
         showToast('✅ 配对成功！Agent 已连接', 'success');
         
         // 获取完整状态
-        const statusResp = await fetch(`${url}/api/status`, {
+        const statusResp = await fetch(`${url}/api/status/detail`, {
           headers: { 'Authorization': `Bearer ${data.token}` }
         });
         if (statusResp.ok) {

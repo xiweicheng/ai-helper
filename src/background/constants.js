@@ -1769,7 +1769,7 @@ export const BUILTIN_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec_command',
-      description: '通过本地 Agent 执行系统命令。适用场景：npm install、git 操作、运行脚本、编译构建等。危险命令（如 rm -rf /）会被自动拦截，敏感命令（如 sudo、全局安装）需要用户确认后才执行。命令的输出和错误会实时返回。',
+      description: '通过本地 Agent 执行系统命令。适用场景：npm install、git 操作、运行脚本、编译构建等。危险命令（如 rm -rf /）会被自动拦截。敏感命令（如 sudo、全局安装 npm 包、chmod 777、git push --force 等）初次调用时会返回确认提示，你需要告知用户需要确认的原因，等待用户同意后，再次调用此工具并传入 force: true 来强制执行。命令的输出和退出码会完整返回。',
       parameters: {
         type: 'object',
         properties: {
@@ -1780,6 +1780,10 @@ export const BUILTIN_TOOLS = [
           cwd: {
             type: 'string',
             description: '命令执行的工作目录（可选），默认为 Agent 的工作目录'
+          },
+          force: {
+            type: 'boolean',
+            description: '设为 true 强制执行已被用户确认的命令。仅在用户明确同意执行后再使用。默认为 false。'
           }
         },
         required: ['command']

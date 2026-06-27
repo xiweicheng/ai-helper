@@ -440,7 +440,7 @@ export function saveConfig() {
         // 尝试获取工作目录
         try {
           if (agentResult.agentToken) {
-            const resp = await fetch(`${agentResult.agentUrl}/api/status`, {
+            const resp = await fetch(`${agentResult.agentUrl}/api/status/detail`, {
               headers: { 'Authorization': `Bearer ${agentResult.agentToken}` }
             });
             if (resp.ok) {

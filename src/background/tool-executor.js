@@ -2430,15 +2430,20 @@ async function executeAgentDeleteFile(args, toolCallId) {
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
  */
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
-  const { command, cwd } = args;
+  const { command, cwd, force } = args;
   if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
   
-  // 发起命令执行请求
-  const result = await AgentClient.execCommand(command, cwd);
+  // 使用 wait 模式，阻塞等待命令完整输出
+  const result = await AgentClient.execCommandWait(command, cwd, !!force);
   
   // 黑名单拦截
-  if (result.level === 'deny' || !result.success) {
+  if (result.level === 'deny') {
     return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+  }
+
+  // 网络/认证错误
+  if (!result.success && !result.level) {
+    return { success: false, error: result.error || '命令执行失败', tool_call_id: toolCallId };
   }
   
   // 灰名单 - 需要确认
@@ -2446,7 +2451,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     return {
       success: true,
       level: 'confirm',
-      message: `⚠️ 命令需要确认: ${result.reason}\n\n命令: ${command}\n\n请在确认弹窗中决定是否执行。`,
+      message: `⚠️ 命令需要用户确认：${result.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
       reason: result.reason,
       command,
       cwd,
@@ -2454,17 +2459,16 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     };
   }
   
-  // 普通命令 - 已开始执行，返回 execId 和 WS URL 供前端连接
-  if (result.level === 'allow') {
-    return {
-      success: true,
-      level: 'allow',
-      execId: result.execId,
-      wsUrl: result.wsUrl,
-      message: `命令已开始执行: ${command}`,
-      tool_call_id: toolCallId
-    };
-  }
-  
-  return { success: false, error: '未知的命令执行状态', tool_call_id: toolCallId };
+  // 命令执行完毕，返回完整输出
+  return {
+    success: true,
+    level: 'allow',
+    execId: result.execId,
+    exitCode: result.exitCode,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    killed: result.killed || false,
+    message: `命令执行完毕 (exitCode: ${result.exitCode})\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
+    tool_call_id: toolCallId
+  };
 }

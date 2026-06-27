@@ -1,39 +1,71 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize, isAbsolute } from 'path';
+import { resolve, normalize } from 'path';
+import { realpathSync } from 'fs';
 import { loadConfig } from './config.js';
 
 /**
  * 检查路径是否在白名单内
- * @returns {{ allowed: boolean, reason?: string }}
+ * 使用 realpathSync 防止符号链接绕过
+ * @returns {{ allowed: boolean, reason?: string, resolved?: string }}
  */
 function checkPath(pathStr) {
   if (!pathStr || typeof pathStr !== 'string') {
     return { allowed: false, reason: '路径无效' };
   }
 
-  const resolved = resolve(pathStr);
-  const normalized = normalize(resolved);
+  try {
+    const resolved = resolve(pathStr);
+    const normalized = normalize(resolved);
 
-  // 防路径穿越（如 ../../etc/passwd）
-  const config = loadConfig();
-  const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
+    const config = loadConfig();
+    const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
 
-  for (const allowed of allowedPaths) {
-    const allowedResolved = resolve(allowed);
-    if (normalized.startsWith(allowedResolved + '/') || normalized === allowedResolved) {
-      return { allowed: true, resolved: normalized };
+    // 先做前缀检查（快速路径）
+    let prefixMatch = false;
+    let matchedAllowed = null;
+    for (const allowed of allowedPaths) {
+      const allowedResolved = resolve(allowed);
+      if (normalized.startsWith(allowedResolved + '/') || normalized === allowedResolved) {
+        prefixMatch = true;
+        matchedAllowed = allowedResolved;
+        break;
+      }
     }
-  }
+    if (!prefixMatch) {
+      return { allowed: false, reason: `路径不在允许的目录范围内` };
+    }
 
-  return {
-    allowed: false,
-    reason: `路径 "${pathStr}" 不在允许的目录范围内。允许的目录: ${allowedPaths.join(', ')}`
-  };
+    // realpath 校验：防止符号链接绕过
+    // 注意：文件可能尚未创建，realpathSync 会抛出 ENOENT
+    let realPath;
+    try {
+      realPath = realpathSync(resolved);
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        // 文件不存在时，检查父目录
+        const parentDir = resolve(resolved, '..');
+        realPath = realpathSync(parentDir) + '/' + normalized.split('/').pop();
+      } else {
+        return { allowed: false, reason: `无法解析路径: ${err.message}` };
+      }
+    }
+
+    // 对 realPath 再次做前缀检查
+    for (const allowed of allowedPaths) {
+      const allowedResolved = resolve(allowed);
+      if (realPath.startsWith(allowedResolved + '/') || realPath === allowedResolved) {
+        return { allowed: true, resolved: normalized };
+      }
+    }
+
+    return { allowed: false, reason: `路径指向了允许范围之外的位置` };
+  } catch (err) {
+    return { allowed: false, reason: `路径检查异常: ${err.message}` };
+  }
 }
 
 // ==================== 命令分级管控 ====================
 
-// 黑名单模式 - 直接拒绝，不可绕过
 const BLACKLIST_PATTERNS = [
   // 高危写入系统目录
   /^\s*rm\s+-rf\s+\/(\*|\s|$)/,
@@ -52,45 +84,47 @@ const BLACKLIST_PATTERNS = [
   /^\s*>\s*\/etc\/sudoers/,
   // fork bomb
   /:\(\)\s*{\s*:\s*\|\s*:\s*&\s*};\s*:/,
+  /#!/,
   // 恶意管道执行
   /(curl|wget|lynx|links)\s+.*\|\s*(ba)?sh/,
   /git\s+clone\s+.*\|\s*(ba)?sh/,
   // 修改根目录权限
   /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\//,
   /^\s*chown\s+-R\s+\S+\s+\//,
+  // Shell 命令替换注入
+  /`[^`]*`/,                   // 反引号命令替换
+  /\$\([^)]*\)/,               // $() 命令替换
+  /\$\{[^}]*\}/,               // ${} 变量替换（可能含命令）
 ];
 
-// 灰名单模式 - 弹确认框，用户可放行
 const GRAYLIST_PATTERNS = [
-  // sudo 命令
   { pattern: /^\s*sudo\s/, reason: '命令需要管理员权限 (sudo)' },
-  // 全局 npm 安装
   { pattern: /npm\s+(i|install)\s+-g\s/, reason: '全局安装 npm 包' },
   { pattern: /pip\s+(install|uninstall)\s/, reason: 'pip 安装/卸载包' },
-  // 递归权限修改（非根目录）
   { pattern: /^\s*chmod\s+-R\s+777\s/, reason: '递归修改权限为 777' },
-  // 递归删除（非根目录）
   { pattern: /^\s*rm\s+-rf\s+(?!\/|~)/, reason: '递归强制删除文件/目录' },
-  // 强制推送
   { pattern: /git\s+push\s+(-f|--force)/, reason: 'Git 强制推送' },
-  // 关机/重启
   { pattern: /^\s*(shutdown|reboot|halt|poweroff)/, reason: '关机或重启系统' },
-  // 修改 hosts
   { pattern: /^\s*>\s*\/etc\/hosts/, reason: '修改系统 hosts 文件' },
-  // eval 执行
   { pattern: /\beval\s+/, reason: '使用 eval 执行命令' },
 ];
 
 /**
  * 检查命令安全性
+ * @param {boolean} [force=false] - 强制放行（用户确认后的调用）
  * @returns {{ safe: boolean, level: 'allow'|'confirm'|'deny', reason?: string }}
  */
-function checkCommand(command) {
+function checkCommand(command, force = false) {
   if (!command || typeof command !== 'string') {
     return { safe: false, level: 'deny', reason: '命令无效' };
   }
 
   const trimmed = command.trim();
+
+  // 强制模式：跳过所有检查
+  if (force) {
+    return { safe: true, level: 'allow' };
+  }
 
   // 1. 先检查黑名单
   for (const pattern of BLACKLIST_PATTERNS) {

@@ -26,9 +26,6 @@ async function isAgentPaired() {
 
 /**
  * 发起配对请求
- * @param {string} agentUrl - Agent 地址，如 http://127.0.0.1:18910
- * @param {string} pairCode - 配对码
- * @returns {Promise<{success: boolean, token?: string, error?: string}>}
  */
 async function pairWithAgent(agentUrl, pairCode) {
   try {
@@ -51,7 +48,7 @@ async function pairWithAgent(agentUrl, pairCode) {
 }
 
 /**
- * 断开配对（清除存储的 token）
+ * 断开配对
  */
 async function unpairAgent() {
   await chrome.storage.local.remove(['agentUrl', 'agentToken']);
@@ -60,9 +57,6 @@ async function unpairAgent() {
 
 /**
  * 发送带认证的 HTTP 请求到 Agent
- * @param {string} path - API 路径，如 '/api/fs/read'
- * @param {Object} body - 请求体
- * @returns {Promise<Object>}
  */
 async function agentRequest(path, body = {}) {
   const config = await getAgentConfig();
@@ -86,48 +80,56 @@ async function agentRequest(path, body = {}) {
 }
 
 /**
- * 读取文件
+ * 发送带认证的 GET 请求
  */
+async function agentGet(path) {
+  const config = await getAgentConfig();
+  if (!config.connected) {
+    return { success: false, error: 'Agent 未配对' };
+  }
+  try {
+    const response = await fetch(`${config.url}${path}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${config.token}` }
+    });
+    return await response.json();
+  } catch (err) {
+    return { success: false, error: `Agent 请求失败: ${err.message}` };
+  }
+}
+
 async function readFile(filePath) {
   return agentRequest('/api/fs/read', { path: filePath });
 }
 
-/**
- * 写入文件
- */
 async function writeFile(filePath, content) {
   return agentRequest('/api/fs/write', { path: filePath, content });
 }
 
-/**
- * 列出目录
- */
 async function listDir(dirPath) {
   return agentRequest('/api/fs/list', { path: dirPath });
 }
 
-/**
- * 删除文件/目录
- */
 async function deleteFile(filePath) {
   return agentRequest('/api/fs/delete', { path: filePath });
 }
 
 /**
- * 发起命令执行请求（先发 HTTP，根据返回的 level 决定后续流程）
+ * 发起命令执行请求
  * @param {string} command
  * @param {string} [cwd]
- * @returns {Promise<Object>} { success, level, execId?, wsUrl?, reason?, command?, error? }
+ * @param {boolean} [force=false] - 强制执行（跳过安全检查）
  */
-async function execCommand(command, cwd) {
-  return agentRequest('/api/exec', { command, cwd });
+async function execCommand(command, cwd, force = false) {
+  return agentRequest('/api/exec', { command, cwd, force });
 }
 
 /**
- * 确认执行灰名单命令
+ * 同步执行命令并等待结果（用于扩展端获取完整输出）
+ * @returns {Promise<Object>} { success, exitCode, stdout, stderr, execId, killed, error? }
  */
-async function execCommandConfirm(command, cwd) {
-  return agentRequest('/api/exec/confirm', { command, cwd });
+async function execCommandWait(command, cwd, force = false) {
+  return agentRequest('/api/exec', { command, cwd, wait: true, force });
 }
 
 /**
@@ -138,7 +140,7 @@ async function stopCommand(execId) {
 }
 
 /**
- * 获取 Agent 状态（配对码、工作目录等）
+ * 获取 Agent 详细状态（需认证）
  */
 async function getAgentStatus() {
   const config = await getAgentConfig();
@@ -154,12 +156,15 @@ async function getAgentStatus() {
 }
 
 /**
+ * 获取 Agent 详细信息（含配对码和工作目录，需认证）
+ */
+async function getAgentDetail() {
+  return agentGet('/api/status/detail');
+}
+
+/**
  * 创建 WebSocket 连接，用于接收命令执行的实时输出
- * @param {string} wsUrl - WebSocket URL
- * @param {Function} onMessage - 消息回调 (data) => void
- * @param {Function} onClose - 关闭回调 () => void
- * @param {Function} onError - 错误回调 (error) => void
- * @returns {WebSocket}
+ * Token 通过 getAgentConfig 获取，不再从 URL 传入
  */
 async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
   const config = await getAgentConfig();
@@ -168,7 +173,6 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
     return null;
   }
 
-  // wsUrl 中已经包含了 token query param
   const ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
@@ -208,8 +212,9 @@ export {
   listDir,
   deleteFile,
   execCommand,
-  execCommandConfirm,
+  execCommandWait,
   stopCommand,
   getAgentStatus,
+  getAgentDetail,
   createExecWebSocket
 };
