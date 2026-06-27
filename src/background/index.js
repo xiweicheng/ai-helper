@@ -6,6 +6,23 @@ import { getTools } from './tool-executor.js';
 import { reactLoop, callApiNonStream } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 
+// SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
+// 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
+const keepalivePorts = new Map(); // sessionId -> Port
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name?.startsWith('keepalive-')) {
+    const sessionId = port.name.replace('keepalive-', '');
+    keepalivePorts.set(sessionId, port);
+    console.log('[Background] keepalive 端口已连接, sessionId:', sessionId);
+
+    port.onDisconnect.addListener(() => {
+      keepalivePorts.delete(sessionId);
+      console.log('[Background] keepalive 端口已断开, sessionId:', sessionId);
+    });
+  }
+});
+
 // ==================== Side Panel 路由配置 ====================
 
 /**

@@ -155,6 +155,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // ==================== 工具栏配置事件 ====================
   
+  // 工具预筛选开关控制预筛选最小工具数显示
+  const enableToolPreselectCheckbox = document.getElementById('enableToolPreselect');
+  const preselectMinToolCountSection = document.getElementById('preselectMinToolCountSection');
+  if (enableToolPreselectCheckbox && preselectMinToolCountSection) {
+    const togglePreselectSection = () => {
+      preselectMinToolCountSection.style.display = enableToolPreselectCheckbox.checked ? '' : 'none';
+    };
+    enableToolPreselectCheckbox.addEventListener('change', togglePreselectSection);
+    // 初始状态（注意：loadConfig 会在 DOMContentLoaded 之后异步执行 set checked）
+    // 这里先根据 checkbox 初始状态设置，loadConfig 加载后再触发 change 事件
+    togglePreselectSection();
+  }
+  
   // 工具栏直接显示数量变更
   document.getElementById('toolbarMaxVisible').addEventListener('change', function() {
     saveToolbarConfig();

@@ -1,5 +1,5 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 
@@ -29,48 +29,186 @@ export function getTools() {
   });
 }
 
+/**
+ * 两阶段解析工具参数：
+ * 1. 先尝试标准 JSON.parse
+ * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
+ * 返回 null 表示所有解析尝试均失败
+ */
 function tryParseToolArgs(argsStr) {
   if (!argsStr || typeof argsStr !== 'string') return null;
   
   const trimmed = argsStr.trim();
   if (!trimmed) return null;
   
+  // 阶段 1: 标准 JSON 解析
   try {
     return JSON.parse(trimmed);
   } catch {
     console.warn('[Background] 工具参数直接解析失败，尝试修复...');
   }
   
+  // 阶段 2: 修复常见问题后重试
   let fixed = trimmed;
   
-  fixed = fixed.replace(/,\s*\}/g, '}');
-  fixed = fixed.replace(/,\s*\]/g, ']');
+  // 2a. 移除尾随逗号（对象和数组）
+  fixed = fixed.replace(/,\s*([}\]])/g, '$1');
   
-  fixed = fixed.replace(/"([^"]+)":\s*([a-zA-Z\u4e00-\u9fa5][a-zA-Z0-9\u4e00-\u9fa5_]*)/g, '"$1": "$2"');
-  
-  fixed = fixed.replace(/:\s*(\{[\s\S]*\})/g, (match, value) => {
-    try {
-      JSON.parse(value);
-      return match;
-    } catch {
+  // 2b. 修复未加引号的字符串值
+  // 匹配模式: "key": value 其中 value 是未加引号的中文/英文/数字组合
+  // 支持包含空格、特殊字符的值，直到遇到 , 或 } 或换行符
+  fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
+    const trimmedValue = value.trim();
+    // 跳过已经是数字、布尔值、null 的值
+    if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
       return match;
     }
+    return `"${key}": "${trimmedValue}"${delimiter}`;
   });
   
+  // 2c. 递归修复嵌套对象中的未加引号字符串值
+  // 使用深度优先策略：从内层向外层修复
+  let prevFixed;
+  do {
+    prevFixed = fixed;
+    fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
+      const trimmedValue = value.trim();
+      if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
+        return match;
+      }
+      return `"${key}": "${trimmedValue}"${delimiter}`;
+    });
+  } while (fixed !== prevFixed);
+  
+  // 阶段 2 最终尝试
   try {
     const result = JSON.parse(fixed);
     console.log('[Background] 工具参数修复解析成功:', result);
     return result;
   } catch (e) {
-    console.error('[Background] 工具参数修复解析也失败:', e);
+    console.error('[Background] 工具参数修复解析也失败:', e, '修复后字符串:', fixed.substring(0, 200));
     return null;
   }
+}
+
+/**
+ * 统一工具结果格式为 { success, content, error?, metadata? }
+ */
+function normalizeToolResult(result, toolCallId) {
+  if (result && typeof result === 'object' && 'success' in result) {
+    if (!('content' in result)) {
+      if (result.message) {
+        result.content = result.message;
+      } else {
+        const { success, error, tool_call_id, ...rest } = result;
+        result.content = JSON.stringify(rest);
+        result.metadata = rest;
+      }
+    }
+    if (!result.tool_call_id) result.tool_call_id = toolCallId;
+    return result;
+  }
+  if (typeof result === 'string') {
+    return { success: true, content: result, tool_call_id: toolCallId };
+  }
+  return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
+}
+
+/**
+ * 记录工具使用统计到 chrome.storage.local
+ */
+async function recordToolStats(toolName, result, duration) {
+  try {
+    const toolStatsKey = 'toolUsageStats';
+    const stats = await chrome.storage.local.get([toolStatsKey]);
+    const toolStats = stats[toolStatsKey] || {};
+    const entry = toolStats[toolName] || { callCount: 0, successCount: 0, totalDuration: 0, lastUsed: 0 };
+    entry.callCount++;
+    if (result.success) entry.successCount++;
+    entry.totalDuration += duration;
+    entry.lastUsed = Date.now();
+    toolStats[toolName] = entry;
+    chrome.storage.local.set({ [toolStatsKey]: toolStats });
+  } catch (e) {
+    console.warn('[Background] 记录工具统计失败:', e);
+  }
+}
+
+/**
+ * 获取当前活跃标签页 ID
+ */
+function getActiveTabId() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      resolve(tabs && tabs.length > 0 ? tabs[0].id : null);
+    });
+  });
+}
+
+/**
+ * 向 Content Script 发送消息，失败时自动注入并重试
+ * @param {number} tabId - 目标标签页 ID
+ * @param {Object} message - 要发送的消息（需包含 type 字段）
+ * @param {string} toolCallId - 工具调用 ID
+ * @returns {Promise<Object>} 带有 tool_call_id 的结果对象
+ */
+async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        console.warn('[Background] 发送消息到 content script 失败:', errorMsg);
+
+        chrome.tabs.get(tabId, (tab) => {
+          if (chrome.runtime.lastError || !tab) {
+            resolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
+            return;
+          }
+
+          const url = tab.url || '';
+          if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
+            resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+            return;
+          }
+
+          console.log('[Background] 尝试自动注入 content script 到 Tab:', tabId);
+          const manifest = chrome.runtime.getManifest();
+          const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
+          const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: [contentFile]
+          })
+            .then(() => {
+              console.log('[Background] Content script 注入成功, 重试发送消息');
+              setTimeout(() => {
+                chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
+                  if (chrome.runtime.lastError) {
+                    console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
+                    resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+                  } else {
+                    resolve({ ...retryResponse, tool_call_id: toolCallId });
+                  }
+                });
+              }, 500);
+            })
+            .catch(err => {
+              console.error('[Background] 注入 content script 失败:', err);
+              resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+            });
+        });
+      } else {
+        resolve({ ...response, tool_call_id: toolCallId });
+      }
+    });
+  });
 }
 
 /**
  * 执行工具调用
  */
 export async function executeTool(toolCall, tabId, sessionId = null) {
+  const startTime = Date.now();
   const { name, arguments: argsStr, id, function: functionObj, index } = toolCall;
   
   // 兼容不同的工具调用格式
@@ -103,162 +241,116 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   
   console.log('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
 
-  // ==================== 工具路由映射表 ====================
-  // Background 直接执行的工具
-  const BACKGROUND_HANDLERS = {
-    search_bookmarks: (a) => executeSearchBookmarks(a, toolCallId),
-    search_history: (a) => executeSearchHistory(a, toolCallId),
-    capture_tab_screenshot: (a) => executeCaptureScreenshot(a, toolCallId),
-    clarify_question: (a) => executeClarifyQuestion(a, toolCallId, sessionId),
-    show_notification: (a) => executeShowNotification(a, toolCallId),
-    fetch_url: (a) => executeFetchUrl(a, toolCallId),
-    open_tab: (a) => executeOpenTab(a, toolCallId),
-    switch_tab: (a) => executeSwitchTab(a, toolCallId),
-    close_tab: (a) => executeCloseTab(a, toolCallId),
-    get_tabs: (a) => executeGetTabs(a, toolCallId),
-    get_browser_info: (a) => executeGetBrowserInfo(a, toolCallId),
-    download_file: (a) => executeDownloadFile(a, toolCallId),
-    manage_cookies: (a) => executeManageCookies(a, toolCallId),
-    schedule_task: (a) => executeScheduleTask(a, toolCallId),
-    plan_task: (a) => executePlanTask(a, toolCallId),
-    clear_page_data: (a) => executeClearPageData(a, toolCallId),
-    resize_window: (a) => executeResizeWindow(a, toolCallId),
-    navigate_back_forward: (a) => executeNavigateBackForward(a, toolCallId),
-    reload_tab: (a) => executeReloadTab(a, toolCallId),
-    mute_tab: (a) => executeMuteTab(a, toolCallId),
-    pin_tab: (a) => executePinTab(a, toolCallId),
-    group_tabs: (a) => executeGroupTabs(a, toolCallId),
-    record_network: (a) => executeRecordNetwork(a, toolCallId, sessionId),
-    search_conversation_memory: (a) => executeSearchConversationMemory(a, toolCallId, sessionId),
-    preview_ui_prototype: (a) => executePreviewUiPrototype(a, toolCallId, sessionId),
-    get_ui_prototype: (a) => executeGetUiPrototype(a, toolCallId, sessionId),
+  // ==================== 工具路由（基于 TOOL_EXECUTION_MAP） ====================
+  // Background 工具：toolName → handler 函数引用
+  const BG_HANDLERS = {
+    search_bookmarks: executeSearchBookmarks,
+    search_history: executeSearchHistory,
+    capture_tab_screenshot: executeCaptureScreenshot,
+    clarify_question: executeClarifyQuestion,
+    show_notification: executeShowNotification,
+    fetch_url: executeFetchUrl,
+    open_tab: executeOpenTab,
+    switch_tab: executeSwitchTab,
+    close_tab: executeCloseTab,
+    get_tabs: executeGetTabs,
+    get_browser_info: executeGetBrowserInfo,
+    download_file: executeDownloadFile,
+    manage_cookies: executeManageCookies,
+    schedule_task: executeScheduleTask,
+    plan_task: executePlanTask,
+    clear_page_data: executeClearPageData,
+    resize_window: executeResizeWindow,
+    navigate_back_forward: executeNavigateBackForward,
+    reload_tab: executeReloadTab,
+    mute_tab: executeMuteTab,
+    pin_tab: executePinTab,
+    group_tabs: executeGroupTabs,
+    record_network: executeRecordNetwork,
+    search_conversation_memory: executeSearchConversationMemory,
+    preview_ui_prototype: executePreviewUiPrototype,
+    get_ui_prototype: executeGetUiPrototype,
   };
 
-  // Content Script 委派的工具：toolName → [messageType, payloadBuilder(args)]
-  const CONTENT_TOOLS = {
-    get_page_text:             ['GET_PAGE_TEXT',             a => ({ maxLength: a.maxLength, includeHeadings: a.includeHeadings, includeLinks: a.includeLinks })],
-    get_full_html:             ['GET_FULL_HTML',             a => ({ includeStyles: a.includeStyles, maxLength: a.maxLength })],
-    query_interactive_elements:['QUERY_INTERACTIVE_ELEMENTS', a => ({ filterByText: a.filterByText, elementTypes: a.elementTypes, maxResults: a.maxResults })],
-    get_selected_content:      ['GET_SELECTED_CONTENT',      a => ({ format: a.format || 'text' })],
-    click_element:             ['CLICK_ELEMENT',             a => ({ selector: a.selector, waitTime: a.waitTime, timeout: a.timeout })],
-    fill_form:                 ['FILL_FORM',                 a => ({ fields: a.fields, waitTime: a.waitTime })],
-    scroll_to:                 ['SCROLL_TO',                 a => ({ target: a.target, selector: a.selector, x: a.x, y: a.y, align: a.align, behavior: a.behavior })],
-    extract_table:             ['EXTRACT_TABLE',             a => ({ selector: a.selector, includeHeaders: a.includeHeaders, format: a.format })],
-    copy_to_clipboard:         ['COPY_TO_CLIPBOARD',         a => ({ text: a.text })],
-    paste_from_clipboard:      ['PASTE_FROM_CLIPBOARD',      a => ({})],
-    hover_element:             ['HOVER_ELEMENT',             a => ({ selector: a.selector })],
-    extract_metadata:          ['EXTRACT_METADATA',          a => ({})],
-    highlight_text:            ['HIGHLIGHT_TEXT',            a => ({ text: a.text, color: a.color })],
-    wait_for_element:          ['WAIT_FOR_ELEMENT',          a => ({ selector: a.selector, state: a.state, timeout: a.timeout })],
-    keyboard_input:            ['KEYBOARD_INPUT',            a => ({ key: a.key, text: a.text, ctrlKey: a.ctrlKey, shiftKey: a.shiftKey, altKey: a.altKey })],
-    file_upload:               ['FILE_UPLOAD',               a => ({ selector: a.selector, fileName: a.fileName, fileContent: a.fileContent, fileType: a.fileType })],
-    extract_links:             ['EXTRACT_LINKS',             a => ({ filterType: a.filterType, includeImages: a.includeImages })],
-    extract_forms:             ['EXTRACT_FORMS',             a => ({ formSelector: a.formSelector })],
-    watch_element:             ['WATCH_ELEMENT',             a => ({ selector: a.selector, duration: a.duration })],
-    manage_storage:            ['MANAGE_STORAGE',            a => ({ action: a.action, storage: a.storage, key: a.key, value: a.value })],
-    get_element_rect:          ['GET_ELEMENT_RECT',          a => ({ selector: a.selector })],
-    get_computed_style:        ['GET_COMPUTED_STYLE',        a => ({ selector: a.selector, properties: a.properties })],
-    diff_page:                 ['DIFF_PAGE',                 a => ({ action: a.action, snapshotName: a.snapshotName })],
-    extract_images:            ['EXTRACT_IMAGES',            a => ({ minWidth: a.minWidth, minHeight: a.minHeight, includeBackgroundImages: a.includeBackgroundImages, download: a.download, maxResults: a.maxResults })],
-    search_in_page:            ['SEARCH_IN_PAGE',            a => ({ query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive, contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight })],
-    generate_qrcode:           ['GENERATE_QRCODE',           a => ({ content: a.content, size: a.size, errorCorrection: a.errorCorrection, showImage: a.showImage })],
-    page_to_markdown:          ['PAGE_TO_MARKDOWN',          a => ({ selector: a.selector, includeImages: a.includeImages, includeLinks: a.includeLinks, maxLength: a.maxLength })],
-    performance_audit:         ['PERFORMANCE_AUDIT',         a => ({ includeResourceTiming: a.includeResourceTiming, includePaintTiming: a.includePaintTiming, includeMemoryInfo: a.includeMemoryInfo })],
-    screenshot_element:        ['SCREENSHOT_ELEMENT',        a => ({ selector: a.selector, quality: a.quality, format: a.format })],
-    page_to_pdf:               ['PAGE_TO_PDF',               a => ({ fileName: a.fileName, landscape: a.landscape, scale: a.scale, printBackground: a.printBackground, margins: a.margins })],
-    page_to_json:              ['PAGE_TO_JSON',              a => ({ selector: a.selector, maxItems: a.maxItems })],
-    find_similar_elements:     ['FIND_SIMILAR_ELEMENTS',     a => ({ selector: a.selector, maxResults: a.maxResults })],
-    get_iframe_content:        ['GET_IFRAME_CONTENT',        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength })],
-    inject_css:                ['INJECT_CSS',                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode })],
-    get_page_language:         ['GET_PAGE_LANGUAGE',         a => ({})],
-    read_accessibility_tree:   ['READ_ACCESSIBILITY_TREE',   a => ({ maxResults: a.maxResults })],
-    set_zoom:                  ['SET_ZOOM',                  a => ({ level: a.level })],
-    clear_page_data:           ['CLEAR_PAGE_DATA',           a => ({ site: a.site })],
+  // Content Script 工具：toolName → payloadBuilder(args)
+  // messageType 由 toolName.toUpperCase() 自动推导
+  const CONTENT_PAYLOADS = {
+    get_page_text:             a => ({ maxLength: a.maxLength, includeHeadings: a.includeHeadings, includeLinks: a.includeLinks }),
+    get_full_html:             a => ({ includeStyles: a.includeStyles, maxLength: a.maxLength }),
+    query_interactive_elements:a => ({ filterByText: a.filterByText, elementTypes: a.elementTypes, maxResults: a.maxResults }),
+    get_selected_content:      a => ({ format: a.format || 'text' }),
+    click_element:             a => ({ selector: a.selector, waitTime: a.waitTime, timeout: a.timeout }),
+    fill_form:                 a => ({ fields: a.fields, waitTime: a.waitTime }),
+    scroll_to:                 a => ({ target: a.target, selector: a.selector, x: a.x, y: a.y, align: a.align, behavior: a.behavior }),
+    extract_table:             a => ({ selector: a.selector, includeHeaders: a.includeHeaders, format: a.format }),
+    copy_to_clipboard:         a => ({ text: a.text }),
+    paste_from_clipboard:      a => ({}),
+    hover_element:             a => ({ selector: a.selector }),
+    extract_metadata:          a => ({}),
+    highlight_text:            a => ({ text: a.text, color: a.color }),
+    wait_for_element:          a => ({ selector: a.selector, state: a.state, timeout: a.timeout }),
+    keyboard_input:            a => ({ key: a.key, text: a.text, ctrlKey: a.ctrlKey, shiftKey: a.shiftKey, altKey: a.altKey }),
+    file_upload:               a => ({ selector: a.selector, fileName: a.fileName, fileContent: a.fileContent, fileType: a.fileType }),
+    extract_links:             a => ({ filterType: a.filterType, includeImages: a.includeImages }),
+    extract_forms:             a => ({ formSelector: a.formSelector }),
+    watch_element:             a => ({ selector: a.selector, duration: a.duration }),
+    manage_storage:            a => ({ action: a.action, storage: a.storage, key: a.key, value: a.value }),
+    get_element_rect:          a => ({ selector: a.selector }),
+    get_computed_style:        a => ({ selector: a.selector, properties: a.properties }),
+    diff_page:                 a => ({ action: a.action, snapshotName: a.snapshotName }),
+    extract_images:            a => ({ minWidth: a.minWidth, minHeight: a.minHeight, includeBackgroundImages: a.includeBackgroundImages, download: a.download, maxResults: a.maxResults }),
+    search_in_page:            a => ({ query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive, contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight }),
+    generate_qrcode:           a => ({ content: a.content, size: a.size, errorCorrection: a.errorCorrection, showImage: a.showImage }),
+    page_to_markdown:          a => ({ selector: a.selector, includeImages: a.includeImages, includeLinks: a.includeLinks, maxLength: a.maxLength }),
+    performance_audit:         a => ({ includeResourceTiming: a.includeResourceTiming, includePaintTiming: a.includePaintTiming, includeMemoryInfo: a.includeMemoryInfo }),
+    screenshot_element:        a => ({ selector: a.selector, quality: a.quality, format: a.format }),
+    page_to_pdf:               a => ({ fileName: a.fileName, landscape: a.landscape, scale: a.scale, printBackground: a.printBackground, margins: a.margins }),
+    page_to_json:              a => ({ selector: a.selector, maxItems: a.maxItems }),
+    find_similar_elements:     a => ({ selector: a.selector, maxResults: a.maxResults }),
+    get_iframe_content:        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength }),
+    inject_css:                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode }),
+    get_page_language:         a => ({}),
+    read_accessibility_tree:   a => ({ maxResults: a.maxResults }),
+    set_zoom:                  a => ({ level: a.level }),
   };
 
-  // 直接执行的工具
-  if (BACKGROUND_HANDLERS[toolName]) {
-    console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
-    return BACKGROUND_HANDLERS[toolName](args);
-  }
+  const executionType = TOOL_EXECUTION_MAP[toolName];
+  let result;
 
-  // Content Script 委派的工具
-  if (CONTENT_TOOLS[toolName]) {
-    const [messageType, buildPayload] = CONTENT_TOOLS[toolName];
-    const messagePayload = buildPayload(args);
-
-    return new Promise((resolve) => {
-      const sendToContentScript = (targetTabId) => {
-      return new Promise((innerResolve) => {
-        chrome.tabs.sendMessage(targetTabId, { type: messageType, ...messagePayload }, (response) => {
-          if (chrome.runtime.lastError) {
-            const errorMsg = chrome.runtime.lastError.message;
-            console.warn('[Background] 发送消息到 content script 失败:', errorMsg);
-            
-            // 检查是否是可访问的 URL
-            chrome.tabs.get(targetTabId, (tab) => {
-              if (chrome.runtime.lastError || !tab) {
-                innerResolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
-                return;
-              }
-              
-              const url = tab.url || '';
-              if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
-                innerResolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
-                return;
-              }
-              
-              // 尝试自动注入 content script（从 manifest 读取实际文件名，因为 Vite 打包后 hash 会变）
-              console.log('[Background] 尝试自动注入 content script 到 Tab:', targetTabId);
-              const manifest = chrome.runtime.getManifest();
-              const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
-              const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
-              chrome.scripting.executeScript({
-                target: { tabId: targetTabId },
-                files: [contentFile]
-              })
-                .then(() => {
-                  console.log('[Background] Content script 注入成功, 重试发送消息');
-                  // 注入成功后稍等片刻再发送消息
-                  setTimeout(() => {
-                    chrome.tabs.sendMessage(targetTabId, { type: messageType, ...messagePayload }, (retryResponse) => {
-                      if (chrome.runtime.lastError) {
-                        console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
-                        innerResolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-                      } else {
-                        innerResolve({ ...retryResponse, tool_call_id: toolCallId });
-                      }
-                    });
-                  }, 500);
-                })
-                .catch(err => {
-                  console.error('[Background] 注入 content script 失败:', err);
-                  innerResolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
-                });
-            });
-          } else {
-            innerResolve({ ...response, tool_call_id: toolCallId });
-          }
-        });
-      });
-    };
-    
-    if (tabId) {
-      sendToContentScript(tabId).then(result => resolve(result));
+  if (executionType === 'background') {
+    const handler = BG_HANDLERS[toolName];
+    if (handler) {
+      console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
+      result = await handler(args, toolCallId, sessionId);
     } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          sendToContentScript(tabs[0].id).then(result => resolve(result));
-        } else {
-          resolve({ success: false, error: '没有可用的标签页', tool_call_id: toolCallId });
-        }
-      });
+      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
     }
-  });
+  } else if (executionType === 'content_script') {
+    const buildPayload = CONTENT_PAYLOADS[toolName];
+    if (buildPayload) {
+      const messageType = toolName.toUpperCase();
+      const messagePayload = buildPayload(args);
+      const targetTabId = tabId || await getActiveTabId();
+      if (targetTabId) {
+        result = await sendToContentScriptWithRetry(targetTabId, { type: messageType, ...messagePayload }, toolCallId);
+      } else {
+        result = { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      }
+    } else {
+      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+    }
+  } else {
+    result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
   }
 
-  // 未知工具
-  return { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+  // 统一结果格式
+  result = normalizeToolResult(result, toolCallId);
+
+  // 记录工具使用统计
+  const duration = Date.now() - startTime;
+  recordToolStats(toolName, result, duration);
+
+  return result;
 }
 
 /**
@@ -772,6 +864,9 @@ export function executeShowNotification(args, toolCallId) {
 
 /**
  * 带超时控制的 fetch 请求
+ * 使用内部 AbortController + 外部 signal 事件监听，避免 AbortSignal.any() 的兼容性 bug
+ * 不依赖 AbortSignal.any() 传播 abort，而是统一通过 controller.abort() 触发
+ *
  * @param {string} url
  * @param {Object} options - fetch options（可包含外部 signal）
  * @param {number} timeoutMs
@@ -779,30 +874,36 @@ export function executeShowNotification(args, toolCallId) {
 export async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  // 如果有外部 signal，需要同时监听外部取消和超时
   const externalSignal = options?.signal;
-  
+
+  // 统一 abort 通道：外部取消也通过 controller.abort() 触发
+  const onExternalAbort = () => controller.abort();
+
   try {
-    // 组合内部超时 signal 和外部 signal
-    let combinedSignal = controller.signal;
     if (externalSignal) {
-      combinedSignal = AbortSignal.any([controller.signal, externalSignal]);
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
     }
-    
+
     const response = await fetch(url, {
       ...options,
-      signal: combinedSignal
+      signal: controller.signal   // 始终使用内部 signal，避免 AbortSignal.any 潜在 bug
     });
     clearTimeout(timeoutId);
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
     if (error.name === 'AbortError') {
-      // 如果是外部取消导致的，直接抛出原始 AbortError（fetchWithRetry 不会重试）
+      // 外部取消 → 传播原始 AbortError（fetchWithRetry 不重试）
       if (externalSignal?.aborted) {
         throw error;
       }
+      // 内部超时 → 包装为超时错误（fetchWithRetry 会重试）
       throw new Error(`请求超时 (${timeoutMs}ms)`);
     }
     throw error;

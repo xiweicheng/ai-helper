@@ -13,7 +13,9 @@ export const DEFAULT_REACT_CONFIG = {
   clarifyTimeout: 180000,     // 澄清工具超时 (ms) (60000-600000)，独立配置
   apiRetryCount: 3,           // API 调用失败重试次数 (0-10)
   apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
-  enableToolPreselect: true   // 是否启用工具预筛选（默认开启）
+  enableToolPreselect: true,  // 是否启用工具预筛选（默认开启）
+  preselectMinToolCount: 3,   // 工具预筛选最小触发数量（工具数超过此值才启动预筛选）
+  toolConfirmationEnabled: true  // 是否启用敏感工具操作确认（关闭后敏感工具直接放行）
 };
 
 // 反思配置默认值
@@ -1687,6 +1689,24 @@ export const BUILTIN_TOOLS = [
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================
+
+// 类别权重：用于确定分类显示顺序（数字越小越靠前）
+export const CATEGORY_WEIGHT = {
+  page_interaction: 1,
+  form_operation: 2,
+  info_extract: 3,
+  page_analysis: 4,
+  tab_management: 5,
+  bookmark_history: 6,
+  storage_management: 7,
+  network_request: 8,
+  media_process: 9,
+  debug_dev: 10,
+  ai_collaboration: 11,
+  system_integration: 12,
+  memory: 13,
+};
+
 export const TOOL_CATEGORY_MAP = {
   click_element: 'page_interaction',
   hover_element: 'page_interaction',
@@ -1753,6 +1773,107 @@ export const TOOL_CATEGORY_MAP = {
   get_ui_prototype: 'ai_collaboration',
 };
 
+// 从 TOOL_CATEGORY_MAP 动态派生分类顺序列表（单一数据源，无需手动维护）
+export const CATEGORY_ORDER = [...new Set(Object.values(TOOL_CATEGORY_MAP))]
+  .sort((a, b) => (CATEGORY_WEIGHT[a] || 99) - (CATEGORY_WEIGHT[b] || 99));
+
+// ==================== 工具执行元数据（统一管理，避免手动维护映射表） ====================
+
+// 工具执行方式：background（后台直接执行）| content_script（委托 content script）
+export const TOOL_EXECUTION_MAP = {
+  // Background 直接执行的工具
+  search_bookmarks: 'background',
+  search_history: 'background',
+  capture_tab_screenshot: 'background',
+  clarify_question: 'background',
+  show_notification: 'background',
+  fetch_url: 'background',
+  open_tab: 'background',
+  switch_tab: 'background',
+  close_tab: 'background',
+  get_tabs: 'background',
+  get_browser_info: 'background',
+  download_file: 'background',
+  manage_cookies: 'background',
+  schedule_task: 'background',
+  plan_task: 'background',
+  clear_page_data: 'background',
+  resize_window: 'background',
+  navigate_back_forward: 'background',
+  reload_tab: 'background',
+  mute_tab: 'background',
+  pin_tab: 'background',
+  group_tabs: 'background',
+  record_network: 'background',
+  search_conversation_memory: 'background',
+  preview_ui_prototype: 'background',
+  get_ui_prototype: 'background',
+  // Content Script 委托的工具
+  get_page_text: 'content_script',
+  get_full_html: 'content_script',
+  query_interactive_elements: 'content_script',
+  get_selected_content: 'content_script',
+  click_element: 'content_script',
+  fill_form: 'content_script',
+  scroll_to: 'content_script',
+  extract_table: 'content_script',
+  copy_to_clipboard: 'content_script',
+  paste_from_clipboard: 'content_script',
+  hover_element: 'content_script',
+  extract_metadata: 'content_script',
+  highlight_text: 'content_script',
+  wait_for_element: 'content_script',
+  keyboard_input: 'content_script',
+  file_upload: 'content_script',
+  extract_links: 'content_script',
+  extract_forms: 'content_script',
+  watch_element: 'content_script',
+  manage_storage: 'content_script',
+  get_element_rect: 'content_script',
+  get_computed_style: 'content_script',
+  diff_page: 'content_script',
+  extract_images: 'content_script',
+  search_in_page: 'content_script',
+  generate_qrcode: 'content_script',
+  page_to_markdown: 'content_script',
+  performance_audit: 'content_script',
+  screenshot_element: 'content_script',
+  page_to_pdf: 'content_script',
+  page_to_json: 'content_script',
+  find_similar_elements: 'content_script',
+  get_iframe_content: 'content_script',
+  inject_css: 'content_script',
+  get_page_language: 'content_script',
+  read_accessibility_tree: 'content_script',
+  set_zoom: 'content_script',
+};
+
+// 可并行执行的工具（只读操作，无副作用）
+export const PARALLELIZABLE_TOOLS = new Set([
+  'get_page_text', 'get_full_html', 'query_interactive_elements',
+  'get_selected_content', 'extract_metadata', 'extract_table',
+  'extract_links', 'extract_forms', 'get_element_rect',
+  'get_computed_style', 'extract_images', 'search_in_page',
+  'page_to_markdown', 'performance_audit', 'get_page_language',
+  'read_accessibility_tree', 'find_similar_elements',
+  'get_iframe_content', 'page_to_json', 'get_browser_info',
+  'search_bookmarks', 'search_history', 'get_tabs',
+  'search_conversation_memory', 'get_ui_prototype',
+  'paste_from_clipboard', 'diff_page', 'screenshot_element',
+]);
+
+// 需要用户确认的敏感工具
+export const CONFIRMATION_REQUIRED_TOOLS = new Set([
+  'manage_cookies',
+  'clear_page_data',
+  'download_file',
+  'schedule_task',
+  'close_tab',
+  'mute_tab',
+  'pin_tab',
+  'group_tabs',
+]);
+
 /**
  * 从 OpenAI Function Calling 格式的 BUILTIN_TOOLS 派生 UI 格式
  */
@@ -1761,5 +1882,8 @@ export const BUILTIN_TOOLS_UI = BUILTIN_TOOLS.map(t => ({
   name: t.function.name,
   description: t.function.description,
   category: TOOL_CATEGORY_MAP[t.id] || 'system_integration',
+  execution: TOOL_EXECUTION_MAP[t.id] || 'background',
+  parallelizable: PARALLELIZABLE_TOOLS.has(t.id),
+  requiresConfirmation: CONFIRMATION_REQUIRED_TOOLS.has(t.id),
   enabled: true
 }));

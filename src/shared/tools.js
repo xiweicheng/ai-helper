@@ -1,22 +1,29 @@
 // shared/tools.js - 从主定义派生，单一数据源
-import { BUILTIN_TOOLS_UI } from '../background/constants.js';
+import { BUILTIN_TOOLS_UI, CATEGORY_ORDER } from '../background/constants.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
 
+// 从 CATEGORY_ORDER 动态派生 TOOL_CATEGORIES（单一数据源）
 export const TOOL_CATEGORIES = [
   { id: 'all', label: '全部工具' },
-  { id: 'page_interaction', label: '页面交互' },
-  { id: 'form_operation', label: '表单操作' },
-  { id: 'info_extract', label: '信息提取' },
-  { id: 'page_analysis', label: '页面分析' },
-  { id: 'tab_management', label: '标签页管理' },
-  { id: 'bookmark_history', label: '书签历史' },
-  { id: 'storage_management', label: '存储管理' },
-  { id: 'network_request', label: '网络请求' },
-  { id: 'media_process', label: '媒体处理' },
-  { id: 'debug_dev', label: '调试开发' },
-  { id: 'ai_collaboration', label: 'AI协作' },
-  { id: 'system_integration', label: '系统集成' },
+  ...CATEGORY_ORDER.map(id => ({
+    id,
+    label: ({
+      page_interaction: '页面交互',
+      form_operation: '表单操作',
+      info_extract: '信息提取',
+      page_analysis: '页面分析',
+      tab_management: '标签页管理',
+      bookmark_history: '书签历史',
+      storage_management: '存储管理',
+      network_request: '网络请求',
+      media_process: '媒体处理',
+      debug_dev: '调试开发',
+      ai_collaboration: 'AI协作',
+      system_integration: '系统集成',
+      memory: '记忆检索',
+    })[id] || id
+  }))
 ];
 
 export const PRESET_MODES = [

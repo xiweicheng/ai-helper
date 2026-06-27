@@ -5000,6 +5000,28 @@
     </div>
   </div>
   
+  <!-- 敏感工具操作确认对话框 -->
+  <div class="clarify-overlay" id="confirmOverlay" style="display: none; z-index: 5000;">
+    <div class="clarify-container" id="confirmContainer">
+      <div class="clarify-content">
+        <div class="clarify-header">
+          <div class="clarify-icon">⚠️</div>
+          <div class="clarify-header-content">
+            <div class="clarify-title">操作确认</div>
+            <div class="clarify-question" id="confirmMessage">模型请求执行敏感操作，是否允许？</div>
+            <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: #e67e22; margin-top: 4px;"></div>
+            <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: #666; margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px;"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="clarify-footer">
+        <button class="clarify-btn cancel" id="confirmDenyBtn">拒绝</button>
+        <button class="clarify-btn confirm" id="confirmApproveBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">允许</button>
+      </div>
+    </div>
+  </div>
+  
   <!-- 问题澄清对话框 -->
   <div class="clarify-overlay" id="clarifyOverlay">
     <div class="clarify-container" id="clarifyContainer">

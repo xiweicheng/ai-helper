@@ -2,8 +2,70 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
+import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
+
+// 敏感工具中文显示名映射
+const TOOL_DISPLAY_NAMES = {
+  manage_cookies: '管理 Cookie',
+  clear_page_data: '清除页面数据',
+  download_file: '下载文件',
+  schedule_task: '安排定时任务',
+  close_tab: '关闭标签页',
+  mute_tab: '静音标签页',
+  pin_tab: '固定标签页',
+  group_tabs: '分组标签页',
+};
+
+/**
+ * 请求用户确认敏感工具操作
+ * 发送消息到 Side Panel 显示确认对话框，等待用户响应
+ */
+async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
+  const toolLabel = TOOL_DISPLAY_NAMES[toolName] || toolName;
+  const confirmTimeout = 30000; // 30秒确认超时
+  
+  console.log(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
+  
+  return new Promise((resolve) => {
+    const handler = (message) => {
+      if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolName) {
+        chrome.runtime.onMessage.removeListener(handler);
+        clearTimeout(timeoutId);
+        console.log(`[Background] 用户确认结果: ${toolName} = ${message.confirmed}`);
+        resolve(message.confirmed);
+      }
+    };
+    
+    chrome.runtime.onMessage.addListener(handler);
+    
+    const timeoutId = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(handler);
+      console.log(`[Background] 确认超时，默认拒绝: ${toolName}`);
+      resolve(false); // 超时默认拒绝
+    }, confirmTimeout);
+    
+    // 发送显示确认对话框的消息
+    chrome.runtime.sendMessage({
+      type: 'SHOW_CONFIRM_DIALOG',
+      data: {
+        toolName,
+        toolLabel,
+        args: toolArgs,
+        toolCallId: toolName,
+        sessionId,
+        timeout: confirmTimeout
+      }
+    }).catch(err => {
+      console.log('[Background] 发送确认对话框消息失败:', err.message);
+      // 发送失败，直接放行
+      chrome.runtime.onMessage.removeListener(handler);
+      clearTimeout(timeoutId);
+      resolve(true);
+    });
+  });
+}
 
 /**
  * 创建带执行日志的错误
@@ -38,6 +100,7 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
 export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = []) {
   let iteration = 0;
   let currentMessages = [...messages];
+  const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
   // 为工具定义、系统提示词、输出预留空间后，剩余约 80% 用于消息历史
@@ -303,6 +366,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }
         
         // 使用带重试和超时的 fetch
+        // 外层超时保护：独立 setTimeout watchdog，防止 fetchWithRetry 因 AbortSignal bug 永久挂起
+        const outerTimeoutMs = Math.max(remainingTime - 30000, apiTimeout);
+        const outerWatchdog = setTimeout(() => {
+          console.warn(`[Background] ⚠️ API 调用外层超时保护触发 (${Math.round(outerTimeoutMs / 1000)}s)，强制 abort`);
+          abortController?.abort();
+        }, outerTimeoutMs);
+
         const fetchResponse = await fetchWithRetry(apiUrl, {
           method: 'POST',
           headers: {
@@ -314,6 +384,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }, apiTimeout, reactConfig.apiRetryCount, reactConfig.apiRetryBaseDelay, (retryAttempt, retryError) => {
           console.warn(`[Background] API 重试 ${retryAttempt} 次后:`, retryError.message);
         });
+        clearTimeout(outerWatchdog);
         
         if (!fetchResponse.ok) {
           const errorText = await fetchResponse.text();
@@ -332,6 +403,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           throw new Error('API 响应不是有效的 JSON: ' + parseError.message);
         }
       } catch (error) {
+        clearTimeout(outerWatchdog);
         // 区分用户取消（AbortError）和真正的 API 错误
         const isAborted = error.name === 'AbortError';
         if (isAborted) {
@@ -391,6 +463,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           }
         };
       }
+
+      // 推送 API 调用成功状态更新
+      sendExecutionStatusUpdate(`API调用 (第${currentCount}次${taskContext ? `, 子任务第${iteration}次` : ''})`, 'success');
       
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
@@ -399,7 +474,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         currentMessages.push(assistantMessage);
         trimMessages();
         
-        for (const toolCall of assistantMessage.tool_calls) {
+        const pendingReflections = [];
+        const reflectionConfig = reactConfig.reflection;
+        
+        /**
+         * 执行单个工具调用，返回执行结果
+         * 处理：取消检查、工具执行（含超时）、clarify_question 暂停/恢复、
+         * 结果格式化、缓存、执行日志更新、plan_task 子任务延续
+         */
+        async function executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG) {
           // 在每个工具执行前检查是否已取消
           if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
             throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
@@ -407,6 +490,57 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           const toolName = toolCall.function?.name || toolCall.name;
           const toolStartTime = Date.now();
+          const toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
+          
+          // 检查是否需要用户确认（敏感工具 + 开关开启）
+          const needsConfirmation = CONFIRMATION_REQUIRED_TOOLS.has(toolName) && reactConfig.toolConfirmationEnabled;
+          if (needsConfirmation) {
+            const confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
+            if (!confirmed) {
+              // 用户拒绝，返回错误结果
+              const toolLogId = crypto.randomUUID();
+              executionLog.push({
+                id: toolLogId,
+                iteration,
+                timestamp: new Date().toISOString(),
+                status: 'cancelled',
+                nodeType: 'tool_exec',
+                nodeName: `工具执行:${toolName}`,
+                action: { name: toolName, params: toolArgs },
+                error: '用户拒绝了此操作'
+              });
+              sendExecutionStatusUpdate(`工具执行:${toolName}`, 'cancelled');
+              return {
+                toolCall,
+                result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
+                toolResultStr: '用户拒绝了此操作',
+                toolLogEntry: {
+                  id: toolLogId,
+                  iteration,
+                  timestamp: new Date().toISOString(),
+                  status: 'cancelled',
+                  nodeType: 'tool_exec',
+                  nodeName: `工具执行:${toolName}`,
+                  action: { name: toolName, params: toolArgs },
+                  error: '用户拒绝了此操作'
+                }
+              };
+            }
+          }
+          
+          // 缓存检查
+          const cacheKey = `${toolName}:${JSON.stringify(toolArgs)}`;
+          if (toolResultCache.has(cacheKey)) {
+            if (PARALLELIZABLE_TOOLS.has(toolName)) {
+              console.log(`[Background] 工具 ${toolName} 命中缓存，使用缓存结果`);
+              const cached = toolResultCache.get(cacheKey);
+              return { ...cached, fromCache: true };
+            } else {
+              // 非并行工具（有副作用）调用时清空缓存，因为状态已改变
+              toolResultCache.clear();
+              console.log(`[Background] 非并行工具 ${toolName} 调用，清空工具结果缓存`);
+            }
+          }
           
           // 添加工具执行开始的日志节点（状态为 processing）
           const toolLogId = crypto.randomUUID();
@@ -454,7 +588,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 const fullTools = await getTools();
                 const config = await getStoredConfig();
                 const enableToolPreselect = config.reactConfig.enableToolPreselect;
-                if (enableToolPreselect && fullTools.length > 5) {
+                const preselectMinToolCount = config.reactConfig.preselectMinToolCount || 3;
+                if (enableToolPreselect && fullTools.length > preselectMinToolCount) {
                   const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams);
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
@@ -472,8 +607,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }
             }
             
-            // 确保 toolResult 是字符串格式
-            let toolResultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+            // 格式化工具结果（统一格式处理）
+            let toolResultStr;
+            if (typeof toolResult === 'string') {
+              toolResultStr = toolResult;
+            } else if (toolResult && typeof toolResult === 'object') {
+              // Unified format: { success, content, error?, metadata? }
+              toolResultStr = toolResult.content || JSON.stringify(toolResult);
+            } else {
+              toolResultStr = JSON.stringify(toolResult);
+            }
 
             // 工具结果截断：防止大结果撑爆上下文
             const resultTokens = estimateTokens(toolResultStr);
@@ -483,8 +626,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               toolResultStr = truncated;
             }
 
-            // 工具级反思：检查工具结果是否有异常
-            // 修复：计算真正"连续"的失败数（从最近一次成功往后数）
+            // 计算真正"连续"的失败数（从最近一次成功往后数）
             const allToolEntries = executionLog
               .filter(e => e.nodeType === 'tool_exec' && e.iteration === iteration)
               .sort((a, b) => executionLog.indexOf(a) - executionLog.indexOf(b));
@@ -496,43 +638,22 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 break;
               }
             }
-            const reflectionConfig = reactConfig.reflection;
+            
             const toolReflectionCount = executionLog.filter(
               e => e.nodeType === 'reflection' && e.reflectionType === 'tool'
             ).length;
             const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
             const withinFrequencyLimit = toolReflectionCount < maxPerIteration;
 
-            let toolReflectionNote = '';
+            // 收集待处理的反思，而非立即执行（优先级队列）
             if (withinFrequencyLimit && shouldTriggerToolReflection(toolResultStr, consecutiveFailCount, reflectionConfig)) {
-              const toolReflection = await reflectOnToolResult(
-                toolName, toolResultStr,
-                JSON.parse(toolCall.function?.arguments || '{}'),
-                config, model, reflectionConfig, executionLog, iteration
-              );
-
-              if (toolReflection) {
-                const toolReflectionId = crypto.randomUUID();
-                const toolReflectionEntry = {
-                  id: toolReflectionId,
-                  iteration,
-                  timestamp: new Date().toISOString(),
-                  status: toolReflection.useful ? 'success' : 'failed',
-                  nodeType: 'reflection',
-                  nodeName: `工具反思: ${toolName}`,
-                  reflectionType: 'tool',
-                  useful: toolReflection.useful,
-                  reasoning: toolReflection.reasoning,
-                  suggestion: toolReflection.suggestion
-                };
-                executionLog.push(toolReflectionEntry);
-                console.log(`[Background] 工具反思: ${toolName} - ${toolReflection.useful ? '有用' : '无效'} - ${toolReflection.reasoning}`);
-
-                // 将反思建议附加到工具结果消息中（不注入system消息，避免破坏tool_calls序列）
-                if (!toolReflection.useful && toolReflection.suggestion) {
-                  toolReflectionNote = `\n\n【反思提醒】工具"${toolName}"的返回结果被评估为无帮助（${toolReflection.reasoning}）。建议：${toolReflection.suggestion}。请在后续步骤中考虑调整策略。`;
-                }
-              }
+              pendingReflections.push({
+                toolName,
+                toolResultStr,
+                toolCallParams: toolArgs,
+                toolCallId: toolCall.id,
+                priority: getToolReflectionPriority(toolName, toolResultStr, consecutiveFailCount)
+              });
             }
             
             // 处理任务规划工具的结果，提取子任务列表
@@ -545,7 +666,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 success: true,
                 message: `任务规划完成，已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
                 data: subtaskPlan
-              }) + toolReflectionNote;
+              });
               currentMessages.push({
                 role: 'tool',
                 content: planTaskContent,
@@ -563,7 +684,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   nodeName: `任务规划完成`,
                   action: {
                     name: toolName,
-                    params: JSON.parse(toolCall.function?.arguments || '{}')
+                    params: toolArgs
                   },
                   observation: `已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
                   subtaskCount: subtaskPlan.subtasks.length,
@@ -602,13 +723,18 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               });
               trimMessages();
               
-              // 继续下一轮循环，让模型总结子任务结果
-              continue;
+              // 缓存结果（plan_task 也是可缓存的只读操作）
+              if (PARALLELIZABLE_TOOLS.has(toolName)) {
+                toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCall.id });
+              }
+              
+              return { planTaskHandled: true };
             }
             
+            // 添加工具结果到消息历史（不附加反思备注，反思在优先级队列处理后统一附加）
             currentMessages.push({
               role: 'tool',
-              content: toolResultStr + toolReflectionNote,
+              content: toolResultStr,
               tool_call_id: toolCall.id,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
@@ -630,12 +756,19 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 nodeName: `工具执行:${toolName}`,
                 action: {
                   name: toolName,
-                  params: JSON.parse(toolCall.function?.arguments || '{}')
+                  params: toolArgs
                 },
                 observation: toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr,
                 prototypeId: toolResult?.prototypeId || null
               };
             }
+            
+            // 缓存结果（仅并行工具）
+            if (PARALLELIZABLE_TOOLS.has(toolName)) {
+              toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCall.id, toolResult });
+            }
+            
+            return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCall.id, toolResult };
             
           } catch (toolError) {
             console.error('[Background] 工具执行失败:', toolError);
@@ -661,7 +794,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 nodeName: `工具执行:${toolName}`,
                 action: {
                   name: toolName,
-                  params: JSON.parse(toolCall.function?.arguments || '{}')
+                  params: toolArgs
                 },
                 error: toolError.message
               };
@@ -669,6 +802,106 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             
             throw createErrorWithLog(toolError.message);
           }
+        }
+        
+        /**
+         * 处理待处理的反思队列（按优先级排序后处理前 N 个）
+         */
+        async function processPendingReflections() {
+          if (pendingReflections.length === 0) return;
+          
+          // 按优先级降序排序
+          pendingReflections.sort((a, b) => b.priority - a.priority);
+          const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
+          
+          for (const ref of pendingReflections.slice(0, maxPerIteration)) {
+            const toolReflection = await reflectOnToolResult(
+              ref.toolName, ref.toolResultStr, ref.toolCallParams,
+              config, model, reflectionConfig, executionLog, iteration
+            );
+            
+            if (toolReflection) {
+              const toolReflectionId = crypto.randomUUID();
+              const toolReflectionEntry = {
+                id: toolReflectionId,
+                iteration,
+                timestamp: new Date().toISOString(),
+                status: toolReflection.useful ? 'success' : 'failed',
+                nodeType: 'reflection',
+                nodeName: `工具反思: ${ref.toolName}`,
+                reflectionType: 'tool',
+                useful: toolReflection.useful,
+                reasoning: toolReflection.reasoning,
+                suggestion: toolReflection.suggestion
+              };
+              executionLog.push(toolReflectionEntry);
+              console.log(`[Background] 工具反思: ${ref.toolName} - ${toolReflection.useful ? '有用' : '无效'} - ${toolReflection.reasoning}`);
+              
+              // 将反思建议附加到工具结果消息中
+              if (!toolReflection.useful && toolReflection.suggestion) {
+                const note = `\n\n【反思提醒】工具"${ref.toolName}"的返回结果被评估为无帮助（${toolReflection.reasoning}）。建议：${toolReflection.suggestion}。请在后续步骤中考虑调整策略。`;
+                // 查找并更新对应的工具消息
+                for (let j = currentMessages.length - 1; j >= 0; j--) {
+                  if (currentMessages[j].role === 'tool' && currentMessages[j].tool_call_id === ref.toolCallId) {
+                    currentMessages[j] = {
+                      ...currentMessages[j],
+                      content: currentMessages[j].content + note
+                    };
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+        
+        // 检查是否所有工具都可并行执行
+        const allParallelizable = assistantMessage.tool_calls.every(
+          tc => PARALLELIZABLE_TOOLS.has(tc.function?.name || tc.name)
+        );
+        
+        if (allParallelizable && assistantMessage.tool_calls.length > 1) {
+          // 并行执行路径
+          console.log('[Background] 并行执行工具调用:', assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name));
+          
+          const parallelPromises = assistantMessage.tool_calls.map(toolCall =>
+            executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG)
+              .catch(err => ({ error: err.message }))
+          );
+          const parallelResults = await Promise.all(parallelPromises);
+          
+          // 按原始顺序处理结果，检查错误和 plan_task
+          let planTaskHandled = false;
+          for (let i = 0; i < assistantMessage.tool_calls.length; i++) {
+            const result = parallelResults[i];
+            if (result.error) {
+              throw createErrorWithLog(result.error);
+            }
+            if (result.planTaskHandled) {
+              planTaskHandled = true;
+            }
+          }
+          
+          // 处理反思优先级队列
+          await processPendingReflections();
+          
+          if (planTaskHandled) {
+            continue;
+          }
+        } else {
+          // 顺序执行路径
+          for (const toolCall of assistantMessage.tool_calls) {
+            const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG);
+            
+            if (result.planTaskHandled) {
+              // plan_task 处理了子任务，处理反思队列后继续外层循环
+              await processPendingReflections();
+              continue;
+            }
+          }
+          
+          // 所有工具执行完毕后，处理反思优先级队列
+          await processPendingReflections();
         }
         
         continue;
@@ -1384,6 +1617,32 @@ function shouldReflect(executionLog, taskContext) {
 }
 
 /**
+ * 计算工具反思优先级
+ * 用于决定反思队列的处理顺序
+ */
+function getToolReflectionPriority(toolName, toolResultStr, consecutiveFailCount) {
+  let priority = 0;
+  // 错误结果获得最高优先级
+  if (toolResultStr.includes('"success":false') || toolResultStr.includes('error') || toolResultStr.includes('失败')) {
+    priority += 10;
+  }
+  // 连续失败获得高优先级
+  if (consecutiveFailCount >= 2) {
+    priority += consecutiveFailCount * 5;
+  }
+  // 重要工具（表单填充、数据修改）获得更高优先级
+  const importantTools = ['fill_form', 'click_element', 'download_file', 'manage_cookies', 'clear_page_data'];
+  if (importantTools.includes(toolName)) {
+    priority += 3;
+  }
+  // 空结果获得中等优先级
+  if (!toolResultStr || toolResultStr.trim() === '' || toolResultStr === '{}') {
+    priority += 2;
+  }
+  return priority;
+}
+
+/**
  * 判断工具结果是否触发工具级反思
  */
 function shouldTriggerToolReflection(toolResultStr, failCountInIteration, reflectionConfig) {
@@ -1395,8 +1654,8 @@ function shouldTriggerToolReflection(toolResultStr, failCountInIteration, reflec
     return true;
   }
 
-  // 错误触发
-  if (tc.triggerOnError && toolResultStr.includes('"success":false')) {
+  // 错误触发（统一格式下 content 字段可能包含 error 或 失败 关键字）
+  if (tc.triggerOnError && (toolResultStr.includes('"success":false') || toolResultStr.includes('error') || toolResultStr.includes('失败'))) {
     return true;
   }
 

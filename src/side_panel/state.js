@@ -59,6 +59,8 @@ export let substituteLoadingIds = new Map();
 // 澄清对话框相关状态
 export let currentClarifyToolCallId = null;
 export let currentClarifySessionId = null;  // 当前澄清所属的会话 ID
+export let currentConfirmToolCallId = null; // 当前确认对话框所属的 toolCallId
+export let currentConfirmSessionId = null;  // 当前确认对话框所属的会话 ID
 export let clarifyTimerInterval = null;
 export let clarifyTimeoutValue = 180000;  // 默认 3 分钟
 
@@ -168,6 +170,10 @@ export default {
   set currentClarifyToolCallId(v) { currentClarifyToolCallId = v; },
   get currentClarifySessionId() { return currentClarifySessionId; },
   set currentClarifySessionId(v) { currentClarifySessionId = v; },
+  get currentConfirmToolCallId() { return currentConfirmToolCallId; },
+  set currentConfirmToolCallId(v) { currentConfirmToolCallId = v; },
+  get currentConfirmSessionId() { return currentConfirmSessionId; },
+  set currentConfirmSessionId(v) { currentConfirmSessionId = v; },
   get clarifyTimerInterval() { return clarifyTimerInterval; },
   set clarifyTimerInterval(v) { clarifyTimerInterval = v; },
   get clarifyTimeoutValue() { return clarifyTimeoutValue; },

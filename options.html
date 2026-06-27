@@ -1524,6 +1524,35 @@
         </div>
       </div>
       
+      <div class="react-config-item" id="preselectMinToolCountSection" style="display: none;">
+        <label>
+          预筛选最小工具数
+          <span class="hint-text">（工具总数超过此数量时，才会启动预筛选）</span>
+        </label>
+        <input type="number" id="preselectMinToolCount" min="1" max="20" step="1" value="3" placeholder="3">
+        <span class="unit">个</span>
+        <div class="range-labels">
+          <span>最小: 1</span>
+          <span>最大: 20</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          敏感工具操作确认
+          <span class="hint-text">（模型调用敏感工具（如管理Cookie、下载文件、关闭标签页等）时，是否需要用户确认）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="toolConfirmationEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="toolConfirmationEnabledLabel">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          启用后，当模型调用敏感操作工具时，会弹出确认框等待用户确认。<br>
+          关闭后，所有工具操作将直接放行执行，无需确认。
+        </div>
+      </div>
+      
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 配置说明</h3>
         <p>

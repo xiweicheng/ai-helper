@@ -117,6 +117,7 @@ export function loadConfig() {
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
+    'preselectMinToolCount', 'toolConfirmationEnabled',
     'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
     'reflectionConfig'
   ], function(result) {
@@ -151,8 +152,19 @@ export function loadConfig() {
       result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
     
     // 加载工具预筛选开关
-    document.getElementById('enableToolPreselect').checked = 
+    const enableToolPreselectEl = document.getElementById('enableToolPreselect');
+    enableToolPreselectEl.checked = 
       result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect;
+    // 触发 change 事件，联动显示/隐藏预筛选最小工具数
+    enableToolPreselectEl.dispatchEvent(new Event('change'));
+    
+    // 加载工具预筛选最小触发数量
+    document.getElementById('preselectMinToolCount').value = 
+      result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
+    
+    // 加载敏感工具操作确认开关
+    document.getElementById('toolConfirmationEnabled').checked = 
+      result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled;
     
     // 加载对话配置
     document.getElementById('chatMaxInputHistory').value = 
@@ -251,6 +263,8 @@ export function saveConfig() {
   const reactApiRetryCount = parseInt(document.getElementById('reactApiRetryCount').value) ?? DEFAULT_REACT_CONFIG.apiRetryCount;
   const reactApiRetryBaseDelay = parseInt(document.getElementById('reactApiRetryBaseDelay').value) || DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
   const enableToolPreselect = document.getElementById('enableToolPreselect').checked;
+  const preselectMinToolCount = parseInt(document.getElementById('preselectMinToolCount').value) || DEFAULT_REACT_CONFIG.preselectMinToolCount;
+  const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   
   // 获取对话配置
   const chatMaxInputHistory = parseInt(document.getElementById('chatMaxInputHistory').value) || DEFAULT_CHAT_CONFIG.maxInputHistory;
@@ -400,6 +414,8 @@ export function saveConfig() {
     reactApiRetryCount: reactApiRetryCount,
     reactApiRetryBaseDelay: reactApiRetryBaseDelay,
     enableToolPreselect: enableToolPreselect,
+    preselectMinToolCount: preselectMinToolCount,
+    toolConfirmationEnabled: toolConfirmationEnabled,
     // 对话配置
     chatMaxInputHistory: chatMaxInputHistory,
     chatMaxHistoryMessages: chatMaxHistoryMessages,
@@ -423,7 +439,9 @@ export function saveConfig() {
         clarifyTimeout: reactClarifyTimeout,
         apiRetryCount: reactApiRetryCount,
         apiRetryBaseDelay: reactApiRetryBaseDelay,
-        enableToolPreselect: enableToolPreselect
+        enableToolPreselect: enableToolPreselect,
+        preselectMinToolCount: preselectMinToolCount,
+        toolConfirmationEnabled: toolConfirmationEnabled
       }, {
         maxInputHistory: chatMaxInputHistory,
         maxHistoryMessages: chatMaxHistoryMessages,
@@ -512,6 +530,8 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     API 重试次数: ${react.apiRetryCount} 次<br>
     API 重试基础延迟: ${react.apiRetryBaseDelay}ms<br>
     工具预筛选: ${react.enableToolPreselect ? '✅ 启用' : '❌ 关闭'}<br>
+    预筛选最小工具数: ${react.preselectMinToolCount ?? 3} 个<br>
+    敏感工具操作确认: ${react.toolConfirmationEnabled ? '✅ 启用' : '❌ 关闭'}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>反思配置：</strong><br>
     反思功能: ${reflection.enabled ? '✅ 启用' : '❌ 关闭'}<br>

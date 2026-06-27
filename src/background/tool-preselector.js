@@ -216,9 +216,13 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     status
   });
 
-  // 如果工具很少（<=5个），不需要筛选
-  if (totalCount <= 5) {
-    console.log('[ToolPreselector] 工具数量 <= 5，跳过预筛选');
+  // 获取可配置的预筛选阈值
+  const config = await getStoredConfig();
+  const preselectMinToolCount = config.reactConfig?.preselectMinToolCount ?? 3;
+
+  // 如果工具数量未超过阈值，不需要筛选
+  if (totalCount <= preselectMinToolCount) {
+    console.log(`[ToolPreselector] 工具数量 ${totalCount} <= ${preselectMinToolCount}，跳过预筛选`);
     return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'skip', params: { reason: '工具数量少', toolCount: totalCount } }, duration: 1 })] };
   }
 
@@ -236,8 +240,8 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
   const startTime = Date.now();
 
   try {
-    const config = await getStoredConfig();
-    const apiUrl = `${config.apiBase}/chat/completions`;
+    const preselectConfig = config; // 复用上面已获取的 config
+    const apiUrl = `${preselectConfig.apiBase}/chat/completions`;
 
     const apiMessages = [
       { role: 'system', content: systemPrompt },
@@ -246,21 +250,21 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     ];
 
     const requestBody = {
-      model: model || config.modelName,
+      model: model || preselectConfig.modelName,
       messages: apiMessages,
       stream: false,
       temperature: 0.1,
-      max_tokens: 1024
+      max_tokens: Math.min(4096, Math.max(1024, totalCount * 30))
     };
 
     const response = await fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
+        'Authorization': `Bearer ${preselectConfig.apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
-    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay);
+    }, preselectConfig.reactConfig.apiTimeout, preselectConfig.reactConfig.apiRetryCount, preselectConfig.reactConfig.apiRetryBaseDelay);
 
     const duration = Date.now() - startTime;
 

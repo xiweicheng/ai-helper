@@ -35,7 +35,9 @@ export const DEFAULT_REACT_CONFIG = {
   clarifyTimeout: 180000,
   apiRetryCount: 3,
   apiRetryBaseDelay: 1000,
-  enableToolPreselect: true   // 是否启用工具预筛选（默认开启）
+  enableToolPreselect: true,   // 是否启用工具预筛选（默认开启）
+  preselectMinToolCount: 3,    // 工具预筛选最小触发数量
+  toolConfirmationEnabled: true  // 是否启用敏感工具操作确认（默认开启）
 };
 
 // 默认工具栏工具配置

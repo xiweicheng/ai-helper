@@ -271,18 +271,14 @@ function getVisibleTools() {
 }
 
 function updateAllCategoryCounts() {
-  const categories = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
-                     'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
+  const categories = CATEGORY_ORDER;
   categories.forEach(category => {
     updateCategoryCount(category);
   });
 }
 
 function updateCategoryBadges() {
-  const categories = ['all', 'page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
-                     'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];
+  const categories = ['all', ...CATEGORY_ORDER];
   
   categories.forEach(category => {
     const badge = document.getElementById('badge-' + category);

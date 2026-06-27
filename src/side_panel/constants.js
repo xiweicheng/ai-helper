@@ -1,6 +1,7 @@
-import { BUILTIN_TOOLS_UI } from '../background/constants.js';
+import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../background/constants.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
+export const CATEGORY_ORDER = _CATEGORY_ORDER;
 
 export const PRESET_MODES = [
   { label: "精准编码", temp: 0.2, topP: 1.0, tip: "较低随机性，适合业务开发、调试、纠错" },
@@ -24,7 +25,3 @@ export const TOOL_CATEGORY_NAMES = {
     'system_integration': '⚙️ 系统集成',
     'memory': '🧠 记忆检索'
 };
-
-export const CATEGORY_ORDER = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
-                     'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration', 'memory'];

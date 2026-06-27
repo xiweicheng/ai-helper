@@ -4693,7 +4693,7 @@
     }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-BB5x2B5S.js"></script>
+  <script type="module" crossorigin src="/assets/constants-CYfGTw-M.js"></script>
   <script type="module" crossorigin src="/assets/token-counter-C6QcPNvr.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -5001,6 +5001,28 @@
       <div class="modal-actions">
         <button class="modal-btn cancel" id="promptManageCancelBtn">取消</button>
         <button class="modal-btn confirm" id="promptManageAddBtn" style="background: #667eea;">添加提示词</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 敏感工具操作确认对话框 -->
+  <div class="clarify-overlay" id="confirmOverlay" style="display: none; z-index: 5000;">
+    <div class="clarify-container" id="confirmContainer">
+      <div class="clarify-content">
+        <div class="clarify-header">
+          <div class="clarify-icon">⚠️</div>
+          <div class="clarify-header-content">
+            <div class="clarify-title">操作确认</div>
+            <div class="clarify-question" id="confirmMessage">模型请求执行敏感操作，是否允许？</div>
+            <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: #e67e22; margin-top: 4px;"></div>
+            <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: #666; margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px;"></div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="clarify-footer">
+        <button class="clarify-btn cancel" id="confirmDenyBtn">拒绝</button>
+        <button class="clarify-btn confirm" id="confirmApproveBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">允许</button>
       </div>
     </div>
   </div>

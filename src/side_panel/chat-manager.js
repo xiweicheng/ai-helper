@@ -2058,6 +2058,21 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
+
+  // 建立长连接端口以保持 Service Worker 存活，
+  // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
+  const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
+  console.log('[SidePanel] keepalive 端口已连接, sessionId:', mySessionId);
+
+  // 统一清理函数：断开 keepalive 端口、清理 listener 和 timeout、清除状态
+  const cleanupCallApi = () => {
+    try { keepalivePort.disconnect(); } catch (e) {}
+    if (timeoutId) clearTimeout(timeoutId);
+    removeListener();
+    state.pendingCancelApiMap.delete(mySessionId);
+    state.pendingCallApiSessionIds.delete(mySessionId);
+    syncPendingSessionsToStorage();
+  };
   
   return new Promise((resolve, reject) => {
     let executionLog = [];
@@ -2065,11 +2080,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      removeListener();
-      state.pendingCancelApiMap.delete(mySessionId);
-      state.pendingCallApiSessionIds.delete(mySessionId);
-      syncPendingSessionsToStorage();
+      cleanupCallApi();
       // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
       if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
         errorResult.executionLog = executionLog;
@@ -2172,11 +2183,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'API_COMPLETE') {
-        if (timeoutId) clearTimeout(timeoutId);
-        state.pendingCancelApiMap.delete(mySessionId);
-        state.pendingCallApiSessionIds.delete(mySessionId);
-        syncPendingSessionsToStorage();
-        chrome.runtime.onMessage.removeListener(listener);
+        cleanupCallApi();
         resolve({ 
           content: message.content, 
           executionLog: message.executionLog || executionLog,
@@ -2184,11 +2191,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         });
         return false;
       } else if (message.type === 'API_ERROR') {
-        if (timeoutId) clearTimeout(timeoutId);
-        state.pendingCancelApiMap.delete(mySessionId);
-        state.pendingCallApiSessionIds.delete(mySessionId);
-        syncPendingSessionsToStorage();
-        chrome.runtime.onMessage.removeListener(listener);
+        cleanupCallApi();
         reject({
           message: message.error,
           executionLog: message.executionLog || executionLog

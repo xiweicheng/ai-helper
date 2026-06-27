@@ -6,6 +6,7 @@ import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCur
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
+import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
 import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
 import {
@@ -1382,4 +1383,5 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
+document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
