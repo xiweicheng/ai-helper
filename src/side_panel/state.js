@@ -43,8 +43,8 @@ export let enabledTools = [];
 // 分类折叠状态
 export const collapsedCategories = {};
 
-// 当前执行状态
-export let currentExecutionStatus = null;
+// 当前执行状态（按 sessionId 隔离，key 为 sessionId）
+export let sessionExecutionStatus = new Map();
 export let executionLogListener = null;
 
 // 当前 API 调用的取消函数，按 sessionId 隔离，防止多会话并行时互相覆盖
@@ -138,8 +138,17 @@ export default {
   set enabledTools(v) { enabledTools = v; },
   get collapsedCategories() { return collapsedCategories; },
   // collapsedCategories is const, no setter needed
-  get currentExecutionStatus() { return currentExecutionStatus; },
-  set currentExecutionStatus(v) { currentExecutionStatus = v; },
+  get sessionExecutionStatus() { return sessionExecutionStatus; },
+  set sessionExecutionStatus(v) { sessionExecutionStatus = v; },
+  // 兼容旧代码：currentExecutionStatus 通过 getter/setter 操作当前活跃会话
+  get currentExecutionStatus() { return sessionExecutionStatus.get(activeSessionId) || null; },
+  set currentExecutionStatus(v) { 
+    if (v === null) {
+      sessionExecutionStatus.delete(activeSessionId);
+    } else {
+      sessionExecutionStatus.set(activeSessionId, v);
+    }
+  },
   get executionLogListener() { return executionLogListener; },
   set executionLogListener(v) { executionLogListener = v; },
   get pendingCancelApi() { return pendingCancelApiMap.get(activeSessionId) || null; },

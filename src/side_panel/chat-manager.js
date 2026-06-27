@@ -1977,9 +1977,11 @@ export function addLoadingMessage() {
   }
   
   // 始终同步注册执行日志监听器，避免竞态（storage.get 是异步的）
+  // 捕获当前会话 ID，防止切换会话后过滤逻辑用错 sessionId
+  const mySessionId = state.activeSessionId;
   state.executionLogListener = (message, sender, sendResponse) => {
-    // 过滤：只处理属于当前会话或没有 sessionId 的消息（兼容）
-    if (message.sessionId && message.sessionId !== state.activeSessionId) {
+    // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
+    if (message.sessionId && message.sessionId !== mySessionId) {
       return false;
     }
     if (message.type === 'EXECUTION_STATUS_UPDATE') {
@@ -2028,6 +2030,7 @@ export function removeLoadingMessage(loadingId) {
     state.executionLogListener = null;
   }
   
+  // 按会话隔离清空执行状态，不影响其他会话
   state.currentExecutionStatus = null;
   
   const realtimePanel = document.querySelector('.execution-log-panel.realtime-mode');

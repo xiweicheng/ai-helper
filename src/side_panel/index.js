@@ -809,9 +809,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
 
-    // 切换会话时不再重置全局 isGenerating（现在是按会话隔离的 Set）
-    // UI 元素重置即可，新会话的输入框默认可用
-    if (sendBtn) sendBtn.disabled = false;
+    // 清理旧会话的 executionLogListener，防止 listener 累积
+    if (state.executionLogListener) {
+      chrome.runtime.onMessage.removeListener(state.executionLogListener);
+      state.executionLogListener = null;
+    }
+
+    // 根据目标会话的生成状态决定发送按钮是否禁用
+    if (sendBtn) sendBtn.disabled = state.isGenerating;
     if (userInput) userInput.focus();
 
     chatContainerEl.innerHTML = '';
