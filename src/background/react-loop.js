@@ -256,8 +256,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
       // 上下文压力评估：在每次 API 调用前检查 token 使用量
       const filteredTokens = estimateMessagesTokens(filteredMessages);
-      const toolTokens = estimateToolsTokens(apiTools.length);
-      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName));
+      const toolTokens = (typeof estimateToolsTokens === 'function' ? estimateToolsTokens : (n) => n * 200)(apiTools.length);
+      const getCtxWin = typeof getContextWindow === 'function' ? getContextWindow : () => 64000;
+      const pressure = assessContextPressure(filteredTokens + toolTokens, getCtxWin(model || config.modelName));
       if (pressure.level !== 'safe') {
         console.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, ${filteredTokens} tokens ${filteredMessages.length} 条消息)`);
       }

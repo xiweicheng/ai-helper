@@ -3290,23 +3290,10 @@
     .prototype-header {
       display: flex;
       align-items: center;
-      gap: 10px;
+      justify-content: space-between;
       padding: 10px 14px;
-      border-bottom: 1px solid #f0f0f0;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       flex-shrink: 0;
-    }
-    
-    .prototype-icon {
-      width: 28px;
-      height: 28px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      font-size: 14px;
     }
     
     .prototype-header-content {
@@ -3348,6 +3335,7 @@
       transition: all 0.2s;
       flex-shrink: 0;
       line-height: 1;
+      margin-left: 10px;
     }
     
     .prototype-close-btn:hover {
@@ -3360,6 +3348,7 @@
       padding: 4px;
       background: #f0f2f5;
       min-height: 0;
+      position: relative;
     }
     
     .prototype-iframe {
@@ -3374,80 +3363,92 @@
     
     .prototype-footer {
       display: flex;
-      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
       padding: 10px 14px;
       border-top: 1px solid #f0f0f0;
       background: #fafafa;
       flex-shrink: 0;
     }
     
-    .prototype-btn {
-      flex: 1;
-      padding: 8px 14px;
-      border: 1px solid #e0e0e0;
+    .prototype-footer-left {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .prototype-footer-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: white;
       border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
+      font-size: 16px;
       cursor: pointer;
-      transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
+      transition: all 0.15s;
+      border: 1px solid #e8e8e8;
+    }
+    
+    .prototype-footer-btn:hover {
+      background: #f0f2f5;
+      border-color: #d9d9d9;
+    }
+    
+    .prototype-footer-btn:active {
+      transform: scale(0.95);
+    }
+    
+    .prototype-footer-primary {
+      padding: 9px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
+      display: flex;
+      align-items: center;
       gap: 6px;
     }
     
-    .prototype-btn.download {
-      background: white;
-      color: #667eea;
-      border-color: #667eea;
-    }
-    
-    .prototype-btn.download:hover {
-      background: rgba(102, 126, 234, 0.08);
-      transform: translateY(-1px);
-    }
-    
-    .prototype-btn.open-tab {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
-    }
-    
-    .prototype-btn.open-tab:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.45);
-    }
-    
-    .prototype-btn.continue-optimize {
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-      color: white;
-      border: none;
-      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
-    }
-    
-    .prototype-btn.continue-optimize:hover {
+    .prototype-footer-primary:hover {
       transform: translateY(-1px);
       box-shadow: 0 6px 16px rgba(245, 87, 108, 0.4);
     }
     
-    /* 缩放工具栏 */
+    .prototype-footer-primary:active {
+      transform: translateY(0);
+    }
+    
+    /* 缩放工具栏 - 浮动在内容区右下角 */
     .prototype-zoom-toolbar {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
       display: flex;
       align-items: center;
-      gap: 4px;
-      margin-right: 6px;
-      flex-shrink: 0;
+      gap: 3px;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 8px;
+      padding: 3px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+      backdrop-filter: blur(4px);
+      z-index: 10;
     }
     
     .prototype-zoom-btn {
-      width: 26px;
-      height: 26px;
+      width: 24px;
+      height: 24px;
       border: none;
-      background: rgba(255, 255, 255, 0.2);
-      color: white;
+      background: transparent;
+      color: #333;
       border-radius: 5px;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       display: flex;
@@ -3459,19 +3460,18 @@
     }
     
     .prototype-zoom-btn:hover {
-      background: rgba(255, 255, 255, 0.35);
+      background: rgba(0, 0, 0, 0.08);
     }
     
     .prototype-zoom-btn:active {
-      background: rgba(255, 255, 255, 0.45);
-      transform: scale(0.92);
+      background: rgba(0, 0, 0, 0.15);
     }
     
     .prototype-zoom-level {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
-      color: white;
-      min-width: 38px;
+      color: #555;
+      min-width: 34px;
       text-align: center;
       cursor: pointer;
       user-select: none;
@@ -3481,15 +3481,17 @@
     }
     
     .prototype-zoom-level:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(0, 0, 0, 0.08);
     }
     
     .prototype-zoom-level.zoomed {
-      background: rgba(255, 255, 255, 0.25);
+      color: #667eea;
+      font-weight: 700;
     }
     
     .prototype-zoom-level.flash {
-      background: rgba(255, 255, 255, 0.45);
+      background: rgba(102, 126, 234, 0.15);
+      color: #667eea;
       transition: background 0.1s;
     }
     
@@ -5068,27 +5070,28 @@
   <div class="prototype-overlay" id="prototypeOverlay">
     <div class="prototype-container" id="prototypeContainer">
       <div class="prototype-header">
-        <div class="prototype-icon">🎨</div>
         <div class="prototype-header-content">
           <div class="prototype-title" id="prototypeTitle">UI 原型预览</div>
           <div class="prototype-description" id="prototypeDescription"></div>
-        </div>
-        <div class="prototype-zoom-toolbar" id="prototypeZoomToolbar">
-          <button class="prototype-zoom-btn" id="prototypeZoomOutBtn" title="缩小 (Ctrl+滚轮)">−</button>
-          <span class="prototype-zoom-level" id="prototypeZoomLevel" title="点击重置">100%</span>
-          <button class="prototype-zoom-btn" id="prototypeZoomInBtn" title="放大 (Ctrl+滚轮)">+</button>
         </div>
         <button class="prototype-close-btn" id="prototypeCloseBtn" title="关闭">×</button>
       </div>
       
       <div class="prototype-content" id="prototypeContent">
         <iframe class="prototype-iframe" id="prototypeIframe" sandbox="allow-scripts" scrolling="auto"></iframe>
+        <div class="prototype-zoom-toolbar" id="prototypeZoomToolbar">
+          <button class="prototype-zoom-btn" id="prototypeZoomOutBtn" title="缩小 (Ctrl+滚轮)">−</button>
+          <span class="prototype-zoom-level" id="prototypeZoomLevel" title="点击重置">100%</span>
+          <button class="prototype-zoom-btn" id="prototypeZoomInBtn" title="放大 (Ctrl+滚轮)">+</button>
+        </div>
       </div>
       
       <div class="prototype-footer">
-        <button class="prototype-btn download" id="prototypeDownloadBtn">📥 下载</button>
-        <button class="prototype-btn open-tab" id="prototypeOpenTabBtn">🔗 新标签</button>
-        <button class="prototype-btn continue-optimize" id="prototypeContinueBtn">💡 继续优化</button>
+        <div class="prototype-footer-left">
+          <button class="prototype-footer-btn" id="prototypeDownloadBtn" title="下载">📥</button>
+          <button class="prototype-footer-btn" id="prototypeOpenTabBtn" title="新标签页打开">🔗</button>
+        </div>
+        <button class="prototype-footer-primary" id="prototypeContinueBtn">💡 继续优化</button>
       </div>
     </div>
   </div>
