@@ -105,6 +105,50 @@ ai-helper-agent start --port 18911
 | `commandTimeout` | 命令执行超时（毫秒） | 300000（5分钟） |
 | `fileMaxSize` | 文件读写最大字节数 | 52428800（50MB） |
 
+## 审计日志
+
+所有操作自动记录到审计日志中，日志文件位于 `~/.ai-helper-agent/logs/`。
+
+### 日志格式
+
+JSON Lines 格式，每行一条记录，文件按日命名 `agent-YYYY-MM-DD.log`。
+
+```json
+{"timestamp":"2026-01-15T10:30:00.123Z","level":"info","category":"fs","action":"read","path":"/home/user/project/src/index.js","size":2048}
+{"timestamp":"2026-01-15T10:30:05.456Z","level":"info","category":"exec","action":"completed","command":"npm test","cwd":"/home/user/project","execId":"a1b2c3d4","exitCode":0,"killed":false,"stdoutLen":1024,"stderrLen":0}
+{"timestamp":"2026-01-15T10:31:00.789Z","level":"warn","category":"security","action":"exec_denied","command":"rm -rf /","reason":"高危命令被拦截"}
+```
+
+### 日志分类
+
+| category | 说明 | 包含的操作 |
+|----------|------|-----------|
+| `auth` | 认证事件 | 配对成功/失败 |
+| `fs` | 文件操作 | read, write, list, delete |
+| `exec` | 命令执行 | started, completed, stopped, error |
+| `security` | 安全事件 | deny, confirm, auth 失败, 路径越权拦截 |
+| `system` | 系统事件 | server_start, server_stop, shutdown |
+
+### 日志查询 API
+
+```
+GET /api/logs?date=2026-01-15&category=security&limit=50&offset=0
+GET /api/logs/dates
+```
+
+- `date` - 日期筛选 (YYYY-MM-DD)，不传默认今天
+- `category` - 分类筛选，不传返回全部
+- `limit` - 返回条数上限，默认 200
+- `offset` - 分页偏移
+
+返回按时间倒序排列（最新的在前）。
+
+### 自动清理
+
+- 最多保留 30 个日志文件
+- 单文件超过 10MB 自动删除
+- 每次写入日志时触发检查
+
 ## API 端点
 
 ### 无需认证
@@ -127,6 +171,8 @@ ai-helper-agent start --port 18911
 | GET | `/api/exec/running` | 运行中的进程列表 |
 | GET | `/api/status/detail` | 详细信息（含工作目录） |
 | POST | `/api/shutdown` | 关闭 Agent 服务 |
+| GET | `/api/logs` | 查询审计日志（支持 date/category/limit/offset 参数） |
+| GET | `/api/logs/dates` | 获取可用日志日期列表 |
 
 ### WebSocket
 
