@@ -58,7 +58,7 @@ export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
   maxMessageLength: 100000,
-  maxMemoryMessages: null,   // 记忆历史限制条数，null表示不限制
+  maxMemoryMessages: 20,   // 记忆历史限制条数，默认20条
   enableExecutionLog: false  // 默认关闭执行日志
 };
 

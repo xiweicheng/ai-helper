@@ -3,6 +3,7 @@ import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortControl
 import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { preselectTools } from './tool-preselector.js';
+import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
 
 /**
  * 创建带执行日志的错误
@@ -38,33 +39,58 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   let iteration = 0;
   let currentMessages = [...messages];
   
-  // ReAct 循环消息上限：防止工具输出过大导致 token 超限
-  const MAX_REACT_MESSAGES = 40;
-  const trimMessages = () => {
-    if (currentMessages.length > MAX_REACT_MESSAGES) {
-      const oldLen = currentMessages.length;
-      const firstMsg = currentMessages[0]?.role === 'system' ? 1 : 0;
-      let keep = MAX_REACT_MESSAGES - firstMsg;
+  // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
+  // 为工具定义、系统提示词、输出预留空间后，剩余约 80% 用于消息历史
+  let reactTokenBudget = null;
 
-      // 从末尾向前取 keep 条消息，确保不切断 tool_calls / tool 配对
-      // 检查截断后的第一条消息是否是孤立的 tool 响应（其 assistant 在截断中被丢弃）
-      const tail = currentMessages.slice(-keep);
-      const firstTailMsg = tail[0];
-      if (firstTailMsg?.role === 'tool') {
-        // 向前找到包含 tool_calls 的 assistant 消息，将其及之后的所有消息一起保留
-        const keptCount = currentMessages.length - keep;
-        for (let i = keptCount - 1; i >= 0; i--) {
-          if (currentMessages[i].role === 'assistant' && currentMessages[i].tool_calls) {
-            keep = currentMessages.length - i;
-            break;
-          }
+  const getReactTokenBudget = (modelName) => {
+    if (reactTokenBudget === null) {
+      const contextWindow = getMessageBudget(modelName, tools.length);
+      reactTokenBudget = Math.floor(contextWindow * 0.8);
+      console.log(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName})`);
+    }
+    return reactTokenBudget;
+  };
+
+  /**
+   * 工具结果截断：单条工具结果最大 token 数
+   * 避免 get_full_html / fetch_url 等大结果撑爆上下文
+   */
+  const MAX_TOOL_RESULT_TOKENS = 6000;
+
+  /**
+   * 基于 Token 总量的消息裁剪，替代原来的条数限制
+   * 保留 system message，从后往前保留消息，确保 tool_calls/tool 配对
+   */
+  const trimMessages = () => {
+    const budget = getReactTokenBudget(model || 'default');
+    const totalTokens = estimateMessagesTokens(currentMessages);
+    if (totalTokens <= budget) return;
+
+    const oldLen = currentMessages.length;
+    const oldTokens = totalTokens;
+    const systemMsg = currentMessages[0]?.role === 'system' ? [currentMessages[0]] : [];
+    const rest = systemMsg.length ? currentMessages.slice(1) : [...currentMessages];
+
+    // 从后往前逐条移除，直到 token 量在预算内
+    while (rest.length > 0) {
+      const currentTokens = estimateMessagesTokens([...systemMsg, ...rest]);
+      if (currentTokens <= budget) break;
+
+      // 移除最早的非 system 消息
+      const removed = rest.shift();
+
+      // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
+      if (removed?.role === 'assistant' && removed.tool_calls) {
+        while (rest.length > 0 && rest[0]?.role === 'tool') {
+          rest.shift();
         }
       }
-
-      const trimmed = currentMessages.slice(-keep);
-      currentMessages = firstMsg ? [currentMessages[0], ...trimmed] : trimmed;
-      console.log(`[Background] ReAct 消息截断: ${oldLen} → ${currentMessages.length} 条`);
     }
+
+    currentMessages = [...systemMsg, ...rest];
+    const newTokens = estimateMessagesTokens(currentMessages);
+    console.log(`[Background] ReAct Token 裁剪: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} 条)`);
   };
   
   const executionLog = [...initialLog];
@@ -226,6 +252,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const apiTools = hasPlanTask ? await getFullTools() : tools;
       if (hasPlanTask) {
         console.log('[Background] 当前迭代包含 plan_task，使用全量工具进行任务拆解，工具数:', apiTools.length);
+      }
+
+      // 上下文压力评估：在每次 API 调用前检查 token 使用量
+      const filteredTokens = estimateMessagesTokens(filteredMessages);
+      const toolTokens = estimateToolsTokens(apiTools.length);
+      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName));
+      if (pressure.level !== 'safe') {
+        console.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, ${filteredTokens} tokens ${filteredMessages.length} 条消息)`);
       }
       
       executionLog.push({
@@ -438,7 +472,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             }
             
             // 确保 toolResult 是字符串格式
-            const toolResultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+            let toolResultStr = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+
+            // 工具结果截断：防止大结果撑爆上下文
+            const resultTokens = estimateTokens(toolResultStr);
+            if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
+              const truncated = truncateByTokens(toolResultStr, MAX_TOOL_RESULT_TOKENS);
+              console.log(`[Background] 工具 ${toolName} 结果截断: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
+              toolResultStr = truncated;
+            }
 
             // 工具级反思：检查工具结果是否有异常
             // 修复：计算真正"连续"的失败数（从最近一次成功往后数）
@@ -543,9 +585,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }
               
               // 将所有子任务结果添加到消息历史（作为系统消息，而非工具消息）
-              const subtaskSummary = subtaskResults.map((result, idx) => 
-                `子任务 ${idx + 1}: ${result.subtaskName}\n结果: ${result.result}`
-              ).join('\n\n');
+              // 每个子任务结果截断至合理大小，避免汇总消息过大
+              const SUBTASK_RESULT_MAX_TOKENS = 3000;
+              const subtaskSummary = subtaskResults.map((result, idx) => {
+                const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
+                const truncated = estimateTokens(resultStr) > SUBTASK_RESULT_MAX_TOKENS
+                  ? truncateByTokens(resultStr, SUBTASK_RESULT_MAX_TOKENS)
+                  : resultStr;
+                return `子任务 ${idx + 1}: ${result.subtaskName}\n结果: ${truncated}`;
+              }).join('\n\n');
               
               currentMessages.push({
                 role: 'system',

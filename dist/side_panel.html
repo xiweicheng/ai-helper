@@ -3431,6 +3431,68 @@
       box-shadow: 0 6px 16px rgba(245, 87, 108, 0.4);
     }
     
+    /* 缩放工具栏 */
+    .prototype-zoom-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+    
+    .prototype-zoom-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-radius: 5px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      line-height: 1;
+      padding: 0;
+    }
+    
+    .prototype-zoom-btn:hover {
+      background: rgba(255, 255, 255, 0.35);
+    }
+    
+    .prototype-zoom-btn:active {
+      background: rgba(255, 255, 255, 0.45);
+      transform: scale(0.92);
+    }
+    
+    .prototype-zoom-level {
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+      min-width: 38px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    
+    .prototype-zoom-level:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    .prototype-zoom-level.zoomed {
+      background: rgba(255, 255, 255, 0.25);
+    }
+    
+    .prototype-zoom-level.flash {
+      background: rgba(255, 255, 255, 0.45);
+      transition: background 0.1s;
+    }
+    
     /* 原型库列表样式 */
     .prototype-library-container {
       max-width: 500px;
@@ -4629,8 +4691,8 @@
     }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-DCowTt34.js"></script>
-  <script type="module" crossorigin src="/assets/db-D4uBNs2S.js"></script>
+  <script type="module" crossorigin src="/assets/constants-BB5x2B5S.js"></script>
+  <script type="module" crossorigin src="/assets/token-counter-C6QcPNvr.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -5016,10 +5078,15 @@
           <div class="prototype-title" id="prototypeTitle">UI 原型预览</div>
           <div class="prototype-description" id="prototypeDescription"></div>
         </div>
+        <div class="prototype-zoom-toolbar" id="prototypeZoomToolbar">
+          <button class="prototype-zoom-btn" id="prototypeZoomOutBtn" title="缩小 (Ctrl+滚轮)">−</button>
+          <span class="prototype-zoom-level" id="prototypeZoomLevel" title="点击重置">100%</span>
+          <button class="prototype-zoom-btn" id="prototypeZoomInBtn" title="放大 (Ctrl+滚轮)">+</button>
+        </div>
         <button class="prototype-close-btn" id="prototypeCloseBtn" title="关闭">×</button>
       </div>
       
-      <div class="prototype-content">
+      <div class="prototype-content" id="prototypeContent">
         <iframe class="prototype-iframe" id="prototypeIframe" sandbox="allow-scripts" scrolling="auto"></iframe>
       </div>
       

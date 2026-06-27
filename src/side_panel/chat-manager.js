@@ -8,6 +8,7 @@ import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatM
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
+import { estimateMessagesTokens, assessContextPressure, getContextWindow } from '../shared/token-counter.js';
 
 // ============================================================
 // pendingCallApiSessionIds 持久化帮助函数
@@ -333,6 +334,18 @@ export async function sendMessage() {
     }
 
     const apiParams = await getApiParams();
+
+    // 上下文压力评估：发送前检查消息总量
+    const msgTokens = estimateMessagesTokens(messages);
+    const sysPromptTokens = estimateMessagesTokens([messages[0]]); // system prompt
+    const historyTokens = msgTokens - sysPromptTokens;
+    const contextWindow = getContextWindow(model);
+    const pressure = assessContextPressure(msgTokens, contextWindow);
+    console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (系统提示词: ${sysPromptTokens}, 历史: ${historyTokens}), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%), 消息: ${messages.length} 条`);
+    if (pressure.level === 'critical') {
+      console.warn('[SidePanel] 上下文压力过高，可能触发 API 错误');
+    }
+
     let content, executionLog, reflectionScore, wasRevised = false;
     
     try {

@@ -3,6 +3,10 @@
 import { getUiPrototype, listUiPrototypes, deleteUiPrototype } from '../storage/db.js';
 
 let currentPrototype = null;
+let currentZoom = 1.0;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2.0;
+const ZOOM_STEP = 0.1;
 
 /**
  * 包裹原型 HTML，确保在任意容器中都可滚动
@@ -31,6 +35,7 @@ export function showUiPrototypeDialog(prototypeData) {
   console.log('[SidePanel] 显示 UI 原型预览:', prototypeData);
   
   currentPrototype = prototypeData;
+  resetZoom();
   
   const titleEl = document.getElementById('prototypeTitle');
   const descEl = document.getElementById('prototypeDescription');
@@ -336,6 +341,73 @@ function formatTime(timestamp) {
   }
 }
 
+// ========== 缩放功能 ==========
+
+function applyZoom(newZoom) {
+  currentZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
+  currentZoom = Math.round(currentZoom * 100) / 100;
+  
+  const iframeEl = document.getElementById('prototypeIframe');
+  const levelEl = document.getElementById('prototypeZoomLevel');
+  
+  if (iframeEl) {
+    iframeEl.style.zoom = currentZoom;
+  }
+  
+  if (levelEl) {
+    levelEl.textContent = Math.round(currentZoom * 100) + '%';
+    if (currentZoom !== 1.0) {
+      levelEl.classList.add('zoomed');
+    } else {
+      levelEl.classList.remove('zoomed');
+    }
+  }
+}
+
+function zoomIn() {
+  applyZoom(currentZoom + ZOOM_STEP);
+  flashZoomLevel();
+}
+
+function zoomOut() {
+  applyZoom(currentZoom - ZOOM_STEP);
+  flashZoomLevel();
+}
+
+function resetZoom() {
+  applyZoom(1.0);
+}
+
+function setZoom(level) {
+  applyZoom(level);
+  flashZoomLevel();
+}
+
+function flashZoomLevel() {
+  const levelEl = document.getElementById('prototypeZoomLevel');
+  if (!levelEl) return;
+  levelEl.classList.add('flash');
+  setTimeout(() => levelEl.classList.remove('flash'), 150);
+}
+
+function handleZoomWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  
+  if (e.deltaY < 0) {
+    zoomIn();
+  } else {
+    zoomOut();
+  }
+}
+
+function handleZoomKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+    e.preventDefault();
+    resetZoom();
+  }
+}
+
 export function initPrototypeEvents() {
   const closeBtn = document.getElementById('prototypeCloseBtn');
   if (closeBtn) {
@@ -356,6 +428,31 @@ export function initPrototypeEvents() {
   if (continueBtn) {
     continueBtn.addEventListener('click', continueOptimizePrototype);
   }
+  
+  // 缩放按钮事件
+  const zoomInBtn = document.getElementById('prototypeZoomInBtn');
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener('click', zoomIn);
+  }
+  
+  const zoomOutBtn = document.getElementById('prototypeZoomOutBtn');
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener('click', zoomOut);
+  }
+  
+  const zoomLevel = document.getElementById('prototypeZoomLevel');
+  if (zoomLevel) {
+    zoomLevel.addEventListener('click', resetZoom);
+  }
+  
+  // Ctrl+滚轮缩放
+  const contentEl = document.getElementById('prototypeContent');
+  if (contentEl) {
+    contentEl.addEventListener('wheel', handleZoomWheel, { passive: false });
+  }
+  
+  // Ctrl+0 快捷键
+  document.addEventListener('keydown', handleZoomKeydown);
   
   const libraryCloseBtn = document.getElementById('prototypeLibraryCloseBtn');
   if (libraryCloseBtn) {
