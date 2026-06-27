@@ -2064,6 +2064,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
   console.log('[SidePanel] keepalive 端口已连接, sessionId:', mySessionId);
 
+  // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
+  // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
+  const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null };
+  keepalivePort.onMessage.addListener((msg) => {
+    if (msg.type === 'SW_RESTARTED' && msg.sessionId === mySessionId) {
+      console.warn('[SidePanel] ⚠️ 收到 SW_RESTARTED 通知，后台已重启，API 调用已丢失');
+      _swRestartCtx.restarted = true;
+      // 如果 Promise executor 已经初始化（rejectFn 已设置），直接触发清理和拒绝
+      if (_swRestartCtx.rejectFn && _swRestartCtx.cleanup) {
+        _swRestartCtx.cleanup();
+        _swRestartCtx.rejectFn({
+          message: '后台服务异常重启，API 调用已中断，请重试',
+          executionLog: []
+        });
+      }
+    }
+  });
+
   // timeoutId / removeListener 需放在 Promise 外层作用域，供 cleanupCallApi 及 pause/resume 闭包访问
   // 放在对象上防止 terser 在 minify 时跨作用域重命名导致 ReferenceError
   const _timeoutCtx = { timeoutId: null, removeListener: () => {} };
@@ -2079,6 +2097,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   };
   
   return new Promise((resolve, reject) => {
+    // 桥接 SW 重启检测到 Promise executor
+    _swRestartCtx.cleanup = cleanupCallApi;
+    _swRestartCtx.rejectFn = reject;
+
+    // SW 重启检测：如果在 Promise 执行前已经收到 SW_RESTARTED 通知，立即 reject
+    if (_swRestartCtx.restarted) {
+      cleanupCallApi();
+      reject({ message: '后台服务异常重启，API 调用已中断，请重试', executionLog: [] });
+      return;
+    }
+
     let executionLog = [];
     const timeoutSeconds = Math.round(timeoutMs / 1000);
     

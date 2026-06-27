@@ -6,6 +6,10 @@ import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.j
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
 
+// 活跃的 ReAct 循环 sessionId 集合，用于检测 SW 静默重启
+// 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
+export const activeReactLoops = new Set();
+
 // 敏感工具中文显示名映射
 const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
@@ -98,6 +102,9 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
 export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = []) {
+  // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
+  if (sessionId) activeReactLoops.add(sessionId);
+
   let iteration = 0;
   let currentMessages = [...messages];
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
@@ -343,6 +350,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 发送 API 调用状态
       sendExecutionStatusUpdate(`API调用 (第${currentCount}次${taskContext ? `, 子任务第${iteration}次` : ''})`, 'processing');
       
+      // 外层超时 watchdog，需在 try/catch 外层声明以便 catch 块中清理
+      let outerWatchdog;
+
       try {
         const apiUrl = `${config.apiBase}/chat/completions`;
         console.log('[Background] API 请求工具数量:', apiTools.length);
@@ -368,7 +378,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 使用带重试和超时的 fetch
         // 外层超时保护：独立 setTimeout watchdog，防止 fetchWithRetry 因 AbortSignal bug 永久挂起
         const outerTimeoutMs = Math.max(remainingTime - 30000, apiTimeout);
-        const outerWatchdog = setTimeout(() => {
+        outerWatchdog = setTimeout(() => {
           console.warn(`[Background] ⚠️ API 调用外层超时保护触发 (${Math.round(outerTimeoutMs / 1000)}s)，强制 abort`);
           abortController?.abort();
         }, outerTimeoutMs);
@@ -510,6 +520,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 error: '用户拒绝了此操作'
               });
               sendExecutionStatusUpdate(`工具执行:${toolName}`, 'cancelled');
+              // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
+              currentMessages.push({
+                role: 'tool',
+                content: '用户拒绝了此操作',
+                tool_call_id: toolCall.id
+              });
+              trimMessages();
               return {
                 toolCall,
                 result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
@@ -534,6 +551,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             if (PARALLELIZABLE_TOOLS.has(toolName)) {
               console.log(`[Background] 工具 ${toolName} 命中缓存，使用缓存结果`);
               const cached = toolResultCache.get(cacheKey);
+              // 推送缓存工具结果到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
+              currentMessages.push({
+                role: 'tool',
+                content: cached.toolResultStr,
+                tool_call_id: toolCall.id
+              });
+              trimMessages();
               return { ...cached, fromCache: true };
             } else {
               // 非并行工具（有副作用）调用时清空缓存，因为状态已改变
@@ -959,8 +983,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     error.executionLog = executionLog;
     throw error;
   } catch (error) {
-    // 重新抛出错误，保持错误处理流程
     throw error;
+  } finally {
+    // 标记该 session 的 ReAct 循环已结束，用于 SW 重启检测
+    if (sessionId) activeReactLoops.delete(sessionId);
   }
 }
 

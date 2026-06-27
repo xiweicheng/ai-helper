@@ -864,8 +864,11 @@ export function executeShowNotification(args, toolCallId) {
 
 /**
  * 带超时控制的 fetch 请求
- * 使用内部 AbortController + 外部 signal 事件监听，避免 AbortSignal.any() 的兼容性 bug
- * 不依赖 AbortSignal.any() 传播 abort，而是统一通过 controller.abort() 触发
+ *
+ * 核心设计：
+ * 1. 超时用 AbortSignal.timeout()（浏览器引擎级，不受 SW setTimeout 节流影响）
+ * 2. 外部取消用 addEventListener('abort') 桥接到同一个 AbortController
+ * 3. 不使用 AbortSignal.any()（Chrome 有已知 bug，abort 传播可能不生效）
  *
  * @param {string} url
  * @param {Object} options - fetch options（可包含外部 signal）
@@ -873,31 +876,36 @@ export function executeShowNotification(args, toolCallId) {
  */
 export async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // AbortSignal.timeout() 是浏览器引擎级超时，不受 SW 定时器节流影响
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const externalSignal = options?.signal;
 
-  // 统一 abort 通道：外部取消也通过 controller.abort() 触发
-  const onExternalAbort = () => controller.abort();
+  // 统一 abort 通道：超时和外部取消都通过 controller.abort() 触发
+  const onAbort = () => controller.abort();
+  timeoutSignal.addEventListener('abort', onAbort, { once: true });
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
 
   try {
-    if (externalSignal) {
-      if (externalSignal.aborted) {
-        controller.abort();
-      } else {
-        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
-      }
-    }
-
     const response = await fetch(url, {
       ...options,
       signal: controller.signal   // 始终使用内部 signal，避免 AbortSignal.any 潜在 bug
     });
-    clearTimeout(timeoutId);
-    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    // 清理监听器
+    timeoutSignal.removeEventListener('abort', onAbort);
+    if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
-    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    // 清理监听器
+    timeoutSignal.removeEventListener('abort', onAbort);
+    if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+
     if (error.name === 'AbortError') {
       // 外部取消 → 传播原始 AbortError（fetchWithRetry 不重试）
       if (externalSignal?.aborted) {

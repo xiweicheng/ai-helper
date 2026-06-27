@@ -3,7 +3,7 @@
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools } from './tool-executor.js';
-import { reactLoop, callApiNonStream } from './react-loop.js';
+import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
@@ -13,8 +13,20 @@ const keepalivePorts = new Map(); // sessionId -> Port
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
+    // 判断是否为重连（SW 重启后的重连），而非首次连接
+    const isReconnection = keepalivePorts.has(sessionId);
     keepalivePorts.set(sessionId, port);
-    console.log('[Background] keepalive 端口已连接, sessionId:', sessionId);
+    console.log('[Background] keepalive 端口已连接, sessionId:', sessionId, isReconnection ? '(重连)' : '(首次)');
+
+    // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
+    if (isReconnection && !activeReactLoops.has(sessionId)) {
+      console.warn('[Background] ⚠️ 检测到 SW 已重启，sessionId', sessionId, '的 API 调用已丢失');
+      try {
+        port.postMessage({ type: 'SW_RESTARTED', sessionId });
+      } catch (e) {
+        console.warn('[Background] 发送 SW_RESTARTED 消息失败:', e.message);
+      }
+    }
 
     port.onDisconnect.addListener(() => {
       keepalivePorts.delete(sessionId);
