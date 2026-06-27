@@ -1066,14 +1066,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.storage.local.set({ [key]: chatContainerEl.scrollTop });
   });
 
+  // 更多操作下拉菜单
+  const headerMoreBtn = document.getElementById('headerMoreBtn');
+  const headerMoreDropdown = document.getElementById('headerMoreDropdown');
+  if (headerMoreBtn && headerMoreDropdown) {
+    headerMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.toggle('show');
+    });
+    // 点击外部关闭下拉菜单
+    document.addEventListener('click', (e) => {
+      if (!headerMoreDropdown.contains(e.target) && e.target !== headerMoreBtn) {
+        headerMoreDropdown.classList.remove('show');
+      }
+    });
+  }
+
   // 清除对话历史按钮
-  clearChatBtn.addEventListener('click', () => {
+  clearChatBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    headerMoreDropdown.classList.remove('show');
     showModal();
   });
 
   // 导出对话历史按钮
   if (exportChatBtn) {
-    exportChatBtn.addEventListener('click', exportChatHistory);
+    exportChatBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      exportChatHistory();
+    });
   }
 
   // 设置按钮
@@ -1087,7 +1109,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 原型库按钮
   const prototypeLibraryBtn = document.getElementById('prototypeLibraryBtn');
   if (prototypeLibraryBtn) {
-    prototypeLibraryBtn.addEventListener('click', showPrototypeLibrary);
+    prototypeLibraryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      showPrototypeLibrary();
+    });
   }
 
   // 隔离对话开关（记忆对话）

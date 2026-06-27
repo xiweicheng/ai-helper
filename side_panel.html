@@ -32,6 +32,8 @@
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+      position: relative;
+      z-index: 100;
     }
     .header h1 {
       font-size: 16px;
@@ -76,6 +78,48 @@
       background: rgba(255, 255, 255, 0.15);
       color: rgba(255, 255, 255, 0.95);
       transform: scale(1.08);
+    }
+    .header-more-wrapper {
+      position: relative;
+    }
+    .header-more-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 6px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      z-index: 10001;
+      min-width: 150px;
+      padding: 4px;
+      overflow: hidden;
+    }
+    .header-more-dropdown.show {
+      display: block;
+    }
+    .header-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      color: #333;
+      font-size: 13px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .header-dropdown-item:hover {
+      background: #f0f0f5;
+    }
+    .header-dropdown-item svg {
+      flex-shrink: 0;
+      color: #666;
     }
     .input-container {
       padding: 12px;
@@ -4592,23 +4636,37 @@
       AI Helper
     </h1>
     <div style="display: flex; align-items: center; gap: 4px;">
-      <button class="clear-chat-btn" id="clearChatBtn" title="清除对话历史">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-        </svg>
-      </button>
-      <button class="clear-chat-btn" id="exportChatBtn" title="导出对话历史">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-        </svg>
-      </button>
-      <button class="settings-btn" id="prototypeLibraryBtn" title="原型库">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <polyline points="21 15 16 10 5 21"/>
-        </svg>
-      </button>
+      <div class="header-more-wrapper" id="headerMoreWrapper">
+        <button class="clear-chat-btn" id="headerMoreBtn" title="更多操作">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="5" r="1"/>
+            <circle cx="12" cy="12" r="1"/>
+            <circle cx="12" cy="19" r="1"/>
+          </svg>
+        </button>
+        <div class="header-more-dropdown" id="headerMoreDropdown">
+          <button class="header-dropdown-item" id="clearChatBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+            清除对话
+          </button>
+          <button class="header-dropdown-item" id="exportChatBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+            导出对话
+          </button>
+          <button class="header-dropdown-item" id="prototypeLibraryBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            原型库
+          </button>
+        </div>
+      </div>
       <button class="settings-btn" id="settingsBtn" title="插件设置">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
