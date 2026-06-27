@@ -247,6 +247,13 @@ export function startServer() {
       return jsonResponse(res, 200, { success: true, processes: getRunningProcesses() });
     }
 
+    // Agent 关闭（需认证，POST 方法）
+    if (req.method === 'POST' && pathname === '/api/shutdown') {
+      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
+      shutdown();
+      return;
+    }
+
     // 404
     jsonResponse(res, 404, { success: false, error: '未知的 API 路径' });
   });
