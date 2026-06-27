@@ -424,13 +424,34 @@ export function saveConfig() {
     enableExecutionLog: enableExecutionLog,
     // 反思配置
     reflectionConfig: reflectionConfig
-  }, function() {
+  }, async function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
     } else {
       showToast('✅ 配置已保存成功！', 'success');
       const status = document.getElementById('status');
       status.style.display = 'none';
+
+      // 读取 Agent 配置
+      const agentResult = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+      let agentConfig = null;
+      if (agentResult.agentUrl) {
+        agentConfig = { url: agentResult.agentUrl, connected: !!agentResult.agentToken };
+        // 尝试获取工作目录
+        try {
+          if (agentResult.agentToken) {
+            const resp = await fetch(`${agentResult.agentUrl}/api/status`, {
+              headers: { 'Authorization': `Bearer ${agentResult.agentToken}` }
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              agentConfig.workdir = data.workdir;
+              agentConfig.connected = true;
+            }
+          }
+        } catch {}
+      }
+
       updateConfigDetails(apiBase, currentModel, {
         maxIterations: reactMaxIterations,
         apiTimeout: reactApiTimeout,
@@ -448,7 +469,7 @@ export function saveConfig() {
         maxMessageLength: chatMaxMessageLength,
         maxMemoryMessages: chatMaxMemoryMessages,
         enableExecutionLog: enableExecutionLog
-      }, reflectionConfig);
+      }, reflectionConfig, agentConfig);
     }
   });
 }
@@ -501,7 +522,7 @@ export function initStatus() {
 }
 
 // 更新配置详情显示
-export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig) {
+export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig, agentConfig) {
   const details = document.getElementById('configDetails');
   const base = apiBase || 'https://api.deepseek.com';
   const model = modelName || 'deepseek-v4-pro';
@@ -561,6 +582,11 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     消息最大长度: ${chat.maxMessageLength} 字符<br>
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
+    ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
+    <strong>本地 Agent 配置：</strong><br>
+    Agent 地址: ${agentConfig.url || '未配置'}<br>
+    连接状态: ${agentConfig.connected ? '✅ 已连接' : '⚠️ 未配对'}<br>
+    ${agentConfig.workdir ? `工作目录: ${agentConfig.workdir}<br>` : ''}` : ''}
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     💡 <strong>提示</strong>：澄清等待时间不计入整体循环超时<br>
     ⚠️ API Key 如果过期或失效，需要重新生成并更新配置
