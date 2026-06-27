@@ -1,5 +1,5 @@
 {
-  "name": "ai-helper-local-agent",
+  "name": "ai-helper-agent",
   "version": "1.0.0",
   "description": "AI Helper 本地代理服务 - 为 Chrome 扩展提供本地文件读写和系统命令执行能力",
   "type": "module",

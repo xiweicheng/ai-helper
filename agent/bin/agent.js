@@ -36,7 +36,7 @@ async function isRunning(config) {
  * 打印帮助信息
  */
 function printHelp() {
-  console.log('AI Helper Local Agent - 本地文件读写和命令执行代理');
+  console.log('AI Helper Agent - 本地文件读写和命令执行代理');
   console.log('');
   console.log('用法: ai-helper-agent <命令> [选项]');
   console.log('');
@@ -67,7 +67,7 @@ const command = process.argv[2] || 'help';
 // --version / -v
 if (command === '--version' || command === '-v') {
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
-  console.log(`ai-helper-local-agent v${pkg.version}`);
+  console.log(`ai-helper-agent v${pkg.version}`);
   process.exit(0);
 }
 
@@ -76,7 +76,7 @@ if (command === 'start') {
   const { startServer } = await import('../src/server.js');
   const { loadConfig } = await import('../src/config.js');
 
-  console.log('[Agent] AI Helper Local Agent 启动中...');
+  console.log('[Agent] AI Helper Agent 启动中...');
 
   const args = process.argv.slice(3);
   const config = loadConfig();
