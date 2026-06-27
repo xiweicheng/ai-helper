@@ -294,6 +294,20 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
         selectedNames.includes(t.function.name)
       );
 
+      // 兜底：如果用户消息中包含 proto_（原型ID），确保 UI 原型工具被包含
+      if (userQuestion.includes('proto_')) {
+        const protoTools = ['get_ui_prototype', 'preview_ui_prototype'];
+        for (const toolName of protoTools) {
+          if (!selectedTools.some(t => t.function.name === toolName)) {
+            const tool = tools.find(t => t.function.name === toolName);
+            if (tool) {
+              selectedTools.push(tool);
+              console.log(`[ToolPreselector] 兜底追加原型工具: ${toolName}`);
+            }
+          }
+        }
+      }
+
       if (selectedTools.length === 0) {
         console.warn('[ToolPreselector] 筛选后工具为空，使用全量工具');
         return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '筛选结果无匹配' } }, duration })] };

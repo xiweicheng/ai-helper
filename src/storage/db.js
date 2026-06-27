@@ -2,7 +2,7 @@
 // 提供 Promise 化的 IndexedDB 操作，支持 side panel 和 service worker 共享访问
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /**
  * 获取数据库连接（单例）
@@ -30,6 +30,13 @@ function openDB() {
       if (!db.objectStoreNames.contains('archivedSessions')) {
         const archiveStore = db.createObjectStore('archivedSessions', { keyPath: 'id' });
         archiveStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+
+      // UI 原型存储（keyPath: id）
+      if (!db.objectStoreNames.contains('uiPrototypes')) {
+        const prototypeStore = db.createObjectStore('uiPrototypes', { keyPath: 'id' });
+        prototypeStore.createIndex('createdAt', 'createdAt', { unique: false });
+        prototypeStore.createIndex('sessionId', 'sessionId', { unique: false });
       }
     };
 
@@ -261,6 +268,65 @@ export function replaceArchivedSessions(sessions) {
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => resolve(false);
     });
+  });
+}
+
+// ==================== UI Prototypes CRUD ====================
+
+/**
+ * 保存 UI 原型
+ */
+export function saveUiPrototype(prototype) {
+  const now = Date.now();
+  const data = {
+    ...prototype,
+    createdAt: prototype.createdAt || now,
+    updatedAt: now
+  };
+  return withStore('uiPrototypes', 'readwrite', (store, resolve) => {
+    const request = store.put(data);
+    request.onsuccess = () => resolve(data);
+    request.onerror = () => resolve(null);
+  });
+}
+
+/**
+ * 获取单个 UI 原型
+ */
+export function getUiPrototype(id) {
+  return withStore('uiPrototypes', 'readonly', (store, resolve) => {
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+/**
+ * 获取所有 UI 原型（按创建时间倒序）
+ */
+export function listUiPrototypes(sessionId = null) {
+  return withStore('uiPrototypes', 'readonly', (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => {
+      let results = request.result || [];
+      if (sessionId) {
+        results = results.filter(p => p.sessionId === sessionId);
+      }
+      results.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      resolve(results);
+    };
+    request.onerror = () => resolve([]);
+  });
+}
+
+/**
+ * 删除 UI 原型
+ */
+export function deleteUiPrototype(id) {
+  return withStore('uiPrototypes', 'readwrite', (store, resolve) => {
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
   });
 }
 

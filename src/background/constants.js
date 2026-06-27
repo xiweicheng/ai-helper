@@ -12,7 +12,8 @@ export const DEFAULT_REACT_CONFIG = {
   toolTimeout: 30000,         // 工具执行超时 (ms) (5000-600000)
   clarifyTimeout: 180000,     // 澄清工具超时 (ms) (60000-600000)，独立配置
   apiRetryCount: 3,           // API 调用失败重试次数 (0-10)
-  apiRetryBaseDelay: 1000     // API 重试基础延迟 (ms) (500-30000)，指数退避
+  apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
+  enableToolPreselect: true   // 是否启用工具预筛选（默认开启）
 };
 
 // 反思配置默认值
@@ -1638,6 +1639,50 @@ export const BUILTIN_TOOLS = [
         required: ['query']
       }
     }
+  },
+  {
+    id: 'preview_ui_prototype',
+    type: 'function',
+    function: {
+      name: 'preview_ui_prototype',
+      description: '在界面中预览一个 UI 原型。当你生成了 HTML/CSS/JS 界面原型代码后，调用此工具将原型展示给用户预览。调用成功后返回 prototypeId，如果用户后续要求修改此原型，先调用 get_ui_prototype 获取原代码，再修改并重新调用此工具。',
+      parameters: {
+        type: 'object',
+        properties: {
+          html: {
+            type: 'string',
+            description: '完整的 HTML 代码（包含内联的 CSS 和 JS）'
+          },
+          title: {
+            type: 'string',
+            description: '原型的标题/名称，用于在历史记录中识别'
+          },
+          description: {
+            type: 'string',
+            description: '原型的简要说明，可选'
+          }
+        },
+        required: ['html', 'title']
+      }
+    }
+  },
+  {
+    id: 'get_ui_prototype',
+    type: 'function',
+    function: {
+      name: 'get_ui_prototype',
+      description: '根据原型 ID 获取之前创建的 UI 原型的完整代码。当用户要求修改/优化之前创建的某个原型时，先调用此工具获取该原型的 HTML 代码，再基于代码进行修改，最后调用 preview_ui_prototype 重新预览。',
+      parameters: {
+        type: 'object',
+        properties: {
+          prototypeId: {
+            type: 'string',
+            description: '用户提到的原型 ID，格式为 proto_xxxxxxxxxxxxx'
+          }
+        },
+        required: ['prototypeId']
+      }
+    }
   }
 ];
 
@@ -1704,6 +1749,8 @@ export const TOOL_CATEGORY_MAP = {
   group_tabs: 'tab_management',
   record_network: 'debug_dev',
   search_conversation_memory: 'memory',
+  preview_ui_prototype: 'ai_collaboration',
+  get_ui_prototype: 'ai_collaboration',
 };
 
 /**

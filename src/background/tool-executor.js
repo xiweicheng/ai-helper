@@ -1,7 +1,7 @@
 // background/tool-executor.js - 工具定义与执行
 import { BUILTIN_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
-import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration } from '../storage/db.js';
+import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 
 /**
  * 获取启用的工具列表
@@ -130,6 +130,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     group_tabs: (a) => executeGroupTabs(a, toolCallId),
     record_network: (a) => executeRecordNetwork(a, toolCallId, sessionId),
     search_conversation_memory: (a) => executeSearchConversationMemory(a, toolCallId, sessionId),
+    preview_ui_prototype: (a) => executePreviewUiPrototype(a, toolCallId, sessionId),
+    get_ui_prototype: (a) => executeGetUiPrototype(a, toolCallId, sessionId),
   };
 
   // Content Script 委派的工具：toolName → [messageType, payloadBuilder(args)]
@@ -2117,4 +2119,129 @@ export function executeRecordNetwork(args, toolCallId, sessionId = null) {
       tool_call_id: toolCallId
     });
   });
+}
+
+/**
+ * 执行 UI 原型预览工具
+ * 将原型代码存储到数据库，并通知 Side Panel 显示预览
+ */
+export async function executePreviewUiPrototype(args, toolCallId, sessionId = null) {
+  const { html, title, description } = args;
+  
+  console.log('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
+  
+  if (!html || !html.trim()) {
+    return Promise.resolve({ 
+      success: false, 
+      error: '缺少 HTML 参数',
+      tool_call_id: toolCallId 
+    });
+  }
+  
+  if (!title || !title.trim()) {
+    return Promise.resolve({ 
+      success: false, 
+      error: '缺少 title 参数',
+      tool_call_id: toolCallId 
+    });
+  }
+  
+  try {
+    const prototypeId = 'proto_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    const prototypeData = {
+      id: prototypeId,
+      title: title.trim(),
+      description: description || '',
+      html: html.trim(),
+      sessionId: sessionId || null,
+      createdAt: Date.now()
+    };
+    
+    const saved = await saveUiPrototype(prototypeData);
+    
+    if (!saved) {
+      return { 
+        success: false, 
+        error: '保存原型失败',
+        tool_call_id: toolCallId 
+      };
+    }
+    
+    console.log('[Background] UI 原型已保存，ID:', prototypeId);
+    
+    chrome.runtime.sendMessage({
+      type: 'SHOW_UI_PROTOTYPE',
+      data: {
+        prototypeId,
+        title: prototypeData.title,
+        description: prototypeData.description
+      }
+    }).catch(() => {});
+    
+    return { 
+      success: true, 
+      message: `UI 原型 "${title}" 已创建并预览`,
+      prototypeId: prototypeId,
+      tool_call_id: toolCallId 
+    };
+    
+  } catch (err) {
+    console.error('[Background] 执行 UI 原型预览失败:', err);
+    return { 
+      success: false, 
+      error: '执行失败: ' + err.message,
+      tool_call_id: toolCallId 
+    };
+  }
+}
+
+/**
+ * 执行获取 UI 原型代码工具
+ * 根据原型 ID 从数据库读取原型 HTML 代码，供模型后续修改使用
+ */
+export async function executeGetUiPrototype(args, toolCallId, sessionId = null) {
+  const { prototypeId } = args;
+  
+  console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
+  
+  if (!prototypeId || !prototypeId.trim()) {
+    return Promise.resolve({ 
+      success: false, 
+      error: '缺少 prototypeId 参数',
+      tool_call_id: toolCallId 
+    });
+  }
+  
+  try {
+    const prototype = await getUiPrototype(prototypeId.trim());
+    
+    if (!prototype) {
+      return { 
+        success: false, 
+        error: `未找到原型: ${prototypeId}`,
+        tool_call_id: toolCallId 
+      };
+    }
+    
+    console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
+    
+    return { 
+      success: true, 
+      message: `已获取原型 "${prototype.title}" 的代码`,
+      prototypeId: prototype.id,
+      title: prototype.title,
+      description: prototype.description || '',
+      html: prototype.html,
+      tool_call_id: toolCallId 
+    };
+    
+  } catch (err) {
+    console.error('[Background] 获取 UI 原型失败:', err);
+    return { 
+      success: false, 
+      error: '获取失败: ' + err.message,
+      tool_call_id: toolCallId 
+    };
+  }
 }

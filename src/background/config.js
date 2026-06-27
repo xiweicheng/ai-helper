@@ -10,7 +10,7 @@ export function getStoredConfig() {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
-      'reactApiRetryCount', 'reactApiRetryBaseDelay',
+      'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
       'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength',
       'reflectionConfig'
     ], (result) => {
@@ -28,6 +28,7 @@ export function getStoredConfig() {
           clarifyTimeout: result.reactClarifyTimeout || DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: result.reactApiRetryCount !== undefined ? result.reactApiRetryCount : DEFAULT_REACT_CONFIG.apiRetryCount,
           apiRetryBaseDelay: result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
+          enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
           // 反思配置（从 storage 读取，否则使用默认值）
           reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
         },

@@ -22,6 +22,15 @@ function openToolsPopup() {
   // 更新标题中的启用工具数
   updateToolsPopupTitle();
   
+  // 加载工具预筛选开关状态
+  chrome.storage.local.get(['enableToolPreselect'], (result) => {
+    const toggle = document.getElementById('toolsPreselectToggle');
+    if (toggle) {
+      const enabled = result.enableToolPreselect !== undefined ? result.enableToolPreselect : true;
+      toggle.checked = enabled;
+    }
+  });
+  
   // 初始化所有标签的样式
   const categoryBtns = document.querySelectorAll('.category-btn');
   categoryBtns.forEach(btn => {
@@ -330,6 +339,14 @@ function saveToolsFromPopup() {
   chrome.storage.local.set({ enabledTools: state.enabledTools }, () => {
     console.log('[SidePanel] 工具配置已保存:', state.enabledTools);
   });
+
+  // 保存工具预筛选开关状态
+  const preselectToggle = document.getElementById('toolsPreselectToggle');
+  if (preselectToggle) {
+    chrome.storage.local.set({ enableToolPreselect: preselectToggle.checked }, () => {
+      console.log('[SidePanel] 工具预筛选开关已保存:', preselectToggle.checked);
+    });
+  }
   
   // 更新按钮状态
   updateToolsToggleState();

@@ -1500,6 +1500,42 @@
       justify-content: flex-end;
     }
     
+    /* 工具预筛选弹窗内开关 */
+    .tool-preselect-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+      margin-right: auto;
+    }
+    .tool-preselect-toggle .toggle-switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: #ccc;
+      border-radius: 10px;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    .tool-preselect-toggle .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .tool-preselect-toggle input:checked ~ .toggle-switch {
+      background: #667eea;
+    }
+    .tool-preselect-toggle input:checked ~ .toggle-switch::after {
+      transform: translateX(16px);
+    }
+    
     .modal-btn {
       padding: 8px 20px;
       border-radius: 8px;
@@ -3171,6 +3207,333 @@
       box-shadow: none;
     }
     
+    /* UI 原型预览弹窗样式 */
+    .prototype-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 5000;
+      animation: fadeIn 0.2s ease-out;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    
+    .prototype-overlay.show {
+      display: flex;
+    }
+    
+    .prototype-container {
+      background: white;
+      border-radius: 12px;
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .prototype-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      flex-shrink: 0;
+    }
+    
+    .prototype-icon {
+      width: 28px;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+    
+    .prototype-header-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .prototype-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: white;
+      margin-bottom: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .prototype-description {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      line-height: 1.3;
+    }
+    
+    .prototype-close-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    
+    .prototype-close-btn:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+    
+    .prototype-content {
+      flex: 1;
+      overflow: auto;
+      padding: 4px;
+      background: #f0f2f5;
+      min-height: 0;
+    }
+    
+    .prototype-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      border-radius: 6px;
+      background: white;
+      display: block;
+      overflow: auto;
+    }
+    
+    .prototype-footer {
+      display: flex;
+      gap: 10px;
+      padding: 10px 14px;
+      border-top: 1px solid #f0f0f0;
+      background: #fafafa;
+      flex-shrink: 0;
+    }
+    
+    .prototype-btn {
+      flex: 1;
+      padding: 8px 14px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    
+    .prototype-btn.download {
+      background: white;
+      color: #667eea;
+      border-color: #667eea;
+    }
+    
+    .prototype-btn.download:hover {
+      background: rgba(102, 126, 234, 0.08);
+      transform: translateY(-1px);
+    }
+    
+    .prototype-btn.open-tab {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+    }
+    
+    .prototype-btn.open-tab:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(102, 126, 234, 0.45);
+    }
+    
+    .prototype-btn.continue-optimize {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      border: none;
+      box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3);
+    }
+    
+    .prototype-btn.continue-optimize:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(245, 87, 108, 0.4);
+    }
+    
+    /* 原型库列表样式 */
+    .prototype-library-container {
+      max-width: 500px;
+      width: 90%;
+      max-height: 60vh;
+    }
+    
+    .prototype-library-list {
+      max-height: 40vh;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    
+    .prototype-library-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+      font-size: 14px;
+    }
+    
+    .prototype-library-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 4px;
+      border: 1px solid #f0f0f0;
+    }
+    
+    .prototype-library-item:hover {
+      background: #f5f7fa;
+      border-color: #e0e0e0;
+    }
+    
+    .prototype-library-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .prototype-library-item-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .prototype-library-item-time {
+      font-size: 12px;
+      color: #999;
+    }
+    
+    .prototype-library-item-id {
+      font-size: 11px;
+      color: #aaa;
+      font-family: monospace;
+      margin-bottom: 2px;
+    }
+    
+    .prototype-library-item-actions {
+      display: flex;
+      flex-direction: row;
+      gap: 4px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    
+    .prototype-library-item-open {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #999;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .prototype-library-item-open:hover {
+      background: rgba(102, 126, 234, 0.1);
+      color: #667eea;
+    }
+    
+    .prototype-library-item-open svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .prototype-library-item-optimize {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #999;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .prototype-library-item-optimize:hover {
+      background: rgba(240, 147, 251, 0.1);
+      color: #f093fb;
+    }
+    
+    .prototype-library-item-optimize svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .prototype-library-item-delete {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #999;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .prototype-library-item-delete:hover {
+      background: rgba(231, 76, 60, 0.1);
+      color: #e74c3c;
+    }
+    
+    .prototype-library-item-delete svg {
+      width: 14px;
+      height: 14px;
+    }
+    
     .clarify-option-other {
       color: #999;
       font-style: italic;
@@ -3247,6 +3610,31 @@
       font-size: 10px;
       font-weight: 600;
       vertical-align: middle;
+    }
+    
+    .prototype-btn-small {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #999;
+      transition: all 0.2s;
+      margin-left: 6px;
+      flex-shrink: 0;
+    }
+    
+    .prototype-btn-small:hover {
+      background: rgba(102, 126, 234, 0.1);
+      color: #667eea;
+    }
+    
+    .prototype-btn-small svg {
+      width: 14px;
+      height: 14px;
     }
     
     /* 执行日志面板样式 */
@@ -4214,6 +4602,13 @@
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
         </svg>
       </button>
+      <button class="settings-btn" id="prototypeLibraryBtn" title="原型库">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
       <button class="settings-btn" id="settingsBtn" title="插件设置">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
@@ -4249,7 +4644,7 @@
   
   <!-- 工具配置弹窗 -->
   <div class="modal-overlay" id="toolsPopupOverlay">
-    <div class="modal-container" style="max-width: 400px; height: 520px; display: flex; flex-direction: column;">
+    <div class="modal-container" style="max-width: 520px; width: 90%; height: 520px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolsPopupClose" title="关闭">×</button>
       <div class="modal-title">工具配置</div>
       <div style="margin-bottom: 12px;">
@@ -4325,6 +4720,11 @@
         <!-- 工具列表由 JS 动态生成 -->
       </div>
       <div class="modal-actions">
+        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="任务执行前先调用模型筛选相关工具，关闭后将全量工具直接传给模型">
+          <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
+          <span class="toggle-switch"></span>
+          <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;">工具预筛选</span>
+        </label>
         <button class="modal-btn cancel" id="toolsPopupCancel">取消</button>
         <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;">保存</button>
       </div>
@@ -4540,6 +4940,56 @@
       <div class="modal-actions">
         <button class="modal-btn cancel" id="sessionDeleteCancelBtn">取消</button>
         <button class="modal-btn confirm" id="sessionDeleteConfirmBtn">删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- UI 原型预览弹窗 -->
+  <div class="prototype-overlay" id="prototypeOverlay">
+    <div class="prototype-container" id="prototypeContainer">
+      <div class="prototype-header">
+        <div class="prototype-icon">🎨</div>
+        <div class="prototype-header-content">
+          <div class="prototype-title" id="prototypeTitle">UI 原型预览</div>
+          <div class="prototype-description" id="prototypeDescription"></div>
+        </div>
+        <button class="prototype-close-btn" id="prototypeCloseBtn" title="关闭">×</button>
+      </div>
+      
+      <div class="prototype-content">
+        <iframe class="prototype-iframe" id="prototypeIframe" sandbox="allow-scripts" scrolling="auto"></iframe>
+      </div>
+      
+      <div class="prototype-footer">
+        <button class="prototype-btn download" id="prototypeDownloadBtn">📥 下载</button>
+        <button class="prototype-btn open-tab" id="prototypeOpenTabBtn">🔗 新标签</button>
+        <button class="prototype-btn continue-optimize" id="prototypeContinueBtn">💡 继续优化</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 通用确认弹窗 -->
+  <div class="modal-overlay" id="genericConfirmModal" style="z-index: 5000;">
+    <div class="modal-container" style="max-width: 380px;">
+      <div class="modal-title" id="genericConfirmTitle">确认操作</div>
+      <div class="modal-message" id="genericConfirmMessage"></div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="genericConfirmCancelBtn">取消</button>
+        <button class="modal-btn confirm" id="genericConfirmOkBtn">确认</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 原型库列表弹窗 -->
+  <div class="modal-overlay" id="prototypeLibraryModal" style="z-index: 4000;">
+    <div class="modal-container prototype-library-container">
+      <button class="prompt-modal-close" id="prototypeLibraryCloseBtn" title="关闭">×</button>
+      <div class="modal-title">🎨 原型库</div>
+      <div class="prototype-library-list" id="prototypeLibraryList">
+        <div class="prototype-library-empty">暂无原型</div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="prototypeLibraryCancelBtn">关闭</button>
       </div>
     </div>
   </div>

@@ -58,25 +58,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           console.log('[Background] 获取到工具列表，数量:', tools.length, '工具:', tools.map(t => t.function.name));
 
+          // 检查工具预筛选开关
+          const config = await getStoredConfig();
+          const enableToolPreselect = config.reactConfig.enableToolPreselect;
+
           // 预筛选工具：通过前置规划调用减少不必要的工具传递
-          const preselection = await preselectTools(messages, model, tools, apiParams);
+          let preselection;
+          if (enableToolPreselect) {
+            preselection = await preselectTools(messages, model, tools, apiParams);
+          } else {
+            console.log('[Background] 工具预筛选已关闭，使用全量工具');
+            preselection = {
+              type: 'tools',
+              tools,
+              executionLog: []
+            };
+          }
 
           // 发送预筛选完成状态，让实时日志面板也能看到这个步骤
-          const statusUpdate = {
-            type: 'EXECUTION_STATUS_UPDATE',
-            nodeName: '工具预筛选',
-            status: 'success',
-            executionLog: preselection.executionLog
-          };
-          if (sessionId) {
-            statusUpdate.sessionId = sessionId;
+          if (preselection.executionLog.length > 0) {
+            const statusUpdate = {
+              type: 'EXECUTION_STATUS_UPDATE',
+              nodeName: '工具预筛选',
+              status: 'success',
+              executionLog: preselection.executionLog
+            };
+            if (sessionId) {
+              statusUpdate.sessionId = sessionId;
+            }
+            console.log('[Background] 发送预筛选状态更新:', statusUpdate);
+            chrome.runtime.sendMessage(statusUpdate).then(() => {
+              console.log('[Background] 预筛选状态更新发送成功');
+            }).catch(err => {
+              console.error('[Background] 预筛选状态更新发送失败:', err);
+            });
           }
-          console.log('[Background] 发送预筛选状态更新:', statusUpdate);
-          chrome.runtime.sendMessage(statusUpdate).then(() => {
-            console.log('[Background] 预筛选状态更新发送成功');
-          }).catch(err => {
-            console.error('[Background] 预筛选状态更新发送失败:', err);
-          });
 
           // 模型直接回答了，无需再调主力模型
           if (preselection.type === 'answer') {

@@ -1271,7 +1271,7 @@
     }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-DDlpGcH7.js"></script>
+  <script type="module" crossorigin src="/assets/constants-DCowTt34.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
 </head>
 <body>
@@ -1508,6 +1508,22 @@
         <div class="range-labels">
           <span>最小: 500ms</span>
           <span>最大: 30000ms</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          工具预筛选
+          <span class="hint-text">（任务执行前自动调用模型筛选相关工具，减少无关工具干扰）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="enableToolPreselect" checked>
+          <span class="toggle-switch"></span>
+          <span id="enableToolPreselectLabel">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          启用后，每次任务执行前会先调用一次模型判断需要哪些工具。<br>
+          如果发现筛选不准确导致任务质量下降，可关闭此开关。
         </div>
       </div>
       

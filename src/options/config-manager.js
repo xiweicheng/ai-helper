@@ -116,7 +116,7 @@ export function loadConfig() {
   chrome.storage.local.get([
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
-    'reactApiRetryCount', 'reactApiRetryBaseDelay',
+    'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
     'reflectionConfig'
   ], function(result) {
@@ -149,6 +149,10 @@ export function loadConfig() {
       result.reactApiRetryCount !== undefined ? result.reactApiRetryCount : DEFAULT_REACT_CONFIG.apiRetryCount;
     document.getElementById('reactApiRetryBaseDelay').value = 
       result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
+    
+    // 加载工具预筛选开关
+    document.getElementById('enableToolPreselect').checked = 
+      result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect;
     
     // 加载对话配置
     document.getElementById('chatMaxInputHistory').value = 
@@ -246,6 +250,7 @@ export function saveConfig() {
   const reactClarifyTimeout = (parseInt(document.getElementById('reactClarifyTimeout').value) || 3) * 60000;
   const reactApiRetryCount = parseInt(document.getElementById('reactApiRetryCount').value) ?? DEFAULT_REACT_CONFIG.apiRetryCount;
   const reactApiRetryBaseDelay = parseInt(document.getElementById('reactApiRetryBaseDelay').value) || DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
+  const enableToolPreselect = document.getElementById('enableToolPreselect').checked;
   
   // 获取对话配置
   const chatMaxInputHistory = parseInt(document.getElementById('chatMaxInputHistory').value) || DEFAULT_CHAT_CONFIG.maxInputHistory;
@@ -394,6 +399,7 @@ export function saveConfig() {
     reactClarifyTimeout: reactClarifyTimeout,
     reactApiRetryCount: reactApiRetryCount,
     reactApiRetryBaseDelay: reactApiRetryBaseDelay,
+    enableToolPreselect: enableToolPreselect,
     // 对话配置
     chatMaxInputHistory: chatMaxInputHistory,
     chatMaxHistoryMessages: chatMaxHistoryMessages,
@@ -416,7 +422,8 @@ export function saveConfig() {
         toolTimeout: reactToolTimeout,
         clarifyTimeout: reactClarifyTimeout,
         apiRetryCount: reactApiRetryCount,
-        apiRetryBaseDelay: reactApiRetryBaseDelay
+        apiRetryBaseDelay: reactApiRetryBaseDelay,
+        enableToolPreselect: enableToolPreselect
       }, {
         maxInputHistory: chatMaxInputHistory,
         maxHistoryMessages: chatMaxHistoryMessages,
@@ -504,6 +511,7 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     澄清等待超时: ${formatTime(react.clarifyTimeout)}<br>
     API 重试次数: ${react.apiRetryCount} 次<br>
     API 重试基础延迟: ${react.apiRetryBaseDelay}ms<br>
+    工具预筛选: ${react.enableToolPreselect ? '✅ 启用' : '❌ 关闭'}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>反思配置：</strong><br>
     反思功能: ${reflection.enabled ? '✅ 启用' : '❌ 关闭'}<br>

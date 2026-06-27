@@ -6,6 +6,7 @@ import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCur
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
+import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
 import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
 import {
   sendMessage, clearChatHistory, exportChatHistory,
@@ -1082,6 +1083,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.runtime.openOptionsPage();
     });
   }
+  
+  // 原型库按钮
+  const prototypeLibraryBtn = document.getElementById('prototypeLibraryBtn');
+  if (prototypeLibraryBtn) {
+    prototypeLibraryBtn.addEventListener('click', showPrototypeLibrary);
+  }
 
   // 隔离对话开关（记忆对话）
   const isolateChatBtn = document.getElementById('isolateChatBtn');
@@ -1273,6 +1280,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 工具预筛选开关变化时自动保存
+  const toolsPreselectToggle = document.getElementById('toolsPreselectToggle');
+  if (toolsPreselectToggle) {
+    toolsPreselectToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ enableToolPreselect: toolsPreselectToggle.checked }, () => {
+        console.log('[SidePanel] 工具预筛选开关已更新:', toolsPreselectToggle.checked);
+      });
+    });
+  }
+
   // 工具弹窗取消按钮
   const toolsPopupCancel = document.getElementById('toolsPopupCancel');
   if (toolsPopupCancel) {
@@ -1334,3 +1351,4 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
+document.addEventListener('DOMContentLoaded', initPrototypeEvents);

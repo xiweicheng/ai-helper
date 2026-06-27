@@ -417,7 +417,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               console.log('[Background] 澄清完成，重新预筛选工具...');
               try {
                 const fullTools = await getTools();
-                if (fullTools.length > 5) {
+                const config = await getStoredConfig();
+                const enableToolPreselect = config.reactConfig.enableToolPreselect;
+                if (enableToolPreselect && fullTools.length > 5) {
                   const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams);
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
@@ -427,6 +429,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   if (reSelection.executionLog) {
                     executionLog.push(...reSelection.executionLog);
                   }
+                } else if (!enableToolPreselect) {
+                  console.log('[Background] 工具预筛选已关闭，澄清后不重新筛选');
                 }
               } catch (rePreselectErr) {
                 console.warn('[Background] 澄清后工具重新筛选失败，继续使用当前工具集:', rePreselectErr.message);
@@ -579,7 +583,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   name: toolName,
                   params: JSON.parse(toolCall.function?.arguments || '{}')
                 },
-                observation: toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr
+                observation: toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr,
+                prototypeId: toolResult?.prototypeId || null
               };
             }
             
