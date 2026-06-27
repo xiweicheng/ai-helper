@@ -784,6 +784,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               });
             }
             
+            // 推送工具错误响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息，
+            // 避免后续 API 调用出现 400 "insufficient tool messages following tool_calls"
+            const toolErrorContent = JSON.stringify({
+              success: false,
+              error: toolError.message || '工具执行异常'
+            });
+            currentMessages.push({
+              role: 'tool',
+              content: toolErrorContent,
+              tool_call_id: toolCall.id,
+              subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
+              subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
+            });
+            trimMessages();
+            
             // 更新工具执行日志为失败
             const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
             if (toolLogIndex !== -1) {

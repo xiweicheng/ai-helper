@@ -2064,11 +2064,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
   console.log('[SidePanel] keepalive 端口已连接, sessionId:', mySessionId);
 
+  // timeoutId / removeListener 需放在 Promise 外层作用域，供 cleanupCallApi 及 pause/resume 闭包访问
+  // 放在对象上防止 terser 在 minify 时跨作用域重命名导致 ReferenceError
+  const _timeoutCtx = { timeoutId: null, removeListener: () => {} };
+
   // 统一清理函数：断开 keepalive 端口、清理 listener 和 timeout、清除状态
   const cleanupCallApi = () => {
     try { keepalivePort.disconnect(); } catch (e) {}
-    if (timeoutId) clearTimeout(timeoutId);
-    removeListener();
+    if (_timeoutCtx.timeoutId) { clearTimeout(_timeoutCtx.timeoutId); _timeoutCtx.timeoutId = null; }
+    _timeoutCtx.removeListener();
     state.pendingCancelApiMap.delete(mySessionId);
     state.pendingCallApiSessionIds.delete(mySessionId);
     syncPendingSessionsToStorage();
@@ -2095,7 +2099,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     syncPendingSessionsToStorage();
     console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
-    let timeoutId = setTimeout(() => {
+    _timeoutCtx.timeoutId = setTimeout(() => {
       cancelApi({
         message: `请求超时（${timeoutSeconds}秒）`,
         executionLog: executionLog
@@ -2115,10 +2119,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     let pauseStartTime = null;
     
     const pauseTimeout = () => {
-      if (pauseStartTime === null && timeoutId !== null) {
+      if (pauseStartTime === null && _timeoutCtx.timeoutId !== null) {
         pauseStartTime = Date.now();
-        clearTimeout(timeoutId);
-        timeoutId = null;
+        clearTimeout(_timeoutCtx.timeoutId);
+        _timeoutCtx.timeoutId = null;
         console.log('[SidePanel] 前端超时已暂停（澄清工具执行中）');
       }
     };
@@ -2140,7 +2144,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           return;
         }
         
-        timeoutId = setTimeout(() => {
+        _timeoutCtx.timeoutId = setTimeout(() => {
           cancelApi({
             message: `请求超时（${timeoutSeconds}秒）`,
             executionLog: executionLog
@@ -2203,7 +2207,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     chrome.runtime.onMessage.addListener(listener);
     
-    const removeListener = () => {
+    _timeoutCtx.removeListener = () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
 
