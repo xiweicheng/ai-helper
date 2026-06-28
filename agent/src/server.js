@@ -3,6 +3,7 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
@@ -12,6 +13,7 @@ import { logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, g
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
 
 // 平台信息（启动时检测一次）
 const PLATFORM_INFO = {
@@ -140,6 +142,14 @@ export function startServer() {
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()
       });
+    }
+
+    // Agent 关闭（无需认证，仅限本地访问）
+    if (req.method === 'POST' && pathname === '/api/shutdown') {
+      logSystem('shutdown', { reason: 'api_request' });
+      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
+      shutdown();
+      return;
     }
 
     // ---------- 需要认证的接口 ----------
@@ -404,14 +414,6 @@ export function startServer() {
       return jsonResponse(res, 200, { success: true, dates: getLogDates() });
     }
 
-    // Agent 关闭
-    if (req.method === 'POST' && pathname === '/api/shutdown') {
-      logSystem('shutdown', { reason: 'api_request' });
-      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
-      shutdown();
-      return;
-    }
-
     // 404
     jsonResponse(res, 404, { success: false, error: '未知的 API 路径' });
   }
@@ -482,6 +484,8 @@ export function startServer() {
     }
     wss.close();
     server.close();
+    // 清理 PID 文件
+    try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch {}
     logSystem('server_stop', { reason: 'shutdown' });
     process.exit(0);
   }
