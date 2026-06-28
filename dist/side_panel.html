@@ -1635,6 +1635,69 @@
       background: #5568d3;
     }
     
+    /* 快捷键弹窗样式 */
+    .shortcuts-container {
+      max-width: 460px !important;
+      width: 90%;
+    }
+
+    .shortcuts-table-wrapper {
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 12px;
+    }
+
+    .shortcuts-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .shortcuts-table thead th {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 2px solid #e0e0e0;
+      color: #888;
+      font-weight: 500;
+      font-size: 12px;
+    }
+
+    .shortcuts-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      color: #333;
+    }
+
+    .shortcuts-table td:first-child {
+      white-space: nowrap;
+      font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    }
+
+    .shortcuts-table td:last-child {
+      color: #aaa;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .shortcuts-table kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+      color: #555;
+      background: #f5f5f5;
+      border: 1px solid #d0d0d0;
+      border-radius: 4px;
+      box-shadow: 0 1px 0 #d0d0d0;
+      line-height: 1.4;
+    }
+
+    .shortcuts-divider td {
+      padding: 4px 0 0 0;
+      border-bottom: none;
+      height: 8px;
+    }
+
     /* 工具调用状态样式 */
     .tool-call-status {
       align-self: flex-start;
@@ -4963,6 +5026,13 @@
             </svg>
             原型库
           </button>
+          <button class="header-dropdown-item" id="shortcutsBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>
+            </svg>
+            查看快捷键
+          </button>
         </div>
       </div>
       <button class="settings-btn" id="settingsBtn" title="插件设置">
@@ -5421,5 +5491,35 @@
 
   <script src="libs/marked.min.js"></script>
   <script src="libs/mermaid.min.js"></script>
+
+  <!-- 快捷键查看弹窗 -->
+  <div class="modal-overlay" id="shortcutsModal" style="z-index: 4000;">
+    <div class="modal-container shortcuts-container">
+      <button class="prompt-modal-close" id="shortcutsCloseBtn" title="关闭">×</button>
+      <div class="modal-title">⌨️ 快捷键</div>
+      <div class="shortcuts-table-wrapper">
+        <table class="shortcuts-table">
+          <thead>
+            <tr><th>快捷键</th><th>功能</th><th>平台</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><kbd>Alt</kbd> + <kbd>↑</kbd></td><td>跳转到上一条消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>↓</kbd></td><td>跳转到下一条消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↑</kbd></td><td>回到对话顶部</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↓</kbd></td><td>跳到对话底部</td><td>Win / Mac</td></tr>
+            <tr class="shortcuts-divider"><td colspan="3"></td></tr>
+            <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>T</kbd></td><td>打开/关闭工具配置</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>/</kbd></td><td>打开快捷键面板</td><td>Win / Mac</td></tr>
+            <tr class="shortcuts-divider"><td colspan="3"></td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>发送消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>换行</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>输入历史（输入框内）</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>清空输入框</td><td>Win / Mac</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

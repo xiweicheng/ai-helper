@@ -910,6 +910,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 快捷键查看按钮
+  const shortcutsBtn = document.getElementById('shortcutsBtn');
+  const shortcutsModal = document.getElementById('shortcutsModal');
+  const shortcutsCloseBtn = document.getElementById('shortcutsCloseBtn');
+
+  function showShortcuts() {
+    if (shortcutsModal) shortcutsModal.style.display = 'flex';
+  }
+
+  function hideShortcuts() {
+    if (shortcutsModal) shortcutsModal.style.display = 'none';
+  }
+
+  if (shortcutsBtn) {
+    shortcutsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showShortcuts();
+      // 关闭更多操作下拉
+      const dropdown = document.getElementById('headerMoreDropdown');
+      if (dropdown) dropdown.classList.remove('show');
+    });
+  }
+
+  if (shortcutsCloseBtn) {
+    shortcutsCloseBtn.addEventListener('click', hideShortcuts);
+  }
+
+  if (shortcutsModal) {
+    shortcutsModal.addEventListener('click', (e) => {
+      if (e.target === shortcutsModal) hideShortcuts();
+    });
+  }
+
   // 全局键盘快捷键
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -920,6 +953,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         openToolsPopup();
       }
+    }
+
+    // Esc 关闭快捷键面板
+    if (e.key === 'Escape' && shortcutsModal && shortcutsModal.style.display !== 'none') {
+      hideShortcuts();
+      return;
+    }
+
+    // Alt+/ ：打开快捷键面板
+    if (e.altKey && e.code === 'Slash') {
+      e.preventDefault();
+      showShortcuts();
+      return;
     }
 
     // Alt+ArrowUp/ArrowDown 系列快捷键：在对话消息之间快速跳转
