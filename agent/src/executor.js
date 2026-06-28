@@ -162,7 +162,9 @@ function addWsClient(execId, wsClient) {
 function killProcess(execId) {
   const entry = runningProcesses.get(execId);
   if (entry) {
-    entry.process.kill('SIGTERM');
+    try {
+      entry.process.kill('SIGTERM');
+    } catch {}
     // 5秒后强制 kill，保存 ID 以便后续清理
     const forceKillId = setTimeout(() => {
       try {

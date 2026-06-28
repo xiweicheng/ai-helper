@@ -88,7 +88,15 @@ export function startServer() {
   initSearchTools().then(result => { searchTools = result; });
 
   // ==================== HTTP Server ====================
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => {
+    // 用立即执行的 async 函数包裹，统一捕获异常防止进程崩溃
+    handleRequest(req, res).catch((err) => {
+      console.error('[Agent] 请求处理异常:', err);
+      try { jsonResponse(res, 500, { success: false, error: '服务器内部错误' }); } catch {}
+    });
+  });
+
+  async function handleRequest(req, res) {
     // CORS 预检
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
@@ -99,7 +107,12 @@ export function startServer() {
       return res.end();
     }
 
-    const url = new URL(req.url, `http://${host}:${port}`);
+    let url;
+    try {
+      url = new URL(req.url, `http://${host}:${port}`);
+    } catch {
+      return jsonResponse(res, 400, { success: false, error: '请求 URL 格式无效' });
+    }
     const pathname = url.pathname;
 
     // ---------- 无需认证的接口 ----------
@@ -166,36 +179,46 @@ export function startServer() {
 
       // 搜索文件（按文件名模式）
       if (pathname === '/api/fs/search_files') {
-        const result = await searchFiles(
-          body.path || '.',
-          body.pattern || '*',
-          body.recursive !== false,
-          body.maxResults || 200
-        );
-        if (result.success) {
-          logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
-        } else {
-          logSecurity('fs_search_files_blocked', { path: body.path, reason: result.error });
+        try {
+          const result = await searchFiles(
+            body.path || '.',
+            body.pattern || '*',
+            body.recursive !== false,
+            body.maxResults || 200
+          );
+          if (result.success) {
+            logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
+          } else {
+            logSecurity('fs_search_files_blocked', { path: body.path, reason: result.error });
+          }
+          return jsonResponse(res, result.success ? 200 : 403, result);
+        } catch (err) {
+          logError('fs', 'search_files_error', { path: body.path, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `文件搜索异常: ${err.message}` });
         }
-        return jsonResponse(res, result.success ? 200 : 403, result);
       }
 
       // 搜索文件内容
       if (pathname === '/api/fs/search_content') {
-        const result = await searchContent(
-          body.path || '.',
-          body.pattern,
-          body.filePattern || null,
-          body.caseSensitive || false,
-          body.maxResults || 100,
-          body.contextLines !== undefined ? body.contextLines : 2
-        );
-        if (result.success) {
-          logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
-        } else {
-          logSecurity('fs_search_content_blocked', { path: body.path, reason: result.error });
+        try {
+          const result = await searchContent(
+            body.path || '.',
+            body.pattern,
+            body.filePattern || null,
+            body.caseSensitive || false,
+            body.maxResults || 100,
+            body.contextLines !== undefined ? body.contextLines : 2
+          );
+          if (result.success) {
+            logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
+          } else {
+            logSecurity('fs_search_content_blocked', { path: body.path, reason: result.error });
+          }
+          return jsonResponse(res, result.success ? 200 : 403, result);
+        } catch (err) {
+          logError('fs', 'search_content_error', { path: body.path, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `内容搜索异常: ${err.message}` });
         }
-        return jsonResponse(res, result.success ? 200 : 403, result);
       }
 
       // 读取文件
@@ -391,13 +414,19 @@ export function startServer() {
 
     // 404
     jsonResponse(res, 404, { success: false, error: '未知的 API 路径' });
-  });
+  }
 
   // ==================== WebSocket Server ====================
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
-    const url = new URL(request.url, `http://${host}:${port}`);
+    let url;
+    try {
+      url = new URL(request.url, `http://${host}:${port}`);
+    } catch {
+      socket.destroy();
+      return;
+    }
     const pathParts = url.pathname.split('/');
 
     if (pathParts[1] === 'ws' && pathParts[2] === 'exec') {
@@ -429,6 +458,15 @@ export function startServer() {
   });
 
   // 启动服务器
+  server.on('error', (err) => {
+    console.error('[Agent] 服务器错误:', err.message);
+    logError('system', 'server_error', { message: err.message, code: err.code });
+    if (err.code === 'EADDRINUSE') {
+      console.error('[Agent] 端口已被占用，请检查是否已有 Agent 在运行');
+      process.exit(1);
+    }
+  });
+
   server.listen(port, host, () => {
     console.log(`[Agent] HTTP 服务已启动: http://${host}:${port}`);
     console.log(`[Agent] WebSocket 服务已启动: ws://${host}:${port}`);
@@ -450,6 +488,17 @@ export function startServer() {
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // 全局崩溃防护：捕获未处理的异常，记录日志但不退出进程
+  process.on('uncaughtException', (err) => {
+    console.error('[Agent] 未捕获异常:', err);
+    logError('system', 'uncaught_exception', { message: err.message, stack: err.stack });
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[Agent] 未处理的 Promise 拒绝:', reason);
+    logError('system', 'unhandled_rejection', { message: reason?.message || String(reason), stack: reason?.stack });
+  });
 
   return { server, wss, shutdown };
 }

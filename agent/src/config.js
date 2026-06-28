@@ -26,7 +26,11 @@ let pairingsCacheMtime = 0;
 
 function ensureAgentDir() {
   if (!existsSync(AGENT_DIR)) {
-    mkdirSync(AGENT_DIR, { recursive: true });
+    try {
+      mkdirSync(AGENT_DIR, { recursive: true });
+    } catch (err) {
+      console.error('[Config] 无法创建 Agent 目录:', err.message);
+    }
   }
 }
 
@@ -78,9 +82,13 @@ export function loadConfig() {
  */
 export function saveConfig(config) {
   ensureAgentDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-  configCache = config;
-  configCacheMtime = getMtime(CONFIG_FILE);
+  try {
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    configCache = config;
+    configCacheMtime = getMtime(CONFIG_FILE);
+  } catch (err) {
+    console.error('[Config] 保存配置失败:', err.message);
+  }
 }
 
 /**
@@ -128,9 +136,13 @@ export function savePairing(extensionId, token) {
   const pairings = loadPairings();
   pairings[extensionId] = { token, pairedAt: Date.now() };
   ensureAgentDir();
-  writeFileSync(PAIRINGS_FILE, JSON.stringify(pairings, null, 2), 'utf-8');
-  pairingsCache = pairings;
-  pairingsCacheMtime = getMtime(PAIRINGS_FILE);
+  try {
+    writeFileSync(PAIRINGS_FILE, JSON.stringify(pairings, null, 2), 'utf-8');
+    pairingsCache = pairings;
+    pairingsCacheMtime = getMtime(PAIRINGS_FILE);
+  } catch (err) {
+    console.error('[Config] 保存配对失败:', err.message);
+  }
 }
 
 export { AGENT_DIR, CONFIG_FILE };

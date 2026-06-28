@@ -58,7 +58,7 @@ const DEFAULT_IGNORE_DIRS = new Set([
 ]);
 
 /**
- * 文件名模式匹配（支持 glob：*.js, test*.ts, **/*.js 等）
+ * 文件名模式匹配（支持 glob：*.js, test*.ts, ** / *.js 等）
  */
 function matchGlob(filename, pattern) {
   // 转换 glob 为简单正则
