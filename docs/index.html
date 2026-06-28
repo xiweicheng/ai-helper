@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Helper — 让你的浏览器会思考</title>
+<meta name="description" content="AI Helper 是开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、59 个内置工具、本地 Agent 系统命令执行，基于 ReAct 推理循环架构。">
+<meta name="keywords" content="AI Helper, 浏览器助手, Chrome扩展, LLM, ReAct, 自动化, 开源">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg: #09090b;
+    --bg-card: #12121a;
+    --bg-card-hover: #1a1a28;
+    --border: #1e1e30;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --accent: #667eea;
+    --accent2: #764ba2;
+    --accent-glow: rgba(102, 126, 234, 0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── 背景光晕 ─── */
+  .bg-glow {
+    position: fixed;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow-1 {
+    top: -20%; left: -10%;
+    width: 60vw; height: 60vw;
+    background: radial-gradient(circle, rgba(102,126,234,0.06) 0%, transparent 70%);
+    filter: blur(80px);
+  }
+  .glow-2 {
+    bottom: -20%; right: -10%;
+    width: 50vw; height: 50vw;
+    background: radial-gradient(circle, rgba(118,75,162,0.05) 0%, transparent 70%);
+    filter: blur(80px);
+  }
+
+  /* ─── 导航 ─── */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    backdrop-filter: blur(12px);
+    background: rgba(9,9,11,0.8);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-inner {
+    max-width: 1200px; margin: 0 auto;
+    padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-logo {
+    font-size: 18px; font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .nav-links { display: flex; gap: 24px; align-items: center; }
+  .nav-links a {
+    color: var(--text-muted); text-decoration: none; font-size: 14px;
+    transition: color .2s;
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-cta {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; padding: 8px 18px; border-radius: 8px;
+    text-decoration: none; font-size: 14px; font-weight: 600;
+    transition: opacity .2s;
+  }
+  .nav-cta:hover { opacity: 0.9; }
+
+  /* ─── Hero ─── */
+  .hero {
+    position: relative; z-index: 1;
+    padding: 160px 24px 100px;
+    text-align: center; max-width: 900px; margin: 0 auto;
+  }
+  .hero-badge {
+    display: inline-block;
+    background: var(--bg-card); border: 1px solid var(--border);
+    color: var(--accent); font-size: 13px; padding: 6px 16px;
+    border-radius: 20px; margin-bottom: 32px;
+  }
+  .hero h1 {
+    font-size: clamp(40px, 7vw, 72px); font-weight: 800;
+    line-height: 1.1; letter-spacing: -2px; margin-bottom: 24px;
+  }
+  .hero h1 span {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .hero p {
+    font-size: 18px; color: var(--text-muted);
+    max-width: 600px; margin: 0 auto 40px;
+  }
+  .hero-actions {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 28px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; text-decoration: none;
+    transition: all .2s; cursor: pointer; border: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+  .btn-outline {
+    background: transparent; color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-outline:hover { border-color: var(--accent); background: var(--bg-card); }
+
+  /* ─── Stats ─── */
+  .stats {
+    position: relative; z-index: 1;
+    display: flex; justify-content: center; gap: 60px; flex-wrap: wrap;
+    padding: 40px 24px 80px;
+  }
+  .stat { text-align: center; }
+  .stat-num {
+    font-size: 36px; font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ─── 通用区块 ─── */
+  .section {
+    position: relative; z-index: 1;
+    padding: 80px 24px; max-width: 1100px; margin: 0 auto;
+  }
+  .section-title {
+    text-align: center; margin-bottom: 56px;
+  }
+  .section-title h2 {
+    font-size: 32px; font-weight: 700; letter-spacing: -1px; margin-bottom: 12px;
+  }
+  .section-title p {
+    color: var(--text-muted); font-size: 16px;
+  }
+
+  /* ─── 特性卡片 ─── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px 28px;
+    transition: all .3s;
+  }
+  .card:hover { border-color: var(--accent); background: var(--bg-card-hover); transform: translateY(-2px); }
+  .card-icon { font-size: 36px; margin-bottom: 16px; }
+  .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .card p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+
+  /* ─── 工具分类 ─── */
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .tool-cat {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 16px; text-align: center;
+    transition: all .3s;
+  }
+  .tool-cat:hover { border-color: var(--accent); }
+  .tool-cat .cat-icon { font-size: 28px; margin-bottom: 8px; }
+  .tool-cat .cat-name { font-size: 14px; font-weight: 600; }
+  .tool-cat .cat-count {
+    font-size: 20px; font-weight: 800; margin-top: 4px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+
+  /* ─── 架构图 ─── */
+  .arch {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 48px 32px;
+    overflow-x: auto;
+  }
+  .arch-flow {
+    display: flex; align-items: center; gap: 16px;
+    justify-content: center; flex-wrap: wrap; min-width: 700px;
+  }
+  .arch-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px 20px; text-align: center;
+    flex: 1; min-width: 160px;
+  }
+  .arch-box.highlight { border-color: var(--accent); background: rgba(102,126,234,0.05); }
+  .arch-box .arch-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+  .arch-box .arch-desc { font-size: 12px; color: var(--text-muted); }
+  .arch-arrow { font-size: 24px; color: var(--accent); flex-shrink: 0; }
+
+  /* ─── 快速开始 ─── */
+  .steps {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;
+  }
+  .step {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    position: relative;
+  }
+  .step-num {
+    position: absolute; top: -16px; left: 24px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .step h3 { font-size: 16px; font-weight: 600; margin: 12px 0 8px; }
+  .step p { font-size: 13px; color: var(--text-muted); }
+  .step code {
+    display: block; margin-top: 12px; padding: 8px 12px;
+    background: var(--bg); border-radius: 6px;
+    font-size: 12px; color: var(--accent); overflow-x: auto;
+  }
+
+  /* ─── CTA ─── */
+  .cta-section {
+    position: relative; z-index: 1;
+    text-align: center; padding: 80px 24px;
+    background: linear-gradient(180deg, transparent, var(--accent-glow));
+  }
+  .cta-section h2 {
+    font-size: 28px; font-weight: 700; margin-bottom: 16px;
+  }
+  .cta-section p {
+    color: var(--text-muted); margin-bottom: 32px;
+  }
+
+  /* ─── Footer ─── */
+  .footer {
+    text-align: center; padding: 40px 24px;
+    color: var(--text-muted); font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  /* ─── 响应式 ─── */
+  @media (max-width: 768px) {
+    .hero { padding: 120px 20px 60px; }
+    .hero h1 { font-size: 36px; }
+    .stats { gap: 32px; }
+    .arch-flow { flex-direction: column; }
+    .arch-arrow { transform: rotate(90deg); }
+    .nav-links a:not(.nav-cta) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-glow glow-1"></div>
+<div class="bg-glow glow-2"></div>
+
+<!-- 导航 -->
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-logo">AI Helper</div>
+    <div class="nav-links">
+      <a href="#features">特性</a>
+      <a href="#tools">工具</a>
+      <a href="#arch">架构</a>
+      <a href="#start">快速开始</a>
+      <a class="nav-cta" href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub →</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-badge">🎯 开源 · Chrome Extension</div>
+  <h1>让你的浏览器<br><span>会思考</span></h1>
+  <p>基于大语言模型的 Chrome 智能助手。用自然语言操控浏览器，59 个内置工具覆盖页面交互、内容提取、本地开发全流程。</p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
+      GitHub
+    </a>
+    <a class="btn btn-outline" href="#start">快速开始 →</a>
+  </div>
+</section>
+
+<!-- 关键数据 -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num">59</div>
+    <div class="stat-label">内置工具</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">11</div>
+    <div class="stat-label">工具分类</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">ReAct</div>
+    <div class="stat-label">推理架构</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">OSS</div>
+    <div class="stat-label">开源免费</div>
+  </div>
+</div>
+
+<!-- 特性 -->
+<section class="section" id="features">
+  <div class="section-title">
+    <h2>核心能力</h2>
+    <p>不止是问答机器人，更是浏览器自动化引擎</p>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-icon">🧠</div>
+      <h3>ReAct 推理循环</h3>
+      <p>LLM 思考 → 调用工具 → 结果反馈 → 继续推理。像人类一样分步解决问题，支持多轮工具调用和任务拆解。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🖱️</div>
+      <h3>浏览器自动化</h3>
+      <p>点击、填表、滚动、拖拽、截图、等待元素、下拉选择。用自然语言操控网页，无需写一行脚本。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📄</div>
+      <h3>内容智能提取</h3>
+      <p>纯文本、HTML、表格、链接、表单、图片、元数据。支持 Markdown/JSON 格式化输出，滚动收集长内容。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🖥️</div>
+      <h3>Agent 本地操作</h3>
+      <p>读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>Markdown & 图表</h3>
+      <p>代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔒</div>
+      <h3>隐私与安全</h3>
+      <p>API Key 本地存储。Agent 命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护。</p>
+    </div>
+  </div>
+</section>
+
+<!-- 工具能力 -->
+<section class="section" id="tools">
+  <div class="section-title">
+    <h2>59 个内置工具</h2>
+    <p>覆盖浏览器自动化全场景，按需启用</p>
+  </div>
+  <div class="tools-grid">
+    <div class="tool-cat">
+      <div class="cat-icon">🖱️</div>
+      <div class="cat-name">页面交互</div>
+      <div class="cat-count">6</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">📝</div>
+      <div class="cat-name">表单与输入</div>
+      <div class="cat-count">4</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">📄</div>
+      <div class="cat-name">内容提取</div>
+      <div class="cat-count">16</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">📑</div>
+      <div class="cat-name">标签页管理</div>
+      <div class="cat-count">6</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🔖</div>
+      <div class="cat-name">书签与历史</div>
+      <div class="cat-count">2</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">💾</div>
+      <div class="cat-name">存储管理</div>
+      <div class="cat-count">3</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🌐</div>
+      <div class="cat-name">网络请求</div>
+      <div class="cat-count">1</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">📷</div>
+      <div class="cat-name">媒体与输出</div>
+      <div class="cat-count">7</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🔧</div>
+      <div class="cat-name">调试与开发</div>
+      <div class="cat-count">2</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🤖</div>
+      <div class="cat-name">AI 协作</div>
+      <div class="cat-count">5</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🖥️</div>
+      <div class="cat-name">Agent</div>
+      <div class="cat-count">7</div>
+    </div>
+  </div>
+</section>
+
+<!-- 架构 -->
+<section class="section" id="arch">
+  <div class="section-title">
+    <h2>三层架构</h2>
+    <p>Chrome Extension API 消息通道，各层职责清晰</p>
+  </div>
+  <div class="arch">
+    <div class="arch-flow">
+      <div class="arch-box highlight">
+        <div class="arch-title">Side Panel</div>
+        <div class="arch-desc">对话界面<br>Markdown/Mermaid 渲染<br>工具面板</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box highlight">
+        <div class="arch-title">Background Worker</div>
+        <div class="arch-desc">消息路由<br>ReAct 推理引擎<br>工具调度执行</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        <div class="arch-title">Content Script</div>
+        <div class="arch-desc">DOM 操作<br>页面注入<br>40+ 页面工具</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        <div class="arch-title">Agent 服务</div>
+        <div class="arch-desc">文件读写<br>命令执行<br>代码搜索</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 快速开始 -->
+<section class="section" id="start">
+  <div class="section-title">
+    <h2>30 秒快速开始</h2>
+    <p>三步完成安装配置，即刻开始使用</p>
+  </div>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <h3>加载扩展</h3>
+      <p>下载项目后，在 chrome://extensions 开启开发者模式，加载 dist 目录。</p>
+      <code>git clone &amp;&amp; npm install &amp;&amp; npm run build</code>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <h3>配置 API Key</h3>
+      <p>右键扩展图标 → 选项，填入 DeepSeek API Key（或其他 OpenAI 兼容 API）。</p>
+      <code>API Key → 填入 → 保存</code>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <h3>安装 Agent（可选）</h3>
+      <p>如需本地文件读写和命令执行，全局安装 Agent 服务并启动。</p>
+      <code>npm i -g ai-helper-agent &amp;&amp; ai-helper-agent start</code>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<div class="cta-section">
+  <h2>准备好了吗？</h2>
+  <p>开源免费，MIT 协议，欢迎 Star &amp; PR</p>
+  <div class="hero-actions" style="justify-content: center;">
+    <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
+      ⭐ GitHub
+    </a>
+    <a class="btn btn-outline" href="https://github.com/xiweicheng/ai-helper/blob/main/README.md" target="_blank">
+      查看文档 →
+    </a>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+  <p>© 2026 AI Helper · <a href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub</a> · MIT License</p>
+</footer>
+
+</body>
+</html>
