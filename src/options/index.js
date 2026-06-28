@@ -435,6 +435,18 @@ function initAgentConfig() {
       const response = await fetch(`${storedUrl}/api/status`);
       if (response.ok) {
         const data = await response.json();
+        // 更新平台信息
+        const platformInfo = {
+          platformName: data.platformName || 'Unknown',
+          platform: data.platform || 'unknown',
+          arch: data.arch || 'unknown',
+          shell: data.shell || '/bin/sh',
+          homeDir: data.homeDir || '',
+          workdir: '',
+          connected: true
+        };
+        await chrome.storage.local.set({ agentPlatform: platformInfo });
+        
         if (!storedToken) {
           updateStatusUI('disconnected', 'Agent 在线 - 请填入配对码完成配对');
           return;
@@ -446,6 +458,8 @@ function initAgentConfig() {
           });
           if (detailResp.ok) {
             const detailData = await detailResp.json();
+            platformInfo.workdir = detailData.workdir || '';
+            await chrome.storage.local.set({ agentPlatform: platformInfo });
             updateStatusUI('connected', `已连接 - Agent v${data.version}`, detailData.workdir);
           } else {
             updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
@@ -457,6 +471,7 @@ function initAgentConfig() {
         updateStatusUI('disconnected', '连接失败 - Token 已失效，请重新配对');
       }
     } catch {
+      await chrome.storage.local.remove('agentPlatform');
       updateStatusUI('disconnected', '无法连接到 Agent - 请确认 Agent 服务已启动');
     }
   }
@@ -491,12 +506,38 @@ function initAgentConfig() {
         updateStatusUI('connected', '配对成功');
         showToast('✅ 配对成功！Agent 已连接', 'success');
         
+        // 获取 Agent 平台信息并存储
+        try {
+          const statusResp = await fetch(`${url}/api/status`);
+          if (statusResp.ok) {
+            const statusData = await statusResp.json();
+            const platformInfo = {
+              platformName: statusData.platformName || 'Unknown',
+              platform: statusData.platform || 'unknown',
+              arch: statusData.arch || 'unknown',
+              shell: statusData.shell || '/bin/sh',
+              homeDir: statusData.homeDir || '',
+              workdir: statusData.workdir || '',
+              connected: true
+            };
+            await chrome.storage.local.set({ agentPlatform: platformInfo });
+            console.log('[Options] Agent 平台信息已保存:', platformInfo);
+          }
+        } catch (e) {
+          console.warn('[Options] 获取 Agent 平台信息失败:', e);
+        }
+        
         // 获取完整状态
         const statusResp = await fetch(`${url}/api/status/detail`, {
           headers: { 'Authorization': `Bearer ${data.token}` }
         });
         if (statusResp.ok) {
           const statusData = await statusResp.json();
+          // 更新 workdir 到平台信息
+          const platformInfo = (await chrome.storage.local.get('agentPlatform')).agentPlatform || {};
+          platformInfo.workdir = statusData.workdir || '';
+          await chrome.storage.local.set({ agentPlatform: platformInfo });
+          
           updateStatusUI('connected', `已连接 - Agent v${statusData.version}`, statusData.workdir);
         }
       } else {
@@ -516,7 +557,7 @@ function initAgentConfig() {
    * 断开 Agent 连接
    */
   async function disconnectAgent() {
-    await chrome.storage.local.remove(['agentUrl', 'agentToken']);
+    await chrome.storage.local.remove(['agentUrl', 'agentToken', 'agentPlatform']);
     pairCodeInput.value = '';
     updateStatusUI('disconnected', '已断开连接');
     showToast('已断开 Agent 连接', 'info');

@@ -931,29 +931,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'get_computed_style',
-    type: 'function',
-    function: {
-      name: 'get_computed_style',
-      description: '获取元素的最终计算样式。用于CSS调试、主题色提取',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: '目标元素CSS选择器'
-          },
-          properties: {
-            type: 'array',
-            items: { type: 'string' },
-            description: '要获取的CSS属性列表（可选，不填则返回常用属性）'
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
     id: 'diff_page',
     type: 'function',
     function: {
@@ -1450,15 +1427,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'get_page_language',
-    type: 'function',
-    function: {
-      name: 'get_page_language',
-      description: '检测当前网页的语言设置，返回 HTML lang 属性、meta 标签和浏览器语言信息',
-      parameters: { type: 'object', properties: {}, required: [] }
-    }
-  },
-  {
     id: 'read_accessibility_tree',
     type: 'function',
     function: {
@@ -1474,21 +1442,6 @@ export const BUILTIN_TOOLS = [
     }
   },
   {
-    id: 'set_zoom',
-    type: 'function',
-    function: {
-      name: 'set_zoom',
-      description: '控制当前页面的缩放级别，支持数值缩放（0.5-3.0）、步进缩放（in/out）和重置（reset）',
-      parameters: {
-        type: 'object',
-        properties: {
-          level: { type: 'string', description: '缩放级别：数字字符串如"1.5"、"0.75"，或"in"/"out"/"reset"' }
-        },
-        required: ['level']
-      }
-    }
-  },
-  {
     id: 'clear_page_data',
     type: 'function',
     function: {
@@ -1498,22 +1451,6 @@ export const BUILTIN_TOOLS = [
         type: 'object',
         properties: {
           site: { type: 'string', description: '指定要清除的站点（URL 模式），不指定则清除当前标签页站点' }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    id: 'resize_window',
-    type: 'function',
-    function: {
-      name: 'resize_window',
-      description: '调整浏览器窗口大小，适合响应式页面测试。不指定尺寸则返回当前窗口尺寸',
-      parameters: {
-        type: 'object',
-        properties: {
-          width: { type: 'integer', description: '窗口宽度（像素）' },
-          height: { type: 'integer', description: '窗口高度（像素）' }
         },
         required: []
       }
@@ -1547,38 +1484,6 @@ export const BUILTIN_TOOLS = [
           bypassCache: { type: 'boolean', description: '是否跳过缓存强制刷新', default: false }
         },
         required: []
-      }
-    }
-  },
-  {
-    id: 'mute_tab',
-    type: 'function',
-    function: {
-      name: 'mute_tab',
-      description: '静音或取消静音指定标签页',
-      parameters: {
-        type: 'object',
-        properties: {
-          tabId: { type: 'integer', description: '目标标签页 ID，不指定则操作当前标签页' },
-          muted: { type: 'boolean', description: 'true 静音，false 取消静音' }
-        },
-        required: ['muted']
-      }
-    }
-  },
-  {
-    id: 'pin_tab',
-    type: 'function',
-    function: {
-      name: 'pin_tab',
-      description: '固定或取消固定指定标签页（固定标签页会缩小并固定在标签栏左侧）',
-      parameters: {
-        type: 'object',
-        properties: {
-          tabId: { type: 'integer', description: '目标标签页 ID，不指定则操作当前标签页' },
-          pinned: { type: 'boolean', description: 'true 固定，false 取消固定' }
-        },
-        required: ['pinned']
       }
     }
   },
@@ -1789,6 +1694,74 @@ export const BUILTIN_TOOLS = [
         required: ['command']
       }
     }
+  },
+  {
+    id: 'agent_search_files',
+    type: 'function',
+    function: {
+      name: 'agent_search_files',
+      description: '通过本地 Agent 按文件名模式搜索文件。支持 glob 模式（如 "*.js"、"test*.ts"）。优先使用 fd 命令（如已安装），否则使用 Node.js 原生递归搜索。自动跳过 node_modules、.git 等目录。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '搜索根目录路径'
+          },
+          pattern: {
+            type: 'string',
+            description: '文件名匹配模式，支持 glob，如 "*.js"、"test*.ts"、"*.{json,md}"。默认为 "*" (匹配所有文件)'
+          },
+          recursive: {
+            type: 'boolean',
+            description: '是否递归搜索子目录，默认 true'
+          },
+          maxResults: {
+            type: 'integer',
+            description: '最大返回结果数，默认 200'
+          }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    id: 'agent_search_content',
+    type: 'function',
+    function: {
+      name: 'agent_search_content',
+      description: '通过本地 Agent 在文件中搜索文本内容。优先使用 ripgrep (rg) 命令（如已安装），否则使用 Node.js 原生搜索。自动跳过 node_modules、.git、二进制文件等。返回匹配行及上下文。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: '搜索根目录路径'
+          },
+          pattern: {
+            type: 'string',
+            description: '要搜索的文本内容（纯文本匹配，非正则）'
+          },
+          filePattern: {
+            type: 'string',
+            description: '可选：限制搜索的文件类型，如 "*.js"、"*.{ts,tsx}"。不传则搜索所有文本文件'
+          },
+          caseSensitive: {
+            type: 'boolean',
+            description: '是否大小写敏感，默认 false（不区分大小写）'
+          },
+          maxResults: {
+            type: 'integer',
+            description: '最大返回结果数，默认 100'
+          },
+          contextLines: {
+            type: 'integer',
+            description: '每条匹配结果附带的上下文行数，默认 2'
+          }
+        },
+        required: ['path', 'pattern']
+      }
+    }
   }
 ];
 
@@ -1828,7 +1801,6 @@ export const TOOL_CATEGORY_MAP = {
   extract_forms: 'page_analysis',
   extract_images: 'page_analysis',
   get_element_rect: 'page_analysis',
-  get_computed_style: 'page_analysis',
   page_to_markdown: 'page_analysis',
   open_tab: 'tab_management',
   switch_tab: 'tab_management',
@@ -1861,15 +1833,10 @@ export const TOOL_CATEGORY_MAP = {
   find_similar_elements: 'page_analysis',
   get_iframe_content: 'page_analysis',
   inject_css: 'debug_dev',
-  get_page_language: 'info_extract',
   read_accessibility_tree: 'info_extract',
-  set_zoom: 'page_interaction',
   clear_page_data: 'storage_management',
-  resize_window: 'system_integration',
   navigate_back_forward: 'tab_management',
   reload_tab: 'tab_management',
-  mute_tab: 'tab_management',
-  pin_tab: 'tab_management',
   group_tabs: 'tab_management',
   record_network: 'debug_dev',
   search_conversation_memory: 'memory',
@@ -1880,6 +1847,8 @@ export const TOOL_CATEGORY_MAP = {
   agent_list_dir: 'system_integration',
   agent_delete_file: 'system_integration',
   agent_exec_command: 'system_integration',
+  agent_search_files: 'system_integration',
+  agent_search_content: 'system_integration',
 };
 
 // 从 TOOL_CATEGORY_MAP 动态派生分类顺序列表（单一数据源，无需手动维护）
@@ -1907,11 +1876,8 @@ export const TOOL_EXECUTION_MAP = {
   schedule_task: 'background',
   plan_task: 'background',
   clear_page_data: 'background',
-  resize_window: 'background',
   navigate_back_forward: 'background',
   reload_tab: 'background',
-  mute_tab: 'background',
-  pin_tab: 'background',
   group_tabs: 'background',
   record_network: 'background',
   search_conversation_memory: 'background',
@@ -1939,7 +1905,6 @@ export const TOOL_EXECUTION_MAP = {
   watch_element: 'content_script',
   manage_storage: 'content_script',
   get_element_rect: 'content_script',
-  get_computed_style: 'content_script',
   diff_page: 'content_script',
   extract_images: 'content_script',
   search_in_page: 'content_script',
@@ -1952,14 +1917,14 @@ export const TOOL_EXECUTION_MAP = {
   find_similar_elements: 'content_script',
   get_iframe_content: 'content_script',
   inject_css: 'content_script',
-  get_page_language: 'content_script',
   read_accessibility_tree: 'content_script',
-  set_zoom: 'content_script',
   agent_read_file: 'background',
   agent_write_file: 'background',
   agent_list_dir: 'background',
   agent_delete_file: 'background',
   agent_exec_command: 'background',
+  agent_search_files: 'background',
+  agent_search_content: 'background',
 };
 
 // 可并行执行的工具（只读操作，无副作用）
@@ -1967,13 +1932,14 @@ export const PARALLELIZABLE_TOOLS = new Set([
   'get_page_text', 'get_full_html', 'query_interactive_elements',
   'get_selected_content', 'extract_metadata', 'extract_table',
   'extract_links', 'extract_forms', 'get_element_rect',
-  'get_computed_style', 'extract_images', 'search_in_page',
-  'page_to_markdown', 'performance_audit', 'get_page_language',
+  'extract_images', 'search_in_page',
+  'page_to_markdown', 'performance_audit',
   'read_accessibility_tree', 'find_similar_elements',
   'get_iframe_content', 'page_to_json', 'get_browser_info',
   'search_bookmarks', 'search_history', 'get_tabs',
   'search_conversation_memory', 'get_ui_prototype',
   'paste_from_clipboard', 'diff_page', 'screenshot_element',
+  'agent_search_files', 'agent_search_content',
 ]);
 
 // 需要用户确认的敏感工具
@@ -1983,8 +1949,6 @@ export const CONFIRMATION_REQUIRED_TOOLS = new Set([
   'download_file',
   'schedule_task',
   'close_tab',
-  'mute_tab',
-  'pin_tab',
   'group_tabs',
   'agent_delete_file',
   'agent_exec_command',

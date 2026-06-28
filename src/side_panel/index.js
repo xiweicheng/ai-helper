@@ -756,7 +756,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 加载保存的模型选择和自定义模型
-  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory'], (result) => {
+  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform'], (result) => {
     const savedModelName = result.modelName;
     if (savedModelName) {
       state.currentModel = savedModelName;
@@ -764,6 +764,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.customPrompts = result.customPrompts || [];
     state.systemPrompt = result.systemPrompt || '';
     state.inputHistory = result.inputHistory || [];
+    if (result.agentPlatform) {
+      state.agentPlatform = result.agentPlatform;
+    }
     addPromptManageButton();
 
     loadCustomModelsToDropdown(result.customModels, () => {

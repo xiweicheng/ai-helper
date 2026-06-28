@@ -261,11 +261,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     schedule_task: executeScheduleTask,
     plan_task: executePlanTask,
     clear_page_data: executeClearPageData,
-    resize_window: executeResizeWindow,
     navigate_back_forward: executeNavigateBackForward,
     reload_tab: executeReloadTab,
-    mute_tab: executeMuteTab,
-    pin_tab: executePinTab,
     group_tabs: executeGroupTabs,
     record_network: executeRecordNetwork,
     search_conversation_memory: executeSearchConversationMemory,
@@ -276,6 +273,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     agent_list_dir: executeAgentListDir,
     agent_delete_file: executeAgentDeleteFile,
     agent_exec_command: executeAgentExecCommand,
+    agent_search_files: executeAgentSearchFiles,
+    agent_search_content: executeAgentSearchContent,
   };
 
   // Content Script 工具：toolName → payloadBuilder(args)
@@ -302,7 +301,6 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     watch_element:             a => ({ selector: a.selector, duration: a.duration }),
     manage_storage:            a => ({ action: a.action, storage: a.storage, key: a.key, value: a.value }),
     get_element_rect:          a => ({ selector: a.selector }),
-    get_computed_style:        a => ({ selector: a.selector, properties: a.properties }),
     diff_page:                 a => ({ action: a.action, snapshotName: a.snapshotName }),
     extract_images:            a => ({ minWidth: a.minWidth, minHeight: a.minHeight, includeBackgroundImages: a.includeBackgroundImages, download: a.download, maxResults: a.maxResults }),
     search_in_page:            a => ({ query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive, contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight }),
@@ -315,9 +313,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     find_similar_elements:     a => ({ selector: a.selector, maxResults: a.maxResults }),
     get_iframe_content:        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength }),
     inject_css:                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode }),
-    get_page_language:         a => ({}),
     read_accessibility_tree:   a => ({ maxResults: a.maxResults }),
-    set_zoom:                  a => ({ level: a.level }),
   };
 
   const executionType = TOOL_EXECUTION_MAP[toolName];
@@ -1729,58 +1725,6 @@ export function executeClearPageData(args, toolCallId) {
 }
 
 /**
- * 调整浏览器窗口大小
- */
-export function executeResizeWindow(args, toolCallId) {
-  const { width: rawWidth, height: rawHeight } = args;
-  const width = rawWidth !== undefined ? parseInt(rawWidth, 10) : undefined;
-  const height = rawHeight !== undefined ? parseInt(rawHeight, 10) : undefined;
-
-  return new Promise((resolve) => {
-    chrome.windows.getCurrent((currentWindow) => {
-      if (chrome.runtime.lastError || !currentWindow) {
-        resolve({ success: false, error: '无法获取当前窗口', tool_call_id: toolCallId });
-        return;
-      }
-
-      const previous = { width: currentWindow.width, height: currentWindow.height };
-
-      if (width === undefined && height === undefined) {
-        resolve({
-          success: true,
-          current: previous,
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      const updateInfo = {};
-      if (width !== undefined) updateInfo.width = width;
-      if (height !== undefined) updateInfo.height = height;
-
-      chrome.windows.update(currentWindow.id, updateInfo, (updatedWindow) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            previous,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        resolve({
-          success: true,
-          previous,
-          current: { width: updatedWindow.width, height: updatedWindow.height },
-          tool_call_id: toolCallId
-        });
-      });
-    });
-  });
-}
-
-/**
  * 导航前进/后退
  */
 export function executeNavigateBackForward(args, toolCallId) {
@@ -1864,99 +1808,6 @@ export function executeReloadTab(args, toolCallId) {
           return;
         }
         doReload(tabs[0].id);
-      });
-    }
-  });
-}
-
-/**
- * 静音/取消静音标签页
- */
-export function executeMuteTab(args, toolCallId) {
-  const { tabId, muted } = args;
-
-  return new Promise((resolve) => {
-    if (muted === undefined) {
-      resolve({ success: false, error: '缺少 muted 参数', tool_call_id: toolCallId });
-      return;
-    }
-
-    const doMute = (targetTabId) => {
-      chrome.tabs.update(targetTabId, { muted: !!muted }, (tab) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            tabId: targetTabId,
-            tool_call_id: toolCallId
-          });
-        } else {
-          resolve({
-            success: true,
-            tabId: targetTabId,
-            muted: tab.mutedInfo?.muted || !!muted,
-            tool_call_id: toolCallId
-          });
-        }
-      });
-    };
-
-    if (tabId !== undefined) {
-      doMute(tabId);
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
-          return;
-        }
-        doMute(tabs[0].id);
-      });
-    }
-  });
-}
-
-/**
- * 固定/取消固定标签页
- */
-export function executePinTab(args, toolCallId) {
-  const { tabId: rawTabId, pinned } = args;
-  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
-
-  return new Promise((resolve) => {
-    if (pinned === undefined) {
-      resolve({ success: false, error: '缺少 pinned 参数', tool_call_id: toolCallId });
-      return;
-    }
-
-    const doPin = (targetTabId) => {
-      chrome.tabs.update(targetTabId, { pinned: !!pinned }, (tab) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            tabId: targetTabId,
-            tool_call_id: toolCallId
-          });
-        } else {
-          resolve({
-            success: true,
-            tabId: targetTabId,
-            pinned: tab.pinned,
-            tool_call_id: toolCallId
-          });
-        }
-      });
-    };
-
-    if (tabId !== undefined) {
-      doPin(tabId);
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
-          return;
-        }
-        doPin(tabs[0].id);
       });
     }
   });
@@ -2471,4 +2322,53 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     message: `命令执行完毕 (exitCode: ${result.exitCode})\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
     tool_call_id: toolCallId
   };
+}
+
+/**
+ * Agent 文件名搜索
+ */
+async function executeAgentSearchFiles(args, toolCallId) {
+  const { path, pattern, recursive, maxResults } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
+  if (result.success) {
+    const engineLabel = result.engine === 'fd' ? ' (引擎: fd)' : ' (引擎: Node.js)';
+    return {
+      success: true,
+      results: result.results,
+      total: result.total,
+      engine: result.engine,
+      message: `找到 ${result.total} 个文件${engineLabel}\n\n${result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n')}${result.total > 50 ? '\n\n... (仅显示前 50 条)' : ''}`,
+      tool_call_id: toolCallId
+    };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件内容搜索
+ */
+async function executeAgentSearchContent(args, toolCallId) {
+  const { path, pattern, filePattern, caseSensitive, maxResults, contextLines } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.searchContent(
+    path, pattern, filePattern || null,
+    caseSensitive || false, maxResults || 100,
+    contextLines !== undefined ? contextLines : 2
+  );
+  if (result.success) {
+    const engineLabel = result.engine === 'rg' ? ' (引擎: ripgrep)' : ' (引擎: Node.js)';
+    return {
+      success: true,
+      results: result.results,
+      total: result.total,
+      engine: result.engine,
+      message: `找到 ${result.total} 条匹配${engineLabel}\n\n${result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n')}${result.total > 30 ? '\n\n... (仅显示前 30 条)' : ''}`,
+      tool_call_id: toolCallId
+    };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
 }

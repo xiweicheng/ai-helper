@@ -222,8 +222,6 @@ ai-helper/
 | `get_tabs` | 获取所有标签页列表 |
 | `navigate_back_forward` | 前进/后退导航 |
 | `reload_tab` | 刷新标签页 |
-| `mute_tab` | 静音/取消静音 |
-| `pin_tab` | 固定/取消固定标签页 |
 | `group_tabs` | 标签页分组 |
 
 ### 调试开发（6 个）

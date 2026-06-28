@@ -115,6 +115,20 @@ async function deleteFile(filePath) {
 }
 
 /**
+ * 按文件名模式搜索文件
+ */
+async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200) {
+  return agentRequest('/api/fs/search_files', { path: rootPath, pattern, recursive, maxResults });
+}
+
+/**
+ * 搜索文件内容
+ */
+async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, maxResults = 100, contextLines = 2) {
+  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines });
+}
+
+/**
  * 发起命令执行请求
  * @param {string} command
  * @param {string} [cwd]
@@ -211,6 +225,8 @@ export {
   writeFile,
   listDir,
   deleteFile,
+  searchFiles,
+  searchContent,
   execCommand,
   execCommandWait,
   stopCommand,

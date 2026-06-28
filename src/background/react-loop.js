@@ -17,8 +17,6 @@ const TOOL_DISPLAY_NAMES = {
   download_file: '下载文件',
   schedule_task: '安排定时任务',
   close_tab: '关闭标签页',
-  mute_tab: '静音标签页',
-  pin_tab: '固定标签页',
   group_tabs: '分组标签页',
 };
 

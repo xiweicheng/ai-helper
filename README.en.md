@@ -222,8 +222,6 @@ Automatically appears when text is selected on any webpage, providing:
 | `get_tabs` | List all tabs |
 | `navigate_back_forward` | Navigate back/forward |
 | `reload_tab` | Reload tab |
-| `mute_tab` | Mute/unmute tab |
-| `pin_tab` | Pin/unpin tab |
 | `group_tabs` | Group tabs |
 
 ### Debug & Development (6)

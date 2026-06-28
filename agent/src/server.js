@@ -3,13 +3,29 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
 import { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses } from './executor.js';
 import { logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
+import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+
+// 平台信息（启动时检测一次）
+const PLATFORM_INFO = {
+  platform: os.platform(),           // darwin / linux / win32
+  platformName: (() => {
+    const map = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+    return map[os.platform()] || os.platform();
+  })(),
+  arch: os.arch(),                   // arm64 / x64
+  hostname: os.hostname(),
+  shell: process.env.SHELL || process.env.COMSPEC || '/bin/sh',
+  homeDir: os.homedir(),
+  nodeVersion: process.version
+};
 
 /**
  * JSON 响应辅助
@@ -65,7 +81,11 @@ export function startServer() {
   const config = loadConfig();
   const { port, host } = config;
 
-  logSystem('server_start', { port, host, workdir: config.workdir });
+  logSystem('server_start', { port, host, workdir: config.workdir, ...PLATFORM_INFO });
+
+  // 异步初始化搜索工具检测
+  let searchTools = { fd: false, rg: false };
+  initSearchTools().then(result => { searchTools = result; });
 
   // ==================== HTTP Server ====================
   const server = http.createServer(async (req, res) => {
@@ -98,12 +118,14 @@ export function startServer() {
       return jsonResponse(res, result.success ? 200 : 400, result);
     }
 
-    // 健康检查
+    // 健康检查 + 平台信息
     if (req.method === 'GET' && pathname === '/api/status') {
       return jsonResponse(res, 200, {
         success: true,
         version: '1.0.0',
-        running: true
+        running: true,
+        ...PLATFORM_INFO,
+        searchTools: getSearchToolsAvailable()
       });
     }
 
@@ -129,7 +151,9 @@ export function startServer() {
         version: '1.0.0',
         pairCode: getCurrentPairCode(),
         workdir: config.workdir,
-        runningProcesses: getRunningProcesses()
+        runningProcesses: getRunningProcesses(),
+        ...PLATFORM_INFO,
+        searchTools: getSearchToolsAvailable()
       });
     }
 
@@ -139,6 +163,40 @@ export function startServer() {
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
 
       // === 文件操作 ===
+
+      // 搜索文件（按文件名模式）
+      if (pathname === '/api/fs/search_files') {
+        const result = await searchFiles(
+          body.path || '.',
+          body.pattern || '*',
+          body.recursive !== false,
+          body.maxResults || 200
+        );
+        if (result.success) {
+          logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
+        } else {
+          logSecurity('fs_search_files_blocked', { path: body.path, reason: result.error });
+        }
+        return jsonResponse(res, result.success ? 200 : 403, result);
+      }
+
+      // 搜索文件内容
+      if (pathname === '/api/fs/search_content') {
+        const result = await searchContent(
+          body.path || '.',
+          body.pattern,
+          body.filePattern || null,
+          body.caseSensitive || false,
+          body.maxResults || 100,
+          body.contextLines !== undefined ? body.contextLines : 2
+        );
+        if (result.success) {
+          logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
+        } else {
+          logSecurity('fs_search_content_blocked', { path: body.path, reason: result.error });
+        }
+        return jsonResponse(res, result.success ? 200 : 403, result);
+      }
 
       // 读取文件
       if (pathname === '/api/fs/read') {

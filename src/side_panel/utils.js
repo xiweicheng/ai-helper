@@ -126,6 +126,13 @@ export function copyToClipboard(text, btn) {
  */
 export function getSystemPrompt() {
   const currentTime = new Date().toLocaleString('zh-CN');
+
+  // 构建 Agent 平台信息文本
+  let agentInfo = '';
+  if (state.agentPlatform && state.agentPlatform.connected) {
+    const ap = state.agentPlatform;
+    agentInfo = `\n- 本地 Agent：${ap.platformName} (${ap.arch})，默认 shell: ${ap.shell}，工作目录: ${ap.workdir || '未设置'}`;
+  }
   
   // 任务拆解相关规则（无论是否使用自定义提示词，都需要追加）
   const taskPlanningRules = `
@@ -160,7 +167,7 @@ export function getSystemPrompt() {
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
 - 操作系统：Windows 10.0
-- 当前时间：${currentTime}${taskPlanningRules}
+- 当前时间：${currentTime}${agentInfo}${taskPlanningRules}
 `;
   }
   
@@ -186,7 +193,7 @@ export function getSystemPrompt() {
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
 - 操作系统：Windows 10.0
-- 当前时间：${currentTime}
+- 当前时间：${currentTime}${agentInfo}
 `;
 }
 

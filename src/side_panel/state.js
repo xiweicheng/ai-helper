@@ -20,6 +20,17 @@ export let systemPrompt = '';
 export let inputHistory = [];
 export let inputHistoryIndex = -1;
 
+// Agent 平台信息（从 Agent 获取，用于系统提示词注入）
+export let agentPlatform = {
+  platformName: 'Unknown',
+  platform: 'unknown',
+  arch: 'unknown',
+  shell: '/bin/sh',
+  homeDir: '/home/user',
+  workdir: '',
+  connected: false
+};
+
 // 配置常量 - 从 storage 获取，使用默认值作为后备
 export let chatConfig = {
   maxInputHistory: 20,
@@ -120,6 +131,8 @@ export default {
   set draggedItemIndex(v) { draggedItemIndex = v; },
   get systemPrompt() { return systemPrompt; },
   set systemPrompt(v) { systemPrompt = v; },
+  get agentPlatform() { return agentPlatform; },
+  set agentPlatform(v) { Object.assign(agentPlatform, v); },
   get inputHistory() { return inputHistory; },
   set inputHistory(v) { inputHistory = v; },
   get inputHistoryIndex() { return inputHistoryIndex; },
