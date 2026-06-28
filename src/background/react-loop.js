@@ -1626,7 +1626,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       },
       body: JSON.stringify(requestBody),
       signal: abortSignal
-    });
+    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay);
   })
   .then(async response => {
     if (!response.ok) {

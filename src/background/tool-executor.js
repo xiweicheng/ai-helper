@@ -964,6 +964,8 @@ export function executeShowNotification(args, toolCallId) {
  * @param {number} timeoutMs
  */
 export async function fetchWithTimeout(url, options, timeoutMs) {
+  // 确保 timeoutMs 是有效的正整数，防止 AbortSignal.timeout() 报错
+  const safeTimeoutMs = Math.max(1, Math.floor(Number(timeoutMs) || 60000));
   const controller = new AbortController();
   const externalSignal = options?.signal;
 
@@ -972,11 +974,11 @@ export async function fetchWithTimeout(url, options, timeoutMs) {
   let timeoutSignal;
   let timeoutId;
   if (typeof AbortSignal.timeout === 'function') {
-    timeoutSignal = AbortSignal.timeout(timeoutMs);
+    timeoutSignal = AbortSignal.timeout(safeTimeoutMs);
   } else {
     // 回退：使用 setTimeout 模拟超时
     timeoutSignal = controller.signal;
-    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    timeoutId = setTimeout(() => controller.abort(), safeTimeoutMs);
   }
 
   // 统一 abort 通道：超时和外部取消都通过 controller.abort() 触发
@@ -1013,7 +1015,7 @@ export async function fetchWithTimeout(url, options, timeoutMs) {
         throw error;
       }
       // 内部超时 → 包装为超时错误（fetchWithRetry 会重试）
-      throw new Error(`请求超时 (${timeoutMs}ms)`);
+      throw new Error(`请求超时 (${safeTimeoutMs}ms)`);
     }
     throw error;
   }
