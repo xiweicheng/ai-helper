@@ -1820,11 +1820,16 @@ document.addEventListener('DOMContentLoaded', initPrototypeEvents);
 function updateImagePreviewVisibility() {
   const previewBar = document.getElementById('imagePreviewBar');
   const screenshotBtn = document.getElementById('screenshotBtn');
+  // 预览区仅在有图片时显示
   if (previewBar) {
-    previewBar.style.display = state.enableImageInput ? '' : 'none';
+    previewBar.style.display = state.attachedImages.length > 0 ? '' : 'none';
   }
   if (screenshotBtn) {
-    screenshotBtn.style.display = state.enableImageInput ? '' : 'none';
+    if (state.enableImageInput) {
+      screenshotBtn.style.removeProperty('display');
+    } else {
+      screenshotBtn.style.display = 'none';
+    }
   }
   // 如果关闭了图片功能，清空已附加的图片
   if (!state.enableImageInput) {
