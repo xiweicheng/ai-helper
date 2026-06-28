@@ -198,6 +198,8 @@ Automatically appears when text is selected on any webpage, providing:
 | `search_in_page` | Regex search page text |
 | `page_to_markdown` | Convert page to Markdown |
 | `page_to_json` | Extract structured data as JSON |
+| `scroll_and_collect` | Scroll and collect long content |
+| `get_element_count` | Quick element count |
 
 ### Page Interaction (10)
 | Tool | Description |
@@ -211,6 +213,7 @@ Automatically appears when text is selected on any webpage, providing:
 | `drag_and_drop` | Drag-and-drop operation |
 | `keyboard_input` | Keyboard input |
 | `file_upload` | Inject files into upload controls |
+| `select_dropdown` | Dropdown menu selection |
 
 ### Tab Management (9)
 | Tool | Description |
@@ -234,6 +237,7 @@ Automatically appears when text is selected on any webpage, providing:
 | Tool | Description |
 |------|-------------|
 | `capture_tab_screenshot` | Tab screenshot |
+| `take_full_page_screenshot` | Full page screenshot |
 | `generate_qrcode` | Generate QR code |
 | `text_to_speech` | Text to speech |
 | `video_control` | Control page video playback |
@@ -257,6 +261,7 @@ Automatically appears when text is selected on any webpage, providing:
 | `paste_from_clipboard` | Read from clipboard |
 | `get_browser_info` | Browser environment info |
 | `show_notification` | Desktop notifications |
+| `wait_for_navigation` | Wait for page navigation |
 | `manage_cookies` | Cookie management |
 | `manage_storage` | localStorage/sessionStorage management |
 | `clear_page_data` | One-click clear site data |

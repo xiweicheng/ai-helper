@@ -7,13 +7,13 @@ import {
   highlightText, extractLinks, extractForms,
   removeHighlights, extractImages, searchInPage,
   pageToMarkdown, pageToJson, findSimilarElements,
-  getIframeContent
+  getIframeContent, getElementCount, scrollAndCollect
 } from './page-tools.js';
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement,
   keyboardInput, dragAndDrop, fileUpload,
-  manageStorage, pickColor, textToSpeech
+  manageStorage, pickColor, textToSpeech, selectDropdown
 } from './interaction-tools.js';
 
 import {
@@ -86,9 +86,12 @@ const HANDLERS = {
   PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
   WAIT_FOR_ELEMENT:          (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
   DRAG_AND_DROP:             (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
+  SELECT_DROPDOWN:           (msg) => selectDropdown(msg.triggerSelector, msg.optionText, msg.optionSelector, msg.timeout),
   COLOR_PICKER:              ()   => pickColor(),
   GENERATE_QRCODE:           (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
   RUN_JAVASCRIPT:            (msg) => runJavascript(msg.code, msg.timeout),
+  GET_ELEMENT_COUNT:         (msg) => getElementCount(msg.selector, msg.includeHidden),
+  SCROLL_AND_COLLECT:        (msg) => scrollAndCollect(msg),
 
   // ── 特殊：清除站点数据（内联逻辑）──
   CLEAR_PAGE_DATA: (msg) => {
@@ -116,6 +119,7 @@ const HANDLERS = {
 const ASYNC_HANDLERS = new Set([
   'COPY_TO_CLIPBOARD', 'PASTE_FROM_CLIPBOARD',
   'WAIT_FOR_ELEMENT', 'DRAG_AND_DROP',
+  'SELECT_DROPDOWN', 'SCROLL_AND_COLLECT',
   'WATCH_ELEMENT', 'COLOR_PICKER',
   'GENERATE_QRCODE', 'SCREENSHOT_ELEMENT',
   'PAGE_TO_PDF', 'RUN_JAVASCRIPT',

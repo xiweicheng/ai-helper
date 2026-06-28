@@ -326,6 +326,8 @@ const TOOL_HANDLERS = {
   agent_exec_command: executeAgentExecCommand,
   agent_search_files: executeAgentSearchFiles,
   agent_search_content: executeAgentSearchContent,
+  wait_for_navigation: executeWaitForNavigation,
+  take_full_page_screenshot: executeTakeFullPageScreenshot,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -1907,6 +1909,149 @@ async function executeAgentReadFile(args, toolCallId) {
     return { success: true, content: result.content, size: result.size, path: result.path, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+// ========== P0/P1 新增工具 (2026-06-28) ==========
+
+/**
+ * 等待页面导航完成
+ * 监听 tab 更新事件，等待页面加载到指定状态
+ */
+async function executeWaitForNavigation(args, toolCallId) {
+  const { timeout = 30000, waitUntil = 'load' } = args;
+
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    const tabId = tabs[0].id;
+
+    console.log('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          chrome.tabs.onUpdated.removeListener(listener);
+          console.warn('[Background] 等待导航超时:', timeout + 'ms');
+          resolve({ success: false, error: `等待导航超时 (${timeout}ms)`, tool_call_id: toolCallId });
+        }
+      }, timeout);
+
+      // 立刻检查一次：如果当前 tab 已经是 complete 状态则立即返回
+      chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: false, error: '标签页不可用', tool_call_id: toolCallId }); }
+          return;
+        }
+        if (tab.status === 'complete' && waitUntil === 'load') {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面已加载完成', tool_call_id: toolCallId }); }
+          return;
+        }
+        if (tab.status === 'complete' && waitUntil === 'domcontentloaded') {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面 DOM 已就绪', tool_call_id: toolCallId }); }
+          return;
+        }
+      });
+
+      const listener = (updatedTabId, changeInfo, tab) => {
+        if (updatedTabId !== tabId) return;
+        if (resolved) return;
+
+        if (waitUntil === 'networkidle') {
+          // networkIdle 策略：状态为 complete 后，再等 500ms 无新网络活动
+          if (changeInfo.status === 'complete') {
+            setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(timeoutId);
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve({ success: true, status: 'complete', url: tab.url, message: '网络空闲，页面加载完成', tool_call_id: toolCallId });
+              }
+            }, 500);
+          }
+        } else if (changeInfo.status === 'complete') {
+          resolved = true;
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve({ success: true, status: 'complete', url: tab.url, message: '页面加载完成', tool_call_id: toolCallId });
+        } else if (changeInfo.status === 'loading' && waitUntil === 'domcontentloaded') {
+          // 对于 domcontentloaded，loading 状态已经意味着 DOM 开始解析
+          // 但我们仍然等 complete（稳妥）
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(listener);
+    });
+  } catch (err) {
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+  }
+}
+
+/**
+ * 全页截图
+ * 优先使用 CDP Page.captureScreenshot（支持 captureBeyondViewport），失败时回退到 captureVisibleTab
+ */
+async function executeTakeFullPageScreenshot(args, toolCallId) {
+  const { format = 'png', quality = 80 } = args;
+
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    const tabId = tabs[0].id;
+
+    console.log('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
+
+    return new Promise((resolve) => {
+      chrome.debugger.attach({ tabId }, '1.3', () => {
+        if (chrome.runtime.lastError) {
+          // debugger 不可用，回退到可见区截图
+          console.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
+          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+            } else {
+              resolve({ success: true, dataUrl, fullPage: false, message: 'debugger 不可用，返回可视区截图', tool_call_id: toolCallId });
+            }
+          });
+          return;
+        }
+
+        const screenshotParams = {
+          format: format === 'jpeg' ? 'jpeg' : 'png',
+          captureBeyondViewport: true
+        };
+        if (format === 'jpeg') {
+          screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
+        }
+
+        chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', screenshotParams, (result) => {
+          chrome.debugger.detach({ tabId }, () => {});
+
+          if (chrome.runtime.lastError || !result || !result.data) {
+            const errMsg = chrome.runtime.lastError?.message || '截图失败';
+            console.error('[Background] 全页截图 CDP 失败:', errMsg);
+            // 回退到可见区截图
+            chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+              if (chrome.runtime.lastError) {
+                resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+              } else {
+                resolve({ success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId });
+              }
+            });
+            return;
+          }
+
+          resolve({ success: true, dataUrl: `data:image/${format};base64,${result.data}`, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
+        });
+      });
+    });
+  } catch (err) {
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+  }
 }
 
 /**

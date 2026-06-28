@@ -1713,7 +1713,132 @@ export const RAW_TOOLS = [
         required: ['path', 'pattern']
       }
     }
-  }
+  },
+  // ========== P0/P1 新增工具 (2026-06-28) ==========
+  {
+    id: 'drag_and_drop',
+    category: 'page_interaction',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'drag_and_drop',
+      description: '模拟拖拽操作，将源元素拖放到目标元素位置。适用于看板排序、文件拖放、排序列表等场景。注意：此为实验性功能，部分复杂拖拽交互可能不完全生效。',
+      parameters: {
+        type: 'object',
+        properties: {
+          sourceSelector: { type: 'string', description: '要拖拽的源元素 CSS 选择器' },
+          targetSelector: { type: 'string', description: '拖拽目标元素的 CSS 选择器' }
+        },
+        required: ['sourceSelector', 'targetSelector']
+      }
+    }
+  },
+  {
+    id: 'wait_for_navigation',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'wait_for_navigation',
+      description: '等待当前标签页完成页面跳转/导航。在点击链接、提交表单后调用此工具，确保新页面加载完毕后再继续操作。',
+      parameters: {
+        type: 'object',
+        properties: {
+          timeout: { type: 'integer', description: '超时时间（毫秒），默认 30000', default: 30000 },
+          waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'], description: '等待目标：load（完全加载）/domcontentloaded（DOM就绪）/networkidle（网络空闲），默认 load', default: 'load' }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    id: 'scroll_and_collect',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'scroll_and_collect',
+      description: '自动滚动页面并持续收集文本内容。适用于无限滚动页面（微博、Twitter、商品列表）。每滚动一段距离后提取新增可见文本，去重拼接后返回。',
+      parameters: {
+        type: 'object',
+        properties: {
+          scrollPixels: { type: 'integer', description: '每次滚动像素距离，默认 800', default: 800 },
+          maxScrolls: { type: 'integer', description: '最大滚动次数，防无限滚动，默认 20', default: 20 },
+          pauseMs: { type: 'integer', description: '滚动间暂停时间（ms），等待内容加载，默认 500', default: 500 },
+          selector: { type: 'string', description: '限定收集区域的选择器，默认收集整个页面' }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    id: 'select_dropdown',
+    category: 'form_operation',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'select_dropdown',
+      description: '在下拉菜单中选择指定选项。支持原生 <select> 元素和自定义下拉（div+ul+li）。自动处理：点击触发器 → 等待选项出现 → 文本匹配 → 点击。',
+      parameters: {
+        type: 'object',
+        properties: {
+          triggerSelector: { type: 'string', description: '下拉触发器的 CSS 选择器（点击展开选项）' },
+          optionText: { type: 'string', description: '要选择的选项文本（支持包含匹配和去空白匹配）' },
+          optionSelector: { type: 'string', description: '选项容器选择器（可选，限定选项搜索范围）' },
+          timeout: { type: 'integer', description: '等待选项出现的超时（ms），默认 5000', default: 5000 }
+        },
+        required: ['triggerSelector', 'optionText']
+      }
+    }
+  },
+  {
+    id: 'get_element_count',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'get_element_count',
+      description: '快速统计匹配 CSS 选择器的元素数量。比 query_interactive_elements 轻量得多（不返回元素详情），适合快速判断页面状态（如"有几条结果"）。',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS 选择器' },
+          includeHidden: { type: 'boolean', description: '是否包含隐藏元素，默认 false', default: false }
+        },
+        required: ['selector']
+      }
+    }
+  },
+  {
+    id: 'take_full_page_screenshot',
+    category: 'media_process',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'take_full_page_screenshot',
+      description: '对当前标签页进行完整页面截图（包括滚动区域外的内容）。优先使用 DevTools 协议获取全页，失败时回退到可视区截图。返回 Base64 图片数据。',
+      parameters: {
+        type: 'object',
+        properties: {
+          format: { type: 'string', enum: ['png', 'jpeg'], description: '图片格式，默认 png', default: 'png' },
+          quality: { type: 'integer', description: 'JPEG 质量（1-100），仅 jpeg 生效，默认 80', default: 80 }
+        },
+        required: []
+      }
+    }
+  },
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================

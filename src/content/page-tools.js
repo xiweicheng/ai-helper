@@ -1344,6 +1344,130 @@ export function getIframeContent(selector = 'iframe', includeNested = false, max
   }
 }
 
+// ========== P0/P1 新增工具 (2026-06-28) ==========
+
+/**
+ * 快速统计元素数量
+ * 比 query_interactive_elements 轻量得多，仅返回计数和存在性
+ */
+export function getElementCount(selector, includeHidden = false) {
+  try {
+    const elements = document.querySelectorAll(selector);
+    if (!includeHidden) {
+      let visibleCount = 0;
+      let totalCount = elements.length;
+      elements.forEach(el => {
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          visibleCount++;
+        }
+      });
+      return {
+        success: true,
+        count: visibleCount,
+        totalCount,
+        empty: visibleCount === 0,
+        selector
+      };
+    }
+    return {
+      success: true,
+      count: elements.length,
+      totalCount: elements.length,
+      empty: elements.length === 0,
+      selector
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 滚动收集文本内容
+ * 适用于无限滚动页面：连续滚动并收集新增的可见文本，去重后返回
+ */
+export function scrollAndCollect(args = {}) {
+  const { scrollPixels = 800, maxScrolls = 20, pauseMs = 500, selector } = args;
+
+  return new Promise(async (resolve) => {
+    try {
+      const container = selector ? document.querySelector(selector) : null;
+      const getVisibleText = () => {
+        const target = container || document.body;
+        // 只获取当前可视区域内的文本节点
+        const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+        let text = '';
+        let node;
+        while ((node = walker.nextNode())) {
+          const parentEl = node.parentElement;
+          if (!parentEl) continue;
+          const rect = parentEl.getBoundingClientRect();
+          // 在可视区内（或接近可视区）
+          if (rect.bottom > -100 && rect.top < window.innerHeight + 100) {
+            const trimmed = node.textContent.trim();
+            if (trimmed) text += trimmed + '\n';
+          }
+        }
+        return text;
+      };
+
+      const scrollElement = container || (document.scrollingElement || document.documentElement);
+      let allText = '';
+      let lastText = '';
+      const startScrollY = window.scrollY;
+
+      for (let i = 0; i < maxScrolls; i++) {
+        // 获取当前可视文本
+        const currentText = getVisibleText();
+        allText += currentText + '\n';
+        lastText = currentText;
+
+        // 记录滚动前的位置
+        const prevScrollY = window.scrollY;
+
+        // 滚动
+        scrollElement.scrollBy({ top: scrollPixels, behavior: 'auto' });
+
+        // 暂停等待内容加载
+        await new Promise(r => setTimeout(r, pauseMs));
+
+        // 检查是否已到底部（位置没变）
+        if (Math.abs(window.scrollY - prevScrollY) < 5) {
+          // 再试一次
+          await new Promise(r => setTimeout(r, pauseMs));
+          if (Math.abs(window.scrollY - prevScrollY) < 5) break;
+        }
+      }
+
+      // 滚回起始位置
+      if (container) {
+        scrollElement.scrollTo({ top: startScrollY, behavior: 'auto' });
+      }
+
+      // 去重：移除相邻重复行
+      const lines = allText.split('\n');
+      const deduped = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && trimmed !== deduped[deduped.length - 1]) {
+          deduped.push(trimmed);
+        }
+      }
+
+      resolve({
+        success: true,
+        content: deduped.join('\n'),
+        contentLength: deduped.join('\n').length,
+        scrolls: maxScrolls,
+        startScrollY,
+        endScrollY: window.scrollY
+      });
+    } catch (error) {
+      resolve({ success: false, error: error.message });
+    }
+  });
+}
+
 /**
  * 读取无障碍树信息
  */

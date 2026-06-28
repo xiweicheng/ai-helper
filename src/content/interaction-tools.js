@@ -451,6 +451,82 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
   }
 }
 
+// ========== P0/P1 新增工具 (2026-06-28) ==========
+
+/**
+ * 下拉选择器
+ * 支持原生 <select> 和自定义下拉（div+ul+li）
+ * 流程：点击触发器 → 等待 → 匹配文本 → 点击选项
+ */
+export function selectDropdown(triggerSelector, optionText, optionSelector = null, timeout = 5000) {
+  return new Promise(async (resolve) => {
+    try {
+      const trigger = document.querySelector(triggerSelector);
+      if (!trigger) {
+        resolve({ success: false, error: `未找到触发器: ${triggerSelector}` });
+        return;
+      }
+
+      // 尝试原生 <select>
+      if (trigger.tagName === 'SELECT') {
+        const options = trigger.options;
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i];
+          const optLabel = (opt.textContent || opt.label || '').trim();
+          // 精确匹配或包含匹配
+          if (optLabel === optionText || optLabel.includes(optionText)) {
+            trigger.value = opt.value;
+            trigger.dispatchEvent(new Event('change', { bubbles: true }));
+            trigger.dispatchEvent(new Event('input', { bubbles: true }));
+            resolve({ success: true, message: `已选择: ${optLabel}`, triggerTag: 'SELECT' });
+            return;
+          }
+        }
+        resolve({ success: false, error: `在 <select> 中未找到匹配的选项: "${optionText}"`, availableOptions: Array.from(options).map(o => o.textContent?.trim()).filter(Boolean) });
+        return;
+      }
+
+      // 自定义下拉：点击触发器
+      trigger.click();
+      await new Promise(r => setTimeout(r, 300));
+
+      // 等待选项出现
+      const startTime = Date.now();
+      const optionContainer = optionSelector ? document.querySelector(optionSelector) : document;
+
+      let matchedOption = null;
+      while (Date.now() - startTime < timeout) {
+        const candidates = optionContainer.querySelectorAll(
+          'li, [role="option"], [role="menuitem"], .option, .dropdown-item, .select-item, [data-value], div'
+        );
+        for (const el of candidates) {
+          const text = (el.textContent || '').trim();
+          // 忽略太短的文本
+          if (text.length < 2) continue;
+          // 匹配：精确、包含、或去空白后匹配
+          if (text === optionText || text.includes(optionText) || 
+              text.replace(/\s+/g, '') === optionText.replace(/\s+/g, '')) {
+            matchedOption = el;
+            break;
+          }
+        }
+        if (matchedOption) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      if (!matchedOption) {
+        resolve({ success: false, error: `在 ${timeout}ms 内未找到匹配选项: "${optionText}"` });
+        return;
+      }
+
+      // 点击匹配的选项
+      matchedOption.click();
+      resolve({ success: true, message: `已选择: ${matchedOption.textContent?.trim()}`, triggerTag: trigger.tagName });
+    } catch (error) {
+      resolve({ success: false, error: error.message });
+    }
+  });
+}
 
 /**
  * 监听元素变化

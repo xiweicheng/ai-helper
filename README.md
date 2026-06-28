@@ -198,6 +198,8 @@ ai-helper/
 | `search_in_page` | 正则搜索页面文本 |
 | `page_to_markdown` | 网页转 Markdown |
 | `page_to_json` | 网页结构化数据提取为 JSON |
+| `scroll_and_collect` | 滚动收集长内容 |
+| `get_element_count` | 快速元素计数 |
 
 ### 页面交互操作（10 个）
 | 工具 | 说明 |
@@ -211,6 +213,7 @@ ai-helper/
 | `drag_and_drop` | 拖拽操作 |
 | `keyboard_input` | 键盘输入 |
 | `file_upload` | 文件上传控件注入 |
+| `select_dropdown` | 下拉菜单选择 |
 
 ### 标签页管理（9 个）
 | 工具 | 说明 |
@@ -234,6 +237,7 @@ ai-helper/
 | 工具 | 说明 |
 |------|------|
 | `capture_tab_screenshot` | 标签页截图 |
+| `take_full_page_screenshot` | 全页截图 |
 | `generate_qrcode` | 生成二维码 |
 | `text_to_speech` | 文字转语音 |
 | `video_control` | 控制页面视频播放 |
@@ -257,6 +261,7 @@ ai-helper/
 | `paste_from_clipboard` | 从剪贴板读取 |
 | `get_browser_info` | 浏览器环境信息 |
 | `show_notification` | 桌面通知 |
+| `wait_for_navigation` | 等待页面跳转完成 |
 | `manage_cookies` | Cookie 管理 |
 | `manage_storage` | localStorage/sessionStorage 管理 |
 | `clear_page_data` | 一键清除站点数据 |
