@@ -36,7 +36,8 @@ export let chatConfig = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
   maxMessageLength: 100000,
-  maxMemoryMessages: 20
+  maxMemoryMessages: 20,
+  enableExecutionLog: false
 };
 
 // 温度设置

@@ -664,9 +664,13 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     // 绑定事件委托（首次调用时执行一次）
     bindExecutionLogDelegate();
+    bindReflectionBadgeDelegate();
 
-    if (hasExecutionLog) {
-      // 执行日志按钮（合并反思评分）
+    // 提取反思详情数据（用于弹窗展示）
+    const postReflection = executionLog?.find(e => e.nodeType === 'reflection' && e.reflectionType === 'post');
+
+    // 1. 执行日志按钮（独立的时钟图标）
+    if (hasExecutionLog && state.chatConfig.enableExecutionLog) {
       const logBtn = document.createElement('button');
       logBtn.className = 'execution-log-btn';
       logBtn.type = 'button';
@@ -677,33 +681,39 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         '<polyline points="12 6 12 12 16 14"></polyline>',
         '</svg>'
       ].join('');
-
-      if (hasReflection) {
-        logBtn.classList.add('has-reflection');
-        const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
-        const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
-        const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
-        const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
-        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10${roundsTag}${wasRevised ? '（已修订）' : ''}`;
-        logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`);
-      }
-
       footer.appendChild(logBtn);
-    } else if (hasReflection) {
-      // 无执行日志但存在反思评分，独立显示评分徽章
-      const scoreBadge = document.createElement('button');
-      scoreBadge.className = 'execution-log-btn has-reflection';
-      scoreBadge.type = 'button';
+    }
+
+    // 2. 质量评估图标（独立的评分徽章）
+    if (hasReflection && state.chatConfig.enableExecutionLog) {
       const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
-      scoreBadge.classList.add(scoreColor);
       const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
-      scoreBadge.title = `AI 自我评估: ${reflectionScore}/10`;
-      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
+      const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
+      const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
+
+      const scoreBadge = document.createElement('button');
+      scoreBadge.className = 'reflection-score-btn';
+      scoreBadge.type = 'button';
+      scoreBadge.title = `AI 质量评估: ${reflectionScore}/10${roundsTag}${wasRevised ? '（已修订）' : ''}\n点击查看评估详情`;
+      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`;
+      scoreBadge.dataset.reflectionData = JSON.stringify({
+        overallScore: postReflection?.overallScore ?? reflectionScore,
+        dimensions: postReflection?.dimensions || null,
+        issues: postReflection?.issues || null,
+        suggestions: postReflection?.suggestions || null,
+        decision: postReflection?.action?.decision || null,
+        useful: postReflection?.useful ?? null,
+        reasoning: postReflection?.reasoning || null,
+        suggestion: postReflection?.suggestion || null,
+        rounds: reflectionRounds,
+        wasRevised
+      });
+
       footer.appendChild(scoreBadge);
-    } else if (executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed')) {
-      // 反思 API 失败：显示警告提示
+    } else if (!hasReflection && executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed') && state.chatConfig.enableExecutionLog) {
+      // 反思 API 失败：显示警告提示（仅在无评分时显示）
       const warnBadge = document.createElement('button');
-      warnBadge.className = 'execution-log-btn has-reflection score-low';
+      warnBadge.className = 'reflection-score-btn';
       warnBadge.type = 'button';
       warnBadge.title = '反思评估失败（点击查看执行日志）';
       warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
@@ -851,6 +861,190 @@ function bindExecutionLogDelegate() {
   });
   
   executionLogDelegateBound = true;
+}
+
+// ============================================================
+// 事件委托：质量评估徽章点击
+// ============================================================
+let reflectionBadgeDelegateBound = false;
+
+function bindReflectionBadgeDelegate() {
+  if (reflectionBadgeDelegateBound) return;
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+
+  chatContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.reflection-score-btn');
+    if (!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rawData = btn.dataset.reflectionData;
+    if (!rawData) return;
+
+    try {
+      const data = JSON.parse(rawData);
+      showReflectionInfo(data, btn);
+    } catch (err) {
+      console.error('[chat-manager] 解析 reflectionData 失败:', err);
+    }
+  });
+
+  reflectionBadgeDelegateBound = true;
+}
+
+/**
+ * 显示质量评估详情弹窗
+ */
+function showReflectionInfo(data, anchorBtn) {
+  // 关闭已存在的弹窗
+  const existing = document.querySelector('.reflection-info-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'reflection-info-overlay';
+
+  const { overallScore, dimensions, issues, suggestions, decision, useful, reasoning, suggestion, rounds, wasRevised } = data;
+
+  const scoreColor = overallScore >= 8 ? 'score-high' : (overallScore >= 5 ? 'score-mid' : 'score-low');
+  const scoreEmoji = overallScore >= 8 ? '✅' : (overallScore >= 5 ? '🔍' : '⚠️');
+  const decisionLabel = decision === 'passed' ? '✅ 通过' : (decision === 'revised' ? '🔧 已修订' : (decision === 'needs_improvement' ? '⚠️ 需改进' : ''));
+
+  const dimLabels = {
+    accuracy: '准确性',
+    completeness: '完整性',
+    relevance: '相关性',
+    clarity: '清晰度',
+    usefulness: '实用性',
+    safety: '安全性',
+    efficiency: '效率'
+  };
+
+  let dimensionsHtml = '';
+  if (dimensions && Object.keys(dimensions).length > 0) {
+    dimensionsHtml = `
+      <div class="ri-section">
+        <div class="ri-section-title">📊 各维度评分</div>
+        <div class="ri-dimensions">
+          ${Object.entries(dimensions).map(([key, val]) => {
+            const label = dimLabels[key] || key;
+            const dimColor = val >= 8 ? '#10b981' : (val >= 5 ? '#f59e0b' : '#ef4444');
+            return `
+              <div class="ri-dim-item">
+                <span class="ri-dim-label">${escapeHtml(label)}</span>
+                <span class="ri-dim-bar-bg"><span class="ri-dim-bar-fill" style="width:${val * 10}%;background:${dimColor}"></span></span>
+                <span class="ri-dim-score" style="color:${dimColor}">${val}/10</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  let issuesHtml = '';
+  if (issues && issues.length > 0) {
+    issuesHtml = `
+      <div class="ri-section">
+        <div class="ri-section-title">📋 发现的问题</div>
+        <ul class="ri-list">${issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+      </div>
+    `;
+  }
+
+  let suggestionsHtml = '';
+  if (suggestions && suggestions.length > 0) {
+    suggestionsHtml = `
+      <div class="ri-section">
+        <div class="ri-section-title">💡 改进建议</div>
+        <ul class="ri-list">${suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
+      </div>
+    `;
+  }
+
+  let processHtml = '';
+  if (rounds > 0 || decision || useful !== null) {
+    const processItems = [];
+    if (rounds > 0) processItems.push(`<span class="ri-tag">🔄 经过 ${rounds} 轮评估${wasRevised ? '（已修订）' : ''}</span>`);
+    if (decision) processItems.push(`<span class="ri-tag">🎯 最终决策: ${decisionLabel}</span>`);
+    if (useful !== null) processItems.push(`<span class="ri-tag">${useful ? '✅ AI 认为结果有用' : '⚠️ AI 认为结果需要改进'}</span>`);
+    if (reasoning) processItems.push(`<div class="ri-reasoning">📝 ${escapeHtml(reasoning)}</div>`);
+
+    processHtml = `
+      <div class="ri-section">
+        <div class="ri-section-title">🔍 评估过程</div>
+        <div class="ri-process">${processItems.join('')}</div>
+      </div>
+    `;
+  }
+
+  // 评分说明
+  const scoreExplanation = overallScore >= 8
+    ? 'AI 认为回答质量较高，准确性和完整性良好，可以直接使用。'
+    : (overallScore >= 5
+      ? 'AI 认为回答存在一些不足，建议核实关键信息或补充细节后再使用。'
+      : 'AI 认为回答质量较低，可能存在较多错误或遗漏，建议重新提问或调整问题表述。');
+
+  overlay.innerHTML = `
+    <div class="reflection-info-panel">
+      <div class="ri-header">
+        <div class="ri-title">质量评估详情</div>
+        <button class="ri-close" title="关闭">✕</button>
+      </div>
+      <div class="ri-body">
+        <div class="ri-score-overview">
+          <span class="ri-score-emoji">${scoreEmoji}</span>
+          <span class="ri-score-value ${scoreColor}">${overallScore}<span class="ri-score-max">/10</span></span>
+          <span class="ri-score-label">综合评分</span>
+        </div>
+        <div class="ri-section">
+          <div class="ri-section-title">📖 评分说明</div>
+          <p class="ri-text">${scoreExplanation}</p>
+        </div>
+        ${dimensionsHtml}
+        ${issuesHtml}
+        ${suggestionsHtml}
+        ${processHtml}
+        <div class="ri-section ri-about">
+          <div class="ri-section-title">ℹ️ 什么是质量评估？</div>
+          <p class="ri-text">质量评估是 AI 在生成回答后，对自己的回答进行的<strong>自我反思和评分</strong>。AI 会从准确性、完整性、相关性等多个维度审视回答质量，发现潜在问题并尝试改进。</p>
+          <p class="ri-text ri-text-sm">评分标准：<span style="color:#10b981">✅ 8-10分 质量良好</span> · <span style="color:#f59e0b">🔍 5-7分 需要关注</span> · <span style="color:#ef4444">⚠️ 1-4分 存在较多问题</span></p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // 关闭事件
+  const closeBtn = overlay.querySelector('.ri-close');
+  closeBtn.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // 定位弹窗：靠近触发按钮
+  const btnRect = anchorBtn.getBoundingClientRect();
+  const panel = overlay.querySelector('.reflection-info-panel');
+  const panelWidth = 380;
+  const panelMaxHeight = Math.min(window.innerHeight - 40, 560);
+
+  // 水平定位：面板右边缘对齐按钮右边缘
+  let left = btnRect.right - panelWidth;
+  if (left < 10) left = 10;
+  if (left + panelWidth > window.innerWidth - 10) left = window.innerWidth - panelWidth - 10;
+
+  // 垂直定位：面板顶部略低于按钮底部
+  let top = btnRect.bottom + 6;
+  if (top + panelMaxHeight > window.innerHeight - 10) {
+    top = btnRect.top - panelMaxHeight - 6;
+  }
+  if (top < 10) top = 10;
+
+  panel.style.left = left + 'px';
+  panel.style.top = top + 'px';
+  panel.style.maxHeight = panelMaxHeight + 'px';
 }
 
 // ============================================================
@@ -2015,16 +2209,13 @@ export function addLoadingMessage() {
   };
   chrome.runtime.onMessage.addListener(state.executionLogListener);
 
-  // enableExecutionLog 只控制面板是否显示
-  chrome.storage.local.get('enableExecutionLog', (result) => {
-    const enableExecutionLog = result.enableExecutionLog || false;
-    if (enableExecutionLog) {
-      const statusContainer = loadingDiv.querySelector('.execution-status-container');
-      if (statusContainer) {
-        statusContainer.style.display = 'flex';
-      }
+  // enableExecutionLog 控制面板显示及执行日志按钮
+  if (state.chatConfig.enableExecutionLog) {
+    const statusContainer = loadingDiv.querySelector('.execution-status-container');
+    if (statusContainer) {
+      statusContainer.style.display = 'flex';
     }
-  });
+  }
   
   const logToggleBtn = loadingDiv.querySelector('.execution-log-toggle-btn');
   if (logToggleBtn) {
