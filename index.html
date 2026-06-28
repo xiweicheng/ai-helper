@@ -141,6 +141,112 @@
   }
   .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
+  /* ─── 截图画廊（瀑布流）─── */
+  .screenshots-grid {
+    column-count: 3;
+    column-gap: 20px;
+  }
+  .screenshot-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all .3s;
+    cursor: pointer;
+    break-inside: avoid;
+    margin-bottom: 20px;
+  }
+  .screenshot-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px var(--accent-glow);
+  }
+  .screenshot-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .screenshot-card .caption {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    border-top: 1px solid var(--border);
+  }
+  @media (max-width: 900px) {
+    .screenshots-grid { column-count: 2; }
+  }
+  @media (max-width: 600px) {
+    .screenshots-grid { column-count: 1; }
+  }
+
+  /* ─── 灯箱 ─── */
+  .lightbox {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.88);
+    backdrop-filter: blur(12px);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .lightbox.active {
+    display: flex;
+  }
+  .lightbox img {
+    max-width: 92vw;
+    max-height: 92vh;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .lightbox-close {
+    position: absolute;
+    top: 24px; right: 32px;
+    font-size: 32px;
+    color: #fff;
+    opacity: 0.6;
+    transition: opacity .2s;
+  }
+  .lightbox-close:hover { opacity: 1; }
+  .lightbox-arrow {
+    position: absolute;
+    top: 50%; transform: translateY(-50%);
+    font-size: 40px;
+    color: #fff;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: opacity .2s;
+    user-select: none;
+    padding: 16px;
+  }
+  .lightbox-arrow:hover { opacity: 1; }
+  .lightbox-arrow.prev { left: 16px; }
+  .lightbox-arrow.next { right: 16px; }
+  .lightbox-counter {
+    position: absolute;
+    bottom: 28px;
+    left: 50%; transform: translateX(-50%);
+    color: #fff;
+    font-size: 14px;
+    opacity: 0.6;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 16px;
+    border-radius: 20px;
+  }
+  .lightbox-caption {
+    position: absolute;
+    bottom: 60px;
+    left: 50%; transform: translateX(-50%);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    text-align: center;
+    max-width: 80vw;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  }
+
   /* ─── 通用区块 ─── */
   .section {
     position: relative; z-index: 1;
@@ -281,6 +387,7 @@
     <div class="nav-links">
       <a href="#features">特性</a>
       <a href="#tools">工具</a>
+      <a href="#screenshots">截图</a>
       <a href="#arch">架构</a>
       <a href="#start">快速开始</a>
       <a class="nav-cta" href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub →</a>
@@ -427,6 +534,62 @@
   </div>
 </section>
 
+<!-- 系统截图 -->
+<section class="section" id="screenshots">
+  <div class="section-title">
+    <h2>系统预览</h2>
+    <p>实际运行截图，一睹为快</p>
+  </div>
+  <div class="screenshots-grid">
+    <div class="screenshot-card">
+      <img src="images/对话生成静态页面.png" alt="对话生成静态页面" loading="lazy">
+      <div class="caption">对话生成静态页面 — 用自然语言直接生成完整网页</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/页面划词便捷AI问答.png" alt="页面划词便捷AI问答" loading="lazy">
+      <div class="caption">页面划词便捷 AI 问答 — 选中文字即刻提问</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/页面表格识别导出.png" alt="页面表格识别导出" loading="lazy">
+      <div class="caption">页面表格智能识别与导出 — 自动提取并导出 Excel</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/连接本地agent代理实现高级文件读写命令执行.png" alt="连接本地Agent代理" loading="lazy">
+      <div class="caption">连接本地 Agent 代理 — 高级文件读写与终端命令执行</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/循环推理执行日志追踪.png" alt="循环推理执行日志追踪" loading="lazy">
+      <div class="caption">ReAct 循环推理执行日志追踪 — 透明可解释的推理过程</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/丰富自动化LLM调用工具.png" alt="丰富自动化LLM调用工具" loading="lazy">
+      <div class="caption">丰富的自动化 LLM 调用工具 — 59 个内置工具按需调用</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/强大灵活的系统配置能力.png" alt="强大灵活的系统配置能力" loading="lazy">
+      <div class="caption">强大灵活的系统配置 — 模型、工具、Agent 自由组合</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/自定义常用提示词.png" alt="自定义常用提示词" loading="lazy">
+      <div class="caption">自定义常用提示词 — 打造专属快捷指令库</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/工具使用统计.png" alt="工具使用统计" loading="lazy">
+      <div class="caption">工具使用统计面板 — 一目了然掌握工具调用频率</div>
+    </div>
+  </div>
+</section>
+
+<!-- 灯箱 -->
+<div class="lightbox" id="lightbox">
+  <span class="lightbox-close">&times;</span>
+  <span class="lightbox-arrow prev" id="lb-prev">&#8249;</span>
+  <span class="lightbox-arrow next" id="lb-next">&#8250;</span>
+  <img src="" alt="" id="lightbox-img">
+  <div class="lightbox-caption" id="lb-caption"></div>
+  <div class="lightbox-counter" id="lb-counter"></div>
+</div>
+
 <!-- 架构 -->
 <section class="section" id="arch">
   <div class="section-title">
@@ -516,6 +679,70 @@
 <footer class="footer">
   <p>© 2026 AI Helper · <a href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub</a> · MIT License</p>
 </footer>
+
+<script>
+(function() {
+  var cards = document.querySelectorAll('.screenshot-card');
+  var images = Array.from(cards).map(function(c) { return c.querySelector('img'); });
+  var captions = Array.from(cards).map(function(c) { return c.querySelector('.caption').textContent; });
+  var lb = document.getElementById('lightbox');
+  var lbImg = document.getElementById('lightbox-img');
+  var lbCaption = document.getElementById('lb-caption');
+  var lbCounter = document.getElementById('lb-counter');
+  var currentIdx = -1;
+
+  function showImage(idx) {
+    if (idx < 0 || idx >= images.length) return;
+    currentIdx = idx;
+    lbImg.src = images[idx].src;
+    lbImg.alt = images[idx].alt;
+    lbCaption.textContent = captions[idx];
+    lbCounter.textContent = (idx + 1) + ' / ' + images.length;
+    lb.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    lb.classList.remove('active');
+    document.body.style.overflow = '';
+    currentIdx = -1;
+  }
+
+  function showPrev() { if (currentIdx > 0) showImage(currentIdx - 1); }
+  function showNext() { if (currentIdx < images.length - 1) showImage(currentIdx + 1); }
+
+  cards.forEach(function(card, i) {
+    card.addEventListener('click', function(e) {
+      e.stopPropagation();
+      showImage(i);
+    });
+  });
+
+  lb.addEventListener('click', function(e) {
+    if (e.target === lb || e.target.classList.contains('lightbox-close')) {
+      closeLightbox();
+    }
+  });
+
+  document.getElementById('lb-prev').addEventListener('click', function(e) {
+    e.stopPropagation();
+    showPrev();
+  });
+  document.getElementById('lb-next').addEventListener('click', function(e) {
+    e.stopPropagation();
+    showNext();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (!lb.classList.contains('active')) return;
+    switch (e.key) {
+      case 'Escape':      closeLightbox(); break;
+      case 'ArrowLeft':   e.preventDefault(); showPrev(); break;
+      case 'ArrowRight':  e.preventDefault(); showNext(); break;
+    }
+  });
+})();
+</script>
 
 </body>
 </html>
