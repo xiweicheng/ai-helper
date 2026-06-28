@@ -13,14 +13,15 @@ npm install -g ai-helper-agent
 ## 快速开始
 
 ```bash
-# 启动 Agent（默认工作目录为当前目录）
+# 前台启动（终端显示实时运行日志，适合调试）
 ai-helper-agent start
 
-# 指定工作目录
-ai-helper-agent start --workdir /path/to/your/project
+# 后台启动（守护进程模式，终端立即返回）
+ai-helper-agent start --background
+ai-helper-agent start -b
 
-# 指定端口
-ai-helper-agent start --port 18911
+# 指定工作目录和端口
+ai-helper-agent start --workdir /path/to/your/project --port 18911
 ```
 
 启动后终端会显示 4 位配对码，在 Chrome 扩展设置页「本地Agent」标签中填入即可完成配对。
@@ -29,9 +30,10 @@ ai-helper-agent start --port 18911
 
 | 命令 | 说明 |
 |------|------|
-| `start` | 启动 Agent 服务 |
+| `start` | 启动 Agent 服务（前台运行，显示实时日志） |
+| `start --background` / `start -b` | 后台启动（守护进程模式） |
 | `stop` | 停止正在运行的 Agent |
-| `restart` | 重启 Agent 服务 |
+| `restart` | 重启 Agent 服务（支持 -b 后台重启） |
 | `status` | 查看运行状态 |
 | `paircode` | 查看配对码提示 |
 | `config` | 查看当前配置 |
@@ -41,14 +43,40 @@ ai-helper-agent start --port 18911
 ### 启动选项
 
 ```
---port <端口>      监听端口，默认 18910
---host <地址>      监听地址，默认 127.0.0.1
---workdir <目录>   工作目录（文件读写限制在此范围内）
+--background, -b    后台运行（守护进程模式）
+--port <端口>       监听端口，默认 18910
+--host <地址>       监听地址，默认 127.0.0.1
+--workdir <目录>    工作目录（文件读写限制在此范围内）
 ```
+
+### 前台 vs 后台运行
+
+| 模式 | 命令 | 终端行为 | 适用场景 |
+|------|------|----------|----------|
+| 前台 | `start` | 阻塞终端，实时显示运行日志 | 开发调试、问题排查 |
+| 后台 | `start --background` | 立即返回，终端无日志输出 | 生产环境、日常使用 |
+
+前台运行时，所有文件读写、命令执行、安全拦截等操作日志会以格式化形式实时输出到终端：
+
+```
+[12:30:01] [INFO] [文件:read] path=/project/src/index.js size=2048
+[12:30:05] [INFO] [命令:started] command="npm test" cwd=/project execId=a1b2c3d4
+[12:30:12] [INFO] [命令:completed] execId=a1b2c3d4 exitCode=0 killed=false
+[12:31:00] [WARN] [安全:exec_denied] command="rm -rf /" reason=高危命令被拦截
+```
+
+### 进程管理
+
+Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周期：
+
+- 启动时自动写入 PID 文件
+- `stop` 命令优先通过 API 优雅关闭，失败则通过 PID 文件 kill 进程
+- 正常关闭时自动清理 PID 文件
 
 ## 安全机制
 
 ### 文件沙箱
+
 所有文件操作限制在配置的 `allowedPaths` 白名单目录内。通过 `realpath` 解析防止符号链接绕过，确保物理路径安全。
 
 ### 命令分级管控
@@ -105,9 +133,31 @@ ai-helper-agent start --port 18911
 | `commandTimeout` | 命令执行超时（毫秒） | 300000（5分钟） |
 | `fileMaxSize` | 文件读写最大字节数 | 52428800（50MB） |
 
+## 文件搜索
+
+Agent 优先使用系统原生搜索工具，不可用时自动回退到 Node.js 实现：
+
+| 引擎 | 用途 | 检测命令 |
+|------|------|----------|
+| `fd` | 文件名搜索（快速） | `fd --version` |
+| `rg` (ripgrep) | 文件内容搜索（快速） | `rg --version` |
+
+状态接口返回当前可用的搜索工具：
+
+```json
+{ "searchTools": { "fd": true, "rg": true } }
+```
+
 ## 审计日志
 
 所有操作自动记录到审计日志中，日志文件位于 `~/.ai-helper-agent/logs/`。
+
+### 双通道输出
+
+- **终端输出**（前台模式）：格式化可读格式，输出到 stderr
+- **文件输出**：JSON Lines 格式，写入日志文件
+
+两种通道同时工作，互不影响。
 
 ### 日志格式
 
@@ -124,10 +174,10 @@ JSON Lines 格式，每行一条记录，文件按日命名 `agent-YYYY-MM-DD.lo
 | category | 说明 | 包含的操作 |
 |----------|------|-----------|
 | `auth` | 认证事件 | 配对成功/失败 |
-| `fs` | 文件操作 | read, write, list, delete |
+| `fs` | 文件操作 | read, write, list, delete, search_files, search_content |
 | `exec` | 命令执行 | started, completed, stopped, error |
 | `security` | 安全事件 | deny, confirm, auth 失败, 路径越权拦截 |
-| `system` | 系统事件 | server_start, server_stop, shutdown |
+| `system` | 系统事件 | server_start, server_stop, shutdown, server_error, uncaught_exception, unhandled_rejection |
 
 ### 日志查询 API
 
@@ -156,7 +206,8 @@ GET /api/logs/dates
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/pair` | 配对认证 |
-| GET | `/api/status` | 健康检查（版本号、运行状态） |
+| GET | `/api/status` | 健康检查（版本号、平台信息、搜索工具可用性） |
+| POST | `/api/shutdown` | 关闭 Agent 服务（仅限本地访问） |
 
 ### 需要认证（Bearer Token）
 
@@ -166,11 +217,12 @@ GET /api/logs/dates
 | POST | `/api/fs/write` | 写入文件 |
 | POST | `/api/fs/list` | 列出目录 |
 | POST | `/api/fs/delete` | 删除文件/目录 |
+| POST | `/api/fs/search_files` | 按文件名模式搜索（glob） |
+| POST | `/api/fs/search_content` | 搜索文件内容（rg 优先，Node.js 回退） |
 | POST | `/api/exec` | 执行系统命令 |
 | POST | `/api/exec/stop` | 停止命令执行 |
 | GET | `/api/exec/running` | 运行中的进程列表 |
-| GET | `/api/status/detail` | 详细信息（含工作目录） |
-| POST | `/api/shutdown` | 关闭 Agent 服务 |
+| GET | `/api/status/detail` | 详细信息（含工作目录、配对码、搜索工具） |
 | GET | `/api/logs` | 查询审计日志（支持 date/category/limit/offset 参数） |
 | GET | `/api/logs/dates` | 获取可用日志日期列表 |
 
@@ -180,12 +232,24 @@ GET /api/logs/dates
 |------|------|
 | `ws://127.0.0.1:18910/ws/exec/:execId` | 命令执行实时输出流 |
 
+## 健壮性
+
+Agent 内置多层异常保护，防止单个错误导致整个服务崩溃：
+
+- **请求级保护**：每个 HTTP 请求处理外层包裹异常捕获，异常时返回 500 而非崩溃
+- **URL 解析保护**：畸形 URL 不会导致进程崩溃，返回 400
+- **服务器级保护**：端口占用等服务器错误有专门处理，优雅报错退出
+- **全局兜底**：`uncaughtException` 和 `unhandledRejection` 全局捕获，记录错误日志但不退出进程
+- **文件 I/O 保护**：配置文件读写失败不影响服务运行
+- **进程管理保护**：`SIGTERM`/`SIGKILL` 发送对已退出进程有 try-catch 保护
+
 ## 技术栈
 
 - Node.js >= 18
 - 原生 `http` 模块（HTTP 服务）
 - `ws` 库（WebSocket 服务）
 - 零外部框架依赖
+- 可选依赖：`fd`、`rg`（ripgrep）— 用于加速文件搜索
 
 ## License
 
