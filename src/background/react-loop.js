@@ -777,7 +777,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 更新工具执行日志
             const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
             if (toolLogIndex !== -1) {
-              executionLog[toolLogIndex] = {
+              const logEntry = {
                 ...executionLog[toolLogIndex],
                 duration: Date.now() - toolStartTime,
                 status: isSuccess ? 'success' : 'failed',
@@ -789,6 +789,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 observation: toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr,
                 prototypeId: toolResult?.prototypeId || null
               };
+              // 失败时传递 error 字段，确保执行日志面板能展示具体错误原因
+              if (!isSuccess && toolResult?.error) {
+                logEntry.error = toolResult.error;
+              }
+              executionLog[toolLogIndex] = logEntry;
             }
             
             // 缓存结果（仅并行工具）

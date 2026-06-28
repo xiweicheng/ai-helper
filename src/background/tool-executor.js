@@ -184,6 +184,10 @@ function normalizeToolResult(result, toolCallId) {
     if (!('content' in result)) {
       if (result.message) {
         result.content = result.message;
+      } else if (!result.success && result.error) {
+        // 失败且有 error 时，将错误信息作为内容展示，确保 LLM 和用户能看到失败原因
+        result.content = `操作失败: ${result.error}`;
+        result.message = result.error;
       } else {
         const { success, error, tool_call_id, ...rest } = result;
         result.content = JSON.stringify(rest);
