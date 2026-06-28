@@ -2,7 +2,7 @@
 
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
@@ -1436,16 +1436,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 工具统计排序状态 { column, asc }
+  let toolStatsSort = { column: 'callCount', asc: false };
+
   async function loadToolStats() {
     const table = document.getElementById('toolStatsTable');
     const tbody = document.getElementById('toolStatsTableBody');
     const loading = document.getElementById('toolStatsLoading');
     const empty = document.getElementById('toolStatsEmpty');
+    const summary = document.getElementById('toolStatsSummary');
+    const unusedSection = document.getElementById('toolStatsUnusedSection');
+    const unusedList = document.getElementById('toolStatsUnusedList');
 
     if (!table || !tbody || !loading || !empty) return;
 
     table.style.display = 'none';
     empty.style.display = 'none';
+    if (unusedSection) unusedSection.style.display = 'none';
+    if (summary) summary.textContent = '';
     loading.style.display = '';
 
     try {
@@ -1459,33 +1467,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      entries.sort((a, b) => b[1].callCount - a[1].callCount);
+      // 构建工具 ID → 描述映射
+      const toolDescMap = {};
+      BUILTIN_TOOLS.forEach(t => {
+        toolDescMap[t.id] = t.name ? `${t.name}：${t.description || ''}` : (t.description || t.id);
+      });
 
-      tbody.innerHTML = entries.map(([name, stat]) => {
-        const successRate = stat.callCount > 0 ? (stat.successCount / stat.callCount * 100) : 0;
-        const avgDuration = stat.callCount > 0 ? (stat.totalDuration / stat.callCount) : 0;
+      renderToolStatsTable(entries, toolDescMap);
 
-        let rateColor = '#38a169';
-        if (successRate < 60) rateColor = '#e53e3e';
-        else if (successRate < 85) rateColor = '#d69e2e';
+      // 计算未使用工具
+      const allToolIds = BUILTIN_TOOLS.map(t => t.id);
+      const usedToolIds = new Set(entries.map(([name]) => name));
+      const unusedToolIds = allToolIds.filter(id => !usedToolIds.has(id));
 
-        const avgTimeStr = avgDuration < 1000
-          ? `${Math.round(avgDuration)}ms`
-          : `${(avgDuration / 1000).toFixed(1)}s`;
+      const usedCount = entries.length;
+      const unusedCount = unusedToolIds.length;
 
-        return `<tr>
-          <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code>${name}</code></td>
-          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.callCount}</td>
-          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.successCount}</td>
-          <td style="padding: 6px 10px; border-bottom: 1px solid #eee;">
-            <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: #e0e0e0; vertical-align: middle; margin-right: 6px;">
-              <span style="display: inline-block; width: ${successRate * 0.5}px; height: 5px; border-radius: 3px; background: ${rateColor}; vertical-align: top;"></span>
-            </span>
-            <span style="font-size: 12px; color: ${rateColor}; font-weight: 500;">${successRate.toFixed(0)}%</span>
-          </td>
-          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${avgTimeStr}</td>
-        </tr>`;
-      }).join('');
+      // 汇总信息
+      if (summary) {
+        summary.textContent = `已使用 ${usedCount} 个，未使用 ${unusedCount} 个`;
+      }
+
+      // 未使用工具列表（按字母排序）
+      if (unusedSection && unusedList && unusedCount > 0) {
+        unusedList.innerHTML = unusedToolIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map(id => {
+          const desc = toolDescMap[id] || id;
+          return `<code title="${escapeHtml(desc)}" style="padding: 3px 10px; background: #f5f5f5; color: #aaa; border: 1px solid #eee; border-radius: 4px; font-size: 11px;">${id}</code>`;
+        }).join('');
+        unusedSection.style.display = '';
+      }
 
       loading.style.display = 'none';
       table.style.display = '';
@@ -1496,6 +1506,96 @@ document.addEventListener('DOMContentLoaded', async () => {
       empty.style.display = '';
     }
   }
+
+  function renderToolStatsTable(entries, toolDescMap) {
+    const tbody = document.getElementById('toolStatsTableBody');
+    if (!tbody) return;
+
+    const { column, asc } = toolStatsSort;
+
+    const sortedEntries = [...entries].sort((a, b) => {
+      const [nameA, statA] = a;
+      const [nameB, statB] = b;
+      const successRateA = statA.callCount > 0 ? (statA.successCount / statA.callCount * 100) : 0;
+      const successRateB = statB.callCount > 0 ? (statB.successCount / statB.callCount * 100) : 0;
+      const durationA = statA.callCount > 0 ? (statA.totalDuration / statA.callCount) : 0;
+      const durationB = statB.callCount > 0 ? (statB.totalDuration / statB.callCount) : 0;
+
+      let cmp = 0;
+      switch (column) {
+        case 'name': cmp = nameA.toLowerCase().localeCompare(nameB.toLowerCase()); break;
+        case 'callCount': cmp = statA.callCount - statB.callCount; break;
+        case 'successCount': cmp = statA.successCount - statB.successCount; break;
+        case 'successRate': cmp = successRateA - successRateB; break;
+        case 'duration': cmp = durationA - durationB; break;
+      }
+      return asc ? cmp : -cmp;
+    });
+
+    tbody.innerHTML = sortedEntries.map(([name, stat]) => {
+      const successRate = stat.callCount > 0 ? (stat.successCount / stat.callCount * 100) : 0;
+      const avgDuration = stat.callCount > 0 ? (stat.totalDuration / stat.callCount) : 0;
+      const tooltip = toolDescMap[name] || name;
+
+      let rateColor = '#38a169';
+      if (successRate < 60) rateColor = '#e53e3e';
+      else if (successRate < 85) rateColor = '#d69e2e';
+
+      const avgTimeStr = avgDuration < 1000
+        ? `${Math.round(avgDuration)}ms`
+        : `${(avgDuration / 1000).toFixed(1)}s`;
+
+      return `<tr>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code title="${escapeHtml(tooltip)}">${name}</code></td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.callCount}</td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.successCount}</td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #eee;">
+          <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: #e0e0e0; vertical-align: middle; margin-right: 6px;">
+            <span style="display: inline-block; width: ${successRate * 0.5}px; height: 5px; border-radius: 3px; background: ${rateColor}; vertical-align: top;"></span>
+          </span>
+          <span style="font-size: 12px; color: ${rateColor}; font-weight: 500;">${successRate.toFixed(0)}%</span>
+        </td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${avgTimeStr}</td>
+      </tr>`;
+    }).join('');
+
+    updateSortIndicators();
+  }
+
+  function updateSortIndicators() {
+    const { column, asc } = toolStatsSort;
+    const sortKeys = ['name', 'callCount', 'successCount', 'successRate', 'duration'];
+    const idMap = { name: 'sortByName', callCount: 'sortByCallCount', successCount: 'sortBySuccessCount', successRate: 'sortBySuccessRate', duration: 'sortByDuration' };
+
+    sortKeys.forEach(key => {
+      const th = document.getElementById(idMap[key]);
+      if (!th) return;
+      const indicator = th.querySelector('.sort-indicator');
+      if (!indicator) return;
+      if (key === column) {
+        indicator.textContent = asc ? '▲' : '▼';
+        indicator.style.color = '#667eea';
+      } else {
+        indicator.textContent = '';
+        indicator.style.color = '';
+      }
+    });
+  }
+
+  // 排序表头点击事件
+  document.querySelectorAll('#toolStatsTable th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const sortKey = th.dataset.sort;
+      if (toolStatsSort.column === sortKey) {
+        toolStatsSort.asc = !toolStatsSort.asc;
+      } else {
+        toolStatsSort.column = sortKey;
+        toolStatsSort.asc = false;
+      }
+      // 重新渲染（需要从 storage 重新读取数据）
+      loadToolStats();
+    });
+  });
 
   modalCancelBtn.addEventListener('click', () => {
     hideModal();

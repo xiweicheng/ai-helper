@@ -2370,9 +2370,13 @@ async function executeAgentDeleteFile(args, toolCallId) {
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const { command, cwd, force } = args;
   if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
-  
+
+  // 当用户关闭敏感工具确认开关时，自动向 Agent 传 force: true 跳过灰名单检查
+  const config = await getStoredConfig();
+  const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
+
   // 使用 wait 模式，阻塞等待命令完整输出
-  const result = await AgentClient.execCommandWait(command, cwd, !!force);
+  const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
   
   // 黑名单拦截
   if (result.level === 'deny') {

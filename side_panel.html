@@ -4870,22 +4870,29 @@
       <div class="modal-title">📊 工具使用统计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
         <span style="font-size: 12px; color: #999;">各工具调用频率、成功率、平均耗时</span>
-        <button id="toolStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+        <div>
+          <span id="toolStatsSummary" style="font-size: 12px; color: #888; margin-right: 12px;"></span>
+          <button id="toolStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+        </div>
       </div>
       <div style="flex: 1; overflow-y: auto;">
         <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
         <table id="toolStatsTable" style="display: none; width: 100%; border-collapse: collapse; font-size: 13px;">
           <thead>
             <tr style="position: sticky; top: 0; background: #f5f7fa; z-index: 1;">
-              <th style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">工具名称</th>
-              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">调用</th>
-              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">成功</th>
-              <th style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">成功率</th>
-              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">平均耗时</th>
+              <th id="sortByName" data-sort="name" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">已使用工具 <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByCallCount" data-sort="callCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">调用 <span class="sort-indicator" style="font-size: 10px;">▼</span></th>
+              <th id="sortBySuccessCount" data-sort="successCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">成功 <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortBySuccessRate" data-sort="successRate" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">成功率 <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByDuration" data-sort="duration" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">平均耗时 <span class="sort-indicator" style="font-size: 10px;"></span></th>
             </tr>
           </thead>
           <tbody id="toolStatsTableBody"></tbody>
         </table>
+        <div id="toolStatsUnusedSection" style="display: none; margin-top: 16px;">
+          <div style="font-size: 12px; font-weight: 600; color: #999; margin-bottom: 6px;">未使用工具</div>
+          <div id="toolStatsUnusedList" style="display: flex; flex-wrap: wrap; gap: 6px 4px;"></div>
+        </div>
         <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
       </div>
     </div>

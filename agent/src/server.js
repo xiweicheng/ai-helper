@@ -1,7 +1,7 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync } from 'fs';
 import { join } from 'path';
 import os from 'os';
 import { loadConfig } from './config.js';
@@ -224,6 +224,17 @@ export function startServer() {
         const buf = Buffer.from(body.content || '', 'utf-8');
         if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
         writeFileSync(check.resolved, body.content || '', 'utf-8');
+
+        // 如果写入的是脚本文件，剥离执行权限防止直接运行
+        const SCRIPT_EXT_RE = /\.(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)$/i;
+        const isScriptExt = SCRIPT_EXT_RE.test(check.resolved);
+        const hasShebang = (body.content || '').startsWith('#!');
+        if (isScriptExt || hasShebang) {
+          try {
+            chmodSync(check.resolved, 0o644);
+          } catch {}
+        }
+
         logFs('write', { path: check.resolved, size: buf.length });
         return jsonResponse(res, 200, { success: true, size: buf.length, path: check.resolved });
       }

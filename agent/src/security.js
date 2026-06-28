@@ -97,6 +97,9 @@ const BLACKLIST_PATTERNS = [
   /\$\{[^}]*\}/,               // ${} 变量替换（可能含命令）
 ];
 
+const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
+const SCRIPT_INTERPRETERS = '(bash|sh|zsh|python3?|node|ruby|perl|php|lua)';
+
 const GRAYLIST_PATTERNS = [
   { pattern: /^\s*sudo\s/, reason: '命令需要管理员权限 (sudo)' },
   { pattern: /npm\s+(i|install)\s+-g\s/, reason: '全局安装 npm 包' },
@@ -107,6 +110,13 @@ const GRAYLIST_PATTERNS = [
   { pattern: /^\s*(shutdown|reboot|halt|poweroff)/, reason: '关机或重启系统' },
   { pattern: /^\s*>\s*\/etc\/hosts/, reason: '修改系统 hosts 文件' },
   { pattern: /\beval\s+/, reason: '使用 eval 执行命令' },
+
+  // 脚本解释器执行外部文件 — 防止 Agent 将自己写入的脚本传参执行
+  { pattern: new RegExp(`^\\s*${SCRIPT_INTERPRETERS}(\\s+[^-]\\S*)*\\s+\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '执行外部脚本文件' },
+  // 直接执行脚本（shebang 或 ./ 方式）
+  { pattern: new RegExp(`^\\s*\\.?\\/\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '直接执行脚本文件' },
+  // chmod +x 授予执行权限（配合写文件不赋执行权策略，需用户确认）
+  { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-7][0-7])\s/, reason: '修改文件执行权限' },
 ];
 
 /**
