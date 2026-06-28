@@ -145,10 +145,23 @@ function tryParseToolArgs(argsStr) {
 }
 
 /**
- * 统一工具结果格式为 { success, content, error?, metadata? }
+ * 创建统一格式的工具返回结果
+ * @param {boolean} success - 是否成功
+ * @param {string} content - 给大模型读的内容（必须）
+ * @param {Object} [extra] - 额外的元数据字段
+ * @returns {{ success: boolean, content: string, tool_call_id?: string }}
+ */
+function makeResult(success, content, extra = {}) {
+  return { success, content, ...extra };
+}
+
+/**
+ * 安全网：统一工具结果格式为 { success, content, error?, ... }
+ * 所有 handler 都应该使用 makeResult() 返回，此函数仅处理异常情况
  */
 function normalizeToolResult(result, toolCallId) {
   if (result && typeof result === 'object' && 'success' in result) {
+    // 标准对象格式：补充缺失的 content 和 tool_call_id
     if (!('content' in result)) {
       if (result.message) {
         result.content = result.message;
@@ -157,11 +170,13 @@ function normalizeToolResult(result, toolCallId) {
         result.content = JSON.stringify(rest);
         result.metadata = rest;
       }
+      console.warn('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
     }
     if (!result.tool_call_id) result.tool_call_id = toolCallId;
     return result;
   }
   if (typeof result === 'string') {
+    console.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
     return { success: true, content: result, tool_call_id: toolCallId };
   }
   return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
@@ -418,7 +433,7 @@ export function executeSearchBookmarks(args, toolCallId) {
   return new Promise((resolve) => {
     if (!chrome.bookmarks) {
       console.error('[Background] chrome.bookmarks API 不可用');
-      resolve('浏览器不支持书签 API');
+      resolve(makeResult(false, '浏览器不支持书签 API'));
       return;
     }
     
@@ -430,7 +445,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         
         if (chrome.runtime.lastError) {
           console.error('[Background] chrome.bookmarks.getTree 错误:', chrome.runtime.lastError.message);
-          resolve('获取书签失败: ' + chrome.runtime.lastError.message);
+          resolve(makeResult(false, '获取书签失败: ' + chrome.runtime.lastError.message));
           return;
         }
         
@@ -452,7 +467,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         console.log('[Background] 收集到的书签总数:', allBookmarks.length);
         
         if (allBookmarks.length === 0) {
-          resolve('浏览器中暂无书签');
+          resolve(makeResult(true, '浏览器中暂无书签'));
           return;
         }
         
@@ -470,7 +485,7 @@ export function executeSearchBookmarks(args, toolCallId) {
           formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
         
         console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
-        resolve(resultText);
+        resolve(makeResult(true, resultText));
       });
       return;
     }
@@ -482,13 +497,13 @@ export function executeSearchBookmarks(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.bookmarks.search 错误:', chrome.runtime.lastError.message);
-        resolve('搜索书签失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '搜索书签失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的书签');
-        resolve('未找到匹配的书签。提示：尝试使用具体关键词搜索');
+        resolve(makeResult(true, '未找到匹配的书签。提示：尝试使用具体关键词搜索'));
         return;
       }
       
@@ -506,7 +521,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
       
       console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
-      resolve(resultText);
+      resolve(makeResult(true, resultText));
     });
   });
 }
@@ -525,7 +540,7 @@ export function executeSearchHistory(args, toolCallId) {
   return new Promise((resolve) => {
     if (!chrome.history) {
       console.error('[Background] chrome.history API 不可用');
-      resolve('浏览器不支持历史 API');
+      resolve(makeResult(false, '浏览器不支持历史 API'));
       return;
     }
     
@@ -547,13 +562,13 @@ export function executeSearchHistory(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.history.search 错误:', chrome.runtime.lastError.message);
-        resolve('搜索历史失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '搜索历史失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的访问记录');
-        resolve('未找到匹配的访问记录。提示：尝试使用具体关键词搜索');
+        resolve(makeResult(true, '未找到匹配的访问记录。提示：尝试使用具体关键词搜索'));
         return;
       }
       
@@ -569,7 +584,7 @@ export function executeSearchHistory(args, toolCallId) {
         formattedResults.map((h, i) => `${i+1}. ${h.title}\n   URL: ${h.url}\n   最后访问: ${h.lastVisitTime}\n   访问次数: ${h.visitCount}`).join('\n\n');
       
       console.log('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
-      resolve(resultText);
+      resolve(makeResult(true, resultText));
     });
   });
 }
@@ -619,7 +634,7 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
     }
 
     if (allMessages.length === 0) {
-      return '未找到任何对话记录。';
+      return makeResult(true, '未找到任何对话记录。');
     }
 
     // 关键词匹配搜索（分词 + 包含匹配）
@@ -659,7 +674,7 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
       .slice(0, maxResults);
 
     if (relevant.length === 0) {
-      return `未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`;
+      return makeResult(true, `未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`);
     }
 
     // 格式化结果
@@ -674,10 +689,10 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
         .join('\n\n---\n\n');
 
     console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
-    return resultText;
+    return makeResult(true, resultText);
   } catch (err) {
     console.error('[Background] 对话记忆搜索失败:', err);
-    return `搜索对话记录时出错: ${err.message}`;
+    return makeResult(false, `搜索对话记录时出错: ${err.message}`);
   }
 }
 
@@ -701,13 +716,13 @@ export function executeCaptureScreenshot(args, toolCallId) {
     chrome.tabs.captureVisibleTab(undefined, captureOptions, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
-        resolve('截图失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '截图失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!dataUrl || dataUrl.length === 0) {
         console.error('[Background] 截图结果为空');
-        resolve('截图结果为空，可能是该页面不允许截图或窗口中没有可见标签页');
+        resolve(makeResult(false, '截图结果为空，可能是该页面不允许截图或窗口中没有可见标签页'));
         return;
       }
       
@@ -720,7 +735,7 @@ export function executeCaptureScreenshot(args, toolCallId) {
       
       // 返回成功消息
       const result = `截图成功！\n图片大小约 ${imageSize} MB\n格式: ${format}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`;
-      resolve(result);
+      resolve(makeResult(true, result));
     });
   });
 }
@@ -813,7 +828,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           result += `\n补充说明: ${additionalInfo.trim()}`;
         }
         
-        resolve(result);
+        resolve(makeResult(true, result));
       }
     };
     
@@ -896,7 +911,7 @@ export function executeShowNotification(args, toolCallId) {
     chrome.notifications.create(notificationOptions, (notificationId) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 创建通知失败:', chrome.runtime.lastError.message);
-        resolve('通知创建失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '通知创建失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
@@ -910,7 +925,7 @@ export function executeShowNotification(args, toolCallId) {
         });
       }
       
-      resolve('通知已发送');
+      resolve(makeResult(true, '通知已发送'));
     });
   });
 }

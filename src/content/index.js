@@ -1,19 +1,19 @@
-// content/index.js - Content Script 入口文件
+// content/index.js - Content Script 入口文件（Map 路由，统一同步/异步处理）
 
 import {
-  getPageText, getFullHtml, queryInteractiveElements, generateUniqueSelector,
-  getElementText, getElementValue, getSelectedContent,
-  extractTable, copyToClipboard, pasteFromClipboard, hoverElement,
-  extractMetadata, highlightText, extractLinks, extractForms,
-  getElementSelector, extractImages, searchInPage, pageToMarkdown, removeHighlights,
-  pageToJson, findSimilarElements, getIframeContent, readAccessibilityTree
+  getPageText, getFullHtml, queryInteractiveElements,
+  getSelectedContent, extractTable, copyToClipboard,
+  pasteFromClipboard, hoverElement, extractMetadata,
+  highlightText, extractLinks, extractForms,
+  removeHighlights, extractImages, searchInPage,
+  pageToMarkdown, pageToJson, findSimilarElements,
+  getIframeContent, readAccessibilityTree
 } from './page-tools.js';
 
 import {
-  clickElement, fillForm, scrollToPosition, waitForElement, keyboardInput,
-  dragAndDrop, fileUpload, watchElement, manageStorage,
-  getElementRect, pickColor,
-  diffPage, textToSpeech
+  clickElement, fillForm, scrollToPosition, waitForElement,
+  keyboardInput, dragAndDrop, fileUpload, watchElement,
+  manageStorage, getElementRect, pickColor, diffPage, textToSpeech
 } from './interaction-tools.js';
 
 import {
@@ -24,7 +24,6 @@ import {
 import { initSelectionToolbar } from './selection-toolbar.js';
 
 // ==================== 快捷键支持 ====================
-// Ctrl+Shift+A 或 Cmd+Shift+A 打开 Popup
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
     e.preventDefault();
@@ -32,271 +31,78 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ==================== 消息监听 ====================
+// ==================== 消息路由（Map 查找，O(1)） ====================
 
-// 监听来自 background 的消息
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // 获取纯文本内容
-  if (message.type === 'GET_PAGE_TEXT') {
-    const result = getPageText(message);
-    sendResponse(result);
-  }
-  
-  // 获取完整HTML
-  if (message.type === 'GET_FULL_HTML') {
-    const result = getFullHtml(message);
-    sendResponse(result);
-  }
-  
-  // 查询可交互元素
-  if (message.type === 'QUERY_INTERACTIVE_ELEMENTS') {
-    const result = queryInteractiveElements(message);
-    sendResponse(result);
-  }
-  
-  // 获取选中内容
-  if (message.type === 'GET_SELECTED_CONTENT') {
-    const result = getSelectedContent(message.format);
-    sendResponse(result);
-  }
-  
-  // 点击元素
-  if (message.type === 'CLICK_ELEMENT') {
-    const result = clickElement(message.selector, message.waitTime, message.timeout);
-    sendResponse(result);
-  }
-  
-  // 填充表单
-  if (message.type === 'FILL_FORM') {
-    const result = fillForm(message.fields, message.waitTime);
-    sendResponse(result);
-  }
-  
-  // 滚动到指定位置
-  if (message.type === 'SCROLL_TO') {
-    const result = scrollToPosition(message);
-    sendResponse(result);
-  }
-  
-  // 提取表格
-  if (message.type === 'EXTRACT_TABLE') {
-    const result = extractTable(message.selector, message.includeHeaders, message.format);
-    sendResponse(result);
-  }
-  
-  // 复制到剪贴板
-  if (message.type === 'COPY_TO_CLIPBOARD') {
-    copyToClipboard(message.text).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 从剪贴板粘贴
-  if (message.type === 'PASTE_FROM_CLIPBOARD') {
-    pasteFromClipboard().then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 鼠标悬停
-  if (message.type === 'HOVER_ELEMENT') {
-    const result = hoverElement(message.selector);
-    sendResponse(result);
-  }
-  
-  // 提取元数据
-  if (message.type === 'EXTRACT_METADATA') {
-    const result = extractMetadata();
-    sendResponse(result);
-  }
-  
-  // 高亮文本
-  if (message.type === 'HIGHLIGHT_TEXT') {
-    const result = highlightText(message.text, message.color);
-    sendResponse(result);
-  }
-  
-  // 移除高亮
-  if (message.type === 'REMOVE_HIGHLIGHTS') {
-    const result = removeHighlights();
-    sendResponse(result);
-  }
-  
-  // ========== 交互工具 ==========
-  
-  // 等待元素
-  if (message.type === 'WAIT_FOR_ELEMENT') {
-    waitForElement(message.selector, message.state, message.timeout).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 键盘输入
-  if (message.type === 'KEYBOARD_INPUT') {
-    const result = keyboardInput(message);
-    sendResponse(result);
-  }
-  
-  // 拖拽操作
-  if (message.type === 'DRAG_AND_DROP') {
-    dragAndDrop(message.sourceSelector, message.targetSelector).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 文件上传
-  if (message.type === 'FILE_UPLOAD') {
-    const result = fileUpload(message.selector, message.fileName, message.fileContent, message.fileType);
-    sendResponse(result);
-  }
-  
-  // 提取链接
-  if (message.type === 'EXTRACT_LINKS') {
-    const result = extractLinks(message.filterType, message.includeImages);
-    sendResponse(result);
-  }
-  
-  // 提取表单
-  if (message.type === 'EXTRACT_FORMS') {
-    const result = extractForms(message.formSelector);
-    sendResponse(result);
-  }
-  
-  // 监听元素变化
-  if (message.type === 'WATCH_ELEMENT') {
-    watchElement(message.selector, message.duration).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 管理Storage
-  if (message.type === 'MANAGE_STORAGE') {
-    const result = manageStorage(message);
-    sendResponse(result);
-  }
-  
-  // 获取元素位置尺寸
-  if (message.type === 'GET_ELEMENT_RECT') {
-    const result = getElementRect(message.selector);
-    sendResponse(result);
-  }
-  
-  // 取色器
-  if (message.type === 'COLOR_PICKER') {
-    pickColor().then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 页面差异对比
-  if (message.type === 'DIFF_PAGE') {
-    const result = diffPage(message.action, message.snapshotName);
-    sendResponse(result);
-  }
-  
-  // 文字转语音
-  if (message.type === 'TEXT_TO_SPEECH') {
-    const result = textToSpeech(message.text, message.lang, message.rate, message.pitch);
-    sendResponse(result);
-  }
-  
-  // ========== 高级工具 ==========
-  
-  // 提取图片
-  if (message.type === 'EXTRACT_IMAGES') {
-    const result = extractImages(message);
-    sendResponse(result);
-  }
-  
-  // 页面内搜索
-  if (message.type === 'SEARCH_IN_PAGE') {
-    const result = searchInPage(message);
-    sendResponse(result);
-  }
-  
-  // 视频控制
-  if (message.type === 'VIDEO_CONTROL') {
-    const result = videoControl(message.action, message.selector, message.value);
-    sendResponse(result);
-  }
-  
-  // 生成二维码
-  if (message.type === 'GENERATE_QRCODE') {
-    generateQRCode(message.content, message.size, message.errorCorrection, message.showImage).then(result => {
-      sendResponse(result);
-    });
-    return true;
-  }
-  
-  // 网页转Markdown
-  if (message.type === 'PAGE_TO_MARKDOWN') {
-    const result = pageToMarkdown(message.selector, message.includeImages, message.includeLinks, message.maxLength);
-    sendResponse(result);
-  }
-  
-  // 性能审计
-  if (message.type === 'PERFORMANCE_AUDIT') {
-    const result = performanceAudit(message.includeResourceTiming, message.includePaintTiming, message.includeMemoryInfo);
-    sendResponse(result);
-  }
-  
-  // 元素截图
-  if (message.type === 'SCREENSHOT_ELEMENT') {
-    screenshotElement(message.selector, message.quality, message.format).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // Shadow DOM查询
-  if (message.type === 'SHADOW_DOM_QUERY') {
-    const result = shadowDomQuery(message.selector, message.deep, message.maxDepth, message.maxResults);
-    sendResponse(result);
-  }
-  
-  // 页面转PDF
-  if (message.type === 'PAGE_TO_PDF') {
-    pageToPdf(message.fileName, message.landscape, message.scale, message.printBackground, message.margins)
-      .then(result => sendResponse(result));
-    return true;
-  }
-  
-  // ========== 新增工具消息处理 ==========
-  // 页面结构化 JSON 提取
-  if (message.type === 'PAGE_TO_JSON') {
-    const result = pageToJson(message.selector, message.maxItems);
-    sendResponse(result);
-  }
-  
-  // 查找相似元素
-  if (message.type === 'FIND_SIMILAR_ELEMENTS') {
-    const result = findSimilarElements(message.selector, message.maxResults);
-    sendResponse(result);
-  }
-  
-  // iframe 内容获取
-  if (message.type === 'GET_IFRAME_CONTENT') {
-    const result = getIframeContent(message.selector, message.includeNested, message.maxLength);
-    sendResponse(result);
-  }
-  
-  // 在页面执行 JavaScript
-  if (message.type === 'RUN_JAVASCRIPT') {
-    runJavascript(message.code, message.timeout).then(result => sendResponse(result));
-    return true;
-  }
-  
-  // 注入 CSS
-  if (message.type === 'INJECT_CSS') {
-    const result = injectCss(message.css, message.targetSelector, message.injectMode);
-    sendResponse(result);
-  }
-  
-  // 读取无障碍树
-  if (message.type === 'READ_ACCESSIBILITY_TREE') {
-    const result = readAccessibilityTree(message.maxResults);
-    sendResponse(result);
-  }
-  
-  // 清除站点数据（content script 端处理 localStorage/sessionStorage）
-  if (message.type === 'CLEAR_PAGE_DATA') {
+/**
+ * 所有消息处理器映射表
+ * - 同步处理器：直接返回结果
+ * - 异步处理器：返回 Promise，自动处理 return true
+ * - 特殊处理器：内联逻辑（如 CLEAR_PAGE_DATA）
+ */
+const HANDLERS = {
+  // ── 页面读取 ──
+  GET_PAGE_TEXT:             (msg) => getPageText(msg),
+  GET_FULL_HTML:             (msg) => getFullHtml(msg),
+  QUERY_INTERACTIVE_ELEMENTS:(msg) => queryInteractiveElements(msg),
+  GET_SELECTED_CONTENT:      (msg) => getSelectedContent(msg.format),
+
+  // ── 页面交互 ──
+  CLICK_ELEMENT:             (msg) => clickElement(msg.selector, msg.waitTime, msg.timeout),
+  FILL_FORM:                 (msg) => fillForm(msg.fields, msg.waitTime),
+  SCROLL_TO:                 (msg) => scrollToPosition(msg),
+  HOVER_ELEMENT:             (msg) => hoverElement(msg.selector),
+
+  // ── 表单/输入工具 ──
+  KEYBOARD_INPUT:            (msg) => keyboardInput(msg),
+  FILE_UPLOAD:               (msg) => fileUpload(msg.selector, msg.fileName, msg.fileContent, msg.fileType),
+
+  // ── 信息提取 ──
+  EXTRACT_TABLE:             (msg) => extractTable(msg.selector, msg.includeHeaders, msg.format),
+  EXTRACT_METADATA:          ()   => extractMetadata(),
+  EXTRACT_LINKS:             (msg) => extractLinks(msg.filterType, msg.includeImages),
+  EXTRACT_FORMS:             (msg) => extractForms(msg.formSelector),
+  EXTRACT_IMAGES:            (msg) => extractImages(msg),
+  SEARCH_IN_PAGE:            (msg) => searchInPage(msg),
+  PAGE_TO_MARKDOWN:          (msg) => pageToMarkdown(msg.selector, msg.includeImages, msg.includeLinks, msg.maxLength),
+  PAGE_TO_JSON:              (msg) => pageToJson(msg.selector, msg.maxItems),
+  FIND_SIMILAR_ELEMENTS:     (msg) => findSimilarElements(msg.selector, msg.maxResults),
+  GET_IFRAME_CONTENT:        (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
+  READ_ACCESSIBILITY_TREE:   (msg) => readAccessibilityTree(msg.maxResults),
+
+  // ── 高亮/选区 ──
+  HIGHLIGHT_TEXT:            (msg) => highlightText(msg.text, msg.color),
+  REMOVE_HIGHLIGHTS:         ()   => removeHighlights(),
+
+  // ── 元素分析 ──
+  GET_ELEMENT_RECT:          (msg) => getElementRect(msg.selector),
+  DIFF_PAGE:                 (msg) => diffPage(msg.action, msg.snapshotName),
+  SHADOW_DOM_QUERY:          (msg) => shadowDomQuery(msg.selector, msg.deep, msg.maxDepth, msg.maxResults),
+
+  // ── 媒体/输出 ──
+  MANAGE_STORAGE:            (msg) => manageStorage(msg),
+  TEXT_TO_SPEECH:            (msg) => textToSpeech(msg.text, msg.lang, msg.rate, msg.pitch),
+  INJECT_CSS:                (msg) => injectCss(msg.css, msg.targetSelector, msg.injectMode),
+  PERFORMANCE_AUDIT:         (msg) => performanceAudit(msg.includeResourceTiming, msg.includePaintTiming, msg.includeMemoryInfo),
+  VIDEO_CONTROL:             (msg) => videoControl(msg.action, msg.selector, msg.value),
+
+  // ── 异步工具（返回 Promise，需保持通道开放）──
+  COPY_TO_CLIPBOARD:         (msg) => copyToClipboard(msg.text),
+  PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
+  WAIT_FOR_ELEMENT:          (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
+  DRAG_AND_DROP:             (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
+  WATCH_ELEMENT:             (msg) => watchElement(msg.selector, msg.duration),
+  COLOR_PICKER:              ()   => pickColor(),
+  GENERATE_QRCODE:           (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
+  SCREENSHOT_ELEMENT:        (msg) => screenshotElement(msg.selector, msg.quality, msg.format),
+  PAGE_TO_PDF:               (msg) => pageToPdf(msg.fileName, msg.landscape, msg.scale, msg.printBackground, msg.margins),
+  RUN_JAVASCRIPT:            (msg) => runJavascript(msg.code, msg.timeout),
+
+  // ── 特殊：清除站点数据（内联逻辑）──
+  CLEAR_PAGE_DATA: (msg) => {
     try {
       const cleared = [];
-      if (message.site) {
-        // 指定站点清除（仅清除同源的 storage）
-        if (window.location.href.includes(new URL(message.site).hostname)) {
+      if (msg.site) {
+        if (window.location.href.includes(new URL(msg.site).hostname)) {
           localStorage.clear();
           sessionStorage.clear();
           cleared.push('localStorage', 'sessionStorage');
@@ -306,17 +112,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sessionStorage.clear();
         cleared.push('localStorage', 'sessionStorage');
       }
-      sendResponse({ success: true, cleared });
+      return { success: true, cleared };
     } catch (e) {
-      sendResponse({ success: false, error: e.message });
+      return { success: false, error: e.message };
     }
-  }
-  
-  // 获取网页选中的内容（旧版兼容）
+  },
+};
+
+/** 异步工具的 message type 集合，用于判断是否需要 return true */
+const ASYNC_HANDLERS = new Set([
+  'COPY_TO_CLIPBOARD', 'PASTE_FROM_CLIPBOARD',
+  'WAIT_FOR_ELEMENT', 'DRAG_AND_DROP',
+  'WATCH_ELEMENT', 'COLOR_PICKER',
+  'GENERATE_QRCODE', 'SCREENSHOT_ELEMENT',
+  'PAGE_TO_PDF', 'RUN_JAVASCRIPT',
+]);
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 旧版兼容：getSelectedText
   if (message.action === 'getSelectedText') {
-    const selectedText = window.getSelection()?.toString() || '';
-    sendResponse({ text: selectedText });
+    sendResponse({ text: window.getSelection()?.toString() || '' });
+    return;
   }
+
+  const handler = HANDLERS[message.type];
+  if (!handler) return;
+
+  const result = handler(message);
+
+  if (ASYNC_HANDLERS.has(message.type) || result instanceof Promise) {
+    // 异步：保持通道开放，then 后回复
+    Promise.resolve(result).then(sendResponse);
+    return true;
+  }
+
+  // 同步：直接回复
+  sendResponse(result);
 });
 
 // 初始化选中文本浮动工具栏
