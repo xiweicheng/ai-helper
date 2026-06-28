@@ -61,7 +61,7 @@ export const DEFAULT_CHAT_CONFIG = {
 export const RAW_TOOLS = [
   {
     id: 'get_page_text',
-    category: 'info_extract',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -94,7 +94,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'get_full_html',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -122,7 +122,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'query_interactive_elements',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -157,7 +157,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'get_selected_content',
-    category: 'info_extract',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -242,7 +242,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'capture_tab_screenshot',
-    category: 'media_process',
+    category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -314,7 +314,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'show_notification',
-    category: 'system_integration',
+    category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -444,7 +444,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'scroll_to',
-    category: 'system_integration',
+    category: 'page_interaction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -494,7 +494,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'extract_table',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -528,7 +528,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'copy_to_clipboard',
-    category: 'system_integration',
+    category: 'media_output',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -550,7 +550,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'paste_from_clipboard',
-    category: 'system_integration',
+    category: 'media_output',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -729,7 +729,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'extract_metadata',
-    category: 'info_extract',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -746,7 +746,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'download_file',
-    category: 'system_integration',
+    category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: true,
@@ -772,7 +772,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'get_browser_info',
-    category: 'system_integration',
+    category: 'debug_dev',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
@@ -817,7 +817,7 @@ export const RAW_TOOLS = [
   // ========== 新增工具 ==========
   {
     id: 'wait_for_element',
-    category: 'system_integration',
+    category: 'page_interaction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -926,7 +926,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'extract_links',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -955,7 +955,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'extract_forms',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1068,7 +1068,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'extract_images',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1111,7 +1111,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'search_in_page',
-    category: 'info_extract',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1159,7 +1159,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'generate_qrcode',
-    category: 'media_process',
+    category: 'media_output',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1197,7 +1197,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'page_to_markdown',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1304,7 +1304,7 @@ export const RAW_TOOLS = [
   // ========== 新增工具 (2026-06-21) ==========
   {
     id: 'page_to_json',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1324,7 +1324,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'find_similar_elements',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1344,7 +1344,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'get_iframe_content',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1444,7 +1444,7 @@ export const RAW_TOOLS = [
   },
 {
     id: 'search_conversation_memory',
-    category: 'memory',
+    category: 'ai_collaboration',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1517,7 +1517,7 @@ export const RAW_TOOLS = [
   // ========== 本地 Agent 工具 ==========
   {
     id: 'agent_read_file',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1539,7 +1539,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_write_file',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1565,7 +1565,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_list_dir',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1588,7 +1588,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_delete_file',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: true,
@@ -1610,7 +1610,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_exec_command',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: true,
@@ -1640,7 +1640,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_search_files',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1674,7 +1674,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'agent_search_content',
-    category: 'system_integration',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1737,7 +1737,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'wait_for_navigation',
-    category: 'system_integration',
+    category: 'page_interaction',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1757,7 +1757,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'scroll_and_collect',
-    category: 'info_extract',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1801,7 +1801,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'get_element_count',
-    category: 'page_analysis',
+    category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
@@ -1821,7 +1821,7 @@ export const RAW_TOOLS = [
   },
   {
     id: 'take_full_page_screenshot',
-    category: 'media_process',
+    category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
@@ -1847,17 +1847,15 @@ export const RAW_TOOLS = [
 export const CATEGORY_WEIGHT = {
   page_interaction: 1,
   form_operation: 2,
-  info_extract: 3,
-  page_analysis: 4,
-  tab_management: 5,
-  bookmark_history: 6,
-  storage_management: 7,
-  network_request: 8,
-  media_process: 9,
-  debug_dev: 10,
-  ai_collaboration: 11,
-  system_integration: 12,
-  memory: 13,
+  content_extraction: 3,
+  tab_management: 4,
+  bookmark_history: 5,
+  storage_management: 6,
+  network_request: 7,
+  media_output: 8,
+  debug_dev: 9,
+  ai_collaboration: 10,
+  local_agent: 11,
 };
 
 // 从 RAW_TOOLS 动态派生分类顺序列表（单一数据源，无需手动维护）

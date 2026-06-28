@@ -13,15 +13,13 @@ export const PRESET_MODES = [
 export const TOOL_CATEGORY_NAMES = {
     'page_interaction': '🖱️ 页面交互',
     'form_operation': '📝 表单操作',
-    'info_extract': '📄 信息提取',
-    'page_analysis': '🔍 页面分析',
+    'content_extraction': '📄 内容提取',
     'tab_management': '📑 标签页管理',
     'bookmark_history': '🔖 书签历史',
     'storage_management': '💾 存储管理',
     'network_request': '🌐 网络请求',
-    'media_process': '📷 媒体处理',
+    'media_output': '📷 媒体与输出',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'system_integration': '⚙️ 系统集成',
-    'memory': '🧠 记忆检索'
+    'local_agent': '🖥️ 本地Agent'
 };
