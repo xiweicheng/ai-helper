@@ -1,5 +1,5 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
@@ -215,6 +215,79 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
   });
 }
 
+// ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
+
+// Background 工具处理器注册表（单一数据源）
+// 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
+const TOOL_HANDLERS = {
+  search_bookmarks: executeSearchBookmarks,
+  search_history: executeSearchHistory,
+  capture_tab_screenshot: executeCaptureScreenshot,
+  clarify_question: executeClarifyQuestion,
+  show_notification: executeShowNotification,
+  fetch_url: executeFetchUrl,
+  open_tab: executeOpenTab,
+  switch_tab: executeSwitchTab,
+  close_tab: executeCloseTab,
+  get_tabs: executeGetTabs,
+  get_browser_info: executeGetBrowserInfo,
+  download_file: executeDownloadFile,
+  manage_cookies: executeManageCookies,
+  schedule_task: executeScheduleTask,
+  plan_task: executePlanTask,
+  clear_page_data: executeClearPageData,
+  navigate_back_forward: executeNavigateBackForward,
+  reload_tab: executeReloadTab,
+  group_tabs: executeGroupTabs,
+  record_network: executeRecordNetwork,
+  search_conversation_memory: executeSearchConversationMemory,
+  preview_ui_prototype: executePreviewUiPrototype,
+  get_ui_prototype: executeGetUiPrototype,
+  agent_read_file: executeAgentReadFile,
+  agent_write_file: executeAgentWriteFile,
+  agent_list_dir: executeAgentListDir,
+  agent_delete_file: executeAgentDeleteFile,
+  agent_exec_command: executeAgentExecCommand,
+  agent_search_files: executeAgentSearchFiles,
+  agent_search_content: executeAgentSearchContent,
+};
+
+// 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
+const BG_HANDLERS = {};
+for (const tool of RAW_TOOLS) {
+  if (tool.execution === 'background' && TOOL_HANDLERS[tool.id]) {
+    BG_HANDLERS[tool.id] = TOOL_HANDLERS[tool.id];
+  }
+}
+
+// 从 RAW_TOOLS 自动派生 CONTENT_PAYLOADS（根据 function.parameters.properties 自动透传所有参数）
+// 新增 content_script 工具时：只需在 RAW_TOOLS 添加定义，payload 自动生成
+const CONTENT_PAYLOADS = {};
+for (const tool of RAW_TOOLS) {
+  if (tool.execution === 'content_script') {
+    const props = tool.function.parameters?.properties;
+    if (props) {
+      const propKeys = Object.keys(props);
+      CONTENT_PAYLOADS[tool.id] = (a) => {
+        const payload = {};
+        for (const key of propKeys) {
+          payload[key] = a[key];
+        }
+        return payload;
+      };
+    } else {
+      CONTENT_PAYLOADS[tool.id] = () => ({});
+    }
+  }
+}
+
+// 特殊覆盖：需要别名或默认值处理的工具
+// search_in_page: 兼容 pattern 别名（模型可能传 pattern 而非 query）
+CONTENT_PAYLOADS.search_in_page = a => ({
+  query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive,
+  contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight
+});
+
 /**
  * 执行工具调用
  */
@@ -251,80 +324,6 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   }
   
   console.log('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
-
-  // ==================== 工具路由（基于 TOOL_EXECUTION_MAP） ====================
-  // Background 工具：toolName → handler 函数引用
-  const BG_HANDLERS = {
-    search_bookmarks: executeSearchBookmarks,
-    search_history: executeSearchHistory,
-    capture_tab_screenshot: executeCaptureScreenshot,
-    clarify_question: executeClarifyQuestion,
-    show_notification: executeShowNotification,
-    fetch_url: executeFetchUrl,
-    open_tab: executeOpenTab,
-    switch_tab: executeSwitchTab,
-    close_tab: executeCloseTab,
-    get_tabs: executeGetTabs,
-    get_browser_info: executeGetBrowserInfo,
-    download_file: executeDownloadFile,
-    manage_cookies: executeManageCookies,
-    schedule_task: executeScheduleTask,
-    plan_task: executePlanTask,
-    clear_page_data: executeClearPageData,
-    navigate_back_forward: executeNavigateBackForward,
-    reload_tab: executeReloadTab,
-    group_tabs: executeGroupTabs,
-    record_network: executeRecordNetwork,
-    search_conversation_memory: executeSearchConversationMemory,
-    preview_ui_prototype: executePreviewUiPrototype,
-    get_ui_prototype: executeGetUiPrototype,
-    agent_read_file: executeAgentReadFile,
-    agent_write_file: executeAgentWriteFile,
-    agent_list_dir: executeAgentListDir,
-    agent_delete_file: executeAgentDeleteFile,
-    agent_exec_command: executeAgentExecCommand,
-    agent_search_files: executeAgentSearchFiles,
-    agent_search_content: executeAgentSearchContent,
-  };
-
-  // Content Script 工具：toolName → payloadBuilder(args)
-  // messageType 由 toolName.toUpperCase() 自动推导
-  const CONTENT_PAYLOADS = {
-    get_page_text:             a => ({ maxLength: a.maxLength, includeHeadings: a.includeHeadings, includeLinks: a.includeLinks }),
-    get_full_html:             a => ({ includeStyles: a.includeStyles, maxLength: a.maxLength }),
-    query_interactive_elements:a => ({ filterByText: a.filterByText, elementTypes: a.elementTypes, maxResults: a.maxResults }),
-    get_selected_content:      a => ({ format: a.format || 'text' }),
-    click_element:             a => ({ selector: a.selector, waitTime: a.waitTime, timeout: a.timeout }),
-    fill_form:                 a => ({ fields: a.fields, waitTime: a.waitTime }),
-    scroll_to:                 a => ({ target: a.target, selector: a.selector, x: a.x, y: a.y, align: a.align, behavior: a.behavior }),
-    extract_table:             a => ({ selector: a.selector, includeHeaders: a.includeHeaders, format: a.format }),
-    copy_to_clipboard:         a => ({ text: a.text }),
-    paste_from_clipboard:      a => ({}),
-    hover_element:             a => ({ selector: a.selector }),
-    extract_metadata:          a => ({}),
-    highlight_text:            a => ({ text: a.text, color: a.color }),
-    wait_for_element:          a => ({ selector: a.selector, state: a.state, timeout: a.timeout }),
-    keyboard_input:            a => ({ key: a.key, text: a.text, ctrlKey: a.ctrlKey, shiftKey: a.shiftKey, altKey: a.altKey }),
-    file_upload:               a => ({ selector: a.selector, fileName: a.fileName, fileContent: a.fileContent, fileType: a.fileType }),
-    extract_links:             a => ({ filterType: a.filterType, includeImages: a.includeImages }),
-    extract_forms:             a => ({ formSelector: a.formSelector }),
-    watch_element:             a => ({ selector: a.selector, duration: a.duration }),
-    manage_storage:            a => ({ action: a.action, storage: a.storage, key: a.key, value: a.value }),
-    get_element_rect:          a => ({ selector: a.selector }),
-    diff_page:                 a => ({ action: a.action, snapshotName: a.snapshotName }),
-    extract_images:            a => ({ minWidth: a.minWidth, minHeight: a.minHeight, includeBackgroundImages: a.includeBackgroundImages, download: a.download, maxResults: a.maxResults }),
-    search_in_page:            a => ({ query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive, contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight }),
-    generate_qrcode:           a => ({ content: a.content, size: a.size, errorCorrection: a.errorCorrection, showImage: a.showImage }),
-    page_to_markdown:          a => ({ selector: a.selector, includeImages: a.includeImages, includeLinks: a.includeLinks, maxLength: a.maxLength }),
-    performance_audit:         a => ({ includeResourceTiming: a.includeResourceTiming, includePaintTiming: a.includePaintTiming, includeMemoryInfo: a.includeMemoryInfo }),
-    screenshot_element:        a => ({ selector: a.selector, quality: a.quality, format: a.format }),
-    page_to_pdf:               a => ({ fileName: a.fileName, landscape: a.landscape, scale: a.scale, printBackground: a.printBackground, margins: a.margins }),
-    page_to_json:              a => ({ selector: a.selector, maxItems: a.maxItems }),
-    find_similar_elements:     a => ({ selector: a.selector, maxResults: a.maxResults }),
-    get_iframe_content:        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength }),
-    inject_css:                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode }),
-    read_accessibility_tree:   a => ({ maxResults: a.maxResults }),
-  };
 
   const executionType = TOOL_EXECUTION_MAP[toolName];
   let result;
@@ -888,9 +887,19 @@ export function executeShowNotification(args, toolCallId) {
  */
 export async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
-  // AbortSignal.timeout() 是浏览器引擎级超时，不受 SW 定时器节流影响
-  const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const externalSignal = options?.signal;
+
+  // AbortSignal.timeout() 是浏览器引擎级超时，不受 SW 定时器节流影响
+  // 低版本 Chrome（<103）不支持，使用 setTimeout 作为回退
+  let timeoutSignal;
+  let timeoutId;
+  if (typeof AbortSignal.timeout === 'function') {
+    timeoutSignal = AbortSignal.timeout(timeoutMs);
+  } else {
+    // 回退：使用 setTimeout 模拟超时
+    timeoutSignal = controller.signal;
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  }
 
   // 统一 abort 通道：超时和外部取消都通过 controller.abort() 触发
   const onAbort = () => controller.abort();
@@ -912,11 +921,13 @@ export async function fetchWithTimeout(url, options, timeoutMs) {
     // 清理监听器
     timeoutSignal.removeEventListener('abort', onAbort);
     if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
     return response;
   } catch (error) {
     // 清理监听器
     timeoutSignal.removeEventListener('abort', onAbort);
     if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (error.name === 'AbortError') {
       // 外部取消 → 传播原始 AbortError（fetchWithRetry 不重试）
@@ -2050,12 +2061,13 @@ export function executeRecordNetwork(args, toolCallId, sessionId = null) {
         chrome.debugger.onEvent.removeListener(recordingState.eventHandler);
       }
 
-      // 重置状态
+      // 重置状态并清理 Map 条目，防止内存泄漏
       recordingState.active = false;
       recordingState.tabId = null;
       recordingState.requests = [];
       recordingState.startTime = null;
       recordingState.eventHandler = null;
+      networkRecordingStateMap.delete(sessionId);
 
       chrome.debugger.detach({ tabId }, () => {
         if (chrome.runtime.lastError) {

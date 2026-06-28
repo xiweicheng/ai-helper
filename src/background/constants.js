@@ -58,9 +58,13 @@ export const DEFAULT_CHAT_CONFIG = {
   maxMemoryMessages: 20     // 记忆历史限制条数，默认20条
 };
 
-export const BUILTIN_TOOLS = [
+export const RAW_TOOLS = [
   {
     id: 'get_page_text',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_page_text',
@@ -90,6 +94,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_full_html',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_full_html',
@@ -114,6 +122,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'query_interactive_elements',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'query_interactive_elements',
@@ -145,6 +157,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_selected_content',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_selected_content',
@@ -164,6 +180,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'search_bookmarks',
+    category: 'bookmark_history',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'search_bookmarks',
@@ -187,6 +207,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'search_history',
+    category: 'bookmark_history',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'search_history',
@@ -218,6 +242,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'capture_tab_screenshot',
+    category: 'media_process',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'capture_tab_screenshot',
@@ -243,6 +271,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'clarify_question',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'clarify_question',
@@ -282,6 +314,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'show_notification',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'show_notification',
@@ -329,6 +365,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'click_element',
+    category: 'page_interaction',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'click_element',
@@ -357,6 +397,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'fill_form',
+    category: 'form_operation',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'fill_form',
@@ -400,6 +444,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'scroll_to',
+    category: 'system_integration',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'scroll_to',
@@ -446,6 +494,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'extract_table',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'extract_table',
@@ -476,6 +528,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'copy_to_clipboard',
+    category: 'system_integration',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'copy_to_clipboard',
@@ -494,6 +550,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'paste_from_clipboard',
+    category: 'system_integration',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'paste_from_clipboard',
@@ -507,6 +567,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'fetch_url',
+    category: 'network_request',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'fetch_url',
@@ -544,6 +608,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'open_tab',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'open_tab',
@@ -567,6 +635,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'switch_tab',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'switch_tab',
@@ -585,6 +657,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'close_tab',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'close_tab',
@@ -603,6 +679,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_tabs',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_tabs',
@@ -627,6 +707,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'hover_element',
+    category: 'page_interaction',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'hover_element',
@@ -645,6 +729,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'extract_metadata',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'extract_metadata',
@@ -658,6 +746,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'download_file',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'download_file',
@@ -680,6 +772,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_browser_info',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_browser_info',
@@ -693,6 +789,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'highlight_text',
+    category: 'ai_collaboration',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'highlight_text',
@@ -717,6 +817,10 @@ export const BUILTIN_TOOLS = [
   // ========== 新增工具 ==========
   {
     id: 'wait_for_element',
+    category: 'system_integration',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'wait_for_element',
@@ -746,6 +850,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'keyboard_input',
+    category: 'form_operation',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'keyboard_input',
@@ -783,6 +891,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'file_upload',
+    category: 'form_operation',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'file_upload',
@@ -814,6 +926,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'extract_links',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'extract_links',
@@ -839,6 +955,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'extract_forms',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'extract_forms',
@@ -857,6 +977,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'watch_element',
+    category: 'system_integration',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'watch_element',
@@ -880,6 +1004,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'manage_storage',
+    category: 'storage_management',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'manage_storage',
@@ -914,6 +1042,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_element_rect',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_element_rect',
@@ -932,6 +1064,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'diff_page',
+    category: 'debug_dev',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'diff_page',
@@ -956,6 +1092,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'manage_cookies',
+    category: 'storage_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'manage_cookies',
@@ -1005,6 +1145,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'extract_images',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'extract_images',
@@ -1044,6 +1188,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'search_in_page',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'search_in_page',
@@ -1088,6 +1236,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'generate_qrcode',
+    category: 'media_process',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'generate_qrcode',
@@ -1122,6 +1274,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'page_to_markdown',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'page_to_markdown',
@@ -1155,6 +1311,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'performance_audit',
+    category: 'debug_dev',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'performance_audit',
@@ -1184,6 +1344,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'screenshot_element',
+    category: 'media_process',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'screenshot_element',
@@ -1213,6 +1377,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'schedule_task',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'schedule_task',
@@ -1252,6 +1420,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'plan_task',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'plan_task',
@@ -1317,6 +1489,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'page_to_pdf',
+    category: 'media_process',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'page_to_pdf',
@@ -1362,6 +1538,10 @@ export const BUILTIN_TOOLS = [
   // ========== 新增工具 (2026-06-21) ==========
   {
     id: 'page_to_json',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'page_to_json',
@@ -1378,6 +1558,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'find_similar_elements',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'find_similar_elements',
@@ -1394,6 +1578,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_iframe_content',
+    category: 'page_analysis',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_iframe_content',
@@ -1411,6 +1599,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'inject_css',
+    category: 'debug_dev',
+    execution: 'content_script',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'inject_css',
@@ -1428,6 +1620,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'read_accessibility_tree',
+    category: 'info_extract',
+    execution: 'content_script',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'read_accessibility_tree',
@@ -1443,6 +1639,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'clear_page_data',
+    category: 'storage_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'clear_page_data',
@@ -1458,6 +1658,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'navigate_back_forward',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'navigate_back_forward',
@@ -1473,6 +1677,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'reload_tab',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'reload_tab',
@@ -1489,6 +1697,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'group_tabs',
+    category: 'tab_management',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'group_tabs',
@@ -1506,6 +1718,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'record_network',
+    category: 'debug_dev',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'record_network',
@@ -1521,6 +1737,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'search_conversation_memory',
+    category: 'memory',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'search_conversation_memory',
@@ -1549,6 +1769,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'preview_ui_prototype',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'preview_ui_prototype',
@@ -1575,6 +1799,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'get_ui_prototype',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'get_ui_prototype',
@@ -1594,6 +1822,10 @@ export const BUILTIN_TOOLS = [
   // ========== 本地 Agent 工具 ==========
   {
     id: 'agent_read_file',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_read_file',
@@ -1612,6 +1844,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_write_file',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_write_file',
@@ -1634,6 +1870,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_list_dir',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_list_dir',
@@ -1653,6 +1893,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_delete_file',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'agent_delete_file',
@@ -1671,6 +1915,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_exec_command',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: true,
     type: 'function',
     function: {
       name: 'agent_exec_command',
@@ -1697,6 +1945,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_search_files',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_search_files',
@@ -1727,6 +1979,10 @@ export const BUILTIN_TOOLS = [
   },
   {
     id: 'agent_search_content',
+    category: 'system_integration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_search_content',
@@ -1784,186 +2040,19 @@ export const CATEGORY_WEIGHT = {
   memory: 13,
 };
 
-export const TOOL_CATEGORY_MAP = {
-  click_element: 'page_interaction',
-  hover_element: 'page_interaction',
-  fill_form: 'form_operation',
-  keyboard_input: 'form_operation',
-  file_upload: 'form_operation',
-  get_page_text: 'info_extract',
-  get_selected_content: 'info_extract',
-  extract_metadata: 'info_extract',
-  search_in_page: 'info_extract',
-  get_full_html: 'page_analysis',
-  query_interactive_elements: 'page_analysis',
-  extract_table: 'page_analysis',
-  extract_links: 'page_analysis',
-  extract_forms: 'page_analysis',
-  extract_images: 'page_analysis',
-  get_element_rect: 'page_analysis',
-  page_to_markdown: 'page_analysis',
-  open_tab: 'tab_management',
-  switch_tab: 'tab_management',
-  close_tab: 'tab_management',
-  get_tabs: 'tab_management',
-  search_bookmarks: 'bookmark_history',
-  search_history: 'bookmark_history',
-  manage_cookies: 'storage_management',
-  manage_storage: 'storage_management',
-  fetch_url: 'network_request',
-  capture_tab_screenshot: 'media_process',
-  screenshot_element: 'media_process',
-  page_to_pdf: 'media_process',
-  generate_qrcode: 'media_process',
-  diff_page: 'debug_dev',
-  performance_audit: 'debug_dev',
-  clarify_question: 'ai_collaboration',
-  highlight_text: 'ai_collaboration',
-  schedule_task: 'ai_collaboration',
-  plan_task: 'ai_collaboration',
-  copy_to_clipboard: 'system_integration',
-  paste_from_clipboard: 'system_integration',
-  show_notification: 'system_integration',
-  download_file: 'system_integration',
-  get_browser_info: 'system_integration',
-  scroll_to: 'system_integration',
-  wait_for_element: 'system_integration',
-  watch_element: 'system_integration',
-  page_to_json: 'page_analysis',
-  find_similar_elements: 'page_analysis',
-  get_iframe_content: 'page_analysis',
-  inject_css: 'debug_dev',
-  read_accessibility_tree: 'info_extract',
-  clear_page_data: 'storage_management',
-  navigate_back_forward: 'tab_management',
-  reload_tab: 'tab_management',
-  group_tabs: 'tab_management',
-  record_network: 'debug_dev',
-  search_conversation_memory: 'memory',
-  preview_ui_prototype: 'ai_collaboration',
-  get_ui_prototype: 'ai_collaboration',
-  agent_read_file: 'system_integration',
-  agent_write_file: 'system_integration',
-  agent_list_dir: 'system_integration',
-  agent_delete_file: 'system_integration',
-  agent_exec_command: 'system_integration',
-  agent_search_files: 'system_integration',
-  agent_search_content: 'system_integration',
-};
-
-// 从 TOOL_CATEGORY_MAP 动态派生分类顺序列表（单一数据源，无需手动维护）
-export const CATEGORY_ORDER = [...new Set(Object.values(TOOL_CATEGORY_MAP))]
+// 从 RAW_TOOLS 动态派生分类顺序列表（单一数据源，无需手动维护）
+export const CATEGORY_ORDER = [...new Set(RAW_TOOLS.map(t => t.category))]
   .sort((a, b) => (CATEGORY_WEIGHT[a] || 99) - (CATEGORY_WEIGHT[b] || 99));
 
-// ==================== 工具执行元数据（统一管理，避免手动维护映射表） ====================
-
-// 工具执行方式：background（后台直接执行）| content_script（委托 content script）
-export const TOOL_EXECUTION_MAP = {
-  // Background 直接执行的工具
-  search_bookmarks: 'background',
-  search_history: 'background',
-  capture_tab_screenshot: 'background',
-  clarify_question: 'background',
-  show_notification: 'background',
-  fetch_url: 'background',
-  open_tab: 'background',
-  switch_tab: 'background',
-  close_tab: 'background',
-  get_tabs: 'background',
-  get_browser_info: 'background',
-  download_file: 'background',
-  manage_cookies: 'background',
-  schedule_task: 'background',
-  plan_task: 'background',
-  clear_page_data: 'background',
-  navigate_back_forward: 'background',
-  reload_tab: 'background',
-  group_tabs: 'background',
-  record_network: 'background',
-  search_conversation_memory: 'background',
-  preview_ui_prototype: 'background',
-  get_ui_prototype: 'background',
-  // Content Script 委托的工具
-  get_page_text: 'content_script',
-  get_full_html: 'content_script',
-  query_interactive_elements: 'content_script',
-  get_selected_content: 'content_script',
-  click_element: 'content_script',
-  fill_form: 'content_script',
-  scroll_to: 'content_script',
-  extract_table: 'content_script',
-  copy_to_clipboard: 'content_script',
-  paste_from_clipboard: 'content_script',
-  hover_element: 'content_script',
-  extract_metadata: 'content_script',
-  highlight_text: 'content_script',
-  wait_for_element: 'content_script',
-  keyboard_input: 'content_script',
-  file_upload: 'content_script',
-  extract_links: 'content_script',
-  extract_forms: 'content_script',
-  watch_element: 'content_script',
-  manage_storage: 'content_script',
-  get_element_rect: 'content_script',
-  diff_page: 'content_script',
-  extract_images: 'content_script',
-  search_in_page: 'content_script',
-  generate_qrcode: 'content_script',
-  page_to_markdown: 'content_script',
-  performance_audit: 'content_script',
-  screenshot_element: 'content_script',
-  page_to_pdf: 'content_script',
-  page_to_json: 'content_script',
-  find_similar_elements: 'content_script',
-  get_iframe_content: 'content_script',
-  inject_css: 'content_script',
-  read_accessibility_tree: 'content_script',
-  agent_read_file: 'background',
-  agent_write_file: 'background',
-  agent_list_dir: 'background',
-  agent_delete_file: 'background',
-  agent_exec_command: 'background',
-  agent_search_files: 'background',
-  agent_search_content: 'background',
-};
-
-// 可并行执行的工具（只读操作，无副作用）
-export const PARALLELIZABLE_TOOLS = new Set([
-  'get_page_text', 'get_full_html', 'query_interactive_elements',
-  'get_selected_content', 'extract_metadata', 'extract_table',
-  'extract_links', 'extract_forms', 'get_element_rect',
-  'extract_images', 'search_in_page',
-  'page_to_markdown', 'performance_audit',
-  'read_accessibility_tree', 'find_similar_elements',
-  'get_iframe_content', 'page_to_json', 'get_browser_info',
-  'search_bookmarks', 'search_history', 'get_tabs',
-  'search_conversation_memory', 'get_ui_prototype',
-  'paste_from_clipboard', 'diff_page', 'screenshot_element',
-  'agent_search_files', 'agent_search_content',
-]);
-
-// 需要用户确认的敏感工具
-export const CONFIRMATION_REQUIRED_TOOLS = new Set([
-  'manage_cookies',
-  'clear_page_data',
-  'download_file',
-  'schedule_task',
-  'close_tab',
-  'group_tabs',
-  'agent_delete_file',
-  'agent_exec_command',
-]);
-
-/**
- * 从 OpenAI Function Calling 格式的 BUILTIN_TOOLS 派生 UI 格式
- */
-export const BUILTIN_TOOLS_UI = BUILTIN_TOOLS.map(t => ({
-  id: t.id,
-  name: t.function.name,
-  description: t.function.description,
-  category: TOOL_CATEGORY_MAP[t.id] || 'system_integration',
-  execution: TOOL_EXECUTION_MAP[t.id] || 'background',
-  parallelizable: PARALLELIZABLE_TOOLS.has(t.id),
-  requiresConfirmation: CONFIRMATION_REQUIRED_TOOLS.has(t.id),
+// 从 RAW_TOOLS 自动派生所有映射表
+export const BUILTIN_TOOLS = RAW_TOOLS.map(t => ({ id: t.id, type: t.type, function: t.function }));
+export const TOOL_CATEGORY_MAP = Object.fromEntries(RAW_TOOLS.map(t => [t.id, t.category]));
+export const TOOL_EXECUTION_MAP = Object.fromEntries(RAW_TOOLS.map(t => [t.id, t.execution]));
+export const PARALLELIZABLE_TOOLS = new Set(RAW_TOOLS.filter(t => t.parallelizable).map(t => t.id));
+export const CONFIRMATION_REQUIRED_TOOLS = new Set(RAW_TOOLS.filter(t => t.requiresConfirmation).map(t => t.id));
+export const BUILTIN_TOOLS_UI = RAW_TOOLS.map(t => ({
+  id: t.id, name: t.function.name, description: t.function.description,
+  category: t.category, execution: t.execution,
+  parallelizable: t.parallelizable, requiresConfirmation: t.requiresConfirmation,
   enabled: true
 }));

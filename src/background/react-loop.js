@@ -106,6 +106,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   let iteration = 0;
   let currentMessages = [...messages];
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
+  const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
   // 为工具定义、系统提示词、输出预留空间后，剩余约 80% 用于消息历史
@@ -490,7 +491,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
          * 处理：取消检查、工具执行（含超时）、clarify_question 暂停/恢复、
          * 结果格式化、缓存、执行日志更新、plan_task 子任务延续
          */
-        async function executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG) {
+        async function executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages) {
           // 在每个工具执行前检查是否已取消
           if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
             throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
@@ -547,21 +548,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           const cacheKey = `${toolName}:${JSON.stringify(toolArgs)}`;
           if (toolResultCache.has(cacheKey)) {
             if (PARALLELIZABLE_TOOLS.has(toolName)) {
-              console.log(`[Background] 工具 ${toolName} 命中缓存，使用缓存结果`);
               const cached = toolResultCache.get(cacheKey);
-              // 推送缓存工具结果到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
-              currentMessages.push({
-                role: 'tool',
-                content: cached.toolResultStr,
-                tool_call_id: toolCall.id
-              });
-              trimMessages();
               return { ...cached, fromCache: true };
-            } else {
-              // 非并行工具（有副作用）调用时清空缓存，因为状态已改变
-              toolResultCache.clear();
-              console.log(`[Background] 非并行工具 ${toolName} 调用，清空工具结果缓存`);
             }
+            // 非并行工具：清空缓存
+            toolResultCache.clear();
+          }
+
+          // 清除非并行工具缓存
+          if (!PARALLELIZABLE_TOOLS.has(toolName)) {
+            toolResultCache.clear();
           }
           
           // 添加工具执行开始的日志节点（状态为 processing）
@@ -747,6 +743,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 缓存结果（plan_task 也是可缓存的只读操作）
               if (PARALLELIZABLE_TOOLS.has(toolName)) {
+                if (toolResultCache.size >= MAX_CACHE_SIZE) {
+                  // 删除最早插入的条目（Map 保持插入顺序）
+                  const firstKey = toolResultCache.keys().next().value;
+                  toolResultCache.delete(firstKey);
+                }
                 toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCall.id });
               }
               
@@ -787,6 +788,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             
             // 缓存结果（仅并行工具）
             if (PARALLELIZABLE_TOOLS.has(toolName)) {
+              if (toolResultCache.size >= MAX_CACHE_SIZE) {
+                const firstKey = toolResultCache.keys().next().value;
+                toolResultCache.delete(firstKey);
+              }
               toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCall.id, toolResult });
             }
             
@@ -901,11 +906,31 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           // 并行执行路径
           console.log('[Background] 并行执行工具调用:', assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name));
           
+          // 记录并行执行前的消息数量，用于后续按 tool_calls 顺序重排 tool 消息
+          const msgCountBefore = currentMessages.length;
+          
           const parallelPromises = assistantMessage.tool_calls.map(toolCall =>
-            executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG)
+            executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages)
               .catch(err => ({ error: err.message }))
           );
           const parallelResults = await Promise.all(parallelPromises);
+          
+          // 按 tool_calls 原始顺序重排 currentMessages 中新追加的 tool 消息，
+          // 确保 tool 消息顺序与 assistant(tool_calls) 中的 tool_calls 顺序一致
+          const newMessages = currentMessages.splice(msgCountBefore);
+          const toolCallOrder = new Map(
+            assistantMessage.tool_calls.map((tc, i) => [tc.id, i])
+          );
+          const toolMessages = newMessages.filter(m => m.role === 'tool');
+          const nonToolMessages = newMessages.filter(m => m.role !== 'tool');
+          // 按 tool_calls 声明顺序排序 tool 消息
+          toolMessages.sort((a, b) => {
+            const orderA = toolCallOrder.get(a.tool_call_id) ?? 999;
+            const orderB = toolCallOrder.get(b.tool_call_id) ?? 999;
+            return orderA - orderB;
+          });
+          // 非 tool 消息（如 plan_task 的 system 消息）保持在 tool 消息之前
+          currentMessages.push(...nonToolMessages, ...toolMessages);
           
           // 按原始顺序处理结果，检查错误和 plan_task
           let planTaskHandled = false;
@@ -928,7 +953,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         } else {
           // 顺序执行路径
           for (const toolCall of assistantMessage.tool_calls) {
-            const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages, SUBTASK_CONFIG);
+            const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
             
             if (result.planTaskHandled) {
               // plan_task 处理了子任务，处理反思队列后继续外层循环
@@ -1585,7 +1610,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       requestBody.top_p = apiParams.top_p;
     }
 
-    return fetch(apiUrl, {
+    return fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,

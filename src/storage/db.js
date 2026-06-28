@@ -84,22 +84,28 @@ function getDB() {
 function withStore(storeName, mode, callback, isRetry = false) {
   return getDB().then((db) => {
     return new Promise((resolve, reject) => {
+      let resolvedValue = null;
       let settled = false;
 
       const tx = db.transaction(storeName, mode);
       const store = tx.objectStore(storeName);
 
+      // 回调中的 resolve 仅保存结果，实际 resolve 在 tx.oncomplete 中执行
+      // 确保事务已提交后再返回，防止调用方读取到未持久化的数据
       callback(store, (result) => {
-        settled = true;
-        resolve(result);
+        resolvedValue = result;
       });
 
       tx.oncomplete = () => {
-        // 如果 callback 里直接调了 resolve，这里不重复操作
+        if (!settled) {
+          settled = true;
+          resolve(resolvedValue);
+        }
       };
 
       tx.onerror = (event) => {
         if (settled) return;
+        settled = true;
         const err = event.target.error || new Error(`Transaction error on ${storeName}`);
         console.error(`[IDB] 事务错误 (${storeName}):`, err);
 
@@ -116,6 +122,7 @@ function withStore(storeName, mode, callback, isRetry = false) {
 
       tx.onabort = () => {
         if (settled) return;
+        settled = true;
 
         if (!isRetry) {
           resetDBConnection();
