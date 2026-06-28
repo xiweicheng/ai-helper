@@ -4768,7 +4768,10 @@
   <div class="modal-overlay" id="toolsPopupOverlay">
     <div class="modal-container" style="max-width: 520px; width: 90%; height: 520px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolsPopupClose" title="关闭">×</button>
-      <div class="modal-title">工具配置</div>
+      <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between;">
+        <span>工具配置</span>
+        <button id="toolStatsBtn" title="工具使用统计" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
+      </div>
       <div style="margin-bottom: 12px;">
         <input type="text" id="toolsSearchInput" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none;">
       </div>
@@ -4849,6 +4852,37 @@
         </label>
         <button class="modal-btn cancel" id="toolsPopupCancel">取消</button>
         <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 工具使用统计子弹窗 -->
+  <div class="modal-overlay" id="toolStatsOverlay" style="display: none;">
+    <div class="modal-container" style="max-width: 560px; width: 90%; height: 480px; display: flex; flex-direction: column;">
+      <button class="prompt-modal-close" id="toolStatsClose" title="关闭">×</button>
+      <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between;">
+        <span>📊 工具使用统计</span>
+        <button id="toolStatsRefreshBtn" title="刷新" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      </div>
+      <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 12px; color: #999;">各工具调用频率、成功率、平均耗时</span>
+        <button id="toolStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto;">
+        <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
+        <table id="toolStatsTable" style="display: none; width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="position: sticky; top: 0; background: #f5f7fa; z-index: 1;">
+              <th style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">工具名称</th>
+              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">调用</th>
+              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">成功</th>
+              <th style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">成功率</th>
+              <th style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0;">平均耗时</th>
+            </tr>
+          </thead>
+          <tbody id="toolStatsTableBody"></tbody>
+        </table>
+        <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
       </div>
     </div>
   </div>

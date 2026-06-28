@@ -4,9 +4,28 @@ import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
 
+// ==================== 敏感操作审计日志 ====================
+
+const AUDIT_LOG_KEY = 'sensitiveAuditLog';
+const MAX_AUDIT_ENTRIES = 100;
+
+async function appendAuditLog(category, action, details = {}) {
+  try {
+    const result = await chrome.storage.local.get([AUDIT_LOG_KEY]);
+    const entries = result[AUDIT_LOG_KEY] || [];
+    entries.unshift({ timestamp: new Date().toISOString(), category, action, details });
+    if (entries.length > MAX_AUDIT_ENTRIES) entries.length = MAX_AUDIT_ENTRIES;
+    await chrome.storage.local.set({ [AUDIT_LOG_KEY]: entries });
+  } catch (e) { console.warn('[Background] 审计日志写入失败:', e); }
+}
+
 // Agent 连通性缓存（避免每次 getTools 都做网络探测）
 let agentConnectivityCache = { connected: null, checkedAt: 0 };
 const AGENT_CACHE_TTL = 30000; // 30 秒内复用缓存
+
+export function clearAgentConnectivityCache() {
+  agentConnectivityCache = { connected: null, checkedAt: 0 };
+}
 
 /**
  * 检测 Agent 是否真正连通（storage 有凭据且服务可达）
@@ -1118,7 +1137,7 @@ export async function executeFetchUrl(args, toolCallId) {
     
     if (error.name === 'AbortError') {
       console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
-      errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢`;
+      errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢。如需获取数据，可尝试：\n1. 适当增大 timeout 参数重新请求\n2. 检查该 URL 在浏览器中是否能快速访问\n3. 如果是 API 接口，尝试缩小请求范围`;
     } else {
       console.error('[Background] HTTP 请求失败:', error.name, error.message);
       if (error.message === 'Failed to fetch') {
@@ -1405,6 +1424,7 @@ export function executeManageCookies(args, toolCallId) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
               resolve({ success: true, message: `已删除Cookie: ${name}`, tool_call_id: toolCallId });
+              appendAuditLog('cookie_write', `删除 Cookie: ${name}`, { domain: cookieDomain, name });
             }
           });
           break;
@@ -1776,9 +1796,11 @@ export function executeClearPageData(args, toolCallId) {
       }));
 
       Promise.allSettled(cleanupTasks).then(() => {
+        const uniqueCleared = [...new Set(cleared)];
+        appendAuditLog('page_data_clear', `清除页面数据: ${targetSite}`, { site: targetSite, cleared: uniqueCleared });
         resolve({
           success: true,
-          cleared: [...new Set(cleared)],
+          cleared: uniqueCleared,
           site: targetSite,
           tool_call_id: toolCallId
         });
@@ -2335,6 +2357,7 @@ async function executeAgentDeleteFile(args, toolCallId) {
   
   const result = await AgentClient.deleteFile(path);
   if (result.success) {
+    appendAuditLog('file_delete', `删除文件: ${result.path}`, { path: result.path });
     return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
@@ -2375,6 +2398,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   }
   
   // 命令执行完毕，返回完整输出
+  appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
   return {
     success: true,
     level: 'allow',

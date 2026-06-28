@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache } from './tool-executor.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 
@@ -433,3 +433,90 @@ async function handleGeneratePdf(tabId, options) {
     });
   });
 }
+
+// ==================== Agent 健康检查 ====================
+
+let agentHealthCheckInterval = null;
+let wasAgentConnected = null; // 上次检查的连接状态
+
+/**
+ * 执行 Agent 健康检查，状态变化时通知 Side Panel
+ */
+async function performAgentHealthCheck() {
+  try {
+    const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+    const isPaired = !!(storage.agentUrl && storage.agentToken);
+    
+    if (!isPaired) {
+      if (wasAgentConnected !== false) {
+        wasAgentConnected = false;
+        clearAgentConnectivityCache();
+        notifyAgentStatusChange(false, '未配对');
+      }
+      return;
+    }
+    
+    // Ping Agent 服务确认可达性
+    let connected = false;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`${storage.agentUrl}/api/status`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      connected = response.ok;
+    } catch (err) {
+      connected = false;
+    }
+    
+    if (wasAgentConnected !== connected) {
+      wasAgentConnected = connected;
+      clearAgentConnectivityCache();
+      const status = connected ? 'connected' : 'disconnected';
+      const detail = connected ? 'Agent 服务已恢复' : 'Agent 服务不可达';
+      console.log(`[Background] Agent 健康检查状态变化: ${detail}`);
+      notifyAgentStatusChange(connected, status);
+    }
+  } catch (err) {
+    console.warn('[Background] Agent 健康检查异常:', err.message);
+  }
+}
+
+/**
+ * 通知 Side Panel Agent 状态变化
+ */
+function notifyAgentStatusChange(connected, status) {
+  chrome.runtime.sendMessage({
+    type: 'AGENT_STATUS_CHANGE',
+    connected,
+    status
+  }).catch(() => {
+    // Side Panel 可能未打开，忽略错误
+  });
+}
+
+/**
+ * 启动 Agent 定期健康检查（30 秒间隔）
+ */
+function startAgentHealthCheck() {
+  stopAgentHealthCheck();
+  console.log('[Background] 启动 Agent 健康检查（30s 间隔）');
+  
+  // 立即执行一次
+  performAgentHealthCheck();
+  
+  agentHealthCheckInterval = setInterval(performAgentHealthCheck, 30000);
+}
+
+/**
+ * 停止 Agent 定期健康检查
+ */
+function stopAgentHealthCheck() {
+  if (agentHealthCheckInterval) {
+    clearInterval(agentHealthCheckInterval);
+    agentHealthCheckInterval = null;
+    wasAgentConnected = null;
+  }
+}
+
+// SW 启动时自动开始健康检查
+startAgentHealthCheck();
