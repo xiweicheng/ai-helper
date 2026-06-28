@@ -345,8 +345,22 @@ export function deleteUiPrototype(id) {
  * @returns {Promise<Array<{session: string, index: number, role: string, content: string}>>}
  */
 export function searchActiveSessionsMessages(sessionId) {
+  if (sessionId) {
+    // 指定 sessionId 时使用 O(1) 主键查询，避免全量加载所有会话
+    return getSession(sessionId).then((session) => {
+      if (!session) return [];
+      const label = session.title || `会话 ${session.id?.slice(0, 8)}`;
+      return (session.messageHistory || []).filter(msg => msg.content).map((msg, idx) => ({
+        session: session.id,
+        sessionLabel: label,
+        index: idx,
+        role: msg.role,
+        content: msg.content,
+      }));
+    });
+  }
   return getAllSessions().then((all) => {
-    const sessions = sessionId ? all.filter((s) => s.id === sessionId) : all;
+    const sessions = all;
     const results = [];
     sessions.forEach((session) => {
       const label = session.title || `会话 ${session.id?.slice(0, 8)}`;

@@ -196,16 +196,22 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   console.log('[Background] reactLoop 任务上下文:', taskContext ? `子任务 ${taskContext.subtaskId || '无'} (${taskContext.subtaskName || '主任务'})` : '无');
   
   /**
-   * 发送实时执行状态更新消息
+   * 发送实时执行状态更新消息（200ms 节流，子任务大量执行时防止消息拥塞）
    */
+  let lastStatusSendTime = 0;
   function sendExecutionStatusUpdate(nodeName, status) {
     try {
+      const now = Date.now();
       const logSnapshot = [...executionLog];
       
-      // 如果有回调函数，通知父任务
+      // 回调通知父任务不受节流限制
       if (typeof onLogUpdate === 'function') {
         onLogUpdate(logSnapshot);
       }
+      
+      // 节流：200ms 内不重复发送 chrome.runtime.sendMessage
+      if (now - lastStatusSendTime < 200) return;
+      lastStatusSendTime = now;
       
       const msg = {
         type: 'EXECUTION_STATUS_UPDATE',
@@ -625,13 +631,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }
             }
             
-            // 格式化工具结果（统一格式处理）
+            // 格式化工具结果（normalizeToolResult 已保证 content 字段为字符串）
             let toolResultStr;
             if (typeof toolResult === 'string') {
               toolResultStr = toolResult;
-            } else if (toolResult && typeof toolResult === 'object') {
-              // Unified format: { success, content, error?, metadata? }
-              toolResultStr = toolResult.content || JSON.stringify(toolResult);
+            } else if (toolResult && typeof toolResult === 'object' && 'content' in toolResult) {
+              toolResultStr = toolResult.content ?? JSON.stringify(toolResult);
             } else {
               toolResultStr = JSON.stringify(toolResult);
             }
