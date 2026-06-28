@@ -2573,6 +2573,14 @@
     .prompt-modal-close:hover {
       color: #333;
     }
+    #toolStatsBtn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
+    #toolStatsRefreshBtn:hover {
+      background: #f0f0f0;
+      color: #333;
+    }
     
     /* 选中文本浮动菜单样式 */
     .selection-floating-menu {
@@ -4768,10 +4776,8 @@
   <div class="modal-overlay" id="toolsPopupOverlay">
     <div class="modal-container" style="max-width: 520px; width: 90%; height: 520px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolsPopupClose" title="关闭">×</button>
-      <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between;">
-        <span>工具配置</span>
-        <button id="toolStatsBtn" title="工具使用统计" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
-      </div>
+      <button id="toolStatsBtn" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
+      <div class="modal-title">工具配置</div>
       <div style="margin-bottom: 12px;">
         <input type="text" id="toolsSearchInput" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none;">
       </div>
@@ -4860,10 +4866,8 @@
   <div class="modal-overlay" id="toolStatsOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 560px; width: 90%; height: 480px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolStatsClose" title="关闭">×</button>
-      <div class="modal-title" style="display: flex; align-items: center; justify-content: space-between;">
-        <span>📊 工具使用统计</span>
-        <button id="toolStatsRefreshBtn" title="刷新" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
-      </div>
+      <button id="toolStatsRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title">📊 工具使用统计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
         <span style="font-size: 12px; color: #999;">各工具调用频率、成功率、平均耗时</span>
         <button id="toolStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
@@ -4883,6 +4887,18 @@
           <tbody id="toolStatsTableBody"></tbody>
         </table>
         <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 自定义确认弹窗 -->
+  <div class="modal-overlay" id="customConfirmOverlay" style="display: none;">
+    <div class="modal-container" style="max-width: 380px; width: 90%;">
+      <div class="modal-title" id="customConfirmTitle">确认操作</div>
+      <div class="modal-message" id="customConfirmMessage" style="color: #555; font-size: 14px; margin-bottom: 20px; line-height: 1.6;"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button id="customConfirmCancelBtn" style="padding: 8px 20px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 14px; cursor: pointer;">取消</button>
+        <button id="customConfirmOkBtn" style="padding: 8px 20px; border: none; border-radius: 6px; background: #e53e3e; color: white; font-size: 14px; cursor: pointer;">确认</button>
       </div>
     </div>
   </div>

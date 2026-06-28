@@ -1346,6 +1346,157 @@ document.addEventListener('DOMContentLoaded', async () => {
   const modalCancelBtn = document.getElementById('modalCancelBtn');
   const modalConfirmBtn = document.getElementById('modalConfirmBtn');
 
+  // ==================== 自定义确认弹窗 ====================
+
+  /**
+   * 显示自定义确认弹窗，返回 Promise<boolean>
+   * @param {string} message - 提示信息
+   * @param {string} title - 标题（可选）
+   */
+  function showCustomConfirm(message, title = '确认操作') {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('customConfirmOverlay');
+      const titleEl = document.getElementById('customConfirmTitle');
+      const messageEl = document.getElementById('customConfirmMessage');
+      const cancelBtn = document.getElementById('customConfirmCancelBtn');
+      const okBtn = document.getElementById('customConfirmOkBtn');
+
+      if (!overlay || !titleEl || !messageEl || !cancelBtn || !okBtn) {
+        resolve(confirm(message)); // fallback
+        return;
+      }
+
+      const cleanup = () => {
+        overlay.style.display = 'none';
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+      };
+
+      const onOk = () => { cleanup(); resolve(true); };
+      const onCancel = () => { cleanup(); resolve(false); };
+      const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      overlay.style.display = 'flex';
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+    });
+  }
+
+  // ==================== 工具使用统计子弹窗 ====================
+
+  const toolStatsOverlay = document.getElementById('toolStatsOverlay');
+  const toolStatsClose = document.getElementById('toolStatsClose');
+  const toolStatsBtn = document.getElementById('toolStatsBtn');
+
+  function openToolStats() {
+    if (toolStatsOverlay) {
+      toolStatsOverlay.style.display = 'flex';
+      loadToolStats();
+    }
+  }
+
+  function closeToolStats() {
+    if (toolStatsOverlay) toolStatsOverlay.style.display = 'none';
+  }
+
+  if (toolStatsBtn) {
+    toolStatsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openToolStats();
+    });
+  }
+
+  if (toolStatsClose) {
+    toolStatsClose.addEventListener('click', closeToolStats);
+  }
+
+  if (toolStatsOverlay) {
+    toolStatsOverlay.addEventListener('click', (e) => {
+      if (e.target === toolStatsOverlay) closeToolStats();
+    });
+  }
+
+  const toolStatsRefreshBtn = document.getElementById('toolStatsRefreshBtn');
+  if (toolStatsRefreshBtn) {
+    toolStatsRefreshBtn.addEventListener('click', loadToolStats);
+  }
+
+  const toolStatsClearBtn = document.getElementById('toolStatsClearBtn');
+  if (toolStatsClearBtn) {
+    toolStatsClearBtn.addEventListener('click', async () => {
+      const confirmed = await showCustomConfirm('确定要清空所有工具使用统计吗？此操作不可撤销。', '清空统计');
+      if (!confirmed) return;
+      await chrome.storage.local.remove(['toolUsageStats']);
+      loadToolStats();
+    });
+  }
+
+  async function loadToolStats() {
+    const table = document.getElementById('toolStatsTable');
+    const tbody = document.getElementById('toolStatsTableBody');
+    const loading = document.getElementById('toolStatsLoading');
+    const empty = document.getElementById('toolStatsEmpty');
+
+    if (!table || !tbody || !loading || !empty) return;
+
+    table.style.display = 'none';
+    empty.style.display = 'none';
+    loading.style.display = '';
+
+    try {
+      const result = await chrome.storage.local.get(['toolUsageStats']);
+      const toolStats = result.toolUsageStats || {};
+      const entries = Object.entries(toolStats);
+
+      if (entries.length === 0) {
+        loading.style.display = 'none';
+        empty.style.display = '';
+        return;
+      }
+
+      entries.sort((a, b) => b[1].callCount - a[1].callCount);
+
+      tbody.innerHTML = entries.map(([name, stat]) => {
+        const successRate = stat.callCount > 0 ? (stat.successCount / stat.callCount * 100) : 0;
+        const avgDuration = stat.callCount > 0 ? (stat.totalDuration / stat.callCount) : 0;
+
+        let rateColor = '#38a169';
+        if (successRate < 60) rateColor = '#e53e3e';
+        else if (successRate < 85) rateColor = '#d69e2e';
+
+        const avgTimeStr = avgDuration < 1000
+          ? `${Math.round(avgDuration)}ms`
+          : `${(avgDuration / 1000).toFixed(1)}s`;
+
+        return `<tr>
+          <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code>${name}</code></td>
+          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.callCount}</td>
+          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.successCount}</td>
+          <td style="padding: 6px 10px; border-bottom: 1px solid #eee;">
+            <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: #e0e0e0; vertical-align: middle; margin-right: 6px;">
+              <span style="display: inline-block; width: ${successRate * 0.5}px; height: 5px; border-radius: 3px; background: ${rateColor}; vertical-align: top;"></span>
+            </span>
+            <span style="font-size: 12px; color: ${rateColor}; font-weight: 500;">${successRate.toFixed(0)}%</span>
+          </td>
+          <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${avgTimeStr}</td>
+        </tr>`;
+      }).join('');
+
+      loading.style.display = 'none';
+      table.style.display = '';
+    } catch (err) {
+      console.error('[SidePanel] 加载统计失败:', err);
+      loading.style.display = 'none';
+      empty.textContent = '加载失败';
+      empty.style.display = '';
+    }
+  }
+
   modalCancelBtn.addEventListener('click', () => {
     hideModal();
   });
