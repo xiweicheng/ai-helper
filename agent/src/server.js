@@ -13,16 +13,19 @@ import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logE
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
+const MAX_LOG_QUERY_LIMIT = 1000;        // 日志查询最大条数
 const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
+const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制
 
 // 平台信息（启动时检测一次）
 const PLATFORM_INFO = {
-  platform: os.platform(),           // darwin / linux / win32
+  platform: os.platform(),
   platformName: (() => {
     const map = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
     return map[os.platform()] || os.platform();
   })(),
-  arch: os.arch(),                   // arm64 / x64
+  arch: os.arch(),
   hostname: os.hostname(),
   shell: process.env.SHELL || process.env.COMSPEC || '/bin/sh',
   homeDir: os.homedir(),
@@ -83,7 +86,7 @@ export function startServer() {
   const config = loadConfig();
   const { port, host } = config;
 
-  // 开启终端日志输出（前台运行时可见，后台模式 stdio ignore 自动丢弃）
+  // 开启终端日志输出
   setConsoleOutput(true);
 
   logSystem('server_start', { port, host, workdir: config.workdir, ...PLATFORM_INFO });
@@ -92,9 +95,11 @@ export function startServer() {
   let searchTools = { fd: false, rg: false };
   initSearchTools().then(result => { searchTools = result; });
 
+  // 防止 shutdown 并发执行
+  let shuttingDown = false;
+
   // ==================== HTTP Server ====================
   const server = http.createServer((req, res) => {
-    // 用立即执行的 async 函数包裹，统一捕获异常防止进程崩溃
     handleRequest(req, res).catch((err) => {
       console.error('[Agent] 请求处理异常:', err);
       try { jsonResponse(res, 500, { success: false, error: '服务器内部错误' }); } catch {}
@@ -127,7 +132,7 @@ export function startServer() {
       let body;
       try { body = await parseBody(req); }
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      const result = handlePairRequest(body.code, body.extensionId);
+      const result = await handlePairRequest(body.code, body.extensionId);
       if (result.success) {
         logAuth('pair_success', { extensionId: body.extensionId });
       } else {
@@ -168,7 +173,7 @@ export function startServer() {
       return jsonResponse(res, 403, { success: false, error: '认证 token 无效' });
     }
 
-    const maxSize = config.fileMaxSize;
+    const maxSize = config.fileMaxSize || DEFAULT_MAX_SIZE;
 
     // 认证后的状态信息
     if (req.method === 'GET' && pathname === '/api/status/detail') {
@@ -192,12 +197,13 @@ export function startServer() {
 
       // 搜索文件（按文件名模式）
       if (pathname === '/api/fs/search_files') {
+        const maxResults = Math.min(body.maxResults || 200, MAX_SEARCH_RESULTS);
         try {
           const result = await searchFiles(
             body.path || '.',
             body.pattern || '*',
             body.recursive !== false,
-            body.maxResults || 200
+            maxResults
           );
           if (result.success) {
             logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -213,13 +219,14 @@ export function startServer() {
 
       // 搜索文件内容
       if (pathname === '/api/fs/search_content') {
+        const maxResults = Math.min(body.maxResults || 100, MAX_SEARCH_RESULTS);
         try {
           const result = await searchContent(
             body.path || '.',
             body.pattern,
             body.filePattern || null,
             body.caseSensitive || false,
-            body.maxResults || 100,
+            maxResults,
             body.contextLines !== undefined ? body.contextLines : 2
           );
           if (result.success) {
@@ -257,14 +264,15 @@ export function startServer() {
           logSecurity('fs_write_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        const buf = Buffer.from(body.content || '', 'utf-8');
+        const rawContent = 'content' in body ? String(body.content) : '';
+        const buf = Buffer.from(rawContent, 'utf-8');
         if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
-        writeFileSync(check.resolved, body.content || '', 'utf-8');
+        writeFileSync(check.resolved, rawContent, 'utf-8');
 
         // 如果写入的是脚本文件，剥离执行权限防止直接运行
         const SCRIPT_EXT_RE = /\.(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)$/i;
         const isScriptExt = SCRIPT_EXT_RE.test(check.resolved);
-        const hasShebang = (body.content || '').startsWith('#!');
+        const hasShebang = rawContent.startsWith('#!');
         if (isScriptExt || hasShebang) {
           try {
             chmodSync(check.resolved, 0o644);
@@ -320,7 +328,7 @@ export function startServer() {
 
       if (pathname === '/api/exec') {
         const { command, cwd, wait, force } = body;
-        if (!command) return jsonResponse(res, 400, { success: false, error: '缺少 command 参数' });
+        if (!command || typeof command !== 'string') return jsonResponse(res, 400, { success: false, error: '缺少 command 参数（必须是字符串）' });
 
         // 校验 cwd
         let resolvedCwd = cwd || config.workdir;
@@ -331,7 +339,7 @@ export function startServer() {
         }
 
         // 安全检查
-        const cmdCheck = checkCommand(command, force);
+        const cmdCheck = checkCommand(command, !!force);
         if (cmdCheck.level === 'deny') {
           logSecurity('exec_denied', { command, reason: cmdCheck.reason });
           return jsonResponse(res, 403, { success: false, error: cmdCheck.reason, level: 'deny' });
@@ -406,7 +414,8 @@ export function startServer() {
     if (req.method === 'GET' && pathname === '/api/logs') {
       const date = url.searchParams.get('date') || undefined;
       const category = url.searchParams.get('category') || undefined;
-      const limit = parseInt(url.searchParams.get('limit') || '200', 10);
+      const rawLimit = parseInt(url.searchParams.get('limit') || '200', 10);
+      const limit = Math.min(isNaN(rawLimit) ? 200 : rawLimit, MAX_LOG_QUERY_LIMIT);
       const offset = parseInt(url.searchParams.get('offset') || '0', 10);
       const result = queryLogs({ date, category, limit, offset });
       return jsonResponse(res, 200, { success: true, ...result });
@@ -478,17 +487,27 @@ export function startServer() {
     startPairCodeRotation();
   });
 
-  // 优雅关闭
-  function shutdown() {
+  // 优雅关闭（异步 + 防并发）
+  async function shutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('[Agent] 正在关闭...');
     stopPairCodeRotation();
+
+    // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {
       killProcess(entry.execId);
     }
-    wss.close();
-    server.close();
+
+    // 等待 server 和 wss 关闭
+    await Promise.all([
+      new Promise(resolve => server.close(resolve)),
+      new Promise(resolve => wss.close(resolve))
+    ]);
+
     // 清理 PID 文件
     try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch {}
+
     logSystem('server_stop', { reason: 'shutdown' });
     process.exit(0);
   }
@@ -497,15 +516,19 @@ export function startServer() {
   process.on('SIGTERM', shutdown);
 
   // 全局崩溃防护：捕获未处理的异常，记录日志但不退出进程
-  process.on('uncaughtException', (err) => {
-    console.error('[Agent] 未捕获异常:', err);
-    logError('system', 'uncaught_exception', { message: err.message, stack: err.stack });
-  });
+  if (process.listenerCount('uncaughtException') === 0) {
+    process.on('uncaughtException', (err) => {
+      console.error('[Agent] 未捕获异常:', err);
+      logError('system', 'uncaught_exception', { message: err.message, stack: err.stack });
+    });
+  }
 
-  process.on('unhandledRejection', (reason) => {
-    console.error('[Agent] 未处理的 Promise 拒绝:', reason);
-    logError('system', 'unhandled_rejection', { message: reason?.message || String(reason), stack: reason?.stack });
-  });
+  if (process.listenerCount('unhandledRejection') === 0) {
+    process.on('unhandledRejection', (reason) => {
+      console.error('[Agent] 未处理的 Promise 拒绝:', reason);
+      logError('system', 'unhandled_rejection', { message: reason?.message || String(reason), stack: reason?.stack });
+    });
+  }
 
   return { server, wss, shutdown };
 }

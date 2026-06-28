@@ -1,5 +1,5 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize } from 'path';
+import { resolve, normalize, sep } from 'path';
 import { realpathSync } from 'fs';
 import { loadConfig } from './config.js';
 
@@ -20,23 +20,22 @@ function checkPath(pathStr) {
     const config = loadConfig();
     const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
 
-    // 先做前缀检查（快速路径）
+    // 先做前缀检查（快速路径，兼容 Windows/Unix）
     let prefixMatch = false;
-    let matchedAllowed = null;
     for (const allowed of allowedPaths) {
       const allowedResolved = resolve(allowed);
-      if (normalized.startsWith(allowedResolved + '/') || normalized === allowedResolved) {
+      // 统一使用 OS 分隔符构造前缀
+      const prefix = allowedResolved.endsWith(sep) ? allowedResolved : allowedResolved + sep;
+      if (normalized.startsWith(prefix) || normalized === allowedResolved) {
         prefixMatch = true;
-        matchedAllowed = allowedResolved;
         break;
       }
     }
     if (!prefixMatch) {
-      return { allowed: false, reason: `路径不在允许的目录范围内` };
+      return { allowed: false, reason: '路径不在允许的目录范围内' };
     }
 
     // realpath 校验：防止符号链接绕过
-    // 注意：文件可能尚未创建，realpathSync 会抛出 ENOENT
     let realPath;
     try {
       realPath = realpathSync(resolved);
@@ -44,7 +43,7 @@ function checkPath(pathStr) {
       if (err.code === 'ENOENT') {
         // 文件不存在时，检查父目录
         const parentDir = resolve(resolved, '..');
-        realPath = realpathSync(parentDir) + '/' + normalized.split('/').pop();
+        realPath = realpathSync(parentDir) + sep + normalized.split(sep).pop();
       } else {
         return { allowed: false, reason: `无法解析路径: ${err.message}` };
       }
@@ -53,12 +52,13 @@ function checkPath(pathStr) {
     // 对 realPath 再次做前缀检查
     for (const allowed of allowedPaths) {
       const allowedResolved = resolve(allowed);
-      if (realPath.startsWith(allowedResolved + '/') || realPath === allowedResolved) {
+      const prefix = allowedResolved.endsWith(sep) ? allowedResolved : allowedResolved + sep;
+      if (realPath.startsWith(prefix) || realPath === allowedResolved) {
         return { allowed: true, resolved: normalized };
       }
     }
 
-    return { allowed: false, reason: `路径指向了允许范围之外的位置` };
+    return { allowed: false, reason: '路径指向了允许范围之外的位置' };
   } catch (err) {
     return { allowed: false, reason: `路径检查异常: ${err.message}` };
   }
@@ -84,17 +84,17 @@ const BLACKLIST_PATTERNS = [
   /^\s*>\s*\/etc\/sudoers/,
   // fork bomb
   /:\(\)\s*{\s*:\s*\|\s*:\s*&\s*};\s*:/,
-  /#!/,
+  // shebang 直接执行（出现在命令开头）
+  /^\s*#!/,
   // 恶意管道执行
   /(curl|wget|lynx|links)\s+.*\|\s*(ba)?sh/,
   /git\s+clone\s+.*\|\s*(ba)?sh/,
   // 修改根目录权限
   /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\//,
   /^\s*chown\s+-R\s+\S+\s+\//,
-  // Shell 命令替换注入
-  /`[^`]*`/,                   // 反引号命令替换
-  /\$\([^)]*\)/,               // $() 命令替换
-  /\$\{[^}]*\}/,               // ${} 变量替换（可能含命令）
+  // Shell 命令替换注入（仅匹配反引号内的可执行命令模式）
+  /`[^`]*`/,
+  /\$\([^)]*\)/,
 ];
 
 const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
@@ -111,17 +111,17 @@ const GRAYLIST_PATTERNS = [
   { pattern: /^\s*>\s*\/etc\/hosts/, reason: '修改系统 hosts 文件' },
   { pattern: /\beval\s+/, reason: '使用 eval 执行命令' },
 
-  // 脚本解释器执行外部文件 — 防止 Agent 将自己写入的脚本传参执行
+  // 脚本解释器执行外部文件
   { pattern: new RegExp(`^\\s*${SCRIPT_INTERPRETERS}(\\s+[^-]\\S*)*\\s+\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '执行外部脚本文件' },
-  // 直接执行脚本（shebang 或 ./ 方式）
+  // 直接执行脚本
   { pattern: new RegExp(`^\\s*\\.?\\/\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '直接执行脚本文件' },
-  // chmod +x 授予执行权限（配合写文件不赋执行权策略，需用户确认）
+  // chmod +x 授予执行权限
   { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-7][0-7])\s/, reason: '修改文件执行权限' },
 ];
 
 /**
  * 检查命令安全性
- * @param {boolean} [force=false] - 强制放行（用户确认后的调用）
+ * @param {boolean} [force=false] - 用户已确认（跳过灰名单但保留黑名单）
  * @returns {{ safe: boolean, level: 'allow'|'confirm'|'deny', reason?: string }}
  */
 function checkCommand(command, force = false) {
@@ -131,12 +131,7 @@ function checkCommand(command, force = false) {
 
   const trimmed = command.trim();
 
-  // 强制模式：跳过所有检查
-  if (force) {
-    return { safe: true, level: 'allow' };
-  }
-
-  // 1. 先检查黑名单
+  // 1. 黑名单始终生效（即使是 force 模式也不可绕过）
   for (const pattern of BLACKLIST_PATTERNS) {
     if (pattern.test(trimmed)) {
       return {
@@ -147,7 +142,12 @@ function checkCommand(command, force = false) {
     }
   }
 
-  // 2. 检查灰名单
+  // 2. 强制模式：跳过灰名单检查
+  if (force) {
+    return { safe: true, level: 'allow' };
+  }
+
+  // 3. 检查灰名单
   for (const entry of GRAYLIST_PATTERNS) {
     if (entry.pattern.test(trimmed)) {
       return {
@@ -158,7 +158,7 @@ function checkCommand(command, force = false) {
     }
   }
 
-  // 3. 通过安全检查
+  // 4. 通过安全检查
   return { safe: true, level: 'allow' };
 }
 

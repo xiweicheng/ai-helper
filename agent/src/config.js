@@ -1,4 +1,4 @@
-// agent/src/config.js - 配置管理（带内存缓存）
+// agent/src/config.js - 配置管理（带内存缓存 + 写入互斥锁）
 import { homedir } from 'os';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
@@ -17,6 +17,8 @@ const DEFAULTS = {
   fileMaxSize: 50 * 1024 * 1024
 };
 
+const VALID_CONFIG_KEYS = Object.keys(DEFAULTS);
+
 // 内存缓存
 let configCache = null;
 let configCacheMtime = 0;
@@ -24,12 +26,23 @@ let configCacheMtime = 0;
 let pairingsCache = null;
 let pairingsCacheMtime = 0;
 
+// 写入互斥锁（防止并发写互相覆盖）
+let writeLock = Promise.resolve();
+
+function withWriteLock(fn) {
+  const prev = writeLock;
+  let release;
+  writeLock = new Promise(resolve => { release = resolve; });
+  return prev.then(() => fn().finally(release));
+}
+
 function ensureAgentDir() {
   if (!existsSync(AGENT_DIR)) {
     try {
       mkdirSync(AGENT_DIR, { recursive: true });
     } catch (err) {
       console.error('[Config] 无法创建 Agent 目录:', err.message);
+      throw err;
     }
   }
 }
@@ -53,7 +66,7 @@ export function loadConfig() {
 
   if (!existsSync(CONFIG_FILE)) {
     const defaults = { ...DEFAULTS, allowedPaths: [DEFAULTS.workdir] };
-    saveConfig(defaults);
+    saveConfigSync(defaults);
     configCache = defaults;
     configCacheMtime = getMtime(CONFIG_FILE);
     return defaults;
@@ -70,7 +83,8 @@ export function loadConfig() {
     configCache = { ...DEFAULTS, ...userConfig };
     configCacheMtime = mtime;
     return configCache;
-  } catch {
+  } catch (err) {
+    console.error('[Config] 配置文件解析失败:', err.message);
     configCache = { ...DEFAULTS, allowedPaths: [DEFAULTS.workdir] };
     configCacheMtime = 0;
     return configCache;
@@ -78,27 +92,48 @@ export function loadConfig() {
 }
 
 /**
- * 保存配置（写入磁盘并更新缓存）
+ * 同步写入磁盘（内部方法，不加锁）
  */
-export function saveConfig(config) {
+function saveConfigSync(config) {
   ensureAgentDir();
-  try {
-    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-    configCache = config;
-    configCacheMtime = getMtime(CONFIG_FILE);
-  } catch (err) {
-    console.error('[Config] 保存配置失败:', err.message);
+  const safe = {};
+  for (const key of VALID_CONFIG_KEYS) {
+    if (config[key] !== undefined) safe[key] = config[key];
   }
+  writeFileSync(CONFIG_FILE, JSON.stringify(safe, null, 2), 'utf-8');
 }
 
 /**
- * 更新单字段配置
+ * 保存配置（写入磁盘并更新缓存，加写锁防并发覆盖）
  */
-export function updateConfigField(key, value) {
-  const config = loadConfig();
-  config[key] = value;
-  saveConfig(config);
-  return config;
+export async function saveConfig(config) {
+  return withWriteLock(async () => {
+    try {
+      saveConfigSync(config);
+      // 从磁盘重新加载确保缓存与磁盘一致
+      const mtime = getMtime(CONFIG_FILE);
+      const raw = readFileSync(CONFIG_FILE, 'utf-8');
+      configCache = { ...DEFAULTS, ...JSON.parse(raw) };
+      configCacheMtime = mtime;
+    } catch (err) {
+      console.error('[Config] 保存配置失败:', err.message);
+      throw err;
+    }
+  });
+}
+
+/**
+ * 更新单字段配置（加写锁防 TOCTOU）
+ */
+export async function updateConfigField(key, value) {
+  if (!VALID_CONFIG_KEYS.includes(key)) {
+    throw new Error(`无效配置项: ${key}`);
+  }
+  return withWriteLock(async () => {
+    const config = loadConfig();
+    config[key] = value;
+    return saveConfig(config).then(() => config);
+  });
 }
 
 /**
@@ -122,7 +157,8 @@ export function loadPairings() {
     pairingsCache = JSON.parse(readFileSync(PAIRINGS_FILE, 'utf-8'));
     pairingsCacheMtime = mtime;
     return pairingsCache;
-  } catch {
+  } catch (err) {
+    console.error('[Config] 配对文件解析失败:', err.message);
     pairingsCache = {};
     pairingsCacheMtime = 0;
     return {};
@@ -130,19 +166,22 @@ export function loadPairings() {
 }
 
 /**
- * 保存配对（写入磁盘并更新缓存）
+ * 保存配对（加写锁防并发覆盖）
  */
-export function savePairing(extensionId, token) {
-  const pairings = loadPairings();
-  pairings[extensionId] = { token, pairedAt: Date.now() };
-  ensureAgentDir();
-  try {
-    writeFileSync(PAIRINGS_FILE, JSON.stringify(pairings, null, 2), 'utf-8');
-    pairingsCache = pairings;
-    pairingsCacheMtime = getMtime(PAIRINGS_FILE);
-  } catch (err) {
-    console.error('[Config] 保存配对失败:', err.message);
-  }
+export async function savePairing(extensionId, token) {
+  return withWriteLock(async () => {
+    const pairings = loadPairings();
+    pairings[extensionId] = { token, pairedAt: Date.now() };
+    ensureAgentDir();
+    try {
+      writeFileSync(PAIRINGS_FILE, JSON.stringify(pairings, null, 2), 'utf-8');
+      pairingsCache = pairings;
+      pairingsCacheMtime = getMtime(PAIRINGS_FILE);
+    } catch (err) {
+      console.error('[Config] 保存配对失败:', err.message);
+      throw err;
+    }
+  });
 }
 
 export { AGENT_DIR, CONFIG_FILE };

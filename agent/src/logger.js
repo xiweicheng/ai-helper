@@ -6,6 +6,8 @@ import { homedir } from 'os';
 const LOG_DIR = join(homedir(), '.ai-helper-agent', 'logs');
 const MAX_LOG_FILES = 30;          // 最多保留 30 个日志文件
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 单文件最大 10MB
+const CLEAN_INTERVAL_MS = 60_000;  // 清理间隔（60 秒）
+const QUERY_MAX_LIMIT = 1000;      // 单次查询最大条数
 
 // 是否输出到终端 stderr
 let consoleOutput = false;
@@ -51,17 +53,27 @@ function ensureLogDir() {
 /**
  * 获取当天日志文件路径
  */
-function getLogFile() {
+function getLogFile(date) {
+  if (date) return join(LOG_DIR, `agent-${date}.log`);
   const now = new Date();
-  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  return join(LOG_DIR, `agent-${date}.log`);
+  const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  return join(LOG_DIR, `agent-${dateStr}.log`);
 }
 
+// 清理节流：记录上次清理时间
+let lastCleanTime = 0;
+
 /**
- * 清理旧日志文件（保留最近 MAX_LOG_FILES 个，删除超大文件）
+ * 清理旧日志文件（保留最近 MAX_LOG_FILES 个文件 + 删除超大文件）
+ * 节流执行：至少间隔 CLEAN_INTERVAL_MS
  */
 function cleanOldLogs() {
+  const now = Date.now();
+  if (now - lastCleanTime < CLEAN_INTERVAL_MS) return;
+  lastCleanTime = now;
+
   try {
+    ensureLogDir();
     const files = readdirSync(LOG_DIR)
       .filter(f => f.endsWith('.log'))
       .map(f => {
@@ -80,7 +92,7 @@ function cleanOldLogs() {
       }
     }
     if (deleted > 0) {
-      console.log(`[Logger] 清理了 ${deleted} 个旧日志文件`);
+      console.error(`[Logger] 清理了 ${deleted} 个旧日志文件`);
     }
   } catch {}
 }
@@ -143,14 +155,10 @@ function logError(category, action, details) { log('error', category, action, de
  * @returns {{ entries: Array, total: number }}
  */
 function queryLogs(options = {}) {
-  const { date, category, limit = 200, offset = 0 } = options;
+  const { date, category, limit: rawLimit = 200, offset = 0 } = options;
+  const limit = Math.min(rawLimit, QUERY_MAX_LIMIT);
 
-  let filePath;
-  if (date) {
-    filePath = join(LOG_DIR, `agent-${date}.log`);
-  } else {
-    filePath = getLogFile();
-  }
+  const filePath = getLogFile(date);
 
   let entries = [];
   try {
@@ -168,7 +176,7 @@ function queryLogs(options = {}) {
   } catch {}
 
   // 按时间倒序（最新的在前）
-  entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  entries.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
   const total = entries.length;
   entries = entries.slice(offset, offset + limit);

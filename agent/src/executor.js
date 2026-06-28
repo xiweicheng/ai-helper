@@ -6,6 +6,40 @@ import { loadConfig } from './config.js';
 // 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId }
 const runningProcesses = new Map();
 
+// 安全的子进程环境变量白名单（不泄露宿主敏感信息）
+const SAFE_ENV_KEYS = [
+  'PATH', 'HOME', 'USER', 'SHELL', 'TERM', 'LANG', 'LC_ALL', 'LC_CTYPE',
+  'PWD', 'OLDPWD', 'NODE_PATH', 'MANPATH', 'INFOPATH',
+  'XDG_SESSION_TYPE', 'DISPLAY', 'SSH_AUTH_SOCK', 'COLORTERM',
+  'EDITOR', 'VISUAL', 'PAGER', 'BROWSER',
+  'GIT_EDITOR', 'GIT_PAGER', 'GIT_SSH_COMMAND',
+  // 平台相关
+  'TMPDIR', 'TEMPDIR', 'TEMP', 'TMP',
+  // 常用工具
+  'NVM_DIR', 'NVM_BIN', 'JAVA_HOME', 'GOPATH', 'GOROOT', 'CARGO_HOME',
+  'RUSTUP_HOME', 'PYTHONPATH', 'VIRTUAL_ENV', 'CONDA_PREFIX',
+  'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'GRADLE_HOME',
+  'PKG_CONFIG_PATH', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH',
+  // 颜色/格式化
+  'NO_COLOR', 'CLICOLOR', 'CLICOLOR_FORCE', 'FORCE_COLOR'
+];
+
+/**
+ * 构建安全的子进程环境变量
+ */
+function buildSafeEnv() {
+  const env = {};
+  for (const key of SAFE_ENV_KEYS) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
+  }
+  // 强制覆盖
+  env.TERM = 'dumb';
+  env.FORCE_COLOR = '0';
+  return env;
+}
+
 /**
  * 生成唯一执行 ID
  */
@@ -30,7 +64,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
 
   const proc = spawn('sh', ['-c', command], {
     cwd: workdir,
-    env: { ...process.env, TERM: 'dumb', FORCE_COLOR: '0' },
+    env: buildSafeEnv(),
     stdio: ['pipe', 'pipe', 'pipe']
   });
 
@@ -40,12 +74,14 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   let stdoutCollected = '';
   let stderrCollected = '';
   let killed = false;
-  let forceKillId = null; // 追踪 SIGKILL 的 setTimeout
+  let finished = false; // 防止 close/error 重复处理
 
-  runningProcesses.set(execId, { process: proc, wsClients });
+  // 存储到 entry 中供 clearTimers 读取
+  const entry = { process: proc, wsClients };
+  runningProcesses.set(execId, entry);
 
   // 超时控制
-  const timeoutId = setTimeout(() => {
+  entry.timeoutId = setTimeout(() => {
     killed = true;
     killProcess(execId);
   }, timeout);
@@ -57,6 +93,16 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
       if (client.readyState === 1) {
         client.send(msg);
       }
+    }
+  }
+
+  // 清理所有定时器
+  function clearTimers() {
+    clearTimeout(entry.timeoutId);
+    entry.timeoutId = null;
+    if (entry.forceKillId !== null && entry.forceKillId !== undefined) {
+      clearTimeout(entry.forceKillId);
+      entry.forceKillId = null;
     }
   }
 
@@ -74,23 +120,18 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     broadcast({ type: 'stderr', data: str, execId });
   });
 
-  // 清理超时计时器
-  function clearTimers() {
-    clearTimeout(timeoutId);
-    if (forceKillId !== null) {
-      clearTimeout(forceKillId);
-      forceKillId = null;
-    }
-  }
-
   // 进程结束
   proc.on('close', (exitCode) => {
+    if (finished) return;
+    finished = true;
     clearTimers();
-    broadcast({ type: 'exit', exitCode, execId, killed });
+    broadcast({ type: 'exit', exitCode: typeof exitCode === 'number' ? exitCode : -1, execId, killed });
     runningProcesses.delete(execId);
     if (onComplete) {
       onComplete({
-        execId, exitCode, killed,
+        execId,
+        exitCode: typeof exitCode === 'number' ? exitCode : -1,
+        killed,
         stdout: collectOutput ? stdoutCollected : undefined,
         stderr: collectOutput ? stderrCollected : undefined
       });
@@ -99,6 +140,8 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
 
   // 进程错误
   proc.on('error', (err) => {
+    if (finished) return;
+    finished = true;
     clearTimers();
     broadcast({ type: 'error', error: err.message, execId });
     runningProcesses.delete(execId);
@@ -120,21 +163,23 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
  * @returns {Promise<{execId, exitCode, stdout, stderr, killed, error?}>}
  */
 function executeCommandSync(command, cwd) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const config = loadConfig();
     const timeout = config.commandTimeout || 300000;
 
     let resolved = false;
+    let syncTimeoutId = null;
 
     const execId = executeCommand(command, cwd, null, (result) => {
+      clearTimeout(syncTimeoutId);
       if (!resolved) {
         resolved = true;
         resolve(result);
       }
     }, true);
 
-    // 超时兜底
-    setTimeout(() => {
+    // 超时兜底（超时后额外 5s 用于 kill 完成）
+    syncTimeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true;
         killProcess(execId);
@@ -161,22 +206,32 @@ function addWsClient(execId, wsClient) {
  */
 function killProcess(execId) {
   const entry = runningProcesses.get(execId);
-  if (entry) {
-    try {
-      entry.process.kill('SIGTERM');
-    } catch {}
-    // 5秒后强制 kill，保存 ID 以便后续清理
-    const forceKillId = setTimeout(() => {
-      try {
-        if (entry.process.exitCode === null) {
-          entry.process.kill('SIGKILL');
-        }
-      } catch {}
-    }, 5000);
-    entry.forceKillId = forceKillId;
-    return true;
+  if (!entry) return false;
+
+  if (entry.process.exitCode !== null) return false; // 已退出
+
+  try {
+    entry.process.kill('SIGTERM');
+  } catch {}
+
+  // 5秒后强制 kill（绑定到 entry 对象防止闭包引用旧变量）
+  if (entry.timeoutId) {
+    clearTimeout(entry.timeoutId);
+    entry.timeoutId = null;
   }
-  return false;
+  if (entry.forceKillId) {
+    clearTimeout(entry.forceKillId);
+  }
+  entry.forceKillId = setTimeout(() => {
+    try {
+      if (entry.process.exitCode === null) {
+        entry.process.kill('SIGKILL');
+      }
+    } catch {}
+    entry.forceKillId = null;
+  }, 5000);
+
+  return true;
 }
 
 /**

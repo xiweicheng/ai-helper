@@ -9,37 +9,45 @@ let fdAvailable = null;
 let rgAvailable = null;
 
 /**
- * 检测系统是否安装了 fd（快速文件搜索）
+ * 检测系统是否安装了 fd（快速文件搜索，带 5s 超时）
  */
 function checkFdAvailable() {
   return new Promise((resolve) => {
     const proc = spawn('fd', ['--version'], { stdio: 'ignore' });
-    proc.on('close', (code) => resolve(code === 0));
-    proc.on('error', () => resolve(false));
+    const timeout = setTimeout(() => { proc.kill(); resolve(false); }, 5000);
+    proc.on('close', (code) => { clearTimeout(timeout); resolve(code === 0); });
+    proc.on('error', () => { clearTimeout(timeout); resolve(false); });
   });
 }
 
 /**
- * 检测系统是否安装了 rg（ripgrep 快速内容搜索）
+ * 检测系统是否安装了 rg（ripgrep 快速内容搜索，带 5s 超时）
  */
 function checkRgAvailable() {
   return new Promise((resolve) => {
     const proc = spawn('rg', ['--version'], { stdio: 'ignore' });
-    proc.on('close', (code) => resolve(code === 0));
-    proc.on('error', () => resolve(false));
+    const timeout = setTimeout(() => { proc.kill(); resolve(false); }, 5000);
+    proc.on('close', (code) => { clearTimeout(timeout); resolve(code === 0); });
+    proc.on('error', () => { clearTimeout(timeout); resolve(false); });
   });
 }
 
 /**
- * 初始化检测 fd/rg 可用性
+ * 初始化检测 fd/rg 可用性（仅允许单次初始化）
  */
+let searchToolsInitPromise = null;
+
 export async function initSearchTools() {
-  const [fd, rg] = await Promise.all([checkFdAvailable(), checkRgAvailable()]);
-  fdAvailable = fd;
-  rgAvailable = rg;
-  console.log(`[Agent] fd (文件搜索): ${fd ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
-  console.log(`[Agent] rg (内容搜索): ${rg ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
-  return { fd: fdAvailable, rg: rgAvailable };
+  if (searchToolsInitPromise) return searchToolsInitPromise;
+  searchToolsInitPromise = (async () => {
+    const [fd, rg] = await Promise.all([checkFdAvailable(), checkRgAvailable()]);
+    fdAvailable = fd;
+    rgAvailable = rg;
+    console.log(`[Agent] fd (文件搜索): ${fd ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
+    console.log(`[Agent] rg (内容搜索): ${rg ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
+    return { fd: fdAvailable, rg: rgAvailable };
+  })();
+  return searchToolsInitPromise;
 }
 
 /**
@@ -84,11 +92,20 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
     const proc = spawn('fd', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout = [];
     const stderr = [];
+    let timedOut = false;
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+      resolve([]);
+    }, 30000);
 
     proc.stdout.on('data', (chunk) => stdout.push(chunk));
     proc.stderr.on('data', (chunk) => stderr.push(chunk));
 
     proc.on('close', (code) => {
+      clearTimeout(timeout);
+      if (timedOut) return;
       const output = Buffer.concat(stdout).toString('utf-8').trim();
       const lines = output ? output.split('\n').filter(Boolean) : [];
       const results = lines.map(p => {
@@ -102,8 +119,7 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
       resolve(results);
     });
 
-    proc.on('error', () => resolve([]));
-    setTimeout(() => { proc.kill(); resolve([]); }, 30000);
+    proc.on('error', () => { clearTimeout(timeout); resolve([]); });
   });
 }
 
@@ -204,24 +220,32 @@ function searchContentWithRg(rootPath, pattern, filePattern, maxResults, context
 
     const proc = spawn('rg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout = [];
-    let killed = false;
+    let timedOut = false;
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      proc.kill();
+      resolve([]);
+    }, 30000);
 
     proc.stdout.on('data', (chunk) => stdout.push(chunk));
 
     proc.on('close', (code) => {
+      clearTimeout(timeout);
+      if (timedOut) return;
       if (code !== 0 && code !== 1) { resolve([]); return; } // 1 = no matches
       const output = Buffer.concat(stdout).toString('utf-8').trim();
       resolve(parseRgOutput(output, contextLines));
     });
 
-    proc.on('error', () => resolve([]));
-    setTimeout(() => { proc.kill(); killed = true; resolve([]); }, 30000);
+    proc.on('error', () => { clearTimeout(timeout); resolve([]); });
   });
 }
 
 /**
  * 解析 rg 输出格式：file:line:content
  * 上下文行格式：file-line:content
+ * 注：Windows 路径含 `:` 可能导致解析偏差，建议在 WSL/Mac/Linux 中使用
  */
 function parseRgOutput(output, contextLines) {
   if (!output) return [];
@@ -232,7 +256,7 @@ function parseRgOutput(output, contextLines) {
     // 匹配行分隔符（rg 用 -- 分隔不同文件的匹配）
     if (line === '--') continue;
 
-    // 匹配文件名:行号:内容
+    // 匹配文件名:行号:内容（非贪婪匹配文件名）
     const match = line.match(/^(.+?):(\d+):(.*)$/);
     if (match) {
       results.push({
@@ -270,7 +294,7 @@ function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxR
         walk(fullPath);
       } else if (entry.isFile()) {
         if (filePattern && !matchGlob(entry.name, filePattern)) continue;
-        // 跳过二进制和超大文件
+        // 跳过压缩和映射文件
         if (entry.name.endsWith('.min.js')) continue;
         if (entry.name.endsWith('.map')) continue;
 

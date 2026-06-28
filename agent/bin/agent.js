@@ -4,8 +4,9 @@
 import { join } from 'path';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { spawn } from 'child_process';
+import { homedir } from 'os';
 
-const AGENT_DIR = join(process.env.HOME || '~', '.ai-helper-agent');
+const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
 const PID_FILE = join(AGENT_DIR, 'agent.pid');
 
@@ -18,7 +19,9 @@ function readAgentConfig() {
       const raw = readFileSync(CONFIG_FILE, 'utf-8');
       return JSON.parse(raw);
     }
-  } catch {}
+  } catch (err) {
+    console.error(`[Agent] 配置文件读取失败: ${err.message}`);
+  }
   return { port: 18910, host: '127.0.0.1' };
 }
 
@@ -27,47 +30,87 @@ function readAgentConfig() {
  */
 function ensureAgentDir() {
   if (!existsSync(AGENT_DIR)) {
-    try { mkdirSync(AGENT_DIR, { recursive: true }); } catch {}
+    try {
+      mkdirSync(AGENT_DIR, { recursive: true });
+    } catch (err) {
+      console.error(`[Agent] 无法创建配置目录 ${AGENT_DIR}: ${err.message}`);
+    }
   }
 }
 
 /**
- * 从 PID 文件读取进程 ID
+ * 从 PID 文件读取进程 ID（原子化读取，无 TOCTOU）
  */
 function getPidFromFile() {
   try {
-    if (existsSync(PID_FILE)) {
-      return parseInt(readFileSync(PID_FILE, 'utf-8').trim(), 10);
+    const raw = readFileSync(PID_FILE, 'utf-8').trim();
+    const pid = parseInt(raw, 10);
+    if (isNaN(pid) || pid <= 0) {
+      console.error(`[Agent] PID 文件内容无效: "${raw}"`);
+      return null;
     }
-  } catch {}
-  return null;
+    return pid;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * 删除 PID 文件
  */
 function removePidFile() {
-  try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch {}
+  try {
+    if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+  } catch (err) {
+    console.error(`[Agent] 删除 PID 文件失败: ${err.message}`);
+  }
 }
 
 /**
  * 通过 PID 终止进程
  */
 function killByPid(pid) {
-  try { process.kill(pid, 'SIGTERM'); return true; }
-  catch { return false; }
-}
-
-/**
- * 检查 Agent 是否在运行
- */
-async function isRunning(config) {
+  if (!pid || typeof pid !== 'number' || pid <= 0) return false;
   try {
-    const resp = await fetch(`http://${config.host}:${config.port}/api/status`);
-    return resp.ok;
+    process.kill(pid, 'SIGTERM');
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * 校验端口号
+ */
+function isValidPort(port) {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+/**
+ * 检查 Agent 是否在运行（轮询直到确认）
+ */
+async function isRunning(config, retries = 2) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const resp = await fetch(`http://${config.host}:${config.port}/api/status`);
+      if (resp.ok) return true;
+    } catch {}
+    if (i < retries - 1) await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
+}
+
+/**
+ * 等待 Agent 退出（轮询端口释放）
+ */
+async function waitForExit(config, timeoutMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const alive = await isRunning(config, 1);
+    if (!alive) return true;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return false;
 }
 
 /**
@@ -102,12 +145,41 @@ function printHelp() {
   console.log('  ai-helper-agent status');
 }
 
+/**
+ * 从命令行参数提取端口配置，校验后覆盖 config
+ */
+function applyCliArgs(config, args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--port' && args[i + 1]) {
+      const port = parseInt(args[i + 1], 10);
+      if (!isValidPort(port)) {
+        console.error(`[Agent] 无效端口号: ${args[i + 1]}，使用默认端口 ${config.port}`);
+      } else {
+        config.port = port;
+      }
+      i++;
+    } else if (arg === '--host' && args[i + 1]) {
+      config.host = args[i + 1];
+      i++;
+    } else if (arg === '--workdir' && args[i + 1]) {
+      config.workdir = args[i + 1];
+      i++;
+    }
+  }
+  return config;
+}
+
 const command = process.argv[2] || 'help';
 
 // --version / -v
 if (command === '--version' || command === '-v') {
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
-  console.log(`ai-helper-agent v${pkg.version}`);
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
+    console.log(`ai-helper-agent v${pkg.version}`);
+  } catch (err) {
+    console.error(`[Agent] 无法读取版本信息: ${err.message}`);
+  }
   process.exit(0);
 }
 
@@ -141,44 +213,48 @@ if (command === 'start') {
       env: { ...process.env }
     });
 
-    child.unref();
+    // 监听 spawn 错误
+    let spawnFailed = false;
+    child.on('error', (err) => {
+      spawnFailed = true;
+      console.error(`[Agent] 后台启动失败: ${err.message}`);
+      try { unlinkSync(PID_FILE); } catch {}
+      process.exit(1);
+    });
 
-    // 写入 PID 文件
-    try {
-      writeFileSync(PID_FILE, String(child.pid));
-    } catch {}
+    // 等待进程启动确认
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    console.log(`[Agent] Agent 已在后台启动 (PID: ${child.pid})`);
-    console.log(`[Agent] 使用 'ai-helper-agent stop' 停止服务`);
-    console.log(`[Agent] 使用 'ai-helper-agent status' 查看状态`);
-    process.exit(0);
+    if (!spawnFailed && child.pid) {
+      try {
+        writeFileSync(PID_FILE, String(child.pid));
+      } catch (err) {
+        console.error(`[Agent] PID 文件写入失败: ${err.message}`);
+        process.exit(1);
+      }
+      child.unref();
+      console.log(`[Agent] Agent 已在后台启动 (PID: ${child.pid})`);
+      console.log(`[Agent] 使用 'ai-helper-agent stop' 停止服务`);
+      console.log(`[Agent] 使用 'ai-helper-agent status' 查看状态`);
+    }
+
+    process.exit(spawnFailed ? 1 : 0);
   }
 
   // 前台模式：写入 PID 文件以便 stop 能找到
   ensureAgentDir();
-  try { writeFileSync(PID_FILE, String(process.pid)); } catch {}
+  try {
+    writeFileSync(PID_FILE, String(process.pid));
+  } catch (err) {
+    console.error(`[Agent] PID 文件写入失败: ${err.message}`);
+  }
 
   const { startServer } = await import('../src/server.js');
   const { loadConfig } = await import('../src/config.js');
 
   console.log('[Agent] AI Helper Agent 启动中...');
 
-  const args = passArgs;
-  const config = loadConfig();
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--port' && args[i + 1]) {
-      config.port = parseInt(args[i + 1], 10);
-      i++;
-    } else if (arg === '--host' && args[i + 1]) {
-      config.host = args[i + 1];
-      i++;
-    } else if (arg === '--workdir' && args[i + 1]) {
-      config.workdir = args[i + 1];
-      i++;
-    }
-  }
+  const config = applyCliArgs(loadConfig(), passArgs);
 
   console.log(`[Agent] 工作目录: ${config.workdir}`);
   console.log(`[Agent] 监听地址: ${config.host}:${config.port}`);
@@ -203,7 +279,9 @@ if (command === 'start') {
         removePidFile();
         process.exit(0);
       }
-    } catch {}
+    } catch (err) {
+      console.error(`[Agent] API 关闭请求失败: ${err.message}`);
+    }
     console.log('[Agent] API 关闭失败，尝试通过 PID 终止...');
   }
 
@@ -234,9 +312,14 @@ if (command === 'start') {
     console.log('[Agent] 正在停止 Agent...');
     try {
       await fetch(`http://${config.host}:${config.port}/api/shutdown`, { method: 'POST' });
-    } catch {}
-    // 等待进程退出
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    } catch (err) {
+      console.error(`[Agent] API 关闭请求失败: ${err.message}`);
+    }
+    // 等待进程退出（轮询而非硬延迟）
+    const exited = await waitForExit(config, 8000);
+    if (!exited) {
+      console.log('[Agent] 等待超时，尝试强制终止...');
+    }
   }
 
   // 再通过 PID 兜底
@@ -249,7 +332,6 @@ if (command === 'start') {
 
   // 重新启动
   if (isBg) {
-    // 后台模式：spawn 子进程
     ensureAgentDir();
     const passArgs = process.argv.slice(3).filter(a => a !== '--background' && a !== '-b');
 
@@ -265,31 +347,44 @@ if (command === 'start') {
       env: { ...process.env }
     });
 
-    child.unref();
+    let spawnFailed = false;
+    child.on('error', (err) => {
+      spawnFailed = true;
+      console.error(`[Agent] 后台重启失败: ${err.message}`);
+      try { unlinkSync(PID_FILE); } catch {}
+      process.exit(1);
+    });
 
-    try { writeFileSync(PID_FILE, String(child.pid)); } catch {}
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    console.log(`[Agent] Agent 已在后台重启 (PID: ${child.pid})`);
-    console.log(`[Agent] 使用 'ai-helper-agent stop' 停止服务`);
-    process.exit(0);
+    if (!spawnFailed && child.pid) {
+      try {
+        writeFileSync(PID_FILE, String(child.pid));
+      } catch (err) {
+        console.error(`[Agent] PID 文件写入失败: ${err.message}`);
+        process.exit(1);
+      }
+      child.unref();
+      console.log(`[Agent] Agent 已在后台重启 (PID: ${child.pid})`);
+      console.log(`[Agent] 使用 'ai-helper-agent stop' 停止服务`);
+    }
+
+    process.exit(spawnFailed ? 1 : 0);
   }
 
   // 前台模式
   console.log('[Agent] 正在启动 Agent...');
   ensureAgentDir();
-  try { writeFileSync(PID_FILE, String(process.pid)); } catch {}
+  try {
+    writeFileSync(PID_FILE, String(process.pid));
+  } catch (err) {
+    console.error(`[Agent] PID 文件写入失败: ${err.message}`);
+  }
 
   const { startServer: restartServer } = await import('../src/server.js');
   const { loadConfig: restartConfig } = await import('../src/config.js');
-  const cfg = restartConfig();
-
-  // 应用命令行参数
-  const rargs = process.argv.slice(3).filter(a => a !== '--background' && a !== '-b');
-  for (let i = 0; i < rargs.length; i++) {
-    if (rargs[i] === '--port' && rargs[i + 1]) { cfg.port = parseInt(rargs[i + 1], 10); i++; }
-    else if (rargs[i] === '--host' && rargs[i + 1]) { cfg.host = rargs[i + 1]; i++; }
-    else if (rargs[i] === '--workdir' && rargs[i + 1]) { cfg.workdir = rargs[i + 1]; i++; }
-  }
+  const cfg = applyCliArgs(restartConfig(),
+    process.argv.slice(3).filter(a => a !== '--background' && a !== '-b'));
 
   console.log(`[Agent] 工作目录: ${cfg.workdir}`);
   restartServer();
@@ -309,7 +404,9 @@ if (command === 'start') {
       const resp = await fetch(`http://${config.host}:${config.port}/api/status`);
       const data = await resp.json();
       console.log(`[Agent] 版本:     ${data.version}`);
-    } catch {}
+    } catch (err) {
+      console.error(`[Agent] 获取状态失败: ${err.message}`);
+    }
   }
 
 // ==================== paircode ====================
@@ -322,7 +419,6 @@ if (command === 'start') {
     process.exit(1);
   }
 
-  // 配对码需要认证，如果没有 token 则直接查看（Agent 启动控制台会打印）
   console.log('[Agent] 配对码已显示在 Agent 启动终端中');
   console.log('[Agent] 请在启动 Agent 的终端窗口中查看配对码');
   console.log('');
@@ -333,7 +429,9 @@ if (command === 'start') {
       const data = await resp.json();
       console.log(`[Agent] 版本: ${data.version}`);
     }
-  } catch {}
+  } catch (err) {
+    console.error(`[Agent] 获取状态失败: ${err.message}`);
+  }
 
 // ==================== config ====================
 } else if (command === 'config') {
