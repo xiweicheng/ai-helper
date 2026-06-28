@@ -4,30 +4,72 @@ import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
 
+// Agent 连通性缓存（避免每次 getTools 都做网络探测）
+let agentConnectivityCache = { connected: null, checkedAt: 0 };
+const AGENT_CACHE_TTL = 30000; // 30 秒内复用缓存
+
+/**
+ * 检测 Agent 是否真正连通（storage 有凭据且服务可达）
+ * 有缓存时直接返回，避免每次调用都发网络请求
+ */
+async function checkAgentConnectivity() {
+  const now = Date.now();
+  if (agentConnectivityCache.connected !== null && (now - agentConnectivityCache.checkedAt) < AGENT_CACHE_TTL) {
+    return agentConnectivityCache.connected;
+  }
+
+  // 第一步：检查 storage 是否有配对的凭据
+  const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+  if (!storage.agentUrl || !storage.agentToken) {
+    agentConnectivityCache = { connected: false, checkedAt: now };
+    return false;
+  }
+
+  // 第二步：有凭据，但需确认 Agent 服务是否可达（1.5 秒超时）
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const response = await fetch(`${storage.agentUrl}/api/status`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const connected = response.ok;
+    agentConnectivityCache = { connected, checkedAt: now };
+    console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
+    return connected;
+  } catch (err) {
+    agentConnectivityCache = { connected: false, checkedAt: now };
+    console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
+    return false;
+  }
+}
+
 /**
  * 获取启用的工具列表
- * 会自动隐藏不可用的工具（如 Agent 未配对时隐藏 agent_* 工具）
+ * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
  */
-export function getTools() {
+export async function getTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['enabledTools', 'agentUrl', 'agentToken'], (result) => {
+    chrome.storage.local.get(['enabledTools'], async (result) => {
       let enabledTools = result.enabledTools;
-      const agentConnected = !!(result.agentUrl && result.agentToken);
       
       // 如果没有保存的配置，使用默认值（全部启用）
       if (!enabledTools || !Array.isArray(enabledTools) || enabledTools.length === 0) {
         enabledTools = BUILTIN_TOOLS.map(t => t.id);
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
+
+      // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
+      const agentConnected = await checkAgentConnectivity();
       
-      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已配对:', agentConnected);
+      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已连通:', agentConnected);
       
       const tools = BUILTIN_TOOLS
         .filter(tool => enabledTools.includes(tool.id))
         .filter(tool => {
-          // Agent 未配对时，隐藏所有 agent_* 工具，避免大模型无效调用
+          // Agent 未连通时，隐藏所有 agent_* 工具，避免大模型无效调用
           if (tool.id.startsWith('agent_') && !agentConnected) {
-            console.log('[Background] Agent 未配对，隐藏工具:', tool.id);
+            console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
             return false;
           }
           return true;
