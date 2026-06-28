@@ -6,11 +6,13 @@ import * as AgentClient from './local-agent-client.js';
 
 /**
  * 获取启用的工具列表
+ * 会自动隐藏不可用的工具（如 Agent 未配对时隐藏 agent_* 工具）
  */
 export function getTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['enabledTools'], (result) => {
+    chrome.storage.local.get(['enabledTools', 'agentUrl', 'agentToken'], (result) => {
       let enabledTools = result.enabledTools;
+      const agentConnected = !!(result.agentUrl && result.agentToken);
       
       // 如果没有保存的配置，使用默认值（全部启用）
       if (!enabledTools || !Array.isArray(enabledTools) || enabledTools.length === 0) {
@@ -18,10 +20,18 @@ export function getTools() {
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
       
-      console.log('[Background] 当前启用的工具配置:', enabledTools);
+      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已配对:', agentConnected);
       
       const tools = BUILTIN_TOOLS
         .filter(tool => enabledTools.includes(tool.id))
+        .filter(tool => {
+          // Agent 未配对时，隐藏所有 agent_* 工具，避免大模型无效调用
+          if (tool.id.startsWith('agent_') && !agentConnected) {
+            console.log('[Background] Agent 未配对，隐藏工具:', tool.id);
+            return false;
+          }
+          return true;
+        })
         .map(tool => tool);
       
       console.log('[Background] 过滤后的工具列表:', tools.map(t => t.id), '数量:', tools.length);
@@ -973,106 +983,91 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
   throw lastError;
 }
 
-export function executeFetchUrl(args, toolCallId) {
+export async function executeFetchUrl(args, toolCallId) {
   const { url, method = 'GET', headers = {}, body, timeout = 30000 } = args;
   
   console.log('[Background] 执行 HTTP 请求:', 'method=', method, 'url=', url, 'timeout=', timeout);
   
   // 验证 URL 格式
   if (!url) {
-    return Promise.resolve({ 
+    return { 
       success: false, 
       error: '缺少 URL 参数',
       tool_call_id: toolCallId 
-    });
+    };
   }
   
   // 检查 URL 是否有效
   try {
     new URL(url);
   } catch (e) {
-    return Promise.resolve({ 
+    return { 
       success: false, 
       error: `无效的 URL 格式: ${url}`,
       tool_call_id: toolCallId 
-    });
+    };
   }
   
-  return new Promise((resolve) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.log('[Background] HTTP 请求超时:', url);
-    }, timeout);
+  const fetchOptions = {
+    method: method.toUpperCase(),
+    headers: headers
+  };
+  
+  // 只在有 body 且不是 GET/HEAD 方法时添加 body
+  if (body && method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD') {
+    fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : body;
+  }
+  
+  console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
+  
+  try {
+    const response = await fetchWithRetry(url, fetchOptions, timeout);
+    console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
     
-    const fetchOptions = {
-      method: method.toUpperCase(),
-      headers: headers,
-      signal: controller.signal
-    };
+    try {
+      const text = await response.text();
+      const result = {
+        success: response.status >= 200 && response.status < 300,
+        status: response.status,
+        statusText: response.statusText,
+        content: text.substring(0, 10000),
+        contentLength: text.length,
+        url: response.url
+      };
+      console.log('[Background] HTTP 响应内容长度:', text.length);
+      return { ...result, tool_call_id: toolCallId };
+    } catch (textError) {
+      console.error('[Background] 读取响应内容失败:', textError);
+      return {
+        success: false,
+        error: `读取响应内容失败: ${textError.message}`,
+        status: response.status,
+        tool_call_id: toolCallId
+      };
+    }
+  } catch (error) {
+    let errorMessage = error.message;
     
-    // 只在有 body 且不是 GET/HEAD 方法时添加 body
-    if (body && method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD') {
-      fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : body;
+    if (error.name === 'AbortError') {
+      console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
+      errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢`;
+    } else {
+      console.error('[Background] HTTP 请求失败:', error.name, error.message);
+      if (error.message === 'Failed to fetch') {
+        errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
+      } else if (error.message.includes('CORS')) {
+        errorMessage = `CORS 跨域限制，目标服务器不允许跨域访问`;
+      }
     }
     
-    console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
-    
-    fetch(url, fetchOptions)
-    .then(async response => {
-      clearTimeout(timeoutId);
-      console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
-      
-      try {
-        const text = await response.text();
-        const result = {
-          success: response.status >= 200 && response.status < 300,
-          status: response.status,
-          statusText: response.statusText,
-          content: text.substring(0, 10000),
-          contentLength: text.length,
-          url: response.url
-        };
-        console.log('[Background] HTTP 响应内容长度:', text.length);
-        resolve({ ...result, tool_call_id: toolCallId });
-      } catch (textError) {
-        console.error('[Background] 读取响应内容失败:', textError);
-        resolve({
-          success: false,
-          error: `读取响应内容失败: ${textError.message}`,
-          status: response.status,
-          tool_call_id: toolCallId
-        });
-      }
-    })
-    .catch(error => {
-      clearTimeout(timeoutId);
-      
-      let errorMessage = error.message;
-      
-      // 提供更详细的错误信息
-      if (error.name === 'AbortError') {
-        // AbortError 是预期的超时行为，使用 warn 而非 error
-        console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
-        errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢`;
-      } else {
-        console.error('[Background] HTTP 请求失败:', error.name, error.message);
-        if (error.message === 'Failed to fetch') {
-          errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
-        } else if (error.message.includes('CORS')) {
-          errorMessage = `CORS 跨域限制，目标服务器不允许跨域访问`;
-        }
-      }
-      
-      resolve({ 
-        success: false, 
-        error: errorMessage,
-        originalError: error.message,
-        url: url,
-        tool_call_id: toolCallId 
-      });
-    });
-  });
+    return { 
+      success: false, 
+      error: errorMessage,
+      originalError: error.message,
+      url: url,
+      tool_call_id: toolCallId 
+    };
+  }
 }
 
 /**
