@@ -2,9 +2,11 @@
 // 同时导出命名 let 绑定（供 named import 使用）和 default 对象（供 import state 使用）
 // default 对象通过 getter/setter 代理到同名 let 变量，确保两种导入方式共享同一份数据
 
-export let isGenerating = false;
+export let generatingSessionIds = new Set();  // Set of sessionIds currently generating
 export let messageHistory = [];
 export let currentModel = 'deepseek-v4-pro';
+export let activeSessionId = null;   // 当前活跃会话 ID
+export let sessions = [];             // 所有会话列表缓存
 export let useTools = true;
 export let isolateChat = true;
 export let enableSelectionQuery = false;
@@ -18,12 +20,23 @@ export let systemPrompt = '';
 export let inputHistory = [];
 export let inputHistoryIndex = -1;
 
+// Agent 平台信息（从 Agent 获取，用于系统提示词注入）
+export let agentPlatform = {
+  platformName: 'Unknown',
+  platform: 'unknown',
+  arch: 'unknown',
+  shell: '/bin/sh',
+  homeDir: '/home/user',
+  workdir: '',
+  connected: false
+};
+
 // 配置常量 - 从 storage 获取，使用默认值作为后备
 export let chatConfig = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 5000,
-  maxMemoryMessages: null
+  maxMessageLength: 100000,
+  maxMemoryMessages: 20
 };
 
 // 温度设置
@@ -41,14 +54,26 @@ export let enabledTools = [];
 // 分类折叠状态
 export const collapsedCategories = {};
 
-// 当前执行状态
-export let currentExecutionStatus = null;
+// 当前执行状态（按 sessionId 隔离，key 为 sessionId）
+export let sessionExecutionStatus = new Map();
 export let executionLogListener = null;
 
-// 问题澄清对话框状态
+// 当前 API 调用的取消函数，按 sessionId 隔离，防止多会话并行时互相覆盖
+export let pendingCancelApiMap = new Map();
+
+// 记录有 pending callApi 的会话 ID 集合（支持多会话同时有后台任务）
+export let pendingCallApiSessionIds = new Set();
+
+// 切换回原会话后，重新创建的加载指示器 ID 集合（按 sessionId 索引）
+export let substituteLoadingIds = new Map();
+
+// 澄清对话框相关状态
 export let currentClarifyToolCallId = null;
+export let currentClarifySessionId = null;  // 当前澄清所属的会话 ID
+export let currentConfirmToolCallId = null; // 当前确认对话框所属的 toolCallId
+export let currentConfirmSessionId = null;  // 当前确认对话框所属的会话 ID
 export let clarifyTimerInterval = null;
-export let clarifyTimeoutValue = 180000;
+export let clarifyTimeoutValue = 180000;  // 默认 3 分钟
 
 // 消息目录状态
 export let messageTocContainer = null;
@@ -72,12 +97,20 @@ export let isScrolling = false;
 // 使用方式: import state from './state.js'; state.xxx = value;
 // ============================================================
 export default {
-  get isGenerating() { return isGenerating; },
-  set isGenerating(v) { isGenerating = v; },
+  get isGenerating() { return generatingSessionIds.has(activeSessionId); },
+  set isGenerating(v) { 
+    if (v) generatingSessionIds.add(activeSessionId); 
+    else generatingSessionIds.delete(activeSessionId);
+  },
+  get generatingSessionIds() { return generatingSessionIds; },
   get messageHistory() { return messageHistory; },
   set messageHistory(v) { messageHistory = v; },
   get currentModel() { return currentModel; },
   set currentModel(v) { currentModel = v; },
+  get activeSessionId() { return activeSessionId; },
+  set activeSessionId(v) { activeSessionId = v; },
+  get sessions() { return sessions; },
+  set sessions(v) { sessions = v; },
   get useTools() { return useTools; },
   set useTools(v) { useTools = v; },
   get isolateChat() { return isolateChat; },
@@ -98,6 +131,8 @@ export default {
   set draggedItemIndex(v) { draggedItemIndex = v; },
   get systemPrompt() { return systemPrompt; },
   set systemPrompt(v) { systemPrompt = v; },
+  get agentPlatform() { return agentPlatform; },
+  set agentPlatform(v) { Object.assign(agentPlatform, v); },
   get inputHistory() { return inputHistory; },
   set inputHistory(v) { inputHistory = v; },
   get inputHistoryIndex() { return inputHistoryIndex; },
@@ -118,12 +153,40 @@ export default {
   set enabledTools(v) { enabledTools = v; },
   get collapsedCategories() { return collapsedCategories; },
   // collapsedCategories is const, no setter needed
-  get currentExecutionStatus() { return currentExecutionStatus; },
-  set currentExecutionStatus(v) { currentExecutionStatus = v; },
+  get sessionExecutionStatus() { return sessionExecutionStatus; },
+  set sessionExecutionStatus(v) { sessionExecutionStatus = v; },
+  // 兼容旧代码：currentExecutionStatus 通过 getter/setter 操作当前活跃会话
+  get currentExecutionStatus() { return sessionExecutionStatus.get(activeSessionId) || null; },
+  set currentExecutionStatus(v) { 
+    if (v === null) {
+      sessionExecutionStatus.delete(activeSessionId);
+    } else {
+      sessionExecutionStatus.set(activeSessionId, v);
+    }
+  },
   get executionLogListener() { return executionLogListener; },
   set executionLogListener(v) { executionLogListener = v; },
+  get pendingCancelApi() { return pendingCancelApiMap.get(activeSessionId) || null; },
+  set pendingCancelApi(v) {
+    if (v === null) {
+      pendingCancelApiMap.delete(activeSessionId);
+    } else {
+      pendingCancelApiMap.set(activeSessionId, v);
+    }
+  },
+  get pendingCancelApiMap() { return pendingCancelApiMap; },
+  get pendingCallApiSessionIds() { return pendingCallApiSessionIds; },
+  set pendingCallApiSessionIds(v) { pendingCallApiSessionIds = v; },
+  get substituteLoadingIds() { return substituteLoadingIds; },
+  set substituteLoadingIds(v) { substituteLoadingIds = v; },
   get currentClarifyToolCallId() { return currentClarifyToolCallId; },
   set currentClarifyToolCallId(v) { currentClarifyToolCallId = v; },
+  get currentClarifySessionId() { return currentClarifySessionId; },
+  set currentClarifySessionId(v) { currentClarifySessionId = v; },
+  get currentConfirmToolCallId() { return currentConfirmToolCallId; },
+  set currentConfirmToolCallId(v) { currentConfirmToolCallId = v; },
+  get currentConfirmSessionId() { return currentConfirmSessionId; },
+  set currentConfirmSessionId(v) { currentConfirmSessionId = v; },
   get clarifyTimerInterval() { return clarifyTimerInterval; },
   set clarifyTimerInterval(v) { clarifyTimerInterval = v; },
   get clarifyTimeoutValue() { return clarifyTimeoutValue; },

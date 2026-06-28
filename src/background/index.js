@@ -2,9 +2,38 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools } from './tool-executor.js';
-import { reactLoop, callApiNonStream } from './react-loop.js';
+import { getTools, clearAgentConnectivityCache } from './tool-executor.js';
+import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
+
+// SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
+// 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
+const keepalivePorts = new Map(); // sessionId -> Port
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name?.startsWith('keepalive-')) {
+    const sessionId = port.name.replace('keepalive-', '');
+    // 判断是否为重连（SW 重启后的重连），而非首次连接
+    const isReconnection = keepalivePorts.has(sessionId);
+    keepalivePorts.set(sessionId, port);
+    console.log('[Background] keepalive 端口已连接, sessionId:', sessionId, isReconnection ? '(重连)' : '(首次)');
+
+    // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
+    if (isReconnection && !activeReactLoops.has(sessionId)) {
+      console.warn('[Background] ⚠️ 检测到 SW 已重启，sessionId', sessionId, '的 API 调用已丢失');
+      try {
+        port.postMessage({ type: 'SW_RESTARTED', sessionId });
+      } catch (e) {
+        console.warn('[Background] 发送 SW_RESTARTED 消息失败:', e.message);
+      }
+    }
+
+    port.onDisconnect.addListener(() => {
+      keepalivePorts.delete(sessionId);
+      console.log('[Background] keepalive 端口已断开, sessionId:', sessionId);
+    });
+  }
+});
 
 // ==================== Side Panel 路由配置 ====================
 
@@ -28,18 +57,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // 监听来自 popup/side_panel 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CANCEL_REACT') {
-    const { tabId } = message;
-    cancelReactLoop(tabId);
+    const { tabId, sessionId } = message;
+    // 优先使用 sessionId，兼容旧版 tabId
+    if (sessionId) {
+      cancelReactLoop(sessionId);
+    } else {
+      cancelReactLoop(tabId);
+    }
     return false;
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId } = message;
     
-    // 重置当前对话的 API 调用计数器
-    resetDialogApiCallCount();
+    // 重置当前会话的 API 调用计数器
+    resetDialogApiCallCount(sessionId);
     
-    console.log('[Background] 收到 CALL_API 消息，useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
+    console.log('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
     
     const apiCall = useTools 
       ? (async () => {
@@ -48,30 +82,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
             console.log('[Background] 没有可用工具，跳过预筛选，直接普通对话');
-            return callApiNonStream(messages, model, apiParams);
+            return callApiNonStream(messages, model, apiParams, sessionId);
           }
 
           console.log('[Background] 获取到工具列表，数量:', tools.length, '工具:', tools.map(t => t.function.name));
 
+          // 检查工具预筛选开关
+          const config = await getStoredConfig();
+          const enableToolPreselect = config.reactConfig.enableToolPreselect;
+
           // 预筛选工具：通过前置规划调用减少不必要的工具传递
-          // 先递增计数器，让预筛选也能显示正确的调用次数
-          const preselectCount = incrementDialogApiCallCount();
-          const preselection = await preselectTools(messages, model, tools, apiParams, preselectCount);
+          let preselection;
+          if (enableToolPreselect) {
+            preselection = await preselectTools(messages, model, tools, apiParams);
+          } else {
+            console.log('[Background] 工具预筛选已关闭，使用全量工具');
+            preselection = {
+              type: 'tools',
+              tools,
+              executionLog: []
+            };
+          }
 
           // 发送预筛选完成状态，让实时日志面板也能看到这个步骤
-          const currentCount = preselectCount;
-          const statusUpdate = {
-            type: 'EXECUTION_STATUS_UPDATE',
-            nodeName: `API调用 (第${currentCount}次)（🔍工具预筛选）`,
-            status: 'success',
-            executionLog: preselection.executionLog
-          };
-          console.log('[Background] 发送预筛选状态更新:', statusUpdate);
-          chrome.runtime.sendMessage(statusUpdate).then(() => {
-            console.log('[Background] 预筛选状态更新发送成功');
-          }).catch(err => {
-            console.error('[Background] 预筛选状态更新发送失败:', err);
-          });
+          if (preselection.executionLog.length > 0) {
+            const statusUpdate = {
+              type: 'EXECUTION_STATUS_UPDATE',
+              nodeName: '工具预筛选',
+              status: 'success',
+              executionLog: preselection.executionLog
+            };
+            if (sessionId) {
+              statusUpdate.sessionId = sessionId;
+            }
+            console.log('[Background] 发送预筛选状态更新:', statusUpdate);
+            chrome.runtime.sendMessage(statusUpdate).then(() => {
+              console.log('[Background] 预筛选状态更新发送成功');
+            }).catch(err => {
+              console.error('[Background] 预筛选状态更新发送失败:', err);
+            });
+          }
 
           // 模型直接回答了，无需再调主力模型
           if (preselection.type === 'answer') {
@@ -82,35 +132,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
 
-          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, null, null, { value: 1 }, preselectLog);
+          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
-            executionLog: reactResult.executionLog || preselectLog
+            executionLog: reactResult.executionLog || preselectLog,
+            reflectionScore: reactResult.reflectionScore,
+            wasRevised: reactResult.wasRevised || false
           };
         })()
-      : callApiNonStream(messages, model, apiParams);
+      : callApiNonStream(messages, model, apiParams, sessionId);
     
     apiCall
       .then(result => {
         // 兼容两种返回格式：{ content, executionLog } 或直接返回 content
         const content = result.content !== undefined ? result.content : result;
         const executionLog = result.executionLog || [];
+        const reflectionScore = result.reflectionScore;
+        const wasRevised = result.wasRevised || false;
         
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
+          sessionId: sessionId,
           content: content,
-          executionLog: executionLog
+          executionLog: executionLog,
+          reflectionScore: reflectionScore,
+          wasRevised: wasRevised
         }).catch(err => {
           console.warn('[Background] 发送回传消息失败:', err);
         });
       })
       .catch(error => {
-        console.error('[Background] API 调用失败:', error);
+        const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
+        if (isAborted) {
+          console.log('[Background] API 调用已被用户取消');
+        } else {
+          console.error('[Background] API 调用失败:', error.message || error);
+        }
         // 获取 executionLog（如果可用）
         const executionLog = error.executionLog || [];
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
+          sessionId: sessionId,
           error: error.message || 'API 调用失败',
           executionLog: executionLog
         }).catch(err => {
@@ -204,14 +267,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
           });
         }
-        
-        chrome.runtime.sendMessage({
-          type: 'API_COMPLETE',
-          content: content,
-          executionLog: executionLog
-        }).catch(() => {
-          console.warn('[Background] 发送 API_COMPLETE 失败（可能 Side Panel 未打开）');
-        });
       } catch (error) {
         console.error('[Background] 选中文本工具栏 API 失败:', error);
         
@@ -221,11 +276,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             error: error.message || 'API 调用失败'
           }).catch(() => {});
         }
-        
-        chrome.runtime.sendMessage({
-          type: 'API_ERROR',
-          error: error.message || 'API 调用失败'
-        }).catch(() => {});
       }
     });
     
@@ -383,3 +433,90 @@ async function handleGeneratePdf(tabId, options) {
     });
   });
 }
+
+// ==================== Agent 健康检查 ====================
+
+let agentHealthCheckInterval = null;
+let wasAgentConnected = null; // 上次检查的连接状态
+
+/**
+ * 执行 Agent 健康检查，状态变化时通知 Side Panel
+ */
+async function performAgentHealthCheck() {
+  try {
+    const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+    const isPaired = !!(storage.agentUrl && storage.agentToken);
+    
+    if (!isPaired) {
+      if (wasAgentConnected !== false) {
+        wasAgentConnected = false;
+        clearAgentConnectivityCache();
+        notifyAgentStatusChange(false, '未配对');
+      }
+      return;
+    }
+    
+    // Ping Agent 服务确认可达性
+    let connected = false;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`${storage.agentUrl}/api/status`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      connected = response.ok;
+    } catch (err) {
+      connected = false;
+    }
+    
+    if (wasAgentConnected !== connected) {
+      wasAgentConnected = connected;
+      clearAgentConnectivityCache();
+      const status = connected ? 'connected' : 'disconnected';
+      const detail = connected ? 'Agent 服务已恢复' : 'Agent 服务不可达';
+      console.log(`[Background] Agent 健康检查状态变化: ${detail}`);
+      notifyAgentStatusChange(connected, status);
+    }
+  } catch (err) {
+    console.warn('[Background] Agent 健康检查异常:', err.message);
+  }
+}
+
+/**
+ * 通知 Side Panel Agent 状态变化
+ */
+function notifyAgentStatusChange(connected, status) {
+  chrome.runtime.sendMessage({
+    type: 'AGENT_STATUS_CHANGE',
+    connected,
+    status
+  }).catch(() => {
+    // Side Panel 可能未打开，忽略错误
+  });
+}
+
+/**
+ * 启动 Agent 定期健康检查（30 秒间隔）
+ */
+function startAgentHealthCheck() {
+  stopAgentHealthCheck();
+  console.log('[Background] 启动 Agent 健康检查（30s 间隔）');
+  
+  // 立即执行一次
+  performAgentHealthCheck();
+  
+  agentHealthCheckInterval = setInterval(performAgentHealthCheck, 30000);
+}
+
+/**
+ * 停止 Agent 定期健康检查
+ */
+function stopAgentHealthCheck() {
+  if (agentHealthCheckInterval) {
+    clearInterval(agentHealthCheckInterval);
+    agentHealthCheckInterval = null;
+    wasAgentConnected = null;
+  }
+}
+
+// SW 启动时自动开始健康检查
+startAgentHealthCheck();

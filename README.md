@@ -180,15 +180,32 @@ ai-helper/
 
 ---
 
-## 内建工具 (50+)
+## 内建工具 (59)
 
-### 页面内容提取（13 个）
+### 页面交互（6 个）
+| 工具 | 说明 |
+|------|------|
+| `click_element` | 点击元素 |
+| `hover_element` | 鼠标悬停 |
+| `drag_and_drop` | 拖拽操作 |
+| `scroll_to` | 滚动到指定位置 |
+| `wait_for_element` | 等待元素出现/消失 |
+| `wait_for_navigation` | 等待页面跳转完成 |
+
+### 表单与输入（4 个）
+| 工具 | 说明 |
+|------|------|
+| `fill_form` | 批量填表 |
+| `keyboard_input` | 键盘输入 |
+| `file_upload` | 文件上传控件注入 |
+| `select_dropdown` | 下拉菜单选择 |
+
+### 内容提取（16 个）
 | 工具 | 说明 |
 |------|------|
 | `get_page_text` | 获取纯文本内容 |
 | `get_full_html` | 获取完整 HTML |
 | `query_interactive_elements` | 提取可交互元素（推荐优先使用） |
-| `get_element_by_selector` | CSS 选择器获取元素 |
 | `get_selected_content` | 获取用户选中内容 |
 | `extract_table` | 表格提取为 JSON/Markdown |
 | `extract_links` | 提取所有链接 |
@@ -198,22 +215,12 @@ ai-helper/
 | `search_in_page` | 正则搜索页面文本 |
 | `page_to_markdown` | 网页转 Markdown |
 | `page_to_json` | 网页结构化数据提取为 JSON |
+| `find_similar_elements` | 查找相似结构元素 |
+| `get_iframe_content` | 获取 iframe 内容（同源） |
+| `scroll_and_collect` | 滚动收集长内容 |
+| `get_element_count` | 快速元素计数 |
 
-### 页面交互操作（10 个）
-| 工具 | 说明 |
-|------|------|
-| `click_element` | 点击元素 |
-| `fill_form` | 批量填表 |
-| `hover_element` | 鼠标悬停 |
-| `scroll_to` | 滚动到指定位置 |
-| `scroll_into_view` | 元素滚动到可视区域 |
-| `wait_for_element` | 等待元素出现/消失 |
-| `watch_element` | 监听 DOM 变化 |
-| `drag_and_drop` | 拖拽操作 |
-| `keyboard_input` | 键盘输入 |
-| `file_upload` | 文件上传控件注入 |
-
-### 标签页管理（9 个）
+### 标签页管理（6 个）
 | 工具 | 说明 |
 |------|------|
 | `open_tab` | 打开新标签页 |
@@ -222,53 +229,61 @@ ai-helper/
 | `get_tabs` | 获取所有标签页列表 |
 | `navigate_back_forward` | 前进/后退导航 |
 | `reload_tab` | 刷新标签页 |
-| `mute_tab` | 静音/取消静音 |
-| `pin_tab` | 固定/取消固定标签页 |
-| `group_tabs` | 标签页分组 |
 
-### 调试开发（6 个）
+### 书签与历史（2 个）
 | 工具 | 说明 |
 |------|------|
-| `run_javascript` | 在页面执行 JavaScript |
-| `inject_css` | 注入 CSS 样式 |
-| `shadow_dom_query` | 穿透 Shadow DOM 查询元素 |
-| `color_picker` | EyeDropper 取色器 |
-| `performance_audit` | 采集 Core Web Vitals |
-| `record_network` | 录制网络请求 |
+| `search_bookmarks` | 搜索浏览器书签 |
+| `search_history` | 搜索浏览器历史记录 |
 
-### 媒体处理（6 个）
+### 存储管理（3 个）
 | 工具 | 说明 |
 |------|------|
-| `capture_tab_screenshot` | 标签页截图 |
-| `screenshot_element` | 元素截图 |
-| `page_to_pdf` | 页面导出 PDF |
-| `generate_qrcode` | 生成二维码 |
-| `text_to_speech` | 文字转语音 |
-| `video_control` | 控制页面视频播放 |
-
-### AI 协作（7 个）
-| 工具 | 说明 |
-|------|------|
-| `clarify_question` | 弹出澄清对话框 |
-| `plan_task` | 复杂任务拆解规划 |
-| `execute_workflow` | 执行预定义工作流 |
-| `schedule_task` | 创建定时任务 |
-| `manage_user_scripts` | 用户脚本管理 |
-| `highlight_text` | 高亮页面文本 |
-| `find_text_on_page` | 浏览器原生查找 |
-
-### 系统集成（9 个）
-| 工具 | 说明 |
-|------|------|
-| `fetch_url` | HTTP 请求 |
-| `download_file` | 下载文件 |
-| `copy_to_clipboard` | 复制到剪贴板 |
-| `paste_from_clipboard` | 从剪贴板读取 |
-| `get_browser_info` | 浏览器环境信息 |
-| `show_notification` | 桌面通知 |
 | `manage_cookies` | Cookie 管理 |
 | `manage_storage` | localStorage/sessionStorage 管理 |
 | `clear_page_data` | 一键清除站点数据 |
+
+### 网络请求（1 个）
+| 工具 | 说明 |
+|------|------|
+| `fetch_url` | HTTP 请求 |
+
+### 媒体与输出（7 个）
+| 工具 | 说明 |
+|------|------|
+| `capture_tab_screenshot` | 标签页截图 |
+| `take_full_page_screenshot` | 全页截图 |
+| `generate_qrcode` | 生成二维码 |
+| `copy_to_clipboard` | 复制到剪贴板 |
+| `paste_from_clipboard` | 从剪贴板读取 |
+| `download_file` | 下载文件 |
+| `show_notification` | 桌面通知 |
+
+### 调试与开发（2 个）
+| 工具 | 说明 |
+|------|------|
+| `inject_css` | 注入 CSS 样式 |
+| `get_browser_info` | 获取浏览器环境信息 |
+
+### AI 协作（5 个）
+| 工具 | 说明 |
+|------|------|
+| `clarify_question` | 弹出澄清对话框 |
+| `highlight_text` | 高亮页面文本 |
+| `plan_task` | 复杂任务拆解规划 |
+| `preview_ui_prototype` | UI 原型预览与管理 |
+| `search_conversation_memory` | 搜索对话记忆 |
+
+### 本地 Agent（7 个）
+| 工具 | 说明 |
+|------|------|
+| `agent_read_file` | 读取本地文件 |
+| `agent_write_file` | 写入本地文件 |
+| `agent_list_dir` | 列出目录内容 |
+| `agent_delete_file` | 删除本地文件 |
+| `agent_exec_command` | 执行终端命令 |
+| `agent_search_files` | 按文件名搜索 |
+| `agent_search_content` | 在文件中搜索文本内容 |
 
 ---
 
@@ -281,7 +296,7 @@ ai-helper/
 | Service Worker | 后台进程，API 调用和工具执行 |
 | Side Panel API | Chrome 114+ 侧边栏 |
 | Content Script | 页面注入，DOM 操作 |
-| chrome.debugger API | 用于页面导出 PDF、网络录制等高级功能 |
+| chrome.debugger API | 用于全页截图等高级功能 |
 | OpenAI Compatible API | LLM 调用，默认 DeepSeek |
 | marked.js | Markdown 渲染引擎 |
 | mermaid.js | 图表渲染引擎 |

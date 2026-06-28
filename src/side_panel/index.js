@@ -2,16 +2,19 @@
 
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
+import { initConfirmEvents } from './confirm-dialog.js';
+import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
 import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
 import {
   sendMessage, clearChatHistory, exportChatHistory,
   showModal, hideModal, loadChatHistory, saveChatHistory,
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
-  callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend
+  callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
+  restorePendingSessionsFromStorage
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -253,12 +256,13 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
 
   const estimatedMenuHeight = 40 + menuPrompts.length * 36;
   const estimatedMenuWidth = 180;
+  const menuOffset = 30;
 
-  let top = mouseY - bodyRect.top - estimatedMenuHeight - 10;
+  let top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
   let left = mouseX - bodyRect.left - 20;
 
   if (top < bodyRect.top + 10) {
-    top = mouseY - bodyRect.top + 15;
+    top = mouseY - bodyRect.top + menuOffset;
   }
 
   if (left < bodyRect.left + 10) {
@@ -266,16 +270,16 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   }
 
   if (left + estimatedMenuWidth > bodyRect.right - 10) {
-    left = mouseX - bodyRect.left - estimatedMenuWidth - 10;
+    left = mouseX - bodyRect.left - estimatedMenuWidth - menuOffset;
     if (left < bodyRect.left + 10) {
       left = mouseX - bodyRect.left + 20;
     }
   }
 
   if (top + estimatedMenuHeight > bodyRect.bottom - 10) {
-    top = mouseY - bodyRect.top - estimatedMenuHeight - 10;
+    top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
     if (top < bodyRect.top + 10) {
-      top = mouseY - bodyRect.top + 15;
+      top = mouseY - bodyRect.top + menuOffset;
     }
   }
 
@@ -336,6 +340,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   sendBtn.disabled = true;
 
   const loadingId = addLoadingMessage();
+  const mySessionId = state.activeSessionId;
 
   const model = state.currentModel;
 
@@ -403,7 +408,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
   } catch (error) {
   } finally {
-    state.isGenerating = false;
+    state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     const userInput = document.getElementById('userInput');
     userInput.focus();
@@ -418,6 +423,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 获取当前激活的 Tab ID
   await getCurrentActiveTabId();
+
+  // 恢复持久化的 pendingCallApiSessionIds（Side Panel 重开后不丢失后台任务状态）
+  await restorePendingSessionsFromStorage();
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {
@@ -686,15 +694,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 10);
   });
 
-  // 定时检查页面选中内容（每500ms检查一次）
+  // 定时检查页面选中内容（仅在 enableSelectionQuery 开启时生效）
   let pageLastSelectedText = '';
+  let selectionCheckInterval = null;
 
-  setInterval(async () => {
+  async function performSelectionCheck() {
     try {
-      if (!state.enableSelectionQuery) {
-        return;
-      }
-
       const tabs = await new Promise((resolve) => {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => resolve(tabs));
       });
@@ -727,10 +732,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (e) {
     }
-  }, 500);
+  }
+
+  function refreshSelectionInterval() {
+    if (selectionCheckInterval) {
+      clearInterval(selectionCheckInterval);
+      selectionCheckInterval = null;
+    }
+    if (state.enableSelectionQuery) {
+      selectionCheckInterval = setInterval(performSelectionCheck, 500);
+    }
+  }
+
+  // 初始启动
+  refreshSelectionInterval();
+
+  // 监听配置变化：enableSelectionQuery 改变时动态启停轮询
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && 'enableSelectionQuery' in changes) {
+      state.enableSelectionQuery = changes.enableSelectionQuery.newValue;
+      refreshSelectionInterval();
+    }
+  });
 
   // 加载保存的模型选择和自定义模型
-  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory'], (result) => {
+  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform'], (result) => {
     const savedModelName = result.modelName;
     if (savedModelName) {
       state.currentModel = savedModelName;
@@ -738,6 +764,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.customPrompts = result.customPrompts || [];
     state.systemPrompt = result.systemPrompt || '';
     state.inputHistory = result.inputHistory || [];
+    if (result.agentPlatform) {
+      state.agentPlatform = result.agentPlatform;
+    }
     addPromptManageButton();
 
     loadCustomModelsToDropdown(result.customModels, () => {
@@ -776,6 +805,64 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 加载保存的对话历史
   loadChatHistory();
+
+  // 监听会话切换事件（由 session-manager-ui.js 触发）
+  document.addEventListener('session-switched', () => {
+    const chatContainerEl = document.getElementById('chatContainer');
+    const sendBtn = document.getElementById('sendBtn');
+    const userInput = document.getElementById('userInput');
+    if (!chatContainerEl) return;
+
+    // 清理旧会话的 executionLogListener，防止 listener 累积
+    if (state.executionLogListener) {
+      chrome.runtime.onMessage.removeListener(state.executionLogListener);
+      state.executionLogListener = null;
+    }
+
+    // 根据目标会话的生成状态决定发送按钮是否禁用
+    if (sendBtn) sendBtn.disabled = state.isGenerating;
+    if (userInput) userInput.focus();
+
+    chatContainerEl.innerHTML = '';
+
+    if (!state.messageHistory || state.messageHistory.length === 0) {
+      const welcomeDiv = document.createElement('div');
+      welcomeDiv.className = 'welcome-message';
+      welcomeDiv.innerHTML = `
+        <div class="icon-wrapper">
+          <div class="icon">💬</div>
+        </div>
+        <h2>开始对话</h2>
+        <p>输入您的问题，AI 助手将为您解答</p>
+      `;
+      chatContainerEl.appendChild(welcomeDiv);
+    } else {
+      state.messageHistory.forEach(msg => {
+        addMessage(msg.role, msg.content, false, msg.executionLog || []);
+      });
+      renderMermaidCharts();
+    }
+
+    // 如果切回的会话有正在执行的后台任务，显示加载状态
+    const hasPendingTask = state.pendingCallApiSessionIds.has(state.activeSessionId) && !!state.pendingCancelApi;
+    console.log('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', state.activeSessionId, 'hasCancelApi:', !!state.pendingCancelApi);
+    if (hasPendingTask) {
+      console.log('[SidePanel] 切回有后台任务的会话，显示加载状态');
+      const loadingId = addLoadingMessage();
+      state.substituteLoadingIds.set(state.activeSessionId, loadingId);
+    }
+
+    // 恢复该会话的滚动位置
+    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.get([scrollKey], (result) => {
+      if (result[scrollKey] !== undefined) {
+        setTimeout(() => {
+          const el = document.getElementById('chatContainer');
+          if (el) el.scrollTop = result[scrollKey];
+        }, 150);
+      }
+    });
+  });
 
   // 模型选项点击事件（现在在tempDropdown内）
   document.querySelectorAll('.model-option').forEach(option => {
@@ -984,17 +1071,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   chatContainerEl.addEventListener('scroll', () => {
-    chrome.storage.local.set({ scrollPosition: chatContainerEl.scrollTop });
+    const key = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.set({ [key]: chatContainerEl.scrollTop });
   });
 
+  // 更多操作下拉菜单
+  const headerMoreBtn = document.getElementById('headerMoreBtn');
+  const headerMoreDropdown = document.getElementById('headerMoreDropdown');
+  if (headerMoreBtn && headerMoreDropdown) {
+    headerMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.toggle('show');
+    });
+    // 点击外部关闭下拉菜单
+    document.addEventListener('click', (e) => {
+      if (!headerMoreDropdown.contains(e.target) && e.target !== headerMoreBtn) {
+        headerMoreDropdown.classList.remove('show');
+      }
+    });
+  }
+
   // 清除对话历史按钮
-  clearChatBtn.addEventListener('click', () => {
+  clearChatBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    headerMoreDropdown.classList.remove('show');
     showModal();
   });
 
   // 导出对话历史按钮
   if (exportChatBtn) {
-    exportChatBtn.addEventListener('click', exportChatHistory);
+    exportChatBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      exportChatHistory();
+    });
   }
 
   // 设置按钮
@@ -1002,6 +1112,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
+    });
+  }
+  
+  // 原型库按钮
+  const prototypeLibraryBtn = document.getElementById('prototypeLibraryBtn');
+  if (prototypeLibraryBtn) {
+    prototypeLibraryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      showPrototypeLibrary();
     });
   }
 
@@ -1030,7 +1150,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (result.enabledTools && result.enabledTools.length > 0) {
-      state.enabledTools = result.enabledTools;
+      // 合并：过滤掉 BUILTIN_TOOLS 中不存在的 ID，添加默认启用的新工具
+      const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+      const savedTools = result.enabledTools.filter(id => validToolIds.has(id));
+      // 添加新工具（BUILTIN_TOOLS 中有但 savedTools 中没有的，默认启用）
+      const newTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...savedTools, ...newTools];
+      if (newTools.length > 0) {
+        // 有新增工具，自动保存合并后的列表
+        chrome.storage.local.set({ enabledTools: state.enabledTools });
+      }
     } else {
       state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
     }
@@ -1042,6 +1171,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (enableToolsBtn) {
       enableToolsBtn.checked = state.useTools;
     }
+
+    refreshSelectionInterval();
   });
 
   isolateChatBtn.addEventListener('change', () => {
@@ -1193,6 +1324,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 工具预筛选开关变化时自动保存
+  const toolsPreselectToggle = document.getElementById('toolsPreselectToggle');
+  if (toolsPreselectToggle) {
+    toolsPreselectToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ enableToolPreselect: toolsPreselectToggle.checked }, () => {
+        console.log('[SidePanel] 工具预筛选开关已更新:', toolsPreselectToggle.checked);
+      });
+    });
+  }
+
   // 工具弹窗取消按钮
   const toolsPopupCancel = document.getElementById('toolsPopupCancel');
   if (toolsPopupCancel) {
@@ -1204,6 +1345,257 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 模态框按钮事件
   const modalCancelBtn = document.getElementById('modalCancelBtn');
   const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+
+  // ==================== 自定义确认弹窗 ====================
+
+  /**
+   * 显示自定义确认弹窗，返回 Promise<boolean>
+   * @param {string} message - 提示信息
+   * @param {string} title - 标题（可选）
+   */
+  function showCustomConfirm(message, title = '确认操作') {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('customConfirmOverlay');
+      const titleEl = document.getElementById('customConfirmTitle');
+      const messageEl = document.getElementById('customConfirmMessage');
+      const cancelBtn = document.getElementById('customConfirmCancelBtn');
+      const okBtn = document.getElementById('customConfirmOkBtn');
+
+      if (!overlay || !titleEl || !messageEl || !cancelBtn || !okBtn) {
+        resolve(confirm(message)); // fallback
+        return;
+      }
+
+      const cleanup = () => {
+        overlay.style.display = 'none';
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+      };
+
+      const onOk = () => { cleanup(); resolve(true); };
+      const onCancel = () => { cleanup(); resolve(false); };
+      const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      overlay.style.display = 'flex';
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+    });
+  }
+
+  // ==================== 工具使用统计子弹窗 ====================
+
+  const toolStatsOverlay = document.getElementById('toolStatsOverlay');
+  const toolStatsClose = document.getElementById('toolStatsClose');
+  const toolStatsBtn = document.getElementById('toolStatsBtn');
+
+  function openToolStats() {
+    if (toolStatsOverlay) {
+      toolStatsOverlay.style.display = 'flex';
+      loadToolStats();
+    }
+  }
+
+  function closeToolStats() {
+    if (toolStatsOverlay) toolStatsOverlay.style.display = 'none';
+  }
+
+  if (toolStatsBtn) {
+    toolStatsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openToolStats();
+    });
+  }
+
+  if (toolStatsClose) {
+    toolStatsClose.addEventListener('click', closeToolStats);
+  }
+
+  if (toolStatsOverlay) {
+    toolStatsOverlay.addEventListener('click', (e) => {
+      if (e.target === toolStatsOverlay) closeToolStats();
+    });
+  }
+
+  const toolStatsRefreshBtn = document.getElementById('toolStatsRefreshBtn');
+  if (toolStatsRefreshBtn) {
+    toolStatsRefreshBtn.addEventListener('click', loadToolStats);
+  }
+
+  const toolStatsClearBtn = document.getElementById('toolStatsClearBtn');
+  if (toolStatsClearBtn) {
+    toolStatsClearBtn.addEventListener('click', async () => {
+      const confirmed = await showCustomConfirm('确定要清空所有工具使用统计吗？此操作不可撤销。', '清空统计');
+      if (!confirmed) return;
+      await chrome.storage.local.remove(['toolUsageStats']);
+      loadToolStats();
+    });
+  }
+
+  // 工具统计排序状态 { column, asc }
+  let toolStatsSort = { column: 'callCount', asc: false };
+
+  async function loadToolStats() {
+    const table = document.getElementById('toolStatsTable');
+    const tbody = document.getElementById('toolStatsTableBody');
+    const loading = document.getElementById('toolStatsLoading');
+    const empty = document.getElementById('toolStatsEmpty');
+    const summary = document.getElementById('toolStatsSummary');
+    const unusedSection = document.getElementById('toolStatsUnusedSection');
+    const unusedList = document.getElementById('toolStatsUnusedList');
+
+    if (!table || !tbody || !loading || !empty) return;
+
+    table.style.display = 'none';
+    empty.style.display = 'none';
+    if (unusedSection) unusedSection.style.display = 'none';
+    if (summary) summary.textContent = '';
+    loading.style.display = '';
+
+    try {
+      const result = await chrome.storage.local.get(['toolUsageStats']);
+      const toolStats = result.toolUsageStats || {};
+      const entries = Object.entries(toolStats);
+
+      if (entries.length === 0) {
+        loading.style.display = 'none';
+        empty.style.display = '';
+        return;
+      }
+
+      // 构建工具 ID → 描述映射
+      const toolDescMap = {};
+      BUILTIN_TOOLS.forEach(t => {
+        toolDescMap[t.id] = t.name ? `${t.name}：${t.description || ''}` : (t.description || t.id);
+      });
+
+      renderToolStatsTable(entries, toolDescMap);
+
+      // 计算未使用工具
+      const allToolIds = BUILTIN_TOOLS.map(t => t.id);
+      const usedToolIds = new Set(entries.map(([name]) => name));
+      const unusedToolIds = allToolIds.filter(id => !usedToolIds.has(id));
+
+      const usedCount = entries.length;
+      const unusedCount = unusedToolIds.length;
+
+      // 汇总信息
+      if (summary) {
+        summary.textContent = `已使用 ${usedCount} 个，未使用 ${unusedCount} 个`;
+      }
+
+      // 未使用工具列表（按字母排序）
+      if (unusedSection && unusedList && unusedCount > 0) {
+        unusedList.innerHTML = unusedToolIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map(id => {
+          const desc = toolDescMap[id] || id;
+          return `<code title="${escapeHtml(desc)}" style="padding: 3px 10px; background: #f5f5f5; color: #aaa; border: 1px solid #eee; border-radius: 4px; font-size: 11px;">${id}</code>`;
+        }).join('');
+        unusedSection.style.display = '';
+      }
+
+      loading.style.display = 'none';
+      table.style.display = '';
+    } catch (err) {
+      console.error('[SidePanel] 加载统计失败:', err);
+      loading.style.display = 'none';
+      empty.textContent = '加载失败';
+      empty.style.display = '';
+    }
+  }
+
+  function renderToolStatsTable(entries, toolDescMap) {
+    const tbody = document.getElementById('toolStatsTableBody');
+    if (!tbody) return;
+
+    const { column, asc } = toolStatsSort;
+
+    const sortedEntries = [...entries].sort((a, b) => {
+      const [nameA, statA] = a;
+      const [nameB, statB] = b;
+      const successRateA = statA.callCount > 0 ? (statA.successCount / statA.callCount * 100) : 0;
+      const successRateB = statB.callCount > 0 ? (statB.successCount / statB.callCount * 100) : 0;
+      const durationA = statA.callCount > 0 ? (statA.totalDuration / statA.callCount) : 0;
+      const durationB = statB.callCount > 0 ? (statB.totalDuration / statB.callCount) : 0;
+
+      let cmp = 0;
+      switch (column) {
+        case 'name': cmp = nameA.toLowerCase().localeCompare(nameB.toLowerCase()); break;
+        case 'callCount': cmp = statA.callCount - statB.callCount; break;
+        case 'successCount': cmp = statA.successCount - statB.successCount; break;
+        case 'successRate': cmp = successRateA - successRateB; break;
+        case 'duration': cmp = durationA - durationB; break;
+      }
+      return asc ? cmp : -cmp;
+    });
+
+    tbody.innerHTML = sortedEntries.map(([name, stat]) => {
+      const successRate = stat.callCount > 0 ? (stat.successCount / stat.callCount * 100) : 0;
+      const avgDuration = stat.callCount > 0 ? (stat.totalDuration / stat.callCount) : 0;
+      const tooltip = toolDescMap[name] || name;
+
+      let rateColor = '#38a169';
+      if (successRate < 60) rateColor = '#e53e3e';
+      else if (successRate < 85) rateColor = '#d69e2e';
+
+      const avgTimeStr = avgDuration < 1000
+        ? `${Math.round(avgDuration)}ms`
+        : `${(avgDuration / 1000).toFixed(1)}s`;
+
+      return `<tr>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code title="${escapeHtml(tooltip)}">${name}</code></td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.callCount}</td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.successCount}</td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid #eee;">
+          <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: #e0e0e0; vertical-align: middle; margin-right: 6px;">
+            <span style="display: inline-block; width: ${successRate * 0.5}px; height: 5px; border-radius: 3px; background: ${rateColor}; vertical-align: top;"></span>
+          </span>
+          <span style="font-size: 12px; color: ${rateColor}; font-weight: 500;">${successRate.toFixed(0)}%</span>
+        </td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${avgTimeStr}</td>
+      </tr>`;
+    }).join('');
+
+    updateSortIndicators();
+  }
+
+  function updateSortIndicators() {
+    const { column, asc } = toolStatsSort;
+    const sortKeys = ['name', 'callCount', 'successCount', 'successRate', 'duration'];
+    const idMap = { name: 'sortByName', callCount: 'sortByCallCount', successCount: 'sortBySuccessCount', successRate: 'sortBySuccessRate', duration: 'sortByDuration' };
+
+    sortKeys.forEach(key => {
+      const th = document.getElementById(idMap[key]);
+      if (!th) return;
+      const indicator = th.querySelector('.sort-indicator');
+      if (!indicator) return;
+      if (key === column) {
+        indicator.textContent = asc ? '▲' : '▼';
+        indicator.style.color = '#667eea';
+      } else {
+        indicator.textContent = '';
+        indicator.style.color = '';
+      }
+    });
+  }
+
+  // 排序表头点击事件
+  document.querySelectorAll('#toolStatsTable th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const sortKey = th.dataset.sort;
+      if (toolStatsSort.column === sortKey) {
+        toolStatsSort.asc = !toolStatsSort.asc;
+      } else {
+        toolStatsSort.column = sortKey;
+        toolStatsSort.asc = false;
+      }
+      // 重新渲染（需要从 storage 重新读取数据）
+      loadToolStats();
+    });
+  });
 
   modalCancelBtn.addEventListener('click', () => {
     hideModal();
@@ -1254,3 +1646,5 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
+document.addEventListener('DOMContentLoaded', initConfirmEvents);
+document.addEventListener('DOMContentLoaded', initPrototypeEvents);

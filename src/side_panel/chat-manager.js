@@ -5,6 +5,33 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession } from './session-manager.js';
+import { renderSessionTabs } from './session-manager-ui.js';
+import { loadAndShowPrototype } from './ui-prototype.js';
+import { estimateMessagesTokens, assessContextPressure, getContextWindow } from '../shared/token-counter.js';
+import { BUILTIN_TOOLS } from './constants.js';
+
+// ============================================================
+// pendingCallApiSessionIds 持久化帮助函数
+// 防止 Side Panel 重开后丢失后台任务状态
+// ============================================================
+
+const PENDING_SESSIONS_KEY = 'pendingCallApiSessions';
+
+export function syncPendingSessionsToStorage() {
+  chrome.storage.session.set({ [PENDING_SESSIONS_KEY]: [...state.pendingCallApiSessionIds] }).catch(() => {});
+}
+
+export async function restorePendingSessionsFromStorage() {
+  try {
+    const result = await chrome.storage.session.get([PENDING_SESSIONS_KEY]);
+    if (result[PENDING_SESSIONS_KEY] && Array.isArray(result[PENDING_SESSIONS_KEY])) {
+      state.pendingCallApiSessionIds = new Set(result[PENDING_SESSIONS_KEY]);
+    }
+  } catch (e) {
+    // 忽略恢复错误
+  }
+}
 
 // ============================================================
 // 辅助函数（仅在模块内使用）
@@ -62,60 +89,78 @@ export function clearSelectedContext() {
 // ============================================================
 
 export async function loadChatHistory() {
-  chrome.storage.local.get(['chatHistory', 'scrollPosition'], (result) => {
-    if (result.chatHistory && result.chatHistory.length > 0) {
-      state.messageHistory = result.chatHistory;
-      state.messageHistory.forEach(msg => {
-        addMessage(msg.role, msg.content, false, msg.executionLog || []);
-      });
-      const welcomeMessage = document.querySelector('.welcome-message');
-      if (welcomeMessage) {
-        welcomeMessage.remove();
+  const sessionsData = await loadSessions();
+  
+  if (sessionsData.activeSessionId && sessionsData.list.length > 0) {
+    state.activeSessionId = sessionsData.activeSessionId;
+    state.sessions = sessionsData.list;
+    
+    const activeSession = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+    if (activeSession) {
+      state.messageHistory = activeSession.messageHistory || [];
+      state.currentModel = activeSession.model || state.currentModel;
+      state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
+      // 合并会话的 enabledTools：保留已有选择，自动添加新工具
+      if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
+        const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+        const saved = activeSession.enabledTools.filter(id => validIds.has(id));
+        const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
+        state.enabledTools = [...saved, ...added];
+      } else {
+        state.enabledTools = activeSession.enabledTools || state.enabledTools;
       }
-      
-      renderMermaidCharts();
-      
-      if (result.scrollPosition !== undefined) {
+      state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
+      state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
+    }
+    
+    state.messageHistory.forEach(msg => {
+      // 从 executionLog 中检测是否有 revised 决策
+      let wasRevised = msg.wasRevised;
+      if (!wasRevised && msg.executionLog) {
+        try {
+          const logs = typeof msg.executionLog === 'string' ? JSON.parse(msg.executionLog) : msg.executionLog;
+          wasRevised = logs.some(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.action?.decision === 'revised');
+        } catch {}
+      }
+      addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
+    });
+    
+    const welcomeMessage = document.querySelector('.welcome-message');
+    if (welcomeMessage && state.messageHistory.length > 0) {
+      welcomeMessage.remove();
+    }
+    
+    renderMermaidCharts();
+    
+    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
+    chrome.storage.local.get([scrollKey], (result) => {
+      if (result[scrollKey] !== undefined) {
         setTimeout(() => {
           const chatContainerEl = document.getElementById('chatContainer');
-          chatContainerEl.scrollTop = result.scrollPosition;
+          chatContainerEl.scrollTop = result[scrollKey];
         }, 100);
       }
+    });
+    
+    renderSessionTabs();
+  } else {
+    // 首次打开：自动创建默认会话并渲染标签栏
+    await createSession();
+    
+    const refreshedData = await loadSessions();
+    if (refreshedData.activeSessionId) {
+      state.activeSessionId = refreshedData.activeSessionId;
+      state.sessions = refreshedData.list;
     }
-  });
+    
+    renderSessionTabs();
+  }
 }
 
 export function saveChatHistory() {
-  const trimmedHistory = state.messageHistory.slice(-state.chatConfig.maxHistoryMessages);
-  
-  const sanitizedHistory = trimmedHistory.map(msg => ({
-    role: msg.role,
-    content: msg.content.substring(0, state.chatConfig.maxMessageLength),
-    executionLog: msg.executionLog || []
-  }));
-  
   try {
-    chrome.storage.local.set({ chatHistory: sanitizedHistory }, (error) => {
-      if (chrome.runtime.lastError) {
-        console.error('[SidePanel] 保存对话历史失败:', chrome.runtime.lastError.message);
-        if (state.messageHistory.length > 5) {
-          state.messageHistory = state.messageHistory.slice(-5);
-          const reducedHistory = state.messageHistory.map(msg => ({
-            role: msg.role,
-            content: msg.content.substring(0, 2000),
-            executionLog: msg.executionLog || []
-          }));
-          chrome.storage.local.set({ chatHistory: reducedHistory }, () => {
-            if (chrome.runtime.lastError) {
-              console.error('[SidePanel] 再次保存失败:', chrome.runtime.lastError.message);
-            } else {
-              console.log('[SidePanel] 截断后保存成功，消息数:', reducedHistory.length);
-            }
-          });
-        }
-      } else {
-        console.log('[SidePanel] 对话历史已保存，消息数:', sanitizedHistory.length);
-      }
+    saveCurrentSession().catch(err => {
+      console.error('[SidePanel] 保存当前会话失败:', err);
     });
   } catch (e) {
     console.error('[SidePanel] 保存对话历史异常:', e);
@@ -123,18 +168,27 @@ export function saveChatHistory() {
 }
 
 export function clearChatHistory() {
-  state.messageHistory = [];
-  chrome.storage.local.remove(['chatHistory', 'scrollPosition'], () => {
-    const chatContainer = document.getElementById('chatContainer');
-    chatContainer.innerHTML = `
-      <div class="welcome-message">
-        <div class="icon">💬</div>
-        <h2>开始对话</h2>
-        <p>输入您的问题，AI 助手将为您解答</p>
-      </div>
-    `;
-    console.log('[SidePanel] 对话历史已清除');
-  });
+  if (state.messageHistory && state.messageHistory.length > 0) {
+    archiveCurrentSession().then(() => {
+      state.messageHistory = [];
+      const chatContainer = document.getElementById('chatContainer');
+      if (chatContainer) {
+        chatContainer.innerHTML = '';
+        const welcomeDiv = document.createElement('div');
+        welcomeDiv.className = 'welcome-message';
+        welcomeDiv.innerHTML = `
+          <div class="icon-wrapper">
+            <div class="icon">💬</div>
+          </div>
+          <h2>开始对话</h2>
+          <p>输入您的问题，AI 助手将为您解答</p>
+        `;
+        chatContainer.appendChild(welcomeDiv);
+      }
+      chrome.storage.local.remove('scrollPosition_' + (state.activeSessionId || 'default'));
+      renderSessionTabs();
+    });
+  }
 }
 
 export function exportChatHistory() {
@@ -241,6 +295,7 @@ export async function sendMessage() {
   saveChatHistory();
   
   addToInputHistory(text);
+  state.inputHistoryIndex = -1;
 
   userInput.value = '';
   userInput.style.height = 'auto';
@@ -252,6 +307,7 @@ export async function sendMessage() {
   state.isGenerating = true;
   sendBtn.disabled = true;
 
+  const mySessionId = state.activeSessionId;
   const loadingId = addLoadingMessage();
 
   const model = state.currentModel;
@@ -287,40 +343,91 @@ export async function sendMessage() {
     }
 
     const apiParams = await getApiParams();
-    let content, executionLog;
+
+    // 上下文压力评估：发送前检查消息总量
+    const msgTokens = estimateMessagesTokens(messages);
+    const sysPromptTokens = estimateMessagesTokens([messages[0]]); // system prompt
+    const historyTokens = msgTokens - sysPromptTokens;
+    const contextWindow = getContextWindow(model);
+    const pressure = assessContextPressure(msgTokens, contextWindow);
+    console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (系统提示词: ${sysPromptTokens}, 历史: ${historyTokens}), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%), 消息: ${messages.length} 条`);
+    if (pressure.level === 'critical') {
+      console.warn('[SidePanel] 上下文压力过高，可能触发 API 错误');
+    }
+
+    let content, executionLog, reflectionScore, wasRevised = false;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
+      reflectionScore = result.reflectionScore;
+      wasRevised = result.wasRevised || false;
     } catch (errorResult) {
+      // 检查是否已切换到其他会话
+      if (state.activeSessionId !== mySessionId) {
+        // 保存结果到原会话的历史中，不修改当前 DOM
+        if (errorResult.message === '任务已被用户停止') {
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        } else {
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [] });
+        }
+        removeLoadingMessage(loadingId);
+        state.substituteLoadingIds.delete(mySessionId);
+        return;
+      }
+      
+      // 用户主动取消：显示取消记录，但不作为错误
+      if (errorResult.message === '任务已被用户停止') {
+        removeLoadingMessage(loadingId);
+        state.substituteLoadingIds.delete(mySessionId);
+        addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
+        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        saveChatHistory();
+        return;
+      }
+      
       removeLoadingMessage(loadingId);
+      state.substituteLoadingIds.delete(mySessionId);
       
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
       
-      const messageDiv = addMessage('assistant', content, true, executionLog);
+      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
       
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
-      
-      saveChatHistory();
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
       
       throw errorResult;
     }
     
+    // 检查是否已切换到其他会话（成功路径）
+    if (state.activeSessionId !== mySessionId) {
+      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
+      removeLoadingMessage(loadingId);
+      state.substituteLoadingIds.delete(mySessionId);
+      return;
+    }
+    
     removeLoadingMessage(loadingId);
     
-    const messageDiv = addMessage('assistant', content, true, executionLog);
+    // 清理切回会话时创建的替代加载指示器
+    if (state.substituteLoadingIds.has(mySessionId)) {
+      removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+      state.substituteLoadingIds.delete(mySessionId);
+    }
+    
+    const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
     
     await renderMessageMermaid(messageDiv);
     
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
-    
-    saveChatHistory();
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
     
   } catch (error) {
+    console.error('[SidePanel] sendMessage 异常:', error?.message || error);
   } finally {
-    state.isGenerating = false;
+    // 合并在此处统一保存，减少 IndexedDB 写入次数
+    saveChatHistory();
+    state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
   }
@@ -434,7 +541,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = []) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -445,6 +552,9 @@ export function addMessage(role, content, scroll = true, executionLog = []) {
   messageDiv.dataset.rawContent = content;
   
   messageDiv.dataset.executionLog = JSON.stringify(executionLog);
+  if (wasRevised) {
+    messageDiv.dataset.wasRevised = 'true';
+  }
   
   if (role === 'assistant') {
     messageDiv.innerHTML = formatMessageContent(content);
@@ -544,25 +654,89 @@ export function addMessage(role, content, scroll = true, executionLog = []) {
     exportMenuContainer.appendChild(exportDropdown);
     footer.appendChild(exportMenuContainer);
     
-    if (executionLog && executionLog.length > 0) {
-      chrome.storage.local.get('enableExecutionLog', (result) => {
-        if (result.enableExecutionLog) {
-          const logBtn = document.createElement('button');
-          logBtn.className = 'execution-log-btn';
-          logBtn.title = '执行日志';
-          logBtn.innerHTML = [
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
-            '<circle cx="12" cy="12" r="10"></circle>',
-            '<polyline points="12 6 12 12 16 14"></polyline>',
-            '</svg>'
-          ].join('');
-          logBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            showExecutionLog(executionLog);
-          });
-          footer.appendChild(logBtn);
+    const hasExecutionLog = executionLog && executionLog.length > 0;
+    const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
+    
+    // 计算反思轮数（postReflection 类型的成功节点数量）
+    const reflectionRounds = executionLog 
+      ? executionLog.filter(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.status === 'success').length 
+      : 0;
+
+    // 绑定事件委托（首次调用时执行一次）
+    bindExecutionLogDelegate();
+
+    if (hasExecutionLog) {
+      // 执行日志按钮（合并反思评分）
+      const logBtn = document.createElement('button');
+      logBtn.className = 'execution-log-btn';
+      logBtn.type = 'button';
+      logBtn.title = '执行日志';
+      logBtn.innerHTML = [
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
+        '<circle cx="12" cy="12" r="10"></circle>',
+        '<polyline points="12 6 12 12 16 14"></polyline>',
+        '</svg>'
+      ].join('');
+
+      if (hasReflection) {
+        logBtn.classList.add('has-reflection');
+        const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
+        const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
+        const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
+        const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
+        logBtn.title = `执行日志 | AI 自我评估: ${reflectionScore}/10${roundsTag}${wasRevised ? '（已修订）' : ''}`;
+        logBtn.insertAdjacentHTML('beforeend', `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`);
+      }
+
+      footer.appendChild(logBtn);
+    } else if (hasReflection) {
+      // 无执行日志但存在反思评分，独立显示评分徽章
+      const scoreBadge = document.createElement('button');
+      scoreBadge.className = 'execution-log-btn has-reflection';
+      scoreBadge.type = 'button';
+      const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
+      scoreBadge.classList.add(scoreColor);
+      const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
+      scoreBadge.title = `AI 自我评估: ${reflectionScore}/10`;
+      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
+      footer.appendChild(scoreBadge);
+    } else if (executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed')) {
+      // 反思 API 失败：显示警告提示
+      const warnBadge = document.createElement('button');
+      warnBadge.className = 'execution-log-btn has-reflection score-low';
+      warnBadge.type = 'button';
+      warnBadge.title = '反思评估失败（点击查看执行日志）';
+      warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
+      footer.appendChild(warnBadge);
+    }
+    
+    const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    if (prototypeCall) {
+      const prototypeBtn = document.createElement('button');
+      prototypeBtn.className = 'prototype-btn-small';
+      prototypeBtn.type = 'button';
+      prototypeBtn.title = '查看 UI 原型';
+      prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      prototypeBtn.addEventListener('click', () => {
+        // 多种方式尝试获取 prototypeId
+        let prototypeId = prototypeCall.prototypeId;
+        
+        // 兜底：从 observation JSON 中解析
+        if (!prototypeId && prototypeCall.observation) {
+          try {
+            const parsed = typeof prototypeCall.observation === 'string' 
+              ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+            prototypeId = parsed?.prototypeId;
+          } catch (e) {}
+        }
+        
+        if (prototypeId) {
+          loadAndShowPrototype(prototypeId);
+        } else {
+          console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
         }
       });
+      footer.appendChild(prototypeBtn);
     }
     
     messageDiv.appendChild(footer);
@@ -645,6 +819,41 @@ export function addMessage(role, content, scroll = true, executionLog = []) {
 }
 
 // ============================================================
+// 事件委托：执行日志按钮点击
+// ============================================================
+let executionLogDelegateBound = false;
+
+function bindExecutionLogDelegate() {
+  if (executionLogDelegateBound) return;
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+  
+  chatContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.execution-log-btn');
+    if (!btn) return;
+    
+    const messageEl = btn.closest('.message');
+    if (!messageEl) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const rawLog = messageEl.dataset.executionLog;
+    if (!rawLog) return;
+    
+    try {
+      const log = JSON.parse(rawLog);
+      console.log('[chat-manager] 执行日志按钮点击(委托), entries:', log.length);
+      showExecutionLog(log);
+    } catch (err) {
+      console.error('[chat-manager] 解析 executionLog 失败:', err);
+    }
+  });
+  
+  executionLogDelegateBound = true;
+}
+
+// ============================================================
 // Re-export renderMessageMermaid from markdown-render.js
 // ============================================================
 export { renderMessageMermaid };
@@ -663,12 +872,8 @@ function getStatusText(status) {
 }
 
 function renderExecutionTimeline(executionLog) {
-  console.log('[SidePanel] renderExecutionTimeline 被调用，日志数量:', executionLog.length);
-  executionLog.forEach((entry, i) => {
-    console.log(`[SidePanel] 日志条目 ${i}:`, entry.nodeType, entry.nodeName, entry.status);
-  });
-  
   const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const totalCount = sortedLog.length;
   
   let result = '';
   let currentSubtaskIndex = null;
@@ -678,22 +883,36 @@ function renderExecutionTimeline(executionLog) {
     const isToolExec = entry.nodeType === 'tool_exec';
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
+    const isReflection = entry.nodeType === 'reflection';
+    const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
       currentSubtaskIndex = entry.subtaskIndex;
     }
     
     let indentClass = '';
-    let prefix = '';
-    if (isSubtask) {
+    let nodeIcon = '';
+    
+    if (isReflection) {
+      nodeIcon = '🎯';
+    } else if (isPreselect) {
+      nodeIcon = '🔍';
+    } else if (isPlanTask) {
+      indentClass = 'plan-task-level';
+      nodeIcon = '📋';
+    } else if (isSubtask) {
       indentClass = 'subtask-level';
-      prefix = '🔀';
+      nodeIcon = '🔀';
     } else if (isToolExec && currentSubtaskIndex !== null) {
       indentClass = 'tool-level';
-      prefix = '🔧';
+      nodeIcon = '🔧';
     } else if (isApiCall && currentSubtaskIndex !== null) {
       indentClass = 'api-level';
-      prefix = '📡';
+      nodeIcon = '📡';
+    } else if (isToolExec) {
+      nodeIcon = '⚡';
+    } else if (isApiCall) {
+      nodeIcon = '📡';
     }
     
     let statusIcon = '○';
@@ -703,6 +922,9 @@ function renderExecutionTimeline(executionLog) {
     } else if (entry.status === 'failed') {
       statusIcon = '✗';
     }
+    if (isReflection) {
+      statusClass = `reflection ${statusClass}`;
+    }
     
     let nodeName = escapeHtml(entry.nodeName || '未知节点');
     
@@ -711,10 +933,10 @@ function renderExecutionTimeline(executionLog) {
     }
     
     if (entry.subtaskCount) {
-      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务)</span>`;
+      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
-    if ((isApiCall || isPreselect) && entry.apiRequest) {
+    if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
@@ -728,12 +950,155 @@ function renderExecutionTimeline(executionLog) {
     }
     
     result += `
-      <div class="realtime-timeline-item ${indentClass}" data-status="${entry.status || 'processing'}" data-node-type="${entry.nodeType || ''}">
-        <div class="realtime-timeline-dot ${statusClass}">${statusIcon}</div>
-        <div class="realtime-timeline-content">
-          <span class="realtime-node-name">${prefix} ${nodeName}</span>
-          <span class="realtime-duration">${formatDuration(entry.duration || 0)}</span>
-          ${entry.error ? `<span class="realtime-error">${escapeHtml(entry.error)}</span>` : ''}
+      <div class="timeline-item ${indentClass}" data-status="${entry.status || 'processing'}" data-node-type="${entry.nodeType || ''}">
+        <div class="timeline-line"></div>
+        <div class="timeline-dot ${statusClass}">
+          ${statusIcon}
+        </div>
+        <div class="timeline-content">
+          <div class="timeline-header">
+            <span class="expand-icon">▼</span>
+            <span class="node-icon">${nodeIcon}</span>
+            <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
+            <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
+            <span class="duration-badge" title="耗时">${formatDuration(entry.duration || 0)}</span>
+          </div>
+          
+          <div class="timeline-details">
+            ${entry.thought && entry.thought.trim() ? `
+            <div class="timeline-section">
+              <div class="section-title">💡 思考</div>
+              <div class="section-content">${escapeHtml(entry.thought)}</div>
+            </div>
+            ` : ''}
+            
+            ${!isPreselect && entry.action ? `
+            <div class="timeline-section">
+              <div class="section-title">⚡ 工具调用</div>
+              <div class="section-content">
+                <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
+                <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+              </div>
+            </div>
+            ` : ''}
+            
+            ${isPreselect && entry.action?.params?.selected ? `
+            <div class="timeline-section">
+              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-content">
+                <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+                <strong>数量:</strong> ${entry.action.params.selected.length} 个
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.observation ? `
+            <div class="timeline-section">
+              <div class="section-title">📝 观察结果</div>
+              <div class="section-content">${escapeHtml(entry.observation)}</div>
+            </div>
+            ` : ''}
+            
+            ${entry.apiRequest ? `
+            <div class="timeline-section">
+              <div class="section-title">📡 API 请求</div>
+              <div class="section-content">
+                ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+                ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+                ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
+                ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.apiResponse ? `
+            <div class="timeline-section">
+              <div class="section-title">📤 API 响应</div>
+              <div class="section-content">
+                ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+                ${entry.apiResponse.tokenUsage ? `
+                  <strong>Token 使用:</strong><br>
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                ` : ''}
+              </div>
+            </div>
+            ` : ''}
+            
+            ${entry.error ? `
+            <div class="timeline-section error">
+              <div class="section-title">❌ 错误信息</div>
+              <div class="section-content">${escapeHtml(entry.error)}</div>
+            </div>
+            ` : ''}
+            
+            ${entry.result ? `
+            <div class="timeline-section">
+              <div class="section-title">✅ 子任务结果</div>
+              <div class="section-content">${escapeHtml(entry.result)}</div>
+            </div>
+            ` : ''}
+            
+            ${isReflection ? `
+            <div class="timeline-section reflection-details">
+              ${entry.prompt ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 评估提示词</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.rawContent ? `
+              <div class="timeline-section">
+                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.apiResponse?.tokenUsage ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 Token 使用</div>
+                <div class="section-content">
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                </div>
+              </div>
+              ` : ''}
+              ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              ` : ''}
+              ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+              <div class="reflection-dimensions">
+                ${Object.entries(entry.dimensions).map(([key, val]) => `
+                  <div class="dimension-item">
+                    <span class="dim-label">${key}</span>
+                    <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                    <span class="dim-score">${val}/10</span>
+                  </div>
+                `).join('')}
+              </div>
+              ` : ''}
+              ${entry.issues && entry.issues.length > 0 ? `
+              <div class="section-title">📋 发现的问题</div>
+              <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.suggestions && entry.suggestions.length > 0 ? `
+              <div class="section-title">💡 改进建议</div>
+              <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.action?.decision ? `
+              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              ` : ''}
+              ${entry.useful !== undefined ? `
+              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ` : ''}
+            </div>
+            ` : ''}
+          </div>
         </div>
       </div>
     `;
@@ -745,6 +1110,328 @@ function renderExecutionTimeline(executionLog) {
 function renderExecutionLogForPanel(executionLog) {
   const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   
+  // 检测是否有任务组信息
+  const hasTaskGroups = sortedLog.some(entry => entry.taskGroup);
+  
+  if (!hasTaskGroups) {
+    // 如果没有任务组信息，使用原来的渲染方式
+    return renderExecutionLogOriginal(sortedLog);
+  }
+  
+  // 按任务组分组
+  const taskGroups = new Map();
+  let currentTaskGroup = null;
+  let mainTasks = [];
+  
+  sortedLog.forEach(entry => {
+    if (entry.taskGroup) {
+      if (!taskGroups.has(entry.taskGroup)) {
+        taskGroups.set(entry.taskGroup, {
+          groupId: entry.taskGroup,
+          groupIndex: entry.taskGroupIndex,
+          groupName: entry.taskGroupName,
+          entries: [],
+          status: entry.status
+        });
+      }
+      taskGroups.get(entry.taskGroup).entries.push(entry);
+      if (entry.status) {
+        taskGroups.get(entry.taskGroup).status = entry.status;
+      }
+    } else {
+      mainTasks.push(entry);
+    }
+  });
+  
+  // 渲染主任务日志（不在任何任务组中的日志）
+  let result = renderMainTasks(mainTasks, sortedLog.length);
+  
+  // 渲染任务组
+  taskGroups.forEach((group, groupId) => {
+    const groupStatus = group.status || 'processing';
+    const statusIcon = groupStatus === 'success' ? '✓' : (groupStatus === 'failed' ? '✗' : '○');
+    const statusClass = groupStatus;
+    
+    result += `
+      <div class="task-group-container" data-group-id="${groupId}">
+        <div class="task-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <div class="task-group-line"></div>
+          <div class="task-group-dot ${statusClass}">
+            ${statusIcon}
+          </div>
+          <div class="task-group-content">
+            <div class="task-group-title">
+              <span class="task-group-expand-icon">▼</span>
+              <span class="task-group-icon">📁</span>
+              <span class="task-group-index">${group.groupIndex}</span>
+              <span class="task-group-name">${escapeHtml(group.groupName)}</span>
+              <span class="task-group-count">(${group.entries.length} 步骤)</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-group-timeline">
+          ${renderTaskGroupEntries(group.entries, sortedLog.length)}
+        </div>
+      </div>
+    `;
+  });
+  
+  return result;
+}
+
+/**
+ * 渲染主任务日志（不在任务组中的日志）
+ */
+function renderMainTasks(mainTasks, totalCount) {
+  if (mainTasks.length === 0) return '';
+  
+  let result = '';
+  
+  result += `
+    <div class="main-tasks-container">
+      <div class="main-tasks-header">
+        <div class="main-tasks-line"></div>
+        <div class="main-tasks-dot processing">
+          ◉
+        </div>
+        <div class="main-tasks-content">
+          <div class="main-tasks-title">
+            <span class="main-tasks-icon">🏠</span>
+            <span class="main-tasks-name">主任务</span>
+            <span class="main-tasks-count">(${mainTasks.length} 步骤)</span>
+          </div>
+        </div>
+      </div>
+      <div class="main-tasks-timeline">
+  `;
+  
+  mainTasks.forEach((entry, index) => {
+    result += renderSingleEntry(entry, index, totalCount);
+  });
+  
+  result += `
+      </div>
+    </div>
+  `;
+  
+  return result;
+}
+
+/**
+ * 渲染任务组内的日志条目
+ */
+function renderTaskGroupEntries(entries, totalCount) {
+  let result = '';
+  entries.forEach((entry, index) => {
+    result += renderSingleEntry(entry, index, totalCount);
+  });
+  return result;
+}
+
+/**
+ * 渲染单个日志条目
+ */
+function renderSingleEntry(entry, index, totalCount) {
+  const isSubtask = entry.nodeType === 'subtask';
+  const isToolExec = entry.nodeType === 'tool_exec';
+  const isApiCall = entry.nodeType === 'api_call';
+  const isPreselect = entry.nodeType === 'preselect';
+  const isReflection = entry.nodeType === 'reflection';
+  const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
+  
+  let indentClass = '';
+  let nodeIcon = '';
+  
+  if (isReflection) {
+    indentClass = 'reflection-level';
+    nodeIcon = '🎯';
+  } else if (isPreselect) {
+    nodeIcon = '📡';
+  } else if (isPlanTask) {
+    indentClass = 'plan-task-level';
+    nodeIcon = '📋';
+  } else if (isSubtask) {
+    indentClass = 'subtask-level';
+    nodeIcon = '🔀';
+  } else if (isToolExec) {
+    indentClass = 'tool-level';
+    nodeIcon = '🔧';
+  } else if (isApiCall) {
+    indentClass = 'api-level';
+    nodeIcon = '📡';
+  } else if (isToolExec) {
+    nodeIcon = '⚡';
+  } else if (isApiCall) {
+    nodeIcon = '📡';
+  }
+  
+  let statusIcon = '○';
+  let statusClass = entry.status || 'processing';
+  if (entry.status === 'success') {
+    statusIcon = '✓';
+  } else if (entry.status === 'failed') {
+    statusIcon = '✗';
+  }
+  if (isReflection) {
+    statusClass = `reflection ${statusClass}`;
+  }
+  
+  let nodeName = escapeHtml(entry.nodeName || '未知节点');
+  
+  if (entry.subtaskCount) {
+    nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
+  }
+  
+  if ((isApiCall || isPreselect) && entry.apiRequest) {
+    const info = [];
+    if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
+      info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
+    }
+    if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
+      info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
+    }
+    if (info.length > 0) {
+      nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
+    }
+  }
+  
+  return `
+    <div class="timeline-item ${indentClass}">
+      <div class="timeline-line"></div>
+      <div class="timeline-dot ${statusClass}">
+        ${statusIcon}
+      </div>
+      <div class="timeline-content">
+        <div class="timeline-header">
+          <span class="expand-icon">▼</span>
+          <span class="node-icon">${nodeIcon}</span>
+          <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
+          <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
+          <span class="duration-badge" title="耗时">${formatDuration(entry.duration)}</span>
+        </div>
+        
+        <div class="timeline-details">
+          ${entry.thought && entry.thought.trim() ? `
+          <div class="timeline-section">
+            <div class="section-title">💡 思考</div>
+            <div class="section-content">${escapeHtml(entry.thought)}</div>
+          </div>
+          ` : ''}
+          
+          ${!isPreselect && entry.action ? `
+          <div class="timeline-section">
+            <div class="section-title">⚡ 工具调用</div>
+            <div class="section-content">
+              <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
+              <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+            </div>
+          </div>
+          ` : ''}
+          
+          ${isPreselect && entry.action?.params?.selected ? `
+          <div class="timeline-section">
+            <div class="section-title">🔍 筛选结果</div>
+            <div class="section-content">
+              <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+              <strong>数量:</strong> ${entry.action.params.selected.length} 个
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.observation ? `
+          <div class="timeline-section">
+            <div class="section-title">📝 观察结果</div>
+            <div class="section-content">${escapeHtml(entry.observation)}</div>
+          </div>
+          ` : ''}
+          
+          ${entry.apiRequest ? `
+          <div class="timeline-section">
+            <div class="section-title">📡 API 请求</div>
+            <div class="section-content">
+              ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+              ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+              ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
+              ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+              ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.apiResponse ? `
+          <div class="timeline-section">
+            <div class="section-title">📤 API 响应</div>
+            <div class="section-content">
+              ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+              ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+              ${entry.apiResponse.tokenUsage ? `
+                <strong>Token 使用:</strong><br>
+                - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+              ` : ''}
+            </div>
+          </div>
+          ` : ''}
+          
+          ${entry.error ? `
+          <div class="timeline-section error">
+            <div class="section-title">❌ 错误信息</div>
+            <div class="section-content">${escapeHtml(entry.error)}</div>
+          </div>
+          ` : ''}
+          
+          ${entry.result ? `
+          <div class="timeline-section">
+            <div class="section-title">✅ 子任务结果</div>
+            <div class="section-content">${escapeHtml(entry.result)}</div>
+          </div>
+          ` : ''}
+          
+          ${isReflection ? `
+          <div class="timeline-section reflection-details">
+            ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+            <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+            ` : ''}
+            ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+            <div class="reflection-dimensions">
+              ${Object.entries(entry.dimensions).map(([key, val]) => `
+                <div class="dimension-item">
+                  <span class="dim-label">${key}</span>
+                  <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                  <span class="dim-score">${val}/10</span>
+                </div>
+              `).join('')}
+            </div>
+            ` : ''}
+            ${entry.issues && entry.issues.length > 0 ? `
+            <div class="section-title">📋 发现的问题</div>
+            <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+            ` : ''}
+            ${entry.suggestions && entry.suggestions.length > 0 ? `
+            <div class="section-title">💡 改进建议</div>
+            <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+            ` : ''}
+            ${entry.action?.decision ? `
+            <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+            ` : ''}
+            ${entry.useful !== undefined ? `
+            <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+            ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+            ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+            ` : ''}
+          </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 原来的日志渲染方式（保留用于没有任务组的场景）
+ */
+function renderExecutionLogOriginal(sortedLog) {
   let result = '';
   let currentSubtaskIndex = null;
   
@@ -753,6 +1440,7 @@ function renderExecutionLogForPanel(executionLog) {
     const isToolExec = entry.nodeType === 'tool_exec';
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
+    const isReflection = entry.nodeType === 'reflection';
     const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
@@ -762,8 +1450,10 @@ function renderExecutionLogForPanel(executionLog) {
     let indentClass = '';
     let nodeIcon = '';
     
-    if (isPreselect) {
-      nodeIcon = '📡';
+    if (isReflection) {
+      nodeIcon = '🎯';
+    } else if (isPreselect) {
+      nodeIcon = '🔍';
     } else if (isPlanTask) {
       indentClass = 'plan-task-level';
       nodeIcon = '📋';
@@ -800,7 +1490,7 @@ function renderExecutionLogForPanel(executionLog) {
       nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
     }
     
-    if ((isApiCall || isPreselect) && entry.apiRequest) {
+    if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
         info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
@@ -905,6 +1595,63 @@ function renderExecutionLogForPanel(executionLog) {
               <div class="section-content">${escapeHtml(entry.result)}</div>
             </div>
             ` : ''}
+            
+            ${isReflection ? `
+            <div class="timeline-section reflection-details">
+              ${entry.prompt ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 评估提示词</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.rawContent ? `
+              <div class="timeline-section">
+                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
+              </div>
+              ` : ''}
+              ${entry.apiResponse?.tokenUsage ? `
+              <div class="timeline-section">
+                <div class="section-title">📊 Token 使用</div>
+                <div class="section-content">
+                  - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
+                  - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                </div>
+              </div>
+              ` : ''}
+              ${entry.overallScore !== undefined && entry.overallScore !== null ? `
+              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              ` : ''}
+              ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
+              <div class="reflection-dimensions">
+                ${Object.entries(entry.dimensions).map(([key, val]) => `
+                  <div class="dimension-item">
+                    <span class="dim-label">${key}</span>
+                    <span class="dim-bar"><span class="dim-fill" style="width:${val * 10}%"></span></span>
+                    <span class="dim-score">${val}/10</span>
+                  </div>
+                `).join('')}
+              </div>
+              ` : ''}
+              ${entry.issues && entry.issues.length > 0 ? `
+              <div class="section-title">📋 发现的问题</div>
+              <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.suggestions && entry.suggestions.length > 0 ? `
+              <div class="section-title">💡 改进建议</div>
+              <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+              ` : ''}
+              ${entry.action?.decision ? `
+              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              ` : ''}
+              ${entry.useful !== undefined ? `
+              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ` : ''}
+            </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -915,14 +1662,13 @@ function renderExecutionLogForPanel(executionLog) {
 }
 
 function updateRealtimeExecutionLogPanel(status) {
-  const panel = document.querySelector('.realtime-execution-log-panel');
+  const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
   
-  console.log('[SidePanel] updateRealtimeExecutionLogPanel 被调用，状态:', status.nodeName, '日志数量:', status.executionLog?.length);
-  
-  const executionValue = panel.querySelector('.realtime-execution-value');
-  if (executionValue) {
-    executionValue.textContent = status.nodeName || '处理中...';
+  // 更新"执行中"节点名称
+  const executingNode = panel.querySelector('.realtime-executing-node');
+  if (executingNode) {
+    executingNode.textContent = status.nodeName || '处理中...';
   }
   
   const executionLog = status.executionLog || [];
@@ -932,145 +1678,193 @@ function updateRealtimeExecutionLogPanel(status) {
   const subtaskCount = executionLog.filter(entry => entry.nodeType === 'subtask').length;
   const completedSubtasks = executionLog.filter(entry => entry.nodeType === 'subtask' && entry.status === 'success').length;
   
-  const statTotal = panel.querySelector('.realtime-stat-total');
-  const statSuccess = panel.querySelector('.realtime-stat-success');
-  const statFailed = panel.querySelector('.realtime-stat-failed');
-  const statSubtask = panel.querySelector('.realtime-stat-subtask');
+  // 更新统计数字
+  const comboValue = panel.querySelector('.combo-value');
+  const statSuccess = panel.querySelector('.combo-stat.success .stat-value');
+  const statFailed = panel.querySelector('.combo-stat.failed .stat-value');
+  const statSubtask = panel.querySelector('.combo-stat.subtask');
   
-  if (statTotal) {
-    statTotal.querySelector('.stat-count-mini').textContent = totalCount;
-  }
-  if (statSuccess) {
-    statSuccess.querySelector('.stat-count-mini').textContent = successCount;
-  }
-  if (statFailed) {
-    statFailed.querySelector('.stat-count-mini').textContent = failedCount;
-  }
+  if (comboValue) comboValue.textContent = totalCount;
+  if (statSuccess) statSuccess.textContent = successCount;
+  if (statFailed) statFailed.textContent = failedCount;
   if (statSubtask) {
     if (subtaskCount > 0) {
-      statSubtask.style.display = 'flex';
-      statSubtask.querySelector('.stat-count-mini').textContent = `${completedSubtasks}/${subtaskCount}`;
+      statSubtask.style.display = '';
+      statSubtask.querySelector('.stat-value').textContent = `${completedSubtasks}/${subtaskCount}`;
     } else {
       statSubtask.style.display = 'none';
     }
   }
   
-  const timeline = panel.querySelector('.realtime-log-timeline');
-  timeline.innerHTML = executionLog.length > 0 ? renderExecutionTimeline(executionLog) : '<div class="realtime-waiting-message">等待执行中...</div>';
+  // 更新 timeline
+  const timeline = panel.querySelector('.timeline');
+  timeline.innerHTML = executionLog.length > 0
+    ? renderExecutionTimeline(executionLog)
+    : '<div class="realtime-waiting-message">等待执行中...</div>';
   
-  const timelineWrapper = panel.querySelector('.realtime-log-timeline-wrapper');
-  if (timelineWrapper) {
-    timelineWrapper.scrollTop = timelineWrapper.scrollHeight;
-  }
+  // 自动滚动到底部
+  timeline.scrollTop = timeline.scrollHeight;
 }
 
 function showRealtimeExecutionLogPanel(loadingId) {
+  const existingPanel = document.querySelector('.execution-log-panel.realtime-mode');
+  if (existingPanel) {
+    existingPanel.remove();
+  }
+  
   const panel = document.createElement('div');
-  panel.className = 'realtime-execution-log-panel';
+  panel.className = 'execution-log-panel realtime-mode';
   
   panel.innerHTML = `
-    <div class="realtime-log-container">
-      <div class="realtime-log-header">
-        <div class="realtime-log-title">
-          <svg viewBox="0 0 1024 1024">
-            <path d="M512 5.12C230.4 5.12 5.12 230.4 5.12 512s225.28 506.88 506.88 506.88 506.88-225.28 506.88-506.88S793.6 5.12 512 5.12z m0 92.16c107.52 0 215.04 46.08 291.84 122.88s122.88 184.32 122.88 291.84-46.08 215.04-122.88 291.84-184.32 122.88-291.84 122.88-215.04-46.08-291.84-122.88-122.88-184.32-122.88-291.84 46.08-215.04 122.88-291.84S404.48 97.28 512 97.28zM430.08 327.68h-5.12c-5.12 0-5.12 5.12-5.12 5.12v353.28l5.12 5.12h20.48l250.88-168.96s5.12 0 5.12-5.12V512v-5.12s0-5.12-5.12-5.12l-256-168.96c-5.12 0-5.12 0-10.24-5.12z" fill="#707070"></path>
+    <div class="log-container">
+      <div class="log-header">
+        <div class="log-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
           <h3>实时执行日志</h3>
         </div>
-        <div class="realtime-log-close">
+        <div class="log-close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </div>
       </div>
-      <div class="realtime-log-content">
-        <div class="realtime-header-bar">
-          <div class="realtime-current-execution">
-            <span class="realtime-execution-label">当前执行:</span>
-            <span class="realtime-execution-value">准备中...</span>
+      
+      <div class="log-summary">
+        <div class="realtime-executing-indicator">
+          <span class="realtime-pulse-dot"></span>
+          <span class="realtime-executing-label">执行中:</span>
+          <span class="realtime-executing-node">准备中...</span>
+        </div>
+        <div class="summary-combo">
+          <div class="combo-main">
+            <span class="combo-icon">◉</span>
+            <span class="combo-label">总节点</span>
+            <span class="combo-value">0</span>
           </div>
-          <div class="realtime-stat-summary-inline">
-            <span class="realtime-stat-item-mini realtime-stat-total">
-              <span class="stat-icon">◉</span>
-              <span class="stat-text-mini">总节点</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span class="realtime-stat-item-mini realtime-stat-success" data-status="success">
+          <div class="combo-stats">
+            <div class="combo-stat success" data-status="success">
               <span class="stat-icon">✓</span>
-              <span class="stat-text-mini">成功</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span>|</span>
-            <span class="realtime-stat-item-mini realtime-stat-failed" data-status="failed">
+              <span class="stat-label">成功</span>
+              <span class="stat-value">0</span>
+            </div>
+            <div class="combo-stat failed" data-status="failed">
               <span class="stat-icon">✗</span>
-              <span class="stat-text-mini">失败</span>
-              <span class="stat-count-mini">0</span>
-            </span>
-            <span class="realtime-stat-item-mini realtime-stat-subtask" data-status="subtask" style="display:none">
+              <span class="stat-label">失败</span>
+              <span class="stat-value">0</span>
+            </div>
+            <div class="combo-stat subtask" data-status="subtask" style="display:none">
               <span class="stat-icon">🔀</span>
-              <span class="stat-text-mini">子任务</span>
-              <span class="stat-count-mini">0/0</span>
-            </span>
+              <span class="stat-label">子任务</span>
+              <span class="stat-value">0/0</span>
+            </div>
           </div>
         </div>
-        <div class="realtime-log-timeline-wrapper">
-          <div class="realtime-log-timeline">
-            <div class="realtime-waiting-message">等待执行中...</div>
-          </div>
+        <div class="summary-actions">
+          <button class="toggle-expand-btn" title="展开全部节点">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="7 13 12 18 17 13"></polyline>
+              <polyline points="7 6 12 11 17 6"></polyline>
+            </svg>
+          </button>
         </div>
+      </div>
+      
+      <div class="timeline">
+        <div class="realtime-waiting-message">等待执行中...</div>
       </div>
     </div>
   `;
   
   document.body.appendChild(panel);
   
-  const closeBtn = panel.querySelector('.realtime-log-close');
+  // 关闭按钮
+  const closeBtn = panel.querySelector('.log-close');
   closeBtn.addEventListener('click', () => {
     panel.remove();
   });
   
+  // 点击遮罩关闭
   panel.addEventListener('click', (e) => {
     if (e.target === panel) {
       panel.remove();
     }
   });
   
-  panel.addEventListener('click', (e) => {
-    const target = e.target.closest('.realtime-stat-item-mini[data-status]');
-    if (target) {
-      const status = target.dataset.status;
-      const isActive = target.classList.contains('active');
-      
-      panel.querySelectorAll('.realtime-stat-item-mini[data-status]').forEach(item => {
-        item.classList.remove('active');
-      });
-      
-      if (!isActive) {
-        target.classList.add('active');
-        
-        panel.querySelectorAll('.realtime-timeline-item').forEach(timelineItem => {
-          if (status === 'subtask') {
-            const nodeType = timelineItem.dataset.nodeType;
-            if (nodeType === 'subtask') {
-              timelineItem.style.display = '';
-            } else {
-              timelineItem.style.display = 'none';
-            }
-          } else {
-            const itemStatus = timelineItem.dataset.status;
-            if (itemStatus === status) {
-              timelineItem.style.display = '';
-            } else {
-              timelineItem.style.display = 'none';
-            }
-          }
-        });
+  // 展开/收起全部
+  const toggleExpandBtn = panel.querySelector('.toggle-expand-btn');
+  let isExpanded = false;
+  toggleExpandBtn.addEventListener('click', () => {
+    isExpanded = !isExpanded;
+    const timelineContents = panel.querySelectorAll('.timeline-content');
+    timelineContents.forEach(content => {
+      if (isExpanded) {
+        content.classList.add('expanded');
       } else {
-        panel.querySelectorAll('.realtime-timeline-item').forEach(timelineItem => {
-          timelineItem.style.display = '';
-        });
+        content.classList.remove('expanded');
       }
+    });
+    
+    const svg = toggleExpandBtn.querySelector('svg');
+    if (isExpanded) {
+      svg.innerHTML = '<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>';
+      toggleExpandBtn.setAttribute('title', '收起全部节点');
+    } else {
+      svg.innerHTML = '<polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline>';
+      toggleExpandBtn.setAttribute('title', '展开全部节点');
+    }
+  });
+  
+  // 单条展开/收起（事件委托）
+  panel.addEventListener('click', (e) => {
+    const header = e.target.closest('.timeline-header');
+    if (header) {
+      const content = header.parentElement;
+      content.classList.toggle('expanded');
+    }
+  });
+  
+  // 按状态筛选
+  panel.addEventListener('click', (e) => {
+    const target = e.target.closest('.combo-stat[data-status]');
+    if (!target) return;
+    
+    const status = target.dataset.status;
+    const isActive = target.classList.contains('active');
+    
+    panel.querySelectorAll('.combo-stat[data-status]').forEach(item => {
+      item.classList.remove('active');
+    });
+    
+    const timelineItems = panel.querySelectorAll('.timeline-item');
+    
+    if (!isActive) {
+      target.classList.add('active');
+      
+      timelineItems.forEach(timelineItem => {
+        if (status === 'subtask') {
+          const nodeType = timelineItem.dataset.nodeType;
+          if (nodeType === 'subtask') {
+            timelineItem.style.display = '';
+          } else {
+            timelineItem.style.display = 'none';
+          }
+        } else {
+          const dot = timelineItem.querySelector('.timeline-dot');
+          if (dot && dot.classList.contains(status)) {
+            timelineItem.style.display = '';
+          } else {
+            timelineItem.style.display = 'none';
+          }
+        }
+      });
+    } else {
+      timelineItems.forEach(timelineItem => {
+        timelineItem.style.display = '';
+      });
     }
   });
   
@@ -1080,7 +1874,7 @@ function showRealtimeExecutionLogPanel(loadingId) {
 }
 
 function toggleRealtimeExecutionLog(loadingId) {
-  const existingPanel = document.querySelector('.realtime-execution-log-panel');
+  const existingPanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (existingPanel) {
     existingPanel.remove();
     return;
@@ -1135,7 +1929,7 @@ function updateExecutionStatus(loadingId, nodeName, status, executionLog) {
     state.currentExecutionStatus.status = status;
   }
   
-  const realtimePanel = document.querySelector('.realtime-execution-log-panel');
+  const realtimePanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (realtimePanel) {
     updateRealtimeExecutionLogPanel(state.currentExecutionStatus);
   }
@@ -1192,12 +1986,26 @@ export function addLoadingMessage() {
       if (loadingText) {
         loadingText.textContent = '停止中...';
       }
-      chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null });
+      // 发送取消消息到后台
+      chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null, sessionId: state.activeSessionId });
+      // 立即清理前端状态：调用 cancelApi 会 reject Promise 并清理 listener 和 timeout
+      if (state.pendingCancelApi) {
+        state.pendingCancelApi({
+          message: '任务已被用户停止',
+          executionLog: state.currentExecutionStatus?.executionLog || []
+        });
+      }
     });
   }
   
   // 始终同步注册执行日志监听器，避免竞态（storage.get 是异步的）
+  // 捕获当前会话 ID，防止切换会话后过滤逻辑用错 sessionId
+  const mySessionId = state.activeSessionId;
   state.executionLogListener = (message, sender, sendResponse) => {
+    // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
+    if (message.sessionId && message.sessionId !== mySessionId) {
+      return false;
+    }
     if (message.type === 'EXECUTION_STATUS_UPDATE') {
       console.log('[SidePanel] 收到执行状态更新:', message.nodeName, message.status, '日志数量:', message.executionLog?.length);
       updateExecutionStatus(loadingId, message.nodeName, message.status, message.executionLog);
@@ -1244,9 +2052,10 @@ export function removeLoadingMessage(loadingId) {
     state.executionLogListener = null;
   }
   
+  // 按会话隔离清空执行状态，不影响其他会话
   state.currentExecutionStatus = null;
   
-  const realtimePanel = document.querySelector('.realtime-execution-log-panel');
+  const realtimePanel = document.querySelector('.execution-log-panel.realtime-mode');
   if (realtimePanel) {
     realtimePanel.remove();
   }
@@ -1256,21 +2065,90 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
   
+  // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
+  const mySessionId = state.activeSessionId;
+
+  // 建立长连接端口以保持 Service Worker 存活，
+  // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
+  const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
+  console.log('[SidePanel] keepalive 端口已连接, sessionId:', mySessionId);
+
+  // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
+  // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
+  const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null };
+  keepalivePort.onMessage.addListener((msg) => {
+    if (msg.type === 'SW_RESTARTED' && msg.sessionId === mySessionId) {
+      console.warn('[SidePanel] ⚠️ 收到 SW_RESTARTED 通知，后台已重启，API 调用已丢失');
+      _swRestartCtx.restarted = true;
+      // 如果 Promise executor 已经初始化（rejectFn 已设置），直接触发清理和拒绝
+      if (_swRestartCtx.rejectFn && _swRestartCtx.cleanup) {
+        _swRestartCtx.cleanup();
+        _swRestartCtx.rejectFn({
+          message: '后台服务异常重启，API 调用已中断，请重试',
+          executionLog: []
+        });
+      }
+    }
+  });
+
+  // timeoutId / removeListener 需放在 Promise 外层作用域，供 cleanupCallApi 及 pause/resume 闭包访问
+  // 放在对象上防止 terser 在 minify 时跨作用域重命名导致 ReferenceError
+  const _timeoutCtx = { timeoutId: null, removeListener: () => {} };
+
+  // 统一清理函数：断开 keepalive 端口、清理 listener 和 timeout、清除状态
+  const cleanupCallApi = () => {
+    try { keepalivePort.disconnect(); } catch (e) {}
+    if (_timeoutCtx.timeoutId) { clearTimeout(_timeoutCtx.timeoutId); _timeoutCtx.timeoutId = null; }
+    _timeoutCtx.removeListener();
+    state.pendingCancelApiMap.delete(mySessionId);
+    state.pendingCallApiSessionIds.delete(mySessionId);
+    syncPendingSessionsToStorage();
+  };
+  
   return new Promise((resolve, reject) => {
+    // 桥接 SW 重启检测到 Promise executor
+    _swRestartCtx.cleanup = cleanupCallApi;
+    _swRestartCtx.rejectFn = reject;
+
+    // SW 重启检测：如果在 Promise 执行前已经收到 SW_RESTARTED 通知，立即 reject
+    if (_swRestartCtx.restarted) {
+      cleanupCallApi();
+      reject({ message: '后台服务异常重启，API 调用已中断，请重试', executionLog: [] });
+      return;
+    }
+
     let executionLog = [];
     const timeoutSeconds = Math.round(timeoutMs / 1000);
     
-    let timeoutId = setTimeout(() => {
-      removeListener();
-      chrome.runtime.sendMessage({
-        type: 'CANCEL_REACT',
-        tabId: state.currentTabId
-      }).catch(err => {
-        console.log('[SidePanel] 发送取消请求失败:', err.message);
-      });
-      reject({
+    // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
+    const cancelApi = (errorResult) => {
+      cleanupCallApi();
+      // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
+      if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
+        errorResult.executionLog = executionLog;
+      } else if (executionLog.length > 0) {
+        // 两者都有时，以本地为准（后台最新快照）
+        errorResult.executionLog = executionLog;
+      }
+      reject(errorResult);
+    };
+    state.pendingCancelApi = cancelApi;
+    state.pendingCallApiSessionIds.add(mySessionId);
+    syncPendingSessionsToStorage();
+    console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
+    
+    _timeoutCtx.timeoutId = setTimeout(() => {
+      cancelApi({
         message: `请求超时（${timeoutSeconds}秒）`,
         executionLog: executionLog
+      });
+      // 同时通知后台取消（超时场景）
+      chrome.runtime.sendMessage({
+        type: 'CANCEL_REACT',
+        tabId: state.currentTabId,
+        sessionId: state.activeSessionId
+      }).catch(err => {
+        console.log('[SidePanel] 发送取消请求失败:', err.message);
       });
     }, timeoutMs);
     
@@ -1279,10 +2157,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     let pauseStartTime = null;
     
     const pauseTimeout = () => {
-      if (pauseStartTime === null && timeoutId !== null) {
+      if (pauseStartTime === null && _timeoutCtx.timeoutId !== null) {
         pauseStartTime = Date.now();
-        clearTimeout(timeoutId);
-        timeoutId = null;
+        clearTimeout(_timeoutCtx.timeoutId);
+        _timeoutCtx.timeoutId = null;
         console.log('[SidePanel] 前端超时已暂停（澄清工具执行中）');
       }
     };
@@ -1297,25 +2175,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         const remainingTime = timeoutMs + totalPausedDuration - elapsedTime;
         
         if (remainingTime <= 0) {
-          removeListener();
-          reject({
+          cancelApi({
             message: `请求超时（${timeoutSeconds}秒）`,
             executionLog: executionLog
           });
           return;
         }
         
-        timeoutId = setTimeout(() => {
-          removeListener();
-          chrome.runtime.sendMessage({
-            type: 'CANCEL_REACT',
-            tabId: state.currentTabId
-          }).catch(err => {
-            console.log('[SidePanel] 发送取消请求失败:', err.message);
-          });
-          reject({
+        _timeoutCtx.timeoutId = setTimeout(() => {
+          cancelApi({
             message: `请求超时（${timeoutSeconds}秒）`,
             executionLog: executionLog
+          });
+          chrome.runtime.sendMessage({
+            type: 'CANCEL_REACT',
+            tabId: state.currentTabId,
+            sessionId: mySessionId
+          }).catch(err => {
+            console.log('[SidePanel] 发送取消请求失败:', err.message);
           });
         }, remainingTime);
         
@@ -1325,6 +2202,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
 
     const listener = (message) => {
       console.log('[SidePanel] 收到消息:', message);
+      
+      // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
+      // 使用捕获的 mySessionId 而非 state.activeSessionId，确保切换会话后仍能收到本会话的响应
+      if (message.sessionId && message.sessionId !== mySessionId) {
+        return false;
+      }
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
         executionLog = message.executionLog || [];
@@ -1342,16 +2225,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'API_COMPLETE') {
-        if (timeoutId) clearTimeout(timeoutId);
-        chrome.runtime.onMessage.removeListener(listener);
+        cleanupCallApi();
         resolve({ 
           content: message.content, 
-          executionLog: message.executionLog || executionLog 
+          executionLog: message.executionLog || executionLog,
+          reflectionScore: message.reflectionScore
         });
         return false;
       } else if (message.type === 'API_ERROR') {
-        if (timeoutId) clearTimeout(timeoutId);
-        chrome.runtime.onMessage.removeListener(listener);
+        cleanupCallApi();
         reject({
           message: message.error,
           executionLog: message.executionLog || executionLog
@@ -1363,13 +2245,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     chrome.runtime.onMessage.addListener(listener);
     
-    const removeListener = () => {
+    _timeoutCtx.removeListener = () => {
       chrome.runtime.onMessage.removeListener(listener);
     };
 
-    console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
+    console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
     chrome.runtime.sendMessage({
       type: 'CALL_API',
+      sessionId: state.activeSessionId,
       messages: messages,
       model: model,
       useTools: useTools,
@@ -1398,6 +2281,8 @@ function showExecutionLog(executionLog) {
   const subtaskCount = executionLog.filter(entry => entry.nodeType === 'subtask').length;
   const completedSubtasks = executionLog.filter(entry => entry.nodeType === 'subtask' && entry.status === 'success').length;
   const planTaskCount = executionLog.filter(entry => entry.nodeType === 'tool_exec' && entry.action?.name === 'plan_task' && entry.status === 'success').length;
+  const reflectionEntries = executionLog.filter(entry => entry.nodeType === 'reflection');
+  const postReflection = reflectionEntries.find(e => e.reflectionType === 'post');
   
   panel.innerHTML = `
     <div class="log-container">
@@ -1449,6 +2334,13 @@ function showExecutionLog(executionLog) {
               <span class="stat-icon">🔀</span>
               <span class="stat-label">子任务</span>
               <span class="stat-value">${completedSubtasks}/${subtaskCount}</span>
+            </div>
+            ` : ''}
+            ${postReflection ? `
+            <div class="combo-stat reflection" title="质量评估: ${postReflection.overallScore}/10">
+              <span class="stat-icon">🎯</span>
+              <span class="stat-label">评分</span>
+              <span class="stat-value">${postReflection.overallScore}/10</span>
             </div>
             ` : ''}
           </div>

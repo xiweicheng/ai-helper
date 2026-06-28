@@ -1041,8 +1041,291 @@
     .tab-panel.active {
       display: block;
     }
+    
+    .reflection-config {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+    
+    .reflection-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    
+    .reflection-config .subtitle {
+      margin-bottom: 20px;
+    }
+    
+    .reflection-section {
+      background: #fafafa;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .reflection-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #ddd;
+    }
+    
+    .reflection-section-title {
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .reflection-section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .reflection-section-toggle label {
+      margin-bottom: 0;
+    }
+    
+    .reflection-config-item {
+      margin-bottom: 12px;
+    }
+    
+    .reflection-config-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .reflection-config-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      font-weight: 500;
+      color: #555;
+      font-size: 13px;
+    }
+    
+    .reflection-config-item .hint-text {
+      font-size: 11px;
+      color: #999;
+      font-weight: normal;
+    }
+    
+    .reflection-config-item input[type="number"],
+    .reflection-config-item input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      transition: border-color 0.2s;
+    }
+    
+    .reflection-config-item input[type="number"]:focus,
+    .reflection-config-item input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+    
+    .reflection-config-item .unit {
+      font-size: 11px;
+      color: #888;
+      margin-left: 4px;
+    }
+    
+    .reflection-config-item .range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+    
+    .reflection-section.collapsible {
+      cursor: pointer;
+    }
+    
+    .reflection-section.collapsible .reflection-section-header:hover {
+      background: rgba(102, 126, 234, 0.05);
+      border-radius: 6px;
+    }
+    
+    .reflection-section.collapsed .reflection-section-content {
+      display: none;
+    }
+    
+    .reflection-section-icon {
+      font-size: 12px;
+      transition: transform 0.2s;
+      display: inline-block;
+      margin-right: 4px;
+    }
+    
+    .reflection-section.collapsed .reflection-section-icon {
+      transform: rotate(-90deg);
+    }
+    
+    .reflection-section.disabled {
+      opacity: 0.5;
+    }
+    
+    .reflection-section.disabled .reflection-section-content {
+      display: none;
+    }
+    
+    .reflection-config.disabled {
+      opacity: 0.6;
+    }
+    
+    .reflection-config.disabled .reflection-section {
+      display: none;
+    }
+    
+    .reflection-config.disabled .reflection-main-toggle {
+      display: flex;
+    }
+    
+    .reflection-toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+    
+    .reflection-toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .reflection-toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .3s;
+      border-radius: 20px;
+    }
+    
+    .reflection-toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    
+    .reflection-toggle-switch input:checked + .reflection-toggle-slider {
+      background-color: #667eea;
+    }
+    
+    .reflection-toggle-switch input:focus + .reflection-toggle-slider {
+      box-shadow: 0 0 1px #667eea;
+    }
+    
+    .reflection-toggle-switch input:checked + .reflection-toggle-slider:before {
+      transform: translateX(16px);
+    }
+    
+    .reflection-toggle-text {
+      font-size: 12px;
+      color: #666;
+      font-weight: 500;
+    }
+    
+    .reflection-main-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8eefd 100%);
+      border-radius: 10px;
+      border: 1px solid #d0d9f0;
+    }
+    
+    .reflection-main-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 0;
+      font-weight: 600;
+      color: #333;
+      cursor: pointer;
+    }
+
+    /* Agent 配置样式 */
+    .agent-config {
+      margin-top: 0;
+    }
+    .agent-config h2 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+    .agent-config .subtitle {
+      margin-bottom: 20px;
+    }
+    .agent-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .agent-status.connected {
+      background: #f0fff4;
+      border: 1px solid #c6f6d5;
+      color: #38a169;
+    }
+    .agent-status.disconnected {
+      background: #fff5f5;
+      border: 1px solid #fed7d7;
+      color: #e53e3e;
+    }
+    .agent-status.checking {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      color: #d69e2e;
+    }
+    .agent-status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .agent-info {
+      padding: 10px 14px;
+      background: #f0f4ff;
+      border: 1px solid #d0d9f0;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #4a5568;
+    }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
+  <script type="module" crossorigin src="/assets/constants-CIsVXb3D.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
 </head>
 <body>
@@ -1054,7 +1337,9 @@
       <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
       <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
       <button class="tab-nav-btn" data-tab="react">ReAct</button>
+      <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
+      <button class="tab-nav-btn" data-tab="agent">本地Agent</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -1122,6 +1407,14 @@
           <span>最小: 1</span>
           <span>最大: 5</span>
         </div>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="enableSelectionToolbar">
+          <span class="toggle-text">启用选中内容工具栏</span>
+        </label>
+        <p class="hint" style="margin-top: 4px; color: #999; font-size: 12px;">关闭后，在网页上选中文字时将不再弹出操作工具栏</p>
       </div>
 
       <div class="form-group">
@@ -1273,6 +1566,51 @@
         </div>
       </div>
       
+      <div class="react-config-item">
+        <label>
+          工具预筛选
+          <span class="hint-text">（任务执行前自动调用模型筛选相关工具，减少无关工具干扰）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="enableToolPreselect" checked>
+          <span class="toggle-switch"></span>
+          <span id="enableToolPreselectLabel">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          启用后，每次任务执行前会先调用一次模型判断需要哪些工具。<br>
+          如果发现筛选不准确导致任务质量下降，可关闭此开关。
+        </div>
+      </div>
+      
+      <div class="react-config-item" id="preselectMinToolCountSection" style="display: none;">
+        <label>
+          预筛选最小工具数
+          <span class="hint-text">（工具总数超过此数量时，才会启动预筛选）</span>
+        </label>
+        <input type="number" id="preselectMinToolCount" min="1" max="20" step="1" value="3" placeholder="3">
+        <span class="unit">个</span>
+        <div class="range-labels">
+          <span>最小: 1</span>
+          <span>最大: 20</span>
+        </div>
+      </div>
+      
+      <div class="react-config-item">
+        <label>
+          敏感工具操作确认
+          <span class="hint-text">（模型调用敏感工具（如管理Cookie、下载文件、关闭标签页等）时，是否需要用户确认）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="toolConfirmationEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="toolConfirmationEnabledLabel">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          启用后，当模型调用敏感操作工具时，会弹出确认框等待用户确认。<br>
+          关闭后，所有工具操作将直接放行执行，无需确认。
+        </div>
+      </div>
+      
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 配置说明</h3>
         <p>
@@ -1286,6 +1624,212 @@
     </div>
 
     </div><!-- /tab-react -->
+
+    <!-- 反思配置区域 -->
+    <div class="tab-panel" data-tab="reflection">
+    <div class="reflection-config" id="reflectionConfig">
+      <h2>🎯 AI 自我反思配置</h2>
+      <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
+      
+      <div class="reflection-main-toggle">
+        <label>
+          <input type="checkbox" id="reflectionEnabled" checked>
+          <span>启用反思功能</span>
+        </label>
+      </div>
+      
+      <div class="reflection-section" id="postReflectionSection" data-toggle="postReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">📝 后置反思（循环结束后评估质量）</span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="postReflectionEnabled" checked>
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label>
+              最大反思轮数
+              <span class="hint-text">（0=不反思，1-3轮）</span>
+            </label>
+            <input type="number" id="reflectionPostMaxRounds" min="0" max="3" value="1" placeholder="1">
+            <div class="range-labels">
+              <span>0（关闭）</span>
+              <span>3</span>
+            </div>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              质量评分阈值
+              <span class="hint-text">（低于此值重新执行，1-10分）</span>
+            </label>
+            <input type="number" id="reflectionPostQualityThreshold" min="1" max="10" value="7" placeholder="7">
+            <span class="unit">/10</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              修订阈值
+              <span class="hint-text">（低于此值直接修订而非重新执行，1-10分）</span>
+            </label>
+            <input type="number" id="reflectionPostRefineThreshold" min="1" max="10" value="5" placeholder="5">
+            <span class="unit">/10</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              反思模型
+              <span class="hint-text">（留空使用当前模型）</span>
+            </label>
+            <input type="text" id="reflectionPostModel" placeholder="使用当前模型">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              温度系数
+              <span class="hint-text">（反思时的随机性，0-1）</span>
+            </label>
+            <input type="number" id="reflectionPostTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大 Token
+              <span class="hint-text">（反思响应的最大 token 数）</span>
+            </label>
+            <input type="number" id="reflectionPostMaxTokens" min="256" max="8192" step="256" value="2048" placeholder="2048">
+          </div>
+        </div>
+      </div>
+
+      <div class="reflection-section" id="toolReflectionSection" data-toggle="toolReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">🔧 工具级反思（工具执行后评估结果）</span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="toolReflectionEnabled" checked>
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnError" checked>
+              <span class="toggle-text">工具返回错误时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnEmpty" checked>
+              <span class="toggle-text">工具返回空结果时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="toolReflectionTriggerOnOversized" checked>
+              <span class="toggle-text">工具返回结果过大时触发</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              结果大小阈值
+              <span class="hint-text">（超过此字符数视为过大）</span>
+            </label>
+            <input type="number" id="toolReflectionOversizeThreshold" min="1000" max="200000" step="1000" value="50000" placeholder="50000">
+            <span class="unit">字符</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              连续失败触发次数
+              <span class="hint-text">（连续 N 次工具失败后触发反思）</span>
+            </label>
+            <input type="number" id="toolReflectionConsecutiveFails" min="1" max="10" value="3" placeholder="3">
+            <span class="unit">次</span>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              每轮最多触发次数
+              <span class="hint-text">（单轮迭代中工具反思的上限）</span>
+            </label>
+            <input type="number" id="toolReflectionMaxPerIteration" min="1" max="5" value="2" placeholder="2">
+            <span class="unit">次</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="reflection-section collapsible" id="subtaskReflectionSection" data-toggle="subtaskReflectionEnabled">
+        <div class="reflection-section-header">
+          <span class="reflection-section-title">
+            <span class="reflection-section-icon">▶</span>
+            📋 子任务反思（高级）
+          </span>
+          <div class="reflection-section-toggle">
+            <span class="reflection-toggle-text">启用</span>
+            <label class="reflection-toggle-switch">
+              <input type="checkbox" id="subtaskReflectionEnabled">
+              <span class="reflection-toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="reflection-section-content">
+          <div class="reflection-config-item">
+            <label class="toggle-label">
+              <input type="checkbox" id="subtaskReflectionOnlyComplex" checked>
+              <span class="toggle-text">仅对复杂子任务生效</span>
+            </label>
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大反思轮数
+              <span class="hint-text">（0=不反思）</span>
+            </label>
+            <input type="number" id="subtaskReflectionMaxRounds" min="0" max="3" value="1" placeholder="1">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              评估维度
+              <span class="hint-text">（逗号分隔，如：completeness,relevance）</span>
+            </label>
+            <input type="text" id="subtaskReflectionDimensions" value="completeness,relevance" placeholder="completeness,relevance">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              反思模型
+              <span class="hint-text">（留空使用当前模型）</span>
+            </label>
+            <input type="text" id="subtaskReflectionModel" placeholder="使用当前模型">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              温度系数
+              <span class="hint-text">（反思时的随机性，0-1）</span>
+            </label>
+            <input type="number" id="subtaskReflectionTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
+          </div>
+          <div class="reflection-config-item">
+            <label>
+              最大 Token
+              <span class="hint-text">（反思响应的最大 token 数）</span>
+            </label>
+            <input type="number" id="subtaskReflectionMaxTokens" min="256" max="4096" step="256" value="1024" placeholder="1024">
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 反思配置说明</h3>
+        <p>
+          <strong>后置反思</strong>：在 ReAct 循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。<br>
+          <strong>工具级反思</strong>：在每次工具调用后，AI 会检查执行结果是否符合预期，遇到错误或异常时自动调整策略。<br>
+          <strong>子任务反思</strong>：对于复杂任务拆解后的子任务进行单独评估，默认关闭。<br>
+          • 提高质量阈值会减少反思次数，但可能降低结果质量<br>
+          • 降低温度系数会使反思更保守、更一致<br>
+          • 启用反思会增加 API 调用次数，建议根据需求权衡
+        </p>
+      </div>
+    </div>
+    </div><!-- /tab-reflection -->
 
     <!-- 对话配置区域 -->
     <div class="tab-panel" data-tab="chat">
@@ -1322,9 +1866,9 @@
       <div class="chat-config-item">
         <label>
           单条消息最大字符数
-          <span class="hint-text">（超过此长度将被截断）</span>
+          <span class="hint-text">（上限参考值，已移除截断）</span>
         </label>
-        <input type="number" id="chatMaxMessageLength" min="1000" max="50000" step="1000" value="5000" placeholder="5000">
+        <input type="number" id="chatMaxMessageLength" min="1000" max="200000" step="1000" value="100000" placeholder="100000">
         <span class="unit">字符</span>
         <div class="range-labels">
           <span>最小: 1000</span>
@@ -1359,13 +1903,66 @@
           <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
           • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
           • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
-          • <strong>消息长度</strong>：防止过长消息占用过多存储空间<br>
+          • <strong>消息长度</strong>：上限参考值，已不再截断消息内容<br>
           • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
           • 建议根据实际需求平衡存储成本和使用体验
         </p>
       </div>
     </div>
     </div><!-- /tab-chat -->
+
+    <!-- 本地Agent配置区域 -->
+    <div class="tab-panel" data-tab="agent">
+    <div class="agent-config">
+      <h2>🖥️ 本地 Agent 配置</h2>
+      <p class="subtitle">连接本地 Agent 服务，实现文件读写和系统命令执行</p>
+
+      <div class="agent-status" id="agentStatus">
+        <span class="agent-status-dot" id="agentStatusDot"></span>
+        <span id="agentStatusText">未连接</span>
+      </div>
+
+      <div class="agent-info" id="agentInfo" style="display:none;">
+        <span id="agentWorkdir"></span>
+      </div>
+
+      <div class="form-group">
+        <label>Agent 地址 <span class="hint">（本地 Agent 服务的 HTTP 地址）</span></label>
+        <input type="text" id="agentUrl" placeholder="http://127.0.0.1:18910" value="http://127.0.0.1:18910">
+      </div>
+
+      <div class="form-group" id="pairCodeGroup">
+        <label>配对码 <span class="hint">（在 Agent 终端窗口中查看）</span></label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="agentPairCode" placeholder="4位配对码" maxlength="4" style="flex: 1; text-align: center; font-size: 20px; letter-spacing: 8px;" autocomplete="off">
+          <button class="btn btn-primary" id="agentConnectBtn" style="width: auto; flex-shrink: 0; min-width: 80px;">连接</button>
+        </div>
+      </div>
+
+      <div class="form-group" id="disconnectGroup" style="display:none;">
+        <button class="btn btn-primary" id="agentDisconnectBtn" style="background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);">断开连接</button>
+      </div>
+
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 使用说明</h3>
+        <p>
+          1. 在终端中启动 Agent：<code>cd agent && node bin/agent.js start</code><br>
+          2. Agent 启动后会显示 4 位配对码<br>
+          3. 在此页面填入配对码并点击"连接"<br>
+          4. 配对成功后，AI 对话中即可使用 agent_* 系列工具操作本地文件系统<br>
+        </p>
+      </div>
+
+      <div class="warning-box" style="margin-top: 10px;">
+        <h3>⚠️ 安全提示</h3>
+        <p>
+          Agent 服务仅监听 127.0.0.1，外部网络无法访问。<br>
+          文件操作限制在配置的工作目录内，不可越权访问。<br>
+          危险命令（如 rm -rf /）会被自动拦截。
+        </p>
+      </div>
+    </div>
+    </div><!-- /tab-agent -->
 
     <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
 

@@ -1,5 +1,8 @@
 // options/constants.js - 常量定义
 
+// 从 background/constants.js 导入反思配置，确保一致性
+import { DEFAULT_REFLECTION_CONFIG } from '../background/constants.js';
+
 // 预设模型列表
 export const PRESET_MODELS = [
   'deepseek-v4-pro',
@@ -31,7 +34,10 @@ export const DEFAULT_REACT_CONFIG = {
   toolTimeout: 30000,
   clarifyTimeout: 180000,
   apiRetryCount: 3,
-  apiRetryBaseDelay: 1000
+  apiRetryBaseDelay: 1000,
+  enableToolPreselect: true,   // 是否启用工具预筛选（默认开启）
+  preselectMinToolCount: 3,    // 工具预筛选最小触发数量
+  toolConfirmationEnabled: true  // 是否启用敏感工具操作确认（默认开启）
 };
 
 // 默认工具栏工具配置
@@ -46,12 +52,17 @@ export const DEFAULT_TOOLBAR_TOOLS = [
 // 工具栏默认直接显示数量
 export const DEFAULT_TOOLBAR_MAX_VISIBLE = 4;
 export const DEFAULT_TOOLBAR_ICON_ONLY = false;
+// 选中内容工具栏开关（独立于划词问答开关）
+export const DEFAULT_ENABLE_SELECTION_TOOLBAR = true;
 
 // 对话配置默认值
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 5000,
-  maxMemoryMessages: null,   // 记忆历史限制条数，null表示不限制
+  maxMessageLength: 100000,
+  maxMemoryMessages: 20,   // 记忆历史限制条数，默认20条
   enableExecutionLog: false  // 默认关闭执行日志
 };
+
+// 导出从 background/constants.js 导入的反思配置
+export { DEFAULT_REFLECTION_CONFIG };

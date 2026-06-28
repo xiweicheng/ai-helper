@@ -1,0 +1,44 @@
+{
+  "name": "ai-helper-agent",
+  "version": "1.2.0",
+  "description": "AI Helper 本地代理服务 - 为 Chrome 扩展提供本地文件读写和系统命令执行能力",
+  "type": "module",
+  "main": "./src/server.js",
+  "bin": {
+    "ai-helper-agent": "./bin/agent.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/agent.js start",
+    "stop": "node bin/agent.js stop",
+    "status": "node bin/agent.js status"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai-helper",
+    "local-agent",
+    "chrome-extension",
+    "file-manager",
+    "command-executor",
+    "developer-tools"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "homepage": "",
+  "bugs": {
+    "url": ""
+  }
+}

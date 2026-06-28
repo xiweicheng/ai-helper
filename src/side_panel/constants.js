@@ -1,6 +1,7 @@
-import { BUILTIN_TOOLS_UI } from '../background/constants.js';
+import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../background/constants.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
+export const CATEGORY_ORDER = _CATEGORY_ORDER;
 
 export const PRESET_MODES = [
   { label: "精准编码", temp: 0.2, topP: 1.0, tip: "较低随机性，适合业务开发、调试、纠错" },
@@ -12,18 +13,13 @@ export const PRESET_MODES = [
 export const TOOL_CATEGORY_NAMES = {
     'page_interaction': '🖱️ 页面交互',
     'form_operation': '📝 表单操作',
-    'info_extract': '📄 信息提取',
-    'page_analysis': '🔍 页面分析',
+    'content_extraction': '📄 内容提取',
     'tab_management': '📑 标签页管理',
     'bookmark_history': '🔖 书签历史',
     'storage_management': '💾 存储管理',
     'network_request': '🌐 网络请求',
-    'media_process': '📷 媒体处理',
+    'media_output': '📷 媒体与输出',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'system_integration': '⚙️ 系统集成'
+    'local_agent': '🖥️ 本地Agent'
 };
-
-export const CATEGORY_ORDER = ['page_interaction', 'form_operation', 'info_extract', 'page_analysis', 
-                     'tab_management', 'bookmark_history', 'storage_management', 
-                     'network_request', 'media_process', 'debug_dev', 'ai_collaboration', 'system_integration'];

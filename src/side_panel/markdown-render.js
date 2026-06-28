@@ -350,7 +350,7 @@ export function addMermaidControls(container) {
   // 缩放状态
   let scale = 1;
   const MIN_SCALE = 0.3;
-  const MAX_SCALE = 3;
+  const MAX_SCALE = 10;
   const SCALE_STEP = 0.15;
   
   // 保存原始的 mermaid 源代码（优先使用 data-raw-code 属性中保存的原始代码）
@@ -743,33 +743,37 @@ export async function renderMessageMermaid(messageDiv) {
   }
   
   try {
-    // 批量渲染所有 mermaid 元素
-    await mermaid.run({
-      nodes: Array.from(mermaidElements)
-    });
+    // 逐个渲染，避免批量模式下 DOM 引用失效导致工具栏添加失败
+    for (let i = 0; i < mermaidElements.length; i++) {
+      const container = mermaidElements[i];
+      try {
+        await mermaid.run({
+          nodes: [container]
+        });
+        console.log('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
+        
+        // 渲染后重新查询，确保拿到最新的 DOM 引用
+        const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
+        if (currentContainer) {
+          addMermaidControls(currentContainer);
+        }
+      } catch (err) {
+        console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', err);
+        // 重新查询后显示错误
+        const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
+        if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
+          currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${err.message}</div>`;
+        }
+      }
+    }
     
-    console.log('[SidePanel] Mermaid.run 完成');
-    
-    // 等待 SVG 完全渲染
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // 为每个渲染好的图表添加工具栏
-    mermaidElements.forEach((container, index) => {
-      console.log('[SidePanel] 开始为第', index + 1, '个图表添加工具栏');
-      addMermaidControls(container);
-    });
+    console.log('[SidePanel] Mermaid 渲染完成');
     
     // 验证工具栏是否添加成功
-    await new Promise(resolve => setTimeout(resolve, 100));
     const controls = messageDiv.querySelectorAll('.mermaid-controls');
     console.log('[SidePanel] 工具栏添加结果:', controls.length, '个成功');
   } catch (error) {
-    console.error('[SidePanel] Mermaid 渲染失败:', error);
-    mermaidElements.forEach(mermaidDiv => {
-      if (!mermaidDiv.querySelector('svg') && !mermaidDiv.querySelector('.mermaid-controls')) {
-        mermaidDiv.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${error.message}</div>`;
-      }
-    });
+    console.error('[SidePanel] Mermaid 渲染整体失败:', error);
   }
   
   // 添加代码块复制按钮事件

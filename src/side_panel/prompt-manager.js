@@ -395,6 +395,7 @@ export async function sendPromptByCode(code) {
 
   // 添加加载消息
   const loadingId = addLoadingMessage();
+  const mySessionId = state.activeSessionId;
 
   const model = state.currentModel;
 
@@ -480,7 +481,7 @@ export async function sendPromptByCode(code) {
   } catch (error) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
   } finally {
-    state.isGenerating = false;
+    state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
   }

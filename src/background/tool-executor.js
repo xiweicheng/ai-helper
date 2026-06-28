@@ -1,13 +1,75 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
+import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
+import * as AgentClient from './local-agent-client.js';
+
+// ==================== 敏感操作审计日志 ====================
+
+const AUDIT_LOG_KEY = 'sensitiveAuditLog';
+const MAX_AUDIT_ENTRIES = 100;
+
+async function appendAuditLog(category, action, details = {}) {
+  try {
+    const result = await chrome.storage.local.get([AUDIT_LOG_KEY]);
+    const entries = result[AUDIT_LOG_KEY] || [];
+    entries.unshift({ timestamp: new Date().toISOString(), category, action, details });
+    if (entries.length > MAX_AUDIT_ENTRIES) entries.length = MAX_AUDIT_ENTRIES;
+    await chrome.storage.local.set({ [AUDIT_LOG_KEY]: entries });
+  } catch (e) { console.warn('[Background] 审计日志写入失败:', e); }
+}
+
+// Agent 连通性缓存（避免每次 getTools 都做网络探测）
+let agentConnectivityCache = { connected: null, checkedAt: 0 };
+const AGENT_CACHE_TTL = 30000; // 30 秒内复用缓存
+
+export function clearAgentConnectivityCache() {
+  agentConnectivityCache = { connected: null, checkedAt: 0 };
+}
+
+/**
+ * 检测 Agent 是否真正连通（storage 有凭据且服务可达）
+ * 有缓存时直接返回，避免每次调用都发网络请求
+ */
+async function checkAgentConnectivity() {
+  const now = Date.now();
+  if (agentConnectivityCache.connected !== null && (now - agentConnectivityCache.checkedAt) < AGENT_CACHE_TTL) {
+    return agentConnectivityCache.connected;
+  }
+
+  // 第一步：检查 storage 是否有配对的凭据
+  const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+  if (!storage.agentUrl || !storage.agentToken) {
+    agentConnectivityCache = { connected: false, checkedAt: now };
+    return false;
+  }
+
+  // 第二步：有凭据，但需确认 Agent 服务是否可达（1.5 秒超时）
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const response = await fetch(`${storage.agentUrl}/api/status`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const connected = response.ok;
+    agentConnectivityCache = { connected, checkedAt: now };
+    console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
+    return connected;
+  } catch (err) {
+    agentConnectivityCache = { connected: false, checkedAt: now };
+    console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
+    return false;
+  }
+}
 
 /**
  * 获取启用的工具列表
+ * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
  */
-export function getTools() {
+export async function getTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['enabledTools'], (result) => {
+    chrome.storage.local.get(['enabledTools'], async (result) => {
       let enabledTools = result.enabledTools;
       
       // 如果没有保存的配置，使用默认值（全部启用）
@@ -15,11 +77,22 @@ export function getTools() {
         enabledTools = BUILTIN_TOOLS.map(t => t.id);
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
+
+      // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
+      const agentConnected = await checkAgentConnectivity();
       
-      console.log('[Background] 当前启用的工具配置:', enabledTools);
+      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已连通:', agentConnected);
       
       const tools = BUILTIN_TOOLS
         .filter(tool => enabledTools.includes(tool.id))
+        .filter(tool => {
+          // Agent 未连通时，隐藏所有 agent_* 工具，避免大模型无效调用
+          if (tool.id.startsWith('agent_') && !agentConnected) {
+            console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
+            return false;
+          }
+          return true;
+        })
         .map(tool => tool);
       
       console.log('[Background] 过滤后的工具列表:', tools.map(t => t.id), '数量:', tools.length);
@@ -29,9 +102,275 @@ export function getTools() {
 }
 
 /**
+ * 两阶段解析工具参数：
+ * 1. 先尝试标准 JSON.parse
+ * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
+ * 返回 null 表示所有解析尝试均失败
+ */
+function tryParseToolArgs(argsStr) {
+  if (!argsStr || typeof argsStr !== 'string') return null;
+  
+  const trimmed = argsStr.trim();
+  if (!trimmed) return null;
+  
+  // 阶段 1: 标准 JSON 解析
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    console.warn('[Background] 工具参数直接解析失败，尝试修复...');
+  }
+  
+  // 阶段 2: 修复常见问题后重试
+  let fixed = trimmed;
+  
+  // 2a. 移除尾随逗号（对象和数组）
+  fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+  
+  // 2b. 修复未加引号的字符串值
+  // 匹配模式: "key": value 其中 value 是未加引号的中文/英文/数字组合
+  // 支持包含空格、特殊字符的值，直到遇到 , 或 } 或换行符
+  fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
+    const trimmedValue = value.trim();
+    // 跳过已经是数字、布尔值、null 的值
+    if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
+      return match;
+    }
+    return `"${key}": "${trimmedValue}"${delimiter}`;
+  });
+  
+  // 2c. 递归修复嵌套对象中的未加引号字符串值
+  // 使用深度优先策略：从内层向外层修复
+  let prevFixed;
+  do {
+    prevFixed = fixed;
+    fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
+      const trimmedValue = value.trim();
+      if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
+        return match;
+      }
+      return `"${key}": "${trimmedValue}"${delimiter}`;
+    });
+  } while (fixed !== prevFixed);
+  
+  // 阶段 2 最终尝试
+  try {
+    const result = JSON.parse(fixed);
+    console.log('[Background] 工具参数修复解析成功:', result);
+    return result;
+  } catch (e) {
+    console.error('[Background] 工具参数修复解析也失败:', e, '修复后字符串:', fixed.substring(0, 200));
+    return null;
+  }
+}
+
+/**
+ * 创建统一格式的工具返回结果
+ * @param {boolean} success - 是否成功
+ * @param {string} content - 给大模型读的内容（必须）
+ * @param {Object} [extra] - 额外的元数据字段
+ * @returns {{ success: boolean, content: string, tool_call_id?: string }}
+ */
+function makeResult(success, content, extra = {}) {
+  return { success, content, ...extra };
+}
+
+/**
+ * 安全网：统一工具结果格式为 { success, content, error?, ... }
+ * 所有 handler 都应该使用 makeResult() 返回，此函数仅处理异常情况
+ */
+function normalizeToolResult(result, toolCallId) {
+  if (result && typeof result === 'object' && 'success' in result) {
+    // 标准对象格式：补充缺失的 content 和 tool_call_id
+    if (!('content' in result)) {
+      if (result.message) {
+        result.content = result.message;
+      } else if (!result.success && result.error) {
+        // 失败且有 error 时，将错误信息作为内容展示，确保 LLM 和用户能看到失败原因
+        result.content = `操作失败: ${result.error}`;
+        result.message = result.error;
+      } else {
+        const { success, error, tool_call_id, ...rest } = result;
+        result.content = JSON.stringify(rest);
+        result.metadata = rest;
+      }
+      console.warn('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
+    }
+    if (!result.tool_call_id) result.tool_call_id = toolCallId;
+    return result;
+  }
+  if (typeof result === 'string') {
+    console.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
+    return { success: true, content: result, tool_call_id: toolCallId };
+  }
+  return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
+}
+
+/**
+ * 记录工具使用统计到 chrome.storage.local
+ */
+async function recordToolStats(toolName, result, duration) {
+  try {
+    const toolStatsKey = 'toolUsageStats';
+    const stats = await chrome.storage.local.get([toolStatsKey]);
+    const toolStats = stats[toolStatsKey] || {};
+    const entry = toolStats[toolName] || { callCount: 0, successCount: 0, totalDuration: 0, lastUsed: 0 };
+    entry.callCount++;
+    if (result.success) entry.successCount++;
+    entry.totalDuration += duration;
+    entry.lastUsed = Date.now();
+    toolStats[toolName] = entry;
+    chrome.storage.local.set({ [toolStatsKey]: toolStats });
+  } catch (e) {
+    console.warn('[Background] 记录工具统计失败:', e);
+  }
+}
+
+/**
+ * 获取当前活跃标签页 ID
+ */
+function getActiveTabId() {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      resolve(tabs && tabs.length > 0 ? tabs[0].id : null);
+    });
+  });
+}
+
+/**
+ * 向 Content Script 发送消息，失败时自动注入并重试
+ * @param {number} tabId - 目标标签页 ID
+ * @param {Object} message - 要发送的消息（需包含 type 字段）
+ * @param {string} toolCallId - 工具调用 ID
+ * @returns {Promise<Object>} 带有 tool_call_id 的结果对象
+ */
+async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        const errorMsg = chrome.runtime.lastError.message;
+        console.warn('[Background] 发送消息到 content script 失败:', errorMsg);
+
+        chrome.tabs.get(tabId, (tab) => {
+          if (chrome.runtime.lastError || !tab) {
+            resolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
+            return;
+          }
+
+          const url = tab.url || '';
+          if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
+            resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+            return;
+          }
+
+          console.log('[Background] 尝试自动注入 content script 到 Tab:', tabId);
+          const manifest = chrome.runtime.getManifest();
+          const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
+          const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: [contentFile]
+          })
+            .then(() => {
+              console.log('[Background] Content script 注入成功, 重试发送消息');
+              setTimeout(() => {
+                chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
+                  if (chrome.runtime.lastError) {
+                    console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
+                    resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+                  } else {
+                    resolve({ ...retryResponse, tool_call_id: toolCallId });
+                  }
+                });
+              }, 500);
+            })
+            .catch(err => {
+              console.error('[Background] 注入 content script 失败:', err);
+              resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+            });
+        });
+      } else {
+        resolve({ ...response, tool_call_id: toolCallId });
+      }
+    });
+  });
+}
+
+// ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
+
+// Background 工具处理器注册表（单一数据源）
+// 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
+const TOOL_HANDLERS = {
+  search_bookmarks: executeSearchBookmarks,
+  search_history: executeSearchHistory,
+  capture_tab_screenshot: executeCaptureScreenshot,
+  clarify_question: executeClarifyQuestion,
+  show_notification: executeShowNotification,
+  fetch_url: executeFetchUrl,
+  open_tab: executeOpenTab,
+  switch_tab: executeSwitchTab,
+  close_tab: executeCloseTab,
+  get_tabs: executeGetTabs,
+  get_browser_info: executeGetBrowserInfo,
+  download_file: executeDownloadFile,
+  manage_cookies: executeManageCookies,
+  plan_task: executePlanTask,
+  clear_page_data: executeClearPageData,
+  navigate_back_forward: executeNavigateBackForward,
+  reload_tab: executeReloadTab,
+  search_conversation_memory: executeSearchConversationMemory,
+  preview_ui_prototype: executePreviewUiPrototype,
+  agent_read_file: executeAgentReadFile,
+  agent_write_file: executeAgentWriteFile,
+  agent_list_dir: executeAgentListDir,
+  agent_delete_file: executeAgentDeleteFile,
+  agent_exec_command: executeAgentExecCommand,
+  agent_search_files: executeAgentSearchFiles,
+  agent_search_content: executeAgentSearchContent,
+  wait_for_navigation: executeWaitForNavigation,
+  take_full_page_screenshot: executeTakeFullPageScreenshot,
+};
+
+// 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
+const BG_HANDLERS = {};
+for (const tool of RAW_TOOLS) {
+  if (tool.execution === 'background' && TOOL_HANDLERS[tool.id]) {
+    BG_HANDLERS[tool.id] = TOOL_HANDLERS[tool.id];
+  }
+}
+
+// 从 RAW_TOOLS 自动派生 CONTENT_PAYLOADS（根据 function.parameters.properties 自动透传所有参数）
+// 新增 content_script 工具时：只需在 RAW_TOOLS 添加定义，payload 自动生成
+const CONTENT_PAYLOADS = {};
+for (const tool of RAW_TOOLS) {
+  if (tool.execution === 'content_script') {
+    const props = tool.function.parameters?.properties;
+    if (props) {
+      const propKeys = Object.keys(props);
+      CONTENT_PAYLOADS[tool.id] = (a) => {
+        const payload = {};
+        for (const key of propKeys) {
+          payload[key] = a[key];
+        }
+        return payload;
+      };
+    } else {
+      CONTENT_PAYLOADS[tool.id] = () => ({});
+    }
+  }
+}
+
+// 特殊覆盖：需要别名或默认值处理的工具
+// search_in_page: 兼容 pattern 别名（模型可能传 pattern 而非 query）
+CONTENT_PAYLOADS.search_in_page = a => ({
+  query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive,
+  contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight
+});
+
+/**
  * 执行工具调用
  */
-export function executeTool(toolCall, tabId) {
+export async function executeTool(toolCall, tabId, sessionId = null) {
+  const startTime = Date.now();
   const { name, arguments: argsStr, id, function: functionObj, index } = toolCall;
   
   // 兼容不同的工具调用格式
@@ -44,7 +383,7 @@ export function executeTool(toolCall, tabId) {
   // 解析参数
   if (functionObj && functionObj.arguments) {
     try {
-      const parsed = JSON.parse(functionObj.arguments);
+      const parsed = tryParseToolArgs(functionObj.arguments);
       args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', functionObj.arguments);
@@ -54,7 +393,8 @@ export function executeTool(toolCall, tabId) {
     args = argsStr || {};
   } else if (typeof argsStr === 'string') {
     try {
-      args = JSON.parse(argsStr);
+      const parsed = tryParseToolArgs(argsStr);
+      args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
@@ -63,171 +403,43 @@ export function executeTool(toolCall, tabId) {
   
   console.log('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
 
-  // ==================== 工具路由映射表 ====================
-  // Background 直接执行的工具
-  const BACKGROUND_HANDLERS = {
-    search_bookmarks: (a) => executeSearchBookmarks(a, toolCallId),
-    search_history: (a) => executeSearchHistory(a, toolCallId),
-    capture_tab_screenshot: (a) => executeCaptureScreenshot(a, toolCallId),
-    clarify_question: (a) => executeClarifyQuestion(a, toolCallId),
-    show_notification: (a) => executeShowNotification(a, toolCallId),
-    fetch_url: (a) => executeFetchUrl(a, toolCallId),
-    open_tab: (a) => executeOpenTab(a, toolCallId),
-    switch_tab: (a) => executeSwitchTab(a, toolCallId),
-    close_tab: (a) => executeCloseTab(a, toolCallId),
-    get_tabs: (a) => executeGetTabs(a, toolCallId),
-    get_browser_info: (a) => executeGetBrowserInfo(a, toolCallId),
-    download_file: (a) => executeDownloadFile(a, toolCallId),
-    manage_cookies: (a) => executeManageCookies(a, toolCallId),
-    schedule_task: (a) => executeScheduleTask(a, toolCallId),
-    execute_workflow: (a) => executeWorkflow(a, toolCallId),
-    plan_task: (a) => executePlanTask(a, toolCallId),
-    manage_user_scripts: (a) => executeManageUserScripts(a, toolCallId),
-    compare_urls: (a) => executeCompareUrls(a, toolCallId),
-    clear_page_data: (a) => executeClearPageData(a, toolCallId),
-    resize_window: (a) => executeResizeWindow(a, toolCallId),
-    navigate_back_forward: (a) => executeNavigateBackForward(a, toolCallId),
-    reload_tab: (a) => executeReloadTab(a, toolCallId),
-    mute_tab: (a) => executeMuteTab(a, toolCallId),
-    pin_tab: (a) => executePinTab(a, toolCallId),
-    group_tabs: (a) => executeGroupTabs(a, toolCallId),
-    record_network: (a) => executeRecordNetwork(a, toolCallId),
-  };
+  const executionType = TOOL_EXECUTION_MAP[toolName];
+  let result;
 
-  // Content Script 委派的工具：toolName → [messageType, payloadBuilder(args)]
-  const CONTENT_TOOLS = {
-    get_page_text:             ['GET_PAGE_TEXT',             a => ({ maxLength: a.maxLength, includeHeadings: a.includeHeadings, includeLinks: a.includeLinks })],
-    get_full_html:             ['GET_FULL_HTML',             a => ({ includeStyles: a.includeStyles, maxLength: a.maxLength })],
-    query_interactive_elements:['QUERY_INTERACTIVE_ELEMENTS', a => ({ filterByText: a.filterByText, elementTypes: a.elementTypes, maxResults: a.maxResults })],
-    get_element_by_selector:   ['GET_ELEMENT',               a => ({ selector: a.selector || null })],
-    get_selected_content:      ['GET_SELECTED_CONTENT',      a => ({ format: a.format || 'text' })],
-    click_element:             ['CLICK_ELEMENT',             a => ({ selector: a.selector, waitTime: a.waitTime, timeout: a.timeout })],
-    fill_form:                 ['FILL_FORM',                 a => ({ fields: a.fields, waitTime: a.waitTime })],
-    scroll_to:                 ['SCROLL_TO',                 a => ({ target: a.target, selector: a.selector, x: a.x, y: a.y, behavior: a.behavior })],
-    extract_table:             ['EXTRACT_TABLE',             a => ({ selector: a.selector, includeHeaders: a.includeHeaders, format: a.format })],
-    copy_to_clipboard:         ['COPY_TO_CLIPBOARD',         a => ({ text: a.text })],
-    paste_from_clipboard:      ['PASTE_FROM_CLIPBOARD',      a => ({})],
-    hover_element:             ['HOVER_ELEMENT',             a => ({ selector: a.selector })],
-    extract_metadata:          ['EXTRACT_METADATA',          a => ({})],
-    highlight_text:            ['HIGHLIGHT_TEXT',            a => ({ text: a.text, color: a.color })],
-    wait_for_element:          ['WAIT_FOR_ELEMENT',          a => ({ selector: a.selector, state: a.state, timeout: a.timeout })],
-    keyboard_input:            ['KEYBOARD_INPUT',            a => ({ key: a.key, text: a.text, ctrlKey: a.ctrlKey, shiftKey: a.shiftKey, altKey: a.altKey })],
-    drag_and_drop:             ['DRAG_AND_DROP',             a => ({ sourceSelector: a.sourceSelector, targetSelector: a.targetSelector })],
-    file_upload:               ['FILE_UPLOAD',               a => ({ selector: a.selector, fileName: a.fileName, fileContent: a.fileContent, fileType: a.fileType })],
-    scroll_into_view:          ['SCROLL_INTO_VIEW',          a => ({ selector: a.selector, align: a.align, smooth: a.smooth })],
-    extract_links:             ['EXTRACT_LINKS',             a => ({ filterType: a.filterType, includeImages: a.includeImages })],
-    extract_forms:             ['EXTRACT_FORMS',             a => ({ formSelector: a.formSelector })],
-    watch_element:             ['WATCH_ELEMENT',             a => ({ selector: a.selector, duration: a.duration })],
-    manage_storage:            ['MANAGE_STORAGE',            a => ({ action: a.action, storage: a.storage, key: a.key, value: a.value })],
-    get_element_rect:          ['GET_ELEMENT_RECT',          a => ({ selector: a.selector })],
-    get_computed_style:        ['GET_COMPUTED_STYLE',        a => ({ selector: a.selector, properties: a.properties })],
-    color_picker:              ['COLOR_PICKER',              a => ({})],
-    diff_page:                 ['DIFF_PAGE',                 a => ({ action: a.action, snapshotName: a.snapshotName })],
-    text_to_speech:            ['TEXT_TO_SPEECH',            a => ({ text: a.text, lang: a.lang, rate: a.rate, pitch: a.pitch })],
-    extract_images:            ['EXTRACT_IMAGES',            a => ({ minWidth: a.minWidth, minHeight: a.minHeight, includeBackgroundImages: a.includeBackgroundImages, download: a.download, maxResults: a.maxResults })],
-    search_in_page:            ['SEARCH_IN_PAGE',            a => ({ pattern: a.pattern, caseSensitive: a.caseSensitive, contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight })],
-    video_control:             ['VIDEO_CONTROL',             a => ({ action: a.action, selector: a.selector, value: a.value })],
-    generate_qrcode:           ['GENERATE_QRCODE',           a => ({ content: a.content, size: a.size, errorCorrection: a.errorCorrection, showImage: a.showImage })],
-    page_to_markdown:          ['PAGE_TO_MARKDOWN',          a => ({ selector: a.selector, includeImages: a.includeImages, includeLinks: a.includeLinks, maxLength: a.maxLength })],
-    performance_audit:         ['PERFORMANCE_AUDIT',         a => ({ includeResourceTiming: a.includeResourceTiming, includePaintTiming: a.includePaintTiming, includeMemoryInfo: a.includeMemoryInfo })],
-    screenshot_element:        ['SCREENSHOT_ELEMENT',        a => ({ selector: a.selector, quality: a.quality, format: a.format })],
-    shadow_dom_query:          ['SHADOW_DOM_QUERY',          a => ({ selector: a.selector, deep: a.deep, maxDepth: a.maxDepth, maxResults: a.maxResults })],
-    page_to_pdf:               ['PAGE_TO_PDF',               a => ({ fileName: a.fileName, landscape: a.landscape, scale: a.scale, printBackground: a.printBackground, margins: a.margins })],
-    page_to_json:              ['PAGE_TO_JSON',              a => ({ selector: a.selector, maxItems: a.maxItems })],
-    find_similar_elements:     ['FIND_SIMILAR_ELEMENTS',     a => ({ selector: a.selector, maxResults: a.maxResults })],
-    get_iframe_content:        ['GET_IFRAME_CONTENT',        a => ({ selector: a.selector, includeNested: a.includeNested, maxLength: a.maxLength })],
-    run_javascript:            ['RUN_JAVASCRIPT',            a => ({ code: a.code, timeout: a.timeout })],
-    inject_css:                ['INJECT_CSS',                a => ({ css: a.css, targetSelector: a.targetSelector, injectMode: a.injectMode })],
-    find_text_on_page:         ['FIND_TEXT_ON_PAGE',         a => ({ query: a.query, caseSensitive: a.caseSensitive, highlight: a.highlight })],
-    get_page_language:         ['GET_PAGE_LANGUAGE',         a => ({})],
-    read_accessibility_tree:   ['READ_ACCESSIBILITY_TREE',   a => ({ maxResults: a.maxResults })],
-    set_zoom:                  ['SET_ZOOM',                  a => ({ level: a.level })],
-    clear_page_data:           ['CLEAR_PAGE_DATA',           a => ({ site: a.site })],
-  };
-
-  // 直接执行的工具
-  if (BACKGROUND_HANDLERS[toolName]) {
-    console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
-    return BACKGROUND_HANDLERS[toolName](args);
-  }
-
-  // Content Script 委派的工具
-  if (CONTENT_TOOLS[toolName]) {
-    const [messageType, buildPayload] = CONTENT_TOOLS[toolName];
-    const messagePayload = buildPayload(args);
-
-    return new Promise((resolve) => {
-      const sendToContentScript = (targetTabId) => {
-      return new Promise((innerResolve) => {
-        chrome.tabs.sendMessage(targetTabId, { type: messageType, ...messagePayload }, (response) => {
-          if (chrome.runtime.lastError) {
-            const errorMsg = chrome.runtime.lastError.message;
-            console.warn('[Background] 发送消息到 content script 失败:', errorMsg);
-            
-            // 检查是否是可访问的 URL
-            chrome.tabs.get(targetTabId, (tab) => {
-              if (chrome.runtime.lastError || !tab) {
-                innerResolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
-                return;
-              }
-              
-              const url = tab.url || '';
-              if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
-                innerResolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
-                return;
-              }
-              
-              // 尝试自动注入 content script（从 manifest 读取实际文件名，因为 Vite 打包后 hash 会变）
-              console.log('[Background] 尝试自动注入 content script 到 Tab:', targetTabId);
-              const manifest = chrome.runtime.getManifest();
-              const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
-              const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
-              chrome.scripting.executeScript({
-                target: { tabId: targetTabId },
-                files: [contentFile]
-              })
-                .then(() => {
-                  console.log('[Background] Content script 注入成功, 重试发送消息');
-                  // 注入成功后稍等片刻再发送消息
-                  setTimeout(() => {
-                    chrome.tabs.sendMessage(targetTabId, { type: messageType, ...messagePayload }, (retryResponse) => {
-                      if (chrome.runtime.lastError) {
-                        console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
-                        innerResolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-                      } else {
-                        innerResolve({ ...retryResponse, tool_call_id: toolCallId });
-                      }
-                    });
-                  }, 500);
-                })
-                .catch(err => {
-                  console.error('[Background] 注入 content script 失败:', err);
-                  innerResolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
-                });
-            });
-          } else {
-            innerResolve({ ...response, tool_call_id: toolCallId });
-          }
-        });
-      });
-    };
-    
-    if (tabId) {
-      sendToContentScript(tabId).then(result => resolve(result));
+  if (executionType === 'background') {
+    const handler = BG_HANDLERS[toolName];
+    if (handler) {
+      console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
+      result = await handler(args, toolCallId, sessionId);
     } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          sendToContentScript(tabs[0].id).then(result => resolve(result));
-        } else {
-          resolve({ success: false, error: '没有可用的标签页', tool_call_id: toolCallId });
-        }
-      });
+      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
     }
-  });
+  } else if (executionType === 'content_script') {
+    const buildPayload = CONTENT_PAYLOADS[toolName];
+    if (buildPayload) {
+      const messageType = toolName.toUpperCase();
+      const messagePayload = buildPayload(args);
+      const targetTabId = tabId || await getActiveTabId();
+      if (targetTabId) {
+        result = await sendToContentScriptWithRetry(targetTabId, { type: messageType, ...messagePayload }, toolCallId);
+      } else {
+        result = { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      }
+    } else {
+      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+    }
+  } else {
+    result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
   }
 
-  // 未知工具
-  return { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+  // 统一结果格式
+  result = normalizeToolResult(result, toolCallId);
+
+  // 记录工具使用统计
+  const duration = Date.now() - startTime;
+  recordToolStats(toolName, result, duration);
+
+  return result;
 }
 
 /**
@@ -235,14 +447,14 @@ export function executeTool(toolCall, tabId) {
  */
 export function executeSearchBookmarks(args, toolCallId) {
   const query = args.query || '';
-  const maxResults = args.maxResults || 10;
+  const maxResults = parseInt(args.maxResults, 10) || 10;
   
   console.log('[Background] 执行书签搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults);
   
   return new Promise((resolve) => {
     if (!chrome.bookmarks) {
       console.error('[Background] chrome.bookmarks API 不可用');
-      resolve('浏览器不支持书签 API');
+      resolve(makeResult(false, '浏览器不支持书签 API'));
       return;
     }
     
@@ -254,7 +466,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         
         if (chrome.runtime.lastError) {
           console.error('[Background] chrome.bookmarks.getTree 错误:', chrome.runtime.lastError.message);
-          resolve('获取书签失败: ' + chrome.runtime.lastError.message);
+          resolve(makeResult(false, '获取书签失败: ' + chrome.runtime.lastError.message));
           return;
         }
         
@@ -276,7 +488,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         console.log('[Background] 收集到的书签总数:', allBookmarks.length);
         
         if (allBookmarks.length === 0) {
-          resolve('浏览器中暂无书签');
+          resolve(makeResult(true, '浏览器中暂无书签'));
           return;
         }
         
@@ -294,7 +506,7 @@ export function executeSearchBookmarks(args, toolCallId) {
           formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
         
         console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
-        resolve(resultText);
+        resolve(makeResult(true, resultText));
       });
       return;
     }
@@ -306,13 +518,13 @@ export function executeSearchBookmarks(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.bookmarks.search 错误:', chrome.runtime.lastError.message);
-        resolve('搜索书签失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '搜索书签失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的书签');
-        resolve('未找到匹配的书签。提示：尝试使用具体关键词搜索');
+        resolve(makeResult(true, '未找到匹配的书签。提示：尝试使用具体关键词搜索'));
         return;
       }
       
@@ -330,7 +542,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
       
       console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
-      resolve(resultText);
+      resolve(makeResult(true, resultText));
     });
   });
 }
@@ -340,7 +552,7 @@ export function executeSearchBookmarks(args, toolCallId) {
  */
 export function executeSearchHistory(args, toolCallId) {
   const query = args.query || '';
-  const maxResults = args.maxResults || 10;
+  const maxResults = parseInt(args.maxResults, 10) || 10;
   const startTime = args.startTime || null;
   const endTime = args.endTime || null;
   
@@ -349,7 +561,7 @@ export function executeSearchHistory(args, toolCallId) {
   return new Promise((resolve) => {
     if (!chrome.history) {
       console.error('[Background] chrome.history API 不可用');
-      resolve('浏览器不支持历史 API');
+      resolve(makeResult(false, '浏览器不支持历史 API'));
       return;
     }
     
@@ -371,13 +583,13 @@ export function executeSearchHistory(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.history.search 错误:', chrome.runtime.lastError.message);
-        resolve('搜索历史失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '搜索历史失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的访问记录');
-        resolve('未找到匹配的访问记录。提示：尝试使用具体关键词搜索');
+        resolve(makeResult(true, '未找到匹配的访问记录。提示：尝试使用具体关键词搜索'));
         return;
       }
       
@@ -393,9 +605,116 @@ export function executeSearchHistory(args, toolCallId) {
         formattedResults.map((h, i) => `${i+1}. ${h.title}\n   URL: ${h.url}\n   最后访问: ${h.lastVisitTime}\n   访问次数: ${h.visitCount}`).join('\n\n');
       
       console.log('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
-      resolve(resultText);
+      resolve(makeResult(true, resultText));
     });
   });
+}
+
+/**
+ * 执行对话记忆搜索
+ * 搜索当前会话和/或历史会话中的对话记录
+ */
+async function executeSearchConversationMemory(args, toolCallId, sessionId = null) {
+  const query = (args.query || '').toLowerCase();
+  const maxResults = parseInt(args.maxResults, 10) || 5;
+  const searchScope = args.searchScope || 'current_session';
+
+  console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope, 'sessionId=', sessionId);
+
+  try {
+    // 确保从 chrome.storage 迁移完成
+    await ensureMigration();
+
+    // 收集所有可搜索的消息
+    let allMessages = [];
+
+    // 活跃会话消息：使用传入的 sessionId，避免多会话切换时读到错误会话
+    let activeFilter = null;
+    if (searchScope !== 'all_sessions') {
+      activeFilter = sessionId || await getActiveSessionId();
+    }
+    const activeMessages = await searchActiveSessionsMessages(activeFilter);
+    allMessages = activeMessages.map((m) => ({
+      session: m.sessionLabel,
+      index: m.index,
+      role: m.role,
+      content: m.content,
+    }));
+
+    // 归档会话消息（仅在 all_sessions 时）
+    if (searchScope === 'all_sessions') {
+      const archivedMessages = await getArchivedSessionsMessages();
+      archivedMessages.forEach((m) => {
+        allMessages.push({
+          session: m.sessionLabel,
+          index: m.index,
+          role: m.role,
+          content: m.content,
+        });
+      });
+    }
+
+    if (allMessages.length === 0) {
+      return makeResult(true, '未找到任何对话记录。');
+    }
+
+    // 关键词匹配搜索（分词 + 包含匹配）
+    const keywords = query.split(/\s+/).filter((k) => k.length > 0);
+    const scoredMessages = allMessages.map((msg) => {
+      const contentLower = msg.content.toLowerCase();
+      let score = 0;
+
+      // 精确匹配整句加分
+      if (contentLower.includes(query)) {
+        score += 10;
+      }
+
+      // 每个关键词匹配加分
+      for (const kw of keywords) {
+        if (contentLower.includes(kw)) {
+          score += 3;
+        }
+        // 关键词出现次数加权
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const count = (contentLower.match(new RegExp(escaped, 'g')) || []).length;
+        score += count * 0.5;
+      }
+
+      // 标题/引用标记等更相关
+      if (contentLower.includes('[引用内容]') || contentLower.includes('[选中内容]')) {
+        score += 1;
+      }
+
+      return { ...msg, score };
+    });
+
+    // 按分数排序，过滤零分
+    const relevant = scoredMessages
+      .filter((m) => m.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxResults);
+
+    if (relevant.length === 0) {
+      return makeResult(true, `未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`);
+    }
+
+    // 格式化结果
+    const resultText =
+      `找到 ${relevant.length} 条相关对话记录：\n\n` +
+      relevant
+        .map((m, i) => {
+          const contentPreview =
+            m.content.length > 500 ? m.content.substring(0, 500) + '...' : m.content;
+          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
+        })
+        .join('\n\n---\n\n');
+
+    console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
+    return makeResult(true, resultText);
+  } catch (err) {
+    console.error('[Background] 对话记忆搜索失败:', err);
+    return makeResult(false, `搜索对话记录时出错: ${err.message}`);
+  }
 }
 
 /**
@@ -403,7 +722,7 @@ export function executeSearchHistory(args, toolCallId) {
  */
 export function executeCaptureScreenshot(args, toolCallId) {
   const format = args.format || 'jpeg';
-  const quality = args.quality || 80;
+  const quality = args.quality !== undefined ? parseInt(args.quality, 10) : 80;
   
   console.log('[Background] 执行标签页截图:', 'format=', format, 'quality=', quality);
   
@@ -418,13 +737,13 @@ export function executeCaptureScreenshot(args, toolCallId) {
     chrome.tabs.captureVisibleTab(undefined, captureOptions, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
-        resolve('截图失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '截图失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!dataUrl || dataUrl.length === 0) {
         console.error('[Background] 截图结果为空');
-        resolve('截图结果为空，可能是该页面不允许截图或窗口中没有可见标签页');
+        resolve(makeResult(false, '截图结果为空，可能是该页面不允许截图或窗口中没有可见标签页'));
         return;
       }
       
@@ -437,7 +756,7 @@ export function executeCaptureScreenshot(args, toolCallId) {
       
       // 返回成功消息
       const result = `截图成功！\n图片大小约 ${imageSize} MB\n格式: ${format}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`;
-      resolve(result);
+      resolve(makeResult(true, result));
     });
   });
 }
@@ -468,10 +787,10 @@ export function triggerScreenshotDownload(dataUrl, format) {
  * 通过 Side Panel 弹窗让用户选择或输入澄清信息
  * 注意：此工具需要用户交互，使用独立的澄清超时配置
  */
-export async function executeClarifyQuestion(args, toolCallId) {
+export async function executeClarifyQuestion(args, toolCallId, sessionId = null) {
   const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true } = args;
   
-  console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId);
+  console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   
   // 获取配置以使用合适的超时时间
   const config = await getStoredConfig();
@@ -485,7 +804,8 @@ export async function executeClarifyQuestion(args, toolCallId) {
       allowCustomInput,
       allowAdditionalInfo,
       toolCallId,
-      timeout: clarifyTimeout  // 传递超时时间给前端显示倒计时
+      timeout: clarifyTimeout,  // 传递超时时间给前端显示倒计时
+      sessionId  // 携带 sessionId 让前端知道是哪个会话的澄清
     };
     
     let timeoutId = null;
@@ -529,13 +849,14 @@ export async function executeClarifyQuestion(args, toolCallId) {
           result += `\n补充说明: ${additionalInfo.trim()}`;
         }
         
-        resolve(result);
+        resolve(makeResult(true, result));
       }
     };
     
     // 发送消息到 Side Panel 显示澄清弹窗
     chrome.runtime.sendMessage({
       type: 'SHOW_CLARIFY_DIALOG',
+      sessionId,
       data: clarifyData
     }, (response) => {
       if (chrome.runtime.lastError) {
@@ -559,7 +880,8 @@ export async function executeClarifyQuestion(args, toolCallId) {
         // 通知前端倒计时结束
         chrome.runtime.sendMessage({
           type: 'CLARIFY_TIMEOUT',
-          toolCallId: toolCallId
+          toolCallId: toolCallId,
+          sessionId
         }).catch(() => {});
         
         resolve({ 
@@ -603,14 +925,14 @@ export function executeShowNotification(args, toolCallId) {
       title: title,
       message: message,
       iconUrl: icon || 'icons/icon128.png',
-      silent: silent,
-      requireInteraction: requireInteraction
+      silent: silent === true || silent === 'true',
+      requireInteraction: requireInteraction === true || requireInteraction === 'true'
     };
     
     chrome.notifications.create(notificationOptions, (notificationId) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 创建通知失败:', chrome.runtime.lastError.message);
-        resolve('通知创建失败: ' + chrome.runtime.lastError.message);
+        resolve(makeResult(false, '通知创建失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
@@ -624,28 +946,73 @@ export function executeShowNotification(args, toolCallId) {
         });
       }
       
-      resolve('通知已发送');
+      resolve(makeResult(true, '通知已发送'));
     });
   });
 }
 
 /**
  * 带超时控制的 fetch 请求
+ *
+ * 核心设计：
+ * 1. 超时用 AbortSignal.timeout()（浏览器引擎级，不受 SW setTimeout 节流影响）
+ * 2. 外部取消用 addEventListener('abort') 桥接到同一个 AbortController
+ * 3. 不使用 AbortSignal.any()（Chrome 有已知 bug，abort 传播可能不生效）
+ *
+ * @param {string} url
+ * @param {Object} options - fetch options（可包含外部 signal）
+ * @param {number} timeoutMs
  */
 export async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+  const externalSignal = options?.signal;
+
+  // AbortSignal.timeout() 是浏览器引擎级超时，不受 SW 定时器节流影响
+  // 低版本 Chrome（<103）不支持，使用 setTimeout 作为回退
+  let timeoutSignal;
+  let timeoutId;
+  if (typeof AbortSignal.timeout === 'function') {
+    timeoutSignal = AbortSignal.timeout(timeoutMs);
+  } else {
+    // 回退：使用 setTimeout 模拟超时
+    timeoutSignal = controller.signal;
+    timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  }
+
+  // 统一 abort 通道：超时和外部取消都通过 controller.abort() 触发
+  const onAbort = () => controller.abort();
+  timeoutSignal.addEventListener('abort', onAbort, { once: true });
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
+
   try {
     const response = await fetch(url, {
       ...options,
-      signal: controller.signal
+      signal: controller.signal   // 始终使用内部 signal，避免 AbortSignal.any 潜在 bug
     });
-    clearTimeout(timeoutId);
+    // 清理监听器
+    timeoutSignal.removeEventListener('abort', onAbort);
+    if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
     return response;
   } catch (error) {
-    clearTimeout(timeoutId);
+    // 清理监听器
+    timeoutSignal.removeEventListener('abort', onAbort);
+    if (externalSignal) externalSignal.removeEventListener('abort', onAbort);
+    if (timeoutId) clearTimeout(timeoutId);
+
     if (error.name === 'AbortError') {
+      // 外部取消 → 传播原始 AbortError（fetchWithRetry 不重试）
+      if (externalSignal?.aborted) {
+        throw error;
+      }
+      // 内部超时 → 包装为超时错误（fetchWithRetry 会重试）
       throw new Error(`请求超时 (${timeoutMs}ms)`);
     }
     throw error;
@@ -705,106 +1072,91 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
   throw lastError;
 }
 
-export function executeFetchUrl(args, toolCallId) {
+export async function executeFetchUrl(args, toolCallId) {
   const { url, method = 'GET', headers = {}, body, timeout = 30000 } = args;
   
   console.log('[Background] 执行 HTTP 请求:', 'method=', method, 'url=', url, 'timeout=', timeout);
   
   // 验证 URL 格式
   if (!url) {
-    return Promise.resolve({ 
+    return { 
       success: false, 
       error: '缺少 URL 参数',
       tool_call_id: toolCallId 
-    });
+    };
   }
   
   // 检查 URL 是否有效
   try {
     new URL(url);
   } catch (e) {
-    return Promise.resolve({ 
+    return { 
       success: false, 
       error: `无效的 URL 格式: ${url}`,
       tool_call_id: toolCallId 
-    });
+    };
   }
   
-  return new Promise((resolve) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      console.log('[Background] HTTP 请求超时:', url);
-    }, timeout);
+  const fetchOptions = {
+    method: method.toUpperCase(),
+    headers: headers
+  };
+  
+  // 只在有 body 且不是 GET/HEAD 方法时添加 body
+  if (body && method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD') {
+    fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : body;
+  }
+  
+  console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
+  
+  try {
+    const response = await fetchWithRetry(url, fetchOptions, timeout);
+    console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
     
-    const fetchOptions = {
-      method: method.toUpperCase(),
-      headers: headers,
-      signal: controller.signal
-    };
+    try {
+      const text = await response.text();
+      const result = {
+        success: response.status >= 200 && response.status < 300,
+        status: response.status,
+        statusText: response.statusText,
+        content: text.substring(0, 10000),
+        contentLength: text.length,
+        url: response.url
+      };
+      console.log('[Background] HTTP 响应内容长度:', text.length);
+      return { ...result, tool_call_id: toolCallId };
+    } catch (textError) {
+      console.error('[Background] 读取响应内容失败:', textError);
+      return {
+        success: false,
+        error: `读取响应内容失败: ${textError.message}`,
+        status: response.status,
+        tool_call_id: toolCallId
+      };
+    }
+  } catch (error) {
+    let errorMessage = error.message;
     
-    // 只在有 body 且不是 GET/HEAD 方法时添加 body
-    if (body && method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD') {
-      fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : body;
+    if (error.name === 'AbortError') {
+      console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
+      errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢。如需获取数据，可尝试：\n1. 适当增大 timeout 参数重新请求\n2. 检查该 URL 在浏览器中是否能快速访问\n3. 如果是 API 接口，尝试缩小请求范围`;
+    } else {
+      console.error('[Background] HTTP 请求失败:', error.name, error.message);
+      if (error.message === 'Failed to fetch') {
+        errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
+      } else if (error.message.includes('CORS')) {
+        errorMessage = `CORS 跨域限制，目标服务器不允许跨域访问`;
+      }
     }
     
-    console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
-    
-    fetch(url, fetchOptions)
-    .then(async response => {
-      clearTimeout(timeoutId);
-      console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
-      
-      try {
-        const text = await response.text();
-        const result = {
-          success: response.status >= 200 && response.status < 300,
-          status: response.status,
-          statusText: response.statusText,
-          content: text.substring(0, 10000),
-          contentLength: text.length,
-          url: response.url
-        };
-        console.log('[Background] HTTP 响应内容长度:', text.length);
-        resolve({ ...result, tool_call_id: toolCallId });
-      } catch (textError) {
-        console.error('[Background] 读取响应内容失败:', textError);
-        resolve({
-          success: false,
-          error: `读取响应内容失败: ${textError.message}`,
-          status: response.status,
-          tool_call_id: toolCallId
-        });
-      }
-    })
-    .catch(error => {
-      clearTimeout(timeoutId);
-      
-      let errorMessage = error.message;
-      
-      // 提供更详细的错误信息
-      if (error.name === 'AbortError') {
-        // AbortError 是预期的超时行为，使用 warn 而非 error
-        console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
-        errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢`;
-      } else {
-        console.error('[Background] HTTP 请求失败:', error.name, error.message);
-        if (error.message === 'Failed to fetch') {
-          errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
-        } else if (error.message.includes('CORS')) {
-          errorMessage = `CORS 跨域限制，目标服务器不允许跨域访问`;
-        }
-      }
-      
-      resolve({ 
-        success: false, 
-        error: errorMessage,
-        originalError: error.message,
-        url: url,
-        tool_call_id: toolCallId 
-      });
-    });
-  });
+    return { 
+      success: false, 
+      error: errorMessage,
+      originalError: error.message,
+      url: url,
+      tool_call_id: toolCallId 
+    };
+  }
 }
 
 /**
@@ -877,7 +1229,8 @@ export function executeDownloadFile(args, toolCallId) {
  * 打开新标签页
  */
 export function executeOpenTab(args, toolCallId) {
-  const { url, active = true } = args;
+  const { url, active: rawActive = true } = args;
+  const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
   
   console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active);
   
@@ -902,7 +1255,8 @@ export function executeOpenTab(args, toolCallId) {
  * 切换到指定标签页
  */
 export function executeSwitchTab(args, toolCallId) {
-  const { tabId } = args;
+  const { tabId: rawTabId } = args;
+  const tabId = parseInt(rawTabId, 10);
   
   console.log('[Background] 切换标签页:', 'tabId=', tabId);
   
@@ -927,7 +1281,8 @@ export function executeSwitchTab(args, toolCallId) {
  * 关闭指定标签页
  */
 export function executeCloseTab(args, toolCallId) {
-  const { tabId } = args;
+  const { tabId: rawTabId } = args;
+  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
   
   console.log('[Background] 关闭标签页:', 'tabId=', tabId);
   
@@ -997,7 +1352,10 @@ export function executeGetTabs(args, toolCallId) {
  */
 export function executeManageCookies(args, toolCallId) {
   return new Promise((resolve) => {
-    const { action, name, value, domain, path = '/', secure = false, httpOnly = false, expirationDate } = args;
+    const { action, name, value, domain, path = '/', secure: rawSecure = false, httpOnly: rawHttpOnly = false, expirationDate: rawExpirationDate } = args;
+    const secure = rawSecure === true || rawSecure === 'true';
+    const httpOnly = rawHttpOnly === true || rawHttpOnly === 'true';
+    const expirationDate = rawExpirationDate !== undefined ? parseFloat(rawExpirationDate) : undefined;
     
     const getCurrentDomain = (callback) => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -1068,6 +1426,7 @@ export function executeManageCookies(args, toolCallId) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
               resolve({ success: true, message: `已删除Cookie: ${name}`, tool_call_id: toolCallId });
+              appendAuditLog('cookie_write', `删除 Cookie: ${name}`, { domain: cookieDomain, name });
             }
           });
           break;
@@ -1086,100 +1445,6 @@ export function executeManageCookies(args, toolCallId) {
           resolve({ success: false, error: `未知操作: ${action}`, tool_call_id: toolCallId });
       }
     });
-  });
-}
-
-/**
- * 定时任务工具
- */
-export function executeScheduleTask(args, toolCallId) {
-  return new Promise((resolve) => {
-    const { action, name, delayInMinutes, periodInMinutes, scheduledTime, taskData } = args;
-    
-    switch (action) {
-      case 'create':
-        if (!name) {
-          resolve({ success: false, error: 'create操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        
-        const alarmInfo = {};
-        
-        if (periodInMinutes !== undefined) {
-          alarmInfo.periodInMinutes = periodInMinutes;
-        }
-        if (delayInMinutes !== undefined) {
-          alarmInfo.delayInMinutes = delayInMinutes;
-        }
-        if (scheduledTime) {
-          alarmInfo.when = new Date(scheduledTime).getTime();
-        }
-        
-        if (taskData) {
-          chrome.storage.local.set({ [`schedule_task_${name}`]: taskData }, () => {});
-        }
-        
-        chrome.alarms.create(name, alarmInfo, () => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, message: `已创建定时任务: ${name}`, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'get':
-        if (!name) {
-          resolve({ success: false, error: 'get操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.alarms.get(name, (alarm) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, alarm: alarm, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'list':
-        chrome.alarms.getAll((alarms) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, alarms: alarms, total: alarms.length, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'clear':
-        if (!name) {
-          resolve({ success: false, error: 'clear操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.alarms.clear(name, (cleared) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            chrome.storage.local.remove(`schedule_task_${name}`);
-            resolve({ success: true, cleared: cleared, message: `已清除定时任务: ${name}`, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'clearAll':
-        chrome.alarms.clearAll((cleared) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, cleared: cleared, message: '已清除所有定时任务', tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      default:
-        resolve({ success: false, error: `未知操作: ${action}`, tool_call_id: toolCallId });
-    }
   });
 }
 
@@ -1236,14 +1501,6 @@ export function executePlanTask(args, toolCallId) {
     planId: toolCallId || crypto.randomUUID(),
     createdAt: new Date().toISOString()
   };
-  
-  // 保存当前任务规划到临时存储
-  chrome.storage.local.set({ 
-    [`current_plan_${planSummary.planId}`]: planSummary,
-    lastPlanTimestamp: Date.now()
-  }, () => {
-    console.log('[Background] 任务规划已保存');
-  });
   
   // 格式化返回结果
   const formatResult = () => {
@@ -1307,530 +1564,8 @@ export function substituteVariables(obj, variables) {
   return obj;
 }
 
-/**
- * 工作流执行工具
- */
-export function executeWorkflow(args, toolCallId) {
-  return new Promise((resolve) => {
-    const { workflow, workflowName, variables = {}, debug = false } = args;
-    
-    let workflowDefinition = workflow;
-    
-    if (workflowName && !workflow) {
-      chrome.storage.local.get(`workflow_${workflowName}`, (result) => {
-        workflowDefinition = result[`workflow_${workflowName}`];
-        if (!workflowDefinition) {
-          resolve({ success: false, error: `未找到工作流: ${workflowName}`, tool_call_id: toolCallId });
-          return;
-        }
-        executeWorkflowSteps(workflowDefinition, variables, debug, toolCallId, resolve);
-      });
-    } else if (workflow) {
-      executeWorkflowSteps(workflow, variables, debug, toolCallId, resolve);
-    } else {
-      resolve({ success: false, error: '需要提供workflow对象或workflowName', tool_call_id: toolCallId });
-    }
-  });
-}
 
-export async function executeWorkflowSteps(workflow, variables, debug, toolCallId, resolve) {
-  const { steps = [], name = '未命名工作流' } = workflow;
-  const results = [];
-  let currentVariables = { ...variables };
-  
-  if (debug) {
-    console.log(`[Background] 开始执行工作流: ${name}, 步骤数: ${steps.length}`);
-  }
 
-  /**
-   * 递归执行子步骤并收集结果（用于 condition/loop 内部）
-   */
-  async function runSubSteps(subSteps) {
-    const subResults = [];
-    let subVars = { ...currentVariables };
-
-    for (let i = 0; i < subSteps.length; i++) {
-      const step = subSteps[i];
-      const stepName = step.name || `子步骤 ${i + 1}`;
-
-      try {
-        let result;
-        switch (step.type) {
-          case 'delay':
-            await new Promise(r => setTimeout(r, (step.duration || 1000)));
-            result = { success: true, message: `等待 ${step.duration || 1000}ms` };
-            break;
-          case 'variable':
-            if (step.set) {
-              Object.keys(step.set).forEach(key => {
-                subVars[key] = evaluateExpression(step.set[key], subVars);
-              });
-              result = { success: true, variables: { ...subVars } };
-            } else if (step.get) {
-              result = { success: true, value: subVars[step.get] };
-            }
-            break;
-          case 'condition': {
-            const condResult = evaluateExpression(step.condition, subVars);
-            const innerResults = [];
-            if (condResult && step.ifTrue) {
-              const inner = await runSubSteps(step.ifTrue);
-              innerResults.push(...inner.results);
-              subVars = { ...inner.variables };
-            } else if (!condResult && step.ifFalse) {
-              const inner = await runSubSteps(step.ifFalse);
-              innerResults.push(...inner.results);
-              subVars = { ...inner.variables };
-            }
-            result = { success: true, conditionResult: condResult, subResults: innerResults };
-            break;
-          }
-          case 'loop': {
-            const iterations = evaluateExpression(step.iterations || 5, subVars);
-            const loopResults = [];
-            for (let j = 0; j < iterations; j++) {
-              subVars.loopIndex = j;
-              if (step.steps) {
-                const inner = await runSubSteps(step.steps);
-                loopResults.push({ iteration: j, results: inner.results });
-                subVars = { ...inner.variables };
-              }
-            }
-            delete subVars.loopIndex;
-            result = { success: true, iterations, loopResults };
-            break;
-          }
-          case 'tool':
-            const toolArgs = substituteVariables(step.args, subVars);
-            const toolResult = await executeTool({
-              name: step.tool,
-              arguments: toolArgs
-            });
-            result = toolResult;
-            if (step.saveResultTo) {
-              subVars[step.saveResultTo] = toolResult;
-            }
-            break;
-          default:
-            result = { success: false, error: `未知步骤类型: ${step.type}` };
-        }
-
-        subResults.push({ step: stepName, result });
-
-        if (!result.success && step.continueOnError !== true) {
-          return { results: subResults, variables: subVars, error: `子步骤 "${stepName}" 失败: ${result.error}` };
-        }
-      } catch (error) {
-        subResults.push({ step: stepName, result: { success: false, error: error.message } });
-        if (step.continueOnError !== true) {
-          return { results: subResults, variables: subVars, error: `子步骤 "${stepName}" 异常: ${error.message}` };
-        }
-      }
-    }
-
-    return { results: subResults, variables: subVars };
-  }
-  
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    const stepName = step.name || `步骤 ${i + 1}`;
-    
-    if (debug) {
-      console.log(`[Background] 执行步骤: ${stepName}`);
-    }
-    
-    try {
-      let result;
-      
-      switch (step.type) {
-        case 'delay':
-          await new Promise(r => setTimeout(r, (step.duration || 1000)));
-          result = { success: true, message: `等待 ${step.duration || 1000}ms` };
-          break;
-          
-        case 'variable':
-          if (step.set) {
-            Object.keys(step.set).forEach(key => {
-              currentVariables[key] = evaluateExpression(step.set[key], currentVariables);
-            });
-            result = { success: true, variables: currentVariables };
-          } else if (step.get) {
-            result = { success: true, value: currentVariables[step.get] };
-          }
-          break;
-          
-        case 'condition': {
-          const conditionResult = evaluateExpression(step.condition, currentVariables);
-          const subResults = [];
-          if (conditionResult && step.ifTrue) {
-            const inner = await runSubSteps(step.ifTrue);
-            subResults.push(...inner.results);
-            currentVariables = { ...inner.variables };
-          } else if (!conditionResult && step.ifFalse) {
-            const inner = await runSubSteps(step.ifFalse);
-            subResults.push(...inner.results);
-            currentVariables = { ...inner.variables };
-          }
-          result = { success: true, conditionResult, subResults };
-          break;
-        }
-          
-        case 'loop': {
-          const iterations = evaluateExpression(step.iterations || 5, currentVariables);
-          const loopResults = [];
-          for (let j = 0; j < iterations; j++) {
-            currentVariables['loopIndex'] = j;
-            if (step.steps) {
-              const inner = await runSubSteps(step.steps);
-              loopResults.push({ iteration: j, results: inner.results });
-              currentVariables = { ...inner.variables };
-            }
-          }
-          result = { success: true, iterations, loopResults };
-          break;
-        }
-          
-        case 'tool':
-          const toolArgs = substituteVariables(step.args, currentVariables);
-          const toolResult = await executeTool({
-            name: step.tool,
-            arguments: toolArgs
-          });
-          result = toolResult;
-          if (step.saveResultTo) {
-            currentVariables[step.saveResultTo] = toolResult;
-          }
-          break;
-          
-        default:
-          result = { success: false, error: `未知步骤类型: ${step.type}` };
-      }
-      
-      results.push({ step: stepName, result });
-      
-      if (!result.success && step.continueOnError !== true) {
-        resolve({
-          success: false,
-          error: `工作流执行失败，步骤: ${stepName}, 错误: ${result.error}`,
-          results: results,
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-      
-    } catch (error) {
-      if (debug) {
-        console.error(`[Background] 步骤 ${stepName} 执行出错:`, error);
-      }
-      results.push({ step: stepName, result: { success: false, error: error.message } });
-      
-      if (step.continueOnError !== true) {
-        resolve({
-          success: false,
-          error: `工作流执行失败，步骤: ${stepName}, 错误: ${error.message}`,
-          results: results,
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-    }
-  }
-  
-  resolve({
-    success: true,
-    message: `工作流 "${name}" 执行完成`,
-    results: results,
-    finalVariables: currentVariables,
-    tool_call_id: toolCallId
-  });
-}
-
-/**
- * 用户脚本管理工具
- */
-export function executeManageUserScripts(args, toolCallId) {
-  return new Promise((resolve) => {
-    const { action, name, code, matchPatterns, runAt = 'document_idle' } = args;
-    
-    switch (action) {
-      case 'create':
-        if (!name || !code) {
-          resolve({ success: false, error: 'create操作需要提供name和code参数', tool_call_id: toolCallId });
-          return;
-        }
-        const scriptData = {
-          name,
-          code,
-          matchPatterns: matchPatterns || ['<all_urls>'],
-          runAt,
-          createdAt: Date.now(),
-          enabled: true
-        };
-        chrome.storage.local.set({ [`user_script_${name}`]: scriptData }, () => {
-          resolve({ success: true, message: `已创建脚本: ${name}`, script: scriptData, tool_call_id: toolCallId });
-        });
-        break;
-        
-      case 'get':
-        if (!name) {
-          resolve({ success: false, error: 'get操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.storage.local.get(`user_script_${name}`, (result) => {
-          const script = result[`user_script_${name}`];
-          if (script) {
-            resolve({ success: true, script: script, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: false, error: `未找到脚本: ${name}`, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'list':
-        chrome.storage.local.get(null, (result) => {
-          const scripts = Object.keys(result)
-            .filter(key => key.startsWith('user_script_'))
-            .map(key => result[key]);
-          resolve({ success: true, scripts: scripts, total: scripts.length, tool_call_id: toolCallId });
-        });
-        break;
-        
-      case 'update':
-        if (!name) {
-          resolve({ success: false, error: 'update操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.storage.local.get(`user_script_${name}`, (result) => {
-          const existing = result[`user_script_${name}`];
-          if (!existing) {
-            resolve({ success: false, error: `未找到脚本: ${name}`, tool_call_id: toolCallId });
-            return;
-          }
-          const updated = {
-            ...existing,
-            code: code !== undefined ? code : existing.code,
-            matchPatterns: matchPatterns !== undefined ? matchPatterns : existing.matchPatterns,
-            runAt: runAt !== undefined ? runAt : existing.runAt,
-            updatedAt: Date.now()
-          };
-          chrome.storage.local.set({ [`user_script_${name}`]: updated }, () => {
-            resolve({ success: true, message: `已更新脚本: ${name}`, script: updated, tool_call_id: toolCallId });
-          });
-        });
-        break;
-        
-      case 'delete':
-        if (!name) {
-          resolve({ success: false, error: 'delete操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.storage.local.remove(`user_script_${name}`, () => {
-          resolve({ success: true, message: `已删除脚本: ${name}`, tool_call_id: toolCallId });
-        });
-        break;
-        
-      case 'run':
-        if (!name && !code) {
-          resolve({ success: false, error: 'run操作需要提供name或code参数', tool_call_id: toolCallId });
-          return;
-        }
-        
-        if (code) {
-          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs && tabs[0]) {
-              // 通过消息通信让 content script 执行脚本
-              chrome.tabs.sendMessage(tabs[0].id, {
-                type: 'executeScript',
-                code: code
-              }, (response) => {
-                if (response) {
-                  resolve({ success: response.success, result: response.result, error: response.error, tool_call_id: toolCallId });
-                } else {
-                  resolve({ success: false, error: '脚本执行失败', tool_call_id: toolCallId });
-                }
-              });
-            }
-          });
-        } else {
-          chrome.storage.local.get(`user_script_${name}`, (result) => {
-            const script = result[`user_script_${name}`];
-            if (!script) {
-              resolve({ success: false, error: `未找到脚本: ${name}`, tool_call_id: toolCallId });
-              return;
-            }
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-              if (tabs && tabs[0]) {
-                // 通过消息通信让 content script 执行脚本
-                chrome.tabs.sendMessage(tabs[0].id, {
-                  type: 'executeScript',
-                  code: script.code
-                }, (response) => {
-                  if (response) {
-                    resolve({ success: response.success, result: response.result, error: response.error, tool_call_id: toolCallId });
-                  } else {
-                    resolve({ success: false, error: '脚本执行失败', tool_call_id: toolCallId });
-                  }
-                });
-              }
-            });
-          });
-        }
-        break;
-        
-      default:
-        resolve({ success: false, error: `未知操作: ${action}`, tool_call_id: toolCallId });
-    }
-  });
-}
-
-function stripHtml(html) {
-  // Service Worker 中无法使用 DOM API，使用正则表达式去除 HTML 标签
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function calculateDiff(text1, text2) {
-  const len1 = text1.length;
-  const len2 = text2.length;
-  const maxLen = Math.max(len1, len2);
-  const similarity = maxLen > 0 ? (maxLen - Math.abs(len1 - len2)) / maxLen : 1;
-  
-  let differences = [];
-  const minLen = Math.min(len1, len2);
-  
-  for (let i = 0; i < minLen; i += 50) {
-    const chunk1 = text1.substring(i, i + 50);
-    const chunk2 = text2.substring(i, i + 50);
-    if (chunk1 !== chunk2) {
-      differences.push({
-        position: i,
-        expected: chunk2,
-        actual: chunk1
-      });
-    }
-    if (differences.length >= 10) break;
-  }
-  
-  return {
-    similarity: Math.round(similarity * 100),
-    differences: differences.slice(0, 10),
-    totalDifferences: differences.length
-  };
-}
-
-/**
- * URL对比工具
- */
-export function executeCompareUrls(args, toolCallId) {
-  return new Promise((resolve) => {
-    const { url1, url2, compareTextOnly = true, ignoreWhitespace = true } = args;
-    
-    if (!url1 || !url2) {
-      resolve({ success: false, error: '需要提供url1和url2参数', tool_call_id: toolCallId });
-      return;
-    }
-    
-    console.log('[Background] compare_urls 开始执行:', url1, url2);
-    
-    let content1 = null;
-    let content2 = null;
-    let completed = 0;
-    let resolved = false;
-    
-    const safeResolve = (result) => {
-      if (!resolved) {
-        resolved = true;
-        console.log('[Background] compare_urls 执行完成:', result.success ? '成功' : '失败');
-        resolve(result);
-      }
-    };
-    
-    const checkComplete = () => {
-      completed++;
-      console.log('[Background] compare_urls 进度:', completed, '/2');
-      if (completed === 2) {
-        if (!content1 || !content2) {
-          safeResolve({ success: false, error: '获取页面内容失败', tool_call_id: toolCallId });
-          return;
-        }
-        
-        try {
-          let text1 = compareTextOnly ? stripHtml(content1) : content1;
-          let text2 = compareTextOnly ? stripHtml(content2) : content2;
-          
-          if (ignoreWhitespace) {
-            text1 = text1.replace(/\s+/g, ' ').trim();
-            text2 = text2.replace(/\s+/g, ' ').trim();
-          }
-          
-          const areEqual = text1 === text2;
-          const diff = calculateDiff(text1, text2);
-          
-          safeResolve({
-            success: true,
-            url1,
-            url2,
-            areEqual,
-            diff,
-            length1: text1.length,
-            length2: text2.length,
-            tool_call_id: toolCallId
-          });
-        } catch (error) {
-          console.error('[Background] compare_urls 处理内容失败:', error);
-          safeResolve({ success: false, error: '处理页面内容失败: ' + error.message, tool_call_id: toolCallId });
-        }
-      }
-    };
-    
-    // 带超时的 fetch 请求（带 credentials 以支持需要登录的页面）
-    const fetchWithTimeout = (url, timeout = 8000) => {
-      return new Promise((resolveFetch) => {
-        const timeoutId = setTimeout(() => {
-          console.log('[Background] fetch 超时:', url);
-          resolveFetch(null);
-        }, timeout);
-        
-        fetch(url, {
-          credentials: 'include',
-          mode: 'cors',
-          headers: {
-            'User-Agent': navigator.userAgent
-          }
-        })
-          .then(response => {
-            clearTimeout(timeoutId);
-            if (!response.ok) {
-              console.warn(`[Background] fetch ${url} 返回状态: ${response.status}`);
-              return response.text();
-            }
-            return response.text();
-          })
-          .then(text => {
-            resolveFetch(text);
-          })
-          .catch(error => {
-            clearTimeout(timeoutId);
-            console.error(`[Background] fetch ${url} 失败:`, error.message);
-            resolveFetch(null);
-          });
-      });
-    };
-    
-    // 执行两个 fetch 请求
-    fetchWithTimeout(url1).then(text => { content1 = text; checkComplete(); });
-    fetchWithTimeout(url2).then(text => { content2 = text; checkComplete(); });
-    
-    // 兜底超时：15秒后强制返回
-    setTimeout(() => {
-      safeResolve({ success: false, error: '对比操作超时', tool_call_id: toolCallId });
-    }, 15000);
-  });
-}
 
 /**
  * 清除页面数据（localStorage, sessionStorage, cookies, cache）
@@ -1966,60 +1701,12 @@ export function executeClearPageData(args, toolCallId) {
       }));
 
       Promise.allSettled(cleanupTasks).then(() => {
+        const uniqueCleared = [...new Set(cleared)];
+        appendAuditLog('page_data_clear', `清除页面数据: ${targetSite}`, { site: targetSite, cleared: uniqueCleared });
         resolve({
           success: true,
-          cleared: [...new Set(cleared)],
+          cleared: uniqueCleared,
           site: targetSite,
-          tool_call_id: toolCallId
-        });
-      });
-    });
-  });
-}
-
-/**
- * 调整浏览器窗口大小
- */
-export function executeResizeWindow(args, toolCallId) {
-  const { width, height } = args;
-
-  return new Promise((resolve) => {
-    chrome.windows.getCurrent((currentWindow) => {
-      if (chrome.runtime.lastError || !currentWindow) {
-        resolve({ success: false, error: '无法获取当前窗口', tool_call_id: toolCallId });
-        return;
-      }
-
-      const previous = { width: currentWindow.width, height: currentWindow.height };
-
-      if (width === undefined && height === undefined) {
-        resolve({
-          success: true,
-          current: previous,
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      const updateInfo = {};
-      if (width !== undefined) updateInfo.width = width;
-      if (height !== undefined) updateInfo.height = height;
-
-      chrome.windows.update(currentWindow.id, updateInfo, (updatedWindow) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            previous,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        resolve({
-          success: true,
-          previous,
-          current: { width: updatedWindow.width, height: updatedWindow.height },
           tool_call_id: toolCallId
         });
       });
@@ -2077,7 +1764,8 @@ export function executeNavigateBackForward(args, toolCallId) {
  * 重新加载标签页
  */
 export function executeReloadTab(args, toolCallId) {
-  const { tabId, bypassCache = false } = args;
+  const { tabId: rawTabId, bypassCache = false } = args;
+  const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
 
   return new Promise((resolve) => {
     const doReload = (targetTabId) => {
@@ -2116,358 +1804,403 @@ export function executeReloadTab(args, toolCallId) {
 }
 
 /**
- * 静音/取消静音标签页
+ * 执行 UI 原型预览/获取工具
+ * action=preview: 创建并预览原型（需要 html + title）
+ * action=get: 根据 prototypeId 获取原型代码（需要 prototypeId）
  */
-export function executeMuteTab(args, toolCallId) {
-  const { tabId, muted } = args;
-
-  return new Promise((resolve) => {
-    if (muted === undefined) {
-      resolve({ success: false, error: '缺少 muted 参数', tool_call_id: toolCallId });
-      return;
+export async function executePreviewUiPrototype(args, toolCallId, sessionId = null) {
+  const { action = 'preview', html, title, description, prototypeId } = args;
+  
+  // ── action=get：获取已创建的原型代码 ──
+  if (action === 'get') {
+    console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
+    
+    if (!prototypeId || !prototypeId.trim()) {
+      return { success: false, error: '缺少 prototypeId 参数', tool_call_id: toolCallId };
     }
-
-    const doMute = (targetTabId) => {
-      chrome.tabs.update(targetTabId, { muted: !!muted }, (tab) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            tabId: targetTabId,
-            tool_call_id: toolCallId
-          });
-        } else {
-          resolve({
-            success: true,
-            tabId: targetTabId,
-            muted: tab.mutedInfo?.muted || !!muted,
-            tool_call_id: toolCallId
-          });
-        }
-      });
-    };
-
-    if (tabId !== undefined) {
-      doMute(tabId);
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
-          return;
-        }
-        doMute(tabs[0].id);
-      });
-    }
-  });
-}
-
-/**
- * 固定/取消固定标签页
- */
-export function executePinTab(args, toolCallId) {
-  const { tabId, pinned } = args;
-
-  return new Promise((resolve) => {
-    if (pinned === undefined) {
-      resolve({ success: false, error: '缺少 pinned 参数', tool_call_id: toolCallId });
-      return;
-    }
-
-    const doPin = (targetTabId) => {
-      chrome.tabs.update(targetTabId, { pinned: !!pinned }, (tab) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: chrome.runtime.lastError.message,
-            tabId: targetTabId,
-            tool_call_id: toolCallId
-          });
-        } else {
-          resolve({
-            success: true,
-            tabId: targetTabId,
-            pinned: tab.pinned,
-            tool_call_id: toolCallId
-          });
-        }
-      });
-    };
-
-    if (tabId !== undefined) {
-      doPin(tabId);
-    } else {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
-          return;
-        }
-        doPin(tabs[0].id);
-      });
-    }
-  });
-}
-
-/**
- * 标签页分组
- */
-export function executeGroupTabs(args, toolCallId) {
-  const { tabIds, title, color } = args;
-
-  return new Promise((resolve) => {
-    if (!tabIds || !Array.isArray(tabIds) || tabIds.length === 0) {
-      resolve({ success: false, error: '缺少 tabIds 参数（需为非空数组）', tool_call_id: toolCallId });
-      return;
-    }
-
-    if (!chrome.tabs.group) {
-      resolve({
-        success: false,
-        error: '当前浏览器不支持标签页分组功能（需要 Chrome 89+）',
-        tool_call_id: toolCallId
-      });
-      return;
-    }
-
-    const VALID_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
-
-    const groupOptions = { tabIds: [tabIds[0]] };
-
-    chrome.tabs.group(groupOptions, (groupId) => {
-      if (chrome.runtime.lastError) {
-        resolve({
-          success: false,
-          error: chrome.runtime.lastError.message,
-          tool_call_id: toolCallId
-        });
-        return;
+    
+    try {
+      const prototype = await getUiPrototype(prototypeId.trim());
+      
+      if (!prototype) {
+        return { success: false, error: `未找到原型: ${prototypeId}`, tool_call_id: toolCallId };
       }
+      
+      console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
+      
+      return { 
+        success: true, 
+        message: `已获取原型 "${prototype.title}" 的代码`,
+        prototypeId: prototype.id,
+        title: prototype.title,
+        description: prototype.description || '',
+        html: prototype.html,
+        tool_call_id: toolCallId 
+      };
+    } catch (err) {
+      console.error('[Background] 获取 UI 原型失败:', err);
+      return { success: false, error: '获取失败: ' + err.message, tool_call_id: toolCallId };
+    }
+  }
+  
+  // ── action=preview：创建并预览原型 ──
+  console.log('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
+  
+  if (!html || !html.trim()) {
+    return { success: false, error: '缺少 HTML 参数', tool_call_id: toolCallId };
+  }
+  
+  if (!title || !title.trim()) {
+    return { success: false, error: '缺少 title 参数', tool_call_id: toolCallId };
+  }
+  
+  try {
+    const newPrototypeId = 'proto_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    const prototypeData = {
+      id: newPrototypeId,
+      title: title.trim(),
+      description: description || '',
+      html: html.trim(),
+      sessionId: sessionId || null,
+      createdAt: Date.now()
+    };
+    
+    const saved = await saveUiPrototype(prototypeData);
+    
+    if (!saved) {
+      return { success: false, error: '保存原型失败', tool_call_id: toolCallId };
+    }
+    
+    console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
+    
+    chrome.runtime.sendMessage({
+      type: 'SHOW_UI_PROTOTYPE',
+      data: {
+        prototypeId: newPrototypeId,
+        title: prototypeData.title,
+        description: prototypeData.description
+      }
+    }).catch(() => {});
+    
+    return { 
+      success: true, 
+      message: `UI 原型 "${title}" 已创建并预览`,
+      prototypeId: newPrototypeId,
+      tool_call_id: toolCallId 
+    };
+  } catch (err) {
+    console.error('[Background] 执行 UI 原型预览失败:', err);
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+  }
+}
 
-      // 将其他标签页加入该分组
-      const addRemaining = (remainingIds, currentGroupId) => {
-        if (remainingIds.length === 0) {
-          finalizeGroup(currentGroupId);
+// ========== 本地 Agent 工具处理函数 ==========
+
+/**
+ * Agent 文件读取
+ */
+async function executeAgentReadFile(args, toolCallId) {
+  const { path } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.readFile(path);
+  if (result.success) {
+    return { success: true, content: result.content, size: result.size, path: result.path, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+// ========== P0/P1 新增工具 (2026-06-28) ==========
+
+/**
+ * 等待页面导航完成
+ * 监听 tab 更新事件，等待页面加载到指定状态
+ */
+async function executeWaitForNavigation(args, toolCallId) {
+  const { timeout = 30000, waitUntil = 'load' } = args;
+
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    const tabId = tabs[0].id;
+
+    console.log('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          chrome.tabs.onUpdated.removeListener(listener);
+          console.warn('[Background] 等待导航超时:', timeout + 'ms');
+          resolve({ success: false, error: `等待导航超时 (${timeout}ms)`, tool_call_id: toolCallId });
+        }
+      }, timeout);
+
+      // 立刻检查一次：如果当前 tab 已经是 complete 状态则立即返回
+      chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError || !tab) {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: false, error: '标签页不可用', tool_call_id: toolCallId }); }
           return;
         }
-        const nextId = remainingIds[0];
-        chrome.tabs.group({ tabIds: [nextId], groupId: currentGroupId }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] 将标签页加入分组失败:', chrome.runtime.lastError.message);
+        if (tab.status === 'complete' && waitUntil === 'load') {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面已加载完成', tool_call_id: toolCallId }); }
+          return;
+        }
+        if (tab.status === 'complete' && waitUntil === 'domcontentloaded') {
+          clearTimeout(timeoutId);
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面 DOM 已就绪', tool_call_id: toolCallId }); }
+          return;
+        }
+      });
+
+      const listener = (updatedTabId, changeInfo, tab) => {
+        if (updatedTabId !== tabId) return;
+        if (resolved) return;
+
+        if (waitUntil === 'networkidle') {
+          // networkIdle 策略：状态为 complete 后，再等 500ms 无新网络活动
+          if (changeInfo.status === 'complete') {
+            setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(timeoutId);
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve({ success: true, status: 'complete', url: tab.url, message: '网络空闲，页面加载完成', tool_call_id: toolCallId });
+              }
+            }, 500);
           }
-          addRemaining(remainingIds.slice(1), currentGroupId);
-        });
+        } else if (changeInfo.status === 'complete') {
+          resolved = true;
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve({ success: true, status: 'complete', url: tab.url, message: '页面加载完成', tool_call_id: toolCallId });
+        } else if (changeInfo.status === 'loading' && waitUntil === 'domcontentloaded') {
+          // 对于 domcontentloaded，loading 状态已经意味着 DOM 开始解析
+          // 但我们仍然等 complete（稳妥）
+        }
       };
 
-      const finalizeGroup = (currentGroupId) => {
-        // chrome.tabGroups API 在某些 Service Worker 上下文中不可用
-        if (!chrome.tabGroups) {
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            color: color || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        const updateProps = {};
-        if (title) updateProps.title = title;
-        if (color && VALID_COLORS.includes(color)) updateProps.color = color;
-
-        if (Object.keys(updateProps).length === 0) {
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        chrome.tabGroups.update(currentGroupId, updateProps, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] 更新分组属性失败:', chrome.runtime.lastError.message);
-          }
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            color: color || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-        });
-      };
-
-      addRemaining(tabIds.slice(1), groupId);
+      chrome.tabs.onUpdated.addListener(listener);
     });
-  });
+  } catch (err) {
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+  }
 }
 
 /**
- * 网络录制工具
- * 使用 chrome.debugger API 捕获网络请求
+ * 全页截图
+ * 优先使用 CDP Page.captureScreenshot（支持 captureBeyondViewport），失败时回退到 captureVisibleTab
  */
-const networkRecordingState = {
-  active: false,
-  tabId: null,
-  requests: [],
-  startTime: null,
-  eventHandler: null
-};
+async function executeTakeFullPageScreenshot(args, toolCallId) {
+  const { format = 'png', quality = 80 } = args;
 
-function createDebuggerEventHandler() {
-  return (source, method, params) => {
-    if (!networkRecordingState.active) return;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    const tabId = tabs[0].id;
 
-    if (method === 'Network.requestWillBeSent') {
-      networkRecordingState.requests.push({
-        requestId: params.requestId,
-        url: params.request?.url || '',
-        method: params.request?.method || 'GET',
-        type: params.type || 'Unknown',
-        timestamp: params.timestamp || Date.now(),
-        status: null,
-        statusText: null,
-        responseReceived: false
-      });
-    } else if (method === 'Network.responseReceived') {
-      const existing = networkRecordingState.requests.find(r => r.requestId === params.requestId);
-      if (existing) {
-        existing.status = params.response?.status || null;
-        existing.statusText = params.response?.statusText || null;
-        existing.responseReceived = true;
-        existing.responseTimestamp = params.timestamp || Date.now();
-        existing.mimeType = params.response?.mimeType || null;
-      }
-    }
-  };
-}
+    console.log('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
 
-export function executeRecordNetwork(args, toolCallId) {
-  const { action } = args;
-
-  return new Promise((resolve) => {
-    if (action === 'status') {
-      resolve({
-        success: true,
-        action: 'status',
-        active: networkRecordingState.active,
-        requestCount: networkRecordingState.requests.length,
-        startTime: networkRecordingState.startTime,
-        tool_call_id: toolCallId
-      });
-      return;
-    }
-
-    if (action === 'start') {
-      if (networkRecordingState.active) {
-        resolve({
-          success: false,
-          error: '网络录制已在运行中',
-          action: 'start',
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
+    return new Promise((resolve) => {
+      chrome.debugger.attach({ tabId }, '1.3', () => {
+        if (chrome.runtime.lastError) {
+          // debugger 不可用，回退到可见区截图
+          console.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
+          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+            } else {
+              resolve({ success: true, dataUrl, fullPage: false, message: 'debugger 不可用，返回可视区截图', tool_call_id: toolCallId });
+            }
+          });
           return;
         }
 
-        const tabId = tabs[0].id;
+        const screenshotParams = {
+          format: format === 'jpeg' ? 'jpeg' : 'png',
+          captureBeyondViewport: true
+        };
+        if (format === 'jpeg') {
+          screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
+        }
 
-        chrome.debugger.attach({ tabId }, '1.3', () => {
-          if (chrome.runtime.lastError) {
-            resolve({
-              success: false,
-              error: '无法附加调试器: ' + chrome.runtime.lastError.message,
-              action: 'start',
-              tool_call_id: toolCallId
+        chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', screenshotParams, (result) => {
+          chrome.debugger.detach({ tabId }, () => {});
+
+          if (chrome.runtime.lastError || !result || !result.data) {
+            const errMsg = chrome.runtime.lastError?.message || '截图失败';
+            console.error('[Background] 全页截图 CDP 失败:', errMsg);
+            // 回退到可见区截图
+            chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+              if (chrome.runtime.lastError) {
+                resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+              } else {
+                resolve({ success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId });
+              }
             });
             return;
           }
 
-          networkRecordingState.active = true;
-          networkRecordingState.tabId = tabId;
-          networkRecordingState.requests = [];
-          networkRecordingState.startTime = Date.now();
-          networkRecordingState.eventHandler = createDebuggerEventHandler();
-
-          chrome.debugger.onEvent.addListener(networkRecordingState.eventHandler);
-
-          chrome.debugger.sendCommand({ tabId }, 'Network.enable', {}, () => {
-            if (chrome.runtime.lastError) {
-              console.warn('[Background] Network.enable 失败:', chrome.runtime.lastError.message);
-              // 即使 Network.enable 失败，也继续录制（部分浏览器可能已自动启用）
-            }
-
-            resolve({
-              success: true,
-              action: 'start',
-              tabId,
-              tool_call_id: toolCallId
-            });
-          });
+          resolve({ success: true, dataUrl: `data:image/${format};base64,${result.data}`, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
         });
       });
-      return;
-    }
-
-    if (action === 'stop') {
-      if (!networkRecordingState.active) {
-        resolve({
-          success: false,
-          error: '没有正在进行的网络录制',
-          action: 'stop',
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      const tabId = networkRecordingState.tabId;
-      const requests = [...networkRecordingState.requests];
-      const requestCount = requests.length;
-
-      // 移除事件监听
-      if (networkRecordingState.eventHandler) {
-        chrome.debugger.onEvent.removeListener(networkRecordingState.eventHandler);
-      }
-
-      // 重置状态
-      networkRecordingState.active = false;
-      networkRecordingState.tabId = null;
-      networkRecordingState.requests = [];
-      networkRecordingState.startTime = null;
-      networkRecordingState.eventHandler = null;
-
-      chrome.debugger.detach({ tabId }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn('[Background] 分离调试器失败:', chrome.runtime.lastError.message);
-        }
-
-        resolve({
-          success: true,
-          action: 'stop',
-          requests,
-          requestCount,
-          tool_call_id: toolCallId
-        });
-      });
-      return;
-    }
-
-    resolve({
-      success: false,
-      error: `未知操作: ${action}，支持 start/stop/status`,
-      action,
-      tool_call_id: toolCallId
     });
-  });
+  } catch (err) {
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+  }
 }
 
-export { stripHtml, calculateDiff };
+/**
+ * Agent 文件写入
+ */
+async function executeAgentWriteFile(args, toolCallId) {
+  const { path, content } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (content === undefined || content === null) return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.writeFile(path, content);
+  if (result.success) {
+    return { success: true, message: `文件已写入: ${result.path} (${result.size} 字节)`, path: result.path, size: result.size, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 目录列表
+ */
+async function executeAgentListDir(args, toolCallId) {
+  const { path } = args;
+  
+  const result = await AgentClient.listDir(path || '.');
+  if (result.success) {
+    const files = result.entries?.filter(e => e.type === 'file') || [];
+    const dirs = result.entries?.filter(e => e.type === 'directory') || [];
+    const text = `目录 "${result.path}" 包含 ${result.entries?.length || 0} 个项目:\n` +
+      `  📁 ${dirs.length} 个目录\n` +
+      `  📄 ${files.length} 个文件\n\n` +
+      (result.entries || []).map(e => `  ${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.type === 'file' ? ` (${e.size} 字节)` : ''}`).join('\n');
+    return { success: true, content: text, path: result.path, entries: result.entries, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件删除
+ */
+async function executeAgentDeleteFile(args, toolCallId) {
+  const { path } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.deleteFile(path);
+  if (result.success) {
+    appendAuditLog('file_delete', `删除文件: ${result.path}`, { path: result.path });
+    return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 命令执行
+ * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
+ */
+async function executeAgentExecCommand(args, toolCallId, sessionId) {
+  const { command, cwd, force } = args;
+  if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
+
+  // 当用户关闭敏感工具确认开关时，自动向 Agent 传 force: true 跳过灰名单检查
+  const config = await getStoredConfig();
+  const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
+
+  // 使用 wait 模式，阻塞等待命令完整输出
+  const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
+  
+  // 黑名单拦截
+  if (result.level === 'deny') {
+    return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+  }
+
+  // 网络/认证错误
+  if (!result.success && !result.level) {
+    return { success: false, error: result.error || '命令执行失败', tool_call_id: toolCallId };
+  }
+  
+  // 灰名单 - 需要确认
+  if (result.level === 'confirm') {
+    return {
+      success: true,
+      level: 'confirm',
+      message: `⚠️ 命令需要用户确认：${result.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
+      reason: result.reason,
+      command,
+      cwd,
+      tool_call_id: toolCallId
+    };
+  }
+  
+  // 命令执行完毕，返回完整输出
+  appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
+  return {
+    success: true,
+    level: 'allow',
+    execId: result.execId,
+    exitCode: result.exitCode,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    killed: result.killed || false,
+    message: `命令执行完毕 (exitCode: ${result.exitCode})\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
+    tool_call_id: toolCallId
+  };
+}
+
+/**
+ * Agent 文件名搜索
+ */
+async function executeAgentSearchFiles(args, toolCallId) {
+  const { path, pattern, recursive, maxResults } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
+  if (result.success) {
+    const engineLabel = result.engine === 'fd' ? ' (引擎: fd)' : ' (引擎: Node.js)';
+    return {
+      success: true,
+      results: result.results,
+      total: result.total,
+      engine: result.engine,
+      message: `找到 ${result.total} 个文件${engineLabel}\n\n${result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n')}${result.total > 50 ? '\n\n... (仅显示前 50 条)' : ''}`,
+      tool_call_id: toolCallId
+    };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件内容搜索
+ */
+async function executeAgentSearchContent(args, toolCallId) {
+  const { path, pattern, filePattern, caseSensitive, maxResults, contextLines } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
+  
+  const result = await AgentClient.searchContent(
+    path, pattern, filePattern || null,
+    caseSensitive || false, maxResults || 100,
+    contextLines !== undefined ? contextLines : 2
+  );
+  if (result.success) {
+    const engineLabel = result.engine === 'rg' ? ' (引擎: ripgrep)' : ' (引擎: Node.js)';
+    return {
+      success: true,
+      results: result.results,
+      total: result.total,
+      engine: result.engine,
+      message: `找到 ${result.total} 条匹配${engineLabel}\n\n${result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n')}${result.total > 30 ? '\n\n... (仅显示前 30 条)' : ''}`,
+      tool_call_id: toolCallId
+    };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}

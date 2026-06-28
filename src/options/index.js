@@ -37,7 +37,7 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'chat'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -155,6 +155,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // ==================== 工具栏配置事件 ====================
   
+  // 工具预筛选开关控制预筛选最小工具数显示
+  const enableToolPreselectCheckbox = document.getElementById('enableToolPreselect');
+  const preselectMinToolCountSection = document.getElementById('preselectMinToolCountSection');
+  if (enableToolPreselectCheckbox && preselectMinToolCountSection) {
+    const togglePreselectSection = () => {
+      preselectMinToolCountSection.style.display = enableToolPreselectCheckbox.checked ? '' : 'none';
+    };
+    enableToolPreselectCheckbox.addEventListener('change', togglePreselectSection);
+    // 初始状态（注意：loadConfig 会在 DOMContentLoaded 之后异步执行 set checked）
+    // 这里先根据 checkbox 初始状态设置，loadConfig 加载后再触发 change 事件
+    togglePreselectSection();
+  }
+  
   // 工具栏直接显示数量变更
   document.getElementById('toolbarMaxVisible').addEventListener('change', function() {
     saveToolbarConfig();
@@ -164,6 +177,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   const iconOnlyCheckbox = document.getElementById('toolbarIconOnly');
   if (iconOnlyCheckbox) {
     iconOnlyCheckbox.addEventListener('change', function() {
+      saveToolbarConfig();
+    });
+  }
+  
+  // 选中内容工具栏开关变更
+  const enableSelectionToolbarCheckbox = document.getElementById('enableSelectionToolbar');
+  if (enableSelectionToolbarCheckbox) {
+    enableSelectionToolbarCheckbox.addEventListener('change', function() {
       saveToolbarConfig();
     });
   }
@@ -263,6 +284,79 @@ document.addEventListener('DOMContentLoaded', async function() {
     currentTools = result.tools;
     persistAndRender();
   });
+  
+  // 子任务反思区域折叠/展开
+  const subtaskReflectionSection = document.getElementById('subtaskReflectionSection');
+  if (subtaskReflectionSection) {
+    subtaskReflectionSection.addEventListener('click', function(e) {
+      if (e.target.closest('.reflection-section-toggle') || e.target.closest('.reflection-config-item')) return;
+      this.classList.toggle('collapsed');
+    });
+  }
+  
+  // 反思总开关控制
+  const reflectionEnabled = document.getElementById('reflectionEnabled');
+  const reflectionConfig = document.getElementById('reflectionConfig');
+  
+  function updateReflectionSectionVisibility() {
+    if (!reflectionConfig) return;
+    
+    if (!reflectionEnabled || !reflectionEnabled.checked) {
+      reflectionConfig.classList.add('disabled');
+    } else {
+      reflectionConfig.classList.remove('disabled');
+    }
+  }
+  
+  function updateReflectionModuleVisibility(moduleId, toggleId) {
+    const module = document.getElementById(moduleId);
+    const toggle = document.getElementById(toggleId);
+    
+    if (!module || !toggle) return;
+    
+    if (!toggle.checked) {
+      module.classList.add('disabled');
+    } else {
+      module.classList.remove('disabled');
+    }
+  }
+  
+  if (reflectionEnabled) {
+    reflectionEnabled.addEventListener('change', updateReflectionSectionVisibility);
+  }
+  
+  // 后置反思开关控制
+  const postReflectionEnabled = document.getElementById('postReflectionEnabled');
+  if (postReflectionEnabled) {
+    postReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
+    });
+  }
+  
+  // 工具级反思开关控制
+  const toolReflectionEnabled = document.getElementById('toolReflectionEnabled');
+  if (toolReflectionEnabled) {
+    toolReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
+    });
+  }
+  
+  // 子任务反思开关控制
+  const subtaskReflectionEnabled = document.getElementById('subtaskReflectionEnabled');
+  if (subtaskReflectionEnabled) {
+    subtaskReflectionEnabled.addEventListener('change', function() {
+      updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
+    });
+  }
+  
+  // 初始化时更新可见性
+  updateReflectionSectionVisibility();
+  updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
+  updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
+  updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
+
+  // ==================== Agent 配置 ====================
+  initAgentConfig();
 });
 
 // 持久化并重新渲染
@@ -271,4 +365,213 @@ function persistAndRender() {
     renderToolbarToolsList(currentTools);
     saveToolbarConfig();
   });
+}
+
+// ==================== Agent 配置函数 ====================
+
+/**
+ * 初始化 Agent 配置界面
+ */
+function initAgentConfig() {
+  const agentUrlInput = document.getElementById('agentUrl');
+  const pairCodeInput = document.getElementById('agentPairCode');
+  const connectBtn = document.getElementById('agentConnectBtn');
+  const disconnectBtn = document.getElementById('agentDisconnectBtn');
+  const statusDot = document.getElementById('agentStatusDot');
+  const statusText = document.getElementById('agentStatusText');
+  const agentStatus = document.getElementById('agentStatus');
+  const pairCodeGroup = document.getElementById('pairCodeGroup');
+  const disconnectGroup = document.getElementById('disconnectGroup');
+  const agentInfo = document.getElementById('agentInfo');
+  const agentWorkdirEl = document.getElementById('agentWorkdir');
+
+  if (!agentUrlInput || !connectBtn) return;
+
+  /**
+   * 更新连接状态 UI
+   */
+  function updateStatusUI(status, message, workdir) {
+    agentStatus.className = 'agent-status ' + status;
+    statusText.textContent = message;
+    
+    if (status === 'connected') {
+      pairCodeGroup.style.display = 'none';
+      disconnectGroup.style.display = '';
+      agentStatus.className = 'agent-status connected';
+      
+      if (workdir) {
+        agentInfo.style.display = '';
+        agentWorkdirEl.textContent = '工作目录: ' + workdir;
+      }
+    } else if (status === 'checking') {
+      agentStatus.className = 'agent-status checking';
+    } else {
+      pairCodeGroup.style.display = '';
+      disconnectGroup.style.display = 'none';
+      agentInfo.style.display = 'none';
+      agentStatus.className = 'agent-status disconnected';
+    }
+  }
+
+  /**
+   * 检查 Agent 连接状态
+   */
+  async function checkAgentStatus() {
+    updateStatusUI('checking', '正在检查连接...');
+    
+    const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+    const storedUrl = result.agentUrl;
+    const storedToken = result.agentToken;
+
+    if (!storedUrl) {
+      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+      agentUrlInput.value = 'http://127.0.0.1:18910';
+      return;
+    }
+
+    agentUrlInput.value = storedUrl;
+
+    try {
+      const response = await fetch(`${storedUrl}/api/status`);
+      if (response.ok) {
+        const data = await response.json();
+        // 更新平台信息
+        const platformInfo = {
+          platformName: data.platformName || 'Unknown',
+          platform: data.platform || 'unknown',
+          arch: data.arch || 'unknown',
+          shell: data.shell || '/bin/sh',
+          homeDir: data.homeDir || '',
+          workdir: '',
+          connected: true
+        };
+        await chrome.storage.local.set({ agentPlatform: platformInfo });
+        
+        if (!storedToken) {
+          updateStatusUI('disconnected', 'Agent 在线 - 请填入配对码完成配对');
+          return;
+        }
+        // 获取详细信息（含工作目录）
+        try {
+          const detailResp = await fetch(`${storedUrl}/api/status/detail`, {
+            headers: { 'Authorization': `Bearer ${storedToken}` }
+          });
+          if (detailResp.ok) {
+            const detailData = await detailResp.json();
+            platformInfo.workdir = detailData.workdir || '';
+            await chrome.storage.local.set({ agentPlatform: platformInfo });
+            updateStatusUI('connected', `已连接 - Agent v${data.version}`, detailData.workdir);
+          } else {
+            updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+          }
+        } catch {
+          updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+        }
+      } else {
+        updateStatusUI('disconnected', '连接失败 - Token 已失效，请重新配对');
+      }
+    } catch {
+      await chrome.storage.local.remove('agentPlatform');
+      updateStatusUI('disconnected', '无法连接到 Agent - 请确认 Agent 服务已启动');
+    }
+  }
+
+  /**
+   * 连接 Agent
+   */
+  async function connectToAgent() {
+    const url = agentUrlInput.value.trim() || 'http://127.0.0.1:18910';
+    const code = pairCodeInput.value.trim();
+
+    if (!code || code.length !== 4) {
+      showToast('请输入4位配对码', 'warning');
+      return;
+    }
+
+    updateStatusUI('checking', '正在配对...');
+    connectBtn.disabled = true;
+    connectBtn.textContent = '配对中...';
+
+    try {
+      const response = await fetch(`${url}/api/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, extensionId: chrome.runtime.id })
+      });
+      const data = await response.json();
+
+      if (data.success && data.token) {
+        await chrome.storage.local.set({ agentUrl: url, agentToken: data.token });
+        pairCodeInput.value = '';
+        updateStatusUI('connected', '配对成功');
+        showToast('✅ 配对成功！Agent 已连接', 'success');
+        
+        // 获取 Agent 平台信息并存储
+        try {
+          const statusResp = await fetch(`${url}/api/status`);
+          if (statusResp.ok) {
+            const statusData = await statusResp.json();
+            const platformInfo = {
+              platformName: statusData.platformName || 'Unknown',
+              platform: statusData.platform || 'unknown',
+              arch: statusData.arch || 'unknown',
+              shell: statusData.shell || '/bin/sh',
+              homeDir: statusData.homeDir || '',
+              workdir: statusData.workdir || '',
+              connected: true
+            };
+            await chrome.storage.local.set({ agentPlatform: platformInfo });
+            console.log('[Options] Agent 平台信息已保存:', platformInfo);
+          }
+        } catch (e) {
+          console.warn('[Options] 获取 Agent 平台信息失败:', e);
+        }
+        
+        // 获取完整状态
+        const statusResp = await fetch(`${url}/api/status/detail`, {
+          headers: { 'Authorization': `Bearer ${data.token}` }
+        });
+        if (statusResp.ok) {
+          const statusData = await statusResp.json();
+          // 更新 workdir 到平台信息
+          const platformInfo = (await chrome.storage.local.get('agentPlatform')).agentPlatform || {};
+          platformInfo.workdir = statusData.workdir || '';
+          await chrome.storage.local.set({ agentPlatform: platformInfo });
+          
+          updateStatusUI('connected', `已连接 - Agent v${statusData.version}`, statusData.workdir);
+        }
+      } else {
+        updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
+        showToast('❌ ' + (data.error || '配对失败'), 'error');
+      }
+    } catch (err) {
+      updateStatusUI('disconnected', '连接失败 - 请确认 Agent 服务已启动');
+      showToast('❌ 无法连接到 Agent: ' + err.message, 'error');
+    } finally {
+      connectBtn.disabled = false;
+      connectBtn.textContent = '连接';
+    }
+  }
+
+  /**
+   * 断开 Agent 连接
+   */
+  async function disconnectAgent() {
+    await chrome.storage.local.remove(['agentUrl', 'agentToken', 'agentPlatform']);
+    pairCodeInput.value = '';
+    updateStatusUI('disconnected', '已断开连接');
+    showToast('已断开 Agent 连接', 'info');
+  }
+
+  // 绑定事件
+  connectBtn.addEventListener('click', connectToAgent);
+  disconnectBtn.addEventListener('click', disconnectAgent);
+
+  // 回车键快速配对
+  pairCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') connectToAgent();
+  });
+
+  // 启动时检查状态
+  checkAgentStatus();
 }

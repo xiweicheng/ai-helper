@@ -222,34 +222,6 @@ export function getElementValue(el) {
   return '';
 }
 
-/**
- * 获取指定选择器的元素内容
- */
-export function getElementBySelector(selector) {
-  try {
-    if (!selector) {
-      return { success: false, error: '选择器不能为空' };
-    }
-    
-    const cleanedSelector = selector.trim().replace(/[`'"“”''""``]/g, '');
-    
-    const element = document.querySelector(cleanedSelector);
-    if (!element) {
-      return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
-    }
-    return {
-      success: true,
-      data: {
-        tagName: element.tagName,
-        className: element.className,
-        text: element.innerText ? element.innerText.substring(0, 5000) : '',
-        html: element.innerHTML ? element.innerHTML.substring(0, 5000) : ''
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
 
 /**
  * 获取用户选中的内容
@@ -839,14 +811,102 @@ export function extractImages(options = {}) {
  */
 export function searchInPage(options = {}) {
   try {
-    const { pattern, caseSensitive = false, contextLength = 50, maxResults = 20, highlight = false } = options;
+    const { query, pattern, mode = 'plain', caseSensitive = false, contextLength = 50, maxResults = 20, highlight = false } = options;
     
-    if (!pattern) {
-      return { success: false, error: '需要提供搜索模式' };
+    const searchPattern = query || pattern;
+    
+    if (!searchPattern) {
+      return { success: false, error: '需要提供搜索关键词' };
+    }
+    
+    if (mode === 'plain') {
+      const found = window.find(searchPattern, caseSensitive, false, true, false, true, false);
+      
+      let count = 0;
+      const matches = [];
+      
+      try {
+        const sel = window.getSelection();
+        const savedRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+        
+        const walker = document.createTreeWalker(
+          document.body,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        );
+        const flags = caseSensitive ? 'g' : 'gi';
+        const escaped = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escaped, flags);
+        const bodyText = document.body.innerText;
+        
+        let globalIndex = 0;
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          const nodeText = node.textContent;
+          const nodeMatches = nodeText.match(regex);
+          if (nodeMatches) {
+            for (const m of nodeMatches) {
+              if (matches.length >= maxResults) break;
+              const idx = bodyText.indexOf(m, globalIndex);
+              const start = Math.max(0, idx - contextLength);
+              const end = Math.min(bodyText.length, idx + m.length + contextLength);
+              matches.push({
+                match: m,
+                position: idx,
+                context: bodyText.substring(start, end),
+                lineNumber: bodyText.substring(0, idx).split('\n').length
+              });
+              count++;
+              globalIndex = idx + m.length;
+            }
+          }
+          if (matches.length >= maxResults) break;
+        }
+        
+        if (savedRange) {
+          sel.removeAllRanges();
+          sel.addRange(savedRange);
+        }
+      } catch (e) {
+        count = found ? 1 : 0;
+      }
+      
+      if (highlight && count > 0) {
+        removeHighlights();
+        const highlightStyle = document.createElement('style');
+        highlightStyle.id = 'ai-helper-highlight-style';
+        highlightStyle.textContent = `
+          .ai-helper-search-highlight {
+            background-color: #ffff00;
+            color: #000;
+            padding: 1px 2px;
+            border-radius: 2px;
+          }
+        `;
+        document.head.appendChild(highlightStyle);
+        
+        const flags2 = caseSensitive ? 'g' : 'gi';
+        const escaped2 = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        document.body.innerHTML = document.body.innerHTML.replace(
+          new RegExp(escaped2, flags2),
+          '<span class="ai-helper-search-highlight">$&</span>'
+        );
+      }
+      
+      return {
+        success: true,
+        query: searchPattern,
+        mode: 'plain',
+        found,
+        total: count,
+        matches: matches,
+        highlighted: highlight
+      };
     }
     
     const flags = caseSensitive ? 'g' : 'gi';
-    const regex = new RegExp(pattern, flags);
+    const regex = new RegExp(searchPattern, flags);
     
     const bodyText = document.body.innerText;
     const matches = [];
@@ -883,14 +943,15 @@ export function searchInPage(options = {}) {
       document.head.appendChild(highlightStyle);
       
       document.body.innerHTML = document.body.innerHTML.replace(
-        new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags),
+        new RegExp(searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags),
         '<span class="ai-helper-search-highlight">$&</span>'
       );
     }
     
     return {
       success: true,
-      pattern: pattern,
+      pattern: searchPattern,
+      mode: 'regex',
       total: matches.length,
       matches: matches,
       highlighted: highlight
@@ -1283,40 +1344,128 @@ export function getIframeContent(selector = 'iframe', includeNested = false, max
   }
 }
 
+// ========== P0/P1 新增工具 (2026-06-28) ==========
+
 /**
- * 获取页面语言信息
+ * 快速统计元素数量
+ * 比 query_interactive_elements 轻量得多，仅返回计数和存在性
  */
-export function getPageLanguage() {
+export function getElementCount(selector, includeHidden = false) {
   try {
-    const htmlLang = document.documentElement.lang || '';
-
-    const metaContentLanguage = document.querySelector('meta[http-equiv="content-language"]');
-    const metaContentLanguageValue = metaContentLanguage ? metaContentLanguage.content : '';
-
-    const metaLanguage = document.querySelector('meta[name="language"]');
-    const metaLanguageValue = metaLanguage ? metaLanguage.content : '';
-
-    const navigatorLanguage = navigator.language || '';
-    const direction = document.dir || '';
-
-    const primaryLang = htmlLang
-      || metaContentLanguageValue
-      || metaLanguageValue
-      || navigatorLanguage;
-
+    const elements = document.querySelectorAll(selector);
+    if (!includeHidden) {
+      let visibleCount = 0;
+      let totalCount = elements.length;
+      elements.forEach(el => {
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          visibleCount++;
+        }
+      });
+      return {
+        success: true,
+        count: visibleCount,
+        totalCount,
+        empty: visibleCount === 0,
+        selector
+      };
+    }
     return {
       success: true,
-      language: primaryLang,
-      details: {
-        htmlLang,
-        metaLanguage: metaContentLanguageValue || metaLanguageValue,
-        navigatorLanguage,
-        direction
-      }
+      count: elements.length,
+      totalCount: elements.length,
+      empty: elements.length === 0,
+      selector
     };
   } catch (error) {
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * 滚动收集文本内容
+ * 适用于无限滚动页面：连续滚动并收集新增的可见文本，去重后返回
+ */
+export function scrollAndCollect(args = {}) {
+  const { scrollPixels = 800, maxScrolls = 20, pauseMs = 500, selector } = args;
+
+  return new Promise(async (resolve) => {
+    try {
+      const container = selector ? document.querySelector(selector) : null;
+      const getVisibleText = () => {
+        const target = container || document.body;
+        // 只获取当前可视区域内的文本节点
+        const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+        let text = '';
+        let node;
+        while ((node = walker.nextNode())) {
+          const parentEl = node.parentElement;
+          if (!parentEl) continue;
+          const rect = parentEl.getBoundingClientRect();
+          // 在可视区内（或接近可视区）
+          if (rect.bottom > -100 && rect.top < window.innerHeight + 100) {
+            const trimmed = node.textContent.trim();
+            if (trimmed) text += trimmed + '\n';
+          }
+        }
+        return text;
+      };
+
+      const scrollElement = container || (document.scrollingElement || document.documentElement);
+      let allText = '';
+      let lastText = '';
+      const startScrollY = window.scrollY;
+
+      for (let i = 0; i < maxScrolls; i++) {
+        // 获取当前可视文本
+        const currentText = getVisibleText();
+        allText += currentText + '\n';
+        lastText = currentText;
+
+        // 记录滚动前的位置
+        const prevScrollY = window.scrollY;
+
+        // 滚动
+        scrollElement.scrollBy({ top: scrollPixels, behavior: 'auto' });
+
+        // 暂停等待内容加载
+        await new Promise(r => setTimeout(r, pauseMs));
+
+        // 检查是否已到底部（位置没变）
+        if (Math.abs(window.scrollY - prevScrollY) < 5) {
+          // 再试一次
+          await new Promise(r => setTimeout(r, pauseMs));
+          if (Math.abs(window.scrollY - prevScrollY) < 5) break;
+        }
+      }
+
+      // 滚回起始位置
+      if (container) {
+        scrollElement.scrollTo({ top: startScrollY, behavior: 'auto' });
+      }
+
+      // 去重：移除相邻重复行
+      const lines = allText.split('\n');
+      const deduped = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && trimmed !== deduped[deduped.length - 1]) {
+          deduped.push(trimmed);
+        }
+      }
+
+      resolve({
+        success: true,
+        content: deduped.join('\n'),
+        contentLength: deduped.join('\n').length,
+        scrolls: maxScrolls,
+        startScrollY,
+        endScrollY: window.scrollY
+      });
+    } catch (error) {
+      resolve({ success: false, error: error.message });
+    }
+  });
 }
 
 /**

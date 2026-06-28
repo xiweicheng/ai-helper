@@ -180,15 +180,32 @@ Automatically appears when text is selected on any webpage, providing:
 
 ---
 
-## Built-in Tools (50+)
+## Built-in Tools (59)
 
-### Page Content Extraction (13)
+### Page Interaction (6)
+| Tool | Description |
+|------|-------------|
+| `click_element` | Click element |
+| `hover_element` | Mouse hover |
+| `drag_and_drop` | Drag-and-drop operation |
+| `scroll_to` | Scroll to position |
+| `wait_for_element` | Wait for element state change |
+| `wait_for_navigation` | Wait for page navigation |
+
+### Form & Input (4)
+| Tool | Description |
+|------|-------------|
+| `fill_form` | Batch fill forms |
+| `keyboard_input` | Keyboard input |
+| `file_upload` | Inject files into upload controls |
+| `select_dropdown` | Dropdown menu selection |
+
+### Content Extraction (16)
 | Tool | Description |
 |------|-------------|
 | `get_page_text` | Extract plain text content |
 | `get_full_html` | Get complete HTML source |
 | `query_interactive_elements` | Extract interactive elements (recommended) |
-| `get_element_by_selector` | Get element by CSS selector |
 | `get_selected_content` | Get user-selected content |
 | `extract_table` | Extract tables as JSON/Markdown |
 | `extract_links` | Extract all links |
@@ -198,22 +215,12 @@ Automatically appears when text is selected on any webpage, providing:
 | `search_in_page` | Regex search page text |
 | `page_to_markdown` | Convert page to Markdown |
 | `page_to_json` | Extract structured data as JSON |
+| `find_similar_elements` | Find similar structure elements |
+| `get_iframe_content` | Get iframe content (same-origin) |
+| `scroll_and_collect` | Scroll and collect long content |
+| `get_element_count` | Quick element count |
 
-### Page Interaction (10)
-| Tool | Description |
-|------|-------------|
-| `click_element` | Click element |
-| `fill_form` | Batch fill forms |
-| `hover_element` | Mouse hover |
-| `scroll_to` | Scroll to position |
-| `scroll_into_view` | Scroll element into view |
-| `wait_for_element` | Wait for element state change |
-| `watch_element` | Monitor DOM changes |
-| `drag_and_drop` | Drag-and-drop operation |
-| `keyboard_input` | Keyboard input |
-| `file_upload` | Inject files into upload controls |
-
-### Tab Management (9)
+### Tab Management (6)
 | Tool | Description |
 |------|-------------|
 | `open_tab` | Open new tab |
@@ -222,53 +229,61 @@ Automatically appears when text is selected on any webpage, providing:
 | `get_tabs` | List all tabs |
 | `navigate_back_forward` | Navigate back/forward |
 | `reload_tab` | Reload tab |
-| `mute_tab` | Mute/unmute tab |
-| `pin_tab` | Pin/unpin tab |
-| `group_tabs` | Group tabs |
 
-### Debug & Development (6)
+### Bookmarks & History (2)
 | Tool | Description |
 |------|-------------|
-| `run_javascript` | Execute JavaScript on page |
-| `inject_css` | Inject CSS styles |
-| `shadow_dom_query` | Query within Shadow DOM |
-| `color_picker` | EyeDropper color picker |
-| `performance_audit` | Collect Core Web Vitals |
-| `record_network` | Record network requests |
+| `search_bookmarks` | Search browser bookmarks |
+| `search_history` | Search browser history |
 
-### Media Processing (6)
+### Storage Management (3)
 | Tool | Description |
 |------|-------------|
-| `capture_tab_screenshot` | Tab screenshot |
-| `screenshot_element` | Element screenshot |
-| `page_to_pdf` | Export page as PDF |
-| `generate_qrcode` | Generate QR code |
-| `text_to_speech` | Text to speech |
-| `video_control` | Control page video playback |
-
-### AI Collaboration (7)
-| Tool | Description |
-|------|-------------|
-| `clarify_question` | Show clarification dialog |
-| `plan_task` | Task decomposition planner |
-| `execute_workflow` | Execute predefined workflows |
-| `schedule_task` | Create scheduled tasks |
-| `manage_user_scripts` | User script management |
-| `highlight_text` | Highlight text on page |
-| `find_text_on_page` | Native text search |
-
-### System Integration (9)
-| Tool | Description |
-|------|-------------|
-| `fetch_url` | HTTP requests |
-| `download_file` | Download files |
-| `copy_to_clipboard` | Copy to clipboard |
-| `paste_from_clipboard` | Read from clipboard |
-| `get_browser_info` | Browser environment info |
-| `show_notification` | Desktop notifications |
 | `manage_cookies` | Cookie management |
 | `manage_storage` | localStorage/sessionStorage management |
 | `clear_page_data` | One-click clear site data |
+
+### Network Request (1)
+| Tool | Description |
+|------|-------------|
+| `fetch_url` | HTTP requests |
+
+### Media & Output (7)
+| Tool | Description |
+|------|-------------|
+| `capture_tab_screenshot` | Tab screenshot |
+| `take_full_page_screenshot` | Full page screenshot |
+| `generate_qrcode` | Generate QR code |
+| `copy_to_clipboard` | Copy to clipboard |
+| `paste_from_clipboard` | Read from clipboard |
+| `download_file` | Download files |
+| `show_notification` | Desktop notifications |
+
+### Debug & Dev (2)
+| Tool | Description |
+|------|-------------|
+| `inject_css` | Inject CSS styles |
+| `get_browser_info` | Browser environment info |
+
+### AI Collaboration (5)
+| Tool | Description |
+|------|-------------|
+| `clarify_question` | Show clarification dialog |
+| `highlight_text` | Highlight text on page |
+| `plan_task` | Task decomposition planner |
+| `preview_ui_prototype` | UI prototype preview & management |
+| `search_conversation_memory` | Search conversation memory |
+
+### Local Agent (7)
+| Tool | Description |
+|------|-------------|
+| `agent_read_file` | Read local file |
+| `agent_write_file` | Write local file |
+| `agent_list_dir` | List directory contents |
+| `agent_delete_file` | Delete local file |
+| `agent_exec_command` | Execute terminal command |
+| `agent_search_files` | Search by file name |
+| `agent_search_content` | Search text in files |
 
 ---
 
@@ -281,7 +296,7 @@ Automatically appears when text is selected on any webpage, providing:
 | Service Worker | Background process for API calls and tool execution |
 | Side Panel API | Chrome 114+ side panel |
 | Content Script | Page injection, DOM operations |
-| chrome.debugger API | PDF export, network recording, and other advanced features |
+| chrome.debugger API | Full page screenshots and other advanced features |
 | OpenAI Compatible API | LLM integration, default DeepSeek |
 | marked.js | Markdown rendering engine |
 | mermaid.js | Diagram rendering engine |

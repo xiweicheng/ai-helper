@@ -1,0 +1,204 @@
+// agent/src/logger.js - 审计日志模块（JSON Lines 格式，按日轮转，自动清理）
+import { appendFileSync, mkdirSync, existsSync, readdirSync, statSync, unlinkSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+const LOG_DIR = join(homedir(), '.ai-helper-agent', 'logs');
+const MAX_LOG_FILES = 30;          // 最多保留 30 个日志文件
+const MAX_LOG_SIZE = 10 * 1024 * 1024; // 单文件最大 10MB
+const CLEAN_INTERVAL_MS = 60_000;  // 清理间隔（60 秒）
+const QUERY_MAX_LIMIT = 1000;      // 单次查询最大条数
+
+// 是否输出到终端 stderr
+let consoleOutput = false;
+
+/**
+ * 设置是否在终端输出日志（前台运行时开启）
+ */
+function setConsoleOutput(enabled) {
+  consoleOutput = enabled;
+}
+
+const CATEGORY_LABELS = {
+  auth: '认证', fs: '文件', exec: '命令', security: '安全', system: '系统'
+};
+
+const LEVEL_LABELS = { info: 'INFO', warn: 'WARN', error: 'ERROR' };
+
+/**
+ * 格式化详情为可读字符串
+ */
+function formatDetails(details) {
+  if (!details || Object.keys(details).length === 0) return '';
+  const parts = [];
+  for (const [key, val] of Object.entries(details)) {
+    if (val !== undefined && val !== null) {
+      const str = typeof val === 'string' ? val : JSON.stringify(val);
+      if (str.length > 120) {
+        parts.push(`${key}=${str.slice(0, 120)}...`);
+      } else {
+        parts.push(`${key}=${str}`);
+      }
+    }
+  }
+  return parts.join(' ');
+}
+
+function ensureLogDir() {
+  if (!existsSync(LOG_DIR)) {
+    mkdirSync(LOG_DIR, { recursive: true });
+  }
+}
+
+/**
+ * 获取当天日志文件路径
+ */
+function getLogFile(date) {
+  if (date) return join(LOG_DIR, `agent-${date}.log`);
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  return join(LOG_DIR, `agent-${dateStr}.log`);
+}
+
+// 清理节流：记录上次清理时间
+let lastCleanTime = 0;
+
+/**
+ * 清理旧日志文件（保留最近 MAX_LOG_FILES 个文件 + 删除超大文件）
+ * 节流执行：至少间隔 CLEAN_INTERVAL_MS
+ */
+function cleanOldLogs() {
+  const now = Date.now();
+  if (now - lastCleanTime < CLEAN_INTERVAL_MS) return;
+  lastCleanTime = now;
+
+  try {
+    ensureLogDir();
+    const files = readdirSync(LOG_DIR)
+      .filter(f => f.endsWith('.log'))
+      .map(f => {
+        const path = join(LOG_DIR, f);
+        const stat = statSync(path);
+        return { name: f, path, mtime: stat.mtimeMs, size: stat.size };
+      })
+      .sort((a, b) => b.mtime - a.mtime); // 最新的在前面
+
+    let deleted = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      // 超过保留数量，或单文件超过大小限制
+      if (i >= MAX_LOG_FILES || f.size > MAX_LOG_SIZE) {
+        try { unlinkSync(f.path); deleted++; } catch {}
+      }
+    }
+    if (deleted > 0) {
+      console.error(`[Logger] 清理了 ${deleted} 个旧日志文件`);
+    }
+  } catch {}
+}
+
+/**
+ * 写入一条日志
+ * @param {'info'|'warn'|'error'} level - 日志级别
+ * @param {'auth'|'fs'|'exec'|'security'|'system'} category - 日志分类
+ * @param {string} action - 操作名称
+ * @param {Object} details - 详细信息
+ */
+function log(level, category, action, details = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    category,
+    action,
+    ...details
+  };
+
+  // 输出到终端 stderr（前台运行时可见）
+  if (consoleOutput) {
+    const time = entry.timestamp.slice(11, 19); // HH:MM:SS
+    const levelTag = LEVEL_LABELS[level] || level.toUpperCase();
+    const catTag = CATEGORY_LABELS[category] || category;
+    const detailStr = formatDetails(details);
+    const msg = detailStr
+      ? `[${time}] [${levelTag}] [${catTag}:${action}] ${detailStr}`
+      : `[${time}] [${levelTag}] [${catTag}:${action}]`;
+    process.stderr.write(msg + '\n');
+  }
+
+  // 写入文件
+  try {
+    ensureLogDir();
+    cleanOldLogs();
+    appendFileSync(getLogFile(), JSON.stringify(entry) + '\n', 'utf-8');
+  } catch (err) {
+    // 日志写入失败不应影响主流程
+    console.error('[Logger] 日志写入失败:', err.message);
+  }
+}
+
+// ==================== 便捷方法 ====================
+
+function logAuth(action, details) { log('info', 'auth', action, details); }
+function logFs(action, details) { log('info', 'fs', action, details); }
+function logExec(action, details) { log('info', 'exec', action, details); }
+function logSecurity(action, details) { log('warn', 'security', action, details); }
+function logSystem(action, details) { log('info', 'system', action, details); }
+function logError(category, action, details) { log('error', category, action, details); }
+
+/**
+ * 查询日志（用于 /api/logs 端点）
+ * @param {Object} options - 查询选项
+ * @param {string} [options.date] - 日期 (YYYY-MM-DD)
+ * @param {string} [options.category] - 分类过滤
+ * @param {number} [options.limit=200] - 返回条数上限
+ * @param {number} [options.offset=0] - 偏移量
+ * @returns {{ entries: Array, total: number }}
+ */
+function queryLogs(options = {}) {
+  const { date, category, limit: rawLimit = 200, offset = 0 } = options;
+  const limit = Math.min(rawLimit, QUERY_MAX_LIMIT);
+
+  const filePath = getLogFile(date);
+
+  let entries = [];
+  try {
+    if (existsSync(filePath)) {
+      const raw = readFileSync(filePath, 'utf-8');
+      const lines = raw.trim().split('\n');
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (category && entry.category !== category) continue;
+          entries.push(entry);
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // 按时间倒序（最新的在前）
+  entries.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+  const total = entries.length;
+  entries = entries.slice(offset, offset + limit);
+
+  return { entries, total };
+}
+
+/**
+ * 获取可用日志日期列表
+ */
+function getLogDates() {
+  try {
+    ensureLogDir();
+    const files = readdirSync(LOG_DIR)
+      .filter(f => f.match(/^agent-\d{4}-\d{2}-\d{2}\.log$/))
+      .map(f => f.replace('agent-', '').replace('.log', ''))
+      .sort()
+      .reverse();
+    return files;
+  } catch {
+    return [];
+  }
+}
+
+export { setConsoleOutput, log, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates };
