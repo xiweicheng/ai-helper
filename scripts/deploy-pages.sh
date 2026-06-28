@@ -34,9 +34,21 @@ if $DRY_RUN; then
   exit 0
 fi
 
+# 检查远端
+REMOTES=()
+git remote get-url origin &>/dev/null && REMOTES+=("origin")
+git remote get-url gitee &>/dev/null && REMOTES+=("gitee")
+
+if [ ${#REMOTES[@]} -eq 0 ]; then
+  echo "   ⚠️  未找到 origin 或 gitee 远端"
+  exit 1
+fi
+
 # 推送 docs/ 到 gh-pages 分支根目录
-echo "   🚀 推送 docs/ → gh-pages ..."
-git subtree push --prefix docs origin gh-pages
+for remote in "${REMOTES[@]}"; do
+  echo "   🚀 推送 docs/ → $remote gh-pages ..."
+  git subtree push --prefix docs "$remote" gh-pages
+done
 
 echo ""
 echo "✅ 部署完成！"
