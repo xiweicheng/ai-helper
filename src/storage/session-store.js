@@ -4,6 +4,7 @@
 
 import * as idb from './db.js';
 import state from '../side_panel/state.js';
+import { BUILTIN_TOOLS } from '../side_panel/constants.js';
 
 let migrated = false;
 
@@ -162,7 +163,15 @@ export async function switchToSession(sessionId) {
   state.messageHistory = targetSession.messageHistory || [];
   state.currentModel = targetSession.model || state.currentModel;
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
-  state.enabledTools = targetSession.enabledTools || state.enabledTools;
+  // 合并会话的 enabledTools：保留已有选择，自动添加新工具
+  if (targetSession.enabledTools && targetSession.enabledTools.length > 0) {
+    const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+    const saved = targetSession.enabledTools.filter(id => validIds.has(id));
+    const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
+    state.enabledTools = [...saved, ...added];
+  } else {
+    state.enabledTools = targetSession.enabledTools || state.enabledTools;
+  }
   state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态

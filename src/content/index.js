@@ -6,19 +6,19 @@ import {
   extractTable, copyToClipboard, pasteFromClipboard, hoverElement,
   extractMetadata, highlightText, extractLinks, extractForms,
   getElementSelector, extractImages, searchInPage, pageToMarkdown, removeHighlights,
-  pageToJson, findSimilarElements, getIframeContent, getPageLanguage, readAccessibilityTree
+  pageToJson, findSimilarElements, getIframeContent, readAccessibilityTree
 } from './page-tools.js';
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement, keyboardInput,
   dragAndDrop, fileUpload, watchElement, manageStorage,
-  getElementRect, getComputedStyleTool, getComputedStyle, pickColor,
+  getElementRect, pickColor,
   diffPage, textToSpeech
 } from './interaction-tools.js';
 
 import {
   videoControl, generateQRCode, performanceAudit, screenshotElement,
-  shadowDomQuery, pageToPdf, runJavascript, injectCss, setZoom
+  shadowDomQuery, pageToPdf, runJavascript, injectCss
 } from './advanced-tools.js';
 
 import { initSelectionToolbar } from './selection-toolbar.js';
@@ -176,12 +176,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse(result);
   }
   
-  // 获取计算样式
-  if (message.type === 'GET_COMPUTED_STYLE') {
-    const result = getComputedStyle(message.selector, message.properties);
-    sendResponse(result);
-  }
-  
   // 取色器
   if (message.type === 'COLOR_PICKER') {
     pickColor().then(result => sendResponse(result));
@@ -290,21 +284,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse(result);
   }
   
-  // 获取页面语言
-  if (message.type === 'GET_PAGE_LANGUAGE') {
-    const result = getPageLanguage();
-    sendResponse(result);
-  }
-  
   // 读取无障碍树
   if (message.type === 'READ_ACCESSIBILITY_TREE') {
     const result = readAccessibilityTree(message.maxResults);
-    sendResponse(result);
-  }
-  
-  // 页面缩放
-  if (message.type === 'SET_ZOOM') {
-    const result = setZoom(message.level);
     sendResponse(result);
   }
   

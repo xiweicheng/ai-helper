@@ -9,6 +9,7 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs } from './session-manager-ui.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow } from '../shared/token-counter.js';
+import { BUILTIN_TOOLS } from './constants.js';
 
 // ============================================================
 // pendingCallApiSessionIds 持久化帮助函数
@@ -99,7 +100,15 @@ export async function loadChatHistory() {
       state.messageHistory = activeSession.messageHistory || [];
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
-      state.enabledTools = activeSession.enabledTools || state.enabledTools;
+      // 合并会话的 enabledTools：保留已有选择，自动添加新工具
+      if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
+        const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+        const saved = activeSession.enabledTools.filter(id => validIds.has(id));
+        const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
+        state.enabledTools = [...saved, ...added];
+      } else {
+        state.enabledTools = activeSession.enabledTools || state.enabledTools;
+      }
       state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
       state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
     }

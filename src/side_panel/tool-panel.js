@@ -1,6 +1,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.js';
 import { showToast } from './utils.js';
+import { saveCurrentSession } from './session-manager.js';
 
 function openToolsPopup() {
   const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
@@ -279,6 +280,9 @@ function updateAllCategoryCounts() {
 
 function updateCategoryBadges() {
   const categories = ['all', ...CATEGORY_ORDER];
+  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  // 只统计 BUILTIN_TOOLS 中存在的工具
+  const validEnabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   categories.forEach(category => {
     const badge = document.getElementById('badge-' + category);
@@ -289,7 +293,7 @@ function updateCategoryBadges() {
     
     if (category === 'all') {
       totalCount = BUILTIN_TOOLS.length;
-      enabledCount = state.enabledTools.length;
+      enabledCount = validEnabledCount;
     } else {
       const categoryTools = BUILTIN_TOOLS.filter(tool => tool.category === category);
       totalCount = categoryTools.length;
@@ -305,13 +309,15 @@ function updateToolsPopupTitle() {
   if (!countSpan) return;
   
   const totalCount = BUILTIN_TOOLS.length;
-  const enabledCount = state.enabledTools.length;
+  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  const enabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   countSpan.textContent = `(已启用 ${enabledCount}/${totalCount})`;
 }
 
 function saveToolsFromPopup() {
   const newEnabledTools = [];
+  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
   
   BUILTIN_TOOLS.forEach(tool => {
     const checkbox = document.getElementById('tool_' + tool.id);
@@ -321,7 +327,7 @@ function saveToolsFromPopup() {
         newEnabledTools.push(tool.id);
       }
     } else {
-      // 不可见工具：保持原始状态（从 enabledTools 数组中获取）
+      // 不可见工具：保持原始状态（只保留 BUILTIN_TOOLS 中存在的 ID）
       if (state.enabledTools.includes(tool.id)) {
         newEnabledTools.push(tool.id);
       }
@@ -335,6 +341,9 @@ function saveToolsFromPopup() {
   chrome.storage.local.set({ enabledTools: state.enabledTools }, () => {
     console.log('[SidePanel] 工具配置已保存:', state.enabledTools);
   });
+  
+  // 同步更新当前会话的 enabledTools，避免下次加载时被旧会话数据覆盖
+  saveCurrentSession().catch(() => {});
 
   // 保存工具预筛选开关状态
   const preselectToggle = document.getElementById('toolsPreselectToggle');
@@ -353,11 +362,13 @@ function saveToolsFromPopup() {
 function updateToolsToggleState() {
   const toolsToggleBtn = document.getElementById('toolsToggleBtn');
   const toolsBadge = document.getElementById('toolsBadge');
+  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  const validEnabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   if (toolsToggleBtn) {
-    if (state.useTools && state.enabledTools.length > 0) {
+    if (state.useTools && validEnabledCount > 0) {
       toolsToggleBtn.classList.add('active');
-      toolsToggleBtn.title = `工具 (${state.enabledTools.length}个启用)`;
+      toolsToggleBtn.title = `工具 (${validEnabledCount}个启用)`;
     } else {
       toolsToggleBtn.classList.remove('active');
       toolsToggleBtn.title = '工具 (未启用)';
@@ -365,8 +376,8 @@ function updateToolsToggleState() {
   }
   
   if (toolsBadge) {
-    if (state.enabledTools.length > 0) {
-      toolsBadge.textContent = state.enabledTools.length;
+    if (validEnabledCount > 0) {
+      toolsBadge.textContent = validEnabledCount;
       toolsBadge.style.display = 'inline';
     } else {
       toolsBadge.style.display = 'none';

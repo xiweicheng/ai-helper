@@ -598,56 +598,6 @@ export function getElementRect(selector) {
 }
 
 /**
- * 获取计算样式
- */
-export function getComputedStyleTool(selector, properties = null) {
-  try {
-    const el = document.querySelector(selector);
-    
-    if (!el) {
-      return { success: false, error: `未找到元素: ${selector}` };
-    }
-    
-    const computed = window.getComputedStyle(el);
-    
-    // 默认属性
-    const defaultProps = [
-      'display', 'visibility', 'opacity', 'width', 'height',
-      'position', 'top', 'left', 'right', 'bottom',
-      'margin', 'padding', 'border',
-      'background', 'backgroundColor', 'backgroundImage',
-      'color', 'fontSize', 'fontFamily', 'fontWeight',
-      'textAlign', 'lineHeight', 'overflow', 'overflowX', 'overflowY',
-      'flexDirection', 'justifyContent', 'alignItems', 'flex',
-      'gridTemplateColumns', 'gridTemplateRows',
-      'zIndex', 'transform', 'transition'
-    ];
-    
-    const props = properties || defaultProps;
-    const result = {};
-    
-    props.forEach(prop => {
-      try {
-        result[prop] = computed.getPropertyValue(prop) || computed[prop];
-      } catch (e) {
-        result[prop] = computed[prop];
-      }
-    });
-    
-    return {
-      success: true,
-      element: selector,
-      styles: result
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// 绑定函数名（因为我们不能重命名getComputedStyle）
-export const getComputedStyle = getComputedStyleTool;
-
-/**
  * 取色器
  */
 export function pickColor() {

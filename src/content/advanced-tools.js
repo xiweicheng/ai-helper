@@ -610,33 +610,3 @@ export function injectCss(css, targetSelector = null, injectMode = 'style') {
     return { success: false, error: error.message };
   }
 }
-
-
-export function setZoom(level) {
-  try {
-    const previousZoom = document.body.style.zoom || '1';
-    let newLevel;
-
-    if (typeof level === 'number') {
-      newLevel = Math.max(0.5, Math.min(3.0, level));
-    } else if (level === 'in') {
-      newLevel = Math.min(3.0, parseFloat(previousZoom) + 0.1);
-    } else if (level === 'out') {
-      newLevel = Math.max(0.5, parseFloat(previousZoom) - 0.1);
-    } else if (level === 'reset') {
-      newLevel = 1;
-    } else {
-      return { success: false, error: `无效的 zoom level: ${level}，支持数字(0.5-3.0)、'in'、'out'、'reset'` };
-    }
-
-    document.body.style.zoom = String(newLevel);
-
-    return {
-      success: true,
-      previousZoom: String(previousZoom),
-      currentZoom: String(newLevel)
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}

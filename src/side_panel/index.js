@@ -1150,7 +1150,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (result.enabledTools && result.enabledTools.length > 0) {
-      state.enabledTools = result.enabledTools;
+      // 合并：过滤掉 BUILTIN_TOOLS 中不存在的 ID，添加默认启用的新工具
+      const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+      const savedTools = result.enabledTools.filter(id => validToolIds.has(id));
+      // 添加新工具（BUILTIN_TOOLS 中有但 savedTools 中没有的，默认启用）
+      const newTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...savedTools, ...newTools];
+      if (newTools.length > 0) {
+        // 有新增工具，自动保存合并后的列表
+        chrome.storage.local.set({ enabledTools: state.enabledTools });
+      }
     } else {
       state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
     }

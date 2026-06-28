@@ -1345,42 +1345,6 @@ export function getIframeContent(selector = 'iframe', includeNested = false, max
 }
 
 /**
- * 获取页面语言信息
- */
-export function getPageLanguage() {
-  try {
-    const htmlLang = document.documentElement.lang || '';
-
-    const metaContentLanguage = document.querySelector('meta[http-equiv="content-language"]');
-    const metaContentLanguageValue = metaContentLanguage ? metaContentLanguage.content : '';
-
-    const metaLanguage = document.querySelector('meta[name="language"]');
-    const metaLanguageValue = metaLanguage ? metaLanguage.content : '';
-
-    const navigatorLanguage = navigator.language || '';
-    const direction = document.dir || '';
-
-    const primaryLang = htmlLang
-      || metaContentLanguageValue
-      || metaLanguageValue
-      || navigatorLanguage;
-
-    return {
-      success: true,
-      language: primaryLang,
-      details: {
-        htmlLang,
-        metaLanguage: metaContentLanguageValue || metaLanguageValue,
-        navigatorLanguage,
-        direction
-      }
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-/**
  * 读取无障碍树信息
  */
 export function readAccessibilityTree(maxResults = 100) {
