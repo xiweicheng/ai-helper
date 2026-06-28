@@ -922,13 +922,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Alt+ArrowUp/ArrowDown：在对话消息之间快速跳转
+    // Alt+ArrowUp/ArrowDown 系列快捷键：在对话消息之间快速跳转
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       const chatContainer = document.getElementById('chatContainer');
       if (!chatContainer) return;
 
-      // 收集所有可导航的消息元素（用户消息、助手消息、上下文气泡）
       const messages = chatContainer.querySelectorAll('.message.user, .message.assistant, .user-context-bubble');
+
+      // Alt+Shift+ArrowUp/ArrowDown：快速回到顶部/底部
+      if (e.shiftKey) {
+        e.preventDefault();
+        if (e.key === 'ArrowUp' && messages.length > 0) {
+          messages[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (e.key === 'ArrowDown' && messages.length > 0) {
+          messages[messages.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return;
+      }
+
       if (messages.length === 0) return;
 
       const containerRect = chatContainer.getBoundingClientRect();
