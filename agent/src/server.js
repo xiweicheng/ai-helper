@@ -9,7 +9,7 @@ import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
 import { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses } from './executor.js';
-import { logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
+import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
@@ -82,6 +82,9 @@ function parseBody(req) {
 export function startServer() {
   const config = loadConfig();
   const { port, host } = config;
+
+  // 开启终端日志输出（前台运行时可见，后台模式 stdio ignore 自动丢弃）
+  setConsoleOutput(true);
 
   logSystem('server_start', { port, host, workdir: config.workdir, ...PLATFORM_INFO });
 

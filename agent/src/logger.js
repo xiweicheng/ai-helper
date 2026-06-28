@@ -7,6 +7,41 @@ const LOG_DIR = join(homedir(), '.ai-helper-agent', 'logs');
 const MAX_LOG_FILES = 30;          // 最多保留 30 个日志文件
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 单文件最大 10MB
 
+// 是否输出到终端 stderr
+let consoleOutput = false;
+
+/**
+ * 设置是否在终端输出日志（前台运行时开启）
+ */
+function setConsoleOutput(enabled) {
+  consoleOutput = enabled;
+}
+
+const CATEGORY_LABELS = {
+  auth: '认证', fs: '文件', exec: '命令', security: '安全', system: '系统'
+};
+
+const LEVEL_LABELS = { info: 'INFO', warn: 'WARN', error: 'ERROR' };
+
+/**
+ * 格式化详情为可读字符串
+ */
+function formatDetails(details) {
+  if (!details || Object.keys(details).length === 0) return '';
+  const parts = [];
+  for (const [key, val] of Object.entries(details)) {
+    if (val !== undefined && val !== null) {
+      const str = typeof val === 'string' ? val : JSON.stringify(val);
+      if (str.length > 120) {
+        parts.push(`${key}=${str.slice(0, 120)}...`);
+      } else {
+        parts.push(`${key}=${str}`);
+      }
+    }
+  }
+  return parts.join(' ');
+}
+
 function ensureLogDir() {
   if (!existsSync(LOG_DIR)) {
     mkdirSync(LOG_DIR, { recursive: true });
@@ -58,18 +93,30 @@ function cleanOldLogs() {
  * @param {Object} details - 详细信息
  */
 function log(level, category, action, details = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level,
+    category,
+    action,
+    ...details
+  };
+
+  // 输出到终端 stderr（前台运行时可见）
+  if (consoleOutput) {
+    const time = entry.timestamp.slice(11, 19); // HH:MM:SS
+    const levelTag = LEVEL_LABELS[level] || level.toUpperCase();
+    const catTag = CATEGORY_LABELS[category] || category;
+    const detailStr = formatDetails(details);
+    const msg = detailStr
+      ? `[${time}] [${levelTag}] [${catTag}:${action}] ${detailStr}`
+      : `[${time}] [${levelTag}] [${catTag}:${action}]`;
+    process.stderr.write(msg + '\n');
+  }
+
+  // 写入文件
   try {
     ensureLogDir();
-    cleanOldLogs(); // 每次写入时顺便清理（频率不高，影响可忽略）
-
-    const entry = {
-      timestamp: new Date().toISOString(),
-      level,
-      category,
-      action,
-      ...details
-    };
-
+    cleanOldLogs();
     appendFileSync(getLogFile(), JSON.stringify(entry) + '\n', 'utf-8');
   } catch (err) {
     // 日志写入失败不应影响主流程
@@ -146,4 +193,4 @@ function getLogDates() {
   }
 }
 
-export { log, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates };
+export { setConsoleOutput, log, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates };
