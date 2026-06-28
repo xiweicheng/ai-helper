@@ -67,6 +67,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   
+  if (message.type === 'CAPTURE_TAB') {
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ dataUrl });
+      }
+    });
+    return true; // 异步响应
+  }
+  
   if (message.type === 'CALL_API') {
     const { messages, model, useTools, tabId, apiParams, sessionId } = message;
     

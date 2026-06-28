@@ -90,6 +90,11 @@ export let lastMouseY = 0;
 // 待删除的提示词索引
 export let pendingDeleteIndex = -1;
 
+// 图片识别
+export let enableImageInput = false;
+export let imageModelName = 'deepseek-vl2';
+export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
+
 // 标志位
 export let isScrolling = false;
 
@@ -208,6 +213,12 @@ export default {
   set lastMouseY(v) { lastMouseY = v; },
   get pendingDeleteIndex() { return pendingDeleteIndex; },
   set pendingDeleteIndex(v) { pendingDeleteIndex = v; },
+  get enableImageInput() { return enableImageInput; },
+  set enableImageInput(v) { enableImageInput = v; },
+  get imageModelName() { return imageModelName; },
+  set imageModelName(v) { imageModelName = v; },
+  get attachedImages() { return attachedImages; },
+  set attachedImages(v) { attachedImages = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
 };

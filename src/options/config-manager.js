@@ -1,13 +1,17 @@
 // options/config-manager.js - 配置管理与状态
 
-import { PRESET_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import { PRESET_MODELS, PRESET_IMAGE_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 
 // Re-export PRESET_MODELS so index.js can use it
-export { PRESET_MODELS };
+export { PRESET_MODELS, PRESET_IMAGE_MODELS };
 
 let currentModel = 'deepseek-v4-pro';
 export { currentModel };
 export function setCurrentModel(value) { currentModel = value; }
+
+let currentImageModel = 'deepseek-vl2';
+export { currentImageModel };
+export function setCurrentImageModel(value) { currentImageModel = value; }
 
 // 添加自定义模型到下拉列表
 export function addCustomModelToDropdown(modelName) {
@@ -111,10 +115,124 @@ export function updateModelSelection(selectedValue) {
   });
 }
 
+// ============================================================
+// 图片识别模型管理（所有模型均可删除，包括预设）
+// ============================================================
+
+// 添加图片识别模型到下拉列表
+export function addCustomImageModelToDropdown(modelName) {
+  const modelDropdown = document.getElementById('imageModelDropdown');
+  if (!modelDropdown) return;
+  const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
+  if (existingOption) return;
+
+  const option = document.createElement('div');
+  option.className = 'model-option';
+  option.dataset.value = modelName;
+  option.textContent = modelName;
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'delete-model-btn';
+  deleteBtn.title = '删除此模型';
+  deleteBtn.innerHTML = '×';
+  // 图片模型删除按钮始终可见
+  deleteBtn.style.display = 'inline-block';
+  option.appendChild(deleteBtn);
+
+  modelDropdown.appendChild(option);
+  saveImageModels();
+}
+
+// 从下拉列表移除图片识别模型（包括预设）
+export function removeImageModel(modelName) {
+  const modelDropdown = document.getElementById('imageModelDropdown');
+  if (!modelDropdown) return;
+  const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
+  if (option) {
+    option.remove();
+  }
+
+  // 如果当前选中的是被删除的模型，恢复为第一个剩余模型或空
+  if (currentImageModel === modelName) {
+    const firstOption = modelDropdown.querySelector('.model-option');
+    const newModel = firstOption ? firstOption.dataset.value : '';
+    setCurrentImageModel(newModel);
+    const input = document.getElementById('imageModelInput');
+    if (input) input.value = newModel;
+    updateImageModelSelection(newModel);
+  }
+
+  saveImageModels();
+}
+
+// 保存图片识别模型列表到存储
+export function saveImageModels() {
+  const modelDropdown = document.getElementById('imageModelDropdown');
+  if (!modelDropdown) return;
+  const imageModels = [];
+  modelDropdown.querySelectorAll('.model-option').forEach(option => {
+    imageModels.push(option.dataset.value);
+  });
+  chrome.storage.local.set({ imageModels }, () => {
+    console.log('[Options] 图片识别模型已保存:', imageModels);
+  });
+}
+
+// 从存储加载图片识别模型到下拉列表
+export function loadImageModels(callback) {
+  chrome.storage.local.get(['imageModels'], (result) => {
+    const modelDropdown = document.getElementById('imageModelDropdown');
+    if (!modelDropdown) {
+      if (typeof callback === 'function') callback();
+      return;
+    }
+    const savedModels = result.imageModels || PRESET_IMAGE_MODELS;
+
+    // 清空现有选项
+    modelDropdown.innerHTML = '';
+
+    savedModels.forEach(modelName => {
+      const option = document.createElement('div');
+      option.className = 'model-option';
+      option.dataset.value = modelName;
+      option.textContent = modelName;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'delete-model-btn';
+      deleteBtn.title = '删除此模型';
+      deleteBtn.innerHTML = '×';
+      deleteBtn.style.display = 'inline-block';
+      option.appendChild(deleteBtn);
+
+      modelDropdown.appendChild(option);
+    });
+
+    if (typeof callback === 'function') {
+      callback();
+    }
+  });
+}
+
+// 更新图片识别模型选中状态
+export function updateImageModelSelection(selectedValue) {
+  const modelDropdown = document.getElementById('imageModelDropdown');
+  if (!modelDropdown) return;
+  modelDropdown.querySelectorAll('.model-option').forEach(option => {
+    if (option.dataset.value === selectedValue) {
+      option.classList.add('selected');
+    } else {
+      option.classList.remove('selected');
+    }
+  });
+}
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
+    'enableImageInput', 'imageModelName', 'imageModels',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
@@ -134,7 +252,20 @@ export function loadConfig() {
     if (result.systemPrompt) {
       document.getElementById('systemPrompt').value = result.systemPrompt;
     }
-    
+
+    // 加载图片识别配置
+    const enableImageInputEl = document.getElementById('enableImageInput');
+    const imageModelGroup = document.getElementById('imageModelGroup');
+    if (enableImageInputEl && imageModelGroup) {
+      enableImageInputEl.checked = result.enableImageInput || false;
+      imageModelGroup.style.display = enableImageInputEl.checked ? '' : 'none';
+    }
+    if (result.imageModelName) {
+      setCurrentImageModel(result.imageModelName);
+      const imageModelInput = document.getElementById('imageModelInput');
+      if (imageModelInput) imageModelInput.value = result.imageModelName;
+    }
+
     // 加载 ReAct 配置（时间单位转换）
     document.getElementById('reactMaxIterations').value = 
       result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations;
@@ -245,6 +376,13 @@ export function loadConfig() {
       }
       updateReflectionVisibility();
     });
+
+    // 加载图片识别模型列表
+    loadImageModels(() => {
+      if (result.imageModelName) {
+        updateImageModelSelection(result.imageModelName);
+      }
+    });
   });
 }
 
@@ -273,6 +411,10 @@ export function saveConfig() {
   const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
   const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
+  
+  // 获取图片识别配置
+  const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
+  const imageModelName = currentImageModel || 'deepseek-vl2';
   
   // 获取反思配置
   const reflectionConfig = {
@@ -422,6 +564,9 @@ export function saveConfig() {
     chatMaxMessageLength: chatMaxMessageLength,
     chatMaxMemoryMessages: chatMaxMemoryMessages,
     enableExecutionLog: enableExecutionLog,
+    // 图片识别配置
+    enableImageInput: enableImageInput,
+    imageModelName: imageModelName,
     // 反思配置
     reflectionConfig: reflectionConfig
   }, async function() {

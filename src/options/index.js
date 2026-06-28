@@ -1,6 +1,7 @@
 // options/index.js - 选项页面入口
 
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, PRESET_IMAGE_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
+import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
 import {
   loadToolbarTools,
@@ -123,6 +124,78 @@ document.addEventListener('DOMContentLoaded', async function() {
       modelDropdown.classList.remove('show');
     }
   });
+
+  // ==================== 图片识别模型选择器事件 ====================
+
+  const enableImageInputEl = document.getElementById('enableImageInput');
+  const imageModelGroup = document.getElementById('imageModelGroup');
+  if (enableImageInputEl && imageModelGroup) {
+    enableImageInputEl.addEventListener('change', function() {
+      imageModelGroup.style.display = this.checked ? '' : 'none';
+      // 立即持久化开关状态
+      chrome.storage.local.set({ enableImageInput: this.checked });
+    });
+  }
+
+  const imageModelInput = document.getElementById('imageModelInput');
+  const imageModelDropdown = document.getElementById('imageModelDropdown');
+
+  if (imageModelInput && imageModelDropdown) {
+    imageModelInput.addEventListener('click', function(e) {
+      e.stopPropagation();
+      imageModelDropdown.classList.toggle('show');
+    });
+
+    imageModelInput.addEventListener('input', function() {
+      const value = imageModelInput.value.trim();
+      setCurrentImageModel(value);
+    });
+
+    let imageBlurTimeout;
+    imageModelInput.addEventListener('blur', function() {
+      imageBlurTimeout = setTimeout(function() {
+        const value = imageModelInput.value.trim();
+        if (value && !PRESET_IMAGE_MODELS.includes(value)) {
+          addCustomImageModelToDropdown(value);
+        }
+        if (!value) {
+          imageModelInput.value = currentImageModel || 'deepseek-vl2';
+        }
+      }, 200);
+    });
+
+    imageModelInput.addEventListener('focus', function() {
+      if (imageBlurTimeout) {
+        clearTimeout(imageBlurTimeout);
+        imageBlurTimeout = null;
+      }
+    });
+
+    imageModelDropdown.addEventListener('click', function(e) {
+      if (e.target.classList.contains('delete-model-btn')) {
+        e.stopPropagation();
+        const option = e.target.closest('.model-option');
+        const value = option.dataset.value;
+        removeImageModel(value);
+        return;
+      }
+      const option = e.target.closest('.model-option');
+      if (option) {
+        e.stopPropagation();
+        const value = option.dataset.value;
+        setCurrentImageModel(value);
+        imageModelInput.value = value;
+        updateImageModelSelection(value);
+        imageModelDropdown.classList.remove('show');
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!imageModelDropdown.contains(e.target) && e.target !== imageModelInput) {
+        imageModelDropdown.classList.remove('show');
+      }
+    });
+  }
   
   // 显示/隐藏 Token 切换
   const toggleToken = document.getElementById('toggleToken');

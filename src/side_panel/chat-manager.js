@@ -258,6 +258,162 @@ export function hideModal() {
 // 消息发送
 // ============================================================
 
+/**
+ * 打开图片预览弹窗
+ * @param {string} dataUrl - 图片 Base64 dataUrl
+ */
+export function openImagePreview(dataUrl) {
+  const overlay = document.getElementById('imagePreviewOverlay');
+  const img = document.getElementById('imagePreviewLarge');
+  if (!overlay || !img) return;
+  img.src = dataUrl;
+  overlay.classList.add('show');
+}
+
+/**
+ * 初始化图片预览弹窗事件（一次性设置）
+ */
+export function initImagePreviewOverlay() {
+  const overlay = document.getElementById('imagePreviewOverlay');
+  if (!overlay || overlay.dataset.initialized) return;
+  overlay.dataset.initialized = 'true';
+
+  // 点击遮罩关闭
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('show');
+    }
+  });
+
+  // 关闭按钮
+  const closeBtn = overlay.querySelector('.image-preview-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      overlay.classList.remove('show');
+    });
+  }
+
+  // ESC 关闭
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay.classList.contains('show')) {
+      overlay.classList.remove('show');
+    }
+  });
+}
+
+/**
+ * 压缩图片并通过 canvas 转为 Base64，然后附加到 state.attachedImages
+ * @param {Blob} blob - 原始图片 Blob
+ */
+export function compressAndAttachImage(blob) {
+  const img = new Image();
+  const url = URL.createObjectURL(blob);
+
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+
+    // 计算缩放尺寸（最大 1024px）
+    let { width, height } = img;
+    const maxDim = 1024;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round(height * (maxDim / width));
+        width = maxDim;
+      } else {
+        width = Math.round(width * (maxDim / height));
+        height = maxDim;
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+
+    state.attachedImages.push({ dataUrl });
+
+    // 更新预览
+    const previewBar = document.getElementById('imagePreviewBar');
+    const userInput = document.getElementById('userInput');
+    if (previewBar) previewBar.style.display = '';
+
+    // 重新渲染预览
+    renderImagePreviewsFromChat();
+
+    // 聚焦输入框
+    if (userInput) userInput.focus();
+  };
+
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    console.error('[ChatManager] 图片加载失败');
+  };
+
+  img.src = url;
+}
+
+/**
+ * 从 chat-manager 上下文渲染图片预览
+ */
+function renderImagePreviewsFromChat() {
+  const previewBar = document.getElementById('imagePreviewBar');
+  if (!previewBar) return;
+
+  previewBar.innerHTML = '';
+
+  state.attachedImages.forEach((img, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'image-preview-item';
+
+    const thumb = document.createElement('img');
+    thumb.src = img.dataUrl;
+    thumb.className = 'image-preview-thumb';
+    thumb.title = '点击查看大图';
+    thumb.style.cursor = 'zoom-in';
+    thumb.addEventListener('click', () => {
+      openImagePreview(img.dataUrl);
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'image-preview-remove';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = '移除图片';
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.attachedImages.splice(index, 1);
+      renderImagePreviewsFromChat();
+    });
+
+    wrapper.appendChild(thumb);
+    wrapper.appendChild(removeBtn);
+    previewBar.appendChild(wrapper);
+  });
+}
+
+/**
+ * 构建用户消息 content，当有图片附件时返回数组格式
+ * @param {string} text - 纯文本内容
+ * @returns {string|Array} content 字段值
+ */
+function buildUserContent(text) {
+  if (!state.enableImageInput || state.attachedImages.length === 0) {
+    return text;
+  }
+
+  const parts = [{ type: 'text', text: text }];
+  for (const img of state.attachedImages) {
+    parts.push({
+      type: 'image_url',
+      image_url: { url: img.dataUrl }
+    });
+  }
+
+  return parts;
+}
+
 export async function sendMessage() {
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -290,7 +446,8 @@ export async function sendMessage() {
 
   addMessage('user', text);
   
-  state.messageHistory.push({ role: 'user', content: finalText });
+  const userContent = buildUserContent(finalText);
+  state.messageHistory.push({ role: 'user', content: userContent });
   
   saveChatHistory();
   
@@ -310,7 +467,9 @@ export async function sendMessage() {
   const mySessionId = state.activeSessionId;
   const loadingId = addLoadingMessage();
 
-  const model = state.currentModel;
+  const model = state.enableImageInput && state.attachedImages.length > 0
+    ? (state.imageModelName || 'deepseek-vl2')
+    : state.currentModel;
 
   try {
     await ensureChatConfigLoaded();
@@ -339,7 +498,9 @@ export async function sendMessage() {
       }
       messages = [...messages, ...historyToSend];
     } else {
-      messages.push({ role: 'user', content: finalText });
+      // 构建用户消息 content（支持图片附件）
+      const userContent = buildUserContent(finalText);
+      messages.push({ role: 'user', content: userContent });
     }
 
     const apiParams = await getApiParams();
@@ -430,6 +591,12 @@ export async function sendMessage() {
     state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
+    // 清空图片附件
+    if (state.attachedImages.length > 0) {
+      state.attachedImages = [];
+      const previewBar = document.getElementById('imagePreviewBar');
+      if (previewBar) previewBar.innerHTML = '';
+    }
   }
 }
 
@@ -548,8 +715,17 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   
   const timestamp = new Date().toISOString();
   messageDiv.dataset.timestamp = timestamp;
-  
-  messageDiv.dataset.rawContent = content;
+
+  // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
+  const textContent = Array.isArray(content)
+    ? content.filter(c => c.type === 'text').map(c => c.text).join('')
+    : content;
+  const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
+
+  // 存储原始内容：数组格式需要序列化，字符串直接存
+  messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : content;
+  // 额外存储纯文本版本，供复制/编辑/引用使用
+  messageDiv.dataset.textContent_ = textContent;
   
   messageDiv.dataset.executionLog = JSON.stringify(executionLog);
   if (wasRevised) {
@@ -751,8 +927,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     messageDiv.appendChild(footer);
   } else {
-    const quotedMatch = content.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
-    const selectedMatch = content.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const quotedMatch = textContent.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const selectedMatch = textContent.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const match = quotedMatch || selectedMatch;
     
     if (match) {
@@ -762,7 +938,16 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       messageDiv._pendingContext = { type, contextText, userQuestion };
       messageDiv.textContent = userQuestion;
     } else {
-      messageDiv.textContent = content;
+      messageDiv.textContent = textContent;
+    }
+
+    // 如果消息包含图片，显示图片徽章
+    if (hasImages) {
+      const imageBadge = document.createElement('span');
+      imageBadge.className = 'image-badge';
+      imageBadge.textContent = '🖼️ 图片';
+      imageBadge.style.cssText = 'display:inline-block;margin-top:4px;padding:2px 8px;background:#f0f4ff;color:#667eea;border-radius:12px;font-size:11px;';
+      messageDiv.appendChild(imageBadge);
     }
     
     const toolbar = document.createElement('div');
@@ -2641,7 +2826,7 @@ function showExecutionLog(executionLog) {
 
 function copyMessage(messageDiv, copyBtn) {
   try {
-    const textToCopy = messageDiv.dataset.rawContent || '';
+    const textToCopy = messageDiv.dataset.textContent_ || messageDiv.dataset.rawContent || '';
     
     navigator.clipboard.writeText(textToCopy).then(() => {
       const originalHTML = copyBtn.innerHTML;
@@ -2690,7 +2875,7 @@ function copyMessage(messageDiv, copyBtn) {
 
 function editAndResendMessage(messageDiv) {
   try {
-    const textToEdit = messageDiv.dataset.rawContent || '';
+    const textToEdit = messageDiv.dataset.textContent_ || messageDiv.dataset.rawContent || '';
     
     if (!textToEdit) {
       showToast('无法获取消息内容', 'error');

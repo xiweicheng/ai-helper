@@ -1377,6 +1377,25 @@
     </div>
 
     <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="enableImageInput">
+        <span class="toggle-text">启用图片识别功能</span>
+      </label>
+      <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏发送图片给多模态模型进行分析）</span>
+    </div>
+
+    <div class="form-group" id="imageModelGroup" style="display:none;">
+      <label>图片识别模型 <span class="hint">（支持多模态视觉能力的模型，可自定义）</span></label>
+      <div class="model-selector">
+        <input type="text" id="imageModelInput" placeholder="请输入模型名称或从下方选择" value="deepseek-vl2">
+        <div class="model-dropdown" id="imageModelDropdown">
+          <div class="model-option" data-value="deepseek-vl2">deepseek-vl2</div>
+          <div class="model-option" data-value="deepseek-v4-pro-vision">deepseek-v4-pro-vision</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
       <label for="systemPrompt">系统提示词 <span class="hint">（可选，留空则使用默认值）</span></label>
       <div class="system-prompt-wrapper">
         <button type="button" id="resetSystemPromptBtn" class="reset-system-prompt-btn" title="重置为默认值">

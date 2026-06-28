@@ -14,7 +14,8 @@ import {
   showModal, hideModal, loadChatHistory, saveChatHistory,
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
-  restorePendingSessionsFromStorage
+  restorePendingSessionsFromStorage,
+  compressAndAttachImage, openImagePreview, initImagePreviewOverlay
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -756,7 +757,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 加载保存的模型选择和自定义模型
-  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform'], (result) => {
+  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform', 'enableImageInput', 'imageModelName'], (result) => {
     const savedModelName = result.modelName;
     if (savedModelName) {
       state.currentModel = savedModelName;
@@ -767,6 +768,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (result.agentPlatform) {
       state.agentPlatform = result.agentPlatform;
     }
+    // 图片识别配置
+    state.enableImageInput = result.enableImageInput || false;
+    state.imageModelName = result.imageModelName || 'deepseek-vl2';
+    updateImagePreviewVisibility();
     addPromptManageButton();
 
     loadCustomModelsToDropdown(result.customModels, () => {
@@ -799,6 +804,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           state.currentModel = newModelName;
           updateModelSelection(newModelName);
         }
+      }
+      if (changes.enableImageInput) {
+        state.enableImageInput = changes.enableImageInput.newValue;
+        updateImagePreviewVisibility();
+      }
+      if (changes.imageModelName) {
+        state.imageModelName = changes.imageModelName.newValue || 'deepseek-vl2';
       }
     }
   });
@@ -1139,6 +1151,47 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendMessage();
     }
   });
+
+  // 粘贴图片处理
+  userInput.addEventListener('paste', (e) => {
+    if (!state.enableImageInput) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (blob) {
+          compressAndAttachImage(blob);
+        }
+        break;
+      }
+    }
+  });
+
+  // 截图按钮
+  const screenshotBtn = document.getElementById('screenshotBtn');
+  if (screenshotBtn) {
+    screenshotBtn.addEventListener('click', async () => {
+      if (!state.enableImageInput) return;
+      try {
+        const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
+        if (response?.dataUrl) {
+          // 将 dataUrl 转为 blob 再压缩
+          const res = await fetch(response.dataUrl);
+          const blob = await res.blob();
+          compressAndAttachImage(blob);
+        }
+      } catch (err) {
+        console.error('[SidePanel] 截图失败:', err);
+        showToast('截图失败，请重试');
+      }
+    });
+  }
+
+  // 初始化图片预览弹窗事件
+  initImagePreviewOverlay();
 
   // 控制输入框滚轮事件：锁定高度防止跳动
   userInput.addEventListener('wheel', (e) => {
@@ -1758,3 +1811,62 @@ document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
+
+// ==================== 图片辅助函数 ====================
+
+/**
+ * 更新图片预览区可见性
+ */
+function updateImagePreviewVisibility() {
+  const previewBar = document.getElementById('imagePreviewBar');
+  const screenshotBtn = document.getElementById('screenshotBtn');
+  if (previewBar) {
+    previewBar.style.display = state.enableImageInput ? '' : 'none';
+  }
+  if (screenshotBtn) {
+    screenshotBtn.style.display = state.enableImageInput ? '' : 'none';
+  }
+  // 如果关闭了图片功能，清空已附加的图片
+  if (!state.enableImageInput) {
+    state.attachedImages = [];
+  }
+  renderImagePreviews();
+}
+
+/**
+ * 渲染图片预览缩略图
+ */
+function renderImagePreviews() {
+  const previewBar = document.getElementById('imagePreviewBar');
+  if (!previewBar) return;
+
+  previewBar.innerHTML = '';
+
+  state.attachedImages.forEach((img, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'image-preview-item';
+
+    const thumb = document.createElement('img');
+    thumb.src = img.dataUrl;
+    thumb.className = 'image-preview-thumb';
+    thumb.title = '点击查看大图';
+    thumb.style.cursor = 'zoom-in';
+    thumb.addEventListener('click', () => {
+      openImagePreview(img.dataUrl);
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'image-preview-remove';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = '移除图片';
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.attachedImages.splice(index, 1);
+      renderImagePreviews();
+    });
+
+    wrapper.appendChild(thumb);
+    wrapper.appendChild(removeBtn);
+    previewBar.appendChild(wrapper);
+  });
+}
