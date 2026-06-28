@@ -1023,8 +1023,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
       if ((response.status >= 500 || response.status === 429) && attempt < maxRetries) {
         const errorText = await response.text().catch(() => '');
         lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
-        const base = baseDelay * Math.pow(2, attempt);
-        const delay = Math.floor(base * (0.75 + Math.random() * 0.5)); // ±25% jitter
+        const delay = baseDelay * Math.pow(2, attempt);
         console.log(`[Background] API 返回 ${response.status}，${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
         if (onRetry) onRetry(attempt + 1, lastError, delay);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -1042,8 +1041,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
         break;
       }
 
-      const base = baseDelay * Math.pow(2, attempt);
-      const delay = Math.floor(base * (0.75 + Math.random() * 0.5)); // ±25% jitter
+      const delay = baseDelay * Math.pow(2, attempt);
       console.log(`[Background] API 调用失败，${delay}ms 后重试 (${attempt + 1}/${maxRetries}):`, error.message);
       if (onRetry) onRetry(attempt + 1, error, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
