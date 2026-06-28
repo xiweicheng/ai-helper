@@ -47,7 +47,13 @@ fi
 # 推送 docs/ 到 gh-pages 分支根目录
 for remote in "${REMOTES[@]}"; do
   echo "   🚀 推送 docs/ → $remote gh-pages ..."
-  git subtree push --prefix docs "$remote" gh-pages
+  if git subtree push --prefix docs "$remote" gh-pages 2>/dev/null; then
+    :
+  else
+    echo "   ⚠️  历史分叉，使用 force push ..."
+    SPLIT=$(git subtree split --prefix docs main)
+    git push "$remote" "$SPLIT:refs/heads/gh-pages" --force
+  fi
 done
 
 echo ""
