@@ -921,6 +921,59 @@ document.addEventListener('DOMContentLoaded', async () => {
         openToolsPopup();
       }
     }
+
+    // Alt+ArrowUp/ArrowDown：在对话消息之间快速跳转
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      const chatContainer = document.getElementById('chatContainer');
+      if (!chatContainer) return;
+
+      // 收集所有可导航的消息元素（用户消息、助手消息、上下文气泡）
+      const messages = chatContainer.querySelectorAll('.message.user, .message.assistant, .user-context-bubble');
+      if (messages.length === 0) return;
+
+      const containerRect = chatContainer.getBoundingClientRect();
+      const viewportTop = containerRect.top;
+      const threshold = 10; // 小阈值避免重复定位到同一条消息
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        // 找到当前视口中第一条可见消息，然后跳转到它前面的那条
+        let currentIndex = -1;
+        for (let i = 0; i < messages.length; i++) {
+          const rect = messages[i].getBoundingClientRect();
+          if (rect.bottom > viewportTop + threshold) {
+            currentIndex = i;
+            break;
+          }
+        }
+        // 如果所有消息都在视口上方，则从最后一条开始
+        if (currentIndex === -1) {
+          currentIndex = messages.length;
+        }
+        // 跳到前一条
+        const targetIndex = currentIndex - 1;
+        if (targetIndex >= 0) {
+          messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        // 找到当前视口中第一条消息，然后跳转到它后面的那条
+        let currentIndex = -1;
+        for (let i = 0; i < messages.length; i++) {
+          const rect = messages[i].getBoundingClientRect();
+          if (rect.bottom > viewportTop + threshold) {
+            currentIndex = i;
+            break;
+          }
+        }
+        if (currentIndex === -1) return;
+        // 跳到下一条
+        const targetIndex = currentIndex + 1;
+        if (targetIndex < messages.length) {
+          messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }
   });
 
   // 输入框回车发送（Shift+Enter 换行）
