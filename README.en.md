@@ -208,7 +208,6 @@ Automatically appears when text is selected on any webpage, providing:
 | `scroll_to` | Scroll to position |
 | `scroll_into_view` | Scroll element into view |
 | `wait_for_element` | Wait for element state change |
-| `watch_element` | Monitor DOM changes |
 | `drag_and_drop` | Drag-and-drop operation |
 | `keyboard_input` | Keyboard input |
 | `file_upload` | Inject files into upload controls |
@@ -222,7 +221,6 @@ Automatically appears when text is selected on any webpage, providing:
 | `get_tabs` | List all tabs |
 | `navigate_back_forward` | Navigate back/forward |
 | `reload_tab` | Reload tab |
-| `group_tabs` | Group tabs |
 
 ### Debug & Development (6)
 | Tool | Description |
@@ -231,15 +229,11 @@ Automatically appears when text is selected on any webpage, providing:
 | `inject_css` | Inject CSS styles |
 | `shadow_dom_query` | Query within Shadow DOM |
 | `color_picker` | EyeDropper color picker |
-| `performance_audit` | Collect Core Web Vitals |
-| `record_network` | Record network requests |
 
 ### Media Processing (6)
 | Tool | Description |
 |------|-------------|
 | `capture_tab_screenshot` | Tab screenshot |
-| `screenshot_element` | Element screenshot |
-| `page_to_pdf` | Export page as PDF |
 | `generate_qrcode` | Generate QR code |
 | `text_to_speech` | Text to speech |
 | `video_control` | Control page video playback |
@@ -250,7 +244,6 @@ Automatically appears when text is selected on any webpage, providing:
 | `clarify_question` | Show clarification dialog |
 | `plan_task` | Task decomposition planner |
 | `execute_workflow` | Execute predefined workflows |
-| `schedule_task` | Create scheduled tasks |
 | `manage_user_scripts` | User script management |
 | `highlight_text` | Highlight text on page |
 | `find_text_on_page` | Native text search |

@@ -15,9 +15,7 @@ const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
   clear_page_data: '清除页面数据',
   download_file: '下载文件',
-  schedule_task: '安排定时任务',
   close_tab: '关闭标签页',
-  group_tabs: '分组标签页',
 };
 
 /**

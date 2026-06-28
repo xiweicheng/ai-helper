@@ -313,16 +313,12 @@ const TOOL_HANDLERS = {
   get_browser_info: executeGetBrowserInfo,
   download_file: executeDownloadFile,
   manage_cookies: executeManageCookies,
-  schedule_task: executeScheduleTask,
   plan_task: executePlanTask,
   clear_page_data: executeClearPageData,
   navigate_back_forward: executeNavigateBackForward,
   reload_tab: executeReloadTab,
-  group_tabs: executeGroupTabs,
-  record_network: executeRecordNetwork,
   search_conversation_memory: executeSearchConversationMemory,
   preview_ui_prototype: executePreviewUiPrototype,
-  get_ui_prototype: executeGetUiPrototype,
   agent_read_file: executeAgentReadFile,
   agent_write_file: executeAgentWriteFile,
   agent_list_dir: executeAgentListDir,
@@ -1451,103 +1447,6 @@ export function executeManageCookies(args, toolCallId) {
 }
 
 /**
- * 定时任务工具
- */
-export function executeScheduleTask(args, toolCallId) {
-  return new Promise((resolve) => {
-    const { action, name, delayInMinutes: rawDelay, periodInMinutes: rawPeriod, scheduledTime, taskData } = args;
-    
-    switch (action) {
-      case 'create':
-        if (!name) {
-          resolve({ success: false, error: 'create操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        
-        const alarmInfo = {};
-        
-        const periodInMinutes = rawPeriod !== undefined ? parseFloat(rawPeriod) : undefined;
-        const delayInMinutes = rawDelay !== undefined ? parseFloat(rawDelay) : undefined;
-        
-        if (periodInMinutes !== undefined && !isNaN(periodInMinutes)) {
-          alarmInfo.periodInMinutes = periodInMinutes;
-        }
-        if (delayInMinutes !== undefined && !isNaN(delayInMinutes)) {
-          alarmInfo.delayInMinutes = delayInMinutes;
-        }
-        if (scheduledTime) {
-          alarmInfo.when = new Date(scheduledTime).getTime();
-        }
-        
-        if (taskData) {
-          chrome.storage.local.set({ [`schedule_task_${name}`]: taskData }, () => {});
-        }
-        
-        chrome.alarms.create(name, alarmInfo, () => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, message: `已创建定时任务: ${name}`, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'get':
-        if (!name) {
-          resolve({ success: false, error: 'get操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.alarms.get(name, (alarm) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, alarm: alarm, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'list':
-        chrome.alarms.getAll((alarms) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, alarms: alarms, total: alarms.length, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'clear':
-        if (!name) {
-          resolve({ success: false, error: 'clear操作需要提供name参数', tool_call_id: toolCallId });
-          return;
-        }
-        chrome.alarms.clear(name, (cleared) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            chrome.storage.local.remove(`schedule_task_${name}`);
-            resolve({ success: true, cleared: cleared, message: `已清除定时任务: ${name}`, tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      case 'clearAll':
-        chrome.alarms.clearAll((cleared) => {
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-          } else {
-            resolve({ success: true, cleared: cleared, message: '已清除所有定时任务', tool_call_id: toolCallId });
-          }
-        });
-        break;
-        
-      default:
-        resolve({ success: false, error: `未知操作: ${action}`, tool_call_id: toolCallId });
-    }
-  });
-}
-
-/**
  * 任务规划工具执行函数
  */
 export function executePlanTask(args, toolCallId) {
@@ -1903,310 +1802,61 @@ export function executeReloadTab(args, toolCallId) {
 }
 
 /**
- * 标签页分组
- */
-export function executeGroupTabs(args, toolCallId) {
-  const { tabIds: rawTabIds, title, color } = args;
-  const tabIds = Array.isArray(rawTabIds) ? rawTabIds.map(id => parseInt(id, 10)) : rawTabIds;
-
-  return new Promise((resolve) => {
-    if (!tabIds || !Array.isArray(tabIds) || tabIds.length === 0) {
-      resolve({ success: false, error: '缺少 tabIds 参数（需为非空数组）', tool_call_id: toolCallId });
-      return;
-    }
-
-    if (!chrome.tabs.group) {
-      resolve({
-        success: false,
-        error: '当前浏览器不支持标签页分组功能（需要 Chrome 89+）',
-        tool_call_id: toolCallId
-      });
-      return;
-    }
-
-    const VALID_COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'];
-
-    const groupOptions = { tabIds: [tabIds[0]] };
-
-    chrome.tabs.group(groupOptions, (groupId) => {
-      if (chrome.runtime.lastError) {
-        resolve({
-          success: false,
-          error: chrome.runtime.lastError.message,
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      // 将其他标签页加入该分组
-      const addRemaining = (remainingIds, currentGroupId) => {
-        if (remainingIds.length === 0) {
-          finalizeGroup(currentGroupId);
-          return;
-        }
-        const nextId = remainingIds[0];
-        chrome.tabs.group({ tabIds: [nextId], groupId: currentGroupId }, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] 将标签页加入分组失败:', chrome.runtime.lastError.message);
-          }
-          addRemaining(remainingIds.slice(1), currentGroupId);
-        });
-      };
-
-      const finalizeGroup = (currentGroupId) => {
-        // chrome.tabGroups API 在某些 Service Worker 上下文中不可用
-        if (!chrome.tabGroups) {
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            color: color || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        const updateProps = {};
-        if (title) updateProps.title = title;
-        if (color && VALID_COLORS.includes(color)) updateProps.color = color;
-
-        if (Object.keys(updateProps).length === 0) {
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-          return;
-        }
-
-        chrome.tabGroups.update(currentGroupId, updateProps, () => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] 更新分组属性失败:', chrome.runtime.lastError.message);
-          }
-          resolve({
-            success: true,
-            groupId: currentGroupId,
-            title: title || undefined,
-            color: color || undefined,
-            tabIds,
-            tool_call_id: toolCallId
-          });
-        });
-      };
-
-      addRemaining(tabIds.slice(1), groupId);
-    });
-  });
-}
-
-/**
- * 网络录制工具
- * 使用 chrome.debugger API 捕获网络请求
- * 按 sessionId 隔离，支持多会话并行录制
- */
-const networkRecordingStateMap = new Map(); // sessionId -> { active, tabId, requests, startTime, eventHandler }
-
-function getRecordingState(sessionId) {
-  if (!networkRecordingStateMap.has(sessionId)) {
-    networkRecordingStateMap.set(sessionId, {
-      active: false,
-      tabId: null,
-      requests: [],
-      startTime: null,
-      eventHandler: null
-    });
-  }
-  return networkRecordingStateMap.get(sessionId);
-}
-
-function createDebuggerEventHandler(recordingState) {
-  return (source, method, params) => {
-    if (!recordingState.active) return;
-
-    if (method === 'Network.requestWillBeSent') {
-      recordingState.requests.push({
-        requestId: params.requestId,
-        url: params.request?.url || '',
-        method: params.request?.method || 'GET',
-        type: params.type || 'Unknown',
-        timestamp: params.timestamp || Date.now(),
-        status: null,
-        statusText: null,
-        responseReceived: false
-      });
-    } else if (method === 'Network.responseReceived') {
-      const existing = recordingState.requests.find(r => r.requestId === params.requestId);
-      if (existing) {
-        existing.status = params.response?.status || null;
-        existing.statusText = params.response?.statusText || null;
-        existing.responseReceived = true;
-        existing.responseTimestamp = params.timestamp || Date.now();
-        existing.mimeType = params.response?.mimeType || null;
-      }
-    }
-  };
-}
-
-export function executeRecordNetwork(args, toolCallId, sessionId = null) {
-  const { action } = args;
-  const effectiveSessionId = sessionId || 'default';
-  const recordingState = getRecordingState(effectiveSessionId);
-
-  return new Promise((resolve) => {
-    if (action === 'status') {
-      resolve({
-        success: true,
-        action: 'status',
-        active: recordingState.active,
-        requestCount: recordingState.requests.length,
-        startTime: recordingState.startTime,
-        tool_call_id: toolCallId
-      });
-      return;
-    }
-
-    if (action === 'start') {
-      if (recordingState.active) {
-        resolve({
-          success: false,
-          error: '网络录制已在运行中',
-          action: 'start',
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
-          return;
-        }
-
-        const tabId = tabs[0].id;
-
-        chrome.debugger.attach({ tabId }, '1.3', () => {
-          if (chrome.runtime.lastError) {
-            resolve({
-              success: false,
-              error: '无法附加调试器: ' + chrome.runtime.lastError.message,
-              action: 'start',
-              tool_call_id: toolCallId
-            });
-            return;
-          }
-
-          recordingState.active = true;
-          recordingState.tabId = tabId;
-          recordingState.requests = [];
-          recordingState.startTime = Date.now();
-          recordingState.eventHandler = createDebuggerEventHandler(recordingState);
-
-          chrome.debugger.onEvent.addListener(recordingState.eventHandler);
-
-          chrome.debugger.sendCommand({ tabId }, 'Network.enable', {}, () => {
-            if (chrome.runtime.lastError) {
-              console.warn('[Background] Network.enable 失败:', chrome.runtime.lastError.message);
-              // 即使 Network.enable 失败，也继续录制（部分浏览器可能已自动启用）
-            }
-
-            resolve({
-              success: true,
-              action: 'start',
-              tabId,
-              tool_call_id: toolCallId
-            });
-          });
-        });
-      });
-      return;
-    }
-
-    if (action === 'stop') {
-      if (!recordingState.active) {
-        resolve({
-          success: false,
-          error: '没有正在进行的网络录制',
-          action: 'stop',
-          tool_call_id: toolCallId
-        });
-        return;
-      }
-
-      const tabId = recordingState.tabId;
-      const requests = [...recordingState.requests];
-      const requestCount = requests.length;
-
-      // 移除事件监听
-      if (recordingState.eventHandler) {
-        chrome.debugger.onEvent.removeListener(recordingState.eventHandler);
-      }
-
-      // 重置状态并清理 Map 条目，防止内存泄漏
-      recordingState.active = false;
-      recordingState.tabId = null;
-      recordingState.requests = [];
-      recordingState.startTime = null;
-      recordingState.eventHandler = null;
-      networkRecordingStateMap.delete(sessionId);
-
-      chrome.debugger.detach({ tabId }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn('[Background] 分离调试器失败:', chrome.runtime.lastError.message);
-        }
-
-        resolve({
-          success: true,
-          action: 'stop',
-          requests,
-          requestCount,
-          tool_call_id: toolCallId
-        });
-      });
-      return;
-    }
-
-    resolve({
-      success: false,
-      error: `未知操作: ${action}，支持 start/stop/status`,
-      action,
-      tool_call_id: toolCallId
-    });
-  });
-}
-
-/**
- * 执行 UI 原型预览工具
- * 将原型代码存储到数据库，并通知 Side Panel 显示预览
+ * 执行 UI 原型预览/获取工具
+ * action=preview: 创建并预览原型（需要 html + title）
+ * action=get: 根据 prototypeId 获取原型代码（需要 prototypeId）
  */
 export async function executePreviewUiPrototype(args, toolCallId, sessionId = null) {
-  const { html, title, description } = args;
+  const { action = 'preview', html, title, description, prototypeId } = args;
   
+  // ── action=get：获取已创建的原型代码 ──
+  if (action === 'get') {
+    console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
+    
+    if (!prototypeId || !prototypeId.trim()) {
+      return { success: false, error: '缺少 prototypeId 参数', tool_call_id: toolCallId };
+    }
+    
+    try {
+      const prototype = await getUiPrototype(prototypeId.trim());
+      
+      if (!prototype) {
+        return { success: false, error: `未找到原型: ${prototypeId}`, tool_call_id: toolCallId };
+      }
+      
+      console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
+      
+      return { 
+        success: true, 
+        message: `已获取原型 "${prototype.title}" 的代码`,
+        prototypeId: prototype.id,
+        title: prototype.title,
+        description: prototype.description || '',
+        html: prototype.html,
+        tool_call_id: toolCallId 
+      };
+    } catch (err) {
+      console.error('[Background] 获取 UI 原型失败:', err);
+      return { success: false, error: '获取失败: ' + err.message, tool_call_id: toolCallId };
+    }
+  }
+  
+  // ── action=preview：创建并预览原型 ──
   console.log('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
   
   if (!html || !html.trim()) {
-    return Promise.resolve({ 
-      success: false, 
-      error: '缺少 HTML 参数',
-      tool_call_id: toolCallId 
-    });
+    return { success: false, error: '缺少 HTML 参数', tool_call_id: toolCallId };
   }
   
   if (!title || !title.trim()) {
-    return Promise.resolve({ 
-      success: false, 
-      error: '缺少 title 参数',
-      tool_call_id: toolCallId 
-    });
+    return { success: false, error: '缺少 title 参数', tool_call_id: toolCallId };
   }
   
   try {
-    const prototypeId = 'proto_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const newPrototypeId = 'proto_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
     const prototypeData = {
-      id: prototypeId,
+      id: newPrototypeId,
       title: title.trim(),
       description: description || '',
       html: html.trim(),
@@ -2217,19 +1867,15 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     const saved = await saveUiPrototype(prototypeData);
     
     if (!saved) {
-      return { 
-        success: false, 
-        error: '保存原型失败',
-        tool_call_id: toolCallId 
-      };
+      return { success: false, error: '保存原型失败', tool_call_id: toolCallId };
     }
     
-    console.log('[Background] UI 原型已保存，ID:', prototypeId);
+    console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
     
     chrome.runtime.sendMessage({
       type: 'SHOW_UI_PROTOTYPE',
       data: {
-        prototypeId,
+        prototypeId: newPrototypeId,
         title: prototypeData.title,
         description: prototypeData.description
       }
@@ -2238,67 +1884,12 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     return { 
       success: true, 
       message: `UI 原型 "${title}" 已创建并预览`,
-      prototypeId: prototypeId,
+      prototypeId: newPrototypeId,
       tool_call_id: toolCallId 
     };
-    
   } catch (err) {
     console.error('[Background] 执行 UI 原型预览失败:', err);
-    return { 
-      success: false, 
-      error: '执行失败: ' + err.message,
-      tool_call_id: toolCallId 
-    };
-  }
-}
-
-/**
- * 执行获取 UI 原型代码工具
- * 根据原型 ID 从数据库读取原型 HTML 代码，供模型后续修改使用
- */
-export async function executeGetUiPrototype(args, toolCallId, sessionId = null) {
-  const { prototypeId } = args;
-  
-  console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
-  
-  if (!prototypeId || !prototypeId.trim()) {
-    return Promise.resolve({ 
-      success: false, 
-      error: '缺少 prototypeId 参数',
-      tool_call_id: toolCallId 
-    });
-  }
-  
-  try {
-    const prototype = await getUiPrototype(prototypeId.trim());
-    
-    if (!prototype) {
-      return { 
-        success: false, 
-        error: `未找到原型: ${prototypeId}`,
-        tool_call_id: toolCallId 
-      };
-    }
-    
-    console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
-    
-    return { 
-      success: true, 
-      message: `已获取原型 "${prototype.title}" 的代码`,
-      prototypeId: prototype.id,
-      title: prototype.title,
-      description: prototype.description || '',
-      html: prototype.html,
-      tool_call_id: toolCallId 
-    };
-    
-  } catch (err) {
-    console.error('[Background] 获取 UI 原型失败:', err);
-    return { 
-      success: false, 
-      error: '获取失败: ' + err.message,
-      tool_call_id: toolCallId 
-    };
+    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
   }
 }
 

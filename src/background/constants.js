@@ -975,34 +975,7 @@ export const RAW_TOOLS = [
       }
     }
   },
-  {
-    id: 'watch_element',
-    category: 'system_integration',
-    execution: 'content_script',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'watch_element',
-      description: '监听指定DOM元素变化（添加子节点、删除、属性变化）。用于实时捕获动态内容更新',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: '目标元素CSS选择器'
-          },
-          duration: {
-            type: 'integer',
-            description: '监听持续时间（毫秒），默认30000',
-            default: 30000
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
+{
     id: 'manage_storage',
     category: 'storage_management',
     execution: 'content_script',
@@ -1040,57 +1013,7 @@ export const RAW_TOOLS = [
       }
     }
   },
-  {
-    id: 'get_element_rect',
-    category: 'page_analysis',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'get_element_rect',
-      description: '获取元素的位置、尺寸、内边距、外边距信息。用于布局调试、UI自动化坐标计算',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: '目标元素CSS选择器'
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
-    id: 'diff_page',
-    category: 'debug_dev',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'diff_page',
-      description: '对比当前页与上一次快照的差异。用于监控页面变更、回归测试',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            description: '操作：snapshot（保存快照）、compare（对比快照）',
-            enum: ['snapshot', 'compare'],
-            default: 'snapshot'
-          },
-          snapshotName: {
-            type: 'string',
-            description: '快照名称（用于compare时指定要对比的快照）'
-          }
-        },
-        required: []
-      }
-    }
-  },
-  {
+{
     id: 'manage_cookies',
     category: 'storage_management',
     execution: 'background',
@@ -1309,116 +1232,7 @@ export const RAW_TOOLS = [
       }
     }
   },
-  {
-    id: 'performance_audit',
-    category: 'debug_dev',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'performance_audit',
-      description: '采集页面性能指标（LCP/FCP/CLS等Core Web Vitals）',
-      parameters: {
-        type: 'object',
-        properties: {
-          includeResourceTiming: {
-            type: 'boolean',
-            description: '是否包含资源加载时序，默认false',
-            default: false
-          },
-          includePaintTiming: {
-            type: 'boolean',
-            description: '是否包含绘制时序，默认true',
-            default: true
-          },
-          includeMemoryInfo: {
-            type: 'boolean',
-            description: '是否包含内存信息，默认false',
-            default: false
-          }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    id: 'screenshot_element',
-    category: 'media_process',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'screenshot_element',
-      description: '对指定元素进行截图，返回Base64图片数据',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: {
-            type: 'string',
-            description: '目标元素选择器'
-          },
-          quality: {
-            type: 'number',
-            description: '图片质量（0-1），默认0.9',
-            default: 0.9
-          },
-          format: {
-            type: 'string',
-            enum: ['png', 'jpeg', 'webp'],
-            description: '图片格式，默认png',
-            default: 'png'
-          }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
-    id: 'schedule_task',
-    category: 'ai_collaboration',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: true,
-    type: 'function',
-    function: {
-      name: 'schedule_task',
-      description: '创建定时任务（如定时刷新、页面监控）',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: {
-            type: 'string',
-            enum: ['create', 'get', 'list', 'clear', 'clearAll'],
-            description: '操作类型'
-          },
-          name: {
-            type: 'string',
-            description: '任务名称（create/get/clear操作必需）'
-          },
-          delayInMinutes: {
-            type: 'number',
-            description: '延迟执行时间（分钟），与periodInMinutes二选一'
-          },
-          periodInMinutes: {
-            type: 'number',
-            description: '重复周期（分钟），设置后为周期性任务'
-          },
-          scheduledTime: {
-            type: 'string',
-            description: '指定执行时间（ISO 8601格式）'
-          },
-          taskData: {
-            type: 'object',
-            description: '任务附带数据，可在触发时获取'
-          }
-        },
-        required: ['action']
-      }
-    }
-  },
-  {
+{
     id: 'plan_task',
     category: 'ai_collaboration',
     execution: 'background',
@@ -1484,54 +1298,6 @@ export const RAW_TOOLS = [
           }
         },
         required: ['taskDescription', 'subtasks']
-      }
-    }
-  },
-  {
-    id: 'page_to_pdf',
-    category: 'media_process',
-    execution: 'content_script',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'page_to_pdf',
-      description: '将当前页面导出为PDF文件',
-      parameters: {
-        type: 'object',
-        properties: {
-          fileName: {
-            type: 'string',
-            description: '输出文件名，默认当前页面标题',
-            default: 'page.pdf'
-          },
-          landscape: {
-            type: 'boolean',
-            description: '是否横向打印，默认false',
-            default: false
-          },
-          scale: {
-            type: 'number',
-            description: '缩放比例（0.1-2），默认1',
-            default: 1
-          },
-          printBackground: {
-            type: 'boolean',
-            description: '是否打印背景，默认true',
-            default: true
-          },
-          margins: {
-            type: 'object',
-            properties: {
-              top: { type: 'string', default: '1cm' },
-              right: { type: 'string', default: '1cm' },
-              bottom: { type: 'string', default: '1cm' },
-              left: { type: 'string', default: '1cm' }
-            },
-            description: '页边距，如"1cm"或"0.5in"'
-          }
-        },
-        required: []
       }
     }
   },
@@ -1618,26 +1384,7 @@ export const RAW_TOOLS = [
       }
     }
   },
-  {
-    id: 'read_accessibility_tree',
-    category: 'info_extract',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'read_accessibility_tree',
-      description: '获取页面无障碍树信息，收集带有 ARIA 属性、语义化 role 的元素，对复杂 SPA 应用的页面结构理解很有帮助',
-      parameters: {
-        type: 'object',
-        properties: {
-          maxResults: { type: 'integer', description: '最大返回元素数，默认100', default: 100 }
-        },
-        required: []
-      }
-    }
-  },
-  {
+{
     id: 'clear_page_data',
     category: 'storage_management',
     execution: 'background',
@@ -1695,47 +1442,7 @@ export const RAW_TOOLS = [
       }
     }
   },
-  {
-    id: 'group_tabs',
-    category: 'tab_management',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: true,
-    type: 'function',
-    function: {
-      name: 'group_tabs',
-      description: '创建标签页分组并设置分组标题和颜色，适用于 Chrome 标签页管理',
-      parameters: {
-        type: 'object',
-        properties: {
-          tabIds: { type: 'array', items: { type: 'integer' }, description: '要分组的标签页 ID 数组，至少需要 1 个' },
-          title: { type: 'string', description: '分组名称' },
-          color: { type: 'string', enum: ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan'], description: '分组颜色' }
-        },
-        required: ['tabIds']
-      }
-    }
-  },
-  {
-    id: 'record_network',
-    category: 'debug_dev',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'record_network',
-      description: '录制或停止录制当前标签页的网络请求，方便分析页面加载行为',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['start', 'stop', 'status'], description: '操作：start（开始录制）、stop（停止并返回结果）、status（查看录制状态）' }
-        },
-        required: ['action']
-      }
-    }
-  },
-  {
+{
     id: 'search_conversation_memory',
     category: 'memory',
     execution: 'background',
@@ -1776,46 +1483,34 @@ export const RAW_TOOLS = [
     type: 'function',
     function: {
       name: 'preview_ui_prototype',
-      description: '在界面中预览一个 UI 原型。当你生成了 HTML/CSS/JS 界面原型代码后，调用此工具将原型展示给用户预览。调用成功后返回 prototypeId，如果用户后续要求修改此原型，先调用 get_ui_prototype 获取原代码，再修改并重新调用此工具。',
+      description: 'UI 原型预览和管理工具。action=preview：传入HTML代码创建并预览原型，返回prototypeId；action=get：根据prototypeId获取之前创建的原型完整代码，用于修改后再预览。',
       parameters: {
         type: 'object',
         properties: {
+          action: {
+            type: 'string',
+            enum: ['preview', 'get'],
+            description: '操作类型：preview（创建并预览原型，默认）、get（根据 prototypeId 获取原型代码）',
+            default: 'preview'
+          },
           html: {
             type: 'string',
-            description: '完整的 HTML 代码（包含内联的 CSS 和 JS）'
+            description: '完整的 HTML 代码（包含内联的 CSS 和 JS），仅 action=preview 时需要'
           },
           title: {
             type: 'string',
-            description: '原型的标题/名称，用于在历史记录中识别'
+            description: '原型的标题/名称，仅 action=preview 时需要'
           },
           description: {
             type: 'string',
             description: '原型的简要说明，可选'
-          }
-        },
-        required: ['html', 'title']
-      }
-    }
-  },
-  {
-    id: 'get_ui_prototype',
-    category: 'ai_collaboration',
-    execution: 'background',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'get_ui_prototype',
-      description: '根据原型 ID 获取之前创建的 UI 原型的完整代码。当用户要求修改/优化之前创建的某个原型时，先调用此工具获取该原型的 HTML 代码，再基于代码进行修改，最后调用 preview_ui_prototype 重新预览。',
-      parameters: {
-        type: 'object',
-        properties: {
+          },
           prototypeId: {
             type: 'string',
-            description: '用户提到的原型 ID，格式为 proto_xxxxxxxxxxxxx'
+            description: '原型 ID，格式为 proto_xxxxxxxxxxxxx，仅 action=get 时需要'
           }
         },
-        required: ['prototypeId']
+        required: ['action']
       }
     }
   },

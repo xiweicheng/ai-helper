@@ -7,18 +7,18 @@ import {
   highlightText, extractLinks, extractForms,
   removeHighlights, extractImages, searchInPage,
   pageToMarkdown, pageToJson, findSimilarElements,
-  getIframeContent, readAccessibilityTree
+  getIframeContent
 } from './page-tools.js';
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement,
-  keyboardInput, dragAndDrop, fileUpload, watchElement,
-  manageStorage, getElementRect, pickColor, diffPage, textToSpeech
+  keyboardInput, dragAndDrop, fileUpload,
+  manageStorage, pickColor, textToSpeech
 } from './interaction-tools.js';
 
 import {
-  videoControl, generateQRCode, performanceAudit, screenshotElement,
-  shadowDomQuery, pageToPdf, runJavascript, injectCss
+  videoControl, generateQRCode,
+  shadowDomQuery, runJavascript, injectCss
 } from './advanced-tools.js';
 
 import { initSelectionToolbar } from './selection-toolbar.js';
@@ -67,22 +67,18 @@ const HANDLERS = {
   PAGE_TO_JSON:              (msg) => pageToJson(msg.selector, msg.maxItems),
   FIND_SIMILAR_ELEMENTS:     (msg) => findSimilarElements(msg.selector, msg.maxResults),
   GET_IFRAME_CONTENT:        (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
-  READ_ACCESSIBILITY_TREE:   (msg) => readAccessibilityTree(msg.maxResults),
 
   // ── 高亮/选区 ──
   HIGHLIGHT_TEXT:            (msg) => highlightText(msg.text, msg.color),
   REMOVE_HIGHLIGHTS:         ()   => removeHighlights(),
 
   // ── 元素分析 ──
-  GET_ELEMENT_RECT:          (msg) => getElementRect(msg.selector),
-  DIFF_PAGE:                 (msg) => diffPage(msg.action, msg.snapshotName),
   SHADOW_DOM_QUERY:          (msg) => shadowDomQuery(msg.selector, msg.deep, msg.maxDepth, msg.maxResults),
 
   // ── 媒体/输出 ──
   MANAGE_STORAGE:            (msg) => manageStorage(msg),
   TEXT_TO_SPEECH:            (msg) => textToSpeech(msg.text, msg.lang, msg.rate, msg.pitch),
   INJECT_CSS:                (msg) => injectCss(msg.css, msg.targetSelector, msg.injectMode),
-  PERFORMANCE_AUDIT:         (msg) => performanceAudit(msg.includeResourceTiming, msg.includePaintTiming, msg.includeMemoryInfo),
   VIDEO_CONTROL:             (msg) => videoControl(msg.action, msg.selector, msg.value),
 
   // ── 异步工具（返回 Promise，需保持通道开放）──
@@ -90,11 +86,8 @@ const HANDLERS = {
   PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
   WAIT_FOR_ELEMENT:          (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
   DRAG_AND_DROP:             (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
-  WATCH_ELEMENT:             (msg) => watchElement(msg.selector, msg.duration),
   COLOR_PICKER:              ()   => pickColor(),
   GENERATE_QRCODE:           (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
-  SCREENSHOT_ELEMENT:        (msg) => screenshotElement(msg.selector, msg.quality, msg.format),
-  PAGE_TO_PDF:               (msg) => pageToPdf(msg.fileName, msg.landscape, msg.scale, msg.printBackground, msg.margins),
   RUN_JAVASCRIPT:            (msg) => runJavascript(msg.code, msg.timeout),
 
   // ── 特殊：清除站点数据（内联逻辑）──

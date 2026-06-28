@@ -208,7 +208,6 @@ ai-helper/
 | `scroll_to` | 滚动到指定位置 |
 | `scroll_into_view` | 元素滚动到可视区域 |
 | `wait_for_element` | 等待元素出现/消失 |
-| `watch_element` | 监听 DOM 变化 |
 | `drag_and_drop` | 拖拽操作 |
 | `keyboard_input` | 键盘输入 |
 | `file_upload` | 文件上传控件注入 |
@@ -222,7 +221,6 @@ ai-helper/
 | `get_tabs` | 获取所有标签页列表 |
 | `navigate_back_forward` | 前进/后退导航 |
 | `reload_tab` | 刷新标签页 |
-| `group_tabs` | 标签页分组 |
 
 ### 调试开发（6 个）
 | 工具 | 说明 |
@@ -231,15 +229,11 @@ ai-helper/
 | `inject_css` | 注入 CSS 样式 |
 | `shadow_dom_query` | 穿透 Shadow DOM 查询元素 |
 | `color_picker` | EyeDropper 取色器 |
-| `performance_audit` | 采集 Core Web Vitals |
-| `record_network` | 录制网络请求 |
 
 ### 媒体处理（6 个）
 | 工具 | 说明 |
 |------|------|
 | `capture_tab_screenshot` | 标签页截图 |
-| `screenshot_element` | 元素截图 |
-| `page_to_pdf` | 页面导出 PDF |
 | `generate_qrcode` | 生成二维码 |
 | `text_to_speech` | 文字转语音 |
 | `video_control` | 控制页面视频播放 |
@@ -250,7 +244,6 @@ ai-helper/
 | `clarify_question` | 弹出澄清对话框 |
 | `plan_task` | 复杂任务拆解规划 |
 | `execute_workflow` | 执行预定义工作流 |
-| `schedule_task` | 创建定时任务 |
 | `manage_user_scripts` | 用户脚本管理 |
 | `highlight_text` | 高亮页面文本 |
 | `find_text_on_page` | 浏览器原生查找 |
