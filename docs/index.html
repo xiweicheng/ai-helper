@@ -195,11 +195,33 @@
   .lightbox.active {
     display: flex;
   }
-  .lightbox img {
+  .lb-img-wrap {
     max-width: 92vw;
-    max-height: 92vh;
+    max-height: 82vh;
+    overflow: hidden;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .lb-img-wrap.zoomed {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    cursor: grab;
+  }
+  .lb-img-wrap.zoomed:active {
+    cursor: grabbing;
+  }
+  .lightbox img {
+    display: block;
+    max-width: 100%;
+    max-height: 82vh;
+    width: auto;
+    height: auto;
+    user-select: none;
+    transition: max-width 0.3s ease, max-height 0.3s ease, width 0.3s ease;
+  }
+  .lb-img-wrap.zoomed img {
+    max-width: none;
+    max-height: none;
   }
   .lightbox-close {
     position: absolute;
@@ -224,6 +246,26 @@
   .lightbox-arrow:hover { opacity: 1; }
   .lightbox-arrow.prev { left: 16px; }
   .lightbox-arrow.next { right: 16px; }
+  .lightbox-zoombar {
+    position: absolute;
+    top: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 24px;
+    padding: 6px 14px;
+  }
+  .lightbox-zoombar button {
+    background: none; border: none;
+    color: #fff; font-size: 20px; font-weight: 600;
+    cursor: pointer; opacity: 0.7;
+    padding: 2px 6px; line-height: 1;
+    transition: opacity .2s;
+  }
+  .lightbox-zoombar button:hover { opacity: 1; }
+  .lightbox-zoombar .zoom-label {
+    color: #fff; font-size: 13px;
+    opacity: 0.8; min-width: 42px; text-align: center;
+  }
   .lightbox-counter {
     position: absolute;
     bottom: 28px;
@@ -577,6 +619,54 @@
       <img src="images/工具使用统计.png" alt="工具使用统计" loading="lazy">
       <div class="caption">工具使用统计面板 — 一目了然掌握工具调用频率</div>
     </div>
+    <div class="screenshot-card">
+      <img src="images/ReAct推理循环配置.png" alt="ReAct推理循环配置" loading="lazy">
+      <div class="caption">ReAct 推理循环配置 — 灵活调整推理步数和超时策略</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/本地Agent代理配置.png" alt="本地Agent代理配置" loading="lazy">
+      <div class="caption">本地 Agent 代理配置 — 自定义允许和禁用的命令</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/大模型对接基础配置.png" alt="大模型对接基础配置" loading="lazy">
+      <div class="caption">大模型对接基础配置 — 支持 OpenAI 兼容 API</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/划词工具栏自定义配置.png" alt="划词工具栏自定义配置" loading="lazy">
+      <div class="caption">划词工具栏自定义配置 — 工具栏功能随心定制</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/模型参数便捷按需调整.png" alt="模型参数便捷按需调整" loading="lazy">
+      <div class="caption">模型参数便捷按需调整 — 温度、TopP 实时调控</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/模型对话配置.png" alt="模型对话配置" loading="lazy">
+      <div class="caption">模型对话配置 — 多模型切换与参数个性化</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/生成的静态页面支持统一管理.png" alt="生成的静态页面统一管理" loading="lazy">
+      <div class="caption">生成的静态页面统一管理 — 一键查看、复制、下载</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/生成回答做质量评估.png" alt="生成回答质量评估" loading="lazy">
+      <div class="caption">生成回答质量评估 — AI 回答效果量化打分</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/推理过程反思配置.png" alt="推理过程反思配置" loading="lazy">
+      <div class="caption">推理过程反思配置 — 支持自我纠错与迭代优化</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/推理循环配置化.png" alt="推理循环配置化" loading="lazy">
+      <div class="caption">推理循环配置化 — 思考-行动-观察全流程可控</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/页面划词工具栏配置.png" alt="页面划词工具栏配置" loading="lazy">
+      <div class="caption">页面划词工具栏配置 — 划词功能自由开关组合</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/自定义提示词便捷触发发送.png" alt="自定义提示词便捷触发发送" loading="lazy">
+      <div class="caption">自定义提示词便捷触发 — 一键调用常用指令</div>
+    </div>
   </div>
 </section>
 
@@ -585,7 +675,15 @@
   <span class="lightbox-close">&times;</span>
   <span class="lightbox-arrow prev" id="lb-prev">&#8249;</span>
   <span class="lightbox-arrow next" id="lb-next">&#8250;</span>
-  <img src="" alt="" id="lightbox-img">
+  <div class="lightbox-zoombar" id="lb-zoombar">
+    <button id="lb-zoom-out" title="缩小">−</button>
+    <span class="zoom-label" id="lb-zoom-label">适应</span>
+    <button id="lb-zoom-in" title="放大">+</button>
+    <button id="lb-zoom-reset" title="重置" style="font-size:14px">↺</button>
+  </div>
+  <div class="lb-img-wrap" id="lb-img-wrap">
+    <img src="" alt="" id="lightbox-img">
+  </div>
   <div class="lightbox-caption" id="lb-caption"></div>
   <div class="lightbox-counter" id="lb-counter"></div>
 </div>
@@ -686,10 +784,59 @@
   var images = Array.from(cards).map(function(c) { return c.querySelector('img'); });
   var captions = Array.from(cards).map(function(c) { return c.querySelector('.caption').textContent; });
   var lb = document.getElementById('lightbox');
+  var lbImgWrap = document.getElementById('lb-img-wrap');
   var lbImg = document.getElementById('lightbox-img');
   var lbCaption = document.getElementById('lb-caption');
   var lbCounter = document.getElementById('lb-counter');
+  var lbZoomLabel = document.getElementById('lb-zoom-label');
   var currentIdx = -1;
+  var zoomLevel = 0; // 0=fit, then % of natural size: 100, 150, 200, 300
+  var zoomSteps = [0, 100, 150, 200, 300];
+
+  function applyZoom() {
+    if (zoomLevel === 0) {
+      lbImgWrap.classList.remove('zoomed');
+      lbImg.style.width = 'auto';
+      lbImg.style.maxWidth = '100%';
+      lbImg.style.maxHeight = '82vh';
+      lbZoomLabel.textContent = '适应';
+    } else {
+      lbImgWrap.classList.add('zoomed');
+      lbImg.style.maxWidth = 'none';
+      lbImg.style.maxHeight = 'none';
+      lbImg.style.width = zoomLevel + '%';
+      lbZoomLabel.textContent = zoomLevel + '%';
+    }
+  }
+
+  function zoomIn() {
+    for (var i = 0; i < zoomSteps.length; i++) {
+      if (zoomSteps[i] > zoomLevel) { zoomLevel = zoomSteps[i]; break; }
+    }
+    applyZoom();
+  }
+
+  function zoomOut() {
+    for (var i = zoomSteps.length - 1; i >= 0; i--) {
+      if (zoomSteps[i] < zoomLevel) { zoomLevel = zoomSteps[i]; break; }
+    }
+    applyZoom();
+  }
+
+  function resetZoom() {
+    zoomLevel = 0;
+    applyZoom();
+  }
+
+  var dragStart = false, dragX = 0, dragY = 0, scrollX = 0, scrollY = 0;
+  var downX = 0, downY = 0;  // for click vs drag detection
+
+  function toggleZoom() {
+    // Click toggle only between fit and 100%
+    if (zoomLevel === 0) { zoomLevel = 100; }
+    else { zoomLevel = 0; }
+    applyZoom();
+  }
 
   function showImage(idx) {
     if (idx < 0 || idx >= images.length) return;
@@ -700,12 +847,16 @@
     lbCounter.textContent = (idx + 1) + ' / ' + images.length;
     lb.classList.add('active');
     document.body.style.overflow = 'hidden';
+    zoomLevel = 0;
+    applyZoom();
   }
 
   function closeLightbox() {
     lb.classList.remove('active');
     document.body.style.overflow = '';
     currentIdx = -1;
+    zoomLevel = 0;
+    applyZoom();
   }
 
   function showPrev() { if (currentIdx > 0) showImage(currentIdx - 1); }
@@ -725,12 +876,62 @@
   });
 
   document.getElementById('lb-prev').addEventListener('click', function(e) {
-    e.stopPropagation();
-    showPrev();
+    e.stopPropagation(); showPrev();
   });
   document.getElementById('lb-next').addEventListener('click', function(e) {
+    e.stopPropagation(); showNext();
+  });
+  document.getElementById('lb-zoom-in').addEventListener('click', function(e) {
+    e.stopPropagation(); zoomIn();
+  });
+  document.getElementById('lb-zoom-out').addEventListener('click', function(e) {
+    e.stopPropagation(); zoomOut();
+  });
+  document.getElementById('lb-zoom-reset').addEventListener('click', function(e) {
+    e.stopPropagation(); resetZoom();
+  });
+
+  // Click on image to toggle zoom (only when not dragging)
+  lbImg.addEventListener('mousedown', function(e) {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+  lbImg.addEventListener('mouseup', function(e) {
+    var dx = e.clientX - downX;
+    var dy = e.clientY - downY;
+    if (dx * dx + dy * dy < 25) {  // less than ~5px movement = click
+      e.stopPropagation();
+      toggleZoom();
+    }
+  });
+
+  // Drag to pan when zoomed
+  lbImgWrap.addEventListener('mousedown', function(e) {
+    if (zoomLevel === 0) return;
+    dragStart = true;
+    dragX = e.clientX;
+    dragY = e.clientY;
+    scrollX = lbImgWrap.scrollLeft;
+    scrollY = lbImgWrap.scrollTop;
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', function(e) {
+    if (!dragStart) return;
+    lbImgWrap.scrollLeft = scrollX + (dragX - e.clientX);
+    lbImgWrap.scrollTop = scrollY + (dragY - e.clientY);
+  });
+
+  window.addEventListener('mouseup', function() {
+    dragStart = false;
+  });
+
+  // Mouse wheel zoom on image
+  lbImg.addEventListener('wheel', function(e) {
     e.stopPropagation();
-    showNext();
+    e.preventDefault();
+    if (e.deltaY < 0) zoomIn();
+    else zoomOut();
   });
 
   document.addEventListener('keydown', function(e) {
@@ -739,6 +940,9 @@
       case 'Escape':      closeLightbox(); break;
       case 'ArrowLeft':   e.preventDefault(); showPrev(); break;
       case 'ArrowRight':  e.preventDefault(); showNext(); break;
+      case '+': case '=': e.preventDefault(); zoomIn(); break;
+      case '-':           e.preventDefault(); zoomOut(); break;
+      case '0':           e.preventDefault(); resetZoom(); break;
     }
   });
 })();

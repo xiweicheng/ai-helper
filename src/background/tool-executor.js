@@ -1995,7 +1995,9 @@ async function executeWaitForNavigation(args, toolCallId) {
 
 /**
  * 全页截图
- * 优先使用 CDP Page.captureScreenshot（支持 captureBeyondViewport），失败时回退到 captureVisibleTab
+ * 通过 CDP 先获取页面真实尺寸，用 Emulation.setDeviceMetricsOverride 临时拉高视口后截图，
+ * 避免 captureBeyondViewport 在 fixed/sticky 元素上的重复渲染 bug。
+ * 失败时回退到 scroll-and-stitch 分段截图拼接方案。
  */
 async function executeTakeFullPageScreenshot(args, toolCallId) {
   const { format = 'png', quality = 80 } = args;
@@ -2008,52 +2010,269 @@ async function executeTakeFullPageScreenshot(args, toolCallId) {
     console.log('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
 
     return new Promise((resolve) => {
-      chrome.debugger.attach({ tabId }, '1.3', () => {
+      chrome.debugger.attach({ tabId }, '1.3', async () => {
         if (chrome.runtime.lastError) {
-          // debugger 不可用，回退到可见区截图
           console.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
           chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
+              triggerScreenshotDownload(dataUrl, 'png');
               resolve({ success: true, dataUrl, fullPage: false, message: 'debugger 不可用，返回可视区截图', tool_call_id: toolCallId });
             }
           });
           return;
         }
 
-        const screenshotParams = {
-          format: format === 'jpeg' ? 'jpeg' : 'png',
-          captureBeyondViewport: true
-        };
-        if (format === 'jpeg') {
-          screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
-        }
-
-        chrome.debugger.sendCommand({ tabId }, 'Page.captureScreenshot', screenshotParams, (result) => {
-          chrome.debugger.detach({ tabId }, () => {});
-
-          if (chrome.runtime.lastError || !result || !result.data) {
-            const errMsg = chrome.runtime.lastError?.message || '截图失败';
-            console.error('[Background] 全页截图 CDP 失败:', errMsg);
-            // 回退到可见区截图
+        try {
+          // 方案 A：Emulation 视口拉伸（首选，速度快无拼接痕迹）
+          const fullDataUrl = await captureViaEmulation(tabId, format, quality);
+          triggerScreenshotDownload(fullDataUrl, format);
+          resolve({ success: true, dataUrl: fullDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
+        } catch (emulationErr) {
+          console.warn('[Background] Emulation 方案失败，回退到 scroll-and-stitch:', emulationErr.message);
+          try {
+            // 方案 B：scroll-and-stitch 分段拼接（兜底）
+            const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
+            triggerScreenshotDownload(stitchedDataUrl, format);
+            resolve({ success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功（分段拼接）', tool_call_id: toolCallId });
+          } catch (stitchErr) {
+            console.error('[Background] scroll-and-stitch 也失败:', stitchErr.message);
+            chrome.debugger.detach({ tabId }, () => {});
             chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
               if (chrome.runtime.lastError) {
                 resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
               } else {
+                triggerScreenshotDownload(dataUrl, 'png');
                 resolve({ success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId });
               }
             });
-            return;
           }
-
-          resolve({ success: true, dataUrl: `data:image/${format};base64,${result.data}`, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
-        });
+        }
       });
     });
   } catch (err) {
     return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
   }
+}
+
+/**
+ * CDP sendCommand 的 Promise 包装
+ */
+function cdpSend(tabId, method, params = {}) {
+  return new Promise((resolve, reject) => {
+    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
+// Emulation 方案最大视口高度（Chrome GPU 纹理上限约 16384，取安全值）
+const MAX_EMULATION_HEIGHT = 8192;
+
+/**
+ * 方案 A：通过 Emulation.setDeviceMetricsOverride 拉高视口后截图
+ * 仅适用于页面高度不超过 MAX_EMULATION_HEIGHT 的情况，超过则抛错由 stitch 兜底。
+ * 返回 dataUrl
+ */
+async function captureViaEmulation(tabId, format, quality) {
+  // 1. 获取页面真实尺寸
+  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
+    expression: 'JSON.stringify({ w: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth || 0, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0, window.innerHeight), dpr: window.devicePixelRatio || 1 })',
+    returnByValue: true
+  });
+
+  let pageW, pageH, dpr;
+  try {
+    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
+    pageW = Math.min(parsed.w || 1280, 10000);
+    pageH = Math.min(parsed.h || 720, MAX_EMULATION_HEIGHT);
+    dpr = Math.min(parsed.dpr || 1, 2);
+  } catch {
+    pageW = 1280;
+    pageH = 5000;
+    dpr = 1;
+  }
+
+  console.log('[Background] Emulation 页面尺寸:', pageW, 'x', pageH, 'dpr:', dpr);
+
+  // 2. 临时拉高视口
+  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width: Math.ceil(pageW),
+    height: Math.ceil(pageH),
+    deviceScaleFactor: dpr,
+    mobile: false,
+    screenWidth: Math.ceil(pageW),
+    screenHeight: Math.ceil(pageH)
+  });
+
+  // 3. 等待布局完成
+  await new Promise(r => setTimeout(r, 300));
+
+  // 4. 截取完整页面（不加 captureBeyondViewport）
+  const screenshotParams = {
+    format: format === 'jpeg' ? 'jpeg' : 'png',
+    clip: { x: 0, y: 0, width: pageW, height: pageH, scale: 1 }
+  };
+  if (format === 'jpeg') {
+    screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
+  }
+
+  const result = await cdpSend(tabId, 'Page.captureScreenshot', screenshotParams);
+
+  // 5. 恢复视口
+  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
+  chrome.debugger.detach({ tabId }, () => {});
+
+  console.log('[Background] Emulation 全页截图成功, 数据长度:', result.data?.length);
+  return `data:image/${format === 'jpeg' ? 'jpeg' : 'png'};base64,${result.data}`;
+}
+
+const STITCH_OVERLAP = 60;  // 分片之间的重叠像素，避免边界遗漏
+
+/**
+ * 方案 B：分段滚动截图 + Canvas 拼接
+ * 先滚动到底部触发懒加载，再逐段截图拼接。
+ * 返回 dataUrl
+ */
+async function captureViaStitch(tabId, format, quality) {
+  // 1. 设为 DPR=1，确保截图分片的像素尺寸与 CSS 尺寸一致
+  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false
+  });
+  await new Promise(r => setTimeout(r, 200));
+
+  // 2. 先滚动到页面底部，触发懒加载内容
+  await scrollPageToBottom(tabId);
+
+  // 3. 重新获取最终页面总高度（懒加载后可能变大）
+  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
+    expression: 'JSON.stringify({ w: window.innerWidth, h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0), vh: window.innerHeight })',
+    returnByValue: true
+  });
+
+  let pageW, pageH, viewH;
+  try {
+    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
+    pageW = parsed.w || 1280;
+    pageH = parsed.h || 720;
+    viewH = parsed.vh || 720;
+  } catch {
+    pageW = 1280;
+    pageH = 720;
+    viewH = 720;
+  }
+
+  console.log('[Background] Stitch 页面尺寸（懒加载后）:', pageW, 'x', pageH, 'viewport:', viewH);
+
+  // 4. 逐段滚动截图（带重叠）
+  const chunks = [];
+  let y = 0;
+  while (y < pageH) {
+    await cdpSend(tabId, 'Runtime.evaluate', {
+      expression: `window.scrollTo(0, ${y})`
+    });
+    await new Promise(r => setTimeout(r, 600));
+
+    const chunkH = Math.min(viewH, pageH - y);
+    const result = await cdpSend(tabId, 'Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: 0, y: 0, width: pageW, height: chunkH, scale: 1 }
+    });
+
+    chunks.push({ data: result.data, y, h: chunkH, w: pageW });
+    console.log('[Background] Stitch 分段:', y, '-', y + chunkH);
+    y += (viewH - STITCH_OVERLAP);
+  }
+
+  // 5. 恢复视口
+  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
+  chrome.debugger.detach({ tabId }, () => {});
+
+  // 6. Canvas 拼接
+  return stitchChunksToDataUrl(chunks, pageW, pageH, format, quality);
+}
+
+/**
+ * 逐步滚动到页面底部，触发所有懒加载内容
+ */
+async function scrollPageToBottom(tabId) {
+  const evaluate = (expr) => cdpSend(tabId, 'Runtime.evaluate', {
+    expression: expr, returnByValue: true
+  });
+
+  // 先获取视口高度
+  const vhResult = await evaluate('window.innerHeight');
+  const vh = parseInt(vhResult.result?.value) || 800;
+
+  let prevScrollY = -1;
+  let currentScrollY = 0;
+  let rounds = 0;
+  const maxRounds = 50; // 安全上限
+
+  while (currentScrollY !== prevScrollY && rounds < maxRounds) {
+    prevScrollY = currentScrollY;
+    await evaluate(`window.scrollBy(0, ${vh})`);
+    await new Promise(r => setTimeout(r, 300));
+    const posResult = await evaluate('window.scrollY');
+    currentScrollY = parseInt(posResult.result?.value) || 0;
+    rounds++;
+  }
+
+  console.log('[Background] 预滚动完成, 最终 scrollY:', currentScrollY, '轮次:', rounds);
+}
+
+/**
+ * 将多个 base64 分片用 OffscreenCanvas 拼接为完整图片
+ */
+async function stitchChunksToDataUrl(chunks, totalW, totalH, format, quality) {
+  const canvas = new OffscreenCanvas(totalW, totalH);
+  const ctx = canvas.getContext('2d');
+
+  for (const chunk of chunks) {
+    const blob = base64ToBlob(chunk.data, 'image/png');
+    const bitmap = await createImageBitmap(blob);
+    // DPR=1 下 bitmap 像素尺寸与 CSS 尺寸一致，直接按坐标绘制
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, chunk.y, chunk.w, chunk.h);
+    bitmap.close();
+  }
+
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const outputBlob = await canvas.convertToBlob({
+    type: mimeType,
+    quality: format === 'jpeg' ? (quality || 80) / 100 : undefined
+  });
+  const arrayBuffer = await outputBlob.arrayBuffer();
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let i = 0; i < uint8Array.length; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+/**
+ * base64 字符串 → Blob
+ */
+function base64ToBlob(base64, mimeType = 'image/png') {
+  const byteChars = atob(base64);
+  const byteArrays = [];
+  for (let offset = 0; offset < byteChars.length; offset += 512) {
+    const slice = byteChars.slice(offset, offset + 512);
+    const byteNumbers = new Array(slice.length);
+    for (let i = 0; i < slice.length; i++) {
+      byteNumbers[i] = slice.charCodeAt(i);
+    }
+    byteArrays.push(new Uint8Array(byteNumbers));
+  }
+  return new Blob(byteArrays, { type: mimeType });
 }
 
 /**

@@ -15,11 +15,8 @@
     "notifications",
     "tabs",
     "cookies",
-    "alarms",
-    "pageCapture",
     "debugger",
-    "browsingData",
-    "tabGroups"
+    "browsingData"
   ],
   "host_permissions": [
     "<all_urls>",
