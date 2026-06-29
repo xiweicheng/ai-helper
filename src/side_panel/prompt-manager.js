@@ -1,7 +1,7 @@
 import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded } from './utils.js';
 import { addToInputHistory } from './input-history.js';
-import { callApi, addContextBubble, addMessage, buildUserContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
+import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 
 // ==================== 清除选中内容上下文（sendPromptByCode 依赖） ====================
 
@@ -404,6 +404,13 @@ export async function sendPromptByCode(code) {
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
+  // 图片数据已包含在 userContent 中，立即清除预览
+  if (state.attachedImages.length > 0) {
+    state.attachedImages = [];
+    const previewBar = document.getElementById('imagePreviewBar');
+    if (previewBar) previewBar.innerHTML = '';
+  }
+
   try {
     // 确保配置已加载
     await ensureChatConfigLoaded();
@@ -435,6 +442,10 @@ export async function sendPromptByCode(code) {
         console.log('[SidePanel] 记忆历史限制未生效:', state.chatConfig.maxMemoryMessages);
       }
       messages = [...messages, ...historyToSend];
+      // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
+      for (let i = 0; i < messages.length - 1; i++) {
+        messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };
+      }
     } else {
       // 无记忆模式：只发送当前用户消息
       messages.push({ role: 'user', content: userContent });
@@ -489,12 +500,6 @@ export async function sendPromptByCode(code) {
     state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
-    // 清空图片附件
-    if (state.attachedImages.length > 0) {
-      state.attachedImages = [];
-      const previewBar = document.getElementById('imagePreviewBar');
-      if (previewBar) previewBar.innerHTML = '';
-    }
   }
 }
 

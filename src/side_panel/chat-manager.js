@@ -528,6 +528,21 @@ export function buildUserContent(text) {
   return parts;
 }
 
+/**
+ * 从消息 content 中移除图片数据，仅保留文本部分
+ * 用于发送历史消息时避免携带已无用的 Base64 图片
+ * @param {string|Array} content - 消息内容
+ * @returns {string|Array} 仅含文本的内容
+ */
+export function stripImagesFromContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const textParts = content.filter(c => c.type === 'text');
+    return textParts.length === 1 ? textParts[0].text : textParts;
+  }
+  return content;
+}
+
 export async function sendMessage() {
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -586,6 +601,13 @@ export async function sendMessage() {
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
+  // 图片数据已包含在 userContent 中，立即清除预览
+  if (state.attachedImages.length > 0) {
+    state.attachedImages = [];
+    const previewBar = document.getElementById('imagePreviewBar');
+    if (previewBar) previewBar.innerHTML = '';
+  }
+
   try {
     await ensureChatConfigLoaded();
     
@@ -612,6 +634,10 @@ export async function sendMessage() {
         console.log('[SidePanel] 记忆历史限制未生效:', state.chatConfig.maxMemoryMessages);
       }
       messages = [...messages, ...historyToSend];
+      // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
+      for (let i = 0; i < messages.length - 1; i++) {
+        messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };
+      }
     } else {
       // 构建用户消息 content（支持图片附件）
       const userContent = buildUserContent(finalText);
@@ -706,12 +732,6 @@ export async function sendMessage() {
     state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
-    // 清空图片附件
-    if (state.attachedImages.length > 0) {
-      state.attachedImages = [];
-      const previewBar = document.getElementById('imagePreviewBar');
-      if (previewBar) previewBar.innerHTML = '';
-    }
   }
 }
 
