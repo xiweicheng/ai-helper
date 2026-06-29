@@ -528,7 +528,7 @@ function initAgentConfig() {
     }
 
     agentDetailPanel.innerHTML = rows.join('');
-    agentDetailToggle.style.display = '';
+    agentDetailToggle.style.display = 'block';
   }
 
   function escHtml(str) {
@@ -551,13 +551,9 @@ function initAgentConfig() {
 
       if (detailData) {
         agentInfo.style.display = '';
-        const parts = [];
-        if (detailData.workdir) parts.push(`📁 工作目录: ${detailData.workdir}`);
-        if (detailData.platformName && detailData.arch) {
-          parts.push(`💻 ${detailData.platformName} ${detailData.arch}`);
+        if (detailData.workdir) {
+          agentWorkdirEl.innerHTML = `📁 工作目录: ${detailData.workdir}`;
         }
-        if (detailData.nodeVersion) parts.push(`⬢ ${detailData.nodeVersion}`);
-        agentWorkdirEl.innerHTML = parts.join(' &nbsp;|&nbsp; ');
         renderAgentDetail(detailData);
       }
     } else if (status === 'checking') {
@@ -646,6 +642,7 @@ function initAgentConfig() {
             const merged = mergeDetail(statusData, detailData);
             const labelParts = [`Agent v${merged.version}`];
             if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
+            if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
             updateStatusUI('connected', labelParts.join(' | '), merged);
           } else {
             updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
@@ -730,11 +727,15 @@ function initAgentConfig() {
             const merged = mergeDetail(statusData2, detailData2);
             const labelParts = [`Agent v${merged.version}`];
             if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
+            if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
             updateStatusUI('connected', labelParts.join(' | '), merged);
           }
         } catch (e) {
           console.warn('[Options] 获取 Agent 详情失败:', e);
         }
+
+        // 通知 Side Panel 状态变化（直接在 storage 写入完成后即时通知）
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true }).catch(() => {});
       } else {
         updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
         showToast('❌ ' + (data.error || '配对失败'), 'error');
@@ -756,13 +757,15 @@ function initAgentConfig() {
     pairCodeInput.value = '';
     updateStatusUI('disconnected', '已断开连接');
     showToast('已断开 Agent 连接', 'info');
+    // 通知 Side Panel 状态变化
+    chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false }).catch(() => {});
   }
 
   // 详情面板折叠切换
   if (agentDetailToggle && agentDetailPanel) {
     agentDetailToggle.addEventListener('click', () => {
       const isOpen = agentDetailPanel.style.display !== 'none';
-      agentDetailPanel.style.display = isOpen ? 'none' : '';
+      agentDetailPanel.style.display = isOpen ? 'none' : 'block';
       agentDetailToggle.textContent = isOpen ? '▶ 详细信息' : '▼ 详细信息';
       agentDetailToggle.classList.toggle('open', !isOpen);
     });

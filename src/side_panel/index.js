@@ -476,6 +476,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateAgentIndicator(state.agentPlatform);
       });
     }
+    if (message.type === 'AGENT_CONNECTION_CHANGED') {
+      // 直接从选项页通知更新，不依赖 storage 读取
+      state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
+      updateAgentIndicator(state.agentPlatform);
+    }
   });
 
   // 检查是否有待处理的选中文本搜索（Side Panel 刚打开时）
