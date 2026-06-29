@@ -268,7 +268,8 @@ function startRegionSelection() {
         return;
       }
 
-      resolve(rect);
+      // 等待一帧确保遮罩层渲染移除后再截图
+      requestAnimationFrame(() => resolve(rect));
     });
 
     document.addEventListener('keydown', onKeyDown, true);

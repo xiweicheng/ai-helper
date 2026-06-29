@@ -1045,6 +1045,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // Alt+S ：全页面截图
+    if (e.altKey && !e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      captureFullPageScreenshot();
+      return;
+    }
+
+    // Alt+Shift+S ：区域截图
+    if (e.altKey && e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      captureRegionScreenshot();
+      return;
+    }
+
     // Alt+ArrowUp/ArrowDown 系列快捷键：在对话消息之间快速跳转
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       const chatContainer = document.getElementById('chatContainer');
@@ -1248,12 +1262,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isRegionMode) {
           await captureRegionScreenshot();
         } else {
-          const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
-          if (response?.dataUrl) {
-            const res = await fetch(response.dataUrl);
-            const blob = await res.blob();
-            compressAndAttachImage(blob);
-          }
+          await captureFullPageScreenshot();
         }
       } catch (err) {
         console.error('[SidePanel] 截图失败:', err);
@@ -1960,6 +1969,28 @@ function renderImagePreviews() {
     wrapper.appendChild(removeBtn);
     previewBar.appendChild(wrapper);
   });
+}
+
+/**
+ * 全页面截图：截取整个可见标签页
+ */
+async function captureFullPageScreenshot() {
+  if (!state.enableImageInput) {
+    showToast('请先开启图片输入功能');
+    return;
+  }
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
+    if (response?.dataUrl) {
+      const res = await fetch(response.dataUrl);
+      const blob = await res.blob();
+      compressAndAttachImage(blob);
+      showToast('截图成功');
+    }
+  } catch (err) {
+    console.error('[SidePanel] 全页面截图失败:', err);
+    showToast('截图失败，请重试');
+  }
 }
 
 /**
