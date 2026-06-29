@@ -9,11 +9,8 @@ export const PRESET_MODELS = [
   'deepseek-v4-flash'
 ];
 
-// 图片识别预设模型（均可删除）
-export const PRESET_IMAGE_MODELS = [
-  'deepseek-vl2',
-  'deepseek-v4-pro-vision'
-];
+// 图像识别模型完全由用户自定义，无预设模型
+export const PRESET_IMAGE_MODELS = [];
 
 // 默认系统提示词
 export const DEFAULT_SYSTEM_PROMPT = `你是AI智能助手(AI Helper)，专为IT从业者（产品经理、架构师、开发工程师、测试工程师等）打造的AI技术助手。

@@ -9,21 +9,69 @@ let currentModel = 'deepseek-v4-pro';
 export { currentModel };
 export function setCurrentModel(value) { currentModel = value; }
 
-let currentImageModel = 'deepseek-vl2';
+let currentImageModel = '';
 export { currentImageModel };
 export function setCurrentImageModel(value) { currentImageModel = value; }
 
-// 添加自定义模型到下拉列表
+// 已被用户删除的预设模型列表（跨页面持久化）
+let deletedPresetModels = [];
+
+/**
+ * 加载已删除的预设模型列表
+ */
+function loadDeletedPresetModels(callback) {
+  chrome.storage.local.get(['deletedPresetModels'], (result) => {
+    deletedPresetModels = result.deletedPresetModels || [];
+    if (typeof callback === 'function') callback();
+  });
+}
+
+/**
+ * 保存已删除的预设模型列表
+ */
+function saveDeletedPresetModels() {
+  chrome.storage.local.set({ deletedPresetModels });
+}
+
+/**
+ * 为所有模型选项（含预设）添加删除按钮
+ */
+function ensureModelDeleteButtons() {
+  const modelDropdown = document.getElementById('modelDropdown');
+  if (!modelDropdown) return;
+  modelDropdown.querySelectorAll('.model-option:not([data-is-custom="true"])').forEach(option => {
+    // 跳过已添加删除按钮的
+    if (option.querySelector('.delete-model-btn')) return;
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'delete-model-btn';
+    deleteBtn.title = '删除此模型';
+    deleteBtn.innerHTML = '×';
+    option.appendChild(deleteBtn);
+  });
+}
+
+// 添加模型到下拉列表（支持重新加回已删除的预设模型）
 export function addCustomModelToDropdown(modelName) {
   const modelDropdown = document.getElementById('modelDropdown');
   // 检查是否已存在
   const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (existingOption) return;
   
+  // 如果是之前被删除的预设模型，从删除列表中移除
+  if (PRESET_MODELS.includes(modelName) && deletedPresetModels.includes(modelName)) {
+    deletedPresetModels = deletedPresetModels.filter(m => m !== modelName);
+    saveDeletedPresetModels();
+  }
+  
   const option = document.createElement('div');
   option.className = 'model-option';
   option.dataset.value = modelName;
-  option.dataset.isCustom = 'true';
+  // 预设模型不加 isCustom 标记
+  const isPreset = PRESET_MODELS.includes(modelName);
+  if (!isPreset) {
+    option.dataset.isCustom = 'true';
+  }
   option.textContent = modelName;
   
   const deleteBtn = document.createElement('button');
@@ -39,19 +87,30 @@ export function addCustomModelToDropdown(modelName) {
   saveCustomModels();
 }
 
-// 从下拉列表移除自定义模型
+// 从下拉列表移除模型（包括预设和自定义）
 export function removeCustomModel(modelName) {
   const modelDropdown = document.getElementById('modelDropdown');
-  const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"][data-is-custom="true"]`);
+  // 移除所有匹配的选项（不再区分预设/自定义）
+  const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (option) {
     option.remove();
   }
+
+  // 如果是预设模型，记录到已删除列表
+  if (PRESET_MODELS.includes(modelName) && !deletedPresetModels.includes(modelName)) {
+    deletedPresetModels.push(modelName);
+    saveDeletedPresetModels();
+  }
   
-  // 如果当前选中的是被删除的模型，恢复为默认
+  // 如果当前选中的是被删除的模型，恢复为第一个可用预设或空
   if (currentModel === modelName) {
-    setCurrentModel('deepseek-v4-pro');
-    document.getElementById('modelInput').value = currentModel;
-    updateModelSelection(currentModel);
+    // 找到第一个未被删除的预设模型作为回退
+    const fallback = PRESET_MODELS.find(m => !deletedPresetModels.includes(m));
+    const newModel = fallback || '';
+    setCurrentModel(newModel);
+    const modelInput = document.getElementById('modelInput');
+    if (modelInput) modelInput.value = newModel;
+    updateModelSelection(newModel);
   }
   
   // 更新存储
@@ -65,42 +124,54 @@ export function saveCustomModels() {
   modelDropdown.querySelectorAll('.model-option[data-is-custom="true"]').forEach(option => {
     customModels.push(option.dataset.value);
   });
-  chrome.storage.local.set({ customModels }, () => {
-    console.log('[Options] 自定义模型已保存:', customModels);
+  chrome.storage.local.set({ customModels, deletedPresetModels }, () => {
+    console.log('[Options] 自定义模型已保存:', customModels, '已删除预设:', deletedPresetModels);
   });
 }
 
 // 加载自定义模型到下拉列表
 export function loadCustomModels(callback) {
-  chrome.storage.local.get(['customModels'], (result) => {
+  loadDeletedPresetModels(() => {
+    // 先移除已被用户删除的预设模型
     const modelDropdown = document.getElementById('modelDropdown');
-    const customModels = result.customModels || [];
-    
-    customModels.forEach(modelName => {
-      // 检查是否已存在
-      const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-      if (existingOption) return;
-      
-      const option = document.createElement('div');
-      option.className = 'model-option';
-      option.dataset.value = modelName;
-      option.dataset.isCustom = 'true';
-      option.textContent = modelName;
-      
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'delete-model-btn';
-      deleteBtn.title = '删除此模型';
-      deleteBtn.innerHTML = '×';
-      option.appendChild(deleteBtn);
-      
-      modelDropdown.appendChild(option);
-    });
-    
-    // 调用回调函数
-    if (typeof callback === 'function') {
-      callback();
+    if (modelDropdown) {
+      deletedPresetModels.forEach(modelName => {
+        const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
+        if (option) option.remove();
+      });
+      // 为剩余预设模型添加删除按钮
+      ensureModelDeleteButtons();
     }
+
+    chrome.storage.local.get(['customModels'], (result) => {
+      const customModels = result.customModels || [];
+      
+      customModels.forEach(modelName => {
+        // 检查是否已存在
+        const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
+        if (existingOption) return;
+        
+        const option = document.createElement('div');
+        option.className = 'model-option';
+        option.dataset.value = modelName;
+        option.dataset.isCustom = 'true';
+        option.textContent = modelName;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'delete-model-btn';
+        deleteBtn.title = '删除此模型';
+        deleteBtn.innerHTML = '×';
+        option.appendChild(deleteBtn);
+        
+        modelDropdown.appendChild(option);
+      });
+      
+      // 调用回调函数
+      if (typeof callback === 'function') {
+        callback();
+      }
+    });
   });
 }
 
@@ -187,7 +258,7 @@ export function loadImageModels(callback) {
       if (typeof callback === 'function') callback();
       return;
     }
-    const savedModels = result.imageModels || PRESET_IMAGE_MODELS;
+    const savedModels = result.imageModels || [];
 
     // 清空现有选项
     modelDropdown.innerHTML = '';
@@ -233,6 +304,7 @@ export function loadConfig() {
   chrome.storage.local.get([
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'enableImageInput', 'imageModelName', 'imageModels',
+    'imageApiBase', 'imageApiKey',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
@@ -256,14 +328,28 @@ export function loadConfig() {
     // 加载图片识别配置
     const enableImageInputEl = document.getElementById('enableImageInput');
     const imageModelGroup = document.getElementById('imageModelGroup');
+    const imageApiGroup = document.getElementById('imageApiGroup');
+    const imageApiKeyGroup = document.getElementById('imageApiKeyGroup');
     if (enableImageInputEl && imageModelGroup) {
       enableImageInputEl.checked = result.enableImageInput || false;
       imageModelGroup.style.display = enableImageInputEl.checked ? '' : 'none';
+      if (imageApiGroup) {
+        imageApiGroup.style.display = enableImageInputEl.checked ? '' : 'none';
+      }
+      if (imageApiKeyGroup) {
+        imageApiKeyGroup.style.display = enableImageInputEl.checked ? '' : 'none';
+      }
     }
     if (result.imageModelName) {
       setCurrentImageModel(result.imageModelName);
       const imageModelInput = document.getElementById('imageModelInput');
       if (imageModelInput) imageModelInput.value = result.imageModelName;
+    }
+    if (result.imageApiBase) {
+      document.getElementById('imageApiBase').value = result.imageApiBase;
+    }
+    if (result.imageApiKey) {
+      document.getElementById('imageApiKey').value = result.imageApiKey;
     }
 
     // 加载 ReAct 配置（时间单位转换）
@@ -414,7 +500,9 @@ export function saveConfig() {
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
-  const imageModelName = currentImageModel || 'deepseek-vl2';
+  const imageModelName = currentImageModel || '';
+  const imageApiBase = document.getElementById('imageApiBase')?.value.trim() || '';
+  const imageApiKey = document.getElementById('imageApiKey')?.value.trim() || '';
   
   // 获取反思配置
   const reflectionConfig = {
@@ -567,6 +655,8 @@ export function saveConfig() {
     // 图片识别配置
     enableImageInput: enableImageInput,
     imageModelName: imageModelName,
+    imageApiBase: imageApiBase,
+    imageApiKey: imageApiKey,
     // 反思配置
     reflectionConfig: reflectionConfig
   }, async function() {

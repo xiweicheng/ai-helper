@@ -1443,13 +1443,33 @@
       <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏发送图片给多模态模型进行分析）</span>
     </div>
 
+    <div class="form-group" id="imageApiGroup" style="display:none;">
+      <label for="imageApiBase">API Base URL <span class="hint">（可选，留空则使用基础模型配置）</span></label>
+      <input type="text" id="imageApiBase" placeholder="https://api.deepseek.com" style="width:100%;">
+    </div>
+
+    <div class="form-group" id="imageApiKeyGroup" style="display:none;">
+      <label>API Key <span class="hint">（可选，留空则使用基础模型配置）</span></label>
+      <div class="token-input-wrapper">
+        <input type="password" id="imageApiKey" class="token-input" placeholder="请输入图片识别 API Key">
+        <button type="button" id="toggleImageApiKeyBtn" class="toggle-token-btn" title="显示/隐藏 API Key">
+          <svg class="icon-eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg class="icon-eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <div class="form-group" id="imageModelGroup" style="display:none;">
-      <label>图片识别模型 <span class="hint">（支持多模态视觉能力的模型，可自定义）</span></label>
+      <label>模型名称 <span class="hint">（支持多模态视觉能力的模型，可自定义；留空则使用基础模型的模型名称）</span></label>
       <div class="model-selector">
-        <input type="text" id="imageModelInput" placeholder="请输入模型名称或从下方选择" value="deepseek-vl2">
+        <input type="text" id="imageModelInput" placeholder="留空则使用基础模型" value="">
         <div class="model-dropdown" id="imageModelDropdown">
-          <div class="model-option" data-value="deepseek-vl2">deepseek-vl2</div>
-          <div class="model-option" data-value="deepseek-v4-pro-vision">deepseek-v4-pro-vision</div>
         </div>
       </div>
     </div>

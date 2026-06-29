@@ -1,6 +1,6 @@
 // options/index.js - 选项页面入口
 
-import { currentModel, setCurrentModel, PRESET_MODELS, PRESET_IMAGE_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
 import {
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   modelInput.addEventListener('blur', function() {
     blurTimeout = setTimeout(function() {
       const value = modelInput.value.trim();
-      if (value && !PRESET_MODELS.includes(value)) {
+      if (value) {
         addCustomModelToDropdown(value);
       }
       if (!value) {
@@ -129,9 +129,17 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   const enableImageInputEl = document.getElementById('enableImageInput');
   const imageModelGroup = document.getElementById('imageModelGroup');
+  const imageApiGroup = document.getElementById('imageApiGroup');
+  const imageApiKeyGroup = document.getElementById('imageApiKeyGroup');
   if (enableImageInputEl && imageModelGroup) {
     enableImageInputEl.addEventListener('change', function() {
       imageModelGroup.style.display = this.checked ? '' : 'none';
+      if (imageApiGroup) {
+        imageApiGroup.style.display = this.checked ? '' : 'none';
+      }
+      if (imageApiKeyGroup) {
+        imageApiKeyGroup.style.display = this.checked ? '' : 'none';
+      }
       // 立即持久化开关状态
       chrome.storage.local.set({ enableImageInput: this.checked });
     });
@@ -155,12 +163,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     imageModelInput.addEventListener('blur', function() {
       imageBlurTimeout = setTimeout(function() {
         const value = imageModelInput.value.trim();
-        if (value && !PRESET_IMAGE_MODELS.includes(value)) {
+        if (value) {
           addCustomImageModelToDropdown(value);
         }
-        if (!value) {
-          imageModelInput.value = currentImageModel || 'deepseek-vl2';
-        }
+        // 空值允许，表示使用基础模型
       }, 200);
     });
 
@@ -193,6 +199,37 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.addEventListener('click', function(e) {
       if (!imageModelDropdown.contains(e.target) && e.target !== imageModelInput) {
         imageModelDropdown.classList.remove('show');
+      }
+    });
+  }
+
+  // 图片识别 API Base 和 Token 自动保存
+  const imageApiBaseEl = document.getElementById('imageApiBase');
+  if (imageApiBaseEl) {
+    imageApiBaseEl.addEventListener('blur', function() {
+      chrome.storage.local.set({ imageApiBase: this.value.trim() });
+    });
+  }
+
+  const imageApiKeyEl = document.getElementById('imageApiKey');
+  const toggleImageApiKeyBtn = document.getElementById('toggleImageApiKeyBtn');
+  if (imageApiKeyEl) {
+    imageApiKeyEl.addEventListener('blur', function() {
+      chrome.storage.local.set({ imageApiKey: this.value.trim() });
+    });
+  }
+  if (imageApiKeyEl && toggleImageApiKeyBtn) {
+    const imgIconEyeOpen = toggleImageApiKeyBtn.querySelector('.icon-eye-open');
+    const imgIconEyeClosed = toggleImageApiKeyBtn.querySelector('.icon-eye-closed');
+    toggleImageApiKeyBtn.addEventListener('click', function() {
+      if (imageApiKeyEl.type === 'password') {
+        imageApiKeyEl.type = 'text';
+        imgIconEyeOpen.style.display = 'none';
+        imgIconEyeClosed.style.display = 'block';
+      } else {
+        imageApiKeyEl.type = 'password';
+        imgIconEyeOpen.style.display = 'block';
+        imgIconEyeClosed.style.display = 'none';
       }
     });
   }

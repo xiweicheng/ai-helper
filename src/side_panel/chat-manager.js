@@ -444,9 +444,10 @@ export async function sendMessage() {
   }
   
 
-  addMessage('user', text);
-  
   const userContent = buildUserContent(finalText);
+  // 显示用户消息（含图片）
+  addMessage('user', userContent);
+  
   state.messageHistory.push({ role: 'user', content: userContent });
   
   saveChatHistory();
@@ -468,7 +469,7 @@ export async function sendMessage() {
   const loadingId = addLoadingMessage();
 
   const model = state.enableImageInput && state.attachedImages.length > 0
-    ? (state.imageModelName || 'deepseek-vl2')
+    ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
   try {
@@ -941,13 +942,22 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       messageDiv.textContent = textContent;
     }
 
-    // 如果消息包含图片，显示图片徽章
+    // 如果消息包含图片，显示缩略图
     if (hasImages) {
-      const imageBadge = document.createElement('span');
-      imageBadge.className = 'image-badge';
-      imageBadge.textContent = '🖼️ 图片';
-      imageBadge.style.cssText = 'display:inline-block;margin-top:4px;padding:2px 8px;background:#f0f4ff;color:#667eea;border-radius:12px;font-size:11px;';
-      messageDiv.appendChild(imageBadge);
+      const imagesContainer = document.createElement('div');
+      imagesContainer.className = 'user-message-images';
+      const imageParts = content.filter(c => c.type === 'image_url');
+      imageParts.forEach((imgPart, idx) => {
+        const imgEl = document.createElement('img');
+        imgEl.src = imgPart.image_url.url;
+        imgEl.className = 'user-message-image';
+        imgEl.title = '点击查看大图';
+        imgEl.addEventListener('click', () => {
+          openImagePreview(imgPart.image_url.url);
+        });
+        imagesContainer.appendChild(imgEl);
+      });
+      messageDiv.appendChild(imagesContainer);
     }
     
     const toolbar = document.createElement('div');
@@ -2633,7 +2643,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       model: model,
       useTools: useTools,
       tabId: state.currentTabId,
-      apiParams: apiParams
+      apiParams: apiParams,
+      // 图片识别独立配置（仅当启用且有图片时传递）
+      imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
+      imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''
     });
   });
 }

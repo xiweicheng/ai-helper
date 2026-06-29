@@ -182,6 +182,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const abortSignal = abortController?.signal;
   
   const config = await getStoredConfig();
+  
+  // 如果传入了图片识别独立配置，则覆盖默认配置
+  if (apiParams && apiParams.imageApiBase) {
+    config.apiBase = apiParams.imageApiBase;
+  }
+  if (apiParams && apiParams.imageApiKey) {
+    config.apiKey = apiParams.imageApiKey;
+  }
+  
   const reactConfig = config.reactConfig;
   const maxIterations = reactConfig.maxIterations;
   const apiTimeout = reactConfig.apiTimeout;
@@ -1599,6 +1608,14 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
  */
 export function callApiNonStream(messages, model, apiParams = {}, sessionId = null) {
   return getStoredConfig().then(config => {
+    // 如果传入了图片识别独立配置，则覆盖默认配置
+    if (apiParams.imageApiBase) {
+      config.apiBase = apiParams.imageApiBase;
+    }
+    if (apiParams.imageApiKey) {
+      config.apiKey = apiParams.imageApiKey;
+    }
+    
     // 获取 AbortController 以支持用户取消
     const abortController = sessionId ? getOrCreateAbortController(sessionId) : null;
     const abortSignal = abortController?.signal;

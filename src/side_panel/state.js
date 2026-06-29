@@ -92,7 +92,9 @@ export let pendingDeleteIndex = -1;
 
 // 图片识别
 export let enableImageInput = false;
-export let imageModelName = 'deepseek-vl2';
+export let imageModelName = '';         // 图片识别模型，为空则使用 currentModel
+export let imageApiBase = '';   // 图片识别独立 API Base，为空则使用主配置
+export let imageApiKey = '';    // 图片识别独立 API Token，为空则使用主配置
 export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
 
 // 标志位
@@ -217,6 +219,10 @@ export default {
   set enableImageInput(v) { enableImageInput = v; },
   get imageModelName() { return imageModelName; },
   set imageModelName(v) { imageModelName = v; },
+  get imageApiBase() { return imageApiBase; },
+  set imageApiBase(v) { imageApiBase = v; },
+  get imageApiKey() { return imageApiKey; },
+  set imageApiKey(v) { imageApiKey = v; },
   get attachedImages() { return attachedImages; },
   set attachedImages(v) { attachedImages = v; },
   get isScrolling() { return isScrolling; },

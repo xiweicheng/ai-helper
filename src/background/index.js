@@ -80,7 +80,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams, sessionId } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey } = message;
+    
+    // 将图片识别独立配置合并到 apiParams 中
+    if (imageApiBase) {
+      apiParams.imageApiBase = imageApiBase;
+    }
+    if (imageApiKey) {
+      apiParams.imageApiKey = imageApiKey;
+    }
     
     // 重置当前会话的 API 调用计数器
     resetDialogApiCallCount(sessionId);
