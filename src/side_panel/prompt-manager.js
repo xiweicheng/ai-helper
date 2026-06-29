@@ -404,9 +404,8 @@ export async function sendPromptByCode(code) {
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
-  // 图片数据已包含在 userContent 中，立即清除预览
+  // 图片数据已包含在 userContent 中，立即清除预览栏 DOM
   if (state.attachedImages.length > 0) {
-    state.attachedImages = [];
     const previewBar = document.getElementById('imagePreviewBar');
     if (previewBar) previewBar.innerHTML = '';
   }
@@ -500,6 +499,7 @@ export async function sendPromptByCode(code) {
     state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
+    state.attachedImages = [];
   }
 }
 
