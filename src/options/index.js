@@ -457,24 +457,108 @@ function initAgentConfig() {
   const disconnectGroup = document.getElementById('disconnectGroup');
   const agentInfo = document.getElementById('agentInfo');
   const agentWorkdirEl = document.getElementById('agentWorkdir');
+  const agentDetailToggle = document.getElementById('agentDetailToggle');
+  const agentDetailPanel = document.getElementById('agentDetailPanel');
 
   if (!agentUrlInput || !connectBtn) return;
+
+  // 缓存最新的详情数据
+  let lastDetailData = null;
+
+  /**
+   * 格式化字节大小
+   */
+  function formatBytes(bytes) {
+    if (bytes == null || bytes === 0) return '无限制';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let i = 0;
+    let val = bytes;
+    while (val >= 1024 && i < units.length - 1) { val /= 1024; i++; }
+    return (Math.round(val * 10) / 10) + ' ' + units[i];
+  }
+
+  /**
+   * 格式化毫秒时长
+   */
+  function formatDuration(ms) {
+    if (ms == null || ms === 0) return '无限制';
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(0) + 's';
+    return (ms / 60000).toFixed(1) + ' min';
+  }
+
+  /**
+   * 渲染 Agent 详情面板
+   */
+  function renderAgentDetail(data) {
+    lastDetailData = data;
+    if (!agentDetailPanel) return;
+
+    const rows = [];
+
+    if (data.searchTools) {
+      const fdOk = data.searchTools.fd ? '✅' : '❌';
+      const rgOk = data.searchTools.rg ? '✅' : '❌';
+      rows.push(`<div class="detail-row"><span class="detail-label">搜索引擎</span><span class="detail-value">fd ${fdOk} &nbsp; rg ${rgOk}</span></div>`);
+    }
+    if (data.hostname) {
+      rows.push(`<div class="detail-row"><span class="detail-label">主机名</span><span class="detail-value">${escHtml(data.hostname)}</span></div>`);
+    }
+    if (data.shell) {
+      rows.push(`<div class="detail-row"><span class="detail-label">Shell</span><span class="detail-value">${escHtml(data.shell)}</span></div>`);
+    }
+    if (data.homeDir) {
+      rows.push(`<div class="detail-row"><span class="detail-label">用户目录</span><span class="detail-value">${escHtml(data.homeDir)}</span></div>`);
+    }
+    if (data.nodeVersion) {
+      rows.push(`<div class="detail-row"><span class="detail-label">Node.js</span><span class="detail-value">${escHtml(data.nodeVersion)}</span></div>`);
+    }
+    if (data.commandTimeout != null) {
+      rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
+    }
+    if (data.fileMaxSize != null) {
+      rows.push(`<div class="detail-row"><span class="detail-label">文件大小限制</span><span class="detail-value">${formatBytes(data.fileMaxSize)}</span></div>`);
+    }
+    if (data.allowedPaths && data.allowedPaths.length > 0) {
+      const pathsHtml = data.allowedPaths.map(p => `<code>${escHtml(p)}</code>`).join('<br>');
+      rows.push(`<div class="detail-row"><span class="detail-label">允许访问的目录</span><span class="detail-value">${pathsHtml}</span></div>`);
+    }
+    if (data.pairCodeTTL != null) {
+      rows.push(`<div class="detail-row"><span class="detail-label">配对码有效期</span><span class="detail-value">${data.pairCodeTTL}s</span></div>`);
+    }
+
+    agentDetailPanel.innerHTML = rows.join('');
+    agentDetailToggle.style.display = '';
+  }
+
+  function escHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
 
   /**
    * 更新连接状态 UI
    */
-  function updateStatusUI(status, message, workdir) {
+  function updateStatusUI(status, message, detailData) {
     agentStatus.className = 'agent-status ' + status;
     statusText.textContent = message;
-    
+
     if (status === 'connected') {
       pairCodeGroup.style.display = 'none';
       disconnectGroup.style.display = '';
       agentStatus.className = 'agent-status connected';
-      
-      if (workdir) {
+
+      if (detailData) {
         agentInfo.style.display = '';
-        agentWorkdirEl.textContent = '工作目录: ' + workdir;
+        const parts = [];
+        if (detailData.workdir) parts.push(`📁 工作目录: ${detailData.workdir}`);
+        if (detailData.platformName && detailData.arch) {
+          parts.push(`💻 ${detailData.platformName} ${detailData.arch}`);
+        }
+        if (detailData.nodeVersion) parts.push(`⬢ ${detailData.nodeVersion}`);
+        agentWorkdirEl.innerHTML = parts.join(' &nbsp;|&nbsp; ');
+        renderAgentDetail(detailData);
       }
     } else if (status === 'checking') {
       agentStatus.className = 'agent-status checking';
@@ -483,7 +567,32 @@ function initAgentConfig() {
       disconnectGroup.style.display = 'none';
       agentInfo.style.display = 'none';
       agentStatus.className = 'agent-status disconnected';
+      if (agentDetailToggle) agentDetailToggle.style.display = 'none';
+      if (agentDetailPanel) agentDetailPanel.innerHTML = '';
+      lastDetailData = null;
     }
+  }
+
+  /**
+   * 合并公开状态和认证详情为统一数据结构
+   */
+  function mergeDetail(statusData, detailData) {
+    return {
+      version: detailData?.version || statusData?.version,
+      platformName: statusData?.platformName,
+      platform: statusData?.platform,
+      arch: statusData?.arch,
+      hostname: statusData?.hostname,
+      shell: statusData?.shell,
+      homeDir: statusData?.homeDir,
+      nodeVersion: statusData?.nodeVersion,
+      searchTools: statusData?.searchTools,
+      workdir: detailData?.workdir || statusData?.workdir || '',
+      allowedPaths: detailData?.allowedPaths || [],
+      commandTimeout: detailData?.commandTimeout,
+      fileMaxSize: detailData?.fileMaxSize,
+      pairCodeTTL: detailData?.pairCodeTTL
+    };
   }
 
   /**
@@ -491,7 +600,7 @@ function initAgentConfig() {
    */
   async function checkAgentStatus() {
     updateStatusUI('checking', '正在检查连接...');
-    
+
     const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
     const storedUrl = result.agentUrl;
     const storedToken = result.agentToken;
@@ -507,24 +616,24 @@ function initAgentConfig() {
     try {
       const response = await fetch(`${storedUrl}/api/status`);
       if (response.ok) {
-        const data = await response.json();
+        const statusData = await response.json();
         // 更新平台信息
         const platformInfo = {
-          platformName: data.platformName || 'Unknown',
-          platform: data.platform || 'unknown',
-          arch: data.arch || 'unknown',
-          shell: data.shell || '/bin/sh',
-          homeDir: data.homeDir || '',
+          platformName: statusData.platformName || 'Unknown',
+          platform: statusData.platform || 'unknown',
+          arch: statusData.arch || 'unknown',
+          shell: statusData.shell || '/bin/sh',
+          homeDir: statusData.homeDir || '',
           workdir: '',
           connected: true
         };
         await chrome.storage.local.set({ agentPlatform: platformInfo });
-        
+
         if (!storedToken) {
           updateStatusUI('disconnected', 'Agent 在线 - 请填入配对码完成配对');
           return;
         }
-        // 获取详细信息（含工作目录）
+        // 获取详细信息（含工作目录和配置）
         try {
           const detailResp = await fetch(`${storedUrl}/api/status/detail`, {
             headers: { 'Authorization': `Bearer ${storedToken}` }
@@ -533,7 +642,11 @@ function initAgentConfig() {
             const detailData = await detailResp.json();
             platformInfo.workdir = detailData.workdir || '';
             await chrome.storage.local.set({ agentPlatform: platformInfo });
-            updateStatusUI('connected', `已连接 - Agent v${data.version}`, detailData.workdir);
+
+            const merged = mergeDetail(statusData, detailData);
+            const labelParts = [`Agent v${merged.version}`];
+            if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
+            updateStatusUI('connected', labelParts.join(' | '), merged);
           } else {
             updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
           }
@@ -578,7 +691,7 @@ function initAgentConfig() {
         pairCodeInput.value = '';
         updateStatusUI('connected', '配对成功');
         showToast('✅ 配对成功！Agent 已连接', 'success');
-        
+
         // 获取 Agent 平台信息并存储
         try {
           const statusResp = await fetch(`${url}/api/status`);
@@ -599,19 +712,28 @@ function initAgentConfig() {
         } catch (e) {
           console.warn('[Options] 获取 Agent 平台信息失败:', e);
         }
-        
-        // 获取完整状态
-        const statusResp = await fetch(`${url}/api/status/detail`, {
-          headers: { 'Authorization': `Bearer ${data.token}` }
-        });
-        if (statusResp.ok) {
-          const statusData = await statusResp.json();
-          // 更新 workdir 到平台信息
-          const platformInfo = (await chrome.storage.local.get('agentPlatform')).agentPlatform || {};
-          platformInfo.workdir = statusData.workdir || '';
-          await chrome.storage.local.set({ agentPlatform: platformInfo });
-          
-          updateStatusUI('connected', `已连接 - Agent v${statusData.version}`, statusData.workdir);
+
+        // 获取完整状态和配置
+        try {
+          const [statusResp2, detailResp2] = await Promise.all([
+            fetch(`${url}/api/status`),
+            fetch(`${url}/api/status/detail`, { headers: { 'Authorization': `Bearer ${data.token}` } })
+          ]);
+          if (statusResp2.ok && detailResp2.ok) {
+            const statusData2 = await statusResp2.json();
+            const detailData2 = await detailResp2.json();
+            // 更新 workdir 到平台信息
+            const platformInfo = (await chrome.storage.local.get('agentPlatform')).agentPlatform || {};
+            platformInfo.workdir = detailData2.workdir || '';
+            await chrome.storage.local.set({ agentPlatform: platformInfo });
+
+            const merged = mergeDetail(statusData2, detailData2);
+            const labelParts = [`Agent v${merged.version}`];
+            if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
+            updateStatusUI('connected', labelParts.join(' | '), merged);
+          }
+        } catch (e) {
+          console.warn('[Options] 获取 Agent 详情失败:', e);
         }
       } else {
         updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
@@ -634,6 +756,16 @@ function initAgentConfig() {
     pairCodeInput.value = '';
     updateStatusUI('disconnected', '已断开连接');
     showToast('已断开 Agent 连接', 'info');
+  }
+
+  // 详情面板折叠切换
+  if (agentDetailToggle && agentDetailPanel) {
+    agentDetailToggle.addEventListener('click', () => {
+      const isOpen = agentDetailPanel.style.display !== 'none';
+      agentDetailPanel.style.display = isOpen ? 'none' : '';
+      agentDetailToggle.textContent = isOpen ? '▶ 详细信息' : '▼ 详细信息';
+      agentDetailToggle.classList.toggle('open', !isOpen);
+    });
   }
 
   // 绑定事件

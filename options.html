@@ -1323,6 +1323,66 @@
       font-size: 13px;
       color: #4a5568;
     }
+    .agent-detail-toggle {
+      display: none;
+      width: 100%;
+      padding: 8px 14px;
+      background: transparent;
+      border: 1px dashed #cbd5e0;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      color: #718096;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+    }
+    .agent-detail-toggle:hover {
+      background: #f7fafc;
+      border-color: #a0aec0;
+      color: #4a5568;
+    }
+    .agent-detail-toggle.open {
+      margin-bottom: 0;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      border-bottom: none;
+    }
+    .agent-detail-panel {
+      display: none;
+      padding: 12px 14px;
+      background: #fafafa;
+      border: 1px dashed #cbd5e0;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #4a5568;
+    }
+    .detail-row {
+      display: flex;
+      padding: 5px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .detail-row:last-child {
+      border-bottom: none;
+    }
+    .detail-label {
+      flex: 0 0 120px;
+      color: #a0aec0;
+      font-weight: 500;
+    }
+    .detail-value {
+      flex: 1;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+    .detail-value code {
+      background: #edf2f7;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
@@ -1942,6 +2002,9 @@
         <span id="agentWorkdir"></span>
       </div>
 
+      <button class="agent-detail-toggle" id="agentDetailToggle" style="display:none;">▶ 详细信息</button>
+      <div class="agent-detail-panel" id="agentDetailPanel"></div>
+
       <div class="form-group">
         <label>Agent 地址 <span class="hint">（本地 Agent 服务的 HTTP 地址）</span></label>
         <input type="text" id="agentUrl" placeholder="http://127.0.0.1:18910" value="http://127.0.0.1:18910">
@@ -1962,10 +2025,17 @@
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 使用说明</h3>
         <p>
-          1. 在终端中启动 Agent：<code>cd agent && node bin/agent.js start</code><br>
-          2. Agent 启动后会显示 4 位配对码<br>
-          3. 在此页面填入配对码并点击"连接"<br>
-          4. 配对成功后，AI 对话中即可使用 agent_* 系列工具操作本地文件系统<br>
+          <strong>方式一：NPM 全局安装（推荐）</strong><br>
+          1. <code>npm install -g ai-helper-agent</code>（要求 Node.js ≥ 18）<br>
+          2. <code>ai-helper-agent start</code><br>
+          3. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+          <br>
+          <strong>方式二：本地源码运行（开发调试）</strong><br>
+          1. <code>cd agent && node bin/agent.js start</code><br>
+          2. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+          <br>
+          后台运行：<code>ai-helper-agent start --background</code>（方式一）或 <code>node bin/agent.js start --background</code>（方式二）<br>
+          更多命令：<code>ai-helper-agent help</code>
         </p>
       </div>
 

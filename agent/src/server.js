@@ -181,7 +181,11 @@ export function startServer() {
         success: true,
         version: '1.0.0',
         pairCode: getCurrentPairCode(),
+        pairCodeTTL: config.pairCodeTTL,
         workdir: config.workdir,
+        allowedPaths: config.allowedPaths,
+        commandTimeout: config.commandTimeout,
+        fileMaxSize: config.fileMaxSize,
         runningProcesses: getRunningProcesses(),
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()

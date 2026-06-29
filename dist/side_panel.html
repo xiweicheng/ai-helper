@@ -121,6 +121,39 @@
       flex-shrink: 0;
       color: #666;
     }
+    .header-agent-indicator {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+    .header-agent-indicator:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: scale(1.08);
+    }
+    .header-agent-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      transition: background 0.3s;
+    }
+    .header-agent-dot.connected {
+      background: #48bb78;
+      box-shadow: 0 0 6px rgba(72, 187, 120, 0.5);
+    }
+    .header-agent-dot.disconnected {
+      background: #fc8181;
+    }
+    .header-agent-dot.unknown {
+      background: #a0aec0;
+    }
     .input-container {
       padding: 12px;
       background: white;
@@ -5050,6 +5083,9 @@
       AI Helper
     </h1>
     <div style="display: flex; align-items: center; gap: 4px;">
+      <button class="header-agent-indicator" id="headerAgentIndicator" title="Agent 状态">
+        <span class="header-agent-dot unknown" id="headerAgentDot"></span>
+      </button>
       <div class="header-more-wrapper" id="headerMoreWrapper">
         <button class="clear-chat-btn" id="headerMoreBtn" title="更多操作">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -418,6 +418,26 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
 // ==================== 主初始化 ====================
 
+/**
+ * 更新 Side Panel 头部的 Agent 连接指示器
+ */
+function updateAgentIndicator(platformInfo) {
+  const dot = document.getElementById('headerAgentDot');
+  const btn = document.getElementById('headerAgentIndicator');
+  if (!dot || !btn) return;
+
+  if (!platformInfo || !platformInfo.connected) {
+    dot.className = 'header-agent-dot disconnected';
+    btn.title = 'Agent 未连接 - 点击前往设置';
+  } else {
+    dot.className = 'header-agent-dot connected';
+    const parts = ['Agent 已连接'];
+    if (platformInfo.platformName) parts.push(platformInfo.platformName);
+    if (platformInfo.arch) parts.push(platformInfo.arch);
+    btn.title = parts.join(' | ') + ' - 点击前往设置';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 存储表格数据供工具栏按钮使用
   window.__tableBlocks = [];
@@ -447,6 +467,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       directSend(message.text, message.selectedText || '');
       // 清除存储的待发送文本
       chrome.storage.session.remove('pendingDirectSend').catch(() => {});
+    }
+    if (message.type === 'AGENT_STATUS_CHANGE') {
+      console.log('[SidePanel] 收到 Agent 状态变化:', message.connected, message.status);
+      // 重新从 storage 读取最新的 agentPlatform
+      chrome.storage.local.get('agentPlatform', (result) => {
+        state.agentPlatform = result.agentPlatform || { connected: false };
+        updateAgentIndicator(state.agentPlatform);
+      });
     }
   });
 
@@ -768,6 +796,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (result.agentPlatform) {
       state.agentPlatform = result.agentPlatform;
     }
+    updateAgentIndicator(state.agentPlatform);
     // 图片识别配置
     state.enableImageInput = result.enableImageInput || false;
     state.imageModelName = result.imageModelName || 'deepseek-vl2';
@@ -1275,6 +1304,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
+    });
+  }
+
+  // Agent 状态指示器 - 点击跳转到设置页的 Agent 标签
+  const agentIndicator = document.getElementById('headerAgentIndicator');
+  if (agentIndicator) {
+    agentIndicator.addEventListener('click', async () => {
+      const url = chrome.runtime.getURL('options.html#agent');
+      const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL('options.html') });
+      if (tabs.length > 0) {
+        await chrome.tabs.update(tabs[0].id, { active: true, url });
+      } else {
+        await chrome.tabs.create({ url });
+      }
     });
   }
   
