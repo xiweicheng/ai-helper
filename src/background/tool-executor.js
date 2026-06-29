@@ -661,7 +661,8 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
     // 关键词匹配搜索（分词 + 包含匹配）
     const keywords = query.split(/\s+/).filter((k) => k.length > 0);
     const scoredMessages = allMessages.map((msg) => {
-      const contentLower = msg.content.toLowerCase();
+      const text = typeof msg.content === 'string' ? msg.content : (Array.isArray(msg.content) ? msg.content.filter(c => c.type === 'text').map(c => c.text).join('') : '');
+      const contentLower = text.toLowerCase();
       let score = 0;
 
       // 精确匹配整句加分
