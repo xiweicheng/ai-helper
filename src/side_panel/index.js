@@ -1943,7 +1943,7 @@ function renderImagePreviews() {
     thumb.title = '点击查看大图';
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
-      openImagePreview(img.dataUrl);
+      openImagePreview(img.dataUrl, thumb);
     });
 
     const removeBtn = document.createElement('button');

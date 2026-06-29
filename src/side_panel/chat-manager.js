@@ -290,6 +290,10 @@ let previewDragStartY = 0;
 let previewDragStartTX = 0;
 let previewDragStartTY = 0;
 
+// 图片预览多图切换状态
+let previewImageList = [];
+let previewImageIndex = 0;
+
 function updatePreviewTransform() {
   const img = document.getElementById('imagePreviewLarge');
   if (!img) return;
@@ -314,13 +318,114 @@ function resetPreviewTransform() {
   updatePreviewTransform();
 }
 
-export function openImagePreview(dataUrl) {
+export function openImagePreview(dataUrl, sourceElement) {
   const overlay = document.getElementById('imagePreviewOverlay');
   const img = document.getElementById('imagePreviewLarge');
   if (!overlay || !img) return;
+
+  // 根据来源分组收集图片
+  collectPreviewImages(dataUrl, sourceElement);
+
+  // 如果只有一张图，隐藏导航
+  updatePreviewNavVisibility();
+  showPreviewImage(dataUrl);
+  overlay.classList.add('show');
+}
+
+/**
+ * 收集同组图片的 dataUrl，构建预览列表
+ * @param {string} currentDataUrl - 当前图片 dataUrl
+ * @param {Element} [sourceElement] - 触发预览的元素，用于判断分组
+ */
+function collectPreviewImages(currentDataUrl, sourceElement) {
+  previewImageList = [];
+
+  if (sourceElement) {
+    // 输入框缩略图：仅收集输入框预览区的图片
+    if (sourceElement.closest('.image-preview-bar') || sourceElement.classList.contains('image-preview-thumb')) {
+      document.querySelectorAll('.image-preview-thumb').forEach((thumb) => {
+        if (thumb.src) previewImageList.push(thumb.src);
+      });
+    }
+    // 消息图片：仅收集同一消息容器内的图片
+    else if (sourceElement.closest('.user-message-images')) {
+      const container = sourceElement.closest('.user-message-images');
+      container.querySelectorAll('.user-message-image').forEach((img) => {
+        if (img.src) previewImageList.push(img.src);
+      });
+    }
+  }
+
+  // 如果未匹配到分组，收集所有图片（兜底）
+  if (previewImageList.length === 0) {
+    document.querySelectorAll('.image-preview-thumb, .user-message-image').forEach((img) => {
+      if (img.src) previewImageList.push(img.src);
+    });
+  }
+
+  // 找到当前图片的索引
+  previewImageIndex = previewImageList.indexOf(currentDataUrl);
+  if (previewImageIndex === -1) {
+    previewImageList.push(currentDataUrl);
+    previewImageIndex = previewImageList.length - 1;
+  }
+}
+
+/**
+ * 更新预览导航按钮可见性
+ */
+function updatePreviewNavVisibility() {
+  const prevBtn = document.getElementById('imagePreviewPrev');
+  const nextBtn = document.getElementById('imagePreviewNext');
+  const counter = document.getElementById('imagePreviewCounter');
+
+  if (previewImageList.length <= 1) {
+    if (prevBtn) prevBtn.style.display = 'none';
+    if (nextBtn) nextBtn.style.display = 'none';
+    if (counter) counter.style.display = 'none';
+  } else {
+    if (prevBtn) prevBtn.style.display = '';
+    if (nextBtn) nextBtn.style.display = '';
+    if (counter) counter.style.display = '';
+    updatePreviewNavButtons();
+  }
+}
+
+/**
+ * 更新预览导航按钮状态和计数
+ */
+function updatePreviewNavButtons() {
+  const prevBtn = document.getElementById('imagePreviewPrev');
+  const nextBtn = document.getElementById('imagePreviewNext');
+  const counter = document.getElementById('imagePreviewCounter');
+
+  // 首尾循环，按钮始终可用
+  if (prevBtn) prevBtn.disabled = false;
+  if (nextBtn) nextBtn.disabled = false;
+  if (counter) {
+    counter.textContent = `${previewImageIndex + 1} / ${previewImageList.length}`;
+  }
+}
+
+/**
+ * 显示指定索引的图片
+ */
+function showPreviewImage(dataUrl) {
+  const img = document.getElementById('imagePreviewLarge');
+  if (!img) return;
   resetPreviewTransform();
   img.src = dataUrl;
-  overlay.classList.add('show');
+}
+
+/**
+ * 切换到上一张/下一张（首尾循环）
+ */
+function navigatePreview(direction) {
+  const total = previewImageList.length;
+  if (total === 0) return;
+  previewImageIndex = (previewImageIndex + direction + total) % total;
+  showPreviewImage(previewImageList[previewImageIndex]);
+  updatePreviewNavButtons();
 }
 
 /**
@@ -350,10 +455,31 @@ export function initImagePreviewOverlay() {
     closeBtn.addEventListener('click', closePreview);
   }
 
-  // ESC 关闭
+  // 上一张/下一张按钮
+  const prevBtn = document.getElementById('imagePreviewPrev');
+  const nextBtn = document.getElementById('imagePreviewNext');
+  if (prevBtn) {
+    prevBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigatePreview(-1);
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigatePreview(1);
+    });
+  }
+
+  // 键盘导航
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlay.classList.contains('show')) {
+    if (!overlay.classList.contains('show')) return;
+    if (e.key === 'Escape') {
       closePreview();
+    } else if (e.key === 'ArrowLeft') {
+      navigatePreview(-1);
+    } else if (e.key === 'ArrowRight') {
+      navigatePreview(1);
     }
   });
 
@@ -488,7 +614,7 @@ function renderImagePreviewsFromChat() {
     thumb.title = '点击查看大图';
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
-      openImagePreview(img.dataUrl);
+      openImagePreview(img.dataUrl, thumb);
     });
 
     const removeBtn = document.createElement('button');
@@ -1087,7 +1213,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         imgEl.className = 'user-message-image';
         imgEl.title = '点击查看大图';
         imgEl.addEventListener('click', () => {
-          openImagePreview(imgPart.image_url.url);
+          openImagePreview(imgPart.image_url.url, imgEl);
         });
         imagesContainer.appendChild(imgEl);
       });

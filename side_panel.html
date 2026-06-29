@@ -1645,6 +1645,57 @@
     #imagePreviewLarge.dragging {
       cursor: grabbing;
     }
+
+    .image-preview-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 60px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      opacity: 0;
+    }
+    .image-preview-container:hover .image-preview-nav,
+    .image-preview-nav.always-visible {
+      opacity: 1;
+    }
+    .image-preview-nav:hover {
+      background: rgba(0, 0, 0, 0.65);
+    }
+    .image-preview-nav:disabled {
+      opacity: 0.2;
+      cursor: default;
+    }
+    .image-preview-nav.prev {
+      left: 8px;
+    }
+    .image-preview-nav.next {
+      right: 8px;
+    }
+
+    .image-preview-counter {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 13px;
+      pointer-events: none;
+      z-index: 2;
+    }
     
     .modal-title {
       font-size: 16px;
@@ -5668,10 +5719,13 @@
   <!-- 图片预览弹窗 -->
   <div class="modal-overlay" id="imagePreviewOverlay" style="z-index: 5000;">
     <div class="modal-container image-preview-container" style="max-width:90vw;max-height:90vh;padding:12px;background:transparent;box-shadow:none;">
-      <button class="image-preview-close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:1;">×</button>
+      <button class="image-preview-close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:3;">×</button>
+      <button class="image-preview-nav prev" id="imagePreviewPrev" title="上一张" style="display:none;">◀</button>
+      <button class="image-preview-nav next" id="imagePreviewNext" title="下一张" style="display:none;">▶</button>
       <div id="imagePreviewViewport" style="overflow:hidden;display:flex;align-items:center;justify-content:center;max-width:calc(90vw - 24px);max-height:calc(90vh - 24px);border-radius:8px;">
         <img id="imagePreviewLarge" src="" style="max-width:100%;max-height:100%;border-radius:8px;object-fit:contain;transform-origin:center center;user-select:none;-webkit-user-drag:none;">
       </div>
+      <div class="image-preview-counter" id="imagePreviewCounter" style="display:none;"></div>
     </div>
   </div>
 
