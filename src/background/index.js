@@ -85,6 +85,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 重置当前会话的 API 调用计数器
     resetDialogApiCallCount(sessionId);
     
+    // 立即发送初始状态更新，避免用户在工具预筛选等前置步骤期间看不到任何反馈
+    const initialStatus = {
+      type: 'EXECUTION_STATUS_UPDATE',
+      nodeName: '准备中...',
+      status: 'processing',
+      executionLog: []
+    };
+    if (sessionId) {
+      initialStatus.sessionId = sessionId;
+    }
+    chrome.runtime.sendMessage(initialStatus).catch(() => {});
+    
     console.log('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
     
     const apiCall = useTools 
