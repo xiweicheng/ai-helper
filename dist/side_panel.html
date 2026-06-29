@@ -1625,6 +1625,26 @@
         transform: translateY(0);
       }
     }
+
+    /* 图片预览弹窗缩放拖拽 */
+    .image-preview-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #imagePreviewLarge {
+      cursor: default;
+      transition: none;
+    }
+
+    #imagePreviewLarge.zoomable {
+      cursor: grab;
+    }
+
+    #imagePreviewLarge.dragging {
+      cursor: grabbing;
+    }
     
     .modal-title {
       font-size: 16px;
@@ -5087,6 +5107,23 @@
       20% { background-color: rgba(102, 126, 234, 0.2); }
       100% { background-color: transparent; }
     }
+
+    /* 窄栏模式：消息底部工具栏只显示图标，隐藏文字 */
+    @media (max-width: 420px) {
+      .message.assistant .copy-btn span,
+      .message.assistant .quote-btn span,
+      .export-trigger-btn span {
+        display: none;
+      }
+      .message.assistant .copy-btn,
+      .message.assistant .quote-btn,
+      .export-trigger-btn {
+        padding: 4px 6px;
+      }
+      .message.assistant .message-footer {
+        gap: 2px;
+      }
+    }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/constants-CIsVXb3D.js"></script>
@@ -5634,9 +5671,11 @@
 
   <!-- 图片预览弹窗 -->
   <div class="modal-overlay" id="imagePreviewOverlay" style="z-index: 5000;">
-    <div class="modal-container" style="max-width:90vw;max-height:90vh;padding:12px;background:transparent;box-shadow:none;display:flex;align-items:center;justify-content:center;">
+    <div class="modal-container image-preview-container" style="max-width:90vw;max-height:90vh;padding:12px;background:transparent;box-shadow:none;">
       <button class="image-preview-close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:1;">×</button>
-      <img id="imagePreviewLarge" src="" style="max-width:90vw;max-height:85vh;border-radius:8px;object-fit:contain;">
+      <div id="imagePreviewViewport" style="overflow:hidden;display:flex;align-items:center;justify-content:center;max-width:calc(90vw - 24px);max-height:calc(90vh - 24px);border-radius:8px;">
+        <img id="imagePreviewLarge" src="" style="max-width:100%;max-height:100%;border-radius:8px;object-fit:contain;transform-origin:center center;user-select:none;-webkit-user-drag:none;">
+      </div>
     </div>
   </div>
 

@@ -45,6 +45,17 @@ export async function saveSessions(sessionsData) {
 }
 
 /**
+ * 从消息 content 中提取纯文本（content 可能是数组格式含图片）
+ */
+function getTextContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.filter(c => c.type === 'text').map(c => c.text).join('');
+  }
+  return '';
+}
+
+/**
  * 保存当前会话状态
  */
 export async function saveCurrentSession() {
@@ -75,7 +86,7 @@ export async function saveCurrentSession() {
   // 更新标题（取第一条用户消息的前 50 个字符）
   const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
   if (firstUserMsg) {
-    currentSession.title = firstUserMsg.content.substring(0, 50).replace(/\n/g, ' ');
+    currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
   }
 
   await idb.putSession(currentSession);
@@ -229,7 +240,7 @@ export async function archiveCurrentSession() {
 
   const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
   const title = firstUserMsg
-    ? firstUserMsg.content.substring(0, 50).replace(/\n/g, ' ')
+    ? getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ')
     : currentSession.title || '未命名会话';
 
   const archivedId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);

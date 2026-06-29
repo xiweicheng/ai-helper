@@ -703,8 +703,9 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
       `找到 ${relevant.length} 条相关对话记录：\n\n` +
       relevant
         .map((m, i) => {
+          const text = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join('') : '');
           const contentPreview =
-            m.content.length > 500 ? m.content.substring(0, 500) + '...' : m.content;
+            text.length > 500 ? text.substring(0, 500) + '...' : text;
           return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
         })
         .join('\n\n---\n\n');

@@ -37,20 +37,38 @@ export async function restorePendingSessionsFromStorage() {
 // 辅助函数（仅在模块内使用）
 // ============================================================
 
+function extractTextContent(content) {
+  // 可能是数组格式（含图片时）
+  if (Array.isArray(content)) {
+    return content.filter(c => c.type === 'text').map(c => c.text).join('');
+  }
+  // 可能是 JSON 字符串格式的数组（从 dataset.rawContent 读取时）
+  if (typeof content === 'string' && content.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(c => c.type === 'text').map(c => c.text).join('');
+      }
+    } catch (e) { /* not JSON, treat as plain text */ }
+  }
+  return content;
+}
+
 function setQuoteContext(content) {
-  state.quotedContextText = content;
+  const textContent = extractTextContent(content);
+  state.quotedContextText = textContent;
   const indicator = document.getElementById('selectionIndicator');
   const selectionText = document.getElementById('selectionText');
   const userInput = document.getElementById('userInput');
   
   if (indicator && selectionText && userInput) {
     let displayText;
-    if (content.length > 100) {
-      displayText = content.substring(0, 100) + '...';
-    } else if (content.length > 50) {
-      displayText = content.substring(0, 50) + '...';
+    if (textContent.length > 100) {
+      displayText = textContent.substring(0, 100) + '...';
+    } else if (textContent.length > 50) {
+      displayText = textContent.substring(0, 50) + '...';
     } else {
-      displayText = content;
+      displayText = textContent;
     }
     selectionText.textContent = `💬 已引用: ${displayText}`;
     indicator.classList.add('show');
@@ -262,10 +280,45 @@ export function hideModal() {
  * 打开图片预览弹窗
  * @param {string} dataUrl - 图片 Base64 dataUrl
  */
+// 图片预览缩放/拖拽状态
+let previewScale = 1;
+let previewTranslateX = 0;
+let previewTranslateY = 0;
+let previewIsDragging = false;
+let previewDragStartX = 0;
+let previewDragStartY = 0;
+let previewDragStartTX = 0;
+let previewDragStartTY = 0;
+
+function updatePreviewTransform() {
+  const img = document.getElementById('imagePreviewLarge');
+  if (!img) return;
+  img.style.transform = `translate(${previewTranslateX}px, ${previewTranslateY}px) scale(${previewScale})`;
+  if (previewScale > 1) {
+    img.classList.add('zoomable');
+    if (previewIsDragging) {
+      img.classList.add('dragging');
+    } else {
+      img.classList.remove('dragging');
+    }
+  } else {
+    img.classList.remove('zoomable', 'dragging');
+  }
+}
+
+function resetPreviewTransform() {
+  previewScale = 1;
+  previewTranslateX = 0;
+  previewTranslateY = 0;
+  previewIsDragging = false;
+  updatePreviewTransform();
+}
+
 export function openImagePreview(dataUrl) {
   const overlay = document.getElementById('imagePreviewOverlay');
   const img = document.getElementById('imagePreviewLarge');
   if (!overlay || !img) return;
+  resetPreviewTransform();
   img.src = dataUrl;
   overlay.classList.add('show');
 }
@@ -278,25 +331,86 @@ export function initImagePreviewOverlay() {
   if (!overlay || overlay.dataset.initialized) return;
   overlay.dataset.initialized = 'true';
 
+  const img = document.getElementById('imagePreviewLarge');
+  const closePreview = () => {
+    overlay.classList.remove('show');
+    resetPreviewTransform();
+  };
+
   // 点击遮罩关闭
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) {
-      overlay.classList.remove('show');
+      closePreview();
     }
   });
 
   // 关闭按钮
   const closeBtn = overlay.querySelector('.image-preview-close');
   if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      overlay.classList.remove('show');
-    });
+    closeBtn.addEventListener('click', closePreview);
   }
 
   // ESC 关闭
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && overlay.classList.contains('show')) {
-      overlay.classList.remove('show');
+      closePreview();
+    }
+  });
+
+  // 滚轮缩放
+  overlay.addEventListener('wheel', (e) => {
+    if (!overlay.classList.contains('show')) return;
+    e.preventDefault();
+    const rect = img.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left - rect.width / 2;
+    const mouseY = e.clientY - rect.top - rect.height / 2;
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    const oldScale = previewScale;
+    const newScale = Math.max(0.3, Math.min(5, previewScale + delta));
+
+    // 以鼠标位置为中心缩放
+    const scaleRatio = newScale / oldScale;
+    previewScale = newScale;
+    previewTranslateX = mouseX - scaleRatio * (mouseX - previewTranslateX);
+    previewTranslateY = mouseY - scaleRatio * (mouseY - previewTranslateY);
+    updatePreviewTransform();
+  }, { passive: false });
+
+  // 拖拽平移
+  img.addEventListener('mousedown', (e) => {
+    if (!overlay.classList.contains('show') || previewScale <= 1) return;
+    e.preventDefault();
+    previewIsDragging = true;
+    previewDragStartX = e.clientX;
+    previewDragStartY = e.clientY;
+    previewDragStartTX = previewTranslateX;
+    previewDragStartTY = previewTranslateY;
+    updatePreviewTransform();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!previewIsDragging) return;
+    previewTranslateX = previewDragStartTX + (e.clientX - previewDragStartX);
+    previewTranslateY = previewDragStartTY + (e.clientY - previewDragStartY);
+    updatePreviewTransform();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!previewIsDragging) return;
+    previewIsDragging = false;
+    updatePreviewTransform();
+  });
+
+  // 双击切换 1x / 2x
+  img.addEventListener('dblclick', () => {
+    if (!overlay.classList.contains('show')) return;
+    if (previewScale > 1) {
+      resetPreviewTransform();
+    } else {
+      previewScale = 2;
+      previewTranslateX = 0;
+      previewTranslateY = 0;
+      updatePreviewTransform();
     }
   });
 }
