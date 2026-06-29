@@ -171,11 +171,11 @@ function startRegionSelection() {
       background: rgba(0, 0, 0, 0.15);
     `;
 
-    // 选择框
+    // 选择框（pointer-events: none 确保不拦截鼠标事件）
     const selectBox = document.createElement('div');
     selectBox.id = '__region_select_box__';
     selectBox.style.cssText = `
-      position: fixed; z-index: 2147483647;
+      position: fixed; z-index: 2147483647; pointer-events: none;
       border: 2px dashed #667eea;
       background: rgba(102, 126, 234, 0.1);
       display: none;
