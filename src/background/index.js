@@ -387,6 +387,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     return false;
   }
+  if (message.type === 'TRIGGER_AGENT_HEALTH_CHECK') {
+    // 重置状态标记，确保无论状态是否变化都会通知 Side Panel
+    wasAgentConnected = null;
+    performAgentHealthCheck();
+    return false;
+  }
+  if (message.type === 'AGENT_CONNECTION_CHANGED') {
+    // 直接转发到 Side Panel，不依赖健康检查 ping
+    chrome.runtime.sendMessage({
+      type: 'AGENT_CONNECTION_CHANGED',
+      connected: message.connected
+    }).catch(() => {});
+    if (message.connected) {
+      // 连接成功，同时触发健康检查以确保 background 内部状态正确
+      wasAgentConnected = null;
+      performAgentHealthCheck();
+    }
+    return false;
+  }
 });
 
 // 处理选中文本的 AI 搜索：存储搜索结果并通知 Side Panel
@@ -456,25 +475,6 @@ async function handleGeneratePdf(tabId, options) {
       });
     });
   });
-  if (message.type === 'TRIGGER_AGENT_HEALTH_CHECK') {
-    // 重置状态标记，确保无论状态是否变化都会通知 Side Panel
-    wasAgentConnected = null;
-    performAgentHealthCheck();
-    return false;
-  }
-  if (message.type === 'AGENT_CONNECTION_CHANGED') {
-    // 直接转发到 Side Panel，不依赖健康检查 ping
-    chrome.runtime.sendMessage({
-      type: 'AGENT_CONNECTION_CHANGED',
-      connected: message.connected
-    }).catch(() => {});
-    if (message.connected) {
-      // 连接成功，同时触发健康检查以确保 background 内部状态正确
-      wasAgentConnected = null;
-      performAgentHealthCheck();
-    }
-    return false;
-  }
 }
 
 // ==================== Agent 健康检查 ====================

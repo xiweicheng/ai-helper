@@ -478,6 +478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 直接从选项页通知更新，不依赖 storage 读取
+      console.log('[SidePanel] 收到 Agent 连接状态变更:', message.connected);
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
       updateAgentIndicator(state.agentPlatform);
     }
