@@ -113,6 +113,9 @@ const HANDLERS = {
       return { success: false, error: e.message };
     }
   },
+
+  // ── 区域截图选择 ──
+  START_REGION_SELECTION: () => startRegionSelection(),
 };
 
 /** 异步工具的 message type 集合，用于判断是否需要 return true */
@@ -123,6 +126,7 @@ const ASYNC_HANDLERS = new Set([
   'WATCH_ELEMENT', 'COLOR_PICKER',
   'GENERATE_QRCODE', 'SCREENSHOT_ELEMENT',
   'PAGE_TO_PDF', 'RUN_JAVASCRIPT',
+  'START_REGION_SELECTION',
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -149,3 +153,125 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 初始化选中文本浮动工具栏
 initSelectionToolbar();
+
+// ==================== 区域截图选择 ====================
+
+/**
+ * 在页面上启动区域选择模式，用户拖拽选择截图区域
+ * 返回 Promise<{x, y, width, height} | null>
+ */
+function startRegionSelection() {
+  return new Promise((resolve) => {
+    // 创建遮罩层
+    const overlay = document.createElement('div');
+    overlay.id = '__region_select_overlay__';
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 2147483647; cursor: crosshair;
+      background: rgba(0, 0, 0, 0.15);
+    `;
+
+    // 选择框
+    const selectBox = document.createElement('div');
+    selectBox.id = '__region_select_box__';
+    selectBox.style.cssText = `
+      position: fixed; z-index: 2147483647;
+      border: 2px dashed #667eea;
+      background: rgba(102, 126, 234, 0.1);
+      display: none;
+    `;
+
+    // 提示文字
+    const hint = document.createElement('div');
+    hint.style.cssText = `
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      z-index: 2147483647; pointer-events: none;
+      padding: 8px 20px; border-radius: 20px;
+      background: rgba(0, 0, 0, 0.75); color: #fff;
+      font-size: 14px; font-family: sans-serif;
+    `;
+    hint.textContent = '拖拽选择截图区域，按 Esc 取消';
+
+    let startX = 0, startY = 0;
+    let isDragging = false;
+
+    function getPos(e) {
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function updateBox(x1, y1, x2, y2) {
+      const left = Math.min(x1, x2);
+      const top = Math.min(y1, y2);
+      const width = Math.abs(x2 - x1);
+      const height = Math.abs(y2 - y1);
+      selectBox.style.left = left + 'px';
+      selectBox.style.top = top + 'px';
+      selectBox.style.width = width + 'px';
+      selectBox.style.height = height + 'px';
+      selectBox.style.display = 'block';
+    }
+
+    function cleanup() {
+      overlay.remove();
+      selectBox.remove();
+      hint.remove();
+      document.removeEventListener('keydown', onKeyDown, true);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+        resolve(null);
+      }
+    }
+
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const { x, y } = getPos(e);
+      startX = x;
+      startY = y;
+      isDragging = true;
+      document.body.appendChild(selectBox);
+      document.body.appendChild(hint);
+    });
+
+    overlay.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      const { x, y } = getPos(e);
+      updateBox(startX, startY, x, y);
+    });
+
+    overlay.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      isDragging = false;
+
+      const { x, y } = getPos(e);
+      const rect = {
+        x: Math.min(startX, x),
+        y: Math.min(startY, y),
+        width: Math.abs(x - startX),
+        height: Math.abs(y - startY),
+      };
+
+      cleanup();
+
+      // 最小区域阈值
+      if (rect.width < 10 || rect.height < 10) {
+        resolve(null);
+        return;
+      }
+
+      resolve(rect);
+    });
+
+    document.addEventListener('keydown', onKeyDown, true);
+    document.body.appendChild(overlay);
+  });
+}

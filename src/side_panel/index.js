@@ -1238,15 +1238,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 截图按钮
   const screenshotBtn = document.getElementById('screenshotBtn');
   if (screenshotBtn) {
-    screenshotBtn.addEventListener('click', async () => {
+    screenshotBtn.addEventListener('click', async (e) => {
       if (!state.enableImageInput) return;
+
+      // Ctrl/Shift/Meta + 点击 → 区域截图
+      const isRegionMode = e.ctrlKey || e.shiftKey || e.metaKey;
+
       try {
-        const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
-        if (response?.dataUrl) {
-          // 将 dataUrl 转为 blob 再压缩
-          const res = await fetch(response.dataUrl);
-          const blob = await res.blob();
-          compressAndAttachImage(blob);
+        if (isRegionMode) {
+          await captureRegionScreenshot();
+        } else {
+          const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
+          if (response?.dataUrl) {
+            const res = await fetch(response.dataUrl);
+            const blob = await res.blob();
+            compressAndAttachImage(blob);
+          }
         }
       } catch (err) {
         console.error('[SidePanel] 截图失败:', err);
@@ -1952,5 +1959,80 @@ function renderImagePreviews() {
     wrapper.appendChild(thumb);
     wrapper.appendChild(removeBtn);
     previewBar.appendChild(wrapper);
+  });
+}
+
+/**
+ * 区域截图：先让用户在活跃标签页上拖拽选择区域，再截取并裁剪
+ */
+async function captureRegionScreenshot() {
+  const tabId = await getCurrentActiveTabId();
+  if (!tabId) {
+    showToast('无法获取当前标签页');
+    return;
+  }
+
+  try {
+    // 向 content script 发送消息，启动区域选择
+    const rect = await chrome.tabs.sendMessage(tabId, { type: 'START_REGION_SELECTION' });
+
+    if (!rect) {
+      // 用户取消或区域太小
+      return;
+    }
+
+    console.log('[SidePanel] 区域选择结果:', rect);
+
+    // 先截取整个可见区域
+    const capResponse = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
+    if (!capResponse?.dataUrl) {
+      showToast('截图失败，请重试');
+      return;
+    }
+
+    // 裁剪图片
+    const croppedDataUrl = await cropImage(capResponse.dataUrl, rect);
+    if (!croppedDataUrl) {
+      showToast('裁剪失败，请重试');
+      return;
+    }
+
+    // 转为 blob 并附加
+    const res = await fetch(croppedDataUrl);
+    const blob = await res.blob();
+    compressAndAttachImage(blob);
+  } catch (err) {
+    console.error('[SidePanel] 区域截图失败:', err);
+    showToast('区域截图失败，请确保页面已加载且未被浏览器限制');
+  }
+}
+
+/**
+ * 使用 Canvas 裁剪图片
+ * @param {string} dataUrl - 原始图片 data URL
+ * @param {{x, y, width, height}} rect - 裁剪区域（视口坐标）
+ * @returns {Promise<string>} 裁剪后的 data URL
+ */
+function cropImage(dataUrl, rect) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      // 考虑 devicePixelRatio
+      const dpr = window.devicePixelRatio || 1;
+      const sx = rect.x * dpr;
+      const sy = rect.y * dpr;
+      const sw = rect.width * dpr;
+      const sh = rect.height * dpr;
+
+      canvas.width = sw;
+      canvas.height = sh;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = dataUrl;
   });
 }
