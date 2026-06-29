@@ -296,8 +296,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       
       // 过滤消息中的不必要字段，确保消息格式符合 API 要求
       const filteredMessages = currentMessages.map((msg, index) => {
-        // 移除不需要传递给 API 的字段
-        const { executionLog, subtaskId, subtaskName, subtaskIndex, ...rest } = msg;
+        // 移除不需要传递给 API 的字段（内部字段 + API 响应专用字段）
+        const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, ...rest } = msg;
         
         // 对于工具消息，确保只有 role、content 和 tool_call_id
         if (rest.role === 'tool') {
@@ -311,6 +311,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             content: rest.content,
             tool_call_id: rest.tool_call_id
           };
+        }
+        
+        // 对于 assistant 消息，裁剪 tool_calls 中可能混入的非标准字段（如 index 等）
+        if (rest.role === 'assistant' && Array.isArray(rest.tool_calls)) {
+          rest.tool_calls = rest.tool_calls.map(tc => ({
+            id: tc.id,
+            type: tc.type,
+            function: tc.function
+          }));
         }
         
         return rest;
@@ -1598,9 +1607,9 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
     console.log('[Background] 发送非流式 API 请求到:', apiUrl);
 
-    // 过滤消息中的 executionLog 字段，不传递给大模型
+    // 过滤消息中的内部字段和 API 响应专用字段，不传递给大模型
     const filteredMessages = messages.map(msg => {
-      const { executionLog, ...rest } = msg;
+      const { executionLog, refusal, ...rest } = msg;
       return rest;
     });
 
