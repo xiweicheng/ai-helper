@@ -399,21 +399,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         });
         clearTimeout(outerWatchdog);
         
-        if (!fetchResponse.ok) {
-          const errorText = await fetchResponse.text();
-          console.error('[Background] API 响应错误:', fetchResponse.status, errorText);
-          throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${errorText}`);
-        }
-        
-        // 先获取原始文本，再解析 JSON
+        // 先获取原始文本，再根据状态和内容判断
         const responseText = await fetchResponse.text();
-        console.log('[Background] API 响应原始文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+        console.log('[Background] API 响应状态:', fetchResponse.status, '原始文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+
+        if (!fetchResponse.ok) {
+          console.error('[Background] API 响应错误:', fetchResponse.status, responseText);
+          throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${responseText.substring(0, 500)}`);
+        }
+
         try {
           response = JSON.parse(responseText);
         } catch (parseError) {
           console.error('[Background] JSON 解析失败:', parseError);
           console.error('[Background] 原始响应:', responseText);
-          throw new Error('API 响应不是有效的 JSON: ' + parseError.message);
+          throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
         }
       } catch (error) {
         clearTimeout(outerWatchdog);
@@ -444,7 +444,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           };
         }
         
-        throw createErrorWithLog(isAborted ? '请求已被用户取消' : error.message);
+        throw createErrorWithLog(isAborted ? '请求已被用户取消' : error.message, executionLog);
       }
       
       // 更新成功的 API 调用日志
@@ -850,7 +850,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               };
             }
             
-            throw createErrorWithLog(toolError.message);
+            throw createErrorWithLog(toolError.message, executionLog);
           }
         }
         
@@ -1629,16 +1629,18 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
     }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay);
   })
   .then(async response => {
+    const responseText = await response.text();
+    console.log('[Background] 非流式 API 响应状态:', response.status, '文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${responseText.substring(0, 500)}`);
     }
-    const rawText = await response.text();
+
     try {
-      return JSON.parse(rawText);
+      return JSON.parse(responseText);
     } catch (parseErr) {
-      console.error('[Background] JSON 解析失败，原始响应:', rawText.substring(0, 500));
-      throw new Error(`JSON 解析失败: ${parseErr.message}`);
+      console.error('[Background] JSON 解析失败，原始响应:', responseText.substring(0, 500));
+      throw new Error(`JSON 解析失败 (HTTP ${response.status}): ${parseErr.message}。响应前100字符: ${responseText.substring(0, 100)}`);
     }
   })
   .then(data => {
