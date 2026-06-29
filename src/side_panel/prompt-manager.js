@@ -1,7 +1,7 @@
 import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded } from './utils.js';
 import { addToInputHistory } from './input-history.js';
-import { callApi, addContextBubble, addMessage, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
+import { callApi, addContextBubble, addMessage, buildUserContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 
 // ==================== 清除选中内容上下文（sendPromptByCode 依赖） ====================
 
@@ -371,11 +371,14 @@ export async function sendPromptByCode(code) {
     clearSelectedContext();
   }
 
-  // 添加用户问题气泡
-  addMessage('user', prompt.content);
+  // 构建用户消息 content（支持图片附件）
+  const userContent = buildUserContent(userMessage);
+
+  // 添加用户问题气泡（含图片）
+  addMessage('user', buildUserContent(prompt.content));
 
   // 更新消息历史
-  state.messageHistory.push({ role: 'user', content: userMessage });
+  state.messageHistory.push({ role: 'user', content: userContent });
 
   // 保存历史
   saveChatHistory();
@@ -397,7 +400,9 @@ export async function sendPromptByCode(code) {
   const loadingId = addLoadingMessage();
   const mySessionId = state.activeSessionId;
 
-  const model = state.currentModel;
+  const model = state.enableImageInput && state.attachedImages.length > 0
+    ? (state.imageModelName || state.currentModel)
+    : state.currentModel;
 
   try {
     // 确保配置已加载
@@ -432,7 +437,7 @@ export async function sendPromptByCode(code) {
       messages = [...messages, ...historyToSend];
     } else {
       // 无记忆模式：只发送当前用户消息
-      messages.push({ role: 'user', content: userMessage });
+      messages.push({ role: 'user', content: userContent });
     }
 
     // 调用 background.js 的 API
@@ -484,6 +489,12 @@ export async function sendPromptByCode(code) {
     state.generatingSessionIds.delete(mySessionId);
     sendBtn.disabled = false;
     userInput.focus();
+    // 清空图片附件
+    if (state.attachedImages.length > 0) {
+      state.attachedImages = [];
+      const previewBar = document.getElementById('imagePreviewBar');
+      if (previewBar) previewBar.innerHTML = '';
+    }
   }
 }
 

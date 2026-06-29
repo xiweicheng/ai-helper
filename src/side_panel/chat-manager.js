@@ -398,7 +398,7 @@ function renderImagePreviewsFromChat() {
  * @param {string} text - 纯文本内容
  * @returns {string|Array} content 字段值
  */
-function buildUserContent(text) {
+export function buildUserContent(text) {
   if (!state.enableImageInput || state.attachedImages.length === 0) {
     return text;
   }
