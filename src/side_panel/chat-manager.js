@@ -3157,11 +3157,68 @@ function copyMessage(messageDiv, copyBtn) {
 
 function editAndResendMessage(messageDiv) {
   try {
-    const textToEdit = messageDiv.dataset.textContent_ || messageDiv.dataset.rawContent || '';
+    const rawContent = messageDiv.dataset.rawContent || '';
+    const textContent_ = messageDiv.dataset.textContent_ || '';
     
-    if (!textToEdit) {
+    if (!textContent_ && !rawContent) {
       showToast('无法获取消息内容', 'error');
       return;
+    }
+    
+    // 1. 恢复图片附件到 state.attachedImages 并显示在输入框上方
+    state.attachedImages = [];
+    if (rawContent.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(rawContent);
+        if (Array.isArray(parsed)) {
+          const imageParts = parsed.filter(c => c.type === 'image_url');
+          for (const imgPart of imageParts) {
+            state.attachedImages.push({ dataUrl: imgPart.image_url.url });
+          }
+        }
+      } catch (e) { /* 不是 JSON 格式，跳过图片解析 */ }
+    }
+    renderImagePreviewsFromChat();
+    
+    // 2. 恢复引用/选中上下文，显示在输入框上方
+    state.quotedContextText = '';
+    state.selectedContextText = '';
+    
+    const quotedMatch = textContent_.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const selectedMatch = textContent_.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const match = quotedMatch || selectedMatch;
+    
+    let textToEdit = textContent_;
+    
+    if (match) {
+      const type = quotedMatch ? 'quoted' : 'selected';
+      const contextText = match[1].trim();
+      const userQuestion = match[2].trim();
+      
+      // 更新 selectionIndicator 显示
+      const indicator = document.getElementById('selectionIndicator');
+      const selectionTextEl = document.getElementById('selectionText');
+      if (indicator && selectionTextEl) {
+        let displayText;
+        if (contextText.length > 100) {
+          displayText = contextText.substring(0, 100) + '...';
+        } else if (contextText.length > 50) {
+          displayText = contextText.substring(0, 50) + '...';
+        } else {
+          displayText = contextText;
+        }
+        
+        if (type === 'quoted') {
+          state.quotedContextText = contextText;
+          selectionTextEl.textContent = `💬 已引用: ${displayText}`;
+        } else {
+          state.selectedContextText = contextText;
+          selectionTextEl.textContent = `📌 已选中: ${displayText}`;
+        }
+        indicator.classList.add('show');
+      }
+      
+      textToEdit = userQuestion;
     }
     
     const userInput = document.getElementById('userInput');
