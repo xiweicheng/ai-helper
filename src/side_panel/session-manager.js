@@ -63,6 +63,13 @@ export async function renameSession(sessionId, newTitle) {
 }
 
 /**
+ * 重新排序会话
+ */
+export async function reorderSessions(orderedIds) {
+  return store.reorderSessions(orderedIds);
+}
+
+/**
  * 归档当前会话
  */
 export async function archiveCurrentSession() {

@@ -27,6 +27,13 @@ export async function loadSessions() {
     idb.getAllSessions(),
     idb.getActiveSessionId(),
   ]);
+  // 按 order 排序，没有 order 的按 createdAt 兜底
+  list.sort((a, b) => {
+    if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+    if (a.order !== undefined) return -1;
+    if (b.order !== undefined) return 1;
+    return new Date(a.createdAt) - new Date(b.createdAt);
+  });
   return { activeSessionId: activeId, list };
 }
 
@@ -112,6 +119,7 @@ export async function createSession() {
     scrollPosition: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    order: Date.now(),
     isGenerating: false,
     lastExecutionLog: [],
   };
@@ -226,6 +234,27 @@ export async function renameSession(sessionId, newTitle) {
   session.title = newTitle;
   session.updatedAt = new Date().toISOString();
   await idb.putSession(session);
+  return true;
+}
+
+/**
+ * 重新排序会话
+ * @param {string[]} orderedIds - 按新顺序排列的会话 ID 列表
+ */
+export async function reorderSessions(orderedIds) {
+  const allSessions = await idb.getAllSessions();
+  const sessionMap = new Map(allSessions.map(s => [s.id, s]));
+
+  const updates = [];
+  orderedIds.forEach((id, index) => {
+    const session = sessionMap.get(id);
+    if (session) {
+      session.order = index;
+      updates.push(idb.putSession(session));
+    }
+  });
+
+  await Promise.all(updates);
   return true;
 }
 

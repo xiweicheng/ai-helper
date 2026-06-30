@@ -9,8 +9,22 @@ import {
   deleteSession,
   renameSession,
   loadSessions,
-  saveCurrentSession
+  saveCurrentSession,
+  reorderSessions
 } from './session-manager.js';
+
+// ==================== 下拉面板状态 ====================
+let dropdownState = {
+  visible: false,
+  highlightIndex: -1,
+  filteredSessions: [],
+};
+
+// ==================== 拖拽状态 ====================
+let dragState = {
+  draggedId: null,
+  sourceType: null, // 'tab' | 'dropdown'
+};
 
 /**
  * 渲染会话标签栏（纯标签栏，不涉及消息区域）
@@ -22,11 +36,10 @@ export async function renderSessionTabs() {
 
   const tabsContainer = document.getElementById('sessionTabs');
   const scrollContainer = document.getElementById('sessionTabsScroll');
-  const addWrapper = document.getElementById('sessionTabsAddWrapper');
-  if (!tabsContainer || !scrollContainer || !addWrapper) return;
+  const actionsContainer = document.getElementById('sessionTabsActions');
+  if (!tabsContainer || !scrollContainer || !actionsContainer) return;
 
   scrollContainer.innerHTML = '';
-  addWrapper.innerHTML = '';
 
   sessionsData.list.forEach(session => {
     const tab = document.createElement('div');
@@ -84,15 +97,55 @@ export async function renderSessionTabs() {
       showTabContextMenu(e, session);
     });
 
+    // 拖拽排序支持
+    tab.draggable = true;
+    tab.addEventListener('dragstart', (e) => handleTabDragStart(e, session.id));
+    tab.addEventListener('dragover', (e) => handleTabDragOver(e));
+    tab.addEventListener('dragleave', (e) => handleTabDragLeave(e));
+    tab.addEventListener('drop', (e) => handleTabDrop(e, session.id));
+    tab.addEventListener('dragend', (e) => handleTabDragEnd(e));
+
     scrollContainer.appendChild(tab);
   });
 
-  // 新建按钮（固定在右侧）
-  const addBtn = document.createElement('div');
-  addBtn.className = 'session-tab-add';
-  addBtn.title = '新建会话';
-  addBtn.textContent = '+';
-  addBtn.addEventListener('click', async () => {
+  // 绑定更多按钮事件
+  bindMoreButton();
+  // 绑定新建按钮（+ 已在 HTML 中）
+  bindAddButton();
+  // 绑定下拉面板事件
+  bindDropdownEvents();
+
+  // 鼠标滚轮水平滚动支持
+  bindWheelScroll(scrollContainer);
+
+  // 检测溢出并显示/隐藏更多按钮
+  checkOverflow(scrollContainer);
+  // 滚动到当前活跃标签
+  scrollToActiveTab(scrollContainer);
+}
+
+// ==================== 更多按钮 ====================
+
+function bindMoreButton() {
+  const moreBtn = document.getElementById('sessionTabsMore');
+  if (!moreBtn) return;
+  // 移除旧监听器（防止重复绑定）
+  const newMoreBtn = moreBtn.cloneNode(true);
+  moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
+  newMoreBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown();
+  });
+}
+
+// ==================== 新建按钮 ====================
+
+function bindAddButton() {
+  const addBtn = document.getElementById('sessionTabsAdd');
+  if (!addBtn) return;
+  const newAddBtn = addBtn.cloneNode(true);
+  addBtn.parentNode.replaceChild(newAddBtn, addBtn);
+  newAddBtn.addEventListener('click', async () => {
     await saveCurrentSession();
     const newSession = await createSession();
     state.activeSessionId = newSession.id;
@@ -102,11 +155,512 @@ export async function renderSessionTabs() {
     }));
     renderSessionTabs();
   });
-  addWrapper.appendChild(addBtn);
-
-  // 鼠标滚轮水平滚动支持
-  bindWheelScroll(scrollContainer);
 }
+
+// ==================== 溢出检测 ====================
+
+function checkOverflow(scrollContainer) {
+  const moreBtn = document.getElementById('sessionTabsMore');
+  if (!moreBtn) return;
+  if (scrollContainer.scrollWidth > scrollContainer.clientWidth) {
+    moreBtn.style.display = 'flex';
+  } else {
+    moreBtn.style.display = 'none';
+  }
+}
+
+// ResizeObserver 监听滚动容器尺寸变化
+let overflowObserver = null;
+
+function setupOverflowObserver() {
+  if (overflowObserver) return;
+  const scrollContainer = document.getElementById('sessionTabsScroll');
+  if (!scrollContainer) return;
+  overflowObserver = new ResizeObserver(() => {
+    checkOverflow(scrollContainer);
+  });
+  overflowObserver.observe(scrollContainer);
+}
+
+// ==================== 活跃标签滚动 ====================
+
+function scrollToActiveTab(scrollContainer) {
+  setTimeout(() => {
+    const activeTab = scrollContainer.querySelector('.session-tab.active');
+    if (activeTab) {
+      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, 50);
+}
+
+// ==================== 标签栏拖拽排序 ====================
+
+function handleTabDragStart(e, sessionId) {
+  dragState.draggedId = sessionId;
+  dragState.sourceType = 'tab';
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', sessionId);
+  e.currentTarget.classList.add('dragging');
+}
+
+function handleTabDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function handleTabDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function handleTabDrop(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const draggedId = dragState.draggedId;
+  if (!draggedId || draggedId === targetId) return;
+
+  const sessions = state.sessions || [];
+  const draggedIndex = sessions.findIndex(s => s.id === draggedId);
+  const targetIndex = sessions.findIndex(s => s.id === targetId);
+  if (draggedIndex === -1 || targetIndex === -1) return;
+
+  // 移动并持久化
+  const reordered = [...sessions];
+  const [moved] = reordered.splice(draggedIndex, 1);
+  reordered.splice(targetIndex, 0, moved);
+
+  state.sessions = reordered;
+  await reorderSessions(reordered.map(s => s.id));
+  renderSessionTabs();
+}
+
+function handleTabDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.session-tab.drag-over').forEach(el => el.classList.remove('drag-over'));
+  dragState.draggedId = null;
+  dragState.sourceType = null;
+}
+
+// ==================== 下拉列表拖拽排序 ====================
+
+function handleDropdownDragStart(e, sessionId) {
+  dragState.draggedId = sessionId;
+  dragState.sourceType = 'dropdown';
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', sessionId);
+  e.currentTarget.classList.add('dragging');
+}
+
+function handleDropdownDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function handleDropdownDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+async function handleDropdownDrop(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const draggedId = dragState.draggedId;
+  if (!draggedId || draggedId === targetId) return;
+
+  // 使用过滤后的列表做排序（下拉列表可能是搜索过滤后的子集）
+  const filtered = dropdownState.filteredSessions;
+  const draggedIndex = filtered.findIndex(s => s.id === draggedId);
+  const targetIndex = filtered.findIndex(s => s.id === targetId);
+  if (draggedIndex === -1 || targetIndex === -1) return;
+
+  const reorderedFiltered = [...filtered];
+  const [moved] = reorderedFiltered.splice(draggedIndex, 1);
+  reorderedFiltered.splice(targetIndex, 0, moved);
+
+  // 更新 filteredSessions
+  dropdownState.filteredSessions = reorderedFiltered;
+
+  // 映射回完整 sessions 列表
+  const allSessions = state.sessions || [];
+  const fullIds = allSessions.map(s => s.id);
+  const filteredIds = new Set(reorderedFiltered.map(s => s.id));
+  const nonFilteredIds = fullIds.filter(id => !filteredIds.has(id));
+
+  // 将过滤后重排的顺序与非过滤部分拼接
+  const newOrderedIds = [...reorderedFiltered.map(s => s.id), ...nonFilteredIds];
+
+  state.sessions = newOrderedIds.map(id => allSessions.find(s => s.id === id)).filter(Boolean);
+  await reorderSessions(newOrderedIds);
+  renderDropdownList();
+  renderSessionTabs();
+}
+
+function handleDropdownDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.session-dropdown-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  dragState.draggedId = null;
+  dragState.sourceType = null;
+}
+
+// ==================== 下拉面板 ====================
+
+function toggleDropdown() {
+  if (dropdownState.visible) {
+    closeDropdown();
+  } else {
+    openDropdown();
+  }
+}
+
+async function openDropdown() {
+  const moreBtn = document.getElementById('sessionTabsMore');
+  const dropdown = document.getElementById('sessionDropdown');
+  if (!moreBtn || !dropdown) return;
+
+  // 重新加载最新会话列表
+  const sessionsData = await loadSessions();
+  state.sessions = sessionsData.list;
+  state.activeSessionId = sessionsData.activeSessionId;
+
+  dropdownState.filteredSessions = [...sessionsData.list];
+  dropdownState.highlightIndex = -1;
+  dropdownState.visible = true;
+
+  renderDropdownList();
+  positionDropdown(moreBtn, dropdown);
+
+  // 聚焦搜索框
+  const searchInput = document.getElementById('sessionDropdownSearch');
+  if (searchInput) {
+    searchInput.value = '';
+    setTimeout(() => searchInput.focus(), 50);
+  }
+
+  // 更新更多按钮样式
+  moreBtn.classList.add('active');
+
+  // 外部点击关闭
+  setTimeout(() => {
+    document.addEventListener('click', handleOutsideClick);
+  }, 0);
+}
+
+function closeDropdown() {
+  const moreBtn = document.getElementById('sessionTabsMore');
+  const dropdown = document.getElementById('sessionDropdown');
+  if (dropdown) {
+    dropdown.classList.remove('show');
+  }
+  if (moreBtn) {
+    moreBtn.classList.remove('active');
+  }
+  dropdownState.visible = false;
+  dropdownState.highlightIndex = -1;
+  dropdownState.filteredSessions = [];
+  document.removeEventListener('click', handleOutsideClick);
+}
+
+function handleOutsideClick(e) {
+  const dropdown = document.getElementById('sessionDropdown');
+  const moreBtn = document.getElementById('sessionTabsMore');
+  if (!dropdown || !moreBtn) return;
+  if (!dropdown.contains(e.target) && e.target !== moreBtn && !moreBtn.contains(e.target)) {
+    closeDropdown();
+  }
+}
+
+function positionDropdown(moreBtn, dropdown) {
+  dropdown.classList.add('show');
+  const rect = moreBtn.getBoundingClientRect();
+  const dropdownHeight = 360; // max-height
+
+  let top = rect.bottom + 4;
+  let left = rect.right - 240; // 右对齐
+
+  // 底部超出时向上翻转
+  if (top + dropdownHeight > window.innerHeight - 8) {
+    top = rect.top - dropdownHeight - 4;
+    if (top < 8) top = 8;
+  }
+
+  // 左侧超出修正
+  if (left < 8) left = 8;
+
+  dropdown.style.top = top + 'px';
+  dropdown.style.left = left + 'px';
+}
+
+function renderDropdownList() {
+  const listEl = document.getElementById('sessionDropdownList');
+  if (!listEl) return;
+
+  listEl.innerHTML = '';
+
+  if (dropdownState.filteredSessions.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'session-dropdown-empty';
+    emptyEl.textContent = '无匹配会话';
+    listEl.appendChild(emptyEl);
+    return;
+  }
+
+  dropdownState.filteredSessions.forEach((session, index) => {
+    const item = document.createElement('div');
+    item.className = 'session-dropdown-item';
+    item.dataset.sessionId = session.id;
+    item.dataset.index = index;
+
+    if (session.id === state.activeSessionId) {
+      item.classList.add('active');
+    }
+    if (index === dropdownState.highlightIndex) {
+      item.classList.add('highlighted');
+    }
+
+    // 标题
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'session-dropdown-item-title';
+    titleSpan.textContent = session.title || '新会话';
+    item.appendChild(titleSpan);
+
+    // 关闭按钮
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'session-dropdown-item-close';
+    closeBtn.innerHTML = '&#10005;';
+    closeBtn.title = '关闭会话';
+    closeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      await handleDropdownCloseSession(session.id);
+    });
+    item.appendChild(closeBtn);
+
+    // 点击切换会话
+    item.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await handleDropdownSelectSession(session.id);
+    });
+
+    // 拖拽排序支持
+    item.draggable = true;
+    item.addEventListener('dragstart', (e) => handleDropdownDragStart(e, session.id));
+    item.addEventListener('dragover', (e) => handleDropdownDragOver(e));
+    item.addEventListener('dragleave', (e) => handleDropdownDragLeave(e));
+    item.addEventListener('drop', (e) => handleDropdownDrop(e, session.id));
+    item.addEventListener('dragend', (e) => handleDropdownDragEnd(e));
+
+    listEl.appendChild(item);
+  });
+}
+
+function filterDropdownSessions(searchText) {
+  const allSessions = state.sessions || [];
+  if (!searchText.trim()) {
+    dropdownState.filteredSessions = [...allSessions];
+  } else {
+    const lower = searchText.trim().toLowerCase();
+    dropdownState.filteredSessions = allSessions.filter(s =>
+      (s.title || '新会话').toLowerCase().includes(lower)
+    );
+  }
+  dropdownState.highlightIndex = -1;
+  renderDropdownList();
+}
+
+async function handleDropdownSelectSession(sessionId) {
+  closeDropdown();
+  if (sessionId === state.activeSessionId) return;
+  await handleSessionSwitch(sessionId);
+}
+
+async function handleDropdownCloseSession(sessionId) {
+  // 先删除
+  await deleteSession(sessionId);
+  // 重新加载
+  const sessionsData = await loadSessions();
+  state.sessions = sessionsData.list;
+  state.activeSessionId = sessionsData.activeSessionId;
+
+  // 更新过滤列表
+  const searchInput = document.getElementById('sessionDropdownSearch');
+  const searchText = searchInput ? searchInput.value : '';
+  const allSessions = state.sessions || [];
+  if (!searchText.trim()) {
+    dropdownState.filteredSessions = [...allSessions];
+  } else {
+    const lower = searchText.trim().toLowerCase();
+    dropdownState.filteredSessions = allSessions.filter(s =>
+      (s.title || '新会话').toLowerCase().includes(lower)
+    );
+  }
+  dropdownState.highlightIndex = Math.min(dropdownState.highlightIndex, dropdownState.filteredSessions.length - 1);
+  renderDropdownList();
+
+  // 同步更新标签栏
+  const active = allSessions.find(s => s.id === state.activeSessionId);
+  if (active) {
+    state.messageHistory = active.messageHistory || [];
+  } else {
+    state.messageHistory = [];
+  }
+  document.dispatchEvent(new CustomEvent('session-switched'));
+  renderSessionTabs();
+}
+
+async function handleCloseAllSessions() {
+  const sessions = state.sessions || [];
+  if (sessions.length === 0) return;
+
+  // 先关闭下拉面板，避免遮挡确认弹窗
+  closeDropdown();
+
+  const confirmed = await showCustomConfirm(
+    `确定要关闭全部 ${sessions.length} 个会话吗？此操作不可撤销。`,
+    '关闭全部会话'
+  );
+  if (!confirmed) {
+    // 用户取消，重新打开下拉
+    openDropdown();
+    return;
+  }
+
+  // 逐个删除所有会话
+  for (const session of sessions) {
+    await deleteSession(session.id);
+  }
+  // 重新加载
+  const sessionsData = await loadSessions();
+  state.sessions = sessionsData.list;
+  state.activeSessionId = sessionsData.activeSessionId;
+  const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+  state.messageHistory = active ? (active.messageHistory || []) : [];
+
+  document.dispatchEvent(new CustomEvent('session-switched'));
+  renderSessionTabs();
+}
+
+function bindDropdownEvents() {
+  const searchInput = document.getElementById('sessionDropdownSearch');
+  const closeAllBtn = document.getElementById('sessionDropdownCloseAll');
+  const dropdown = document.getElementById('sessionDropdown');
+
+  if (!dropdown) return;
+
+  // 搜索输入
+  if (searchInput) {
+    const newSearch = searchInput.cloneNode(true);
+    searchInput.parentNode.replaceChild(newSearch, searchInput);
+    newSearch.addEventListener('input', (e) => {
+      filterDropdownSessions(e.target.value);
+    });
+    newSearch.addEventListener('keydown', (e) => {
+      handleDropdownKeydown(e);
+    });
+  }
+
+  // 关闭全部按钮
+  if (closeAllBtn) {
+    const newCloseAll = closeAllBtn.cloneNode(true);
+    closeAllBtn.parentNode.replaceChild(newCloseAll, closeAllBtn);
+    newCloseAll.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await handleCloseAllSessions();
+    });
+  }
+
+  // 防止面板内部点击关闭
+  dropdown.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+function handleDropdownKeydown(e) {
+  if (!dropdownState.visible) return;
+
+  const list = dropdownState.filteredSessions;
+  const len = list.length;
+  if (len === 0) {
+    if (e.key === 'Escape') closeDropdown();
+    return;
+  }
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      dropdownState.highlightIndex = Math.min(dropdownState.highlightIndex + 1, len - 1);
+      renderDropdownList();
+      scrollHighlightedIntoView();
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      dropdownState.highlightIndex = Math.max(dropdownState.highlightIndex - 1, 0);
+      renderDropdownList();
+      scrollHighlightedIntoView();
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (dropdownState.highlightIndex >= 0 && dropdownState.highlightIndex < len) {
+        const session = dropdownState.filteredSessions[dropdownState.highlightIndex];
+        handleDropdownSelectSession(session.id);
+      }
+      break;
+    case 'Escape':
+      e.preventDefault();
+      closeDropdown();
+      break;
+  }
+}
+
+function scrollHighlightedIntoView() {
+  const highlighted = document.querySelector('.session-dropdown-item.highlighted');
+  if (highlighted) {
+    highlighted.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+// ==================== 自定义确认弹窗 ====================
+
+function showCustomConfirm(message, title) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('sessionDeleteModal');
+    const messageEl = document.getElementById('sessionDeleteMessage');
+    const confirmBtn = document.getElementById('sessionDeleteConfirmBtn');
+    const cancelBtn = document.getElementById('sessionDeleteCancelBtn');
+    const closeBtn = document.getElementById('sessionDeleteCloseBtn');
+
+    if (!modal || !messageEl) {
+      resolve(false);
+      return;
+    }
+
+    messageEl.textContent = message;
+
+    const cleanup = () => {
+      modal.classList.remove('show');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      closeBtn.removeEventListener('click', onCancel);
+    };
+
+    const onConfirm = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    closeBtn.addEventListener('click', onCancel);
+
+    modal.classList.add('show');
+  });
+}
+
+// ==================== 会话切换 ====================
 
 /**
  * 处理会话切换
@@ -144,15 +698,9 @@ async function handleSessionSwitch(sessionId) {
 
   renderSessionTabs();
   updateUIControls();
-
-  // 滚动到当前活跃标签
-  setTimeout(() => {
-    const activeTab = document.querySelector('.session-tab.active');
-    if (activeTab) {
-      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    }
-  }, 50);
 }
+
+// ==================== UI 控件更新 ====================
 
 /**
  * 更新 UI 控件（模型选择器等）
@@ -174,7 +722,8 @@ function updateUIControls() {
   }
 }
 
-// 鼠标滚轮水平滚动支持
+// ==================== 滚轮水平滚动 ====================
+
 const wheelScrollBindings = new WeakSet();
 
 function bindWheelScroll(el) {
@@ -339,4 +888,13 @@ function createMenuItem(label, onClick, className = '') {
   item.textContent = label;
   item.addEventListener('click', onClick);
   return item;
+}
+
+// ==================== 初始化 ====================
+
+// 在模块加载时设置 ResizeObserver
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupOverflowObserver);
+} else {
+  setupOverflowObserver();
 }

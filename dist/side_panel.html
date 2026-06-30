@@ -1006,13 +1006,13 @@
       border-radius: 2px;
     }
     
-    .session-tabs-add-wrapper {
+    .session-tabs-actions {
       flex-shrink: 0;
       padding: 4px 10px 4px 4px;
       background: #f0f2f5;
-      /* border-bottom: 1px solid #e0e0e0; */
       display: flex;
       align-items: center;
+      gap: 2px;
     }
     
     .session-tab {
@@ -1124,6 +1124,222 @@
       color: #667eea;
       border-color: #667eea;
       background: rgba(102, 126, 234, 0.05);
+    }
+
+    /* 标签栏拖拽样式 */
+    .session-tab.dragging {
+      opacity: 0.4;
+    }
+
+    .session-tab.drag-over {
+      border-left: 2px solid #667eea;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+
+    /* 更多按钮（三个点） */
+    .session-tabs-more {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #999;
+      background: transparent;
+      border: 1px dashed #ccc;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+      user-select: none;
+      line-height: 1;
+    }
+
+    .session-tabs-more:hover {
+      color: #667eea;
+      border-color: #667eea;
+      background: rgba(102, 126, 234, 0.05);
+    }
+
+    .session-tabs-more.active {
+      color: #667eea;
+      border-color: #667eea;
+      background: rgba(102, 126, 234, 0.1);
+    }
+
+    /* ========== 会话下拉面板 ========== */
+    .session-dropdown {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+      width: 240px;
+      max-height: 360px;
+      overflow: hidden;
+      flex-direction: column;
+      animation: dropdownFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .session-dropdown.show {
+      display: flex;
+    }
+
+    .session-dropdown-search {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: white;
+      border-bottom: 1px solid #e8eaed;
+    }
+
+    .session-dropdown-search-icon {
+      flex-shrink: 0;
+      color: #999;
+    }
+
+    .session-dropdown-search input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 12px;
+      color: #333;
+      background: transparent;
+      min-width: 0;
+    }
+
+    .session-dropdown-search input::placeholder {
+      color: #bbb;
+    }
+
+    .session-dropdown-list {
+      flex: 1;
+      overflow-y: auto;
+      max-height: 260px;
+    }
+
+    .session-dropdown-list::-webkit-scrollbar {
+      width: 3px;
+    }
+
+    .session-dropdown-list::-webkit-scrollbar-thumb {
+      background: #d0d0d0;
+      border-radius: 3px;
+    }
+
+    .session-dropdown-empty {
+      padding: 20px 12px;
+      text-align: center;
+      color: #bbb;
+      font-size: 12px;
+    }
+
+    .session-dropdown-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #333;
+      transition: background 0.1s ease;
+      gap: 8px;
+    }
+
+    .session-dropdown-item:hover {
+      background: #f5f6f8;
+    }
+
+    .session-dropdown-item.highlighted {
+      background: #eef0ff;
+    }
+
+    .session-dropdown-item.active {
+      color: #667eea;
+      font-weight: 500;
+    }
+
+    .session-dropdown-item-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .session-dropdown-item.active .session-dropdown-item-title::before {
+      content: '● ';
+      font-size: 8px;
+      vertical-align: middle;
+    }
+
+    /* 下拉列表拖拽样式 */
+    .session-dropdown-item.dragging {
+      opacity: 0.3;
+    }
+
+    .session-dropdown-item.drag-over {
+      border-top: 2px solid #667eea;
+    }
+
+    .session-dropdown-item-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      font-size: 10px;
+      color: #bbb;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+      line-height: 1;
+    }
+
+    .session-dropdown-item-close:hover {
+      color: #e53e3e;
+      background: rgba(229, 62, 62, 0.1);
+    }
+
+    .session-dropdown-footer {
+      position: sticky;
+      bottom: 0;
+      background: white;
+      border-top: 1px solid #e8eaed;
+      padding: 6px 8px;
+    }
+
+    .session-dropdown-close-all {
+      width: 100%;
+      padding: 6px 0;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: #e53e3e;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .session-dropdown-close-all:hover {
+      background: rgba(229, 62, 62, 0.06);
+    }
+
+    /* 下拉动画 */
+    @keyframes dropdownFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     
     /* 右键菜单 */
@@ -5243,7 +5459,30 @@
   <!-- 会话标签栏 -->
   <div class="session-tabs" id="sessionTabs">
     <div class="session-tabs-scroll" id="sessionTabsScroll"></div>
-    <div class="session-tabs-add-wrapper" id="sessionTabsAddWrapper"></div>
+    <div class="session-tabs-actions" id="sessionTabsActions">
+      <div class="session-tabs-more" id="sessionTabsMore" title="全部会话">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="5" r="2"/>
+          <circle cx="12" cy="12" r="2"/>
+          <circle cx="12" cy="19" r="2"/>
+        </svg>
+      </div>
+      <div class="session-tab-add" id="sessionTabsAdd">+</div>
+    </div>
+  </div>
+
+  <!-- 会话下拉面板 -->
+  <div class="session-dropdown" id="sessionDropdown">
+    <div class="session-dropdown-search">
+      <svg class="session-dropdown-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input type="text" placeholder="搜索会话..." id="sessionDropdownSearch" />
+    </div>
+    <div class="session-dropdown-list" id="sessionDropdownList"></div>
+    <div class="session-dropdown-footer">
+      <button class="session-dropdown-close-all" id="sessionDropdownCloseAll">关闭全部</button>
+    </div>
   </div>
   
   <div class="chat-container" id="chatContainer">
