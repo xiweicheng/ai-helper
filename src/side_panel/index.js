@@ -581,7 +581,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   function adjustInputHeight() {
     if (!userInput || state.isScrolling) return;
     userInput.style.height = 'auto';
-    userInput.style.height = Math.min(userInput.scrollHeight, 100) + 'px';
+    const scrollH = userInput.scrollHeight;
+    // 单行内容时移除 inline height，让 CSS min-height 统一处理，避免中英文 scrollHeight 差异导致抖动
+    if (scrollH <= 50) {
+      userInput.style.height = '';
+    } else {
+      userInput.style.height = Math.min(scrollH, 100) + 'px';
+    }
   }
 
   // 加载保存的温度设置
@@ -1924,6 +1930,14 @@ function updateImagePreviewVisibility() {
       screenshotBtn.style.removeProperty('display');
     } else {
       screenshotBtn.style.display = 'none';
+    }
+  }
+  // 根据截图按钮是否可见，调整 textarea 右侧内边距，防止文字与按钮重叠
+  if (userInput) {
+    if (state.enableImageInput) {
+      userInput.style.paddingRight = '84px';
+    } else {
+      userInput.style.paddingRight = '';
     }
   }
   // 如果关闭了图片功能，清空已附加的图片
