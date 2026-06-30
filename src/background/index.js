@@ -5,6 +5,7 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache } from './tool-executor.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
+import { recordTokenUsage } from './token-recorder.js';
 
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
@@ -176,11 +177,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     apiCall
       .then(result => {
-        // 兼容两种返回格式：{ content, executionLog } 或直接返回 content
+        // 兼容两种返回格式：{ content, executionLog } 或 { content, usage }
         const content = result.content !== undefined ? result.content : result;
         const executionLog = result.executionLog || [];
         const reflectionScore = result.reflectionScore;
         const wasRevised = result.wasRevised || false;
+
+        // 记录非 ReAct 模式的 token 使用统计
+        if (result.usage) {
+          recordTokenUsage({
+            sessionId,
+            model: model || '',
+            usage: result.usage,
+            callType: 'non_stream'
+          }).catch(() => {});
+        }
         
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         chrome.runtime.sendMessage({
@@ -288,6 +299,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const result = await callApiNonStream(messages, config.modelName, {});
         const content = result.content !== undefined ? result.content : result;
         const executionLog = result.executionLog || [];
+
+        // 记录 token 使用统计
+        if (result.usage) {
+          recordTokenUsage({
+            sessionId: 'selection_toolbar',
+            model: config.modelName,
+            usage: result.usage,
+            callType: 'non_stream'
+          }).catch(() => {});
+        }
         
         console.log('[Background] 选中文本工具栏 API 完成，内容长度:', content.length);
         

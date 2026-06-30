@@ -5,6 +5,7 @@ import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
+import { recordTokenUsage } from './token-recorder.js';
 
 // 活跃的 ReAct 循环 sessionId 集合，用于检测 SW 静默重启
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
@@ -495,6 +496,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             tokenUsage: response.usage
           }
         };
+      }
+
+      // 记录 token 使用统计
+      if (response.usage) {
+        recordTokenUsage({
+          sessionId,
+          model: model || config.modelName,
+          usage: response.usage,
+          callType: 'react_loop'
+        }).catch(() => {});
       }
 
       // 推送 API 调用成功状态更新
@@ -1006,7 +1017,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         console.log('[Background] 触发后置反思...');
         const reflectionResult = await reflectOnResult(
           currentMessages, content, executionLog, model, config,
-          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext
+          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId
         );
         
         // 合并反思日志
@@ -1292,7 +1303,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
               subtaskReflectConfig,
               tabId,
               subtask.name,
-              parentExecutionLog
+              parentExecutionLog,
+              sessionId
             );
             
             // 如果反思有修订，使用修订后的结果
@@ -1674,7 +1686,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
   .then(data => {
     console.log('[Background] API 响应:', JSON.stringify(data).substring(0, 200));
     const content = data.choices?.[0]?.message?.content || '';
-    return content;
+    return { content, usage: data.usage || null };
   })
   .catch(error => {
     if (error.name === 'AbortError') {
@@ -1917,7 +1929,7 @@ function parseReflectionResult(rawContent) {
  *
  * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null, wasRevised: boolean }}
  */
-async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext) {
+async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId) {
   const postConfig = reflectionConfig.postReflection;
 
   if (postConfig.maxRounds < 1) {
@@ -2043,6 +2055,16 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
         },
         duration
       });
+
+      // 记录反思 token 使用统计
+      if (data.usage) {
+        recordTokenUsage({
+          sessionId,
+          model: reflectionModel,
+          usage: data.usage,
+          callType: 'reflection'
+        }).catch(() => {});
+      }
 
       // 如果通过且不需要修订，提前结束
       if (decision === 'passed') {
@@ -2173,7 +2195,7 @@ ${toolResultStr.substring(0, 2000)}
 /**
  * 子任务反思：对子任务执行结果进行质量评估
  */
-async function reflectOnSubtask(messages, result, executionLog, model, config, subtaskReflectConfig, tabId, subtaskName, parentExecutionLog) {
+async function reflectOnSubtask(messages, result, executionLog, model, config, subtaskReflectConfig, tabId, subtaskName, parentExecutionLog, sessionId) {
   const startTime = Date.now();
   const reflectionLog = [];
   
@@ -2269,6 +2291,16 @@ ${dimensionPrompts}
     });
 
     console.log(`[Background] 子任务反思完成: ${subtaskName}, 评分: ${parsed.overallScore}/10, 耗时: ${duration}ms`);
+
+    // 记录子任务反思 token 使用统计
+    if (data.usage) {
+      recordTokenUsage({
+        sessionId,
+        model: reflectionModel,
+        usage: data.usage,
+        callType: 'subtask_reflection'
+      }).catch(() => {});
+    }
 
     return {
       score: parsed.overallScore,

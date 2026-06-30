@@ -2,7 +2,7 @@
 // 提供 Promise 化的 IndexedDB 操作，支持 side panel 和 service worker 共享访问
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /**
  * 获取数据库连接（单例）
@@ -38,6 +38,13 @@ function openDB() {
         prototypeStore.createIndex('createdAt', 'createdAt', { unique: false });
         prototypeStore.createIndex('sessionId', 'sessionId', { unique: false });
       }
+
+      // Token 使用统计存储（keyPath: id）
+      if (!db.objectStoreNames.contains('tokenStats')) {
+        const tokenStatsStore = db.createObjectStore('tokenStats', { keyPath: 'id' });
+        tokenStatsStore.createIndex('sessionId', 'sessionId', { unique: false });
+        tokenStatsStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
     };
 
     request.onsuccess = (event) => {
@@ -66,7 +73,7 @@ function resetDBConnection() {
 /**
  * 获取数据库实例（缓存单例）
  */
-function getDB() {
+export function getDB() {
   if (!dbPromise) {
     dbPromise = openDB();
   }
@@ -81,7 +88,7 @@ function getDB() {
  * @param {boolean} [isRetry=false] - 是否为重试调用（内部使用）
  * @returns {Promise<any>}
  */
-function withStore(storeName, mode, callback, isRetry = false) {
+export function withStore(storeName, mode, callback, isRetry = false) {
   return getDB().then((db) => {
     return new Promise((resolve, reject) => {
       let resolvedValue = null;

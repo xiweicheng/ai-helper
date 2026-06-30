@@ -5501,7 +5501,7 @@
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/constants-CIsVXb3D.js"></script>
-  <script type="module" crossorigin src="/assets/token-counter-048_GRqq.js"></script>
+  <script type="module" crossorigin src="/assets/token-store-CgV-rD1I.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -5549,6 +5549,12 @@
               <polyline points="21 15 16 10 5 21"/>
             </svg>
             原型库
+          </button>
+          <button class="header-dropdown-item" id="tokenStatsHeaderBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
+            </svg>
+            Token 统计
           </button>
           <button class="header-dropdown-item" id="shortcutsBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5729,6 +5735,37 @@
           <div id="toolStatsUnusedList" style="display: flex; flex-wrap: wrap; gap: 6px 4px;"></div>
         </div>
         <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Token 使用统计子弹窗 -->
+  <div class="modal-overlay" id="tokenStatsOverlay" style="display: none;">
+    <div class="modal-container" style="max-width: 520px; width: 90%; max-height: 540px; display: flex; flex-direction: column;">
+      <button class="prompt-modal-close" id="tokenStatsClose" title="关闭">×</button>
+      <button id="tokenStatsRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title">🪙 Token 使用统计</div>
+      <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="font-size: 12px; color: #999;">单次问答 ReAct 会话维度 & 总体维度</span>
+        <button id="tokenStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto;">
+        <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
+        <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
+        <div id="tokenStatsContent" style="display: none;">
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">当前会话</div>
+            <div id="tokenSessionStats"></div>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">全局统计</div>
+            <div id="tokenOverallStats"></div>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;">近期调用</div>
+            <div id="tokenRecentCalls"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

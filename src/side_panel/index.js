@@ -28,6 +28,7 @@ import {
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState
 } from './tool-panel.js';
+import { initTokenStatsPanel } from './token-stats-panel.js';
 
 // ==================== 配置监听 ====================
 
@@ -1410,6 +1411,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       showPrototypeLibrary();
     });
   }
+
+  // Token 统计按钮（header 下拉菜单）
+  const tokenStatsHeaderBtn = document.getElementById('tokenStatsHeaderBtn');
+  if (tokenStatsHeaderBtn) {
+    tokenStatsHeaderBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      if (window.openTokenStats) window.openTokenStats();
+    });
+  }
+
+  // 初始化 Token 统计面板
+  initTokenStatsPanel(() => state.activeSessionId, showCustomConfirm);
 
   // 隔离对话开关（记忆对话）
   const isolateChatBtn = document.getElementById('isolateChatBtn');
