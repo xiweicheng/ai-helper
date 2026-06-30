@@ -689,12 +689,10 @@ export async function sendMessage() {
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
     finalText = `[引用内容]\n${ctx}\n\n[用户问题]\n${text}`;
-    addContextBubble('quoted', ctx, false);
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
     finalText = `[选中内容]\n${ctx}\n\n[用户问题]\n${text}`;
-    addContextBubble('selected', ctx, false);
     state.selectedContextText = '';
   }
   

@@ -206,6 +206,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
    * 发送实时执行状态更新消息（200ms 节流，子任务大量执行时防止消息拥塞）
    */
   let lastStatusSendTime = 0;
+  let lastSentNodeName = '';
   function sendExecutionStatusUpdate(nodeName, status) {
     try {
       const now = Date.now();
@@ -216,9 +217,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         onLogUpdate(logSnapshot);
       }
       
-      // 节流：200ms 内不重复发送 chrome.runtime.sendMessage
-      if (now - lastStatusSendTime < 200) return;
+      // 节流：200ms 内同一节点名不重复发送，但节点名变化时立即发送
+      if (nodeName === lastSentNodeName && now - lastStatusSendTime < 200) return;
       lastStatusSendTime = now;
+      lastSentNodeName = nodeName;
       
       const msg = {
         type: 'EXECUTION_STATUS_UPDATE',
