@@ -24,17 +24,55 @@
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
       padding: 30px;
     }
-    h1 {
-      text-align: center;
-      color: #667eea;
-      margin-bottom: 10px;
-      font-size: 24px;
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 24px;
     }
-    .subtitle {
-      text-align: center;
+    .header-left h1 {
+      color: #667eea;
+      font-size: 24px;
+      margin-bottom: 6px;
+      text-align: left;
+      margin-top: 0;
+    }
+    .header-left .subtitle {
       color: #888;
-      margin-bottom: 30px;
       font-size: 14px;
+      margin-bottom: 0;
+      text-align: left;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 6px;
+      flex-shrink: 0;
+    }
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      color: #666;
+      padding: 0;
+      position: relative;
+    }
+    .icon-btn:hover {
+      background: #f0f0f0;
+      color: #667eea;
+      border-color: #667eea;
+    }
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      pointer-events: none;
     }
     .form-group {
       margin-bottom: 20px;
@@ -988,6 +1026,26 @@
       gap: 8px;
       margin-top: 16px;
     }
+
+    .modal-actions .btn {
+      width: auto;
+      padding: 8px 24px;
+    }
+
+    .modal-actions .btn-primary {
+      width: auto;
+      padding: 8px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .modal-actions .btn-secondary {
+      width: auto;
+      padding: 8px 24px;
+      background: #f0f0f0;
+      color: #555;
+      border: 1px solid #ddd;
+    }
     
     /* 工具栏数量输入框保持和 ReAct/Chat 数字输入框一致 */
     #toolbarMaxVisible {
@@ -1389,8 +1447,28 @@
 </head>
 <body>
   <div class="container">
-    <h1><img src="data:image/png;base64,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" width="24" height="24" alt="AI Helper" style="vertical-align: -4px; margin-right: 8px;">AI Helper 配置</h1>
-    <p class="subtitle">网页智能助手 - OpenAI 兼容接口</p>
+    <div class="page-header">
+      <div class="header-left">
+        <h1><img src="data:image/png;base64,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" width="24" height="24" alt="AI Helper" style="vertical-align: -4px; margin-right: 8px;">AI Helper 配置</h1>
+        <p class="subtitle">网页智能助手 - OpenAI 兼容接口</p>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="importConfigBtn" title="导入配置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </button>
+        <button class="icon-btn" id="exportConfigBtn" title="导出配置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
 
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
@@ -2080,6 +2158,58 @@
 
     <div class="status" id="status"></div>
   </div>
+  
+  <!-- 导出配置弹窗 -->
+  <div class="modal-overlay" id="exportConfigModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导出配置</h3>
+        <button class="modal-close-btn" id="exportConfigCloseBtn" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+          <input type="checkbox" id="exportIncludeSecrets" style="width: 16px; height: 16px;">
+          <span>包含 API 密钥</span>
+          <span style="font-size: 12px; color: #e67e22; font-weight: normal;">⚠ 敏感信息，请确保文件安全</span>
+        </label>
+        <p style="margin-top: 12px; font-size: 13px; color: #888;">
+          导出文件将包含除 Agent 连接信息外的所有配置，可选择是否包含 API 密钥。
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="exportConfigCancelBtn">取消</button>
+        <button class="btn btn-primary" id="exportConfigOkBtn">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入配置弹窗 -->
+  <div class="modal-overlay" id="importConfigModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导入配置</h3>
+        <button class="modal-close-btn" id="importConfigCloseBtn" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <p id="importSummary" style="font-size: 13px; color: #888; margin-bottom: 16px;"></p>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555; margin-bottom: 12px;">
+          <input type="radio" name="importStrategy" id="importStrategyMerge" value="merge" checked style="width: auto;">
+          <span>合并导入 — 仅覆盖文件中存在的配置项，保留其他</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+          <input type="radio" name="importStrategy" id="importStrategyReplace" value="replace" style="width: auto;">
+          <span>完全替换 — 清空当前配置，使用文件中的配置</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="importConfigCancelBtn">取消</button>
+        <button class="btn btn-primary" id="importConfigOkBtn">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏的文件选择器 -->
+  <input type="file" id="importConfigFile" accept=".json" style="display: none;">
   
   <!-- Toast 提示容器 -->
   <div class="toast-container" id="toastContainer"></div>

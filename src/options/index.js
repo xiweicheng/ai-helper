@@ -16,6 +16,7 @@ import {
   addBlockedDomain,
   removeBlockedDomain
 } from './toolbar-config.js';
+import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
 
 let currentTools = [];
 
@@ -467,6 +468,16 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ==================== Agent 配置 ====================
   initAgentConfig();
+
+  // ==================== 配置导入/导出 ====================
+  document.getElementById('exportConfigBtn').addEventListener('click', showExportDialog);
+  document.getElementById('importConfigBtn').addEventListener('click', triggerImport);
+  document.getElementById('importConfigFile').addEventListener('change', function(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      handleImportFile(e.target.files[0]);
+    }
+  });
+  initConfigIOEvents();
 });
 
 // 持久化并重新渲染

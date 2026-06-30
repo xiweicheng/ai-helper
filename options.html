@@ -24,17 +24,55 @@
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
       padding: 30px;
     }
-    h1 {
-      text-align: center;
-      color: #667eea;
-      margin-bottom: 10px;
-      font-size: 24px;
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 24px;
     }
-    .subtitle {
-      text-align: center;
+    .header-left h1 {
+      color: #667eea;
+      font-size: 24px;
+      margin-bottom: 6px;
+      text-align: left;
+      margin-top: 0;
+    }
+    .header-left .subtitle {
       color: #888;
-      margin-bottom: 30px;
       font-size: 14px;
+      margin-bottom: 0;
+      text-align: left;
+    }
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 6px;
+      flex-shrink: 0;
+    }
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      color: #666;
+      padding: 0;
+      position: relative;
+    }
+    .icon-btn:hover {
+      background: #f0f0f0;
+      color: #667eea;
+      border-color: #667eea;
+    }
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      pointer-events: none;
     }
     .form-group {
       margin-bottom: 20px;
@@ -988,6 +1026,26 @@
       gap: 8px;
       margin-top: 16px;
     }
+
+    .modal-actions .btn {
+      width: auto;
+      padding: 8px 24px;
+    }
+
+    .modal-actions .btn-primary {
+      width: auto;
+      padding: 8px 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .modal-actions .btn-secondary {
+      width: auto;
+      padding: 8px 24px;
+      background: #f0f0f0;
+      color: #555;
+      border: 1px solid #ddd;
+    }
     
     /* 工具栏数量输入框保持和 ReAct/Chat 数字输入框一致 */
     #toolbarMaxVisible {
@@ -1386,8 +1444,28 @@
 </head>
 <body>
   <div class="container">
-    <h1><img src="icons/icon48.png" width="24" height="24" alt="AI Helper" style="vertical-align: -4px; margin-right: 8px;">AI Helper 配置</h1>
-    <p class="subtitle">网页智能助手 - OpenAI 兼容接口</p>
+    <div class="page-header">
+      <div class="header-left">
+        <h1><img src="icons/icon48.png" width="24" height="24" alt="AI Helper" style="vertical-align: -4px; margin-right: 8px;">AI Helper 配置</h1>
+        <p class="subtitle">网页智能助手 - OpenAI 兼容接口</p>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="importConfigBtn" title="导入配置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </button>
+        <button class="icon-btn" id="exportConfigBtn" title="导出配置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
 
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
@@ -2077,6 +2155,58 @@
 
     <div class="status" id="status"></div>
   </div>
+  
+  <!-- 导出配置弹窗 -->
+  <div class="modal-overlay" id="exportConfigModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导出配置</h3>
+        <button class="modal-close-btn" id="exportConfigCloseBtn" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+          <input type="checkbox" id="exportIncludeSecrets" style="width: 16px; height: 16px;">
+          <span>包含 API 密钥</span>
+          <span style="font-size: 12px; color: #e67e22; font-weight: normal;">⚠ 敏感信息，请确保文件安全</span>
+        </label>
+        <p style="margin-top: 12px; font-size: 13px; color: #888;">
+          导出文件将包含除 Agent 连接信息外的所有配置，可选择是否包含 API 密钥。
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="exportConfigCancelBtn">取消</button>
+        <button class="btn btn-primary" id="exportConfigOkBtn">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入配置弹窗 -->
+  <div class="modal-overlay" id="importConfigModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>导入配置</h3>
+        <button class="modal-close-btn" id="importConfigCloseBtn" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <p id="importSummary" style="font-size: 13px; color: #888; margin-bottom: 16px;"></p>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555; margin-bottom: 12px;">
+          <input type="radio" name="importStrategy" id="importStrategyMerge" value="merge" checked style="width: auto;">
+          <span>合并导入 — 仅覆盖文件中存在的配置项，保留其他</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+          <input type="radio" name="importStrategy" id="importStrategyReplace" value="replace" style="width: auto;">
+          <span>完全替换 — 清空当前配置，使用文件中的配置</span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="importConfigCancelBtn">取消</button>
+        <button class="btn btn-primary" id="importConfigOkBtn">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 隐藏的文件选择器 -->
+  <input type="file" id="importConfigFile" accept=".json" style="display: none;">
   
   <!-- Toast 提示容器 -->
   <div class="toast-container" id="toastContainer"></div>
