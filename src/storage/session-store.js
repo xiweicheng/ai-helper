@@ -130,6 +130,53 @@ export async function createSession() {
 }
 
 /**
+ * 从导出的会话数据导入为新的活跃会话
+ * @param {Array} sessionsData - 导出的会话数据数组（不含 id/order，导入时重新生成）
+ * @returns {Promise<Array>} 新创建的会话数组
+ */
+export async function importSessions(sessionsData) {
+  await init();
+  const createdSessions = [];
+
+  for (const sessionData of sessionsData) {
+    const sessionId = generateSessionId();
+    const newSession = {
+      id: sessionId,
+      title: sessionData.title || '导入的会话',
+      model: sessionData.model || state.currentModel,
+      useTools: sessionData.useTools !== undefined ? sessionData.useTools : true,
+      enabledTools: sessionData.enabledTools || [...state.enabledTools],
+      temperature: sessionData.temperature !== undefined ? sessionData.temperature : state.temperature,
+      topP: sessionData.topP !== undefined ? sessionData.topP : state.topP,
+      messageHistory: (sessionData.messageHistory || []).map((msg) => ({
+        role: msg.role,
+        content: msg.content || '',
+        executionLog: msg.executionLog || [],
+        reflectionScore: msg.reflectionScore,
+        wasRevised: msg.wasRevised || false,
+      })),
+      scrollPosition: 0,
+      createdAt: sessionData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      order: Date.now() + createdSessions.length,
+      isGenerating: false,
+      lastExecutionLog: [],
+    };
+
+    await idb.putSession(newSession);
+    createdSessions.push(newSession);
+  }
+
+  // 如果当前没有活跃会话，自动切换到第一个导入的会话
+  const activeId = await idb.getActiveSessionId();
+  if (!activeId && createdSessions.length > 0) {
+    await idb.setActiveSessionId(createdSessions[0].id);
+  }
+
+  return createdSessions;
+}
+
+/**
  * 将一条消息追加到指定会话的消息历史中
  * 用于切换会话后，后台任务仍在执行时保存任务结果
  * @param {string} sessionId 目标会话 ID

@@ -84,6 +84,13 @@ export async function restoreArchivedSession(archivedId) {
 }
 
 /**
+ * 从导出的会话数据导入
+ */
+export async function importSessions(sessionsData) {
+  return store.importSessions(sessionsData);
+}
+
+/**
  * 将一条消息追加到指定会话的历史中（用于切换会话后保存后台任务结果）
  * @param {string} sessionId 目标会话 ID
  * @param {Object} message 消息对象 { role, content, executionLog }

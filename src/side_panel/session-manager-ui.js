@@ -177,7 +177,10 @@ function setupOverflowObserver() {
   const scrollContainer = document.getElementById('sessionTabsScroll');
   if (!scrollContainer) return;
   overflowObserver = new ResizeObserver(() => {
-    checkOverflow(scrollContainer);
+    // 使用 requestAnimationFrame 避免 ResizeObserver loop 错误
+    requestAnimationFrame(() => {
+      checkOverflow(scrollContainer);
+    });
   });
   overflowObserver.observe(scrollContainer);
 }

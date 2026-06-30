@@ -780,6 +780,58 @@ export async function renderMessageMermaid(messageDiv) {
   addCodeCopyButtons();
 }
 
+// Ctrl+单击复制代码的事件委托是否已绑定
+let ctrlClickBound = false;
+
+/**
+ * 设置 Ctrl+单击复制代码事件（委托在 #chatContainer 上，只绑定一次）
+ */
+function setupCodeCtrlClick() {
+  if (ctrlClickBound) return;
+  ctrlClickBound = true;
+
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+
+  chatContainer.addEventListener('click', (e) => {
+    // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac）
+    if (!e.ctrlKey && !e.metaKey) return;
+
+    // 点击目标是 <code> 元素
+    const codeEl = e.target.closest('code');
+    if (!codeEl) return;
+
+    // 排除复制按钮区域内的点击（按钮自己的点击事件会 stopPropagation）
+    const copyBtn = e.target.closest('.code-copy-btn');
+    if (copyBtn) return;
+
+    e.preventDefault();
+    const codeText = codeEl.textContent;
+    if (!codeText) return;
+
+    navigator.clipboard.writeText(codeText).then(() => {
+      // 判断是行内代码还是代码块
+      const isCodeBlock = codeEl.closest('.code-block-container');
+      const label = isCodeBlock ? '代码块' : '代码';
+      showToast(`${label}已复制到剪贴板`, 'success');
+    }).catch((err) => {
+      console.error('[SidePanel] Ctrl+单击复制失败:', err);
+      // 降级方案
+      const textArea = document.createElement('textarea');
+      textArea.value = codeText;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      showToast('代码已复制到剪贴板', 'success');
+    });
+  });
+
+  console.log('[SidePanel] Ctrl+单击复制代码事件已绑定');
+}
+
 /**
  * 添加代码块复制按钮事件
  */
@@ -814,6 +866,9 @@ export function addCodeCopyButtons() {
     console.log('[SidePanel] 已绑定按钮', index);
   });
   
+  // 设置 Ctrl+单击复制（只绑定一次）
+  setupCodeCtrlClick();
+
   // 添加表格工具栏按钮事件
   addTableToolbarEvents();
 }

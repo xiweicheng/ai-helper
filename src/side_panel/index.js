@@ -10,7 +10,8 @@ import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
 import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
 import {
-  sendMessage, clearChatHistory, exportChatHistory,
+  sendMessage, clearChatHistory, showExportDialog, hideExportDialog, performExport,
+  initExportDialogEvents, triggerImportDialog, handleImportFile,
   showModal, hideModal, loadChatHistory, saveChatHistory,
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
@@ -1353,7 +1354,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     exportChatBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       headerMoreDropdown.classList.remove('show');
-      exportChatHistory();
+      showExportDialog();
+    });
+  }
+
+  // 导入对话按钮
+  const importChatBtn = document.getElementById('importChatBtn');
+  if (importChatBtn) {
+    importChatBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      triggerImportDialog();
+    });
+  }
+
+  // 导入文件选择器 change 事件
+  const importSessionsFile = document.getElementById('importSessionsFile');
+  if (importSessionsFile) {
+    importSessionsFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        handleImportFile(file);
+      }
     });
   }
 
@@ -1912,6 +1934,7 @@ document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
+document.addEventListener('DOMContentLoaded', initExportDialogEvents);
 
 // ==================== 图片辅助函数 ====================
 
