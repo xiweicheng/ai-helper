@@ -1956,6 +1956,12 @@ function renderImagePreviews() {
 
   previewBar.innerHTML = '';
 
+  if (state.attachedImages.length === 0) {
+    previewBar.style.display = 'none';
+    return;
+  }
+  previewBar.style.display = '';
+
   state.attachedImages.forEach((img, index) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'image-preview-item';

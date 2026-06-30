@@ -604,6 +604,12 @@ function renderImagePreviewsFromChat() {
 
   previewBar.innerHTML = '';
 
+  if (state.attachedImages.length === 0) {
+    previewBar.style.display = 'none';
+    return;
+  }
+  previewBar.style.display = '';
+
   state.attachedImages.forEach((img, index) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'image-preview-item';
@@ -725,10 +731,13 @@ export async function sendMessage() {
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
-  // 图片数据已包含在 userContent 中，立即清除预览栏 DOM
+  // 图片数据已包含在 userContent 中，立即清除并隐藏预览栏 DOM
   if (state.attachedImages.length > 0) {
     const previewBar = document.getElementById('imagePreviewBar');
-    if (previewBar) previewBar.innerHTML = '';
+    if (previewBar) {
+      previewBar.innerHTML = '';
+      previewBar.style.display = 'none';
+    }
   }
 
   try {
@@ -856,6 +865,8 @@ export async function sendMessage() {
     sendBtn.disabled = false;
     userInput.focus();
     state.attachedImages = [];
+    const previewBar = document.getElementById('imagePreviewBar');
+    if (previewBar) previewBar.style.display = 'none';
   }
 }
 
