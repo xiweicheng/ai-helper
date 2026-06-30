@@ -1805,10 +1805,13 @@
       <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
       
       <div class="reflection-main-toggle">
-        <label>
-          <input type="checkbox" id="reflectionEnabled" checked>
-          <span>启用反思功能</span>
-        </label>
+        <span>启用反思功能</span>
+        <div class="reflection-section-toggle">
+          <label class="reflection-toggle-switch">
+            <input type="checkbox" id="reflectionEnabled" checked>
+            <span class="reflection-toggle-slider"></span>
+          </label>
+        </div>
       </div>
       
       <div class="reflection-section" id="postReflectionSection" data-toggle="postReflectionEnabled">

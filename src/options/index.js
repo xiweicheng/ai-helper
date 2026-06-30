@@ -812,7 +812,7 @@ function initAgentConfig() {
   // 详情面板折叠切换
   if (agentDetailToggle && agentDetailPanel) {
     agentDetailToggle.addEventListener('click', () => {
-      const isOpen = agentDetailPanel.style.display !== 'none';
+      const isOpen = getComputedStyle(agentDetailPanel).display !== 'none';
       agentDetailPanel.style.display = isOpen ? 'none' : 'block';
       agentDetailToggle.textContent = isOpen ? '▶ 详细信息' : '▼ 详细信息';
       agentDetailToggle.classList.toggle('open', !isOpen);

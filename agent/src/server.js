@@ -2,7 +2,8 @@
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 import os from 'os';
 import { loadConfig } from './config.js';
@@ -11,6 +12,9 @@ import { checkPath, checkCommand } from './security.js';
 import { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses } from './executor.js';
 import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
@@ -145,7 +149,7 @@ export function startServer() {
     if (req.method === 'GET' && pathname === '/api/status') {
       return jsonResponse(res, 200, {
         success: true,
-        version: '1.0.0',
+        version: AGENT_VERSION,
         running: true,
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()
@@ -179,7 +183,7 @@ export function startServer() {
     if (req.method === 'GET' && pathname === '/api/status/detail') {
       return jsonResponse(res, 200, {
         success: true,
-        version: '1.0.0',
+        version: AGENT_VERSION,
         pairCode: getCurrentPairCode(),
         pairCodeTTL: config.pairCodeTTL,
         workdir: config.workdir,
