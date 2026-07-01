@@ -466,6 +466,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
   updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
 
+  // ==================== 流式输出配置 ====================
+  // 流式输出开关：控制流式渲染延迟的显示
+  const streamEnabledEl = document.getElementById('streamEnabled');
+  const streamChunkDelaySection = document.getElementById('streamChunkDelaySection');
+  if (streamEnabledEl && streamChunkDelaySection) {
+    streamEnabledEl.addEventListener('change', function() {
+      streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
+    });
+    // 初始化时同步状态
+    streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
+  }
+
   // ==================== Agent 配置 ====================
   initAgentConfig();
 

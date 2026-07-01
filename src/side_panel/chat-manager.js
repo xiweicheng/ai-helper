@@ -999,7 +999,7 @@ export async function sendMessage() {
       console.warn('[SidePanel] 上下文压力过高，可能触发 API 错误');
     }
 
-    let content, executionLog, reflectionScore, wasRevised = false;
+    let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
@@ -1007,6 +1007,7 @@ export async function sendMessage() {
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
       wasRevised = result.wasRevised || false;
+      wasStreamed = result.wasStreamed || false;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -1052,17 +1053,25 @@ export async function sendMessage() {
       return;
     }
     
-    removeLoadingMessage(loadingId);
-    
-    // 清理切回会话时创建的替代加载指示器
-    if (state.substituteLoadingIds.has(mySessionId)) {
-      removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
-      state.substituteLoadingIds.delete(mySessionId);
+    // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
+    if (!wasStreamed) {
+      removeLoadingMessage(loadingId);
+      
+      // 清理切回会话时创建的替代加载指示器
+      if (state.substituteLoadingIds.has(mySessionId)) {
+        removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+        state.substituteLoadingIds.delete(mySessionId);
+      }
+      
+      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+      await renderMessageMermaid(messageDiv);
+    } else {
+      // 流式模式下仅清理可能的残留
+      if (state.substituteLoadingIds.has(mySessionId)) {
+        removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+        state.substituteLoadingIds.delete(mySessionId);
+      }
     }
-    
-    const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
-    
-    await renderMessageMermaid(messageDiv);
     
     state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
     
@@ -2926,6 +2935,69 @@ export function removeLoadingMessage(loadingId) {
   }
 }
 
+// ============================================================
+// 流式输出 UI 辅助函数
+// ============================================================
+
+/**
+ * 创建流式输出消息容器
+ */
+function addStreamingMessage() {
+  const chatContainer = document.getElementById('chatContainer');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'message-wrapper assistant streaming';
+  wrapper.innerHTML = `
+    <div class="message-content">
+      <div class="stream-content"></div>
+      <div class="stream-status">正在生成...</div>
+    </div>
+  `;
+  chatContainer.appendChild(wrapper);
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  return wrapper;
+}
+
+/**
+ * 更新流式消息内容（增量渲染 Markdown）
+ */
+function updateStreamingMessage(element, fullContent) {
+  const contentDiv = element.querySelector('.stream-content');
+  if (!contentDiv) return;
+  
+  // 增量渲染：使用 marked 解析当前完整内容
+  const html = formatMessageContent(fullContent);
+  contentDiv.innerHTML = html;
+  
+  // 自动滚动
+  const chatContainer = document.getElementById('chatContainer');
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+/**
+ * 更新流式消息状态文本
+ */
+function updateStreamingStatus(element, statusText) {
+  const statusDiv = element.querySelector('.stream-status');
+  if (statusDiv) {
+    statusDiv.textContent = statusText;
+  }
+}
+
+/**
+ * 完成流式消息：移除状态文本，添加操作按钮
+ */
+function finalizeStreamingMessage(element) {
+  const statusDiv = element.querySelector('.stream-status');
+  if (statusDiv) {
+    statusDiv.remove();
+  }
+  element.classList.remove('streaming');
+  
+  // 添加代码复制按钮、Mermaid 渲染等后处理
+  addCodeCopyButtons();
+  renderMessageMermaid(element);
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}) {
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -2984,6 +3056,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
 
     let executionLog = [];
     const timeoutSeconds = Math.round(timeoutMs / 1000);
+    
+    // 流式输出状态
+    let _streamingElement = null;
+    let _streamedContent = '';
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
@@ -3089,12 +3165,55 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         return false;
       }
       
+      // 流式输出消息处理
+      if (message.type === 'STREAM_START') {
+        console.log('[SidePanel] 流式输出开始');
+        // 移除 loading 消息（通过 class 查找）
+        const loadingDiv = document.querySelector('.loading-message');
+        if (loadingDiv) {
+          loadingDiv.remove();
+        }
+        // 清理执行日志监听器
+        if (state.executionLogListener) {
+          chrome.runtime.onMessage.removeListener(state.executionLogListener);
+          state.executionLogListener = null;
+        }
+        state.currentExecutionStatus = null;
+        _streamingElement = addStreamingMessage();
+        _streamedContent = '';
+        return false;
+      }
+      
+      if (message.type === 'STREAM_CHUNK') {
+        if (_streamingElement) {
+          _streamedContent += message.delta;
+          updateStreamingMessage(_streamingElement, _streamedContent);
+        }
+        return false;
+      }
+      
+      if (message.type === 'STREAM_TOOL_CALL') {
+        if (_streamingElement && message.toolCalls?.length > 0) {
+          const toolNames = message.toolCalls.map(tc => tc.function?.name || 'unknown').join(', ');
+          updateStreamingStatus(_streamingElement, `正在执行工具: ${toolNames}...`);
+        }
+        return false;
+      }
+      
+      if (message.type === 'STREAM_DONE') {
+        if (_streamingElement) {
+          finalizeStreamingMessage(_streamingElement);
+        }
+        return false;
+      }
+      
       if (message.type === 'API_COMPLETE') {
         cleanupCallApi();
         resolve({ 
           content: message.content, 
           executionLog: message.executionLog || executionLog,
-          reflectionScore: message.reflectionScore
+          reflectionScore: message.reflectionScore,
+          wasStreamed: !!_streamingElement
         });
         return false;
       } else if (message.type === 'API_ERROR') {

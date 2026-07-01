@@ -3,6 +3,7 @@ import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
+import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 
 // ==================== 敏感操作审计日志 ====================
 
@@ -2337,10 +2338,96 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   // 当用户关闭敏感工具确认开关时，自动向 Agent 传 force: true 跳过灰名单检查
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
+  const useAgentStream = config.streamConfig?.agentStreamEnabled !== false;
 
-  // 使用 wait 模式，阻塞等待命令完整输出
+  // 流式模式：异步执行 + WebSocket 实时输出
+  if (useAgentStream) {
+    // 先发起异步执行
+    const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
+    
+    // 黑名单/网络错误：直接返回
+    if (initResult.level === 'deny') {
+      return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+    }
+    if (!initResult.success && !initResult.level) {
+      return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
+    }
+    if (initResult.level === 'confirm') {
+      return {
+        success: true,
+        level: 'confirm',
+        message: `⚠️ 命令需要用户确认：${initResult.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
+        reason: initResult.reason,
+        command,
+        cwd,
+        tool_call_id: toolCallId
+      };
+    }
+
+    // 允许执行：通过 WebSocket 流式输出
+    const { execId, wsUrl } = initResult;
+    let stdoutCollected = '';
+    let stderrCollected = '';
+    let exitCode = null;
+    let killed = false;
+
+    try {
+      await new Promise((resolve, reject) => {
+        AgentClient.createExecWebSocket(wsUrl, (data) => {
+          if (data.type === 'stdout') {
+            stdoutCollected += data.data;
+            sendAgentStream(sessionId, execId, 'stdout', data.data);
+          } else if (data.type === 'stderr') {
+            stderrCollected += data.data;
+            sendAgentStream(sessionId, execId, 'stderr', data.data);
+          } else if (data.type === 'exit') {
+            exitCode = data.exitCode;
+            killed = data.killed;
+            sendAgentStreamDone(sessionId, execId, exitCode);
+            resolve();
+          }
+        }, () => {
+          // onClose - 如果还没收到 exit，视为异常关闭
+          if (exitCode === null) {
+            exitCode = -1;
+            sendAgentStreamDone(sessionId, execId, -1);
+          }
+          resolve();
+        }, (err) => {
+          console.error('[AgentExec] WebSocket 错误:', err);
+          reject(err);
+        });
+      });
+    } catch (wsError) {
+      // WebSocket 连接失败，回退到同步模式
+      console.warn('[AgentExec] WebSocket 流式失败，回退到同步模式:', wsError.message);
+      const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
+      return formatAgentExecResult(result, command, cwd, toolCallId);
+    }
+
+    appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode });
+    return {
+      success: true,
+      level: 'allow',
+      execId,
+      exitCode,
+      stdout: stdoutCollected,
+      stderr: stderrCollected,
+      killed,
+      message: `命令执行完毕 (exitCode: ${exitCode})\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
+      tool_call_id: toolCallId
+    };
+  }
+
+  // 非流式模式：使用 wait 同步执行
   const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
-  
+  return formatAgentExecResult(result, command, cwd, toolCallId);
+}
+
+/**
+ * 格式化 Agent 命令执行结果（非流式模式）
+ */
+function formatAgentExecResult(result, command, cwd, toolCallId) {
   // 黑名单拦截
   if (result.level === 'deny') {
     return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };

@@ -6,6 +6,7 @@ import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.j
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
+import { StreamController, readSSEStream } from './stream-controller.js';
 
 // 活跃的 ReAct 循环 sessionId 集合，用于检测 SW 静默重启
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
@@ -198,6 +199,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const loopTimeout = reactConfig.loopTimeout;
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
+  const streamConfig = config.streamConfig;
   
   console.log('[Background] reactLoop 配置:', reactConfig);
   console.log('[Background] reactLoop 收到工具列表:', tools.map(t => t.function.name), '数量:', tools.length);
@@ -336,6 +338,23 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         
         return rest;
       }).filter(msg => msg !== null);
+
+      // 防御：如果最后一条有效消息是 assistant(tool_calls) 但没有后续 tool 消息，清除 tool_calls
+      // 如果清除后 content 也为空，则移除整条消息
+      const lastFiltered = filteredMessages[filteredMessages.length - 1];
+      if (lastFiltered?.role === 'assistant' && lastFiltered.tool_calls) {
+        const hasToolAfter = filteredMessages.some((msg, i) => {
+          if (msg.role !== 'tool') return false;
+          return i > filteredMessages.lastIndexOf(lastFiltered);
+        });
+        if (!hasToolAfter) {
+          console.warn('[Background] reactLoop: 最后一条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+          delete lastFiltered.tool_calls;
+          if (!lastFiltered.content) {
+            filteredMessages.pop();
+          }
+        }
+      }
       
       // 添加 API 调用开始的日志节点（状态为 processing）
       const apiLogId = crypto.randomUUID();
@@ -388,7 +407,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             const { id, ...clean } = t;
             return clean;
           }),
-          stream: false
+          stream: streamConfig.streamEnabled !== false
         };
         
         // 添加 temperature 和 top_p 参数
@@ -419,22 +438,50 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           console.warn(`[Background] API 重试 ${retryAttempt} 次后:`, retryError.message);
         });
         clearTimeout(outerWatchdog);
-        
-        // 先获取原始文本，再根据状态和内容判断
-        const responseText = await fetchResponse.text();
-        console.log('[Background] API 响应状态:', fetchResponse.status, '原始文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
 
         if (!fetchResponse.ok) {
-          console.error('[Background] API 响应错误:', fetchResponse.status, responseText);
-          throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${responseText.substring(0, 500)}`);
+          const errorText = await fetchResponse.text();
+          console.error('[Background] API 响应错误:', fetchResponse.status, errorText);
+          throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${errorText.substring(0, 500)}`);
         }
 
-        try {
-          response = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('[Background] JSON 解析失败:', parseError);
-          console.error('[Background] 原始响应:', responseText);
-          throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+        // 流式模式：读取 SSE 流
+        if (streamConfig.streamEnabled !== false && fetchResponse.body) {
+          const streamController = new StreamController(sessionId, streamConfig);
+          const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
+          console.log('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
+          
+          // 构建兼容现有代码的 response 对象
+          // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
+          const normalizedToolCalls = streamResult.toolCalls ? streamResult.toolCalls.map(tc => ({
+            ...tc,
+            id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
+          })) : null;
+
+          response = {
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: streamResult.content || null,
+                reasoning_content: streamResult.reasoningContent,
+                tool_calls: normalizedToolCalls
+              },
+              finish_reason: streamResult.status === 'tool_calls' ? 'tool_calls' : 'stop'
+            }],
+            usage: streamResult.usage
+          };
+        } else {
+          // 非流式模式：保持原有逻辑
+          const responseText = await fetchResponse.text();
+          console.log('[Background] API 响应状态:', fetchResponse.status, '原始文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+
+          try {
+            response = JSON.parse(responseText);
+          } catch (parseError) {
+            console.error('[Background] JSON 解析失败:', parseError);
+            console.error('[Background] 原始响应:', responseText);
+            throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+          }
         }
       } catch (error) {
         clearTimeout(outerWatchdog);
@@ -535,6 +582,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           const toolName = toolCall.function?.name || toolCall.name;
           const toolStartTime = Date.now();
           const toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
+          // 防御：流式模式下 tool_call.id 可能为空，用 index 生成回退 id
+          const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
           
           // 检查是否需要用户确认（敏感工具 + 开关开启）
           const needsConfirmation = CONFIRMATION_REQUIRED_TOOLS.has(toolName) && reactConfig.toolConfirmationEnabled;
@@ -558,7 +607,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               currentMessages.push({
                 role: 'tool',
                 content: '用户拒绝了此操作',
-                tool_call_id: toolCall.id
+                tool_call_id: toolCallId
               });
               trimMessages();
               return {
@@ -703,7 +752,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 toolName,
                 toolResultStr,
                 toolCallParams: toolArgs,
-                toolCallId: toolCall.id,
+                toolCallId: toolCallId,
                 priority: getToolReflectionPriority(toolName, toolResultStr, consecutiveFailCount)
               });
             }
@@ -722,7 +771,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               currentMessages.push({
                 role: 'tool',
                 content: planTaskContent,
-                tool_call_id: toolCall.id
+                tool_call_id: toolCallId
               });
               trimMessages();
               
@@ -782,7 +831,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   const firstKey = toolResultCache.keys().next().value;
                   toolResultCache.delete(firstKey);
                 }
-                toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCall.id });
+                toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCallId });
               }
               
               return { planTaskHandled: true };
@@ -792,7 +841,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             currentMessages.push({
               role: 'tool',
               content: toolResultStr,
-              tool_call_id: toolCall.id,
+              tool_call_id: toolCallId,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
@@ -831,10 +880,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 const firstKey = toolResultCache.keys().next().value;
                 toolResultCache.delete(firstKey);
               }
-              toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCall.id, toolResult });
+              toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult });
             }
             
-            return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCall.id, toolResult };
+            return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult };
             
           } catch (toolError) {
             console.error('[Background] 工具执行失败:', toolError);
@@ -859,7 +908,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             currentMessages.push({
               role: 'tool',
               content: toolErrorContent,
-              tool_call_id: toolCall.id,
+              tool_call_id: toolCallId,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
@@ -1618,7 +1667,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 }
 
 /**
- * 调用 OpenAI 兼容 API（非流式，简单模式）
+ * 调用 OpenAI 兼容 API（支持流式/非流式）
  */
 export function callApiNonStream(messages, model, apiParams = {}, sessionId = null) {
   return getStoredConfig().then(config => {
@@ -1636,18 +1685,39 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
     const apiUrl = `${config.apiBase}/chat/completions`;
 
-    console.log('[Background] 发送非流式 API 请求到:', apiUrl);
-
     // 过滤消息中的内部字段和 API 响应专用字段，不传递给大模型
     const filteredMessages = messages.map(msg => {
       const { executionLog, refusal, ...rest } = msg;
       return rest;
     });
 
+    // 防御：如果最后一条消息是 assistant(tool_calls) 但没有后续 tool 消息，清除 tool_calls
+    // 如果清除后 content 也为空，则移除整条消息
+    const lastMsg = filteredMessages[filteredMessages.length - 1];
+    if (lastMsg?.role === 'assistant' && lastMsg.tool_calls) {
+      const hasToolAfter = filteredMessages.some((msg, i) => {
+        if (msg.role !== 'tool') return false;
+        return i > filteredMessages.lastIndexOf(
+          filteredMessages.find(m => m === lastMsg)
+        );
+      });
+      if (!hasToolAfter) {
+        console.warn('[Background] callApiNonStream: 最后一条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+        delete lastMsg.tool_calls;
+        if (!lastMsg.content) {
+          filteredMessages.pop();
+        }
+      }
+    }
+
+    const useStream = config.streamConfig?.streamEnabled !== false;
+
+    console.log('[Background] 发送 API 请求到:', apiUrl, '流式:', useStream);
+
     const requestBody = {
       model: model || config.modelName,
       messages: filteredMessages,
-      stream: false
+      stream: useStream
     };
 
     // 添加 temperature 和 top_p 参数
@@ -1666,35 +1736,44 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       },
       body: JSON.stringify(requestBody),
       signal: abortSignal
-    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay);
-  })
-  .then(async response => {
-    const responseText = await response.text();
-    console.log('[Background] 非流式 API 响应状态:', response.status, '文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay)
+    .then(async response => {
+      if (!response.ok) {
+        const responseText = await response.text();
+        console.error('[Background] API 响应错误:', response.status, responseText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${responseText.substring(0, 500)}`);
+      }
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}, message: ${responseText.substring(0, 500)}`);
-    }
+      // 流式模式：读取 SSE 流
+      if (useStream && response.body) {
+        const streamController = new StreamController(sessionId, config.streamConfig);
+        const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
+        console.log('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
+        return { content: result.content, usage: result.usage };
+      }
 
-    try {
-      return JSON.parse(responseText);
-    } catch (parseErr) {
-      console.error('[Background] JSON 解析失败，原始响应:', responseText.substring(0, 500));
-      throw new Error(`JSON 解析失败 (HTTP ${response.status}): ${parseErr.message}。响应前100字符: ${responseText.substring(0, 100)}`);
-    }
-  })
-  .then(data => {
-    console.log('[Background] API 响应:', JSON.stringify(data).substring(0, 200));
-    const content = data.choices?.[0]?.message?.content || '';
-    return { content, usage: data.usage || null };
-  })
-  .catch(error => {
-    if (error.name === 'AbortError') {
-      console.log('[Background] API 调用已被用户取消');
-    } else {
-      console.error('[Background] API 调用失败:', error.message || error);
-    }
-    throw error;
+      // 非流式模式：保持原有逻辑
+      const responseText = await response.text();
+      console.log('[Background] 非流式 API 响应状态:', response.status, '文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+
+      try {
+        const data = JSON.parse(responseText);
+        console.log('[Background] API 响应:', JSON.stringify(data).substring(0, 200));
+        const content = data.choices?.[0]?.message?.content || '';
+        return { content, usage: data.usage || null };
+      } catch (parseErr) {
+        console.error('[Background] JSON 解析失败，原始响应:', responseText.substring(0, 500));
+        throw new Error(`JSON 解析失败 (HTTP ${response.status}): ${parseErr.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+      }
+    })
+    .catch(error => {
+      if (error.name === 'AbortError') {
+        console.log('[Background] API 调用已被用户取消');
+      } else {
+        console.error('[Background] API 调用失败:', error.message || error);
+      }
+      throw error;
+    });
   });
 }
 

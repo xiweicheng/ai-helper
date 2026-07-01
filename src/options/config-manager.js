@@ -309,7 +309,8 @@ export function loadConfig() {
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
     'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
-    'reflectionConfig'
+    'reflectionConfig',
+    'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -425,6 +426,20 @@ export function loadConfig() {
     document.getElementById('subtaskReflectionTemperature').value = reflection.subtaskReflection?.temperature ?? DEFAULT_REFLECTION_CONFIG.subtaskReflection.temperature;
     document.getElementById('subtaskReflectionMaxTokens').value = reflection.subtaskReflection?.maxTokens ?? DEFAULT_REFLECTION_CONFIG.subtaskReflection.maxTokens;
     
+    // 加载流式输出配置
+    const streamEnabledEl = document.getElementById('streamEnabled');
+    if (streamEnabledEl) {
+      streamEnabledEl.checked = result.streamEnabled !== undefined ? result.streamEnabled : true;
+    }
+    const streamChunkDelayEl = document.getElementById('streamChunkDelay');
+    if (streamChunkDelayEl) {
+      streamChunkDelayEl.value = result.streamChunkDelay !== undefined ? result.streamChunkDelay : 30;
+    }
+    const agentStreamEnabledEl = document.getElementById('agentStreamEnabled');
+    if (agentStreamEnabledEl) {
+      agentStreamEnabledEl.checked = result.agentStreamEnabled !== undefined ? result.agentStreamEnabled : true;
+    }
+    
     // 更新反思配置区域可见性
     function updateReflectionVisibility() {
       const reflectionConfig = document.getElementById('reflectionConfig');
@@ -497,6 +512,11 @@ export function saveConfig() {
   const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
   const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
+
+  // 获取流式输出配置
+  const streamEnabled = document.getElementById('streamEnabled')?.checked !== false;
+  const streamChunkDelay = parseInt(document.getElementById('streamChunkDelay')?.value) || 30;
+  const agentStreamEnabled = document.getElementById('agentStreamEnabled')?.checked !== false;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
@@ -658,7 +678,11 @@ export function saveConfig() {
     imageApiBase: imageApiBase,
     imageApiKey: imageApiKey,
     // 反思配置
-    reflectionConfig: reflectionConfig
+    reflectionConfig: reflectionConfig,
+    // 流式输出配置
+    streamEnabled: streamEnabled,
+    streamChunkDelay: streamChunkDelay,
+    agentStreamEnabled: agentStreamEnabled
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');

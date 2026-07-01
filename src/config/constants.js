@@ -31,6 +31,10 @@ export const STORAGE_KEYS = {
   TOOLBAR_TOOLS: 'toolbarTools',
   TOOLBAR_MAX_VISIBLE: 'toolbarMaxVisible',
   TOOLBAR_ICON_ONLY: 'toolbarIconOnly',
+  // 流式输出配置
+  STREAM_ENABLED: 'streamEnabled',
+  STREAM_CHUNK_DELAY: 'streamChunkDelay',
+  AGENT_STREAM_ENABLED: 'agentStreamEnabled',
 };
 
 export const MESSAGE_TYPES = {

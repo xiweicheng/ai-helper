@@ -1,6 +1,6 @@
 // background/config.js - 配置管理
 
-import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG } from './constants.js';
 
 /**
  * 获取存储的配置
@@ -13,7 +13,8 @@ export function getStoredConfig() {
       'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
       'preselectMinToolCount', 'toolConfirmationEnabled',
       'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength',
-      'reflectionConfig'
+      'reflectionConfig',
+      'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
       resolve({
         apiBase: result.apiBase || DEFAULT_API_BASE,
@@ -40,6 +41,12 @@ export function getStoredConfig() {
           maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
           maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages,
           maxMessageLength: result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength
+        },
+        // 流式输出配置
+        streamConfig: {
+          streamEnabled: result.streamEnabled !== undefined ? result.streamEnabled : DEFAULT_STREAM_CONFIG.streamEnabled,
+          streamChunkDelay: result.streamChunkDelay !== undefined ? result.streamChunkDelay : DEFAULT_STREAM_CONFIG.streamChunkDelay,
+          agentStreamEnabled: result.agentStreamEnabled !== undefined ? result.agentStreamEnabled : DEFAULT_STREAM_CONFIG.agentStreamEnabled
         }
       });
     });
