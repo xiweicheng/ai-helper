@@ -4036,7 +4036,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
           const statusDiv = _streamingElement.querySelector('.stream-status');
           if (statusDiv) {
-            statusDiv.textContent = '处理中...';
+            statusDiv.textContent = '质量评估中...';
           }
           // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
         }
