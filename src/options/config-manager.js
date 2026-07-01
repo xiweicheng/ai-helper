@@ -807,6 +807,8 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     工具预筛选: ${react.enableToolPreselect ? '✅ 启用' : '❌ 关闭'}<br>
     预筛选最小工具数: ${react.preselectMinToolCount ?? 3} 个<br>
     敏感工具操作确认: ${react.toolConfirmationEnabled ? '✅ 启用' : '❌ 关闭'}<br>
+    流式输出: ${stream.streamEnabled !== false ? '✅ 启用' : '❌ 关闭'}<br>
+    流式渲染延迟: ${stream.streamChunkDelay ?? 30} ms<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>反思配置：</strong><br>
     反思功能: ${reflection.enabled ? '✅ 启用' : '❌ 关闭'}<br>
@@ -836,10 +838,6 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     消息最大长度: ${chat.maxMessageLength} 字符<br>
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
-    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>流式输出配置：</strong><br>
-    流式输出: ${stream.streamEnabled !== false ? '✅ 启用' : '❌ 关闭'}<br>
-    流式渲染延迟: ${stream.streamChunkDelay ?? 30} ms<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>本地 Agent 配置：</strong><br>
     Agent 地址: ${agentConfig.url || '未配置'}<br>

@@ -164,8 +164,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
+          console.log('[Background] 预筛选执行日志:', JSON.stringify(preselectLog).substring(0, 500));
 
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
+          console.log('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
             executionLog: reactResult.executionLog || preselectLog,

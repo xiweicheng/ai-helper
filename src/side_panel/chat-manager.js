@@ -219,6 +219,7 @@ export function clearChatHistory() {
 // 导出/导入会话
 // ============================================================
 
+
 /**
  * 显示导出会话选择弹窗
  */
@@ -311,6 +312,7 @@ function updateSelectedCount() {
     okBtn.style.opacity = checked.length === 0 ? '0.5' : '1';
   }
 }
+
 
 /**
  * 隐藏导出弹窗
@@ -3325,6 +3327,60 @@ function appendToolResult(result) {
 }
 
 /**
+ * 创建工具预筛选卡片（用于流式过程折叠区的最前面）
+ * @param {Object} entry - preselect 执行日志条目
+ * @returns {HTMLElement}
+ */
+function createPreSelectCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'tool-call-item expanded preselect-card';
+  
+  const isFailed = entry.status === 'failed';
+  const statusText = isFailed ? '失败' : '完成';
+  const statusClass = isFailed ? 'fail' : 'success';
+  
+  let summaryHtml = '';
+  if (entry.action?.params?.selected) {
+    // 成功筛选：显示筛选结果
+    const selected = entry.action.params.selected;
+    const toolCount = entry.apiRequest?.toolCount || '?';
+    summaryHtml = `<span class="preselect-summary">从 ${toolCount} 个工具中筛选出 <strong>${selected.length}</strong> 个：${selected.map(n => `<code>${escapeHtml(n)}</code>`).join('、')}</span>`;
+  } else if (entry.action?.name === 'all_tools') {
+    summaryHtml = `<span class="preselect-summary">跳过筛选（${escapeHtml(entry.action.params.reason || '')}），使用全部工具</span>`;
+  } else if (entry.action?.name === 'skip') {
+    summaryHtml = `<span class="preselect-summary">跳过筛选（${escapeHtml(entry.action.params.reason || '')}），工具总数 ${entry.action.params.toolCount || '?'}</span>`;
+  } else if (entry.error) {
+    summaryHtml = `<span class="preselect-summary" style="color:#dc2626;">${escapeHtml(entry.error)}</span>`;
+  } else if (entry.thought) {
+    summaryHtml = `<span class="preselect-summary">模型直接回答：${escapeHtml(entry.thought).substring(0, 200)}</span>`;
+  }
+  
+  const duration = entry.duration ? `${entry.duration}ms` : '';
+  
+  card.innerHTML = `
+    <div class="tool-call-header">
+      <svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <span class="tool-call-name">工具预筛选</span>
+      <span class="tool-call-status ${statusClass}">${statusText}</span>
+      ${duration ? `<span class="tool-call-duration">${duration}</span>` : ''}
+      <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="tool-call-body">
+      ${summaryHtml}
+      ${entry.apiResponse?.toolCountAfter !== undefined ? `<div class="preselect-meta">筛选后工具数：<strong>${entry.apiResponse.toolCountAfter}</strong></div>` : ''}
+    </div>
+  `;
+  
+  card.querySelector('.tool-call-header').addEventListener('click', () => {
+    card.classList.toggle('expanded');
+  });
+  
+  return card;
+}
+
+/**
  * 完成流式消息：移除状态文本，添加底部工具栏（复制/引用/导出/执行日志）
  * 如果包含 ReAct 工具调用过程，自动将思考过程包装到可折叠区域，最终答案始终可见
  * @param {HTMLElement} element - 流式消息容器元素
@@ -3392,6 +3448,15 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     // 移动所有 tool-call-item 到 process-content
     const toolItems = messageContent.querySelectorAll('.tool-call-item');
     toolItems.forEach(item => processContent.appendChild(item));
+    
+    // 检查执行日志中是否有工具预筛选条目，插入到 process-content 最前面
+    const preselectEntries = (executionLog || []).filter(e => e.nodeType === 'preselect');
+    console.log('[finalizeStreamingMessage] executionLog length:', (executionLog || []).length, 'preselectEntries:', preselectEntries.length);
+    preselectEntries.forEach(entry => {
+      console.log('[finalizeStreamingMessage] creating preselect card for entry:', entry);
+      const preselectCard = createPreSelectCard(entry);
+      processContent.insertBefore(preselectCard, processContent.firstChild);
+    });
     
     // 移除最后一个 thinking-badge 和 thinking-content（最终答案，将显示在折叠区外）
     const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
