@@ -140,7 +140,13 @@ export async function loadChatHistory() {
           wasRevised = logs.some(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.action?.decision === 'revised');
         } catch {}
       }
-      addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
+      
+      // 如果有保存的 HTML 内容（流式消息），直接恢复完整 DOM
+      if (msg.htmlContent) {
+        restoreMessageFromHtml(msg.htmlContent);
+      } else {
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
+      }
     });
     
     const welcomeMessage = document.querySelector('.welcome-message');
@@ -1047,7 +1053,11 @@ export async function sendMessage() {
     
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
-      appendMessageToSession(mySessionId, { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
+      const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
+      if (wasStreamed && _streamingElement) {
+        msgEntry.htmlContent = _streamingElement.dataset.htmlContent || _streamingElement.outerHTML;
+      }
+      appendMessageToSession(mySessionId, msgEntry);
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
       return;
@@ -1073,7 +1083,13 @@ export async function sendMessage() {
       }
     }
     
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised });
+    // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
+    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
+    if (wasStreamed && _streamingElement) {
+      msgEntry.htmlContent = _streamingElement.dataset.htmlContent || _streamingElement.outerHTML;
+    }
+    
+    state.messageHistory.push(msgEntry);
     
   } catch (error) {
     console.error('[SidePanel] sendMessage 异常:', error?.message || error);
@@ -1375,8 +1391,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       });
 
       footer.appendChild(scoreBadge);
-    } else if (!hasReflection && executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed') && state.chatConfig.enableExecutionLog) {
-      // 反思 API 失败：显示警告提示（仅在无评分时显示）
+    } else if (!hasReflection && postReflection && postReflection.status === 'failed' && state.chatConfig?.enableExecutionLog) {
+    // 仅当存在 post 反思节点且状态为 failed 时才显示警告（不包括工具级反思失败）
       const warnBadge = document.createElement('button');
       warnBadge.className = 'reflection-score-btn';
       warnBadge.type = 'button';
@@ -1518,6 +1534,15 @@ let executionLogDelegateBound = false;
 
 /** 当前流式消息 DOM 元素（模块级，供 appendToolResult 访问） */
 let _streamingElement = null;
+
+/** 思考开始时间（当前步骤的思考耗时） */
+let _thinkingStartTime = 0;
+
+/** 总体思考过程开始时间（用于折叠区的总耗时） */
+let _processStartTime = 0;
+
+/** 累积的推理内容（思考过程） */
+let _reasoningContent = '';
 
 function bindExecutionLogDelegate() {
   if (executionLogDelegateBound) return;
@@ -2960,7 +2985,7 @@ function addStreamingMessage() {
         <div class="thinking-dots">
           <span></span><span></span><span></span>
         </div>
-        <span class="thinking-label">大模型思考中...</span>
+        <span class="thinking-label">思考中...</span>
       </div>
       <div class="stream-content"></div>
       <div class="stream-status hidden"></div>
@@ -2972,37 +2997,127 @@ function addStreamingMessage() {
 }
 
 /**
+ * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
+ * @param {string} htmlContent - 消息的 outerHTML
+ */
+function restoreMessageFromHtml(htmlContent) {
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer || !htmlContent) return;
+  
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlContent;
+  const messageEl = tempDiv.firstElementChild;
+  if (!messageEl) return;
+  
+  // 移除 streaming 类（持久化后不再是流式状态）
+  messageEl.classList.remove('streaming');
+  
+  // 重新绑定事件：折叠/展开思考过程
+  const processHeader = messageEl.querySelector('.thinking-process-header');
+  if (processHeader) {
+    const processHistory = processHeader.closest('.thinking-process');
+    processHeader.addEventListener('click', () => {
+      processHistory.classList.toggle('collapsed');
+    });
+  }
+  
+  // 重新绑定工具卡片展开/折叠
+  messageEl.querySelectorAll('.tool-call-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.closest('.tool-call-item').classList.toggle('expanded');
+    });
+  });
+  
+  // 重新绑定底部工具栏按钮事件
+  const footer = messageEl.querySelector('.message-footer');
+  if (footer) {
+    // 复制按钮
+    const copyBtn = footer.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyAssistantMessage(messageEl, copyBtn);
+      });
+    }
+    // 引用按钮
+    const quoteBtn = footer.querySelector('.quote-btn');
+    if (quoteBtn) {
+      quoteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quoteAndAsk(messageEl);
+      });
+    }
+    // 导出菜单
+    const exportTrigger = footer.querySelector('.export-trigger-btn');
+    const exportDropdown = footer.querySelector('.export-dropdown');
+    if (exportTrigger && exportDropdown) {
+      exportTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.export-dropdown.show').forEach(menu => {
+          if (menu !== exportDropdown) menu.classList.remove('show');
+        });
+        exportDropdown.classList.toggle('show');
+      });
+      exportDropdown.querySelector('.export-docx-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToDocx(messageEl, exportTrigger);
+        exportDropdown.classList.remove('show');
+      });
+      exportDropdown.querySelector('.export-pdf-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToPdf(messageEl, exportTrigger);
+        exportDropdown.classList.remove('show');
+      });
+    }
+  }
+  
+  chatContainer.appendChild(messageEl);
+}
+
+/**
  * 更新流式消息内容（增量渲染 Markdown）
- * 首次有内容时自动隐藏思考中指示器，并添加思考结果图标
+ * 首次有内容时自动隐藏思考中指示器，并添加思考结果图标（含耗时）
+ * 支持多轮 ReAct 迭代：每轮追加独立的思考标记
  */
 function updateStreamingMessage(element, fullContent) {
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
   
-  // 首次有内容时隐藏思考指示器
-  const thinkingEl = element.querySelector('.thinking-indicator');
-  if (thinkingEl && !thinkingEl.classList.contains('hidden')) {
-    thinkingEl.classList.add('hidden');
-    // 在内容区域添加思考结果图标标记
-    contentDiv.innerHTML = '<span class="thinking-badge"><svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果</span>';
+  // 查找最后一个可见的思考指示器（可能在 stream-content 内部，也可能在 message-content 中）
+  const visibleThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)')
+    || element.querySelector('.thinking-indicator:not(.hidden)');
+  
+  if (visibleThinking) {
+    // 首次有内容：隐藏指示器，替换为思考结果标记（含耗时）
+    // 注意：badge 始终添加到 stream-content 内，确保折叠重组时能正确归入折叠区
+    visibleThinking.classList.add('hidden');
+    // 如果指示器在 message-content 中（非 stream-content 内），移除它
+    if (!contentDiv.contains(visibleThinking)) {
+      visibleThinking.remove();
+    }
+    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    contentDiv.appendChild(badge);
   }
   
-  // 增量渲染：使用 marked 解析当前完整内容
-  const html = formatMessageContent(fullContent);
-  // 保持思考标记，只更新后面的内容
-  if (contentDiv.querySelector('.thinking-badge')) {
-    const badge = contentDiv.querySelector('.thinking-badge');
-    const contentAfter = contentDiv.querySelector('.thinking-content');
-    if (contentAfter) {
-      contentAfter.innerHTML = html;
+  // 找到最后一个 thinking-badge，在其后更新或创建 thinking-content
+  const badges = contentDiv.querySelectorAll('.thinking-badge');
+  if (badges.length > 0) {
+    const lastBadge = badges[badges.length - 1];
+    let contentAfter = lastBadge.nextElementSibling;
+    // 检查下一个兄弟节点是否是 thinking-content
+    if (contentAfter && contentAfter.classList.contains('thinking-content')) {
+      contentAfter.innerHTML = formatMessageContent(fullContent);
     } else {
       const wrapper = document.createElement('div');
       wrapper.className = 'thinking-content';
-      wrapper.innerHTML = html;
-      badge.after(wrapper);
+      wrapper.innerHTML = formatMessageContent(fullContent);
+      lastBadge.after(wrapper);
     }
   } else {
-    contentDiv.innerHTML = html;
+    contentDiv.innerHTML = formatMessageContent(fullContent);
   }
   
   // 自动滚动
@@ -3033,7 +3148,7 @@ function appendToolCallItems(element, toolCalls) {
   const thinkingEl = element.querySelector('.thinking-indicator');
   if (thinkingEl) thinkingEl.classList.add('hidden');
   
-  const contentDiv = element.querySelector('.message-content');
+  const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
   
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
@@ -3198,30 +3313,128 @@ function appendToolResult(result) {
 
 /**
  * 完成流式消息：移除状态文本，添加底部工具栏（复制/引用/导出/执行日志）
+ * 如果包含 ReAct 工具调用过程，自动将思考过程包装到可折叠区域，最终答案始终可见
  * @param {HTMLElement} element - 流式消息容器元素
  * @param {string} content - 最终内容
  * @param {Array} executionLog - 执行日志
  * @param {number|null} reflectionScore - 反思评分
+ * @param {string|null} reasoningContent - 推理/思考过程内容
  */
-function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null) {
+function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null) {
   if (!element) return;
   
-  // 隐藏思考指示器
-  const thinkingEl = element.querySelector('.thinking-indicator');
-  if (thinkingEl) thinkingEl.classList.add('hidden');
+  // 隐藏所有思考指示器
+  element.querySelectorAll('.thinking-indicator').forEach(el => el.classList.add('hidden'));
   
   const statusDiv = element.querySelector('.stream-status');
-  if (statusDiv) {
-    statusDiv.remove();
-  }
+  if (statusDiv) statusDiv.remove();
   element.classList.remove('streaming');
+  
+  const messageContent = element.querySelector('.message-content');
+  const streamContent = element.querySelector('.stream-content');
+  
+  // 检测是否为 ReAct 过程（包含工具调用卡片）
+  const hasToolCalls = (messageContent && messageContent.querySelector('.tool-call-item'))
+    || (streamContent && streamContent.querySelector('.tool-call-item'));
+  
+  if (hasToolCalls) {
+    // ============================================
+    // ReAct 模式：包装思考过程到可折叠区域
+    // ============================================
+    
+    // 计算整体思考耗时
+    const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
+    
+    // 创建可折叠的思考过程区域
+    const processHistory = document.createElement('div');
+    processHistory.className = 'thinking-process collapsed';
+    
+    const processHeader = document.createElement('div');
+    processHeader.className = 'thinking-process-header';
+    processHeader.innerHTML = `
+      <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+        <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
+      </svg>
+      <span class="thinking-process-title">思考过程</span>
+      <span class="thinking-process-duration">${totalDuration}</span>
+      <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    `;
+    
+    const processBody = document.createElement('div');
+    processBody.className = 'thinking-process-body';
+    const processContent = document.createElement('div');
+    processContent.className = 'thinking-process-content';
+    processBody.appendChild(processContent);
+    
+    // 移动 stream-content 的内容到 process-content
+    if (streamContent) {
+      while (streamContent.firstChild) {
+        processContent.appendChild(streamContent.firstChild);
+      }
+    }
+    
+    // 移动所有 tool-call-item 到 process-content
+    const toolItems = messageContent.querySelectorAll('.tool-call-item');
+    toolItems.forEach(item => processContent.appendChild(item));
+    
+    // 移除最后一个 thinking-badge 和 thinking-content（最终答案，将显示在折叠区外）
+    const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
+    const thinkingContents = processContent.querySelectorAll('.thinking-content');
+    if (thinkingBadges.length > 0) {
+      const lastBadge = thinkingBadges[thinkingBadges.length - 1];
+      lastBadge.remove();
+    }
+    if (thinkingContents.length > 0) {
+      const lastContent = thinkingContents[thinkingContents.length - 1];
+      lastContent.remove();
+    }
+    
+    processHistory.appendChild(processHeader);
+    processHistory.appendChild(processBody);
+    
+    // 创建最终答案区域（始终可见，不折叠）
+    const finalAnswer = document.createElement('div');
+    finalAnswer.className = 'final-answer';
+    const textContent = extractTextContent(content);
+    if (textContent && textContent.trim()) {
+      finalAnswer.innerHTML = formatMessageContent(textContent);
+    }
+    
+    // 清理 message-content 中的残留元素
+    // 移除原始的 thinking-indicator（来自 addStreamingMessage 模板）
+    const origThinking = messageContent.querySelector('.thinking-indicator');
+    if (origThinking) origThinking.remove();
+    
+    // 插入 process-history 和 final-answer
+    messageContent.appendChild(processHistory);
+    messageContent.appendChild(finalAnswer);
+    
+    // 点击头部切换折叠
+    processHeader.addEventListener('click', () => {
+      processHistory.classList.toggle('collapsed');
+    });
+    
+  } else {
+    // ============================================
+    // 非 ReAct 模式：普通流式回答，直接渲染内容
+    // ============================================
+    if (streamContent) {
+      const textContent = extractTextContent(content);
+      // 如果 stream-content 中已有 thinking-content（首次有内容时创建），保持它
+      const hasThinkingContent = streamContent.querySelector('.thinking-content');
+      if (!hasThinkingContent && textContent && textContent.trim()) {
+        streamContent.innerHTML = formatMessageContent(textContent);
+      }
+    }
+  }
   
   // 设置数据属性（供工具栏按钮使用）
   element.classList.add('assistant', 'message');
-  element.dataset.rawContent = content;
-  element.dataset.textContent_ = Array.isArray(content) 
-    ? content.filter(c => c.type === 'text').map(c => c.text).join('') 
-    : content;
+  element.dataset.rawContent = typeof content === 'string' ? content : JSON.stringify(content);
+  element.dataset.textContent_ = extractTextContent(content);
   element.dataset.executionLog = JSON.stringify(executionLog);
   
   // 添加底部工具栏
@@ -3368,7 +3581,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     });
     
     footer.appendChild(scoreBadge);
-  } else if (!hasReflection && executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed') && state.chatConfig?.enableExecutionLog) {
+  } else if (!hasReflection && postReflection && postReflection.status === 'failed' && state.chatConfig?.enableExecutionLog) {
     const warnBadge = document.createElement('button');
     warnBadge.className = 'reflection-score-btn';
     warnBadge.type = 'button';
@@ -3386,6 +3599,9 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   // 添加代码复制按钮、Mermaid 渲染等后处理
   addCodeCopyButtons();
   renderMessageMermaid(element);
+  
+  // 保存完整 HTML 到 dataset 供持久化使用
+  element.dataset.htmlContent = element.outerHTML;
 }
 
 export async function callApi(messages, model, useTools = false, apiParams = {}) {
@@ -3449,6 +3665,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     // 流式输出状态
     _streamingElement = null;
+    _processStartTime = 0;
     let _streamedContent = '';
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
@@ -3569,8 +3786,32 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           state.executionLogListener = null;
         }
         state.currentExecutionStatus = null;
-        _streamingElement = addStreamingMessage();
+        
+        if (!_streamingElement) {
+          _streamingElement = addStreamingMessage();
+          _processStartTime = Date.now();
+        } else {
+          // 后续 ReAct 迭代：在 stream-content 末尾添加新的思考指示器
+          const contentDiv = _streamingElement.querySelector('.stream-content');
+          if (contentDiv) {
+            const newThinking = document.createElement('div');
+            newThinking.className = 'thinking-indicator';
+            newThinking.innerHTML = `
+              <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+                <circle cx="8" cy="12" r="1.5"/>
+                <circle cx="16" cy="12" r="1.5"/>
+              </svg>
+              <div class="thinking-dots"><span></span><span></span><span></span></div>
+              <span class="thinking-label">思考中...</span>
+            `;
+            contentDiv.appendChild(newThinking);
+          }
+        }
+        
         _streamedContent = '';
+        _thinkingStartTime = Date.now();
+        _reasoningContent = '';
         return false;
       }
       
@@ -3613,7 +3854,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'API_COMPLETE') {
         // 流式消息：在 resolve 前添加底部工具栏
         if (_streamingElement && message.content) {
-          finalizeStreamingMessage(_streamingElement, message.content, message.executionLog || [], message.reflectionScore);
+          finalizeStreamingMessage(_streamingElement, message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
         }
         cleanupCallApi();
         resolve({ 

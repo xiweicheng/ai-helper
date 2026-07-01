@@ -182,6 +182,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const executionLog = result.executionLog || [];
         const reflectionScore = result.reflectionScore;
         const wasRevised = result.wasRevised || false;
+        const reasoningContent = result.reasoningContent || null;
 
         // 记录非 ReAct 模式的 token 使用统计
         if (result.usage) {
@@ -200,6 +201,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           content: content,
           executionLog: executionLog,
           reflectionScore: reflectionScore,
+          reasoningContent: reasoningContent,
           wasRevised: wasRevised
         }).catch(err => {
           console.warn('[Background] 发送回传消息失败:', err);

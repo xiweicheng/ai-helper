@@ -17,7 +17,7 @@ const EXPORT_KEYS = [
   'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
   'toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',
-  'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled',
+  'streamEnabled', 'streamChunkDelay',
 ];
 
 // 敏感的密钥 key

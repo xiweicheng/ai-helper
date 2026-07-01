@@ -310,7 +310,7 @@ export function loadConfig() {
     'preselectMinToolCount', 'toolConfirmationEnabled',
     'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
     'reflectionConfig',
-    'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
+    'streamEnabled', 'streamChunkDelay'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -435,10 +435,6 @@ export function loadConfig() {
     if (streamChunkDelayEl) {
       streamChunkDelayEl.value = result.streamChunkDelay !== undefined ? result.streamChunkDelay : 30;
     }
-    const agentStreamEnabledEl = document.getElementById('agentStreamEnabled');
-    if (agentStreamEnabledEl) {
-      agentStreamEnabledEl.checked = result.agentStreamEnabled !== undefined ? result.agentStreamEnabled : true;
-    }
     
     // 更新反思配置区域可见性
     function updateReflectionVisibility() {
@@ -516,7 +512,6 @@ export function saveConfig() {
   // 获取流式输出配置
   const streamEnabled = document.getElementById('streamEnabled')?.checked !== false;
   const streamChunkDelay = parseInt(document.getElementById('streamChunkDelay')?.value) || 30;
-  const agentStreamEnabled = document.getElementById('agentStreamEnabled')?.checked !== false;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
@@ -681,8 +676,7 @@ export function saveConfig() {
     reflectionConfig: reflectionConfig,
     // 流式输出配置
     streamEnabled: streamEnabled,
-    streamChunkDelay: streamChunkDelay,
-    agentStreamEnabled: agentStreamEnabled
+    streamChunkDelay: streamChunkDelay
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
@@ -728,7 +722,7 @@ export function saveConfig() {
         maxMessageLength: chatMaxMessageLength,
         maxMemoryMessages: chatMaxMemoryMessages,
         enableExecutionLog: enableExecutionLog
-      }, reflectionConfig, agentConfig);
+      }, reflectionConfig, agentConfig, { streamEnabled, streamChunkDelay });
     }
   });
 }
@@ -781,13 +775,14 @@ export function initStatus() {
 }
 
 // 更新配置详情显示
-export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig, agentConfig) {
+export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig, agentConfig, streamConfig) {
   const details = document.getElementById('configDetails');
   const base = apiBase || 'https://api.deepseek.com';
   const model = modelName || 'deepseek-v4-pro';
   const react = reactConfig || DEFAULT_REACT_CONFIG;
   const chat = chatConfig || DEFAULT_CHAT_CONFIG;
   const reflection = reflectionConfig || DEFAULT_REFLECTION_CONFIG;
+  const stream = streamConfig || { streamEnabled: true, streamChunkDelay: 30 };
   
   const formatTime = (ms) => {
     if (ms >= 60000) {
@@ -841,6 +836,10 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     消息最大长度: ${chat.maxMessageLength} 字符<br>
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
+    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
+    <strong>流式输出配置：</strong><br>
+    流式输出: ${stream.streamEnabled !== false ? '✅ 启用' : '❌ 关闭'}<br>
+    流式渲染延迟: ${stream.streamChunkDelay ?? 30} ms<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>本地 Agent 配置：</strong><br>
     Agent 地址: ${agentConfig.url || '未配置'}<br>

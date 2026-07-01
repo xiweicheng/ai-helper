@@ -86,6 +86,7 @@ export async function saveCurrentSession() {
     executionLog: msg.executionLog || [],
     reflectionScore: msg.reflectionScore,
     wasRevised: msg.wasRevised || false,
+    htmlContent: msg.htmlContent || undefined,
   }));
 
   currentSession.updatedAt = new Date().toISOString();
@@ -154,6 +155,7 @@ export async function importSessions(sessionsData) {
         executionLog: msg.executionLog || [],
         reflectionScore: msg.reflectionScore,
         wasRevised: msg.wasRevised || false,
+        htmlContent: msg.htmlContent || undefined,
       })),
       scrollPosition: 0,
       createdAt: sessionData.createdAt || new Date().toISOString(),
@@ -193,6 +195,7 @@ export async function appendMessageToSession(sessionId, message) {
     executionLog: message.executionLog || [],
     reflectionScore: message.reflectionScore,
     wasRevised: message.wasRevised || false,
+    htmlContent: message.htmlContent || undefined,
   });
 
   session.updatedAt = new Date().toISOString();

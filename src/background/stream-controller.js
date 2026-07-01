@@ -6,7 +6,7 @@
  * 支持 OpenAI 兼容格式的 SSE 流
  *
  * @param {string} sessionId - 会话 ID
- * @param {Object} streamConfig - 流式配置 { streamEnabled, streamChunkDelay, agentStreamEnabled }
+ * @param {Object} streamConfig - 流式配置 { streamEnabled, streamChunkDelay }
  */
 export class StreamController {
   constructor(sessionId, streamConfig) {
@@ -183,6 +183,7 @@ export class StreamController {
       type: 'STREAM_DONE',
       sessionId: this.sessionId,
       finalContent: this.fullContent,
+      reasoningContent: this.reasoningContent || null,
       usage: this.usage,
       toolCalls: this.toolCalls.length > 0 ? this.toolCalls : null
     }).catch(() => {});

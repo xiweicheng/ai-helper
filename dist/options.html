@@ -1790,17 +1790,14 @@
       <h3 style="margin-top: 24px; border-top: 1px solid #e0e0e0; padding-top: 16px;">🌊 流式输出配置</h3>
 
       <div class="react-config-item">
-        <label>
-          LLM 流式输出
-          <span class="hint-text">（开启后 AI 回复会逐字显示，关闭后等待完整回复一次性显示）</span>
-        </label>
+        <label>流式输出</label>
         <label class="toggle-label">
           <input type="checkbox" id="streamEnabled" checked>
           <span class="toggle-switch"></span>
           <span id="streamEnabledLabel">已启用</span>
         </label>
         <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          开启流式输出后，AI 回复会实时逐字显示，提供更快的反馈感知。<br>
+          开启后 AI 回复会实时逐字显示，Agent 命令执行时也会实时输出，提供更快的反馈感知。<br>
           如果遇到兼容性问题，可关闭此开关回退到一次性输出模式。
         </div>
       </div>
@@ -1815,22 +1812,6 @@
         <div class="range-labels">
           <span>最小: 0（瞬间）</span>
           <span>最大: 200ms</span>
-        </div>
-      </div>
-
-      <div class="react-config-item">
-        <label>
-          Agent 命令实时输出
-          <span class="hint-text">（Agent 命令执行时通过 WebSocket 实时显示输出，关闭后等待命令执行完毕再显示）</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="agentStreamEnabled" checked>
-          <span class="toggle-switch"></span>
-          <span id="agentStreamEnabledLabel">已启用</span>
-        </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          开启后，Agent 命令执行时会实时显示输出内容，类似终端效果。<br>
-          如果 WebSocket 连接失败，会自动回退到同步等待模式。
         </div>
       </div>
       

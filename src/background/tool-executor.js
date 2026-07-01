@@ -2347,7 +2347,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   // 当用户关闭敏感工具确认开关时，自动向 Agent 传 force: true 跳过灰名单检查
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
-  const useAgentStream = config.streamConfig?.agentStreamEnabled !== false;
+  const useAgentStream = config.streamConfig?.streamEnabled !== false;
 
   // 流式模式：异步执行 + WebSocket 实时输出
   if (useAgentStream) {

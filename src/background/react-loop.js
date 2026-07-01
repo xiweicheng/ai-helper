@@ -1096,6 +1096,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
       
       const content = assistantMessage?.content || '';
+      const reasoningContent = assistantMessage?.reasoning_content || null;
       console.log('[Background] ReAct 循环完成，最终内容长度:', content.length);
       
       // 后置反思：对最终答案进行质量评估
@@ -1117,7 +1118,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           content: reflectionResult.content,
           executionLog,
           reflectionScore: reflectionResult.overallScore,
-          wasRevised: reflectionResult.wasRevised
+          wasRevised: reflectionResult.wasRevised,
+          reasoningContent
         };
       }
       
@@ -1125,7 +1127,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       sendExecutionStatusUpdate('执行完成', 'success');
       
       // 返回执行日志和内容
-      return { content, executionLog };
+      return { content, executionLog, reasoningContent };
     }
     
     const error = new Error(`ReAct 循环超过最大迭代次数 (${maxIterations})`);
