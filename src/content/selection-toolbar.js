@@ -823,13 +823,11 @@ async function createToolbar() {
     </div>`;
   });
   
-  // 如果有溢出工具，添加"更多"按钮（放在复制按钮前面）
-  if (overflowTools.length > 0) {
-    buttonsHtml += `<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
-      <span class="aih-tb-icon">${ICONS.more}</span>
-    </div>`;
-    renderOverflowDropdown(overflowTools);
-  }
+  // "更多"按钮始终显示，提供溢出工具 + 设置/屏蔽入口
+  buttonsHtml += `<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
+    <span class="aih-tb-icon">${ICONS.more}</span>
+  </div>`;
+  renderOverflowDropdown(overflowTools);
   
   // 复制按钮固定在最后
   buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="复制选中内容">

@@ -600,9 +600,9 @@ function getPageText(e={}){let{maxLength:t=15e3,includeHeadings:n=!0,includeLink
       <span class="aih-tb-icon">${ICONS.search}</span>${o?``:`AI搜索`}
     </div>`),r.forEach(e=>{let t=getToolIcon(e.id);a+=`<div class="aih-tb-btn" role="button" tabindex="0" data-action="${e.id}" title="${e.name}">
       <span class="aih-tb-icon">${t}</span>${o?``:e.name}
-    </div>`}),i.length>0&&(a+=`<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
-      <span class="aih-tb-icon">${ICONS.more}</span>
-    </div>`,renderOverflowDropdown(i)),a+=`<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="复制选中内容">
+    </div>`}),a+=`<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
+    <span class="aih-tb-icon">${ICONS.more}</span>
+  </div>`,renderOverflowDropdown(i),a+=`<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="复制选中内容">
     <span class="aih-tb-icon">${ICONS.copy}</span>${o?``:`复制`}
   </div>`,a+=`</span>`,a+=`<span class="aih-tb-ask-wrap">
     <input type="text" class="aih-tb-ask-input" placeholder="问问..." />
@@ -686,4 +686,4 @@ function getPageText(e={}){let{maxLength:t=15e3,includeHeadings:n=!0,includeLink
       background: rgba(0, 0, 0, 0.75); color: #fff;
       font-size: 14px; font-family: sans-serif;
     `,r.textContent=`拖拽选择截图区域，按 Esc 取消`;let i=0,a=0,o=!1;function s(e){return{x:e.clientX,y:e.clientY}}function c(e,t,r,i){let a=Math.min(e,r),o=Math.min(t,i),s=Math.abs(r-e),c=Math.abs(i-t);n.style.left=a+`px`,n.style.top=o+`px`,n.style.width=s+`px`,n.style.height=c+`px`,n.style.display=`block`}function l(){t.remove(),n.remove(),r.remove(),document.removeEventListener(`keydown`,u,!0)}function u(t){t.key===`Escape`&&(t.preventDefault(),t.stopPropagation(),l(),e(null))}t.addEventListener(`mousedown`,e=>{if(e.button!==0)return;e.preventDefault(),e.stopPropagation();let{x:t,y:c}=s(e);i=t,a=c,o=!0,document.body.appendChild(n),document.body.appendChild(r)}),t.addEventListener(`mousemove`,e=>{if(!o)return;e.preventDefault();let{x:t,y:n}=s(e);c(i,a,t,n)}),t.addEventListener(`mouseup`,t=>{if(!o)return;t.preventDefault(),t.stopPropagation(),o=!1;let{x:n,y:r}=s(t),c={x:Math.min(i,n),y:Math.min(a,r),width:Math.abs(n-i),height:Math.abs(r-a)};if(l(),c.width<10||c.height<10){e(null);return}requestAnimationFrame(()=>e(c))}),document.addEventListener(`keydown`,u,!0),document.body.appendChild(t)})}
-//# sourceMappingURL=content-DWkafxg0.js.map
+//# sourceMappingURL=content-DimsUaPM.js.map

@@ -2878,7 +2878,9 @@ export function addLoadingMessage() {
   `;
   
   chatContainer.appendChild(loadingDiv);
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  requestAnimationFrame(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
   
   const stopBtn = loadingDiv.querySelector('.stop-task-btn');
   const loadingText = loadingDiv.querySelector('.loading-text');
@@ -2992,7 +2994,9 @@ function addStreamingMessage() {
     </div>
   `;
   chatContainer.appendChild(wrapper);
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  requestAnimationFrame(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
   return wrapper;
 }
 
@@ -3120,9 +3124,10 @@ function updateStreamingMessage(element, fullContent) {
     contentDiv.innerHTML = formatMessageContent(fullContent);
   }
   
-  // 自动滚动
-  const chatContainer = document.getElementById('chatContainer');
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  // 自动滚动（等浏览器完成布局后再滚动，确保 scrollHeight 已更新）
+  requestAnimationFrame(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
 }
 
 /**
@@ -3247,9 +3252,11 @@ function appendToolCallItems(element, toolCalls) {
     contentDiv.appendChild(item);
   });
   
-  // 滚动到底部
-  const chatContainer = document.getElementById('chatContainer');
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  // 滚动到底部（等浏览器完成布局后）
+  requestAnimationFrame(() => {
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
 }
 
 /**
@@ -3309,6 +3316,12 @@ function appendToolResult(result) {
       codeBlock.textContent = isExpanded ? fullContent : contentPreview;
     });
   }
+  
+  // 滚动到底部（等浏览器完成布局后）
+  requestAnimationFrame(() => {
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
 }
 
 /**
