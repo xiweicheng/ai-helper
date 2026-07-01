@@ -3990,9 +3990,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               </div>
               <pre class="agent-stream-content"><code></code></pre>
             `;
-            const mc = _streamingElement.querySelector('.message-content');
-            if (mc) {
-              mc.appendChild(outputDiv);
+            const sc = _streamingElement.querySelector('.stream-content');
+            if (sc) {
+              sc.appendChild(outputDiv);
             }
             agentEntry = { element: outputDiv, stdout: '', stderr: '' };
             _agentStreams[message.execId] = agentEntry;
