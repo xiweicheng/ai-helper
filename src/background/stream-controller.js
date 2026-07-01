@@ -57,10 +57,6 @@ export class StreamController {
 
     const delta = choice.delta || {};
     
-    // 原始 SSE chunk 日志（含 delta 完整内容，用于诊断 tool_calls 格式问题）
-    if (delta.tool_calls || choice.finish_reason === 'tool_calls') {
-      console.log('[StreamController] 收到 tool_calls SSE chunk, delta:', JSON.stringify(delta).substring(0, 500));
-    }
     const finishReason = choice.finish_reason;
 
     // 提取 usage（在最后一个 chunk 中）
@@ -97,18 +93,32 @@ export class StreamController {
             ? tc.function.arguments
             : JSON.stringify(tc.function.arguments);
           this.toolCalls[idx].function.arguments += argVal;
-          console.log(`[StreamController] tool_call[${idx}] 参数增量 (${argVal.length} 字符, 类型=${typeof tc.function.arguments}):`, argVal.substring(0, 100));
         }
       }
-      console.log(`[StreamController] tool_call[${this.toolCalls.length - 1}] 累计参数:`, this.toolCalls[this.toolCalls.length - 1]?.function?.arguments?.substring(0, 200));
     }
 
     // 最终状态（必须在 delta 处理之后，确保最后一个 chunk 的数据不丢失）
     if (finishReason === 'stop') {
+      // 如果最后一个 chunk 同时包含 content 和 finish_reason，
+      // 先发送 content chunk，下一次循环遇到 [DONE] 或 reader 结束时再触发 finish
+      if (delta.content) {
+        return { type: 'content', content: delta.content };
+      }
       return { type: 'done' };
     }
 
+    if (finishReason === 'length') {
+      // token 限制导致截断，按 done 处理但标记截断
+      if (delta.content) {
+        return { type: 'content', content: delta.content };
+      }
+      return { type: 'done', truncated: true };
+    }
+
     if (finishReason === 'tool_calls') {
+      // 打印完整的 tool_calls 摘要（而非每个 chunk 都打印）
+      console.log(`[StreamController] tool_calls 完成: ${this.toolCalls.length} 个调用`, 
+        this.toolCalls.map(tc => ({ name: tc.function?.name, argsLen: tc.function?.arguments?.length })));
       return { type: 'tool_calls' };
     }
 
@@ -242,13 +252,28 @@ export async function readSSEStream(reader, controller, abortSignal) {
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      if (abortSignal?.aborted) {
-        reader.cancel();
-        break;
+      // 使用 Promise.race 确保 abort 能立即中断 reader.read()
+      let readResult;
+      if (abortSignal) {
+        readResult = await Promise.race([
+          reader.read(),
+          new Promise((_, reject) => {
+            if (abortSignal.aborted) {
+              reject(new DOMException('Aborted', 'AbortError'));
+              return;
+            }
+            const onAbort = () => {
+              reject(new DOMException('Aborted', 'AbortError'));
+            };
+            abortSignal.addEventListener('abort', onAbort, { once: true });
+          })
+        ]);
+      } else {
+        readResult = await reader.read();
       }
+
+      const { done, value } = readResult;
+      if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -262,8 +287,8 @@ export async function readSSEStream(reader, controller, abortSignal) {
           controller.sendChunk(result.content);
         } else if (result.type === 'tool_calls') {
           // 检测到 tool_calls，暂停读取，返回给调用方处理
-          controller.sendToolCallNotification();
-          // 把 buffer 放回去，调用方会重新发起请求
+          // 注意：不在此处发送 STREAM_TOOL_CALL，因为 tool_call.id 可能尚未完整
+          // 由 react-loop.js 在规范化 toolCallId 后统一发送
           return { status: 'tool_calls', ...controller.getResult() };
         } else if (result.type === 'done') {
           // 正常结束
@@ -279,7 +304,6 @@ export async function readSSEStream(reader, controller, abortSignal) {
       if (result.type === 'content') {
         controller.sendChunk(result.content);
       } else if (result.type === 'tool_calls') {
-        controller.sendToolCallNotification();
         return { status: 'tool_calls', ...controller.getResult() };
       }
     }

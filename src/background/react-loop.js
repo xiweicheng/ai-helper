@@ -466,11 +466,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           const streamController = new StreamController(sessionId, streamConfig);
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
           console.log('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
-          if (streamResult.toolCalls?.length > 0) {
-            console.log('[Background] streamResult.toolCalls 详情:', JSON.stringify(streamResult.toolCalls.map(t => ({ id: t.id, name: t.function?.name, argsLen: t.function?.arguments?.length, argsPreview: t.function?.arguments?.substring(0, 200) }))));
-          } else {
-            console.log('[Background] WARNING: streamResult.toolCalls 为空或不存在 (status=' + streamResult.status + ')');
-          }
           
           // 构建兼容现有代码的 response 对象
           // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
@@ -478,6 +473,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             ...tc,
             id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
           })) : null;
+
+          // 发送 STREAM_TOOL_CALL 通知（使用规范化后的 toolCallId，确保与 STREAM_TOOL_RESULT 匹配）
+          if (normalizedToolCalls && normalizedToolCalls.length > 0) {
+            chrome.runtime.sendMessage({
+              type: 'STREAM_TOOL_CALL',
+              sessionId,
+              toolCalls: normalizedToolCalls,
+              thinkingContent: streamResult.content
+            }).catch(() => {});
+          }
 
           response = {
             choices: [{

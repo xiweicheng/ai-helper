@@ -3267,11 +3267,11 @@ function appendToolCallItems(element, toolCalls) {
  * 在流式消息的工具卡片中添加执行结果
  * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
  */
-function appendToolResult(result) {
+function appendToolResult(result, streamingElement) {
   if (!result?.toolCallId) return;
   
   // 在当前流式消息中查找对应的工具卡片
-  const element = _streamingElement;
+  const element = streamingElement || _streamingElement;
   if (!element) return;
   
   const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
@@ -3685,6 +3685,26 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   element.dataset.htmlContent = element.outerHTML;
 }
 
+/**
+ * 清理被取消的流式消息：移除思考中占位和状态文本
+ */
+function finalizeCancelledStream(element) {
+  if (!element) return;
+  
+  // 隐藏所有思考指示器
+  element.querySelectorAll('.thinking-indicator').forEach(el => el.classList.add('hidden'));
+  
+  // 更新状态文本为"已取消"
+  const statusDiv = element.querySelector('.stream-status');
+  if (statusDiv) {
+    statusDiv.textContent = '已取消';
+  }
+  
+  // 移除 streaming 动画类
+  element.classList.remove('streaming');
+  element.classList.add('stream-cancelled');
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}) {
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -3749,9 +3769,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     _pendingPreselectLog = null;
     _processStartTime = 0;
     let _streamedContent = '';
+    let _agentStreams = {};  // execId -> { element, stdout, stderr }
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
+      // 如果存在流式输出元素，清理思考中占位
+      if (_streamingElement) {
+        finalizeCancelledStream(_streamingElement);
+      }
       cleanupCallApi();
       // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
       if (!errorResult.executionLog || errorResult.executionLog.length === 0) {
@@ -3945,7 +3970,63 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'STREAM_TOOL_RESULT') {
         // 工具执行完成，在对应卡片后追加结果
         if (_streamingElement && message.result) {
-          appendToolResult(message.result);
+          appendToolResult(message.result, _streamingElement);
+        }
+        return false;
+      }
+      
+      if (message.type === 'AGENT_STREAM') {
+        // Agent 命令实时输出
+        if (_streamingElement && message.execId) {
+          let agentEntry = _agentStreams[message.execId];
+          if (!agentEntry) {
+            // 创建新的 Agent 输出区域
+            const outputDiv = document.createElement('div');
+            outputDiv.className = 'agent-stream-output';
+            outputDiv.innerHTML = `
+              <div class="agent-stream-header">
+                <span class="agent-stream-icon">🖥️</span>
+                <span class="agent-stream-label">命令输出</span>
+              </div>
+              <pre class="agent-stream-content"><code></code></pre>
+            `;
+            const mc = _streamingElement.querySelector('.message-content');
+            if (mc) {
+              mc.appendChild(outputDiv);
+            }
+            agentEntry = { element: outputDiv, stdout: '', stderr: '' };
+            _agentStreams[message.execId] = agentEntry;
+          }
+          
+          const codeEl = agentEntry.element.querySelector('code');
+          if (codeEl) {
+            if (message.streamType === 'stderr') {
+              agentEntry.stderr += message.data;
+            } else {
+              agentEntry.stdout += message.data;
+            }
+            codeEl.textContent = agentEntry.stdout + (agentEntry.stderr ? '\n' + agentEntry.stderr : '');
+            // 自动滚动到底部
+            codeEl.parentElement.scrollTop = codeEl.parentElement.scrollHeight;
+          }
+        }
+        return false;
+      }
+      
+      if (message.type === 'AGENT_STREAM_DONE') {
+        // Agent 命令执行结束
+        if (message.execId) {
+          const agentEntry = _agentStreams[message.execId];
+          if (agentEntry) {
+            const headerEl = agentEntry.element.querySelector('.agent-stream-label');
+            if (headerEl) {
+              const exitLabel = message.exitCode === 0 ? '完成' : `退出 (code: ${message.exitCode})`;
+              headerEl.textContent = `命令输出 - ${exitLabel}`;
+            }
+            if (message.exitCode !== 0) {
+              agentEntry.element.classList.add('agent-stream-error');
+            }
+          }
         }
         return false;
       }
@@ -3955,7 +4036,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
           const statusDiv = _streamingElement.querySelector('.stream-status');
           if (statusDiv) {
-            statusDiv.textContent = '质量评估中...';
+            statusDiv.textContent = '处理中...';
           }
           // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
         }
