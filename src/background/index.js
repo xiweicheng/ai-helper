@@ -166,6 +166,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
           console.log('[Background] 预筛选执行日志:', JSON.stringify(preselectLog).substring(0, 500));
 
+          // 发送预筛选日志到 Side Panel，使其在流式输出过程中也能看到
+          if (preselectLog.length > 0) {
+            chrome.runtime.sendMessage({
+              type: 'STREAM_PRESELECT',
+              sessionId: sessionId,
+              preselectLog: preselectLog
+            }).catch(() => {});
+          }
+
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           console.log('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
           return {

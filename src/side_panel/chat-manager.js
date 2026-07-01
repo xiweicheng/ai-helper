@@ -1536,6 +1536,7 @@ let executionLogDelegateBound = false;
 
 /** 当前流式消息 DOM 元素（模块级，供 appendToolResult 访问） */
 let _streamingElement = null;
+let _pendingPreselectLog = null;  // 缓存的预筛选日志，STREAM_START 时添加到流式元素
 
 /** 思考开始时间（当前步骤的思考耗时） */
 let _thinkingStartTime = 0;
@@ -3450,13 +3451,16 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     toolItems.forEach(item => processContent.appendChild(item));
     
     // 检查执行日志中是否有工具预筛选条目，插入到 process-content 最前面
-    const preselectEntries = (executionLog || []).filter(e => e.nodeType === 'preselect');
-    console.log('[finalizeStreamingMessage] executionLog length:', (executionLog || []).length, 'preselectEntries:', preselectEntries.length);
-    preselectEntries.forEach(entry => {
-      console.log('[finalizeStreamingMessage] creating preselect card for entry:', entry);
-      const preselectCard = createPreSelectCard(entry);
-      processContent.insertBefore(preselectCard, processContent.firstChild);
-    });
+    // 如果流式过程中已添加预筛选卡片（已随 stream-content 移入），则跳过避免重复
+    if (!processContent.querySelector('.preselect-card')) {
+      const preselectEntries = (executionLog || []).filter(e => e.nodeType === 'preselect');
+      console.log('[finalizeStreamingMessage] executionLog length:', (executionLog || []).length, 'preselectEntries:', preselectEntries.length);
+      preselectEntries.forEach(entry => {
+        console.log('[finalizeStreamingMessage] creating preselect card for entry:', entry);
+        const preselectCard = createPreSelectCard(entry);
+        processContent.insertBefore(preselectCard, processContent.firstChild);
+      });
+    }
     
     // 移除最后一个 thinking-badge 和 thinking-content（最终答案，将显示在折叠区外）
     const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
@@ -3743,6 +3747,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     // 流式输出状态
     _streamingElement = null;
+    _pendingPreselectLog = null;
     _processStartTime = 0;
     let _streamedContent = '';
     
@@ -3851,6 +3856,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       // 流式输出消息处理
+      if (message.type === 'STREAM_PRESELECT') {
+        console.log('[SidePanel] 收到预筛选日志，条数:', message.preselectLog?.length);
+        _pendingPreselectLog = message.preselectLog || null;
+        // 如果流式元素已创建（STREAM_START 先于本消息到达），立即添加预筛选卡片
+        if (_streamingElement && _pendingPreselectLog && _pendingPreselectLog.length > 0) {
+          const sc = _streamingElement.querySelector('.stream-content');
+          if (sc) {
+            _pendingPreselectLog.forEach(entry => {
+              const preselectCard = createPreSelectCard(entry);
+              sc.insertBefore(preselectCard, sc.firstChild);
+            });
+            _pendingPreselectLog = null;
+            console.log('[SidePanel] 预筛选卡片已追加到已有流式元素');
+          }
+        }
+        return false;
+      }
+      
       if (message.type === 'STREAM_START') {
         console.log('[SidePanel] 流式输出开始');
         // 移除 loading 消息（通过 class 查找）
@@ -3868,6 +3891,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         if (!_streamingElement) {
           _streamingElement = addStreamingMessage();
           _processStartTime = Date.now();
+          
+          // 如果有待处理的预筛选日志，立即添加预筛选卡片到 stream-content
+          if (_pendingPreselectLog && _pendingPreselectLog.length > 0) {
+            const sc = _streamingElement.querySelector('.stream-content');
+            _pendingPreselectLog.forEach(entry => {
+              const preselectCard = createPreSelectCard(entry);
+              sc.appendChild(preselectCard);
+            });
+            _pendingPreselectLog = null;
+          }
         } else {
           // 后续 ReAct 迭代：在 stream-content 末尾添加新的思考指示器
           const contentDiv = _streamingElement.querySelector('.stream-content');

@@ -286,6 +286,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     }
   }
   
+  // 再次清除取消状态，防止在 await getStoredConfig() 等异步操作期间
+  // 收到前一个请求残留的 CANCEL_REACT 消息导致的误取消
+  resetReactCancel(sessionId || tabId);
+
   try {
     while (iteration < maxIterations) {
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
