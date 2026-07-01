@@ -353,6 +353,7 @@ export async function performExport() {
           role: msg.role,
           content: msg.content || '',
           executionLog: msg.executionLog || [],
+          htmlContent: msg.htmlContent || '',
           reflectionScore: msg.reflectionScore,
           wasRevised: msg.wasRevised || false,
         })),
@@ -4386,7 +4387,6 @@ function copyAssistantMessage(messageDiv, copyBtn) {
     showToast('复制失败', 'error');
   }
 }
-
 function exportAssistantMessageToDocx(messageDiv, exportBtn) {
   try {
     let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
