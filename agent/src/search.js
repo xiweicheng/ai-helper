@@ -13,7 +13,7 @@ let rgAvailable = null;
  */
 function checkFdAvailable() {
   return new Promise((resolve) => {
-    const proc = spawn('fd', ['--version'], { stdio: 'ignore' });
+    const proc = spawn('fd', ['--version'], { stdio: 'ignore', windowsHide: true });
     const timeout = setTimeout(() => { proc.kill(); resolve(false); }, 5000);
     proc.on('close', (code) => { clearTimeout(timeout); resolve(code === 0); });
     proc.on('error', () => { clearTimeout(timeout); resolve(false); });
@@ -25,7 +25,7 @@ function checkFdAvailable() {
  */
 function checkRgAvailable() {
   return new Promise((resolve) => {
-    const proc = spawn('rg', ['--version'], { stdio: 'ignore' });
+    const proc = spawn('rg', ['--version'], { stdio: 'ignore', windowsHide: true });
     const timeout = setTimeout(() => { proc.kill(); resolve(false); }, 5000);
     proc.on('close', (code) => { clearTimeout(timeout); resolve(code === 0); });
     proc.on('error', () => { clearTimeout(timeout); resolve(false); });
@@ -89,7 +89,7 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
     if (!recursive) args.push('--max-depth', '1');
     args.push(rootPath);
 
-    const proc = spawn('fd', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn('fd', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const stdout = [];
     const stderr = [];
     let timedOut = false;
@@ -218,7 +218,7 @@ function searchContentWithRg(rootPath, pattern, filePattern, maxResults, context
     }
     args.push(pattern, rootPath);
 
-    const proc = spawn('rg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn('rg', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const stdout = [];
     let timedOut = false;
 

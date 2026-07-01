@@ -106,7 +106,10 @@ export function stopClarifyTimer() {
 export function showClarifyDialog(data) {
   console.log('[SidePanel] 显示澄清对话框:', data);
   
-  const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true, toolCallId, timeout = 180000, sessionId } = data;
+  const { question, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true, toolCallId, timeout = 180000, sessionId } = data;
+  
+  // 确保 options 是数组，防止 LLM 返回非数组类型导致 forEach 报错
+  const options = Array.isArray(data.options) ? data.options : (data.options ? [String(data.options)] : []);
   
   // 保存工具调用ID和所属会话ID
   state.currentClarifyToolCallId = toolCallId;

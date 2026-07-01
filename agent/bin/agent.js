@@ -210,7 +210,8 @@ if (command === 'start') {
       detached: true,
       stdio: 'ignore',
       cwd: process.cwd(),
-      env: { ...process.env }
+      env: { ...process.env },
+      windowsHide: true
     });
 
     // 监听 spawn 错误
@@ -344,7 +345,8 @@ if (command === 'start') {
       detached: true,
       stdio: 'ignore',
       cwd: process.cwd(),
-      env: { ...process.env }
+      env: { ...process.env },
+      windowsHide: true
     });
 
     let spawnFailed = false;

@@ -800,7 +800,10 @@ export function triggerScreenshotDownload(dataUrl, format) {
  * 注意：此工具需要用户交互，使用独立的澄清超时配置
  */
 export async function executeClarifyQuestion(args, toolCallId, sessionId = null) {
-  const { question, options, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true } = args;
+  const { question, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true } = args;
+  
+  // 确保 options 是数组，防止 LLM 返回非数组类型
+  const options = Array.isArray(args.options) ? args.options : (args.options ? [String(args.options)] : []);
   
   console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   
@@ -811,7 +814,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
   return new Promise((resolve) => {
     const clarifyData = {
       question,
-      options: options || [],
+      options: options,
       recommendedOption: recommendedOption !== undefined ? recommendedOption : 0,
       allowCustomInput,
       allowAdditionalInfo,

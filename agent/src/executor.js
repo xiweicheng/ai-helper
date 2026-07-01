@@ -65,7 +65,8 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   const proc = spawn('sh', ['-c', command], {
     cwd: workdir,
     env: buildSafeEnv(),
-    stdio: ['pipe', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
   });
 
   const wsClients = new Set();
