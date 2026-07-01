@@ -383,16 +383,25 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   
   // 解析参数
   if (functionObj && functionObj.arguments) {
+    // 防御：arguments 可能是 string 或已解析的 object
+    const argsStrRaw = typeof functionObj.arguments === 'string'
+      ? functionObj.arguments
+      : JSON.stringify(functionObj.arguments);
+    console.log('[Background] toolCall.function.arguments 类型:', typeof functionObj.arguments, '长度:', argsStrRaw.length);
     try {
-      const parsed = tryParseToolArgs(functionObj.arguments);
+      const parsed = tryParseToolArgs(argsStrRaw);
       args = parsed || {};
     } catch (e) {
-      console.error('[Background] 解析工具参数失败:', e, '原始值:', functionObj.arguments);
+      console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStrRaw.substring(0, 300));
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
+    }
+    if (Object.keys(args).length === 0 && argsStrRaw && argsStrRaw.length > 0 && argsStrRaw !== '{}') {
+      console.error('[Background] 参数解析后为空对象！原始 arguments:', argsStrRaw.substring(0, 300));
     }
   } else if (typeof argsStr === 'object') {
     args = argsStr || {};
   } else if (typeof argsStr === 'string') {
+    console.log('[Background] 使用备用 argsStr 解析:', argsStr.substring(0, 300));
     try {
       const parsed = tryParseToolArgs(argsStr);
       args = parsed || {};

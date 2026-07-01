@@ -187,10 +187,14 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
     return null;
   }
 
-  const ws = new WebSocket(wsUrl);
+  // WebSocket 无法设置自定义 HTTP 头，认证 token 通过 URL query 参数传递
+  const separator = wsUrl.includes('?') ? '&' : '?';
+  const authenticatedUrl = `${wsUrl}${separator}token=${encodeURIComponent(config.token)}`;
+
+  const ws = new WebSocket(authenticatedUrl);
 
   ws.onopen = () => {
-    console.log('[AgentClient] WebSocket 已连接:', wsUrl);
+    console.log('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
   };
 
   ws.onmessage = (event) => {

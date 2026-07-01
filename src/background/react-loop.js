@@ -339,19 +339,28 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         return rest;
       }).filter(msg => msg !== null);
 
-      // 防御：如果最后一条有效消息是 assistant(tool_calls) 但没有后续 tool 消息，清除 tool_calls
-      // 如果清除后 content 也为空，则移除整条消息
-      const lastFiltered = filteredMessages[filteredMessages.length - 1];
-      if (lastFiltered?.role === 'assistant' && lastFiltered.tool_calls) {
-        const hasToolAfter = filteredMessages.some((msg, i) => {
-          if (msg.role !== 'tool') return false;
-          return i > filteredMessages.lastIndexOf(lastFiltered);
-        });
-        if (!hasToolAfter) {
-          console.warn('[Background] reactLoop: 最后一条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
-          delete lastFiltered.tool_calls;
-          if (!lastFiltered.content) {
-            filteredMessages.pop();
+      // 防御：扫描所有 assistant(tool_calls) 消息，确保其后有对应的 tool 消息
+      // 如果 assistant(tool_calls) 后没有 tool 消息配对，清除 tool_calls（content 为空则移除整条）
+      for (let i = 0; i < filteredMessages.length; i++) {
+        const msg = filteredMessages[i];
+        if (msg?.role === 'assistant' && msg.tool_calls) {
+          // 检查该消息之后（直到下一条非 tool 消息或末尾）是否有 tool 消息
+          let hasToolMsg = false;
+          for (let j = i + 1; j < filteredMessages.length; j++) {
+            const next = filteredMessages[j];
+            if (next.role === 'tool') {
+              hasToolMsg = true;
+            } else {
+              break; // 遇到非 tool 消息，停止检查
+            }
+          }
+          if (!hasToolMsg) {
+            console.warn('[Background] reactLoop: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+            delete msg.tool_calls;
+            if (!msg.content) {
+              filteredMessages.splice(i, 1);
+              i--; // 调整索引
+            }
           }
         }
       }
@@ -410,6 +419,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           stream: streamConfig.streamEnabled !== false
         };
         
+        console.log('[Background] API 请求体 stream 模式:', requestBody.stream, '工具数量:', requestBody.tools.length, '消息数量:', requestBody.messages.length, 'model:', requestBody.model);
+        
         // 添加 temperature 和 top_p 参数
         if (apiParams.temperature !== undefined) {
           requestBody.temperature = apiParams.temperature;
@@ -447,9 +458,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
         // 流式模式：读取 SSE 流
         if (streamConfig.streamEnabled !== false && fetchResponse.body) {
+          console.log('[Background] 进入流式模式，streamEnabled:', streamConfig.streamEnabled);
           const streamController = new StreamController(sessionId, streamConfig);
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
           console.log('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
+          if (streamResult.toolCalls?.length > 0) {
+            console.log('[Background] streamResult.toolCalls 详情:', JSON.stringify(streamResult.toolCalls.map(t => ({ id: t.id, name: t.function?.name, argsLen: t.function?.arguments?.length, argsPreview: t.function?.arguments?.substring(0, 200) }))));
+          } else {
+            console.log('[Background] WARNING: streamResult.toolCalls 为空或不存在 (status=' + streamResult.status + ')');
+          }
           
           // 构建兼容现有代码的 response 对象
           // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
@@ -581,7 +598,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           const toolName = toolCall.function?.name || toolCall.name;
           const toolStartTime = Date.now();
-          const toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
+          // 防御：arguments 可能是 string 或已解析的 object
+          const rawArgs = toolCall.function?.arguments;
+          console.log('[Background] executeSingleToolCall 收到工具调用:', JSON.stringify({ name: toolName, argsType: typeof rawArgs, argsRaw: typeof rawArgs === 'string' ? rawArgs.substring(0, 200) : JSON.stringify(rawArgs).substring(0, 200), id: toolCall.id }));
+          const toolArgs = (() => {
+            if (!rawArgs) return {};
+            if (typeof rawArgs === 'object') return rawArgs;
+            try { return JSON.parse(rawArgs || '{}'); } catch { return {}; }
+          })();
           // 防御：流式模式下 tool_call.id 可能为空，用 index 生成回退 id
           const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
           
@@ -718,6 +742,23 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             } else {
               toolResultStr = JSON.stringify(toolResult);
             }
+            
+            // 检查工具执行是否成功
+            const isToolSuccess = toolResult && toolResult.success !== false;
+
+            // 发送工具结果到 Side Panel 展示
+            chrome.runtime.sendMessage({
+              type: 'STREAM_TOOL_RESULT',
+              sessionId,
+              result: {
+                toolCallId: toolCallId,
+                toolName,
+                success: isToolSuccess,
+                content: isToolSuccess ? toolResultStr : (toolResult?.error || toolResultStr),
+                truncated: false,
+                duration: Date.now() - toolStartTime
+              }
+            }).catch(() => {});
 
             // 工具结果截断：防止大结果撑爆上下文
             const resultTokens = estimateTokens(toolResultStr);
@@ -849,16 +890,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             
             console.log('[Background] 工具执行结果长度:', toolResultStr.length, '内容预览:', toolResultStr.substring(0, 200));
             
-            // 检查工具执行是否成功
-            const isSuccess = toolResult && toolResult.success !== false;
-            
             // 更新工具执行日志
             const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
             if (toolLogIndex !== -1) {
               const logEntry = {
                 ...executionLog[toolLogIndex],
                 duration: Date.now() - toolStartTime,
-                status: isSuccess ? 'success' : 'failed',
+                status: isToolSuccess ? 'success' : 'failed',
                 nodeName: `工具执行:${toolName}`,
                 action: {
                   name: toolName,
@@ -868,7 +906,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 prototypeId: toolResult?.prototypeId || null
               };
               // 失败时传递 error 字段，确保执行日志面板能展示具体错误原因
-              if (!isSuccess && toolResult?.error) {
+              if (!isToolSuccess && toolResult?.error) {
                 logEntry.error = toolResult.error;
               }
               executionLog[toolLogIndex] = logEntry;
@@ -1691,21 +1729,27 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       return rest;
     });
 
-    // 防御：如果最后一条消息是 assistant(tool_calls) 但没有后续 tool 消息，清除 tool_calls
-    // 如果清除后 content 也为空，则移除整条消息
-    const lastMsg = filteredMessages[filteredMessages.length - 1];
-    if (lastMsg?.role === 'assistant' && lastMsg.tool_calls) {
-      const hasToolAfter = filteredMessages.some((msg, i) => {
-        if (msg.role !== 'tool') return false;
-        return i > filteredMessages.lastIndexOf(
-          filteredMessages.find(m => m === lastMsg)
-        );
-      });
-      if (!hasToolAfter) {
-        console.warn('[Background] callApiNonStream: 最后一条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
-        delete lastMsg.tool_calls;
-        if (!lastMsg.content) {
-          filteredMessages.pop();
+    // 防御：扫描所有 assistant(tool_calls) 消息，确保其后有对应的 tool 消息
+    // 如果 assistant(tool_calls) 后没有 tool 消息配对，清除 tool_calls（content 为空则移除整条）
+    for (let i = 0; i < filteredMessages.length; i++) {
+      const msg = filteredMessages[i];
+      if (msg?.role === 'assistant' && msg.tool_calls) {
+        let hasToolMsg = false;
+        for (let j = i + 1; j < filteredMessages.length; j++) {
+          const next = filteredMessages[j];
+          if (next.role === 'tool') {
+            hasToolMsg = true;
+          } else {
+            break;
+          }
+        }
+        if (!hasToolMsg) {
+          console.warn('[Background] callApiNonStream: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+          delete msg.tool_calls;
+          if (!msg.content) {
+            filteredMessages.splice(i, 1);
+            i--;
+          }
         }
       }
     }

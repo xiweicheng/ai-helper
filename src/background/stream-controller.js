@@ -56,6 +56,11 @@ export class StreamController {
     }
 
     const delta = choice.delta || {};
+    
+    // 原始 SSE chunk 日志（含 delta 完整内容，用于诊断 tool_calls 格式问题）
+    if (delta.tool_calls || choice.finish_reason === 'tool_calls') {
+      console.log('[StreamController] 收到 tool_calls SSE chunk, delta:', JSON.stringify(delta).substring(0, 500));
+    }
     const finishReason = choice.finish_reason;
 
     // 提取 usage（在最后一个 chunk 中）
@@ -86,8 +91,16 @@ export class StreamController {
         }
         if (tc.id) this.toolCalls[idx].id = tc.id;
         if (tc.function?.name) this.toolCalls[idx].function.name += tc.function.name;
-        if (tc.function?.arguments) this.toolCalls[idx].function.arguments += tc.function.arguments;
+        if (tc.function?.arguments) {
+          // 防御：某些代理 API 可能返回已解析的 arguments 对象
+          const argVal = typeof tc.function.arguments === 'string'
+            ? tc.function.arguments
+            : JSON.stringify(tc.function.arguments);
+          this.toolCalls[idx].function.arguments += argVal;
+          console.log(`[StreamController] tool_call[${idx}] 参数增量 (${argVal.length} 字符, 类型=${typeof tc.function.arguments}):`, argVal.substring(0, 100));
+        }
       }
+      console.log(`[StreamController] tool_call[${this.toolCalls.length - 1}] 累计参数:`, this.toolCalls[this.toolCalls.length - 1]?.function?.arguments?.substring(0, 200));
     }
 
     // 最终状态（必须在 delta 处理之后，确保最后一个 chunk 的数据不丢失）
@@ -104,8 +117,9 @@ export class StreamController {
       return { type: 'content', content: delta.content };
     }
 
+    // delta.tool_calls 中间 chunk：仅累积参数，不退出循环，等待 finish_reason
     if (delta.tool_calls) {
-      return { type: 'tool_calls' };
+      return { type: 'accumulating' };
     }
 
     return { type: 'ignore' };
@@ -221,6 +235,9 @@ export class StreamController {
 export async function readSSEStream(reader, controller, abortSignal) {
   const decoder = new TextDecoder();
   let buffer = '';
+
+  // 立即通知 Side Panel 流式输出开始，不等首帧内容
+  controller.sendStart();
 
   try {
     while (true) {

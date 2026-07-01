@@ -1516,6 +1516,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 // ============================================================
 let executionLogDelegateBound = false;
 
+/** 当前流式消息 DOM 元素（模块级，供 appendToolResult 访问） */
+let _streamingElement = null;
+
 function bindExecutionLogDelegate() {
   if (executionLogDelegateBound) return;
   const chatContainer = document.getElementById('chatContainer');
@@ -2948,8 +2951,19 @@ function addStreamingMessage() {
   wrapper.className = 'message-wrapper assistant streaming';
   wrapper.innerHTML = `
     <div class="message-content">
+      <div class="thinking-indicator">
+        <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+          <circle cx="8" cy="12" r="1.5"/>
+          <circle cx="16" cy="12" r="1.5"/>
+        </svg>
+        <div class="thinking-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="thinking-label">大模型思考中...</span>
+      </div>
       <div class="stream-content"></div>
-      <div class="stream-status">正在生成...</div>
+      <div class="stream-status hidden"></div>
     </div>
   `;
   chatContainer.appendChild(wrapper);
@@ -2959,14 +2973,37 @@ function addStreamingMessage() {
 
 /**
  * 更新流式消息内容（增量渲染 Markdown）
+ * 首次有内容时自动隐藏思考中指示器，并添加思考结果图标
  */
 function updateStreamingMessage(element, fullContent) {
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
   
+  // 首次有内容时隐藏思考指示器
+  const thinkingEl = element.querySelector('.thinking-indicator');
+  if (thinkingEl && !thinkingEl.classList.contains('hidden')) {
+    thinkingEl.classList.add('hidden');
+    // 在内容区域添加思考结果图标标记
+    contentDiv.innerHTML = '<span class="thinking-badge"><svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果</span>';
+  }
+  
   // 增量渲染：使用 marked 解析当前完整内容
   const html = formatMessageContent(fullContent);
-  contentDiv.innerHTML = html;
+  // 保持思考标记，只更新后面的内容
+  if (contentDiv.querySelector('.thinking-badge')) {
+    const badge = contentDiv.querySelector('.thinking-badge');
+    const contentAfter = contentDiv.querySelector('.thinking-content');
+    if (contentAfter) {
+      contentAfter.innerHTML = html;
+    } else {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'thinking-content';
+      wrapper.innerHTML = html;
+      badge.after(wrapper);
+    }
+  } else {
+    contentDiv.innerHTML = html;
+  }
   
   // 自动滚动
   const chatContainer = document.getElementById('chatContainer');
@@ -2974,24 +3011,377 @@ function updateStreamingMessage(element, fullContent) {
 }
 
 /**
- * 更新流式消息状态文本
+ * 更新流式消息状态文本（工具调用时）
  */
 function updateStreamingStatus(element, statusText) {
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) {
-    statusDiv.textContent = statusText;
+    statusDiv.classList.remove('hidden');
+    statusDiv.innerHTML = `<svg class="tool-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> ${statusText}`;
   }
 }
 
 /**
- * 完成流式消息：移除状态文本，添加操作按钮
+ * 在流式消息中添加工具调用详情卡片
+ * @param {HTMLElement} element - 流式消息容器
+ * @param {Array} toolCalls - 工具调用数组 [{ id, type, function: { name, arguments } }]
  */
-function finalizeStreamingMessage(element) {
+function appendToolCallItems(element, toolCalls) {
+  if (!element || !toolCalls?.length) return;
+  
+  // 隐藏思考指示器
+  const thinkingEl = element.querySelector('.thinking-indicator');
+  if (thinkingEl) thinkingEl.classList.add('hidden');
+  
+  const contentDiv = element.querySelector('.message-content');
+  if (!contentDiv) return;
+  
+  // 工具分类配置：{ toolName: { icon, label, summaryFn } }
+  const toolMeta = {
+    execute_command:       { metaType: 'exec' },
+    execute_agent_exec_command: { metaType: 'exec' },
+    agent_read_file:       { metaType: 'file', action: '读取' },
+    agent_write_file:      { metaType: 'file', action: '写入' },
+    file_upload:           { metaType: 'file', action: '上传' },
+    download_file:         { metaType: 'file', action: '下载' },
+    fetch_url:             { metaType: 'web', action: '请求' },
+    click_element:         { metaType: 'web', action: '点击' },
+    fill_form:             { metaType: 'web', action: '填写' },
+    open_tab:              { metaType: 'web', action: '打开' },
+    search_bookmarks:      { metaType: 'search' },
+    search_history:        { metaType: 'search' },
+    search_in_page:        { metaType: 'search' },
+  };
+  
+  toolCalls.forEach(tc => {
+    const toolName = tc.function?.name || 'unknown';
+    const meta = toolMeta[toolName] || { metaType: 'other' };
+    let args;
+    try {
+      args = JSON.parse(tc.function?.arguments || '{}');
+    } catch {
+      args = { raw: tc.function?.arguments || '' };
+    }
+    
+    const formattedArgs = JSON.stringify(args, null, 2);
+    
+    // 根据工具类型构建摘要行
+    let summaryHtml = '';
+    if (meta.metaType === 'exec') {
+      // 命令执行：展示实际命令
+      const cmd = args.command || args.cmd || JSON.stringify(args);
+      summaryHtml = `<code class="tool-call-cmd">$ ${escapeHtml(cmd)}</code>`;
+    } else if (meta.metaType === 'file') {
+      // 文件操作：展示路径/文件名
+      const path = args.file_path || args.filePath || args.path || args.filename || args.fileName || args.url || '';
+      const icon = meta.action === '读取' ? '📖' : meta.action === '写入' ? '📝' : meta.action === '上传' ? '📤' : '📥';
+      summaryHtml = `<span class="tool-call-file">${icon} ${escapeHtml(path) || escapeHtml(toolName)}</span>`;
+    } else if (meta.metaType === 'web') {
+      const url = args.url || args.href || args.selector || '';
+      summaryHtml = `<span class="tool-call-web">${escapeHtml(meta.action)}: ${escapeHtml(url) || escapeHtml(JSON.stringify(args).substring(0, 80))}</span>`;
+    } else if (meta.metaType === 'search') {
+      const query = args.query || args.keyword || args.text || '';
+      summaryHtml = `<span class="tool-call-search">🔍 ${escapeHtml(query) || escapeHtml(toolName)}</span>`;
+    } else {
+      // 其他工具：显示关键参数
+      const keys = Object.keys(args);
+      if (keys.length === 0) {
+        summaryHtml = `<span>${escapeHtml(toolName)}</span>`;
+      } else if (keys.length === 1) {
+        summaryHtml = `<span>${escapeHtml(keys[0])}: ${escapeHtml(JSON.stringify(args[keys[0]]).substring(0, 80))}</span>`;
+      } else {
+        const preview = keys.slice(0, 2).map(k => `${escapeHtml(k)}=${escapeHtml(JSON.stringify(args[k]).substring(0, 30))}`).join(', ');
+        summaryHtml = `<span>${preview}${keys.length > 2 ? ' ...' : ''}</span>`;
+      }
+    }
+    
+    // 图标
+    const iconSvg = meta.metaType === 'exec'
+      ? `<svg class="tool-call-icon exec" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+         </svg>`
+      : meta.metaType === 'file'
+      ? `<svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+         </svg>`
+      : `<svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+         </svg>`;
+    
+    const item = document.createElement('div');
+    item.className = 'tool-call-item';
+    item.setAttribute('data-tool-call-id', tc.id || '');
+    item.innerHTML = `
+      <div class="tool-call-header">
+        ${iconSvg}
+        <span class="tool-call-name">${escapeHtml(toolName)}</span>
+        <div class="tool-call-summary">${summaryHtml}</div>
+        <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="tool-call-body">
+        <pre><code>${escapeHtml(formattedArgs)}</code></pre>
+      </div>
+    `;
+    
+    // 点击展开/折叠
+    item.querySelector('.tool-call-header').addEventListener('click', () => {
+      item.classList.toggle('expanded');
+    });
+    
+    contentDiv.appendChild(item);
+  });
+  
+  // 滚动到底部
+  const chatContainer = document.getElementById('chatContainer');
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+/**
+ * 在流式消息的工具卡片中添加执行结果
+ * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
+ */
+function appendToolResult(result) {
+  if (!result?.toolCallId) return;
+  
+  // 在当前流式消息中查找对应的工具卡片
+  const element = _streamingElement;
+  if (!element) return;
+  
+  const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
+  if (!card) return;
+  
+  // 移除旧的结果（如果有）
+  const oldResult = card.querySelector('.tool-call-result');
+  if (oldResult) oldResult.remove();
+  
+  // 截断提示
+  const truncateNote = result.truncated 
+    ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
+    : '';
+  
+  // 格式化结果内容
+  const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
+  const contentPreview = contentText.length > 500 
+    ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
+    : contentText;
+  const fullContent = contentText;
+  
+  const resultDiv = document.createElement('div');
+  resultDiv.className = 'tool-call-result';
+  resultDiv.innerHTML = `
+    <div class="tool-result-header">
+      <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+        ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
+      </span>
+      ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+      ${truncateNote}
+    </div>
+    <div class="tool-result-content">
+      <pre><code>${escapeHtml(contentPreview)}</code></pre>
+    </div>
+  `;
+  
+  card.appendChild(resultDiv);
+  
+  // 如果内容 > 500 字符，支持点击展开完整内容
+  if (fullContent.length > 500) {
+    const codeBlock = resultDiv.querySelector('code');
+    let isExpanded = false;
+    resultDiv.style.cursor = 'pointer';
+    resultDiv.addEventListener('click', () => {
+      isExpanded = !isExpanded;
+      codeBlock.textContent = isExpanded ? fullContent : contentPreview;
+    });
+  }
+}
+
+/**
+ * 完成流式消息：移除状态文本，添加底部工具栏（复制/引用/导出/执行日志）
+ * @param {HTMLElement} element - 流式消息容器元素
+ * @param {string} content - 最终内容
+ * @param {Array} executionLog - 执行日志
+ * @param {number|null} reflectionScore - 反思评分
+ */
+function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null) {
+  if (!element) return;
+  
+  // 隐藏思考指示器
+  const thinkingEl = element.querySelector('.thinking-indicator');
+  if (thinkingEl) thinkingEl.classList.add('hidden');
+  
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) {
     statusDiv.remove();
   }
   element.classList.remove('streaming');
+  
+  // 设置数据属性（供工具栏按钮使用）
+  element.classList.add('assistant', 'message');
+  element.dataset.rawContent = content;
+  element.dataset.textContent_ = Array.isArray(content) 
+    ? content.filter(c => c.type === 'text').map(c => c.text).join('') 
+    : content;
+  element.dataset.executionLog = JSON.stringify(executionLog);
+  
+  // 添加底部工具栏
+  const footer = document.createElement('div');
+  footer.className = 'message-footer';
+  
+  // 复制按钮
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'copy-btn';
+  copyBtn.innerHTML = [
+    '<svg viewBox="0 0 16 16" fill="currentColor">',
+    '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
+    '</svg>',
+    '<span>复制</span>'
+  ].join('');
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyAssistantMessage(element, copyBtn);
+  });
+  footer.appendChild(copyBtn);
+  
+  // 引用按钮
+  const quoteBtn = document.createElement('button');
+  quoteBtn.className = 'quote-btn';
+  quoteBtn.innerHTML = [
+    '<svg t="1781246498458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9645" width="14" height="14"><path d="M156.09136 606.57001a457.596822 457.596822 0 0 1 221.680239-392.516385 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z m406.752731 0a457.596822 457.596822 0 0 1 221.680239-392.007944 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z" fill="#8a8a8a" p-id="9646"></path></svg>',
+    '<span>引用</span>'
+  ].join('');
+  quoteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    quoteAndAsk(element);
+  });
+  footer.appendChild(quoteBtn);
+  
+  // 导出菜单
+  const exportMenuContainer = document.createElement('div');
+  exportMenuContainer.className = 'export-menu-container';
+  
+  const exportTriggerBtn = document.createElement('button');
+  exportTriggerBtn.className = 'export-trigger-btn';
+  exportTriggerBtn.innerHTML = '<svg t="1781245244396" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="14" height="14"><path d="M496.213333 739.84c2.133333 2.133333 4.693333 3.84 7.68 5.12 0.853333 0.426667 2.133333 0.426667 2.986667 0.853333 1.706667 0.426667 2.986667 0.853333 4.693333 0.853334 5.546667 0 11.093333-2.133333 14.933334-6.4l256-256c8.533333-8.533333 8.533333-21.76 0-30.293334s-21.76-8.533333-30.293334 0L533.333333 674.133333V128c0-11.946667-9.386667-21.333333-21.333333-21.333333s-21.333333 9.386667-21.333333 21.333333v545.706667l-219.306667-219.306667c-8.533333-8.533333-21.76-8.533333-30.293333 0s-8.533333 21.76 0 30.293333l255.146666 255.146667zM768 874.666667H256c-11.946667 0-21.333333 9.386667-21.333333 21.333333s9.386667 21.333333 21.333333 21.333333h512c11.946667 0 21.333333-9.386667 21.333333-21.333333s-9.386667-21.333333-21.333333-21.333333z" fill="#8a8a8a" p-id="5116"></path></svg><span>导出</span><svg class="dropdown-arrow" width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M0 0l4 6 4-6z"/></svg>';
+  
+  const exportDropdown = document.createElement('div');
+  exportDropdown.className = 'export-dropdown';
+  exportDropdown.innerHTML = [
+    '<div class="export-dropdown-item export-docx-item">',
+    '<svg t="1781245550030" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6544" width="32" height="32"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#8a8a8a" p-id="6545"></path><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#8a8a8a" p-id="6546"></path><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#8a8a8a" p-id="6547"></path></svg>',
+    '<span>导出 Word</span>',
+    '</div>',
+    '<div class="export-dropdown-item export-pdf-item">',
+    '<svg t="1781245863206" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8152" width="32" height="32"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#8a8a8a" p-id="8153"></path><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#8a8a8a" p-id="8154"></path></svg>',
+    '<span>导出 PDF</span>',
+    '</div>'
+  ].join('');
+  
+  exportDropdown.querySelector('.export-docx-item').addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportAssistantMessageToDocx(element, exportTriggerBtn);
+    exportDropdown.classList.remove('show');
+  });
+  
+  exportDropdown.querySelector('.export-pdf-item').addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportAssistantMessageToPdf(element, exportTriggerBtn);
+    exportDropdown.classList.remove('show');
+  });
+  
+  exportTriggerBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.export-dropdown.show').forEach(menu => {
+      if (menu !== exportDropdown) menu.classList.remove('show');
+    });
+    exportDropdown.classList.toggle('show');
+  });
+  
+  let hoverTimer = null;
+  exportMenuContainer.addEventListener('mouseenter', () => {
+    hoverTimer = setTimeout(() => {
+      document.querySelectorAll('.export-dropdown.show').forEach(menu => {
+        if (menu !== exportDropdown) menu.classList.remove('show');
+      });
+      exportDropdown.classList.add('show');
+    }, 300);
+  });
+  exportMenuContainer.addEventListener('mouseleave', () => {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    setTimeout(() => {
+      if (!exportMenuContainer.matches(':hover') && !exportDropdown.matches(':hover')) {
+        exportDropdown.classList.remove('show');
+      }
+    }, 100);
+  });
+  
+  exportMenuContainer.appendChild(exportTriggerBtn);
+  exportMenuContainer.appendChild(exportDropdown);
+  footer.appendChild(exportMenuContainer);
+  
+  // 执行日志按钮（如果启用且有日志）
+  if (executionLog && executionLog.length > 0 && state.chatConfig?.enableExecutionLog) {
+    const logBtn = document.createElement('button');
+    logBtn.className = 'execution-log-btn';
+    logBtn.type = 'button';
+    logBtn.title = '执行日志';
+    logBtn.innerHTML = [
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
+      '<circle cx="12" cy="12" r="10"></circle>',
+      '<polyline points="12 6 12 12 16 14"></polyline>',
+      '</svg>'
+    ].join('');
+    footer.appendChild(logBtn);
+  }
+  
+  // 质量评估徽章（反思评分）
+  const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
+  const reflectionRounds = executionLog 
+    ? executionLog.filter(e => e.nodeType === 'reflection' && e.reflectionType === 'post' && e.status === 'success').length 
+    : 0;
+  const postReflection = executionLog?.find(e => e.nodeType === 'reflection' && e.reflectionType === 'post');
+  
+  if (hasReflection && state.chatConfig?.enableExecutionLog) {
+    const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
+    const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
+    const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
+    
+    const scoreBadge = document.createElement('button');
+    scoreBadge.className = 'reflection-score-btn';
+    scoreBadge.type = 'button';
+    scoreBadge.title = `AI 质量评估: ${reflectionScore}/10${roundsTag}\n点击查看评估详情`;
+    scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
+    scoreBadge.dataset.reflectionData = JSON.stringify({
+      overallScore: postReflection?.overallScore ?? reflectionScore,
+      dimensions: postReflection?.dimensions || null,
+      issues: postReflection?.issues || null,
+      suggestions: postReflection?.suggestions || null,
+      decision: postReflection?.action?.decision || null,
+      useful: postReflection?.useful ?? null,
+      reasoning: postReflection?.reasoning || null,
+      suggestion: postReflection?.suggestion || null,
+      rounds: reflectionRounds,
+      wasRevised: false
+    });
+    
+    footer.appendChild(scoreBadge);
+  } else if (!hasReflection && executionLog && executionLog.some(e => e.nodeType === 'reflection' && e.status === 'failed') && state.chatConfig?.enableExecutionLog) {
+    const warnBadge = document.createElement('button');
+    warnBadge.className = 'reflection-score-btn';
+    warnBadge.type = 'button';
+    warnBadge.title = '反思评估失败（点击查看执行日志）';
+    warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
+    footer.appendChild(warnBadge);
+  }
+  
+  element.querySelector('.message-content').appendChild(footer);
+  
+  // 绑定事件委托（执行日志/反思弹窗点击）
+  bindExecutionLogDelegate();
+  bindReflectionBadgeDelegate();
   
   // 添加代码复制按钮、Mermaid 渲染等后处理
   addCodeCopyButtons();
@@ -3058,7 +3448,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     const timeoutSeconds = Math.round(timeoutMs / 1000);
     
     // 流式输出状态
-    let _streamingElement = null;
+    _streamingElement = null;
     let _streamedContent = '';
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
@@ -3194,20 +3584,37 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'STREAM_TOOL_CALL') {
         if (_streamingElement && message.toolCalls?.length > 0) {
-          const toolNames = message.toolCalls.map(tc => tc.function?.name || 'unknown').join(', ');
-          updateStreamingStatus(_streamingElement, `正在执行工具: ${toolNames}...`);
+          // 添加工具调用详情卡片（含图标、名称、命令/文件/参数、可折叠详情）
+          appendToolCallItems(_streamingElement, message.toolCalls);
+        }
+        return false;
+      }
+      
+      if (message.type === 'STREAM_TOOL_RESULT') {
+        // 工具执行完成，在对应卡片后追加结果
+        if (_streamingElement && message.result) {
+          appendToolResult(message.result);
         }
         return false;
       }
       
       if (message.type === 'STREAM_DONE') {
         if (_streamingElement) {
-          finalizeStreamingMessage(_streamingElement);
+          // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
+          const statusDiv = _streamingElement.querySelector('.stream-status');
+          if (statusDiv) {
+            statusDiv.textContent = '质量评估中...';
+          }
+          // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
         }
         return false;
       }
       
       if (message.type === 'API_COMPLETE') {
+        // 流式消息：在 resolve 前添加底部工具栏
+        if (_streamingElement && message.content) {
+          finalizeStreamingMessage(_streamingElement, message.content, message.executionLog || [], message.reflectionScore);
+        }
         cleanupCallApi();
         resolve({ 
           content: message.content, 
