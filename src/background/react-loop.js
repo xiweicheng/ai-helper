@@ -1809,7 +1809,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
         const streamController = new StreamController(sessionId, config.streamConfig, streamOptions);
         const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
         console.log('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
-        return { content: result.content, usage: result.usage };
+        return { content: result.content, usage: result.usage, reasoningContent: result.reasoningContent };
       }
 
       // 非流式模式：保持原有逻辑

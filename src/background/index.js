@@ -184,7 +184,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
             executionLog: reactResult.executionLog || preselectLog,
             reflectionScore: reactResult.reflectionScore,
-            wasRevised: reactResult.wasRevised || false
+            wasRevised: reactResult.wasRevised || false,
+            reasoningContent: reactResult.reasoningContent || null
           };
         })()
       : callApiNonStream(messages, model, apiParams, sessionId);
