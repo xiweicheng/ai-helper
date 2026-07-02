@@ -895,6 +895,11 @@ function createMenuItem(label, onClick, className = '') {
 
 // ==================== 初始化 ====================
 
+// 监听生成状态变更，实时更新 Tab 栏指示器
+document.addEventListener('generating-state-changed', () => {
+  renderSessionTabs();
+});
+
 // 在模块加载时设置 ResizeObserver
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', setupOverflowObserver);

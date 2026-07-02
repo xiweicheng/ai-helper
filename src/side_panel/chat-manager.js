@@ -1102,6 +1102,7 @@ export async function sendMessage() {
     // 合并在此处统一保存，减少 IndexedDB 写入次数
     saveChatHistory();
     state.generatingSessionIds.delete(mySessionId);
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
     sendBtn.disabled = false;
     userInput.focus();
     state.attachedImages = [];

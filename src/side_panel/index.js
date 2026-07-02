@@ -426,6 +426,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   } catch (error) {
   } finally {
     state.generatingSessionIds.delete(mySessionId);
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
     sendBtn.disabled = false;
     const userInput = document.getElementById('userInput');
     userInput.focus();

@@ -109,6 +109,7 @@ export default {
   set isGenerating(v) { 
     if (v) generatingSessionIds.add(activeSessionId); 
     else generatingSessionIds.delete(activeSessionId);
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
   },
   get generatingSessionIds() { return generatingSessionIds; },
   get messageHistory() { return messageHistory; },

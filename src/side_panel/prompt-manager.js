@@ -497,6 +497,7 @@ export async function sendPromptByCode(code) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
   } finally {
     state.generatingSessionIds.delete(mySessionId);
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
     sendBtn.disabled = false;
     userInput.focus();
     state.attachedImages = [];
