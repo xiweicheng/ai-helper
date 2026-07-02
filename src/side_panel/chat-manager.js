@@ -1057,8 +1057,9 @@ export async function sendMessage() {
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
       const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
-      if (wasStreamed && _streamingElement) {
-        msgEntry.htmlContent = _streamingElement.dataset.htmlContent || _streamingElement.outerHTML;
+      if (wasStreamed && _streamingElements.get(mySessionId)) {
+        const el = _streamingElements.get(mySessionId);
+        msgEntry.htmlContent = el.dataset.htmlContent || el.outerHTML;
       }
       appendMessageToSession(mySessionId, msgEntry);
       removeLoadingMessage(loadingId);
@@ -1088,8 +1089,9 @@ export async function sendMessage() {
     
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
     const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
-    if (wasStreamed && _streamingElement) {
-      msgEntry.htmlContent = _streamingElement.dataset.htmlContent || _streamingElement.outerHTML;
+    if (wasStreamed && _streamingElements.get(mySessionId)) {
+      const el = _streamingElements.get(mySessionId);
+      msgEntry.htmlContent = el.dataset.htmlContent || el.outerHTML;
     }
     
     state.messageHistory.push(msgEntry);
@@ -1535,8 +1537,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 // ============================================================
 let executionLogDelegateBound = false;
 
-/** 当前流式消息 DOM 元素（模块级，供 appendToolResult 访问） */
-let _streamingElement = null;
+/** 当前流式消息 DOM 元素（按 sessionId 隔离，防止会话串台） */
+const _streamingElements = new Map();  // sessionId -> HTMLElement
 let _pendingPreselectLog = null;  // 缓存的预筛选日志，STREAM_START 时添加到流式元素
 
 /** 思考开始时间（当前步骤的思考耗时） */
@@ -3271,7 +3273,7 @@ function appendToolResult(result, streamingElement) {
   if (!result?.toolCallId) return;
   
   // 在当前流式消息中查找对应的工具卡片
-  const element = streamingElement || _streamingElement;
+  const element = streamingElement;
   if (!element) return;
   
   const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
@@ -3712,6 +3714,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
 
+  // 按 sessionId 隔离的流式元素访问器（防止多会话并行时串台）
+  const _se = (val) => {
+    if (val === undefined) return _streamingElements.get(mySessionId) || null;
+    _streamingElements.set(mySessionId, val);
+    return val;
+  };
+
   // 建立长连接端口以保持 Service Worker 存活，
   // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
@@ -3746,6 +3755,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     _timeoutCtx.removeListener();
     state.pendingCancelApiMap.delete(mySessionId);
     state.pendingCallApiSessionIds.delete(mySessionId);
+    _streamingElements.delete(mySessionId);  // 清理本会话的流式元素引用
     syncPendingSessionsToStorage();
   };
   
@@ -3765,7 +3775,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     const timeoutSeconds = Math.round(timeoutMs / 1000);
     
     // 流式输出状态
-    _streamingElement = null;
+    _se(null);
     _pendingPreselectLog = null;
     _processStartTime = 0;
     let _streamedContent = '';
@@ -3774,8 +3784,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
       // 如果存在流式输出元素，清理思考中占位
-      if (_streamingElement) {
-        finalizeCancelledStream(_streamingElement);
+      if (_se()) {
+        finalizeCancelledStream(_se());
       }
       cleanupCallApi();
       // 合并执行日志：优先使用本地 executionLog（后台实时推送），其次使用外部传入的
@@ -3884,8 +3894,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         console.log('[SidePanel] 收到预筛选日志，条数:', message.preselectLog?.length);
         _pendingPreselectLog = message.preselectLog || null;
         // 如果流式元素已创建（STREAM_START 先于本消息到达），立即添加预筛选卡片
-        if (_streamingElement && _pendingPreselectLog && _pendingPreselectLog.length > 0) {
-          const mc = _streamingElement.querySelector('.message-content');
+        if (_se() && _pendingPreselectLog && _pendingPreselectLog.length > 0) {
+          const mc = _se().querySelector('.message-content');
           if (mc) {
             _pendingPreselectLog.forEach(entry => {
               const preselectCard = createPreSelectCard(entry);
@@ -3912,14 +3922,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         }
         state.currentExecutionStatus = null;
         
-        if (!_streamingElement) {
-          _streamingElement = addStreamingMessage();
+        if (!_se()) {
+          _se(addStreamingMessage());
           _processStartTime = Date.now();
           
           // 如果有待处理的预筛选日志，立即添加预筛选卡片到 message-content 最前面
           // （在 thinking-indicator 之前，确保视觉上预筛选卡片先于思考中显示）
           if (_pendingPreselectLog && _pendingPreselectLog.length > 0) {
-            const mc = _streamingElement.querySelector('.message-content');
+            const mc = _se().querySelector('.message-content');
             _pendingPreselectLog.forEach(entry => {
               const preselectCard = createPreSelectCard(entry);
               mc.insertBefore(preselectCard, mc.firstChild);
@@ -3928,7 +3938,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           }
         } else {
           // 后续 ReAct 迭代：在 stream-content 末尾添加新的思考指示器
-          const contentDiv = _streamingElement.querySelector('.stream-content');
+          const contentDiv = _se().querySelector('.stream-content');
           if (contentDiv) {
             const newThinking = document.createElement('div');
             newThinking.className = 'thinking-indicator';
@@ -3952,32 +3962,32 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'STREAM_CHUNK') {
-        if (_streamingElement) {
+        if (_se()) {
           _streamedContent += message.delta;
-          updateStreamingMessage(_streamingElement, _streamedContent);
+          updateStreamingMessage(_se(), _streamedContent);
         }
         return false;
       }
       
       if (message.type === 'STREAM_TOOL_CALL') {
-        if (_streamingElement && message.toolCalls?.length > 0) {
+        if (_se() && message.toolCalls?.length > 0) {
           // 添加工具调用详情卡片（含图标、名称、命令/文件/参数、可折叠详情）
-          appendToolCallItems(_streamingElement, message.toolCalls);
+          appendToolCallItems(_se(), message.toolCalls);
         }
         return false;
       }
       
       if (message.type === 'STREAM_TOOL_RESULT') {
         // 工具执行完成，在对应卡片后追加结果
-        if (_streamingElement && message.result) {
-          appendToolResult(message.result, _streamingElement);
+        if (_se() && message.result) {
+          appendToolResult(message.result, _se());
         }
         return false;
       }
       
       if (message.type === 'AGENT_STREAM') {
         // Agent 命令实时输出
-        if (_streamingElement && message.execId) {
+        if (_se() && message.execId) {
           let agentEntry = _agentStreams[message.execId];
           if (!agentEntry) {
             // 创建新的 Agent 输出区域
@@ -3990,7 +4000,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               </div>
               <pre class="agent-stream-content"><code></code></pre>
             `;
-            const sc = _streamingElement.querySelector('.stream-content');
+            const sc = _se().querySelector('.stream-content');
             if (sc) {
               sc.appendChild(outputDiv);
             }
@@ -4032,9 +4042,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'STREAM_DONE') {
-        if (_streamingElement) {
+        if (_se()) {
           // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
-          const statusDiv = _streamingElement.querySelector('.stream-status');
+          const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
             statusDiv.textContent = '质量评估中...';
           }
@@ -4045,15 +4055,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'API_COMPLETE') {
         // 流式消息：在 resolve 前添加底部工具栏
-        if (_streamingElement && message.content) {
-          finalizeStreamingMessage(_streamingElement, message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
+        if (_se() && message.content) {
+          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
         }
         cleanupCallApi();
         resolve({ 
           content: message.content, 
           executionLog: message.executionLog || executionLog,
           reflectionScore: message.reflectionScore,
-          wasStreamed: !!_streamingElement
+          wasStreamed: !!_se()
         });
         return false;
       } else if (message.type === 'API_ERROR') {

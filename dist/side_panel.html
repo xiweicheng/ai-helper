@@ -1590,6 +1590,12 @@
       40% { transform: scale(1); }
     }
     /* 流式输出消息样式 */
+    .message-wrapper.streaming .message-content {
+      padding: 10px 15px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
     .message-wrapper.streaming .stream-content {
       font-size: 14px;
       line-height: 1.7;
@@ -1622,6 +1628,56 @@
     .message-wrapper.streaming .stream-content pre code {
       background: transparent;
       padding: 0;
+    }
+    /* Agent 命令实时输出 */
+    .agent-stream-output {
+      margin: 12px 0;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8f9fa;
+    }
+    .agent-stream-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: #f0f1f3;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 12px;
+      color: #666;
+    }
+    .agent-stream-icon {
+      font-size: 13px;
+    }
+    .agent-stream-label {
+      font-weight: 500;
+    }
+    .agent-stream-content {
+      margin: 0;
+      padding: 10px 12px;
+      overflow-x: auto;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #374151;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #f8f9fa;
+    }
+    .agent-stream-content code {
+      background: transparent;
+      padding: 0;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+    }
+    .agent-stream-error .agent-stream-header {
+      background: #fef2f2;
+      border-bottom-color: #fecaca;
+    }
+    .agent-stream-error .agent-stream-content {
+      background: #fef9f9;
     }
     /* 思考中指示器 */
     .thinking-indicator {
@@ -1887,7 +1943,7 @@
     }
     .thinking-process-content {
       padding: 12px;
-      background: #fafafe;
+      background: transparent;
       font-size: 13px;
       line-height: 1.6;
       color: #555;
@@ -4375,10 +4431,62 @@
       max-width: 500px;
       width: 90%;
       max-height: 60vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .prototype-library-toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 0 0 12px 0;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    
+    .prototype-library-search {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      border: 1px solid #d0d5dd;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #333;
+      background: #fff;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    
+    .prototype-library-search:focus {
+      border-color: #4f8ef7;
+      box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.15);
+    }
+    
+    .prototype-library-search::placeholder {
+      color: #bbb;
+    }
+    
+    .prototype-library-sort {
+      flex-shrink: 0;
+      padding: 6px 8px;
+      border: 1px solid #d0d5dd;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #555;
+      background: #fff;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    
+    .prototype-library-sort:focus {
+      border-color: #4f8ef7;
+      box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.15);
     }
     
     .prototype-library-list {
-      max-height: 40vh;
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 8px;
     }
@@ -4422,16 +4530,30 @@
       white-space: nowrap;
     }
     
-    .prototype-library-item-time {
+    .prototype-library-item-desc {
       font-size: 12px;
-      color: #999;
+      color: #888;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .prototype-library-item-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
     
     .prototype-library-item-id {
       font-size: 11px;
       color: #aaa;
       font-family: monospace;
-      margin-bottom: 2px;
+    }
+    
+    .prototype-library-item-time {
+      font-size: 11px;
+      color: #aaa;
     }
     
     .prototype-library-item-actions {
@@ -6480,11 +6602,17 @@
     <div class="modal-container prototype-library-container">
       <button class="prompt-modal-close" id="prototypeLibraryCloseBtn" title="关闭">×</button>
       <div class="modal-title">🎨 原型库</div>
+      <div class="prototype-library-toolbar">
+        <input type="text" class="prototype-library-search" id="prototypeLibrarySearch" placeholder="搜索原型..." />
+        <select class="prototype-library-sort" id="prototypeLibrarySort">
+          <option value="createdAt_desc">时间 (新→旧)</option>
+          <option value="createdAt_asc">时间 (旧→新)</option>
+          <option value="title_asc">标题 (A→Z)</option>
+          <option value="title_desc">标题 (Z→A)</option>
+        </select>
+      </div>
       <div class="prototype-library-list" id="prototypeLibraryList">
         <div class="prototype-library-empty">暂无原型</div>
-      </div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="prototypeLibraryCancelBtn">关闭</button>
       </div>
     </div>
   </div>

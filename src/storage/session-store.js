@@ -8,6 +8,9 @@ import { BUILTIN_TOOLS } from '../side_panel/constants.js';
 
 let migrated = false;
 
+// 记录上一次活跃的会话 ID，用于关闭当前会话后回退到上一个
+let previousSessionId = null;
+
 /**
  * 初始化：尝试从 chrome.storage 迁移数据
  */
@@ -220,6 +223,9 @@ export async function switchToSession(sessionId) {
   if (sessionId === state.activeSessionId) return;
   await saveCurrentSession();
 
+  // 记录切换前的会话 ID，用于删除当前会话时回退
+  previousSessionId = state.activeSessionId;
+
   const targetSession = await idb.getSession(sessionId);
   if (!targetSession) {
     console.error('[SessionStore] 找不到会话:', sessionId);
@@ -262,11 +268,15 @@ export async function deleteStoreSession(sessionId) {
 
   await idb.deleteSession(sessionId);
 
-  // 如果删除的是当前活跃会话，切换到第一个剩下的会话
+  // 如果删除的是当前活跃会话，优先切换到上一个会话，其次第一个剩下的会话
   if (activeId === sessionId) {
     const remaining = allSessions.filter((s) => s.id !== sessionId);
     if (remaining.length > 0) {
-      await idb.setActiveSessionId(remaining[0].id);
+      // 优先回退到上一次选中的会话
+      const fallback = remaining.find(s => s.id === previousSessionId);
+      await idb.setActiveSessionId(fallback ? fallback.id : remaining[0].id);
+      // 清除回退记录
+      previousSessionId = null;
     } else {
       await idb.setActiveSessionId(null);
     }

@@ -808,6 +808,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && 'enableSelectionQuery' in changes) {
       state.enableSelectionQuery = changes.enableSelectionQuery.newValue;
+      // 同步 checkbox UI
+      const checkbox = document.getElementById('enableSelectionQueryBtn');
+      if (checkbox) checkbox.checked = state.enableSelectionQuery;
       refreshSelectionInterval();
     }
   });
@@ -897,6 +900,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sendBtn = document.getElementById('sendBtn');
     const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
+
+    // 如果图片已被上一会话消费（预览栏已隐藏），切换会话时清空图片附件
+    const previewBar = document.getElementById('imagePreviewBar');
+    if (state.attachedImages.length > 0 && previewBar && previewBar.style.display === 'none') {
+      state.attachedImages = [];
+    }
 
     // 清理旧会话的 executionLogListener，防止 listener 累积
     if (state.executionLogListener) {

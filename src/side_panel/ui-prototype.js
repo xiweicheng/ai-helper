@@ -160,17 +160,38 @@ export async function showPrototypeLibrary() {
   try {
     const prototypes = await listUiPrototypes();
     
-    if (prototypes.length === 0) {
-      listEl.innerHTML = '<div class="prototype-library-empty">暂无原型</div>';
-    } else {
-      listEl.innerHTML = prototypes.map(p => {
+    renderPrototypeLibraryList(prototypes);
+    
+    // 绑定搜索和排序事件
+    bindPrototypeLibraryControls(prototypes);
+    
+  } catch (err) {
+    console.error('[SidePanel] 加载原型库失败:', err);
+    listEl.innerHTML = '<div class="prototype-library-empty">加载失败</div>';
+  }
+  
+  modal.classList.add('show');
+  console.log('[SidePanel] 原型库已显示');
+}
+
+function renderPrototypeLibraryList(prototypes) {
+  const listEl = document.getElementById('prototypeLibraryList');
+  if (!listEl) return;
+
+  if (prototypes.length === 0) {
+    listEl.innerHTML = '<div class="prototype-library-empty">暂无原型</div>';
+  } else {
+    listEl.innerHTML = prototypes.map(p => {
         const shortId = p.id.replace('proto_', '').slice(-6);
         return `
         <div class="prototype-library-item" data-id="${p.id}">
           <div class="prototype-library-item-info">
-            <div class="prototype-library-item-title">${escapeHtml(p.title)}</div>
-            <div class="prototype-library-item-id">ID: ${shortId}</div>
-            <div class="prototype-library-item-time">${formatTime(p.createdAt)}</div>
+            <div class="prototype-library-item-title" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</div>
+            ${p.description ? `<div class="prototype-library-item-desc">${escapeHtml(p.description)}</div>` : ''}
+            <div class="prototype-library-item-meta">
+              <span class="prototype-library-item-id">ID: ${shortId}</span>
+              <span class="prototype-library-item-time">${formatTime(p.createdAt)}</span>
+            </div>
           </div>
           <div class="prototype-library-item-actions">
             <button class="prototype-library-item-open" title="打开">
@@ -230,14 +251,52 @@ export async function showPrototypeLibrary() {
         }
       });
     }
+  }
+
+function bindPrototypeLibraryControls(allPrototypes) {
+  const applyFilter = () => {
+    const searchInput = document.getElementById('prototypeLibrarySearch');
+    const sortSelect = document.getElementById('prototypeLibrarySort');
+    const searchText = (searchInput?.value || '').trim().toLowerCase();
+    const sortValue = sortSelect?.value || 'createdAt_desc';
     
-  } catch (err) {
-    console.error('[SidePanel] 加载原型库失败:', err);
-    listEl.innerHTML = '<div class="prototype-library-empty">加载失败</div>';
+    let filtered = allPrototypes;
+    if (searchText) {
+      filtered = allPrototypes.filter(p =>
+        (p.title || '').toLowerCase().includes(searchText) ||
+        (p.description || '').toLowerCase().includes(searchText)
+      );
+    }
+    
+    // 排序
+    const [field, order] = sortValue.split('_');
+    filtered = [...filtered].sort((a, b) => {
+      let cmp;
+      if (field === 'title') {
+        cmp = (a.title || '').localeCompare(b.title || '', 'zh-CN');
+      } else {
+        cmp = (a.createdAt || 0) - (b.createdAt || 0);
+      }
+      return order === 'desc' ? -cmp : cmp;
+    });
+    
+    renderPrototypeLibraryList(filtered);
+  };
+  
+  const searchInput = document.getElementById('prototypeLibrarySearch');
+  const sortSelect = document.getElementById('prototypeLibrarySort');
+  
+  if (searchInput) {
+    const newSearch = searchInput.cloneNode(true);
+    searchInput.parentNode.replaceChild(newSearch, searchInput);
+    newSearch.addEventListener('input', applyFilter);
   }
   
-  modal.classList.add('show');
-  console.log('[SidePanel] 原型库已显示');
+  if (sortSelect) {
+    const newSort = sortSelect.cloneNode(true);
+    sortSelect.parentNode.replaceChild(newSort, sortSelect);
+    newSort.addEventListener('change', applyFilter);
+  }
 }
 
 export function hidePrototypeLibrary() {
@@ -457,11 +516,6 @@ export function initPrototypeEvents() {
   const libraryCloseBtn = document.getElementById('prototypeLibraryCloseBtn');
   if (libraryCloseBtn) {
     libraryCloseBtn.addEventListener('click', hidePrototypeLibrary);
-  }
-  
-  const libraryCancelBtn = document.getElementById('prototypeLibraryCancelBtn');
-  if (libraryCancelBtn) {
-    libraryCancelBtn.addEventListener('click', hidePrototypeLibrary);
   }
   
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
