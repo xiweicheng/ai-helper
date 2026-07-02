@@ -1,5 +1,5 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize, sep } from 'path';
+import { resolve, normalize, sep, isAbsolute } from 'path';
 import { realpathSync } from 'fs';
 import { loadConfig } from './config.js';
 
@@ -14,10 +14,12 @@ function checkPath(pathStr) {
   }
 
   try {
-    const resolved = resolve(pathStr);
+    const config = loadConfig();
+
+    // 相对路径基于 config.workdir 解析，而非 process.cwd()
+    const resolved = isAbsolute(pathStr) ? resolve(pathStr) : resolve(config.workdir, pathStr);
     const normalized = normalize(resolved);
 
-    const config = loadConfig();
     const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
 
     // 先做前缀检查（快速路径，兼容 Windows/Unix）
