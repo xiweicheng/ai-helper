@@ -319,29 +319,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     getStoredConfig().then(async (config) => {
       try {
-        const result = await callApiNonStream(messages, config.modelName, {});
-        const content = result.content !== undefined ? result.content : result;
-        const executionLog = result.executionLog || [];
+        const useStream = config.streamConfig?.streamEnabled !== false;
 
-        // 记录 token 使用统计
-        if (result.usage) {
-          recordTokenUsage({
-            sessionId: 'selection_toolbar',
-            model: config.modelName,
-            usage: result.usage,
-            callType: 'non_stream'
-          }).catch(() => {});
-        }
-        
-        console.log('[Background] 选中文本工具栏 API 完成，内容长度:', content.length);
-        
-        if (tabId) {
-          chrome.tabs.sendMessage(tabId, {
-            type: 'SELECTION_TOOLBAR_RESULT',
-            content: content
-          }).catch(() => {
-            console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
+        if (useStream && tabId) {
+          // 流式模式：通过 StreamController 向 content script 发送实时消息
+          const streamSessionId = `toolbar_${tabId}_${Date.now()}`;
+          const result = await callApiNonStream(messages, config.modelName, {}, streamSessionId, {
+            sendFn: (msg) => chrome.tabs.sendMessage(tabId, msg).catch(() => {}),
+            typePrefix: 'SELECTION_TOOLBAR_'
           });
+          const content = result.content !== undefined ? result.content : result;
+
+          // 记录 token 使用统计
+          if (result.usage) {
+            recordTokenUsage({
+              sessionId: 'selection_toolbar',
+              model: config.modelName,
+              usage: result.usage,
+              callType: 'stream'
+            }).catch(() => {});
+          }
+
+          console.log('[Background] 选中文本工具栏流式 API 完成，内容长度:', content.length);
+        } else {
+          // 非流式模式：等待完整结果后一次性返回
+          const result = await callApiNonStream(messages, config.modelName, {});
+          const content = result.content !== undefined ? result.content : result;
+
+          // 记录 token 使用统计
+          if (result.usage) {
+            recordTokenUsage({
+              sessionId: 'selection_toolbar',
+              model: config.modelName,
+              usage: result.usage,
+              callType: 'non_stream'
+            }).catch(() => {});
+          }
+
+          console.log('[Background] 选中文本工具栏 API 完成，内容长度:', content.length);
+
+          if (tabId) {
+            chrome.tabs.sendMessage(tabId, {
+              type: 'SELECTION_TOOLBAR_RESULT',
+              content: content
+            }).catch(() => {
+              console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
+            });
+          }
         }
       } catch (error) {
         console.error('[Background] 选中文本工具栏 API 失败:', error);

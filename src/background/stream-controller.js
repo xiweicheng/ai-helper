@@ -9,7 +9,7 @@
  * @param {Object} streamConfig - 流式配置 { streamEnabled, streamChunkDelay }
  */
 export class StreamController {
-  constructor(sessionId, streamConfig) {
+  constructor(sessionId, streamConfig, options = {}) {
     this.sessionId = sessionId;
     this.config = streamConfig;
     this.fullContent = '';
@@ -20,6 +20,9 @@ export class StreamController {
     this.lastSendTime = 0;
     this._pendingChunk = '';
     this._streamStarted = false;
+    // 支持自定义消息发送函数和消息类型前缀（用于向 content script 发送流式消息）
+    this._sendFn = options.sendFn || ((msg) => chrome.runtime.sendMessage(msg).catch(() => {}));
+    this._typePrefix = options.typePrefix || '';
   }
 
   /**
@@ -142,10 +145,10 @@ export class StreamController {
     if (this._streamStarted) return;
     this._streamStarted = true;
     this.isStreaming = true;
-    chrome.runtime.sendMessage({
-      type: 'STREAM_START',
+    this._sendFn({
+      type: this._typePrefix + 'STREAM_START',
       sessionId: this.sessionId
-    }).catch(() => {});
+    });
   }
 
   /**
@@ -172,11 +175,11 @@ export class StreamController {
 
     this.sendStart(); // 确保先发 start
 
-    chrome.runtime.sendMessage({
-      type: 'STREAM_CHUNK',
+    this._sendFn({
+      type: this._typePrefix + 'STREAM_CHUNK',
       sessionId: this.sessionId,
       delta: this._pendingChunk
-    }).catch(() => {});
+    });
 
     this._pendingChunk = '';
     this.lastSendTime = Date.now();
@@ -189,14 +192,14 @@ export class StreamController {
     this._flushChunk(); // 发送剩余缓冲区
     this.isStreaming = false;
 
-    chrome.runtime.sendMessage({
-      type: 'STREAM_DONE',
+    this._sendFn({
+      type: this._typePrefix + 'STREAM_DONE',
       sessionId: this.sessionId,
       finalContent: this.fullContent,
       reasoningContent: this.reasoningContent || null,
       usage: this.usage,
       toolCalls: this.toolCalls.length > 0 ? this.toolCalls : null
-    }).catch(() => {});
+    });
   }
 
   /**
@@ -205,12 +208,12 @@ export class StreamController {
   sendToolCallNotification() {
     this._flushChunk();
 
-    chrome.runtime.sendMessage({
-      type: 'STREAM_TOOL_CALL',
+    this._sendFn({
+      type: this._typePrefix + 'STREAM_TOOL_CALL',
       sessionId: this.sessionId,
       toolCalls: this.toolCalls,
       thinkingContent: this.fullContent
-    }).catch(() => {});
+    });
   }
 
   /**

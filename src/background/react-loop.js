@@ -1723,7 +1723,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 /**
  * 调用 OpenAI 兼容 API（支持流式/非流式）
  */
-export function callApiNonStream(messages, model, apiParams = {}, sessionId = null) {
+export function callApiNonStream(messages, model, apiParams = {}, sessionId = null, streamOptions = {}) {
   return getStoredConfig().then(config => {
     // 如果传入了图片识别独立配置，则覆盖默认配置
     if (apiParams.imageApiBase) {
@@ -1806,7 +1806,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
       // 流式模式：读取 SSE 流
       if (useStream && response.body) {
-        const streamController = new StreamController(sessionId, config.streamConfig);
+        const streamController = new StreamController(sessionId, config.streamConfig, streamOptions);
         const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
         console.log('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
         return { content: result.content, usage: result.usage };

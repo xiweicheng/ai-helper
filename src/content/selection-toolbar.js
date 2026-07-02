@@ -46,6 +46,7 @@ let toolbarTools = null;  // 工具栏工具配置缓存
 let toolbarMaxVisible = 4;  // 直接显示的工具数量
 let toolbarIconOnly = false; // 图标精简模式
 let overflowDropdownEl = null;  // 溢出下拉菜单
+let streamContent = '';       // 流式模式下累积的内容
 
 // 拖拽状态
 let dragState = null;
@@ -1710,6 +1711,66 @@ function sendToAI(action, text, customSystemPrompt) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionValid()) return;
   
+  // 流式输出：开始（保留 loading 动画，等第一个 chunk 到达后再替换）
+  if (message.type === 'SELECTION_TOOLBAR_STREAM_START') {
+    streamContent = '';
+    return;
+  }
+  
+  // 流式输出：内容增量
+  if (message.type === 'SELECTION_TOOLBAR_STREAM_CHUNK') {
+    streamContent += (message.delta || '');
+    if (resultPanelEl && isResultVisible) {
+      const body = resultPanelEl.querySelector('.aih-result-body');
+      if (body) {
+        // 首个 chunk：替换 loading 动画为流式内容
+        if (!body.querySelector('.aih-result-content-stream')) {
+          body.innerHTML = '<div class="aih-result-content-stream"></div>';
+        }
+        // 流式过程中用纯文本显示，到 STREAM_DONE 时再渲染 markdown
+        const escaped = escapeHtml(streamContent).replace(/\n/g, '<br>');
+        body.innerHTML = '<div class="aih-result-content-stream">' + escaped + '</div>';
+      }
+    }
+    return;
+  }
+  
+  // 流式输出：完成
+  if (message.type === 'SELECTION_TOOLBAR_STREAM_DONE') {
+    // 确保收到所有内容
+    if (message.finalContent) {
+      streamContent = message.finalContent;
+    }
+    
+    const rawContent = streamContent || '无响应';
+    resultRawContent = streamContent;
+    
+    // 解析 ---SUGGESTIONS--- 分隔符
+    let answerContent = rawContent;
+    let suggestions = [];
+    const suggestIdx = rawContent.indexOf('---SUGGESTIONS---');
+    if (suggestIdx !== -1) {
+      answerContent = rawContent.substring(0, suggestIdx).trim();
+      resultRawContent = answerContent;
+      const suggestBlock = rawContent.substring(suggestIdx + '---SUGGESTIONS---'.length);
+      suggestions = suggestBlock
+        .split('\n')
+        .map(s => s.replace(/^[\d]+[\.\、\s]+/, '').trim())
+        .filter(s => s.length > 0)
+        .slice(0, 3);
+    }
+    
+    // 用 marked 解析 Markdown，渲染最终结果
+    const htmlContent = typeof marked !== 'undefined'
+      ? marked.parse(answerContent)
+      : escapeHtml(answerContent).replace(/\n/g, '<br>');
+    showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
+    
+    streamContent = '';
+    return;
+  }
+  
+  // 非流式：一次性返回完整结果
   if (message.type === 'SELECTION_TOOLBAR_RESULT') {
     if (message.error) {
       resultRawContent = '';
