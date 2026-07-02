@@ -65,17 +65,7 @@ export async function renderSessionTabs() {
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       showDeleteModal(session, async () => {
-        const sessionsData = await loadSessions();
-        state.activeSessionId = sessionsData.activeSessionId;
-        state.sessions = sessionsData.list;
-        const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
-        if (active) {
-          state.messageHistory = active.messageHistory || [];
-        } else {
-          state.messageHistory = [];
-        }
-        document.dispatchEvent(new CustomEvent('session-switched'));
-        renderSessionTabs();
+        await reloadAfterDelete();
       });
     });
     tab.appendChild(closeBtn);
@@ -95,6 +85,15 @@ export async function renderSessionTabs() {
     tab.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       showTabContextMenu(e, session);
+    });
+
+    // 中键点击直接关闭会话
+    tab.addEventListener('mousedown', async (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await deleteSession(session.id);
+      await reloadAfterDelete();
     });
 
     // 拖拽排序支持
@@ -477,14 +476,9 @@ async function handleDropdownSelectSession(sessionId) {
 }
 
 async function handleDropdownCloseSession(sessionId) {
-  // 先删除
   await deleteSession(sessionId);
-  // 重新加载
-  const sessionsData = await loadSessions();
-  state.sessions = sessionsData.list;
-  state.activeSessionId = sessionsData.activeSessionId;
-
-  // 更新过滤列表
+  await reloadAfterDelete();
+  // 更新下拉过滤列表
   const searchInput = document.getElementById('sessionDropdownSearch');
   const searchText = searchInput ? searchInput.value : '';
   const allSessions = state.sessions || [];
@@ -498,16 +492,6 @@ async function handleDropdownCloseSession(sessionId) {
   }
   dropdownState.highlightIndex = Math.min(dropdownState.highlightIndex, dropdownState.filteredSessions.length - 1);
   renderDropdownList();
-
-  // 同步更新标签栏
-  const active = allSessions.find(s => s.id === state.activeSessionId);
-  if (active) {
-    state.messageHistory = active.messageHistory || [];
-  } else {
-    state.messageHistory = [];
-  }
-  document.dispatchEvent(new CustomEvent('session-switched'));
-  renderSessionTabs();
 }
 
 async function handleCloseAllSessions() {
@@ -531,15 +515,7 @@ async function handleCloseAllSessions() {
   for (const session of sessions) {
     await deleteSession(session.id);
   }
-  // 重新加载
-  const sessionsData = await loadSessions();
-  state.sessions = sessionsData.list;
-  state.activeSessionId = sessionsData.activeSessionId;
-  const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
-  state.messageHistory = active ? (active.messageHistory || []) : [];
-
-  document.dispatchEvent(new CustomEvent('session-switched'));
-  renderSessionTabs();
+  await reloadAfterDelete();
 }
 
 function bindDropdownEvents() {
@@ -891,6 +867,26 @@ function createMenuItem(label, onClick, className = '') {
   item.textContent = label;
   item.addEventListener('click', onClick);
   return item;
+}
+
+// ==================== 删除后状态重载（自动创建新会话） ====================
+
+/**
+ * 删除会话后重新加载状态，如果没有活跃会话则自动创建
+ */
+async function reloadAfterDelete() {
+  let sessionsData = await loadSessions();
+  // 如果没有活跃会话了，自动创建一个新会话
+  if (!sessionsData.activeSessionId) {
+    await createSession();
+    sessionsData = await loadSessions();
+  }
+  state.activeSessionId = sessionsData.activeSessionId;
+  state.sessions = sessionsData.list;
+  const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
+  state.messageHistory = active ? (active.messageHistory || []) : [];
+  document.dispatchEvent(new CustomEvent('session-switched'));
+  renderSessionTabs();
 }
 
 // ==================== 初始化 ====================
