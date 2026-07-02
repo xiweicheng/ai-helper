@@ -94,9 +94,9 @@ const BLACKLIST_PATTERNS = [
   // 修改根目录权限
   /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\//,
   /^\s*chown\s+-R\s+\S+\s+\//,
-  // Shell 命令替换注入（仅匹配反引号内的可执行命令模式）
-  /`[^`]*`/,
-  /\$\([^)]*\)/,
+  // Shell 命令替换注入 — 允许 echo/printf 等纯输出命令中使用
+  /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*`[^`]*`/,
+  /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*\$\s*\([^)]*\)/,
 ];
 
 const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
