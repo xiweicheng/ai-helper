@@ -15,7 +15,7 @@ import {
   showModal, hideModal, loadChatHistory, saveChatHistory,
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
-  restorePendingSessionsFromStorage,
+  restorePendingSessionsFromStorage, restoreMessageFromHtml,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay
 } from './chat-manager.js';
 import {
@@ -933,7 +933,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       chatContainerEl.appendChild(welcomeDiv);
     } else {
       state.messageHistory.forEach(msg => {
-        addMessage(msg.role, msg.content, false, msg.executionLog || []);
+        if (msg.htmlContent) {
+          restoreMessageFromHtml(msg.htmlContent);
+        } else {
+          addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised);
+        }
       });
       renderMermaidCharts();
     }

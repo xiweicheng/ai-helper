@@ -1009,6 +1009,8 @@ export async function sendMessage() {
     }
 
     let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;
+    let streamingHtml = null;
+    let streamingConnected = true;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
@@ -1017,6 +1019,8 @@ export async function sendMessage() {
       reflectionScore = result.reflectionScore;
       wasRevised = result.wasRevised || false;
       wasStreamed = result.wasStreamed || false;
+      streamingHtml = result.streamingHtml || null;
+      streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -1057,9 +1061,8 @@ export async function sendMessage() {
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
       const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
-      if (wasStreamed && _streamingElements.get(mySessionId)) {
-        const el = _streamingElements.get(mySessionId);
-        msgEntry.htmlContent = el.dataset.htmlContent || el.outerHTML;
+      if (wasStreamed && streamingHtml) {
+        msgEntry.htmlContent = streamingHtml;
       }
       appendMessageToSession(mySessionId, msgEntry);
       removeLoadingMessage(loadingId);
@@ -1070,7 +1073,7 @@ export async function sendMessage() {
     // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
     if (!wasStreamed) {
       removeLoadingMessage(loadingId);
-      
+
       // 清理切回会话时创建的替代加载指示器
       if (state.substituteLoadingIds.has(mySessionId)) {
         removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
@@ -1089,9 +1092,14 @@ export async function sendMessage() {
     
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
     const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
-    if (wasStreamed && _streamingElements.get(mySessionId)) {
-      const el = _streamingElements.get(mySessionId);
-      msgEntry.htmlContent = el.dataset.htmlContent || el.outerHTML;
+    if (wasStreamed && streamingHtml) {
+      msgEntry.htmlContent = streamingHtml;
+      // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
+      if (!streamingConnected) {
+        restoreMessageFromHtml(streamingHtml);
+        const chatContainer = document.getElementById('chatContainer');
+        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
     }
     
     state.messageHistory.push(msgEntry);
@@ -3011,7 +3019,7 @@ function addStreamingMessage() {
  * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
  * @param {string} htmlContent - 消息的 outerHTML
  */
-function restoreMessageFromHtml(htmlContent) {
+export function restoreMessageFromHtml(htmlContent) {
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer || !htmlContent) return;
   
@@ -4059,12 +4067,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         if (_se() && message.content) {
           finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
         }
+        // 在 cleanupCallApi 之前捕获状态（cleanup 会清空 _streamingElements）
+        const streamingEl = _se();
+        const wasStreamed = !!streamingEl;
+        const streamingHtml = streamingEl ? (streamingEl.dataset.htmlContent || streamingEl.outerHTML) : null;
+        const streamingConnected = streamingEl ? streamingEl.isConnected : false;
         cleanupCallApi();
         resolve({ 
           content: message.content, 
           executionLog: message.executionLog || executionLog,
           reflectionScore: message.reflectionScore,
-          wasStreamed: !!_se()
+          wasStreamed,
+          wasRevised: message.wasRevised,
+          streamingHtml,
+          streamingConnected
         });
         return false;
       } else if (message.type === 'API_ERROR') {
