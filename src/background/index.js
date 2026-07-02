@@ -7,6 +7,9 @@ import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 
+// chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
+const MAX_LOG_ENTRIES_FOR_MSG = 1000;
+
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
 const keepalivePorts = new Map(); // sessionId -> Port
@@ -206,11 +209,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
+        // 安全截断：防止 executionLog 超过 chrome.runtime.sendMessage 的 64MiB 限制
+        const truncatedLog = executionLog.length > MAX_LOG_ENTRIES_FOR_MSG
+          ? executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
+          : executionLog;
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId: sessionId,
           content: content,
-          executionLog: executionLog,
+          executionLog: truncatedLog,
           reflectionScore: reflectionScore,
           reasoningContent: reasoningContent,
           wasRevised: wasRevised
@@ -225,13 +232,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           console.error('[Background] API 调用失败:', error.message || error);
         }
-        // 获取 executionLog（如果可用）
-        const executionLog = error.executionLog || [];
+        // 获取 executionLog（如果可用），安全截断防止 64MiB 限制
+        const errExecutionLog = error.executionLog || [];
+        const truncatedErrLog = errExecutionLog.length > MAX_LOG_ENTRIES_FOR_MSG
+          ? errExecutionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
+          : errExecutionLog;
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId: sessionId,
           error: error.message || 'API 调用失败',
-          executionLog: executionLog
+          executionLog: truncatedErrLog
         }).catch(err => {
           console.warn('[Background] 发送错误消息失败:', err);
         });

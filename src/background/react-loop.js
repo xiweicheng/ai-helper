@@ -210,14 +210,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
    */
   let lastStatusSendTime = 0;
   let lastSentNodeName = '';
+  // 跟踪已发送的执行日志条目，用于增量发送避免 64MiB 限制
+  const lastSentLogSnapshot = new Map(); // id -> { status, nodeName }
   function sendExecutionStatusUpdate(nodeName, status) {
     try {
       const now = Date.now();
-      const logSnapshot = [...executionLog];
       
-      // 回调通知父任务不受节流限制
+      // 回调通知父任务：始终传递完整日志（父任务需要完整日志进行合并）
       if (typeof onLogUpdate === 'function') {
-        onLogUpdate(logSnapshot);
+        onLogUpdate([...executionLog]);
       }
       
       // 节流：200ms 内同一节点名不重复发送，但节点名变化时立即发送
@@ -225,11 +226,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       lastStatusSendTime = now;
       lastSentNodeName = nodeName;
       
+      // 增量发送：只发送新增或变更的条目，避免完整 executionLog 超过 64MiB 限制
+      const deltaLog = [];
+      for (const entry of executionLog) {
+        const prev = lastSentLogSnapshot.get(entry.id);
+        if (!prev || prev.status !== entry.status || prev.nodeName !== entry.nodeName) {
+          deltaLog.push(entry);
+          lastSentLogSnapshot.set(entry.id, { status: entry.status, nodeName: entry.nodeName });
+        }
+      }
+      
       const msg = {
         type: 'EXECUTION_STATUS_UPDATE',
         nodeName: nodeName,
         status: status,
-        executionLog: logSnapshot
+        executionLog: deltaLog
       };
       
       if (sessionId) {
@@ -755,7 +766,19 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 检查工具执行是否成功
             const isToolSuccess = toolResult && toolResult.success !== false;
 
-            // 发送工具结果到 Side Panel 展示
+            // 工具结果截断：防止大结果撑爆上下文 以及 chrome.runtime.sendMessage 64MiB 限制
+            const resultTokens = estimateTokens(toolResultStr);
+            let toolResultTruncated = false;
+            let toolResultForDisplay = toolResultStr;
+            if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
+              const truncated = truncateByTokens(toolResultStr, MAX_TOOL_RESULT_TOKENS);
+              console.log(`[Background] 工具 ${toolName} 结果截断: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
+              toolResultTruncated = true;
+              toolResultForDisplay = truncated;
+              toolResultStr = truncated;
+            }
+
+            // 发送工具结果到 Side Panel 展示（使用截断后的内容）
             chrome.runtime.sendMessage({
               type: 'STREAM_TOOL_RESULT',
               sessionId,
@@ -763,19 +786,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 toolCallId: toolCallId,
                 toolName,
                 success: isToolSuccess,
-                content: isToolSuccess ? toolResultStr : (toolResult?.error || toolResultStr),
-                truncated: false,
+                content: isToolSuccess ? toolResultForDisplay : (toolResult?.error || toolResultForDisplay),
+                truncated: toolResultTruncated,
                 duration: Date.now() - toolStartTime
               }
             }).catch(() => {});
-
-            // 工具结果截断：防止大结果撑爆上下文
-            const resultTokens = estimateTokens(toolResultStr);
-            if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
-              const truncated = truncateByTokens(toolResultStr, MAX_TOOL_RESULT_TOKENS);
-              console.log(`[Background] 工具 ${toolName} 结果截断: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
-              toolResultStr = truncated;
-            }
 
             // 计算真正"连续"的失败数（从最近一次成功往后数）
             const allToolEntries = executionLog
@@ -849,7 +864,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration,
-                reactConfig.reflection, config
+                reactConfig.reflection, config, lastSentLogSnapshot
               );
               
               // 子任务执行完毕后检查是否已被取消
@@ -1164,7 +1179,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null) {
+export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map()) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -1176,6 +1191,30 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
   
   const results = [];
   const completedSubtasks = []; // 记录已成功完成的子任务，用于回滚
+
+  /**
+   * 增量发送执行日志状态更新，避免 parentExecutionLog 超过 64MiB 限制
+   */
+  function sendSubtaskStatusUpdate(nodeName, status, logToSend, extraFields = {}) {
+    const deltaLog = [];
+    for (const entry of logToSend) {
+      const prev = lastSentLogSnapshot.get(entry.id);
+      if (!prev || prev.status !== entry.status || prev.nodeName !== entry.nodeName) {
+        deltaLog.push(entry);
+        lastSentLogSnapshot.set(entry.id, { status: entry.status, nodeName: entry.nodeName });
+      }
+    }
+    if (deltaLog.length === 0) return; // 无变更，跳过发送
+    
+    chrome.runtime.sendMessage({
+      type: 'EXECUTION_STATUS_UPDATE',
+      nodeName,
+      status,
+      executionLog: deltaLog,
+      ...(sessionId ? { sessionId } : {}),
+      ...extraFields
+    }).catch(err => {});
+  }
   
   console.log('[Background] 开始执行子任务，策略:', strategy, '失败策略:', failureStrategy, '最大重试:', maxRetries, '数量:', subtasks.length);
   
@@ -1214,13 +1253,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
             subtaskName: subtask.name
           });
           
-          chrome.runtime.sendMessage({
-            type: 'EXECUTION_STATUS_UPDATE',
-            nodeName: `子任务 ${subtask.name} (已回滚)`,
-            status: 'rolledback',
-            executionLog: [...parentExecutionLog],
-            ...(sessionId ? { sessionId } : {})
-          }).catch(err => {});
+          sendSubtaskStatusUpdate(`子任务 ${subtask.name} (已回滚)`, 'rolledback', parentExecutionLog);
           
         } catch (rollbackError) {
           console.error('[Background] 回滚失败:', rollbackError.message);
@@ -1266,14 +1299,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     });
     
     // 发送子任务开始状态
-    chrome.runtime.sendMessage({
-      type: 'EXECUTION_STATUS_UPDATE',
-      nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
-      status: 'processing',
-      executionLog: [...parentExecutionLog],
-      taskGroup: taskGroup,
-      ...(sessionId ? { sessionId } : {})
-    }).catch(err => {});
+    sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', parentExecutionLog, { taskGroup: taskGroup });
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
@@ -1323,14 +1349,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
               });
             });
             
-            chrome.runtime.sendMessage({
-              type: 'EXECUTION_STATUS_UPDATE',
-              nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
-              status: 'processing',
-              executionLog: mergedLog,
-              taskGroup: taskGroup,
-              ...(sessionId ? { sessionId } : {})
-            }).catch(err => {});
+            sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', mergedLog, { taskGroup: taskGroup });
           },
           globalIteration
         );
@@ -1362,15 +1381,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
           };
         }
         
-        // 发送子任务完成状态（包含完整的执行日志）
-        chrome.runtime.sendMessage({
-          type: 'EXECUTION_STATUS_UPDATE',
-          nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`,
-          status: 'success',
-          executionLog: [...parentExecutionLog],
-          taskGroup: taskGroup,
-          ...(sessionId ? { sessionId } : {})
-        }).catch(err => {});
+        // 发送子任务完成状态（增量发送，避免 64MiB 限制）
+        sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`, 'success', parentExecutionLog, { taskGroup: taskGroup });
         
         // 记录已完成的子任务（用于回滚）
         completedSubtasks.push({ subtask, result: subtaskResult });
@@ -1475,14 +1487,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
           }
           
           // 发送子任务失败状态
-          chrome.runtime.sendMessage({
-            type: 'EXECUTION_STATUS_UPDATE',
-            nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`,
-            status: 'failed',
-            executionLog: [...parentExecutionLog],
-            taskGroup: taskGroup,
-            ...(sessionId ? { sessionId } : {})
-          }).catch(err => {});
+          sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`, 'failed', parentExecutionLog, { taskGroup: taskGroup });
           
           return {
             success: false,
