@@ -50,9 +50,12 @@ function extractHistoryContext(messages) {
  * 构建工具预筛选的系统提示词
  */
 function buildPreselectPrompt(tools) {
-  const toolList = tools.map(t =>
-    `- ${t.function.name}: ${t.function.description}`
-  ).join('\n');
+  const toolList = tools.map(t => {
+    const params = t.function.parameters?.properties;
+    const paramNames = params ? Object.keys(params).slice(0, 3) : []; // 最多展示 3 个参数名
+    const paramInfo = paramNames.length > 0 ? ` (参数: ${paramNames.join(', ')})` : '';
+    return `- ${t.function.name}${paramInfo}: ${t.function.description}`;
+  }).join('\n');
 
   return `你是智能助手。根据用户的问题，判断是否需要使用工具来完成。
 
@@ -294,8 +297,10 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
         return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '模型返回空数组' } }, duration })] };
       }
 
+      // 使用 case-insensitive 匹配，防止模型返回大小写不一致的工具名
+      const selectedNamesLower = new Set(selectedNames.map(n => String(n).toLowerCase()));
       const selectedTools = tools.filter(t =>
-        selectedNames.includes(t.function.name)
+        selectedNamesLower.has(t.function.name.toLowerCase())
       );
 
       // 兜底：如果用户消息中包含 proto_（原型ID），确保 UI 原型工具被包含

@@ -4,7 +4,7 @@ import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, truncateByTokens, getMessageBudget, assessContextPressure } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 
@@ -104,18 +104,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   if (sessionId) activeReactLoops.add(sessionId);
 
   let iteration = 0;
+  let totalReflectionRounds = 0; // 单次 ReAct 循环内反思总轮数，防止 API 调用次数远超 maxIterations
+  const MAX_REFLECTION_ROUNDS = 10; // 反思总轮数上限
   let currentMessages = [...messages];
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
+  const CACHE_TTL_MS = 10000; // 缓存条目 10 秒过期，防止页面状态变化后使用过期结果
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
-  // 为工具定义、系统提示词、输出预留空间后，剩余约 80% 用于消息历史
+  // 为工具定义、系统提示词、输出预留空间后的消息预算
   let reactTokenBudget = null;
 
   const getReactTokenBudget = (modelName) => {
     if (reactTokenBudget === null) {
-      const contextWindow = getMessageBudget(modelName, tools.length);
-      reactTokenBudget = Math.floor(contextWindow * 0.8);
+      // getMessageBudget 已减去了系统提示词、工具定义和输出预留
+      reactTokenBudget = getMessageBudget(modelName, tools.length);
       console.log(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName})`);
     }
     return reactTokenBudget;
@@ -323,62 +326,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       let response;
       const apiCallStartTime = Date.now();
       
-      // 过滤消息中的不必要字段，确保消息格式符合 API 要求
-      const filteredMessages = currentMessages.map((msg, index) => {
-        // 移除不需要传递给 API 的字段（内部字段 + API 响应专用字段）
-        const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, ...rest } = msg;
-        
-        // 对于工具消息，确保只有 role、content 和 tool_call_id
-        if (rest.role === 'tool') {
-          // 如果没有 tool_call_id，记录警告并跳过这条消息
-          if (!rest.tool_call_id) {
-            console.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
-            return null;
-          }
-          return {
-            role: rest.role,
-            content: rest.content,
-            tool_call_id: rest.tool_call_id
-          };
-        }
-        
-        // 对于 assistant 消息，裁剪 tool_calls 中可能混入的非标准字段（如 index 等）
-        if (rest.role === 'assistant' && Array.isArray(rest.tool_calls)) {
-          rest.tool_calls = rest.tool_calls.map(tc => ({
-            id: tc.id,
-            type: tc.type,
-            function: tc.function
-          }));
-        }
-        
-        return rest;
-      }).filter(msg => msg !== null);
-
-      // 防御：扫描所有 assistant(tool_calls) 消息，确保其后有对应的 tool 消息
-      // 如果 assistant(tool_calls) 后没有 tool 消息配对，清除 tool_calls（content 为空则移除整条）
-      for (let i = 0; i < filteredMessages.length; i++) {
-        const msg = filteredMessages[i];
-        if (msg?.role === 'assistant' && msg.tool_calls) {
-          // 检查该消息之后（直到下一条非 tool 消息或末尾）是否有 tool 消息
-          let hasToolMsg = false;
-          for (let j = i + 1; j < filteredMessages.length; j++) {
-            const next = filteredMessages[j];
-            if (next.role === 'tool') {
-              hasToolMsg = true;
-            } else {
-              break; // 遇到非 tool 消息，停止检查
-            }
-          }
-          if (!hasToolMsg) {
-            console.warn('[Background] reactLoop: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
-            delete msg.tool_calls;
-            if (!msg.content) {
-              filteredMessages.splice(i, 1);
-              i--; // 调整索引
-            }
-          }
-        }
-      }
+      // 过滤消息中的内部字段，确保消息格式符合 API 要求
+      const filteredMessages = filterApiMessages(currentMessages);
       
       // 添加 API 调用开始的日志节点（状态为 processing）
       const apiLogId = crypto.randomUUID();
@@ -393,9 +342,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
       // 上下文压力评估：在每次 API 调用前检查 token 使用量
       const filteredTokens = estimateMessagesTokens(filteredMessages);
-      const toolTokens = (typeof estimateToolsTokens === 'function' ? estimateToolsTokens : (n) => n * 200)(apiTools.length);
-      const getCtxWin = typeof getContextWindow === 'function' ? getContextWindow : () => 64000;
-      const pressure = assessContextPressure(filteredTokens + toolTokens, getCtxWin(model || config.modelName));
+      const toolTokens = estimateToolsTokens(apiTools.length);
+      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName));
       if (pressure.level !== 'safe') {
         console.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, ${filteredTokens} tokens ${filteredMessages.length} 条消息)`);
       }
@@ -503,7 +451,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 reasoning_content: streamResult.reasoningContent,
                 tool_calls: normalizedToolCalls
               },
-              finish_reason: streamResult.status === 'tool_calls' ? 'tool_calls' : 'stop'
+              finish_reason: streamResult.status === 'tool_calls' ? 'tool_calls' : (streamResult.truncated ? 'length' : 'stop')
             }],
             usage: streamResult.usage
           };
@@ -555,6 +503,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 更新成功的 API 调用日志
       const apiCallDuration = Date.now() - apiCallStartTime;
       const assistantMessage = response.choices?.[0]?.message;
+      const finishReason = response.choices?.[0]?.finish_reason;
+      
+      // 如果内容被截断，记录警告（循环仍继续，让模型在下一轮处理）
+      if (finishReason === 'length') {
+        console.warn(`[Background] API 响应因 token 限制被截断 (finish_reason: length)，内容可能不完整`);
+      }
       
       const apiLogIndex = executionLog.findIndex(log => log.id === apiLogId);
       if (apiLogIndex !== -1) {
@@ -672,15 +626,20 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             }
           }
           
-          // 缓存检查
+          // 缓存检查（含 TTL 过期检查）
           const cacheKey = `${toolName}:${JSON.stringify(toolArgs)}`;
           if (toolResultCache.has(cacheKey)) {
-            if (PARALLELIZABLE_TOOLS.has(toolName)) {
-              const cached = toolResultCache.get(cacheKey);
-              return { ...cached, fromCache: true };
+            const cached = toolResultCache.get(cacheKey);
+            if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
+              if (PARALLELIZABLE_TOOLS.has(toolName)) {
+                return { ...cached, fromCache: true };
+              }
+              // 非并行工具：清空缓存
+              toolResultCache.clear();
+            } else {
+              // 缓存已过期，删除
+              toolResultCache.delete(cacheKey);
             }
-            // 非并行工具：清空缓存
-            toolResultCache.clear();
           }
 
           // 清除非并行工具缓存
@@ -896,7 +855,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   const firstKey = toolResultCache.keys().next().value;
                   toolResultCache.delete(firstKey);
                 }
-                toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCallId });
+                toolResultCache.set(cacheKey, { planTaskHandled: true, toolName, toolCallId: toolCallId, timestamp: Date.now() });
               }
               
               return { planTaskHandled: true };
@@ -942,7 +901,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 const firstKey = toolResultCache.keys().next().value;
                 toolResultCache.delete(firstKey);
               }
-              toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult });
+              toolResultCache.set(cacheKey, { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult, timestamp: Date.now() });
             }
             
             return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult };
@@ -1001,12 +960,18 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
          */
         async function processPendingReflections() {
           if (pendingReflections.length === 0) return;
+          if (totalReflectionRounds >= MAX_REFLECTION_ROUNDS) {
+            console.warn('[Background] 反思总轮数已达上限，跳过工具反思');
+            return;
+          }
           
           // 按优先级降序排序
           pendingReflections.sort((a, b) => b.priority - a.priority);
           const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
           
           for (const ref of pendingReflections.slice(0, maxPerIteration)) {
+            if (totalReflectionRounds >= MAX_REFLECTION_ROUNDS) break;
+            totalReflectionRounds++;
             const toolReflection = await reflectOnToolResult(
               ref.toolName, ref.toolResultStr, ref.toolCallParams,
               config, model, reflectionConfig, executionLog, iteration
@@ -1084,14 +1049,18 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           // 按原始顺序处理结果，检查错误和 plan_task
           let planTaskHandled = false;
+          const parallelErrors = [];
           for (let i = 0; i < assistantMessage.tool_calls.length; i++) {
             const result = parallelResults[i];
             if (result.error) {
-              throw createErrorWithLog(result.error);
+              parallelErrors.push(`[${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name}]: ${result.error}`);
             }
             if (result.planTaskHandled) {
               planTaskHandled = true;
             }
+          }
+          if (parallelErrors.length > 0) {
+            throw createErrorWithLog(parallelErrors.join('; '));
           }
           
           // 处理反思优先级队列
@@ -1739,36 +1708,8 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
     const apiUrl = `${config.apiBase}/chat/completions`;
 
-    // 过滤消息中的内部字段和 API 响应专用字段，不传递给大模型
-    const filteredMessages = messages.map(msg => {
-      const { executionLog, refusal, ...rest } = msg;
-      return rest;
-    });
-
-    // 防御：扫描所有 assistant(tool_calls) 消息，确保其后有对应的 tool 消息
-    // 如果 assistant(tool_calls) 后没有 tool 消息配对，清除 tool_calls（content 为空则移除整条）
-    for (let i = 0; i < filteredMessages.length; i++) {
-      const msg = filteredMessages[i];
-      if (msg?.role === 'assistant' && msg.tool_calls) {
-        let hasToolMsg = false;
-        for (let j = i + 1; j < filteredMessages.length; j++) {
-          const next = filteredMessages[j];
-          if (next.role === 'tool') {
-            hasToolMsg = true;
-          } else {
-            break;
-          }
-        }
-        if (!hasToolMsg) {
-          console.warn('[Background] callApiNonStream: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
-          delete msg.tool_calls;
-          if (!msg.content) {
-            filteredMessages.splice(i, 1);
-            i--;
-          }
-        }
-      }
-    }
+    // 过滤消息中的内部字段，确保消息格式符合 API 要求
+    const filteredMessages = filterApiMessages(messages);
 
     const useStream = config.streamConfig?.streamEnabled !== false;
 
@@ -2076,7 +2017,10 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
   }
 
   const reflectionLog = [];
-  const maxRounds = Math.max(1, postConfig.maxRounds);
+  const maxRounds = Math.min(
+    Math.max(1, postConfig.maxRounds),
+    MAX_REFLECTION_ROUNDS - totalReflectionRounds
+  );
   const startTime = Date.now();
   let currentContent = answer;
   let bestScore = null;
@@ -2090,6 +2034,7 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
     const reflectionModel = postConfig.model || model || config.modelName;
 
     for (let round = 1; round <= maxRounds; round++) {
+      totalReflectionRounds++;
       const roundStartTime = Date.now();
       const roundId = crypto.randomUUID();
 
@@ -2162,6 +2107,7 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
         }
       }
 
+      bestDecision = decision;  // 追踪每轮的实际决策
       const decisionLabel = decision === 'passed' ? '通过' : decision === 'revised' ? '已修订' : '需改进';
 
       reflectionLog.push({

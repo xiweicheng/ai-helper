@@ -118,11 +118,13 @@ export async function loadChatHistory() {
       state.messageHistory = activeSession.messageHistory || [];
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
-      // 合并会话的 enabledTools：保留已有选择，自动添加新工具
+      // 合并会话的 enabledTools：保留已有选择，只自动添加全新工具（避免重新启用用户禁用的工具）
       if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
         const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
         const saved = activeSession.enabledTools.filter(id => validIds.has(id));
-        const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
+        // 只添加原会话中不存在的全新工具，避免将用户禁用的工具重新启用
+        const originalSavedSet = new Set(activeSession.enabledTools);
+        const added = BUILTIN_TOOLS.filter(t => t.enabled && !originalSavedSet.has(t.id)).map(t => t.id);
         state.enabledTools = [...saved, ...added];
       } else {
         state.enabledTools = activeSession.enabledTools || state.enabledTools;
@@ -996,6 +998,7 @@ export async function sendMessage() {
     }
 
     const apiParams = await getApiParams();
+    apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
 
     // 上下文压力评估：发送前检查消息总量
     const msgTokens = estimateMessagesTokens(messages);
@@ -3919,8 +3922,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'STREAM_START') {
         console.log('[SidePanel] 流式输出开始');
-        // 移除 loading 消息（通过 class 查找）
-        const loadingDiv = document.querySelector('.loading-message');
+        // 移除 loading 消息（通过 _loadingId 精确定位当前会话的 loading）
+        const loadingId = apiParams._loadingId;
+        const loadingDiv = loadingId ? document.getElementById(loadingId) : document.querySelector('.loading-message');
         if (loadingDiv) {
           loadingDiv.remove();
         }

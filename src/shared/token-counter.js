@@ -132,3 +132,62 @@ export function assessContextPressure(usedTokens, budget) {
   if (ratio < 0.9) return { level: 'warning', ratio };
   return { level: 'critical', ratio };
 }
+
+/**
+ * 过滤消息中的内部字段，确保消息格式符合 API 要求
+ * 同时扫描并修复 assistant(tool_calls) 与 tool 消息的配对关系
+ * @param {Array} messages - 原始消息数组
+ * @returns {Array} 过滤后的消息数组
+ */
+export function filterApiMessages(messages) {
+  const filtered = messages.map((msg, index) => {
+    const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, ...rest } = msg;
+
+    if (rest.role === 'tool') {
+      if (!rest.tool_call_id) {
+        console.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
+        return null;
+      }
+      return {
+        role: rest.role,
+        content: rest.content,
+        tool_call_id: rest.tool_call_id
+      };
+    }
+
+    if (rest.role === 'assistant' && Array.isArray(rest.tool_calls)) {
+      rest.tool_calls = rest.tool_calls.map(tc => ({
+        id: tc.id,
+        type: tc.type,
+        function: tc.function
+      }));
+    }
+
+    return rest;
+  }).filter(msg => msg !== null);
+
+  // 扫描并修复 tool_calls/tool 配对：如果 assistant(tool_calls) 后无 tool 消息，清除 tool_calls
+  for (let i = 0; i < filtered.length; i++) {
+    const msg = filtered[i];
+    if (msg?.role === 'assistant' && msg.tool_calls) {
+      let hasToolMsg = false;
+      for (let j = i + 1; j < filtered.length; j++) {
+        if (filtered[j].role === 'tool') {
+          hasToolMsg = true;
+        } else {
+          break;
+        }
+      }
+      if (!hasToolMsg) {
+        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+        delete msg.tool_calls;
+        if (!msg.content) {
+          filtered.splice(i, 1);
+          i--;
+        }
+      }
+    }
+  }
+
+  return filtered;
+}
