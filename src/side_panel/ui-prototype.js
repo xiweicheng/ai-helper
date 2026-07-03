@@ -187,7 +187,7 @@ function renderPrototypeLibraryList(prototypes) {
         <div class="prototype-library-item" data-id="${p.id}">
           <div class="prototype-library-item-info">
             <div class="prototype-library-item-title" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</div>
-            ${p.description ? `<div class="prototype-library-item-desc">${escapeHtml(p.description)}</div>` : ''}
+            ${p.description ? `<div class="prototype-library-item-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</div>` : '<div class="prototype-library-item-desc prototype-library-item-desc-empty">暂无描述</div>'}
             <div class="prototype-library-item-meta">
               <span class="prototype-library-item-id">ID: ${shortId}</span>
               <span class="prototype-library-item-time">${formatTime(p.createdAt)}</span>

@@ -973,6 +973,17 @@ export async function sendMessage() {
   try {
     await ensureChatConfigLoaded();
     
+    // 发送前从 storage 同步最新的 modelName，避免因 options 页面修改或跨实例不同步导致模型不一致
+    const storedModelResult = await chrome.storage.local.get(['modelName', 'imageModelName', 'enableImageInput']);
+    if (storedModelResult.modelName && storedModelResult.modelName !== state.currentModel) {
+      console.log('[SidePanel] 检测到模型变更，从 storage 同步:', state.currentModel, '→', storedModelResult.modelName);
+      state.currentModel = storedModelResult.modelName;
+    }
+    // 重新计算 model，使用最新的 currentModel
+    const effectiveModel = state.enableImageInput && state.attachedImages.length > 0
+      ? (state.imageModelName || state.currentModel)
+      : state.currentModel;
+    
     console.log('[SidePanel] 发送消息调试信息:');
     console.log('  - isolateChat:', state.isolateChat);
     console.log('  - chatConfig:', state.chatConfig);
@@ -1042,14 +1053,14 @@ export async function sendMessage() {
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = state.chatConfig.contextWindow || 0;
     const msgTokens = estimateMessagesTokens(messages);
-    const contextWindow = getContextWindow(model, configuredWindow);
+    const contextWindow = getContextWindow(effectiveModel, configuredWindow);
     const pressure = assessContextPressure(msgTokens, contextWindow);
     console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (消息: ${messages.length} 条), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
     
     if (pressure.level === 'critical') {
       console.warn('[SidePanel] 上下文压力过高，主动裁剪...');
       const toolCount2 = state.enabledTools.length || 50;
-      const budget = getMessageBudget(model, toolCount2, configuredWindow);
+      const budget = getMessageBudget(effectiveModel, toolCount2, configuredWindow);
       const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
       messages = trimResult.messages;
       console.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);
@@ -1060,7 +1071,7 @@ export async function sendMessage() {
     let streamingConnected = true;
     
     try {
-      const result = await callApi(messages, model, state.useTools, apiParams);
+      const result = await callApi(messages, effectiveModel, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -1462,7 +1473,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(warnBadge);
     }
     
-    const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    // 使用最后一个成功的 preview_ui_prototype 调用（避免 action=get 返回旧 ID 覆盖 action=preview 的新 ID）
+    const prototypeCalls = executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success') || [];
+    const prototypeCall = prototypeCalls.length > 0 ? prototypeCalls[prototypeCalls.length - 1] : null;
     if (prototypeCall) {
       const prototypeBtn = document.createElement('button');
       prototypeBtn.className = 'prototype-btn-small';
@@ -3729,6 +3742,33 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     footer.appendChild(warnBadge);
   }
   
+  // 原型查看按钮（流式输出也需添加）
+  const prototypeCalls = executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success') || [];
+  const prototypeCall = prototypeCalls.length > 0 ? prototypeCalls[prototypeCalls.length - 1] : null;
+  if (prototypeCall) {
+    const prototypeBtn = document.createElement('button');
+    prototypeBtn.className = 'prototype-btn-small';
+    prototypeBtn.type = 'button';
+    prototypeBtn.title = '查看 UI 原型';
+    prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    prototypeBtn.addEventListener('click', () => {
+      let prototypeId = prototypeCall.prototypeId;
+      if (!prototypeId && prototypeCall.observation) {
+        try {
+          const parsed = typeof prototypeCall.observation === 'string' 
+            ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+          prototypeId = parsed?.prototypeId;
+        } catch (e) {}
+      }
+      if (prototypeId) {
+        loadAndShowPrototype(prototypeId);
+      } else {
+        console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+      }
+    });
+    footer.appendChild(prototypeBtn);
+  }
+  
   element.querySelector('.message-content').appendChild(footer);
   
   // 绑定事件委托（执行日志/反思弹窗点击）
@@ -3839,6 +3879,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
+      // 清除宽限期定时器
+      if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
       // 如果存在流式输出元素，清理思考中占位
       if (_se()) {
         finalizeCancelledStream(_se());
@@ -3858,19 +3900,47 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     syncPendingSessionsToStorage();
     console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
+    // 超时策略：
+    // 1. 达到配置的超时时间时，仅显示"处理时间较长"的视觉反馈，不终止任务
+    //    —— 后台 ReAct 循环有自己的 loopTimeout，由后台自行决定何时终止
+    // 2. 3 倍配置超时后作为安全兜底：如果后台完全失联（SW 崩溃等），才正式取消
+    let _graceTimeoutId = null;
+    const SAFETY_NET_MULTIPLIER = 3; // 安全兜底为配置超时的 3 倍
+    
+    // 启动安全兜底定时器：后台完全失联时才正式取消
+    const _startSafetyNet = () => {
+      const safetyNetMs = timeoutMs * SAFETY_NET_MULTIPLIER;
+      _graceTimeoutId = setTimeout(() => {
+        console.log('[SidePanel] 安全兜底超时，后台已失联，正式取消');
+        cancelApi({
+          message: `请求超时（${Math.round(safetyNetMs / 1000)}秒），后台无响应`,
+          executionLog: executionLog
+        });
+        chrome.runtime.sendMessage({
+          type: 'CANCEL_REACT',
+          tabId: state.currentTabId,
+          sessionId: mySessionId
+        }).catch(err => {
+          console.log('[SidePanel] 发送取消请求失败:', err.message);
+        });
+      }, safetyNetMs);
+    };
+    
+    // 显示"处理时间较长"的视觉反馈
+    const _showLongRunningHint = () => {
+      if (_se()) {
+        const statusDiv = _se().querySelector('.stream-status');
+        if (statusDiv) {
+          statusDiv.classList.remove('hidden');
+          statusDiv.textContent = `处理时间较长（已超过 ${timeoutSeconds} 秒），请耐心等待...`;
+        }
+      }
+    };
+
     _timeoutCtx.timeoutId = setTimeout(() => {
-      cancelApi({
-        message: `请求超时（${timeoutSeconds}秒）`,
-        executionLog: executionLog
-      });
-      // 同时通知后台取消（超时场景）
-      chrome.runtime.sendMessage({
-        type: 'CANCEL_REACT',
-        tabId: state.currentTabId,
-        sessionId: state.activeSessionId
-      }).catch(err => {
-        console.log('[SidePanel] 发送取消请求失败:', err.message);
-      });
+      console.log('[SidePanel] 请求超时，显示处理时间较长提示（不终止任务）...');
+      _showLongRunningHint();
+      _startSafetyNet();
     }, timeoutMs);
     
     const loopStartTime = Date.now();
@@ -3882,6 +3952,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         pauseStartTime = Date.now();
         clearTimeout(_timeoutCtx.timeoutId);
         _timeoutCtx.timeoutId = null;
+        if (_graceTimeoutId !== null) {
+          clearTimeout(_graceTimeoutId);
+          _graceTimeoutId = null;
+        }
         console.log('[SidePanel] 前端超时已暂停（澄清工具执行中）');
       }
     };
@@ -3896,25 +3970,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         const remainingTime = timeoutMs + totalPausedDuration - elapsedTime;
         
         if (remainingTime <= 0) {
-          cancelApi({
-            message: `请求超时（${timeoutSeconds}秒）`,
-            executionLog: executionLog
-          });
+          // 总时间已超过超时限制，不立即取消：显示提示，进入安全兜底等待
+          _showLongRunningHint();
+          _startSafetyNet();
           return;
         }
         
+        // 重新启动超时计时器：超时后仅提示，不取消任务
         _timeoutCtx.timeoutId = setTimeout(() => {
-          cancelApi({
-            message: `请求超时（${timeoutSeconds}秒）`,
-            executionLog: executionLog
-          });
-          chrome.runtime.sendMessage({
-            type: 'CANCEL_REACT',
-            tabId: state.currentTabId,
-            sessionId: mySessionId
-          }).catch(err => {
-            console.log('[SidePanel] 发送取消请求失败:', err.message);
-          });
+          console.log('[SidePanel] 请求超时，显示处理时间较长提示（不终止任务）...');
+          _showLongRunningHint();
+          _startSafetyNet();
         }, remainingTime);
         
         console.log('[SidePanel] 前端超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(remainingTime / 1000), 's');
@@ -4121,6 +4187,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'API_COMPLETE') {
+        // 清除安全兜底定时器
+        if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
         // 流式消息：在 resolve 前添加底部工具栏
         if (_se() && message.content) {
           finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
@@ -4142,6 +4210,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         });
         return false;
       } else if (message.type === 'API_ERROR') {
+        // 清除安全兜底定时器
+        if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
         cleanupCallApi();
         reject({
           message: message.error,
