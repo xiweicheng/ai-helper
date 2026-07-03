@@ -1847,6 +1847,53 @@ export const RAW_TOOLS = [
       }
     }
   },
+  {
+    id: 'capture_page_for_vision',
+    category: 'media_output',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'capture_page_for_vision',
+      description: '截取指定标签页（或当前激活标签页）的可见区域截图，调用图片识别模型进行分析，返回文本描述结果。适用于需要查看页面当前视觉状态、验证操作结果、分析界面问题等场景',
+      parameters: {
+        type: 'object',
+        properties: {
+          tabId: {
+            type: 'integer',
+            description: '目标标签页的 ID。可通过 get_tabs 工具获取所有标签页列表。不传则使用当前激活的标签页'
+          },
+          format: {
+            type: 'string',
+            enum: ['jpeg', 'png'],
+            description: '截图格式，jpeg 更小更快，png 无损但更大。默认 jpeg',
+            default: 'jpeg'
+          },
+          quality: {
+            type: 'integer',
+            description: '截图 JPEG 压缩质量 0-100，默认 60',
+            default: 60
+          },
+          visionMaxDim: {
+            type: 'integer',
+            description: '发给视觉 API 的图片最大长边像素。默认 1024，降低可加速但丢失细节，最高不超过 2048。需要看细节时设为 1536 或 2048',
+            default: 1024,
+            minimum: 512,
+            maximum: 2048
+          },
+          visionQuality: {
+            type: 'integer',
+            description: '发给视觉 API 的图片 JPEG 压缩质量 0-100。默认 65，越低越快但越模糊。需要高清晰度时设为 80-90',
+            default: 65,
+            minimum: 30,
+            maximum: 95
+          }
+        },
+        required: []
+      }
+    }
+  },
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================

@@ -70,7 +70,7 @@ async function checkAgentConnectivity() {
  */
 export async function getTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['enabledTools'], async (result) => {
+    chrome.storage.local.get(['enabledTools', 'enableImageInput'], async (result) => {
       let enabledTools = result.enabledTools;
       
       // 如果没有保存的配置，使用默认值（全部启用）
@@ -79,10 +79,13 @@ export async function getTools() {
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
 
+      // 读取图片识别开关状态
+      const visionEnabled = result.enableImageInput === true;
+      
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
       
-      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已连通:', agentConnected);
+      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已连通:', agentConnected, '图片识别:', visionEnabled);
       
       const tools = BUILTIN_TOOLS
         .filter(tool => enabledTools.includes(tool.id))
@@ -90,6 +93,11 @@ export async function getTools() {
           // Agent 未连通时，隐藏所有 agent_* 工具，避免大模型无效调用
           if (tool.id.startsWith('agent_') && !agentConnected) {
             console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
+            return false;
+          }
+          // 图片识别未开启时，隐藏 vision 相关工具
+          if (tool.id === 'capture_page_for_vision' && !visionEnabled) {
+            console.log('[Background] 图片识别未开启，隐藏工具:', tool.id);
             return false;
           }
           return true;
@@ -100,6 +108,287 @@ export async function getTools() {
       resolve(tools);
     });
   });
+}
+
+/**
+ * 执行页面截图供大模型视觉分析
+ * 截取当前标签页（或指定标签页）的可见区域，调用图片识别 API 进行分析，返回文本结果
+ * 该工具仅在用户开启"图片识别"功能时对大模型可见
+ */
+export async function executeCapturePageForVision(args, toolCallId) {
+  const {
+    tabId,
+    format = 'jpeg',
+    quality = 60,
+    visionMaxDim = 1024,
+    visionQuality = 65
+  } = args;
+
+  try {
+    let targetTabId;
+    let targetWindowId;
+    let targetUrl = '';
+    let targetTitle = '';
+
+    if (tabId) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        targetTabId = tab.id;
+        targetWindowId = tab.windowId;
+        targetUrl = tab.url || '';
+        targetTitle = tab.title || '';
+        await chrome.tabs.update(targetTabId, { active: true });
+        await new Promise(r => setTimeout(r, 300));
+      } catch {
+        return makeResult(false, `标签页 ${tabId} 不存在或无法访问`, { tool_call_id: toolCallId });
+      }
+    } else {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tabs.length) {
+        return makeResult(false, '无法获取当前标签页', { tool_call_id: toolCallId });
+      }
+      targetTabId = tabs[0].id;
+      targetWindowId = tabs[0].windowId;
+      targetUrl = tabs[0].url || '';
+      targetTitle = tabs[0].title || '';
+    }
+
+    console.log('[Background] 执行 vision 截图: tabId=', targetTabId, 'url=', targetUrl, 'format=', format, 'quality=', quality,
+      'visionMaxDim=', visionMaxDim, 'visionQuality=', visionQuality);
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(
+        targetWindowId,
+        { format, quality },
+        (capturedDataUrl) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(capturedDataUrl);
+          }
+        }
+      );
+    });
+
+    const sizeKB = (dataUrl.length / 1024).toFixed(1);
+    console.log('[Background] Vision 截图完成，原始大小:', sizeKB, 'KB');
+
+    // 将原始截图 dataUrl 存入 storage，供 side_panel 展示使用
+    chrome.storage.local.set({ _lastVisionScreenshot: { dataUrl, sizeKB, url: targetUrl, title: targetTitle, timestamp: Date.now() } }).catch(() => {});
+
+    // 使用大模型指定的参数压缩截图
+    const compressedDataUrl = await compressImageForVision(dataUrl, visionMaxDim, visionQuality / 100);
+    const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
+    console.log('[Background] Vision 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
+
+    // 调用图片识别 API（流式）对压缩后的截图进行视觉分析
+    const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle);
+
+    return makeResult(true, visionResult, { tool_call_id: toolCallId });
+  } catch (err) {
+    return makeResult(false, `截图失败: ${err.message}`, { tool_call_id: toolCallId });
+  }
+}
+
+/**
+ * 使用 OffscreenCanvas 压缩截图图片
+ * @param {string} dataUrl - 原始截图 data URL
+ * @param {number} maxDim - 最大长边像素（大模型可动态指定）
+ * @param {number} jpegQuality - JPEG 质量 0-1（大模型可动态指定）
+ */
+async function compressImageForVision(dataUrl, maxDim = 1024, jpegQuality = 0.65) {
+  try {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    const bitmap = await createImageBitmap(blob);
+
+    let { width, height } = bitmap;
+
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round(height * (maxDim / width));
+        width = maxDim;
+      } else {
+        width = Math.round(width * (maxDim / height));
+        height = maxDim;
+      }
+    }
+
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: jpegQuality });
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(compressedBlob);
+    });
+  } catch (err) {
+    console.warn('[Background] 图片压缩失败，使用原始截图:', err.message);
+    return dataUrl;
+  }
+}
+
+/**
+ * 调用图片识别 API 对截图进行视觉分析
+ * 返回文本描述结果
+ */
+async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle) {
+  // 读取图片识别配置（独立 API 端点、Key、模型）+ 流式开关
+  const visionConfig = await new Promise((resolve) => {
+    chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName', 'streamEnabled'], resolve);
+  });
+
+  const apiBase = visionConfig.imageApiBase || visionConfig.apiBase;
+  const apiKey = visionConfig.imageApiKey || visionConfig.apiKey;
+  const model = visionConfig.imageModelName || visionConfig.modelName;
+  const useStream = visionConfig.streamEnabled !== false; // 默认 true
+
+  if (!apiBase || !apiKey) {
+    console.log('[Background] 图片识别 API 未配置，返回截图基本信息');
+    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。`;
+  }
+
+  console.log('[Background] 调用图片识别 API 分析截图，模型:', model, '端点:', apiBase, '流式:', useStream);
+
+  const visionPrompt = `请详细描述这张网页截图的内容，包括：
+1. 页面整体布局和主要区块
+2. 可见的文本内容（标题、段落、按钮文字等）
+3. UI 元素（导航栏、按钮、输入框、表格、图片等）
+4. 页面的视觉状态和风格
+5. 如有明显错误、异常或问题，请指出
+
+截图来源: ${pageTitle} (${pageUrl})`;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const fetchBody = {
+      model: model,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: visionPrompt },
+          { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } }
+        ]
+      }],
+      max_tokens: 2000
+    };
+
+    // 根据流式开关决定是否启用 stream
+    if (useStream) {
+      fetchBody.stream = true;
+    }
+
+    const response = await fetch(`${apiBase}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(fetchBody),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error('[Background] 图片识别 API 请求失败:', response.status, errorText);
+      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败（API 返回 ${response.status}），请检查图片识别 API 配置。`;
+    }
+
+    let analysis;
+
+    if (useStream) {
+      // 流式模式：SSE 逐块读取
+      analysis = await readVisionSSEStream(response, controller);
+    } else {
+      // 非流式模式：JSON 一次性返回
+      const data = await response.json();
+      analysis = data.choices?.[0]?.message?.content;
+    }
+
+    if (!analysis) {
+      console.error('[Background] 图片识别 API 结果为空');
+      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别返回结果为空，请重试。`;
+    }
+
+    console.log('[Background] 图片识别分析完成，结果长度:', analysis.length);
+    return `页面截图分析结果：\n\n**页面**: ${pageTitle}\n**地址**: ${pageUrl}\n\n${analysis}`;
+
+  } catch (err) {
+    clearTimeout(timeout);
+    console.error('[Background] 图片识别 API 调用异常:', err.message);
+    if (err.name === 'AbortError') {
+      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。`;
+    }
+    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败: ${err.message}`;
+  }
+}
+
+/**
+ * 流式读取视觉 API 的 SSE 响应，累积 content 后返回完整文本
+ */
+async function readVisionSSEStream(response, abortController) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullContent = '';
+
+  try {
+    while (true) {
+      let readResult;
+      if (abortController && abortController.signal) {
+        readResult = await Promise.race([
+          reader.read(),
+          new Promise((_, reject) => {
+            if (abortController.signal.aborted) {
+              reject(new DOMException('Aborted', 'AbortError'));
+              return;
+            }
+            const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+            abortController.signal.addEventListener('abort', onAbort, { once: true });
+          })
+        ]);
+      } else {
+        readResult = await reader.read();
+      }
+
+      const { done, value } = readResult;
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+        const data = trimmed.slice(6);
+        if (data === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) {
+            fullContent += delta.content;
+          }
+        } catch {
+          // 解析失败跳过该行
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullContent;
 }
 
 /**
@@ -304,6 +593,7 @@ const TOOL_HANDLERS = {
   search_bookmarks: executeSearchBookmarks,
   search_history: executeSearchHistory,
   capture_tab_screenshot: executeCaptureScreenshot,
+  capture_page_for_vision: executeCapturePageForVision,
   clarify_question: executeClarifyQuestion,
   show_notification: executeShowNotification,
   fetch_url: executeFetchUrl,
