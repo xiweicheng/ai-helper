@@ -95,14 +95,26 @@ export async function getTools() {
             console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
             return false;
           }
-          // 图片识别未开启时，隐藏 vision 相关工具
-          if (tool.id === 'capture_page_for_vision' && !visionEnabled) {
-            console.log('[Background] 图片识别未开启，隐藏工具:', tool.id);
-            return false;
-          }
           return true;
         })
-        .map(tool => tool);
+        .map(tool => {
+          // 深拷贝避免修改原始 BUILTIN_TOOLS
+          const cloned = JSON.parse(JSON.stringify(tool));
+
+          // capture_page 工具：根据图片识别开关动态调整 action 枚举
+          if (tool.id === 'capture_page') {
+            const actionProp = cloned.function.parameters.properties.action;
+            if (!visionEnabled) {
+              // 关闭图片识别时，仅保留 download 模式
+              actionProp.enum = ['download'];
+              actionProp.description = '操作模式：download=截图下载到本地';
+              actionProp.default = 'download';
+              cloned.function.description = '截取当前标签页可见区域的截图并下载到本地';
+            }
+          }
+
+          return cloned;
+        });
       
       console.log('[Background] 过滤后的工具列表:', tools.map(t => t.id), '数量:', tools.length);
       resolve(tools);
@@ -111,12 +123,13 @@ export async function getTools() {
 }
 
 /**
- * 执行页面截图供大模型视觉分析
- * 截取当前标签页（或指定标签页）的可见区域，调用图片识别 API 进行分析，返回文本结果
- * 该工具仅在用户开启"图片识别"功能时对大模型可见
+ * 执行页面截图工具
+ * 支持三种模式：download（下载）、analyze（视觉分析）、both（下载+分析）
+ * action 参数的可用选项会根据 enableImageInput 开关动态变化
  */
-export async function executeCapturePageForVision(args, toolCallId, sessionId = null) {
+export async function executeCapturePage(args, toolCallId, sessionId = null) {
   const {
+    action = 'both',
     tabId,
     format = 'jpeg',
     quality = 60,
@@ -153,8 +166,8 @@ export async function executeCapturePageForVision(args, toolCallId, sessionId = 
       targetTitle = tabs[0].title || '';
     }
 
-    console.log('[Background] 执行 vision 截图: tabId=', targetTabId, 'url=', targetUrl, 'format=', format, 'quality=', quality,
-      'visionMaxDim=', visionMaxDim, 'visionQuality=', visionQuality);
+    console.log('[Background] 执行截图: tabId=', targetTabId, 'url=', targetUrl, 'action=', action,
+      'format=', format, 'quality=', quality, 'visionMaxDim=', visionMaxDim, 'visionQuality=', visionQuality);
 
     const dataUrl = await new Promise((resolve, reject) => {
       chrome.tabs.captureVisibleTab(
@@ -171,20 +184,39 @@ export async function executeCapturePageForVision(args, toolCallId, sessionId = 
     });
 
     const sizeKB = (dataUrl.length / 1024).toFixed(1);
-    console.log('[Background] Vision 截图完成，原始大小:', sizeKB, 'KB');
+    console.log('[Background] 截图完成，大小:', sizeKB, 'KB');
 
-    // 将原始截图 dataUrl 存入 storage，供 side_panel 展示使用
+    // 存储截图供 side_panel 展示
     chrome.storage.local.set({ _lastVisionScreenshot: { dataUrl, sizeKB, url: targetUrl, title: targetTitle, timestamp: Date.now() } }).catch(() => {});
 
-    // 使用大模型指定的参数压缩截图
-    const compressedDataUrl = await compressImageForVision(dataUrl, visionMaxDim, visionQuality / 100);
-    const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
-    console.log('[Background] Vision 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
+    // 根据 action 执行不同操作
+    const needDownload = (action === 'download' || action === 'both');
+    const needAnalyze = (action === 'analyze' || action === 'both');
 
-    // 调用图片识别 API 对压缩后的截图进行视觉分析
-    const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle, sessionId);
+    if (needDownload) {
+      triggerScreenshotDownload(dataUrl, format);
+    }
 
-    return makeResult(true, visionResult, { tool_call_id: toolCallId });
+    if (needAnalyze) {
+      // 使用大模型指定的参数压缩截图
+      const compressedDataUrl = await compressImageForVision(dataUrl, visionMaxDim, visionQuality / 100);
+      const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
+      console.log('[Background] 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
+
+      // 调用图片识别 API 对压缩后的截图进行视觉分析
+      const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle, sessionId);
+
+      if (needDownload) {
+        // both 模式：下载 + 分析
+        return makeResult(true, `截图已下载到本地（${sizeKB} KB）。\n\n${visionResult}`, { tool_call_id: toolCallId });
+      }
+      return makeResult(true, visionResult, { tool_call_id: toolCallId });
+    }
+
+    // 纯 download 模式
+    const imageSizeMB = (dataUrl.length / 1024 / 1024).toFixed(2);
+    const fmt = format === 'png' ? 'png' : 'jpg';
+    return makeResult(true, `截图成功！\n图片大小约 ${imageSizeMB} MB\n格式: ${fmt}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`, { tool_call_id: toolCallId });
   } catch (err) {
     return makeResult(false, `截图失败: ${err.message}`, { tool_call_id: toolCallId });
   }
@@ -601,8 +633,7 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
 const TOOL_HANDLERS = {
   search_bookmarks: executeSearchBookmarks,
   search_history: executeSearchHistory,
-  capture_tab_screenshot: executeCaptureScreenshot,
-  capture_page_for_vision: executeCapturePageForVision,
+  capture_page: executeCapturePage,
   clarify_question: executeClarifyQuestion,
   show_notification: executeShowNotification,
   fetch_url: executeFetchUrl,
@@ -1026,50 +1057,6 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
     console.error('[Background] 对话记忆搜索失败:', err);
     return makeResult(false, `搜索对话记录时出错: ${err.message}`);
   }
-}
-
-/**
- * 执行标签页截图
- */
-export function executeCaptureScreenshot(args, toolCallId) {
-  const format = args.format || 'jpeg';
-  const quality = args.quality !== undefined ? parseInt(args.quality, 10) : 80;
-  
-  console.log('[Background] 执行标签页截图:', 'format=', format, 'quality=', quality);
-  
-  return new Promise((resolve) => {
-    // 使用 chrome.tabs.captureVisibleTab 截图当前可见标签页
-    const captureOptions = {
-      format: format,
-      quality: quality
-    };
-    
-    console.log('[Background] 准备截图可见标签页...');
-    chrome.tabs.captureVisibleTab(undefined, captureOptions, (dataUrl) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
-        resolve(makeResult(false, '截图失败: ' + chrome.runtime.lastError.message));
-        return;
-      }
-      
-      if (!dataUrl || dataUrl.length === 0) {
-        console.error('[Background] 截图结果为空');
-        resolve(makeResult(false, '截图结果为空，可能是该页面不允许截图或窗口中没有可见标签页'));
-        return;
-      }
-      
-      const imageSize = (dataUrl.length / 1024 / 1024).toFixed(2);
-      
-      console.log('[Background] 截图成功，dataUrl 长度:', dataUrl.length, '大小:', imageSize, 'MB');
-      
-      // 触发下载
-      triggerScreenshotDownload(dataUrl, format);
-      
-      // 返回成功消息
-      const result = `截图成功！\n图片大小约 ${imageSize} MB\n格式: ${format}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`;
-      resolve(makeResult(true, result));
-    });
-  });
 }
 
 /**

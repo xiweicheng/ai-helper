@@ -249,35 +249,6 @@ export const RAW_TOOLS = [
     }
   },
   {
-    id: 'capture_tab_screenshot',
-    category: 'media_output',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'capture_tab_screenshot',
-      description: '截取当前标签页可见区域的截图，截图会自动下载到浏览器默认下载目录',
-      parameters: {
-        type: 'object',
-        properties: {
-          format: {
-            type: 'string',
-            description: '图片格式，可选值：jpeg（默认）或 png',
-            enum: ['jpeg', 'png'],
-            default: 'jpeg'
-          },
-          quality: {
-            type: 'integer',
-            description: '图片质量（仅 jpeg 格式有效），范围 0-100，默认为 80',
-            default: 80
-          }
-        },
-        required: []
-      }
-    }
-  },
-  {
     id: 'clarify_question',
     category: 'ai_collaboration',
     execution: 'background',
@@ -1848,21 +1819,27 @@ export const RAW_TOOLS = [
     }
   },
   {
-    id: 'capture_page_for_vision',
+    id: 'capture_page',
     category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'capture_page_for_vision',
-      description: '截取指定标签页（或当前激活标签页）的可见区域截图，调用图片识别模型进行分析，返回文本描述结果。适用于需要查看页面当前视觉状态、验证操作结果、分析界面问题等场景',
+      name: 'capture_page',
+      description: '截取指定标签页（或当前激活标签页）的可见区域截图。支持三种操作模式：download（截图下载到本地）、analyze（截图后AI视觉分析页面内容）、both（下载并分析）',
       parameters: {
         type: 'object',
         properties: {
+          action: {
+            type: 'string',
+            enum: ['download', 'analyze', 'both'],
+            description: '操作模式：download=截图下载到本地，analyze=截图后AI视觉分析页面内容，both=下载并分析。默认 both',
+            default: 'both'
+          },
           tabId: {
             type: 'integer',
-            description: '目标标签页的 ID。可通过 get_tabs 工具获取所有标签页列表。不传则使用当前激活的标签页'
+            description: '目标标签页的 ID。可通过 get_tabs 工具获取所有标签页列表。仅 analyze/both 模式需要指定。不传则使用当前激活的标签页'
           },
           format: {
             type: 'string',
@@ -1877,14 +1854,14 @@ export const RAW_TOOLS = [
           },
           visionMaxDim: {
             type: 'integer',
-            description: '发给视觉 API 的图片最大长边像素。默认 1024，降低可加速但丢失细节，最高不超过 2048。需要看细节时设为 1536 或 2048',
+            description: '发给视觉 API 的图片最大长边像素（仅 analyze/both 模式有效）。默认 1024，降低可加速但丢失细节，最高不超过 2048。需要看细节时设为 1536 或 2048',
             default: 1024,
             minimum: 512,
             maximum: 2048
           },
           visionQuality: {
             type: 'integer',
-            description: '发给视觉 API 的图片 JPEG 压缩质量 0-100。默认 65，越低越快但越模糊。需要高清晰度时设为 80-90',
+            description: '发给视觉 API 的图片 JPEG 压缩质量（仅 analyze/both 模式有效）。默认 65，越低越快但越模糊。需要高清晰度时设为 80-90',
             default: 65,
             minimum: 30,
             maximum: 95
