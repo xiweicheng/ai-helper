@@ -3335,6 +3335,40 @@ function appendToolCallItems(element, toolCalls) {
 }
 
 /**
+ * 在 streaming 内容区实时展示视觉截图分析的流式结果
+ * @param {HTMLElement} streamingElement - 当前流式消息元素
+ * @param {string} content - 累积的完整分析文本
+ */
+function showVisionAnalysisSection(streamingElement, content) {
+  const streamContent = streamingElement.querySelector('.stream-content');
+  if (!streamContent) return;
+
+  let section = streamContent.querySelector('.vision-analysis-section');
+  if (!section) {
+    section = document.createElement('div');
+    section.className = 'vision-analysis-section';
+    section.innerHTML = `
+      <div class="vision-analysis-header">
+        <span class="vision-analysis-label">截图分析</span>
+      </div>
+      <div class="vision-analysis-content">${escapeHtml(content)}</div>
+    `;
+    streamContent.appendChild(section);
+  } else {
+    const contentEl = section.querySelector('.vision-analysis-content');
+    if (contentEl) {
+      contentEl.innerHTML = escapeHtml(content);
+    }
+  }
+
+  // 自动滚动到底部
+  requestAnimationFrame(() => {
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
+}
+
+/**
  * 在流式消息的工具卡片中添加执行结果
  * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
  */
@@ -3876,6 +3910,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     _processStartTime = 0;
     let _streamedContent = '';
     let _agentStreams = {};  // execId -> { element, stdout, stderr }
+    let _visionAnalysisContent = '';  // 截图分析流式内容缓存
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
@@ -4177,7 +4212,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         }
         return false;
       }
-      
+
+      if (message.type === 'VISION_ANALYSIS_CHUNK') {
+        // 截图分析流式输出：在 streaming 内容区实时展示视觉模型的分析结果
+        if (_se() && message.sessionId === mySessionId) {
+          _visionAnalysisContent += message.delta;
+          showVisionAnalysisSection(_se(), _visionAnalysisContent);
+        }
+        return false;
+      }
+
       if (message.type === 'STREAM_DONE') {
         if (_se()) {
           // 流式输出完成，保持动画，API_COMPLETE 时才最终收尾

@@ -115,7 +115,7 @@ export async function getTools() {
  * 截取当前标签页（或指定标签页）的可见区域，调用图片识别 API 进行分析，返回文本结果
  * 该工具仅在用户开启"图片识别"功能时对大模型可见
  */
-export async function executeCapturePageForVision(args, toolCallId) {
+export async function executeCapturePageForVision(args, toolCallId, sessionId = null) {
   const {
     tabId,
     format = 'jpeg',
@@ -181,8 +181,8 @@ export async function executeCapturePageForVision(args, toolCallId) {
     const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
     console.log('[Background] Vision 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
 
-    // 调用图片识别 API（流式）对压缩后的截图进行视觉分析
-    const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle);
+    // 调用图片识别 API 对压缩后的截图进行视觉分析
+    const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle, sessionId);
 
     return makeResult(true, visionResult, { tool_call_id: toolCallId });
   } catch (err) {
@@ -236,7 +236,7 @@ async function compressImageForVision(dataUrl, maxDim = 1024, jpegQuality = 0.65
  * 调用图片识别 API 对截图进行视觉分析
  * 返回文本描述结果
  */
-async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle) {
+async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionId = null) {
   // 读取图片识别配置（独立 API 端点、Key、模型）+ 流式开关
   const visionConfig = await new Promise((resolve) => {
     chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName', 'streamEnabled'], resolve);
@@ -305,8 +305,8 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle) {
     let analysis;
 
     if (useStream) {
-      // 流式模式：SSE 逐块读取
-      analysis = await readVisionSSEStream(response, controller);
+      // 流式模式：SSE 逐块读取，实时推送到 side panel
+      analysis = await readVisionSSEStream(response, controller, sessionId);
     } else {
       // 非流式模式：JSON 一次性返回
       const data = await response.json();
@@ -332,9 +332,9 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle) {
 }
 
 /**
- * 流式读取视觉 API 的 SSE 响应，累积 content 后返回完整文本
+ * 流式读取视觉 API 的 SSE 响应，逐块推送到 side panel 实时展示，完成后返回完整文本
  */
-async function readVisionSSEStream(response, abortController) {
+async function readVisionSSEStream(response, abortController, sessionId = null) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -378,6 +378,15 @@ async function readVisionSSEStream(response, abortController) {
           const delta = parsed.choices?.[0]?.delta;
           if (delta?.content) {
             fullContent += delta.content;
+
+            // 实时推送到 side panel 展示
+            if (sessionId) {
+              chrome.runtime.sendMessage({
+                type: 'VISION_ANALYSIS_CHUNK',
+                sessionId,
+                delta: delta.content
+              }).catch(() => {});
+            }
           }
         } catch {
           // 解析失败跳过该行
