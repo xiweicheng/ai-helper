@@ -3932,6 +3932,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
         executionLog = message.executionLog || [];
+        // 根据执行状态更新流式消息的状态文本
+        if (_se() && message.nodeName) {
+          const statusDiv = _se().querySelector('.stream-status');
+          if (statusDiv) {
+            const statusMap = {
+              '质量评估': '质量评估中...',
+              '执行完成': '处理完成'
+            };
+            if (statusMap[message.nodeName]) {
+              statusDiv.classList.remove('hidden');
+              statusDiv.textContent = statusMap[message.nodeName];
+            }
+          }
+        }
         return false;
       }
       
@@ -4100,12 +4114,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'STREAM_DONE') {
         if (_se()) {
-          // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
-          const statusDiv = _se().querySelector('.stream-status');
-          if (statusDiv) {
-            statusDiv.textContent = '质量评估中...';
-          }
-          // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
+          // 流式输出完成，保持动画，API_COMPLETE 时才最终收尾
+          // 状态文本由 EXECUTION_STATUS_UPDATE（如"质量评估"）驱动
         }
         return false;
       }
