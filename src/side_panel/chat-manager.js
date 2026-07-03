@@ -909,29 +909,35 @@ export async function sendMessage() {
     welcomeMessage.remove();
   }
 
-  let finalText = text;
+  // finalTextForApi: 压缩后发送给模型 / 存入消息历史（节省 token 和存储）
+  // finalTextForDisplay: 原始内容用于气泡展示
+  let finalTextForApi = text;
+  let finalTextForDisplay = text;
   const hasSelectedContext = state.enableSelectionQuery && state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
   
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
-    // 压缩大段引用内容，防止永久占据上下文空间
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    finalTextForApi = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    finalTextForDisplay = `[引用内容]\n${ctx}\n\n[用户问题]\n${text}`;
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    finalTextForApi = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    finalTextForDisplay = `[选中内容]\n${ctx}\n\n[用户问题]\n${text}`;
     state.selectedContextText = '';
   }
   
 
-  const userContent = buildUserContent(finalText);
-  // 显示用户消息（含图片）
-  addMessage('user', userContent);
+  const userContentForDisplay = buildUserContent(finalTextForDisplay);
+  const userContentForApi = buildUserContent(finalTextForApi);
+  // 显示用户消息（含图片）——展示原始内容
+  addMessage('user', userContentForDisplay);
   
-  state.messageHistory.push({ role: 'user', content: userContent });
+  // 消息历史存储压缩版（节省 token）
+  state.messageHistory.push({ role: 'user', content: userContentForApi });
   
   saveChatHistory();
   
@@ -983,7 +989,8 @@ export async function sendMessage() {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
       const configuredWindow = state.chatConfig.contextWindow || 0;
-      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const toolCount = state.enabledTools.length || 50;
+      const messageBudget = getMessageBudget(model, toolCount, configuredWindow);
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
       
@@ -1025,7 +1032,7 @@ export async function sendMessage() {
       }
     } else {
       // 构建用户消息 content（支持图片附件）
-      const userContent = buildUserContent(finalText);
+      const userContent = buildUserContent(finalTextForApi);
       messages.push({ role: 'user', content: userContent });
     }
 
@@ -1041,7 +1048,8 @@ export async function sendMessage() {
     
     if (pressure.level === 'critical') {
       console.warn('[SidePanel] 上下文压力过高，主动裁剪...');
-      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const toolCount2 = state.enabledTools.length || 50;
+      const budget = getMessageBudget(model, toolCount2, configuredWindow);
       const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
       messages = trimResult.messages;
       console.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);

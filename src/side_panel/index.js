@@ -386,7 +386,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪
       const configuredWindow = state.chatConfig.contextWindow || 0;
-      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const toolCount = state.enabledTools.length || 50;
+      const messageBudget = getMessageBudget(model, toolCount, configuredWindow);
       const historyBudget = Math.floor(messageBudget * 0.7);
       
       const historyWithoutCurrent = state.messageHistory.slice(0, -1);

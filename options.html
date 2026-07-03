@@ -2095,6 +2095,19 @@
       </div>
       
       <div class="chat-config-item">
+        <label>
+          上下文窗口大小
+          <span class="hint-text">（当前模型支持的上下文窗口大小，单位 tokens；设为 0 则根据模型名自动推断，支持主流模型 DeepSeek/GPT/Claude）</span>
+        </label>
+        <input type="number" id="chatContextWindow" min="0" max="2000000" step="1000" placeholder="0 = 自动推断">
+        <span class="unit">tokens</span>
+        <div class="range-labels">
+          <span>0 = 自动推断</span>
+          <span>最大: 2,000,000</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
         <label class="toggle-label">
           <input type="checkbox" id="enableExecutionLog">
           <span class="toggle-text">启用执行日志</span>

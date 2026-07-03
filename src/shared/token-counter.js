@@ -308,9 +308,8 @@ export function generateMessagesSummary(trimmedMessages) {
   if (!trimmedMessages || trimmedMessages.length === 0) return null;
 
   const summaryParts = [];
-  let userQuestions = [];
+  const userQuestions = [];
   const toolCalls = [];
-  const keyActions = [];
 
   for (const msg of trimmedMessages) {
     if (msg.role === 'user') {
@@ -319,10 +318,11 @@ export function generateMessagesSummary(trimmedMessages) {
         : (Array.isArray(msg.content)
           ? msg.content.filter(c => c.type === 'text').map(c => c.text).join('')
           : '');
-      // 提取用户问题的关键句（取前 80 字符）
       if (text && text.trim()) {
         const question = text.replace(/\[选中内容\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
           .replace(/\[引用内容\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
+          .replace(/\[选中内容摘要\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
+          .replace(/\[引用内容摘要\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
           .trim()
           .substring(0, 80);
         if (question) userQuestions.push(question);
@@ -331,14 +331,6 @@ export function generateMessagesSummary(trimmedMessages) {
       for (const tc of msg.tool_calls) {
         const name = tc.function?.name || tc.name || '未知工具';
         toolCalls.push(name);
-      }
-    } else if (msg.role === 'tool') {
-      // 从 tool 结果中提取关键信息
-      const content = typeof msg.content === 'string' ? msg.content : '';
-      if (content.includes('success') || content.includes('result')) {
-        // 尝试提取简短的状态信息
-        const shortContent = content.substring(0, 100);
-        if (shortContent) keyActions.push(shortContent.replace(/\n/g, ' ').substring(0, 60));
       }
     }
   }
