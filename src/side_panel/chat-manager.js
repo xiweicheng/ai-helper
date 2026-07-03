@@ -8,7 +8,7 @@ import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatM
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
-import { estimateMessagesTokens, assessContextPressure, getContextWindow } from '../shared/token-counter.js';
+import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 import { BUILTIN_TOOLS } from './constants.js';
 
 // ============================================================
@@ -915,11 +915,14 @@ export async function sendMessage() {
   
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
-    finalText = `[引用内容]\n${ctx}\n\n[用户问题]\n${text}`;
+    // 压缩大段引用内容，防止永久占据上下文空间
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
-    finalText = `[选中内容]\n${ctx}\n\n[用户问题]\n${text}`;
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     state.selectedContextText = '';
   }
   
@@ -978,14 +981,43 @@ export async function sendMessage() {
     
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
-      if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
-        const historyWithoutCurrent = state.messageHistory.slice(0, -1);
-        const limitedHistory = historyWithoutCurrent.slice(-state.chatConfig.maxMemoryMessages);
-        historyToSend = [...limitedHistory, state.messageHistory[state.messageHistory.length - 1]];
-        console.log('[SidePanel] 记忆历史限制生效:', state.chatConfig.maxMemoryMessages, '条（不含当前消息），实际发送:', historyToSend.length, '条');
-      } else {
-        console.log('[SidePanel] 记忆历史限制未生效:', state.chatConfig.maxMemoryMessages);
+      // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
+      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      // 历史消息占用预算的 70%（预留给工具结果和模型输出）
+      const historyBudget = Math.floor(messageBudget * 0.7);
+      
+      const historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
+      
+      // 从后往前保留历史消息，直到 token 量在预算内
+      const keptHistory = [];
+      let keptTokens = estimateMessagesTokens([currentMsg]);
+      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
+        const msg = historyWithoutCurrent[i];
+        const msgTokens = estimateMessagesTokens([msg]);
+        if (keptTokens + msgTokens <= historyBudget) {
+          keptHistory.unshift(msg);
+          keptTokens += msgTokens;
+        } else {
+          break;
+        }
       }
+      
+      // 如果有被裁剪的历史消息，生成摘要注入 system prompt
+      if (keptHistory.length < historyWithoutCurrent.length) {
+        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
+        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
+        const summary = generateMessagesSummary(trimmedMsgs);
+        if (summary) {
+          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
+        }
+        console.log(`[SidePanel] Token 预算裁剪: 保留 ${keptHistory.length} 条历史消息, 裁剪 ${trimmedCount} 条 (预算: ${historyBudget} tokens)`);
+      } else {
+        console.log(`[SidePanel] Token 预算内: ${keptHistory.length} 条历史消息 (预算: ${historyBudget} tokens)`);
+      }
+      
+      historyToSend = [...keptHistory, currentMsg];
       messages = [...messages, ...historyToSend];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
       for (let i = 0; i < messages.length - 1; i++) {
@@ -1000,15 +1032,19 @@ export async function sendMessage() {
     const apiParams = await getApiParams();
     apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
 
-    // 上下文压力评估：发送前检查消息总量
+    // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
+    const configuredWindow = state.chatConfig.contextWindow || 0;
     const msgTokens = estimateMessagesTokens(messages);
-    const sysPromptTokens = estimateMessagesTokens([messages[0]]); // system prompt
-    const historyTokens = msgTokens - sysPromptTokens;
-    const contextWindow = getContextWindow(model);
+    const contextWindow = getContextWindow(model, configuredWindow);
     const pressure = assessContextPressure(msgTokens, contextWindow);
-    console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (系统提示词: ${sysPromptTokens}, 历史: ${historyTokens}), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%), 消息: ${messages.length} 条`);
+    console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (消息: ${messages.length} 条), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
+    
     if (pressure.level === 'critical') {
-      console.warn('[SidePanel] 上下文压力过高，可能触发 API 错误');
+      console.warn('[SidePanel] 上下文压力过高，主动裁剪...');
+      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
+      messages = trimResult.messages;
+      console.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);
     }
 
     let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;

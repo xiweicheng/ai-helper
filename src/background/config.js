@@ -59,14 +59,15 @@ export function getStoredConfig() {
 export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog'
+      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow'
     ], (result) => {
       resolve({
         maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
         maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages,
         maxMessageLength: result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength,
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
-        enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog
+        enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
+        contextWindow: result.chatContextWindow !== undefined ? result.chatContextWindow : 0
       });
     });
   });

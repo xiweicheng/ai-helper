@@ -134,8 +134,8 @@ export function getSystemPrompt() {
     agentInfo = `\n- 本地 Agent：${ap.platformName} (${ap.arch})，默认 shell: ${ap.shell}，工作目录: ${ap.workdir || '未设置'}`;
   }
   
-  // 任务拆解相关规则（无论是否使用自定义提示词，都需要追加）
-  const taskPlanningRules = `
+  // 任务拆解相关规则——仅在启用工具时注入，节省 token
+  const taskPlanningRules = state.useTools ? `
 
 ## 任务拆解规则
 1. **任务大小判断**：
@@ -157,11 +157,11 @@ export function getSystemPrompt() {
 4. **调用 plan_task 工具**：
    - 当判断需要拆解任务时，调用 plan_task 工具
    - 提供完整的子任务列表，包含ID、名称、描述、依赖和所需工具
-   - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）`;
+   - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）` : '';
 
   // 如果用户自定义了系统提示词
   if (state.systemPrompt && state.systemPrompt.trim()) {
-    // 拼接环境信息和任务拆解规则
+    // 拼接环境信息和任务拆解规则（仅在启用工具时）
     return `${state.systemPrompt}
 
 ## 当前环境
@@ -179,16 +179,14 @@ export function getSystemPrompt() {
 - **技术问题解答**：擅长解答架构设计、算法优化、性能调优、Bug排查等技术问题
 - **代码审查**：能提供代码质量评估、最佳实践建议、潜在风险识别
 - **文档编写**：协助撰写技术文档、API说明、测试用例等
-- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题
-- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具${taskPlanningRules}
+- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}
 
 ## 回答原则
 1. **精准专业**：使用准确的技术术语，回答直击要点
 2. **代码优先**：涉及代码时，优先给出可运行的代码示例，并添加必要注释
 3. **结构清晰**：善用Markdown格式（标题、列表、代码块、表格等）组织内容
 4. **实用导向**：提供可落地的解决方案，避免空泛的理论
-5. **安全合规**：不生成违反安全规范的代码，不涉及敏感信息处理
-6. **任务驱动**：复杂任务先规划后执行，使用 plan_task 工具进行拆解
+5. **安全合规**：不生成违反安全规范的代码，不涉及敏感信息处理${state.useTools ? '\n6. **任务驱动**：复杂任务先规划后执行，使用 plan_task 工具进行拆解' : ''}
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）

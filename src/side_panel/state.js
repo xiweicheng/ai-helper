@@ -37,7 +37,8 @@ export let chatConfig = {
   maxHistoryMessages: 50,
   maxMessageLength: 100000,
   maxMemoryMessages: 20,
-  enableExecutionLog: false
+  enableExecutionLog: false,
+  contextWindow: 0   // 0 = 使用内置映射自动推断
 };
 
 // 温度设置

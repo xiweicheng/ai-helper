@@ -36,6 +36,7 @@ export const DEFAULT_CHAT_CONFIG = {
   maxHistoryMessages: 50,
   maxMessageLength: 100000,
   maxMemoryMessages: 20,
+  contextWindow: 0,
 };
 
 export const DEFAULT_REACT_CONFIG = {

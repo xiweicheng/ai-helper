@@ -308,7 +308,7 @@ export function loadConfig() {
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
-    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog',
+    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow',
     'reflectionConfig',
     'streamEnabled', 'streamChunkDelay'
   ], function(result) {
@@ -393,6 +393,11 @@ export function loadConfig() {
       result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength;
     if (result.chatMaxMemoryMessages !== undefined && result.chatMaxMemoryMessages !== null) {
       document.getElementById('chatMaxMemoryMessages').value = result.chatMaxMemoryMessages;
+    }
+    
+    // 加载上下文窗口大小
+    if (result.chatContextWindow !== undefined && result.chatContextWindow > 0) {
+      document.getElementById('chatContextWindow').value = result.chatContextWindow;
     }
     
     // 加载执行日志配置
@@ -507,6 +512,8 @@ export function saveConfig() {
   const chatMaxMessageLength = parseInt(document.getElementById('chatMaxMessageLength').value) || DEFAULT_CHAT_CONFIG.maxMessageLength;
   const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
   const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
+  const contextWindowInput = document.getElementById('chatContextWindow').value.trim();
+  const chatContextWindow = contextWindowInput ? parseInt(contextWindowInput) : 0;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
 
   // 获取流式输出配置
@@ -666,6 +673,7 @@ export function saveConfig() {
     chatMaxHistoryMessages: chatMaxHistoryMessages,
     chatMaxMessageLength: chatMaxMessageLength,
     chatMaxMemoryMessages: chatMaxMemoryMessages,
+    chatContextWindow: chatContextWindow,
     enableExecutionLog: enableExecutionLog,
     // 图片识别配置
     enableImageInput: enableImageInput,
@@ -721,7 +729,8 @@ export function saveConfig() {
         maxHistoryMessages: chatMaxHistoryMessages,
         maxMessageLength: chatMaxMessageLength,
         maxMemoryMessages: chatMaxMemoryMessages,
-        enableExecutionLog: enableExecutionLog
+        enableExecutionLog: enableExecutionLog,
+        contextWindow: chatContextWindow
       }, reflectionConfig, agentConfig, { streamEnabled, streamChunkDelay });
     }
   });

@@ -3,6 +3,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
+import { estimateMessagesTokens, getMessageBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
@@ -38,6 +39,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     state.chatConfig.maxMemoryMessages = changes.chatMaxMemoryMessages.newValue;
     updateMemoryLimitLabel();
     console.log('[SidePanel] 记忆限制配置已更新:', state.chatConfig.maxMemoryMessages);
+  }
+  if (areaName === 'local' && changes.chatContextWindow) {
+    state.chatConfig.contextWindow = changes.chatContextWindow.newValue || 0;
+    console.log('[SidePanel] 上下文窗口配置已更新:', state.chatConfig.contextWindow);
   }
 });
 
@@ -342,7 +347,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
   addContextBubble('selected', selectedText, false);
 
-  const userMessage = `[选中内容]\n${selectedText}\n\n[用户问题]\n${prompt.content}`;
+  const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
+  const userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
 
   addMessage('user', prompt.content);
 
@@ -378,14 +384,37 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
-      if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
-        const historyWithoutCurrent = state.messageHistory.slice(0, -1);
-        const limitedHistory = historyWithoutCurrent.slice(-state.chatConfig.maxMemoryMessages);
-        historyToSend = [...limitedHistory, state.messageHistory[state.messageHistory.length - 1]];
-        console.log('[SidePanel] 记忆历史限制生效:', state.chatConfig.maxMemoryMessages, '条（不含当前消息），实际发送:', historyToSend.length, '条');
-      } else {
-        console.log('[SidePanel] 记忆历史限制未生效:', state.chatConfig.maxMemoryMessages);
+      // Token 预算驱动：根据模型上下文窗口动态裁剪
+      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const historyBudget = Math.floor(messageBudget * 0.7);
+      
+      const historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
+      
+      const keptHistory = [];
+      let keptTokens = estimateMessagesTokens([currentMsg]);
+      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
+        const msg = historyWithoutCurrent[i];
+        const msgTokens = estimateMessagesTokens([msg]);
+        if (keptTokens + msgTokens <= historyBudget) {
+          keptHistory.unshift(msg);
+          keptTokens += msgTokens;
+        } else {
+          break;
+        }
       }
+      
+      if (keptHistory.length < historyWithoutCurrent.length) {
+        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
+        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
+        const summary = generateMessagesSummary(trimmedMsgs);
+        if (summary) {
+          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
+        }
+      }
+      
+      historyToSend = [...keptHistory, currentMsg];
       messages = [...messages, ...historyToSend];
     } else {
       messages.push({ role: 'user', content: userMessage });

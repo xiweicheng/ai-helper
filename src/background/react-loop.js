@@ -4,7 +4,7 @@ import { getStoredConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 
@@ -108,7 +108,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const MAX_REFLECTION_ROUNDS = 10; // 反思总轮数上限
   let currentMessages = [...messages];
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
-  const CACHE_TTL_MS = 10000; // 缓存条目 10 秒过期，防止页面状态变化后使用过期结果
+  const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
@@ -133,6 +133,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   /**
    * 基于 Token 总量的消息裁剪，替代原来的条数限制
    * 保留 system message，从后往前保留消息，确保 tool_calls/tool 配对
+   * 反思消息优先裁剪（权重更高），保护核心对话
    */
   const trimMessages = () => {
     const budget = getReactTokenBudget(model || 'default');
@@ -142,20 +143,55 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     const oldLen = currentMessages.length;
     const oldTokens = totalTokens;
     const systemMsg = currentMessages[0]?.role === 'system' ? [currentMessages[0]] : [];
-    const rest = systemMsg.length ? currentMessages.slice(1) : [...currentMessages];
+    const rest = systemMsg.length ? [...currentMessages.slice(1)] : [...currentMessages];
 
-    // 从后往前逐条移除，直到 token 量在预算内
+    // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
+    const getWeight = (msg) => {
+      if (msg._reflection) return 3;
+      if (msg.role === 'tool') return 2;
+      return 1;
+    };
+
+    // 从前往后逐条移除高权重消息，直到 token 量在预算内
     while (rest.length > 0) {
       const currentTokens = estimateMessagesTokens([...systemMsg, ...rest]);
       if (currentTokens <= budget) break;
 
-      // 移除最早的非 system 消息
-      const removed = rest.shift();
+      // 从开头找到第一条可裁剪的消息（优先高权重）
+      let removeIdx = -1;
+      let bestWeight = 0;
+      for (let i = 0; i < rest.length; i++) {
+        const w = getWeight(rest[i]);
+        if (w > bestWeight) {
+          bestWeight = w;
+          removeIdx = i;
+        }
+        // 最高权重，不再继续查找
+        if (bestWeight >= 3) break;
+      }
+      // 如果没找到高权重消息（都是权重 0），移除最早的一条
+      if (removeIdx < 0 || bestWeight === 0) removeIdx = 0;
+
+      const removed = rest.splice(removeIdx, 1)[0];
 
       // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
       if (removed?.role === 'assistant' && removed.tool_calls) {
-        while (rest.length > 0 && rest[0]?.role === 'tool') {
-          rest.shift();
+        while (rest.length > 0 && rest[removeIdx]?.role === 'tool') {
+          rest.splice(removeIdx, 1);
+        }
+      } else if (removed?.role === 'tool') {
+        // 如果移除了 tool 消息，检查前面的 assistant 是否因此孤立
+        for (let j = removeIdx - 1; j >= 0; j--) {
+          if (rest[j]?.role === 'assistant' && rest[j]?.tool_calls) {
+            // 检查是否还有其他 tool 消息配对
+            const nextMsg = rest[j + 1];
+            if (!nextMsg || nextMsg.role !== 'tool') {
+              // 孤立的 assistant(tool_calls)，清除 tool_calls
+              delete rest[j].tool_calls;
+            }
+          } else {
+            break;
+          }
         }
       }
     }
@@ -730,7 +766,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             let toolResultTruncated = false;
             let toolResultForDisplay = toolResultStr;
             if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
-              const truncated = truncateByTokens(toolResultStr, MAX_TOOL_RESULT_TOKENS);
+              // 自动检测内容类型，智能截断
+              const truncated = truncateContentSmart(toolResultStr, MAX_TOOL_RESULT_TOKENS);
               console.log(`[Background] 工具 ${toolName} 结果截断: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
               toolResultTruncated = true;
               toolResultForDisplay = truncated;

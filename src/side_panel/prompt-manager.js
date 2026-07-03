@@ -2,6 +2,7 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
+import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 
 // ==================== 清除选中内容上下文（sendPromptByCode 依赖） ====================
 
@@ -352,14 +353,16 @@ export async function sendPromptByCode(code) {
   // 优先处理引用内容
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
-    userMessage = `[引用内容]\n${ctx}\n\n[用户问题]\n${prompt.content}`;
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    userMessage = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立引用气泡
     addContextBubble('quoted', ctx, false);
     // 清除引用内容，只使用一次
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
-    userMessage = `[选中内容]\n${ctx}\n\n[用户问题]\n${prompt.content}`;
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
     // 清除选中内容，只使用一次
@@ -430,16 +433,37 @@ export async function sendPromptByCode(code) {
     // 如果记忆对话，则发送历史对话；否则只发送当前最新消息
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
-      // 如果配置了记忆历史限制条数，则只取最近N条（不含当前消息和系统提示词）
-      if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
-        // 当前消息是 messageHistory 的最后一条，限制条数不含当前消息
-        const historyWithoutCurrent = state.messageHistory.slice(0, -1);
-        const limitedHistory = historyWithoutCurrent.slice(-state.chatConfig.maxMemoryMessages);
-        historyToSend = [...limitedHistory, state.messageHistory[state.messageHistory.length - 1]];
-        console.log('[SidePanel] 记忆历史限制生效:', state.chatConfig.maxMemoryMessages, '条（不含当前消息），实际发送:', historyToSend.length, '条');
-      } else {
-        console.log('[SidePanel] 记忆历史限制未生效:', state.chatConfig.maxMemoryMessages);
+      // Token 预算驱动：根据模型上下文窗口动态裁剪
+      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const historyBudget = Math.floor(messageBudget * 0.7);
+      
+      const historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
+      
+      const keptHistory = [];
+      let keptTokens = estimateMessagesTokens([currentMsg]);
+      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
+        const msg = historyWithoutCurrent[i];
+        const msgTokens = estimateMessagesTokens([msg]);
+        if (keptTokens + msgTokens <= historyBudget) {
+          keptHistory.unshift(msg);
+          keptTokens += msgTokens;
+        } else {
+          break;
+        }
       }
+      
+      if (keptHistory.length < historyWithoutCurrent.length) {
+        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
+        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
+        const summary = generateMessagesSummary(trimmedMsgs);
+        if (summary) {
+          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
+        }
+      }
+      
+      historyToSend = [...keptHistory, currentMsg];
       messages = [...messages, ...historyToSend];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
       for (let i = 0; i < messages.length - 1; i++) {
