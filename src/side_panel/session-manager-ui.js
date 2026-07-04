@@ -3,6 +3,7 @@
 
 import state from './state.js';
 import { BUILTIN_TOOLS } from './constants.js';
+import { renderAgentSelector } from './agent-manager.js';
 import {
   createSession,
   switchToSession,
@@ -677,6 +678,7 @@ async function handleSessionSwitch(sessionId) {
 
   renderSessionTabs();
   updateUIControls();
+  renderAgentSelector();
 }
 
 // ==================== UI 控件更新 ====================
