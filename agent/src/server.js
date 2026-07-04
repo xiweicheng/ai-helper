@@ -511,6 +511,10 @@ export function startServer() {
         if (body.id === undefined || body.enabled === undefined) {
           return jsonResponse(res, 400, { success: false, error: '缺少参数: id, enabled' });
         }
+        // 禁用时先断开连接，确保工具立即可用/不可用
+        if (!body.enabled) {
+          await disconnectMcpServer(body.id);
+        }
         const result = await toggleMcpServer(body.id, body.enabled);
         logSystem('mcp_server_toggle', { serverId: body.id, enabled: body.enabled });
         return jsonResponse(res, result.success ? 200 : 400, result);

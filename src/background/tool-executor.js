@@ -34,7 +34,7 @@ export async function loadMcpTools() {
       if (mcpToolIds.has(toolId)) continue;
 
       // 动态注入 RAW_TOOLS（让 LLM 能看到这个工具）
-      RAW_TOOLS.push({
+      const rawToolDef = {
         id: toolId,
         category: 'mcp',
         execution: 'background',
@@ -46,6 +46,14 @@ export async function loadMcpTools() {
           description: `[MCP:${tool.serverName}] ${tool.description || tool.name}`,
           parameters: tool.inputSchema || { type: 'object', properties: {} }
         }
+      };
+      RAW_TOOLS.push(rawToolDef);
+
+      // 同时注入 BUILTIN_TOOLS（LLM 请求实际使用的是这个数组）
+      BUILTIN_TOOLS.push({
+        id: rawToolDef.id,
+        type: rawToolDef.type,
+        function: rawToolDef.function
       });
 
       // 动态注册 handler
@@ -65,6 +73,19 @@ export async function loadMcpTools() {
     // 重建 BG_HANDLERS（因为 RAW_TOOLS 变化了）
     rebuildBgHandlers();
 
+    // 同步 MCP 工具到 chrome.storage，让 Side Panel 也能读取
+    const mcpToolsForUI = result.tools.map(t => ({
+      id: `mcp:${t.serverId}:${t.name}`,
+      name: `mcp:${t.serverId}:${t.name}`,
+      description: `[MCP:${t.serverName}] ${t.description || t.name}`,
+      category: 'mcp',
+      execution: 'background',
+      parallelizable: true,
+      requiresConfirmation: false,
+      enabled: true
+    }));
+    await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
+
     console.log(`[Background] 已加载 ${registered} 个 MCP 工具:`, [...mcpToolIds].join(', '));
     return registered;
   } catch (err) {
@@ -76,17 +97,23 @@ export async function loadMcpTools() {
 /**
  * 清理所有动态注册的 MCP 工具
  */
-function unloadMcpTools() {
+export function unloadMcpTools() {
   for (const toolId of mcpToolIds) {
     // 从 RAW_TOOLS 中移除
-    const idx = RAW_TOOLS.findIndex(t => t.id === toolId);
+    let idx = RAW_TOOLS.findIndex(t => t.id === toolId);
     if (idx >= 0) RAW_TOOLS.splice(idx, 1);
+
+    // 从 BUILTIN_TOOLS 中移除
+    idx = BUILTIN_TOOLS.findIndex(t => t.id === toolId);
+    if (idx >= 0) BUILTIN_TOOLS.splice(idx, 1);
 
     // 从 TOOL_HANDLERS 中移除
     delete TOOL_HANDLERS[toolId];
   }
   mcpToolIds.clear();
   rebuildBgHandlers();
+  // 清除 storage 中的 MCP 工具
+  chrome.storage.local.remove('mcpTools');
 }
 
 /**
@@ -197,6 +224,17 @@ export async function getTools(agentToolIds = null) {
           if (tool.id.startsWith('agent_') && !agentConnected) {
             console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
             return false;
+          }
+          // MCP 工具：Agent 未连通 或 MCP Server 未连接时过滤
+          if (tool.id.startsWith('mcp:')) {
+            if (!agentConnected) {
+              console.log('[Background] Agent 未连通，隐藏 MCP 工具:', tool.id);
+              return false;
+            }
+            if (!mcpToolIds.has(tool.id)) {
+              console.log('[Background] MCP Server 未连接，隐藏 MCP 工具:', tool.id);
+              return false;
+            }
           }
           return true;
         })
@@ -763,7 +801,7 @@ const TOOL_HANDLERS = {
   wait_for_navigation: executeWaitForNavigation,
   dispatch_sub_agent: executeDispatchSubAgent,
   take_full_page_screenshot: executeTakeFullPageScreenshot,
-  skill_run: executeSkillRun,
+  agent_skill_run: executeSkillRun,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）

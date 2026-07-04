@@ -2,7 +2,8 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache, loadMcpTools } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools } from './tool-executor.js';
+import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -74,6 +75,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'RELOAD_MCP_TOOLS') {
     loadMcpTools().then(count => {
       sendResponse({ success: true, count });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'GET_MCP_TOOLS') {
+    // 每次查询前先重新加载，确保 Side Panel 拿到最新数据
+    loadMcpTools().then(count => {
+      const mcpTools = RAW_TOOLS
+        .filter(t => t.id.startsWith('mcp:'))
+        .map(t => ({
+          id: t.id,
+          name: t.function?.name || t.id,
+          description: t.function?.description || '',
+          category: t.category || 'mcp',
+          execution: t.execution || 'background',
+          parallelizable: t.parallelizable !== false,
+          requiresConfirmation: t.requiresConfirmation || false,
+          enabled: true
+        }));
+      console.log(`[Background] GET_MCP_TOOLS 返回 ${mcpTools.length} 个工具（共重载 ${count} 个）`);
+      sendResponse({ success: true, tools: mcpTools });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
     });
@@ -610,6 +634,10 @@ async function performAgentHealthCheck() {
         loadMcpTools().then(count => {
           if (count > 0) console.log(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
         }).catch(() => {});
+      } else {
+        // Agent 断开时清理 MCP 工具状态
+        unloadMcpTools();
+        console.log('[Background] Agent 断开，已清理 MCP 工具');
       }
     }
   } catch (err) {

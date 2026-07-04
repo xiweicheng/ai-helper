@@ -457,9 +457,18 @@ function onTemplateSelect(e) {
 /**
  * 渲染工具选择列表
  */
-function renderAgentToolSelector(selectedToolIds) {
+async function renderAgentToolSelector(selectedToolIds) {
   const container = document.getElementById('agentToolList');
   if (!container) return;
+
+  // 加载 MCP 工具
+  let mcpTools = [];
+  try {
+    const result = await chrome.storage.local.get(['mcpTools']);
+    mcpTools = result.mcpTools || [];
+  } catch { /* ignore */ }
+
+  const allTools = [...BUILTIN_TOOLS, ...mcpTools];
 
   const selectedSet = new Set(selectedToolIds || []);
   const categoryNames = {
@@ -474,17 +483,18 @@ function renderAgentToolSelector(selectedToolIds) {
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
     'local_agent': '🖥️ 代理',
+    'mcp': '🔌 MCP'
   };
 
   // 按类别分组
   const grouped = {};
-  for (const tool of BUILTIN_TOOLS) {
+  for (const tool of allTools) {
     const cat = tool.category || 'other';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(tool);
   }
 
-  const totalCount = BUILTIN_TOOLS.length;
+  const totalCount = allTools.length;
 
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {

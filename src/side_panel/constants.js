@@ -1,7 +1,7 @@
 import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../background/constants.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
-export const CATEGORY_ORDER = _CATEGORY_ORDER;
+export const CATEGORY_ORDER = [...new Set([..._CATEGORY_ORDER, 'mcp'])];
 
 export const PRESET_MODES = [
   { label: "精准编码", temp: 0.2, topP: 1.0, tip: "较低随机性，适合业务开发、调试、纠错" },
@@ -21,5 +21,6 @@ export const TOOL_CATEGORY_NAMES = {
     'media_output': '📷 媒体与输出',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'local_agent': '🖥️ 代理'
+    'local_agent': '🖥️ 代理',
+    'mcp': '🔌 MCP'
 };

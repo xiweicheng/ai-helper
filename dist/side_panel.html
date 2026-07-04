@@ -6445,7 +6445,7 @@
     }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-B6LDMk09.js"></script>
+  <script type="module" crossorigin src="/assets/constants-BYDweWWz.js"></script>
   <script type="module" crossorigin src="/assets/agent-defaults-Cm_3AUQl.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -6583,8 +6583,9 @@
       <button class="prompt-modal-close" id="toolsPopupClose" title="关闭">×</button>
       <button id="toolStatsBtn" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
       <div class="modal-title">工具配置</div>
-      <div style="margin-bottom: 12px;">
-        <input type="text" id="toolsSearchInput" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none;">
+      <div style="margin-bottom: 12px; position: relative;">
+        <input type="text" id="toolsSearchInput" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 36px 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
+        <button type="button" id="toolsSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 16px; cursor: pointer; display: none; padding: 4px 6px; line-height: 1; border-radius: 50%;" title="清除搜索">✕</button>
       </div>
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
         <button type="button" class="category-btn category-all" data-category="all" style="padding: 6px 12px; border: none; border-radius: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
@@ -6636,6 +6637,10 @@
           <button type="button" class="category-btn" data-category="local_agent" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             🖥️ 代理
             <span class="category-badge" id="badge-local_agent" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+          </button>
+          <button type="button" class="category-btn" data-category="mcp" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+            🔌 MCP
+            <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           </div>
         </div>

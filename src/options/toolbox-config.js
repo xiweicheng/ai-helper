@@ -64,7 +64,7 @@ function renderMcpServers(servers) {
     container.innerHTML = `
       <div class="toolbox-empty">
         <div class="toolbox-empty-icon">🔌</div>
-        <div class="toolbox-empty-title">Agent 未连接</div>
+        <div class="toolbox-empty-title">代理未连接</div>
         <div class="toolbox-empty-desc">请先在「代理」Tab 中连接 Agent 服务后，再配置 MCP 服务器</div>
       </div>`;
     return;
@@ -264,7 +264,7 @@ function renderSkills(skills) {
     container.innerHTML = `
       <div class="toolbox-empty">
         <div class="toolbox-empty-icon">🔌</div>
-        <div class="toolbox-empty-title">Agent 未连接</div>
+        <div class="toolbox-empty-title">代理未连接</div>
         <div class="toolbox-empty-desc">请先在「代理」Tab 中连接 Agent 服务后，再管理 Skill</div>
       </div>`;
     return;
@@ -381,10 +381,10 @@ async function refreshToolbox() {
   const statusEl = document.getElementById('toolboxAgentStatus');
   if (statusEl) {
     if (agentConnected) {
-      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> Agent 已连接`;
+      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> 代理已连接 - 支持MCP和Skill`;
       statusEl.className = 'toolbox-agent-status connected';
     } else {
-      statusEl.innerHTML = `<span class="toolbox-status-dot disconnected"></span> Agent 未连接 — 请在「代理」Tab 中连接`;
+      statusEl.innerHTML = `<span class="toolbox-status-dot disconnected"></span> 代理未连接 — 请在「代理」Tab 中连接`;
       statusEl.className = 'toolbox-agent-status disconnected';
     }
   }

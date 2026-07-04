@@ -565,10 +565,10 @@ function updateAgentIndicator(platformInfo) {
 
   if (!platformInfo || !platformInfo.connected) {
     dot.className = 'header-agent-dot disconnected';
-    btn.title = 'Agent 未连接 - 点击前往设置';
+    btn.title = '代理未连接 - 点击前往设置';
   } else {
     dot.className = 'header-agent-dot connected';
-    const parts = ['Agent 已连接'];
+    const parts = ['代理已连接 - 支持MCP和Skill'];
     if (platformInfo.platformName) parts.push(platformInfo.platformName);
     if (platformInfo.arch) parts.push(platformInfo.arch);
     btn.title = parts.join(' | ') + ' - 点击前往设置';
@@ -1788,11 +1788,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 工具搜索功能
   const toolsSearchInput = document.getElementById('toolsSearchInput');
+  const toolsSearchClear = document.getElementById('toolsSearchClear');
 
   if (toolsSearchInput) {
     toolsSearchInput.addEventListener('input', (e) => {
       state.currentSearch = e.target.value.toLowerCase();
+      // 显示/隐藏清除按钮
+      if (toolsSearchClear) {
+        toolsSearchClear.style.display = e.target.value ? '' : 'none';
+      }
       renderToolsPopupList();
+    });
+  }
+
+  // 清除搜索按钮
+  if (toolsSearchClear) {
+    toolsSearchClear.addEventListener('click', () => {
+      if (toolsSearchInput) {
+        toolsSearchInput.value = '';
+        toolsSearchClear.style.display = 'none';
+        state.currentSearch = '';
+        renderToolsPopupList();
+      }
     });
   }
 

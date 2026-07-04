@@ -3,20 +3,66 @@ import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.
 import { showToast, escapeHtml } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 
+// MCP 工具缓存（从 chrome.storage.local 读取）
+let mcpToolsCache = [];
+
 /**
- * 获取当前 Agent 限定范围内的工具列表
+ * 从 chrome.storage.local 加载 MCP 工具
+ */
+async function loadMcpToolsFromStorage() {
+  try {
+    // 优先直接从 Background 获取（避免 storage 竞态）
+    const response = await chrome.runtime.sendMessage({ type: 'GET_MCP_TOOLS' });
+    if (response?.success && response.tools) {
+      mcpToolsCache = response.tools;
+      return mcpToolsCache;
+    }
+  } catch { /* Background 可能未就绪，回退到 storage */ }
+  
+  try {
+    const result = await chrome.storage.local.get(['mcpTools']);
+    mcpToolsCache = result.mcpTools || [];
+    return mcpToolsCache;
+  } catch {
+    mcpToolsCache = [];
+    return [];
+  }
+}
+
+// 监听 Background 的 MCP 工具更新，实时同步缓存
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.mcpTools) {
+    mcpToolsCache = changes.mcpTools.newValue || [];
+    console.log('[SidePanel] MCP 工具缓存已更新:', mcpToolsCache.length, '个');
+    // 如果工具弹窗当前是打开状态，实时刷新列表
+    const overlay = document.getElementById('toolsPopupOverlay');
+    if (overlay?.classList.contains('show')) {
+      updateCategoryBadges();
+      updateToolsPopupTitle();
+      renderToolsPopupList();
+    }
+  }
+});
+
+// 模块初始化时预加载 MCP 工具缓存
+loadMcpToolsFromStorage();
+
+/**
+ * 获取当前 Agent 限定范围内的工具列表（含 MCP 工具）
  * null = 没有限制（默认助手），返回全部工具
  * [] = 空数组，没有工具
  * [id1, id2] = 只返回这些 ID 对应的工具
  */
 function getAgentFilteredTools() {
+  const allTools = [...BUILTIN_TOOLS, ...mcpToolsCache];
   const toolIds = state.activeAgentToolIds;
-  if (toolIds === null || toolIds === undefined) return BUILTIN_TOOLS;
+  if (toolIds === null || toolIds === undefined) return allTools;
+  // MCP 工具是动态注册的，不参与 Agent 白名单过滤
   const filterSet = new Set(toolIds);
-  return BUILTIN_TOOLS.filter(t => filterSet.has(t.id));
+  return allTools.filter(t => t.id.startsWith('mcp:') || filterSet.has(t.id));
 }
 
-function openToolsPopup() {
+async function openToolsPopup() {
   const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
   if (!toolsPopupOverlay) return;
   
@@ -29,6 +75,9 @@ function openToolsPopup() {
   if (searchInput) {
     searchInput.value = '';
   }
+  
+  // 先从 storage 加载 MCP 工具
+  await loadMcpToolsFromStorage();
   
   // 更新标签角标数字
   updateCategoryBadges();
@@ -349,9 +398,10 @@ function updateToolsPopupTitle() {
 
 function saveToolsFromPopup() {
   const newEnabledTools = [];
-  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  const allTools = [...BUILTIN_TOOLS, ...mcpToolsCache];
+  const validToolIds = new Set(allTools.map(t => t.id));
   
-  BUILTIN_TOOLS.forEach(tool => {
+  allTools.forEach(tool => {
     const checkbox = document.getElementById('tool_' + tool.id);
     if (checkbox) {
       // 可见工具：根据 checkbox 状态决定
@@ -359,7 +409,7 @@ function saveToolsFromPopup() {
         newEnabledTools.push(tool.id);
       }
     } else {
-      // 不可见工具：保持原始状态（只保留 BUILTIN_TOOLS 中存在的 ID）
+      // 不可见工具：保持原始状态
       if (state.enabledTools.includes(tool.id)) {
         newEnabledTools.push(tool.id);
       }

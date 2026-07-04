@@ -1898,14 +1898,14 @@ export const RAW_TOOLS = [
     }
   },
   {
-    id: 'skill_run',
-    category: 'mcp',
+    id: 'agent_skill_run',
+    category: 'local_agent',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'skill_run',
+      name: 'agent_skill_run',
       description: '执行一个预定义的 Skill（技能）。Skill 是封装了多步操作的可复用流程。可用的 Skill 列表会在系统提示词中提供。\n\n使用示例：\n- 创建 React 组件模板\n- 执行标准化 Git 提交流程\n- 批量处理文件操作',
       parameters: {
         type: 'object',
