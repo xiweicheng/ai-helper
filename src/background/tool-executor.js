@@ -77,6 +77,9 @@ export async function loadMcpTools() {
         function: rawToolDef.function
       });
 
+      // 动态注入 TOOL_EXECUTION_MAP（executeTool 依赖此映射查找工具）
+      TOOL_EXECUTION_MAP[toolId] = 'background';
+
       // 动态注册 handler
       TOOL_HANDLERS[toolId] = async (args, toolCallId) => {
         const result = await AgentClient.callMcpTool(tool.serverId, tool.name, args);
@@ -129,6 +132,9 @@ export function unloadMcpTools() {
     // 从 BUILTIN_TOOLS 中移除
     idx = BUILTIN_TOOLS.findIndex(t => t.id === toolId);
     if (idx >= 0) BUILTIN_TOOLS.splice(idx, 1);
+
+    // 从 TOOL_EXECUTION_MAP 中移除
+    delete TOOL_EXECUTION_MAP[toolId];
 
     // 从 TOOL_HANDLERS 中移除
     delete TOOL_HANDLERS[toolId];
