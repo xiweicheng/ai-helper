@@ -18,10 +18,17 @@ const EXPORT_KEYS = [
   'toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',
   'streamEnabled', 'streamChunkDelay',
+  // 新增：助手、工具、LLM参数、UI开关等配置
+  'customAgents', 'activeAgentId',
+  'enabledTools',
+  'temperature', 'topP', 'selectedTempIndex',
+  'customPrompts',
+  'agentUrl', 'agentPlatform', 'agentStreamEnabled',
+  'enableTools', 'isolateChat', 'enableSelectionQuery',
 ];
 
 // 敏感的密钥 key
-const SECRET_KEYS = ['apiKey', 'imageApiKey'];
+const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
 
 /**
  * 从 chrome.storage.local 收集当前配置
