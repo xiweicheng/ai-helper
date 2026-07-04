@@ -84,7 +84,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds } = message;
     
     // 将图片识别独立配置合并到 apiParams 中
     if (imageApiBase) {
@@ -113,7 +113,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     const apiCall = useTools 
       ? (async () => {
-          const tools = await getTools();
+          const tools = await getTools(agentToolIds);
 
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {

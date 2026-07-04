@@ -10,6 +10,7 @@ import { initClarifyEvents } from './clarify-dialog.js';
 import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
 import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
+import { initAgentManager } from './agent-manager.js';
 import {
   sendMessage, clearChatHistory, showExportDialog, hideExportDialog, performExport,
   initExportDialogEvents, triggerImportDialog, handleImportFile,
@@ -1993,6 +1994,7 @@ document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
 document.addEventListener('DOMContentLoaded', initExportDialogEvents);
+document.addEventListener('DOMContentLoaded', () => initAgentManager());
 
 // ==================== 图片辅助函数 ====================
 

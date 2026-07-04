@@ -20,6 +20,10 @@ export let systemPrompt = '';
 export let inputHistory = [];
 export let inputHistoryIndex = -1;
 
+// 自定义 Agent 相关
+export let activeAgentId = null;   // 当前选中的 Agent ID
+export let customAgents = [];      // 用户自定义 Agent 列表缓存
+
 // Agent 平台信息（从 Agent 获取，用于系统提示词注入）
 export let agentPlatform = {
   platformName: 'Unknown',
@@ -141,6 +145,10 @@ export default {
   set draggedItemIndex(v) { draggedItemIndex = v; },
   get systemPrompt() { return systemPrompt; },
   set systemPrompt(v) { systemPrompt = v; },
+  get activeAgentId() { return activeAgentId; },
+  set activeAgentId(v) { activeAgentId = v; },
+  get customAgents() { return customAgents; },
+  set customAgents(v) { customAgents = v; },
   get agentPlatform() { return agentPlatform; },
   set agentPlatform(v) { Object.assign(agentPlatform, v); },
   get inputHistory() { return inputHistory; },

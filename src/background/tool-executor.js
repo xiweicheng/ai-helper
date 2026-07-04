@@ -67,8 +67,9 @@ async function checkAgentConnectivity() {
 /**
  * 获取启用的工具列表
  * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
+ * @param {string[]|null} agentToolIds - Agent 指定的工具 ID 列表，null = 使用全局 enabledTools
  */
-export async function getTools() {
+export async function getTools(agentToolIds = null) {
   return new Promise((resolve) => {
     chrome.storage.local.get(['enabledTools', 'enableImageInput'], async (result) => {
       let enabledTools = result.enabledTools;
@@ -79,16 +80,20 @@ export async function getTools() {
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
 
+      // 如果 Agent 指定了工具列表，与全局启用列表取交集
+      const finalToolIds = agentToolIds ? enabledTools.filter(id => agentToolIds.includes(id)) : enabledTools;
+      console.log('[Background] Agent 工具过滤: agentToolIds=', agentToolIds, ', 全局启用:', enabledTools.length, ', 最终:', finalToolIds.length);
+
       // 读取图片识别开关状态
       const visionEnabled = result.enableImageInput === true;
       
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
       
-      console.log('[Background] 当前启用的工具配置:', enabledTools, 'Agent已连通:', agentConnected, '图片识别:', visionEnabled);
+      console.log('[Background] 当前启用的工具配置:', finalToolIds, 'Agent已连通:', agentConnected, '图片识别:', visionEnabled);
       
       const tools = BUILTIN_TOOLS
-        .filter(tool => enabledTools.includes(tool.id))
+        .filter(tool => finalToolIds.includes(tool.id))
         .filter(tool => {
           // Agent 未连通时，隐藏所有 agent_* 工具，避免大模型无效调用
           if (tool.id.startsWith('agent_') && !agentConnected) {

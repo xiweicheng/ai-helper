@@ -78,6 +78,7 @@ export async function saveCurrentSession() {
   currentSession.model = state.currentModel;
   currentSession.useTools = state.useTools;
   currentSession.enabledTools = [...state.enabledTools];
+  currentSession.agentId = state.activeAgentId || null;
   currentSession.temperature = state.temperature;
   currentSession.topP = state.topP;
 
@@ -117,6 +118,7 @@ export async function createSession() {
     model: state.currentModel,
     useTools: state.useTools,
     enabledTools: [...state.enabledTools],
+    agentId: state.activeAgentId || null,
     temperature: state.temperature,
     topP: state.topP,
     messageHistory: [],

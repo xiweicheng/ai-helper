@@ -1,6 +1,7 @@
 // utils.js - 工具函数集合
 
 import state from './state.js';
+import { getAgent } from './agent-store.js';
 
 /**
  * 显示 Toast 提示
@@ -122,9 +123,10 @@ export function copyToClipboard(text, btn) {
 
 /**
  * 获取系统提示词
- * 如果用户自定义了系统提示词，使用用户的；否则使用默认的
+ * 优先级：Agent 自定义 > 全局自定义 > 默认
+ * @param {Object} [agent] - 可选，当前使用的 Agent 对象
  */
-export function getSystemPrompt() {
+export function getSystemPrompt(agent = null) {
   const currentTime = new Date().toLocaleString('zh-CN');
 
   // 构建 Agent 平台信息文本
@@ -134,6 +136,14 @@ export function getSystemPrompt() {
     agentInfo = `\n- 本地 Agent：${ap.platformName} (${ap.arch})，默认 shell: ${ap.shell}，工作目录: ${ap.workdir || '未设置'}`;
   }
   
+  // dispatch_sub_agent 工具说明——仅在 Agent 允许 sub dispatch 时注入
+  const dispatchToolRule = (agent && agent.allowSubDispatch) ? `
+  
+## Sub-Agent 调度
+你可以使用 dispatch_sub_agent 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
+使用场景：复杂任务需要不同领域的专业能力时（如代码审查 + 文档撰写）。
+调用方式：在一次响应中可并行调用多个 dispatch_sub_agent。` : '';
+
   // 任务拆解相关规则——仅在启用工具时注入，节省 token
   const taskPlanningRules = state.useTools ? `
 
@@ -159,15 +169,24 @@ export function getSystemPrompt() {
    - 提供完整的子任务列表，包含ID、名称、描述、依赖和所需工具
    - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）` : '';
 
-  // 如果用户自定义了系统提示词
-  if (state.systemPrompt && state.systemPrompt.trim()) {
-    // 拼接环境信息和任务拆解规则（仅在启用工具时）
-    return `${state.systemPrompt}
+  // 确定系统提示词内容：Agent > 全局 > 默认
+  let promptContent;
+  if (agent && agent.systemPrompt && agent.systemPrompt.trim()) {
+    promptContent = agent.systemPrompt;
+  } else if (state.systemPrompt && state.systemPrompt.trim()) {
+    promptContent = state.systemPrompt;
+  } else {
+    promptContent = null;
+  }
+
+  // 如果 Agent 有自定义 prompt，用它拼接环境信息
+  if (promptContent) {
+    return `${promptContent}
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
 - 操作系统：Windows 10.0
-- 当前时间：${currentTime}${agentInfo}${taskPlanningRules}
+- 当前时间：${currentTime}${agentInfo}${taskPlanningRules}${dispatchToolRule}
 `;
   }
   
@@ -179,7 +198,7 @@ export function getSystemPrompt() {
 - **技术问题解答**：擅长解答架构设计、算法优化、性能调优、Bug排查等技术问题
 - **代码审查**：能提供代码质量评估、最佳实践建议、潜在风险识别
 - **文档编写**：协助撰写技术文档、API说明、测试用例等
-- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}
+- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}${dispatchToolRule}
 
 ## 回答原则
 1. **精准专业**：使用准确的技术术语，回答直击要点

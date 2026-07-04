@@ -3,6 +3,7 @@
 
 import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
+import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions } from './session-manager.js';
@@ -909,35 +910,29 @@ export async function sendMessage() {
     welcomeMessage.remove();
   }
 
-  // finalTextForApi: 压缩后发送给模型 / 存入消息历史（节省 token 和存储）
-  // finalTextForDisplay: 原始内容用于气泡展示
-  let finalTextForApi = text;
-  let finalTextForDisplay = text;
+  let finalText = text;
   const hasSelectedContext = state.enableSelectionQuery && state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
   
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
+    // 压缩大段引用内容，防止永久占据上下文空间
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    finalTextForApi = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
-    finalTextForDisplay = `[引用内容]\n${ctx}\n\n[用户问题]\n${text}`;
+    finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    finalTextForApi = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
-    finalTextForDisplay = `[选中内容]\n${ctx}\n\n[用户问题]\n${text}`;
+    finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     state.selectedContextText = '';
   }
   
 
-  const userContentForDisplay = buildUserContent(finalTextForDisplay);
-  const userContentForApi = buildUserContent(finalTextForApi);
-  // 显示用户消息（含图片）——展示原始内容
-  addMessage('user', userContentForDisplay);
+  const userContent = buildUserContent(finalText);
+  // 显示用户消息（含图片）
+  addMessage('user', userContent);
   
-  // 消息历史存储压缩版（节省 token）
-  state.messageHistory.push({ role: 'user', content: userContentForApi });
+  state.messageHistory.push({ role: 'user', content: userContent });
   
   saveChatHistory();
   
@@ -973,18 +968,13 @@ export async function sendMessage() {
   try {
     await ensureChatConfigLoaded();
     
-    // 发送前从 storage 同步最新的 modelName，避免因 options 页面修改或跨实例不同步导致模型不一致
-    const storedModelResult = await chrome.storage.local.get(['modelName', 'imageModelName', 'enableImageInput']);
-    if (storedModelResult.modelName && storedModelResult.modelName !== state.currentModel) {
-      console.log('[SidePanel] 检测到模型变更，从 storage 同步:', state.currentModel, '→', storedModelResult.modelName);
-      state.currentModel = storedModelResult.modelName;
-    }
-    // 重新计算 model，使用最新的 currentModel
-    const effectiveModel = state.enableImageInput && state.attachedImages.length > 0
-      ? (state.imageModelName || state.currentModel)
-      : state.currentModel;
+    // 获取当前 Agent 及其工具配置
+    const currentAgent = await getCurrentAgentPrompt();
+    const agentToolIds = getCurrentAgentToolIds(currentAgent);
     
     console.log('[SidePanel] 发送消息调试信息:');
+    console.log('  - agent:', currentAgent ? currentAgent.name : '默认助手');
+    console.log('  - agentToolIds:', agentToolIds);
     console.log('  - isolateChat:', state.isolateChat);
     console.log('  - chatConfig:', state.chatConfig);
     console.log('  - messageHistory.length:', state.messageHistory.length);
@@ -992,7 +982,7 @@ export async function sendMessage() {
     let messages = [
       {
         role: 'system',
-        content: getSystemPrompt()
+        content: getSystemPrompt(currentAgent)
       }
     ];
     
@@ -1000,8 +990,7 @@ export async function sendMessage() {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
       const configuredWindow = state.chatConfig.contextWindow || 0;
-      const toolCount = state.enabledTools.length || 50;
-      const messageBudget = getMessageBudget(model, toolCount, configuredWindow);
+      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
       
@@ -1043,7 +1032,7 @@ export async function sendMessage() {
       }
     } else {
       // 构建用户消息 content（支持图片附件）
-      const userContent = buildUserContent(finalTextForApi);
+      const userContent = buildUserContent(finalText);
       messages.push({ role: 'user', content: userContent });
     }
 
@@ -1053,14 +1042,13 @@ export async function sendMessage() {
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = state.chatConfig.contextWindow || 0;
     const msgTokens = estimateMessagesTokens(messages);
-    const contextWindow = getContextWindow(effectiveModel, configuredWindow);
+    const contextWindow = getContextWindow(model, configuredWindow);
     const pressure = assessContextPressure(msgTokens, contextWindow);
     console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (消息: ${messages.length} 条), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
     
     if (pressure.level === 'critical') {
       console.warn('[SidePanel] 上下文压力过高，主动裁剪...');
-      const toolCount2 = state.enabledTools.length || 50;
-      const budget = getMessageBudget(effectiveModel, toolCount2, configuredWindow);
+      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
       const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
       messages = trimResult.messages;
       console.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);
@@ -1071,7 +1059,7 @@ export async function sendMessage() {
     let streamingConnected = true;
     
     try {
-      const result = await callApi(messages, effectiveModel, state.useTools, apiParams);
+      const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -1473,9 +1461,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(warnBadge);
     }
     
-    // 使用最后一个成功的 preview_ui_prototype 调用（避免 action=get 返回旧 ID 覆盖 action=preview 的新 ID）
-    const prototypeCalls = executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success') || [];
-    const prototypeCall = prototypeCalls.length > 0 ? prototypeCalls[prototypeCalls.length - 1] : null;
+    const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
     if (prototypeCall) {
       const prototypeBtn = document.createElement('button');
       prototypeBtn.className = 'prototype-btn-small';
@@ -3335,40 +3321,6 @@ function appendToolCallItems(element, toolCalls) {
 }
 
 /**
- * 在 streaming 内容区实时展示视觉截图分析的流式结果
- * @param {HTMLElement} streamingElement - 当前流式消息元素
- * @param {string} content - 累积的完整分析文本
- */
-function showVisionAnalysisSection(streamingElement, content) {
-  const streamContent = streamingElement.querySelector('.stream-content');
-  if (!streamContent) return;
-
-  let section = streamContent.querySelector('.vision-analysis-section');
-  if (!section) {
-    section = document.createElement('div');
-    section.className = 'vision-analysis-section';
-    section.innerHTML = `
-      <div class="vision-analysis-header">
-        <span class="vision-analysis-label">截图分析</span>
-      </div>
-      <div class="vision-analysis-content">${escapeHtml(content)}</div>
-    `;
-    streamContent.appendChild(section);
-  } else {
-    const contentEl = section.querySelector('.vision-analysis-content');
-    if (contentEl) {
-      contentEl.innerHTML = escapeHtml(content);
-    }
-  }
-
-  // 自动滚动到底部
-  requestAnimationFrame(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
-}
-
-/**
  * 在流式消息的工具卡片中添加执行结果
  * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
  */
@@ -3776,33 +3728,6 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     footer.appendChild(warnBadge);
   }
   
-  // 原型查看按钮（流式输出也需添加）
-  const prototypeCalls = executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success') || [];
-  const prototypeCall = prototypeCalls.length > 0 ? prototypeCalls[prototypeCalls.length - 1] : null;
-  if (prototypeCall) {
-    const prototypeBtn = document.createElement('button');
-    prototypeBtn.className = 'prototype-btn-small';
-    prototypeBtn.type = 'button';
-    prototypeBtn.title = '查看 UI 原型';
-    prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
-    prototypeBtn.addEventListener('click', () => {
-      let prototypeId = prototypeCall.prototypeId;
-      if (!prototypeId && prototypeCall.observation) {
-        try {
-          const parsed = typeof prototypeCall.observation === 'string' 
-            ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
-          prototypeId = parsed?.prototypeId;
-        } catch (e) {}
-      }
-      if (prototypeId) {
-        loadAndShowPrototype(prototypeId);
-      } else {
-        console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
-      }
-    });
-    footer.appendChild(prototypeBtn);
-  }
-  
   element.querySelector('.message-content').appendChild(footer);
   
   // 绑定事件委托（执行日志/反思弹窗点击）
@@ -3910,12 +3835,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     _processStartTime = 0;
     let _streamedContent = '';
     let _agentStreams = {};  // execId -> { element, stdout, stderr }
-    let _visionAnalysisContent = '';  // 截图分析流式内容缓存
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
-      // 清除宽限期定时器
-      if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
       // 如果存在流式输出元素，清理思考中占位
       if (_se()) {
         finalizeCancelledStream(_se());
@@ -3935,47 +3857,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     syncPendingSessionsToStorage();
     console.log('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
-    // 超时策略：
-    // 1. 达到配置的超时时间时，仅显示"处理时间较长"的视觉反馈，不终止任务
-    //    —— 后台 ReAct 循环有自己的 loopTimeout，由后台自行决定何时终止
-    // 2. 3 倍配置超时后作为安全兜底：如果后台完全失联（SW 崩溃等），才正式取消
-    let _graceTimeoutId = null;
-    const SAFETY_NET_MULTIPLIER = 3; // 安全兜底为配置超时的 3 倍
-    
-    // 启动安全兜底定时器：后台完全失联时才正式取消
-    const _startSafetyNet = () => {
-      const safetyNetMs = timeoutMs * SAFETY_NET_MULTIPLIER;
-      _graceTimeoutId = setTimeout(() => {
-        console.log('[SidePanel] 安全兜底超时，后台已失联，正式取消');
-        cancelApi({
-          message: `请求超时（${Math.round(safetyNetMs / 1000)}秒），后台无响应`,
-          executionLog: executionLog
-        });
-        chrome.runtime.sendMessage({
-          type: 'CANCEL_REACT',
-          tabId: state.currentTabId,
-          sessionId: mySessionId
-        }).catch(err => {
-          console.log('[SidePanel] 发送取消请求失败:', err.message);
-        });
-      }, safetyNetMs);
-    };
-    
-    // 显示"处理时间较长"的视觉反馈
-    const _showLongRunningHint = () => {
-      if (_se()) {
-        const statusDiv = _se().querySelector('.stream-status');
-        if (statusDiv) {
-          statusDiv.classList.remove('hidden');
-          statusDiv.textContent = `处理时间较长（已超过 ${timeoutSeconds} 秒），请耐心等待...`;
-        }
-      }
-    };
-
     _timeoutCtx.timeoutId = setTimeout(() => {
-      console.log('[SidePanel] 请求超时，显示处理时间较长提示（不终止任务）...');
-      _showLongRunningHint();
-      _startSafetyNet();
+      cancelApi({
+        message: `请求超时（${timeoutSeconds}秒）`,
+        executionLog: executionLog
+      });
+      // 同时通知后台取消（超时场景）
+      chrome.runtime.sendMessage({
+        type: 'CANCEL_REACT',
+        tabId: state.currentTabId,
+        sessionId: state.activeSessionId
+      }).catch(err => {
+        console.log('[SidePanel] 发送取消请求失败:', err.message);
+      });
     }, timeoutMs);
     
     const loopStartTime = Date.now();
@@ -3987,10 +3881,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         pauseStartTime = Date.now();
         clearTimeout(_timeoutCtx.timeoutId);
         _timeoutCtx.timeoutId = null;
-        if (_graceTimeoutId !== null) {
-          clearTimeout(_graceTimeoutId);
-          _graceTimeoutId = null;
-        }
         console.log('[SidePanel] 前端超时已暂停（澄清工具执行中）');
       }
     };
@@ -4005,17 +3895,25 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         const remainingTime = timeoutMs + totalPausedDuration - elapsedTime;
         
         if (remainingTime <= 0) {
-          // 总时间已超过超时限制，不立即取消：显示提示，进入安全兜底等待
-          _showLongRunningHint();
-          _startSafetyNet();
+          cancelApi({
+            message: `请求超时（${timeoutSeconds}秒）`,
+            executionLog: executionLog
+          });
           return;
         }
         
-        // 重新启动超时计时器：超时后仅提示，不取消任务
         _timeoutCtx.timeoutId = setTimeout(() => {
-          console.log('[SidePanel] 请求超时，显示处理时间较长提示（不终止任务）...');
-          _showLongRunningHint();
-          _startSafetyNet();
+          cancelApi({
+            message: `请求超时（${timeoutSeconds}秒）`,
+            executionLog: executionLog
+          });
+          chrome.runtime.sendMessage({
+            type: 'CANCEL_REACT',
+            tabId: state.currentTabId,
+            sessionId: mySessionId
+          }).catch(err => {
+            console.log('[SidePanel] 发送取消请求失败:', err.message);
+          });
         }, remainingTime);
         
         console.log('[SidePanel] 前端超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(remainingTime / 1000), 's');
@@ -4033,20 +3931,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
         executionLog = message.executionLog || [];
-        // 根据执行状态更新流式消息的状态文本
-        if (_se() && message.nodeName) {
-          const statusDiv = _se().querySelector('.stream-status');
-          if (statusDiv) {
-            const statusMap = {
-              '质量评估': '质量评估中...',
-              '执行完成': '处理完成'
-            };
-            if (statusMap[message.nodeName]) {
-              statusDiv.classList.remove('hidden');
-              statusDiv.textContent = statusMap[message.nodeName];
-            }
-          }
-        }
         return false;
       }
       
@@ -4212,27 +4096,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         }
         return false;
       }
-
-      if (message.type === 'VISION_ANALYSIS_CHUNK') {
-        // 截图分析流式输出：在 streaming 内容区实时展示视觉模型的分析结果
-        if (_se() && message.sessionId === mySessionId) {
-          _visionAnalysisContent += message.delta;
-          showVisionAnalysisSection(_se(), _visionAnalysisContent);
-        }
-        return false;
-      }
-
+      
       if (message.type === 'STREAM_DONE') {
         if (_se()) {
-          // 流式输出完成，保持动画，API_COMPLETE 时才最终收尾
-          // 状态文本由 EXECUTION_STATUS_UPDATE（如"质量评估"）驱动
+          // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
+          const statusDiv = _se().querySelector('.stream-status');
+          if (statusDiv) {
+            statusDiv.textContent = '质量评估中...';
+          }
+          // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
         }
         return false;
       }
       
       if (message.type === 'API_COMPLETE') {
-        // 清除安全兜底定时器
-        if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
         // 流式消息：在 resolve 前添加底部工具栏
         if (_se() && message.content) {
           finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
@@ -4254,8 +4131,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         });
         return false;
       } else if (message.type === 'API_ERROR') {
-        // 清除安全兜底定时器
-        if (_graceTimeoutId) { clearTimeout(_graceTimeoutId); _graceTimeoutId = null; }
         cleanupCallApi();
         reject({
           message: message.error,
@@ -4281,6 +4156,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       useTools: useTools,
       tabId: state.currentTabId,
       apiParams: apiParams,
+      agentId: state.activeAgentId,
+      agentToolIds: agentToolIds,
       // 图片识别独立配置（仅当启用且有图片时传递）
       imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
       imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''
