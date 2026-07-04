@@ -6,6 +6,103 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 
+// ==================== MCP 工具动态注册 ====================
+
+// 已动态注册的 MCP 工具 ID 集合（用于去重和清理）
+const mcpToolIds = new Set();
+
+/**
+ * 从 Agent 拉取 MCP 工具列表并动态注入到 RAW_TOOLS 和 TOOL_HANDLERS
+ * Agent 未连通或不支持 MCP 时自动跳过
+ */
+export async function loadMcpTools() {
+  // 先清理之前注册的 MCP 工具
+  unloadMcpTools();
+
+  try {
+    const result = await AgentClient.getMcpTools();
+    if (!result.success || !result.tools || result.tools.length === 0) {
+      console.log('[Background] 无可用的 MCP 工具');
+      return 0;
+    }
+
+    let registered = 0;
+    for (const tool of result.tools) {
+      const toolId = `mcp:${tool.serverId}:${tool.name}`;
+
+      // 去重：同名工具只注册一次
+      if (mcpToolIds.has(toolId)) continue;
+
+      // 动态注入 RAW_TOOLS（让 LLM 能看到这个工具）
+      RAW_TOOLS.push({
+        id: toolId,
+        category: 'mcp',
+        execution: 'background',
+        parallelizable: true,
+        requiresConfirmation: false,
+        type: 'function',
+        function: {
+          name: toolId,
+          description: `[MCP:${tool.serverName}] ${tool.description || tool.name}`,
+          parameters: tool.inputSchema || { type: 'object', properties: {} }
+        }
+      });
+
+      // 动态注册 handler
+      TOOL_HANDLERS[toolId] = async (args, toolCallId) => {
+        const result = await AgentClient.callMcpTool(tool.serverId, tool.name, args);
+        return {
+          success: result.success,
+          content: result.content || result.error || '',
+          tool_call_id: toolCallId
+        };
+      };
+
+      mcpToolIds.add(toolId);
+      registered++;
+    }
+
+    // 重建 BG_HANDLERS（因为 RAW_TOOLS 变化了）
+    rebuildBgHandlers();
+
+    console.log(`[Background] 已加载 ${registered} 个 MCP 工具:`, [...mcpToolIds].join(', '));
+    return registered;
+  } catch (err) {
+    console.log('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
+    return 0;
+  }
+}
+
+/**
+ * 清理所有动态注册的 MCP 工具
+ */
+function unloadMcpTools() {
+  for (const toolId of mcpToolIds) {
+    // 从 RAW_TOOLS 中移除
+    const idx = RAW_TOOLS.findIndex(t => t.id === toolId);
+    if (idx >= 0) RAW_TOOLS.splice(idx, 1);
+
+    // 从 TOOL_HANDLERS 中移除
+    delete TOOL_HANDLERS[toolId];
+  }
+  mcpToolIds.clear();
+  rebuildBgHandlers();
+}
+
+/**
+ * 重建 BG_HANDLERS（RAW_TOOLS 变化后需要重新派生）
+ */
+function rebuildBgHandlers() {
+  for (const key of Object.keys(BG_HANDLERS)) {
+    delete BG_HANDLERS[key];
+  }
+  for (const tool of RAW_TOOLS) {
+    if (tool.execution === 'background' && TOOL_HANDLERS[tool.id]) {
+      BG_HANDLERS[tool.id] = TOOL_HANDLERS[tool.id];
+    }
+  }
+}
+
 // ==================== 敏感操作审计日志 ====================
 
 const AUDIT_LOG_KEY = 'sensitiveAuditLog';
@@ -666,6 +763,7 @@ const TOOL_HANDLERS = {
   wait_for_navigation: executeWaitForNavigation,
   dispatch_sub_agent: executeDispatchSubAgent,
   take_full_page_screenshot: executeTakeFullPageScreenshot,
+  skill_run: executeSkillRun,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -2206,6 +2304,31 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
 }
 
 // ========== 本地 Agent 工具处理函数 ==========
+
+/**
+ * Skill 执行
+ */
+async function executeSkillRun(args, toolCallId) {
+  const { name, params = {} } = args;
+  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
+
+  try {
+    const result = await AgentClient.runSkill(name, params);
+    if (result.success) {
+      return {
+        success: true,
+        content: result.message || `Skill "${name}" 执行完成`,
+        execId: result.execId,
+        partial: result.partial || false,
+        results: result.results,
+        tool_call_id: toolCallId
+      };
+    }
+    return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
+  } catch (err) {
+    return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
+  }
+}
 
 /**
  * Agent 文件读取

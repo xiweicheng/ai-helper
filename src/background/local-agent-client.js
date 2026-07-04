@@ -57,22 +57,31 @@ async function unpairAgent() {
 
 /**
  * 发送带认证的 HTTP 请求到 Agent
+ * @param {string} path
+ * @param {Object} [body]
+ * @param {string} [method='POST']
  */
-async function agentRequest(path, body = {}) {
+async function agentRequest(path, body = {}, method = 'POST') {
   const config = await getAgentConfig();
   if (!config.connected) {
     return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
   }
 
   try {
-    const response = await fetch(`${config.url}${path}`, {
-      method: 'POST',
+    const fetchOptions = {
+      method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.token}`
-      },
-      body: JSON.stringify(body)
-    });
+      }
+    };
+
+    // GET/DELETE 请求不需要 body
+    if (method !== 'GET' && method !== 'HEAD') {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(`${config.url}${path}`, fetchOptions);
     return await response.json();
   } catch (err) {
     return { success: false, error: `Agent 请求失败: ${err.message}` };
@@ -219,6 +228,103 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
   return ws;
 }
 
+// ========== MCP 相关 API ==========
+
+/**
+ * 获取所有 MCP 工具列表
+ * @param {string} [serverId] - 可选，只获取指定 Server 的工具
+ */
+async function getMcpTools(serverId) {
+  const path = serverId ? `/api/mcp/tools?serverId=${encodeURIComponent(serverId)}` : '/api/mcp/tools';
+  return agentGet(path);
+}
+
+/**
+ * 调用 MCP 工具
+ */
+async function callMcpTool(serverId, toolName, args) {
+  return agentRequest('/api/mcp/call', { serverId, toolName, args });
+}
+
+/**
+ * 获取所有 MCP Server 配置及状态
+ */
+async function getMcpServers() {
+  return agentGet('/api/mcp/servers');
+}
+
+/**
+ * 添加 MCP Server
+ */
+async function addMcpServer(serverConfig) {
+  return agentRequest('/api/mcp/servers', serverConfig);
+}
+
+/**
+ * 删除 MCP Server
+ */
+async function removeMcpServer(serverId) {
+  return agentRequest('/api/mcp/servers', { id: serverId }, 'DELETE');
+}
+
+/**
+ * 连接 MCP Server
+ */
+async function connectMcpServer(serverId) {
+  return agentRequest('/api/mcp/servers/connect', { id: serverId });
+}
+
+/**
+ * 断开 MCP Server
+ */
+async function disconnectMcpServer(serverId) {
+  return agentRequest('/api/mcp/servers/disconnect', { id: serverId });
+}
+
+/**
+ * 切换 MCP Server 启用状态
+ */
+async function toggleMcpServer(serverId, enabled) {
+  return agentRequest('/api/mcp/servers/toggle', { id: serverId, enabled }, 'PUT');
+}
+
+// ========== Skill 相关 API ==========
+
+/**
+ * 获取所有 Skill 列表
+ */
+async function getSkills() {
+  return agentGet('/api/skill/list');
+}
+
+/**
+ * 获取单个 Skill 详情
+ */
+async function getSkillDetail(name) {
+  return agentGet(`/api/skill/detail?name=${encodeURIComponent(name)}`);
+}
+
+/**
+ * 执行 Skill
+ */
+async function runSkill(name, params) {
+  return agentRequest('/api/skill/run', { name, params });
+}
+
+/**
+ * 导入 Skill
+ */
+async function importSkill(skillDef) {
+  return agentRequest('/api/skill/import', skillDef);
+}
+
+/**
+ * 删除 Skill
+ */
+async function deleteSkill(name) {
+  return agentRequest('/api/skill/delete', { name }, 'DELETE');
+}
+
 export {
   getAgentConfig,
   isAgentPaired,
@@ -236,5 +342,20 @@ export {
   stopCommand,
   getAgentStatus,
   getAgentDetail,
-  createExecWebSocket
+  createExecWebSocket,
+  // MCP 相关
+  getMcpTools,
+  callMcpTool,
+  getMcpServers,
+  addMcpServer,
+  removeMcpServer,
+  connectMcpServer,
+  disconnectMcpServer,
+  toggleMcpServer,
+  // Skill 相关
+  getSkills,
+  getSkillDetail,
+  runSkill,
+  importSkill,
+  deleteSkill
 };

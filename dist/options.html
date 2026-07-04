@@ -1547,9 +1547,375 @@
       border-radius: 3px;
       font-size: 12px;
     }
+
+    /* ========== 工具箱 Tab 样式 ========== */
+    .toolbox-agent-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .toolbox-agent-status.connected {
+      background: #f0fff4;
+      border: 1px solid #c6f6d5;
+      color: #38a169;
+    }
+    .toolbox-agent-status.disconnected {
+      background: #fff5f5;
+      border: 1px solid #fed7d7;
+      color: #e53e3e;
+    }
+    .toolbox-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .toolbox-status-dot.connected {
+      background: #38a169;
+    }
+    .toolbox-status-dot.disconnected {
+      background: #e53e3e;
+    }
+
+    .toolbox-section {
+      margin-bottom: 24px;
+    }
+    .toolbox-section-header {
+      margin-bottom: 12px;
+    }
+    .toolbox-section-title {
+      color: #667eea;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .toolbox-section-desc {
+      font-size: 12px;
+      color: #999;
+    }
+
+    /* 空状态 */
+    .toolbox-empty {
+      text-align: center;
+      padding: 32px 16px;
+      color: #999;
+    }
+    .toolbox-empty-icon {
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+    .toolbox-empty-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      margin-bottom: 6px;
+    }
+    .toolbox-empty-desc {
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    /* MCP 服务器卡片 */
+    .mcp-server-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      background: #fafafa;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .mcp-server-card:hover {
+      border-color: #667eea;
+      background: #f5f7ff;
+    }
+    .mcp-server-card.disabled {
+      opacity: 0.55;
+    }
+    .mcp-server-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .mcp-server-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .mcp-server-status {
+      font-size: 12px;
+    }
+    .mcp-server-name {
+      color: #333;
+    }
+    .mcp-server-badge {
+      font-size: 11px;
+      background: #e8f0fe;
+      color: #667eea;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-weight: 400;
+    }
+    .mcp-server-tools-count {
+      font-size: 12px;
+      color: #888;
+    }
+    .mcp-server-command {
+      margin-bottom: 10px;
+    }
+    .mcp-server-command code {
+      font-size: 12px;
+      background: #edf2f7;
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #555;
+      word-break: break-all;
+    }
+    .mcp-server-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Skill 卡片 */
+    .skill-card {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      background: #fafafa;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .skill-card:hover {
+      border-color: #667eea;
+      background: #f5f7ff;
+    }
+    .skill-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .skill-card-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .skill-card-icon {
+      font-size: 16px;
+    }
+    .skill-card-name {
+      font-weight: 500;
+      color: #333;
+    }
+    .skill-card-version {
+      font-size: 11px;
+      background: #f0f0f0;
+      color: #888;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .skill-card-step-count {
+      font-size: 11px;
+      background: #e8f0fe;
+      color: #667eea;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .skill-card-desc {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .skill-card-params {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .skill-param-tag {
+      font-size: 11px;
+      background: #fef3c7;
+      color: #92400e;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .skill-param-tag.required {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+    .skill-card-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* 工具箱按钮 */
+    .toolbox-btn {
+      padding: 4px 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .toolbox-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .toolbox-btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .toolbox-btn-primary:hover:not(:disabled) {
+      background: #5a6fd6;
+    }
+    .toolbox-btn-warn {
+      background: #ed8936;
+      color: white;
+    }
+    .toolbox-btn-warn:hover:not(:disabled) {
+      background: #dd6b20;
+    }
+    .toolbox-btn-danger {
+      background: transparent;
+      color: #e53e3e;
+      border: 1px solid transparent;
+    }
+    .toolbox-btn-danger:hover:not(:disabled) {
+      background: #fff5f5;
+      border-color: #fed7d7;
+    }
+    .toolbox-btn-cancel {
+      background: #f0f0f0;
+      color: #666;
+    }
+    .toolbox-btn-cancel:hover {
+      background: #e0e0e0;
+    }
+
+    /* 添加按钮 */
+    .toolbox-add-btn {
+      width: 100%;
+      padding: 10px 16px;
+      background: transparent;
+      border: 1px dashed #ccc;
+      border-radius: 8px;
+      color: #888;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      margin-top: 8px;
+    }
+    .toolbox-add-btn:hover:not(:disabled) {
+      border-color: #667eea;
+      color: #667eea;
+      background: #f0f4ff;
+    }
+    .toolbox-add-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .toolbox-section-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .toolbox-section-actions .toolbox-add-btn {
+      flex: 1;
+      margin-top: 0;
+    }
+
+    /* 切换开关 */
+    .toolbox-toggle {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+      cursor: pointer;
+      margin-right: auto;
+    }
+    .toolbox-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .toolbox-toggle-slider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #ccc;
+      border-radius: 20px;
+      transition: background 0.3s;
+    }
+    .toolbox-toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      bottom: 2px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toolbox-toggle input:checked + .toolbox-toggle-slider {
+      background: #667eea;
+    }
+    .toolbox-toggle input:checked + .toolbox-toggle-slider::before {
+      transform: translateX(16px);
+    }
+
+    /* 添加 MCP 表单 */
+    .mcp-add-form {
+      background: #f8f9fc;
+      border: 1px solid #e8ecf4;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 8px;
+    }
+    .mcp-add-form-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .mcp-add-form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .toolbox-input {
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      flex: 1;
+      min-width: 0;
+      transition: border-color 0.2s;
+    }
+    .toolbox-input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
   </style>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-MgsnqggU.js"></script>
+  <script type="module" crossorigin src="/assets/constants-B6LDMk09.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
 </head>
 <body>
@@ -1584,6 +1950,7 @@
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
       <button class="tab-nav-btn" data-tab="agent">代理</button>
+      <button class="tab-nav-btn" data-tab="toolbox">工具箱</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -2329,6 +2696,49 @@
       </div>
     </div>
     </div><!-- /tab-agent -->
+
+    <!-- 工具箱配置区域 -->
+    <div class="tab-panel" data-tab="toolbox">
+      <div class="toolbox-agent-status disconnected" id="toolboxAgentStatus">
+        <span class="toolbox-status-dot disconnected"></span> 正在检查 Agent 连接...
+      </div>
+
+      <!-- MCP 服务器管理 -->
+      <div class="toolbox-section">
+        <div class="toolbox-section-header">
+          <h2 class="toolbox-section-title">🔌 MCP 服务器管理</h2>
+          <span class="toolbox-section-desc">通过 MCP 协议连接外部工具服务器，扩展 AI 助手的工具能力</span>
+        </div>
+        <div class="toolbox-list" id="mcpServerList">
+          <div class="toolbox-empty">
+            <div class="toolbox-empty-icon">⏳</div>
+            <div class="toolbox-empty-title">加载中...</div>
+          </div>
+        </div>
+        <div id="mcpAddForm"></div>
+        <button class="toolbox-add-btn" id="addMcpServerBtn" disabled>+ 添加 MCP 服务器</button>
+      </div>
+
+      <!-- Skill 管理 -->
+      <div class="toolbox-section">
+        <div class="toolbox-section-header">
+          <h2 class="toolbox-section-title">🧩 Skill 管理</h2>
+          <span class="toolbox-section-desc">管理可复用的工作流 Skill，让 AI 按预定义步骤执行多步任务</span>
+        </div>
+        <div class="toolbox-list" id="skillList">
+          <div class="toolbox-empty">
+            <div class="toolbox-empty-icon">⏳</div>
+            <div class="toolbox-empty-title">加载中...</div>
+          </div>
+        </div>
+        <div class="toolbox-section-actions">
+          <button class="toolbox-add-btn" id="importSkillBtn" disabled>+ 导入 Skill</button>
+          <button class="toolbox-add-btn" id="reloadSkillsBtn" disabled>🔄 重新加载</button>
+        </div>
+      </div>
+
+      <input type="file" id="importSkillFile" accept=".json" style="display:none;">
+    </div><!-- /tab-toolbox -->
 
     <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
 

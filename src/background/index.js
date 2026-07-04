@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools } from './tool-executor.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -595,6 +595,13 @@ async function performAgentHealthCheck() {
       const detail = connected ? '代理服务已恢复' : '代理服务不可达';
       console.log(`[Background] 代理健康检查状态变化: ${detail}`);
       notifyAgentStatusChange(connected, status);
+
+      // Agent 连接恢复时，重新加载 MCP 工具
+      if (connected) {
+        loadMcpTools().then(count => {
+          if (count > 0) console.log(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
+        }).catch(() => {});
+      }
     }
   } catch (err) {
     console.warn('[Background] 代理健康检查异常:', err.message);

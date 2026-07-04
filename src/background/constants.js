@@ -1897,6 +1897,32 @@ export const RAW_TOOLS = [
       }
     }
   },
+  {
+    id: 'skill_run',
+    category: 'mcp',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'skill_run',
+      description: '执行一个预定义的 Skill（技能）。Skill 是封装了多步操作的可复用流程。可用的 Skill 列表会在系统提示词中提供。\n\n使用示例：\n- 创建 React 组件模板\n- 执行标准化 Git 提交流程\n- 批量处理文件操作',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Skill 名称。例如: create-react-component, git-conventional-commit'
+          },
+          params: {
+            type: 'object',
+            description: 'Skill 所需的参数对象。具体参数取决于 Skill 定义。'
+          }
+        },
+        required: ['name']
+      }
+    }
+  },
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================
@@ -1914,6 +1940,7 @@ export const CATEGORY_WEIGHT = {
   debug_dev: 9,
   ai_collaboration: 10,
   local_agent: 11,
+  mcp: 12,
 };
 
 // 从 RAW_TOOLS 动态派生分类顺序列表（单一数据源，无需手动维护）

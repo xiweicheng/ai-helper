@@ -17,6 +17,7 @@ import {
   removeBlockedDomain
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
+import { initToolbox, refreshToolbox } from './toolbox-config.js';
 
 let currentTools = [];
 
@@ -39,7 +40,7 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -562,6 +563,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   initConfigIOEvents();
+
+  // 初始化工具箱 Tab（延迟加载，页面对 Agent 连接状态有依赖）
+  initToolbox();
+
+  // 切换到工具箱 Tab 时刷新数据（因为 Agent 可能在其他 Tab 连接后变可用）
+  document.querySelector('[data-tab="toolbox"]')?.addEventListener('click', () => {
+    refreshToolbox();
+  });
 });
 
 // 持久化并重新渲染
