@@ -327,6 +327,11 @@ function updateCategoryBadges() {
     }
     
     badge.textContent = `${enabledCount}/${totalCount}`;
+    
+    // 隐藏工具数为 0 的分类标签（保留"全部"标签不隐藏）
+    if (category !== 'all' && badge.parentElement) {
+      badge.parentElement.style.display = totalCount === 0 ? 'none' : '';
+    }
   });
 }
 
