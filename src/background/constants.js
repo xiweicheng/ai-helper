@@ -1503,7 +1503,7 @@ export const RAW_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_read_file',
-      description: '通过本地 Agent 读取本地文件系统的文件内容。需要先在设置中完成 Agent 配对，确保 Agent 服务正在运行。只能读取 Agent 工作目录及其白名单目录内的文件。',
+      description: '通过本地 Agent 读取本地文件系统的文件内容。需要先在设置中完成 Agent 配对，确保代理服务正在运行。只能读取 Agent 工作目录及其白名单目录内的文件。',
       parameters: {
         type: 'object',
         properties: {

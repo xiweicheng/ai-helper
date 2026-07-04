@@ -989,7 +989,7 @@ export async function sendMessage() {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
       const configuredWindow = state.chatConfig.contextWindow || 0;
-      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow, state.customModelMap);
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
       
@@ -1041,13 +1041,13 @@ export async function sendMessage() {
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = state.chatConfig.contextWindow || 0;
     const msgTokens = estimateMessagesTokens(messages);
-    const contextWindow = getContextWindow(model, configuredWindow);
+    const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
     const pressure = assessContextPressure(msgTokens, contextWindow);
     console.log(`[SidePanel] 发送上下文: ${msgTokens} tokens (消息: ${messages.length} 条), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
     
     if (pressure.level === 'critical') {
       console.warn('[SidePanel] 上下文压力过高，主动裁剪...');
-      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow);
+      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow, state.customModelMap);
       const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
       messages = trimResult.messages;
       console.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);

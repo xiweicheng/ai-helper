@@ -3,7 +3,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
-import { estimateMessagesTokens, getMessageBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
+import { estimateMessagesTokens, getMessageBudget, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initClarifyEvents } from './clarify-dialog.js';
@@ -188,16 +188,66 @@ function loadCustomModelsToDropdown(customModels, callback) {
     }
 
     const presetModels = ['deepseek-v4-pro', 'deepseek-v4-flash'];
+    let needsMigration = false;
 
-    customModels.forEach(modelName => {
-      if (presetModels.includes(modelName)) return;
+    customModels.forEach(item => {
+      // 向前兼容：旧格式为字符串，新格式为对象
+      let modelName, contextWindow = 0;
+      if (typeof item === 'string') {
+        modelName = item;
+        needsMigration = true;
+      } else if (item && typeof item === 'object' && item.name) {
+        modelName = item.name;
+        contextWindow = item.contextWindow || 0;
+      } else {
+        return;
+      }
+
+      if (presetModels.includes(modelName)) {
+        // 预设模型若有自定义上下文窗口配置，则在已有选项中显示标签
+        if (contextWindow && contextWindow > 0) {
+          const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
+          if (existingOption) {
+            let leftSpan = existingOption.querySelector('.model-option-left');
+            if (!leftSpan) {
+              // 给旧结构的预设选项也包裹模型名
+              leftSpan = document.createElement('span');
+              leftSpan.className = 'model-option-left';
+              leftSpan.textContent = existingOption.textContent;
+              existingOption.textContent = '';
+              existingOption.insertBefore(leftSpan, existingOption.firstChild);
+            }
+            const badge = leftSpan.querySelector('.model-ctx-badge');
+            if (badge) {
+              badge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
+            } else {
+              const ctxBadge = document.createElement('span');
+              ctxBadge.className = 'model-ctx-badge';
+              ctxBadge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
+              leftSpan.appendChild(ctxBadge);
+            }
+          }
+        }
+        return;
+      }
       const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
       if (existingOption) return;
 
       const option = document.createElement('div');
       option.className = 'model-option';
       option.dataset.value = modelName;
-      option.innerHTML = `<span class="model-option-check"></span>${modelName}`;
+      option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${modelName}</span>`;
+
+      // 上下文窗口大小标签（追加到名称包裹容器内）
+      if (contextWindow && contextWindow > 0) {
+        const leftSpan = option.querySelector('.model-option-left');
+        if (leftSpan) {
+          const ctxBadge = document.createElement('span');
+          ctxBadge.className = 'model-ctx-badge';
+          ctxBadge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
+          leftSpan.appendChild(ctxBadge);
+        }
+      }
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -208,6 +258,18 @@ function loadCustomModelsToDropdown(customModels, callback) {
 
       tempDropdown.querySelector('.model-section').appendChild(option);
     });
+
+    // 如果存在旧格式数据，自动迁移
+    if (needsMigration) {
+      const migrated = customModels.map(item => {
+        if (typeof item === 'string') return { name: item, contextWindow: 0 };
+        return item;
+      });
+      chrome.storage.local.set({ customModels: migrated });
+    }
+
+    // 构建运行时上下文窗口映射
+    state.customModelMap = normalizeCustomModels(customModels);
 
     if (typeof callback === 'function') {
       callback();
@@ -390,7 +452,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       // Token 预算驱动：根据模型上下文窗口动态裁剪
       const configuredWindow = state.chatConfig.contextWindow || 0;
       const toolCount = state.enabledTools.length || 50;
-      const messageBudget = getMessageBudget(model, toolCount, configuredWindow);
+      const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
       const historyBudget = Math.floor(messageBudget * 0.7);
       
       const historyWithoutCurrent = state.messageHistory.slice(0, -1);

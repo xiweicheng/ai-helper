@@ -46,7 +46,7 @@ async function checkAgentConnectivity() {
     return false;
   }
 
-  // 第二步：有凭据，但需确认 Agent 服务是否可达（1.5 秒超时）
+  // 第二步：有凭据，但需确认 代理服务是否可达（1.5 秒超时）
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);

@@ -107,6 +107,9 @@ export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
 // 标志位
 export let isScrolling = false;
 
+// 自定义模型上下文窗口映射（modelName → contextWindow）
+export let customModelMap = new Map();
+
 // ============================================================
 // default 导出：通过 getter/setter 代理到同名 let 变量
 // 使用方式: import state from './state.js'; state.xxx = value;
@@ -243,4 +246,6 @@ export default {
   set attachedImages(v) { attachedImages = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
+  get customModelMap() { return customModelMap; },
+  set customModelMap(v) { customModelMap = v; },
 };

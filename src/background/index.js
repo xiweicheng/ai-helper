@@ -576,7 +576,7 @@ async function performAgentHealthCheck() {
       return;
     }
     
-    // Ping Agent 服务确认可达性
+    // Ping 代理服务确认可达性
     let connected = false;
     try {
       const controller = new AbortController();
@@ -592,17 +592,17 @@ async function performAgentHealthCheck() {
       wasAgentConnected = connected;
       clearAgentConnectivityCache();
       const status = connected ? 'connected' : 'disconnected';
-      const detail = connected ? 'Agent 服务已恢复' : 'Agent 服务不可达';
-      console.log(`[Background] Agent 健康检查状态变化: ${detail}`);
+      const detail = connected ? '代理服务已恢复' : '代理服务不可达';
+      console.log(`[Background] 代理健康检查状态变化: ${detail}`);
       notifyAgentStatusChange(connected, status);
     }
   } catch (err) {
-    console.warn('[Background] Agent 健康检查异常:', err.message);
+    console.warn('[Background] 代理健康检查异常:', err.message);
   }
 }
 
 /**
- * 通知 Side Panel Agent 状态变化
+ * 通知 Side Panel 代理 状态变化
  */
 function notifyAgentStatusChange(connected, status) {
   chrome.runtime.sendMessage({

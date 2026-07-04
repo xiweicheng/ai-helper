@@ -1,6 +1,6 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
-import { getStoredConfig } from './config.js';
+import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
@@ -118,7 +118,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const getReactTokenBudget = (modelName) => {
     if (reactTokenBudget === null) {
       // getMessageBudget 已减去了系统提示词、工具定义和输出预留
-      reactTokenBudget = getMessageBudget(modelName, tools.length);
+      reactTokenBudget = getMessageBudget(modelName, tools.length, 0, chatConfig.customModelMap);
       console.log(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName})`);
     }
     return reactTokenBudget;
@@ -223,6 +223,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const abortSignal = abortController?.signal;
   
   const config = await getStoredConfig();
+  const chatConfig = await getChatConfig();
   
   // 如果传入了图片识别独立配置，则覆盖默认配置
   if (apiParams && apiParams.imageApiBase) {
@@ -379,7 +380,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 上下文压力评估：在每次 API 调用前检查 token 使用量
       const filteredTokens = estimateMessagesTokens(filteredMessages);
       const toolTokens = estimateToolsTokens(apiTools.length);
-      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName));
+      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName, 0, chatConfig.customModelMap));
       if (pressure.level !== 'safe') {
         console.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, ${filteredTokens} tokens ${filteredMessages.length} 条消息)`);
       }

@@ -76,31 +76,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     modelDropdown.classList.toggle('show');
   });
   
-  modelInput.addEventListener('input', function() {
-    const value = modelInput.value.trim();
-    setCurrentModel(value);
-  });
-  
-  let blurTimeout;
-  modelInput.addEventListener('blur', function() {
-    blurTimeout = setTimeout(function() {
-      const value = modelInput.value.trim();
-      if (value) {
-        addCustomModelToDropdown(value);
-      }
-      if (!value) {
-        modelInput.value = currentModel || 'deepseek-v4-pro';
-      }
-    }, 200);
-  });
-  
-  modelInput.addEventListener('focus', function() {
-    if (blurTimeout) {
-      clearTimeout(blurTimeout);
-      blurTimeout = null;
-    }
-  });
-  
   modelDropdown.addEventListener('click', function(e) {
     if (e.target.classList.contains('delete-model-btn')) {
       e.stopPropagation();
@@ -125,6 +100,66 @@ document.addEventListener('DOMContentLoaded', async function() {
       modelDropdown.classList.remove('show');
     }
   });
+
+  // ==================== 添加自定义模型表单事件 ====================
+
+  const addModelToggleBtn = document.getElementById('addModelToggleBtn');
+  const addModelForm = document.getElementById('addModelForm');
+  const addModelName = document.getElementById('addModelName');
+  const addModelContextWindow = document.getElementById('addModelContextWindow');
+  const confirmAddModelBtn = document.getElementById('confirmAddModelBtn');
+  const cancelAddModelBtn = document.getElementById('cancelAddModelBtn');
+
+  if (addModelToggleBtn && addModelForm) {
+    addModelToggleBtn.addEventListener('click', function() {
+      const isVisible = addModelForm.style.display !== 'none';
+      addModelForm.style.display = isVisible ? 'none' : '';
+      addModelToggleBtn.textContent = isVisible ? '+ 添加模型' : '− 收起';
+      if (!isVisible) {
+        addModelName.value = '';
+        addModelContextWindow.value = '';
+        addModelName.focus();
+      }
+    });
+
+    cancelAddModelBtn.addEventListener('click', function() {
+      addModelForm.style.display = 'none';
+      addModelToggleBtn.textContent = '+ 添加模型';
+      addModelName.value = '';
+      addModelContextWindow.value = '';
+    });
+
+    confirmAddModelBtn.addEventListener('click', function() {
+      const name = addModelName.value.trim();
+      const ctxWindow = parseInt(addModelContextWindow.value) || 0;
+      if (!name) {
+        showToast('❌ 请输入模型名称', 'error');
+        return;
+      }
+      addCustomModelToDropdown(name, ctxWindow);
+      modelInput.value = name;
+      setCurrentModel(name);
+      updateModelSelection(name);
+      chrome.storage.local.set({ modelName: name });
+      addModelForm.style.display = 'none';
+      addModelToggleBtn.textContent = '+ 添加模型';
+      addModelName.value = '';
+      addModelContextWindow.value = '';
+      showToast('✅ 模型已添加', 'success');
+    });
+
+    // 回车键确认添加
+    addModelName.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        confirmAddModelBtn.click();
+      }
+    });
+    addModelContextWindow.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        confirmAddModelBtn.click();
+      }
+    });
+  }
 
   // ==================== 图片识别模型选择器事件 ====================
 
@@ -155,29 +190,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       imageModelDropdown.classList.toggle('show');
     });
 
-    imageModelInput.addEventListener('input', function() {
-      const value = imageModelInput.value.trim();
-      setCurrentImageModel(value);
-    });
-
-    let imageBlurTimeout;
-    imageModelInput.addEventListener('blur', function() {
-      imageBlurTimeout = setTimeout(function() {
-        const value = imageModelInput.value.trim();
-        if (value) {
-          addCustomImageModelToDropdown(value);
-        }
-        // 空值允许，表示使用基础模型
-      }, 200);
-    });
-
-    imageModelInput.addEventListener('focus', function() {
-      if (imageBlurTimeout) {
-        clearTimeout(imageBlurTimeout);
-        imageBlurTimeout = null;
-      }
-    });
-
     imageModelDropdown.addEventListener('click', function(e) {
       if (e.target.classList.contains('delete-model-btn')) {
         e.stopPropagation();
@@ -200,6 +212,66 @@ document.addEventListener('DOMContentLoaded', async function() {
     document.addEventListener('click', function(e) {
       if (!imageModelDropdown.contains(e.target) && e.target !== imageModelInput) {
         imageModelDropdown.classList.remove('show');
+      }
+    });
+  }
+
+  // ==================== 图片模型添加表单事件 ====================
+
+  const addImageModelToggleBtn = document.getElementById('addImageModelToggleBtn');
+  const addImageModelForm = document.getElementById('addImageModelForm');
+  const addImageModelName = document.getElementById('addImageModelName');
+  const addImageModelContextWindow = document.getElementById('addImageModelContextWindow');
+  const confirmAddImageModelBtn = document.getElementById('confirmAddImageModelBtn');
+  const cancelAddImageModelBtn = document.getElementById('cancelAddImageModelBtn');
+
+  if (addImageModelToggleBtn && addImageModelForm) {
+    addImageModelToggleBtn.addEventListener('click', function() {
+      const isVisible = addImageModelForm.style.display !== 'none';
+      addImageModelForm.style.display = isVisible ? 'none' : '';
+      addImageModelToggleBtn.textContent = isVisible ? '+ 添加模型' : '− 收起';
+      if (!isVisible) {
+        addImageModelName.value = '';
+        addImageModelContextWindow.value = '';
+        addImageModelName.focus();
+      }
+    });
+
+    cancelAddImageModelBtn.addEventListener('click', function() {
+      addImageModelForm.style.display = 'none';
+      addImageModelToggleBtn.textContent = '+ 添加模型';
+      addImageModelName.value = '';
+      addImageModelContextWindow.value = '';
+    });
+
+    confirmAddImageModelBtn.addEventListener('click', function() {
+      const name = addImageModelName.value.trim();
+      const ctxWindow = parseInt(addImageModelContextWindow.value) || 0;
+      if (!name) {
+        showToast('❌ 请输入模型名称', 'error');
+        return;
+      }
+      addCustomImageModelToDropdown(name, ctxWindow);
+      imageModelInput.value = name;
+      setCurrentImageModel(name);
+      updateImageModelSelection(name);
+      chrome.storage.local.set({ imageModelName: name });
+      addImageModelForm.style.display = 'none';
+      addImageModelToggleBtn.textContent = '+ 添加模型';
+      addImageModelName.value = '';
+      addImageModelContextWindow.value = '';
+      showToast('✅ 图片模型已添加', 'success');
+    });
+
+    // 回车键确认添加
+    addImageModelName.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        confirmAddImageModelBtn.click();
+      }
+    });
+    addImageModelContextWindow.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        confirmAddImageModelBtn.click();
       }
     });
   }
@@ -715,7 +787,7 @@ function initAgentConfig() {
       }
     } catch {
       await chrome.storage.local.remove('agentPlatform');
-      updateStatusUI('disconnected', '无法连接到 Agent - 请确认 Agent 服务已启动');
+      updateStatusUI('disconnected', '无法连接到代理 - 请确认代理服务已启动');
     }
   }
 
@@ -801,7 +873,7 @@ function initAgentConfig() {
         showToast('❌ ' + (data.error || '配对失败'), 'error');
       }
     } catch (err) {
-      updateStatusUI('disconnected', '连接失败 - 请确认 Agent 服务已启动');
+      updateStatusUI('disconnected', '连接失败 - 请确认代理服务已启动');
       showToast('❌ 无法连接到 Agent: ' + err.message, 'error');
     } finally {
       connectBtn.disabled = false;

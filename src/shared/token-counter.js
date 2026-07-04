@@ -200,14 +200,42 @@ export const MODEL_CONTEXT_WINDOWS = {
 };
 
 /**
+ * 标准化自定义模型配置数组，向前兼容旧格式（string[] → object[]）
+ * @param {Array<string|{name: string, contextWindow?: number}>} customModels
+ * @returns {Map<string, number>} modelName → contextWindow 的映射
+ */
+export function normalizeCustomModels(customModels) {
+  const map = new Map();
+  if (!customModels || !Array.isArray(customModels)) return map;
+  for (const item of customModels) {
+    if (typeof item === 'string') {
+      // 旧格式：仅模型名，上下文窗口未知，不加入 map（回退到内置映射）
+      continue;
+    }
+    if (item && typeof item === 'object' && item.name) {
+      map.set(item.name, item.contextWindow || 0);
+    }
+  }
+  return map;
+}
+
+/**
  * 获取模型上下文窗口大小
- * 优先级：用户配置 > 内置映射 > default
+ * 优先级：自定义模型配置 > 用户全局配置 > 内置映射 > default
  * @param {string} modelName
- * @param {number} [userConfiguredWindow] - 用户手动配置的上下文窗口
+ * @param {number} [userConfiguredWindow] - 用户手动配置的上下文窗口（全局覆盖）
+ * @param {Map<string, number>} [customModelMap] - 自定义模型的上下文窗口映射
  * @returns {number}
  */
-export function getContextWindow(modelName, userConfiguredWindow) {
+export function getContextWindow(modelName, userConfiguredWindow, customModelMap) {
+  // 1. 优先使用自定义模型中该模型单独配置的上下文窗口
+  if (customModelMap && customModelMap.has(modelName)) {
+    const window = customModelMap.get(modelName);
+    if (window && window > 0) return window;
+  }
+  // 2. 全局上下文窗口覆盖
   if (userConfiguredWindow && userConfiguredWindow > 0) return userConfiguredWindow;
+  // 3. 内置模型映射
   return MODEL_CONTEXT_WINDOWS[modelName] || MODEL_CONTEXT_WINDOWS.default;
 }
 
@@ -231,10 +259,11 @@ export const OUTPUT_BUDGET = 4096;
  * @param {string} modelName
  * @param {number} toolCount
  * @param {number} [userConfiguredWindow]
+ * @param {Map<string, number>} [customModelMap] - 自定义模型的上下文窗口映射
  * @returns {number}
  */
-export function getMessageBudget(modelName, toolCount = 0, userConfiguredWindow) {
-  const contextWindow = getContextWindow(modelName, userConfiguredWindow);
+export function getMessageBudget(modelName, toolCount = 0, userConfiguredWindow, customModelMap) {
+  const contextWindow = getContextWindow(modelName, userConfiguredWindow, customModelMap);
   return contextWindow - SYSTEM_PROMPT_BUDGET - estimateToolsTokens(toolCount) - OUTPUT_BUDGET;
 }
 

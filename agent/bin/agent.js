@@ -122,10 +122,10 @@ function printHelp() {
   console.log('用法: ai-helper-agent <命令> [选项]');
   console.log('');
   console.log('命令:');
-  console.log('  start        启动 Agent 服务（前台运行）');
-  console.log('  stop         停止正在运行的 Agent');
-  console.log('  restart      重启 Agent 服务');
-  console.log('  status       查看 Agent 运行状态');
+  console.log('  start        启动代理服务（前台运行）');
+  console.log('  stop         停止正在运行的代理');
+  console.log('  restart      重启代理服务');
+  console.log('  status       查看代理运行状态');
   console.log('  paircode     查看当前配对码（需认证状态）');
   console.log('  config       查看当前配置');
   console.log('  help         显示此帮助信息');

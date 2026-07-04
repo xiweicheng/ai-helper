@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 59 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配本地 Agent 服务实现文件系统操作与命令执行。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 59 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配本地代理服务实现文件系统操作与命令执行。
 
 | 特性 | 说明 |
 |------|------|
@@ -37,7 +37,7 @@
 │  ├── tool-executor.js      │
 │  ├── tool-preselector.js   │
 │  ├── local-agent-client.js │    ┌──────────────────────────────┐
-│  ├── config.js             │    │   本地 Agent 服务 (可选层)     │
+│  ├── config.js             │    │   本地代理服务 (可选层)     │
 │  └── state.js              │    │  agent/ (Node.js 独立进程)    │
 └──────────────┬─────────────┘    │  HTTP REST + WebSocket       │
                │                   │  文件读写 | 命令执行 | 搜索   │
@@ -88,7 +88,7 @@
 
 ```
 ai-helper/
-├── agent/                               # 本地 Agent 服务（Node.js 独立进程）
+├── agent/                               # 本地代理服务（Node.js 独立进程）
 │   ├── bin/agent.js                     # CLI 启动脚本
 │   ├── src/
 │   │   ├── server.js                    # HTTP + WebSocket 服务端
@@ -415,7 +415,7 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 | `pick_color` | 取色器（EyeDropper API） |
 | `text_to_speech` | 文本语音朗读（Web Speech API） |
 
-### 本地 Agent（7 个）—— 需安装本地 Agent 服务
+### 本地 Agent（7 个）—— 需安装本地代理服务
 | 工具 | 说明 |
 |------|------|
 | `agent_read_file` | 读取本地文件（路径沙箱，大小限制） |
@@ -465,9 +465,9 @@ Agent 命令执行三级安全：
 
 ---
 
-## 本地 Agent 服务
+## 本地代理服务
 
-扩展可选配一个本地 Node.js Agent 服务，提供浏览器沙箱之外的文件系统和终端命令能力。
+扩展可选配一个本地 Node.js代理服务，提供浏览器沙箱之外的文件系统和终端命令能力。
 
 ### Agent 架构
 
@@ -556,7 +556,7 @@ npm run build
 4. 在「ReAct」标签页调整推理循环参数
 5. 在「反思」标签页配置三级反思策略
 6. 在「对话」标签页设置历史限制和记忆限制
-7. 在「Agent」标签页配对本地 Agent 服务（可选）
+7. 在「Agent」标签页配对本地代理服务（可选）
 8. 在「工具栏」标签页管理划词浮动工具栏
 9. 在侧边栏中即可开始对话
 
@@ -683,7 +683,7 @@ cd agent && npm install && npm start
 然后在扩展选项页「Agent」标签页中输入终端显示的 4 位配对码。
 
 **Q: Agent 命令执行失败？**
-确认 Agent 服务正在运行（`npm start`），检查 `~/.ai-helper-agent/config.json` 中的 `allowedPaths` 是否包含目标路径。
+确认代理服务正在运行（`npm start`），检查 `~/.ai-helper-agent/config.json` 中的 `allowedPaths` 是否包含目标路径。
 
 ---
 

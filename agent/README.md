@@ -30,10 +30,10 @@ ai-helper-agent start --workdir /path/to/your/project --port 18911
 
 | 命令 | 说明 |
 |------|------|
-| `start` | 启动 Agent 服务（前台运行，显示实时日志） |
+| `start` | 启动代理服务（前台运行，显示实时日志） |
 | `start --background` / `start -b` | 后台启动（守护进程模式） |
 | `stop` | 停止正在运行的 Agent |
-| `restart` | 重启 Agent 服务（支持 -b 后台重启） |
+| `restart` | 重启代理服务（支持 -b 后台重启） |
 | `status` | 查看运行状态 |
 | `paircode` | 查看配对码提示 |
 | `config` | 查看当前配置 |
@@ -207,7 +207,7 @@ GET /api/logs/dates
 |------|------|------|
 | POST | `/api/pair` | 配对认证 |
 | GET | `/api/status` | 健康检查（版本号、平台信息、搜索工具可用性） |
-| POST | `/api/shutdown` | 关闭 Agent 服务（仅限本地访问） |
+| POST | `/api/shutdown` | 关闭代理服务（仅限本地访问） |
 
 ### 需要认证（Bearer Token）
 

@@ -1,8 +1,8 @@
-// background/local-agent-client.js - 本地 Agent 通信客户端
-// 封装与本地 Agent 服务的 HTTP 和 WebSocket 通信
+// background/local-agent-client.js - 本地代理通信客户端
+// 封装与本地代理服务的 HTTP 和 WebSocket 通信
 
 /**
- * 获取 Agent 连接配置
+ * 获取代理 连接配置
  * @returns {Promise<{url: string|null, token: string|null, connected: boolean}>}
  */
 async function getAgentConfig() {

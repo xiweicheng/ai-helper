@@ -1,6 +1,7 @@
 // background/config.js - 配置管理
 
 import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG } from './constants.js';
+import { normalizeCustomModels } from '../shared/token-counter.js';
 
 /**
  * 获取存储的配置
@@ -59,7 +60,7 @@ export function getStoredConfig() {
 export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow'
+      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow', 'customModels'
     ], (result) => {
       resolve({
         maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
@@ -67,7 +68,8 @@ export function getChatConfig() {
         maxMessageLength: result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength,
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
         enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
-        contextWindow: result.chatContextWindow !== undefined ? result.chatContextWindow : 0
+        contextWindow: result.chatContextWindow !== undefined ? result.chatContextWindow : 0,
+        customModelMap: normalizeCustomModels(result.customModels || [])
       });
     });
   });

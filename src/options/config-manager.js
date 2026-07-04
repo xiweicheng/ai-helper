@@ -52,11 +52,44 @@ function ensureModelDeleteButtons() {
 }
 
 // 添加模型到下拉列表（支持重新加回已删除的预设模型）
-export function addCustomModelToDropdown(modelName) {
+// modelName: 模型名称
+// contextWindow: 可选的上下文窗口大小，0 或不传表示使用内置映射自动推断
+export function addCustomModelToDropdown(modelName, contextWindow) {
   const modelDropdown = document.getElementById('modelDropdown');
   // 检查是否已存在
   const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-  if (existingOption) return;
+  if (existingOption) {
+    // 如果已存在但传入了新的 contextWindow，更新显示
+    if (contextWindow && contextWindow > 0) {
+      existingOption.dataset.contextWindow = contextWindow;
+      existingOption.dataset.isCustom = 'true';
+      // 确保名称和标签在同一个包裹容器内
+      let leftSpan = existingOption.querySelector('.model-option-left');
+      if (!leftSpan) {
+        // 旧结构：把文本和已有标签移入包裹容器
+        leftSpan = document.createElement('span');
+        leftSpan.className = 'model-option-left';
+        leftSpan.textContent = existingOption.textContent;
+        existingOption.textContent = '';
+        // 把已有的 badge 移入
+        const oldBadge = existingOption.querySelector('.model-ctx-badge');
+        if (oldBadge) leftSpan.appendChild(oldBadge);
+        existingOption.insertBefore(leftSpan, existingOption.firstChild);
+      }
+      // 更新或添加新的 badge
+      const badge = leftSpan.querySelector('.model-ctx-badge');
+      if (badge) {
+        badge.textContent = formatContextWindow(contextWindow);
+      } else {
+        const newBadge = document.createElement('span');
+        newBadge.className = 'model-ctx-badge';
+        newBadge.textContent = formatContextWindow(contextWindow);
+        leftSpan.appendChild(newBadge);
+      }
+      saveCustomModels();
+    }
+    return;
+  }
   
   // 如果是之前被删除的预设模型，从删除列表中移除
   if (PRESET_MODELS.includes(modelName) && deletedPresetModels.includes(modelName)) {
@@ -67,12 +100,26 @@ export function addCustomModelToDropdown(modelName) {
   const option = document.createElement('div');
   option.className = 'model-option';
   option.dataset.value = modelName;
-  // 预设模型不加 isCustom 标记
+  // 预设模型不加 isCustom 标记（除非用户配置了上下文窗口）
   const isPreset = PRESET_MODELS.includes(modelName);
-  if (!isPreset) {
+  if (!isPreset || (contextWindow && contextWindow > 0)) {
     option.dataset.isCustom = 'true';
   }
-  option.textContent = modelName;
+  if (contextWindow && contextWindow > 0) {
+    option.dataset.contextWindow = contextWindow;
+  }
+
+  // 模型名称和上下文标签包裹在一起
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'model-option-left';
+  nameSpan.textContent = modelName;
+  if (contextWindow && contextWindow > 0) {
+    const ctxBadge = document.createElement('span');
+    ctxBadge.className = 'model-ctx-badge';
+    ctxBadge.textContent = formatContextWindow(contextWindow);
+    nameSpan.appendChild(ctxBadge);
+  }
+  option.appendChild(nameSpan);
   
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -117,12 +164,28 @@ export function removeCustomModel(modelName) {
   saveCustomModels();
 }
 
-// 保存自定义模型到存储
+/**
+ * 格式化上下文窗口大小显示（如 128000 → "128K"）
+ */
+function formatContextWindow(tokens) {
+  if (tokens >= 1000000) {
+    return Math.round(tokens / 1000000 * 10) / 10 + 'M';
+  }
+  if (tokens >= 1000) {
+    return Math.round(tokens / 1000) + 'K';
+  }
+  return String(tokens);
+}
+
+// 保存自定义模型到存储（新格式：对象数组）
 export function saveCustomModels() {
   const modelDropdown = document.getElementById('modelDropdown');
   const customModels = [];
   modelDropdown.querySelectorAll('.model-option[data-is-custom="true"]').forEach(option => {
-    customModels.push(option.dataset.value);
+    customModels.push({
+      name: option.dataset.value,
+      contextWindow: parseInt(option.dataset.contextWindow) || 0
+    });
   });
   chrome.storage.local.set({ customModels, deletedPresetModels }, () => {
     console.log('[Options] 自定义模型已保存:', customModels, '已删除预设:', deletedPresetModels);
@@ -145,17 +208,69 @@ export function loadCustomModels(callback) {
 
     chrome.storage.local.get(['customModels'], (result) => {
       const customModels = result.customModels || [];
+      let needsMigration = false;
       
-      customModels.forEach(modelName => {
+      customModels.forEach(item => {
+        // 向前兼容：旧格式为字符串，新格式为对象
+        let modelName, contextWindow = 0;
+        if (typeof item === 'string') {
+          modelName = item;
+          needsMigration = true;
+        } else if (item && typeof item === 'object' && item.name) {
+          modelName = item.name;
+          contextWindow = item.contextWindow || 0;
+        } else {
+          return;
+        }
+        
         // 检查是否已存在
         const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-        if (existingOption) return;
+        if (existingOption) {
+          // 如果是已存在的预设模型，应用其上下文窗口标签
+          if (contextWindow && contextWindow > 0) {
+            existingOption.dataset.contextWindow = contextWindow;
+            existingOption.dataset.isCustom = 'true';
+            let leftSpan = existingOption.querySelector('.model-option-left');
+            if (!leftSpan) {
+              leftSpan = document.createElement('span');
+              leftSpan.className = 'model-option-left';
+              leftSpan.textContent = existingOption.textContent;
+              existingOption.textContent = '';
+              const oldBadge = existingOption.querySelector('.model-ctx-badge');
+              if (oldBadge) leftSpan.appendChild(oldBadge);
+              existingOption.insertBefore(leftSpan, existingOption.firstChild);
+            }
+            const badge = leftSpan.querySelector('.model-ctx-badge');
+            if (badge) {
+              badge.textContent = formatContextWindow(contextWindow);
+            } else {
+              const ctxBadge = document.createElement('span');
+              ctxBadge.className = 'model-ctx-badge';
+              ctxBadge.textContent = formatContextWindow(contextWindow);
+              leftSpan.appendChild(ctxBadge);
+            }
+          }
+          return;
+        }
         
         const option = document.createElement('div');
         option.className = 'model-option';
         option.dataset.value = modelName;
         option.dataset.isCustom = 'true';
-        option.textContent = modelName;
+        if (contextWindow && contextWindow > 0) {
+          option.dataset.contextWindow = contextWindow;
+        }
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'model-option-left';
+        nameSpan.textContent = modelName;
+        if (contextWindow && contextWindow > 0) {
+          const ctxBadge = document.createElement('span');
+          ctxBadge.className = 'model-ctx-badge';
+          ctxBadge.textContent = formatContextWindow(contextWindow);
+          nameSpan.appendChild(ctxBadge);
+        }
+        option.appendChild(nameSpan);
         
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
@@ -166,6 +281,12 @@ export function loadCustomModels(callback) {
         
         modelDropdown.appendChild(option);
       });
+      
+      // 如果存在旧格式数据，自动迁移为新格式
+      if (needsMigration) {
+        saveCustomModels();
+        console.log('[Options] 自定义模型已自动迁移为新格式');
+      }
       
       // 调用回调函数
       if (typeof callback === 'function') {
@@ -191,16 +312,56 @@ export function updateModelSelection(selectedValue) {
 // ============================================================
 
 // 添加图片识别模型到下拉列表
-export function addCustomImageModelToDropdown(modelName) {
+// modelName: 模型名称
+// contextWindow: 可选的上下文窗口大小，0 或不传表示使用内置映射自动推断
+export function addCustomImageModelToDropdown(modelName, contextWindow) {
   const modelDropdown = document.getElementById('imageModelDropdown');
   if (!modelDropdown) return;
   const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-  if (existingOption) return;
+  if (existingOption) {
+    // 如果已存在但传入了新的 contextWindow，更新显示
+    if (contextWindow && contextWindow > 0) {
+      existingOption.dataset.contextWindow = contextWindow;
+      let leftSpan = existingOption.querySelector('.model-option-left');
+      if (!leftSpan) {
+        leftSpan = document.createElement('span');
+        leftSpan.className = 'model-option-left';
+        leftSpan.textContent = existingOption.textContent;
+        existingOption.textContent = '';
+        const oldBadge = existingOption.querySelector('.model-ctx-badge');
+        if (oldBadge) leftSpan.appendChild(oldBadge);
+        existingOption.insertBefore(leftSpan, existingOption.firstChild);
+      }
+      const badge = leftSpan.querySelector('.model-ctx-badge');
+      if (badge) {
+        badge.textContent = formatContextWindow(contextWindow);
+      } else {
+        const newBadge = document.createElement('span');
+        newBadge.className = 'model-ctx-badge';
+        newBadge.textContent = formatContextWindow(contextWindow);
+        leftSpan.appendChild(newBadge);
+      }
+    }
+    return;
+  }
 
   const option = document.createElement('div');
   option.className = 'model-option';
   option.dataset.value = modelName;
-  option.textContent = modelName;
+  if (contextWindow && contextWindow > 0) {
+    option.dataset.contextWindow = contextWindow;
+  }
+
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'model-option-left';
+  nameSpan.textContent = modelName;
+  if (contextWindow && contextWindow > 0) {
+    const ctxBadge = document.createElement('span');
+    ctxBadge.className = 'model-ctx-badge';
+    ctxBadge.textContent = formatContextWindow(contextWindow);
+    nameSpan.appendChild(ctxBadge);
+  }
+  option.appendChild(nameSpan);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -237,13 +398,16 @@ export function removeImageModel(modelName) {
   saveImageModels();
 }
 
-// 保存图片识别模型列表到存储
+// 保存图片识别模型列表到存储（新格式：对象数组）
 export function saveImageModels() {
   const modelDropdown = document.getElementById('imageModelDropdown');
   if (!modelDropdown) return;
   const imageModels = [];
   modelDropdown.querySelectorAll('.model-option').forEach(option => {
-    imageModels.push(option.dataset.value);
+    imageModels.push({
+      name: option.dataset.value,
+      contextWindow: parseInt(option.dataset.contextWindow) || 0
+    });
   });
   chrome.storage.local.set({ imageModels }, () => {
     console.log('[Options] 图片识别模型已保存:', imageModels);
@@ -258,16 +422,42 @@ export function loadImageModels(callback) {
       if (typeof callback === 'function') callback();
       return;
     }
-    const savedModels = result.imageModels || [];
+    const imageModels = result.imageModels || [];
+    let needsMigration = false;
 
     // 清空现有选项
     modelDropdown.innerHTML = '';
 
-    savedModels.forEach(modelName => {
+    imageModels.forEach(item => {
+      // 向前兼容：旧格式为字符串，新格式为对象
+      let modelName, contextWindow = 0;
+      if (typeof item === 'string') {
+        modelName = item;
+        needsMigration = true;
+      } else if (item && typeof item === 'object' && item.name) {
+        modelName = item.name;
+        contextWindow = item.contextWindow || 0;
+      } else {
+        return;
+      }
+
       const option = document.createElement('div');
       option.className = 'model-option';
       option.dataset.value = modelName;
-      option.textContent = modelName;
+      if (contextWindow && contextWindow > 0) {
+        option.dataset.contextWindow = contextWindow;
+      }
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'model-option-left';
+      nameSpan.textContent = modelName;
+      if (contextWindow && contextWindow > 0) {
+        const ctxBadge = document.createElement('span');
+        ctxBadge.className = 'model-ctx-badge';
+        ctxBadge.textContent = formatContextWindow(contextWindow);
+        nameSpan.appendChild(ctxBadge);
+      }
+      option.appendChild(nameSpan);
 
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
@@ -279,6 +469,12 @@ export function loadImageModels(callback) {
 
       modelDropdown.appendChild(option);
     });
+
+    // 如果存在旧格式数据，自动迁移
+    if (needsMigration) {
+      saveImageModels();
+      console.log('[Options] 图片识别模型已自动迁移为新格式');
+    }
 
     if (typeof callback === 'function') {
       callback();
@@ -848,8 +1044,8 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>本地 Agent 配置：</strong><br>
-    Agent 地址: ${agentConfig.url || '未配置'}<br>
+    <strong>本地代理配置：</strong><br>
+    代理地址: ${agentConfig.url || '未配置'}<br>
     连接状态: ${agentConfig.connected ? '✅ 已连接' : '⚠️ 未配对'}<br>
     ${agentConfig.workdir ? `工作目录: ${agentConfig.workdir}<br>` : ''}` : ''}
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">

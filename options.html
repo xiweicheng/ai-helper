@@ -368,6 +368,89 @@
       opacity: 1;
       color: #c53030;
     }
+    .model-option .model-ctx-badge {
+      background: #e8f0fe;
+      color: #667eea;
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .add-model-section {
+      margin-top: 4px;
+    }
+    .add-model-toggle-btn {
+      background: none;
+      border: 1px dashed #667eea;
+      color: #667eea;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+      text-align: center;
+    }
+    .add-model-toggle-btn:hover {
+      background: #f0f4ff;
+      border-style: solid;
+    }
+    .add-model-form {
+      margin-top: 8px;
+      padding: 12px;
+      background: #f8f9fc;
+      border: 1px solid #e8ecf4;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .add-model-form input {
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .add-model-form input:focus {
+      border-color: #667eea;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    }
+    .add-model-form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .add-model-form-actions .btn-primary {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .add-model-form-actions .btn-primary:hover {
+      background: #5a6fd6;
+    }
+    .add-model-form-actions .btn-cancel {
+      background: #f0f0f0;
+      color: #666;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .add-model-form-actions .btn-cancel:hover {
+      background: #e0e0e0;
+    }
     .token-input-wrapper {
       position: relative;
       display: flex;
@@ -1473,7 +1556,7 @@
       <button class="tab-nav-btn" data-tab="react">ReAct</button>
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
-      <button class="tab-nav-btn" data-tab="agent">本地Agent</button>
+      <button class="tab-nav-btn" data-tab="agent">本地代理</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -1500,12 +1583,24 @@
     </div>
 
     <div class="form-group">
-      <label>模型名称 <span class="hint">（可选，可从列表选择或自定义输入）</span></label>
+      <label>模型名称 <span class="hint">（从下拉列表选择，或点击下方按钮添加新模型）</span></label>
       <div class="model-selector">
-        <input type="text" id="modelInput" placeholder="请输入模型名称或从下方选择" value="deepseek-v4-pro">
+        <input type="text" id="modelInput" placeholder="请从下方选择模型" value="deepseek-v4-pro" readonly>
         <div class="model-dropdown" id="modelDropdown">
           <div class="model-option selected" data-value="deepseek-v4-pro">deepseek-v4-pro</div>
           <div class="model-option" data-value="deepseek-v4-flash">deepseek-v4-flash</div>
+        </div>
+      </div>
+      <div class="add-model-section">
+        <button type="button" class="add-model-toggle-btn" id="addModelToggleBtn" title="添加自定义模型">+ 添加模型</button>
+        <div class="add-model-form" id="addModelForm" style="display:none;">
+          <input type="text" id="addModelName" placeholder="模型名称（如 gpt-4o）">
+          <input type="number" id="addModelContextWindow" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
+          <span class="hint-text" style="font-size:11px;color:#888;margin-top:-4px;">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
+          <div class="add-model-form-actions">
+            <button type="button" class="btn-primary" id="confirmAddModelBtn">确认添加</button>
+            <button type="button" class="btn-cancel" id="cancelAddModelBtn">取消</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1541,10 +1636,22 @@
     </div>
 
     <div class="form-group" id="imageModelGroup" style="display:none;">
-      <label>模型名称 <span class="hint">（支持多模态视觉能力的模型，可自定义；留空则使用基础模型的模型名称）</span></label>
+      <label>模型名称 <span class="hint">（支持多模态视觉能力的模型，从列表选择或添加新模型；留空则使用基础模型的模型名称）</span></label>
       <div class="model-selector">
-        <input type="text" id="imageModelInput" placeholder="留空则使用基础模型" value="">
+        <input type="text" id="imageModelInput" placeholder="留空则使用基础模型" value="" readonly>
         <div class="model-dropdown" id="imageModelDropdown">
+        </div>
+      </div>
+      <div class="add-model-section">
+        <button type="button" class="add-model-toggle-btn" id="addImageModelToggleBtn" title="添加自定义图片识别模型">+ 添加模型</button>
+        <div class="add-model-form" id="addImageModelForm" style="display:none;">
+          <input type="text" id="addImageModelName" placeholder="模型名称（如 gpt-4o）">
+          <input type="number" id="addImageModelContextWindow" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
+          <span class="hint-text" style="font-size:11px;color:#888;margin-top:-4px;">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
+          <div class="add-model-form-actions">
+            <button type="button" class="btn-primary" id="confirmAddImageModelBtn">确认添加</button>
+            <button type="button" class="btn-cancel" id="cancelAddImageModelBtn">取消</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2129,11 +2236,11 @@
     </div>
     </div><!-- /tab-chat -->
 
-    <!-- 本地Agent配置区域 -->
+    <!-- 本地代理配置区域 -->
     <div class="tab-panel" data-tab="agent">
     <div class="agent-config">
-      <h2>🖥️ 本地 Agent 配置</h2>
-      <p class="subtitle">连接本地 Agent 服务，实现文件读写和系统命令执行</p>
+      <h2>🖥️ 本地代理配置</h2>
+      <p class="subtitle">连接本地代理服务，实现文件读写和系统命令执行</p>
 
       <div class="agent-status" id="agentStatus">
         <span class="agent-status-dot" id="agentStatusDot"></span>
@@ -2148,7 +2255,7 @@
       <div class="agent-detail-panel" id="agentDetailPanel"></div>
 
       <div class="form-group">
-        <label>Agent 地址 <span class="hint">（本地 Agent 服务的 HTTP 地址）</span></label>
+        <label>代理地址 <span class="hint">（本地代理服务的 HTTP 地址）</span></label>
         <input type="text" id="agentUrl" placeholder="http://127.0.0.1:18910" value="http://127.0.0.1:18910">
       </div>
 
@@ -2186,7 +2293,7 @@
       <div class="warning-box" style="margin-top: 10px;">
         <h3>⚠️ 安全提示</h3>
         <p>
-          Agent 服务仅监听 127.0.0.1，外部网络无法访问。<br>
+          代理服务仅监听 127.0.0.1，外部网络无法访问。<br>
           文件操作限制在配置的工作目录内，不可越权访问。<br>
           危险命令（如 rm -rf /）会被自动拦截。
         </p>

@@ -21,5 +21,5 @@ export const TOOL_CATEGORY_NAMES = {
     'media_output': '📷 媒体与输出',
     'debug_dev': '🔧 调试开发',
     'ai_collaboration': '🤖 AI协作',
-    'local_agent': '🖥️ 本地Agent'
+    'local_agent': '🖥️ 本地代理'
 };
