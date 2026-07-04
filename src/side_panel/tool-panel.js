@@ -3,6 +3,19 @@ import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.
 import { showToast, escapeHtml } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 
+/**
+ * 获取当前 Agent 限定范围内的工具列表
+ * null = 没有限制（默认助手），返回全部工具
+ * [] = 空数组，没有工具
+ * [id1, id2] = 只返回这些 ID 对应的工具
+ */
+function getAgentFilteredTools() {
+  const toolIds = state.activeAgentToolIds;
+  if (toolIds === null || toolIds === undefined) return BUILTIN_TOOLS;
+  const filterSet = new Set(toolIds);
+  return BUILTIN_TOOLS.filter(t => filterSet.has(t.id));
+}
+
 function openToolsPopup() {
   const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
   if (!toolsPopupOverlay) return;
@@ -83,11 +96,22 @@ function renderToolsPopupList() {
   if (!toolsList) return;
   
   toolsList.innerHTML = '';
+
+  const filteredTools = getAgentFilteredTools();
+  const isAgentRestricted = state.activeAgentToolIds !== null && state.activeAgentToolIds !== undefined;
+
+  // 如果 Agent 限定了工具范围，显示提示条
+  if (isAgentRestricted) {
+    const banner = document.createElement('div');
+    banner.className = 'popup-tool-agent-banner';
+    banner.innerHTML = `<span>🔒 当前助手已限定工具范围，以下仅展示该助手绑定的工具（范围内可自由调整）</span>`;
+    toolsList.appendChild(banner);
+  }
   
   // 按分类分组显示
   const groupedTools = {};
   
-  BUILTIN_TOOLS.forEach(tool => {
+  filteredTools.forEach(tool => {
     // 过滤：分类
     if (state.currentCategory !== 'all' && tool.category !== state.currentCategory) {
       return;
@@ -119,8 +143,8 @@ function renderToolsPopupList() {
     const tools = groupedTools[category];
     if (!tools || tools.length === 0) return;
     
-    // 计算该分类下的工具总数和已启用数
-    const categoryTools = BUILTIN_TOOLS.filter(t => t.category === category);
+    // 计算该分类下的工具总数和已启用数（使用过滤后的工具列表）
+    const categoryTools = filteredTools.filter(t => t.category === category);
     const totalCount = categoryTools.length;
     const enabledCount = categoryTools.filter(t => state.enabledTools.includes(t.id)).length;
     
@@ -254,7 +278,8 @@ function updateCategoryCount(category) {
 }
 
 function getVisibleTools() {
-  return BUILTIN_TOOLS.filter(tool => {
+  const filteredTools = getAgentFilteredTools();
+  return filteredTools.filter(tool => {
     // 分类筛选
     if (state.currentCategory !== 'all' && tool.category !== state.currentCategory) {
       return false;
@@ -280,8 +305,9 @@ function updateAllCategoryCounts() {
 
 function updateCategoryBadges() {
   const categories = ['all', ...CATEGORY_ORDER];
-  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-  // 只统计 BUILTIN_TOOLS 中存在的工具
+  const filteredTools = getAgentFilteredTools();
+  const validToolIds = new Set(filteredTools.map(t => t.id));
+  // 只统计当前可见工具中启用的数量
   const validEnabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   categories.forEach(category => {
@@ -292,10 +318,10 @@ function updateCategoryBadges() {
     let enabledCount = 0;
     
     if (category === 'all') {
-      totalCount = BUILTIN_TOOLS.length;
+      totalCount = filteredTools.length;
       enabledCount = validEnabledCount;
     } else {
-      const categoryTools = BUILTIN_TOOLS.filter(tool => tool.category === category);
+      const categoryTools = filteredTools.filter(tool => tool.category === category);
       totalCount = categoryTools.length;
       enabledCount = categoryTools.filter(t => state.enabledTools.includes(t.id)).length;
     }
@@ -308,8 +334,9 @@ function updateToolsPopupTitle() {
   const countSpan = document.getElementById('toolsEnabledCount');
   if (!countSpan) return;
   
-  const totalCount = BUILTIN_TOOLS.length;
-  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  const filteredTools = getAgentFilteredTools();
+  const totalCount = filteredTools.length;
+  const validToolIds = new Set(filteredTools.map(t => t.id));
   const enabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   countSpan.textContent = `(已启用 ${enabledCount}/${totalCount})`;
@@ -356,13 +383,17 @@ function saveToolsFromPopup() {
   // 更新按钮状态
   updateToolsToggleState();
   
-  showToast(state.useTools ? `已启用 ${state.enabledTools.length} 个工具` : '工具已全部禁用', 'success');
+  const filteredTools = getAgentFilteredTools();
+  const filteredIds = new Set(filteredTools.map(t => t.id));
+  const effectiveCount = state.enabledTools.filter(id => filteredIds.has(id)).length;
+  showToast(state.useTools ? `已启用 ${effectiveCount} 个工具` : '工具已全部禁用', 'success');
 }
 
 function updateToolsToggleState() {
   const toolsToggleBtn = document.getElementById('toolsToggleBtn');
   const toolsBadge = document.getElementById('toolsBadge');
-  const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+  const filteredTools = getAgentFilteredTools();
+  const validToolIds = new Set(filteredTools.map(t => t.id));
   const validEnabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
   if (toolsToggleBtn) {
@@ -396,5 +427,6 @@ export {
   updateCategoryBadges,
   updateToolsPopupTitle,
   saveToolsFromPopup,
-  updateToolsToggleState
+  updateToolsToggleState,
+  getAgentFilteredTools
 };

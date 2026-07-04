@@ -4,6 +4,7 @@ import { getAllAgents, createAgent, updateAgent, deleteAgent, getAgent, setActiv
 import { AGENT_TEMPLATES } from '../shared/agent-defaults.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { showToast } from './utils.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
 
 /**
  * 初始化 Agent 管理
@@ -189,8 +190,19 @@ function initAgentSelectorEvents() {
 export async function switchAgent(agentId) {
   const agent = agentId ? await getAgent(agentId) : null;
   state.activeAgentId = agentId;
+  state.activeAgentToolIds = agent ? agent.toolIds : null;
   await setActiveAgentId(agentId);
   await renderAgentSelector();
+  
+  // 如果工具弹窗打开，联动刷新（Agent 限定范围变化）
+  const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
+  if (toolsPopupOverlay && toolsPopupOverlay.classList.contains('show')) {
+    renderToolsPopupList();
+    updateCategoryBadges();
+    updateToolsPopupTitle();
+  }
+  // 始终更新工具栏按钮（工具数量可能变化）
+  updateToolsToggleState();
   
   const agentName = agent ? agent.name : '默认助手';
   showToast(`已切换到：${agentName}`, 'info', 2000);

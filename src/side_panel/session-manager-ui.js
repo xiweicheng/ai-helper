@@ -4,6 +4,8 @@
 import state from './state.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
+import { getAgent } from './agent-store.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
 import {
   createSession,
   switchToSession,
@@ -672,6 +674,14 @@ async function handleSessionSwitch(sessionId) {
     state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
   }
 
+  // 恢复当前 Agent 的工具限定列表
+  if (state.activeAgentId) {
+    const agent = await getAgent(state.activeAgentId);
+    state.activeAgentToolIds = agent ? agent.toolIds : null;
+  } else {
+    state.activeAgentToolIds = null;
+  }
+
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId }
   }));
@@ -679,6 +689,16 @@ async function handleSessionSwitch(sessionId) {
   renderSessionTabs();
   updateUIControls();
   renderAgentSelector();
+  
+  // 如果工具弹窗打开，联动刷新
+  const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
+  if (toolsPopupOverlay && toolsPopupOverlay.classList.contains('show')) {
+    renderToolsPopupList();
+    updateCategoryBadges();
+    updateToolsPopupTitle();
+  }
+  // 始终更新工具栏按钮
+  updateToolsToggleState();
 }
 
 // ==================== UI 控件更新 ====================

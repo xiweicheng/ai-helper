@@ -22,6 +22,7 @@ export let inputHistoryIndex = -1;
 
 // 自定义 Agent 相关
 export let activeAgentId = null;   // 当前选中的 Agent ID
+export let activeAgentToolIds = null; // 当前 Agent 限定的工具列表（null=继承全局）
 export let customAgents = [];      // 用户自定义 Agent 列表缓存
 
 // Agent 平台信息（从 Agent 获取，用于系统提示词注入）
@@ -147,6 +148,8 @@ export default {
   set systemPrompt(v) { systemPrompt = v; },
   get activeAgentId() { return activeAgentId; },
   set activeAgentId(v) { activeAgentId = v; },
+  get activeAgentToolIds() { return activeAgentToolIds; },
+  set activeAgentToolIds(v) { activeAgentToolIds = v; },
   get customAgents() { return customAgents; },
   set customAgents(v) { customAgents = v; },
   get agentPlatform() { return agentPlatform; },
