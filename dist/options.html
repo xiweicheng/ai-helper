@@ -1635,6 +1635,16 @@
     .mcp-server-card.disabled {
       opacity: 0.55;
     }
+    .mcp-server-card.editing {
+      border-color: #667eea;
+      background: #f8f9fc;
+    }
+    .mcp-server-card.editing .mcp-add-form {
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin-top: 0;
+    }
     .mcp-server-header {
       display: flex;
       align-items: center;
@@ -1676,6 +1686,45 @@
       border-radius: 4px;
       color: #555;
       word-break: break-all;
+    }
+
+    /* MCP 工具列表 */
+    .mcp-tools-section {
+      margin-bottom: 10px;
+    }
+    .mcp-tools-toggle {
+      background: none;
+      border: none;
+      color: #667eea;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 2px 0;
+      font-family: inherit;
+    }
+    .mcp-tools-toggle:hover {
+      color: #5a6fd6;
+      text-decoration: underline;
+    }
+    .mcp-tools-list {
+      margin-top: 6px;
+      border-top: 1px solid #eee;
+      padding-top: 6px;
+    }
+    .mcp-tool-item {
+      padding: 4px 0 4px 14px;
+      border-left: 2px solid #e8ecf4;
+      margin-bottom: 4px;
+    }
+    .mcp-tool-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #333;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .mcp-tool-desc {
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
     }
     .mcp-server-actions {
       display: flex;
@@ -1794,6 +1843,14 @@
     .toolbox-btn-danger:hover:not(:disabled) {
       background: #fff5f5;
       border-color: #fed7d7;
+    }
+    .toolbox-btn-edit {
+      background: #f0f4ff;
+      color: #667eea;
+      border: 1px solid #d4dafc;
+    }
+    .toolbox-btn-edit:hover:not(:disabled) {
+      background: #e0e7ff;
     }
     .toolbox-btn-cancel {
       background: #f0f0f0;

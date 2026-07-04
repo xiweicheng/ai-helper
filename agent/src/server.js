@@ -219,7 +219,7 @@ export function startServer() {
       });
     }
 
-    if (req.method === 'POST') {
+    if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
       let body;
       try { body = await parseBody(req); }
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
@@ -434,6 +434,97 @@ export function startServer() {
         logExec('stopped', { execId: body.execId, success: stopped });
         return jsonResponse(res, 200, { success: stopped, execId: body.execId });
       }
+
+      // === Skill 操作（需要 body） ===
+
+      // 执行 Skill
+      if (pathname === '/api/skill/run') {
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        const result = await runSkill(body.name, body.params || {});
+        logSystem('skill_run', { skillName: body.name, success: result.success });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 导入 Skill
+      if (pathname === '/api/skill/import') {
+        if (!body.name || !body.steps) {
+          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: name, steps' });
+        }
+        const result = await importSkill(body);
+        logSystem('skill_import', { skillName: body.name });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 删除 Skill
+      if (pathname === '/api/skill/delete') {
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        const result = await removeSkill(body.name);
+        logSystem('skill_remove', { skillName: body.name });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 重新加载 Skill
+      if (pathname === '/api/skill/reload') {
+        const count = await reloadSkills();
+        logSystem('skill_reload', { count });
+        return jsonResponse(res, 200, { success: true, count });
+      }
+
+      // === MCP 操作（需要 body） ===
+
+      // 添加 MCP 服务器
+      if (pathname === '/api/mcp/servers' && req.method === 'POST') {
+        if (!body.id || !body.command) {
+          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: id, command' });
+        }
+        const result = await addMcpServer(body);
+        logSystem('mcp_server_add', { serverId: body.id });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 删除 MCP 服务器
+      if (pathname === '/api/mcp/servers' && req.method === 'DELETE') {
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        const result = await removeMcpServer(body.id);
+        logSystem('mcp_server_remove', { serverId: body.id });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // MCP 连接
+      if (pathname === '/api/mcp/servers/connect') {
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        const result = await connectMcpServer(body.id);
+        logSystem('mcp_server_connect', { serverId: body.id, success: result.success });
+        return jsonResponse(res, result.success ? 200 : 500, result);
+      }
+
+      // MCP 断开
+      if (pathname === '/api/mcp/servers/disconnect') {
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        const result = await disconnectMcpServer(body.id);
+        logSystem('mcp_server_disconnect', { serverId: body.id });
+        return jsonResponse(res, 200, result);
+      }
+
+      // MCP 启用/禁用切换
+      if (pathname === '/api/mcp/servers/toggle') {
+        if (body.id === undefined || body.enabled === undefined) {
+          return jsonResponse(res, 400, { success: false, error: '缺少参数: id, enabled' });
+        }
+        const result = await toggleMcpServer(body.id, body.enabled);
+        logSystem('mcp_server_toggle', { serverId: body.id, enabled: body.enabled });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // MCP 工具调用
+      if (pathname === '/api/mcp/call') {
+        if (!body.serverId || !body.toolName) {
+          return jsonResponse(res, 400, { success: false, error: '缺少参数: serverId, toolName' });
+        }
+        const result = await callMcpTool(body.serverId, body.toolName, body.args || {});
+        logSystem('mcp_tool_call', { serverId: body.serverId, toolName: body.toolName, success: result.success });
+        return jsonResponse(res, result.success ? 200 : 500, result);
+      }
     }
 
     // 运行中进程列表（需认证）
@@ -457,7 +548,7 @@ export function startServer() {
       return jsonResponse(res, 200, { success: true, dates: getLogDates() });
     }
 
-    // ========== Skill 管理接口 ==========
+    // ========== Skill 管理接口（仅 GET 路由） ==========
 
     // Skill 列表
     if (req.method === 'GET' && pathname === '/api/skill/list') {
@@ -471,17 +562,6 @@ export function startServer() {
       return jsonResponse(res, 200, getSkill(name));
     }
 
-    // 执行 Skill
-    if (req.method === 'POST' && pathname === '/api/skill/run') {
-      let body;
-      try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
-
-      const result = await runSkill(body.name, body.params || {});
-      logSystem('skill_run', { name: body.name, success: result.success });
-      return jsonResponse(res, result.success ? 200 : 400, result);
-    }
-
     // Skill 执行状态查询
     if (req.method === 'GET' && pathname === '/api/skill/status') {
       const execId = url.searchParams.get('execId');
@@ -489,115 +569,17 @@ export function startServer() {
       return jsonResponse(res, 200, getSkillExecutionStatus(execId));
     }
 
-    // 导入 Skill
-    if (req.method === 'POST' && pathname === '/api/skill/import') {
-      let body;
-      try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      if (!body.name || !body.steps) {
-        return jsonResponse(res, 400, { success: false, error: '缺少必要参数: name, steps' });
-      }
-      const result = importSkill(body);
-      logSystem('skill_import', { name: body.name, success: result.success });
-      return jsonResponse(res, result.success ? 200 : 400, result);
-    }
+    // ========== MCP 管理接口（仅 GET 路由） ==========
 
-    // 删除 Skill
-    if (req.method === 'DELETE' && pathname === '/api/skill/delete') {
-      let body;
-      try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
-      const result = removeSkill(body.name);
-      logSystem('skill_delete', { name: body.name });
-      return jsonResponse(res, result.success ? 200 : 400, result);
-    }
-
-    // 重新加载 Skill（热更新）
-    if (req.method === 'POST' && pathname === '/api/skill/reload') {
-      const count = reloadSkills();
-      logSystem('skill_reload', { count });
-      return jsonResponse(res, 200, { success: true, count });
-    }
-
-    // ========== MCP 管理接口 ==========
-
-    // MCP Servers 列表/添加/删除
-    if (pathname === '/api/mcp/servers') {
-      if (req.method === 'GET') {
-        return jsonResponse(res, 200, getMcpServersStatus());
-      }
-      if (req.method === 'POST') {
-        let body;
-        try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-        if (!body.id || !body.command) {
-          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: id, command' });
-        }
-        const result = await addMcpServer(body);
-        logSystem('mcp_server_add', { serverId: body.id });
-        return jsonResponse(res, result.success ? 200 : 400, result);
-      }
-      if (req.method === 'DELETE') {
-        let body;
-        try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
-        const result = await removeMcpServer(body.id);
-        logSystem('mcp_server_remove', { serverId: body.id });
-        return jsonResponse(res, result.success ? 200 : 400, result);
-      }
-    }
-
-    // MCP Server 连接/断开
-    if (pathname === '/api/mcp/servers/connect') {
-      if (req.method === 'POST') {
-        let body;
-        try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
-        const result = await connectMcpServer(body.id);
-        logSystem('mcp_server_connect', { serverId: body.id, success: result.success });
-        return jsonResponse(res, result.success ? 200 : 500, result);
-      }
-    }
-
-    if (pathname === '/api/mcp/servers/disconnect') {
-      if (req.method === 'POST') {
-        let body;
-        try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
-        const result = disconnectMcpServer(body.id);
-        logSystem('mcp_server_disconnect', { serverId: body.id });
-        return jsonResponse(res, 200, result);
-      }
-    }
-
-    // MCP Server 启用/禁用
-    if (pathname === '/api/mcp/servers/toggle') {
-      if (req.method === 'PUT') {
-        let body;
-        try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-        if (!body.id || body.enabled === undefined) {
-          return jsonResponse(res, 400, { success: false, error: '缺少参数: id, enabled' });
-        }
-        const result = await toggleMcpServer(body.id, body.enabled);
-        logSystem('mcp_server_toggle', { serverId: body.id, enabled: body.enabled });
-        return jsonResponse(res, result.success ? 200 : 400, result);
-      }
+    // MCP Servers 列表
+    if (req.method === 'GET' && pathname === '/api/mcp/servers') {
+      return jsonResponse(res, 200, getMcpServersStatus());
     }
 
     // MCP 工具列表
     if (req.method === 'GET' && pathname === '/api/mcp/tools') {
       const serverId = url.searchParams.get('serverId') || undefined;
       return jsonResponse(res, 200, getMcpTools(serverId));
-    }
-
-    // MCP 工具调用
-    if (req.method === 'POST' && pathname === '/api/mcp/call') {
-      let body;
-      try { body = await parseBody(req); } catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      if (!body.serverId || !body.toolName) {
-        return jsonResponse(res, 400, { success: false, error: '缺少参数: serverId, toolName' });
-      }
-      const result = await callMcpTool(body.serverId, body.toolName, body.args);
-      logExec('mcp_tool_call', { serverId: body.serverId, toolName: body.toolName });
-      return jsonResponse(res, result.success ? 200 : 500, result);
     }
 
     // 404

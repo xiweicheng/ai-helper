@@ -70,6 +70,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return false;
   }
+
+  if (message.type === 'RELOAD_MCP_TOOLS') {
+    loadMcpTools().then(count => {
+      sendResponse({ success: true, count });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
   
   if (message.type === 'CAPTURE_TAB') {
     chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 }, (dataUrl) => {

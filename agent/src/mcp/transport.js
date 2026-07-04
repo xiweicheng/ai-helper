@@ -2,10 +2,11 @@
 // MCP 协议使用 JSON-RPC 2.0 over stdin/stdout，每行一个 JSON 消息
 import { spawn } from 'child_process';
 
-const INIT_TIMEOUT = 30000; // 初始化超时 30s
-
 /**
  * 创建 MCP 子进程传输
+ * MCP 协议中，客户端先发 initialize 请求，服务端才会响应。因此 spawn 后立即 resolve，
+ * 由上层 McpClient 负责发送 initialize 和等待响应。
+ *
  * @param {Object} serverConfig - { command, args, env }
  * @returns {Promise<{send: Function, close: Function, onData: Function}>}
  */
@@ -15,6 +16,7 @@ export function createStdioTransport(serverConfig) {
   return new Promise((resolve, reject) => {
     let resolved = false;
     let responseBuffer = '';
+    let dataHandler = null;
 
     const child = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -22,22 +24,11 @@ export function createStdioTransport(serverConfig) {
       detached: false
     });
 
-    let dataHandler = null;
-
     const cleanup = () => {
-      clearTimeout(timeoutId);
       if (child.stdout) child.stdout.removeAllListeners();
       if (child.stderr) child.stderr.removeAllListeners();
       child.removeAllListeners();
     };
-
-    const timeoutId = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        cleanup();
-        reject(new Error(`MCP Server 启动超时 (${INIT_TIMEOUT / 1000}s): ${command} ${args.join(' ')}`));
-      }
-    }, INIT_TIMEOUT);
 
     // stderr 仅记录日志
     child.stderr.on('data', (data) => {
@@ -47,6 +38,7 @@ export function createStdioTransport(serverConfig) {
       }
     });
 
+    // spawn 失败（例如命令不存在）
     child.on('error', (err) => {
       if (!resolved) {
         resolved = true;
@@ -55,8 +47,8 @@ export function createStdioTransport(serverConfig) {
       }
     });
 
+    // 子进程意外退出
     child.on('exit', (code, signal) => {
-      // 传送结束后关闭 child 进程时会触发 exit，这是正常的
       console.log(`[MCP] Server 进程退出: ${command} (code=${code}, signal=${signal})`);
       if (!resolved) {
         resolved = true;
@@ -65,8 +57,7 @@ export function createStdioTransport(serverConfig) {
       }
     });
 
-    // stdout 数据处理：启动阶段等待第一条消息，后续转发给 dataHandler
-    let started = false;
+    // stdout 数据处理：按行分割 JSON-RPC 消息，转发给 dataHandler
     child.stdout.on('data', (data) => {
       responseBuffer += data.toString();
 
@@ -77,37 +68,32 @@ export function createStdioTransport(serverConfig) {
 
         if (!line) continue;
 
-        // 第一条有效 JSON 行 = 子进程启动完成
-        if (!started) {
-          started = true;
-          clearTimeout(timeoutId);
-          if (!resolved) {
-            resolved = true;
-            resolve({
-              send: (jsonRpcMessage) => {
-                const msg = JSON.stringify(jsonRpcMessage) + '\n';
-                child.stdin.write(msg);
-              },
-              close: () => {
-                cleanup();
-                dataHandler = null;
-                try { child.stdin.end(); } catch {}
-                setTimeout(() => {
-                  try { child.kill('SIGTERM'); } catch {}
-                }, 1000);
-              },
-              onData: (handler) => {
-                dataHandler = handler;
-              }
-            });
-          }
-        }
-
-        // 所有后续行转发给 dataHandler
         if (dataHandler) {
           try { dataHandler(line); } catch {}
         }
       }
     });
+
+    // 立即 resolve，McpClient 负责发送 initialize 启动握手
+    if (!resolved) {
+      resolved = true;
+      resolve({
+        send: (jsonRpcMessage) => {
+          const msg = JSON.stringify(jsonRpcMessage) + '\n';
+          child.stdin.write(msg);
+        },
+        close: () => {
+          cleanup();
+          dataHandler = null;
+          try { child.stdin.end(); } catch {}
+          setTimeout(() => {
+            try { child.kill('SIGTERM'); } catch {}
+          }, 1000);
+        },
+        onData: (handler) => {
+          dataHandler = handler;
+        }
+      });
+    }
   });
 }

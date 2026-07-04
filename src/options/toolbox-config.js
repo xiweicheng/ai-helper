@@ -4,6 +4,8 @@
 let agentBaseUrl = null;
 let agentToken = null;
 let agentConnected = false;
+let cachedMcpServers = [];
+let editingMcpId = null;
 
 /**
  * 获取 Agent 连接信息
@@ -56,6 +58,8 @@ function renderMcpServers(servers) {
   const container = document.getElementById('mcpServerList');
   if (!container) return;
 
+  cachedMcpServers = servers || [];
+
   if (!agentConnected) {
     container.innerHTML = `
       <div class="toolbox-empty">
@@ -77,6 +81,27 @@ function renderMcpServers(servers) {
   }
 
   container.innerHTML = servers.map(s => {
+    // 编辑中的服务器显示编辑表单
+    if (s.id === editingMcpId) {
+      return `
+        <div class="mcp-server-card editing">
+          <div class="mcp-add-form">
+            <div class="mcp-add-form-row">
+              <input type="text" id="mcpEditId" value="${escapeHtml(s.id)}" placeholder="服务器 ID" class="toolbox-input">
+              <input type="text" id="mcpEditName" value="${escapeHtml(s.name || '')}" placeholder="显示名称" class="toolbox-input">
+            </div>
+            <div class="mcp-add-form-row">
+              <input type="text" id="mcpEditCommand" value="${escapeHtml(s.command || '')}" placeholder="命令路径" class="toolbox-input" style="flex: 2;">
+              <input type="text" id="mcpEditArgs" value="${escapeHtml((s.args || []).join(' '))}" placeholder="参数，空格分隔" class="toolbox-input" style="flex: 3;">
+            </div>
+            <div class="mcp-add-form-actions">
+              <button class="toolbox-btn toolbox-btn-cancel" data-mcp-id="${escapeHtml(s.id)}" data-action="cancel-edit">取消</button>
+              <button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="save-edit">保存</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
     const statusClass = s.connected ? 'connected' : 'disconnected';
     const statusText = s.connected ? '已连接' : '未连接';
     const statusDot = s.connected ? '🟢' : '🔴';
@@ -96,6 +121,20 @@ function renderMcpServers(servers) {
         <div class="mcp-server-command">
           <code>${escapeHtml(s.command || '')} ${(s.args || []).map(escapeHtml).join(' ')}</code>
         </div>
+        ${s.tools && s.tools.length > 0 ? `
+        <div class="mcp-tools-section">
+          <button class="mcp-tools-toggle" data-mcp-id="${escapeHtml(s.id)}" data-action="toggle-tools">
+            &#9654; 查看 ${s.tools.length} 个工具
+          </button>
+          <div class="mcp-tools-list" id="mcp-tools-${escapeHtml(s.id)}" style="display:none;">
+            ${s.tools.map(t => `
+              <div class="mcp-tool-item">
+                <div class="mcp-tool-name">${escapeHtml(t.name)}</div>
+                <div class="mcp-tool-desc">${escapeHtml(t.description || '')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : ''}
         <div class="mcp-server-actions">
           <label class="toolbox-toggle" title="${s.enabled !== false ? '启用中，点击禁用' : '已禁用，点击启用'}">
             <input type="checkbox" ${s.enabled !== false ? 'checked' : ''} data-mcp-id="${escapeHtml(s.id)}" data-action="toggle">
@@ -105,6 +144,7 @@ function renderMcpServers(servers) {
             ? `<button class="toolbox-btn toolbox-btn-warn" data-mcp-id="${escapeHtml(s.id)}" data-action="disconnect">断开</button>`
             : `<button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="connect">连接</button>`
           }
+          <button class="toolbox-btn toolbox-btn-edit" data-mcp-id="${escapeHtml(s.id)}" data-action="edit">编辑</button>
           <button class="toolbox-btn toolbox-btn-danger" data-mcp-id="${escapeHtml(s.id)}" data-action="delete">删除</button>
         </div>
       </div>`;
@@ -313,6 +353,19 @@ async function reloadSkills() {
 // ==================== 主入口 ====================
 
 /**
+ * 通知 Extension Background 重新加载 MCP 工具
+ */
+function notifyMcpChange() {
+  try {
+    chrome.runtime.sendMessage({ type: 'RELOAD_MCP_TOOLS' }, (resp) => {
+      if (resp?.success) {
+        console.log(`[Toolbox] Background 已重载 ${resp.count} 个 MCP 工具`);
+      }
+    });
+  } catch (_) { /* 忽略错误，background 可能未运行 */ }
+}
+
+/**
  * 刷新整个工具箱面板
  */
 async function refreshToolbox() {
@@ -344,6 +397,86 @@ async function refreshToolbox() {
   if (addBtn) addBtn.disabled = disabled;
   if (importBtn) importBtn.disabled = disabled;
   if (reloadBtn) reloadBtn.disabled = disabled;
+}
+
+/**
+ * 开始编辑 MCP 服务器（卡片内替换为编辑表单）
+ */
+function startEditMcpServer(serverId) {
+  const server = cachedMcpServers.find(s => s.id === serverId);
+  if (!server) return;
+
+  editingMcpId = serverId;
+  const container = document.getElementById('mcpServerList');
+  if (!container) return;
+
+  // 重新渲染，编辑中的卡片替换为表单
+  renderMcpServers(cachedMcpServers);
+}
+
+/**
+ * 取消编辑
+ */
+function cancelEditMcp() {
+  editingMcpId = null;
+  renderMcpServers(cachedMcpServers);
+}
+
+/**
+ * 保存编辑
+ */
+async function saveMcpEdit() {
+  const idInput = document.getElementById('mcpEditId');
+  const nameInput = document.getElementById('mcpEditName');
+  const cmdInput = document.getElementById('mcpEditCommand');
+  const argsInput = document.getElementById('mcpEditArgs');
+
+  const id = idInput?.value.trim();
+  const name = nameInput?.value.trim();
+  const command = cmdInput?.value.trim();
+  const argsRaw = argsInput?.value.trim();
+
+  if (!id || !command) {
+    showToolboxToast('请填写服务器 ID 和命令路径', 'warning');
+    return;
+  }
+
+  const serverData = {
+    id,
+    name: name || id,
+    command,
+    args: argsRaw ? argsRaw.split(/\s+/) : [],
+    enabled: cachedMcpServers.find(s => s.id === editingMcpId)?.enabled !== false
+  };
+
+  try {
+    await addMcpServer(serverData);
+
+    // 如果编辑前处于连接状态，断开旧连接并使用新配置重连
+    const wasConnected = cachedMcpServers.find(s => s.id === editingMcpId)?.connected;
+    if (wasConnected) {
+      showToolboxToast('正在重新连接...', 'info');
+      // 用旧 ID 断开，用新 ID 重连（防止 ID 被修改的情况）
+      await disconnectMcpServer(editingMcpId);
+      // 短暂等待确保旧进程完全退出
+      await new Promise(r => setTimeout(r, 500));
+      const connectResult = await connectMcpServer(id);
+      if (connectResult.success) {
+        showToolboxToast(`MCP 服务器更新成功，已重连（${connectResult.toolCount || 0} 工具）`, 'success');
+      } else {
+        const errMsg = connectResult.error || '未知错误，请检查命令与参数是否正确';
+        showToolboxToast(`配置已更新，但重连失败: ${errMsg}`, 'warning');
+      }
+    } else {
+      showToolboxToast('MCP 服务器更新成功', 'success');
+    }
+
+    editingMcpId = null;
+    notifyMcpChange();
+    await refreshToolbox();
+  } catch (err) {
+    showToolboxToast(`更新失败: ${err.message}`, 'error');
+  }
 }
 
 /**
@@ -418,21 +551,41 @@ function initToolbox() {
           showToolboxToast('正在连接...', 'info');
           await connectMcpServer(serverId);
           showToolboxToast('连接成功', 'success');
+          notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'disconnect') {
           await disconnectMcpServer(serverId);
           showToolboxToast('已断开连接', 'success');
+          notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'toggle') {
           const enabled = btn.checked;
           await toggleMcpServer(serverId, enabled);
           showToolboxToast(enabled ? '已启用' : '已禁用', 'success');
+          notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'delete') {
           if (!confirm('确定要删除该 MCP 服务器吗？')) return;
           await removeMcpServer(serverId);
           showToolboxToast('删除成功', 'success');
+          notifyMcpChange();
           await refreshToolbox();
+        } else if (action === 'edit') {
+          startEditMcpServer(serverId);
+        } else if (action === 'cancel-edit') {
+          cancelEditMcp();
+        } else if (action === 'save-edit') {
+          await saveMcpEdit();
+        } else if (action === 'toggle-tools') {
+          const toolsList = document.getElementById(`mcp-tools-${serverId}`);
+          const toggleBtn = btn;
+          if (toolsList) {
+            const isHidden = toolsList.style.display === 'none';
+            toolsList.style.display = isHidden ? 'block' : 'none';
+            toggleBtn.innerHTML = isHidden
+              ? `&#9660; 收起 ${toolsList.children.length} 个工具`
+              : `&#9654; 查看 ${toolsList.children.length} 个工具`;
+          }
         }
       } catch (err) {
         showToolboxToast(`操作失败: ${err.message}`, 'error');

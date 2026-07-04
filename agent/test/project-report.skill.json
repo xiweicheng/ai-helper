@@ -1,0 +1,52 @@
+{
+  "name": "project-report",
+  "description": "生成项目报告：列出目录结构、搜索 JS 文件、统计代码量",
+  "version": "1.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "targetDir": {
+        "type": "string",
+        "description": "要分析的目标目录路径"
+      }
+    },
+    "required": ["targetDir"]
+  },
+  "steps": [
+    {
+      "id": "list-dir",
+      "tool": "agent_list_dir",
+      "args": {
+        "path": "{{targetDir}}"
+      }
+    },
+    {
+      "id": "search-js",
+      "tool": "agent_search_files",
+      "args": {
+        "path": "{{targetDir}}",
+        "pattern": "*.js",
+        "recursive": true
+      },
+      "dependsOn": ["list-dir"]
+    },
+    {
+      "id": "search-json",
+      "tool": "agent_search_files",
+      "args": {
+        "path": "{{targetDir}}",
+        "pattern": "*.json",
+        "recursive": true
+      },
+      "dependsOn": ["list-dir"]
+    },
+    {
+      "id": "count-lines",
+      "tool": "agent_exec_command",
+      "args": {
+        "command": "find {{targetDir}} -name '*.js' -not -path '*/node_modules/*' -not -path '*/dist/*' | xargs wc -l 2>/dev/null | tail -1"
+      },
+      "dependsOn": ["search-js"]
+    }
+  ]
+}

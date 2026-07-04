@@ -1,0 +1,32 @@
+{
+  "name": "hello-world",
+  "description": "一个简单的 Hello World Skill，用于验证 Skill 执行引擎的基本功能",
+  "version": "1.0",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "要打招呼的名字"
+      }
+    },
+    "required": ["name"]
+  },
+  "steps": [
+    {
+      "id": "step1",
+      "tool": "agent_exec_command",
+      "args": {
+        "command": "echo 'Hello, {{name}}! This is a skill test.'"
+      }
+    },
+    {
+      "id": "step2",
+      "tool": "agent_exec_command",
+      "args": {
+        "command": "date '+📅 当前时间: %Y-%m-%d %H:%M:%S'"
+      },
+      "dependsOn": ["step1"]
+    }
+  ]
+}
