@@ -971,6 +971,7 @@ export async function sendMessage() {
     // 获取当前 Agent 及其工具配置
     const currentAgent = await getCurrentAgentPrompt();
     const agentToolIds = getCurrentAgentToolIds(currentAgent);
+    state.activeAgentToolIds = agentToolIds;
     
     console.log('[SidePanel] 发送消息调试信息:');
     console.log('  - agent:', currentAgent ? currentAgent.name : '默认助手');
@@ -982,7 +983,7 @@ export async function sendMessage() {
     let messages = [
       {
         role: 'system',
-        content: getSystemPrompt(currentAgent)
+        content: await getSystemPrompt(currentAgent)
       }
     ];
     
@@ -4157,7 +4158,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       tabId: state.currentTabId,
       apiParams: apiParams,
       agentId: state.activeAgentId,
-      agentToolIds: agentToolIds,
+      agentToolIds: state.activeAgentToolIds,
       // 图片识别独立配置（仅当启用且有图片时传递）
       imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
       imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''

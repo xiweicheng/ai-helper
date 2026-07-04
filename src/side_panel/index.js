@@ -379,7 +379,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     let messages = [
       {
         role: 'system',
-        content: getSystemPrompt()
+        content: await getSystemPrompt()
       }
     ];
 

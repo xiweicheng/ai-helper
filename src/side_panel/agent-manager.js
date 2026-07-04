@@ -33,8 +33,9 @@ async function loadAgentState() {
  * 渲染 Agent 选择器
  */
 export async function renderAgentSelector() {
-  const selector = document.getElementById('agentSelectorDropdown');
-  if (!selector) return;
+  const listContainer = document.getElementById('agentListItems');
+  const footerContainer = document.getElementById('agentDropdownFooter');
+  if (!listContainer) return;
 
   const allAgents = await getAllAgents();
   const activeId = state.activeAgentId;
@@ -54,15 +55,17 @@ export async function renderAgentSelector() {
       </div>`;
   }
 
-  html += `
-    <div class="agent-item agent-item-add" id="agentAddBtn">
-      <span class="agent-item-icon">＋</span>
-      <span class="agent-item-name">创建新 Agent</span>
-    </div>`;
+  listContainer.innerHTML = html;
 
-  selector.innerHTML = html;
+  // 固定底部：创建按钮
+  if (footerContainer) {
+    footerContainer.innerHTML = `
+      <div class="agent-item" id="agentAddBtn" style="color:#667eea;">
+        <span class="agent-item-icon" style="color:#667eea;">＋</span>
+        <span class="agent-item-name">创建新 Agent</span>
+      </div>`;
+  }
 
-  // 更新选择器按钮上的显示
   updateAgentSelectorButton(allAgents, activeId);
 }
 
@@ -72,6 +75,7 @@ export async function renderAgentSelector() {
 function updateAgentSelectorButton(allAgents, activeId) {
   const btn = document.getElementById('agentSelectorBtn');
   const text = document.getElementById('agentSelectorText');
+  const emoji = document.getElementById('agentSelectorEmoji');
   if (!btn || !text) return;
 
   const activeAgent = allAgents.find(a => a.id === activeId) 
@@ -79,9 +83,50 @@ function updateAgentSelectorButton(allAgents, activeId) {
   
   if (activeAgent) {
     text.textContent = `${activeAgent.icon} ${activeAgent.name}`;
+    if (emoji) emoji.textContent = activeAgent.icon;
   } else {
     text.textContent = '🤖 默认助手';
+    if (emoji) emoji.textContent = '🤖';
   }
+}
+
+/**
+ * 动态定位下拉框：居中于按钮下方，clamp 在面板边界内
+ */
+function positionDropdown() {
+  const btn = document.getElementById('agentSelectorBtn');
+  const dropdown = document.getElementById('agentSelectorDropdown');
+  if (!btn || !dropdown) return;
+
+  const btnRect = btn.getBoundingClientRect();
+  const dropdownRect = dropdown.getBoundingClientRect();
+  const wrapperRect = document.getElementById('agentSelectorWrapper').getBoundingClientRect();
+  const panelWidth = document.body.clientWidth;
+
+  // 按钮中心相对于视口
+  const btnCenter = btnRect.left + btnRect.width / 2;
+
+  // 理想位置：下拉框中心对齐按钮中心
+  let idealLeft = btnCenter - dropdownRect.width / 2;
+
+  // clamp 在面板边界内（左右各留 8px 边距）
+  const minLeft = 8;
+  const maxLeft = panelWidth - dropdownRect.width - 8;
+
+  // 如果面板宽度不够放下下拉框，限制最大宽度
+  if (maxLeft < minLeft) {
+    dropdown.style.maxWidth = (panelWidth - 16) + 'px';
+    // 重新测量
+    const newRect = dropdown.getBoundingClientRect();
+    idealLeft = btnCenter - newRect.width / 2;
+    const newMaxLeft = panelWidth - newRect.width - 8;
+    idealLeft = Math.max(minLeft, Math.min(newMaxLeft, idealLeft));
+  } else {
+    dropdown.style.maxWidth = '';
+    idealLeft = Math.max(minLeft, Math.min(maxLeft, idealLeft));
+  }
+
+  dropdown.style.left = (idealLeft - wrapperRect.left) + 'px';
 }
 
 /**
@@ -96,9 +141,15 @@ function initAgentSelectorEvents() {
   // 点击按钮切换下拉
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isOpen = dropdown.style.display === 'block';
-    dropdown.style.display = isOpen ? 'none' : 'block';
-    if (!isOpen) renderAgentSelector();
+    const isOpen = dropdown.style.display === 'flex';
+    if (isOpen) {
+      dropdown.style.display = 'none';
+    } else {
+      // 打开前先渲染，展示后再动态定位
+      renderAgentSelector();
+      dropdown.style.display = 'flex';
+      positionDropdown();
+    }
   });
 
   // 点击外部关闭
@@ -170,6 +221,127 @@ function initAgentModalEvents() {
 
   // 模板选择
   modal.querySelector('#agentTemplateSelect')?.addEventListener('change', onTemplateSelect);
+
+  // Emoji 选择器
+  initEmojiPicker();
+
+  // 工具快捷操作按钮
+  const toolActions = document.getElementById('agentToolActions');
+  if (toolActions) {
+    toolActions.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === 'selectAll') selectAllTools();
+      else if (action === 'deselectAll') deselectAllTools();
+    });
+  }
+
+  // 工具分类标题点击：切换该分类全选/取消
+  const toolList = document.getElementById('agentToolList');
+  if (toolList) {
+    toolList.addEventListener('click', (e) => {
+      const catHeader = e.target.closest('.agent-tool-category-clickable');
+      if (!catHeader) return;
+      toggleCategorySelection(catHeader.dataset.category);
+    });
+  }
+
+  // 点击外部关闭 emoji picker
+  document.addEventListener('click', (e) => {
+    const picker = document.getElementById('emojiPicker');
+    const btn = document.getElementById('agentEditIconBtn');
+    if (picker && btn && picker.style.display === 'block' && !btn.contains(e.target) && !picker.contains(e.target)) {
+      picker.style.display = 'none';
+    }
+  });
+}
+
+// 常用 Emoji 分类
+const EMOJI_CATEGORIES = [
+  { label: '人物表情', emojis: ['😀','😃','😎','🤩','🥳','😇','🤔','🧐','😤','😭','🥺','🤗','😏','🫡','🤫','🤯','🥱','😴','🤤','💀'] },
+  { label: '手势动作', emojis: ['👋','🤝','👍','👎','👏','🙌','💪','✍️','🙏','🤞','✌️','🤘','👆','👇','👉','👈','🖐️','🤙','🤌','🫶'] },
+  { label: '职业角色', emojis: ['🤖','🧑‍💻','👨‍🔬','👩‍🎨','🧑‍🏫','👨‍💼','🧑‍🔧','👩‍⚕️','🧑‍🚀','👨‍🍳','🧑‍🎓','👩‍🚒','👮','🕵️','👷','🧙','🦸','🧛','🧜','👼'] },
+  { label: 'AI & 科技', emojis: ['🧠','💡','🔍','🔬','🧪','🧬','🛰️','📡','🔗','🌐','💻','🖥️','⌨️','🖱️','🖨️','📱','🔌','💾','🎛️','⚙️'] },
+  { label: '工具物品', emojis: ['🔧','🔨','🪛','🔐','🔑','🛡️','🔒','🔓','✂️','📐','📏','🧲','💣','🧨','🔔','🔕','💎','💿','📀','🎥'] },
+  { label: '文档数据', emojis: ['📝','📋','📄','📊','📈','📉','🗂️','📁','📂','📚','📖','📌','📎','🖇️','✏️','🖊️','📏','📐','🗑️','📇'] },
+  { label: '状态标记', emojis: ['✅','❌','⚠️','⛔','🚫','➕','➖','⭐','🔥','💯','🎯','🏆','🥇','📌','📍','💬','🗨️','💭','🗯️','💢'] },
+  { label: '交通出行', emojis: ['🚀','✈️','🚗','🚲','🛵','🏎️','🚢','🚁','🛸','🏃','🚶','🧗','🏄','🚴','🏊','⛵','🚂','🚌','🚕','🛴'] },
+  { label: '自然天气', emojis: ['☀️','🌙','⭐','🌈','☁️','⛈️','❄️','🔥','💧','🌊','🌸','🌺','🌻','🌲','🍀','🌍','🏔️','🌋','🏝️','🌌'] },
+  { label: '符号标志', emojis: ['©️','®️','™️','♻️','⚡','💲','🔴','🟠','🟡','🟢','🔵','🟣','⬛','⬜','🟤','❤️','💙','💚','💛','💜'] },
+];
+
+function initEmojiPicker() {
+  const picker = document.getElementById('emojiPicker');
+  const btn = document.getElementById('agentEditIconBtn');
+  const hidden = document.getElementById('agentEditIcon');
+  if (!picker || !btn) return;
+
+  // 构建分类 emoji 面板
+  let html = '';
+  for (const cat of EMOJI_CATEGORIES) {
+    html += `<div class="emoji-category-label">${cat.label}</div>`;
+    html += '<div class="emoji-picker-grid">';
+    for (const emoji of cat.emojis) {
+      html += `<button type="button" class="emoji-picker-item" data-emoji="${emoji}">${emoji}</button>`;
+    }
+    html += '</div>';
+  }
+  picker.innerHTML = html;
+
+  // 点击按钮切换 picker
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (picker.style.display === 'block') {
+      picker.style.display = 'none';
+      return;
+    }
+    // 动态定位：判断按钮右侧空间，不够则靠右展开
+    const btnRect = btn.getBoundingClientRect();
+    const panelWidth = document.body.clientWidth;
+    const pickerWidth = 330;
+    const spaceRight = panelWidth - btnRect.left;
+    if (spaceRight >= pickerWidth) {
+      picker.style.left = '0';
+      picker.style.right = 'auto';
+    } else {
+      picker.style.left = 'auto';
+      picker.style.right = '0';
+    }
+    picker.style.display = 'block';
+  });
+
+  // 选择 emoji
+  picker.addEventListener('click', (e) => {
+    const item = e.target.closest('.emoji-picker-item');
+    if (!item) return;
+    const emoji = item.dataset.emoji;
+    btn.textContent = emoji;
+    if (hidden) hidden.value = emoji;
+    picker.style.display = 'none';
+  });
+}
+
+function selectAllTools() {
+  const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
+  checkboxes.forEach(cb => { cb.checked = true; });
+}
+
+function deselectAllTools() {
+  const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
+  checkboxes.forEach(cb => { cb.checked = false; });
+}
+
+function toggleCategorySelection(category) {
+  const items = document.querySelectorAll(`#agentToolList .agent-tool-item[data-category="${category}"]`);
+  const checkboxes = [];
+  items.forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    if (cb) checkboxes.push(cb);
+  });
+  if (checkboxes.length === 0) return;
+  const allChecked = checkboxes.every(cb => cb.checked);
+  checkboxes.forEach(cb => { cb.checked = !allChecked; });
 }
 
 /**
@@ -184,6 +356,8 @@ export async function openAgentEditor(agentId) {
   modal.querySelector('#agentEditId').value = '';
   modal.querySelector('#agentEditName').value = '';
   modal.querySelector('#agentEditIcon').value = '🤖';
+  const iconBtn = modal.querySelector('#agentEditIconBtn');
+  if (iconBtn) iconBtn.textContent = '🤖';
   modal.querySelector('#agentEditDesc').value = '';
   modal.querySelector('#agentEditPrompt').value = '';
   modal.querySelector('#agentEditAllowSub').checked = false;
@@ -201,6 +375,8 @@ export async function openAgentEditor(agentId) {
     modal.querySelector('#agentEditId').value = agent.id;
     modal.querySelector('#agentEditName').value = agent.name;
     modal.querySelector('#agentEditIcon').value = agent.icon || '🤖';
+    const iconBtn = modal.querySelector('#agentEditIconBtn');
+    if (iconBtn) iconBtn.textContent = agent.icon || '🤖';
     modal.querySelector('#agentEditDesc').value = agent.description || '';
     modal.querySelector('#agentEditPrompt').value = agent.systemPrompt || '';
     modal.querySelector('#agentEditAllowSub').checked = agent.allowSubDispatch || false;
@@ -259,6 +435,8 @@ function onTemplateSelect(e) {
 
   modal.querySelector('#agentEditName').value = template.name;
   modal.querySelector('#agentEditIcon').value = template.icon;
+  const iconBtn = modal.querySelector('#agentEditIconBtn');
+  if (iconBtn) iconBtn.textContent = template.icon;
   modal.querySelector('#agentEditDesc').value = template.description;
   modal.querySelector('#agentEditPrompt').value = template.systemPrompt;
   modal.querySelector('#agentEditAllowSub').checked = template.allowSubDispatch || false;
@@ -299,14 +477,16 @@ function renderAgentToolSelector(selectedToolIds) {
     grouped[cat].push(tool);
   }
 
+  const totalCount = BUILTIN_TOOLS.length;
+
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {
     const catName = categoryNames[cat] || cat;
-    html += `<div class="agent-tool-category">${catName}</div>`;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="点击切换该分类全选/取消全选">${catName} <span style="font-weight:400;color:#bbb;">(${tools.length})</span></div>`;
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
       html += `
-        <label class="agent-tool-item">
+        <label class="agent-tool-item" data-category="${escapeAttr(cat)}" title="${escapeAttr(tool.description)}">
           <input type="checkbox" value="${escapeAttr(tool.id)}" ${checked} data-tool-id="${escapeAttr(tool.id)}">
           <span class="agent-tool-name">${escapeHtml(tool.name)}</span>
           <span class="agent-tool-desc">${escapeHtml(tool.description.substring(0, 40))}${tool.description.length > 40 ? '...' : ''}</span>
@@ -314,6 +494,12 @@ function renderAgentToolSelector(selectedToolIds) {
     }
   }
   container.innerHTML = html;
+
+  // 更新总工具数
+  const countEl = document.getElementById('agentToolCount');
+  if (countEl) {
+    countEl.textContent = `(${totalCount})`;
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
+import { executeDispatchSubAgent } from './agent-dispatcher.js';
 
 // ==================== 敏感操作审计日志 ====================
 
@@ -663,6 +664,7 @@ const TOOL_HANDLERS = {
   agent_search_files: executeAgentSearchFiles,
   agent_search_content: executeAgentSearchContent,
   wait_for_navigation: executeWaitForNavigation,
+  dispatch_sub_agent: executeDispatchSubAgent,
   take_full_page_screenshot: executeTakeFullPageScreenshot,
 };
 

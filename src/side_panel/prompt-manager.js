@@ -426,7 +426,7 @@ export async function sendPromptByCode(code) {
     let messages = [
       {
         role: 'system',
-        content: getSystemPrompt()
+        content: await getSystemPrompt()
       }
     ];
 

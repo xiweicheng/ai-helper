@@ -39,6 +39,38 @@
       font-size: 16px;
       font-weight: 600;
       letter-spacing: -0.3px;
+      white-space: nowrap;
+    }
+    .header-title-text {
+      display: inline;
+    }
+    .agent-selector-label {
+      display: inline;
+    }
+    .agent-selector-emoji {
+      display: none;
+    }
+    /* 窄屏自适应：隐藏文字，仅保留图标 */
+    @media (max-width: 420px) {
+      .header {
+        padding: 14px 10px;
+      }
+      .header h1 img {
+        margin-right: 0;
+      }
+      .header-title-text {
+        display: none;
+      }
+      .agent-selector-label {
+        display: none;
+      }
+      .agent-selector-emoji {
+        display: inline;
+      }
+      .agent-selector-btn {
+        padding: 4px 6px;
+        gap: 0;
+      }
     }
     .header .clear-chat-btn {
       background: transparent;
@@ -162,10 +194,10 @@
       display: flex;
       align-items: center;
       gap: 4px;
-      background: rgba(255, 255, 255, 0.12);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: white;
-      padding: 4px 10px;
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.85);
+      padding: 4px 8px;
       border-radius: 8px;
       cursor: pointer;
       font-size: 12px;
@@ -174,7 +206,7 @@
       transition: all 0.2s;
     }
     .agent-selector-btn:hover {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
     }
     .agent-selector-btn svg {
       opacity: 0.7;
@@ -183,17 +215,37 @@
     .agent-selector-dropdown {
       position: absolute;
       top: 100%;
-      left: 0;
+      right: 0;
       margin-top: 4px;
       background: white;
       border: 1px solid #e0e0e0;
       border-radius: 10px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-      min-width: 240px;
+      min-width: 200px;
       max-height: 320px;
-      overflow-y: auto;
       z-index: 200;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .agent-list-scroll {
+      flex: 1;
+      overflow-y: auto;
       padding: 4px;
+    }
+    .agent-dropdown-footer {
+      flex-shrink: 0;
+      padding: 6px 4px;
+      border-top: 1px solid #f0f0f0;
+      background: white;
+    }
+    /* 窄屏时名称过长截断 */
+    @media (max-width: 420px) {
+      .agent-item-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     }
     .agent-item {
       display: flex;
@@ -264,15 +316,23 @@
       border-bottom: 1px solid #f0f0f0;
       margin-bottom: 4px;
     }
+    .agent-tool-category-clickable {
+      cursor: pointer;
+      transition: color 0.15s;
+      user-select: none;
+    }
+    .agent-tool-category-clickable:hover {
+      color: #667eea;
+    }
     .agent-tool-category:first-child {
       padding-top: 0;
     }
     .agent-tool-item {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 6px;
-      border-radius: 4px;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 12px;
       transition: background 0.15s;
@@ -280,9 +340,70 @@
     .agent-tool-item:hover {
       background: #f5f7fa;
     }
+    .agent-tool-action-btn {
+      font-size: 11px;
+      color: #667eea;
+      background: none;
+      border: 1px solid #667eea;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .agent-tool-action-btn:hover {
+      background: #667eea;
+      color: white;
+    }
     .agent-tool-item input[type="checkbox"] {
       margin: 0;
       flex-shrink: 0;
+    }
+    /* Emoji 选择器 */
+    .emoji-picker {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      z-index: 5010;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+      padding: 10px;
+      width: 330px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 4px;
+    }
+    .emoji-category-label {
+      font-size: 10px;
+      color: #aaa;
+      padding: 4px 2px 2px;
+      grid-column: 1 / -1;
+      margin-top: 4px;
+    }
+    .emoji-category-label:first-child {
+      margin-top: 0;
+    }
+    .emoji-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 2px;
+    }
+    .emoji-picker-item {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      border: none;
+      background: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s;
+      padding: 4px;
+    }
+    .emoji-picker-item:hover {
+      background: #e8ecf4;
     }
     .agent-tool-name {
       font-weight: 500;
@@ -6230,15 +6351,19 @@
   <div class="header">
     <h1>
       <img src="icons/icon48.png" width="20" height="20" alt="AI Helper" style="vertical-align: -3px; margin-right: 6px;">
-      AI Helper
+      <span class="header-title-text">AI Helper</span>
     </h1>
     <div style="display: flex; align-items: center; gap: 4px;">
       <div class="agent-selector-wrapper" id="agentSelectorWrapper">
         <button class="agent-selector-btn" id="agentSelectorBtn" title="切换 Agent">
-          <span id="agentSelectorText">🤖 默认助手</span>
+          <span class="agent-selector-label" id="agentSelectorText">🤖 默认助手</span>
+          <span class="agent-selector-emoji" id="agentSelectorEmoji">🤖</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
-        <div class="agent-selector-dropdown" id="agentSelectorDropdown" style="display:none;"></div>
+        <div class="agent-selector-dropdown" id="agentSelectorDropdown" style="display:none;">
+          <div class="agent-list-scroll" id="agentListItems"></div>
+          <div class="agent-dropdown-footer" id="agentDropdownFooter"></div>
+        </div>
       </div>
       <button class="header-agent-indicator" id="headerAgentIndicator" title="Agent 状态">
         <span class="header-agent-dot unknown" id="headerAgentDot"></span>
@@ -6897,9 +7022,11 @@
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">名称</label>
           <input type="text" id="agentEditName" placeholder="Agent 名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
         </div>
-        <div style="width: 70px;">
+        <div style="width: 70px; position: relative;">
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">图标</label>
-          <input type="text" id="agentEditIcon" placeholder="🤖" maxlength="2" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center;">
+          <button type="button" id="agentEditIconBtn" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center; background: white; cursor: pointer;">🤖</button>
+          <input type="hidden" id="agentEditIcon" value="🤖">
+          <div class="emoji-picker" id="emojiPicker" style="display:none;"></div>
         </div>
       </div>
 
@@ -6921,7 +7048,11 @@
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">可用工具（不勾选则继承全局工具设置）</label>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">可用工具 <span id="agentToolCount" style="color: #999;"></span>（不勾选则继承全局工具设置）</label>
+        <div id="agentToolActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
+          <button type="button" class="agent-tool-action-btn" data-action="selectAll">全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="deselectAll">取消全选</button>
+        </div>
         <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
       </div>
 

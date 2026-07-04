@@ -154,6 +154,7 @@ export async function importSessions(sessionsData) {
       enabledTools: sessionData.enabledTools || [...state.enabledTools],
       temperature: sessionData.temperature !== undefined ? sessionData.temperature : state.temperature,
       topP: sessionData.topP !== undefined ? sessionData.topP : state.topP,
+      agentId: sessionData.agentId || null,
       messageHistory: (sessionData.messageHistory || []).map((msg) => ({
         role: msg.role,
         content: msg.content || '',
@@ -251,6 +252,7 @@ export async function switchToSession(sessionId) {
   }
   state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
+  state.activeAgentId = targetSession.agentId || null;
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
   if (targetSession.isGenerating) {
     state.generatingSessionIds.add(sessionId);

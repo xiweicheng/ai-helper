@@ -1871,6 +1871,32 @@ export const RAW_TOOLS = [
       }
     }
   },
+  {
+    id: 'dispatch_sub_agent',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'dispatch_sub_agent',
+      description: '将子任务分派给指定的子 Agent 执行。子 Agent 拥有独立的角色定义和工具集。当你需要不同领域的专业能力处理子任务时使用此工具（如代码审查+文档撰写）。可在一次响应中并行调用多个 dispatch_sub_agent，每个子 Agent 独立执行。',
+      parameters: {
+        type: 'object',
+        properties: {
+          subAgentId: {
+            type: 'string',
+            description: '子 Agent 的 ID。可用的子 Agent 列表会在系统提示词中提供。'
+          },
+          task: {
+            type: 'string',
+            description: '要分派给子 Agent 的完整任务描述，包括所有必要的上下文信息。子 Agent 只会看到这个任务描述和其自身的系统提示词，无法访问主对话历史。请确保任务描述足够详细完整。'
+          }
+        },
+        required: ['subAgentId', 'task']
+      }
+    }
+  },
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================

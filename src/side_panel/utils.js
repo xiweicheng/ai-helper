@@ -1,7 +1,7 @@
 // utils.js - 工具函数集合
 
 import state from './state.js';
-import { getAgent } from './agent-store.js';
+import { getAgent, getAllAgents } from './agent-store.js';
 
 /**
  * 显示 Toast 提示
@@ -126,7 +126,7 @@ export function copyToClipboard(text, btn) {
  * 优先级：Agent 自定义 > 全局自定义 > 默认
  * @param {Object} [agent] - 可选，当前使用的 Agent 对象
  */
-export function getSystemPrompt(agent = null) {
+export async function getSystemPrompt(agent = null) {
   const currentTime = new Date().toLocaleString('zh-CN');
 
   // 构建 Agent 平台信息文本
@@ -137,12 +137,21 @@ export function getSystemPrompt(agent = null) {
   }
   
   // dispatch_sub_agent 工具说明——仅在 Agent 允许 sub dispatch 时注入
-  const dispatchToolRule = (agent && agent.allowSubDispatch) ? `
+  let dispatchToolRule = '';
+  if (agent && agent.allowSubDispatch) {
+    const allAgents = await getAllAgents();
+    const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent.id || ''));
+    const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
+    dispatchToolRule = `
   
 ## Sub-Agent 调度
 你可以使用 dispatch_sub_agent 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
 使用场景：复杂任务需要不同领域的专业能力时（如代码审查 + 文档撰写）。
-调用方式：在一次响应中可并行调用多个 dispatch_sub_agent。` : '';
+调用方式：在一次响应中可并行调用多个 dispatch_sub_agent。
+
+当前可用的子 Agent：
+${subAgentList || '（暂无可用子 Agent，请先在 Agent 管理中创建并启用 Sub-Agent 调度）'}`;
+  }
 
   // 任务拆解相关规则——仅在启用工具时注入，节省 token
   const taskPlanningRules = state.useTools ? `
