@@ -122,7 +122,7 @@ export async function loadChatHistory() {
       // 合并会话的 enabledTools：保留已有选择，只自动添加全新工具（避免重新启用用户禁用的工具）
       if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
         const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-        const saved = activeSession.enabledTools.filter(id => validIds.has(id));
+        const saved = activeSession.enabledTools.filter(id => validIds.has(id) || id.startsWith('mcp_'));
         // 只添加原会话中不存在的全新工具，避免将用户禁用的工具重新启用
         const originalSavedSet = new Set(activeSession.enabledTools);
         const added = BUILTIN_TOOLS.filter(t => t.enabled && !originalSavedSet.has(t.id)).map(t => t.id);

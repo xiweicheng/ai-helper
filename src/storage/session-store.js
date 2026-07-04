@@ -244,7 +244,7 @@ export async function switchToSession(sessionId) {
   // 合并会话的 enabledTools：保留已有选择，自动添加新工具
   if (targetSession.enabledTools && targetSession.enabledTools.length > 0) {
     const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-    const saved = targetSession.enabledTools.filter(id => validIds.has(id));
+    const saved = targetSession.enabledTools.filter(id => validIds.has(id) || id.startsWith('mcp_'));
     const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
     state.enabledTools = [...saved, ...added];
   } else {
