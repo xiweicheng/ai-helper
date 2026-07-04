@@ -62,7 +62,7 @@ export async function renderAgentSelector() {
     footerContainer.innerHTML = `
       <div class="agent-item" id="agentAddBtn" style="color:#667eea;">
         <span class="agent-item-icon" style="color:#667eea;">＋</span>
-        <span class="agent-item-name">创建新 Agent</span>
+        <span class="agent-item-name">创建新助手</span>
       </div>`;
   }
 
@@ -208,11 +208,6 @@ function initAgentModalEvents() {
   // 关闭按钮
   modal.querySelector('#agentModalCloseBtn')?.addEventListener('click', closeAgentEditor);
   
-  // 点击遮罩关闭
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeAgentEditor();
-  });
-
   // 保存按钮
   modal.querySelector('#agentSaveBtn')?.addEventListener('click', saveAgent);
 
@@ -371,7 +366,7 @@ export async function openAgentEditor(agentId) {
     const agent = await getAgent(agentId);
     if (!agent || agent.isBuiltin) return;  // 内置不可编辑
 
-    titleEl.textContent = '编辑 Agent';
+    titleEl.textContent = '编辑助手';
     modal.querySelector('#agentEditId').value = agent.id;
     modal.querySelector('#agentEditName').value = agent.name;
     modal.querySelector('#agentEditIcon').value = agent.icon || '🤖';
@@ -386,7 +381,7 @@ export async function openAgentEditor(agentId) {
     renderAgentToolSelector(agent.toolIds);
   } else {
     // 新建模式
-    titleEl.textContent = '创建新 Agent';
+    titleEl.textContent = '创建新助手';
     deleteBtn.style.display = 'none';
     
     // 渲染空工具选择
@@ -530,7 +525,7 @@ async function saveAgent() {
   const toolIds = getSelectedToolIds();
 
   if (!name) {
-    showToast('请输入 Agent 名称', 'warning');
+    showToast('请输入助手名称', 'warning');
     return;
   }
 
@@ -539,10 +534,10 @@ async function saveAgent() {
   try {
     if (agentId) {
       await updateAgent(agentId, data);
-      showToast('Agent 已更新', 'success');
+      showToast('助手已更新', 'success');
     } else {
       const newAgent = await createAgent(data);
-      showToast(`Agent "${newAgent.name}" 已创建`, 'success');
+      showToast(`助手 "${newAgent.name}" 已创建`, 'success');
     }
 
     // 刷新状态
@@ -566,14 +561,14 @@ async function deleteCurrentAgent() {
   if (!agentId) return;
 
   const confirmed = await showCustomConfirm(
-    `确定要删除这个 Agent 吗？正在使用该 Agent 的会话将恢复为默认助手。`,
-    '删除 Agent'
+    `确定要删除这个助手吗？正在使用该助手的会话将恢复为默认助手。`,
+    '删除助手'
   );
   if (!confirmed) return;
 
   try {
     await deleteAgent(agentId);
-    showToast('Agent 已删除', 'success');
+    showToast('助手已删除', 'success');
     await loadAgentState();
     await renderAgentSelector();
     closeAgentEditor();

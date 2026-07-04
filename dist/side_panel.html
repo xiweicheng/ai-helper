@@ -7015,15 +7015,16 @@
 
   <!-- Agent 编辑模态框 -->
   <div class="modal-overlay" id="agentEditModal" style="display:none; z-index: 5000;">
-    <div class="modal-container" style="max-width: 650px; max-height: 85vh; overflow-y: auto;">
-      <button class="prompt-modal-close" id="agentModalCloseBtn" title="关闭">×</button>
-      <div class="modal-title" id="agentEditTitle">创建新 Agent</div>
+    <div class="modal-container" style="max-width: 650px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+      <button class="prompt-modal-close" id="agentModalCloseBtn" title="关闭" style="position: absolute; top: 12px; right: 16px; z-index: 1;">×</button>
+      <div class="modal-title" id="agentEditTitle" style="flex-shrink: 0; margin-bottom: 12px;">创建新助手</div>
       <input type="hidden" id="agentEditId">
       
+      <div style="flex: 1; overflow-y: auto; padding-right: 4px;">
       <div style="display: flex; gap: 12px; margin-bottom: 12px;">
         <div style="flex: 1;">
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">名称</label>
-          <input type="text" id="agentEditName" placeholder="Agent 名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+          <input type="text" id="agentEditName" placeholder="助手名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
         </div>
         <div style="width: 70px; position: relative;">
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">图标</label>
@@ -7035,7 +7036,7 @@
 
       <div style="margin-bottom: 12px;">
         <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">简短描述</label>
-        <input type="text" id="agentEditDesc" placeholder="这个 Agent 擅长什么？" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+        <input type="text" id="agentEditDesc" placeholder="这个助手擅长什么？" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
       </div>
 
       <div style="margin-bottom: 12px;">
@@ -7046,7 +7047,7 @@
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">系统提示词（定义 Agent 的角色和能力）</label>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">系统提示词（定义助手的角色和能力）</label>
         <textarea id="agentEditPrompt" placeholder="你是一个专业的..." rows="6" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
       </div>
 
@@ -7063,12 +7064,13 @@
         <label class="check-toggle" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #555;">
           <input type="checkbox" id="agentEditAllowSub" style="display:none;">
           <span class="checkmark"></span>
-          允许作为 Sub-Agent 被调度
+          允许作为子助手被调度
         </label>
       </div>
+      </div>
 
-      <div class="modal-actions">
-        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" title="删除此 Agent">删除</button>
+      <div class="modal-actions" style="flex-shrink: 0; padding-top: 12px; margin-top: 0;">
+        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" title="删除此助手">删除</button>
         <button class="modal-btn confirm" id="agentSaveBtn" style="background: #667eea;">保存</button>
       </div>
     </div>
