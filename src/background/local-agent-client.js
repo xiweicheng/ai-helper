@@ -1,5 +1,5 @@
-// background/local-agent-client.js - 本地代理通信客户端
-// 封装与本地代理服务的 HTTP 和 WebSocket 通信
+// background/local-agent-client.js - 代理通信客户端
+// 封装与代理服务的 HTTP 和 WebSocket 通信
 
 /**
  * 获取代理 连接配置

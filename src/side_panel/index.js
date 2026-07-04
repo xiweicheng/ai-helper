@@ -6,6 +6,17 @@ import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCur
 import { estimateMessagesTokens, getMessageBudget, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
+
+/** 格式化上下文窗口大小：>=1M 显示 "1.2M"，>=1K 显示 "128K" */
+function formatCtxWindow(tokens) {
+  if (tokens >= 1000000) {
+    return Math.round(tokens / 1000000 * 10) / 10 + 'M';
+  }
+  if (tokens >= 1000) {
+    return Math.round(tokens / 1000) + 'K';
+  }
+  return String(tokens);
+}
 import { initClarifyEvents } from './clarify-dialog.js';
 import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
@@ -208,23 +219,38 @@ function loadCustomModelsToDropdown(customModels, callback) {
         if (contextWindow && contextWindow > 0) {
           const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
           if (existingOption) {
+            // 确保左侧包裹
             let leftSpan = existingOption.querySelector('.model-option-left');
             if (!leftSpan) {
-              // 给旧结构的预设选项也包裹模型名
               leftSpan = document.createElement('span');
               leftSpan.className = 'model-option-left';
               leftSpan.textContent = existingOption.textContent;
-              existingOption.textContent = '';
+              for (const child of [...existingOption.childNodes]) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                  existingOption.removeChild(child);
+                }
+              }
               existingOption.insertBefore(leftSpan, existingOption.firstChild);
             }
-            const badge = leftSpan.querySelector('.model-ctx-badge');
+
+            // 右侧容器（只有 badge，无删除按钮）
+            let rightSpan = existingOption.querySelector('.model-option-right');
+            if (!rightSpan) {
+              rightSpan = document.createElement('span');
+              rightSpan.className = 'model-option-right';
+              const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
+              if (oldBadge) rightSpan.appendChild(oldBadge);
+              existingOption.appendChild(rightSpan);
+            }
+
+            const badge = rightSpan.querySelector('.model-ctx-badge');
             if (badge) {
-              badge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
+              badge.textContent = formatCtxWindow(contextWindow);
             } else {
               const ctxBadge = document.createElement('span');
               ctxBadge.className = 'model-ctx-badge';
-              ctxBadge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
-              leftSpan.appendChild(ctxBadge);
+              ctxBadge.textContent = formatCtxWindow(contextWindow);
+              rightSpan.appendChild(ctxBadge);
             }
           }
         }
@@ -238,15 +264,15 @@ function loadCustomModelsToDropdown(customModels, callback) {
       option.dataset.value = modelName;
       option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${modelName}</span>`;
 
-      // 上下文窗口大小标签（追加到名称包裹容器内）
+      // 上下文窗口大小标签（放在右侧容器内）
       if (contextWindow && contextWindow > 0) {
-        const leftSpan = option.querySelector('.model-option-left');
-        if (leftSpan) {
-          const ctxBadge = document.createElement('span');
-          ctxBadge.className = 'model-ctx-badge';
-          ctxBadge.textContent = contextWindow >= 1000 ? Math.round(contextWindow / 1000) + 'K' : String(contextWindow);
-          leftSpan.appendChild(ctxBadge);
-        }
+        const rightSpan = document.createElement('span');
+        rightSpan.className = 'model-option-right';
+        const ctxBadge = document.createElement('span');
+        ctxBadge.className = 'model-ctx-badge';
+        ctxBadge.textContent = formatCtxWindow(contextWindow);
+        rightSpan.appendChild(ctxBadge);
+        option.appendChild(rightSpan);
       }
 
       option.addEventListener('click', (e) => {

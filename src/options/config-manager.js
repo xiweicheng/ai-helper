@@ -47,6 +47,7 @@ function ensureModelDeleteButtons() {
     deleteBtn.className = 'delete-model-btn';
     deleteBtn.title = '删除此模型';
     deleteBtn.innerHTML = '×';
+    deleteBtn.style.display = 'inline-block';
     option.appendChild(deleteBtn);
   });
 }
@@ -54,38 +55,71 @@ function ensureModelDeleteButtons() {
 // 添加模型到下拉列表（支持重新加回已删除的预设模型）
 // modelName: 模型名称
 // contextWindow: 可选的上下文窗口大小，0 或不传表示使用内置映射自动推断
+/**
+ * 将旧格式（文本节点直接放在 option 下）迁移为 model-option-left 包裹格式
+ */
+function migrateOptionLeft(option) {
+  const leftSpan = document.createElement('span');
+  leftSpan.className = 'model-option-left';
+  const textNodes = [];
+  for (const child of [...option.childNodes]) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      textNodes.push(child);
+    }
+  }
+  textNodes.forEach(n => {
+    leftSpan.appendChild(n);
+  });
+  // badge 现在属于右侧容器，不放入 leftSpan
+  option.insertBefore(leftSpan, option.firstChild);
+}
+
 export function addCustomModelToDropdown(modelName, contextWindow) {
   const modelDropdown = document.getElementById('modelDropdown');
   // 检查是否已存在
   const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (existingOption) {
-    // 如果已存在但传入了新的 contextWindow，更新显示
+    // 如果已存在但传入了新的 contextWindow，更新右侧显示
     if (contextWindow && contextWindow > 0) {
       existingOption.dataset.contextWindow = contextWindow;
       existingOption.dataset.isCustom = 'true';
-      // 确保名称和标签在同一个包裹容器内
+
+      // 确保模型名有 model-option-left 包裹
       let leftSpan = existingOption.querySelector('.model-option-left');
-      if (!leftSpan) {
-        // 旧结构：把文本和已有标签移入包裹容器
-        leftSpan = document.createElement('span');
-        leftSpan.className = 'model-option-left';
-        leftSpan.textContent = existingOption.textContent;
-        existingOption.textContent = '';
-        // 把已有的 badge 移入
-        const oldBadge = existingOption.querySelector('.model-ctx-badge');
-        if (oldBadge) leftSpan.appendChild(oldBadge);
-        existingOption.insertBefore(leftSpan, existingOption.firstChild);
+      if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
+
+      // 确保有右侧容器（badge + 可选删除按钮）
+      let rightSpan = existingOption.querySelector('.model-option-right');
+      if (!rightSpan) {
+        rightSpan = document.createElement('span');
+        rightSpan.className = 'model-option-right';
+        // 把旧结构中散落的 badge 移入右侧容器
+        const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
+        if (oldBadge) rightSpan.appendChild(oldBadge);
+        let deleteBtn = existingOption.querySelector(':scope > .delete-model-btn');
+        if (!deleteBtn) {
+          deleteBtn = document.createElement('button');
+          deleteBtn.type = 'button';
+          deleteBtn.className = 'delete-model-btn';
+          deleteBtn.title = '删除此模型';
+          deleteBtn.innerHTML = '×';
+        }
+        deleteBtn.style.display = 'inline-block';
+        rightSpan.appendChild(deleteBtn);
+        existingOption.appendChild(rightSpan);
       }
-      // 更新或添加新的 badge
-      const badge = leftSpan.querySelector('.model-ctx-badge');
+
+      // 更新 badge
+      const badge = rightSpan.querySelector('.model-ctx-badge');
       if (badge) {
         badge.textContent = formatContextWindow(contextWindow);
       } else {
         const newBadge = document.createElement('span');
         newBadge.className = 'model-ctx-badge';
         newBadge.textContent = formatContextWindow(contextWindow);
-        leftSpan.appendChild(newBadge);
+        rightSpan.insertBefore(newBadge, rightSpan.firstChild);
       }
+
       saveCustomModels();
     }
     return;
@@ -109,27 +143,32 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
     option.dataset.contextWindow = contextWindow;
   }
 
-  // 模型名称和上下文标签包裹在一起
+  // 模型名称（左侧）
   const nameSpan = document.createElement('span');
   nameSpan.className = 'model-option-left';
   nameSpan.textContent = modelName;
-  if (contextWindow && contextWindow > 0) {
-    const ctxBadge = document.createElement('span');
-    ctxBadge.className = 'model-ctx-badge';
-    ctxBadge.textContent = formatContextWindow(contextWindow);
-    nameSpan.appendChild(ctxBadge);
-  }
   option.appendChild(nameSpan);
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.className = 'delete-model-btn';
-  deleteBtn.title = '删除此模型';
-  deleteBtn.innerHTML = '×';
-  option.appendChild(deleteBtn);
-  
+
+  // 右侧容器：badge + 删除按钮
+   const rightSpan = document.createElement('span');
+   rightSpan.className = 'model-option-right';
+   if (contextWindow && contextWindow > 0) {
+     const ctxBadge = document.createElement('span');
+     ctxBadge.className = 'model-ctx-badge';
+     ctxBadge.textContent = formatContextWindow(contextWindow);
+     rightSpan.appendChild(ctxBadge);
+   }
+   const deleteBtn = document.createElement('button');
+   deleteBtn.type = 'button';
+   deleteBtn.className = 'delete-model-btn';
+   deleteBtn.title = '删除此模型';
+   deleteBtn.innerHTML = '×';
+   deleteBtn.style.display = 'inline-block';
+   rightSpan.appendChild(deleteBtn);
+   option.appendChild(rightSpan);
+
   modelDropdown.appendChild(option);
-  
+
   // 保存自定义模型到存储
   saveCustomModels();
 }
@@ -226,28 +265,54 @@ export function loadCustomModels(callback) {
         // 检查是否已存在
         const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
         if (existingOption) {
-          // 如果是已存在的预设模型，应用其上下文窗口标签
+          // 已存在的预设模型，应用其上下文窗口标签
           if (contextWindow && contextWindow > 0) {
             existingOption.dataset.contextWindow = contextWindow;
             existingOption.dataset.isCustom = 'true';
+
             let leftSpan = existingOption.querySelector('.model-option-left');
-            if (!leftSpan) {
-              leftSpan = document.createElement('span');
-              leftSpan.className = 'model-option-left';
-              leftSpan.textContent = existingOption.textContent;
-              existingOption.textContent = '';
-              const oldBadge = existingOption.querySelector('.model-ctx-badge');
-              if (oldBadge) leftSpan.appendChild(oldBadge);
-              existingOption.insertBefore(leftSpan, existingOption.firstChild);
+            if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
+
+            // 右侧容器（badge + 删除按钮）
+            let rightSpan = existingOption.querySelector('.model-option-right');
+            if (!rightSpan) {
+              rightSpan = document.createElement('span');
+              rightSpan.className = 'model-option-right';
+              const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
+              if (oldBadge) rightSpan.appendChild(oldBadge);
+              const oldDelete = existingOption.querySelector(':scope > .delete-model-btn');
+              if (oldDelete) rightSpan.appendChild(oldDelete);
+              else {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'delete-model-btn';
+                deleteBtn.title = '删除此模型';
+                deleteBtn.innerHTML = '×';
+                deleteBtn.style.display = 'inline-block';
+                rightSpan.appendChild(deleteBtn);
+              }
+              existingOption.appendChild(rightSpan);
             }
-            const badge = leftSpan.querySelector('.model-ctx-badge');
+
+            const badge = rightSpan.querySelector('.model-ctx-badge');
             if (badge) {
               badge.textContent = formatContextWindow(contextWindow);
             } else {
               const ctxBadge = document.createElement('span');
               ctxBadge.className = 'model-ctx-badge';
               ctxBadge.textContent = formatContextWindow(contextWindow);
-              leftSpan.appendChild(ctxBadge);
+              rightSpan.insertBefore(ctxBadge, rightSpan.firstChild);
+            }
+
+            // 确保有删除按钮
+            if (!rightSpan.querySelector('.delete-model-btn')) {
+              const deleteBtn = document.createElement('button');
+              deleteBtn.type = 'button';
+              deleteBtn.className = 'delete-model-btn';
+              deleteBtn.title = '删除此模型';
+              deleteBtn.innerHTML = '×';
+              deleteBtn.style.display = 'inline-block';
+              rightSpan.appendChild(deleteBtn);
             }
           }
           return;
@@ -261,24 +326,30 @@ export function loadCustomModels(callback) {
           option.dataset.contextWindow = contextWindow;
         }
 
+        // 模型名称（左侧）
         const nameSpan = document.createElement('span');
         nameSpan.className = 'model-option-left';
         nameSpan.textContent = modelName;
+        option.appendChild(nameSpan);
+
+        // 右侧容器：badge + 删除按钮
+        const rightSpan = document.createElement('span');
+        rightSpan.className = 'model-option-right';
         if (contextWindow && contextWindow > 0) {
           const ctxBadge = document.createElement('span');
           ctxBadge.className = 'model-ctx-badge';
           ctxBadge.textContent = formatContextWindow(contextWindow);
-          nameSpan.appendChild(ctxBadge);
+          rightSpan.appendChild(ctxBadge);
         }
-        option.appendChild(nameSpan);
-        
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'delete-model-btn';
         deleteBtn.title = '删除此模型';
         deleteBtn.innerHTML = '×';
-        option.appendChild(deleteBtn);
-        
+        deleteBtn.style.display = 'inline-block';
+        rightSpan.appendChild(deleteBtn);
+        option.appendChild(rightSpan);
+
         modelDropdown.appendChild(option);
       });
       
@@ -305,6 +376,38 @@ export function updateModelSelection(selectedValue) {
       option.classList.remove('selected');
     }
   });
+  updateSelectedCtxBadge('modelInput', 'modelSelectedCtxBadge', 'modelDropdown');
+}
+
+/**
+ * 更新选中模型输入框右侧的上下文窗口大小标签
+ */
+export function updateSelectedCtxBadge(inputId, badgeId, dropdownId) {
+  const input = document.getElementById(inputId);
+  const badge = document.getElementById(badgeId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!badge || !dropdown) return;
+  
+  // 如果没有选中模型（输入为空），隐藏 badge
+  if (input && !input.value) {
+    badge.style.display = 'none';
+    return;
+  }
+  
+  const selectedOption = dropdown.querySelector('.model-option.selected') 
+    || (input ? dropdown.querySelector(`.model-option[data-value="${input.value}"]`) : null);
+  
+  if (selectedOption) {
+    const ctxWindow = parseInt(selectedOption.dataset.contextWindow);
+    if (ctxWindow > 0) {
+      badge.textContent = formatContextWindow(ctxWindow);
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  } else {
+    badge.style.display = 'none';
+  }
 }
 
 // ============================================================
@@ -319,27 +422,34 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   if (!modelDropdown) return;
   const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (existingOption) {
-    // 如果已存在但传入了新的 contextWindow，更新显示
+    // 如果已存在但传入了新的 contextWindow，更新右侧显示
     if (contextWindow && contextWindow > 0) {
       existingOption.dataset.contextWindow = contextWindow;
+
       let leftSpan = existingOption.querySelector('.model-option-left');
-      if (!leftSpan) {
-        leftSpan = document.createElement('span');
-        leftSpan.className = 'model-option-left';
-        leftSpan.textContent = existingOption.textContent;
-        existingOption.textContent = '';
-        const oldBadge = existingOption.querySelector('.model-ctx-badge');
-        if (oldBadge) leftSpan.appendChild(oldBadge);
-        existingOption.insertBefore(leftSpan, existingOption.firstChild);
+      if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
+
+      // 右侧容器
+      let rightSpan = existingOption.querySelector('.model-option-right');
+      if (!rightSpan) {
+        rightSpan = document.createElement('span');
+        rightSpan.className = 'model-option-right';
+        const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
+        if (oldBadge) rightSpan.appendChild(oldBadge);
+        // 图片模型都是自定义，保留已有删除按钮
+        const oldDelete = existingOption.querySelector(':scope > .delete-model-btn');
+        if (oldDelete) rightSpan.appendChild(oldDelete);
+        existingOption.appendChild(rightSpan);
       }
-      const badge = leftSpan.querySelector('.model-ctx-badge');
+
+      const badge = rightSpan.querySelector('.model-ctx-badge');
       if (badge) {
         badge.textContent = formatContextWindow(contextWindow);
       } else {
         const newBadge = document.createElement('span');
         newBadge.className = 'model-ctx-badge';
         newBadge.textContent = formatContextWindow(contextWindow);
-        leftSpan.appendChild(newBadge);
+        rightSpan.insertBefore(newBadge, rightSpan.firstChild);
       }
     }
     return;
@@ -355,14 +465,17 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   const nameSpan = document.createElement('span');
   nameSpan.className = 'model-option-left';
   nameSpan.textContent = modelName;
+  option.appendChild(nameSpan);
+
+  // 右侧容器：badge + 删除按钮
+  const rightSpan = document.createElement('span');
+  rightSpan.className = 'model-option-right';
   if (contextWindow && contextWindow > 0) {
     const ctxBadge = document.createElement('span');
     ctxBadge.className = 'model-ctx-badge';
     ctxBadge.textContent = formatContextWindow(contextWindow);
-    nameSpan.appendChild(ctxBadge);
+    rightSpan.appendChild(ctxBadge);
   }
-  option.appendChild(nameSpan);
-
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'delete-model-btn';
@@ -370,7 +483,8 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   deleteBtn.innerHTML = '×';
   // 图片模型删除按钮始终可见
   deleteBtn.style.display = 'inline-block';
-  option.appendChild(deleteBtn);
+  rightSpan.appendChild(deleteBtn);
+  option.appendChild(rightSpan);
 
   modelDropdown.appendChild(option);
   saveImageModels();
@@ -448,24 +562,29 @@ export function loadImageModels(callback) {
         option.dataset.contextWindow = contextWindow;
       }
 
+      // 模型名称（左侧）
       const nameSpan = document.createElement('span');
       nameSpan.className = 'model-option-left';
       nameSpan.textContent = modelName;
+      option.appendChild(nameSpan);
+
+      // 右侧容器：badge + 删除按钮
+      const rightSpan = document.createElement('span');
+      rightSpan.className = 'model-option-right';
       if (contextWindow && contextWindow > 0) {
         const ctxBadge = document.createElement('span');
         ctxBadge.className = 'model-ctx-badge';
         ctxBadge.textContent = formatContextWindow(contextWindow);
-        nameSpan.appendChild(ctxBadge);
+        rightSpan.appendChild(ctxBadge);
       }
-      option.appendChild(nameSpan);
-
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'delete-model-btn';
       deleteBtn.title = '删除此模型';
       deleteBtn.innerHTML = '×';
       deleteBtn.style.display = 'inline-block';
-      option.appendChild(deleteBtn);
+      rightSpan.appendChild(deleteBtn);
+      option.appendChild(rightSpan);
 
       modelDropdown.appendChild(option);
     });
@@ -493,6 +612,7 @@ export function updateImageModelSelection(selectedValue) {
       option.classList.remove('selected');
     }
   });
+  updateSelectedCtxBadge('imageModelInput', 'imageModelSelectedCtxBadge', 'imageModelDropdown');
 }
 
 // 加载配置
@@ -1001,7 +1121,7 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     API Base: ${base}<br>
     模型名称: ${model}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>ReAct 配置：</strong><br>
+    <strong>推理配置：</strong><br>
     最大循环次数: ${react.maxIterations} 次<br>
     API 请求超时: ${formatTime(react.apiTimeout)}<br>
     整体循环超时: ${formatTime(react.loopTimeout)}<br>
@@ -1044,7 +1164,7 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>本地代理配置：</strong><br>
+    <strong>代理配置：</strong><br>
     代理地址: ${agentConfig.url || '未配置'}<br>
     连接状态: ${agentConfig.connected ? '✅ 已连接' : '⚠️ 未配对'}<br>
     ${agentConfig.workdir ? `工作目录: ${agentConfig.workdir}<br>` : ''}` : ''}

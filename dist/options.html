@@ -379,6 +379,30 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
+    .model-option-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .model-option-right .model-ctx-badge {
+      margin-left: 0;
+    }
+    .selected-ctx-badge {
+      position: absolute;
+      right: 36px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #e8f0fe;
+      color: #667eea;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      white-space: nowrap;
+      z-index: 1;
+      pointer-events: none;
+    }
     .add-model-section {
       margin-top: 4px;
     }
@@ -1556,7 +1580,7 @@
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic">基础配置</button>
       <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
-      <button class="tab-nav-btn" data-tab="react">ReAct</button>
+      <button class="tab-nav-btn" data-tab="react">推理</button>
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="chat">对话</button>
       <button class="tab-nav-btn" data-tab="agent">本地代理</button>
@@ -1589,6 +1613,7 @@
       <label>模型名称 <span class="hint">（从下拉列表选择，或点击下方按钮添加新模型）</span></label>
       <div class="model-selector">
         <input type="text" id="modelInput" placeholder="请从下方选择模型" value="deepseek-v4-pro" readonly>
+        <span class="selected-ctx-badge" id="modelSelectedCtxBadge" style="display:none;"></span>
         <div class="model-dropdown" id="modelDropdown">
           <div class="model-option selected" data-value="deepseek-v4-pro">deepseek-v4-pro</div>
           <div class="model-option" data-value="deepseek-v4-flash">deepseek-v4-flash</div>
@@ -1642,6 +1667,7 @@
       <label>模型名称 <span class="hint">（支持多模态视觉能力的模型，从列表选择或添加新模型；留空则使用基础模型的模型名称）</span></label>
       <div class="model-selector">
         <input type="text" id="imageModelInput" placeholder="留空则使用基础模型" value="" readonly>
+        <span class="selected-ctx-badge" id="imageModelSelectedCtxBadge" style="display:none;"></span>
         <div class="model-dropdown" id="imageModelDropdown">
         </div>
       </div>
@@ -1756,7 +1782,7 @@
     <!-- ReAct 配置区域 -->
     <div class="tab-panel" data-tab="react">
     <div class="react-config">
-      <h2>⚙️ ReAct 循环配置</h2>
+      <h2>⚙️ 推理循环配置</h2>
       <p class="subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
       
       <div class="react-config-item">
@@ -1787,7 +1813,7 @@
       <div class="react-config-item">
         <label>
           整体循环超时
-          <span class="hint-text">（整个 ReAct 循环的最长执行时间）</span>
+          <span class="hint-text">（整个推理循环的最长执行时间）</span>
         </label>
         <input type="number" id="reactLoopTimeout" min="1" max="60" step="1" value="5" placeholder="5">
         <span class="unit">分钟 (min)</span>
@@ -1926,7 +1952,7 @@
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 配置说明</h3>
         <p>
-          <strong>ReAct 循环</strong>是 AI 助手进行多步推理和工具调用的核心机制。<br>
+          <strong>推理循环</strong>是 AI 助手进行多步推理和工具调用的核心机制。<br>
           • <strong>循环次数</strong>：决定 AI 可以进行多少轮推理-行动循环<br>
           • <strong>超时设置</strong>：防止长时间等待或无限循环<br>
           • <strong>澄清等待</strong>：用户澄清时间不计入整体循环超时（暂停计时）<br>
@@ -2135,7 +2161,7 @@
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 反思配置说明</h3>
         <p>
-          <strong>后置反思</strong>：在 ReAct 循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。<br>
+          <strong>后置反思</strong>：在推理循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。<br>
           <strong>工具级反思</strong>：在每次工具调用后，AI 会检查执行结果是否符合预期，遇到错误或异常时自动调整策略。<br>
           <strong>子任务反思</strong>：对于复杂任务拆解后的子任务进行单独评估，默认关闭。<br>
           • 提高质量阈值会减少反思次数，但可能降低结果质量<br>

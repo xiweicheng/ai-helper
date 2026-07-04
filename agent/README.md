@@ -1,6 +1,6 @@
 # AI Helper Agent
 
-AI Helper 本地代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写和系统命令执行能力。
+AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写和系统命令执行能力。
 
 ## 安装
 
@@ -24,7 +24,7 @@ ai-helper-agent start -b
 ai-helper-agent start --workdir /path/to/your/project --port 18911
 ```
 
-启动后终端会显示 4 位配对码，在 Chrome 扩展设置页「本地Agent」标签中填入即可完成配对。
+启动后终端会显示 4 位配对码，在 Chrome 扩展设置页「代理」标签中填入即可完成配对。
 
 ## CLI 命令
 
