@@ -136,11 +136,11 @@ export async function getSystemPrompt(agent = null) {
     agentInfo = `\n- 本地 Agent：${ap.platformName} (${ap.arch})，默认 shell: ${ap.shell}，工作目录: ${ap.workdir || '未设置'}`;
   }
   
-  // dispatch_sub_agent 工具说明——仅在 Agent 允许 sub dispatch 时注入
+  // dispatch_sub_agent 工具说明——有可用子 Agent 时注入
   let dispatchToolRule = '';
-  if (agent && agent.allowSubDispatch) {
-    const allAgents = await getAllAgents();
-    const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent.id || ''));
+  const allAgents = await getAllAgents();
+  const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent?.id || ''));
+  if (subAgents.length > 0) {
     const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
     dispatchToolRule = `
   
@@ -150,7 +150,7 @@ export async function getSystemPrompt(agent = null) {
 调用方式：在一次响应中可并行调用多个 dispatch_sub_agent。
 
 当前可用的子 Agent：
-${subAgentList || '（暂无可用子 Agent，请先在 Agent 管理中创建并启用 Sub-Agent 调度）'}`;
+${subAgentList}`;
   }
 
   // 任务拆解相关规则——仅在启用工具时注入，节省 token

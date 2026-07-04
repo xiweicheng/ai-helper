@@ -3,6 +3,7 @@ import { callApiNonStream, reactLoop } from './react-loop.js';
 import { getTools } from './tool-executor.js';
 import { getStoredConfig } from './config.js';
 import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
 
 /**
  * 从浏览器存储中读取 Agent 定义
@@ -10,16 +11,6 @@ import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
  * @returns {Promise<Object|null>}
  */
 async function loadAgent(agentId) {
-  // 内置 Agent
-  const BUILTIN_AGENTS = [{
-    id: 'default',
-    name: '默认助手',
-    systemPrompt: null,
-    toolIds: null,
-    allowSubDispatch: false,
-    isBuiltin: true,
-  }];
-
   const builtin = BUILTIN_AGENTS.find(a => a.id === agentId);
   if (builtin) return builtin;
 
