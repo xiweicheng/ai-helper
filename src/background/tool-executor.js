@@ -20,15 +20,36 @@ export async function loadMcpTools() {
   unloadMcpTools();
 
   try {
-    const result = await AgentClient.getMcpTools();
-    if (!result.success || !result.tools || result.tools.length === 0) {
+    // 并行获取工具列表和服务器状态
+    const [toolsResult, serversResult] = await Promise.all([
+      AgentClient.getMcpTools(),
+      AgentClient.getMcpServers()
+    ]);
+
+    if (!toolsResult.success || !toolsResult.tools || toolsResult.tools.length === 0) {
       console.log('[Background] 无可用的 MCP 工具');
       return 0;
     }
 
+    // 构建已禁用服务器的 ID 集合
+    const disabledServerIds = new Set();
+    if (serversResult?.servers) {
+      for (const server of serversResult.servers) {
+        if (server.enabled === false) {
+          disabledServerIds.add(server.id);
+        }
+      }
+    }
+
     let registered = 0;
-    for (const tool of result.tools) {
-      const toolId = `mcp:${tool.serverId}:${tool.name}`;
+    for (const tool of toolsResult.tools) {
+      // 过滤掉已禁用服务器的工具
+      if (disabledServerIds.has(tool.serverId)) {
+        console.log(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
+        continue;
+      }
+
+      const toolId = `mcp_${tool.serverId}_${tool.name}`;
 
       // 去重：同名工具只注册一次
       if (mcpToolIds.has(toolId)) continue;
@@ -73,17 +94,19 @@ export async function loadMcpTools() {
     // 重建 BG_HANDLERS（因为 RAW_TOOLS 变化了）
     rebuildBgHandlers();
 
-    // 同步 MCP 工具到 chrome.storage，让 Side Panel 也能读取
-    const mcpToolsForUI = result.tools.map(t => ({
-      id: `mcp:${t.serverId}:${t.name}`,
-      name: `mcp:${t.serverId}:${t.name}`,
-      description: `[MCP:${t.serverName}] ${t.description || t.name}`,
-      category: 'mcp',
-      execution: 'background',
-      parallelizable: true,
-      requiresConfirmation: false,
-      enabled: true
-    }));
+    // 同步 MCP 工具到 chrome.storage，让 Side Panel 也能读取（也过滤已禁用的服务器）
+    const mcpToolsForUI = toolsResult.tools
+      .filter(t => !disabledServerIds.has(t.serverId))
+      .map(t => ({
+        id: `mcp_${t.serverId}_${t.name}`,
+        name: `mcp_${t.serverId}_${t.name}`,
+        description: `[MCP:${t.serverName}] ${t.description || t.name}`,
+        category: 'mcp',
+        execution: 'background',
+        parallelizable: true,
+        requiresConfirmation: false,
+        enabled: true
+      }));
     await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
 
     console.log(`[Background] 已加载 ${registered} 个 MCP 工具:`, [...mcpToolIds].join(', '));
@@ -226,7 +249,7 @@ export async function getTools(agentToolIds = null) {
             return false;
           }
           // MCP 工具：Agent 未连通 或 MCP Server 未连接时过滤
-          if (tool.id.startsWith('mcp:')) {
+          if (tool.id.startsWith('mcp_')) {
             if (!agentConnected) {
               console.log('[Background] Agent 未连通，隐藏 MCP 工具:', tool.id);
               return false;

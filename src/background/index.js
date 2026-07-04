@@ -85,7 +85,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 每次查询前先重新加载，确保 Side Panel 拿到最新数据
     loadMcpTools().then(count => {
       const mcpTools = RAW_TOOLS
-        .filter(t => t.id.startsWith('mcp:'))
+        .filter(t => t.id.startsWith('mcp_'))
         .map(t => ({
           id: t.id,
           name: t.function?.name || t.id,

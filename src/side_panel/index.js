@@ -1683,7 +1683,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toolsConfigBtn = document.getElementById('toolsConfigBtn');
 
   // 加载保存的状态
-  chrome.storage.local.get(['isolateChat', 'enableSelectionQuery', 'enableTools', 'enabledTools'], (result) => {
+  chrome.storage.local.get(['isolateChat', 'enableSelectionQuery', 'enableTools', 'enabledTools', 'mcpTools'], (result) => {
     if (result.isolateChat !== undefined) {
       state.isolateChat = result.isolateChat;
     }
@@ -1702,18 +1702,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (result.enabledTools && result.enabledTools.length > 0) {
-      // 合并：过滤掉 BUILTIN_TOOLS 中不存在的 ID，添加默认启用的新工具
-      const validToolIds = new Set(BUILTIN_TOOLS.map(t => t.id));
+      // 合并：过滤掉不存在的 ID（内置 + MCP），添加默认启用的新工具
+      const mcpTools = result.mcpTools || [];
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
       const savedTools = result.enabledTools.filter(id => validToolIds.has(id));
       // 添加新工具（BUILTIN_TOOLS 中有但 savedTools 中没有的，默认启用）
-      const newTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...savedTools, ...newTools];
-      if (newTools.length > 0) {
+      const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
+      // MCP 工具始终默认启用（不在 savedTools 中的为新工具）
+      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...savedTools, ...newBuiltinTools, ...newMcpTools];
+      if (newBuiltinTools.length > 0 || newMcpTools.length > 0) {
         // 有新增工具，自动保存合并后的列表
         chrome.storage.local.set({ enabledTools: state.enabledTools });
       }
     } else {
-      state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
+      const mcpTools = result.mcpTools || [];
+      state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
     }
 
     if (state.enabledTools.length === 0) {

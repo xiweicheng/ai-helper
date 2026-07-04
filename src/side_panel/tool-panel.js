@@ -59,7 +59,7 @@ function getAgentFilteredTools() {
   if (toolIds === null || toolIds === undefined) return allTools;
   // MCP 工具是动态注册的，不参与 Agent 白名单过滤
   const filterSet = new Set(toolIds);
-  return allTools.filter(t => t.id.startsWith('mcp:') || filterSet.has(t.id));
+  return allTools.filter(t => t.id.startsWith('mcp_') || filterSet.has(t.id));
 }
 
 async function openToolsPopup() {
