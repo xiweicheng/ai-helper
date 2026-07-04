@@ -56,12 +56,14 @@ ${task}
  * @returns {Promise<Object>}
  */
 export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
-  const { subAgentId, task } = args;
+  // 兼容 AI 模型可能使用的不同参数名
+  const subAgentId = args.subAgentId || args.agent_id || args.sub_agent_id;
+  const task = args.task;
 
   if (!subAgentId || !task) {
     return {
       success: false,
-      error: '缺少参数：subAgentId 和 task 都是必填的',
+      error: '缺少参数：subAgentId/sub_agent_id 和 task 都是必填的',
       tool_call_id: toolCallId,
     };
   }
@@ -112,7 +114,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
         null,  // tabId - sub-agent 不需要 tab 访问
         apiParams, subSessionId,
         { type: 'subagent', agentId: subAgentId },  // taskContext
-        null, null,
+        null,  // onLogUpdate - sub-agent 不需要回调
         { value: 0 }  // globalIteration
       );
       result = reactResult.content !== undefined ? reactResult.content : reactResult;
