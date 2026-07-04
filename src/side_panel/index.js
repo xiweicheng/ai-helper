@@ -27,6 +27,9 @@ import {
   insertPromptToInputByCode, updatePromptSelection, initPromptEvents
 } from './prompt-manager.js';
 import {
+  showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection
+} from './agent-at-selector.js';
+import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState
@@ -1006,11 +1009,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('click', (e) => {
     const promptDropdown = document.getElementById('promptDropdown');
     const promptSelector = document.getElementById('promptSelector');
+    const agentAtSelector = document.getElementById('agentAtSelector');
     const selectionFloatingMenu = document.getElementById('selectionFloatingMenu');
 
     if (!promptSelector.contains(e.target)) {
       promptDropdown.classList.remove('show');
       hidePromptSelector();
+    }
+
+    if (agentAtSelector && !agentAtSelector.contains(e.target)) {
+      hideAgentAtSelector();
     }
     
     if (selectionFloatingMenu && !selectionFloatingMenu.contains(e.target)) {
@@ -1211,7 +1219,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   userInput.addEventListener('keydown', (e) => {
     const promptSelector = document.getElementById('promptSelector');
     const promptDropdown = document.getElementById('promptDropdown');
+    const agentAtSelector = document.getElementById('agentAtSelector');
+    const agentAtDropdown = document.getElementById('agentAtDropdown');
 
+    // ========== @ Agent 选择器键盘处理 ==========
+    if (agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show')) {
+      const agentAtItems = agentAtDropdown.querySelectorAll('.prompt-item');
+      const visibleCount = agentAtItems.length;
+
+      if (visibleCount === 0) {
+        // no items, pass through
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (state.selectedAgentAtIndex < 0) {
+          state.selectedAgentAtIndex = 0;
+        } else {
+          state.selectedAgentAtIndex = (state.selectedAgentAtIndex + 1) % visibleCount;
+        }
+        updateAgentAtSelection(agentAtItems);
+        return;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (state.selectedAgentAtIndex < 0) {
+          state.selectedAgentAtIndex = visibleCount - 1;
+        } else if (state.selectedAgentAtIndex === 0) {
+          state.selectedAgentAtIndex = visibleCount - 1;
+        } else {
+          state.selectedAgentAtIndex = state.selectedAgentAtIndex - 1;
+        }
+        updateAgentAtSelection(agentAtItems);
+        return;
+      } else if (e.key === 'Enter' && state.selectedAgentAtIndex >= 0) {
+        e.preventDefault();
+        agentAtItems[state.selectedAgentAtIndex].click();
+        return;
+      } else if (e.key === 'Escape') {
+        hideAgentAtSelector();
+        return;
+      }
+    }
+
+    // ========== / 提示词选择器键盘处理 ==========
     if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
       const promptItems = promptDropdown.querySelectorAll('.prompt-item');
       const visibleCount = promptItems.length;
@@ -1275,7 +1323,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const isPromptSelectorVisible = promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show');
-    if (!isPromptSelectorVisible && !state.isGenerating) {
+    const isAgentAtSelectorVisible = agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show');
+    if (!isPromptSelectorVisible && !isAgentAtSelectorVisible && !state.isGenerating) {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (state.inputHistoryIndex === -1) {
@@ -1374,24 +1423,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 100);
   }, { passive: false });
 
-  // 输入框输入事件 - 检查是否需要显示提示词选择器
+  // 输入框输入事件 - 检查是否需要显示提示词选择器或Agent选择器
   userInput.addEventListener('input', (e) => {
     const value = userInput.value;
     const promptSelector = document.getElementById('promptSelector');
     const promptDropdown = document.getElementById('promptDropdown');
+    const agentAtSelector = document.getElementById('agentAtSelector');
+    const agentAtDropdown = document.getElementById('agentAtDropdown');
 
     const lastSlashIndex = value.lastIndexOf('/');
+    const lastAtIndex = value.lastIndexOf('@');
 
+    // 优先级：在同一个触发区域（空格后或行首），/ 和 @ 都需要在合法位置触发
+    // 确定 / 是否在合法位置
+    let slashValid = false;
     if (lastSlashIndex !== -1) {
-      const filterText = value.substring(lastSlashIndex + 1);
+      slashValid = (lastSlashIndex === 0 || value[lastSlashIndex - 1] === '\n' || value[lastSlashIndex - 1] === ' ');
+    }
 
-      if (lastSlashIndex === 0 || value[lastSlashIndex - 1] === '\n' || value[lastSlashIndex - 1] === ' ') {
-        showPromptSelector(filterText);
+    // 确定 @ 是否在合法位置
+    let atValid = false;
+    if (lastAtIndex !== -1) {
+      atValid = (lastAtIndex === 0 || value[lastAtIndex - 1] === '\n' || value[lastAtIndex - 1] === ' ');
+    }
+
+    // 当 / 和 @ 同时存在时，取最后出现的一个
+    if (slashValid && atValid) {
+      if (lastAtIndex > lastSlashIndex) {
+        // @ 在后面，显示 Agent 选择器
+        slashValid = false;
+        hidePromptSelector();
+        const filterText = value.substring(lastAtIndex + 1);
+        showAgentAtSelector(filterText);
       } else {
-        updatePromptList(filterText);
+        // / 在后面，显示提示词选择器
+        atValid = false;
+        hideAgentAtSelector();
+        const filterText = value.substring(lastSlashIndex + 1);
+        if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
+          updatePromptList(filterText);
+        } else {
+          showPromptSelector(filterText);
+        }
       }
+    } else if (slashValid) {
+      hideAgentAtSelector();
+      const filterText = value.substring(lastSlashIndex + 1);
+      if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
+        updatePromptList(filterText);
+      } else {
+        showPromptSelector(filterText);
+      }
+    } else if (atValid) {
+      hidePromptSelector();
+      const filterText = value.substring(lastAtIndex + 1);
+      showAgentAtSelector(filterText);
     } else {
       hidePromptSelector();
+      hideAgentAtSelector();
     }
 
     adjustInputHeight();

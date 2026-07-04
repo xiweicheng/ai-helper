@@ -15,6 +15,7 @@ export let selectedContextText = '';
 export let quotedContextText = '';
 export let customPrompts = [];
 export let selectedPromptIndex = -1;
+export let selectedAgentAtIndex = -1; // @ Agent 选择器当前选中索引
 export let draggedItemIndex = null;
 export let systemPrompt = '';
 export let inputHistory = [];
@@ -142,6 +143,8 @@ export default {
   set customPrompts(v) { customPrompts = v; },
   get selectedPromptIndex() { return selectedPromptIndex; },
   set selectedPromptIndex(v) { selectedPromptIndex = v; },
+  get selectedAgentAtIndex() { return selectedAgentAtIndex; },
+  set selectedAgentAtIndex(v) { selectedAgentAtIndex = v; },
   get draggedItemIndex() { return draggedItemIndex; },
   set draggedItemIndex(v) { draggedItemIndex = v; },
   get systemPrompt() { return systemPrompt; },
