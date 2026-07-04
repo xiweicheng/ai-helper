@@ -254,10 +254,10 @@ export async function switchToSession(sessionId) {
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.activeAgentId = targetSession.agentId || null;
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
+  // 注意：DB 中的 isGenerating 可能不准确（内存 Set 是权威来源），
+  // 只基于 DB 值做 add，不做 delete——生成状态由 sendMessage 的 finally 块统一清理
   if (targetSession.isGenerating) {
     state.generatingSessionIds.add(sessionId);
-  } else {
-    state.generatingSessionIds.delete(sessionId);
   }
 
   return targetSession;

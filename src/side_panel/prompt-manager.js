@@ -394,10 +394,8 @@ export async function sendPromptByCode(code) {
   userInput.value = '';
   userInput.style.height = 'auto';
 
-  // 禁用发送按钮
+  // 设置生成状态（按钮切换由 generating-state-changed 事件处理）
   state.isGenerating = true;
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.disabled = true;
 
   // 添加加载消息
   const loadingId = addLoadingMessage();
@@ -523,7 +521,6 @@ export async function sendPromptByCode(code) {
   } finally {
     state.generatingSessionIds.delete(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
-    sendBtn.disabled = false;
     userInput.focus();
     state.attachedImages = [];
   }

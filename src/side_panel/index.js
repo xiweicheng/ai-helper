@@ -18,7 +18,8 @@ import {
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
   restorePendingSessionsFromStorage, restoreMessageFromHtml,
-  compressAndAttachImage, openImagePreview, initImagePreviewOverlay
+  compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
+  cancelStreamingTask
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -360,8 +361,6 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   addToInputHistory(prompt.content);
 
   state.isGenerating = true;
-  const sendBtn = document.getElementById('sendBtn');
-  sendBtn.disabled = true;
 
   const loadingId = addLoadingMessage();
   const mySessionId = state.activeSessionId;
@@ -458,7 +457,6 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   } finally {
     state.generatingSessionIds.delete(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
-    sendBtn.disabled = false;
     const userInput = document.getElementById('userInput');
     userInput.focus();
   }
@@ -929,7 +927,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听会话切换事件（由 session-manager-ui.js 触发）
   document.addEventListener('session-switched', () => {
     const chatContainerEl = document.getElementById('chatContainer');
-    const sendBtn = document.getElementById('sendBtn');
     const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
 
@@ -945,8 +942,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.executionLogListener = null;
     }
 
-    // 根据目标会话的生成状态决定发送按钮是否禁用
-    if (sendBtn) sendBtn.disabled = state.isGenerating;
+    // 根据目标会话的生成状态更新按钮（停止模式或发送模式）
+    updateSendBtnState();
     if (userInput) userInput.focus();
 
     chatContainerEl.innerHTML = '';
@@ -1027,8 +1024,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 发送按钮点击事件
-  sendBtn.addEventListener('click', sendMessage);
+  // 发送/停止按钮共用：根据生成状态切换图标和行为
+  const SEND_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>';
+  const STOP_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>';
+
+  function updateSendBtnState() {
+    if (state.isGenerating) {
+      // 切换为停止按钮
+      sendBtn.classList.add('stop-mode');
+      sendBtn.innerHTML = STOP_ICON;
+      sendBtn.title = '停止生成';
+      sendBtn.disabled = false;
+    } else {
+      // 恢复为发送按钮
+      sendBtn.classList.remove('stop-mode');
+      sendBtn.innerHTML = SEND_ICON;
+      sendBtn.title = '发送';
+      sendBtn.disabled = false;
+      sendBtn.style.opacity = '';
+      sendBtn.style.cursor = '';
+    }
+  }
+
+  // 发送/停止按钮点击事件
+  sendBtn.addEventListener('click', () => {
+    if (state.isGenerating) {
+      // 停止模式：触发取消
+      cancelStreamingTask(sendBtn);
+    } else {
+      // 发送模式
+      sendMessage();
+    }
+  });
+
+  // 监听生成状态变化，自动切换按钮
+  document.addEventListener('generating-state-changed', updateSendBtnState);
 
   // 提示词触发按钮点击事件 - 切换显示/隐藏提示词选择器
   const promptTriggerBtn = document.getElementById('promptTriggerBtn');

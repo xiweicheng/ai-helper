@@ -899,7 +899,6 @@ export function stripImagesFromContent(content) {
 
 export async function sendMessage() {
   const userInput = document.getElementById('userInput');
-  const sendBtn = document.getElementById('sendBtn');
   const chatContainer = document.getElementById('chatContainer');
   
   const text = userInput.value.trim();
@@ -947,7 +946,6 @@ export async function sendMessage() {
   }
 
   state.isGenerating = true;
-  sendBtn.disabled = true;
 
   const mySessionId = state.activeSessionId;
   const loadingId = addLoadingMessage();
@@ -1158,7 +1156,6 @@ export async function sendMessage() {
     saveChatHistory();
     state.generatingSessionIds.delete(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
-    sendBtn.disabled = false;
     userInput.focus();
     state.attachedImages = [];
     const previewBar = document.getElementById('imagePreviewBar');
@@ -3050,6 +3047,11 @@ function addStreamingMessage() {
           <span></span><span></span><span></span>
         </div>
         <span class="thinking-label">思考中...</span>
+        <button class="streaming-stop-btn" title="停止生成">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          </svg>
+        </button>
       </div>
       <div class="stream-content"></div>
       <div class="stream-status hidden"></div>
@@ -3059,6 +3061,16 @@ function addStreamingMessage() {
   requestAnimationFrame(() => {
     chatContainer.scrollTop = chatContainer.scrollHeight;
   });
+
+  // 绑定流式消息内的停止按钮
+  const streamingStopBtn = wrapper.querySelector('.streaming-stop-btn');
+  if (streamingStopBtn) {
+    streamingStopBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelStreamingTask(streamingStopBtn);
+    });
+  }
+
   return wrapper;
 }
 
@@ -3750,6 +3762,43 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
 }
 
 /**
+ * 统一的停止任务处理函数：供输入区停止按钮和流式消息内停止按钮共用
+ * @param {HTMLElement} stopBtn - 被点击的停止按钮元素
+ */
+export function cancelStreamingTask(stopBtn) {
+  if (!stopBtn || stopBtn.disabled) return;
+
+  stopBtn.disabled = true;
+  stopBtn.style.opacity = '0.4';
+  stopBtn.style.cursor = 'not-allowed';
+
+  // 同时更新加载消息中的停止按钮（如果还存在）
+  const loadingStopBtn = document.querySelector('.loading-message .stop-task-btn');
+  if (loadingStopBtn) {
+    loadingStopBtn.disabled = true;
+    loadingStopBtn.style.opacity = '0.6';
+    loadingStopBtn.style.cursor = 'not-allowed';
+    const loadingText = document.querySelector('.loading-message .loading-text');
+    if (loadingText) loadingText.textContent = '停止中...';
+  }
+
+  // 发送取消消息到后台
+  chrome.runtime.sendMessage({
+    type: 'CANCEL_REACT',
+    tabId: null,
+    sessionId: state.activeSessionId
+  });
+
+  // 立即清理前端状态
+  if (state.pendingCancelApi) {
+    state.pendingCancelApi({
+      message: '任务已被用户停止',
+      executionLog: state.currentExecutionStatus?.executionLog || []
+    });
+  }
+}
+
+/**
  * 清理被取消的流式消息：移除思考中占位和状态文本
  */
 function finalizeCancelledStream(element) {
@@ -4013,7 +4062,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               </svg>
               <div class="thinking-dots"><span></span><span></span><span></span></div>
               <span class="thinking-label">思考中...</span>
+              <button class="streaming-stop-btn" title="停止生成">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                </svg>
+              </button>
             `;
+            // 绑定停止按钮事件
+            const stopBtn = newThinking.querySelector('.streaming-stop-btn');
+            if (stopBtn) {
+              stopBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                cancelStreamingTask(stopBtn);
+              });
+            }
             contentDiv.appendChild(newThinking);
           }
         }

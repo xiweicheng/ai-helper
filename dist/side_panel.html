@@ -2043,6 +2043,36 @@
       0%, 100% { opacity: 0.7; }
       50% { opacity: 1; }
     }
+    /* 流式消息内停止按钮 */
+    .streaming-stop-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 2px;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #ff4d4f;
+      transition: all 0.2s;
+      margin-left: auto;
+      flex-shrink: 0;
+      opacity: 0.6;
+    }
+    .streaming-stop-btn:hover {
+      background: rgba(255, 77, 79, 0.1);
+      opacity: 1;
+    }
+    .streaming-stop-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .streaming-stop-btn svg {
+      width: 14px;
+      height: 14px;
+    }
     /* 工具调用展示 */
     .tool-call-item {
       margin: 8px 0;
@@ -2465,6 +2495,21 @@
       opacity: 0.5;
       cursor: not-allowed;
       box-shadow: none;
+    }
+    .send-inner-btn.stop-mode {
+      background: #ff4d4f;
+      box-shadow: 0 2px 8px rgba(255, 77, 79, 0.35);
+    }
+    .send-inner-btn.stop-mode:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(255, 77, 79, 0.45);
+      background: #ff7875;
+    }
+    .send-inner-btn.stop-mode:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
     }
     .screenshot-inner-btn {
       right: 44px;
