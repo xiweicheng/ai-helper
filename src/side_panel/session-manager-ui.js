@@ -868,6 +868,7 @@ function showTabContextMenu(event, session) {
       }
       document.dispatchEvent(new CustomEvent('session-switched'));
       renderSessionTabs();
+      await renderAgentSelector();
     });
   }, 'danger');
   menu.appendChild(deleteItem);
@@ -909,6 +910,7 @@ async function reloadAfterDelete() {
   state.messageHistory = active ? (active.messageHistory || []) : [];
   document.dispatchEvent(new CustomEvent('session-switched'));
   renderSessionTabs();
+  await renderAgentSelector();
 }
 
 // ==================== 初始化 ====================

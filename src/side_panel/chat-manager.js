@@ -3136,6 +3136,12 @@ export function restoreMessageFromHtml(htmlContent) {
       });
     }
   }
+
+  // 确保执行日志按钮的事件委托已绑定（页面刷新后消息从 HTML 恢复时，addMessage 中的 bindExecutionLogDelegate 不会被调用）
+  bindExecutionLogDelegate();
+
+  // 确保反思评分按钮的事件委托已绑定（同上）
+  bindReflectionBadgeDelegate();
   
   chatContainer.appendChild(messageEl);
 }
