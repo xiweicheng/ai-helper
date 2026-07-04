@@ -863,8 +863,17 @@ function showTabContextMenu(event, session) {
       const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
       if (active) {
         state.messageHistory = active.messageHistory || [];
+        // 恢复新活跃会话的 Agent 绑定
+        state.activeAgentId = active.agentId || null;
       } else {
         state.messageHistory = [];
+        state.activeAgentId = null;
+      }
+      if (state.activeAgentId) {
+        const agent = await getAgent(state.activeAgentId);
+        state.activeAgentToolIds = agent ? agent.toolIds : null;
+      } else {
+        state.activeAgentToolIds = null;
       }
       document.dispatchEvent(new CustomEvent('session-switched'));
       renderSessionTabs();
@@ -908,6 +917,16 @@ async function reloadAfterDelete() {
   state.sessions = sessionsData.list;
   const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
   state.messageHistory = active ? (active.messageHistory || []) : [];
+
+  // 恢复新活跃会话的 Agent 绑定，避免被关闭会话的 Agent 覆盖
+  state.activeAgentId = active ? (active.agentId || null) : null;
+  if (state.activeAgentId) {
+    const agent = await getAgent(state.activeAgentId);
+    state.activeAgentToolIds = agent ? agent.toolIds : null;
+  } else {
+    state.activeAgentToolIds = null;
+  }
+
   document.dispatchEvent(new CustomEvent('session-switched'));
   renderSessionTabs();
   await renderAgentSelector();
