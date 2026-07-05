@@ -493,6 +493,12 @@ export function startServer() {
         if (!body.markdown && !body.prompt) {
           return jsonResponse(res, 400, { success: false, error: '缺少 markdown/prompt 参数' });
         }
+        // 检查是否为不可编辑的内置技能
+        const { skills: skillsMap } = await import('./skill/registry.js');
+        const existingSkill = skillsMap.get(body.name);
+        if (existingSkill?.builtin && existingSkill?.editable === false) {
+          return jsonResponse(res, 403, { success: false, error: `"${body.name}" 是内置技能，不可编辑` });
+        }
         const skillDef = {
           type: 'agent',
           name: body.name,
@@ -508,8 +514,7 @@ export function startServer() {
           const { loadMarkdownSkill } = await import('./skill/markdown-loader.js');
           const skill = loadMarkdownSkill(result.dirPath);
           if (skill) {
-            const { skills } = await import('./skill/registry.js');
-            skills.set(skill.name, skill);
+            skillsMap.set(skill.name, skill);
           }
           logSystem('skill_save_markdown', { skillName: body.name });
         }

@@ -46,6 +46,66 @@ function showCustomConfirm(message, title = '确认操作') {
 }
 
 /**
+ * 显示 Agent Skill 只读查看弹窗（用于内置技能）
+ */
+function showAgentSkillViewer(skillName, data) {
+  const existingModal = document.getElementById('agentSkillViewerModal');
+  if (existingModal) existingModal.remove();
+
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'modal-overlay';
+  modalOverlay.id = 'agentSkillViewerModal';
+
+  const modalContainer = document.createElement('div');
+  modalContainer.className = 'modal-content agent-skill-editor-container';
+  modalContainer.style.width = '700px';
+  modalContainer.style.maxHeight = '85vh';
+
+  modalContainer.innerHTML = `
+    <div class="modal-header">
+      <h3>查看 Skill: ${escapeHtml(skillName)}</h3>
+      <button class="modal-close-btn">&times;</button>
+    </div>
+    <div class="form-group">
+      <label>名称</label>
+      <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:#f5f5f5;color:#666;">
+    </div>
+    <div class="form-group">
+      <label>描述</label>
+      <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:#f5f5f5;color:#666;">
+    </div>
+    <div class="form-group">
+      <label>版本</label>
+      <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:#f5f5f5;color:#666;">
+    </div>
+    <div class="form-group">
+      <label>SKILL.md 内容（只读）</label>
+      <textarea readonly style="min-height: 350px; font-family: monospace; background:#f5f5f5; color:#666; resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
+    </div>
+    ${data.resources && data.resources.length > 0 ? `
+    <div class="form-group">
+      <label>资源文件</label>
+      <div class="skill-resource-list">
+        ${data.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name || r)}</span>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="closeAgentSkillViewerBtn" style="width: auto;">关闭</button>
+    </div>
+  `;
+
+  modalOverlay.appendChild(modalContainer);
+  document.body.appendChild(modalOverlay);
+
+  const closeModal = () => modalOverlay.remove();
+  modalOverlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closeModal();
+  });
+  modalOverlay.querySelector('#closeAgentSkillViewerBtn').addEventListener('click', closeModal);
+}
+
+/**
  * 获取 Agent 连接信息
  */
 async function getAgentConnection() {
@@ -497,7 +557,11 @@ function renderSkills(skills) {
   // Agent Skills
   if (agentSkills.length > 0) {
     html += '<div class="skill-section-title">Agent Skills（AI 能力扩展）</div>';
-    html += agentSkills.map(s => `
+    html += agentSkills.map(s => {
+      const isBuiltin = s.builtin === true;
+      const canEdit = s.editable !== false;
+      const canDelete = s.deletable !== false;
+      return `
       <div class="skill-card skill-card-agent${s.enabled === false ? ' skill-disabled' : ''}">
         <div class="skill-card-header">
           <div class="skill-card-info">
@@ -505,6 +569,7 @@ function renderSkills(skills) {
             <span class="skill-card-name">${escapeHtml(s.name)}</span>
             <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
             <span class="skill-card-badge badge-agent">Agent</span>
+            ${isBuiltin ? '<span class="skill-card-badge badge-builtin">内置</span>' : ''}
             ${s.enabled === false ? '<span class="skill-card-badge badge-disabled">已停用</span>' : ''}
             <span class="skill-card-step-count">${s.resourceCount || 0} 资源</span>
           </div>
@@ -515,12 +580,12 @@ function renderSkills(skills) {
           ${s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')}
         </div>` : ''}
         <div class="skill-card-actions">
-          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>
+          ${canEdit ? `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>` : `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="view-agent-skill">查看详情</button>`}
           <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
-          <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
+          ${canDelete ? `<button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>` : ''}
         </div>
       </div>
-    `).join('');
+    `}).join('');
   }
 
   container.innerHTML = html;
@@ -1473,6 +1538,17 @@ function initToolbox() {
             const data = await getAgentSkillMarkdown(skillName);
             if (data.success) {
               showAgentSkillEditor(skillName, data);
+            } else {
+              showToolboxToast(data.error || '获取 Skill 内容失败', 'error');
+            }
+          } catch (err) {
+            showToolboxToast(`获取失败: ${err.message}`, 'error');
+          }
+        } else if (action === 'view-agent-skill') {
+          try {
+            const data = await getAgentSkillMarkdown(skillName);
+            if (data.success) {
+              showAgentSkillViewer(skillName, data);
             } else {
               showToolboxToast(data.error || '获取 Skill 内容失败', 'error');
             }

@@ -1,10 +1,10 @@
 // skill/registry.js - Skill 注册表
 // 管理所有已加载的 Skill（Workflow + Agent），提供查询和执行接口
-import { loadAllSkills, saveSkillFile, deleteSkillFile } from './loader.js';
+import { loadAllSkills, saveSkillFile, deleteSkillFile, getBuiltinSkills, deleteMarkdownSkillDir } from './loader.js';
 import { executeSkill } from './executor.js';
 import { SKILLS_DIR } from './loader.js';
-import { readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join, basename } from 'path';
 
 // Skill 映射表: name → skill定义
 const skills = new Map();
@@ -17,18 +17,28 @@ const skills = new Map();
 export function initializeSkillRegistry() {
   skills.clear();
 
+  // 1. 加载文件系统中的技能
   const loaded = loadAllSkills();
 
   for (const skill of loaded) {
-    // 加载所有 Skill（包括禁用的），通过 enabled 字段区分
     skills.set(skill.name, skill);
+  }
+
+  // 2. 加载代码内置技能（不覆盖文件系统中同名的技能）
+  const builtinSkills = getBuiltinSkills();
+  for (const skill of builtinSkills) {
+    if (!skills.has(skill.name)) {
+      skills.set(skill.name, skill);
+      console.log(`[Skill Registry] 注册内置 Skill: "${skill.name}"`);
+    }
   }
 
   const workflowCount = [...skills.values()].filter(s => s.type === 'workflow').length;
   const agentCount = [...skills.values()].filter(s => s.type === 'agent').length;
   const enabledCount = [...skills.values()].filter(s => s.enabled !== false).length;
+  const builtinCount = [...skills.values()].filter(s => s.builtin).length;
 
-  console.log(`[Skill Registry] 初始化完成，共注册 ${skills.size} 个 Skill (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}`);
+  console.log(`[Skill Registry] 初始化完成，共注册 ${skills.size} 个 Skill (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}，内置 ${builtinCount}`);
   return skills.size;
 }
 
@@ -46,7 +56,10 @@ export function getSkillList(type) {
       type: skill.type || 'workflow',
       description: skill.description,
       version: skill.version,
-      enabled: skill.enabled !== false
+      enabled: skill.enabled !== false,
+      builtin: !!skill.builtin,
+      editable: skill.editable !== false,
+      deletable: skill.deletable !== false
     };
 
     if (skill.type === 'workflow') {
@@ -172,8 +185,22 @@ export function importSkill(skillDef) {
  */
 export function removeSkill(name) {
   const skill = skills.get(name);
-  const type = skill?.type;
-  const result = deleteSkillFile(name, type);
+  if (!skill) {
+    return { success: false, error: `Skill "${name}" 不存在` };
+  }
+  if (skill.builtin) {
+    return { success: false, error: `"${name}" 是内置技能，不可删除` };
+  }
+
+  let result;
+  if (skill.type === 'agent' && skill.dirPath && existsSync(skill.dirPath)) {
+    // Agent Skill：直接使用已记录的 dirPath 删除目录，避免 name 与目录名不一致的问题
+    result = deleteMarkdownSkillDir(SKILLS_DIR, basename(skill.dirPath));
+  } else {
+    // Workflow Skill 或降级处理
+    result = deleteSkillFile(name, skill?.type);
+  }
+
   if (result.success) {
     skills.delete(name);
   }
@@ -193,6 +220,11 @@ export function toggleSkill(name) {
 
   const newEnabled = skill.enabled === false;
   skill.enabled = newEnabled;
+
+  // 内置技能无需持久化到文件（它们没有物理文件）
+  if (skill.builtin) {
+    return { success: true, enabled: newEnabled };
+  }
 
   try {
     if (skill.type === 'agent' && skill.skillMdPath) {

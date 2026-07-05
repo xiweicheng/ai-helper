@@ -254,5 +254,221 @@ export function deleteSkillFile(name, type) {
   }
 }
 
+/**
+ * 获取代码内置技能列表
+ * 这些技能不存储在文件系统中，而是硬编码在代码里。
+ * 内置技能的特点：
+ * - 随代码发布，无需用户手动导入
+ * - 不可编辑、不可删除，但可以停用
+ * - 最终用户通过 skill-creator 生成的技能仍存放在 SKILLS_DIR 中
+ * @returns {Object[]}
+ */
+export function getBuiltinSkills() {
+  return [
+    {
+      type: 'agent',
+      name: 'skill-creator',
+      description: '创建新技能的元技能。当用户要求创建技能、沉淀技能、新增技能、或任何创建/添加技能的意图时，必须立即调用此技能。',
+      version: '1.0.0',
+      enabled: true,
+      builtin: true,
+      editable: false,
+      deletable: false,
+      resources: [],
+      dirPath: null,
+      skillMdPath: null,
+      _filePath: null,
+      prompt: `## When to Use
+
+**必须在以下情况立即调用此技能：**
+- 用户说"创建技能"、"沉淀技能"、"新增技能"、"添加技能"
+- 用户说"把这个模式保存为技能"
+- 用户说"我想以后也能用这个流程"
+- 用户要求将某个操作规范化为可复用的技能
+
+**不要做：**
+- 仅解释如何创建技能而不实际创建
+- 在未调用此技能的情况下手动指导创建
+- 推迟技能创建到后续步骤
+
+## 技能目录结构
+
+所有用户创建的技能存放在 Agent 配置目录的 skills/ 子目录下：
+
+\`\`\`
+<Agent配置目录>/skills/<skill-name>/
+└── SKILL.md
+\`\`\`
+
+## SKILL.md 标准格式
+
+\`\`\`markdown
+---
+name: <skill-name>
+description: "<简明描述，包含：(1) 技能做什么，(2) 何时触发调用。控制在200字符以内>"
+enabled: true
+---
+
+# <技能标题>
+
+## When to Use This Skill
+
+- 触发条件1
+- 触发条件2
+
+## Core Capabilities
+
+- 能力1
+- 能力2
+
+## Usage
+
+### Step-by-Step
+
+1. 步骤1
+2. 步骤2
+
+## Examples
+
+[具体示例]
+
+## Source
+
+从对话中沉淀，创建日期：YYYY-MM-DD
+\`\`\`
+
+## 创建流程
+
+1. **确认意图**：与用户简短确认技能名称和核心用途
+   - 技能名称：小写字母 + 连字符（如 code-reviewer、api-error-handler）
+   - 一句话描述这个技能解决什么问题
+
+2. **生成 description**：description 是触发匹配的关键，必须包含：
+   - 技能做什么（功能描述）
+   - 什么时候触发调用（触发条件/场景关键词）
+   - 示例格式："Does X. Invoke when Y happens or user asks for Z."
+
+3. **收集内容**：基于当前对话上下文，提取核心内容：
+   - 触发条件（什么时候该用这个技能）
+   - 核心能力（这个技能提供什么）
+   - 操作步骤（具体怎么做）
+   - 示例（正例和反例）
+   - 注意事项（容易踩的坑）
+
+4. **创建文件**：调用 POST /api/skill/save-markdown 接口，将 SKILL.md 内容写入 Agent 配置目录下的 skills/<skill-name>/ 目录。
+
+5. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词
+
+## 技能质量标准
+
+创建技能前验证：
+
+- [ ] 解决方案经过验证且有效
+- [ ] 内容脱离原始对话上下文后依然清晰可理解
+- [ ] 触发条件明确，模型能准确识别
+- [ ] description 包含功能描述和触发场景两部分
+- [ ] 名称符合小写+连字符规范
+- [ ] 代码示例完整且可独立运行
+- [ ] 如有参考文档，在文中提供链接`,
+      fullPrompt: `# Skill Creator
+
+此技能用于在对话过程中即时创建和沉淀新技能。当用户在对话中发现有价值的操作模式、最佳实践或知识时，通过此技能将其固化为可复用的 SKILL.md 文件。
+
+## When to Use
+
+**必须在以下情况立即调用此技能：**
+- 用户说"创建技能"、"沉淀技能"、"新增技能"、"添加技能"
+- 用户说"把这个模式保存为技能"
+- 用户说"我想以后也能用这个流程"
+- 用户要求将某个操作规范化为可复用的技能
+
+**不要做：**
+- 仅解释如何创建技能而不实际创建
+- 在未调用此技能的情况下手动指导创建
+- 推迟技能创建到后续步骤
+
+## 技能目录结构
+
+所有用户创建的技能存放在 Agent 配置目录的 skills/ 子目录下：
+
+\`\`\`
+<Agent配置目录>/skills/<skill-name>/
+└── SKILL.md
+\`\`\`
+
+## SKILL.md 标准格式
+
+\`\`\`markdown
+---
+name: <skill-name>
+description: "<简明描述，包含：(1) 技能做什么，(2) 何时触发调用。控制在200字符以内>"
+enabled: true
+---
+
+# <技能标题>
+
+## When to Use This Skill
+
+- 触发条件1
+- 触发条件2
+
+## Core Capabilities
+
+- 能力1
+- 能力2
+
+## Usage
+
+### Step-by-Step
+
+1. 步骤1
+2. 步骤2
+
+## Examples
+
+[具体示例]
+
+## Source
+
+从对话中沉淀，创建日期：YYYY-MM-DD
+\`\`\`
+
+## 创建流程
+
+1. **确认意图**：与用户简短确认技能名称和核心用途
+   - 技能名称：小写字母 + 连字符（如 code-reviewer、api-error-handler）
+   - 一句话描述这个技能解决什么问题
+
+2. **生成 description**：description 是触发匹配的关键，必须包含：
+   - 技能做什么（功能描述）
+   - 什么时候触发调用（触发条件/场景关键词）
+   - 示例格式："Does X. Invoke when Y happens or user asks for Z."
+
+3. **收集内容**：基于当前对话上下文，提取核心内容：
+   - 触发条件（什么时候该用这个技能）
+   - 核心能力（这个技能提供什么）
+   - 操作步骤（具体怎么做）
+   - 示例（正例和反例）
+   - 注意事项（容易踩的坑）
+
+4. **创建文件**：调用 POST /api/skill/save-markdown 接口，将 SKILL.md 内容写入 Agent 配置目录下的 skills/<skill-name>/ 目录。
+
+5. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词
+
+## 技能质量标准
+
+创建技能前验证：
+
+- [ ] 解决方案经过验证且有效
+- [ ] 内容脱离原始对话上下文后依然清晰可理解
+- [ ] 触发条件明确，模型能准确识别
+- [ ] description 包含功能描述和触发场景两部分
+- [ ] 名称符合小写+连字符规范
+- [ ] 代码示例完整且可独立运行
+- [ ] 如有参考文档，在文中提供链接`
+    }
+  ];
+}
+
 export { SKILLS_DIR };
 export { saveMarkdownSkill, deleteMarkdownSkillDir, importMarkdownSkillFromZip, importMarkdownSkillFromUrl };
