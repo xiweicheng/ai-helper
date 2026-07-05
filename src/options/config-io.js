@@ -25,6 +25,8 @@ const EXPORT_KEYS = [
   'customPrompts',
   'agentUrl', 'agentPlatform', 'agentStreamEnabled',
   'enableTools', 'isolateChat', 'enableSelectionQuery',
+  'deletedPresetModels',
+  'mcpEnabled', 'skillsEnabled',
 ];
 
 // 敏感的密钥 key

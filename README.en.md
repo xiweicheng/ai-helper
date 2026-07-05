@@ -286,9 +286,9 @@ Automatically appears when text is selected on any webpage, providing:
 
 ---
 
-## Built-in Tools (59)
+## Built-in Tools (62)
 
-### Page Interaction (6)
+### Page Interaction (7)
 | Tool | Description |
 |------|-------------|
 | `click_element` | Click element |
@@ -297,14 +297,14 @@ Automatically appears when text is selected on any webpage, providing:
 | `scroll_to` | Scroll to position |
 | `wait_for_element` | Wait for element state change |
 | `wait_for_navigation` | Wait for page navigation |
+| `select_dropdown` | Dropdown menu selection |
 
-### Form & Input (4)
+### Form & Input (3)
 | Tool | Description |
 |------|-------------|
 | `fill_form` | Batch fill forms |
 | `keyboard_input` | Keyboard input |
 | `file_upload` | Inject files into upload controls |
-| `select_dropdown` | Dropdown menu selection |
 
 ### Content Extraction (16)
 | Tool | Description |
@@ -357,7 +357,7 @@ Automatically appears when text is selected on any webpage, providing:
 ### Media & Output (7)
 | Tool | Description |
 |------|-------------|
-| `capture_tab_screenshot` | Tab screenshot |
+| `capture_page` | Tab/element screenshot |
 | `take_full_page_screenshot` | Full page screenshot |
 | `generate_qrcode` | Generate QR code |
 | `copy_to_clipboard` | Copy to clipboard |
@@ -365,22 +365,23 @@ Automatically appears when text is selected on any webpage, providing:
 | `download_file` | Download files |
 | `show_notification` | Desktop notifications |
 
-### Debug & Dev (2)
+### Debug & Dev (3)
 | Tool | Description |
 |------|-------------|
 | `inject_css` | Inject CSS styles |
 | `get_browser_info` | Browser environment info |
+| `highlight_text` | Highlight text on page |
 
 ### AI Collaboration (5)
 | Tool | Description |
 |------|-------------|
 | `clarify_question` | Show clarification dialog |
-| `highlight_text` | Highlight text on page |
 | `plan_task` | Task decomposition planner |
 | `preview_ui_prototype` | UI prototype preview & management |
 | `search_conversation_memory` | Search conversation memory |
+| `dispatch_sub_agent` | Dispatch subtask to sub-agent |
 
-### Local Agent (7)
+### Local Agent (9)
 | Tool | Description |
 |------|-------------|
 | `agent_read_file` | Read local file |
@@ -390,6 +391,8 @@ Automatically appears when text is selected on any webpage, providing:
 | `agent_exec_command` | Execute terminal command |
 | `agent_search_files` | Search by file name |
 | `agent_search_content` | Search text in files |
+| `agent_skill_load` | Load Agent Skill documentation |
+| `agent_skill_run` | Execute Workflow Skill |
 
 ---
 

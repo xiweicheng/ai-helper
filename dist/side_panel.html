@@ -419,14 +419,6 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .input-container {
-      padding: 12px;
-      background: white;
-      border-top: 1px solid #e0e0e0;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
     .input-toolbar {
       display: flex;
       justify-content: space-between;
@@ -669,16 +661,6 @@
     .temp-dropdown.show {
       display: block;
     }
-    @keyframes dropdownFadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(-8px) scale(0.98);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
-    }
     .temp-dropdown-title {
       font-size: 12px;
       font-weight: 600;
@@ -774,6 +756,7 @@
       border-radius: 2px;
       background: #e0e0e0;
       outline: none;
+      appearance: none;
       -webkit-appearance: none;
     }
     .temp-slider::-webkit-slider-thumb {
@@ -2435,15 +2418,12 @@
     .thinking-content {
       /* 无额外样式，作为语义化容器 */
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
     .input-container {
       padding: 16px;
       background: rgba(255, 255, 255, 0.85);
       border-top: 1px solid rgba(0, 0, 0, 0.06);
       display: flex;
+      flex-direction: column;
       gap: 12px;
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
@@ -3029,25 +3009,6 @@
     .message.assistant .copy-btn.copied {
       background: rgba(81, 207, 102, 0.1);
       color: #51cf66;
-    }
-    
-    .message.assistant .export-docx-btn {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 4px 10px;
-      border: none;
-      background: transparent;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      color: #999;
-      transition: all 0.2s;
-    }
-    
-    .message.assistant .export-docx-btn:hover {
-      background: rgba(102, 126, 234, 0.1);
-      color: #667eea;
     }
     
     .message.assistant .export-docx-btn {
@@ -3750,17 +3711,6 @@
     .prompt-manage-item-checkbox {
       display: flex;
       align-items: center;
-    }
-    
-    .prompt-manage-item-checkbox input[type="checkbox"] {
-      cursor: pointer;
-    }
-    
-    .prompt-manage-item-checkbox label {
-      font-size: 12px;
-      color: #666;
-      cursor: pointer;
-      margin-left: 4px;
     }
     
     .prompt-manage-item-checkbox input[type="checkbox"] {
@@ -4484,11 +4434,6 @@
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
     
-    .clarify-custom-textarea:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    
     .clarify-additional-info {
       margin-bottom: 24px;
       display: none;
@@ -4775,6 +4720,7 @@
       padding: 3px;
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
       backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       z-index: 10;
     }
     
@@ -6811,38 +6757,36 @@
         </div>
       </div>
     </div>
-    <div style="display: flex; flex-direction: column;">
-      <div class="selection-indicator" id="selectionIndicator">
-        <span class="selection-text" id="selectionText"></span>
-        <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
+    <div class="selection-indicator" id="selectionIndicator">
+      <span class="selection-text" id="selectionText"></span>
+      <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
+    </div>
+    <!-- 提示词选择器 -->
+    <div class="prompt-selector" id="promptSelector" style="display: none;">
+      <div class="prompt-dropdown" id="promptDropdown">
+        <div class="prompt-dropdown-header">方向键切换 · Enter发送 · Ctrl+Enter带入文本框</div>
+        <div id="promptList"></div>
       </div>
-      <!-- 提示词选择器 -->
-      <div class="prompt-selector" id="promptSelector" style="display: none;">
-        <div class="prompt-dropdown" id="promptDropdown">
-          <div class="prompt-dropdown-header">方向键切换 · Enter发送 · Ctrl+Enter带入文本框</div>
-          <div id="promptList"></div>
-        </div>
+    </div>
+    <!-- @ Agent 选择器 -->
+    <div class="prompt-selector" id="agentAtSelector" style="display: none;">
+      <div class="prompt-dropdown" id="agentAtDropdown">
+        <div class="prompt-dropdown-header">方向键切换 · Enter切换Agent · Esc取消</div>
+        <div id="agentAtList"></div>
       </div>
-      <!-- @ Agent 选择器 -->
-      <div class="prompt-selector" id="agentAtSelector" style="display: none;">
-        <div class="prompt-dropdown" id="agentAtDropdown">
-          <div class="prompt-dropdown-header">方向键切换 · Enter切换Agent · Esc取消</div>
-          <div id="agentAtList"></div>
-        </div>
-      </div>
-      <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
-      <div class="input-wrapper">
-        <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" title="提示词">
-          <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M274.090667 107.861333l43.235555 116.792889 116.792889 43.235556-116.792889 43.235555-43.235555 116.736-43.235556-116.792889-116.736-43.235555 116.736-43.235556 43.235556-116.736zM717.937778 532.138667l51.825778 140.117333 140.117333 51.882667-140.117333 51.882666-51.882667 140.117334-51.825778-140.117334-140.174222-51.882666 140.174222-51.882667 51.825778-140.117333zM699.278222 190.350222a36.977778 36.977778 0 1 0-64.056889-36.977778L219.192889 873.927111a36.977778 36.977778 0 1 0 64.056889 36.977778l416.028444-720.554667z" fill="currentColor"/></svg>
-        </button>
-        <textarea id="userInput" placeholder="输入'/'快捷提示、'@'切换助理、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
-        <button class="input-inner-btn screenshot-inner-btn" id="screenshotBtn" title="截取当前页面（Ctrl/Shift+点击可区域截图）" style="display:none;">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-        </button>
-        <button class="input-inner-btn send-inner-btn" id="sendBtn" title="发送">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>
-        </button>
-      </div>
+    </div>
+    <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
+    <div class="input-wrapper">
+      <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" title="提示词">
+        <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M274.090667 107.861333l43.235555 116.792889 116.792889 43.235556-116.792889 43.235555-43.235555 116.736-43.235556-116.792889-116.736-43.235555 116.736-43.235556 43.235556-116.736zM717.937778 532.138667l51.825778 140.117333 140.117333 51.882667-140.117333 51.882666-51.882667 140.117334-51.825778-140.117334-140.174222-51.882666 140.174222-51.882667 51.825778-140.117333zM699.278222 190.350222a36.977778 36.977778 0 1 0-64.056889-36.977778L219.192889 873.927111a36.977778 36.977778 0 1 0 64.056889 36.977778l416.028444-720.554667z" fill="currentColor"/></svg>
+      </button>
+      <textarea id="userInput" placeholder="输入'/'快捷提示、'@'切换助理、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
+      <button class="input-inner-btn screenshot-inner-btn" id="screenshotBtn" title="截取当前页面（Ctrl/Shift+点击可区域截图）" style="display:none;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </button>
+      <button class="input-inner-btn send-inner-btn" id="sendBtn" title="发送">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>
+      </button>
     </div>
   </div>
   

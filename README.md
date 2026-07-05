@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 60+ 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配代理服务实现文件系统操作、命令执行、技能系统和 MCP 协议扩展。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 62 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配代理服务实现文件系统操作、命令执行、技能系统和 MCP 协议扩展。
 
 | 特性 | 说明 |
 |------|------|
@@ -374,7 +374,7 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 
 ---
 
-## 内建工具 (59)
+## 内建工具 (62)
 
 ### 内容提取（16 个）
 | 工具 | 说明 |
@@ -396,25 +396,23 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 | `scroll_and_collect` | 滚动收集长内容（去重聚合） |
 | `get_element_count` | 快速元素计数（可见性过滤） |
 
-### 页面交互（8 个）
+### 页面交互（7 个）
 | 工具 | 说明 |
 |------|------|
 | `click_element` | 点击元素（CSS 选择器，自动清洗引号） |
 | `hover_element` | 鼠标悬停 |
-| `drag_and_drop` | 拖拽操作（实验性） |
+| `drag_and_drop` | 拖拽操作 |
 | `scroll_to` | 滚动到指定位置/元素 |
 | `wait_for_element` | 等待元素出现/消失（严格可见性检测） |
 | `wait_for_navigation` | 等待页面跳转完成 |
-| `scroll_and_collect` | 无限滚动页面内容收集 |
 | `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件） |
 
-### 表单与输入（4 个）
+### 表单与输入（3 个）
 | 工具 | 说明 |
 |------|------|
 | `fill_form` | 批量填表（支持富文本编辑器） |
 | `keyboard_input` | 键盘输入（绕过 React 受控组件） |
 | `file_upload` | 文件上传（DataTransfer 注入） |
-| `select_dropdown` | 下拉菜单选择 |
 
 ### 标签页管理（6 个）
 | 工具 | 说明 |
@@ -447,7 +445,7 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 ### 媒体与输出（7 个）
 | 工具 | 说明 |
 |------|------|
-| `capture_tab_screenshot` | 标签页截图（CDP 协议） |
+| `capture_page` | 标签页/元素区域截图（CDP 协议） |
 | `take_full_page_screenshot` | 全页截图（CDP `Page.captureScreenshot`） |
 | `generate_qrcode` | 生成二维码（QRCode 库 + Canvas 降级） |
 | `copy_to_clipboard` | 复制到剪贴板（图片/文本） |
@@ -455,37 +453,23 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 | `download_file` | 下载文件（需确认） |
 | `show_notification` | 桌面通知 |
 
-### 调试与开发（4 个）
+### 调试与开发（3 个）
 | 工具 | 说明 |
 |------|------|
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `get_browser_info` | 获取浏览器环境信息 |
-| `get_element_count` | 快速元素计数 |
 | `highlight_text` | 高亮页面文本（可清除） |
 
-### AI 协作（6 个）
+### AI 协作（5 个）
 | 工具 | 说明 |
 |------|------|
 | `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒） |
-| `highlight_text` | 高亮页面文本 |
 | `plan_task` | 复杂任务拆解规划（支持并行/顺序/依赖） |
 | `preview_ui_prototype` | UI 原型预览与管理 |
 | `search_conversation_memory` | 搜索对话记忆（活跃 + 归档） |
-| `read_accessibility_tree` | 读取无障碍树（ARIA 角色/标签） |
+| `dispatch_sub_agent` | 子任务分派给子 Agent 执行（支持并行分派） |
 
-### 页面增强功能（可选）
-| 工具 | 说明 |
-|------|------|
-| `run_javascript` | 在页面执行 JavaScript（异步超时支持） |
-| `screenshot_element` | 元素区域截图（CDP 协议） |
-| `page_to_pdf` | 页面导出 PDF |
-| `video_control` | 视频/音频控制（播放、倍速、全屏等） |
-| `performance_audit` | 性能审计（Navigation/Paint/LCP/CLS/Memory） |
-| `shadow_dom_query` | Shadow DOM 查询（深度递归） |
-| `pick_color` | 取色器（EyeDropper API） |
-| `text_to_speech` | 文本语音朗读（Web Speech API） |
-
-###  Agent（7 个）—— 需安装代理服务
+### Agent（9 个）—— 需安装代理服务
 | 工具 | 说明 |
 |------|------|
 | `agent_read_file` | 读取本地文件（路径沙箱，大小限制） |
@@ -495,6 +479,8 @@ AI 生成的 HTML/CSS 代码可实时预览和交互：
 | `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全） |
 | `agent_search_files` | 按文件名搜索（支持 fd 加速） |
 | `agent_search_content` | 在文件中搜索文本（支持 ripgrep 加速） |
+| `agent_skill_load` | 按需加载 Agent Skill 的完整说明文档 |
+| `agent_skill_run` | 执行预定义的 Workflow Skill 工作流 |
 
 ### 敏感工具安全确认
 
@@ -748,7 +734,7 @@ import { messageHistory } from './state.js'; // 直接解构
 
 ### IndexedDB 数据库设计
 
-`ai-helper-db` (v2)，四个对象存储：
+`ai-helper-db` (v3)，五个对象存储：
 
 | Store | 用途 |
 |-------|------|
@@ -756,6 +742,7 @@ import { messageHistory } from './state.js'; // 直接解构
 | `activeSession` | 当前活跃会话 ID |
 | `archivedSessions` | 已归档会话（索引：createdAt） |
 | `uiPrototypes` | UI 原型（索引：createdAt, sessionId） |
+| `tokenStats` | Token 使用统计（索引：timestamp, sessionId） |
 
 支持自动从事务失败恢复（SW 重启导致连接断开），以及旧版 chrome.storage.local 自动迁移。
 

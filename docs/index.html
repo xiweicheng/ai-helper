@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Helper — 让你的浏览器会思考</title>
-<meta name="description" content="AI Helper 是开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、59 个内置工具、本地代理系统命令执行，基于 ReAct 推理循环架构。">
-<meta name="keywords" content="AI Helper, 浏览器助手, Chrome扩展, LLM, ReAct, 自动化, 开源">
+<meta name="description" content="AI Helper 是开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、62 个内置工具、多智能体协作、Skill 系统、MCP 协议扩展、本地代理命令执行，基于 ReAct 推理循环架构。">
+<meta name="keywords" content="AI Helper, 浏览器助手, Chrome扩展, LLM, ReAct, 多智能体, Skill, MCP, 自动化, 开源">
 <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB1klEQVQ4jaWSS0sbcRTFZz0zmVdmkjBqfMRYzaujY4xGm6RqoyaShRu3ui0UpaALRQUfKD6QgG6FfpripzrlXE1KWpFCF2e4nPM7d15/RVVddGToPhxzBK6VhmePI+ZkRJzpMYvofpenlG45wnIKnv0BiWgOvvsRfV4g4kyPGRmyPQt0PQHbGIZrjyERzaPPm0QyXkQ22RJxpseMDFl2ugtMox+OOYq4k4HvBUj5n1HL72Gj1BZxpseMDFl2ZIGmxWAZSbjWmDxumNnC6vwt1itttCoPaFUfZKbHjAxZdthVdC0O2xiUjzQzs4ulxWssL91h5UsbjfqjiDM9ZmTIssOuwgu3Ra00woXvWFi9RGXtFrXGPRabbRFneszIkGVHFmhaDGaE3yCFwqcdlNYuMNe8wnzzBtkfzyLO9JiRIcuOvIKquvJvLWMIudlvmF4+RbF+jlL9EpmnnyLO9JiRIds5DwovnaeYCL8iqJxgqnqKsHqGsHb+ouqZeMzIdO7ec5B0LYF0YRv5uUMUykcIyscIyievOhaPGRmyf51EVU5jPwaGG8iG+8gVD3pEjxmZN4+y2pUHy0xjaHQTE8GeiDM9Zn/ybyz4LSeaE73HvLvgX/TfC34BQ3B2TrlPmzgAAAAASUVORK5CYII=">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -67,7 +67,7 @@
   .nav-logo {
     font-size: 18px; font-weight: 700;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .nav-links { display: flex; gap: 24px; align-items: center; }
   .nav-links a {
@@ -101,7 +101,7 @@
   }
   .hero h1 span {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .hero p {
     font-size: 18px; color: var(--text-muted);
@@ -137,7 +137,7 @@
   .stat-num {
     font-size: 36px; font-weight: 800;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
@@ -337,7 +337,7 @@
   .tool-cat .cat-count {
     font-size: 20px; font-weight: 800; margin-top: 4px;
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
 
   /* ─── 架构图 ─── */
@@ -441,7 +441,7 @@
 <section class="hero">
   <div class="hero-badge">🎯 开源 · Chrome Extension</div>
   <h1>让你的浏览器<br><span>会思考</span></h1>
-  <p>基于大语言模型的 Chrome 智能助手。用自然语言操控浏览器，59 个内置工具覆盖页面交互、内容提取、本地开发全流程。</p>
+  <p>基于大语言模型的 Chrome 智能助手。62 个内置工具，支持多智能体协作、Skill 系统、MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -454,16 +454,16 @@
 <!-- 关键数据 -->
 <div class="stats">
   <div class="stat">
-    <div class="stat-num">59</div>
+    <div class="stat-num">62</div>
     <div class="stat-label">内置工具</div>
   </div>
   <div class="stat">
-    <div class="stat-num">11</div>
+    <div class="stat-num">12</div>
     <div class="stat-label">工具分类</div>
   </div>
   <div class="stat">
-    <div class="stat-num">ReAct</div>
-    <div class="stat-label">推理架构</div>
+    <div class="stat-num">Multi-Agent</div>
+    <div class="stat-label">多智能体</div>
   </div>
   <div class="stat">
     <div class="stat-num">OSS</div>
@@ -481,7 +481,12 @@
     <div class="card">
       <div class="card-icon">🧠</div>
       <h3>ReAct 推理循环</h3>
-      <p>LLM 思考 → 调用工具 → 结果反馈 → 继续推理。像人类一样分步解决问题，支持多轮工具调用和任务拆解。</p>
+      <p>LLM 思考 → 调用工具 → 结果反馈 → 继续推理。支持多轮工具调用、任务拆解、流式响应、三级反思质量保障。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🤖</div>
+      <h3>多智能体协作</h3>
+      <p>创建和管理多个自定义 AI 助手，内置代码审查、数据分析等模板。支持 Agent 子任务分发和并行协作。</p>
     </div>
     <div class="card">
       <div class="card-icon">🖱️</div>
@@ -499,14 +504,34 @@
       <p>读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。</p>
     </div>
     <div class="card">
+      <div class="card-icon">🎯</div>
+      <h3>Skill 技能系统</h3>
+      <p>Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能，一键创建可复用工作流。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔌</div>
+      <h3>MCP 协议扩展</h3>
+      <p>支持 Model Context Protocol，连接第三方 MCP Server。自动发现工具、多 Server 并行，无限扩展能力边界。</p>
+    </div>
+    <div class="card">
       <div class="card-icon">📊</div>
       <h3>Markdown & 图表</h3>
       <p>代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。</p>
     </div>
     <div class="card">
+      <div class="card-icon">👁️</div>
+      <h3>视觉模型识图</h3>
+      <p>对接视觉语言模型，支持截图识图对话。直接上传图片让 AI 分析页面内容、识别元素、理解布局。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💰</div>
+      <h3>Token 统计面板</h3>
+      <p>实时追踪 Token 消耗，会话/今日/历史多维度统计。趋势图展示、预算管理、上下文压力三级监测。</p>
+    </div>
+    <div class="card">
       <div class="card-icon">🔒</div>
       <h3>隐私与安全</h3>
-      <p>API Key 本地存储。代理命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护。</p>
+      <p>API Key 本地存储。代理命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护，配对认证。</p>
     </div>
   </div>
 </section>
@@ -514,19 +539,19 @@
 <!-- 工具能力 -->
 <section class="section" id="tools">
   <div class="section-title">
-    <h2>59 个内置工具</h2>
-    <p>覆盖浏览器自动化全场景，按需启用</p>
+    <h2>62 个内置工具</h2>
+    <p>覆盖浏览器自动化全场景，支持 Skill 和 MCP 扩展</p>
   </div>
   <div class="tools-grid">
     <div class="tool-cat">
       <div class="cat-icon">🖱️</div>
       <div class="cat-name">页面交互</div>
-      <div class="cat-count">6</div>
+      <div class="cat-count">7</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📝</div>
       <div class="cat-name">表单与输入</div>
-      <div class="cat-count">4</div>
+      <div class="cat-count">3</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📄</div>
@@ -561,7 +586,7 @@
     <div class="tool-cat">
       <div class="cat-icon">🔧</div>
       <div class="cat-name">调试与开发</div>
-      <div class="cat-count">2</div>
+      <div class="cat-count">3</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🤖</div>
@@ -570,8 +595,8 @@
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🖥️</div>
-      <div class="cat-name">代理</div>
-      <div class="cat-count">7</div>
+      <div class="cat-name">Agent 代理</div>
+      <div class="cat-count">9</div>
     </div>
   </div>
 </section>
@@ -584,8 +609,20 @@
   </div>
   <div class="screenshots-grid">
     <div class="screenshot-card">
+      <img src="images/多智能体助手自由切换.png" alt="多智能体助手自由切换" loading="lazy">
+      <div class="caption">多智能体助手自由切换 — 创建专属 Agent，一键切换角色</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/智能体助手自定义.png" alt="智能体助手自定义" loading="lazy">
+      <div class="caption">智能体助手自定义 — 独立系统提示词与工具权限配置</div>
+    </div>
+    <div class="screenshot-card">
       <img src="images/对话生成静态页面.png" alt="对话生成静态页面" loading="lazy">
       <div class="caption">对话生成静态页面 — 用自然语言直接生成完整网页</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/对接视觉模型识图对话.png" alt="对接视觉模型识图对话" loading="lazy">
+      <div class="caption">对接视觉模型识图对话 — 上传截图让 AI 分析页面</div>
     </div>
     <div class="screenshot-card">
       <img src="images/页面划词便捷AI问答.png" alt="页面划词便捷AI问答" loading="lazy">
@@ -618,6 +655,10 @@
     <div class="screenshot-card">
       <img src="images/工具使用统计.png" alt="工具使用统计" loading="lazy">
       <div class="caption">工具使用统计面板 — 一目了然掌握工具调用频率</div>
+    </div>
+    <div class="screenshot-card">
+      <img src="images/大模型token耗费统计.png" alt="大模型token耗费统计" loading="lazy">
+      <div class="caption">Token 耗费统计 — 会话/今日/历史多维度追踪</div>
     </div>
     <div class="screenshot-card">
       <img src="images/ReAct推理循环配置.png" alt="ReAct推理循环配置" loading="lazy">
@@ -667,6 +708,10 @@
       <img src="images/自定义提示词便捷触发发送.png" alt="自定义提示词便捷触发发送" loading="lazy">
       <div class="caption">自定义提示词便捷触发 — 一键调用常用指令</div>
     </div>
+    <div class="screenshot-card">
+      <img src="images/MCP和Skill工具箱配置.png" alt="MCP和Skill工具箱配置" loading="lazy">
+      <div class="caption">MCP & Skill 工具箱配置 — 扩展第三方工具与技能管理</div>
+    </div>
   </div>
 </section>
 
@@ -691,19 +736,19 @@
 <!-- 架构 -->
 <section class="section" id="arch">
   <div class="section-title">
-    <h2>三层架构</h2>
+    <h2>五层架构</h2>
     <p>Chrome Extension API 消息通道，各层职责清晰</p>
   </div>
   <div class="arch">
     <div class="arch-flow">
       <div class="arch-box highlight">
         <div class="arch-title">Side Panel</div>
-        <div class="arch-desc">对话界面<br>Markdown/Mermaid 渲染<br>工具面板</div>
+        <div class="arch-desc">对话界面<br>Markdown/Mermaid 渲染<br>Agent 多助手管理</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box highlight">
         <div class="arch-title">Background Worker</div>
-        <div class="arch-desc">消息路由<br>ReAct 推理引擎<br>工具调度执行</div>
+        <div class="arch-desc">消息路由<br>ReAct 推理引擎<br>工具调度 &amp; Token 管理</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
@@ -713,7 +758,12 @@
       <div class="arch-arrow">→</div>
       <div class="arch-box">
         <div class="arch-title">代理服务</div>
-        <div class="arch-desc">文件读写<br>命令执行<br>代码搜索</div>
+        <div class="arch-desc">文件读写<br>命令执行<br>Skill/MCP 扩展</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        <div class="arch-title">Storage 层</div>
+        <div class="arch-desc">IndexedDB 会话<br>chrome.storage 配置<br>Token 统计持久化</div>
       </div>
     </div>
   </div>
