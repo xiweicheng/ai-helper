@@ -14,6 +14,10 @@
 | MCP Protocol | Model Context Protocol support for third-party tools |
 | Multi-Agent | Custom agents with role templates and tool permissions |
 
+## Feature Preview
+
+![AI Helper Feature Preview](docs/images/ai-helper-promo.gif)
+
 ---
 
 ## Architecture Overview

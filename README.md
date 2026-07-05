@@ -14,6 +14,10 @@
 | MCP 协议 | Model Context Protocol 支持，扩展第三方工具 |
 | 多助手管理 | 支持自定义 Agent，内置多种角色模板 |
 
+## 功能预览
+
+![AI Helper 功能预览](docs/images/ai-helper-promo.gif)
+
 ---
 
 ## 架构总览
