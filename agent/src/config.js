@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
 const PAIRINGS_FILE = join(AGENT_DIR, 'pairings.json');
+const SKILLS_DIR = join(AGENT_DIR, 'skills');
 
 const DEFAULTS = {
   port: 18910,
@@ -82,13 +83,18 @@ export function loadConfig() {
     const userConfig = JSON.parse(raw);
     configCache = { ...DEFAULTS, ...userConfig };
     configCacheMtime = mtime;
-    return configCache;
   } catch (err) {
     console.error('[Config] 配置文件解析失败:', err.message);
     configCache = { ...DEFAULTS, allowedPaths: [DEFAULTS.workdir] };
     configCacheMtime = 0;
-    return configCache;
   }
+
+  // 自动将 skills 目录加入白名单，确保 AI 可以直接写入 skill 文件
+  if (!configCache.allowedPaths.includes(SKILLS_DIR)) {
+    configCache.allowedPaths.push(SKILLS_DIR);
+  }
+
+  return configCache;
 }
 
 /**

@@ -293,12 +293,15 @@ export function getBuiltinSkills() {
 
 ## 技能目录结构
 
-所有用户创建的技能存放在 Agent 配置目录的 skills/ 子目录下：
+所有用户创建的技能存放在 \`~/.ai-helper-agent/skills/\` 目录下（SKILLS_DIR）：
 
 \`\`\`
-<Agent配置目录>/skills/<skill-name>/
-└── SKILL.md
+~/.ai-helper-agent/skills/<skill-name>/
+├── SKILL.md          # 技能定义文件（必需）
+└── _meta.json        # 元数据（可选）
 \`\`\`
+
+**重要**：AI 可以直接使用文件写入工具在此目录下创建文件，该目录已在白名单中。
 
 ## SKILL.md 标准格式
 
@@ -355,7 +358,10 @@ enabled: true
    - 示例（正例和反例）
    - 注意事项（容易踩的坑）
 
-4. **创建文件**：调用 POST /api/skill/save-markdown 接口，将 SKILL.md 内容写入 Agent 配置目录下的 skills/<skill-name>/ 目录。
+4. **创建文件**：直接在 \`~/.ai-helper-agent/skills/<skill-name>/\` 目录下创建 SKILL.md 文件。该目录已在允许路径白名单中，AI 可以直接写入。
+   - 先创建子目录：\`~/.ai-helper-agent/skills/<skill-name>/\`
+   - 在该目录下创建 SKILL.md 文件，写入上述格式内容
+   - 创建完成后，告知用户在工具箱页面点击「重新加载」使技能生效
 
 5. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词
 

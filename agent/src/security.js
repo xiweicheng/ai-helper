@@ -13,7 +13,6 @@ const HARD_BLOCKED_PATHS = [
   join(AGENT_DIR, 'config.json'),     // 代理配置文件
   join(AGENT_DIR, 'pairings.json'),   // 配对记录
   join(AGENT_DIR, 'mcp_servers.json'),// MCP 服务器配置
-  join(AGENT_DIR, 'skills') + sep,    // Skill 文件目录（应通过 API 获取）
   join(AGENT_DIR, 'logs') + sep,      // 日志目录
 ];
 
