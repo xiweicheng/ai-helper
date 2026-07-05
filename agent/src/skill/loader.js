@@ -291,6 +291,8 @@ export function getBuiltinSkills() {
 - 在未调用此技能的情况下手动指导创建
 - 推迟技能创建到后续步骤
 
+**重要安全约束**：\`~/.ai-helper-agent/\` 根目录是受限目录，AI 不能访问。唯一允许操作的是 \`~/.ai-helper-agent/skills/\` 子目录。禁止先探索父目录再找子目录。
+
 ## 技能目录结构
 
 所有用户创建的技能存放在 \`~/.ai-helper-agent/skills/\` 目录下（SKILLS_DIR）：
@@ -301,7 +303,7 @@ export function getBuiltinSkills() {
 └── _meta.json        # 元数据（可选）
 \`\`\`
 
-**重要**：AI 可以直接使用文件写入工具在此目录下创建文件，该目录已在白名单中。
+**禁止**：不要用 ls/readdir 探索 ~/.ai-helper-agent/ 或 ~/.ai-helper-agent/skills/。直接到目标目录操作。
 
 ## SKILL.md 标准格式
 
@@ -342,6 +344,8 @@ enabled: true
 
 ## 创建流程
 
+**重要安全约束**：\`~/.ai-helper-agent/\` 根目录是受限目录，AI 不能访问。唯一允许操作的是 \`~/.ai-helper-agent/skills/\` 子目录。禁止先探索父目录再找子目录。
+
 1. **确认意图**：与用户简短确认技能名称和核心用途
    - 技能名称：小写字母 + 连字符（如 code-reviewer、api-error-handler）
    - 一句话描述这个技能解决什么问题
@@ -358,9 +362,10 @@ enabled: true
    - 示例（正例和反例）
    - 注意事项（容易踩的坑）
 
-4. **创建文件**：直接在 \`~/.ai-helper-agent/skills/<skill-name>/\` 目录下创建 SKILL.md 文件。该目录已在允许路径白名单中，AI 可以直接写入。
-   - 先创建子目录：\`~/.ai-helper-agent/skills/<skill-name>/\`
-   - 在该目录下创建 SKILL.md 文件，写入上述格式内容
+4. **直接创建文件**：一步到位，直接在 \`~/.ai-helper-agent/skills/<skill-name>/\` 下操作。
+   - **禁止**先 \`ls\` 查看 \`~/.ai-helper-agent/\` 或 \`~/.ai-helper-agent/skills/\` 目录（前者无权限，后者不必要）
+   - 直接 \`mkdir -p ~/.ai-helper-agent/skills/<skill-name>/\` 创建子目录
+   - 直接写入 \`~/.ai-helper-agent/skills/<skill-name>/SKILL.md\`
    - 创建完成后，告知用户在工具箱页面点击「重新加载」使技能生效
 
 5. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词

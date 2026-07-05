@@ -7,6 +7,7 @@ const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
 const PAIRINGS_FILE = join(AGENT_DIR, 'pairings.json');
 const SKILLS_DIR = join(AGENT_DIR, 'skills');
+const WORKSPACE_DIR = join(AGENT_DIR, 'workspace');
 
 const DEFAULTS = {
   port: 18910,
@@ -38,13 +39,20 @@ function withWriteLock(fn) {
 }
 
 function ensureAgentDir() {
-  if (!existsSync(AGENT_DIR)) {
-    try {
+  try {
+    // 确保 Agent 根目录存在
+    if (!existsSync(AGENT_DIR)) {
       mkdirSync(AGENT_DIR, { recursive: true });
-    } catch (err) {
-      console.error('[Config] 无法创建 Agent 目录:', err.message);
-      throw err;
     }
+    // 确保 skills 和 workspace 子目录存在
+    for (const dir of [SKILLS_DIR, WORKSPACE_DIR]) {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+    }
+  } catch (err) {
+    console.error('[Config] 无法创建 Agent 目录:', err.message);
+    throw err;
   }
 }
 

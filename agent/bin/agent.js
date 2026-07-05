@@ -9,6 +9,8 @@ import { homedir } from 'os';
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
 const PID_FILE = join(AGENT_DIR, 'agent.pid');
+const SKILLS_DIR = join(AGENT_DIR, 'skills');
+const WORKSPACE_DIR = join(AGENT_DIR, 'workspace');
 
 /**
  * 读取 Agent 配置文件
@@ -29,12 +31,18 @@ function readAgentConfig() {
  * 确保 Agent 配置目录存在
  */
 function ensureAgentDir() {
-  if (!existsSync(AGENT_DIR)) {
-    try {
+  try {
+    if (!existsSync(AGENT_DIR)) {
       mkdirSync(AGENT_DIR, { recursive: true });
-    } catch (err) {
-      console.error(`[Agent] 无法创建配置目录 ${AGENT_DIR}: ${err.message}`);
     }
+    // 确保 skills 和 workspace 子目录存在
+    for (const dir of [SKILLS_DIR, WORKSPACE_DIR]) {
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+    }
+  } catch (err) {
+    console.error(`[Agent] 无法创建配置目录 ${AGENT_DIR}: ${err.message}`);
   }
 }
 
