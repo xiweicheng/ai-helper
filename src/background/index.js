@@ -11,6 +11,9 @@ import { recordTokenUsage } from './token-recorder.js';
 // chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
 const MAX_LOG_ENTRIES_FOR_MSG = 1000;
 
+// MCP 工具查询缓存，避免每次 GET_MCP_TOOLS 都向 Agent 发网络请求
+let mcpToolsCache = null;
+
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
 const keepalivePorts = new Map(); // sessionId -> Port
@@ -73,6 +76,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'RELOAD_MCP_TOOLS') {
+    mcpToolsCache = null; // 强制刷新缓存
     loadMcpTools().then(count => {
       sendResponse({ success: true, count });
     }).catch(err => {
@@ -82,7 +86,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'GET_MCP_TOOLS') {
-    // 每次查询前先重新加载，确保 Side Panel 拿到最新数据
+    // 带缓存的重载：30 秒内复用上次结果，避免每次查询都向 Agent 发网络请求
+    const now = Date.now();
+    if (mcpToolsCache && (now - mcpToolsCache.loadedAt) < 30000) {
+      console.log(`[Background] GET_MCP_TOOLS 使用缓存（${mcpToolsCache.tools.length} 个工具，${Math.round((now - mcpToolsCache.loadedAt) / 1000)}s 前）`);
+      sendResponse({ success: true, tools: mcpToolsCache.tools });
+      return true;
+    }
     loadMcpTools().then(count => {
       const mcpTools = RAW_TOOLS
         .filter(t => t.id.startsWith('mcp_'))
@@ -96,6 +106,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           requiresConfirmation: t.requiresConfirmation || false,
           enabled: true
         }));
+      mcpToolsCache = { tools: mcpTools, loadedAt: Date.now() };
       console.log(`[Background] GET_MCP_TOOLS 返回 ${mcpTools.length} 个工具（共重载 ${count} 个）`);
       sendResponse({ success: true, tools: mcpTools });
     }).catch(err => {
@@ -635,8 +646,9 @@ async function performAgentHealthCheck() {
           if (count > 0) console.log(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
         }).catch(() => {});
       } else {
-        // Agent 断开时清理 MCP 工具状态
+        // Agent 断开时清理 MCP 工具状态和缓存
         unloadMcpTools();
+        mcpToolsCache = null;
         console.log('[Background] Agent 断开，已清理 MCP 工具');
       }
     }

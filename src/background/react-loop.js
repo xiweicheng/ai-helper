@@ -735,6 +735,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams);
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
+                    reactTokenBudget = null; // 工具集变更，重置 Token 预算缓存
                     console.log('[Background] 澄清后工具重新筛选完成:', tools.map(t => t.function.name));
                   }
                   // 合并重新筛选的执行日志
@@ -1113,9 +1114,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
             
             if (result.planTaskHandled) {
-              // plan_task 处理了子任务，处理反思队列后继续外层循环
+              // plan_task 处理了子任务，跳出当前 for 循环，由外层 while 重新迭代
+              // 使用 break 而非 continue，避免在子任务执行后继续执行其他已过时的工具调用
               await processPendingReflections();
-              continue;
+              break;
             }
           }
           

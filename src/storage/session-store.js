@@ -254,10 +254,18 @@ export async function switchToSession(sessionId) {
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.activeAgentId = targetSession.agentId || null;
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
-  // 注意：DB 中的 isGenerating 可能不准确（内存 Set 是权威来源），
-  // 只基于 DB 值做 add，不做 delete——生成状态由 sendMessage 的 finally 块统一清理
-  if (targetSession.isGenerating) {
+  // 仅当 pendingCallApiSessionIds 中也存在该 session 时才恢复，防止 SW 重启后
+  // DB 中残留的 isGenerating=true 导致虚假的"生成中"状态
+  if (targetSession.isGenerating && state.pendingCallApiSessionIds.has(sessionId)) {
     state.generatingSessionIds.add(sessionId);
+  } else if (targetSession.isGenerating) {
+    // DB 中有生成标记但实际无后台任务，清理 DB 中的过期状态
+    console.log('[SessionStore] 检测到过期的 isGenerating 标记，已清理:', sessionId);
+    const session = await idb.getSession(sessionId);
+    if (session) {
+      session.isGenerating = false;
+      await idb.putSession(session);
+    }
   }
 
   return targetSession;
@@ -341,6 +349,10 @@ export async function archiveCurrentSession() {
   const sanitizedMessages = state.messageHistory.map((msg) => ({
     role: msg.role,
     content: msg.content || '',
+    executionLog: msg.executionLog || [],
+    reflectionScore: msg.reflectionScore,
+    wasRevised: msg.wasRevised || false,
+    htmlContent: msg.htmlContent || undefined,
   }));
 
   // 保存到归档

@@ -1016,7 +1016,13 @@ export async function sendMessage() {
         const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
         const summary = generateMessagesSummary(trimmedMsgs);
         if (summary) {
-          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
+          // 控制摘要长度不超过 SYSTEM_PROMPT_BUDGET 的 50%，避免 system prompt 膨胀
+          const SUMMARY_MAX_TOKENS = 1000;
+          const summaryTokens = estimateTokens(summary);
+          const truncatedSummary = summaryTokens > SUMMARY_MAX_TOKENS
+            ? summary.substring(0, SUMMARY_MAX_TOKENS * 4) + '\n...[历史摘要已截断]'
+            : summary;
+          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + truncatedSummary };
         }
         console.log(`[SidePanel] Token 预算裁剪: 保留 ${keptHistory.length} 条历史消息, 裁剪 ${trimmedCount} 条 (预算: ${historyBudget} tokens)`);
       } else {
@@ -1116,7 +1122,8 @@ export async function sendMessage() {
     }
     
     // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
-    if (!wasStreamed) {
+    // 但如果 streamingHtml 为 null（流式输出中断），降级为非流式渲染
+    if (!wasStreamed || !streamingHtml) {
       removeLoadingMessage(loadingId);
 
       // 清理切回会话时创建的替代加载指示器

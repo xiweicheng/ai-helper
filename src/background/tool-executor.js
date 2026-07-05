@@ -1,5 +1,5 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
@@ -152,10 +152,15 @@ function rebuildBgHandlers() {
   for (const key of Object.keys(BG_HANDLERS)) {
     delete BG_HANDLERS[key];
   }
+  // 同步重建 PARALLELIZABLE_TOOLS / CONFIRMATION_REQUIRED_TOOLS，确保 MCP 工具也被纳入
+  PARALLELIZABLE_TOOLS.clear();
+  CONFIRMATION_REQUIRED_TOOLS.clear();
   for (const tool of RAW_TOOLS) {
     if (tool.execution === 'background' && TOOL_HANDLERS[tool.id]) {
       BG_HANDLERS[tool.id] = TOOL_HANDLERS[tool.id];
     }
+    if (tool.parallelizable) PARALLELIZABLE_TOOLS.add(tool.id);
+    if (tool.requiresConfirmation) CONFIRMATION_REQUIRED_TOOLS.add(tool.id);
   }
 }
 

@@ -258,19 +258,26 @@ export async function readSSEStream(reader, controller, abortSignal) {
       // 使用 Promise.race 确保 abort 能立即中断 reader.read()
       let readResult;
       if (abortSignal) {
-        readResult = await Promise.race([
-          reader.read(),
-          new Promise((_, reject) => {
-            if (abortSignal.aborted) {
-              reject(new DOMException('Aborted', 'AbortError'));
-              return;
-            }
-            const onAbort = () => {
-              reject(new DOMException('Aborted', 'AbortError'));
-            };
-            abortSignal.addEventListener('abort', onAbort, { once: true });
-          })
-        ]);
+        let cleanupAbortListener = () => {};
+        try {
+          readResult = await Promise.race([
+            reader.read(),
+            new Promise((_, reject) => {
+              if (abortSignal.aborted) {
+                reject(new DOMException('Aborted', 'AbortError'));
+                return;
+              }
+              const onAbort = () => {
+                reject(new DOMException('Aborted', 'AbortError'));
+              };
+              abortSignal.addEventListener('abort', onAbort, { once: true });
+              cleanupAbortListener = () => abortSignal.removeEventListener('abort', onAbort);
+            })
+          ]);
+        } finally {
+          // 确保 reader.read() 先完成时移除 abort 监听器，防止泄漏
+          cleanupAbortListener();
+        }
       } else {
         readResult = await reader.read();
       }
