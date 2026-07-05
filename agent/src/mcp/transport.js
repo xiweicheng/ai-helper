@@ -31,7 +31,6 @@ export function createStdioTransport(serverConfig) {
       child.removeAllListeners();
     };
 
-    // stderr 仅记录日志
     child.stderr.on('data', (data) => {
       const text = data.toString();
       if (text.trim()) {
@@ -39,17 +38,14 @@ export function createStdioTransport(serverConfig) {
       }
     });
 
-    // spawn 失败（例如命令不存在）
     child.on('error', (err) => {
       if (!resolved) {
         resolved = true;
         cleanup();
         reject(new Error(`无法启动 MCP Server "${command}": ${err.message}`));
       }
-      // spawn 失败也会触发 exit，由 exit 回调通知上层
     });
 
-    // 子进程退出（连接前 = reject，连接后 = 通知 exitHandler）
     child.on('exit', (code, signal) => {
       console.log(`[MCP] Server 进程退出: ${command} (code=${code}, signal=${signal})`);
       if (!resolved) {
@@ -57,12 +53,10 @@ export function createStdioTransport(serverConfig) {
         cleanup();
         reject(new Error(`MCP Server 异常退出 (code=${code}, signal=${signal}): ${command}`));
       } else if (exitHandler) {
-        // 已连接后崩溃 → 通知上层
         exitHandler(code, signal);
       }
     });
 
-    // stdout 数据处理：按行分割 JSON-RPC 消息，转发给 dataHandler
     child.stdout.on('data', (data) => {
       responseBuffer += data.toString();
 
@@ -79,7 +73,6 @@ export function createStdioTransport(serverConfig) {
       }
     });
 
-    // 立即 resolve，McpClient 负责发送 initialize 启动握手
     if (!resolved) {
       resolved = true;
       resolve({
