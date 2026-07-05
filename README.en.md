@@ -1,6 +1,6 @@
 # AI Helper - Web Smart Assistant
 
-> An LLM-powered Chrome browser extension with 50+ built-in tools, supporting natural language conversation, browser automation, and web content processing via a ReAct (Reasoning + Acting) inference loop.
+> An LLM-powered Chrome browser extension with 60+ built-in tools, supporting natural language conversation, browser automation, and web content processing via a ReAct (Reasoning + Acting) inference loop. Optional Node.js agent provides file system access, command execution, skill system, and MCP protocol extension.
 
 | Feature | Description |
 |---------|-------------|
@@ -9,12 +9,16 @@
 | Minimum Chrome Version | 114+ (requires Side Panel API) |
 | API Protocol | OpenAI Chat Completions Compatible |
 | Build Tooling | Vite + @crxjs/vite-plugin |
+| Local Agent | Optional, Node.js 18+ process for file/command capabilities |
+| Skill System | Workflow and Agent skill types, skill creation from conversation |
+| MCP Protocol | Model Context Protocol support for third-party tools |
+| Multi-Agent | Custom agents with role templates and tool permissions |
 
 ---
 
 ## Architecture Overview
 
-The project uses a **four-layer architecture**, communicating via Chrome Extension messaging channels:
+The project uses a **five-layer architecture**, communicating via Chrome Extension messaging channels:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -22,6 +26,7 @@ The project uses a **four-layer architecture**, communicating via Chrome Extensi
 │  side_panel.html + src/side_panel/*.js                        │
 │  Chat | Markdown/Mermaid | Tool Panel | Prompts              │
 │  Selection Query | Input History | Execution Log | Clarify    │
+│  Agent Manager | Token Stats | Agent Selector                 │
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
                ▼                               ▼
@@ -29,40 +34,61 @@ The project uses a **four-layer architecture**, communicating via Chrome Extensi
 │  Background Service       │    │    Options Page (Config)      │
 │  Worker (Core Logic)      │    │  options.html + src/options/  │
 │                          │    │  API Key/Model/Tools/ReAct    │
-│  src/background/          │    │  Toolbar/Prompts/Domains     │
+│  src/background/          │    │  Toolbar/Prompts/Toolbox     │
 │  ├── index.js (router)    │    └──────────────────────────────┘
 │  ├── react-loop.js        │
 │  ├── tool-executor.js     │
 │  ├── tool-preselector.js  │
+│  ├── agent-dispatcher.js  │
+│  ├── stream-controller.js │
+│  ├── token-recorder.js    │
 │  ├── config.js            │
 │  ├── constants.js         │
 │  └── state.js             │
-└──────────────┬─────────────┘
+└──────────────┬─────────────┘    ┌──────────────────────────────┐
+               │                   │   Local Agent (Optional)      │
+               │                   │  agent/ (Node.js Process)     │
+               │                   │  HTTP REST + WebSocket        │
+               │                   │  File/Command + Skill + MCP   │
+               │                   └──────────────────────────────┘
                │  chrome.tabs.sendMessage
                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │           Content Script (Page Tool Execution)                │
 │  src/content/*.js (injected into web pages)                   │
-│  ├── index.js (message routing, 50+ tools)                    │
+│  ├── index.js (message routing, 60+ tools)                    │
 │  ├── page-tools.js (content extraction)                      │
 │  ├── interaction-tools.js (page interaction)                 │
 │  ├── advanced-tools.js (advanced features)                    │
 │  └── selection-toolbar.js (selection floating toolbar)        │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│                   Storage (Persistence)                       │
+│  src/storage/                                                 │
+│  ├── db.js (IndexedDB)                                        │
+│  ├── session-store.js (Session Adapter)                       │
+│  └── token-store.js (Token Stats)                             │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Data Flow
 
 ```
-User Input → Side Panel
+User Input → Side Panel (Agent Selection)
   → chrome.runtime.sendMessage('CALL_API')
     → Background: Tool Preselection → ReAct Loop
-      → LLM API Call (OpenAI Compatible)
-        → If tool needed: Execute (Background directly or delegate to Content Script)
-        → Tool result feeds back to LLM → Next reasoning cycle
-      → Final answer
+      → Token Budget Management → Context Pressure Monitoring
+      → LLM API Call (OpenAI Compatible, Stream Support)
+        → If tool needed: Confirmation Check → Execute Tool
+          ├── Background (Tab management, bookmarks)
+          ├── Content Script (Page interaction, content extraction)
+          └── Local Agent (File/command, MCP tools)
+        → Tool Reflection → Result Cache → Feed back to LLM
+      → Task Decomposition & Parallel Execution (Sub-task dispatch)
+      → Post Reflection: Quality Assessment → Pass/Revise/Retry
     → chrome.runtime.sendMessage('API_COMPLETE')
-  → Side Panel: Markdown rendering, Mermaid chart rendering
+  → Side Panel: Markdown rendering, Mermaid rendering, Token stats update
 ```
 
 ---
@@ -71,6 +97,27 @@ User Input → Side Panel
 
 ```
 ai-helper/
+├── agent/                              # Local Agent service (Node.js)
+│   ├── bin/agent.js                    # CLI entry
+│   ├── src/
+│   │   ├── server.js                   # HTTP + WebSocket server
+│   │   ├── executor.js                 # Command execution engine
+│   │   ├── security.js                # Path sandbox + security
+│   │   ├── config.js                   # Agent configuration
+│   │   ├── auth.js                     # Pairing authentication
+│   │   ├── search.js                   # File search (fd/rg)
+│   │   ├── logger.js                   # Structured logging
+│   │   ├── skill/                      # Skill system
+│   │   │   ├── loader.js              # Skill loader (JSON/YAML/SKILL.md)
+│   │   │   ├── registry.js            # Skill registry
+│   │   │   ├── executor.js            # Workflow executor
+│   │   │   └── markdown-loader.js     # Agent skill loader
+│   │   └── mcp/                        # MCP protocol
+│   │       ├── client.js              # MCP Client (JSON-RPC 2.0)
+│   │       ├── registry.js            # MCP Server registry
+│   │       ├── transport.js           # Stdio transport
+│   │       └── mcp-config.js          # MCP configuration
+│   └── package.json
 ├── icons/                              # Extension icons
 │   ├── icon16.png / icon48.png / icon128.png
 │   └── README.md
@@ -80,46 +127,61 @@ ai-helper/
 │   ├── qrcode.min.js                   # QR code generation library
 │   └── github-markdown-light.min.css   # GitHub-flavored Markdown styles
 ├── scripts/                            # Post-build scripts
-│   └── fix-build.js                    # Fix @crxjs/vite-plugin build artifacts
+│   ├── fix-build.js                    # Fix @crxjs/vite-plugin build artifacts
+│   ├── generate-icons.js               # Icon generation script
+│   └── deploy-pages.sh                 # Pages deployment script
 ├── styles/                             # Style files
 │   └── styles.css                      # Content Script floating box styles
 ├── src/                                # Source code
 │   ├── background/                     # Background Service Worker
 │   │   ├── index.js                    # Entry: message routing, API dispatch
 │   │   ├── react-loop.js              # ReAct inference loop (core engine)
-│   │   ├── tool-executor.js           # Tool execution (26 background + 40+ content script tools)
-│   │   ├── tool-preselector.js        # Tool preselection (lightweight API call to filter toolset)
+│   │   ├── tool-executor.js           # Tool execution
+│   │   ├── tool-preselector.js        # Tool preselection
+│   │   ├── agent-dispatcher.js        # Sub-task dispatcher
+│   │   ├── stream-controller.js       # Streaming response controller
+│   │   ├── token-recorder.js          # Token usage recorder
 │   │   ├── config.js                   # Config read/write
-│   │   ├── constants.js               # Defaults, 50+ built-in tools, category mappings
+│   │   ├── constants.js               # Defaults, 60+ built-in tools
 │   │   └── state.js                   # Cancel control and API counter
 │   ├── content/                        # Page-injected scripts
-│   │   ├── index.js                    # Entry: message routing, 50+ tool handlers
-│   │   ├── page-tools.js              # Page content tools (text, metadata, links, etc.)
-│   │   ├── interaction-tools.js       # Interaction tools (click, fill, scroll, drag, etc.)
-│   │   ├── advanced-tools.js          # Advanced tools (video, screenshot, Shadow DOM, etc.)
+│   │   ├── index.js                    # Entry: message routing
+│   │   ├── page-tools.js              # Page content tools
+│   │   ├── interaction-tools.js       # Interaction tools
+│   │   ├── advanced-tools.js          # Advanced tools
 │   │   └── selection-toolbar.js       # Floating selection toolbar
 │   ├── side_panel/                     # Side Panel UI
 │   │   ├── index.js                    # Entry: event binding, component init
-│   │   ├── chat-manager.js            # Chat management (send/receive, execution log)
-│   │   ├── markdown-render.js         # Markdown/Mermaid rendering & interaction
+│   │   ├── chat-manager.js            # Chat management
+│   │   ├── markdown-render.js         # Markdown/Mermaid rendering
 │   │   ├── tool-panel.js              # Tool selection popup
-│   │   ├── prompt-manager.js          # Prompt management (CRUD, quick select)
+│   │   ├── prompt-manager.js          # Prompt management
+│   │   ├── agent-manager.js           # Multi-agent management UI
+│   │   ├── agent-store.js             # Agent persistence
+│   │   ├── token-stats-panel.js       # Token statistics panel
 │   │   ├── clarify-dialog.js          # Clarification dialog
 │   │   ├── message-toc.js             # Message table of contents
-│   │   ├── input-history.js           # Input history (up/down arrow recall)
+│   │   ├── input-history.js           # Input history
 │   │   ├── state.js                    # UI state management
 │   │   ├── utils.js                    # Utility functions
-│   │   └── constants.js               # Temperature presets, category names
+│   │   └── constants.js               # Temperature presets
 │   ├── options/                        # Extension options page
 │   │   ├── index.js                    # Entry: tab switching, form events
 │   │   ├── config-manager.js          # Config management
 │   │   ├── toolbar-config.js          # Toolbar configuration
+│   │   ├── toolbox-config.js          # Toolbox configuration (Skill/MCP)
 │   │   └── constants.js               # Default system prompt
+│   ├── storage/                        # IndexedDB persistence
+│   │   ├── db.js                       # IndexedDB wrapper
+│   │   ├── session-store.js           # Session adapter
+│   │   └── token-store.js             # Token stats storage
 │   ├── config/                         # Global config constants
-│   │   └── constants.js               # Storage keys, message types, etc.
+│   │   └── constants.js               # Storage keys, message types
 │   └── shared/                         # Shared utilities
-│       ├── tools.js                    # Tool categories and shared definitions
-│       └── utils.js                    # Shared helper functions
+│       ├── tools.js                    # Tool categories
+│       ├── utils.js                    # Shared helper functions
+│       ├── token-counter.js           # Token counter
+│       └── agent-defaults.js          # Built-in agent definitions
 ├── manifest.json                       # Chrome extension config
 ├── side_panel.html                     # Side panel HTML
 ├── options.html                        # Options page HTML
@@ -132,15 +194,59 @@ ai-helper/
 
 ## Core Features
 
+### Multi-Agent Management
+
+Create and manage multiple custom AI agents, each with independent system prompts and tool permissions:
+
+- **Built-in Templates**: Code Review Expert, Web Automation Assistant, Data Analyst, Documentation Writer
+- **Custom Agents**: Create specialized agents with custom icons, names, system prompts, and tool permissions
+- **Agent Selector**: Quick agent switching at the top of the side panel
+- **Tool Filtering**: Each agent can have its own toolset to avoid context bloat
+- **Sub-task Dispatch**: Delegate subtasks to other agents for multi-agent collaboration
+
 ### ReAct Inference Loop
 
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
-1. **Tool Preselection**: Before the main model call, a lightweight API call lets a smaller model decide which tools are needed, reducing 50+ tools to 5-10 relevant ones, significantly cutting token usage
+1. **Tool Preselection**: Before the main model call, a lightweight API call lets a smaller model decide which tools are needed, reducing 60+ tools to 5-10 relevant ones, significantly cutting token usage
 2. **Inference Loop**: LLM thinks → decides to call tool → executes tool → result fed back → continues reasoning → final answer
-3. **Task Decomposition**: Supports the `plan_task` tool to break complex tasks into subtasks, topologically sorted by dependencies and executed sequentially
-4. **Clarification**: When task info is incomplete, the LLM can invoke `clarify_question` to show a dialog for user input
-5. **Timeout Control**: Multi-level timeouts (API, tool, overall loop), with automatic loop timer pausing during clarification
+3. **Task Decomposition**: Supports the `plan_task` tool to break complex tasks into subtasks, with sequential, parallel, and dependency-based execution strategies
+4. **Sub-task Dispatch**: Delegate subtasks to other agents for multi-agent collaboration
+5. **Streaming Response**: OpenAI streaming support for real-time LLM output
+6. **Clarification**: When task info is incomplete, the LLM can invoke `clarify_question` to show a dialog for user input
+7. **Timeout Control**: Multi-level timeouts (API, tool, overall loop), with automatic loop timer pausing during clarification
+8. **Token Budget Management**: Dynamic token budget calculation based on model context window
+9. **Tool Result Cache**: Automatic caching for parallel tool results (30 entry limit)
+
+### Token Statistics Panel
+
+Real-time tracking and display of token usage:
+
+- **Real-time Stats**: Token consumption updated after each API call
+- **Session Stats**: Current session cumulative consumption, average per round
+- **Daily Stats**: Today's cumulative consumption, call count
+- **Chart Display**: Trend charts and detailed data
+- **History**: Last 7 days of token usage history
+
+### Skill System
+
+Capture reusable skills from conversations:
+
+- **Workflow Skill**: JSON/YAML-defined workflow skills that execute directly
+- **Agent Skill**: SKILL.md-defined agent skills that AI can invoke autonomously
+- **Built-in Skill**: `skill-creator` meta-skill for creating new skills from conversations
+- **Skill Management**: Enable/disable, import/export, delete operations
+- **Skill Capture**: Users can say "save this as a skill" to trigger skill creation
+
+### MCP Protocol Extension
+
+Model Context Protocol (MCP) support for third-party tool extensions:
+
+- **MCP Client**: JSON-RPC 2.0 communication with stdio transport
+- **MCP Server Management**: Configure, connect, disconnect, monitor status
+- **Tool Discovery**: Auto-discover tools from MCP Servers
+- **Tool Calling**: Call MCP tools through the Agent service
+- **Multi-Server Support**: Connect to multiple MCP Servers simultaneously
 
 ### Side Panel Chat
 
@@ -296,11 +402,17 @@ Automatically appears when text is selected on any webpage, providing:
 | Service Worker | Background process for API calls and tool execution |
 | Side Panel API | Chrome 114+ side panel |
 | Content Script | Page injection, DOM operations |
+| IndexedDB | Session/prototype/token stats persistence |
+| chrome.storage.local | Config storage, agent definitions |
+| chrome.storage.session | Cross-restart message recovery |
 | chrome.debugger API | Full page screenshots and other advanced features |
-| OpenAI Compatible API | LLM integration, default DeepSeek |
+| OpenAI Compatible API | LLM integration, default DeepSeek, streaming support |
 | marked.js | Markdown rendering engine |
 | mermaid.js | Diagram rendering engine |
 | qrcode.js | QR code generation library |
+| Node.js (Agent) | Local file/command service, skill system, MCP protocol |
+| WebSocket (Agent) | Real-time command output streaming |
+| MCP Protocol | Model Context Protocol for third-party tools |
 
 ---
 

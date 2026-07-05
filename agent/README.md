@@ -1,6 +1,6 @@
 # AI Helper Agent
 
-AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写和系统命令执行能力。
+AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。
 
 ## 安装
 
@@ -242,6 +242,120 @@ Agent 内置多层异常保护，防止单个错误导致整个服务崩溃：
 - **全局兜底**：`uncaughtException` 和 `unhandledRejection` 全局捕获，记录错误日志但不退出进程
 - **文件 I/O 保护**：配置文件读写失败不影响服务运行
 - **进程管理保护**：`SIGTERM`/`SIGKILL` 发送对已退出进程有 try-catch 保护
+
+## Skill 系统
+
+Agent 服务内置 Skill 系统，支持将操作流程沉淀为可复用的技能。
+
+### Skill 类型
+
+| 类型 | 定义格式 | 执行方式 | 用途 |
+|------|----------|----------|------|
+| **Workflow Skill** | JSON/YAML | 直接执行 | 自动化流程，按步骤执行 |
+| **Agent Skill** | SKILL.md | AI 自主调用 | 知识沉淀，在对话中触发 |
+
+### Skill 目录结构
+
+所有 Skill 存储在 `~/.ai-helper-agent/skills/` 目录下：
+
+```
+~/.ai-helper-agent/skills/
+├── workflow-skill.json          # Workflow Skill（JSON 格式）
+├── another-skill.yaml           # Workflow Skill（YAML 格式）
+└── agent-skill/                 # Agent Skill（目录形式）
+    ├── SKILL.md                 # 技能定义文件
+    └── _meta.json               # 元数据（可选）
+```
+
+### SKILL.md 格式
+
+```markdown
+---
+name: <skill-name>
+description: "<简明描述，包含：(1) 技能做什么，(2) 何时触发调用>"
+enabled: true
+---
+
+# <技能标题>
+
+## When to Use This Skill
+
+- 触发条件1
+- 触发条件2
+
+## Core Capabilities
+
+- 能力1
+- 能力2
+
+## Usage
+
+### Step-by-Step
+
+1. 步骤1
+2. 步骤2
+
+## Examples
+
+[具体示例]
+
+## Source
+
+从对话中沉淀，创建日期：YYYY-MM-DD
+```
+
+### 内置技能
+
+- **skill-creator**：元技能，用于从对话中创建和更新其他技能
+
+### Skill API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/skill/list` | 获取所有 Skill 列表 |
+| GET | `/api/skill/:name` | 获取单个 Skill 完整定义 |
+| POST | `/api/skill/import` | 导入新 Skill |
+| POST | `/api/skill/:name/toggle` | 切换启用/停用状态 |
+| DELETE | `/api/skill/:name` | 删除 Skill |
+| POST | `/api/skill/:name/run` | 执行 Workflow Skill |
+
+## MCP 协议扩展
+
+支持 Model Context Protocol（MCP），扩展第三方工具能力。
+
+### MCP Server 配置
+
+配置文件路径：`~/.ai-helper-agent/config.json`
+
+```json
+{
+  "mcpServers": [
+    {
+      "id": "my-mcp-server",
+      "name": "My MCP Server",
+      "command": ["python", "-m", "my_mcp_server"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+### MCP API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/mcp/status` | 获取所有 MCP Server 状态 |
+| POST | `/api/mcp/:serverId/connect` | 连接指定 MCP Server |
+| POST | `/api/mcp/:serverId/disconnect` | 断开连接 |
+| GET | `/api/mcp/tools` | 获取所有 MCP 工具列表 |
+
+### 工作原理
+
+1. Agent 启动时自动连接所有启用的 MCP Server
+2. 通过 stdio 建立 JSON-RPC 2.0 通信
+3. 自动发现 MCP Server 提供的工具
+4. 工具调用请求通过 Agent 转发到 MCP Server
+5. 工具结果返回给扩展
 
 ## 技术栈
 

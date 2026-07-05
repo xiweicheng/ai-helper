@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 59 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配代理服务实现文件系统操作与命令执行。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展，支持自然语言对话、浏览器自动化操作、网页内容处理等 60+ 项工具调用能力，采用 ReAct（Reasoning + Acting）推理循环架构。可选配代理服务实现文件系统操作、命令执行、技能系统和 MCP 协议扩展。
 
 | 特性 | 说明 |
 |------|------|
@@ -10,12 +10,15 @@
 | API 协议 | OpenAI Chat Completions 兼容 |
 | 构建工具 | Vite + @crxjs/vite-plugin |
 | 本地 Agent | 可选，Node.js 18+ 独立进程，提供文件/命令能力 |
+| Skill 系统 | 支持 Workflow 和 Agent 两种技能类型，支持从对话沉淀技能 |
+| MCP 协议 | Model Context Protocol 支持，扩展第三方工具 |
+| 多助手管理 | 支持自定义 Agent，内置多种角色模板 |
 
 ---
 
 ## 架构总览
 
-项目采用 **五层架构**（新增本地 Agent 层），通过 Chrome Extension API 的消息通道进行通信：
+项目采用 **五层架构**，通过 Chrome Extension API 的消息通道进行通信：
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -24,6 +27,7 @@
 │  对话管理 | 多会话标签页 | Markdown/Mermaid 渲染 | 工具面板    │
 │  提示词管理 | 划词问答 | 输入历史 | 执行日志 | 澄清/确认对话框 │
 │  UI 原型预览 | 质量评估展示 | 消息目录 (TOC) | 会话归档       │
+│  多助手管理 | Token 统计面板 | Agent 选择器                   │
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
                ▼                               ▼
@@ -32,16 +36,17 @@
 │   Worker (核心逻辑层)      │    │  options.html + src/options/   │
 │                          │    │  API Key/模型/工具/ReAct参数   │
 │  src/background/          │    │  反思系统/对话配置/工具栏      │
-│  ├── index.js (消息路由)   │    │  Agent 配对连接管理           │
+│  ├── index.js (消息路由)   │    │  Agent 配对连接管理/工具箱     │
 │  ├── react-loop.js (ReAct) │    └──────────────────────────────┘
 │  ├── tool-executor.js      │
 │  ├── tool-preselector.js   │
 │  ├── local-agent-client.js │    ┌──────────────────────────────┐
-│  ├── config.js             │    │   代理服务 (可选层)     │
-│  └── state.js              │    │  agent/ (Node.js 独立进程)    │
-└──────────────┬─────────────┘    │  HTTP REST + WebSocket       │
-               │                   │  文件读写 | 命令执行 | 搜索   │
-               │                   │  路径沙箱 | 安全分级          │
+│  ├── config.js             │    │   代理服务 (可选层)           │
+│  ├── state.js              │    │  agent/ (Node.js 独立进程)    │
+│  ├── agent-dispatcher.js   │    │  HTTP REST + WebSocket       │
+│  ├── stream-controller.js  │    │  文件读写 | 命令执行 | 搜索   │
+│  └── token-recorder.js     │    │  Skill 系统 | MCP 协议扩展   │
+└──────────────┬─────────────┘    │  路径沙箱 | 安全分级          │
                │                   └──────────────────────────────┘
                │  chrome.tabs.sendMessage
                ▼
@@ -59,27 +64,28 @@
 │                   Storage (数据持久化层)                        │
 │  src/storage/                                                 │
 │  ├── db.js (IndexedDB 封装，会话/原型持久化)                   │
-│  └── session-store.js (会话存储适配器)                         │
+│  ├── session-store.js (会话存储适配器)                         │
+│  └── token-store.js (Token 统计存储)                          │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ### 核心数据流
 
 ```
-用户输入 → Side Panel
+用户输入 → Side Panel (选择 Agent)
   → chrome.runtime.sendMessage('CALL_API')
     → Background: 工具预筛选 → ReAct 推理循环
-      → Token 预算管理 → 上下文压力监测
-      → LLM API 调用 (OpenAI 兼容, 带重试和指数退避)
+      → Token 预算管理 → 上下文压力监测 → Token 统计记录
+      → LLM API 调用 (OpenAI 兼容, 带重试和指数退避, 流式响应)
         → 如需工具: 工具确认检查（敏感操作）→ 执行工具
           ├── Background 直接执行（标签页管理、书签搜索等）
           ├── 委派 Content Script（页面交互、内容提取等）
-          └── 委派本地 Agent（文件读写、命令执行等）
+          └── 委派本地 Agent（文件读写、命令执行、MCP 工具等）
         → 工具级反思 → 结果缓存 → 反馈给 LLM
-      → 子任务拆解与并行执行（plan_task 集成）
+      → 子任务拆解与并行执行（plan_task 集成，支持子任务分发）
       → 后置反思：多维度质量评估 → 合格/修订/重试
     → chrome.runtime.sendMessage('API_COMPLETE')
-  → Side Panel: Markdown 渲染, Mermaid 图表渲染, 质量评估展示
+  → Side Panel: Markdown 渲染, Mermaid 图表渲染, 质量评估展示, Token 统计更新
 ```
 
 ---
@@ -97,7 +103,18 @@ ai-helper/
 │   │   ├── config.js                    # Agent 配置（磁盘持久化）
 │   │   ├── auth.js                      # 配对认证（4 位动态码）
 │   │   ├── search.js                    # 文件/内容搜索（fd/rg 加速）
-│   │   └── logger.js                    # 结构化日志
+│   │   ├── logger.js                    # 结构化日志
+│   │   ├── skill/                       # Skill 系统
+│   │   │   ├── loader.js               # Skill 加载器（JSON/YAML/SKILL.md）
+│   │   │   ├── registry.js             # Skill 注册表
+│   │   │   ├── executor.js             # Workflow Skill 执行器
+│   │   │   ├── markdown-loader.js      # Agent Skill 加载器（SKILL.md）
+│   │   │   └── template.js             # Skill 模板
+│   │   └── mcp/                         # MCP 协议支持
+│   │       ├── client.js               # MCP Client（JSON-RPC 2.0）
+│   │       ├── registry.js             # MCP Server 注册表
+│   │       ├── transport.js            # Stdio 传输层
+│   │       └── mcp-config.js           # MCP 配置管理
 │   └── package.json
 ├── icons/                               # 扩展图标
 │   ├── icon16.png / icon48.png / icon128.png
@@ -120,8 +137,11 @@ ai-helper/
 │   │   ├── tool-executor.js            # 工具定义注册与执行调度
 │   │   ├── tool-preselector.js         # 工具预筛选（轻量 API 提前过滤）
 │   │   ├── local-agent-client.js       # 本地 Agent HTTP/WebSocket 通信
+│   │   ├── agent-dispatcher.js         # Agent 子任务分发器
+│   │   ├── stream-controller.js        # 流式响应控制器
+│   │   ├── token-recorder.js           # Token 使用统计记录器
 │   │   ├── config.js                    # 配置读写
-│   │   ├── constants.js                # 默认配置、59 个内建工具定义、分类映射
+│   │   ├── constants.js                # 默认配置、60+ 个内建工具定义、分类映射
 │   │   └── state.js                    # 多会话取消控制、API 计数器
 │   ├── content/                         # 页面注入脚本
 │   │   ├── index.js                     # 入口：消息路由分发
@@ -135,6 +155,10 @@ ai-helper/
 │   │   ├── markdown-render.js          # Markdown/Mermaid 渲染与交互控制
 │   │   ├── tool-panel.js               # 工具选择弹窗（分类筛选、搜索）
 │   │   ├── prompt-manager.js           # 提示词管理（CRUD、快速选择、拖拽排序）
+│   │   ├── agent-manager.js            # Agent 多助手管理 UI
+│   │   ├── agent-store.js              # Agent 数据持久化存储
+│   │   ├── agent-at-selector.js        # Agent @ 选择器
+│   │   ├── token-stats-panel.js        # Token 统计面板
 │   │   ├── session-manager.js          # 多会话存储 API
 │   │   ├── session-manager-ui.js       # 会话标签页 UI（切换、重命名、归档）
 │   │   ├── clarify-dialog.js           # 澄清对话框（倒计时、音频提醒）
@@ -148,17 +172,21 @@ ai-helper/
 │   ├── options/                         # 扩展选项页
 │   │   ├── index.js                     # 入口：标签页切换、表单事件、Agent 配对
 │   │   ├── config-manager.js           # 配置读写管理
+│   │   ├── config-io.js                # 配置导入/导出
 │   │   ├── toolbar-config.js           # 工具栏配置（拖拽排序、域名屏蔽）
+│   │   ├── toolbox-config.js           # 工具箱配置（Skill/MCP 管理）
 │   │   └── constants.js                # 默认系统提示词与配置常量
 │   ├── storage/                         # IndexedDB 持久化层
 │   │   ├── db.js                        # IndexedDB 封装（事务重试、迁移）
-│   │   └── session-store.js            # 会话存储适配器
+│   │   ├── session-store.js            # 会话存储适配器
+│   │   └── token-store.js              # Token 统计存储
 │   ├── config/
 │   │   └── constants.js                # Storage 键名、消息类型等
 │   └── shared/                          # 共享模块
 │       ├── tools.js                     # 工具分类、温度预设
 │       ├── utils.js                     # 通用工具函数
-│       └── token-counter.js            # Token 计数与预算管理
+│       ├── token-counter.js            # Token 计数与预算管理
+│       └── agent-defaults.js           # 内置 Agent 定义和模板
 ├── manifest.json                        # Chrome 扩展配置
 ├── side_panel.html                      # 侧边栏 HTML
 ├── options.html                         # 选项页 HTML
@@ -171,20 +199,32 @@ ai-helper/
 
 ## 核心功能
 
+### 多助手管理（Agent 系统）
+
+支持创建和管理多个自定义 AI 助手，每个助手拥有独立的系统提示词和工具权限：
+
+- **内置模板**：代码审查专家、网页自动化助手、数据分析师、文档撰写助手
+- **自定义 Agent**：创建专属助手，设置图标、名称、系统提示词和工具权限
+- **Agent 选择器**：侧边栏顶部快速切换助手
+- **工具过滤**：每个助手可配置独立的工具集，避免工具过多导致的上下文膨胀
+- **子任务分发**：支持将子任务委派给其他助手执行
+
 ### ReAct 推理循环
 
 项目采用 ReAct（Reasoning + Acting）模式作为核心推理引擎，支持多轮工具调用与结果反馈：
 
-1. **工具预筛选**：正式调用主力模型前，用一次轻量 API 调用判断需要哪些工具，将 59 个工具缩减为 5-10 个相关工具，大幅减少 Token 消耗。对于简单问题可直接回答，跳过完整推理循环
+1. **工具预筛选**：正式调用主力模型前，用一次轻量 API 调用判断需要哪些工具，将 60+ 个工具缩减为 5-10 个相关工具，大幅减少 Token 消耗。对于简单问题可直接回答，跳过完整推理循环
 2. **推理循环**：LLM 思考 → 决定调用工具 → 执行工具 → 结果反馈 → 继续推理，直到得出最终答案
 3. **Token 预算管理**：按模型上下文窗口动态计算可用 Token 预算（80%），按 Token 数而非消息数进行截断，保留 tool_calls/tool 消息配对完整性
 4. **工具结果缓存**：并行工具结果自动缓存，缓存上限 30 条自动淘汰
 5. **并行工具执行**：同一轮中标记为可并行的工具通过 `Promise.all` 并发执行
 6. **任务拆解**：支持 `plan_task` 工具，将复杂任务拆解为子任务，支持顺序、并行、依赖三种执行策略，子任务失败支持重试/回滚/继续
-7. **澄清机制**：任务信息不完整时弹出澄清对话框，循环计时自动暂停，支持推荐选项、自定义输入和附加信息
-8. **超时控制**：多级超时（API 超时、工具超时、整体循环超时），澄清期间自动暂停循环计时
-9. **取消控制**：用户可随时取消推理循环，按会话隔离，支持全部取消
-10. **SW 重启检测**：Keepalive 端口监测 Service Worker 静默重启，自动通知 Side Panel 恢复
+7. **子任务分发**：支持将子任务委派给其他 Agent 执行，实现多 Agent 协作
+8. **流式响应**：支持 OpenAI 流式响应，实时显示 LLM 输出
+9. **澄清机制**：任务信息不完整时弹出澄清对话框，循环计时自动暂停，支持推荐选项、自定义输入和附加信息
+10. **超时控制**：多级超时（API 超时、工具超时、整体循环超时），澄清期间自动暂停循环计时
+11. **取消控制**：用户可随时取消推理循环，按会话隔离，支持全部取消
+12. **SW 重启检测**：Keepalive 端口监测 Service Worker 静默重启，自动通知 Side Panel 恢复
 
 ### 反思系统（多级质量保障）
 
@@ -207,6 +247,36 @@ ReAct 循环内置三级反思机制，确保输出质量：
 - 消息预算 = 上下文窗口 - 系统提示词 - 工具定义 - 输出预留
 - 上下文压力三级监测：safe / warning / critical
 - Token 级别截断（70% 开头 + 30% 结尾 + 截断标记）
+
+### Token 统计面板
+
+实时追踪和展示 Token 使用情况：
+
+- **实时统计**：每次 API 调用后更新 Token 消耗
+- **会话统计**：当前会话累计消耗、平均每轮消耗
+- **今日统计**：当日累计消耗、调用次数
+- **图表展示**：趋势图和详细数据展示
+- **历史记录**：最近 7 天的 Token 使用历史
+
+### Skill 系统
+
+支持将对话中的操作流程沉淀为可复用的技能：
+
+- **Workflow Skill**：基于 JSON/YAML 定义的工作流技能，可直接执行
+- **Agent Skill**：基于 SKILL.md 定义的代理技能，由 AI 在对话中自主调用
+- **内置技能**：`skill-creator` 元技能，支持从对话中自动创建新技能
+- **技能管理**：启用/停用、导入/导出、删除等操作
+- **技能沉淀**：用户说"把这个流程沉淀为技能"即可触发技能创建
+
+### MCP 协议扩展
+
+支持 Model Context Protocol（MCP）协议，扩展第三方工具：
+
+- **MCP Client**：JSON-RPC 2.0 通信，支持 stdio 传输
+- **MCP Server 管理**：配置、连接、断开、状态监测
+- **工具发现**：自动发现 MCP Server 提供的工具
+- **工具调用**：通过 Agent 服务调用 MCP 工具
+- **多 Server 支持**：同时连接多个 MCP Server
 
 ### 多会话管理
 
@@ -449,25 +519,26 @@ Agent 命令执行三级安全：
 | Service Worker | 后台进程，API 调用和工具执行 |
 | Side Panel API | Chrome 114+ 侧边栏 |
 | Content Script | 页面注入，DOM 操作 |
-| IndexedDB | 会话/原型持久化（替代 chrome.storage.local） |
-| chrome.storage.local | 配置存储 |
+| IndexedDB | 会话/原型/Token 统计持久化 |
+| chrome.storage.local | 配置存储、Agent 定义存储 |
 | chrome.storage.session | 跨重启消息恢复 |
 | chrome.debugger API | CDP 截图/PDF 导出 |
-| OpenAI Compatible API | LLM 调用，默认 DeepSeek V4 |
+| OpenAI Compatible API | LLM 调用，默认 DeepSeek V4，支持流式响应 |
 | marked.js | Markdown 渲染引擎 |
 | mermaid.js | 图表渲染引擎 |
 | QRCode.js | 二维码生成（Canvas 降级方案） |
 | Web Speech API | 文本语音合成 |
 | EyeDropper API | 取色器 |
 | Navigation/Performance API | 性能审计 |
-| Node.js (Agent) | 本地文件/命令服务 |
+| Node.js (Agent) | 本地文件/命令服务、Skill 系统、MCP 协议 |
 | WebSocket (Agent) | 命令输出实时流 |
+| MCP Protocol | Model Context Protocol，扩展第三方工具 |
 
 ---
 
 ## 代理服务
 
-扩展可选配一个 Node.js 代理服务，提供浏览器沙箱之外的文件系统和终端命令能力。
+扩展可选配一个 Node.js 代理服务，提供浏览器沙箱之外的文件系统、终端命令、Skill 系统和 MCP 协议扩展能力。
 
 ### Agent 架构
 
@@ -487,8 +558,16 @@ Agent 命令执行三级安全：
 │   │   ├── /api/status (健康检查)  │
 │   │   ├── /api/pair (配对认证)    │
 │   │   ├── /api/logs (日志查询)    │
-│   │   └── /api/shutdown (优雅关闭)│
+│   │   ├── /api/shutdown (优雅关闭)│
+│   │   ├── /api/skill/* (技能管理) │
+│   │   └── /api/mcp/* (MCP 管理)   │
 │   ├── WebSocket (命令输出流)      │
+│   ├── Skill 系统                  │
+│   │   ├── Workflow Skill 执行器   │
+│   │   └── Agent Skill 加载器      │
+│   ├── MCP 协议扩展               │
+│   │   ├── MCP Client 管理        │
+│   │   └── JSON-RPC 2.0 通信      │
 │   └── 安全层                      │
 │       ├── Bearer Token 认证       │
 │       ├── 路径沙箱（realpath）    │
@@ -505,6 +584,26 @@ Agent 命令执行三级安全：
 - **大小限制**：请求体 10MB，单文件 50MB
 - **并发安全**：磁盘写入互斥锁，优雅关闭防双重关闭
 - **配置缓存**：mtime 检测，避免重复读盘
+
+### Skill 系统（Agent 端）
+
+Agent 服务内置 Skill 系统，支持两种类型的技能：
+
+| 类型 | 定义格式 | 执行方式 | 用途 |
+|------|----------|----------|------|
+| **Workflow Skill** | JSON/YAML | 直接执行 | 自动化流程，按步骤执行 |
+| **Agent Skill** | SKILL.md | AI 自主调用 | 知识沉淀，在对话中触发 |
+
+Skill 存储目录：`~/.ai-helper-agent/skills/`
+
+### MCP 协议（Agent 端）
+
+支持 Model Context Protocol，扩展第三方工具能力：
+
+- **MCP Client**：基于 JSON-RPC 2.0，支持 stdio 传输
+- **自动发现**：连接后自动获取 MCP Server 的工具列表
+- **多 Server**：同时连接多个 MCP Server，工具自动合并
+- **工具调用**：通过 Agent API 调用 MCP Server 的工具
 
 ### 启动 Agent
 
