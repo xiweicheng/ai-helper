@@ -2002,10 +2002,10 @@
 
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic">基础</button>
-      <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
+      <button class="tab-nav-btn" data-tab="chat">对话</button>
       <button class="tab-nav-btn" data-tab="react">推理</button>
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
-      <button class="tab-nav-btn" data-tab="chat">对话</button>
+      <button class="tab-nav-btn" data-tab="toolbar">工具栏</button>
       <button class="tab-nav-btn" data-tab="agent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox">工具箱</button>
     </div>
@@ -2127,81 +2127,98 @@
 
     </div><!-- /tab-basic -->
 
-    <!-- 工具栏配置区域 -->
-    <div class="tab-panel" data-tab="toolbar">
-    <div class="toolbar-config">
-      <h2>🔧 工具栏设置</h2>
-      <p class="subtitle">管理划词工具栏的按钮和顺序</p>
-
-      <div class="form-group">
-        <label for="toolbarMaxVisible">工具栏直接显示数量 <span class="hint">（超出部分收入"⋯"下拉菜单）</span></label>
-        <input type="number" id="toolbarMaxVisible" min="1" max="5" value="4" placeholder="4">
+    <!-- 对话配置区域 -->
+    <div class="tab-panel" data-tab="chat">
+    <div class="chat-config">
+      <h2>💬 对话配置</h2>
+      <p class="subtitle">控制对话历史和消息存储的行为参数</p>
+      
+      <div class="chat-config-item">
+        <label>
+          最大输入历史记录数
+          <span class="hint-text">（保存的用户输入历史条数）</span>
+        </label>
+        <input type="number" id="chatMaxInputHistory" min="10" max="100" value="20" placeholder="20">
+        <span class="unit">条</span>
+        <div class="range-labels">
+          <span>最小: 10</span>
+          <span>最大: 100</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          最大保留对话轮数
+          <span class="hint-text">（对话历史中保留的最大消息对数）</span>
+        </label>
+        <input type="number" id="chatMaxHistoryMessages" min="10" max="200" value="50" placeholder="50">
+        <span class="unit">轮</span>
+        <div class="range-labels">
+          <span>最小: 10</span>
+          <span>最大: 200</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          单条消息最大字符数
+          <span class="hint-text">（上限参考值，已移除截断）</span>
+        </label>
+        <input type="number" id="chatMaxMessageLength" min="1000" max="200000" step="1000" value="100000" placeholder="100000">
+        <span class="unit">字符</span>
+        <div class="range-labels">
+          <span>最小: 1000</span>
+          <span>最大: 50000</span>
+        </div>
+      </div>
+      
+      <div class="chat-config-item">
+        <label>
+          记忆历史限制条数
+          <span class="hint-text">（调用大模型时携带的最近记忆条数，需启用记忆才生效；置空表示不限制）</span>
+        </label>
+        <input type="number" id="chatMaxMemoryMessages" min="1" max="400" placeholder="不限制">
+        <span class="unit">条</span>
         <div class="range-labels">
           <span>最小: 1</span>
-          <span>最大: 5</span>
+          <span>最大: 400</span>
         </div>
       </div>
-
-      <div class="form-group">
-        <label class="toggle-label">
-          <input type="checkbox" id="enableSelectionToolbar">
-          <span class="toggle-text">启用选中内容工具栏</span>
+      
+      <div class="chat-config-item">
+        <label>
+          上下文窗口大小
+          <span class="hint-text">（当前模型支持的上下文窗口大小，单位 tokens；设为 0 则根据模型名自动推断，支持主流模型 DeepSeek/GPT/Claude）</span>
         </label>
-        <p class="hint" style="margin-top: 4px; color: #999; font-size: 12px;">关闭后，在网页上选中文字时将不再弹出操作工具栏</p>
+        <input type="number" id="chatContextWindow" min="0" max="2000000" step="1000" placeholder="0 = 自动推断">
+        <span class="unit">tokens</span>
+        <div class="range-labels">
+          <span>0 = 自动推断</span>
+          <span>最大: 2,000,000</span>
+        </div>
       </div>
-
-      <div class="form-group">
+      
+      <div class="chat-config-item">
         <label class="toggle-label">
-          <input type="checkbox" id="toolbarIconOnly">
-          <span class="toggle-text">工具栏图标精简模式（仅显示图标，不显示文字）</span>
+          <input type="checkbox" id="enableExecutionLog">
+          <span class="toggle-text">启用执行日志</span>
+          <span class="hint-text">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
         </label>
       </div>
-
-      <div class="toolbar-tools-list" id="toolbarToolsList">
-        <!-- 工具列表动态渲染 -->
-      </div>
-
-      <button class="btn btn-secondary" id="addCustomToolBtn" style="width: 100%; margin-top: 10px; margin-bottom: 12px;">
-        ＋ 添加自定义工具
-      </button>
-
-      <!-- 域名屏蔽列表 -->
-      <div class="domain-blocklist-section">
-        <h3 class="domain-blocklist-title">域名屏蔽</h3>
-        <p class="subtitle" style="margin-top: 2px;">在此添加需要屏蔽工具栏的域名，屏蔽后该域名下不再显示划词工具栏</p>
-        <div class="domain-add-row">
-          <input type="text" id="domainAddInput" placeholder="例如：example.com（不含 http/https）" class="domain-add-input">
-          <button class="btn btn-primary" id="domainAddBtn" style="width: auto; flex-shrink: 0;">添加</button>
-        </div>
-        <div class="domain-blocklist-list" id="domainBlocklistList">
-          <!-- 动态渲染 -->
-        </div>
-      </div>
-
-      <!-- 自定义工具编辑弹窗 -->
-      <div class="modal-overlay" id="toolEditModal" style="display: none;">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3 id="toolEditModalTitle">添加自定义工具</h3>
-            <button class="modal-close-btn" id="toolEditClose" title="关闭">✕</button>
-          </div>
-          <div class="form-group">
-            <label for="toolEditName">工具名称</label>
-            <input type="text" id="toolEditName" placeholder="例如：润色、改写、代码审查" maxlength="10">
-          </div>
-          <div class="form-group">
-            <label for="toolEditPrompt">系统提示词 <span class="hint">（定义该工具的行为）</span></label>
-            <textarea id="toolEditPrompt" rows="4" placeholder="例如：你是一个文本润色助手，请将用户输入的内容润色得更流畅、更专业。"></textarea>
-          </div>
-          <div class="modal-actions">
-            <button class="btn btn-cancel" id="toolEditCancel">取消</button>
-            <button class="btn btn-primary" id="toolEditSave" style="width: auto;">保存</button>
-          </div>
-        </div>
+      
+      <div class="info-box" style="margin-top: 15px;">
+        <h3>💡 配置说明</h3>
+        <p>
+          <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
+          • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
+          • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
+          • <strong>消息长度</strong>：上限参考值，已不再截断消息内容<br>
+          • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
+          • 建议根据实际需求平衡存储成本和使用体验
+        </p>
       </div>
     </div>
-
-    </div><!-- /tab-toolbar -->
+    </div><!-- /tab-chat -->
 
     <!-- ReAct 配置区域 -->
     <div class="tab-panel" data-tab="react">
@@ -2596,98 +2613,81 @@
     </div>
     </div><!-- /tab-reflection -->
 
-    <!-- 对话配置区域 -->
-    <div class="tab-panel" data-tab="chat">
-    <div class="chat-config">
-      <h2>💬 对话配置</h2>
-      <p class="subtitle">控制对话历史和消息存储的行为参数</p>
-      
-      <div class="chat-config-item">
-        <label>
-          最大输入历史记录数
-          <span class="hint-text">（保存的用户输入历史条数）</span>
-        </label>
-        <input type="number" id="chatMaxInputHistory" min="10" max="100" value="20" placeholder="20">
-        <span class="unit">条</span>
-        <div class="range-labels">
-          <span>最小: 10</span>
-          <span>最大: 100</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          最大保留对话轮数
-          <span class="hint-text">（对话历史中保留的最大消息对数）</span>
-        </label>
-        <input type="number" id="chatMaxHistoryMessages" min="10" max="200" value="50" placeholder="50">
-        <span class="unit">轮</span>
-        <div class="range-labels">
-          <span>最小: 10</span>
-          <span>最大: 200</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          单条消息最大字符数
-          <span class="hint-text">（上限参考值，已移除截断）</span>
-        </label>
-        <input type="number" id="chatMaxMessageLength" min="1000" max="200000" step="1000" value="100000" placeholder="100000">
-        <span class="unit">字符</span>
-        <div class="range-labels">
-          <span>最小: 1000</span>
-          <span>最大: 50000</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          记忆历史限制条数
-          <span class="hint-text">（调用大模型时携带的最近记忆条数，需启用记忆才生效；置空表示不限制）</span>
-        </label>
-        <input type="number" id="chatMaxMemoryMessages" min="1" max="400" placeholder="不限制">
-        <span class="unit">条</span>
+    <!-- 工具栏配置区域 -->
+    <div class="tab-panel" data-tab="toolbar">
+    <div class="toolbar-config">
+      <h2>🔧 工具栏设置</h2>
+      <p class="subtitle">管理划词工具栏的按钮和顺序</p>
+
+      <div class="form-group">
+        <label for="toolbarMaxVisible">工具栏直接显示数量 <span class="hint">（超出部分收入"⋯"下拉菜单）</span></label>
+        <input type="number" id="toolbarMaxVisible" min="1" max="5" value="4" placeholder="4">
         <div class="range-labels">
           <span>最小: 1</span>
-          <span>最大: 400</span>
+          <span>最大: 5</span>
         </div>
       </div>
-      
-      <div class="chat-config-item">
-        <label>
-          上下文窗口大小
-          <span class="hint-text">（当前模型支持的上下文窗口大小，单位 tokens；设为 0 则根据模型名自动推断，支持主流模型 DeepSeek/GPT/Claude）</span>
-        </label>
-        <input type="number" id="chatContextWindow" min="0" max="2000000" step="1000" placeholder="0 = 自动推断">
-        <span class="unit">tokens</span>
-        <div class="range-labels">
-          <span>0 = 自动推断</span>
-          <span>最大: 2,000,000</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
+
+      <div class="form-group">
         <label class="toggle-label">
-          <input type="checkbox" id="enableExecutionLog">
-          <span class="toggle-text">启用执行日志</span>
-          <span class="hint-text">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
+          <input type="checkbox" id="enableSelectionToolbar">
+          <span class="toggle-text">启用选中内容工具栏</span>
+        </label>
+        <p class="hint" style="margin-top: 4px; color: #999; font-size: 12px;">关闭后，在网页上选中文字时将不再弹出操作工具栏</p>
+      </div>
+
+      <div class="form-group">
+        <label class="toggle-label">
+          <input type="checkbox" id="toolbarIconOnly">
+          <span class="toggle-text">工具栏图标精简模式（仅显示图标，不显示文字）</span>
         </label>
       </div>
-      
-      <div class="info-box" style="margin-top: 15px;">
-        <h3>💡 配置说明</h3>
-        <p>
-          <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
-          • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
-          • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
-          • <strong>消息长度</strong>：上限参考值，已不再截断消息内容<br>
-          • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
-          • 建议根据实际需求平衡存储成本和使用体验
-        </p>
+
+      <div class="toolbar-tools-list" id="toolbarToolsList">
+        <!-- 工具列表动态渲染 -->
+      </div>
+
+      <button class="btn btn-secondary" id="addCustomToolBtn" style="width: 100%; margin-top: 10px; margin-bottom: 12px;">
+        ＋ 添加自定义工具
+      </button>
+
+      <!-- 域名屏蔽列表 -->
+      <div class="domain-blocklist-section">
+        <h3 class="domain-blocklist-title">域名屏蔽</h3>
+        <p class="subtitle" style="margin-top: 2px;">在此添加需要屏蔽工具栏的域名，屏蔽后该域名下不再显示划词工具栏</p>
+        <div class="domain-add-row">
+          <input type="text" id="domainAddInput" placeholder="例如：example.com（不含 http/https）" class="domain-add-input">
+          <button class="btn btn-primary" id="domainAddBtn" style="width: auto; flex-shrink: 0;">添加</button>
+        </div>
+        <div class="domain-blocklist-list" id="domainBlocklistList">
+          <!-- 动态渲染 -->
+        </div>
+      </div>
+
+      <!-- 自定义工具编辑弹窗 -->
+      <div class="modal-overlay" id="toolEditModal" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="toolEditModalTitle">添加自定义工具</h3>
+            <button class="modal-close-btn" id="toolEditClose" title="关闭">✕</button>
+          </div>
+          <div class="form-group">
+            <label for="toolEditName">工具名称</label>
+            <input type="text" id="toolEditName" placeholder="例如：润色、改写、代码审查" maxlength="10">
+          </div>
+          <div class="form-group">
+            <label for="toolEditPrompt">系统提示词 <span class="hint">（定义该工具的行为）</span></label>
+            <textarea id="toolEditPrompt" rows="4" placeholder="例如：你是一个文本润色助手，请将用户输入的内容润色得更流畅、更专业。"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-cancel" id="toolEditCancel">取消</button>
+            <button class="btn btn-primary" id="toolEditSave" style="width: auto;">保存</button>
+          </div>
+        </div>
       </div>
     </div>
-    </div><!-- /tab-chat -->
+
+    </div><!-- /tab-toolbar -->
 
     <!-- 代理配置区域 -->
     <div class="tab-panel" data-tab="agent">
