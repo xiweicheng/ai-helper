@@ -1898,6 +1898,28 @@ export const RAW_TOOLS = [
     }
   },
   {
+    id: 'agent_skill_load',
+    category: 'local_agent',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'agent_skill_load',
+      description: '按需加载一个 Agent Skill 的完整说明文档。当系统提示词中的技能列表表明某个技能匹配用户需求时，使用此工具加载其完整内容（SKILL.md），然后严格按照技能文档中的指示执行。',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: '要加载的 Agent Skill 名称。名称可在系统提示词的"可用技能 (Skills)"列表中查看。'
+          }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
     id: 'agent_skill_run',
     category: 'local_agent',
     execution: 'background',

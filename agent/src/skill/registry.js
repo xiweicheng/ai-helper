@@ -3,6 +3,8 @@
 import { loadAllSkills, saveSkillFile, deleteSkillFile } from './loader.js';
 import { executeSkill } from './executor.js';
 import { SKILLS_DIR } from './loader.js';
+import { readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 
 // Skill 映射表: name → skill定义
 const skills = new Map();
@@ -18,15 +20,15 @@ export function initializeSkillRegistry() {
   const loaded = loadAllSkills();
 
   for (const skill of loaded) {
-    if (skill.enabled !== false) {
-      skills.set(skill.name, skill);
-    }
+    // 加载所有 Skill（包括禁用的），通过 enabled 字段区分
+    skills.set(skill.name, skill);
   }
 
   const workflowCount = [...skills.values()].filter(s => s.type === 'workflow').length;
   const agentCount = [...skills.values()].filter(s => s.type === 'agent').length;
+  const enabledCount = [...skills.values()].filter(s => s.enabled !== false).length;
 
-  console.log(`[Skill Registry] 初始化完成，共注册 ${skills.size} 个 Skill (${workflowCount} Workflow + ${agentCount} Agent)`);
+  console.log(`[Skill Registry] 初始化完成，共注册 ${skills.size} 个 Skill (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}`);
   return skills.size;
 }
 
@@ -91,8 +93,9 @@ export async function runSkill(name, params = {}, onStepUpdate) {
 }
 
 /**
- * 获取所有启用的 Agent Skill 的 Prompt 汇总
- * 用于注入到 AI System Prompt 中
+ * 获取所有启用的 Agent Skill 的轻量列表
+ * 仅包含名称和描述，用于注入到 AI System Prompt 中。
+ * AI 需要使用 agent_skill_load 工具按需加载完整内容。
  * @returns {string} - 格式化的技能列表文本
  */
 export function getAgentSkillPrompts() {
@@ -106,11 +109,9 @@ export function getAgentSkillPrompts() {
   if (agentSkills.length === 0) return '';
 
   const parts = [];
-
   parts.push('## 可用技能 (Skills)');
   parts.push('');
-  parts.push('以下是你可以使用的专业技能。当用户的需求匹配某个技能时，请按照技能描述中的指示执行。');
-  parts.push('每个技能目录下的 SKILL.md 包含完整说明，scripts/ templates/ assets/ references/ 子目录包含辅助资源。');
+  parts.push('以下是可用的专业技能列表。当用户需求匹配某个技能时，使用 `agent_skill_load` 工具加载该技能的完整说明。');
   parts.push('');
 
   for (const skill of agentSkills) {
@@ -121,11 +122,31 @@ export function getAgentSkillPrompts() {
       parts.push(`**可用资源**: ${resourceNames}`);
     }
     parts.push('');
-    parts.push(skill.fullPrompt || skill.prompt || '');
-    parts.push('');
   }
 
   return parts.join('\n');
+}
+
+/**
+ * 获取单个 Agent Skill 的完整 Prompt 内容
+ * @param {string} name - Skill 名称
+ * @returns {{ success: boolean, error?: string, skill?: Object, prompt?: string }}
+ */
+export function getAgentSkillPrompt(name) {
+  const skill = skills.get(name);
+  if (!skill || skill.type !== 'agent') {
+    return { success: false, error: `Skill "${name}" 不存在或不是 Agent Skill` };
+  }
+  return {
+    success: true,
+    skill: {
+      name: skill.name,
+      description: skill.description,
+      version: skill.version,
+      resources: skill.resources
+    },
+    prompt: skill.fullPrompt || skill.prompt || ''
+  };
 }
 
 /**
@@ -160,8 +181,48 @@ export function removeSkill(name) {
 }
 
 /**
- * 重新加载所有 Skill（热更新）
+ * 切换 Skill 的启用/停用状态
+ * @param {string} name - Skill 名称
+ * @returns {{ success: boolean, error?: string, enabled?: boolean }}
  */
+export function toggleSkill(name) {
+  const skill = skills.get(name);
+  if (!skill) {
+    return { success: false, error: `Skill "${name}" 不存在` };
+  }
+
+  const newEnabled = skill.enabled === false;
+  skill.enabled = newEnabled;
+
+  try {
+    if (skill.type === 'agent' && skill.skillMdPath) {
+      // 更新 SKILL.md 的 frontmatter
+      const content = readFileSync(skill.skillMdPath, 'utf-8');
+      const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (frontmatterMatch) {
+        let frontmatter = frontmatterMatch[1];
+        if (/^enabled:\s/m.test(frontmatter)) {
+          frontmatter = frontmatter.replace(/^enabled:\s.*$/m, `enabled: ${newEnabled}`);
+        } else {
+          frontmatter += `\nenabled: ${newEnabled}`;
+        }
+        const newContent = content.replace(/^---\n[\s\S]*?\n---/, `---\n${frontmatter}\n---`);
+        writeFileSync(skill.skillMdPath, newContent, 'utf-8');
+      }
+    } else if (skill.type === 'workflow' && skill._filePath) {
+      // 更新 JSON 文件
+      const content = readFileSync(skill._filePath, 'utf-8');
+      const parsed = JSON.parse(content);
+      parsed.enabled = newEnabled;
+      writeFileSync(skill._filePath, JSON.stringify(parsed, null, 2), 'utf-8');
+    }
+  } catch (err) {
+    // 文件写入失败不影响内存状态，仅记录警告
+    console.warn(`[Skill Registry] 持久化 "${name}" 的启用状态失败:`, err.message);
+  }
+
+  return { success: true, enabled: newEnabled };
+}
 export function reloadSkills() {
   return initializeSkillRegistry();
 }

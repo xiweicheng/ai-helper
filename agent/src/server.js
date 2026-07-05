@@ -29,11 +29,13 @@ import {
   initializeSkillRegistry,
   getSkillList,
   getSkill,
+  toggleSkill,
   runSkill,
   importSkill,
   removeSkill,
   reloadSkills,
   getAgentSkillPrompts,
+  getAgentSkillPrompt,
   getSkillsDir
 } from './skill/registry.js';
 import { getSkillExecutionStatus } from './skill/executor.js';
@@ -639,6 +641,15 @@ export function startServer() {
       return jsonResponse(res, 200, getSkill(name));
     }
 
+    // 切换 Skill 启用/停用状态
+    if (req.method === 'POST' && pathname === '/api/skill/toggle') {
+      const { name } = body;
+      if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      const result = toggleSkill(name);
+      logSystem('skill_toggle', { skillName: name, enabled: result.enabled });
+      return jsonResponse(res, result.success ? 200 : 400, result);
+    }
+
     // Skill 执行状态查询
     if (req.method === 'GET' && pathname === '/api/skill/status') {
       const execId = url.searchParams.get('execId');
@@ -650,6 +661,14 @@ export function startServer() {
     if (req.method === 'GET' && pathname === '/api/skill/agent-prompts') {
       const prompts = getAgentSkillPrompts();
       return jsonResponse(res, 200, { success: true, prompts });
+    }
+
+    // 按需加载单个 Agent Skill 的完整内容
+    if (req.method === 'GET' && pathname === '/api/skill/agent-prompt') {
+      const skillName = url.searchParams.get('name');
+      if (!skillName) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      const result = getAgentSkillPrompt(skillName);
+      return jsonResponse(res, result.success ? 200 : 404, result);
     }
 
     // Agent Skill 的 SKILL.md 内容

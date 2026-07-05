@@ -291,9 +291,9 @@ async function toggleMcpServer(serverId, enabled) {
 // ========== Skill 相关 API ==========
 
 /**
- * 获取所有 Skill 列表
+ * 获取 Skill 列表
  */
-async function getSkills() {
+async function getSkillList() {
   return agentGet('/api/skill/list');
 }
 
@@ -325,6 +325,13 @@ async function deleteSkill(name) {
   return agentRequest('/api/skill/delete', { name }, 'DELETE');
 }
 
+/**
+ * 切换 Skill 启用/停用状态
+ */
+async function toggleSkill(name) {
+  return agentRequest('/api/skill/toggle', { name });
+}
+
 // ========== Agent Skill (Markdown) API ==========
 
 /**
@@ -332,6 +339,13 @@ async function deleteSkill(name) {
  */
 async function getAgentSkillPrompts() {
   return agentGet('/api/skill/agent-prompts');
+}
+
+/**
+ * 按需加载单个 Agent Skill 的完整内容
+ */
+async function getAgentSkillPrompt(name) {
+  return agentGet(`/api/skill/agent-prompt?name=${encodeURIComponent(name)}`);
 }
 
 /**
@@ -400,13 +414,15 @@ export {
   disconnectMcpServer,
   toggleMcpServer,
   // Skill 相关
-  getSkills,
+  getSkillList,
   getSkillDetail,
   runSkill,
   importSkill,
   deleteSkill,
+  toggleSkill,
   // Agent Skill (Markdown) API
   getAgentSkillPrompts,
+  getAgentSkillPrompt,
   saveMarkdownSkill,
   getMarkdownSkill,
   getSkillResource,

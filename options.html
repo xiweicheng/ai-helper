@@ -1307,11 +1307,103 @@
       background: #f0fff4;
       color: #38a169;
     }
+    .badge-disabled {
+      background: #fef3c7;
+      color: #d97706;
+    }
     .skill-card-workflow {
       border-left: 3px solid #667eea;
     }
     .skill-card-agent {
       border-left: 3px solid #38a169;
+    }
+    .skill-card.skill-disabled {
+      opacity: 0.6;
+      background: #fafafa;
+      border-left-color: #999;
+    }
+    .skill-card.skill-disabled .skill-card-name {
+      color: #999;
+    }
+
+    /* 参数表单标签 */
+    .param-required {
+      color: #e53e3e;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .param-optional {
+      color: #999;
+      font-size: 11px;
+    }
+
+    /* Skill 执行结果弹窗 */
+    .skill-run-summary {
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #666;
+    }
+    .skill-run-step {
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    .skill-run-step.step-success {
+      border-left: 3px solid #38a169;
+    }
+    .skill-run-step.step-error {
+      border-left: 3px solid #e53e3e;
+    }
+    .skill-run-step.step-skipped {
+      border-left: 3px solid #ccc;
+      opacity: 0.7;
+    }
+    .skill-run-step .step-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #fafafa;
+      border-bottom: 1px solid #eee;
+    }
+    .skill-run-step .step-status-icon {
+      font-weight: bold;
+      font-size: 14px;
+      width: 20px;
+      text-align: center;
+    }
+    .step-success .step-status-icon { color: #38a169; }
+    .step-error .step-status-icon { color: #e53e3e; }
+    .step-skipped .step-status-icon { color: #999; }
+    .skill-run-step .step-title {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .skill-run-step .step-tool-tag {
+      font-size: 11px;
+      background: #edf2f7;
+      color: #4a5568;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: Consolas, Monaco, monospace;
+    }
+    .skill-run-step .step-output {
+      margin: 0;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-family: Consolas, Monaco, monospace;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #fff;
+      color: #333;
     }
     
     /* 工具栏数量输入框保持和 ReAct/Chat 数字输入框一致 */

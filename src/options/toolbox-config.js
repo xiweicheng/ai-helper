@@ -331,13 +331,14 @@ function renderSkills(skills) {
   if (workflowSkills.length > 0) {
     html += '<div class="skill-section-title">Workflow Skills（自动化流程）</div>';
     html += workflowSkills.map(s => `
-      <div class="skill-card skill-card-workflow">
+      <div class="skill-card skill-card-workflow${s.enabled === false ? ' skill-disabled' : ''}">
         <div class="skill-card-header">
           <div class="skill-card-info">
             <span class="skill-card-icon">⚙️</span>
             <span class="skill-card-name">${escapeHtml(s.name)}</span>
             <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
             <span class="skill-card-badge badge-workflow">Workflow</span>
+            ${s.enabled === false ? '<span class="skill-card-badge badge-disabled">已停用</span>' : ''}
             <span class="skill-card-step-count">${s.stepCount || 0} 步骤</span>
           </div>
         </div>
@@ -347,6 +348,7 @@ function renderSkills(skills) {
         </div>
         <div class="skill-card-actions">
           <button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>
+          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
           <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
         </div>
       </div>
@@ -357,13 +359,14 @@ function renderSkills(skills) {
   if (agentSkills.length > 0) {
     html += '<div class="skill-section-title">Agent Skills（AI 能力扩展）</div>';
     html += agentSkills.map(s => `
-      <div class="skill-card skill-card-agent">
+      <div class="skill-card skill-card-agent${s.enabled === false ? ' skill-disabled' : ''}">
         <div class="skill-card-header">
           <div class="skill-card-info">
             <span class="skill-card-icon">🤖</span>
             <span class="skill-card-name">${escapeHtml(s.name)}</span>
             <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
             <span class="skill-card-badge badge-agent">Agent</span>
+            ${s.enabled === false ? '<span class="skill-card-badge badge-disabled">已停用</span>' : ''}
             <span class="skill-card-step-count">${s.resourceCount || 0} 资源</span>
           </div>
         </div>
@@ -374,6 +377,7 @@ function renderSkills(skills) {
         </div>` : ''}
         <div class="skill-card-actions">
           <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>
+          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
           <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
         </div>
       </div>
@@ -416,11 +420,219 @@ async function deleteSkill(name) {
 }
 
 /**
+ * 切换 Skill 启用/停用状态
+ */
+async function toggleSkill(name) {
+  const result = await agentApi('POST', '/api/skill/toggle', { name });
+  if (result.success) return result.enabled !== false;
+  throw new Error(result.error || '操作失败');
+}
+
+/**
  * 运行 Workflow Skill
  */
-async function runSkill(name) {
-  const result = await agentApi('POST', '/api/skill/run', { name, params: {} });
+async function runSkill(name, params = {}) {
+  const result = await agentApi('POST', '/api/skill/run', { name, params });
   return result;
+}
+
+/**
+ * 解析 Skill 的参数定义（兼容 JSON Schema 格式）
+ */
+function parseSkillParams(skill) {
+  const params = skill.parameters || {};
+  // 兼容 JSON Schema 格式: { type: "object", properties: {...}, required: [...] }
+  const props = params.properties || {};
+  const requiredList = Array.isArray(params.required) ? params.required : [];
+  const entries = Object.entries(props);
+  return {
+    hasRequired: entries.length > 0,
+    required: entries.filter(([key]) => requiredList.includes(key)),
+    optional: entries.filter(([key]) => !requiredList.includes(key)),
+    all: entries
+  };
+}
+
+/**
+ * 显示 Skill 参数输入弹窗
+ * @returns {Promise<Object|null>} - 用户填写的参数，取消则返回 null
+ */
+function showSkillParamsDialog(skillName, paramsDef) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    // 生成参数输入字段
+    const requiredFields = paramsDef.required.map(([key, def]) => `
+      <div class="form-group">
+        <label for="skill-param-${key}">${escapeHtml(def.description || key)} <span class="param-required">*必填</span></label>
+        <input type="text" id="skill-param-${key}" class="form-input"
+               placeholder="${escapeHtml(def.type || 'string')}${def.default !== undefined ? ' (默认: ' + def.default + ')' : ''}" />
+      </div>
+    `).join('');
+
+    const optionalFields = paramsDef.optional.map(([key, def]) => `
+      <div class="form-group">
+        <label for="skill-param-${key}">${escapeHtml(def.description || key)} <span class="param-optional">选填</span></label>
+        <input type="text" id="skill-param-${key}" class="form-input"
+               placeholder="${escapeHtml(def.type || 'string')}${def.default !== undefined ? ' (默认: ' + def.default + ')' : ''}" />
+      </div>
+    `).join('');
+
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width:500px;">
+        <div class="modal-header">
+          <h2>运行 Skill "${escapeHtml(skillName)}"</h2>
+          <button class="modal-close-btn" id="skillParamsCancel">×</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin:0 0 16px;color:#666;font-size:13px;">请填写以下参数后运行：</p>
+          ${requiredFields}
+          ${paramsDef.required.length > 0 && paramsDef.optional.length > 0 ? '<div style="border-top:1px dashed #e0e0e0;margin:12px 0;"></div>' : ''}
+          ${optionalFields}
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="skillParamsCancel">取消</button>
+          <button class="btn btn-primary" id="skillParamsSubmit">运行</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); resolve(null); };
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelectorAll('#skillParamsCancel').forEach(btn => {
+      btn.addEventListener('click', close);
+    });
+
+    overlay.querySelector('#skillParamsSubmit').addEventListener('click', () => {
+      const values = {};
+      let allRequiredFilled = true;
+      for (const [key, def] of paramsDef.required) {
+        const input = overlay.querySelector(`#skill-param-${key}`);
+        const val = input?.value?.trim();
+        if (!val) {
+          allRequiredFilled = false;
+          if (input) input.style.borderColor = '#e53e3e';
+        } else {
+          values[key] = val;
+          if (input) input.style.borderColor = '';
+        }
+      }
+      for (const [key] of paramsDef.optional) {
+        const input = overlay.querySelector(`#skill-param-${key}`);
+        if (input) {
+          values[key] = input.value;
+        }
+      }
+      if (!allRequiredFilled) return;
+      overlay.remove();
+      resolve(values);
+    });
+
+    // 回车提交
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        overlay.querySelector('#skillParamsSubmit').click();
+      }
+    });
+
+    // 自动聚焦第一个输入框
+    const firstInput = overlay.querySelector('input');
+    if (firstInput) setTimeout(() => firstInput.focus(), 100);
+  });
+}
+function showSkillRunResult(name, skillInfo, result) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'skillResultModal';
+
+  const steps = skillInfo?.success ? (skillInfo.skill?.steps || []) : [];
+  const stepMap = {};
+  steps.forEach(s => { stepMap[s.id] = s; });
+
+  const results = result.results || {};
+  const stepIds = Object.keys(results);
+
+  let stepsHtml = '';
+  let successCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+
+  if (stepIds.length === 0) {
+    stepsHtml = `<div style="padding:16px;text-align:center;color:#999;">${result.error || '无执行结果'}</div>`;
+  } else {
+    stepsHtml = stepIds.map((stepId, idx) => {
+      const stepRes = results[stepId];
+      const stepDef = stepMap[stepId] || {};
+      const stepName = stepDef.name || stepDef.description || stepId;
+      const tool = stepDef.tool || '';
+      const isSuccess = stepRes?.success;
+      const isSkipped = stepRes?.skipped;
+
+      if (isSkipped) skipCount++;
+      else if (isSuccess) successCount++;
+      else failCount++;
+
+      const statusIcon = isSkipped ? '⊘' : (isSuccess ? '✓' : '✗');
+      const statusClass = isSkipped ? 'step-skipped' : (isSuccess ? 'step-success' : 'step-error');
+      const outputText = isSkipped
+        ? (stepRes.message || '条件不满足，已跳过')
+        : (isSuccess
+          ? (stepRes.content || stepRes.stdout || stepRes.message || '执行成功')
+          : (stepRes.error || '执行失败'));
+
+      // 截断过长输出
+      const truncated = outputText.length > 500
+        ? outputText.substring(0, 500) + `\n... (共 ${outputText.length} 字符，已截断)`
+        : outputText;
+
+      return `
+        <div class="skill-run-step ${statusClass}">
+          <div class="step-header">
+            <span class="step-status-icon">${statusIcon}</span>
+            <span class="step-title">${escapeHtml(stepName)}</span>
+            ${tool ? `<span class="step-tool-tag">${escapeHtml(tool)}</span>` : ''}
+          </div>
+          <pre class="step-output">${escapeHtml(truncated)}</pre>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const icon = result.success ? '✓' : '✗';
+  const statusText = result.success ? '执行完成' : '执行失败';
+  const summaryText = result.success
+    ? `${successCount} 成功, ${failCount} 失败, ${skipCount} 跳过`
+    : (result.error || '未知错误');
+
+  overlay.innerHTML = `
+    <div class="modal-content" style="max-width:700px;max-height:85vh;">
+      <div class="modal-header">
+        <h2>${icon} Skill "${escapeHtml(name)}" ${statusText}</h2>
+        <button class="modal-close-btn" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body" style="max-height:calc(85vh - 120px);overflow-y:auto;">
+        <div class="skill-run-summary">${escapeHtml(summaryText)}</div>
+        ${stepsHtml}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary modal-close-btn">关闭</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay || e.target.classList.contains('modal-close-btn')) {
+      overlay.remove();
+    }
+  });
 }
 
 /**
@@ -1018,13 +1230,30 @@ function initToolbox() {
           await deleteSkill(skillName);
           showToolboxToast('删除成功', 'success');
           await refreshToolbox();
+        } else if (action === 'toggle-skill') {
+          const enabled = await toggleSkill(skillName);
+          showToolboxToast(`已${enabled ? '启用' : '停用'} Skill "${skillName}"`, 'success');
+          await refreshToolbox();
         } else if (action === 'run-skill') {
-          showToolboxToast(`正在运行 Skill "${skillName}"...`, 'info');
-          const result = await runSkill(skillName);
-          if (result.success) {
-            showToolboxToast(`Skill "${skillName}" 执行成功`, 'success');
+          const skillInfo = await agentApi('GET', `/api/skill/detail?name=${encodeURIComponent(skillName)}`);
+          if (!skillInfo?.success || !skillInfo.skill) {
+            showToolboxToast(`获取 Skill 信息失败: ${skillInfo?.error || '未知错误'}`, 'error');
+            return;
+          }
+          // 解析参数定义
+          const paramsDef = parseSkillParams(skillInfo.skill);
+          if (paramsDef.hasRequired) {
+            // 有参数需要填写，弹窗收集
+            const userParams = await showSkillParamsDialog(skillName, paramsDef);
+            if (userParams === null) return; // 用户取消
+            showToolboxToast(`正在运行 Skill "${skillName}"...`, 'info');
+            const result = await runSkill(skillName, userParams);
+            showSkillRunResult(skillName, skillInfo, result);
           } else {
-            showToolboxToast(`执行失败: ${result.error || '未知错误'}`, 'error');
+            // 无必填参数，直接执行
+            showToolboxToast(`正在运行 Skill "${skillName}"...`, 'info');
+            const result = await runSkill(skillName);
+            showSkillRunResult(skillName, skillInfo, result);
           }
         } else if (action === 'edit-agent-skill') {
           try {

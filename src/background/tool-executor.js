@@ -836,6 +836,7 @@ const TOOL_HANDLERS = {
   dispatch_sub_agent: executeDispatchSubAgent,
   take_full_page_screenshot: executeTakeFullPageScreenshot,
   agent_skill_run: executeSkillRun,
+  agent_skill_load: executeSkillLoad,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -2399,6 +2400,29 @@ async function executeSkillRun(args, toolCallId) {
     return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
   } catch (err) {
     return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
+  }
+}
+
+/**
+ * Agent Skill 按需加载
+ */
+async function executeSkillLoad(args, toolCallId) {
+  const { name } = args;
+  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
+
+  try {
+    const result = await AgentClient.getAgentSkillPrompt(name);
+    if (result.success) {
+      return {
+        success: true,
+        content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${result.prompt}`,
+        skill: result.skill,
+        tool_call_id: toolCallId
+      };
+    }
+    return { success: false, error: result.error || 'Skill 加载失败', tool_call_id: toolCallId };
+  } catch (err) {
+    return { success: false, error: `Skill 加载异常: ${err.message}`, tool_call_id: toolCallId };
   }
 }
 

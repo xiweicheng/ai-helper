@@ -166,7 +166,8 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
         onStepUpdate(step.id, 'running', '执行中...');
 
         // 渲染参数中的模板变量（包含前面步骤的结果）
-        const renderedParams = { ...step.params };
+        const stepArgs = step.args || step.params || {};
+        const renderedParams = { ...stepArgs };
         for (const [key, value] of Object.entries(renderedParams)) {
           if (typeof value === 'string') {
             renderedParams[key] = render(value, variables);
@@ -231,8 +232,12 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
 
   // 参数校验
   if (skill.parameters) {
-    for (const [key, def] of Object.entries(skill.parameters)) {
-      if (def.required && (params[key] === undefined || params[key] === null)) {
+    // 兼容 JSON Schema 格式: { type: "object", properties: {...}, required: [...] }
+    const props = skill.parameters.properties || skill.parameters;
+    const requiredList = Array.isArray(skill.parameters.required) ? skill.parameters.required : [];
+    for (const [key, def] of Object.entries(props)) {
+      if (!def || typeof def !== 'object') continue;
+      if (requiredList.includes(key) && (params[key] === undefined || params[key] === null || params[key] === '')) {
         return { success: false, execId, error: `缺少必需参数: ${key}` };
       }
       if (params[key] !== undefined && def.type) {
