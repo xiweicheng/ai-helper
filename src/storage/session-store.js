@@ -18,6 +18,34 @@ export async function init() {
   if (migrated) return;
   await idb.ensureMigration();
   migrated = true;
+
+  // 清理孤儿 scrollPosition key（会话已被删除但 key 残留）
+  cleanupOrphanScrollPositions();
+}
+
+/**
+ * 清理 chrome.storage.local 中无对应会话的 scrollPosition_* key
+ */
+async function cleanupOrphanScrollPositions() {
+  try {
+    const sessions = await idb.getAllSessions();
+    const validIds = new Set(sessions.map(s => s.id));
+    // 'default' 是 fallback key，始终保留
+    validIds.add('default');
+
+    const allItems = await chrome.storage.local.get(null);
+    const orphanKeys = Object.keys(allItems).filter(
+      k => k.startsWith('scrollPosition_') && !validIds.has(k.slice('scrollPosition_'.length))
+    );
+
+    if (orphanKeys.length > 0) {
+      await chrome.storage.local.remove(orphanKeys);
+      console.log(`[session-store] 清理了 ${orphanKeys.length} 个孤儿 scrollPosition key:`, orphanKeys);
+    }
+  } catch (e) {
+    // 非关键路径，静默失败
+    console.warn('[session-store] 清理孤儿 scrollPosition 失败:', e);
+  }
 }
 
 /**
@@ -279,6 +307,9 @@ export async function deleteStoreSession(sessionId) {
   const activeId = await idb.getActiveSessionId();
 
   await idb.deleteSession(sessionId);
+
+  // 清理该会话的 scrollPosition 存储，防止泄露
+  chrome.storage.local.remove('scrollPosition_' + sessionId);
 
   // 如果删除的是当前活跃会话，优先切换到上一个会话，其次第一个剩下的会话
   if (activeId === sessionId) {
