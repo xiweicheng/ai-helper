@@ -32,9 +32,12 @@ import {
   runSkill,
   importSkill,
   removeSkill,
-  reloadSkills
+  reloadSkills,
+  getAgentSkillPrompts,
+  getSkillsDir
 } from './skill/registry.js';
 import { getSkillExecutionStatus } from './skill/executor.js';
+import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './skill/loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
@@ -470,6 +473,76 @@ export function startServer() {
         return jsonResponse(res, 200, { success: true, count });
       }
 
+      // === Agent Skill Markdown 管理 ===
+
+      // 创建/更新 Agent Skill Markdown
+      if (pathname === '/api/skill/save-markdown') {
+        if (!body.name) {
+          return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        }
+        if (!body.markdown && !body.prompt) {
+          return jsonResponse(res, 400, { success: false, error: '缺少 markdown/prompt 参数' });
+        }
+        const skillDef = {
+          type: 'agent',
+          name: body.name,
+          description: body.description || '',
+          version: body.version || '1.0',
+          enabled: body.enabled !== false,
+          fullPrompt: body.markdown || body.prompt || '',
+          prompt: body.markdown || body.prompt || ''
+        };
+        const result = saveMarkdownSkill(getSkillsDir(), skillDef);
+        if (result.success) {
+          // 重新注册
+          const { loadMarkdownSkill } = await import('./skill/markdown-loader.js');
+          const skill = loadMarkdownSkill(result.dirPath);
+          if (skill) {
+            const { skills } = await import('./skill/registry.js');
+            skills.set(skill.name, skill);
+          }
+          logSystem('skill_save_markdown', { skillName: body.name });
+        }
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 从 Zip 导入 Agent Skill（base64 编码的 zip 内容）
+      if (pathname === '/api/skill/import-zip') {
+        if (!body.zipData) {
+          return jsonResponse(res, 400, { success: false, error: '缺少 zipData 参数（base64 编码的 zip 内容）' });
+        }
+        try {
+          const zipBuffer = Buffer.from(body.zipData, 'base64');
+          const result = await importMarkdownSkillFromZip(getSkillsDir(), zipBuffer, body.name);
+          if (result.success && result.skill) {
+            const { skills } = await import('./skill/registry.js');
+            skills.set(result.skill.name, result.skill);
+            logSystem('skill_import_zip', { skillName: result.skill.name });
+          }
+          return jsonResponse(res, result.success ? 200 : 400, result);
+        } catch (err) {
+          return jsonResponse(res, 400, { success: false, error: `Zip 导入失败: ${err.message}` });
+        }
+      }
+
+      // 从 URL 导入 Agent Skill
+      if (pathname === '/api/skill/import-url') {
+        if (!body.url) {
+          return jsonResponse(res, 400, { success: false, error: '缺少 url 参数' });
+        }
+        try {
+          const result = await importMarkdownSkillFromUrl(getSkillsDir(), body.url);
+          if (result.success && result.skill) {
+            const { skills } = await import('./skill/registry.js');
+            skills.set(result.skill.name, result.skill);
+            logSystem('skill_import_url', { skillName: result.skill.name, url: body.url });
+          }
+          return jsonResponse(res, result.success ? 200 : 400, result);
+        } catch (err) {
+          return jsonResponse(res, 400, { success: false, error: `URL 导入失败: ${err.message}` });
+        }
+      }
+
       // === MCP 操作（需要 body） ===
 
       // 添加 MCP 服务器
@@ -571,6 +644,62 @@ export function startServer() {
       const execId = url.searchParams.get('execId');
       if (!execId) return jsonResponse(res, 400, { success: false, error: '缺少 execId 参数' });
       return jsonResponse(res, 200, getSkillExecutionStatus(execId));
+    }
+
+    // Agent Skill Prompts（用于 AI System Prompt 注入）
+    if (req.method === 'GET' && pathname === '/api/skill/agent-prompts') {
+      const prompts = getAgentSkillPrompts();
+      return jsonResponse(res, 200, { success: true, prompts });
+    }
+
+    // Agent Skill 的 SKILL.md 内容
+    if (req.method === 'GET' && pathname === '/api/skill/markdown') {
+      const name = url.searchParams.get('name');
+      if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      const result = getSkill(name);
+      if (!result.success) return jsonResponse(res, 404, result);
+      const skill = result.skill;
+      if (skill.type !== 'agent') {
+        return jsonResponse(res, 400, { success: false, error: '该 Skill 不是 Agent 类型' });
+      }
+      return jsonResponse(res, 200, {
+        success: true,
+        name: skill.name,
+        markdown: skill.fullPrompt || skill.prompt || '',
+        frontmatter: {
+          name: skill.name,
+          description: skill.description,
+          version: skill.version,
+          enabled: skill.enabled
+        },
+        resources: skill.resources || [],
+        dirPath: skill.dirPath
+      });
+    }
+
+    // Skill 资源文件内容
+    if (req.method === 'GET' && pathname === '/api/skill/resource') {
+      const name = url.searchParams.get('name');
+      const resource = url.searchParams.get('resource');
+      if (!name || !resource) {
+        return jsonResponse(res, 400, { success: false, error: '缺少 name 或 resource 参数' });
+      }
+      const result = getSkill(name);
+      if (!result.success) return jsonResponse(res, 404, result);
+      const skill = result.skill;
+      if (skill.type !== 'agent') {
+        return jsonResponse(res, 400, { success: false, error: '该 Skill 不是 Agent 类型' });
+      }
+      const resInfo = skill.resources?.find(r => r.name === resource);
+      if (!resInfo) {
+        return jsonResponse(res, 404, { success: false, error: `资源 "${resource}" 不存在` });
+      }
+      try {
+        const content = readFileSync(resInfo.path, 'utf-8');
+        return jsonResponse(res, 200, { success: true, name: resource, content, size: resInfo.size });
+      } catch (err) {
+        return jsonResponse(res, 500, { success: false, error: `读取资源失败: ${err.message}` });
+      }
     }
 
     // ========== MCP 管理接口（仅 GET 路由） ==========

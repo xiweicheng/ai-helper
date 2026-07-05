@@ -1,11 +1,49 @@
 // options/toolbox-config.js - 工具箱配置（MCP 服务器 & Skill 管理）
 // 依赖 Agent 连接，未连接时禁用所有操作
 
+import { showToast } from './config-manager.js';
+
 let agentBaseUrl = null;
 let agentToken = null;
 let agentConnected = false;
 let cachedMcpServers = [];
 let editingMcpId = null;
+
+/**
+ * 自定义确认弹窗（返回 Promise<boolean>）
+ */
+function showCustomConfirm(message, title = '确认操作') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3>${escapeHtml(title)}</h3>
+        </div>
+        <div class="modal-body">
+          <p>${escapeHtml(message)}</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="confirmCancelBtn">取消</button>
+          <button class="btn btn-primary" id="confirmOkBtn" style="width: auto;">确定</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    overlay.querySelector('#confirmCancelBtn').addEventListener('click', () => close(false));
+    overlay.querySelector('#confirmOkBtn').addEventListener('click', () => close(true));
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(false);
+    });
+  });
+}
 
 /**
  * 获取 Agent 连接信息
@@ -254,7 +292,7 @@ async function loadSkills() {
 }
 
 /**
- * 渲染 Skill 列表
+ * 渲染 Skill 列表（区分 Workflow 和 Agent 类型）
  */
 function renderSkills(skills) {
   const container = document.getElementById('skillList');
@@ -275,31 +313,74 @@ function renderSkills(skills) {
       <div class="toolbox-empty">
         <div class="toolbox-empty-icon">🧩</div>
         <div class="toolbox-empty-title">暂无 Skill</div>
-        <div class="toolbox-empty-desc">点击下方按钮导入 Skill 定义文件（JSON 格式）</div>
+        <div class="toolbox-empty-desc">
+          支持两种 Skill 类型：<br>
+          <strong>Workflow Skill</strong>：导入 JSON 文件（确定性自动化流程）<br>
+          <strong>Agent Skill</strong>：导入 SKILL.md 目录/Zip/URL（AI 能力扩展）
+        </div>
       </div>`;
     return;
   }
 
-  container.innerHTML = skills.map(s => `
-    <div class="skill-card">
-      <div class="skill-card-header">
-        <div class="skill-card-info">
-          <span class="skill-card-icon">📦</span>
-          <span class="skill-card-name">${escapeHtml(s.name)}</span>
-          <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
-          <span class="skill-card-step-count">${s.stepCount || 0} 步骤</span>
+  const workflowSkills = skills.filter(s => s.type !== 'agent');
+  const agentSkills = skills.filter(s => s.type === 'agent');
+
+  let html = '';
+
+  // Workflow Skills
+  if (workflowSkills.length > 0) {
+    html += '<div class="skill-section-title">Workflow Skills（自动化流程）</div>';
+    html += workflowSkills.map(s => `
+      <div class="skill-card skill-card-workflow">
+        <div class="skill-card-header">
+          <div class="skill-card-info">
+            <span class="skill-card-icon">⚙️</span>
+            <span class="skill-card-name">${escapeHtml(s.name)}</span>
+            <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
+            <span class="skill-card-badge badge-workflow">Workflow</span>
+            <span class="skill-card-step-count">${s.stepCount || 0} 步骤</span>
+          </div>
+        </div>
+        <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
+        <div class="skill-card-params">
+          ${renderSkillParams(s.parameters)}
+        </div>
+        <div class="skill-card-actions">
+          <button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>
+          <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
         </div>
       </div>
-      <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
-      <div class="skill-card-params">
-        ${renderSkillParams(s.parameters)}
+    `).join('');
+  }
+
+  // Agent Skills
+  if (agentSkills.length > 0) {
+    html += '<div class="skill-section-title">Agent Skills（AI 能力扩展）</div>';
+    html += agentSkills.map(s => `
+      <div class="skill-card skill-card-agent">
+        <div class="skill-card-header">
+          <div class="skill-card-info">
+            <span class="skill-card-icon">🤖</span>
+            <span class="skill-card-name">${escapeHtml(s.name)}</span>
+            <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
+            <span class="skill-card-badge badge-agent">Agent</span>
+            <span class="skill-card-step-count">${s.resourceCount || 0} 资源</span>
+          </div>
+        </div>
+        <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
+        ${s.resources && s.resources.length > 0 ? `
+        <div class="skill-card-params">
+          ${s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')}
+        </div>` : ''}
+        <div class="skill-card-actions">
+          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>
+          <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
+        </div>
       </div>
-      <div class="skill-card-actions">
-        <button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>
-        <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
-      </div>
-    </div>
-  `).join('');
+    `).join('');
+  }
+
+  container.innerHTML = html;
 }
 
 /**
@@ -317,7 +398,7 @@ function renderSkillParams(parameters) {
 }
 
 /**
- * 导入 Skill
+ * 导入 Workflow Skill
  */
 async function importSkill(skillDef) {
   const result = await agentApi('POST', '/api/skill/import', skillDef);
@@ -335,7 +416,7 @@ async function deleteSkill(name) {
 }
 
 /**
- * 运行 Skill
+ * 运行 Workflow Skill
  */
 async function runSkill(name) {
   const result = await agentApi('POST', '/api/skill/run', { name, params: {} });
@@ -348,6 +429,330 @@ async function runSkill(name) {
 async function reloadSkills() {
   const result = await agentApi('POST', '/api/skill/reload');
   return result;
+}
+
+/**
+ * 导入 Agent Skill（从 JSON/Markdown/Zip/URL）
+ */
+async function importAgentSkill(skillData) {
+  // 判断导入方式
+  if (skillData.markdown || skillData.prompt) {
+    // Markdown 内容直接保存
+    return await agentApi('POST', '/api/skill/save-markdown', skillData);
+  } else if (skillData.zipData) {
+    // Base64 Zip 导入
+    return await agentApi('POST', '/api/skill/import-zip', skillData);
+  } else if (skillData.url) {
+    // URL 导入
+    return await agentApi('POST', '/api/skill/import-url', skillData);
+  }
+  throw new Error('无效的 Skill 数据格式');
+}
+
+/**
+ * 获取 Agent Skill 的 SKILL.md 内容
+ */
+async function getAgentSkillMarkdown(name) {
+  return await agentApi('GET', `/api/skill/markdown?name=${encodeURIComponent(name)}`);
+}
+
+/**
+ * 显示 Agent Skill 编辑器弹窗
+ */
+function showAgentSkillEditor(skillName, existingData = null) {
+  const existingModal = document.getElementById('agentSkillEditorModal');
+  if (existingModal) existingModal.remove();
+
+  const isEdit = !!existingData;
+
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'modal-overlay';
+  modalOverlay.id = 'agentSkillEditorModal';
+
+  const modalContainer = document.createElement('div');
+  modalContainer.className = 'modal-content agent-skill-editor-container';
+  modalContainer.style.width = '700px';
+  modalContainer.style.maxHeight = '85vh';
+
+  modalContainer.innerHTML = `
+    <div class="modal-header">
+      <h3>${isEdit ? '编辑 Agent Skill' : '新建 Agent Skill'}</h3>
+      <button class="modal-close-btn">&times;</button>
+    </div>
+    <div class="form-group">
+      <label>Skill 名称</label>
+      <input type="text" id="agentSkillName" placeholder="e.g. code-review" value="${escapeHtml(isEdit ? existingData.name : '')}" ${isEdit ? 'readonly' : ''}>
+    </div>
+    <div class="form-group">
+      <label>描述</label>
+      <input type="text" id="agentSkillDesc" placeholder="简要描述此 Skill 的功能" value="${escapeHtml(isEdit ? (existingData.frontmatter?.description || '') : '')}">
+    </div>
+    <div class="form-group">
+      <label>版本</label>
+      <input type="text" id="agentSkillVersion" placeholder="1.0" value="${escapeHtml(isEdit ? (existingData.frontmatter?.version || '1.0') : '1.0')}">
+    </div>
+    <div class="form-group">
+      <label>SKILL.md 内容（Markdown）</label>
+      <textarea id="agentSkillMarkdown" style="min-height: 300px; font-family: monospace;" placeholder="# Skill 名称&#10;&#10;## 何时使用&#10;- 条件1&#10;- 条件2&#10;&#10;## 执行步骤&#10;1. 步骤1&#10;2. 步骤2">${escapeHtml(isEdit ? (existingData.markdown || '') : '')}</textarea>
+    </div>
+      ${isEdit && existingData.resources && existingData.resources.length > 0 ? `
+      <div class="form-group">
+        <label>已有资源文件</label>
+        <div class="skill-resource-list">
+          ${existingData.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name)} (${r.size} 字节)</span>`).join('')}
+        </div>
+      </div>` : ''}
+    <div class="modal-actions">
+      <button class="btn btn-cancel" id="cancelAgentSkillBtn">取消</button>
+      <button class="btn btn-primary" id="saveAgentSkillBtn" style="width: auto;">保存</button>
+    </div>
+  `;
+
+  modalOverlay.appendChild(modalContainer);
+  document.body.appendChild(modalOverlay);
+
+  // 关闭
+  const closeModal = () => modalOverlay.remove();
+  modalOverlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closeModal();
+  });
+  modalOverlay.querySelector('#cancelAgentSkillBtn').addEventListener('click', closeModal);
+
+  // 保存
+  modalOverlay.querySelector('#saveAgentSkillBtn').addEventListener('click', async () => {
+    const name = modalOverlay.querySelector('#agentSkillName').value.trim();
+    const description = modalOverlay.querySelector('#agentSkillDesc').value.trim();
+    const version = modalOverlay.querySelector('#agentSkillVersion').value.trim() || '1.0';
+    const markdown = modalOverlay.querySelector('#agentSkillMarkdown').value.trim();
+
+    if (!name) return showToast('请输入 Skill 名称', 'error');
+    if (!markdown) return showToast('请输入 SKILL.md 内容', 'error');
+
+    try {
+      const result = await agentApi('POST', '/api/skill/save-markdown', {
+        name, description, version, markdown
+      });
+      if (result.success) {
+        showToast(`Agent Skill "${name}" 保存成功`, 'success');
+        closeModal();
+        refreshToolbox();
+      } else {
+        showToast(result.error || '保存失败', 'error');
+      }
+    } catch (err) {
+      showToast('保存失败: ' + err.message, 'error');
+    }
+  });
+}
+
+/**
+ * 显示 Zip/URL 导入弹窗
+ */
+function showImportDialog() {
+  const existingModal = document.getElementById('skillImportModal');
+  if (existingModal) existingModal.remove();
+
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'modal-overlay';
+  modalOverlay.id = 'skillImportModal';
+
+  const modalContainer = document.createElement('div');
+  modalContainer.className = 'modal-content';
+  modalContainer.style.width = '640px';
+
+  modalContainer.innerHTML = `
+    <div class="modal-header">
+      <h3>导入 Skill</h3>
+      <button class="modal-close-btn">&times;</button>
+    </div>
+    <div style="padding: 0 24px 8px 24px;">
+      <div class="import-tabs">
+        <button class="import-tab active" data-tab="json">JSON 导入</button>
+        <button class="import-tab" data-tab="markdown">新建编写</button>
+        <button class="import-tab" data-tab="zip">Zip 包</button>
+        <button class="import-tab" data-tab="url">URL 导入</button>
+      </div>
+
+      <!-- JSON Import -->
+      <div class="import-panel active" data-panel="json">
+        <div class="import-panel-desc">导入 JSON 格式的 Workflow Skill（确定性自动化流程）</div>
+        <div class="upload-drop-zone" id="jsonDropZone">
+          <span class="upload-icon">📄</span>
+          <span class="upload-text">点击选择 JSON 文件或拖拽到此处</span>
+          <span class="upload-hint">支持 .json 格式的 Workflow Skill 定义文件</span>
+          <input type="file" id="skillJsonFile" accept=".json">
+        </div>
+      </div>
+
+      <!-- Agent Skill Markdown -->
+      <div class="import-panel" data-panel="markdown">
+        <div class="import-panel-desc">直接编写 SKILL.md 内容，创建 Agent Skill（AI 能力扩展）</div>
+        <div class="form-group">
+          <label>Skill 名称</label>
+          <input type="text" id="quickAgentName" placeholder="e.g. code-review 或 deploy-to-server">
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <input type="text" id="quickAgentDesc" placeholder="简要描述此 Skill 的功能和适用场景">
+        </div>
+        <div class="form-group">
+          <label>SKILL.md 内容（Markdown）</label>
+          <textarea id="quickAgentMarkdown" style="min-height: 180px; font-family: 'SF Mono', 'Monaco', 'Menlo', monospace; font-size: 13px; line-height: 1.6;" placeholder="## 何时使用&#10;- 条件1&#10;- 条件2&#10;&#10;## 执行步骤&#10;1. 步骤1&#10;2. 步骤2"></textarea>
+        </div>
+      </div>
+
+      <!-- Zip Import -->
+      <div class="import-panel" data-panel="zip">
+        <div class="import-panel-desc">导入包含 SKILL.md 的 Zip 压缩包，可附带 scripts/templates/assets 等辅助资源</div>
+        <div class="upload-drop-zone" id="zipDropZone">
+          <span class="upload-icon">📦</span>
+          <span class="upload-text">点击选择 Zip 文件或拖拽到此处</span>
+          <span class="upload-hint">Zip 包内需包含 SKILL.md 文件，可选的 scripts/ templates/ assets/ 子目录</span>
+          <input type="file" id="skillZipFile" accept=".zip">
+        </div>
+      </div>
+
+      <!-- URL Import -->
+      <div class="import-panel" data-panel="url">
+        <div class="import-panel-desc">从远程 URL 下载 Skill 的 Zip 包并自动导入</div>
+        <div class="form-group">
+          <label>下载地址</label>
+          <div class="url-input-wrapper">
+            <span class="url-input-icon">🔗</span>
+            <input type="url" id="skillUrl" placeholder="https://example.com/skills/my-skill.zip">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" id="cancelImportBtn">取消</button>
+      <button class="btn btn-primary" id="confirmImportBtn" style="width: auto;">导入</button>
+    </div>
+  `;
+
+  modalOverlay.appendChild(modalContainer);
+  document.body.appendChild(modalOverlay);
+
+  const closeModal = () => modalOverlay.remove();
+  modalOverlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
+  modalOverlay.querySelector('#cancelImportBtn').addEventListener('click', closeModal);
+
+  // Tab 切换
+  modalOverlay.querySelectorAll('.import-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      modalOverlay.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      modalOverlay.querySelectorAll('.import-panel').forEach(p => p.classList.remove('active'));
+      modalOverlay.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add('active');
+    });
+  });
+
+  // Drop Zone 点击触发 file input
+  const setupDropZone = (zoneId, fileInputId) => {
+    const zone = modalOverlay.querySelector(zoneId);
+    const input = modalOverlay.querySelector(fileInputId);
+    if (!zone || !input) return;
+
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = '#667eea'; zone.style.background = '#f5f7ff'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor = '#d0d5dd'; zone.style.background = '#fafbfc'; });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.style.borderColor = '#d0d5dd';
+      zone.style.background = '#fafbfc';
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        input.files = files;
+        showDropFileName(zone, files[0].name);
+      }
+    });
+
+    input.addEventListener('change', () => {
+      if (input.files && input.files[0]) {
+        showDropFileName(zone, input.files[0].name);
+      }
+    });
+  };
+
+  const showDropFileName = (zone, name) => {
+    zone.classList.add('has-file');
+    const existing = zone.querySelector('.file-name');
+    if (existing) existing.remove();
+    const nameEl = document.createElement('span');
+    nameEl.className = 'file-name';
+    nameEl.textContent = `✓ ${name}`;
+    zone.appendChild(nameEl);
+  };
+
+  setupDropZone('#jsonDropZone', '#skillJsonFile');
+  setupDropZone('#zipDropZone', '#skillZipFile');
+
+  // 确认导入
+  modalOverlay.querySelector('#confirmImportBtn').addEventListener('click', async () => {
+    const activeTab = modalOverlay.querySelector('.import-tab.active')?.dataset.tab;
+
+    try {
+      if (activeTab === 'json') {
+        const fileInput = modalOverlay.querySelector('#skillJsonFile');
+        const file = fileInput.files[0];
+        if (!file) return showToast('请选择 JSON 文件', 'warning');
+
+        const text = await file.text();
+        const skillDef = JSON.parse(text);
+        await importSkill(skillDef);
+        showToast(`Workflow Skill "${skillDef.name}" 导入成功`, 'success');
+      } else if (activeTab === 'markdown') {
+        const name = modalOverlay.querySelector('#quickAgentName').value.trim();
+        const description = modalOverlay.querySelector('#quickAgentDesc').value.trim();
+        const markdown = modalOverlay.querySelector('#quickAgentMarkdown').value.trim();
+        if (!name) return showToast('请输入 Skill 名称', 'warning');
+        if (!markdown) return showToast('请输入 SKILL.md 内容', 'warning');
+
+        const result = await agentApi('POST', '/api/skill/save-markdown', {
+          name, description, version: '1.0', markdown
+        });
+        if (result.success) {
+          showToast(`Agent Skill "${name}" 创建成功`, 'success');
+        } else {
+          return showToast(result.error || '创建失败', 'error');
+        }
+      } else if (activeTab === 'zip') {
+        const fileInput = modalOverlay.querySelector('#skillZipFile');
+        const file = fileInput.files[0];
+        if (!file) return showToast('请选择 Zip 文件', 'warning');
+
+        // 使用 FileReader 安全地将文件转为 base64
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = () => reject(new Error('文件读取失败'));
+          reader.readAsDataURL(file);
+        });
+        const result = await agentApi('POST', '/api/skill/import-zip', { zipData: base64 });
+        if (result.success) {
+          showToast(`Agent Skill "${result.skill?.name || 'unknown'}" 导入成功`, 'success');
+        } else {
+          return showToast(result.error || '导入失败', 'error');
+        }
+      } else if (activeTab === 'url') {
+        const url = modalOverlay.querySelector('#skillUrl').value.trim();
+        if (!url) return showToast('请输入 URL', 'warning');
+
+        const result = await agentApi('POST', '/api/skill/import-url', { url });
+        if (result.success) {
+          showToast(`Agent Skill "${result.skill?.name || 'unknown'}" 导入成功`, 'success');
+        } else {
+          return showToast(result.error || '导入失败', 'error');
+        }
+      }
+
+      closeModal();
+      refreshToolbox();
+    } catch (err) {
+      showToast('导入失败: ' + err.message, 'error');
+    }
+  });
 }
 
 // ==================== 主入口 ====================
@@ -565,7 +970,8 @@ function initToolbox() {
           notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'delete') {
-          if (!confirm('确定要删除该 MCP 服务器吗？')) return;
+          const confirmed = await showCustomConfirm('确定要删除该 MCP 服务器吗？', '删除确认');
+          if (!confirmed) return;
           await removeMcpServer(serverId);
           showToolboxToast('删除成功', 'success');
           notifyMcpChange();
@@ -607,7 +1013,8 @@ function initToolbox() {
 
       try {
         if (action === 'delete-skill') {
-          if (!confirm(`确定要删除 Skill "${skillName}" 吗？`)) return;
+          const confirmed = await showCustomConfirm(`确定要删除 Skill "${skillName}" 吗？`, '删除确认');
+          if (!confirmed) return;
           await deleteSkill(skillName);
           showToolboxToast('删除成功', 'success');
           await refreshToolbox();
@@ -619,6 +1026,17 @@ function initToolbox() {
           } else {
             showToolboxToast(`执行失败: ${result.error || '未知错误'}`, 'error');
           }
+        } else if (action === 'edit-agent-skill') {
+          try {
+            const data = await getAgentSkillMarkdown(skillName);
+            if (data.success) {
+              showAgentSkillEditor(skillName, data);
+            } else {
+              showToolboxToast(data.error || '获取 Skill 内容失败', 'error');
+            }
+          } catch (err) {
+            showToolboxToast(`获取失败: ${err.message}`, 'error');
+          }
         }
       } catch (err) {
         showToolboxToast(`操作失败: ${err.message}`, 'error');
@@ -626,32 +1044,10 @@ function initToolbox() {
     });
   }
 
-  // 导入 Skill
+  // 导入 Skill（使用统一的导入弹窗）
   const importBtn = document.getElementById('importSkillBtn');
-  const importFile = document.getElementById('importSkillFile');
-  if (importBtn && importFile) {
-    importBtn.addEventListener('click', () => importFile.click());
-
-    importFile.addEventListener('change', async () => {
-      const file = importFile.files[0];
-      if (!file) return;
-
-      try {
-        const text = await file.text();
-        const skillDef = JSON.parse(text);
-        if (!skillDef.name || !skillDef.steps) {
-          showToolboxToast('Skill 文件格式错误：缺少 name 或 steps', 'error');
-          return;
-        }
-        await importSkill(skillDef);
-        showToolboxToast(`Skill "${skillDef.name}" 导入成功`, 'success');
-        await refreshToolbox();
-      } catch (err) {
-        showToolboxToast(`导入失败: ${err.message}`, 'error');
-      } finally {
-        importFile.value = '';
-      }
-    });
+  if (importBtn) {
+    importBtn.addEventListener('click', () => showImportDialog());
   }
 
   // 重新加载 Skill

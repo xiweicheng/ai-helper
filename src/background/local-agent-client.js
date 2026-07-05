@@ -325,6 +325,53 @@ async function deleteSkill(name) {
   return agentRequest('/api/skill/delete', { name }, 'DELETE');
 }
 
+// ========== Agent Skill (Markdown) API ==========
+
+/**
+ * 获取 Agent Skill 的 Prompt 汇总（用于 System Prompt 注入）
+ */
+async function getAgentSkillPrompts() {
+  return agentGet('/api/skill/agent-prompts');
+}
+
+/**
+ * 保存 Agent Skill Markdown
+ */
+async function saveMarkdownSkill(name, markdown, description, version) {
+  return agentRequest('/api/skill/save-markdown', { name, markdown, description, version });
+}
+
+/**
+ * 获取 Agent Skill 的 SKILL.md 内容
+ */
+async function getMarkdownSkill(name) {
+  return agentGet(`/api/skill/markdown?name=${encodeURIComponent(name)}`);
+}
+
+/**
+ * 获取 Skill 资源文件内容
+ */
+async function getSkillResource(name, resource) {
+  return agentGet(`/api/skill/resource?name=${encodeURIComponent(name)}&resource=${encodeURIComponent(resource)}`);
+}
+
+/**
+ * 从 Zip 导入 Agent Skill
+ * @param {string} zipBase64 - base64 编码的 zip 文件内容
+ * @param {string} [skillName] - 可选，指定 skill 名称
+ */
+async function importSkillFromZip(zipBase64, skillName) {
+  return agentRequest('/api/skill/import-zip', { zipData: zipBase64, name: skillName });
+}
+
+/**
+ * 从 URL 导入 Agent Skill
+ * @param {string} url - Skill zip 包的下载 URL
+ */
+async function importSkillFromUrl(url) {
+  return agentRequest('/api/skill/import-url', { url });
+}
+
 export {
   getAgentConfig,
   isAgentPaired,
@@ -357,5 +404,12 @@ export {
   getSkillDetail,
   runSkill,
   importSkill,
-  deleteSkill
+  deleteSkill,
+  // Agent Skill (Markdown) API
+  getAgentSkillPrompts,
+  saveMarkdownSkill,
+  getMarkdownSkill,
+  getSkillResource,
+  importSkillFromZip,
+  importSkillFromUrl
 };

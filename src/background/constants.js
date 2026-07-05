@@ -1906,7 +1906,7 @@ export const RAW_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill_run',
-      description: '执行一个预定义的 Skill（技能）。Skill 是封装了多步操作的可复用流程。可用的 Skill 列表会在系统提示词中提供。\n\n使用示例：\n- 创建 React 组件模板\n- 执行标准化 Git 提交流程\n- 批量处理文件操作',
+      description: '执行一个预定义的 Workflow Skill（技能流程）。Workflow Skill 是封装了多步操作的可复用自动化流程，通过 JSON 定义步骤和依赖关系。\n\n注意：Agent Skill（Markdown 格式的技能）不需要通过此工具调用——它们已在系统提示词中提供，AI 可以直接按照 Skill 描述自主执行。只有 Workflow Skill 需要通过此工具触发执行。',
       parameters: {
         type: 'object',
         properties: {

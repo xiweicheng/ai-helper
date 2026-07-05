@@ -191,17 +191,27 @@ ${subAgentList}`;
 
   // 如果 Agent 有自定义 prompt，用它拼接环境信息
   if (promptContent) {
-    return `${promptContent}
+    let finalPrompt = `${promptContent}
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
 - 操作系统：Windows 10.0
 - 当前时间：${currentTime}${agentInfo}${taskPlanningRules}${dispatchToolRule}
 `;
+
+    // 注入 Agent Skill Prompts
+    try {
+      const skillPrompts = await fetchAgentSkillPrompts();
+      if (skillPrompts) {
+        finalPrompt += `\n${skillPrompts}\n`;
+      }
+    } catch { /* 获取失败不影响主流程 */ }
+
+    return finalPrompt;
   }
   
   // 返回默认系统提示词
-  return `你是AI智能助手(AI Helper)，专为IT从业者（产品经理、架构师、开发工程师、测试工程师等）打造的AI技术助手。
+  let defaultPrompt = `你是AI智能助手(AI Helper)，专为IT从业者（产品经理、架构师、开发工程师、测试工程师等）打造的AI技术助手。
 
 ## 你的能力
 - **编程开发**：精通主流编程语言（Java/Python/JavaScript/Go/C++等）及框架，能编写、调试、优化代码
@@ -222,6 +232,36 @@ ${subAgentList}`;
 - 操作系统：Windows 10.0
 - 当前时间：${currentTime}${agentInfo}
 `;
+
+  // 注入 Agent Skill Prompts
+  try {
+    const skillPrompts = await fetchAgentSkillPrompts();
+    if (skillPrompts) {
+      defaultPrompt += `\n${skillPrompts}\n`;
+    }
+  } catch { /* 获取失败不影响主流程 */ }
+
+  return defaultPrompt;
+}
+
+/**
+ * 从后台获取 Agent Skill Prompts
+ * @returns {Promise<string>}
+ */
+async function fetchAgentSkillPrompts() {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPTS' }, (response) => {
+        if (chrome.runtime.lastError) {
+          resolve('');
+          return;
+        }
+        resolve(response?.prompts || '');
+      });
+    } catch {
+      resolve('');
+    }
+  });
 }
 
 /**

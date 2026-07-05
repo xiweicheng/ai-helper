@@ -7,12 +7,16 @@ import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
+import * as AgentClient from './local-agent-client.js';
 
 // chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
 const MAX_LOG_ENTRIES_FOR_MSG = 1000;
 
 // MCP 工具查询缓存，避免每次 GET_MCP_TOOLS 都向 Agent 发网络请求
 let mcpToolsCache = null;
+
+// Agent Skill Prompts 缓存
+let skillPromptsCache = null;
 
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
@@ -109,6 +113,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       mcpToolsCache = { tools: mcpTools, loadedAt: Date.now() };
       console.log(`[Background] GET_MCP_TOOLS 返回 ${mcpTools.length} 个工具（共重载 ${count} 个）`);
       sendResponse({ success: true, tools: mcpTools });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'GET_AGENT_SKILL_PROMPTS') {
+    // 带缓存：60 秒内复用上次结果
+    const now = Date.now();
+    if (skillPromptsCache && (now - skillPromptsCache.loadedAt) < 60000) {
+      sendResponse({ success: true, prompts: skillPromptsCache.prompts });
+      return true;
+    }
+    AgentClient.getAgentSkillPrompts().then(result => {
+      const prompts = result.success ? (result.prompts || '') : '';
+      skillPromptsCache = { prompts, loadedAt: Date.now() };
+      sendResponse({ success: true, prompts });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
     });

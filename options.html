@@ -103,6 +103,7 @@
       vertical-align: middle;
     }
     input[type="text"],
+    input[type="url"],
     textarea {
       width: 100%;
       padding: 12px;
@@ -113,6 +114,7 @@
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     input[type="text"]:focus,
+    input[type="url"]:focus,
     textarea:focus {
       outline: none;
       border-color: #667eea;
@@ -1149,9 +1151,167 @@
     .modal-actions .btn-secondary {
       width: auto;
       padding: 8px 24px;
-      background: #f0f0f0;
+    }
+
+
+
+    /* 导入 Skill 弹窗的 Tab 切换 */
+    .import-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e8eaed;
+      padding: 0 2px;
+    }
+    .import-tab {
+      padding: 8px 16px;
+      border: none;
+      background: transparent;
+      color: #999;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      font-family: inherit;
+      border-radius: 6px 6px 0 0;
+    }
+    .import-tab:hover {
       color: #555;
-      border: 1px solid #ddd;
+      background: #f5f7fa;
+    }
+    .import-tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      font-weight: 600;
+      background: #f5f7ff;
+    }
+    .import-panel {
+      display: none;
+    }
+    .import-panel.active {
+      display: block;
+    }
+    /* 导入面板描述 */
+    .import-panel-desc {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+    /* 文件上传区域 */
+    .upload-drop-zone {
+      border: 2px dashed #d0d5dd;
+      border-radius: 10px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #fafbfc;
+    }
+    .upload-drop-zone:hover {
+      border-color: #667eea;
+      background: #f5f7ff;
+    }
+    .upload-drop-zone.has-file {
+      border-style: solid;
+      border-color: #38a169;
+      background: #f0fff4;
+    }
+    .upload-drop-zone .upload-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .upload-drop-zone .upload-text {
+      font-size: 13px;
+      color: #666;
+    }
+    .upload-drop-zone .upload-hint {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 4px;
+    }
+    .upload-drop-zone .file-name {
+      font-size: 13px;
+      color: #38a169;
+      font-weight: 500;
+      margin-top: 4px;
+    }
+    .upload-drop-zone input[type="file"] {
+      display: none;
+    }
+
+    /* URL 输入框容器（带链接图标） */
+    .url-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .url-input-wrapper .url-input-icon {
+      position: absolute;
+      left: 12px;
+      font-size: 14px;
+      z-index: 1;
+      pointer-events: none;
+    }
+    .url-input-wrapper input[type="url"] {
+      padding-left: 34px;
+    }
+
+    /* Agent Skill 编辑器容器 */
+    .agent-skill-editor-container {
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .skill-resource-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .skill-resource-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      background: #f0f4ff;
+      border: 1px solid #d4dafc;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #555;
+      font-family: monospace;
+    }
+
+    /* Skill 列表 Section 标题 */
+    .skill-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 16px 0 8px 0;
+    }
+    .skill-section-title:first-child {
+      padding-top: 0;
+    }
+    .skill-card-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .badge-workflow {
+      background: #f0f4ff;
+      color: #667eea;
+    }
+    .badge-agent {
+      background: #f0fff4;
+      color: #38a169;
+    }
+    .skill-card-workflow {
+      border-left: 3px solid #667eea;
+    }
+    .skill-card-agent {
+      border-left: 3px solid #38a169;
     }
     
     /* 工具栏数量输入框保持和 ReAct/Chat 数字输入框一致 */

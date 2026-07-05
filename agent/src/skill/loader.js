@@ -1,17 +1,19 @@
 // skill/loader.js - Skill 文件加载器
-// 从 ~/.ai-helper-agent/skills/ 目录加载 JSON/YAML 格式的 Skill 定义
+// 从 ~/.ai-helper-agent/skills/ 目录加载 JSON/YAML 格式的 Workflow Skill 定义
+// 同时扫描子目录中的 SKILL.md 加载 Agent Skill
 import { readFileSync, readdirSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from 'fs';
 import { join, extname } from 'path';
 import { homedir } from 'os';
+import { loadAllMarkdownSkills, saveMarkdownSkill, deleteMarkdownSkillDir, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './markdown-loader.js';
 
 const SKILLS_DIR = join(homedir(), '.ai-helper-agent', 'skills');
 
 /**
- * Skill 定义 Schema 校验
+ * Skill 定义 Schema 校验（Workflow 类型）
  * @param {Object} skill
  * @returns {{ valid: boolean, errors: string[] }}
  */
-function validateSkill(skill) {
+function validateWorkflowSkill(skill) {
   const errors = [];
 
   if (!skill.name || typeof skill.name !== 'string') {
@@ -124,7 +126,7 @@ function loadSkillFile(filePath) {
 
     if (!skill || typeof skill !== 'object') return null;
 
-    const validation = validateSkill(skill);
+    const validation = validateWorkflowSkill(skill);
     if (!validation.valid) {
       console.warn(`[Skill Loader] "${filePath}" 校验失败:`, validation.errors.join(', '));
       return null;
@@ -132,6 +134,7 @@ function loadSkillFile(filePath) {
 
     skill._filePath = filePath;
     skill.enabled = skill.enabled !== false; // 默认启用
+    skill.type = 'workflow';
     return skill;
   } catch (err) {
     console.warn(`[Skill Loader] 加载 "${filePath}" 失败:`, err.message);
@@ -140,47 +143,53 @@ function loadSkillFile(filePath) {
 }
 
 /**
- * 扫描并加载所有 Skill 文件
+ * 扫描并加载所有 Skill 文件（Workflow + Agent）
  * @returns {Object[]} - Skill 定义数组
  */
 export function loadAllSkills() {
-  if (!existsSync(SKILLS_DIR)) {
-    console.log('[Skill Loader] Skills 目录不存在，跳过加载');
-    return [];
-  }
+  let allSkills = [];
 
-  const skills = [];
-  let files;
-  try {
-    files = readdirSync(SKILLS_DIR);
-  } catch (err) {
-    console.warn('[Skill Loader] 读取 Skills 目录失败:', err.message);
-    return [];
-  }
+  // 加载 Workflow Skills（JSON/YAML 文件）
+  if (existsSync(SKILLS_DIR)) {
+    let files;
+    try {
+      files = readdirSync(SKILLS_DIR);
+    } catch (err) {
+      console.warn('[Skill Loader] 读取 Skills 目录失败:', err.message);
+      files = [];
+    }
 
-  for (const file of files) {
-    const ext = extname(file).toLowerCase();
-    if (ext !== '.json' && ext !== '.yaml' && ext !== '.yml') continue;
+    for (const file of files) {
+      const ext = extname(file).toLowerCase();
+      if (ext !== '.json' && ext !== '.yaml' && ext !== '.yml') continue;
 
-    const filePath = join(SKILLS_DIR, file);
-    const stat = statSync(filePath);
-    if (!stat.isFile()) continue;
+      const filePath = join(SKILLS_DIR, file);
+      try {
+        const fstat = statSync(filePath);
+        if (!fstat.isFile()) continue;
+      } catch { continue; }
 
-    const skill = loadSkillFile(filePath);
-    if (skill) {
-      skills.push(skill);
-      console.log(`[Skill Loader] 加载 Skill: "${skill.name}" v${skill.version} (${skill.steps.length} 步骤)`);
+      const skill = loadSkillFile(filePath);
+      if (skill) {
+        skill.type = 'workflow';
+        allSkills.push(skill);
+        console.log(`[Skill Loader] 加载 Workflow Skill: "${skill.name}" v${skill.version} (${skill.steps.length} 步骤)`);
+      }
     }
   }
 
-  console.log(`[Skill Loader] 共加载 ${skills.length} 个 Skill`);
-  return skills;
+  // 加载 Agent Skills（子目录中的 SKILL.md）
+  const agentSkills = loadAllMarkdownSkills(SKILLS_DIR);
+  allSkills = allSkills.concat(agentSkills);
+
+  console.log(`[Skill Loader] 共加载 ${allSkills.length} 个 Skill (${allSkills.filter(s => s.type === 'workflow').length} Workflow + ${allSkills.filter(s => s.type === 'agent').length} Agent)`);
+  return allSkills;
 }
 
 /**
- * 保存 Skill 到文件
+ * 保存 Skill 到文件（支持 Workflow 和 Agent 类型）
  * @param {Object} skill - Skill 定义
- * @returns {{ success: boolean, error?: string }}
+ * @returns {{ success: boolean, error?: string, filePath?: string }}
  */
 export function saveSkillFile(skill) {
   try {
@@ -188,12 +197,17 @@ export function saveSkillFile(skill) {
       mkdirSync(SKILLS_DIR, { recursive: true });
     }
 
-    const validation = validateSkill(skill);
+    // Agent Skill：保存到子目录
+    if (skill.type === 'agent') {
+      return saveMarkdownSkill(SKILLS_DIR, skill);
+    }
+
+    // Workflow Skill：保存为 JSON 文件
+    const validation = validateWorkflowSkill(skill);
     if (!validation.valid) {
       return { success: false, error: `校验失败: ${validation.errors.join(', ')}` };
     }
 
-    // 保存为 JSON 格式
     const safeSkill = {
       name: skill.name,
       description: skill.description,
@@ -212,16 +226,28 @@ export function saveSkillFile(skill) {
 }
 
 /**
- * 删除 Skill 文件
+ * 删除 Skill 文件（支持 Workflow 和 Agent 类型）
  * @param {string} name - Skill 名称
+ * @param {string} [type] - Skill 类型（'workflow' | 'agent'），不传则尝试两种
  */
-export function deleteSkillFile(name) {
-  const filePath = join(SKILLS_DIR, `${name}.json`);
-  if (!existsSync(filePath)) {
+export function deleteSkillFile(name, type) {
+  // Agent Skill：删除整个子目录
+  if (type === 'agent') {
+    return deleteMarkdownSkillDir(SKILLS_DIR, name);
+  }
+
+  // Workflow Skill：删除 JSON 文件
+  const jsonPath = join(SKILLS_DIR, `${name}.json`);
+  if (!existsSync(jsonPath)) {
+    // 如果 JSON 不存在但 type 未指定，尝试作为 Agent Skill 删除
+    if (!type) {
+      const agentResult = deleteMarkdownSkillDir(SKILLS_DIR, name);
+      if (agentResult.success) return agentResult;
+    }
     return { success: false, error: `Skill "${name}" 不存在` };
   }
   try {
-    unlinkSync(filePath);
+    unlinkSync(jsonPath);
     return { success: true };
   } catch (err) {
     return { success: false, error: `删除失败: ${err.message}` };
@@ -229,3 +255,4 @@ export function deleteSkillFile(name) {
 }
 
 export { SKILLS_DIR };
+export { saveMarkdownSkill, deleteMarkdownSkillDir, importMarkdownSkillFromZip, importMarkdownSkillFromUrl };
