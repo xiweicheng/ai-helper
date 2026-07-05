@@ -36,6 +36,19 @@ export class McpClient {
       // 2. 设置响应数据处理器
       this.transport.onData((line) => this._handleLine(line));
 
+      // 2.5 监听进程崩溃（已连接后）
+      this.transport.onExit((code, signal) => {
+        console.error(`[MCP:${this.serverId}] Server 进程意外退出 (code=${code}, signal=${signal})，标记为断开`);
+        this.connected = false;
+        this.tools = [];
+        // 拒绝所有进行中的请求
+        for (const [id, pending] of this.pendingRequests) {
+          clearTimeout(pending.timeoutId);
+          pending.reject(new Error('MCP Server 进程已退出'));
+        }
+        this.pendingRequests.clear();
+      });
+
       console.log(`[MCP:${this.serverId}] 子进程已启动`);
 
       // 3. 发送 initialize 请求

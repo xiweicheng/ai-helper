@@ -410,25 +410,36 @@ export function filterApiMessages(messages) {
     return rest;
   }).filter(msg => msg !== null);
 
-  // 扫描并修复 tool_calls/tool 配对：如果 assistant(tool_calls) 后无 tool 消息，清除 tool_calls
+  // 扫描并修复 tool_calls/tool 配对：验证 tool_call_id 与 tool_calls[].id 严格匹配
   for (let i = 0; i < filtered.length; i++) {
     const msg = filtered[i];
     if (msg?.role === 'assistant' && msg.tool_calls) {
-      let hasToolMsg = false;
+      // 收集该 assistant 之后连续出现的 tool 消息的 tool_call_id
+      const followingToolIds = new Set();
       for (let j = i + 1; j < filtered.length; j++) {
         if (filtered[j].role === 'tool') {
-          hasToolMsg = true;
+          followingToolIds.add(filtered[j].tool_call_id);
         } else {
           break;
         }
       }
-      if (!hasToolMsg) {
-        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息包含 tool_calls 但无对应 tool 消息，已清除');
+
+      // 检查 assistant.tool_calls 中的每个 id 是否都有对应的 tool 响应
+      const matchedCalls = msg.tool_calls.filter(tc => followingToolIds.has(tc.id));
+
+      if (matchedCalls.length === 0) {
+        // 完全没有匹配的 tool 响应 → 清除所有 tool_calls
+        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息 tool_calls 无匹配 tool 响应，已清除');
         delete msg.tool_calls;
         if (!msg.content) {
           filtered.splice(i, 1);
           i--;
         }
+      } else if (matchedCalls.length < msg.tool_calls.length) {
+        // 部分匹配 → 只保留有响应的 tool_calls
+        const unmatched = msg.tool_calls.filter(tc => !followingToolIds.has(tc.id));
+        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息', unmatched.length, '个 tool_call 无对应响应，已移除，保留', matchedCalls.length, '个');
+        msg.tool_calls = matchedCalls;
       }
     }
   }

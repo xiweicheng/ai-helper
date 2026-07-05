@@ -11,22 +11,31 @@ import { executeDispatchSubAgent } from './agent-dispatcher.js';
 // 已动态注册的 MCP 工具 ID 集合（用于去重和清理）
 const mcpToolIds = new Set();
 
+// 互斥锁：防止 loadMcpTools / unloadMcpTools 并发执行
+let mcpLoadLock = Promise.resolve();
+
 /**
  * 从 Agent 拉取 MCP 工具列表并动态注入到 RAW_TOOLS 和 TOOL_HANDLERS
  * Agent 未连通或不支持 MCP 时自动跳过
  */
 export async function loadMcpTools() {
-  // 检查全局 MCP 开关
-  const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
-  if (mcpEnabled === false) {
-    console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
-    return 0;
-  }
-
-  // 先清理之前注册的 MCP 工具
-  unloadMcpTools();
+  // 互斥锁：等待上一次操作完成
+  const prevLock = mcpLoadLock;
+  let releaseLock;
+  mcpLoadLock = new Promise(resolve => { releaseLock = resolve; });
+  await prevLock;
 
   try {
+    // 检查全局 MCP 开关
+    const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
+    if (mcpEnabled === false) {
+      console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
+      return 0;
+    }
+
+    // 先清理之前注册的 MCP 工具
+    unloadMcpToolsInternal();
+
     // 并行获取工具列表和服务器状态
     const [toolsResult, serversResult] = await Promise.all([
       AgentClient.getMcpTools(),
@@ -50,18 +59,14 @@ export async function loadMcpTools() {
 
     let registered = 0;
     for (const tool of toolsResult.tools) {
-      // 过滤掉已禁用服务器的工具
       if (disabledServerIds.has(tool.serverId)) {
         console.log(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
         continue;
       }
 
       const toolId = `mcp_${tool.serverId}_${tool.name}`;
-
-      // 去重：同名工具只注册一次
       if (mcpToolIds.has(toolId)) continue;
 
-      // 动态注入 RAW_TOOLS（让 LLM 能看到这个工具）
       const rawToolDef = {
         id: toolId,
         category: 'mcp',
@@ -76,35 +81,18 @@ export async function loadMcpTools() {
         }
       };
       RAW_TOOLS.push(rawToolDef);
-
-      // 同时注入 BUILTIN_TOOLS（LLM 请求实际使用的是这个数组）
-      BUILTIN_TOOLS.push({
-        id: rawToolDef.id,
-        type: rawToolDef.type,
-        function: rawToolDef.function
-      });
-
-      // 动态注入 TOOL_EXECUTION_MAP（executeTool 依赖此映射查找工具）
+      BUILTIN_TOOLS.push({ id: rawToolDef.id, type: rawToolDef.type, function: rawToolDef.function });
       TOOL_EXECUTION_MAP[toolId] = 'background';
-
-      // 动态注册 handler
       TOOL_HANDLERS[toolId] = async (args, toolCallId) => {
         const result = await AgentClient.callMcpTool(tool.serverId, tool.name, args);
-        return {
-          success: result.success,
-          content: result.content || result.error || '',
-          tool_call_id: toolCallId
-        };
+        return { success: result.success, content: result.content || result.error || '', tool_call_id: toolCallId };
       };
-
       mcpToolIds.add(toolId);
       registered++;
     }
 
-    // 重建 BG_HANDLERS（因为 RAW_TOOLS 变化了）
     rebuildBgHandlers();
 
-    // 同步 MCP 工具到 chrome.storage，让 Side Panel 也能读取（也过滤已禁用的服务器）
     const mcpToolsForUI = toolsResult.tools
       .filter(t => !disabledServerIds.has(t.serverId))
       .map(t => ({
@@ -124,32 +112,41 @@ export async function loadMcpTools() {
   } catch (err) {
     console.log('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
     return 0;
+  } finally {
+    releaseLock();
   }
 }
 
 /**
- * 清理所有动态注册的 MCP 工具
+ * 清理所有动态注册的 MCP 工具（内部版本，不加锁，由 loadMcpTools 调用）
  */
-export function unloadMcpTools() {
+function unloadMcpToolsInternal() {
   for (const toolId of mcpToolIds) {
-    // 从 RAW_TOOLS 中移除
     let idx = RAW_TOOLS.findIndex(t => t.id === toolId);
     if (idx >= 0) RAW_TOOLS.splice(idx, 1);
-
-    // 从 BUILTIN_TOOLS 中移除
     idx = BUILTIN_TOOLS.findIndex(t => t.id === toolId);
     if (idx >= 0) BUILTIN_TOOLS.splice(idx, 1);
-
-    // 从 TOOL_EXECUTION_MAP 中移除
     delete TOOL_EXECUTION_MAP[toolId];
-
-    // 从 TOOL_HANDLERS 中移除
     delete TOOL_HANDLERS[toolId];
   }
   mcpToolIds.clear();
   rebuildBgHandlers();
-  // 清除 storage 中的 MCP 工具
   chrome.storage.local.remove('mcpTools');
+}
+
+/**
+ * 清理所有动态注册的 MCP 工具（公开版本，带互斥锁）
+ */
+export async function unloadMcpTools() {
+  const prevLock = mcpLoadLock;
+  let releaseLock;
+  mcpLoadLock = new Promise(resolve => { releaseLock = resolve; });
+  await prevLock;
+  try {
+    unloadMcpToolsInternal();
+  } finally {
+    releaseLock();
+  }
 }
 
 /**
@@ -322,14 +319,13 @@ chrome.storage.onChanged.addListener((changes) => {
     const enabled = changes.mcpEnabled.newValue !== false;
     console.log('[Background] MCP 全局开关变更:', enabled);
     if (enabled) {
-      // 重新启用时，重新加载 MCP 工具
       loadMcpTools().then(count => {
         console.log('[Background] MCP 工具已重新加载:', count, '个');
       });
     } else {
-      // 停用时，卸载所有 MCP 工具
-      unloadMcpTools();
-      console.log('[Background] MCP 工具已全部卸载');
+      unloadMcpTools().then(() => {
+        console.log('[Background] MCP 工具已全部卸载');
+      });
     }
   }
   if (changes.skillsEnabled) {
@@ -2447,13 +2443,29 @@ async function executeSkillRun(args, toolCallId) {
 /**
  * Agent Skill 按需加载
  */
+// 单次会话中已加载的 Skill 缓存（避免重复网络请求）
+const skillLoadCache = new Map(); // name → { timestamp, prompt, skill }
+
 async function executeSkillLoad(args, toolCallId) {
   const { name } = args;
   if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
 
+  // 检查缓存（60 秒内有效）
+  const cached = skillLoadCache.get(name);
+  if (cached && (Date.now() - cached.timestamp < 60000)) {
+    return {
+      success: true,
+      content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${cached.prompt}`,
+      skill: cached.skill,
+      tool_call_id: toolCallId
+    };
+  }
+
   try {
     const result = await AgentClient.getAgentSkillPrompt(name);
     if (result.success) {
+      // 写入缓存
+      skillLoadCache.set(name, { timestamp: Date.now(), prompt: result.prompt, skill: result.skill });
       return {
         success: true,
         content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${result.prompt}`,

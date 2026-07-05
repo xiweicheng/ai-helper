@@ -935,6 +935,12 @@ function showImportDialog() {
         const file = fileInput.files[0];
         if (!file) return showToast('请选择 Zip 文件', 'warning');
 
+        // 文件大小限制：50MB
+        const MAX_ZIP_SIZE = 50 * 1024 * 1024;
+        if (file.size > MAX_ZIP_SIZE) {
+          return showToast('文件过大，最大支持 50MB', 'warning');
+        }
+
         // 使用 FileReader 安全地将文件转为 base64
         const base64 = await new Promise((resolve, reject) => {
           const reader = new FileReader();

@@ -668,7 +668,7 @@ async function performAgentHealthCheck() {
         }).catch(() => {});
       } else {
         // Agent 断开时清理 MCP 工具状态和缓存
-        unloadMcpTools();
+        await unloadMcpTools();
         mcpToolsCache = null;
         console.log('[Background] Agent 断开，已清理 MCP 工具');
       }

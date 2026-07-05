@@ -348,6 +348,29 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
  * @returns {Promise<{ success: boolean, error?: string, skill?: Object }>}
  */
 export async function importMarkdownSkillFromUrl(skillsDir, url) {
+  // URL 安全检查
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { success: false, error: '仅支持 http/https 协议的 URL' };
+    }
+    // 禁止访问内网地址
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]') {
+      return { success: false, error: '禁止访问本地地址' };
+    }
+    // 禁止访问私有网络
+    const octets = parsed.hostname.split('.');
+    if (octets.length === 4) {
+      const first = parseInt(octets[0], 10);
+      const second = parseInt(octets[1], 10);
+      if (first === 10) return { success: false, error: '禁止访问内网地址' };
+      if (first === 172 && second >= 16 && second <= 31) return { success: false, error: '禁止访问内网地址' };
+      if (first === 192 && second === 168) return { success: false, error: '禁止访问内网地址' };
+    }
+  } catch {
+    return { success: false, error: '无效的 URL' };
+  }
+
   try {
     const buffer = await downloadFile(url);
     return await importMarkdownSkillFromZip(skillsDir, buffer);
@@ -357,17 +380,21 @@ export async function importMarkdownSkillFromUrl(skillsDir, url) {
 }
 
 /**
- * 下载文件到 Buffer（支持 http/https）
+ * 下载文件到 Buffer（支持 http/https，最多重定向 5 次）
  */
-function downloadFile(url) {
+function downloadFile(url, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
     const chunks = [];
 
     protocol.get(url, { timeout: 60000 }, (res) => {
-      // 处理重定向
+      // 处理重定向（带次数限制）
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        downloadFile(res.headers.location).then(resolve).catch(reject);
+        if (maxRedirects <= 0) {
+          reject(new Error('重定向次数过多'));
+          return;
+        }
+        downloadFile(res.headers.location, maxRedirects - 1).then(resolve).catch(reject);
         return;
       }
 

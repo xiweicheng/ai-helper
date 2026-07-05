@@ -2,13 +2,42 @@
 // 解析 Skill 定义的步骤 DAG，按拓扑排序执行，支持并行
 import { render } from './template.js';
 import { readFileSync } from 'fs';
-import { checkPath } from '../security.js';
+import { checkPath, checkCommand } from '../security.js';
 import { join } from 'path';
 
 // 执行上下文（当前活跃的执行任务）
 const activeExecutions = new Map(); // execId → { skill, status, steps, results }
+const MAX_ACTIVE_EXECUTIONS = 100;
+const EXECUTION_TIMEOUT = 300000; // 5 分钟超时
+const EXECUTION_CLEANUP_AGE = 600000; // 10 分钟后清理
 
 let execIdCounter = 0;
+
+/**
+ * 清理超时/过期的执行记录
+ */
+function cleanupActiveExecutions() {
+  const now = Date.now();
+  // 删除超时的记录
+  for (const [execId, exec] of activeExecutions) {
+    if (exec.status === 'completed' || exec.status === 'error') {
+      const age = now - (exec.endTime || exec.startTime);
+      if (age > EXECUTION_CLEANUP_AGE) {
+        activeExecutions.delete(execId);
+      }
+    }
+  }
+  // 超过上限时，删除最旧的已完成记录
+  if (activeExecutions.size > MAX_ACTIVE_EXECUTIONS) {
+    const sorted = [...activeExecutions.entries()]
+      .filter(([_, e]) => e.status === 'completed' || e.status === 'error')
+      .sort((a, b) => a[1].startTime - b[1].startTime);
+    const toDelete = sorted.slice(0, sorted.length - MAX_ACTIVE_EXECUTIONS / 2);
+    for (const [execId] of toDelete) {
+      activeExecutions.delete(execId);
+    }
+  }
+}
 
 /**
  * 内部工具调用函数
@@ -45,6 +74,14 @@ async function executeToolCall(toolName, args) {
       }
 
       case 'agent_exec_command': {
+        const cmdCheck = checkCommand(args.command, false);
+        if (cmdCheck.level === 'deny') {
+          return { success: false, error: cmdCheck.reason };
+        }
+        // Workflow Skill 自动执行，没有交互确认环节，灰名单命令直接拒绝
+        if (cmdCheck.level === 'confirm') {
+          return { success: false, error: `需要用户确认的命令: ${cmdCheck.reason}` };
+        }
         const { execSync } = await import('child_process');
         const result = execSync(args.command, {
           cwd: args.cwd || process.cwd(),
@@ -263,6 +300,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
   };
 
   activeExecutions.set(execId, execution);
+  cleanupActiveExecutions(); // 执行前先清理过期记录
 
   const notify = (stepId, status, message) => {
     execution.steps[stepId] = { status, message };
@@ -270,7 +308,13 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
   };
 
   try {
-    const results = await executeSkillSteps(skill, params, execId, notify);
+    // 带超时的执行
+    const results = await Promise.race([
+      executeSkillSteps(skill, params, execId, notify),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Skill 执行超时（5 分钟）')), EXECUTION_TIMEOUT)
+      )
+    ]);
 
     // 检查是否有失败的步骤
     const failedSteps = Object.entries(results).filter(([_, r]) => !r.success);

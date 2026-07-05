@@ -17,6 +17,7 @@ export function createStdioTransport(serverConfig) {
     let resolved = false;
     let responseBuffer = '';
     let dataHandler = null;
+    let exitHandler = null;
 
     const child = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -45,15 +46,19 @@ export function createStdioTransport(serverConfig) {
         cleanup();
         reject(new Error(`无法启动 MCP Server "${command}": ${err.message}`));
       }
+      // spawn 失败也会触发 exit，由 exit 回调通知上层
     });
 
-    // 子进程意外退出
+    // 子进程退出（连接前 = reject，连接后 = 通知 exitHandler）
     child.on('exit', (code, signal) => {
       console.log(`[MCP] Server 进程退出: ${command} (code=${code}, signal=${signal})`);
       if (!resolved) {
         resolved = true;
         cleanup();
         reject(new Error(`MCP Server 异常退出 (code=${code}, signal=${signal}): ${command}`));
+      } else if (exitHandler) {
+        // 已连接后崩溃 → 通知上层
+        exitHandler(code, signal);
       }
     });
 
@@ -92,6 +97,9 @@ export function createStdioTransport(serverConfig) {
         },
         onData: (handler) => {
           dataHandler = handler;
+        },
+        onExit: (handler) => {
+          exitHandler = handler;
         }
       });
     }

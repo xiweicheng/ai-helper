@@ -345,11 +345,12 @@ function updateCategoryCount(category) {
   const countSpan = categoryHeader.querySelector('.category-count');
   if (!countSpan) return;
   
-  // 获取该分类下的所有工具checkbox
-  const categoryTools = BUILTIN_TOOLS.filter(t => t.category === category);
+  // MCP 分类需要额外统计 mcpToolsCache 中的工具
+  const categoryTools = category === 'mcp'
+    ? [...BUILTIN_TOOLS.filter(t => t.category === category), ...mcpToolsCache.filter(t => t.category === category)]
+    : BUILTIN_TOOLS.filter(t => t.category === category);
   const totalCount = categoryTools.length;
   
-  // 计算当前选中的数量
   let enabledCount = 0;
   categoryTools.forEach(tool => {
     const checkbox = document.getElementById('tool_' + tool.id);
@@ -358,7 +359,6 @@ function updateCategoryCount(category) {
     }
   });
   
-  // 更新数字显示
   countSpan.textContent = `${enabledCount}/${totalCount}`;
 }
 
