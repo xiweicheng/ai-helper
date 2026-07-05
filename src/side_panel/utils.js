@@ -201,7 +201,7 @@ ${subAgentList}`;
 
     // 注入 Agent Skill Prompts
     try {
-      const skillPrompts = await fetchAgentSkillPrompts();
+      const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds);
       if (skillPrompts) {
         finalPrompt += `\n${skillPrompts}\n`;
       }
@@ -235,7 +235,7 @@ ${subAgentList}`;
 
   // 注入 Agent Skill Prompts
   try {
-    const skillPrompts = await fetchAgentSkillPrompts();
+    const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds);
     if (skillPrompts) {
       defaultPrompt += `\n${skillPrompts}\n`;
     }
@@ -246,9 +246,17 @@ ${subAgentList}`;
 
 /**
  * 从后台获取 Agent Skill Prompts
+ * @param {string[]|null|undefined} agentToolIds - Agent 的工具 ID 列表，null/undefined 表示使用全部工具
  * @returns {Promise<string>}
  */
-async function fetchAgentSkillPrompts() {
+async function fetchAgentSkillPrompts(agentToolIds) {
+  // 如果 Agent 限定了工具列表，且列表中不包含任何 Skill 相关工具，则不注入 Skill 描述
+  if (agentToolIds != null && Array.isArray(agentToolIds)
+      && !agentToolIds.includes('agent_skill_load')
+      && !agentToolIds.includes('agent_skill_run')) {
+    return '';
+  }
+
   return new Promise((resolve) => {
     try {
       // 检查全局 Skill 开关
