@@ -132,6 +132,16 @@ function renderMcpServers(servers) {
               <input type="text" id="mcpEditCommand" value="${escapeHtml(s.command || '')}" placeholder="命令路径" class="toolbox-input" style="flex: 2;">
               <input type="text" id="mcpEditArgs" value="${escapeHtml((s.args || []).join(' '))}" placeholder="参数，空格分隔" class="toolbox-input" style="flex: 3;">
             </div>
+            <div class="mcp-env-section">
+              <div class="mcp-env-header">
+                <span class="mcp-env-title">环境变量</span>
+                <span class="mcp-env-hint">（敏感值优先在宿主机 shell 配置中 export，此处仅用于 MCP 专用变量）</span>
+              </div>
+              <div class="mcp-env-rows" id="mcpEditEnvRows">
+                ${renderEnvVarRows(s.env || {})}
+              </div>
+              <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpEditEnvRows" style="font-size: 12px; padding: 2px 10px;">+ 添加变量</button>
+            </div>
             <div class="mcp-add-form-actions">
               <button class="toolbox-btn toolbox-btn-cancel" data-mcp-id="${escapeHtml(s.id)}" data-action="cancel-edit">取消</button>
               <button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="save-edit">保存</button>
@@ -190,6 +200,125 @@ function renderMcpServers(servers) {
 }
 
 /**
+ * 渲染环境变量输入行
+ * @param {Object} envObj - { KEY: 'value', ... }
+ * @returns {string} HTML
+ */
+function renderEnvVarRows(envObj = {}) {
+  const entries = Object.entries(envObj);
+  // 至少显示一个空行
+  if (entries.length === 0) {
+    entries.push(['', '']);
+  }
+  return entries.map(([key, value]) => `
+    <div class="mcp-env-row">
+      <input type="text" class="mcp-env-key toolbox-input" placeholder="变量名" value="${escapeHtml(key)}" style="flex: 1;">
+      <div class="mcp-env-value-wrap token-input-wrapper" style="flex: 2;">
+        <input type="password" class="mcp-env-value token-input" placeholder="值" value="${escapeHtml(value)}">
+        <button type="button" class="mcp-env-eye toggle-token-btn" title="显示/隐藏" data-action="toggle-env-eye">
+          <svg class="icon-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+          <svg class="icon-eye-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </button>
+      </div>
+      <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="删除此行" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
+    </div>
+  `).join('');
+}
+
+/**
+ * 从容器中解析环境变量
+ * @param {HTMLElement} container - 包含 .mcp-env-row 的容器
+ * @returns {Object} env 对象
+ */
+function parseEnvVars(container) {
+  const env = {};
+  container.querySelectorAll('.mcp-env-row').forEach(row => {
+    const key = row.querySelector('.mcp-env-key')?.value.trim();
+    const value = row.querySelector('.mcp-env-value')?.value;
+    if (key && value !== undefined) {
+      env[key] = value;
+    }
+  });
+  return Object.keys(env).length > 0 ? env : {};
+}
+
+/**
+ * 处理环境变量 UI 操作（事件委托）
+ * @param {Event} e - 点击事件
+ * @returns {boolean} 是否已处理（true 表示已消费该事件）
+ */
+function handleEnvAction(e) {
+  const actionBtn = e.target.closest('[data-action]');
+  if (!actionBtn) return false;
+
+  const action = actionBtn.dataset.action;
+
+  if (action === 'toggle-env-eye') {
+    const wrap = actionBtn.closest('.mcp-env-value-wrap');
+    const input = wrap?.querySelector('.mcp-env-value');
+    const iconOpen = wrap?.querySelector('.icon-eye-open');
+    const iconClosed = wrap?.querySelector('.icon-eye-closed');
+    if (input) {
+      if (input.type === 'password') {
+        input.type = 'text';
+        if (iconOpen) iconOpen.style.display = 'none';
+        if (iconClosed) iconClosed.style.display = 'block';
+      } else {
+        input.type = 'password';
+        if (iconOpen) iconOpen.style.display = 'block';
+        if (iconClosed) iconClosed.style.display = 'none';
+      }
+    }
+    return true;
+  }
+
+  if (action === 'remove-env-row') {
+    const row = actionBtn.closest('.mcp-env-row');
+    row?.remove();
+    return true;
+  }
+
+  if (action === 'add-env-row') {
+    const targetId = actionBtn.dataset.target;
+    const target = targetId ? document.getElementById(targetId) : null;
+    if (target) {
+      const newRow = document.createElement('div');
+      newRow.className = 'mcp-env-row';
+      newRow.innerHTML = `
+        <input type="text" class="mcp-env-key toolbox-input" placeholder="变量名" style="flex: 1;">
+        <div class="mcp-env-value-wrap token-input-wrapper" style="flex: 2;">
+          <input type="password" class="mcp-env-value token-input" placeholder="值">
+          <button type="button" class="mcp-env-eye toggle-token-btn" title="显示/隐藏" data-action="toggle-env-eye">
+            <svg class="icon-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <svg class="icon-eye-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+          </button>
+        </div>
+        <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="删除此行" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
+      `;
+      target.appendChild(newRow);
+      // 聚焦新行的变量名输入框
+      const keyInput = newRow.querySelector('.mcp-env-key');
+      if (keyInput) setTimeout(() => keyInput.focus(), 0);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * 显示添加 MCP 服务器表单
  */
 function showAddMcpForm() {
@@ -205,6 +334,16 @@ function showAddMcpForm() {
       <div class="mcp-add-form-row">
         <input type="text" id="mcpAddCommand" placeholder="命令路径，如 npx、python" class="toolbox-input" style="flex: 2;">
         <input type="text" id="mcpAddArgs" placeholder="参数，空格分隔" class="toolbox-input" style="flex: 3;">
+      </div>
+      <div class="mcp-env-section">
+        <div class="mcp-env-header">
+          <span class="mcp-env-title">环境变量</span>
+          <span class="mcp-env-hint">（敏感值优先在宿主机 shell 配置中 export，此处仅用于 MCP 专用变量）</span>
+        </div>
+        <div class="mcp-env-rows" id="mcpAddEnvRows">
+          ${renderEnvVarRows()}
+        </div>
+        <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpAddEnvRows" style="font-size: 12px; padding: 2px 10px;">+ 添加变量</button>
       </div>
       <div class="mcp-add-form-actions">
         <button class="toolbox-btn toolbox-btn-cancel" id="mcpAddCancel">取消</button>
@@ -254,7 +393,7 @@ async function removeMcpServer(serverId) {
  */
 async function connectMcpServer(serverId) {
   const result = await agentApi('POST', '/api/mcp/servers/connect', { id: serverId });
-  if (result.success) return true;
+  if (result.success) return result;
   throw new Error(result.error || '连接失败');
 }
 
@@ -1070,6 +1209,7 @@ async function saveMcpEdit() {
     name: name || id,
     command,
     args: argsRaw ? argsRaw.split(/\s+/) : [],
+    env: parseEnvVars(document.getElementById('mcpEditEnvRows')),
     enabled: cachedMcpServers.find(s => s.id === editingMcpId)?.enabled !== false
   };
 
@@ -1181,6 +1321,9 @@ function initToolbox() {
   const mcpAddForm = document.getElementById('mcpAddForm');
   if (mcpAddForm) {
     mcpAddForm.addEventListener('click', async (e) => {
+      // 环境变量操作
+      if (handleEnvAction(e)) return;
+
       if (e.target.id === 'mcpAddCancel') {
         hideAddMcpForm();
       }
@@ -1195,11 +1338,13 @@ function initToolbox() {
           return;
         }
 
+        const envRows = document.getElementById('mcpAddEnvRows');
         const serverData = {
           id,
           name: name || id,
           command,
           args: argsRaw ? argsRaw.split(/\s+/) : [],
+          env: envRows ? parseEnvVars(envRows) : {},
           enabled: true
         };
 
@@ -1207,6 +1352,7 @@ function initToolbox() {
           await addMcpServer(serverData);
           showToolboxToast('MCP 服务器添加成功', 'success');
           hideAddMcpForm();
+          notifyMcpChange();
           await refreshToolbox();
         } catch (err) {
           showToolboxToast(`添加失败: ${err.message}`, 'error');
@@ -1219,6 +1365,9 @@ function initToolbox() {
   const mcpList = document.getElementById('mcpServerList');
   if (mcpList) {
     mcpList.addEventListener('click', async (e) => {
+      // 环境变量操作（不需要 serverId）
+      if (handleEnvAction(e)) return;
+
       const btn = e.target.closest('button, input');
       if (!btn) return;
 
