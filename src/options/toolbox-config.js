@@ -1098,9 +1098,66 @@ async function saveMcpEdit() {
 }
 
 /**
+ * 更新全局开关的 UI 状态
+ */
+function updateGlobalToggleUI(type, enabled) {
+  const label = document.getElementById(type === 'mcp' ? 'mcpToggleLabel' : 'skillToggleLabel');
+  const section = document.getElementById(type === 'mcp' ? 'mcpSection' : 'skillSection');
+  if (label) {
+    label.textContent = enabled ? '已启用' : '已停用';
+    label.style.color = enabled ? '#666' : '#999';
+  }
+  if (section) {
+    if (enabled) {
+      section.classList.remove('disabled-section');
+    } else {
+      section.classList.add('disabled-section');
+    }
+  }
+}
+
+/**
  * 初始化工具箱 Tab
  */
 function initToolbox() {
+  // 全局开关：MCP 服务
+  const mcpToggle = document.getElementById('mcpGlobalToggle');
+  const skillToggle = document.getElementById('skillGlobalToggle');
+  const mcpToggleLabel = document.getElementById('mcpToggleLabel');
+  const skillToggleLabel = document.getElementById('skillToggleLabel');
+  const mcpSection = document.getElementById('mcpSection');
+  const skillSection = document.getElementById('skillSection');
+
+  // 加载全局开关状态
+  chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
+    const mcpEnabled = result.mcpEnabled !== false;
+    const skillsEnabled = result.skillsEnabled !== false;
+    if (mcpToggle) mcpToggle.checked = mcpEnabled;
+    if (skillToggle) skillToggle.checked = skillsEnabled;
+    updateGlobalToggleUI('mcp', mcpEnabled);
+    updateGlobalToggleUI('skill', skillsEnabled);
+  });
+
+  // MCP 全局开关
+  if (mcpToggle) {
+    mcpToggle.addEventListener('change', () => {
+      const enabled = mcpToggle.checked;
+      chrome.storage.local.set({ mcpEnabled: enabled });
+      updateGlobalToggleUI('mcp', enabled);
+      showToolboxToast(`MCP 服务已${enabled ? '启用' : '停用'}`, 'info');
+    });
+  }
+
+  // Skill 全局开关
+  if (skillToggle) {
+    skillToggle.addEventListener('change', () => {
+      const enabled = skillToggle.checked;
+      chrome.storage.local.set({ skillsEnabled: enabled });
+      updateGlobalToggleUI('skill', enabled);
+      showToolboxToast(`Skill 服务已${enabled ? '启用' : '停用'}`, 'info');
+    });
+  }
+
   // MCP 添加按钮
   const addMcpBtn = document.getElementById('addMcpServerBtn');
   if (addMcpBtn) {

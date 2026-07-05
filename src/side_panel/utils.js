@@ -251,12 +251,19 @@ ${subAgentList}`;
 async function fetchAgentSkillPrompts() {
   return new Promise((resolve) => {
     try {
-      chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPTS' }, (response) => {
-        if (chrome.runtime.lastError) {
+      // 检查全局 Skill 开关
+      chrome.storage.local.get(['skillsEnabled'], (result) => {
+        if (result.skillsEnabled === false) {
           resolve('');
           return;
         }
-        resolve(response?.prompts || '');
+        chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPTS' }, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve('');
+            return;
+          }
+          resolve(response?.prompts || '');
+        });
       });
     } catch {
       resolve('');

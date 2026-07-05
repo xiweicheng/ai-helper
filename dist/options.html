@@ -1840,14 +1840,71 @@
     .toolbox-section-header {
       margin-bottom: 12px;
     }
+    .toolbox-section-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
     .toolbox-section-title {
       color: #667eea;
       font-size: 16px;
-      margin-bottom: 4px;
+      margin: 0;
     }
     .toolbox-section-desc {
       font-size: 12px;
       color: #999;
+    }
+
+    /* 全局开关 */
+    .global-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .global-toggle input {
+      display: none;
+    }
+    .global-toggle-slider {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      background: #ccc;
+      border-radius: 11px;
+      transition: background 0.2s;
+    }
+    .global-toggle-slider::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .global-toggle input:checked + .global-toggle-slider {
+      background: #667eea;
+    }
+    .global-toggle input:checked + .global-toggle-slider::after {
+      transform: translateX(18px);
+    }
+    .global-toggle-label {
+      font-size: 13px;
+      color: #666;
+      min-width: 48px;
+    }
+    /* 禁用状态遮罩 */
+    .toolbox-section.disabled-section .toolbox-list,
+    .toolbox-section.disabled-section .toolbox-section-actions,
+    .toolbox-section.disabled-section #mcpAddForm,
+    .toolbox-section.disabled-section > .toolbox-add-btn {
+      opacity: 0.4;
+      pointer-events: none;
     }
 
     /* 空状态 */
@@ -3013,10 +3070,17 @@
       </div>
 
       <!-- MCP 服务器管理 -->
-      <div class="toolbox-section">
+      <div class="toolbox-section" id="mcpSection">
         <div class="toolbox-section-header">
-          <h2 class="toolbox-section-title">🔌 MCP 服务器管理</h2>
-          <span class="toolbox-section-desc">通过 MCP 协议连接外部工具服务器，扩展 AI 助手的工具能力</span>
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title">🔌 MCP 服务器管理</h2>
+            <label class="global-toggle">
+              <input type="checkbox" id="mcpGlobalToggle" checked>
+              <span class="global-toggle-slider"></span>
+              <span class="global-toggle-label" id="mcpToggleLabel">已启用</span>
+            </label>
+          </div>
+          <span class="toolbox-section-desc">通过 MCP 协议连接外部工具服务器，扩展 AI 助手的工具能力。关闭后所有 MCP 工具将不会发送到 AI 上下文。</span>
         </div>
         <div class="toolbox-list" id="mcpServerList">
           <div class="toolbox-empty">
@@ -3029,10 +3093,17 @@
       </div>
 
       <!-- Skill 管理 -->
-      <div class="toolbox-section">
+      <div class="toolbox-section" id="skillSection">
         <div class="toolbox-section-header">
-          <h2 class="toolbox-section-title">🧩 Skill 管理</h2>
-          <span class="toolbox-section-desc">管理可复用的工作流 Skill，让 AI 按预定义步骤执行多步任务</span>
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title">🧩 Skill 管理</h2>
+            <label class="global-toggle">
+              <input type="checkbox" id="skillGlobalToggle" checked>
+              <span class="global-toggle-slider"></span>
+              <span class="global-toggle-label" id="skillToggleLabel">已启用</span>
+            </label>
+          </div>
+          <span class="toolbox-section-desc">管理可复用的工作流和 Agent Skill。关闭后所有 Skill 内容将不会注入到 AI 系统提示词中。</span>
         </div>
         <div class="toolbox-list" id="skillList">
           <div class="toolbox-empty">

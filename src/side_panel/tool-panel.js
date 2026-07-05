@@ -29,12 +29,29 @@ async function loadMcpToolsFromStorage() {
   }
 }
 
-// 监听 Background 的 MCP 工具更新，实时同步缓存
+// 监听 MCP 工具更新和全局开关变化，实时同步
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.mcpTools) {
+  if (area !== 'local') return;
+  let needsRefresh = false;
+
+  if (changes.mcpTools) {
     mcpToolsCache = changes.mcpTools.newValue || [];
     console.log('[SidePanel] MCP 工具缓存已更新:', mcpToolsCache.length, '个');
-    // 如果工具弹窗当前是打开状态，实时刷新列表
+    needsRefresh = true;
+  }
+  if (changes.mcpEnabled) {
+    globalMcpEnabled = changes.mcpEnabled.newValue !== false;
+    console.log('[SidePanel] MCP 全局开关变更:', globalMcpEnabled);
+    needsRefresh = true;
+  }
+  if (changes.skillsEnabled) {
+    globalSkillsEnabled = changes.skillsEnabled.newValue !== false;
+    console.log('[SidePanel] Skill 全局开关变更:', globalSkillsEnabled);
+    needsRefresh = true;
+  }
+
+  // 如果工具弹窗当前是打开状态，实时刷新列表
+  if (needsRefresh) {
     const overlay = document.getElementById('toolsPopupOverlay');
     if (overlay?.classList.contains('show')) {
       updateCategoryBadges();
@@ -47,6 +64,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // 模块初始化时预加载 MCP 工具缓存
 loadMcpToolsFromStorage();
 
+// 全局开关状态（从 chrome.storage 加载，通过 onChanged 实时更新）
+let globalMcpEnabled = true;
+let globalSkillsEnabled = true;
+
+// 加载全局开关初始状态
+chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
+  globalMcpEnabled = result.mcpEnabled !== false;
+  globalSkillsEnabled = result.skillsEnabled !== false;
+});
+
 /**
  * 获取当前 Agent 限定范围内的工具列表（含 MCP 工具）
  * null = 没有限制（默认助手），返回全部工具
@@ -54,12 +81,21 @@ loadMcpToolsFromStorage();
  * [id1, id2] = 只返回这些 ID 对应的工具
  */
 function getAgentFilteredTools() {
-  const allTools = [...BUILTIN_TOOLS, ...mcpToolsCache];
+  // 根据全局开关决定是否包含 MCP 工具
+  const mcpTools = globalMcpEnabled ? mcpToolsCache : [];
+  const allTools = [...BUILTIN_TOOLS, ...mcpTools];
   const toolIds = state.activeAgentToolIds;
-  if (toolIds === null || toolIds === undefined) return allTools;
-  // MCP 工具是动态注册的，不参与 Agent 白名单过滤
-  const filterSet = new Set(toolIds);
-  return allTools.filter(t => t.id.startsWith('mcp_') || filterSet.has(t.id));
+  let filtered = allTools;
+  if (toolIds !== null && toolIds !== undefined) {
+    // MCP 工具是动态注册的，不参与 Agent 白名单过滤
+    const filterSet = new Set(toolIds);
+    filtered = allTools.filter(t => t.id.startsWith('mcp_') || filterSet.has(t.id));
+  }
+  // Skill 全局开关关闭时，过滤掉 Skill 相关工具
+  if (!globalSkillsEnabled) {
+    filtered = filtered.filter(t => t.id !== 'agent_skill_run' && t.id !== 'agent_skill_load');
+  }
+  return filtered;
 }
 
 async function openToolsPopup() {

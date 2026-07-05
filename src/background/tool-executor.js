@@ -16,6 +16,13 @@ const mcpToolIds = new Set();
  * Agent 未连通或不支持 MCP 时自动跳过
  */
 export async function loadMcpTools() {
+  // 检查全局 MCP 开关
+  const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
+  if (mcpEnabled === false) {
+    console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
+    return 0;
+  }
+
   // 先清理之前注册的 MCP 工具
   unloadMcpTools();
 
@@ -251,6 +258,9 @@ export async function getTools(agentToolIds = null) {
       
       console.log('[Background] 当前启用的工具配置:', finalToolIds, 'Agent已连通:', agentConnected, '图片识别:', visionEnabled);
       
+      // 读取 MCP 全局开关和 Agent 连接状态
+      const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
+
       const tools = BUILTIN_TOOLS
         .filter(tool => finalToolIds.includes(tool.id))
         .filter(tool => {
@@ -259,8 +269,17 @@ export async function getTools(agentToolIds = null) {
             console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
             return false;
           }
-          // MCP 工具：Agent 未连通 或 MCP Server 未连接时过滤
+          // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
+          if ((tool.id === 'agent_skill_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) {
+            console.log('[Background] Skill 全局开关已关闭，隐藏 Skill 工具:', tool.id);
+            return false;
+          }
+          // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
           if (tool.id.startsWith('mcp_')) {
+            if (mcpEnabled === false) {
+              console.log('[Background] MCP 全局开关已关闭，隐藏 MCP 工具:', tool.id);
+              return false;
+            }
             if (!agentConnected) {
               console.log('[Background] Agent 未连通，隐藏 MCP 工具:', tool.id);
               return false;
@@ -296,6 +315,28 @@ export async function getTools(agentToolIds = null) {
     });
   });
 }
+
+// 监听全局 MCP 开关变化
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.mcpEnabled) {
+    const enabled = changes.mcpEnabled.newValue !== false;
+    console.log('[Background] MCP 全局开关变更:', enabled);
+    if (enabled) {
+      // 重新启用时，重新加载 MCP 工具
+      loadMcpTools().then(count => {
+        console.log('[Background] MCP 工具已重新加载:', count, '个');
+      });
+    } else {
+      // 停用时，卸载所有 MCP 工具
+      unloadMcpTools();
+      console.log('[Background] MCP 工具已全部卸载');
+    }
+  }
+  if (changes.skillsEnabled) {
+    // Skill 开关变更时，由侧边栏 fetchAgentSkillPrompts 自行判断，无需额外处理
+    console.log('[Background] Skill 全局开关变更:', changes.skillsEnabled.newValue !== false);
+  }
+});
 
 /**
  * 执行页面截图工具
