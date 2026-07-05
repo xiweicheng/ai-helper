@@ -143,12 +143,12 @@ export function createTableHTML(tableData) {
       tableHTML += `<th class="table-header-cell-wrapper">
         ${headerCell}
         <div class="table-toolbar">
-          <button class="table-toolbar-btn copy-md-btn" title="复制 Markdown 表格" data-table-index="${tableIndex}">
+          <button class="table-toolbar-btn copy-md-btn" title="复制 Markdown 表格" data-table-full="${encodeURIComponent(full)}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
             </svg>
           </button>
-          <button class="table-toolbar-btn download-excel-btn" title="下载 Excel" data-table-index="${tableIndex}">
+          <button class="table-toolbar-btn download-excel-btn" title="下载 Excel" data-table-header="${encodeURIComponent(header)}" data-table-body="${encodeURIComponent(body)}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
               <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
@@ -874,6 +874,52 @@ export function addCodeCopyButtons() {
 }
 
 /**
+ * 从 DOM 中提取表格数据（历史消息的最终 fallback）
+ */
+function extractTableFromDOM(btn) {
+  const table = btn.closest('.table-container-wrapper')?.querySelector('table');
+  if (!table) return null;
+
+  // 提取表头
+  const headers = [];
+  table.querySelectorAll('thead th').forEach(th => {
+    // 取第一个文本子节点（排除 toolbar 中的 SVG 文本）
+    let text = '';
+    for (const node of th.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE && !node.classList.contains('table-toolbar') && !node.closest('.table-toolbar')) {
+        text += node.textContent || '';
+      }
+    }
+    headers.push(text.trim());
+  });
+
+  // 提取表体
+  const bodyRows = [];
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const cells = [];
+    tr.querySelectorAll('td').forEach(td => {
+      cells.push(td.textContent.trim());
+    });
+    bodyRows.push(cells);
+  });
+
+  if (headers.length === 0 && bodyRows.length === 0) return null;
+
+  // 构建 Markdown 表格
+  const headerLine = '| ' + headers.join(' | ') + ' |';
+  const sepLine = '| ' + headers.map(() => '---').join(' | ') + ' |';
+  const bodyLines = bodyRows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+
+  return {
+    full: headerLine + '\n' + sepLine + '\n' + bodyLines,
+    header: headerLine + '\n' + sepLine,
+    body: bodyLines
+  };
+}
+
+/**
  * 添加表格工具栏按钮事件
  */
 export function addTableToolbarEvents() {
@@ -884,10 +930,23 @@ export function addTableToolbarEvents() {
     
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      // 1. 新格式：从 data 属性读取（HTML 恢复后也能工作）
+      const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
+      if (full) {
+        copyToClipboard(full, btn);
+        return;
+      }
+      // 2. 旧格式：从 window.__tableBlocks 读取（实时渲染时）
       const tableIndex = btn.dataset.tableIndex;
       const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
       if (tableBlock) {
         copyToClipboard(tableBlock.full, btn);
+        return;
+      }
+      // 3. 最终 fallback：从 DOM 提取表格数据（历史消息，既有旧格式又是 restore）
+      const domData = extractTableFromDOM(btn);
+      if (domData) {
+        copyToClipboard(domData.full, btn);
       }
     });
   });
@@ -899,10 +958,24 @@ export function addTableToolbarEvents() {
     
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      // 1. 新格式：从 data 属性读取
+      const header = btn.dataset.tableHeader ? decodeURIComponent(btn.dataset.tableHeader) : null;
+      const body = btn.dataset.tableBody ? decodeURIComponent(btn.dataset.tableBody) : null;
+      if (header && body) {
+        downloadTableAsExcel({ header, body });
+        return;
+      }
+      // 2. 旧格式：从 window.__tableBlocks 读取
       const tableIndex = btn.dataset.tableIndex;
       const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
       if (tableBlock) {
         downloadTableAsExcel(tableBlock);
+        return;
+      }
+      // 3. 最终 fallback：从 DOM 提取
+      const domData = extractTableFromDOM(btn);
+      if (domData) {
+        downloadTableAsExcel(domData);
       }
     });
   });

@@ -158,6 +158,7 @@ export async function loadChatHistory() {
     }
     
     renderMermaidCharts();
+    addCodeCopyButtons();
     
     const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
     chrome.storage.local.get([scrollKey], (result) => {
@@ -3161,6 +3162,11 @@ export function restoreMessageFromHtml(htmlContent) {
 
   // 确保反思评分按钮的事件委托已绑定（同上）
   bindReflectionBadgeDelegate();
+  
+  // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
+  messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn').forEach(btn => {
+    delete btn.dataset.bound;
+  });
   
   chatContainer.appendChild(messageEl);
 }

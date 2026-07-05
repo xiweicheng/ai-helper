@@ -20,7 +20,7 @@ function formatCtxWindow(tokens) {
 import { initClarifyEvents } from './clarify-dialog.js';
 import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
-import { renderMermaidCharts, renderMessageMermaid } from './markdown-render.js';
+import { renderMermaidCharts, renderMessageMermaid, addCodeCopyButtons } from './markdown-render.js';
 import { initAgentManager } from './agent-manager.js';
 import {
   sendMessage, clearChatHistory, showExportDialog, hideExportDialog, performExport,
@@ -1059,6 +1059,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
       renderMermaidCharts();
+      addCodeCopyButtons();
     }
 
     // 如果切回的会话有正在执行的后台任务，显示加载状态
