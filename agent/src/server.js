@@ -468,6 +468,14 @@ export function startServer() {
         return jsonResponse(res, result.success ? 200 : 400, result);
       }
 
+      // 切换 Skill 启用/停用
+      if (pathname === '/api/skill/toggle') {
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        const result = toggleSkill(body.name);
+        logSystem('skill_toggle', { skillName: body.name, enabled: result.enabled });
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
       // 重新加载 Skill
       if (pathname === '/api/skill/reload') {
         const count = await reloadSkills();
@@ -639,15 +647,6 @@ export function startServer() {
       const name = url.searchParams.get('name');
       if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
       return jsonResponse(res, 200, getSkill(name));
-    }
-
-    // 切换 Skill 启用/停用状态
-    if (req.method === 'POST' && pathname === '/api/skill/toggle') {
-      const { name } = body;
-      if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
-      const result = toggleSkill(name);
-      logSystem('skill_toggle', { skillName: name, enabled: result.enabled });
-      return jsonResponse(res, result.success ? 200 : 400, result);
     }
 
     // Skill 执行状态查询

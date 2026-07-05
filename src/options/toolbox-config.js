@@ -347,7 +347,7 @@ function renderSkills(skills) {
           ${renderSkillParams(s.parameters)}
         </div>
         <div class="skill-card-actions">
-          <button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>
+          ${s.enabled !== false ? `<button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>` : ''}
           <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
           <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
         </div>
@@ -737,13 +737,14 @@ function showAgentSkillEditor(skillName, existingData = null) {
     const description = modalOverlay.querySelector('#agentSkillDesc').value.trim();
     const version = modalOverlay.querySelector('#agentSkillVersion').value.trim() || '1.0';
     const markdown = modalOverlay.querySelector('#agentSkillMarkdown').value.trim();
+    const enabled = isEdit ? (existingData.frontmatter?.enabled !== false) : true;
 
     if (!name) return showToast('请输入 Skill 名称', 'error');
     if (!markdown) return showToast('请输入 SKILL.md 内容', 'error');
 
     try {
       const result = await agentApi('POST', '/api/skill/save-markdown', {
-        name, description, version, markdown
+        name, description, version, markdown, enabled
       });
       if (result.success) {
         showToast(`Agent Skill "${name}" 保存成功`, 'success');
