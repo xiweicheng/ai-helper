@@ -1,7 +1,41 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize, sep, isAbsolute } from 'path';
+import { resolve, normalize, sep, isAbsolute, join } from 'path';
 import { realpathSync } from 'fs';
+import { homedir } from 'os';
 import { loadConfig } from './config.js';
+
+// ==================== 硬阻止目录（任何情况下都不可访问） ====================
+
+const AGENT_DIR = join(homedir(), '.ai-helper-agent');
+
+/** 核心敏感文件/目录（硬阻止，不可绕过）。其他子目录（如 workspace）由白名单控制。 */
+const HARD_BLOCKED_PATHS = [
+  join(AGENT_DIR, 'config.json'),     // 代理配置文件
+  join(AGENT_DIR, 'pairings.json'),   // 配对记录
+  join(AGENT_DIR, 'mcp_servers.json'),// MCP 服务器配置
+  join(AGENT_DIR, 'skills') + sep,    // Skill 文件目录（应通过 API 获取）
+  join(AGENT_DIR, 'logs') + sep,      // 日志目录
+];
+
+/**
+ * 检查路径是否命中核心敏感文件
+ */
+function isHardBlocked(normalizedPath) {
+  for (const blocked of HARD_BLOCKED_PATHS) {
+    if (blocked.endsWith(sep)) {
+      // 目录：检查是否在该目录下
+      if (normalizedPath.startsWith(blocked) || normalizedPath === blocked.slice(0, -1)) {
+        return true;
+      }
+    } else {
+      // 文件：精确匹配
+      if (normalizedPath === blocked) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /**
  * 检查路径是否在白名单内
@@ -19,6 +53,11 @@ function checkPath(pathStr) {
     // 相对路径基于 config.workdir 解析，而非 process.cwd()
     const resolved = isAbsolute(pathStr) ? resolve(pathStr) : resolve(config.workdir, pathStr);
     const normalized = normalize(resolved);
+
+    // 0. 硬阻止检查（优先级最高，不可绕过）
+    if (isHardBlocked(normalized)) {
+      return { allowed: false, reason: '禁止访问代理系统文件' };
+    }
 
     const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
 
@@ -49,6 +88,11 @@ function checkPath(pathStr) {
       } else {
         return { allowed: false, reason: `无法解析路径: ${err.message}` };
       }
+    }
+
+    // 对 realPath 做硬阻止检查（防止通过符号链接绕过）
+    if (isHardBlocked(realPath)) {
+      return { allowed: false, reason: '禁止访问代理系统文件' };
     }
 
     // 对 realPath 再次做前缀检查
@@ -98,7 +142,6 @@ const BLACKLIST_PATTERNS = [
   /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*`[^`]*`/,
   /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*\$\s*\([^)]*\)/,
 ];
-
 const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
 const SCRIPT_INTERPRETERS = '(bash|sh|zsh|python3?|node|ruby|perl|php|lua)';
 
@@ -140,6 +183,17 @@ function checkCommand(command, force = false) {
         safe: false,
         level: 'deny',
         reason: `高危命令被拦截: "${trimmed.substring(0, 100)}"`
+      };
+    }
+  }
+
+  // 1.5 禁止访问核心敏感文件（通过命令也一样拦截）
+  for (const blocked of HARD_BLOCKED_PATHS) {
+    if (trimmed.includes(blocked)) {
+      return {
+        safe: false,
+        level: 'deny',
+        reason: '禁止访问代理系统文件'
       };
     }
   }
