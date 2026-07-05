@@ -4,10 +4,38 @@ import { loadAllSkills, saveSkillFile, deleteSkillFile, getBuiltinSkills, delete
 import { executeSkill } from './executor.js';
 import { SKILLS_DIR } from './loader.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, basename } from 'path';
+import { join, basename, dirname } from 'path';
 
 // Skill 映射表: name → skill定义
 const skills = new Map();
+
+// 内置技能状态持久化文件
+const BUILTIN_STATE_FILE = join(dirname(SKILLS_DIR), 'builtin_skills_state.json');
+
+/**
+ * 读取内置技能的启用状态
+ * @returns {Record<string, boolean>} name → enabled
+ */
+function loadBuiltinState() {
+  try {
+    if (existsSync(BUILTIN_STATE_FILE)) {
+      return JSON.parse(readFileSync(BUILTIN_STATE_FILE, 'utf-8'));
+    }
+  } catch (e) { /* 忽略 */ }
+  return {};
+}
+
+/**
+ * 保存内置技能的启用状态
+ * @param {Record<string, boolean>} state
+ */
+function saveBuiltinState(state) {
+  try {
+    writeFileSync(BUILTIN_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Skill Registry] 无法保存内置技能状态:', e.message);
+  }
+}
 
 /**
  * 初始化 Skill 注册表
@@ -30,6 +58,15 @@ export function initializeSkillRegistry() {
     if (!skills.has(skill.name)) {
       skills.set(skill.name, skill);
       console.log(`[Skill Registry] 注册内置 Skill: "${skill.name}"`);
+    }
+  }
+
+  // 3. 恢复内置技能的启用状态（用户通过停止/启用的状态）
+  const builtinState = loadBuiltinState();
+  for (const [name, enabled] of Object.entries(builtinState)) {
+    const skill = skills.get(name);
+    if (skill && skill.builtin) {
+      skill.enabled = enabled;
     }
   }
 
@@ -221,8 +258,11 @@ export function toggleSkill(name) {
   const newEnabled = skill.enabled === false;
   skill.enabled = newEnabled;
 
-  // 内置技能无需持久化到文件（它们没有物理文件）
+  // 内置技能无需持久化到文件（它们没有物理文件），但需要记住启用状态
   if (skill.builtin) {
+    const state = loadBuiltinState();
+    state[name] = newEnabled;
+    saveBuiltinState(state);
     return { success: true, enabled: newEnabled };
   }
 

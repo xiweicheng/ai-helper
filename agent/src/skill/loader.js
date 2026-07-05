@@ -398,14 +398,19 @@ enabled: true
 - 在未调用此技能的情况下手动指导创建
 - 推迟技能创建到后续步骤
 
+**重要安全约束**：~/.ai-helper-agent/ 根目录是受限目录，AI 不能访问。唯一允许操作的是 ~/.ai-helper-agent/skills/ 子目录。禁止先探索父目录再找子目录。
+
 ## 技能目录结构
 
-所有用户创建的技能存放在 Agent 配置目录的 skills/ 子目录下：
+所有用户创建的技能存放在 ~/.ai-helper-agent/skills/ 目录下：
 
 \`\`\`
-<Agent配置目录>/skills/<skill-name>/
-└── SKILL.md
+~/.ai-helper-agent/skills/<skill-name>/
+├── SKILL.md
+└── _meta.json
 \`\`\`
+
+**禁止**：不要用 ls/readdir 探索 ~/.ai-helper-agent/ 或 ~/.ai-helper-agent/skills/。直接到目标目录操作。
 
 ## SKILL.md 标准格式
 
@@ -462,7 +467,11 @@ enabled: true
    - 示例（正例和反例）
    - 注意事项（容易踩的坑）
 
-4. **创建文件**：调用 POST /api/skill/save-markdown 接口，将 SKILL.md 内容写入 Agent 配置目录下的 skills/<skill-name>/ 目录。
+4. **直接创建文件**：一步到位，直接在 ~/.ai-helper-agent/skills/<skill-name>/ 下操作。
+   - **禁止**先 ls 查看 ~/.ai-helper-agent/ 或 ~/.ai-helper-agent/skills/ 目录（前者无权限，后者不必要）
+   - 直接 mkdir -p ~/.ai-helper-agent/skills/<skill-name>/ 创建子目录
+   - 直接写入 ~/.ai-helper-agent/skills/<skill-name>/SKILL.md
+   - 创建完成后，告知用户在工具箱页面点击「重新加载」使技能生效
 
 5. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词
 
