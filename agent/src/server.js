@@ -1,10 +1,11 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
+import { exec } from 'child_process';
 import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
@@ -303,6 +304,8 @@ export function startServer() {
         const rawContent = 'content' in body ? String(body.content) : '';
         const buf = Buffer.from(rawContent, 'utf-8');
         if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
+        // 确保父目录存在
+        mkdirSync(dirname(check.resolved), { recursive: true });
         writeFileSync(check.resolved, rawContent, 'utf-8');
 
         // 如果写入的是脚本文件，剥离执行权限防止直接运行
@@ -358,6 +361,44 @@ export function startServer() {
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size });
         return jsonResponse(res, 200, { success: true, path: check.resolved });
+      }
+
+      // 在本地浏览器中打开文件
+      if (pathname === '/api/browser/open') {
+        const targetPath = body.path;
+        if (!targetPath || typeof targetPath !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        }
+        const check = checkPath(targetPath);
+        if (!check.allowed) {
+          logSecurity('browser_open_blocked', { path: targetPath, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        if (!existsSync(check.resolved)) {
+          return jsonResponse(res, 404, { success: false, error: '文件不存在' });
+        }
+
+        const fileUrl = `file://${check.resolved}`;
+        let openCmd;
+        const platform = os.platform();
+        if (platform === 'darwin') {
+          openCmd = `open "${fileUrl}"`;
+        } else if (platform === 'win32') {
+          openCmd = `start "" "${fileUrl}"`;
+        } else {
+          openCmd = `xdg-open "${fileUrl}"`;
+        }
+
+        exec(openCmd, (err) => {
+          if (err) {
+            logError('browser_open', { path: check.resolved, error: err.message });
+            // exec 是异步回调，这里无法直接在回调中响应
+            // 但实际上如果能执行命令，浏览器大概率会成功打开
+          }
+        });
+
+        logFs('browser_open', { path: check.resolved, platform });
+        return jsonResponse(res, 200, { success: true, path: check.resolved, platform });
       }
 
       // === 命令执行 ===

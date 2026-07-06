@@ -2396,20 +2396,58 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     }
     
     console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
-    
+
+    // ── 尝试通过 Agent 写入本地文件并使用本地浏览器打开 ──
+    let localOpened = false;
+    let localPath = null;
+
+    try {
+      const config = await AgentClient.getAgentConfig();
+      if (config.connected) {
+        const relativePath = `prototypes/${newPrototypeId}/index.html`;
+        const writeResult = await AgentClient.writeFile(relativePath, html.trim());
+
+        if (writeResult.success) {
+          localPath = writeResult.path; // agent 返回的绝对路径
+          console.log('[Background] 原型已写入本地:', localPath);
+
+          // 更新 IndexedDB 记录，保存 localPath（包含完整数据，避免覆盖）
+          await saveUiPrototype({ ...prototypeData, localPath });
+
+          // 尝试在本地浏览器打开
+          const openResult = await AgentClient.openBrowser(localPath);
+          if (openResult.success) {
+            localOpened = true;
+            console.log('[Background] 原型已在本地浏览器打开:', localPath);
+          } else {
+            console.warn('[Background] 本地浏览器打开失败:', openResult.error);
+          }
+        } else {
+          console.warn('[Background] Agent 本地文件写入失败:', writeResult.error);
+        }
+      }
+    } catch (err) {
+      // 写入或打开失败，不影响主流程，走兜底
+      console.warn('[Background] Agent 本地原型写入/打开失败，回退到 Side Panel:', err.message);
+    }
+
     chrome.runtime.sendMessage({
       type: 'SHOW_UI_PROTOTYPE',
       data: {
         prototypeId: newPrototypeId,
         title: prototypeData.title,
-        description: prototypeData.description
+        description: prototypeData.description,
+        localOpened,   // 是否已在本地浏览器打开
+        localPath,     // 本地文件路径
       }
     }).catch(() => {});
     
     return { 
       success: true, 
-      message: `UI 原型 "${title}" 已创建并预览`,
+      message: localOpened ? `UI 原型 "${title}" 已创建并在本地浏览器打开` : `UI 原型 "${title}" 已创建并预览`,
       prototypeId: newPrototypeId,
+      localOpened,
+      localPath,
       tool_call_id: toolCallId 
     };
   } catch (err) {

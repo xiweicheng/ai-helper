@@ -152,6 +152,15 @@ async function writeFile(filePath, content) {
   return agentRequest('/api/fs/write', { path: filePath, content });
 }
 
+/**
+ * 在本地浏览器中打开文件
+ * @param {string} filePath - 文件的绝对路径
+ * @returns {Promise<{success: boolean, path?: string, error?: string}>}
+ */
+async function openBrowser(filePath) {
+  return agentRequest('/api/browser/open', { path: filePath });
+}
+
 async function listDir(dirPath) {
   return agentRequest('/api/fs/list', { path: dirPath });
 }
@@ -439,6 +448,7 @@ export {
   agentRequest,
   readFile,
   writeFile,
+  openBrowser,
   listDir,
   deleteFile,
   searchFiles,

@@ -548,6 +548,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return false;
   }
+  // 在本地浏览器打开原型文件
+  if (message.type === 'OPEN_LOCAL_PROTOTYPE') {
+    (async () => {
+      const result = await AgentClient.openBrowser(message.path);
+      sendResponse(result);
+    })();
+    return true; // 异步响应
+  }
+  // 删除本地原型文件
+  if (message.type === 'DELETE_LOCAL_PROTOTYPE') {
+    (async () => {
+      try {
+        const dirPath = message.path.replace(/\/[^/]+\.html$/, '');
+        const result = await AgentClient.deleteFile(dirPath);
+        if (result.success) {
+          console.log('[Background] 本地原型文件已删除:', dirPath);
+        } else {
+          console.warn('[Background] 本地原型文件删除失败:', result.error);
+        }
+        sendResponse(result);
+      } catch (err) {
+        console.warn('[Background] 本地原型文件删除失败:', err.message);
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
 });
 
 // 处理选中文本的 AI 搜索：存储搜索结果并通知 Side Panel

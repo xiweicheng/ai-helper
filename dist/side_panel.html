@@ -4946,6 +4946,31 @@
       height: 14px;
     }
     
+    .prototype-library-item-local-open {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #999;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .prototype-library-item-local-open:hover {
+      background: rgba(102, 187, 106, 0.1);
+      color: #66bb6a;
+    }
+    
+    .prototype-library-item-local-open svg {
+      width: 14px;
+      height: 14px;
+    }
+    
     .prototype-library-item-optimize {
       display: flex;
       align-items: center;
@@ -6957,6 +6982,7 @@
         <div class="prototype-footer-left">
           <button class="prototype-footer-btn" id="prototypeDownloadBtn" title="下载">📥</button>
           <button class="prototype-footer-btn" id="prototypeOpenTabBtn" title="新标签页打开">🔗</button>
+          <button class="prototype-footer-btn" id="prototypeLocalOpenBtn" title="本地浏览器打开" style="display:none;">🖥</button>
         </div>
         <button class="prototype-footer-primary" id="prototypeContinueBtn">💡 继续优化</button>
       </div>

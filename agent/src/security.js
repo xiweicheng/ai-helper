@@ -81,9 +81,24 @@ function checkPath(pathStr) {
       realPath = realpathSync(resolved);
     } catch (err) {
       if (err.code === 'ENOENT') {
-        // 文件不存在时，检查父目录
-        const parentDir = resolve(resolved, '..');
-        realPath = realpathSync(parentDir) + sep + normalized.split(sep).pop();
+        // 文件/目录不存在时，向上查找直到找到存在的父目录
+        let existing = resolved;
+        while (existing !== sep && existing !== '' && existing !== '/') {
+          const parent = resolve(existing, '..');
+          try {
+            realPath = realpathSync(parent) + sep + normalized.slice(resolve(parent).length).replace(/^[/\\]/, '');
+            break;
+          } catch (parentErr) {
+            if (parentErr.code === 'ENOENT') {
+              existing = parent;
+              continue;
+            }
+            return { allowed: false, reason: `无法解析路径: ${parentErr.message}` };
+          }
+        }
+        if (!realPath) {
+          return { allowed: false, reason: `路径检查异常: ${err.message}` };
+        }
       } else {
         return { allowed: false, reason: `无法解析路径: ${err.message}` };
       }

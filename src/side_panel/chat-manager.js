@@ -1460,10 +1460,20 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
     if (prototypeCall) {
+      // 判断是否已在本地浏览器打开
+      let localOpened = false;
+      if (prototypeCall.observation) {
+        try {
+          const obs = typeof prototypeCall.observation === 'string' 
+            ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+          localOpened = obs?.localOpened === true;
+        } catch (e) {}
+      }
+
       const prototypeBtn = document.createElement('button');
       prototypeBtn.className = 'prototype-btn-small';
       prototypeBtn.type = 'button';
-      prototypeBtn.title = '查看 UI 原型';
+      prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
       prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
       prototypeBtn.addEventListener('click', () => {
         // 多种方式尝试获取 prototypeId

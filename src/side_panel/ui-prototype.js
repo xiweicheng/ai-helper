@@ -40,6 +40,7 @@ export function showUiPrototypeDialog(prototypeData) {
   const titleEl = document.getElementById('prototypeTitle');
   const descEl = document.getElementById('prototypeDescription');
   const iframeEl = document.getElementById('prototypeIframe');
+  const localOpenBtn = document.getElementById('prototypeLocalOpenBtn');
   
   if (titleEl) {
     titleEl.textContent = prototypeData.title || 'UI 原型预览';
@@ -52,6 +53,16 @@ export function showUiPrototypeDialog(prototypeData) {
   
   if (iframeEl && prototypeData.html) {
     iframeEl.srcdoc = wrapPrototypeHtml(prototypeData.html);
+  }
+
+  // 有本地文件路径时显示"本地浏览器打开"按钮
+  if (localOpenBtn) {
+    if (prototypeData.localPath) {
+      localOpenBtn.style.display = '';
+      localOpenBtn.dataset.path = prototypeData.localPath;
+    } else {
+      localOpenBtn.style.display = 'none';
+    }
   }
   
   const overlay = document.getElementById('prototypeOverlay');
@@ -194,9 +205,14 @@ function renderPrototypeLibraryList(prototypes) {
             </div>
           </div>
           <div class="prototype-library-item-actions">
-            <button class="prototype-library-item-open" title="打开">
+            <button class="prototype-library-item-open" title="面板内预览">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
+            ${p.localPath ? `
+            <button class="prototype-library-item-local-open" data-path="${escapeHtml(p.localPath)}" title="在本地浏览器打开">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
+            ` : ''}
             <button class="prototype-library-item-optimize" data-id="${p.id}" title="继续优化">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
@@ -211,6 +227,7 @@ function renderPrototypeLibraryList(prototypes) {
       listEl.querySelectorAll('.prototype-library-item').forEach(item => {
         const infoArea = item.querySelector('.prototype-library-item-info');
         const openBtn = item.querySelector('.prototype-library-item-open');
+        const localOpenBtn = item.querySelector('.prototype-library-item-local-open');
         const optimizeBtn = item.querySelector('.prototype-library-item-optimize');
         const deleteBtn = item.querySelector('.prototype-library-item-delete');
         
@@ -228,6 +245,18 @@ function renderPrototypeLibraryList(prototypes) {
             const id = item.dataset.id;
             loadAndShowPrototype(id);
             hidePrototypeLibrary();
+          });
+        }
+
+        if (localOpenBtn) {
+          localOpenBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const path = localOpenBtn.dataset.path;
+            chrome.runtime.sendMessage({ type: 'OPEN_LOCAL_PROTOTYPE', path }, (response) => {
+              if (!response?.success) {
+                console.error('[SidePanel] 本地浏览器打开失败:', response?.error);
+              }
+            });
           });
         }
         
@@ -329,8 +358,26 @@ async function deletePrototypeItem(prototypeId, title) {
   if (!confirmed) return;
   
   try {
+    // 删除前先获取原型数据，检查是否有本地文件
+    const prototype = await getUiPrototype(prototypeId);
+    
     await deleteUiPrototype(prototypeId);
     console.log('[SidePanel] 原型已删除:', prototypeId);
+
+    // 级联删除本地文件
+    if (prototype?.localPath) {
+      chrome.runtime.sendMessage(
+        { type: 'DELETE_LOCAL_PROTOTYPE', path: prototype.localPath },
+        (response) => {
+          if (response?.success) {
+            console.log('[SidePanel] 本地原型文件已删除:', prototype.localPath);
+          } else {
+            console.warn('[SidePanel] 本地原型文件删除失败:', response?.error);
+          }
+        }
+      );
+    }
+
     showPrototypeLibrary();
   } catch (err) {
     console.error('[SidePanel] 删除原型失败:', err);
@@ -482,6 +529,20 @@ export function initPrototypeEvents() {
   if (openTabBtn) {
     openTabBtn.addEventListener('click', openPrototypeInNewTab);
   }
+
+  const localOpenBtn = document.getElementById('prototypeLocalOpenBtn');
+  if (localOpenBtn) {
+    localOpenBtn.addEventListener('click', () => {
+      const path = localOpenBtn.dataset.path;
+      if (path) {
+        chrome.runtime.sendMessage({ type: 'OPEN_LOCAL_PROTOTYPE', path }, (response) => {
+          if (!response?.success) {
+            console.error('[SidePanel] 本地浏览器打开失败:', response?.error);
+          }
+        });
+      }
+    });
+  }
   
   const continueBtn = document.getElementById('prototypeContinueBtn');
   if (continueBtn) {
@@ -521,7 +582,12 @@ export function initPrototypeEvents() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_UI_PROTOTYPE') {
       console.log('[SidePanel] 收到显示原型请求:', message);
-      loadAndShowPrototype(message.data.prototypeId);
+      // 如果已在本地浏览器打开，不自动弹窗（用户可通过圆形按钮手动打开）
+      if (!message.data.localOpened) {
+        loadAndShowPrototype(message.data.prototypeId);
+      } else {
+        console.log('[SidePanel] 原型已在本地浏览器打开，跳过弹窗');
+      }
       sendResponse({ success: true });
     }
   });
