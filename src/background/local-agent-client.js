@@ -2,6 +2,32 @@
 // 封装与代理服务的 HTTP 和 WebSocket 通信
 
 /**
+ * 代理服务可达性状态
+ * null = 尚未检测（未知），true = 可达，false = 不可达
+ * 由 background/index.js 中的健康检查周期性更新
+ */
+let _agentReachable = null;
+
+/**
+ * 设置代理可达性状态
+ * @param {boolean} reachable
+ */
+function setAgentReachable(reachable) {
+  if (_agentReachable !== reachable) {
+    console.log('[AgentClient] 代理可达性变更:', reachable ? '可达' : '不可达');
+  }
+  _agentReachable = reachable;
+}
+
+/**
+ * 查询代理是否可达
+ * @returns {boolean|null} null=未知, true=可达, false=不可达
+ */
+function isAgentReachable() {
+  return _agentReachable;
+}
+
+/**
  * 获取代理 连接配置
  * @returns {Promise<{url: string|null, token: string|null, connected: boolean}>}
  */
@@ -67,6 +93,11 @@ async function agentRequest(path, body = {}, method = 'POST') {
     return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
   }
 
+  // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
+  if (_agentReachable === false) {
+    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+  }
+
   try {
     const fetchOptions = {
       method,
@@ -96,6 +127,12 @@ async function agentGet(path) {
   if (!config.connected) {
     return { success: false, error: 'Agent 未配对' };
   }
+
+  // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
+  if (_agentReachable === false) {
+    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+  }
+
   try {
     const response = await fetch(`${config.url}${path}`, {
       method: 'GET',
@@ -193,6 +230,12 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
   const config = await getAgentConfig();
   if (!config.connected) {
     if (onError) onError(new Error('Agent 未配对'));
+    return null;
+  }
+
+  // 代理服务已知不可达时，直接返回 null，避免阻塞等待超时
+  if (_agentReachable === false) {
+    if (onError) onError(new Error('代理服务未连接，请确认代理服务已启动'));
     return null;
   }
 
@@ -387,6 +430,8 @@ async function importSkillFromUrl(url) {
 }
 
 export {
+  setAgentReachable,
+  isAgentReachable,
   getAgentConfig,
   isAgentPaired,
   pairWithAgent,

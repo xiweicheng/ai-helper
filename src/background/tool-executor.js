@@ -205,6 +205,7 @@ async function checkAgentConnectivity() {
   const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
   if (!storage.agentUrl || !storage.agentToken) {
     agentConnectivityCache = { connected: false, checkedAt: now };
+    AgentClient.setAgentReachable(false);
     return false;
   }
 
@@ -218,10 +219,12 @@ async function checkAgentConnectivity() {
     clearTimeout(timeoutId);
     const connected = response.ok;
     agentConnectivityCache = { connected, checkedAt: now };
+    AgentClient.setAgentReachable(connected);
     console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
     return connected;
   } catch (err) {
     agentConnectivityCache = { connected: false, checkedAt: now };
+    AgentClient.setAgentReachable(false);
     console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
     return false;
   }

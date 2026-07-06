@@ -468,7 +468,24 @@ async function renderAgentToolSelector(selectedToolIds) {
     mcpTools = result.mcpTools || [];
   } catch { /* ignore */ }
 
-  const allTools = [...BUILTIN_TOOLS, ...mcpTools];
+  // 读取全局开关和 Agent 连接状态
+  const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
+  const agentConnected = state.agentPlatform?.connected === true;
+
+  let allTools = [...BUILTIN_TOOLS, ...mcpTools];
+
+  // Agent 未连接时，隐藏所有 agent_* 和 mcp_* 工具
+  if (!agentConnected) {
+    allTools = allTools.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_'));
+  }
+  // MCP 全局开关关闭时，隐藏 MCP 工具
+  if (mcpEnabled === false) {
+    allTools = allTools.filter(t => !t.id.startsWith('mcp_'));
+  }
+  // Skill 全局开关关闭时，隐藏 Skill 相关工具
+  if (skillsEnabled === false) {
+    allTools = allTools.filter(t => t.id !== 'agent_skill_run' && t.id !== 'agent_skill_load');
+  }
 
   const selectedSet = new Set(selectedToolIds || []);
   const categoryNames = {

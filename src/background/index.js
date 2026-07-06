@@ -636,6 +636,7 @@ async function performAgentHealthCheck() {
       if (wasAgentConnected !== false) {
         wasAgentConnected = false;
         clearAgentConnectivityCache();
+        AgentClient.setAgentReachable(false);
         notifyAgentStatusChange(false, '未配对');
       }
       return;
@@ -656,6 +657,7 @@ async function performAgentHealthCheck() {
     if (wasAgentConnected !== connected) {
       wasAgentConnected = connected;
       clearAgentConnectivityCache();
+      AgentClient.setAgentReachable(connected);
       const status = connected ? 'connected' : 'disconnected';
       const detail = connected ? '代理服务已恢复' : '代理服务不可达';
       console.log(`[Background] 代理健康检查状态变化: ${detail}`);

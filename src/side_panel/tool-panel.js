@@ -95,6 +95,11 @@ function getAgentFilteredTools() {
   if (!globalSkillsEnabled) {
     filtered = filtered.filter(t => t.id !== 'agent_skill_run' && t.id !== 'agent_skill_load');
   }
+  // Agent 未连接时，隐藏所有 agent_* 和 mcp_* 工具（依赖代理服务的工具）
+  const agentConnected = state.agentPlatform?.connected === true;
+  if (!agentConnected) {
+    filtered = filtered.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_'));
+  }
   return filtered;
 }
 
@@ -519,5 +524,20 @@ export {
   updateToolsPopupTitle,
   saveToolsFromPopup,
   updateToolsToggleState,
-  getAgentFilteredTools
+  getAgentFilteredTools,
+  refreshToolPopupIfOpen
 };
+
+/**
+ * 如果工具弹窗当前打开，刷新列表、标签、标题和按钮状态
+ * 用于 Agent 连接状态变化等场景
+ */
+function refreshToolPopupIfOpen() {
+  const overlay = document.getElementById('toolsPopupOverlay');
+  if (overlay?.classList.contains('show')) {
+    updateCategoryBadges();
+    updateToolsPopupTitle();
+    updateToolsToggleState();
+    renderToolsPopupList();
+  }
+}

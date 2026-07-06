@@ -43,7 +43,8 @@ import {
 import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
-  updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState
+  updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
+  refreshToolPopupIfOpen
 } from './tool-panel.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
 
@@ -611,6 +612,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.local.get('agentPlatform', (result) => {
         state.agentPlatform = result.agentPlatform || { connected: false };
         updateAgentIndicator(state.agentPlatform);
+        // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
+        refreshToolPopupIfOpen();
       });
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
@@ -618,6 +621,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('[SidePanel] 收到 Agent 连接状态变更:', message.connected);
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
       updateAgentIndicator(state.agentPlatform);
+      // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
+      refreshToolPopupIfOpen();
     }
   });
 
