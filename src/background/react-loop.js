@@ -1880,6 +1880,7 @@ function getToolReflectionPriority(toolName, toolResultStr, consecutiveFailCount
  * 判断工具结果是否触发工具级反思
  */
 function shouldTriggerToolReflection(toolResultStr, failCountInIteration, reflectionConfig) {
+  if (!reflectionConfig?.enabled) return false;
   if (!reflectionConfig?.toolReflection?.enabled) return false;
   const tc = reflectionConfig.toolReflection;
 
@@ -2240,6 +2241,7 @@ async function reflectOnResult(messages, answer, executionLog, model, config, re
  * 工具级反思：对单个工具执行结果进行快速评估
  */
 async function reflectOnToolResult(toolName, toolResultStr, toolCallParams, config, model, reflectionConfig, executionLog, iteration) {
+  if (!reflectionConfig?.enabled) return null;
   const tc = reflectionConfig.toolReflection;
   if (!tc?.enabled) return null;
 
