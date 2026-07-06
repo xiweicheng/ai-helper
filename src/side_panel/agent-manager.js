@@ -4,6 +4,7 @@ import { getAllAgents, createAgent, updateAgent, deleteAgent, getAgent, setActiv
 import { AGENT_TEMPLATES } from '../shared/agent-defaults.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { showToast } from './utils.js';
+import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
 
 /**
@@ -25,9 +26,16 @@ async function loadAgentState() {
     getActiveAgentId(),
     getAllAgents(),
   ]);
-  state.activeAgentId = activeId;
+  // 如果会话已加载了 agentId，以会话绑定的为准，不覆盖
+  if (!state.activeSessionId) {
+    state.activeAgentId = activeId;
+  }
   state.customAgents = allAgents.filter(a => !a.isBuiltin);
-  console.log('[AgentMgr] Agent 状态已加载, activeAgentId:', activeId, 'total:', allAgents.length);
+  // 初始化当前智能体的工具限定列表
+  const currentAgentId = state.activeAgentId || activeId;
+  const activeAgent = allAgents.find(a => a.id === currentAgentId || (!currentAgentId && a.id === 'default'));
+  state.activeAgentToolIds = activeAgent ? activeAgent.toolIds : null;
+  console.log('[AgentMgr] Agent 状态已加载, activeAgentId:', state.activeAgentId, 'total:', allAgents.length, 'toolIds:', state.activeAgentToolIds);
 }
 
 /**
@@ -192,7 +200,36 @@ export async function switchAgent(agentId) {
   state.activeAgentId = agentId;
   state.activeAgentToolIds = agent ? agent.toolIds : null;
   await setActiveAgentId(agentId);
+  // 立即保存当前会话，确保刷新后数据不丢失
+  saveCurrentSession().catch(() => {});
   await renderAgentSelector();
+
+  // 加载当前智能体的工具启用/禁用状态
+  const mcpToolsResult = await chrome.storage.local.get(['mcpTools']);
+  const mcpTools = mcpToolsResult.mcpTools || [];
+  const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
+  const saved = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
+  const isAgentSpecific = !!saved[agentToolsKey]; // 是否命中 agent-specific key
+  const savedTools = saved[agentToolsKey] || saved.enabledTools;
+  if (savedTools && savedTools.length > 0) {
+    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+    const existing = savedTools.filter(id => validToolIds.has(id));
+    if (isAgentSpecific) {
+      // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
+      const newMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...existing, ...newMcp];
+    } else {
+      // 全局降级：保留自动添加新 builtin 工具的行为
+      const newBuiltin = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
+      const newMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...existing, ...newBuiltin, ...newMcp];
+    }
+    if (state.enabledTools.length !== savedTools.length) {
+      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+    }
+  } else {
+    state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+  }
   
   // 如果工具弹窗打开，联动刷新（Agent 限定范围变化）
   const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');

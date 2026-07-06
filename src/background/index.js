@@ -178,7 +178,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     const apiCall = useTools 
       ? (async () => {
-          const tools = await getTools(agentToolIds);
+          const tools = await getTools(agentToolIds, agentId);
 
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {

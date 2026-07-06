@@ -132,6 +132,8 @@ export async function loadChatHistory() {
       }
       state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
       state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
+      // 恢复会话绑定的智能体 ID
+      state.activeAgentId = activeSession.agentId || null;
     }
     
     state.messageHistory.forEach(msg => {

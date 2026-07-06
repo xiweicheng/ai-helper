@@ -20,7 +20,6 @@ const EXPORT_KEYS = [
   'streamEnabled', 'streamChunkDelay',
   // 新增：助手、工具、LLM参数、UI开关等配置
   'customAgents', 'activeAgentId',
-  'enabledTools',
   'temperature', 'topP', 'selectedTempIndex',
   'customPrompts',
   'agentUrl', 'agentPlatform', 'agentStreamEnabled',
@@ -41,10 +40,18 @@ async function collectConfig(includeSecrets) {
   const allKeys = includeSecrets ? [...EXPORT_KEYS, ...SECRET_KEYS] : EXPORT_KEYS;
   
   return new Promise((resolve) => {
-    chrome.storage.local.get(allKeys, (result) => {
+    // 获取所有 storage 数据，以便收集动态 key（如 agentEnabledTools_*）
+    chrome.storage.local.get(null, (result) => {
       const config = {};
+      // 静态白名单 key
       for (const key of allKeys) {
         if (result[key] !== undefined) {
+          config[key] = result[key];
+        }
+      }
+      // 收集所有智能体独立的工具配置 key
+      for (const key of Object.keys(result)) {
+        if (key.startsWith('agentEnabledTools_')) {
           config[key] = result[key];
         }
       }
@@ -176,9 +183,9 @@ function validateImportData(data) {
     return { valid: false, error: '无法识别的配置格式' };
   }
 
-  // 校验每个 key 都在白名单内
+  // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）
   for (const key of Object.keys(config)) {
-    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key)) {
+    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_')) {
       return { valid: false, error: `未知的配置项: ${key}` };
     }
   }

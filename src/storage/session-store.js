@@ -4,7 +4,6 @@
 
 import * as idb from './db.js';
 import state from '../side_panel/state.js';
-import { BUILTIN_TOOLS } from '../side_panel/constants.js';
 
 let migrated = false;
 
@@ -269,18 +268,16 @@ export async function switchToSession(sessionId) {
   state.messageHistory = targetSession.messageHistory || [];
   state.currentModel = targetSession.model || state.currentModel;
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
-  // 合并会话的 enabledTools：保留已有选择，自动添加新工具
-  if (targetSession.enabledTools && targetSession.enabledTools.length > 0) {
-    const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-    const saved = targetSession.enabledTools.filter(id => validIds.has(id) || id.startsWith('mcp_'));
-    const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
-    state.enabledTools = [...saved, ...added];
-  } else {
-    state.enabledTools = targetSession.enabledTools || state.enabledTools;
-  }
+  // enabledTools 由智能体独立 key 管理，会话切换时不再从此处恢复
   state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.activeAgentId = targetSession.agentId || null;
+  // 持久化当前智能体 ID，避免刷新后丢失
+  if (targetSession.agentId) {
+    chrome.storage.local.set({ activeAgentId: targetSession.agentId });
+  } else {
+    chrome.storage.local.remove('activeAgentId');
+  }
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
   // 仅当 pendingCallApiSessionIds 中也存在该 session 时才恢复，防止 SW 重启后
   // DB 中残留的 isGenerating=true 导致虚假的"生成中"状态

@@ -661,14 +661,31 @@ async function handleSessionSwitch(sessionId) {
     state.messageHistory = activeSession.messageHistory || [];
     state.currentModel = activeSession.model || state.currentModel;
     state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
-    // 合并会话的 enabledTools：保留已有选择，自动添加新工具
-    if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
-      const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-      const saved = activeSession.enabledTools.filter(id => validIds.has(id) || id.startsWith('mcp_'));
-      const added = BUILTIN_TOOLS.filter(t => t.enabled && !saved.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...saved, ...added];
+    // 从当前智能体的独立存储中加载工具配置（而非会话级别的旧 enabledTools）
+    const mcpToolsResult = await chrome.storage.local.get(['mcpTools']);
+    const mcpTools = mcpToolsResult.mcpTools || [];
+    const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+    const savedResult = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
+    const isAgentSpecific = !!savedResult[agentToolsKey]; // 是否命中 agent-specific key
+    const savedTools = savedResult[agentToolsKey] || savedResult.enabledTools;
+    if (savedTools && savedTools.length > 0) {
+      const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      const existing = savedTools.filter(id => validIds.has(id));
+      if (isAgentSpecific) {
+        // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
+        const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+        state.enabledTools = [...existing, ...addedMcp];
+      } else {
+        // 全局降级：旧的 global enabledTools，保留自动添加新 builtin 工具的行为
+        const added = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
+        const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+        state.enabledTools = [...existing, ...added, ...addedMcp];
+      }
+      if (state.enabledTools.length !== savedTools.length) {
+        chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      }
     } else {
-      state.enabledTools = activeSession.enabledTools || state.enabledTools;
+      state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
     }
     state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
     state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;

@@ -1688,8 +1688,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const enableToolsBtn = document.getElementById('enableToolsBtn');
   const toolsConfigBtn = document.getElementById('toolsConfigBtn');
 
-  // 加载保存的状态
-  chrome.storage.local.get(['isolateChat', 'enableSelectionQuery', 'enableTools', 'enabledTools', 'mcpTools'], (result) => {
+  // 加载保存的状态（每个智能体独立的已启用工具列表）
+  const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', 'mcpTools'], (result) => {
+    // 优先读取 agent-specific key，降级到旧的全局 enabledTools（兼容旧数据）
     if (result.isolateChat !== undefined) {
       state.isolateChat = result.isolateChat;
     }
@@ -1707,20 +1709,28 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.useTools = result.enableTools;
     }
 
-    if (result.enabledTools && result.enabledTools.length > 0) {
-      // 合并：过滤掉不存在的 ID（内置 + MCP），添加默认启用的新工具
+    // 读取当前智能体的工具配置：优先 agent-specific key，降级到全局 enabledTools
+    const savedAgentTools = result[agentToolsKey];
+    const fallbackTools = result.enabledTools;
+    if (savedAgentTools && savedAgentTools.length > 0) {
+      // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
       const mcpTools = result.mcpTools || [];
       const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
-      const savedTools = result.enabledTools.filter(id => validToolIds.has(id));
-      // 添加新工具（BUILTIN_TOOLS 中有但 savedTools 中没有的，默认启用）
+      const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
+      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...savedTools, ...newMcpTools];
+      if (newMcpTools.length > 0) {
+        chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      }
+    } else if (fallbackTools && fallbackTools.length > 0) {
+      // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
+      const mcpTools = result.mcpTools || [];
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
-      // MCP 工具始终默认启用（不在 savedTools 中的为新工具）
       const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
       state.enabledTools = [...savedTools, ...newBuiltinTools, ...newMcpTools];
-      if (newBuiltinTools.length > 0 || newMcpTools.length > 0) {
-        // 有新增工具，自动保存合并后的列表
-        chrome.storage.local.set({ enabledTools: state.enabledTools });
-      }
+      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
     } else {
       const mcpTools = result.mcpTools || [];
       state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
@@ -1765,7 +1775,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (state.useTools && state.enabledTools.length === 0) {
         state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
-        chrome.storage.local.set({ enabledTools: state.enabledTools });
+        const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+        chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
 
       console.log('[SidePanel] 工具总开关:', state.useTools ? '已启用' : '已禁用');

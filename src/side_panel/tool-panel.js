@@ -460,9 +460,10 @@ function saveToolsFromPopup() {
   state.enabledTools = newEnabledTools;
   state.useTools = state.enabledTools.length > 0;
   
-  // 保存到 storage
-  chrome.storage.local.set({ enabledTools: state.enabledTools }, () => {
-    console.log('[SidePanel] 工具配置已保存:', state.enabledTools);
+  // 保存到当前智能体独立的 storage key
+  const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+  chrome.storage.local.set({ [agentToolsKey]: state.enabledTools }, () => {
+    console.log('[SidePanel] 工具配置已保存到智能体:', agentToolsKey, state.enabledTools);
   });
   
   // 同步更新当前会话的 enabledTools，避免下次加载时被旧会话数据覆盖

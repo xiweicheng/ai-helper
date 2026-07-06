@@ -235,10 +235,12 @@ async function checkAgentConnectivity() {
  * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
  * @param {string[]|null} agentToolIds - Agent 指定的工具 ID 列表，null = 使用全局 enabledTools
  */
-export async function getTools(agentToolIds = null) {
+export async function getTools(agentToolIds = null, agentId = null) {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['enabledTools', 'enableImageInput'], async (result) => {
-      let enabledTools = result.enabledTools;
+    const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
+    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput'], async (result) => {
+      // 优先读取 agent-specific key，降级到旧的全局 enabledTools
+      let enabledTools = result[agentToolsKey] || result.enabledTools;
       
       // 如果没有保存的配置，使用默认值（全部启用）
       if (!enabledTools || !Array.isArray(enabledTools) || enabledTools.length === 0) {
