@@ -1,6 +1,6 @@
 // skill/registry.js - Skill 注册表
 // 管理所有已加载的 Skill（Workflow + Agent），提供查询和执行接口
-import { loadAllSkills, saveSkillFile, deleteSkillFile, getBuiltinSkills, deleteMarkdownSkillDir } from './loader.js';
+import { loadAllSkills, saveSkillFile, deleteSkillFile, getBuiltinSkills, seedSkillCreator, deleteMarkdownSkillDir } from './loader.js';
 import { executeSkill } from './executor.js';
 import { SKILLS_DIR } from './loader.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -44,6 +44,9 @@ function saveBuiltinState(state) {
  */
 export function initializeSkillRegistry() {
   skills.clear();
+
+  // 0. 种子写入 skill-creator 到文件系统（首次运行或版本升级时）
+  seedSkillCreator();
 
   // 1. 加载文件系统中的技能
   const loaded = loadAllSkills();
