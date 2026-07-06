@@ -797,8 +797,14 @@ function setupCodeCtrlClick() {
     // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac）
     if (!e.ctrlKey && !e.metaKey) return;
 
-    // 点击目标是 <code> 元素
-    const codeEl = e.target.closest('code');
+    // 点击目标是 <code> 元素，或代码块容器内的任意位置
+    let codeEl = e.target.closest('code');
+    if (!codeEl) {
+      const container = e.target.closest('.code-block-container');
+      if (container) {
+        codeEl = container.querySelector('code');
+      }
+    }
     if (!codeEl) return;
 
     // 排除复制按钮区域内的点击（按钮自己的点击事件会 stopPropagation）
