@@ -64,31 +64,33 @@ function showAgentSkillViewer(skillName, data) {
   modalContainer.innerHTML = `
     <div class="modal-header">
       <h3>查看 Skill: ${escapeHtml(skillName)}</h3>
-      <button class="modal-close-btn">&times;</button>
+      <button class="modal-close-btn">✕</button>
     </div>
-    <div class="form-group">
-      <label>名称</label>
-      <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:#f5f5f5;color:#666;">
-    </div>
-    <div class="form-group">
-      <label>描述</label>
-      <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:#f5f5f5;color:#666;">
-    </div>
-    <div class="form-group">
-      <label>版本</label>
-      <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:#f5f5f5;color:#666;">
-    </div>
-    <div class="form-group">
-      <label>SKILL.md 内容（只读）</label>
-      <textarea readonly style="min-height: 350px; font-family: monospace; background:#f5f5f5; color:#666; resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
-    </div>
-    ${data.resources && data.resources.length > 0 ? `
-    <div class="form-group">
-      <label>资源文件</label>
-      <div class="skill-resource-list">
-        ${data.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name || r)}</span>`).join('')}
+    <div class="modal-body">
+      <div class="form-group">
+        <label>名称</label>
+        <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:#f5f5f5;color:#666;">
       </div>
-    </div>` : ''}
+      <div class="form-group">
+        <label>描述</label>
+        <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:#f5f5f5;color:#666;">
+      </div>
+      <div class="form-group">
+        <label>版本</label>
+        <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:#f5f5f5;color:#666;">
+      </div>
+      <div class="form-group">
+        <label>SKILL.md 内容（只读）</label>
+        <textarea readonly style="min-height: 350px; font-family: monospace; background:#f5f5f5; color:#666; resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
+      </div>
+      ${data.resources && data.resources.length > 0 ? `
+      <div class="form-group">
+        <label>资源文件</label>
+        <div class="skill-resource-list">
+          ${data.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name || r)}</span>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>
     <div class="modal-actions">
       <button class="btn btn-primary" id="closeAgentSkillViewerBtn" style="width: auto;">关闭</button>
     </div>
@@ -99,9 +101,6 @@ function showAgentSkillViewer(skillName, data) {
 
   const closeModal = () => modalOverlay.remove();
   modalOverlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', (e) => {
-    if (e.target === modalOverlay) closeModal();
-  });
   modalOverlay.querySelector('#closeAgentSkillViewerBtn').addEventListener('click', closeModal);
 }
 
@@ -893,24 +892,25 @@ function showAgentSkillEditor(skillName, existingData = null) {
   modalContainer.innerHTML = `
     <div class="modal-header">
       <h3>${isEdit ? '编辑 Agent Skill' : '新建 Agent Skill'}</h3>
-      <button class="modal-close-btn">&times;</button>
+      <button class="modal-close-btn">✕</button>
     </div>
-    <div class="form-group">
-      <label>Skill 名称</label>
-      <input type="text" id="agentSkillName" placeholder="e.g. code-review" value="${escapeHtml(isEdit ? existingData.name : '')}" ${isEdit ? 'readonly' : ''}>
-    </div>
-    <div class="form-group">
-      <label>描述</label>
-      <input type="text" id="agentSkillDesc" placeholder="简要描述此 Skill 的功能" value="${escapeHtml(isEdit ? (existingData.frontmatter?.description || '') : '')}">
-    </div>
-    <div class="form-group">
-      <label>版本</label>
-      <input type="text" id="agentSkillVersion" placeholder="1.0" value="${escapeHtml(isEdit ? (existingData.frontmatter?.version || '1.0') : '1.0')}">
-    </div>
-    <div class="form-group">
-      <label>SKILL.md 内容（Markdown）</label>
-      <textarea id="agentSkillMarkdown" style="min-height: 300px; font-family: monospace;" placeholder="# Skill 名称&#10;&#10;## 何时使用&#10;- 条件1&#10;- 条件2&#10;&#10;## 执行步骤&#10;1. 步骤1&#10;2. 步骤2">${escapeHtml(isEdit ? (existingData.markdown || '') : '')}</textarea>
-    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Skill 名称</label>
+        <input type="text" id="agentSkillName" placeholder="e.g. code-review" value="${escapeHtml(isEdit ? existingData.name : '')}" ${isEdit ? 'readonly' : ''}>
+      </div>
+      <div class="form-group">
+        <label>描述</label>
+        <input type="text" id="agentSkillDesc" placeholder="简要描述此 Skill 的功能" value="${escapeHtml(isEdit ? (existingData.frontmatter?.description || '') : '')}">
+      </div>
+      <div class="form-group">
+        <label>版本</label>
+        <input type="text" id="agentSkillVersion" placeholder="1.0" value="${escapeHtml(isEdit ? (existingData.frontmatter?.version || '1.0') : '1.0')}">
+      </div>
+      <div class="form-group">
+        <label>SKILL.md 内容（Markdown）</label>
+        <textarea id="agentSkillMarkdown" style="min-height: 300px; font-family: monospace;" placeholder="# Skill 名称&#10;&#10;## 何时使用&#10;- 条件1&#10;- 条件2&#10;&#10;## 执行步骤&#10;1. 步骤1&#10;2. 步骤2">${escapeHtml(isEdit ? (existingData.markdown || '') : '')}</textarea>
+      </div>
       ${isEdit && existingData.resources && existingData.resources.length > 0 ? `
       <div class="form-group">
         <label>已有资源文件</label>
@@ -918,6 +918,7 @@ function showAgentSkillEditor(skillName, existingData = null) {
           ${existingData.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name)} (${r.size} 字节)</span>`).join('')}
         </div>
       </div>` : ''}
+    </div>
     <div class="modal-actions">
       <button class="btn btn-cancel" id="cancelAgentSkillBtn">取消</button>
       <button class="btn btn-primary" id="saveAgentSkillBtn" style="width: auto;">保存</button>
@@ -930,9 +931,6 @@ function showAgentSkillEditor(skillName, existingData = null) {
   // 关闭
   const closeModal = () => modalOverlay.remove();
   modalOverlay.querySelector('.modal-close-btn').addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', (e) => {
-    if (e.target === modalOverlay) closeModal();
-  });
   modalOverlay.querySelector('#cancelAgentSkillBtn').addEventListener('click', closeModal);
 
   // 保存

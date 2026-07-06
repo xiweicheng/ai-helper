@@ -1262,7 +1262,24 @@
     /* Agent Skill 编辑器容器 */
     .agent-skill-editor-container {
       max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .agent-skill-editor-container .modal-body {
+      flex: 1;
       overflow-y: auto;
+      padding-right: 4px;
+      margin-bottom: 16px;
+    }
+    .agent-skill-editor-container .modal-header {
+      position: relative;
+      justify-content: center;
+    }
+    .agent-skill-editor-container .modal-header .modal-close-btn {
+      position: absolute;
+      top: -4px;
+      right: -4px;
     }
     .skill-resource-list {
       display: flex;
