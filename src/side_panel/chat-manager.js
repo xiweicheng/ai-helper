@@ -3990,7 +3990,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
-        executionLog = message.executionLog || [];
+        const deltaLog = message.executionLog || [];
+        if (deltaLog.length > 0) {
+          deltaLog.forEach(newEntry => {
+            const existingIndex = executionLog.findIndex(existing => existing.id === newEntry.id);
+            if (existingIndex !== -1) {
+              executionLog[existingIndex] = { ...executionLog[existingIndex], ...newEntry };
+            } else {
+              executionLog.push(newEntry);
+            }
+          });
+        }
         return false;
       }
       
