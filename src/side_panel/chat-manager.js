@@ -10,7 +10,6 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs } from './session-manager-ui.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
-import { BUILTIN_TOOLS } from './constants.js';
 
 // ============================================================
 // pendingCallApiSessionIds 持久化帮助函数
@@ -119,17 +118,7 @@ export async function loadChatHistory() {
       state.messageHistory = activeSession.messageHistory || [];
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
-      // 合并会话的 enabledTools：保留已有选择，只自动添加全新工具（避免重新启用用户禁用的工具）
-      if (activeSession.enabledTools && activeSession.enabledTools.length > 0) {
-        const validIds = new Set(BUILTIN_TOOLS.map(t => t.id));
-        const saved = activeSession.enabledTools.filter(id => validIds.has(id) || id.startsWith('mcp_'));
-        // 只添加原会话中不存在的全新工具，避免将用户禁用的工具重新启用
-        const originalSavedSet = new Set(activeSession.enabledTools);
-        const added = BUILTIN_TOOLS.filter(t => t.enabled && !originalSavedSet.has(t.id)).map(t => t.id);
-        state.enabledTools = [...saved, ...added];
-      } else {
-        state.enabledTools = activeSession.enabledTools || state.enabledTools;
-      }
+      // enabledTools 由智能体独立 key 管理，不再从会话恢复（此处可能导致竞态条件覆盖正确值）
       state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
       state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
       // 恢复会话绑定的智能体 ID
