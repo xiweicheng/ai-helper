@@ -1575,15 +1575,10 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   }
   
   if (scroll) {
-    const userMessages = chatContainer.querySelectorAll('.message.user');
-    if (userMessages.length > 0) {
-      const latestUserMessages = userMessages[userMessages.length - 1];
-      const prevEl = latestUserMessages.previousElementSibling;
-      if (prevEl && prevEl.classList.contains('user-context-bubble')) {
-        prevEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        latestUserMessages.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+    const assistantMessages = chatContainer.querySelectorAll('.message.assistant');
+    if (assistantMessages.length > 0) {
+      const latestAssistantMessage = assistantMessages[assistantMessages.length - 1];
+      latestAssistantMessage.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
   
@@ -3158,6 +3153,35 @@ export function restoreMessageFromHtml(htmlContent) {
     }
   }
 
+  // 重新绑定原型预览按钮事件
+  const prototypeBtn = footer.querySelector('.prototype-btn-small');
+  if (prototypeBtn) {
+    const logs = (() => {
+      try {
+        const raw = messageEl.dataset.executionLog;
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })();
+    const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    if (prototypeCall) {
+      prototypeBtn.addEventListener('click', () => {
+        let prototypeId = prototypeCall.prototypeId;
+        if (!prototypeId && prototypeCall.observation) {
+          try {
+            const parsed = typeof prototypeCall.observation === 'string' 
+              ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+            prototypeId = parsed?.prototypeId;
+          } catch (e) {}
+        }
+        if (prototypeId) {
+          loadAndShowPrototype(prototypeId);
+        } else {
+          console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+        }
+      });
+    }
+  }
+
   // 确保执行日志按钮的事件委托已绑定（页面刷新后消息从 HTML 恢复时，addMessage 中的 bindExecutionLogDelegate 不会被调用）
   bindExecutionLogDelegate();
 
@@ -3761,6 +3785,41 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     footer.appendChild(warnBadge);
   }
   
+  // 原型预览按钮
+  const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+  if (prototypeCall) {
+    let localOpened = false;
+    if (prototypeCall.observation) {
+      try {
+        const obs = typeof prototypeCall.observation === 'string' 
+          ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+        localOpened = obs?.localOpened === true;
+      } catch (e) {}
+    }
+
+    const prototypeBtn = document.createElement('button');
+    prototypeBtn.className = 'prototype-btn-small';
+    prototypeBtn.type = 'button';
+    prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
+    prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    prototypeBtn.addEventListener('click', () => {
+      let prototypeId = prototypeCall.prototypeId;
+      if (!prototypeId && prototypeCall.observation) {
+        try {
+          const parsed = typeof prototypeCall.observation === 'string' 
+            ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+          prototypeId = parsed?.prototypeId;
+        } catch (e) {}
+      }
+      if (prototypeId) {
+        loadAndShowPrototype(prototypeId);
+      } else {
+        console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+      }
+    });
+    footer.appendChild(prototypeBtn);
+  }
+
   element.querySelector('.message-content').appendChild(footer);
   
   // 绑定事件委托（执行日志/反思弹窗点击）
