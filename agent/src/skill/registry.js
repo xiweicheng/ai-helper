@@ -46,10 +46,12 @@ export function initializeSkillRegistry() {
   skills.clear();
 
   // 0. 种子写入 skill-creator 到文件系统（首次运行或版本升级时）
-  seedSkillCreator();
+  const seeded = seedSkillCreator();
+  console.log(`[Skill Registry] seedSkillCreator 返回: ${seeded}`);
 
   // 1. 加载文件系统中的技能
   const loaded = loadAllSkills();
+  console.log(`[Skill Registry] loadAllSkills 返回 ${loaded.length} 个技能: ${loaded.map(s => s.name).join(', ') || '(无)'}`);
 
   for (const skill of loaded) {
     skills.set(skill.name, skill);

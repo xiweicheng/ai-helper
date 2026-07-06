@@ -265,13 +265,20 @@ export function seedSkillCreator() {
   const skillDir = join(SKILLS_DIR, SKILL_CREATOR_DIR);
   const skillMdPath = join(skillDir, 'SKILL.md');
 
+  console.log(`[Skill Loader] seedSkillCreator: 检查路径 ${skillMdPath}`);
+  console.log(`[Skill Loader] seedSkillCreator: 文件存在? ${existsSync(skillMdPath)}`);
+
   if (existsSync(skillMdPath)) {
     // 已存在，检查是否需要升级（版本号不同则覆盖）
     try {
       const content = readFileSync(skillMdPath, 'utf-8');
       const versionMatch = content.match(/^version:\s*([\d.]+)/m);
       const currentVersion = versionMatch ? versionMatch[1] : '0.0.0';
-      if (currentVersion === '1.1.0') return false;
+      console.log(`[Skill Loader] seedSkillCreator: 已有文件版本=${currentVersion}, 目标版本=1.1.0`);
+      if (currentVersion === '1.1.0') {
+        console.log('[Skill Loader] seedSkillCreator: 版本匹配，跳过写入');
+        return false;
+      }
     } catch { /* 读取失败则覆盖 */ }
   }
 
