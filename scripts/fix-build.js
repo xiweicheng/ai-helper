@@ -294,8 +294,32 @@ function removeOrphanedEntries() {
   removeFile(path.join(distDir, 'content.js'));
 }
 
+// 复制 offscreen document 到 dist
+function copyOffscreenDocument() {
+  const srcDir = path.join(__dirname, '..', 'src', 'offscreen');
+  const destDir = path.join(distDir, 'offscreen');
+  
+  if (!fs.existsSync(srcDir)) {
+    console.log('⚠️  offscreen 源目录不存在，跳过');
+    return;
+  }
+  
+  if (!fs.existsSync(destDir)) {
+    fs.mkdirSync(destDir, { recursive: true });
+  }
+  
+  const files = fs.readdirSync(srcDir);
+  for (const file of files) {
+    const srcFile = path.join(srcDir, file);
+    const destFile = path.join(destDir, file);
+    fs.copyFileSync(srcFile, destFile);
+    console.log(`📋 Copied offscreen/${file}`);
+  }
+}
+
 cleanDevArtifacts();
 fixBuild();
 removeOrphanedEntries();
+copyOffscreenDocument();
 
 console.log('✅ Build artifacts fixed successfully!\n');

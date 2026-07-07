@@ -58,7 +58,7 @@ export async function renderAgentSelector() {
         <span class="agent-item-icon">${escapeHtml(agent.icon)}</span>
         <div class="agent-item-info">
           <span class="agent-item-name">${escapeHtml(agent.name)}</span>
-          <span class="agent-item-desc">${escapeHtml(agent.description || `${toolCount} 个工具`)}</span>
+          <span class="agent-item-desc" title="${escapeAttr(agent.description || `${toolCount} 个工具`)}">${escapeHtml(agent.description || `${toolCount} 个工具`)}</span>
         </div>
         ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="编辑">✎</button>` : ''}
       </div>`;

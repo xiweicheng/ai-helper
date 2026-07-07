@@ -244,7 +244,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
@@ -256,8 +256,8 @@ body {
   background: rgba(102, 126, 234, 0.08);
 }
 .agent-item-icon {
-  font-size: 18px;
-  width: 28px;
+  font-size: 16px;
+  width: 26px;
   text-align: center;
   flex-shrink: 0;
 }
@@ -267,7 +267,7 @@ body {
 }
 .agent-item-name {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: #333;
 }
@@ -284,7 +284,7 @@ body {
   border: none;
   color: #999;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   padding: 4px;
   border-radius: 4px;
   flex-shrink: 0;
@@ -451,6 +451,18 @@ body {
   font-weight: 600;
   color: #333;
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.memory-limit-info-icon {
+  font-size: 12px;
+  color: #aaa;
+  cursor: help;
+  line-height: 1;
+}
+.memory-limit-info-icon:hover {
+  color: #667eea;
 }
 .memory-limit-options {
   display: flex;

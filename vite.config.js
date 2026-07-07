@@ -25,7 +25,7 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,  // 生成 sourcemap
+    sourcemap: true,
     rollupOptions: {
       input: {
         background: 'src/background/index.js',

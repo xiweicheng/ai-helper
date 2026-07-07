@@ -55,7 +55,7 @@ export const MEDIA_TOOLS = [
   {
     id: 'copy_to_clipboard',
     category: 'media_output',
-    execution: 'content_script',
+    execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
@@ -77,7 +77,7 @@ export const MEDIA_TOOLS = [
   {
     id: 'paste_from_clipboard',
     category: 'media_output',
-    execution: 'content_script',
+    execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',

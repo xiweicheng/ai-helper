@@ -879,6 +879,8 @@ const TOOL_HANDLERS = {
   take_full_page_screenshot: executeTakeFullPageScreenshot,
   agent_skill_run: executeSkillRun,
   agent_skill_load: executeSkillLoad,
+  copy_to_clipboard: executeCopyToClipboard,
+  paste_from_clipboard: executePasteFromClipboard,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -3139,4 +3141,75 @@ async function executeAgentSearchContent(args, toolCallId) {
     };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+// ==================== 剪贴板工具（使用 Offscreen Document） ====================
+
+let creatingOffscreenDocument = null;
+
+async function ensureOffscreenDocument() {
+  const offscreenUrl = chrome.runtime.getURL('offscreen/offscreen.html');
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [offscreenUrl]
+  });
+
+  if (existingContexts.length > 0) {
+    return;
+  }
+
+  if (creatingOffscreenDocument) {
+    await creatingOffscreenDocument;
+    return;
+  }
+
+  creatingOffscreenDocument = chrome.offscreen.createDocument({
+    url: 'offscreen/offscreen.html',
+    reasons: ['CLIPBOARD'],
+    justification: '用于读写系统剪贴板内容'
+  });
+
+  try {
+    await creatingOffscreenDocument;
+  } finally {
+    creatingOffscreenDocument = null;
+  }
+}
+
+export async function executeCopyToClipboard(args, toolCallId) {
+  const { text } = args;
+  if (text === undefined || text === null) {
+    return { success: false, error: '缺少 text 参数', tool_call_id: toolCallId };
+  }
+
+  try {
+    await ensureOffscreenDocument();
+    const response = await chrome.runtime.sendMessage({
+      type: 'COPY_TO_CLIPBOARD',
+      text: text
+    });
+    if (response?.success) {
+      return { success: true, message: response.message || '已复制到剪贴板', tool_call_id: toolCallId };
+    } else {
+      return { success: false, error: response?.error || '复制失败', tool_call_id: toolCallId };
+    }
+  } catch (e) {
+    return { success: false, error: e.message, tool_call_id: toolCallId };
+  }
+}
+
+export async function executePasteFromClipboard(args, toolCallId) {
+  try {
+    await ensureOffscreenDocument();
+    const response = await chrome.runtime.sendMessage({
+      type: 'PASTE_FROM_CLIPBOARD'
+    });
+    if (response?.success) {
+      return { success: true, text: response.text, tool_call_id: toolCallId };
+    } else {
+      return { success: false, error: response?.error || '粘贴失败', tool_call_id: toolCallId };
+    }
+  } catch (e) {
+    return { success: false, error: e.message, tool_call_id: toolCallId };
+  }
 }

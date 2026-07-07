@@ -308,7 +308,10 @@
         </label>
         <label class="memory-limit-label" id="memoryLimitLabel" for="isolateChatBtn"></label>
         <div class="memory-limit-dropdown" id="memoryLimitDropdown">
-          <div class="memory-limit-dropdown-title">记忆历史限制</div>
+          <div class="memory-limit-dropdown-title">
+            记忆历史限制
+            <span class="memory-limit-info-icon" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
+          </div>
           <div class="memory-limit-options" id="memoryLimitOptions">
             <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span>不限制</div>
             <div class="memory-limit-option" data-value="200"><span class="memory-limit-check"></span>最近200条</div>
