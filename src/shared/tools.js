@@ -25,10 +25,10 @@ export const TOOL_CATEGORIES = [
 ];
 
 export const PRESET_MODES = [
-  { label: '精准编码', temp: 0.2, topP: 1.0, tip: '较低随机性，适合业务开发、调试、纠错' },
-  { label: '均衡开发', temp: 0.45, topP: 0.9, tip: '兼顾稳定性，用于封装工具类、常规脚本' },
-  { label: '架构探索', temp: 0.65, topP: 0.9, tip: '提供多种实现思路，用于组件重构、方案对比' },
-  { label: '创意发散', temp: 0.9, topP: 0.9, tip: '随机性较高，仅用于原型探索，不建议生产代码' },
+  { label: '精准严谨', temp: 0.2, topP: 1.0, tip: '改错、调试、要准确答案（低随机性，适合修 bug）' },
+  { label: '日常通用', temp: 0.45, topP: 0.9, tip: '多数场景都好用（平衡稳定与灵活，适合写脚本）' },
+  { label: '思路发散', temp: 0.65, topP: 0.9, tip: '要多种方案做对比（适合重构、方案对比）' },
+  { label: '创意脑暴', temp: 0.9, topP: 0.9, tip: '写文案、起名、头脑风暴（高随机性，不建议正式代码）' },
 ];
 
 export const DEFAULT_CHAT_CONFIG = {
