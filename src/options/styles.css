@@ -1336,6 +1336,9 @@ textarea {
   background: #fafafa;
   border-left-color: #999;
 }
+.skill-card-body.disabled {
+  display: none;
+}
 .skill-card.skill-disabled .skill-card-name {
   color: #999;
 }
@@ -1613,6 +1616,32 @@ textarea {
   display: none;
 }
 
+/* 反思标题行（标题 + 总开关） */
+.reflection-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.reflection-title-row h2 {
+  margin: 0;
+  color: #667eea;
+  font-size: 18px;
+}
+
+/* 工具栏标题行（标题 + 总开关） */
+.toolbar-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.toolbar-title-row h2 {
+  margin: 0;
+  color: #667eea;
+  font-size: 18px;
+}
+
 .reflection-config.disabled {
   opacity: 0.6;
 }
@@ -1621,8 +1650,13 @@ textarea {
   display: none;
 }
 
-.reflection-config.disabled .reflection-main-toggle {
-  display: flex;
+/* 工具栏配置关闭状态 */
+.toolbar-config.disabled .toolbar-config-body {
+  display: none;
+}
+.toolbar-config.disabled .subtitle,
+.toolbar-config.disabled .hint {
+  opacity: 0.4;
 }
 
 .reflection-toggle-switch {
@@ -1912,12 +1946,19 @@ textarea {
   color: #666;
   min-width: 48px;
 }
-/* 禁用状态遮罩 */
-.toolbox-section.disabled-section .toolbox-list,
-.toolbox-section.disabled-section .toolbox-section-actions,
-.toolbox-section.disabled-section #mcpAddForm,
-.toolbox-section.disabled-section > .toolbox-add-btn {
-  opacity: 0.4;
+.toolbox-section-content {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+}
+.toolbox-section:not(.disabled-section) .toolbox-section-content {
+  max-height: 2000px;
+  opacity: 1;
+}
+.toolbox-section.disabled-section .toolbox-section-content {
+  max-height: 0;
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -1957,6 +1998,9 @@ textarea {
 }
 .mcp-server-card.disabled {
   opacity: 0.55;
+}
+.mcp-card-body.disabled {
+  display: none;
 }
 .mcp-server-card.editing {
   border-color: #667eea;

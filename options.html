@@ -437,18 +437,15 @@
     <!-- 反思配置区域 -->
     <div class="tab-panel" data-tab="reflection">
     <div class="reflection-config" id="reflectionConfig">
-      <h2>🎯 AI 自我反思配置</h2>
-      <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
-      
-      <div class="reflection-main-toggle">
-        <span>启用反思功能</span>
-        <div class="reflection-section-toggle">
-          <label class="reflection-toggle-switch">
-            <input type="checkbox" id="reflectionEnabled" checked>
-            <span class="reflection-toggle-slider"></span>
-          </label>
-        </div>
+      <div class="reflection-title-row">
+        <h2>🎯 AI 自我反思配置</h2>
+        <label class="global-toggle">
+          <input type="checkbox" id="reflectionEnabled" checked>
+          <span class="global-toggle-slider"></span>
+          <span class="global-toggle-label" id="reflectionToggleLabel">已启用</span>
+        </label>
       </div>
+      <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
       
       <div class="reflection-section" id="postReflectionSection" data-toggle="postReflectionEnabled">
         <div class="reflection-section-header">
@@ -645,9 +642,18 @@
 
     <!-- 工具栏配置区域 -->
     <div class="tab-panel" data-tab="toolbar">
-    <div class="toolbar-config">
-      <h2>🔧 工具栏设置</h2>
+    <div class="toolbar-config" id="toolbarConfig">
+      <div class="toolbar-title-row">
+        <h2>🔧 工具栏设置</h2>
+        <label class="global-toggle">
+          <input type="checkbox" id="enableSelectionToolbar">
+          <span class="global-toggle-slider"></span>
+          <span class="global-toggle-label" id="toolbarToggleLabel">已启用</span>
+        </label>
+      </div>
       <p class="subtitle">管理划词工具栏的按钮和顺序</p>
+
+      <div class="toolbar-config-body" id="toolbarConfigBody">
 
       <div class="form-group">
         <label for="toolbarMaxVisible">工具栏直接显示数量 <span class="hint">（超出部分收入"⋯"下拉菜单）</span></label>
@@ -656,14 +662,6 @@
           <span>最小: 1</span>
           <span>最大: 5</span>
         </div>
-      </div>
-
-      <div class="form-group">
-        <label class="toggle-label">
-          <input type="checkbox" id="enableSelectionToolbar">
-          <span class="toggle-text">启用划词工具栏</span>
-        </label>
-        <p class="hint" style="margin-top: 4px; color: #999; font-size: 12px;">关闭后，在网页上选中文字时将不再弹出操作工具栏</p>
       </div>
 
       <div class="form-group">
@@ -714,6 +712,7 @@
             <button class="btn btn-primary" id="toolEditSave" style="width: auto;">保存</button>
           </div>
         </div>
+      </div>
       </div>
     </div>
 
@@ -791,50 +790,54 @@
       </div>
 
       <!-- MCP 服务器管理 -->
-      <div class="toolbox-section" id="mcpSection">
+      <div class="toolbox-section disabled-section" id="mcpSection">
         <div class="toolbox-section-header">
           <div class="toolbox-section-title-row">
             <h2 class="toolbox-section-title">🔌 MCP 服务器管理</h2>
             <label class="global-toggle">
-              <input type="checkbox" id="mcpGlobalToggle" checked>
+              <input type="checkbox" id="mcpGlobalToggle">
               <span class="global-toggle-slider"></span>
-              <span class="global-toggle-label" id="mcpToggleLabel">已启用</span>
+              <span class="global-toggle-label" id="mcpToggleLabel">已停用</span>
             </label>
           </div>
           <span class="toolbox-section-desc">通过 MCP 协议连接外部工具服务器，扩展 AI 助手的工具能力。关闭后所有 MCP 工具将不会发送到 AI 上下文。</span>
         </div>
-        <div class="toolbox-list" id="mcpServerList">
-          <div class="toolbox-empty">
-            <div class="toolbox-empty-icon">⏳</div>
-            <div class="toolbox-empty-title">加载中...</div>
+        <div class="toolbox-section-content" id="mcpSectionContent">
+          <div class="toolbox-list" id="mcpServerList">
+            <div class="toolbox-empty">
+              <div class="toolbox-empty-icon">⏳</div>
+              <div class="toolbox-empty-title">加载中...</div>
+            </div>
           </div>
+          <div id="mcpAddForm"></div>
+          <button class="toolbox-add-btn" id="addMcpServerBtn" disabled>+ 添加 MCP 服务器</button>
         </div>
-        <div id="mcpAddForm"></div>
-        <button class="toolbox-add-btn" id="addMcpServerBtn" disabled>+ 添加 MCP 服务器</button>
       </div>
 
       <!-- Skill 管理 -->
-      <div class="toolbox-section" id="skillSection">
+      <div class="toolbox-section disabled-section" id="skillSection">
         <div class="toolbox-section-header">
           <div class="toolbox-section-title-row">
             <h2 class="toolbox-section-title">🧩 Skill 管理</h2>
             <label class="global-toggle">
-              <input type="checkbox" id="skillGlobalToggle" checked>
+              <input type="checkbox" id="skillGlobalToggle">
               <span class="global-toggle-slider"></span>
-              <span class="global-toggle-label" id="skillToggleLabel">已启用</span>
+              <span class="global-toggle-label" id="skillToggleLabel">已停用</span>
             </label>
           </div>
           <span class="toolbox-section-desc">管理可复用的工作流和 Agent Skill。关闭后所有 Skill 内容将不会注入到 AI 系统提示词中。</span>
         </div>
-        <div class="toolbox-list" id="skillList">
-          <div class="toolbox-empty">
-            <div class="toolbox-empty-icon">⏳</div>
-            <div class="toolbox-empty-title">加载中...</div>
+        <div class="toolbox-section-content" id="skillSectionContent">
+          <div class="toolbox-list" id="skillList">
+            <div class="toolbox-empty">
+              <div class="toolbox-empty-icon">⏳</div>
+              <div class="toolbox-empty-title">加载中...</div>
+            </div>
           </div>
-        </div>
-        <div class="toolbox-section-actions">
-          <button class="toolbox-add-btn" id="importSkillBtn" disabled>+ 导入 Skill</button>
-          <button class="toolbox-add-btn" id="reloadSkillsBtn" disabled>🔄 重新加载</button>
+          <div class="toolbox-section-actions">
+            <button class="toolbox-add-btn" id="importSkillBtn" disabled>+ 导入 Skill</button>
+            <button class="toolbox-add-btn" id="reloadSkillsBtn" disabled>🔄 重新加载</button>
+          </div>
         </div>
       </div>
 

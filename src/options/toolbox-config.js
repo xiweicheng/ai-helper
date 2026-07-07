@@ -225,24 +225,25 @@ function renderMcpServers(servers) {
           </div>
           <div class="mcp-server-tools-count">${toolCount} 工具</div>
         </div>
-        <div class="mcp-server-command">
-          <code>${escapeHtml(s.command || '')} ${(s.args || []).map(escapeHtml).join(' ')}</code>
-        </div>
-        ${s.tools && s.tools.length > 0 ? `
-        <div class="mcp-tools-section">
-          <button class="mcp-tools-toggle" data-mcp-id="${escapeHtml(s.id)}" data-action="toggle-tools">
-            &#9654; 查看 ${s.tools.length} 个工具
-          </button>
-          <div class="mcp-tools-list" id="mcp-tools-${escapeHtml(s.id)}" style="display:none;">
-            ${s.tools.map(t => `
-              <div class="mcp-tool-item">
-                <div class="mcp-tool-name">${escapeHtml(t.name)}</div>
-                <div class="mcp-tool-desc">${escapeHtml(t.description || '')}</div>
-              </div>
-            `).join('')}
+        <div class="mcp-card-body${s.enabled === false ? ' disabled' : ''}">
+          <div class="mcp-server-command">
+            <code>${escapeHtml(s.command || '')} ${(s.args || []).map(escapeHtml).join(' ')}</code>
           </div>
-        </div>` : ''}
-        <div class="mcp-server-actions">
+          ${s.tools && s.tools.length > 0 ? `
+          <div class="mcp-tools-section">
+            <button class="mcp-tools-toggle" data-mcp-id="${escapeHtml(s.id)}" data-action="toggle-tools">
+              &#9654; 查看 ${s.tools.length} 个工具
+            </button>
+            <div class="mcp-tools-list" id="mcp-tools-${escapeHtml(s.id)}" style="display:none;">
+              ${s.tools.map(t => `
+                <div class="mcp-tool-item">
+                  <div class="mcp-tool-name">${escapeHtml(t.name)}</div>
+                  <div class="mcp-tool-desc">${escapeHtml(t.description || '')}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>` : ''}
+          <div class="mcp-server-actions">
           <label class="toolbox-toggle" title="${s.enabled !== false ? '启用中，点击禁用' : '已禁用，点击启用'}">
             <input type="checkbox" ${s.enabled !== false ? 'checked' : ''} data-mcp-id="${escapeHtml(s.id)}" data-action="toggle">
             <span class="toolbox-toggle-slider"></span>
@@ -253,6 +254,7 @@ function renderMcpServers(servers) {
           }
           <button class="toolbox-btn toolbox-btn-edit" data-mcp-id="${escapeHtml(s.id)}" data-action="edit">编辑</button>
           <button class="toolbox-btn toolbox-btn-danger" data-mcp-id="${escapeHtml(s.id)}" data-action="delete">删除</button>
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -540,14 +542,16 @@ function renderSkills(skills) {
             <span class="skill-card-step-count">${s.stepCount || 0} 步骤</span>
           </div>
         </div>
-        <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
-        <div class="skill-card-params">
-          ${renderSkillParams(s.parameters)}
-        </div>
-        <div class="skill-card-actions">
-          ${s.enabled !== false ? `<button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>` : ''}
-          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
-          <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
+        <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
+          <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
+          <div class="skill-card-params">
+            ${renderSkillParams(s.parameters)}
+          </div>
+          <div class="skill-card-actions">
+            ${s.enabled !== false ? `<button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>` : ''}
+            <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
+            <button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>
+          </div>
         </div>
       </div>
     `).join('');
@@ -573,15 +577,17 @@ function renderSkills(skills) {
             <span class="skill-card-step-count">${s.resourceCount || 0} 资源</span>
           </div>
         </div>
-        <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
-        ${s.resources && s.resources.length > 0 ? `
-        <div class="skill-card-params">
-          ${s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')}
-        </div>` : ''}
-        <div class="skill-card-actions">
-          ${canEdit ? `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>` : `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="view-agent-skill">查看详情</button>`}
-          <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
-          ${canDelete ? `<button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>` : ''}
+        <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
+          <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
+          ${s.resources && s.resources.length > 0 ? `
+          <div class="skill-card-params">
+            ${s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')}
+          </div>` : ''}
+          <div class="skill-card-actions">
+            ${canEdit ? `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>` : `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="view-agent-skill">查看详情</button>`}
+            <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
+            ${canDelete ? `<button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">删除</button>` : ''}
+          </div>
         </div>
       </div>
     `}).join('');

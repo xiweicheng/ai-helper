@@ -20,7 +20,7 @@ export const DEFAULT_REACT_CONFIG = {
 
 // 反思配置默认值
 export const DEFAULT_REFLECTION_CONFIG = {
-  enabled: true,              // 是否启用反思（可整体关闭）
+  enabled: false,             // 是否启用反思（可整体关闭）
   postReflection: {
     enabled: true,            // 主循环后置反思
     maxRounds: 1,             // 最大反思轮数（0=不反思）

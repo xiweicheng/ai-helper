@@ -66,7 +66,15 @@ export function initializeSkillRegistry() {
     }
   }
 
-  // 3. 恢复内置技能的启用状态（用户通过停止/启用的状态）
+  // 3. 标记内置技能的特殊属性（skill-creator 是内置技能，不可编辑、不可删除）
+  const skillCreator = skills.get('skill-creator');
+  if (skillCreator) {
+    skillCreator.builtin = true;
+    skillCreator.editable = false;
+    skillCreator.deletable = false;
+  }
+
+  // 4. 恢复内置技能的启用状态（用户通过停止/启用的状态）
   const builtinState = loadBuiltinState();
   for (const [name, enabled] of Object.entries(builtinState)) {
     const skill = skills.get(name);
