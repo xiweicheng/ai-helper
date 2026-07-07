@@ -1,5 +1,6 @@
 // options/index.js - 选项页面入口
 
+import './styles.css';
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
