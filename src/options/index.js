@@ -1,5 +1,6 @@
 // options/index.js - 选项页面入口
 
+import './styles.css';
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
@@ -59,11 +60,30 @@ document.addEventListener('DOMContentLoaded', async function() {
   activateByHash();
   window.addEventListener('hashchange', activateByHash);
   
+  // 提前声明 DOM 引用，避免 loadConfig 异步回调中的 TDZ 错误
+  const enableToolPreselectCheckbox = document.getElementById('enableToolPreselect');
+  const preselectMinToolCountSection = document.getElementById('preselectMinToolCountSection');
+
   loadConfig();
   
   // 加载工具栏配置
   currentTools = await loadToolbarTools();
   renderToolbarToolsList(currentTools);
+  
+  // 初始化工具栏总开关状态
+  const enableSelToolbarCheckbox = document.getElementById('enableSelectionToolbar');
+  const toolbarConfigEl = document.getElementById('toolbarConfig');
+  const toolbarToggleLabelEl = document.getElementById('toolbarToggleLabel');
+  if (toolbarConfigEl && enableSelToolbarCheckbox) {
+    if (enableSelToolbarCheckbox.checked) {
+      toolbarConfigEl.classList.remove('disabled');
+    } else {
+      toolbarConfigEl.classList.add('disabled');
+    }
+    if (toolbarToggleLabelEl) {
+      toolbarToggleLabelEl.textContent = enableSelToolbarCheckbox.checked ? '已启用' : '已禁用';
+    }
+  }
   
   // 保存按钮事件
   document.getElementById('saveBtn').addEventListener('click', saveConfig);
@@ -340,8 +360,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ==================== 工具栏配置事件 ====================
   
   // 工具预筛选开关控制预筛选最小工具数显示
-  const enableToolPreselectCheckbox = document.getElementById('enableToolPreselect');
-  const preselectMinToolCountSection = document.getElementById('preselectMinToolCountSection');
   if (enableToolPreselectCheckbox && preselectMinToolCountSection) {
     const togglePreselectSection = () => {
       preselectMinToolCountSection.style.display = enableToolPreselectCheckbox.checked ? '' : 'none';
@@ -367,8 +385,26 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // 选中内容工具栏开关变更
   const enableSelectionToolbarCheckbox = document.getElementById('enableSelectionToolbar');
+  const toolbarConfig = document.getElementById('toolbarConfig');
+  const toolbarToggleLabel = document.getElementById('toolbarToggleLabel');
+  
+  function updateToolbarToggleState() {
+    const enabled = enableSelectionToolbarCheckbox && enableSelectionToolbarCheckbox.checked;
+    if (toolbarConfig) {
+      if (enabled) {
+        toolbarConfig.classList.remove('disabled');
+      } else {
+        toolbarConfig.classList.add('disabled');
+      }
+    }
+    if (toolbarToggleLabel) {
+      toolbarToggleLabel.textContent = enabled ? '已启用' : '已禁用';
+    }
+  }
+  
   if (enableSelectionToolbarCheckbox) {
     enableSelectionToolbarCheckbox.addEventListener('change', function() {
+      updateToolbarToggleState();
       saveToolbarConfig();
     });
   }
@@ -481,14 +517,20 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 反思总开关控制
   const reflectionEnabled = document.getElementById('reflectionEnabled');
   const reflectionConfig = document.getElementById('reflectionConfig');
+  const reflectionToggleLabel = document.getElementById('reflectionToggleLabel');
   
   function updateReflectionSectionVisibility() {
     if (!reflectionConfig) return;
     
-    if (!reflectionEnabled || !reflectionEnabled.checked) {
+    const enabled = reflectionEnabled && reflectionEnabled.checked;
+    if (!enabled) {
       reflectionConfig.classList.add('disabled');
     } else {
       reflectionConfig.classList.remove('disabled');
+    }
+    
+    if (reflectionToggleLabel) {
+      reflectionToggleLabel.textContent = enabled ? '已启用' : '已禁用';
     }
   }
   
@@ -507,6 +549,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   if (reflectionEnabled) {
     reflectionEnabled.addEventListener('change', updateReflectionSectionVisibility);
+    // 初始化反思总开关状态
+    updateReflectionSectionVisibility();
   }
   
   // 后置反思开关控制

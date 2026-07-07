@@ -31,14 +31,26 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ==================== 消息路由（Map 查找，O(1)） ====================
-
-/**
- * 所有消息处理器映射表
- * - 同步处理器：直接返回结果
- * - 异步处理器：返回 Promise，自动处理 return true
- * - 特殊处理器：内联逻辑（如 CLEAR_PAGE_DATA）
- */
+// ==================== 消息路由表（Map 查找，O(1)） ====================
+//
+// HANDLERS Map: message.type → handler 的键值映射，共 39 个条目
+//
+// 分类汇总：
+//   页面读取(4):   GET_PAGE_TEXT, GET_FULL_HTML, QUERY_INTERACTIVE_ELEMENTS, GET_SELECTED_CONTENT
+//   页面交互(4):   CLICK_ELEMENT, FILL_FORM, SCROLL_TO, HOVER_ELEMENT
+//   表单/输入(2):   KEYBOARD_INPUT, FILE_UPLOAD
+//   信息提取(10):  EXTRACT_TABLE, EXTRACT_METADATA, EXTRACT_LINKS, EXTRACT_FORMS, EXTRACT_IMAGES,
+//                  SEARCH_IN_PAGE, PAGE_TO_MARKDOWN, PAGE_TO_JSON, FIND_SIMILAR_ELEMENTS, GET_IFRAME_CONTENT
+//   高亮/选区(2):   HIGHLIGHT_TEXT, REMOVE_HIGHLIGHTS
+//   元素分析(1):   SHADOW_DOM_QUERY
+//   媒体/输出(4):   MANAGE_STORAGE, TEXT_TO_SPEECH, INJECT_CSS, VIDEO_CONTROL
+//   异步工具(11):  COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_FOR_ELEMENT, DRAG_AND_DROP,
+//                  SELECT_DROPDOWN, COLOR_PICKER, GENERATE_QRCODE, RUN_JAVASCRIPT,
+//                  GET_ELEMENT_COUNT, SCROLL_AND_COLLECT, START_REGION_SELECTION
+//   特殊(1):       CLEAR_PAGE_DATA（内联逻辑）
+//
+// 异步处理：ASYNC_HANDLERS Set 标记需 return true 保持消息通道开放的工具
+//
 const HANDLERS = {
   // ── 页面读取 ──
   GET_PAGE_TEXT:             (msg) => getPageText(msg),

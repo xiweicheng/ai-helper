@@ -1,5 +1,56 @@
 // background/local-agent-client.js - 代理通信客户端
 // 封装与代理服务的 HTTP 和 WebSocket 通信
+//
+// ==================== Agent API 端点汇总 ====================
+//
+//   配对与会话:
+//     POST   /api/pair                  - 配对认证
+//     GET    /api/status                - 健康检查
+//     GET    /api/status/detail         - 详细状态（配对码、工作目录）
+//
+//   文件系统:
+//     POST   /api/fs/read               - 读取文件
+//     POST   /api/fs/write              - 写入文件
+//     POST   /api/fs/list               - 列出目录
+//     POST   /api/fs/delete             - 删除文件/目录
+//     POST   /api/fs/search_files       - 按模式搜索文件
+//     POST   /api/fs/search_content     - 搜索文件内容
+//
+//   浏览器:
+//     POST   /api/browser/open          - 本地浏览器打开文件
+//
+//   命令执行:
+//     POST   /api/exec                  - 执行命令（支持 wait/stop）
+//     POST   /api/exec/stop             - 停止运行中的命令
+//
+//   MCP:
+//     GET    /api/mcp/tools             - 工具列表 [?serverId=]
+//     POST   /api/mcp/call              - 调用工具
+//     GET    /api/mcp/servers           - Server 列表
+//     POST   /api/mcp/servers           - 添加 Server
+//     DELETE /api/mcp/servers           - 删除 Server
+//     POST   /api/mcp/servers/connect   - 连接 Server
+//     POST   /api/mcp/servers/disconnect- 断开 Server
+//     PUT    /api/mcp/servers/toggle    - 启用/禁用 Server
+//
+//   Skill:
+//     GET    /api/skill/list            - Skill 列表
+//     GET    /api/skill/detail          - Skill 详情 [?name=]
+//     POST   /api/skill/run             - 执行 Skill
+//     POST   /api/skill/import          - 导入 Skill
+//     DELETE /api/skill/delete          - 删除 Skill
+//     POST   /api/skill/toggle          - 启用/禁用 Skill
+//     POST   /api/skill/save-markdown   - 保存 Markdown
+//     GET    /api/skill/markdown        - 获取 Markdown 内容
+//     GET    /api/skill/resource        - 获取资源文件
+//     POST   /api/skill/import-zip      - ZIP 导入（base64）
+//     POST   /api/skill/import-url      - URL 导入
+//
+//   Agent Skill (Markdown):
+//     GET    /api/skill/agent-prompts   - Prompt 汇总
+//     GET    /api/skill/agent-prompt    - 单个 Prompt [?name=]
+//
+// 所有需认证的请求通过 Bearer Token（agentRequest/agentGet）发送
 
 /**
  * 代理服务可达性状态

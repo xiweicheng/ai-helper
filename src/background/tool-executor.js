@@ -3026,15 +3026,18 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     }
 
     appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode });
+    const hasExitCode = exitCode !== null && exitCode !== undefined;
+    const isSuccess = hasExitCode && exitCode === 0;
     return {
-      success: true,
+      success: isSuccess,
       level: 'allow',
       execId,
-      exitCode,
+      exitCode: hasExitCode ? exitCode : undefined,
       stdout: stdoutCollected,
       stderr: stderrCollected,
       killed,
-      message: `命令执行完毕 (exitCode: ${exitCode})\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
+      message: `命令执行完毕 ${hasExitCode ? '(exitCode: ' + exitCode + ')' : '(无 exitCode)'}\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`,
+      error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
       tool_call_id: toolCallId
     };
   }
@@ -3073,15 +3076,18 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
   
   // 命令执行完毕，返回完整输出
   appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
+  const hasExitCode = result.exitCode !== null && result.exitCode !== undefined;
+  const isSuccess = hasExitCode && result.exitCode === 0;
   return {
-    success: true,
+    success: isSuccess,
     level: 'allow',
     execId: result.execId,
-    exitCode: result.exitCode,
+    exitCode: hasExitCode ? result.exitCode : undefined,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     killed: result.killed || false,
-    message: `命令执行完毕 (exitCode: ${result.exitCode})\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}`,
+    message: `命令执行完毕 ${hasExitCode ? '(exitCode: ' + result.exitCode + ')' : '(无 exitCode)'}\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`,
+    error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${result.exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
     tool_call_id: toolCallId
   };
 }
