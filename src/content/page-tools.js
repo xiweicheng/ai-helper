@@ -53,12 +53,12 @@ export function getFullHtml(options = {}) {
   
   return {
     success: true,
-    data: {
+    content: JSON.stringify({
       title: document.title,
       url: window.location.href,
       html: html.substring(0, maxLength),
       fullLength: html.length
-    }
+    })
   };
 }
 
@@ -287,15 +287,15 @@ export function extractTable(selector = 'table', includeHeaders = true, format =
     
     if (format === 'markdown') {
       if (data.length === 0) {
-        return { success: true, data: '表格为空' };
+        return { success: true, content: '表格为空' };
       }
       const header = `| ${data[0].join(' | ')} |`;
       const separator = `| ${data[0].map(() => '---').join(' | ')} |`;
       const body = data.slice(1).map(row => `| ${row.join(' | ')} |`).join('\n');
-      return { success: true, data: `${header}\n${separator}\n${body}` };
+      return { success: true, content: `${header}\n${separator}\n${body}` };
     }
     
-    return { success: true, data, rowCount: data.length, columnCount: data[0]?.length || 0 };
+    return { success: true, content: JSON.stringify({ data, rowCount: data.length, columnCount: data[0]?.length || 0 }), data };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -331,7 +331,7 @@ export async function copyToClipboard(text) {
 export async function pasteFromClipboard() {
   try {
     const text = await navigator.clipboard.readText();
-    return { success: true, data: text };
+    return { success: true, content: text };
   } catch (error) {
     return { success: false, error: error.message };
   }

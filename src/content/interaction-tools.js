@@ -591,10 +591,10 @@ export function manageStorage({ action, storage, key, value }) {
             const k = target.key(i);
             allData[k] = target.getItem(k);
           }
-          return { success: true, data: allData };
+          return { success: true, content: JSON.stringify(allData), data: allData };
         }
         const getValue = target.getItem(key);
-        return { success: true, value: getValue };
+        return { success: true, content: JSON.stringify({ key, value: getValue }), value: getValue };
         
       case 'set':
         if (!key || value === undefined) {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/fix-build.js",
+    "build:silent": "node scripts/silent-build.js",
     "preview": "vite preview"
   },
   "devDependencies": {
