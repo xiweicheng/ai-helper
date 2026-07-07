@@ -219,6 +219,9 @@ function renderPrototypeLibraryList(prototypes) {
             <button class="prototype-library-item-delete" data-id="${p.id}" title="删除">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
+            <button class="prototype-library-item-download" data-id="${p.id}" title="下载原型">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
           </div>
         </div>
       `;
@@ -230,12 +233,12 @@ function renderPrototypeLibraryList(prototypes) {
         const localOpenBtn = item.querySelector('.prototype-library-item-local-open');
         const optimizeBtn = item.querySelector('.prototype-library-item-optimize');
         const deleteBtn = item.querySelector('.prototype-library-item-delete');
+        const downloadBtn = item.querySelector('.prototype-library-item-download');
         
         if (infoArea) {
           infoArea.addEventListener('click', () => {
             const id = item.dataset.id;
             loadAndShowPrototype(id);
-            hidePrototypeLibrary();
           });
         }
         
@@ -244,7 +247,6 @@ function renderPrototypeLibraryList(prototypes) {
             e.stopPropagation();
             const id = item.dataset.id;
             loadAndShowPrototype(id);
-            hidePrototypeLibrary();
           });
         }
 
@@ -276,6 +278,14 @@ function renderPrototypeLibraryList(prototypes) {
             const id = deleteBtn.dataset.id;
             const title = item.querySelector('.prototype-library-item-title')?.textContent || '原型';
             deletePrototypeItem(id, title);
+          });
+        }
+
+        if (downloadBtn) {
+          downloadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = downloadBtn.dataset.id;
+            downloadPrototypeFromLibrary(id);
           });
         }
       });
@@ -346,6 +356,32 @@ function continueOptimizeFromLibrary(prototypeId, title) {
   }
   
   console.log('[SidePanel] 从原型页面库继续优化原型:', prototypeId);
+}
+
+async function downloadPrototypeFromLibrary(prototypeId) {
+  try {
+    const prototype = await getUiPrototype(prototypeId);
+    if (!prototype || !prototype.html) {
+      console.error('[SidePanel] 下载原型失败：未找到原型', prototypeId);
+      return;
+    }
+    
+    const wrappedHtml = wrapPrototypeHtml(prototype.html);
+    const blob = new Blob([wrappedHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (prototype.title || 'prototype').replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_') + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log('[SidePanel] 原型已从原型库下载:', a.download);
+  } catch (err) {
+    console.error('[SidePanel] 下载原型失败:', err);
+  }
 }
 
 async function deletePrototypeItem(prototypeId, title) {

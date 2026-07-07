@@ -4860,6 +4860,8 @@
       transition: background 0.2s;
       margin-bottom: 4px;
       border: 1px solid #f0f0f0;
+      position: relative;
+      overflow: visible;
     }
     
     .prototype-library-item:hover {
@@ -4914,11 +4916,25 @@
     }
     
     .prototype-library-item-actions {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
       display: flex;
       flex-direction: row;
       gap: 4px;
       align-items: center;
-      flex-shrink: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      background: rgba(245, 247, 250, 0.95);
+      border-radius: 6px;
+      padding: 2px;
+    }
+    
+    .prototype-library-item:hover .prototype-library-item-actions {
+      opacity: 1;
+      pointer-events: auto;
     }
     
     .prototype-library-item-open {
@@ -5017,6 +5033,31 @@
     }
     
     .prototype-library-item-delete svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .prototype-library-item-download {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #999;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .prototype-library-item-download:hover {
+      background: rgba(52, 172, 224, 0.1);
+      color: #3498db;
+    }
+    
+    .prototype-library-item-download svg {
       width: 14px;
       height: 14px;
     }
