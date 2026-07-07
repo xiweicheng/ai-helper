@@ -106,6 +106,7 @@ export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
 
 // 标志位
 export let isScrolling = false;
+export let isComposing = false;
 
 // 自定义模型上下文窗口映射（modelName → contextWindow）
 export let customModelMap = new Map();
@@ -246,6 +247,8 @@ export default {
   set attachedImages(v) { attachedImages = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
+  get isComposing() { return isComposing; },
+  set isComposing(v) { isComposing = v; },
   get customModelMap() { return customModelMap; },
   set customModelMap(v) { customModelMap = v; },
 };

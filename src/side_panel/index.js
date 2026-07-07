@@ -1453,9 +1453,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
+      if (state.isComposing) return;
       e.preventDefault();
       sendMessage();
     }
+  });
+
+  // IME 组合输入状态监听（语音输入、中文输入法等的草稿状态）
+  userInput.addEventListener('compositionstart', () => {
+    state.isComposing = true;
+  });
+  userInput.addEventListener('compositionend', () => {
+    state.isComposing = false;
   });
 
   // 粘贴图片处理
