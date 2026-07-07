@@ -64,9 +64,32 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
+// ==================== 消息路由表 ====================
+//
+// 所有消息类型通过 if-chain 分发（非 switch），按频率排序：
+//
+// | 消息类型                      | 来源        | 用途                       | 异步 |
+// |-------------------------------|-------------|---------------------------|------|
+// | CANCEL_REACT                  | side_panel  | 取消 ReAct 循环             | 否   |
+// | RELOAD_MCP_TOOLS              | side_panel  | 强制重载 MCP 工具列表        | 是   |
+// | GET_MCP_TOOLS                 | side_panel  | 获取 MCP 工具（30s 缓存）    | 是   |
+// | GET_AGENT_SKILL_PROMPTS       | side_panel  | 获取 Skill Prompt（60s 缓存）| 是   |
+// | CAPTURE_TAB                   | side_panel  | 截取可见标签页              | 是   |
+// | CALL_API                      | side_panel  | 主 API 调用入口             | 否   |
+// | GET_SESSION                   | side_panel  | 获取当前模型配置            | 是   |
+// | GET_CHAT_CONFIG               | side_panel  | 获取聊天完整配置            | 是   |
+// | OPEN_OPTIONS_PAGE             | side_panel  | 打开配置页面                | 否   |
+// | SELECTION_TOOLBAR_ACTION      | content     | 划词工具栏操作（ai-search/explain/translate/summary）| 否 |
+// | FILL_SIDEPANEL_INPUT          | content     | 追问：填充输入框             | 否   |
+// | DIRECT_SEND                   | content     | 追问：直接发送文本           | 否   |
+// | GENERATE_PDF                  | content     | CDP 生成 PDF               | 是   |
+// | TRIGGER_AGENT_HEALTH_CHECK    | side_panel  | 手动触发 Agent 健康检查      | 否   |
+// | AGENT_CONNECTION_CHANGED      | options     | Agent 配对状态变更通知       | 否   |
+// | OPEN_LOCAL_PROTOTYPE          | side_panel  | 本地浏览器打开原型文件        | 是   |
+// | DELETE_LOCAL_PROTOTYPE        | side_panel  | 删除本地原型文件             | 是   |
+//
 // ==================== 消息监听 ====================
 
-// 监听来自 popup/side_panel 的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CANCEL_REACT') {
     const { tabId, sessionId } = message;

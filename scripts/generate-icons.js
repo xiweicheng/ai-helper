@@ -201,16 +201,21 @@ function svg16() {
       <stop offset="0%" stop-color="rgba(34,211,238,0.6)"/>
       <stop offset="100%" stop-color="rgba(34,211,238,0)"/>
     </radialGradient>
+    <clipPath id="rounded">
+      <rect x="0" y="0" width="${S}" height="${S}" rx="3" ry="3"/>
+    </clipPath>
   </defs>
-  <rect width="${S}" height="${S}" fill="${PALETTE.bg}"/>
-  <circle cx="${cx}" cy="7" r="8" fill="url(#glow)"/>
+  <g clip-path="url(#rounded)">
+    <rect width="${S}" height="${S}" fill="${PALETTE.bg}"/>
+    <circle cx="${cx}" cy="7" r="8" fill="url(#glow)"/>
 
-  <!-- 主六边形 -->
-  <path d="${hexagonPath(cx, cy, hexR)}" fill="url(#prismGrad)" opacity="0.45" stroke="url(#prismGrad)" stroke-width="1.8"/>
+    <!-- 主六边形 -->
+    <path d="${hexagonPath(cx, cy, hexR)}" fill="url(#prismGrad)" opacity="0.45" stroke="url(#prismGrad)" stroke-width="1.8"/>
 
-  <!-- 中心火花 -->
-  <circle cx="${cx}" cy="${cy}" r="1.5" fill="url(#nodeGlow)"/>
-  <circle cx="${cx}" cy="${cy}" r="0.8" fill="${PALETTE.cyan}"/>
+    <!-- 中心火花 -->
+    <circle cx="${cx}" cy="${cy}" r="1.5" fill="url(#nodeGlow)"/>
+    <circle cx="${cx}" cy="${cy}" r="0.8" fill="${PALETTE.cyan}"/>
+  </g>
 </svg>`;
 }
 
