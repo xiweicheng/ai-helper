@@ -18,20 +18,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'PASTE_FROM_CLIPBOARD') {
-    try {
-      const textarea = document.getElementById('clipboard-textarea');
-      textarea.value = '';
-      textarea.focus();
-      const success = document.execCommand('paste');
-      if (success) {
-        sendResponse({ success: true, text: textarea.value });
-      } else {
-        sendResponse({ success: false, error: '粘贴失败' });
-      }
-      textarea.value = '';
-    } catch (e) {
-      sendResponse({ success: false, error: e.message });
-    }
+    // 优先使用 navigator.clipboard.readText()
+    navigator.clipboard.readText()
+      .then(text => {
+        sendResponse({ success: true, text: text });
+      })
+      .catch(err => {
+        // 降级：尝试 execCommand('paste')（offscreen 中可能不工作，但作为兜底）
+        try {
+          const textarea = document.getElementById('clipboard-textarea');
+          textarea.value = '';
+          textarea.focus();
+          const success = document.execCommand('paste');
+          if (success && textarea.value) {
+            sendResponse({ success: true, text: textarea.value });
+          } else {
+            sendResponse({ success: false, error: '无法读取剪贴板：' + (err.message || err) });
+          }
+          textarea.value = '';
+        } catch (e) {
+          sendResponse({ success: false, error: '无法读取剪贴板：' + e.message });
+        }
+      });
     return true;
   }
 });
