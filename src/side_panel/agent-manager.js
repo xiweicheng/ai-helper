@@ -54,13 +54,16 @@ export async function renderAgentSelector() {
     const isActive = agent.id === activeId || (!activeId && agent.id === 'default');
     const toolCount = agent.toolIds ? agent.toolIds.length : '全部';
     html += `
-      <div class="agent-item ${isActive ? 'active' : ''}" data-agent-id="${escapeAttr(agent.id)}">
+      <div class="agent-item ${isActive ? 'active' : ''} ${!agent.isBuiltin ? 'is-editable' : ''}" data-agent-id="${escapeAttr(agent.id)}">
         <span class="agent-item-icon">${escapeHtml(agent.icon)}</span>
         <div class="agent-item-info">
           <span class="agent-item-name">${escapeHtml(agent.name)}</span>
           <span class="agent-item-desc" title="${escapeAttr(agent.description || `${toolCount} 个工具`)}">${escapeHtml(agent.description || `${toolCount} 个工具`)}</span>
         </div>
-        ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="编辑">✎</button>` : ''}
+        <div class="agent-item-actions">
+          ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="编辑">✎</button>` : ''}
+          ${isActive ? '<span class="agent-item-check">✓</span>' : ''}
+        </div>
       </div>`;
   }
 

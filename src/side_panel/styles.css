@@ -253,7 +253,28 @@ body {
   background: #f5f7fa;
 }
 .agent-item.active {
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(102, 126, 234, 0.14);
+}
+.agent-item.active .agent-item-name {
+  color: #667eea;
+}
+.agent-item-actions {
+  width: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.agent-item-check {
+  color: #667eea;
+  font-size: 13px;
+  display: none;
+}
+.agent-item.active .agent-item-check {
+  display: inline-block;
+}
+.agent-item.is-editable:hover .agent-item-check {
+  display: none;
 }
 .agent-item-icon {
   font-size: 16px;
@@ -287,7 +308,10 @@ body {
   font-size: 13px;
   padding: 4px;
   border-radius: 4px;
-  flex-shrink: 0;
+  display: none;
+}
+.agent-item.is-editable:hover .agent-item-edit {
+  display: inline-block;
 }
 .agent-item-edit:hover {
   color: #667eea;
