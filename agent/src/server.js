@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSy
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
-import { exec } from 'child_process';
+import { spawn } from 'child_process';
 import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
@@ -379,23 +379,23 @@ export function startServer() {
         }
 
         const fileUrl = `file://${check.resolved}`;
-        let openCmd;
         const platform = os.platform();
+        let cmd, args, spawnOpts;
         if (platform === 'darwin') {
-          openCmd = `open "${fileUrl}"`;
+          cmd = 'open';
+          args = [fileUrl];
+          spawnOpts = { detached: true, stdio: 'ignore' };
         } else if (platform === 'win32') {
-          openCmd = `start "" "${fileUrl}"`;
+          cmd = 'start';
+          args = ['""', `"${fileUrl}"`];
+          spawnOpts = { detached: true, stdio: 'ignore', shell: true, windowsHide: true };
         } else {
-          openCmd = `xdg-open "${fileUrl}"`;
+          cmd = 'xdg-open';
+          args = [fileUrl];
+          spawnOpts = { detached: true, stdio: 'ignore' };
         }
 
-        exec(openCmd, (err) => {
-          if (err) {
-            logError('browser_open', { path: check.resolved, error: err.message });
-            // exec 是异步回调，这里无法直接在回调中响应
-            // 但实际上如果能执行命令，浏览器大概率会成功打开
-          }
-        });
+        spawn(cmd, args, spawnOpts).unref();
 
         logFs('browser_open', { path: check.resolved, platform });
         return jsonResponse(res, 200, { success: true, path: check.resolved, platform });
