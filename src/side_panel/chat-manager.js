@@ -8,6 +8,7 @@ import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
+import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 
@@ -1474,7 +1475,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       prototypeBtn.className = 'prototype-btn-small';
       prototypeBtn.type = 'button';
       prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
-      prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      prototypeBtn.innerHTML = ICON_IMAGE_24;
       prototypeBtn.addEventListener('click', () => {
         // 多种方式尝试获取 prototypeId
         let prototypeId = prototypeCall.prototypeId;
@@ -3801,7 +3802,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     prototypeBtn.className = 'prototype-btn-small';
     prototypeBtn.type = 'button';
     prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
-    prototypeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+    prototypeBtn.innerHTML = ICON_IMAGE_24;
     prototypeBtn.addEventListener('click', () => {
       let prototypeId = prototypeCall.prototypeId;
       if (!prototypeId && prototypeCall.observation) {
