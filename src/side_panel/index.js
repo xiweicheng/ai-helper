@@ -1660,7 +1660,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
   
-  // 原型库按钮
+  // 原型页面库按钮
   const prototypeLibraryBtn = document.getElementById('prototypeLibraryBtn');
   if (prototypeLibraryBtn) {
     prototypeLibraryBtn.addEventListener('click', (e) => {

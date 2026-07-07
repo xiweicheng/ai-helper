@@ -177,12 +177,12 @@ export async function showPrototypeLibrary() {
     bindPrototypeLibraryControls(prototypes);
     
   } catch (err) {
-    console.error('[SidePanel] 加载原型库失败:', err);
+    console.error('[SidePanel] 加载原型页面库失败:', err);
     listEl.innerHTML = '<div class="prototype-library-empty">加载失败</div>';
   }
   
   modal.classList.add('show');
-  console.log('[SidePanel] 原型库已显示');
+  console.log('[SidePanel] 原型页面库已显示');
 }
 
 function renderPrototypeLibraryList(prototypes) {
@@ -333,7 +333,7 @@ export function hidePrototypeLibrary() {
   if (modal) {
     modal.classList.remove('show');
   }
-  console.log('[SidePanel] 原型库已隐藏');
+  console.log('[SidePanel] 原型页面库已隐藏');
 }
 
 function continueOptimizeFromLibrary(prototypeId, title) {
@@ -345,7 +345,7 @@ function continueOptimizeFromLibrary(prototypeId, title) {
     userInput.style.height = userInput.scrollHeight + 'px';
   }
   
-  console.log('[SidePanel] 从原型库继续优化原型:', prototypeId);
+  console.log('[SidePanel] 从原型页面库继续优化原型:', prototypeId);
 }
 
 async function deletePrototypeItem(prototypeId, title) {
