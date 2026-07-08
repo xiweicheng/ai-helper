@@ -20,6 +20,16 @@ let previewDragStartTY = 0;
 let previewImageList = [];
 let previewImageIndex = 0;
 
+function downloadImage(dataUrl) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  link.download = `image_${timestamp}.jpg`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function updatePreviewTransform() {
   const img = document.getElementById('imagePreviewLarge');
   if (!img) return;
@@ -181,6 +191,18 @@ export function initImagePreviewOverlay() {
     closeBtn.addEventListener('click', closePreview);
   }
 
+  // 下载按钮
+  const downloadBtn = document.getElementById('imagePreviewDownload');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const img = document.getElementById('imagePreviewLarge');
+      if (img && img.src) {
+        downloadImage(img.src);
+      }
+    });
+  }
+
   // 上一张/下一张按钮
   const prevBtn = document.getElementById('imagePreviewPrev');
   const nextBtn = document.getElementById('imagePreviewNext');
@@ -278,39 +300,41 @@ export function compressAndAttachImage(blob) {
   img.onload = () => {
     URL.revokeObjectURL(url);
 
-    // 计算缩放尺寸（最大 1024px）
-    let { width, height } = img;
-    const maxDim = 1024;
-    if (width > maxDim || height > maxDim) {
-      if (width > height) {
-        height = Math.round(height * (maxDim / width));
-        width = maxDim;
-      } else {
-        width = Math.round(width * (maxDim / height));
-        height = maxDim;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const originalUrl = reader.result;
+
+      let { width, height } = img;
+      const maxDim = 1024;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
       }
-    }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+      const compressedUrl = canvas.toDataURL('image/jpeg', 0.65);
 
-    state.attachedImages.push({ dataUrl });
+      state.attachedImages.push({ originalUrl, compressedUrl });
 
-    // 更新预览
-    const previewBar = document.getElementById('imagePreviewBar');
-    const userInput = document.getElementById('userInput');
-    if (previewBar) previewBar.style.display = '';
+      const previewBar = document.getElementById('imagePreviewBar');
+      const userInput = document.getElementById('userInput');
+      if (previewBar) previewBar.style.display = '';
 
-    // 重新渲染预览
-    renderImagePreviewsFromChat();
+      renderImagePreviewsFromChat();
 
-    // 聚焦输入框
-    if (userInput) userInput.focus();
+      if (userInput) userInput.focus();
+    };
+    reader.readAsDataURL(blob);
   };
 
   img.onerror = () => {
@@ -341,12 +365,12 @@ export function renderImagePreviewsFromChat() {
     wrapper.className = 'image-preview-item';
 
     const thumb = document.createElement('img');
-    thumb.src = img.dataUrl;
+    thumb.src = img.originalUrl || img.dataUrl;
     thumb.className = 'image-preview-thumb';
     thumb.title = '点击查看大图';
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
-      openImagePreview(img.dataUrl, thumb);
+      openImagePreview(img.originalUrl || img.dataUrl, thumb);
     });
 
     const removeBtn = document.createElement('button');
@@ -379,7 +403,7 @@ export function buildUserContent(text) {
   for (const img of state.attachedImages) {
     parts.push({
       type: 'image_url',
-      image_url: { url: img.dataUrl }
+      image_url: { url: img.compressedUrl || img.dataUrl }
     });
   }
 
