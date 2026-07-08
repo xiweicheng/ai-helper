@@ -106,9 +106,10 @@ enabled: true
    - **Windows (PowerShell)**：\`New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.ai-helper-agent\\skills\\<skill-name>"\`
    - 如果 \`mkdir\` 报错，尝试不带参数或使用 \`agent_write_file\` 工具在目标路径写入一个临时文件，让系统自动创建父目录。
 
-5. **写入 SKILL.md**：使用 \`agent_write_file\` 工具将内容写入：
-   - 路径：\`~/.ai-helper-agent/skills/<skill-name>/SKILL.md\`
-   - Windows 上路径中的 \`~\` 会自动解析为用户主目录
+5. **写入 SKILL.md**：使用 \`agent_write_file\` 工具将内容写入。
+   - **重要**：\`agent_write_file\` 不会展开 \`~\`，必须使用绝对路径！
+   - **macOS/Linux**：从当前工作目录推断用户主目录（工作目录通常是 \`/Users/<你的用户名>/...\`），完整路径为 \`/Users/<你的用户名>/.ai-helper-agent/skills/<skill-name>/SKILL.md\`
+   - **Windows**：\`C:\\Users\\<你的用户名>\\.ai-helper-agent\\skills\\<skill-name>\\SKILL.md\`
 
 6. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词。建议用户在工具箱页面点击「重新加载」使技能生效。
 
@@ -117,10 +118,10 @@ enabled: true
 当用户要求更新/完善已有技能时：
 
 1. **确认技能名称**：与用户确认要更新的技能名称
-2. **读取现有内容**：使用 \`agent_read_file\` 读取目标 SKILL.md
+2. **读取现有内容**：使用 \`agent_read_file\` 读取目标 SKILL.md（路径规则同创建流程，需使用绝对路径，如 \`/Users/<你的用户名>/.ai-helper-agent/skills/<skill-name>/SKILL.md\`）
 3. **分析更新需求**：结合当前对话上下文，识别需要更新的部分
 4. **合并内容**：保留原技能的核心结构，将新内容融入适当位置
-5. **覆盖写入**：使用 \`agent_write_file\` 覆盖写入 SKILL.md
+5. **覆盖写入**：使用 \`agent_write_file\` 覆盖写入 SKILL.md（路径规则同上，必须使用绝对路径）
 6. **告知用户**：告知更新内容，建议重新加载
 
 ## 更新注意事项
