@@ -2964,7 +2964,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const effectiveTimeout = typeof timeout === 'number' && timeout > 0 
     ? timeout 
     : config.reactConfig.toolTimeout;
-  const idleTimeoutMs = Math.min(effectiveTimeout / 2, 120000);
+  const idleTimeoutMs = Math.max(60000, Math.min(effectiveTimeout / 2, 300000));
 
   if (useAgentStream) {
     const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
