@@ -16,6 +16,7 @@ import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMe
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus } from './execution-log-render.js';
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
+import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
 
 // 从提取的子模块重导出（保持对外接口不变）
 export { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile };
@@ -281,9 +282,18 @@ export async function sendMessage() {
   }
   
 
+  // 注入文件内容（发送给模型，但不显示在用户消息气泡中）
+  const attachedFilesSnapshot = state.attachedFiles.slice();
+  if (attachedFilesSnapshot.length > 0) {
+    const fileContent = buildFileContentText();
+    if (fileContent) {
+      finalText += fileContent;
+    }
+  }
+
   const userContent = buildUserContent(finalText);
-  // 显示用户消息（含图片）
-  addMessage('user', userContent);
+  // 显示用户消息（含图片和文件标签）
+  addMessage('user', userContent, true, [], null, false, attachedFilesSnapshot);
   
   state.messageHistory.push({ role: 'user', content: userContent });
   
@@ -315,6 +325,11 @@ export async function sendMessage() {
       previewBar.innerHTML = '';
       previewBar.style.display = 'none';
     }
+  }
+
+  // 文件内容已注入到消息中，清除文件附件
+  if (state.attachedFiles.length > 0) {
+    clearFiles();
   }
 
   try {
@@ -632,7 +647,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, attachedFiles = []) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -868,11 +883,26 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     if (match) {
       const type = quotedMatch ? 'quoted' : 'selected';
       const contextText = match[1].trim();
-      const userQuestion = match[2].trim();
+      let userQuestion = match[2].trim();
+      // 如果有文件附件，从显示文本中去除文件内容
+      if (attachedFiles && attachedFiles.length > 0) {
+        const fileIdx = userQuestion.indexOf('\n\n[文件: ');
+        if (fileIdx !== -1) {
+          userQuestion = userQuestion.substring(0, fileIdx);
+        }
+      }
       messageDiv._pendingContext = { type, contextText, userQuestion };
       messageDiv.textContent = userQuestion;
     } else {
-      messageDiv.textContent = textContent;
+      // 如果有文件附件，从显示文本中去除文件内容
+      let displayText = textContent;
+      if (attachedFiles && attachedFiles.length > 0) {
+        const fileIdx = displayText.indexOf('\n\n[文件: ');
+        if (fileIdx !== -1) {
+          displayText = displayText.substring(0, fileIdx);
+        }
+      }
+      messageDiv.textContent = displayText;
     }
 
     // 如果消息包含图片，显示缩略图
@@ -891,6 +921,27 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         imagesContainer.appendChild(imgEl);
       });
       messageDiv.appendChild(imagesContainer);
+    }
+
+    // 如果消息包含文件附件，显示文件标签
+    if (attachedFiles && attachedFiles.length > 0) {
+      const filesContainer = document.createElement('div');
+      filesContainer.className = 'user-message-files';
+      const doneFiles = attachedFiles.filter(f => f.status === 'done');
+      const otherFiles = attachedFiles.filter(f => f.status !== 'done');
+      [...doneFiles, ...otherFiles].forEach(f => {
+        const tag = document.createElement('span');
+        tag.className = `user-message-file-tag ${f.status}`;
+        tag.textContent = `${getFileIcon(f.name)} ${f.name} (${formatFileSize(f.size)})`;
+        if (f.status === 'extracting') {
+          tag.textContent += ' 提取中...';
+        } else if (f.status === 'error') {
+          tag.textContent += ' 失败';
+          tag.title = f.error || '提取失败';
+        }
+        filesContainer.appendChild(tag);
+      });
+      messageDiv.appendChild(filesContainer);
     }
     
     const toolbar = document.createElement('div');

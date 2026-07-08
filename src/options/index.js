@@ -202,6 +202,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
+  // ==================== 文件上传开关事件 ====================
+
+  const enableFileInputEl = document.getElementById('enableFileInput');
+  if (enableFileInputEl) {
+    enableFileInputEl.addEventListener('change', function() {
+      chrome.storage.local.set({ enableFileInput: this.checked });
+    });
+  }
+
   const imageModelInput = document.getElementById('imageModelInput');
   const imageModelDropdown = document.getElementById('imageModelDropdown');
 

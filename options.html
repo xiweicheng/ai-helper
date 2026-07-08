@@ -95,6 +95,14 @@
       <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏发送图片给多模态模型进行分析）</span>
     </div>
 
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="enableFileInput">
+        <span class="toggle-text">启用文件上传功能</span>
+      </label>
+      <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏上传 PDF、Word、Excel、文本等文件，基于文件内容进行问答）</span>
+    </div>
+
     <div class="form-group" id="imageApiGroup" style="display:none;">
       <label for="imageApiBase">API Base URL <span class="hint">（可选，留空则使用基础模型配置）</span></label>
       <input type="text" id="imageApiBase" placeholder="https://api.deepseek.com" style="width:100%;">

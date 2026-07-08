@@ -48,6 +48,7 @@ import {
   refreshToolPopupIfOpen
 } from './tool-panel.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
+import { attachFiles, clearFiles } from './file-extract.js';
 
 // ==================== 配置监听 ====================
 
@@ -943,7 +944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 加载保存的模型选择和自定义模型
-  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform', 'enableImageInput', 'imageModelName', 'imageApiBase', 'imageApiKey'], (result) => {
+  chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform', 'enableImageInput', 'imageModelName', 'imageApiBase', 'imageApiKey', 'enableFileInput'], (result) => {
     const savedModelName = result.modelName;
     if (savedModelName) {
       state.currentModel = savedModelName;
@@ -960,7 +961,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.imageModelName = result.imageModelName || '';
     state.imageApiBase = result.imageApiBase || '';
     state.imageApiKey = result.imageApiKey || '';
+    // 文件上传配置
+    state.enableFileInput = result.enableFileInput || false;
     updateImagePreviewVisibility();
+    updateFileInputVisibility();
     addPromptManageButton();
 
     loadCustomModelsToDropdown(result.customModels, () => {
@@ -997,6 +1001,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (changes.enableImageInput) {
         state.enableImageInput = changes.enableImageInput.newValue;
         updateImagePreviewVisibility();
+      }
+      if (changes.enableFileInput) {
+        state.enableFileInput = changes.enableFileInput.newValue;
+        updateFileInputVisibility();
       }
       if (changes.imageModelName) {
         state.imageModelName = changes.imageModelName.newValue || '';
@@ -1467,14 +1475,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.isComposing = false;
   });
 
-  // 粘贴图片处理
+  // 粘贴图片/文件处理
   userInput.addEventListener('paste', (e) => {
-    if (!state.enableImageInput) return;
     const items = e.clipboardData?.items;
     if (!items) return;
 
     for (const item of items) {
-      if (item.type.startsWith('image/')) {
+      // 优先处理图片粘贴
+      if (item.type.startsWith('image/') && state.enableImageInput) {
         e.preventDefault();
         const blob = item.getAsFile();
         if (blob) {
@@ -1482,8 +1490,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         break;
       }
+      // 文件粘贴（当启用文件输入时）
+      if (item.kind === 'file' && state.enableFileInput) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          attachFiles([file]);
+        }
+        break;
+      }
     }
   });
+
+  // 文件上传按钮
+  const fileAttachBtn = document.getElementById('fileAttachBtn');
+  const fileInput = document.getElementById('fileInput');
+  if (fileAttachBtn && fileInput) {
+    fileAttachBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        attachFiles(Array.from(fileInput.files));
+        fileInput.value = '';
+      }
+    });
+  }
 
   // 截图按钮
   const screenshotBtn = document.getElementById('screenshotBtn');
@@ -2283,6 +2315,20 @@ function updateImagePreviewVisibility() {
     state.attachedImages = [];
   }
   renderImagePreviews();
+}
+
+/**
+ * 更新文件上传按钮可见性
+ */
+function updateFileInputVisibility() {
+  const fileAttachBtn = document.getElementById('fileAttachBtn');
+  if (fileAttachBtn) {
+    fileAttachBtn.style.display = state.enableFileInput ? '' : 'none';
+  }
+  // 如果关闭了文件功能，清空已附加的文件
+  if (!state.enableFileInput) {
+    clearFiles();
+  }
 }
 
 /**

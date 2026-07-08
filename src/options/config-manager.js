@@ -620,7 +620,7 @@ export function loadConfig() {
   chrome.storage.local.get([
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'enableImageInput', 'imageModelName', 'imageModels',
-    'imageApiBase', 'imageApiKey',
+    'imageApiBase', 'imageApiKey', 'enableFileInput',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
@@ -655,6 +655,12 @@ export function loadConfig() {
       }
       if (imageApiKeyGroup) {
         imageApiKeyGroup.style.display = enableImageInputEl.checked ? '' : 'none';
+      }
+    }
+    if (result.enableFileInput !== undefined) {
+      const enableFileInputEl = document.getElementById('enableFileInput');
+      if (enableFileInputEl) {
+        enableFileInputEl.checked = result.enableFileInput;
       }
     }
     if (result.imageModelName) {
@@ -838,6 +844,7 @@ export function saveConfig() {
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
+  const enableFileInput = document.getElementById('enableFileInput')?.checked || false;
   const imageModelName = currentImageModel || '';
   const imageApiBase = document.getElementById('imageApiBase')?.value.trim() || '';
   const imageApiKey = document.getElementById('imageApiKey')?.value.trim() || '';
@@ -996,6 +1003,8 @@ export function saveConfig() {
     imageModelName: imageModelName,
     imageApiBase: imageApiBase,
     imageApiKey: imageApiKey,
+    // 文件上传配置
+    enableFileInput: enableFileInput,
     // 反思配置
     reflectionConfig: reflectionConfig,
     // 流式输出配置

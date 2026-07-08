@@ -7,7 +7,7 @@ import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 const EXPORT_KEYS = [
   'apiBase', 'modelName', 'customModels', 'systemPrompt',
   'enableImageInput', 'imageModelName', 'imageModels',
-  'imageApiBase',
+  'imageApiBase', 'enableFileInput',
   'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout',
   'reactToolTimeout', 'reactClarifyTimeout', 'reactApiRetryCount',
   'reactApiRetryBaseDelay', 'enableToolPreselect', 'preselectMinToolCount',

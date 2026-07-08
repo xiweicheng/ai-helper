@@ -104,6 +104,10 @@ export let imageApiBase = '';   // 图片识别独立 API Base，为空则使用
 export let imageApiKey = '';    // 图片识别独立 API Token，为空则使用主配置
 export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
 
+// 文件上传问答
+export let enableFileInput = false;   // 文件上传开关
+export let attachedFiles = [];        // [{ name, size, type, dataUrl, text, status: 'pending'|'extracting'|'done'|'error' }]
+
 // 标志位
 export let isScrolling = false;
 export let isComposing = false;
@@ -245,6 +249,10 @@ export default {
   set imageApiKey(v) { imageApiKey = v; },
   get attachedImages() { return attachedImages; },
   set attachedImages(v) { attachedImages = v; },
+  get enableFileInput() { return enableFileInput; },
+  set enableFileInput(v) { enableFileInput = v; },
+  get attachedFiles() { return attachedFiles; },
+  set attachedFiles(v) { attachedFiles = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
   get isComposing() { return isComposing; },
