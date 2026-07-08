@@ -1881,9 +1881,26 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
       processContent.insertBefore(preselectCard, processContent.firstChild);
     });
     
-    // 移除所有 thinking-badge 和 thinking-content（最终答案统一由 final-answer 区域展示，避免重复）
-    processContent.querySelectorAll('.thinking-badge').forEach(el => el.remove());
-    processContent.querySelectorAll('.thinking-content').forEach(el => el.remove());
+    // 移除与最终答案重复的 thinking-badge/thinking-content（最终答案统一由 final-answer 展示）
+    // 不按索引移除最后一个，而是只移除内容与最终答案匹配的那个，避免误删用户看到的思考文本
+    const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
+    const thinkingContents = processContent.querySelectorAll('.thinking-content');
+    const finalText = extractTextContent(content).trim();
+    
+    if (thinkingContents.length > 0) {
+      // 从后往前找，移除第一个内容匹配最终答案的 thinking-content
+      for (let i = thinkingContents.length - 1; i >= 0; i--) {
+        const tcText = thinkingContents[i].textContent.trim();
+        if (finalText && tcText === finalText) {
+          thinkingContents[i].remove();
+          // 同时移除对应的 badgd（在 thinkingContents[i] 前面的最近一个 badge）
+          if (thinkingBadges[i] && thinkingBadges[i].classList.contains('thinking-badge')) {
+            thinkingBadges[i].remove();
+          }
+          break;
+        }
+      }
+    }
     
     processHistory.appendChild(processHeader);
     processHistory.appendChild(processBody);
