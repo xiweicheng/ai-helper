@@ -110,6 +110,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
   const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
+
+  // 重复工具调用检测：防止模型陷入重复调用同一工具的循环
+  const REPEATED_CALL_WARN_THRESHOLD = 3; // 连续相同调用达到此次数时注入警告
+  const REPEATED_CALL_HARD_LIMIT = 6;     // 连续相同调用达到此次数时强制终止
+  let lastToolCallFingerprint = null;     // 上一轮工具调用的指纹
+  let repeatedCallCount = 0;              // 连续相同调用的计数
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
   // 为工具定义、系统提示词、输出预留空间后的消息预算
@@ -589,6 +595,42 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
         console.log('[Background] 收到工具调用:', assistantMessage.tool_calls);
+        
+        // 重复工具调用检测：计算本轮工具调用的指纹并与上一轮比较
+        const currentFingerprint = JSON.stringify(
+          assistantMessage.tool_calls.map(tc => ({
+            name: tc.function?.name || tc.name,
+            args: typeof tc.function?.arguments === 'string' 
+              ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return tc.function.arguments; } })()
+              : tc.function?.arguments || {}
+          }))
+        );
+        
+        if (currentFingerprint === lastToolCallFingerprint) {
+          repeatedCallCount++;
+          console.warn(`[Background] 检测到重复工具调用 (第${repeatedCallCount}次连续重复):`, 
+            assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', '));
+          
+          if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
+            throw createErrorWithLog(
+              `连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`,
+              executionLog
+            );
+          }
+          
+          if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
+            // 注入警告消息，提示模型更换策略
+            const warnMsg = {
+              role: 'system',
+              content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
+            };
+            currentMessages.push(warnMsg);
+            console.log('[Background] 注入重复调用警告消息');
+          }
+        } else {
+          lastToolCallFingerprint = currentFingerprint;
+          repeatedCallCount = 1;
+        }
         
         currentMessages.push(assistantMessage);
         trimMessages();
