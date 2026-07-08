@@ -609,13 +609,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (message.type === 'AGENT_STATUS_CHANGE') {
       console.log('[SidePanel] 收到 Agent 状态变化:', message.connected, message.status);
-      // 重新从 storage 读取最新的 agentPlatform
-      chrome.storage.local.get('agentPlatform', (result) => {
-        state.agentPlatform = result.agentPlatform || { connected: false };
-        updateAgentIndicator(state.agentPlatform);
-        // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
-        refreshToolPopupIfOpen();
-      });
+      // 直接使用消息中的 connected 值，不重新读 storage（storage 可能是过期状态）
+      state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
+      updateAgentIndicator(state.agentPlatform);
+      // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
+      refreshToolPopupIfOpen();
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 直接从选项页通知更新，不依赖 storage 读取
@@ -955,6 +953,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.agentPlatform = result.agentPlatform;
     }
     updateAgentIndicator(state.agentPlatform);
+    // 触发一次实时代理健康检查，确保连接状态准确
+    chrome.runtime.sendMessage({ type: 'TRIGGER_AGENT_HEALTH_CHECK' }).catch(() => {});
     // 图片识别配置
     state.enableImageInput = result.enableImageInput || false;
     state.imageModelName = result.imageModelName || '';
