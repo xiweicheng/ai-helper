@@ -1642,11 +1642,13 @@ function appendToolCallItems(element, toolCalls) {
     const item = document.createElement('div');
     item.className = 'tool-call-item';
     item.setAttribute('data-tool-call-id', tc.id || '');
+    item.setAttribute('data-meta-type', meta.metaType);
     item.innerHTML = `
       <div class="tool-call-header">
         ${iconSvg}
         <span class="tool-call-name">${escapeHtml(toolName)}</span>
         <div class="tool-call-summary">${summaryHtml}</div>
+        <span class="tool-call-executing">执行中...</span>
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
@@ -1685,6 +1687,12 @@ function appendToolResult(result, streamingElement) {
   
   const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
   if (!card) return;
+  
+  // 标记为已有结果，停止执行中动画
+  card.classList.add('has-result');
+  // 移除执行中状态标识
+  const executingBadge = card.querySelector('.tool-call-executing');
+  if (executingBadge) executingBadge.remove();
   
   // 移除旧的结果（如果有）
   const oldResult = card.querySelector('.tool-call-result');

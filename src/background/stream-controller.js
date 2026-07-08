@@ -40,12 +40,20 @@ export class StreamController {
       return { type: 'done' };
     }
 
-    // data: {...} 行
-    if (!line.startsWith('data: ')) {
+    // data: {...} 或 data:{...} 行（兼容带空格和不带空格两种格式）
+    let jsonStr = null;
+    if (line.startsWith('data: ')) {
+      jsonStr = line.slice(6);
+    } else if (line.startsWith('data:')) {
+      jsonStr = line.slice(5);
+    }
+    if (jsonStr === null) {
       return { type: 'ignore' };
     }
 
-    const jsonStr = line.slice(6);
+    // 去除 jsonStr 首尾空白
+    jsonStr = jsonStr.trim();
+
     let chunk;
     try {
       chunk = JSON.parse(jsonStr);
