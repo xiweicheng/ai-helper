@@ -59,6 +59,12 @@ npm publish --registry https://registry.npmjs.org/
 ```bash
 npm view ai-helper-agent version --registry https://registry.npmjs.org/
 ```
+### 6. 安装测试
+
+```bash
+npm install -g ai-helper-agent --registry https://registry.npmjs.org/
+```
+
 
 ## 常见问题
 
