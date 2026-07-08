@@ -1532,9 +1532,12 @@ function updateStreamingMessage(element, fullContent) {
   }
   
   // 自动滚动（等浏览器完成布局后再滚动，确保 scrollHeight 已更新）
-  requestAnimationFrame(() => {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+  if (element.isConnected) {
+    requestAnimationFrame(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 }
 
 /**
@@ -1660,10 +1663,13 @@ function appendToolCallItems(element, toolCalls) {
   });
   
   // 滚动到底部（等浏览器完成布局后）
-  requestAnimationFrame(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+  if (element.isConnected) {
+    requestAnimationFrame(() => {
+      const chatContainer = document.getElementById('chatContainer');
+      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 }
 
 /**
@@ -1725,10 +1731,13 @@ function appendToolResult(result, streamingElement) {
   }
   
   // 滚动到底部（等浏览器完成布局后）
-  requestAnimationFrame(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+  if (streamingElement.isConnected) {
+    requestAnimationFrame(() => {
+      const chatContainer = document.getElementById('chatContainer');
+      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 }
 
 /**
