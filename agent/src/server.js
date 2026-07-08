@@ -51,7 +51,53 @@ const MAX_LOG_QUERY_LIMIT = 1000;        // 日志查询最大条数
 const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制
 
-// 平台信息（启动时检测一次）
+function detectShell() {
+  const platform = os.platform();
+  const envShell = process.env.SHELL || process.env.COMSPEC || '';
+
+  if (platform === 'win32') {
+    if (envShell.toLowerCase().includes('bash')) {
+      return envShell;
+    } else if (envShell.toLowerCase().includes('powershell')) {
+      return envShell;
+    } else if (envShell.toLowerCase().includes('cmd')) {
+      return envShell;
+    } else {
+      const gitBashPaths = [
+        'C:\\Program Files\\Git\\bin\\bash.exe',
+        'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+        `${process.env.USERPROFILE}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe`,
+      ];
+      for (const path of gitBashPaths) {
+        try {
+          if (require('fs').existsSync(path)) {
+            return path;
+          }
+        } catch {}
+      }
+      return 'cmd.exe';
+    }
+  }
+
+  if (platform === 'darwin') {
+    if (envShell.toLowerCase().includes('zsh')) {
+      return envShell;
+    } else if (envShell.toLowerCase().includes('bash')) {
+      return envShell;
+    }
+    return '/bin/zsh';
+  }
+
+  if (envShell.toLowerCase().includes('bash')) {
+    return envShell;
+  } else if (envShell.toLowerCase().includes('zsh')) {
+    return envShell;
+  } else if (envShell.toLowerCase().includes('fish')) {
+    return envShell;
+  }
+  return '/bin/bash';
+}
+
 const PLATFORM_INFO = {
   platform: os.platform(),
   platformName: (() => {
@@ -60,7 +106,7 @@ const PLATFORM_INFO = {
   })(),
   arch: os.arch(),
   hostname: os.hostname(),
-  shell: process.env.SHELL || process.env.COMSPEC || '/bin/sh',
+  shell: detectShell(),
   homeDir: os.homedir(),
   nodeVersion: process.version
 };

@@ -121,6 +121,82 @@ export function copyToClipboard(text, btn) {
   });
 }
 
+function getBrowserOS() {
+  if (typeof navigator !== 'undefined' && navigator.userAgent) {
+    const ua = navigator.userAgent;
+    if (ua.includes('Windows')) return 'Windows';
+    if (ua.includes('Mac OS') || ua.includes('Macintosh')) return 'macOS';
+    if (ua.includes('Linux') && !ua.includes('Android')) return 'Linux';
+  }
+  return 'Unknown';
+}
+
+function getCommandExecutionEnv() {
+  if (!state.agentPlatform || !state.agentPlatform.connected) {
+    return null;
+  }
+
+  const hasExecCommandTool = state.enabledTools && state.enabledTools.includes('agent_exec_command');
+  if (!hasExecCommandTool) {
+    return null;
+  }
+
+  const ap = state.agentPlatform;
+  let osType = 'unknown';
+  let shellType = ap.shell || '/bin/sh';
+  let commandHint = '';
+
+  if (ap.platformName) {
+    if (ap.platformName.toLowerCase().includes('windows')) {
+      osType = 'Windows';
+      if (shellType.toLowerCase().includes('powershell')) {
+        shellType = 'PowerShell';
+        commandHint = '（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）';
+      } else if (shellType.toLowerCase().includes('cmd') || shellType.toLowerCase().includes('command')) {
+        shellType = 'CMD';
+        commandHint = '（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）';
+      } else if (shellType.toLowerCase().includes('bash') || ap.platformName.toLowerCase().includes('git')) {
+        shellType = 'Git Bash';
+        commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）';
+      } else {
+        shellType = 'PowerShell';
+        commandHint = '（请使用 PowerShell 语法）';
+      }
+    } else if (ap.platformName.toLowerCase().includes('mac') || ap.platformName.toLowerCase().includes('darwin')) {
+      osType = 'macOS';
+      if (shellType.toLowerCase().includes('zsh')) {
+        shellType = 'zsh';
+      } else if (shellType.toLowerCase().includes('bash')) {
+        shellType = 'bash';
+      } else {
+        shellType = 'zsh';
+      }
+      commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）';
+    } else if (ap.platformName.toLowerCase().includes('linux')) {
+      osType = 'Linux';
+      if (shellType.toLowerCase().includes('bash')) {
+        shellType = 'bash';
+      } else if (shellType.toLowerCase().includes('zsh')) {
+        shellType = 'zsh';
+      } else if (shellType.toLowerCase().includes('fish')) {
+        shellType = 'fish';
+      } else {
+        shellType = 'bash';
+      }
+      commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）';
+    }
+  }
+
+  return {
+    osType,
+    shellType,
+    platformName: ap.platformName,
+    arch: ap.arch,
+    workdir: ap.workdir || '',
+    commandHint
+  };
+}
+
 /**
  * 获取系统提示词
  * 优先级：Agent 自定义 > 全局自定义 > 默认
@@ -128,12 +204,38 @@ export function copyToClipboard(text, btn) {
  */
 export async function getSystemPrompt(agent = null) {
   const currentTime = new Date().toLocaleString('zh-CN');
+  const browserOS = getBrowserOS();
+  const execEnv = getCommandExecutionEnv();
 
-  // 构建 Agent 平台信息文本
   let agentInfo = '';
-  if (state.agentPlatform && state.agentPlatform.connected) {
-    const ap = state.agentPlatform;
-    agentInfo = `\n- 本地 Agent：${ap.platformName} (${ap.arch})，默认 shell: ${ap.shell}，工作目录: ${ap.workdir || '未设置'}`;
+  let commandEnvSection = '';
+  
+  if (execEnv) {
+    agentInfo = `\n- 本地 Agent：${execEnv.platformName} (${execEnv.arch})，默认 shell: ${execEnv.shellType}，工作目录: ${execEnv.workdir || '未设置'}`;
+    
+    commandEnvSection = `
+
+## 命令执行环境
+- **操作系统**: ${execEnv.osType}
+- **默认 Shell**: ${execEnv.shellType}
+- **工作目录**: ${execEnv.workdir || '未设置'}
+- **命令格式提示**: ${execEnv.commandHint}
+
+### 命令格式规范
+${['PowerShell', 'CMD'].includes(execEnv.shellType) ? `
+- **文件操作**: 使用 PowerShell/CMD 命令，如 \`Get-ChildItem\`(ls), \`Set-Content\`(写文件), \`Remove-Item\`(删除), \`New-Item -ItemType Directory\`(创建目录)
+- **环境变量**: 使用 \`$env:VAR_NAME\` 访问，如 \`$env:PATH\`
+- **管道**: 使用 \`|\`，如 \`Get-ChildItem | Where-Object { $_.Name -like '*.txt' }\`
+- **字符串**: 使用双引号 \`"\` 或单引号 \`'\`
+- **避免**: 不要使用 Linux 特有命令如 \`cat\`(用 \`Get-Content\`), \`rm\`(用 \`Remove-Item\`), \`ls\`(用 \`Get-ChildItem\`)
+` : `
+- **文件操作**: 使用 Unix 命令，如 \`ls\`, \`cat\`, \`rm\`, \`mkdir\`, \`cp\`, \`mv\`
+- **环境变量**: 使用 \`$VAR_NAME\` 访问，如 \`$PATH\`
+- **管道**: 使用 \`|\`，如 \`ls -la | grep .txt\`
+- **字符串**: 使用双引号 \`"\` 或单引号 \`'\`
+- **路径**: 使用正斜杠 \`/\`，如 \`/c/Users/username/project\`（Windows 上 Git Bash）或 \`/home/user/project\`（Linux/macOS）
+- **避免**: 不要使用 Windows 特有命令如 \`dir\`, \`del\`, \`copy\`
+`}`;
   }
   
   // dispatch_sub_agent 工具说明——有可用子 Agent 时注入
@@ -195,8 +297,8 @@ ${subAgentList}`;
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
-- 操作系统：Windows 10.0
-- 当前时间：${currentTime}${agentInfo}${taskPlanningRules}${dispatchToolRule}
+- 浏览器操作系统：${browserOS}
+- 当前时间：${currentTime}${agentInfo}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}
 `;
 
     // 注入 Agent Skill Prompts
@@ -229,8 +331,8 @@ ${subAgentList}`;
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
-- 操作系统：Windows 10.0
-- 当前时间：${currentTime}${agentInfo}
+- 浏览器操作系统：${browserOS}
+- 当前时间：${currentTime}${agentInfo}${commandEnvSection}
 `;
 
   // 注入 Agent Skill Prompts

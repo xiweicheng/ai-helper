@@ -1,7 +1,55 @@
 // agent/src/executor.js - 命令执行器（child_process + 流式输出）
 import { spawn } from 'child_process';
 import crypto from 'crypto';
+import os from 'os';
 import { loadConfig } from './config.js';
+
+function getShellForExec() {
+  const platform = os.platform();
+  const envShell = process.env.SHELL || process.env.COMSPEC || '';
+
+  if (platform === 'win32') {
+    if (envShell.toLowerCase().includes('bash')) {
+      return { shell: envShell, args: ['-c'] };
+    } else if (envShell.toLowerCase().includes('powershell')) {
+      return { shell: envShell, args: ['-Command'] };
+    } else if (envShell.toLowerCase().includes('cmd')) {
+      return { shell: envShell, args: ['/c'] };
+    } else {
+      const gitBashPaths = [
+        'C:\\Program Files\\Git\\bin\\bash.exe',
+        'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+        `${process.env.USERPROFILE}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe`,
+      ];
+      for (const path of gitBashPaths) {
+        try {
+          if (require('fs').existsSync(path)) {
+            return { shell: path, args: ['-c'] };
+          }
+        } catch {}
+      }
+      return { shell: 'cmd.exe', args: ['/c'] };
+    }
+  }
+
+  if (platform === 'darwin') {
+    if (envShell.toLowerCase().includes('zsh')) {
+      return { shell: envShell, args: ['-c'] };
+    } else if (envShell.toLowerCase().includes('bash')) {
+      return { shell: envShell, args: ['-c'] };
+    }
+    return { shell: '/bin/zsh', args: ['-c'] };
+  }
+
+  if (envShell.toLowerCase().includes('bash')) {
+    return { shell: envShell, args: ['-c'] };
+  } else if (envShell.toLowerCase().includes('zsh')) {
+    return { shell: envShell, args: ['-c'] };
+  } else if (envShell.toLowerCase().includes('fish')) {
+    return { shell: envShell, args: ['-c'] };
+  }
+  return { shell: '/bin/bash', args: ['-c'] };
+}
 
 // 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId }
 const runningProcesses = new Map();
@@ -62,7 +110,8 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   const execId = generateExecId();
   const timeout = config.commandTimeout || 300000;
 
-  const proc = spawn('sh', ['-c', command], {
+  const { shell, args } = getShellForExec();
+  const proc = spawn(shell, [...args, command], {
     cwd: workdir,
     env: buildSafeEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],

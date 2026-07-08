@@ -103,7 +103,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec_command',
-      description: '通过本地 Agent 执行系统命令。适用场景：npm install、git 操作、运行脚本、编译构建等。危险命令（如 rm -rf /）会被自动拦截。敏感命令（如 sudo、全局安装 npm 包、chmod 777、git push --force 等）初次调用时会返回确认提示，你需要告知用户需要确认的原因，等待用户同意后，再次调用此工具并传入 force: true 来强制执行。命令的输出和退出码会完整返回。',
+      description: '通过本地 Agent 执行系统命令。适用场景：npm install、git 操作、运行脚本、编译构建等。危险命令（如 rm -rf /）会被自动拦截。敏感命令（如 sudo、全局安装 npm 包、chmod 777、git push --force 等）初次调用时会返回确认提示，你需要告知用户需要确认的原因，等待用户同意后，再次调用此工具并传入 force: true 来强制执行。命令的输出和退出码会完整返回。\n\n注意：请根据系统提示词中的「命令执行环境」信息生成对应操作系统的命令（Windows 使用 PowerShell，Linux/macOS 使用 Unix 命令）。',
       parameters: {
         type: 'object',
         properties: {
