@@ -3774,6 +3774,9 @@ body {
   font-size: 12px;
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 12px;
+  margin-right: 12px;
 }
 
 .prompt-manage-item-content {

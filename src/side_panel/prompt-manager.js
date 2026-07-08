@@ -582,9 +582,9 @@ export function renderPromptManageList() {
     <div class="prompt-manage-item" draggable="true" data-index="${index}">
       <div class="prompt-manage-item-left">
         <span class="prompt-drag-handle" title="拖拽排序">⋮⋮</span>
-        <span class="prompt-manage-item-code">/${prompt.code}</span>
         <span class="prompt-manage-item-content">${prompt.content}</span>
       </div>
+      <span class="prompt-manage-item-code">/${prompt.code}</span>
       <div class="prompt-manage-item-actions">
         <button class="prompt-sort-btn move-up-btn" data-index="${index}" title="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
         <button class="prompt-sort-btn move-down-btn" data-index="${index}" title="下移" ${index === state.customPrompts.length - 1 ? 'disabled' : ''}>↓</button>

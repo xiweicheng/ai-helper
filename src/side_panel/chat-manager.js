@@ -1440,34 +1440,34 @@ export function restoreMessageFromHtml(htmlContent) {
         exportDropdown.classList.remove('show');
       });
     }
-  }
 
-  // 重新绑定原型预览按钮事件
-  const prototypeBtn = footer.querySelector('.prototype-btn-small');
-  if (prototypeBtn) {
-    const logs = (() => {
-      try {
-        const raw = messageEl.dataset.executionLog;
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })();
-    const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
-    if (prototypeCall) {
-      prototypeBtn.addEventListener('click', () => {
-        let prototypeId = prototypeCall.prototypeId;
-        if (!prototypeId && prototypeCall.observation) {
-          try {
-            const parsed = typeof prototypeCall.observation === 'string' 
-              ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
-            prototypeId = parsed?.prototypeId;
-          } catch (e) {}
-        }
-        if (prototypeId) {
-          loadAndShowPrototype(prototypeId);
-        } else {
-          console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
-        }
-      });
+    // 重新绑定原型预览按钮事件
+    const prototypeBtn = footer.querySelector('.prototype-btn-small');
+    if (prototypeBtn) {
+      const logs = (() => {
+        try {
+          const raw = messageEl.dataset.executionLog;
+          return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+      })();
+      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+      if (prototypeCall) {
+        prototypeBtn.addEventListener('click', () => {
+          let prototypeId = prototypeCall.prototypeId;
+          if (!prototypeId && prototypeCall.observation) {
+            try {
+              const parsed = typeof prototypeCall.observation === 'string' 
+                ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+              prototypeId = parsed?.prototypeId;
+            } catch (e) {}
+          }
+          if (prototypeId) {
+            loadAndShowPrototype(prototypeId);
+          } else {
+            console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+          }
+        });
+      }
     }
   }
 
@@ -1881,17 +1881,9 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
       processContent.insertBefore(preselectCard, processContent.firstChild);
     });
     
-    // 移除最后一个 thinking-badge 和 thinking-content（最终答案，将显示在折叠区外）
-    const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
-    const thinkingContents = processContent.querySelectorAll('.thinking-content');
-    if (thinkingBadges.length > 0) {
-      const lastBadge = thinkingBadges[thinkingBadges.length - 1];
-      lastBadge.remove();
-    }
-    if (thinkingContents.length > 0) {
-      const lastContent = thinkingContents[thinkingContents.length - 1];
-      lastContent.remove();
-    }
+    // 移除所有 thinking-badge 和 thinking-content（最终答案统一由 final-answer 区域展示，避免重复）
+    processContent.querySelectorAll('.thinking-badge').forEach(el => el.remove());
+    processContent.querySelectorAll('.thinking-content').forEach(el => el.remove());
     
     processHistory.appendChild(processHeader);
     processHistory.appendChild(processBody);
@@ -1908,6 +1900,8 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     // 移除原始的 thinking-indicator（来自 addStreamingMessage 模板）
     const origThinking = messageContent.querySelector('.thinking-indicator');
     if (origThinking) origThinking.remove();
+    // 清空 stream-content（所有子节点已移入思考过程区域）
+    if (streamContent) streamContent.innerHTML = '';
     
     // 插入 process-history 和 final-answer
     messageContent.appendChild(processHistory);
