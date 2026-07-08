@@ -333,7 +333,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeo
 
   let idleTimeoutId = setTimeout(() => {
     console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
-    ws.close(1008, 'Idle timeout');
+    ws.close(4000, 'Idle timeout');
     if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
   }, idleTimeoutMs);
 
@@ -341,7 +341,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeo
     clearTimeout(idleTimeoutId);
     idleTimeoutId = setTimeout(() => {
       console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
-      ws.close(1008, 'Idle timeout');
+      ws.close(4000, 'Idle timeout');
       if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
     }, idleTimeoutMs);
   };
