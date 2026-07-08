@@ -2837,6 +2837,10 @@ body {
   z-index: 2;
 }
 
+.image-preview-download:hover {
+  background: rgba(102, 126, 234, 0.8);
+}
+
 .modal-title {
   font-size: 16px;
   font-weight: 600;

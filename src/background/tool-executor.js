@@ -2954,20 +2954,21 @@ async function executeAgentDeleteFile(args, toolCallId) {
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
  */
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
-  const { command, cwd, force } = args;
+  const { command, cwd, force, timeout } = args;
   if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
 
-  // 当用户关闭敏感工具确认开关时，自动向 Agent 传 force: true 跳过灰名单检查
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
   const useAgentStream = config.streamConfig?.streamEnabled !== false;
+  
+  const effectiveTimeout = typeof timeout === 'number' && timeout > 0 
+    ? timeout 
+    : config.reactConfig.toolTimeout;
+  const idleTimeoutMs = Math.min(effectiveTimeout / 2, 120000);
 
-  // 流式模式：异步执行 + WebSocket 实时输出
   if (useAgentStream) {
-    // 先发起异步执行
     const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
     
-    // 黑名单/网络错误：直接返回
     if (initResult.level === 'deny') {
       return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
     }
@@ -2986,16 +2987,38 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       };
     }
 
-    // 允许执行：通过 WebSocket 流式输出
     const { execId, wsUrl } = initResult;
     let stdoutCollected = '';
     let stderrCollected = '';
     let exitCode = null;
     let killed = false;
+    let ws = null;
+
+    const cleanupAndStop = async (reason) => {
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+      if (execId && reason && reason.includes('超时')) {
+        try {
+          await AgentClient.stopCommand(execId);
+          console.log('[AgentExec] 已终止超时的命令进程:', execId);
+        } catch (stopErr) {
+          console.warn('[AgentExec] 终止命令进程失败:', stopErr.message);
+        }
+      }
+    };
 
     try {
       await new Promise((resolve, reject) => {
-        AgentClient.createExecWebSocket(wsUrl, (data) => {
+        const totalTimeoutId = setTimeout(() => {
+          const errMsg = `命令执行超时 (${effectiveTimeout}ms)`;
+          console.error('[AgentExec]', errMsg);
+          cleanupAndStop(errMsg).then(() => {
+            reject(new Error(errMsg));
+          });
+        }, effectiveTimeout);
+
+        ws = AgentClient.createExecWebSocket(wsUrl, (data) => {
           if (data.type === 'stdout') {
             stdoutCollected += data.data;
             sendAgentStream(sessionId, execId, 'stdout', data.data);
@@ -3003,27 +3026,51 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
             stderrCollected += data.data;
             sendAgentStream(sessionId, execId, 'stderr', data.data);
           } else if (data.type === 'exit') {
+            clearTimeout(totalTimeoutId);
             exitCode = data.exitCode;
             killed = data.killed;
             sendAgentStreamDone(sessionId, execId, exitCode);
             resolve();
           }
         }, () => {
-          // onClose - 如果还没收到 exit，视为异常关闭
+          clearTimeout(totalTimeoutId);
           if (exitCode === null) {
             exitCode = -1;
             sendAgentStreamDone(sessionId, execId, -1);
           }
           resolve();
         }, (err) => {
+          clearTimeout(totalTimeoutId);
           console.error('[AgentExec] WebSocket 错误:', err);
-          reject(err);
-        });
+          cleanupAndStop(err.message).then(() => {
+            reject(err);
+          });
+        }, idleTimeoutMs);
+
+        if (!ws) {
+          clearTimeout(totalTimeoutId);
+          reject(new Error('创建 WebSocket 连接失败'));
+        }
       });
     } catch (wsError) {
-      // WebSocket 连接失败，回退到同步模式
-      console.warn('[AgentExec] WebSocket 流式失败，回退到同步模式:', wsError.message);
-      const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
+      console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
+      if (wsError.message.includes('超时')) {
+        sendAgentStreamDone(sessionId, execId, -1);
+        appendAuditLog('command_exec', `命令执行超时: ${command}`, { command, cwd, exitCode: -1 });
+        return {
+          success: false,
+          level: 'allow',
+          execId,
+          exitCode: -1,
+          stdout: stdoutCollected,
+          stderr: stderrCollected,
+          killed: true,
+          message: `命令执行超时（${effectiveTimeout}ms），已终止进程。\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\nstderr:\n```\n' + stderrCollected + '\n```' : ''}`,
+          error: `命令执行超时 (${effectiveTimeout}ms)`
+        };
+      }
+      console.warn('[AgentExec] 回退到同步模式:', wsError.message);
+      const result = await AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout);
       return formatAgentExecResult(result, command, cwd, toolCallId);
     }
 
@@ -3044,8 +3091,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     };
   }
 
-  // 非流式模式：使用 wait 同步执行
-  const result = await AgentClient.execCommandWait(command, cwd, effectiveForce);
+  const result = await AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout);
   return formatAgentExecResult(result, command, cwd, toolCallId);
 }
 

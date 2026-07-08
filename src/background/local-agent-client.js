@@ -137,8 +137,9 @@ async function unpairAgent() {
  * @param {string} path
  * @param {Object} [body]
  * @param {string} [method='POST']
+ * @param {number} [timeoutMs=60000] - 请求超时时间（毫秒）
  */
-async function agentRequest(path, body = {}, method = 'POST') {
+async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000) {
   const config = await getAgentConfig();
   if (!config.connected) {
     return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
@@ -149,13 +150,17 @@ async function agentRequest(path, body = {}, method = 'POST') {
     return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const fetchOptions = {
       method,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.token}`
-      }
+      },
+      signal: controller.signal
     };
 
     // GET/DELETE 请求不需要 body
@@ -164,16 +169,23 @@ async function agentRequest(path, body = {}, method = 'POST') {
     }
 
     const response = await fetch(`${config.url}${path}`, fetchOptions);
+    clearTimeout(timeoutId);
     return await response.json();
   } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return { success: false, error: `请求超时 (${timeoutMs}ms)` };
+    }
     return { success: false, error: `Agent 请求失败: ${err.message}` };
   }
 }
 
 /**
  * 发送带认证的 GET 请求
+ * @param {string} path
+ * @param {number} [timeoutMs=30000] - 请求超时时间（毫秒）
  */
-async function agentGet(path) {
+async function agentGet(path, timeoutMs = 30000) {
   const config = await getAgentConfig();
   if (!config.connected) {
     return { success: false, error: 'Agent 未配对' };
@@ -184,13 +196,22 @@ async function agentGet(path) {
     return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const response = await fetch(`${config.url}${path}`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${config.token}` }
+      headers: { 'Authorization': `Bearer ${config.token}` },
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     return await response.json();
   } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return { success: false, error: `请求超时 (${timeoutMs}ms)` };
+    }
     return { success: false, error: `Agent 请求失败: ${err.message}` };
   }
 }
@@ -248,8 +269,8 @@ async function execCommand(command, cwd, force = false) {
  * 同步执行命令并等待结果（用于扩展端获取完整输出）
  * @returns {Promise<Object>} { success, exitCode, stdout, stderr, execId, killed, error? }
  */
-async function execCommandWait(command, cwd, force = false) {
-  return agentRequest('/api/exec', { command, cwd, wait: true, force });
+async function execCommandWait(command, cwd, force = false, timeoutMs = 600000) {
+  return agentRequest('/api/exec', { command, cwd, wait: true, force }, 'POST', timeoutMs);
 }
 
 /**
@@ -285,8 +306,13 @@ async function getAgentDetail() {
 /**
  * 创建 WebSocket 连接，用于接收命令执行的实时输出
  * Token 通过 getAgentConfig 获取，不再从 URL 传入
+ * @param {string} wsUrl - WebSocket 连接地址
+ * @param {Function} onMessage - 消息回调
+ * @param {Function} onClose - 关闭回调
+ * @param {Function} onError - 错误回调
+ * @param {number} [idleTimeoutMs=60000] - 空闲超时时间（毫秒），默认 60 秒
  */
-async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
+async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeoutMs = 60000) {
   const config = await getAgentConfig();
   if (!config.connected) {
     if (onError) onError(new Error('Agent 未配对'));
@@ -305,11 +331,28 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
 
   const ws = new WebSocket(authenticatedUrl);
 
+  let idleTimeoutId = setTimeout(() => {
+    console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
+    ws.close(1008, 'Idle timeout');
+    if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
+  }, idleTimeoutMs);
+
+  const resetIdleTimeout = () => {
+    clearTimeout(idleTimeoutId);
+    idleTimeoutId = setTimeout(() => {
+      console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
+      ws.close(1008, 'Idle timeout');
+      if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
+    }, idleTimeoutMs);
+  };
+
   ws.onopen = () => {
     console.log('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
+    resetIdleTimeout();
   };
 
   ws.onmessage = (event) => {
+    resetIdleTimeout();
     try {
       const data = JSON.parse(event.data);
       if (onMessage) onMessage(data);
@@ -319,11 +362,13 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError) {
   };
 
   ws.onclose = () => {
+    clearTimeout(idleTimeoutId);
     console.log('[AgentClient] WebSocket 已关闭');
     if (onClose) onClose();
   };
 
   ws.onerror = (err) => {
+    clearTimeout(idleTimeoutId);
     console.error('[AgentClient] WebSocket 错误:', err);
     if (onError) onError(err);
   };

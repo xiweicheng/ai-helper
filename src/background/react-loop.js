@@ -504,20 +504,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
           }
 
-          // 非流式模式：发送 STREAM_TOOL_CALL 通知前端
+          // 非流式模式下，规范化 tool_calls 的 ID（不发送 STREAM_TOOL_CALL，前端不创建流式元素）
           const nonStreamToolCalls = response.choices?.[0]?.message?.tool_calls;
           if (nonStreamToolCalls && nonStreamToolCalls.length > 0) {
             const normalizedNonStreamToolCalls = nonStreamToolCalls.map(tc => ({
               ...tc,
               id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
             }));
-            
-            chrome.runtime.sendMessage({
-              type: 'STREAM_TOOL_CALL',
-              sessionId,
-              toolCalls: normalizedNonStreamToolCalls,
-              thinkingContent: response.choices?.[0]?.message?.content || ''
-            }).catch(() => {});
 
             // 更新 response 中的 tool_calls 使用规范化后的 ID
             response.choices[0].message.tool_calls = normalizedNonStreamToolCalls;
