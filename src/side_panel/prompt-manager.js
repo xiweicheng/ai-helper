@@ -377,8 +377,8 @@ export async function sendPromptByCode(code) {
   // 构建用户消息 content（支持图片附件）
   const userContent = buildUserContent(userMessage);
 
-  // 添加用户问题气泡（含图片）
-  addMessage('user', buildUserContent(prompt.content));
+  // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复
+  addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage);
 
   // 更新消息历史
   state.messageHistory.push({ role: 'user', content: userContent });

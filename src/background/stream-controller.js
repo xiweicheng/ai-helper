@@ -304,9 +304,26 @@ export async function readSSEStream(reader, controller, abortSignal) {
         if (result.type === 'content') {
           controller.sendChunk(result.content);
         } else if (result.type === 'tool_calls') {
-          // 检测到 tool_calls，暂停读取，返回给调用方处理
-          // 注意：不在此处发送 STREAM_TOOL_CALL，因为 tool_call.id 可能尚未完整
-          // 由 react-loop.js 在规范化 toolCallId 后统一发送
+          // 检测到 tool_calls，立即发送 STREAM_TOOL_CALL 通知前端
+          // 这样前端能更早地显示工具执行状态，避免极快工具（如 7ms）的执行中状态不可见
+          const normalizedToolCalls = controller.toolCalls.map(tc => ({
+            ...tc,
+            id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
+          }));
+          
+          // 将规范化后的 IDs 写回，确保 react-loop.js 后续获取的结果使用相同的 ID
+          controller.toolCalls = normalizedToolCalls;
+          
+          // 先发送累积的 content chunk，确保思考内容在工具卡片之前显示
+          controller._flushChunk();
+          
+          controller._sendFn({
+            type: controller._typePrefix + 'STREAM_TOOL_CALL',
+            sessionId: controller.sessionId,
+            toolCalls: normalizedToolCalls,
+            thinkingContent: controller.fullContent
+          }).catch(() => {});
+          
           return { status: 'tool_calls', ...controller.getResult() };
         } else if (result.type === 'done') {
           // 正常结束

@@ -272,20 +272,25 @@ export async function sendMessage() {
     // 压缩大段引用内容，防止永久占据上下文空间
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    // 先添加独立引用内容气泡
+    addContextBubble('quoted', ctx, false);
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    // 先添加独立选中内容气泡
+    addContextBubble('selected', ctx, false);
     state.selectedContextText = '';
   }
   
 
-  const userContent = buildUserContent(finalText);
-  // 显示用户消息（含图片）
-  addMessage('user', userContent);
+  // 显示用户消息（含图片，仅展示用户输入的文字，上下文内容已通过上方独立气泡展示）
+  // rawTextContent 参数传入完整的上下文格式，供编辑时恢复选中内容
+  addMessage('user', buildUserContent(text), true, [], null, false, finalText);
   
-  state.messageHistory.push({ role: 'user', content: userContent });
+  // 消息历史存储拼接后的完整上下文内容
+  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText) });
   
   saveChatHistory();
   
@@ -632,7 +637,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -641,15 +646,17 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   messageDiv.dataset.timestamp = timestamp;
 
   // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
-  const textContent = Array.isArray(content)
+  const displayContent = Array.isArray(content)
     ? content.filter(c => c.type === 'text').map(c => c.text).join('')
     : content;
   const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
 
   // 存储原始内容：数组格式需要序列化，字符串直接存
   messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : content;
-  // 额外存储纯文本版本，供复制/编辑/引用使用
-  messageDiv.dataset.textContent_ = textContent;
+  // 额外存储纯文本版本，供复制/编辑/引用使用（优先使用 rawTextContent 以保留完整上下文格式）
+  messageDiv.dataset.textContent_ = rawTextContent || displayContent;
+  
+  const textContent = displayContent;
   
   messageDiv.dataset.executionLog = JSON.stringify(executionLog);
   if (wasRevised) {
@@ -1643,6 +1650,7 @@ function appendToolCallItems(element, toolCalls) {
     item.className = 'tool-call-item';
     item.setAttribute('data-tool-call-id', tc.id || '');
     item.setAttribute('data-meta-type', meta.metaType);
+    item.setAttribute('data-created-at', Date.now());
     item.innerHTML = `
       <div class="tool-call-header">
         ${iconSvg}
@@ -1690,62 +1698,80 @@ function appendToolResult(result, streamingElement) {
   
   // 标记为已有结果，停止执行中动画
   card.classList.add('has-result');
-  // 移除执行中状态标识
-  const executingBadge = card.querySelector('.tool-call-executing');
-  if (executingBadge) executingBadge.remove();
+
+  // 对于极快完成的工具（如 agent_write_file 仅 7ms），STREAM_TOOL_CALL 和
+  // STREAM_TOOL_RESULT 几乎同时到达，浏览器来不及渲染"执行中..."状态。
+  // 因此设置最小显示延迟 400ms，确保用户能看到执行中的过渡状态。
+  const createdTs = parseInt(card.getAttribute('data-created-at'), 10);
+  const elapsed = Date.now() - createdTs;
+  const MIN_DISPLAY_MS = 400;
+  const delay = elapsed < MIN_DISPLAY_MS && elapsed >= 0 ? MIN_DISPLAY_MS - elapsed : 0;
   
-  // 移除旧的结果（如果有）
-  const oldResult = card.querySelector('.tool-call-result');
-  if (oldResult) oldResult.remove();
-  
-  // 截断提示
-  const truncateNote = result.truncated 
-    ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
-    : '';
-  
-  // 格式化结果内容
-  const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
-  const contentPreview = contentText.length > 500 
-    ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
-    : contentText;
-  const fullContent = contentText;
-  
-  const resultDiv = document.createElement('div');
-  resultDiv.className = 'tool-call-result';
-  resultDiv.innerHTML = `
-    <div class="tool-result-header">
-      <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
-        ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
-      </span>
-      ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
-      ${truncateNote}
-    </div>
-    <div class="tool-result-content">
-      <pre><code>${escapeHtml(contentPreview)}</code></pre>
-    </div>
-  `;
-  
-  card.appendChild(resultDiv);
-  
-  // 如果内容 > 500 字符，支持点击展开完整内容
-  if (fullContent.length > 500) {
-    const codeBlock = resultDiv.querySelector('code');
-    let isExpanded = false;
-    resultDiv.style.cursor = 'pointer';
-    resultDiv.addEventListener('click', () => {
-      isExpanded = !isExpanded;
-      codeBlock.textContent = isExpanded ? fullContent : contentPreview;
-    });
-  }
-  
-  // 滚动到底部（等浏览器完成布局后）
-  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
-  if (streamingElement.isConnected) {
-    requestAnimationFrame(() => {
-      const chatContainer = document.getElementById('chatContainer');
-      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-    });
-  }
+  const renderResult = () => {
+    // 移除执行中状态标识
+    const executingBadge = card.querySelector('.tool-call-executing');
+    if (executingBadge) executingBadge.remove();
+    
+    // 移除旧的结果（如果有）
+    const oldResult = card.querySelector('.tool-call-result');
+    if (oldResult) oldResult.remove();
+    
+    // 截断提示
+    const truncateNote = result.truncated 
+      ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
+      : '';
+    
+    // 格式化结果内容
+    const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
+    const contentPreview = contentText.length > 500 
+      ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
+      : contentText;
+    const fullContent = contentText;
+    
+    const resultDiv = document.createElement('div');
+    resultDiv.className = 'tool-call-result';
+    resultDiv.innerHTML = `
+      <div class="tool-result-header">
+        <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+          ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
+        </span>
+        ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+        ${truncateNote}
+      </div>
+      <div class="tool-result-content">
+        <pre><code>${escapeHtml(contentPreview)}</code></pre>
+      </div>
+    `;
+    
+    card.appendChild(resultDiv);
+    
+    // 如果内容 > 500 字符，支持点击展开完整内容
+    if (fullContent.length > 500) {
+      const codeBlock = resultDiv.querySelector('code');
+      let isExpanded = false;
+      resultDiv.style.cursor = 'pointer';
+        resultDiv.addEventListener('click', () => {
+          isExpanded = !isExpanded;
+          codeBlock.textContent = isExpanded ? fullContent : contentPreview;
+        });
+      }
+      
+      // 滚动到底部（等浏览器完成布局后）
+      // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+      if (streamingElement.isConnected) {
+        requestAnimationFrame(() => {
+          const chatContainer = document.getElementById('chatContainer');
+          if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        });
+      }
+    };
+    
+    // 根据延迟决定是否立即渲染或延迟渲染
+    if (delay > 0) {
+      setTimeout(renderResult, delay);
+    } else {
+      renderResult();
+    }
 }
 
 /**
@@ -2495,6 +2521,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'STREAM_TOOL_CALL') {
+        if (!_se()) {
+          // 如果流式元素还没有创建，立即创建
+          _se(addStreamingMessage());
+          _processStartTime = Date.now();
+        }
         if (_se() && message.toolCalls?.length > 0) {
           // 添加工具调用详情卡片（含图标、名称、命令/文件/参数、可折叠详情）
           appendToolCallItems(_se(), message.toolCalls);

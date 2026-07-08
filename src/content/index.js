@@ -29,6 +29,18 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     chrome.action.click();
   }
+
+  // Alt+S ：全页面截图（页面焦点时可用）
+  if (e.altKey && !e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    chrome.runtime.sendMessage({ type: 'CAPTURE_TAB_FROM_PAGE' });
+  }
+
+  // Alt+Shift+S ：区域截图（页面焦点时可用）
+  if (e.altKey && e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    chrome.runtime.sendMessage({ type: 'CAPTURE_REGION_FROM_PAGE' });
+  }
 });
 
 // ==================== 消息路由表（Map 查找，O(1)） ====================

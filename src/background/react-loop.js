@@ -471,20 +471,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           // 构建兼容现有代码的 response 对象
           // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
+          // 注意：readSSEStream 中已发送 STREAM_TOOL_CALL 并规范化了 ID，此处保持幂等
           const normalizedToolCalls = streamResult.toolCalls ? streamResult.toolCalls.map(tc => ({
             ...tc,
             id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
           })) : null;
 
-          // 发送 STREAM_TOOL_CALL 通知（使用规范化后的 toolCallId，确保与 STREAM_TOOL_RESULT 匹配）
-          if (normalizedToolCalls && normalizedToolCalls.length > 0) {
-            chrome.runtime.sendMessage({
-              type: 'STREAM_TOOL_CALL',
-              sessionId,
-              toolCalls: normalizedToolCalls,
-              thinkingContent: streamResult.content
-            }).catch(() => {});
-          }
+          // STREAM_TOOL_CALL 已在 readSSEStream 中发送，此处不再重复发送
 
           response = {
             choices: [{
@@ -509,6 +502,25 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             console.error('[Background] JSON 解析失败:', parseError);
             console.error('[Background] 原始响应:', responseText);
             throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+          }
+
+          // 非流式模式：发送 STREAM_TOOL_CALL 通知前端
+          const nonStreamToolCalls = response.choices?.[0]?.message?.tool_calls;
+          if (nonStreamToolCalls && nonStreamToolCalls.length > 0) {
+            const normalizedNonStreamToolCalls = nonStreamToolCalls.map(tc => ({
+              ...tc,
+              id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
+            }));
+            
+            chrome.runtime.sendMessage({
+              type: 'STREAM_TOOL_CALL',
+              sessionId,
+              toolCalls: normalizedNonStreamToolCalls,
+              thinkingContent: response.choices?.[0]?.message?.content || ''
+            }).catch(() => {});
+
+            // 更新 response 中的 tool_calls 使用规范化后的 ID
+            response.choices[0].message.tool_calls = normalizedNonStreamToolCalls;
           }
         }
       } catch (error) {
@@ -725,6 +737,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           if (!PARALLELIZABLE_TOOLS.has(toolName)) {
             toolResultCache.clear();
           }
+          
+          // 让出事件循环，确保 STREAM_TOOL_CALL 有机会先传递到侧面板
+          // 这样用户能在工具执行开始前看到"执行中..."状态，而不是等待工具执行完成后才看到
+          await new Promise(r => setTimeout(r, 0));
           
           // 添加工具执行开始的日志节点（状态为 processing）
           const toolLogId = crypto.randomUUID();

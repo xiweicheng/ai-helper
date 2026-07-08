@@ -75,6 +75,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // | GET_MCP_TOOLS                 | side_panel  | 获取 MCP 工具（30s 缓存）    | 是   |
 // | GET_AGENT_SKILL_PROMPTS       | side_panel  | 获取 Skill Prompt（60s 缓存）| 是   |
 // | CAPTURE_TAB                   | side_panel  | 截取可见标签页              | 是   |
+// | CAPTURE_TAB_FROM_PAGE         | content     | 页面快捷键触发全屏截图       | 是   |
+// | CAPTURE_REGION_FROM_PAGE      | content     | 页面快捷键触发区域截图       | 是   |
 // | CALL_API                      | side_panel  | 主 API 调用入口             | 否   |
 // | GET_SESSION                   | side_panel  | 获取当前模型配置            | 是   |
 // | GET_CHAT_CONFIG               | side_panel  | 获取聊天完整配置            | 是   |
@@ -169,6 +171,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     });
     return true; // 异步响应
+  }
+
+  if (message.type === 'CAPTURE_TAB_FROM_PAGE') {
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Background] 页面快捷键截图失败:', chrome.runtime.lastError.message);
+      } else {
+        chrome.runtime.sendMessage({ type: 'SCREENSHOT_RESULT', dataUrl, mode: 'full' }).catch(() => {});
+      }
+    });
+    return true;
+  }
+
+  if (message.type === 'CAPTURE_REGION_FROM_PAGE') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      return false;
+    }
+    chrome.tabs.sendMessage(tabId, { type: 'START_REGION_SELECTION' }, (rect) => {
+      if (!rect) {
+        return;
+      }
+      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Background] 区域截图失败:', chrome.runtime.lastError.message);
+        } else {
+          chrome.runtime.sendMessage({ type: 'SCREENSHOT_RESULT', dataUrl, mode: 'region', rect }).catch(() => {});
+        }
+      });
+    });
+    return true;
   }
   
   if (message.type === 'CALL_API') {

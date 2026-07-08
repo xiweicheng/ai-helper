@@ -445,7 +445,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
   const userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
 
-  addMessage('user', prompt.content);
+  addMessage('user', prompt.content, true, [], null, false, userMessage);
 
   state.messageHistory.push({ role: 'user', content: userMessage });
 
@@ -622,6 +622,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateAgentIndicator(state.agentPlatform);
       // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
+    }
+    if (message.type === 'SCREENSHOT_RESULT' && message.dataUrl) {
+      console.log('[SidePanel] 收到页面快捷键截图结果:', message.mode);
+      handlePageScreenshotResult(message.dataUrl, message.mode, message.rect);
     }
   });
 
@@ -2424,4 +2428,24 @@ function cropImage(dataUrl, rect) {
     img.onerror = () => reject(new Error('图片加载失败'));
     img.src = dataUrl;
   });
+}
+
+async function handlePageScreenshotResult(dataUrl, mode, rect) {
+  if (!state.enableImageInput) {
+    showToast('请先开启图片输入功能');
+    return;
+  }
+  try {
+    let finalDataUrl = dataUrl;
+    if (mode === 'region' && rect) {
+      finalDataUrl = await cropImage(dataUrl, rect);
+    }
+    const res = await fetch(finalDataUrl);
+    const blob = await res.blob();
+    compressAndAttachImage(blob);
+    showToast('截图成功');
+  } catch (err) {
+    console.error('[SidePanel] 页面快捷键截图处理失败:', err);
+    showToast('截图处理失败，请重试');
+  }
 }
