@@ -445,9 +445,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
   const userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
 
-  addMessage('user', prompt.content, true, [], null, false, userMessage);
+  const { messageId } = addMessage('user', prompt.content, true, [], null, false, userMessage);
 
-  state.messageHistory.push({ role: 'user', content: userMessage });
+  state.messageHistory.push({ role: 'user', content: userMessage, messageId });
 
   saveChatHistory();
 
@@ -527,9 +527,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
 
-      const messageDiv = addMessage('assistant', content, true, executionLog);
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
       saveChatHistory();
 
@@ -538,11 +538,11 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
     removeLoadingMessage(loadingId);
 
-    const messageDiv = addMessage('assistant', content, true, executionLog);
+    const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
     await renderMessageMermaid(messageDiv);
 
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
     saveChatHistory();
 

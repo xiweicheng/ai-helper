@@ -2964,7 +2964,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const effectiveTimeout = typeof timeout === 'number' && timeout > 0 
     ? timeout 
     : config.reactConfig.toolTimeout;
-  const idleTimeoutMs = Math.max(60000, Math.min(effectiveTimeout / 2, 300000));
+  const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 
   if (useAgentStream) {
     const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
@@ -3009,48 +3009,67 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     };
 
     try {
+      ws = await AgentClient.createExecWebSocket(wsUrl, (data) => {
+        if (data.type === 'stdout') {
+          stdoutCollected += data.data;
+          sendAgentStream(sessionId, execId, 'stdout', data.data);
+        } else if (data.type === 'stderr') {
+          stderrCollected += data.data;
+          sendAgentStream(sessionId, execId, 'stderr', data.data);
+        } else if (data.type === 'exit') {
+          exitCode = data.exitCode;
+          killed = data.killed;
+          sendAgentStreamDone(sessionId, execId, exitCode);
+        }
+      }, () => {
+        if (exitCode === null) {
+          exitCode = -1;
+          sendAgentStreamDone(sessionId, execId, -1);
+        }
+      }, (err) => {
+        console.warn('[AgentExec] WebSocket 错误:', err);
+      }, idleTimeoutMs);
+
+      if (!ws) {
+        throw new Error('创建 WebSocket 连接失败');
+      }
+
       await new Promise((resolve, reject) => {
         const totalTimeoutId = setTimeout(() => {
           const errMsg = `命令执行超时 (${effectiveTimeout}ms)`;
-          console.error('[AgentExec]', errMsg);
+          console.warn('[AgentExec]', errMsg);
           cleanupAndStop(errMsg).then(() => {
             reject(new Error(errMsg));
           });
         }, effectiveTimeout);
 
-        ws = AgentClient.createExecWebSocket(wsUrl, (data) => {
-          if (data.type === 'stdout') {
-            stdoutCollected += data.data;
-            sendAgentStream(sessionId, execId, 'stdout', data.data);
-          } else if (data.type === 'stderr') {
-            stderrCollected += data.data;
-            sendAgentStream(sessionId, execId, 'stderr', data.data);
-          } else if (data.type === 'exit') {
-            clearTimeout(totalTimeoutId);
-            exitCode = data.exitCode;
-            killed = data.killed;
-            sendAgentStreamDone(sessionId, execId, exitCode);
-            resolve();
-          }
-        }, () => {
+        const originalOnMessage = ws.onmessage;
+        ws.onmessage = (event) => {
+          originalOnMessage(event);
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'exit') {
+              clearTimeout(totalTimeoutId);
+              resolve();
+            }
+          } catch {}
+        };
+
+        const originalOnClose = ws.onclose;
+        ws.onclose = () => {
           clearTimeout(totalTimeoutId);
-          if (exitCode === null) {
-            exitCode = -1;
-            sendAgentStreamDone(sessionId, execId, -1);
-          }
+          if (originalOnClose) originalOnClose();
           resolve();
-        }, (err) => {
+        };
+
+        const originalOnError = ws.onerror;
+        ws.onerror = (err) => {
           clearTimeout(totalTimeoutId);
-          console.error('[AgentExec] WebSocket 错误:', err);
+          if (originalOnError) originalOnError(err);
           cleanupAndStop(err.message).then(() => {
             reject(err);
           });
-        }, idleTimeoutMs);
-
-        if (!ws) {
-          clearTimeout(totalTimeoutId);
-          reject(new Error('创建 WebSocket 连接失败'));
-        }
+        };
       });
     } catch (wsError) {
       console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);

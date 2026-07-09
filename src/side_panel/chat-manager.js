@@ -147,9 +147,9 @@ export async function loadChatHistory() {
       
       // 如果有保存的 HTML 内容（流式消息），直接恢复完整 DOM
       if (msg.htmlContent) {
-        restoreMessageFromHtml(msg.htmlContent);
+        restoreMessageFromHtml(msg.htmlContent, msg.messageId);
       } else {
-        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId);
       }
     });
     
@@ -191,6 +191,14 @@ export function saveChatHistory() {
     saveCurrentSession().catch(err => {
       console.error('[SidePanel] 保存当前会话失败:', err);
     });
+  } catch (e) {
+    console.error('[SidePanel] 保存对话历史异常:', e);
+  }
+}
+
+export async function saveChatHistoryAsync() {
+  try {
+    await saveCurrentSession();
   } catch (e) {
     console.error('[SidePanel] 保存对话历史异常:', e);
   }
@@ -287,10 +295,10 @@ export async function sendMessage() {
 
   // 显示用户消息（含图片，仅展示用户输入的文字，上下文内容已通过上方独立气泡展示）
   // rawTextContent 参数传入完整的上下文格式，供编辑时恢复选中内容
-  addMessage('user', buildUserContent(text), true, [], null, false, finalText);
+  const { messageId: userMsgId } = addMessage('user', buildUserContent(text), true, [], null, false, finalText);
   
   // 消息历史存储拼接后的完整上下文内容
-  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText) });
+  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId });
   
   saveChatHistory();
   
@@ -421,6 +429,7 @@ export async function sendMessage() {
     let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;
     let streamingHtml = null;
     let streamingConnected = true;
+    let streamingMsgId = null;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
@@ -431,6 +440,7 @@ export async function sendMessage() {
       wasStreamed = result.wasStreamed || false;
       streamingHtml = result.streamingHtml || null;
       streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
+      streamingMsgId = result.streamingMsgId || null;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -449,8 +459,8 @@ export async function sendMessage() {
       if (errorResult.message === '任务已被用户停止') {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
-        addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
-        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
+        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId });
         saveChatHistory();
         return;
       }
@@ -461,9 +471,9 @@ export async function sendMessage() {
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
       
-      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore);
       
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId });
       
       throw errorResult;
     }
@@ -480,6 +490,8 @@ export async function sendMessage() {
       return;
     }
     
+    let assistantMsgId = null;
+    
     // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
     // 但如果 streamingHtml 为 null（流式输出中断），降级为非流式渲染
     if (!wasStreamed || !streamingHtml) {
@@ -491,18 +503,25 @@ export async function sendMessage() {
         state.substituteLoadingIds.delete(mySessionId);
       }
       
-      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
-      await renderMessageMermaid(messageDiv);
-    } else {
-      // 流式模式下仅清理可能的残留
-      if (state.substituteLoadingIds.has(mySessionId)) {
-        removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
-        state.substituteLoadingIds.delete(mySessionId);
+      if (!wasStreamed) {
+        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+        assistantMsgId = messageId;
+        await renderMessageMermaid(messageDiv);
+      } else {
+        // 流式模式下仅清理可能的残留
+        if (state.substituteLoadingIds.has(mySessionId)) {
+          removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+          state.substituteLoadingIds.delete(mySessionId);
+        }
+        assistantMsgId = streamingMsgId;
       }
+    } else {
+      // 流式模式且 streamingHtml 存在，使用流式消息的 messageId
+      assistantMsgId = streamingMsgId;
     }
     
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
-    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
+    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: assistantMsgId };
     if (wasStreamed && streamingHtml) {
       msgEntry.htmlContent = streamingHtml;
       // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
@@ -637,13 +656,15 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
   
   const timestamp = new Date().toISOString();
   messageDiv.dataset.timestamp = timestamp;
+  const messageId = existingMessageId || 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  messageDiv.dataset.messageId = messageId;
 
   // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
   const displayContent = Array.isArray(content)
@@ -866,6 +887,21 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(prototypeBtn);
     }
     
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.title = '删除消息';
+    deleteBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    `;
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMessage(messageDiv);
+    });
+    footer.appendChild(deleteBtn);
+    
     messageDiv.appendChild(footer);
   } else {
     const quotedMatch = textContent.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -931,6 +967,22 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     toolbar.appendChild(copyBtn);
     toolbar.appendChild(editBtn);
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'message-toolbar-btn delete-btn';
+    deleteBtn.title = '删除消息';
+    deleteBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    `;
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMessage(messageDiv);
+    });
+    toolbar.appendChild(deleteBtn);
+    
     messageDiv.appendChild(toolbar);
   }
   
@@ -955,7 +1007,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     addCodeCopyButtons();
   }
   
-  return messageDiv;
+  return { element: messageDiv, messageId };
 }
 
 // ============================================================
@@ -1335,6 +1387,8 @@ function addStreamingMessage() {
   const chatContainer = document.getElementById('chatContainer');
   const wrapper = document.createElement('div');
   wrapper.className = 'message-wrapper assistant streaming';
+  const messageId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  wrapper.dataset.messageId = messageId;
   wrapper.innerHTML = `
     <div class="message-content">
       <div class="thinking-indicator">
@@ -1378,7 +1432,7 @@ function addStreamingMessage() {
  * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
  * @param {string} htmlContent - 消息的 outerHTML
  */
-export function restoreMessageFromHtml(htmlContent) {
+export function restoreMessageFromHtml(htmlContent, messageId = null) {
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer || !htmlContent) return;
   
@@ -1386,6 +1440,11 @@ export function restoreMessageFromHtml(htmlContent) {
   tempDiv.innerHTML = htmlContent;
   const messageEl = tempDiv.firstElementChild;
   if (!messageEl) return;
+  
+  // 使用传入的 messageId 覆盖 HTML 中的 ID（确保与 state.messageHistory 一致）
+  if (messageId) {
+    messageEl.dataset.messageId = messageId;
+  }
   
   // 移除 streaming 类（持久化后不再是流式状态）
   messageEl.classList.remove('streaming');
@@ -1475,6 +1534,15 @@ export function restoreMessageFromHtml(htmlContent) {
           }
         });
       }
+    }
+
+    // 重新绑定删除按钮事件
+    const deleteBtn = footer.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMessage(messageEl);
+      });
     }
   }
 
@@ -2279,6 +2347,21 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     footer.appendChild(prototypeBtn);
   }
 
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-btn';
+  deleteBtn.title = '删除消息';
+  deleteBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>
+  `;
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteMessage(element);
+  });
+  footer.appendChild(deleteBtn);
+
   element.querySelector('.message-content').appendChild(footer);
   
   // 绑定事件委托（执行日志/反思弹窗点击）
@@ -2350,9 +2433,122 @@ function finalizeCancelledStream(element) {
   element.classList.add('stream-cancelled');
 }
 
+function showDeleteConfirm(messagePreview) {
+  return new Promise((resolve) => {
+    const existing = document.querySelector('.delete-confirm-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'delete-confirm-overlay';
+    
+    const previewText = messagePreview.length > 50 
+      ? messagePreview.substring(0, 50) + '...' 
+      : messagePreview;
+
+    overlay.innerHTML = `
+      <div class="delete-confirm-modal">
+        <div class="delete-confirm-header">
+          <div class="delete-confirm-icon">🗑️</div>
+          <div class="delete-confirm-title">确认删除消息</div>
+        </div>
+        <div class="delete-confirm-body">
+          <p>删除后消息将从对话历史中移除，且无法恢复。</p>
+          <div class="delete-confirm-preview">${previewText}</div>
+        </div>
+        <div class="delete-confirm-footer">
+          <button class="delete-confirm-cancel">取消</button>
+          <button class="delete-confirm-confirm">确认删除</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const cancelBtn = overlay.querySelector('.delete-confirm-cancel');
+    const confirmBtn = overlay.querySelector('.delete-confirm-confirm');
+
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(false);
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(true);
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+      }
+    });
+  });
+}
+
+export async function deleteMessage(messageElement, skipConfirm = false) {
+  const messageId = messageElement.dataset.messageId;
+  const role = messageElement.classList.contains('user') ? 'user' : 'assistant';
+  
+  let previewText = '';
+  if (role === 'user') {
+    previewText = messageElement.textContent.trim();
+  } else {
+    previewText = messageElement.dataset.textContent_ || '';
+  }
+
+  if (!skipConfirm) {
+    const confirmed = await showDeleteConfirm(previewText);
+    if (!confirmed) return;
+  }
+
+  if (messageId) {
+    const index = state.messageHistory.findIndex(msg => msg.messageId === messageId);
+    if (index !== -1) {
+      state.messageHistory.splice(index, 1);
+    }
+  } else {
+    const timestamp = messageElement.dataset.timestamp;
+    const index = state.messageHistory.findIndex(msg => msg.timestamp === timestamp);
+    if (index !== -1) {
+      state.messageHistory.splice(index, 1);
+    }
+  }
+
+  const prevSibling = messageElement.previousElementSibling;
+  if (prevSibling && prevSibling.classList.contains('user-context-bubble')) {
+    prevSibling.remove();
+  }
+
+  messageElement.remove();
+
+  const chatContainer = document.getElementById('chatContainer');
+  const remainingMessages = chatContainer.querySelectorAll('.message');
+  
+  if (remainingMessages.length === 0) {
+    chatContainer.innerHTML = `
+      <div class="welcome-message">
+        <div class="icon-wrapper">
+          <div class="icon">💬</div>
+        </div>
+        <h2>开始对话</h2>
+        <p>输入您的问题，AI 助手将为您解答</p>
+      </div>
+    `;
+  }
+
+  await saveChatHistoryAsync();
+
+  console.log(`[SidePanel] 已删除消息: ${role}, messageId: ${messageId}`);
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}) {
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
+  
+  const reflectionConfig = await new Promise((resolve) => {
+    chrome.storage.local.get('reflectionConfig', (result) => {
+      resolve(result.reflectionConfig || { enabled: false });
+    });
+  });
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
@@ -2715,12 +2911,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'STREAM_DONE') {
         if (_se()) {
-          // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
           const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
-            statusDiv.textContent = '质量评估中...';
+            if (reflectionConfig?.enabled) {
+              statusDiv.textContent = '质量评估中...';
+            } else {
+              statusDiv.textContent = '处理完成';
+            }
           }
-          // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
+          if (!reflectionConfig?.enabled) {
+            _se().classList.remove('streaming');
+          }
         }
         return false;
       }
@@ -2735,6 +2936,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         const wasStreamed = !!streamingEl;
         const streamingHtml = streamingEl ? (streamingEl.dataset.htmlContent || streamingEl.outerHTML) : null;
         const streamingConnected = streamingEl ? streamingEl.isConnected : false;
+        const streamingMsgId = streamingEl ? streamingEl.dataset.messageId : null;
         cleanupCallApi();
         resolve({ 
           content: message.content, 
@@ -2743,7 +2945,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           wasStreamed,
           wasRevised: message.wasRevised,
           streamingHtml,
-          streamingConnected
+          streamingConnected,
+          streamingMsgId
         });
         return false;
       } else if (message.type === 'API_ERROR') {
