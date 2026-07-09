@@ -794,8 +794,8 @@ function setupCodeCtrlClick() {
   if (!chatContainer) return;
 
   chatContainer.addEventListener('click', (e) => {
-    // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac）
-    if (!e.ctrlKey && !e.metaKey) return;
+    // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac），且必须是左键点击（排除右键/Ctrl+Click）
+    if ((!e.ctrlKey && !e.metaKey) || e.button !== 0) return;
 
     // 点击目标是 <code> 元素，或代码块容器内的任意位置
     let codeEl = e.target.closest('code');

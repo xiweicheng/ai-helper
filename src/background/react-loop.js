@@ -2104,7 +2104,7 @@ function parseReflectionResult(rawContent) {
 async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId) {
   const postConfig = reflectionConfig.postReflection;
 
-  if (postConfig.maxRounds < 1) {
+  if (!reflectionConfig?.enabled || !postConfig?.enabled || postConfig.maxRounds < 1) {
     return { content: answer, reflectionLog: [], status: 'skipped', overallScore: null, wasRevised: false };
   }
 

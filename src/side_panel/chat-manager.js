@@ -827,7 +827,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(warnBadge);
     }
     
-    const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
     if (prototypeCall) {
       // 判断是否已在本地浏览器打开
       let localOpened = false;
@@ -2129,7 +2129,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   }
   
   // 原型预览按钮
-  const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
   if (prototypeCall) {
     let localOpened = false;
     if (prototypeCall.observation) {
