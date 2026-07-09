@@ -1494,48 +1494,79 @@ export function restoreMessageFromHtml(htmlContent) {
 
 /**
  * 更新流式消息内容（增量渲染 Markdown）
- * 首次有内容时自动隐藏思考中指示器，并添加思考结果图标（含耗时）
+ * 流式输出过程中思考指示器保持可见，仅在一轮思考完成后才隐藏并显示思考结果badge
  * 支持多轮 ReAct 迭代：每轮追加独立的思考标记
  */
 function updateStreamingMessage(element, fullContent) {
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
   
-  // 查找最后一个可见的思考指示器（可能在 stream-content 内部，也可能在 message-content 中）
+  // 查找当前可见的思考指示器（判断是否正在思考中）
+  // 优先查找 stream-content 内的指示器，然后查找 message-content 内的
   const visibleThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)')
     || element.querySelector('.thinking-indicator:not(.hidden)');
   
   if (visibleThinking) {
-    // 首次有内容：隐藏指示器，替换为思考结果标记（含耗时）
-    // 注意：badge 始终添加到 stream-content 内，确保折叠重组时能正确归入折叠区
-    visibleThinking.classList.add('hidden');
-    // 如果指示器在 message-content 中（非 stream-content 内），移除它
-    if (!contentDiv.contains(visibleThinking)) {
-      visibleThinking.remove();
-    }
-    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
-    const badge = document.createElement('span');
-    badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
-    contentDiv.appendChild(badge);
-  }
-  
-  // 找到最后一个 thinking-badge，在其后更新或创建 thinking-content
-  const badges = contentDiv.querySelectorAll('.thinking-badge');
-  if (badges.length > 0) {
-    const lastBadge = badges[badges.length - 1];
-    let contentAfter = lastBadge.nextElementSibling;
-    // 检查下一个兄弟节点是否是 thinking-content
-    if (contentAfter && contentAfter.classList.contains('thinking-content')) {
-      contentAfter.innerHTML = formatMessageContent(fullContent);
+    // 当前正在思考中
+    if (contentDiv.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：在指示器前面创建/更新 thinking-content
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        prevSibling.innerHTML = formatMessageContent(fullContent);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        contentDiv.insertBefore(wrapper, visibleThinking);
+      }
     } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：
+      // 如果 stream-content 中没有 thinking-content，创建新的；否则更新最后一个
+      // 注意：这里不能简单地更新最后一个，因为可能有多个轮次的思考内容
+      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+      if (thinkingContents.length === 0) {
+        // 没有任何思考内容，创建新的
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        contentDiv.appendChild(wrapper);
+      } else {
+        // 检查最后一个 thinking-content 是否是当前轮的（前面没有 thinking-badge）
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，更新它
+          lastContent.innerHTML = formatMessageContent(fullContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的（后面有 badge），创建新的
+          const wrapper = document.createElement('div');
+          wrapper.className = 'thinking-content';
+          wrapper.innerHTML = formatMessageContent(fullContent);
+          contentDiv.appendChild(wrapper);
+        }
+      }
+    }
+  } else {
+    // 思考已完成（无可见指示器）：在最后一个 thinking-badge 后更新内容
+    const badges = contentDiv.querySelectorAll('.thinking-badge');
+    if (badges.length > 0) {
+      const lastBadge = badges[badges.length - 1];
+      let contentAfter = lastBadge.nextElementSibling;
+      if (contentAfter && contentAfter.classList.contains('thinking-content')) {
+        contentAfter.innerHTML = formatMessageContent(fullContent);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        lastBadge.after(wrapper);
+      }
+    } else {
+      // 没有 badge，也没有 thinking-indicator，直接创建 thinking-content
       const wrapper = document.createElement('div');
       wrapper.className = 'thinking-content';
       wrapper.innerHTML = formatMessageContent(fullContent);
-      lastBadge.after(wrapper);
+      contentDiv.appendChild(wrapper);
     }
-  } else {
-    contentDiv.innerHTML = formatMessageContent(fullContent);
   }
   
   // 自动滚动（等浏览器完成布局后再滚动，确保 scrollHeight 已更新）
@@ -1566,12 +1597,50 @@ function updateStreamingStatus(element, statusText) {
 function appendToolCallItems(element, toolCalls) {
   if (!element || !toolCalls?.length) return;
   
-  // 隐藏思考指示器
-  const thinkingEl = element.querySelector('.thinking-indicator');
-  if (thinkingEl) thinkingEl.classList.add('hidden');
-  
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
+  
+  // 一轮思考结束：隐藏思考指示器，添加思考结果badge（在思考内容上面）
+  // 查找所有可见的思考指示器（可能在 message-content 或 stream-content 中）
+  const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
+  if (visibleThinking) {
+    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    
+    if (contentDiv.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        // thinking-content 在 thinking-indicator 前面，在 content 前面插入 badge
+        contentDiv.insertBefore(badge, prevSibling);
+      } else {
+        // 没有 thinking-content，在 thinking-indicator 前面插入 badge
+        contentDiv.insertBefore(badge, visibleThinking);
+      }
+      visibleThinking.classList.add('hidden');
+    } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：找到最后一个 thinking-content，在它前面插入 badge
+      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+      if (thinkingContents.length > 0) {
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，在它前面插入 badge
+          contentDiv.insertBefore(badge, lastContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的，在末尾插入 badge
+          contentDiv.appendChild(badge);
+        }
+      } else {
+        // 没有 thinking-content，追加到末尾
+        contentDiv.appendChild(badge);
+      }
+      visibleThinking.classList.add('hidden');
+      visibleThinking.remove();
+    }
+  }
   
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
@@ -1840,15 +1909,56 @@ function createPreSelectCard(entry) {
 function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null) {
   if (!element) return;
   
-  // 隐藏所有思考指示器
+  const messageContent = element.querySelector('.message-content');
+  const streamContent = element.querySelector('.stream-content');
+  
+  // 最后一轮思考结束：隐藏思考指示器，添加思考结果badge（在思考内容上面）
+  const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
+  if (visibleThinking && streamContent) {
+    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    
+    if (streamContent.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        // thinking-content 在 thinking-indicator 前面，在 content 前面插入 badge
+        streamContent.insertBefore(badge, prevSibling);
+      } else {
+        // 没有 thinking-content，在 thinking-indicator 前面插入 badge
+        streamContent.insertBefore(badge, visibleThinking);
+      }
+      visibleThinking.classList.add('hidden');
+    } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：找到最后一个 thinking-content，在它前面插入 badge
+      const thinkingContents = streamContent.querySelectorAll('.thinking-content');
+      if (thinkingContents.length > 0) {
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，在它前面插入 badge
+          streamContent.insertBefore(badge, lastContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的，在末尾插入 badge
+          streamContent.appendChild(badge);
+        }
+      } else {
+        // 没有 thinking-content，追加到末尾
+        streamContent.appendChild(badge);
+      }
+      visibleThinking.classList.add('hidden');
+      visibleThinking.remove();
+    }
+  }
+  
+  // 隐藏所有剩余的思考指示器（确保全部隐藏）
   element.querySelectorAll('.thinking-indicator').forEach(el => el.classList.add('hidden'));
   
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) statusDiv.remove();
   element.classList.remove('streaming');
-  
-  const messageContent = element.querySelector('.message-content');
-  const streamContent = element.querySelector('.stream-content');
   
   // 检测是否为 ReAct 过程（包含工具调用卡片）
   const hasToolCalls = (messageContent && messageContent.querySelector('.tool-call-item'))

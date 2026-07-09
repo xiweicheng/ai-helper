@@ -162,7 +162,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CAPTURE_TAB') {
-    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 100 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
         sendResponse({ error: chrome.runtime.lastError.message });
@@ -174,7 +174,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'CAPTURE_TAB_FROM_PAGE') {
-    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 60 }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 100 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 页面快捷键截图失败:', chrome.runtime.lastError.message);
       } else {
