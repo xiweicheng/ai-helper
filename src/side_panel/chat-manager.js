@@ -1507,7 +1507,13 @@ function updateStreamingMessage(element, fullContent) {
     || element.querySelector('.thinking-indicator:not(.hidden)');
   
   if (visibleThinking) {
-    // 当前正在思考中
+    // 当前正在思考中：检查是否是第一次收到内容，如果是，将"思考中"改为"输出中"
+    const thinkingLabel = visibleThinking.querySelector('.thinking-label');
+    if (thinkingLabel && thinkingLabel.textContent === '思考中...') {
+      thinkingLabel.textContent = '输出中...';
+    }
+    
+    // 当前正在思考中/输出中
     if (contentDiv.contains(visibleThinking)) {
       // 思考指示器在 stream-content 内：在指示器前面创建/更新 thinking-content
       const prevSibling = visibleThinking.previousElementSibling;
