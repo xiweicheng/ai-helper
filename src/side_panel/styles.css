@@ -6395,7 +6395,7 @@ body {
   right: 26px;
   top: 50%;
   transform: translateY(-50%) translateX(0);
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
