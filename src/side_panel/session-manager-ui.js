@@ -479,17 +479,27 @@ async function handleDropdownSelectSession(sessionId) {
 }
 
 async function handleDropdownCloseSession(sessionId) {
+  // 找到会话标题用于确认弹窗
+  const allSessions = state.sessions || [];
+  const session = allSessions.find(s => s.id === sessionId);
+  if (!session) return;
+
+  const confirmed = await showCustomConfirm(
+    `确定要删除会话"${session.title}"吗？此操作不可撤销。`,
+    '删除会话'
+  );
+  if (!confirmed) return;
+
   await deleteSession(sessionId);
   await reloadAfterDelete();
   // 更新下拉过滤列表
   const searchInput = document.getElementById('sessionDropdownSearch');
   const searchText = searchInput ? searchInput.value : '';
-  const allSessions = state.sessions || [];
   if (!searchText.trim()) {
-    dropdownState.filteredSessions = [...allSessions];
+    dropdownState.filteredSessions = [...state.sessions];
   } else {
     const lower = searchText.trim().toLowerCase();
-    dropdownState.filteredSessions = allSessions.filter(s =>
+    dropdownState.filteredSessions = state.sessions.filter(s =>
       (s.title || '新会话').toLowerCase().includes(lower)
     );
   }
