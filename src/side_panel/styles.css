@@ -3985,12 +3985,18 @@ body {
   display: block;
 }
 .prompt-dropdown-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 6px 12px;
   font-size: 11px;
   color: #999;
   background: #fafbfc;
   border-bottom: 1px solid #f0f0f0;
   user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 .prompt-item {
   padding: 8px 12px;
@@ -4024,6 +4030,17 @@ body {
 .prompt-item.selected .prompt-item-code {
   background: #e0e8ff;
   color: #667eea;
+}
+.prompt-item-index {
+  width: 24px;
+  font-size: 11px;
+  color: #bbb;
+  text-align: center;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.prompt-item.selected .prompt-item-index {
+  color: #8899cc;
 }
 .prompt-item-content {
   flex: 1;
@@ -4069,6 +4086,18 @@ body {
 .prompt-manage-btn:hover {
   background: #eef1f6;
   border-color: #c0c8d4;
+  color: #667eea;
+}
+.prompt-dropdown-header .prompt-manage-btn {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.prompt-dropdown-header .prompt-manage-btn:hover {
+  background: #eef1f6;
   color: #667eea;
 }
 
