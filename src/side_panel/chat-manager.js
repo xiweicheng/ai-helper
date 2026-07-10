@@ -148,9 +148,9 @@ export async function loadChatHistory() {
       
       // 如果有保存的 HTML 内容（流式消息），直接恢复完整 DOM
       if (msg.htmlContent) {
-        restoreMessageFromHtml(msg.htmlContent);
+        restoreMessageFromHtml(msg.htmlContent, msg.messageId);
       } else {
-        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised);
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId);
       }
     });
     
@@ -192,6 +192,14 @@ export function saveChatHistory() {
     saveCurrentSession().catch(err => {
       console.error('[SidePanel] 保存当前会话失败:', err);
     });
+  } catch (e) {
+    console.error('[SidePanel] 保存对话历史异常:', e);
+  }
+}
+
+export async function saveChatHistoryAsync() {
+  try {
+    await saveCurrentSession();
   } catch (e) {
     console.error('[SidePanel] 保存对话历史异常:', e);
   }
@@ -273,11 +281,15 @@ export async function sendMessage() {
     // 压缩大段引用内容，防止永久占据上下文空间
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    // 先添加独立引用内容气泡
+    addContextBubble('quoted', ctx, false);
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
+    // 先添加独立选中内容气泡
+    addContextBubble('selected', ctx, false);
     state.selectedContextText = '';
   }
   
@@ -291,11 +303,13 @@ export async function sendMessage() {
     }
   }
 
-  const userContent = buildUserContent(finalText);
-  // 显示用户消息（含图片和文件标签）
-  addMessage('user', userContent, true, [], null, false, attachedFilesSnapshot);
+  // 显示用户消息（仅展示用户输入的文字+文件标签，上下文内容已通过上方独立气泡展示）
+  // rawTextContent 参数传入完整上下文格式，供编辑时恢复
+  // attachedFilesSnapshot 用于渲染文件标签
+  const { messageId: userMsgId } = addMessage('user', buildUserContent(text), true, [], null, false, finalText, null, attachedFilesSnapshot);
   
-  state.messageHistory.push({ role: 'user', content: userContent });
+  // 消息历史存储拼接后的完整上下文内容
+  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId });
   
   saveChatHistory();
   
@@ -431,6 +445,7 @@ export async function sendMessage() {
     let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;
     let streamingHtml = null;
     let streamingConnected = true;
+    let streamingMsgId = null;
     
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
@@ -441,6 +456,7 @@ export async function sendMessage() {
       wasStreamed = result.wasStreamed || false;
       streamingHtml = result.streamingHtml || null;
       streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
+      streamingMsgId = result.streamingMsgId || null;
     } catch (errorResult) {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
@@ -459,8 +475,8 @@ export async function sendMessage() {
       if (errorResult.message === '任务已被用户停止') {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
-        addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
-        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+        const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
+        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId });
         saveChatHistory();
         return;
       }
@@ -471,9 +487,9 @@ export async function sendMessage() {
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
       
-      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore);
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore);
       
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId });
       
       throw errorResult;
     }
@@ -490,6 +506,8 @@ export async function sendMessage() {
       return;
     }
     
+    let assistantMsgId = null;
+    
     // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
     // 但如果 streamingHtml 为 null（流式输出中断），降级为非流式渲染
     if (!wasStreamed || !streamingHtml) {
@@ -501,18 +519,25 @@ export async function sendMessage() {
         state.substituteLoadingIds.delete(mySessionId);
       }
       
-      const messageDiv = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
-      await renderMessageMermaid(messageDiv);
-    } else {
-      // 流式模式下仅清理可能的残留
-      if (state.substituteLoadingIds.has(mySessionId)) {
-        removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
-        state.substituteLoadingIds.delete(mySessionId);
+      if (!wasStreamed) {
+        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+        assistantMsgId = messageId;
+        await renderMessageMermaid(messageDiv);
+      } else {
+        // 流式模式下仅清理可能的残留
+        if (state.substituteLoadingIds.has(mySessionId)) {
+          removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
+          state.substituteLoadingIds.delete(mySessionId);
+        }
+        assistantMsgId = streamingMsgId;
       }
+    } else {
+      // 流式模式且 streamingHtml 存在，使用流式消息的 messageId
+      assistantMsgId = streamingMsgId;
     }
     
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
-    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
+    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: assistantMsgId };
     if (wasStreamed && streamingHtml) {
       msgEntry.htmlContent = streamingHtml;
       // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
@@ -647,24 +672,28 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, attachedFiles = []) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = []) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
   
   const timestamp = new Date().toISOString();
   messageDiv.dataset.timestamp = timestamp;
+  const messageId = existingMessageId || 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  messageDiv.dataset.messageId = messageId;
 
   // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
-  const textContent = Array.isArray(content)
+  const displayContent = Array.isArray(content)
     ? content.filter(c => c.type === 'text').map(c => c.text).join('')
     : content;
   const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
 
   // 存储原始内容：数组格式需要序列化，字符串直接存
   messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : content;
-  // 额外存储纯文本版本，供复制/编辑/引用使用
-  messageDiv.dataset.textContent_ = textContent;
+  // 额外存储纯文本版本，供复制/编辑/引用使用（优先使用 rawTextContent 以保留完整上下文格式）
+  messageDiv.dataset.textContent_ = rawTextContent || displayContent;
+  
+  const textContent = displayContent;
   
   messageDiv.dataset.executionLog = JSON.stringify(executionLog);
   if (wasRevised) {
@@ -835,7 +864,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(warnBadge);
     }
     
-    const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
     if (prototypeCall) {
       // 判断是否已在本地浏览器打开
       let localOpened = false;
@@ -873,6 +902,21 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       });
       footer.appendChild(prototypeBtn);
     }
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.title = '删除消息';
+    deleteBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    `;
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMessage(messageDiv);
+    });
+    footer.appendChild(deleteBtn);
     
     messageDiv.appendChild(footer);
   } else {
@@ -975,6 +1019,22 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     toolbar.appendChild(copyBtn);
     toolbar.appendChild(editBtn);
+    
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'message-toolbar-btn delete-btn';
+    deleteBtn.title = '删除消息';
+    deleteBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+    `;
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMessage(messageDiv);
+    });
+    toolbar.appendChild(deleteBtn);
+    
     messageDiv.appendChild(toolbar);
   }
   
@@ -999,7 +1059,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     addCodeCopyButtons();
   }
   
-  return messageDiv;
+  return { element: messageDiv, messageId };
 }
 
 // ============================================================
@@ -1379,6 +1439,8 @@ function addStreamingMessage() {
   const chatContainer = document.getElementById('chatContainer');
   const wrapper = document.createElement('div');
   wrapper.className = 'message-wrapper assistant streaming';
+  const messageId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  wrapper.dataset.messageId = messageId;
   wrapper.innerHTML = `
     <div class="message-content">
       <div class="thinking-indicator">
@@ -1422,7 +1484,7 @@ function addStreamingMessage() {
  * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
  * @param {string} htmlContent - 消息的 outerHTML
  */
-export function restoreMessageFromHtml(htmlContent) {
+export function restoreMessageFromHtml(htmlContent, messageId = null) {
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer || !htmlContent) return;
   
@@ -1430,6 +1492,11 @@ export function restoreMessageFromHtml(htmlContent) {
   tempDiv.innerHTML = htmlContent;
   const messageEl = tempDiv.firstElementChild;
   if (!messageEl) return;
+  
+  // 使用传入的 messageId 覆盖 HTML 中的 ID（确保与 state.messageHistory 一致）
+  if (messageId) {
+    messageEl.dataset.messageId = messageId;
+  }
   
   // 移除 streaming 类（持久化后不再是流式状态）
   messageEl.classList.remove('streaming');
@@ -1491,33 +1558,42 @@ export function restoreMessageFromHtml(htmlContent) {
         exportDropdown.classList.remove('show');
       });
     }
-  }
 
-  // 重新绑定原型预览按钮事件
-  const prototypeBtn = footer.querySelector('.prototype-btn-small');
-  if (prototypeBtn) {
-    const logs = (() => {
-      try {
-        const raw = messageEl.dataset.executionLog;
-        return raw ? JSON.parse(raw) : [];
-      } catch { return []; }
-    })();
-    const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
-    if (prototypeCall) {
-      prototypeBtn.addEventListener('click', () => {
-        let prototypeId = prototypeCall.prototypeId;
-        if (!prototypeId && prototypeCall.observation) {
-          try {
-            const parsed = typeof prototypeCall.observation === 'string' 
-              ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
-            prototypeId = parsed?.prototypeId;
-          } catch (e) {}
-        }
-        if (prototypeId) {
-          loadAndShowPrototype(prototypeId);
-        } else {
-          console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
-        }
+    // 重新绑定原型预览按钮事件
+    const prototypeBtn = footer.querySelector('.prototype-btn-small');
+    if (prototypeBtn) {
+      const logs = (() => {
+        try {
+          const raw = messageEl.dataset.executionLog;
+          return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+      })();
+      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+      if (prototypeCall) {
+        prototypeBtn.addEventListener('click', () => {
+          let prototypeId = prototypeCall.prototypeId;
+          if (!prototypeId && prototypeCall.observation) {
+            try {
+              const parsed = typeof prototypeCall.observation === 'string' 
+                ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+              prototypeId = parsed?.prototypeId;
+            } catch (e) {}
+          }
+          if (prototypeId) {
+            loadAndShowPrototype(prototypeId);
+          } else {
+            console.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+          }
+        });
+      }
+    }
+
+    // 重新绑定删除按钮事件
+    const deleteBtn = footer.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMessage(messageEl);
       });
     }
   }
@@ -1538,54 +1614,94 @@ export function restoreMessageFromHtml(htmlContent) {
 
 /**
  * 更新流式消息内容（增量渲染 Markdown）
- * 首次有内容时自动隐藏思考中指示器，并添加思考结果图标（含耗时）
+ * 流式输出过程中思考指示器保持可见，仅在一轮思考完成后才隐藏并显示思考结果badge
  * 支持多轮 ReAct 迭代：每轮追加独立的思考标记
  */
 function updateStreamingMessage(element, fullContent) {
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
   
-  // 查找最后一个可见的思考指示器（可能在 stream-content 内部，也可能在 message-content 中）
+  // 查找当前可见的思考指示器（判断是否正在思考中）
+  // 优先查找 stream-content 内的指示器，然后查找 message-content 内的
   const visibleThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)')
     || element.querySelector('.thinking-indicator:not(.hidden)');
   
   if (visibleThinking) {
-    // 首次有内容：隐藏指示器，替换为思考结果标记（含耗时）
-    // 注意：badge 始终添加到 stream-content 内，确保折叠重组时能正确归入折叠区
-    visibleThinking.classList.add('hidden');
-    // 如果指示器在 message-content 中（非 stream-content 内），移除它
-    if (!contentDiv.contains(visibleThinking)) {
-      visibleThinking.remove();
+    // 当前正在思考中：检查是否是第一次收到内容，如果是，将"思考中"改为"输出中"
+    const thinkingLabel = visibleThinking.querySelector('.thinking-label');
+    if (thinkingLabel && thinkingLabel.textContent === '思考中...') {
+      thinkingLabel.textContent = '输出中...';
     }
-    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
-    const badge = document.createElement('span');
-    badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
-    contentDiv.appendChild(badge);
-  }
-  
-  // 找到最后一个 thinking-badge，在其后更新或创建 thinking-content
-  const badges = contentDiv.querySelectorAll('.thinking-badge');
-  if (badges.length > 0) {
-    const lastBadge = badges[badges.length - 1];
-    let contentAfter = lastBadge.nextElementSibling;
-    // 检查下一个兄弟节点是否是 thinking-content
-    if (contentAfter && contentAfter.classList.contains('thinking-content')) {
-      contentAfter.innerHTML = formatMessageContent(fullContent);
+    
+    // 当前正在思考中/输出中
+    if (contentDiv.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：在指示器前面创建/更新 thinking-content
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        prevSibling.innerHTML = formatMessageContent(fullContent);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        contentDiv.insertBefore(wrapper, visibleThinking);
+      }
     } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：
+      // 如果 stream-content 中没有 thinking-content，创建新的；否则更新最后一个
+      // 注意：这里不能简单地更新最后一个，因为可能有多个轮次的思考内容
+      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+      if (thinkingContents.length === 0) {
+        // 没有任何思考内容，创建新的
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        contentDiv.appendChild(wrapper);
+      } else {
+        // 检查最后一个 thinking-content 是否是当前轮的（前面没有 thinking-badge）
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，更新它
+          lastContent.innerHTML = formatMessageContent(fullContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的（后面有 badge），创建新的
+          const wrapper = document.createElement('div');
+          wrapper.className = 'thinking-content';
+          wrapper.innerHTML = formatMessageContent(fullContent);
+          contentDiv.appendChild(wrapper);
+        }
+      }
+    }
+  } else {
+    // 思考已完成（无可见指示器）：在最后一个 thinking-badge 后更新内容
+    const badges = contentDiv.querySelectorAll('.thinking-badge');
+    if (badges.length > 0) {
+      const lastBadge = badges[badges.length - 1];
+      let contentAfter = lastBadge.nextElementSibling;
+      if (contentAfter && contentAfter.classList.contains('thinking-content')) {
+        contentAfter.innerHTML = formatMessageContent(fullContent);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'thinking-content';
+        wrapper.innerHTML = formatMessageContent(fullContent);
+        lastBadge.after(wrapper);
+      }
+    } else {
+      // 没有 badge，也没有 thinking-indicator，直接创建 thinking-content
       const wrapper = document.createElement('div');
       wrapper.className = 'thinking-content';
       wrapper.innerHTML = formatMessageContent(fullContent);
-      lastBadge.after(wrapper);
+      contentDiv.appendChild(wrapper);
     }
-  } else {
-    contentDiv.innerHTML = formatMessageContent(fullContent);
   }
   
   // 自动滚动（等浏览器完成布局后再滚动，确保 scrollHeight 已更新）
-  requestAnimationFrame(() => {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+  if (element.isConnected) {
+    requestAnimationFrame(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 }
 
 /**
@@ -1607,12 +1723,50 @@ function updateStreamingStatus(element, statusText) {
 function appendToolCallItems(element, toolCalls) {
   if (!element || !toolCalls?.length) return;
   
-  // 隐藏思考指示器
-  const thinkingEl = element.querySelector('.thinking-indicator');
-  if (thinkingEl) thinkingEl.classList.add('hidden');
-  
   const contentDiv = element.querySelector('.stream-content');
   if (!contentDiv) return;
+  
+  // 一轮思考结束：隐藏思考指示器，添加思考结果badge（在思考内容上面）
+  // 查找所有可见的思考指示器（可能在 message-content 或 stream-content 中）
+  const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
+  if (visibleThinking) {
+    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    
+    if (contentDiv.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        // thinking-content 在 thinking-indicator 前面，在 content 前面插入 badge
+        contentDiv.insertBefore(badge, prevSibling);
+      } else {
+        // 没有 thinking-content，在 thinking-indicator 前面插入 badge
+        contentDiv.insertBefore(badge, visibleThinking);
+      }
+      visibleThinking.classList.add('hidden');
+    } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：找到最后一个 thinking-content，在它前面插入 badge
+      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+      if (thinkingContents.length > 0) {
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，在它前面插入 badge
+          contentDiv.insertBefore(badge, lastContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的，在末尾插入 badge
+          contentDiv.appendChild(badge);
+        }
+      } else {
+        // 没有 thinking-content，追加到末尾
+        contentDiv.appendChild(badge);
+      }
+      visibleThinking.classList.add('hidden');
+      visibleThinking.remove();
+    }
+  }
   
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
@@ -1690,11 +1844,14 @@ function appendToolCallItems(element, toolCalls) {
     const item = document.createElement('div');
     item.className = 'tool-call-item';
     item.setAttribute('data-tool-call-id', tc.id || '');
+    item.setAttribute('data-meta-type', meta.metaType);
+    item.setAttribute('data-created-at', Date.now());
     item.innerHTML = `
       <div class="tool-call-header">
         ${iconSvg}
         <span class="tool-call-name">${escapeHtml(toolName)}</span>
         <div class="tool-call-summary">${summaryHtml}</div>
+        <span class="tool-call-executing">执行中...</span>
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
@@ -1711,10 +1868,13 @@ function appendToolCallItems(element, toolCalls) {
   });
   
   // 滚动到底部（等浏览器完成布局后）
-  requestAnimationFrame(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+  if (element.isConnected) {
+    requestAnimationFrame(() => {
+      const chatContainer = document.getElementById('chatContainer');
+      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 }
 
 /**
@@ -1731,55 +1891,82 @@ function appendToolResult(result, streamingElement) {
   const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
   if (!card) return;
   
-  // 移除旧的结果（如果有）
-  const oldResult = card.querySelector('.tool-call-result');
-  if (oldResult) oldResult.remove();
+  // 标记为已有结果，停止执行中动画
+  card.classList.add('has-result');
+
+  // 对于极快完成的工具（如 agent_write_file 仅 7ms），STREAM_TOOL_CALL 和
+  // STREAM_TOOL_RESULT 几乎同时到达，浏览器来不及渲染"执行中..."状态。
+  // 因此设置最小显示延迟 400ms，确保用户能看到执行中的过渡状态。
+  const createdTs = parseInt(card.getAttribute('data-created-at'), 10);
+  const elapsed = Date.now() - createdTs;
+  const MIN_DISPLAY_MS = 400;
+  const delay = elapsed < MIN_DISPLAY_MS && elapsed >= 0 ? MIN_DISPLAY_MS - elapsed : 0;
   
-  // 截断提示
-  const truncateNote = result.truncated 
-    ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
-    : '';
-  
-  // 格式化结果内容
-  const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
-  const contentPreview = contentText.length > 500 
-    ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
-    : contentText;
-  const fullContent = contentText;
-  
-  const resultDiv = document.createElement('div');
-  resultDiv.className = 'tool-call-result';
-  resultDiv.innerHTML = `
-    <div class="tool-result-header">
-      <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
-        ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
-      </span>
-      ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
-      ${truncateNote}
-    </div>
-    <div class="tool-result-content">
-      <pre><code>${escapeHtml(contentPreview)}</code></pre>
-    </div>
-  `;
-  
-  card.appendChild(resultDiv);
-  
-  // 如果内容 > 500 字符，支持点击展开完整内容
-  if (fullContent.length > 500) {
-    const codeBlock = resultDiv.querySelector('code');
-    let isExpanded = false;
-    resultDiv.style.cursor = 'pointer';
-    resultDiv.addEventListener('click', () => {
-      isExpanded = !isExpanded;
-      codeBlock.textContent = isExpanded ? fullContent : contentPreview;
-    });
-  }
-  
-  // 滚动到底部（等浏览器完成布局后）
-  requestAnimationFrame(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+  const renderResult = () => {
+    // 移除执行中状态标识
+    const executingBadge = card.querySelector('.tool-call-executing');
+    if (executingBadge) executingBadge.remove();
+    
+    // 移除旧的结果（如果有）
+    const oldResult = card.querySelector('.tool-call-result');
+    if (oldResult) oldResult.remove();
+    
+    // 截断提示
+    const truncateNote = result.truncated 
+      ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
+      : '';
+    
+    // 格式化结果内容
+    const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
+    const contentPreview = contentText.length > 500 
+      ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
+      : contentText;
+    const fullContent = contentText;
+    
+    const resultDiv = document.createElement('div');
+    resultDiv.className = 'tool-call-result';
+    resultDiv.innerHTML = `
+      <div class="tool-result-header">
+        <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+          ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
+        </span>
+        ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+        ${truncateNote}
+      </div>
+      <div class="tool-result-content">
+        <pre><code>${escapeHtml(contentPreview)}</code></pre>
+      </div>
+    `;
+    
+    card.appendChild(resultDiv);
+    
+    // 如果内容 > 500 字符，支持点击展开完整内容
+    if (fullContent.length > 500) {
+      const codeBlock = resultDiv.querySelector('code');
+      let isExpanded = false;
+      resultDiv.style.cursor = 'pointer';
+        resultDiv.addEventListener('click', () => {
+          isExpanded = !isExpanded;
+          codeBlock.textContent = isExpanded ? fullContent : contentPreview;
+        });
+      }
+      
+      // 滚动到底部（等浏览器完成布局后）
+      // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+      if (streamingElement.isConnected) {
+        requestAnimationFrame(() => {
+          const chatContainer = document.getElementById('chatContainer');
+          if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        });
+      }
+    };
+    
+    // 根据延迟决定是否立即渲染或延迟渲染
+    if (delay > 0) {
+      setTimeout(renderResult, delay);
+    } else {
+      renderResult();
+    }
 }
 
 /**
@@ -1845,18 +2032,59 @@ function createPreSelectCard(entry) {
  * @param {number|null} reflectionScore - 反思评分
  * @param {string|null} reasoningContent - 推理/思考过程内容
  */
-function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null) {
+function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null, wasRevised = false) {
   if (!element) return;
   
-  // 隐藏所有思考指示器
+  const messageContent = element.querySelector('.message-content');
+  const streamContent = element.querySelector('.stream-content');
+  
+  // 最后一轮思考结束：隐藏思考指示器，添加思考结果badge（在思考内容上面）
+  const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
+  if (visibleThinking && streamContent) {
+    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    
+    if (streamContent.contains(visibleThinking)) {
+      // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        // thinking-content 在 thinking-indicator 前面，在 content 前面插入 badge
+        streamContent.insertBefore(badge, prevSibling);
+      } else {
+        // 没有 thinking-content，在 thinking-indicator 前面插入 badge
+        streamContent.insertBefore(badge, visibleThinking);
+      }
+      visibleThinking.classList.add('hidden');
+    } else {
+      // 思考指示器在 message-content 中（第一轮迭代）：找到最后一个 thinking-content，在它前面插入 badge
+      const thinkingContents = streamContent.querySelectorAll('.thinking-content');
+      if (thinkingContents.length > 0) {
+        const lastContent = thinkingContents[thinkingContents.length - 1];
+        const nextSibling = lastContent.nextElementSibling;
+        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+          // 最后一个 thinking-content 是当前轮的，在它前面插入 badge
+          streamContent.insertBefore(badge, lastContent);
+        } else {
+          // 最后一个 thinking-content 已经是上一轮的，在末尾插入 badge
+          streamContent.appendChild(badge);
+        }
+      } else {
+        // 没有 thinking-content，追加到末尾
+        streamContent.appendChild(badge);
+      }
+      visibleThinking.classList.add('hidden');
+      visibleThinking.remove();
+    }
+  }
+  
+  // 隐藏所有剩余的思考指示器（确保全部隐藏）
   element.querySelectorAll('.thinking-indicator').forEach(el => el.classList.add('hidden'));
   
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) statusDiv.remove();
   element.classList.remove('streaming');
-  
-  const messageContent = element.querySelector('.message-content');
-  const streamContent = element.querySelector('.stream-content');
   
   // 检测是否为 ReAct 过程（包含工具调用卡片）
   const hasToolCalls = (messageContent && messageContent.querySelector('.tool-call-item'))
@@ -1915,16 +2143,34 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
       processContent.insertBefore(preselectCard, processContent.firstChild);
     });
     
-    // 移除最后一个 thinking-badge 和 thinking-content（最终答案，将显示在折叠区外）
-    const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
+    // 移除与最终答案重复的 thinking-badge/thinking-content（最终答案统一由 final-answer 展示）
+    // 在 ReAct 模式下，最后一个 thinking-content 就是最终答案，应该始终移除它和它前面的 badge
+    // 除非 wasRevised 为 true（反思修改了答案，此时最终答案与最后一个 thinking-content 不同）
     const thinkingContents = processContent.querySelectorAll('.thinking-content');
-    if (thinkingBadges.length > 0) {
-      const lastBadge = thinkingBadges[thinkingBadges.length - 1];
-      lastBadge.remove();
-    }
+    const finalText = extractTextContent(content).trim();
+    
     if (thinkingContents.length > 0) {
       const lastContent = thinkingContents[thinkingContents.length - 1];
-      lastContent.remove();
+      const lastContentText = lastContent.textContent.trim();
+      
+      // 判断是否需要移除：
+      // 1. 未修订时：始终移除最后一个 thinking-content（因为它就是最终答案）
+      // 2. 已修订时：只有当内容相同时才移除（反思没有实际改变内容）
+      const shouldRemove = !wasRevised || (wasRevised && lastContentText === finalText);
+      
+      if (shouldRemove) {
+        // 通过 DOM 关系查找对应的 thinking-badge（在 thinking-content 前面）
+        let prevSibling = lastContent.previousElementSibling;
+        while (prevSibling) {
+          if (prevSibling.classList.contains('thinking-badge')) {
+            prevSibling.remove();
+            break;
+          }
+          prevSibling = prevSibling.previousElementSibling;
+        }
+        
+        lastContent.remove();
+      }
     }
     
     processHistory.appendChild(processHeader);
@@ -1942,6 +2188,8 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     // 移除原始的 thinking-indicator（来自 addStreamingMessage 模板）
     const origThinking = messageContent.querySelector('.thinking-indicator');
     if (origThinking) origThinking.remove();
+    // 清空 stream-content（所有子节点已移入思考过程区域）
+    if (streamContent) streamContent.innerHTML = '';
     
     // 插入 process-history 和 final-answer
     messageContent.appendChild(processHistory);
@@ -2126,7 +2374,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   }
   
   // 原型预览按钮
-  const prototypeCall = executionLog?.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
   if (prototypeCall) {
     let localOpened = false;
     if (prototypeCall.observation) {
@@ -2159,6 +2407,21 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     });
     footer.appendChild(prototypeBtn);
   }
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'delete-btn';
+  deleteBtn.title = '删除消息';
+  deleteBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>
+  `;
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteMessage(element);
+  });
+  footer.appendChild(deleteBtn);
 
   element.querySelector('.message-content').appendChild(footer);
   
@@ -2231,9 +2494,122 @@ function finalizeCancelledStream(element) {
   element.classList.add('stream-cancelled');
 }
 
+function showDeleteConfirm(messagePreview) {
+  return new Promise((resolve) => {
+    const existing = document.querySelector('.delete-confirm-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'delete-confirm-overlay';
+    
+    const previewText = messagePreview.length > 50 
+      ? messagePreview.substring(0, 50) + '...' 
+      : messagePreview;
+
+    overlay.innerHTML = `
+      <div class="delete-confirm-modal">
+        <div class="delete-confirm-header">
+          <div class="delete-confirm-icon">🗑️</div>
+          <div class="delete-confirm-title">确认删除消息</div>
+        </div>
+        <div class="delete-confirm-body">
+          <p>删除后消息将从对话历史中移除，且无法恢复。</p>
+          <div class="delete-confirm-preview">${previewText}</div>
+        </div>
+        <div class="delete-confirm-footer">
+          <button class="delete-confirm-cancel">取消</button>
+          <button class="delete-confirm-confirm">确认删除</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const cancelBtn = overlay.querySelector('.delete-confirm-cancel');
+    const confirmBtn = overlay.querySelector('.delete-confirm-confirm');
+
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(false);
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(true);
+    });
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+      }
+    });
+  });
+}
+
+export async function deleteMessage(messageElement, skipConfirm = false) {
+  const messageId = messageElement.dataset.messageId;
+  const role = messageElement.classList.contains('user') ? 'user' : 'assistant';
+  
+  let previewText = '';
+  if (role === 'user') {
+    previewText = messageElement.textContent.trim();
+  } else {
+    previewText = messageElement.dataset.textContent_ || '';
+  }
+
+  if (!skipConfirm) {
+    const confirmed = await showDeleteConfirm(previewText);
+    if (!confirmed) return;
+  }
+
+  if (messageId) {
+    const index = state.messageHistory.findIndex(msg => msg.messageId === messageId);
+    if (index !== -1) {
+      state.messageHistory.splice(index, 1);
+    }
+  } else {
+    const timestamp = messageElement.dataset.timestamp;
+    const index = state.messageHistory.findIndex(msg => msg.timestamp === timestamp);
+    if (index !== -1) {
+      state.messageHistory.splice(index, 1);
+    }
+  }
+
+  const prevSibling = messageElement.previousElementSibling;
+  if (prevSibling && prevSibling.classList.contains('user-context-bubble')) {
+    prevSibling.remove();
+  }
+
+  messageElement.remove();
+
+  const chatContainer = document.getElementById('chatContainer');
+  const remainingMessages = chatContainer.querySelectorAll('.message');
+  
+  if (remainingMessages.length === 0) {
+    chatContainer.innerHTML = `
+      <div class="welcome-message">
+        <div class="icon-wrapper">
+          <div class="icon">💬</div>
+        </div>
+        <h2>开始对话</h2>
+        <p>输入您的问题，AI 助手将为您解答</p>
+      </div>
+    `;
+  }
+
+  await saveChatHistoryAsync();
+
+  console.log(`[SidePanel] 已删除消息: ${role}, messageId: ${messageId}`);
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}) {
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
+  
+  const reflectionConfig = await new Promise((resolve) => {
+    chrome.storage.local.get('reflectionConfig', (result) => {
+      resolve(result.reflectionConfig || { enabled: false });
+    });
+  });
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
@@ -2475,31 +2851,36 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           // 后续 ReAct 迭代：在 stream-content 末尾添加新的思考指示器
           const contentDiv = _se().querySelector('.stream-content');
           if (contentDiv) {
-            const newThinking = document.createElement('div');
-            newThinking.className = 'thinking-indicator';
-            newThinking.innerHTML = `
-              <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
-                <circle cx="8" cy="12" r="1.5"/>
-                <circle cx="16" cy="12" r="1.5"/>
-              </svg>
-              <div class="thinking-dots"><span></span><span></span><span></span></div>
-              <span class="thinking-label">思考中...</span>
-              <button class="streaming-stop-btn" title="停止生成">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                </svg>
-              </button>
-            `;
-            // 绑定停止按钮事件
-            const stopBtn = newThinking.querySelector('.streaming-stop-btn');
-            if (stopBtn) {
-              stopBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                cancelStreamingTask(stopBtn);
-              });
+            const existingThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)');
+            if (existingThinking) {
+              console.warn('[STREAM_START] 已有可见的思考指示器，跳过创建:', existingThinking);
             }
-            contentDiv.appendChild(newThinking);
+            if (!existingThinking) {
+              const newThinking = document.createElement('div');
+              newThinking.className = 'thinking-indicator';
+              newThinking.innerHTML = `
+                <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+                  <circle cx="8" cy="12" r="1.5"/>
+                  <circle cx="16" cy="12" r="1.5"/>
+                </svg>
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                <span class="thinking-label">思考中...</span>
+                <button class="streaming-stop-btn" title="停止生成">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  </svg>
+                </button>
+              `;
+              const stopBtn = newThinking.querySelector('.streaming-stop-btn');
+              if (stopBtn) {
+                stopBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  cancelStreamingTask(stopBtn);
+                });
+              }
+              contentDiv.appendChild(newThinking);
+            }
           }
         }
         
@@ -2518,6 +2899,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'STREAM_TOOL_CALL') {
+        if (!_se()) {
+          // 如果流式元素还没有创建，立即创建
+          _se(addStreamingMessage());
+          _processStartTime = Date.now();
+        }
         if (_se() && message.toolCalls?.length > 0) {
           // 添加工具调用详情卡片（含图标、名称、命令/文件/参数、可折叠详情）
           appendToolCallItems(_se(), message.toolCalls);
@@ -2591,12 +2977,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       
       if (message.type === 'STREAM_DONE') {
         if (_se()) {
-          // 流式输出完成，但反思/优化可能还在进行中，更新状态文本但保持动画
           const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
-            statusDiv.textContent = '质量评估中...';
+            if (reflectionConfig?.enabled) {
+              statusDiv.textContent = '质量评估中...';
+            } else {
+              statusDiv.textContent = '处理完成';
+            }
           }
-          // 不移除 .streaming，保持脉冲动画，API_COMPLETE 时才最终收尾
+          if (!reflectionConfig?.enabled) {
+            _se().classList.remove('streaming');
+          }
         }
         return false;
       }
@@ -2604,13 +2995,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'API_COMPLETE') {
         // 流式消息：在 resolve 前添加底部工具栏
         if (_se() && message.content) {
-          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
+          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent, message.wasRevised);
         }
         // 在 cleanupCallApi 之前捕获状态（cleanup 会清空 _streamingElements）
         const streamingEl = _se();
         const wasStreamed = !!streamingEl;
         const streamingHtml = streamingEl ? (streamingEl.dataset.htmlContent || streamingEl.outerHTML) : null;
         const streamingConnected = streamingEl ? streamingEl.isConnected : false;
+        const streamingMsgId = streamingEl ? streamingEl.dataset.messageId : null;
         cleanupCallApi();
         resolve({ 
           content: message.content, 
@@ -2619,7 +3011,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           wasStreamed,
           wasRevised: message.wasRevised,
           streamingHtml,
-          streamingConnected
+          streamingConnected,
+          streamingMsgId
         });
         return false;
       } else if (message.type === 'API_ERROR') {
@@ -2910,7 +3303,10 @@ function editAndResendMessage(messageDiv) {
         if (Array.isArray(parsed)) {
           const imageParts = parsed.filter(c => c.type === 'image_url');
           for (const imgPart of imageParts) {
-            state.attachedImages.push({ dataUrl: imgPart.image_url.url });
+            state.attachedImages.push({ 
+              originalUrl: imgPart.image_url.url, 
+              compressedUrl: imgPart.image_url.url 
+            });
           }
         }
       } catch (e) { /* 不是 JSON 格式，跳过图片解析 */ }
@@ -2918,6 +3314,10 @@ function editAndResendMessage(messageDiv) {
     renderImagePreviewsFromChat();
     
     // 2. 恢复引用/选中上下文，显示在输入框上方
+    // 保存当前已有的上下文状态（如果用户之前已经引用了消息或选中了内容）
+    const existingQuotedContext = state.quotedContextText;
+    const existingSelectedContext = state.selectedContextText;
+    
     state.quotedContextText = '';
     state.selectedContextText = '';
     
@@ -2956,6 +3356,9 @@ function editAndResendMessage(messageDiv) {
       }
       
       textToEdit = userQuestion;
+    } else {
+      state.quotedContextText = existingQuotedContext;
+      state.selectedContextText = existingSelectedContext;
     }
     
     const userInput = document.getElementById('userInput');

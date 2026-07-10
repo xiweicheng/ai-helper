@@ -377,11 +377,11 @@ export async function sendPromptByCode(code) {
   // 构建用户消息 content（支持图片附件）
   const userContent = buildUserContent(userMessage);
 
-  // 添加用户问题气泡（含图片）
-  addMessage('user', buildUserContent(prompt.content));
+  // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复
+  const { messageId } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage);
 
   // 更新消息历史
-  state.messageHistory.push({ role: 'user', content: userContent });
+  state.messageHistory.push({ role: 'user', content: userContent, messageId });
 
   // 保存历史
   saveChatHistory();
@@ -490,10 +490,10 @@ export async function sendPromptByCode(code) {
       executionLog = errorResult.executionLog || [];
 
       // 添加错误消息（传递执行日志以便用户可查看）
-      const messageDiv = addMessage('assistant', content, true, executionLog);
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
       // 将错误回复添加到消息历史（包含执行日志）
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
       // 保存历史
       saveChatHistory();
@@ -505,13 +505,13 @@ export async function sendPromptByCode(code) {
     removeLoadingMessage(loadingId);
 
     // 添加助手回复（传递执行日志）
-    const messageDiv = addMessage('assistant', content, true, executionLog);
+    const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
     // 渲染消息中的 mermaid 图表
     await renderMessageMermaid(messageDiv);
 
     // 将助手回复添加到消息历史（包含执行日志）
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
     // 保存历史
     saveChatHistory();
@@ -582,9 +582,9 @@ export function renderPromptManageList() {
     <div class="prompt-manage-item" draggable="true" data-index="${index}">
       <div class="prompt-manage-item-left">
         <span class="prompt-drag-handle" title="拖拽排序">⋮⋮</span>
-        <span class="prompt-manage-item-code">/${prompt.code}</span>
         <span class="prompt-manage-item-content">${prompt.content}</span>
       </div>
+      <span class="prompt-manage-item-code">/${prompt.code}</span>
       <div class="prompt-manage-item-actions">
         <button class="prompt-sort-btn move-up-btn" data-index="${index}" title="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
         <button class="prompt-sort-btn move-down-btn" data-index="${index}" title="下移" ${index === state.customPrompts.length - 1 ? 'disabled' : ''}>↓</button>

@@ -102,7 +102,7 @@ export let enableImageInput = false;
 export let imageModelName = '';         // 图片识别模型，为空则使用 currentModel
 export let imageApiBase = '';   // 图片识别独立 API Base，为空则使用主配置
 export let imageApiKey = '';    // 图片识别独立 API Token，为空则使用主配置
-export let attachedImages = [];  // [{ dataUrl: 'data:image/jpeg;base64,...' }]
+export let attachedImages = [];  // [{ originalUrl: 'data:image/jpeg;base64,...', compressedUrl: 'data:image/jpeg;base64,...' }]
 
 // 文件上传问答
 export let enableFileInput = false;   // 文件上传开关

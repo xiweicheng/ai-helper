@@ -124,7 +124,20 @@ export function isCancelled(sessionIdOrTabId) {
     return cancelledTabs.get(sessionIdOrTabId) === true;
   }
 
-  return cancelledSessions.get(sessionIdOrTabId) === true;
+  // 直接匹配
+  if (cancelledSessions.get(sessionIdOrTabId) === true) {
+    return true;
+  }
+
+  // 检查派生 sessionId（子任务使用 ${parentSessionId}_subtask_${index} 格式）
+  // 如果父任务已取消，子任务也应视为已取消
+  for (const cancelledSession of cancelledSessions.keys()) {
+    if (sessionIdOrTabId.startsWith(cancelledSession + '_')) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // ========== 旧版兼容函数（内部仍有使用） ==========

@@ -1620,6 +1620,14 @@ body {
   flex-shrink: 0;
   transition: all 0.15s ease;
   line-height: 1;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.session-dropdown-item:hover .session-dropdown-item-close,
+.session-dropdown-item.highlighted .session-dropdown-item-close {
+  opacity: 1;
+  visibility: visible;
 }
 
 .session-dropdown-item-close:hover {
@@ -2207,6 +2215,43 @@ body {
 .tool-call-item.expanded .tool-call-chevron {
   transform: rotate(180deg);
 }
+/* 工具执行中状态标识 */
+.tool-call-executing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 3px 10px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  animation: executing-pulse 1s ease-in-out infinite;
+}
+.tool-call-executing::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: executing-dot 1.5s ease-in-out infinite;
+}
+@keyframes executing-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes executing-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.5; }
+}
+/* 工具结果返回后：停止 exec 图标旋转动画 */
+.tool-call-item.has-result .tool-call-icon.exec {
+  animation: none;
+}
 .tool-call-body {
   display: none;
   padding: 0 12px 10px 40px;
@@ -2228,6 +2273,18 @@ body {
   margin: 4px 0 0;
   white-space: pre-wrap;
   word-break: break-all;
+}
+/* 流式过程中：工具卡片自动展开并强化样式 */
+.message-wrapper.streaming .tool-call-item {
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.08);
+}
+.message-wrapper.streaming .tool-call-item .tool-call-body {
+  display: block;
+}
+.message-wrapper.streaming .tool-call-item .tool-call-chevron {
+  transform: rotate(180deg);
 }
 /* 预筛选卡片样式 */
 .preselect-card .tool-call-icon {
@@ -2928,6 +2985,169 @@ body {
   font-size: 13px;
   pointer-events: none;
   z-index: 2;
+}
+
+.image-preview-download:hover {
+  background: rgba(102, 126, 234, 0.8);
+}
+
+.image-preview-edit:hover {
+  background: rgba(102, 126, 234, 0.8);
+}
+
+.image-preview-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 5;
+}
+
+.image-preview-editor-toolbar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 6px 14px;
+  background: rgba(30, 30, 30, 0.92);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  z-index: 10;
+  align-items: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.editor-tool-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.editor-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.editor-tool-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.editor-tool-btn.active:hover {
+  transform: translateY(-1px);
+}
+
+.editor-tool-btn.confirm {
+  background: linear-gradient(135deg, #2ed573 0%, #1e90ff 100%);
+  color: white;
+  margin-left: 4px;
+}
+
+.editor-tool-btn.confirm:hover {
+  box-shadow: 0 4px 12px rgba(46, 213, 115, 0.4);
+}
+
+.editor-tool-btn.cancel {
+  background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+  color: white;
+}
+
+.editor-tool-btn.cancel:hover {
+  box-shadow: 0 4px 12px rgba(229, 62, 62, 0.4);
+}
+
+.editor-tool-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.editor-tool-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 0 6px;
+}
+
+.editor-color-picker {
+  position: relative;
+  padding: 0 4px;
+}
+
+.editor-color-picker input[type="color"] {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 0;
+  background: transparent;
+}
+
+.editor-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.editor-color-picker input[type="color"]::-webkit-color-swatch {
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+}
+
+#editorBrushSize {
+  width: 70px;
+  height: 6px;
+  cursor: pointer;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  outline: none;
+}
+
+#editorBrushSize::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s;
+}
+
+#editorBrushSize::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+#editorBrushSize::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.editor-tool-btn::-moz-focus-inner {
+  border: 0;
 }
 
 .modal-title {
@@ -3867,6 +4087,9 @@ body {
   font-size: 12px;
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 12px;
+  margin-right: 12px;
 }
 
 .prompt-manage-item-content {
@@ -6481,7 +6704,7 @@ body {
   right: 26px;
   top: 50%;
   transform: translateY(-50%) translateX(0);
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
@@ -6625,4 +6848,162 @@ body {
   .message.assistant .message-footer {
     gap: 2px;
   }
+}
+
+/* 删除确认对话框 */
+.delete-confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.delete-confirm-modal {
+  background: white;
+  border-radius: 12px;
+  width: 320px;
+  max-width: 90%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.delete-confirm-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.delete-confirm-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.delete-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.delete-confirm-body {
+  padding: 16px;
+}
+
+.delete-confirm-body p {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.delete-confirm-preview {
+  background: #f5f7fa;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #888;
+  max-height: 80px;
+  overflow-y: auto;
+  word-break: break-all;
+}
+
+.delete-confirm-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.delete-confirm-cancel {
+  flex: 1;
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  color: #666;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-confirm-cancel:hover {
+  background: #f5f7fa;
+  border-color: #ccc;
+}
+
+.delete-confirm-confirm {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #e53e3e;
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-confirm-confirm:hover {
+  background: #dc2626;
+  box-shadow: 0 2px 8px rgba(229, 62, 62, 0.3);
+}
+
+/* 删除按钮样式 */
+.delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  transition: all 0.2s;
+}
+
+.delete-btn:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: #e53e3e;
+}
+
+.delete-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.message.user .message-toolbar-btn.delete-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 4px;
+  color: #666;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.message.user .message-toolbar-btn.delete-btn:hover {
+  background: #f0f4ff !important;
+  color: #e53e3e;
+  box-shadow: 0 2px 8px rgba(229, 62, 62, 0.2);
 }

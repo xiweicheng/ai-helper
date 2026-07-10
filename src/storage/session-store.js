@@ -118,6 +118,8 @@ export async function saveCurrentSession() {
     reflectionScore: msg.reflectionScore,
     wasRevised: msg.wasRevised || false,
     htmlContent: msg.htmlContent || undefined,
+    messageId: msg.messageId || undefined,
+    timestamp: msg.timestamp || undefined,
   }));
 
   currentSession.updatedAt = new Date().toISOString();

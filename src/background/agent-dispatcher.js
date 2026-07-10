@@ -101,7 +101,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
     top_p: agent.topP !== null ? agent.topP : config.topP,
   };
 
-  const model = agent.model || config.model || 'deepseek-v4-pro';
+  const model = agent.model || config.modelName || 'deepseek-v4-pro';
 
   try {
     let result;

@@ -1,8 +1,22 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize, sep, isAbsolute, join } from 'path';
+import { resolve, normalize, sep, isAbsolute, join, dirname } from 'path';
 import { realpathSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, platform } from 'os';
 import { loadConfig } from './config.js';
+
+const isWin32 = platform() === 'win32';
+
+function normalizePathFormat(pathStr) {
+  if (!pathStr || typeof pathStr !== 'string') return pathStr;
+
+  if (isWin32) {
+    pathStr = pathStr.replace(/\/([a-zA-Z])\//g, '$1:/');
+    pathStr = pathStr.replace(/\/([a-zA-Z]):/g, '$1:/');
+    pathStr = pathStr.replace(/\//g, '\\');
+  }
+
+  return pathStr;
+}
 
 // ==================== 硬阻止目录（任何情况下都不可访问） ====================
 
@@ -49,8 +63,10 @@ function checkPath(pathStr) {
   try {
     const config = loadConfig();
 
-    // 相对路径基于 config.workdir 解析，而非 process.cwd()
-    const resolved = isAbsolute(pathStr) ? resolve(pathStr) : resolve(config.workdir, pathStr);
+    const normalizedPathStr = normalizePathFormat(pathStr);
+    const normalizedWorkdir = normalizePathFormat(config.workdir);
+
+    const resolved = isAbsolute(normalizedPathStr) ? resolve(normalizedPathStr) : resolve(normalizedWorkdir, normalizedPathStr);
     const normalized = normalize(resolved);
 
     // 0. 硬阻止检查（优先级最高，不可绕过）
@@ -58,13 +74,12 @@ function checkPath(pathStr) {
       return { allowed: false, reason: '禁止访问代理系统文件' };
     }
 
-    const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths : [config.workdir];
+    const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths.map(p => normalizePathFormat(p)) : [normalizedWorkdir];
 
     // 先做前缀检查（快速路径，兼容 Windows/Unix）
     let prefixMatch = false;
     for (const allowed of allowedPaths) {
       const allowedResolved = resolve(allowed);
-      // 统一使用 OS 分隔符构造前缀
       const prefix = allowedResolved.endsWith(sep) ? allowedResolved : allowedResolved + sep;
       if (normalized.startsWith(prefix) || normalized === allowedResolved) {
         prefixMatch = true;
@@ -81,10 +96,12 @@ function checkPath(pathStr) {
       realPath = realpathSync(resolved);
     } catch (err) {
       if (err.code === 'ENOENT') {
-        // 文件/目录不存在时，向上查找直到找到存在的父目录
         let existing = resolved;
-        while (existing !== sep && existing !== '' && existing !== '/') {
-          const parent = resolve(existing, '..');
+        while (true) {
+          const parent = dirname(existing);
+          if (parent === existing) {
+            break;
+          }
           try {
             realPath = realpathSync(parent) + sep + normalized.slice(resolve(parent).length).replace(/^[/\\]/, '');
             break;

@@ -446,9 +446,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
   const userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
 
-  addMessage('user', prompt.content);
+  const { messageId } = addMessage('user', prompt.content, true, [], null, false, userMessage);
 
-  state.messageHistory.push({ role: 'user', content: userMessage });
+  state.messageHistory.push({ role: 'user', content: userMessage, messageId });
 
   saveChatHistory();
 
@@ -528,9 +528,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
 
-      const messageDiv = addMessage('assistant', content, true, executionLog);
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
       saveChatHistory();
 
@@ -539,11 +539,11 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
     removeLoadingMessage(loadingId);
 
-    const messageDiv = addMessage('assistant', content, true, executionLog);
+    const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
 
     await renderMessageMermaid(messageDiv);
 
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
     saveChatHistory();
 
@@ -610,13 +610,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (message.type === 'AGENT_STATUS_CHANGE') {
       console.log('[SidePanel] 收到 Agent 状态变化:', message.connected, message.status);
-      // 重新从 storage 读取最新的 agentPlatform
-      chrome.storage.local.get('agentPlatform', (result) => {
-        state.agentPlatform = result.agentPlatform || { connected: false };
-        updateAgentIndicator(state.agentPlatform);
-        // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
-        refreshToolPopupIfOpen();
-      });
+      // 直接使用消息中的 connected 值，不重新读 storage（storage 可能是过期状态）
+      state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
+      updateAgentIndicator(state.agentPlatform);
+      // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
+      refreshToolPopupIfOpen();
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 直接从选项页通知更新，不依赖 storage 读取
@@ -625,6 +623,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateAgentIndicator(state.agentPlatform);
       // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
+    }
+    if (message.type === 'SCREENSHOT_RESULT' && message.dataUrl) {
+      console.log('[SidePanel] 收到页面快捷键截图结果:', message.mode);
+      handlePageScreenshotResult(message.dataUrl, message.mode, message.rect);
     }
   });
 
@@ -956,6 +958,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.agentPlatform = result.agentPlatform;
     }
     updateAgentIndicator(state.agentPlatform);
+    // 触发一次实时代理健康检查，确保连接状态准确
+    chrome.runtime.sendMessage({ type: 'TRIGGER_AGENT_HEALTH_CHECK' }).catch(() => {});
     // 图片识别配置
     state.enableImageInput = result.enableImageInput || false;
     state.imageModelName = result.imageModelName || '';
@@ -2470,4 +2474,24 @@ function cropImage(dataUrl, rect) {
     img.onerror = () => reject(new Error('图片加载失败'));
     img.src = dataUrl;
   });
+}
+
+async function handlePageScreenshotResult(dataUrl, mode, rect) {
+  if (!state.enableImageInput) {
+    showToast('请先开启图片输入功能');
+    return;
+  }
+  try {
+    let finalDataUrl = dataUrl;
+    if (mode === 'region' && rect) {
+      finalDataUrl = await cropImage(dataUrl, rect);
+    }
+    const res = await fetch(finalDataUrl);
+    const blob = await res.blob();
+    compressAndAttachImage(blob);
+    showToast('截图成功');
+  } catch (err) {
+    console.error('[SidePanel] 页面快捷键截图处理失败:', err);
+    showToast('截图处理失败，请重试');
+  }
 }

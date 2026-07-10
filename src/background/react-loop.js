@@ -110,6 +110,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
   const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
+
+  // 重复工具调用检测：防止模型陷入重复调用同一工具的循环
+  const REPEATED_CALL_WARN_THRESHOLD = 3; // 连续相同调用达到此次数时注入警告
+  const REPEATED_CALL_HARD_LIMIT = 6;     // 连续相同调用达到此次数时强制终止
+  let lastToolCallFingerprint = null;     // 上一轮工具调用的指纹
+  let repeatedCallCount = 0;              // 连续相同调用的计数
   
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
   // 为工具定义、系统提示词、输出预留空间后的消息预算
@@ -239,7 +245,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const loopTimeout = reactConfig.loopTimeout;
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
-  const streamConfig = config.streamConfig;
+  
+  // 子任务禁用流式输出（子任务的流式消息会干扰主任务的流式 UI 状态）
+  // 子任务的执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示
+  const isSubtask = taskContext && taskContext.subtaskId;
+  const streamConfig = isSubtask 
+    ? { ...config.streamConfig, streamEnabled: false }
+    : config.streamConfig;
   
   console.log('[Background] reactLoop 配置:', reactConfig);
   console.log('[Background] reactLoop 收到工具列表:', tools.map(t => t.function.name), '数量:', tools.length);
@@ -465,20 +477,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           // 构建兼容现有代码的 response 对象
           // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
+          // 注意：readSSEStream 中已发送 STREAM_TOOL_CALL 并规范化了 ID，此处保持幂等
           const normalizedToolCalls = streamResult.toolCalls ? streamResult.toolCalls.map(tc => ({
             ...tc,
             id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
           })) : null;
 
-          // 发送 STREAM_TOOL_CALL 通知（使用规范化后的 toolCallId，确保与 STREAM_TOOL_RESULT 匹配）
-          if (normalizedToolCalls && normalizedToolCalls.length > 0) {
-            chrome.runtime.sendMessage({
-              type: 'STREAM_TOOL_CALL',
-              sessionId,
-              toolCalls: normalizedToolCalls,
-              thinkingContent: streamResult.content
-            }).catch(() => {});
-          }
+          // STREAM_TOOL_CALL 已在 readSSEStream 中发送，此处不再重复发送
 
           response = {
             choices: [{
@@ -503,6 +508,18 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             console.error('[Background] JSON 解析失败:', parseError);
             console.error('[Background] 原始响应:', responseText);
             throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+          }
+
+          // 非流式模式下，规范化 tool_calls 的 ID（不发送 STREAM_TOOL_CALL，前端不创建流式元素）
+          const nonStreamToolCalls = response.choices?.[0]?.message?.tool_calls;
+          if (nonStreamToolCalls && nonStreamToolCalls.length > 0) {
+            const normalizedNonStreamToolCalls = nonStreamToolCalls.map(tc => ({
+              ...tc,
+              id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
+            }));
+
+            // 更新 response 中的 tool_calls 使用规范化后的 ID
+            response.choices[0].message.tool_calls = normalizedNonStreamToolCalls;
           }
         }
       } catch (error) {
@@ -589,6 +606,42 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
         console.log('[Background] 收到工具调用:', assistantMessage.tool_calls);
+        
+        // 重复工具调用检测：计算本轮工具调用的指纹并与上一轮比较
+        const currentFingerprint = JSON.stringify(
+          assistantMessage.tool_calls.map(tc => ({
+            name: tc.function?.name || tc.name,
+            args: typeof tc.function?.arguments === 'string' 
+              ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return tc.function.arguments; } })()
+              : tc.function?.arguments || {}
+          }))
+        );
+        
+        if (currentFingerprint === lastToolCallFingerprint) {
+          repeatedCallCount++;
+          console.warn(`[Background] 检测到重复工具调用 (第${repeatedCallCount}次连续重复):`, 
+            assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', '));
+          
+          if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
+            throw createErrorWithLog(
+              `连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`,
+              executionLog
+            );
+          }
+          
+          if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
+            // 注入警告消息，提示模型更换策略
+            const warnMsg = {
+              role: 'system',
+              content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
+            };
+            currentMessages.push(warnMsg);
+            console.log('[Background] 注入重复调用警告消息');
+          }
+        } else {
+          lastToolCallFingerprint = currentFingerprint;
+          repeatedCallCount = 1;
+        }
         
         currentMessages.push(assistantMessage);
         trimMessages();
@@ -683,6 +736,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           if (!PARALLELIZABLE_TOOLS.has(toolName)) {
             toolResultCache.clear();
           }
+          
+          // 让出事件循环，确保 STREAM_TOOL_CALL 有机会先传递到侧面板
+          // 这样用户能在工具执行开始前看到"执行中..."状态，而不是等待工具执行完成后才看到
+          await new Promise(r => setTimeout(r, 0));
           
           // 添加工具执行开始的日志节点（状态为 processing）
           const toolLogId = crypto.randomUUID();
@@ -1290,6 +1347,9 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     const taskGroup = `subtask_group_${subtaskIndex}`;
     let lastError = null;
     
+    // 为子任务创建派生 sessionId，隔离流式消息（避免干扰主任务的流式输出状态）
+    const subtaskSessionId = sessionId ? `${sessionId}_subtask_${subtaskIndex}` : null;
+    
     // 添加子任务开始日志（包含任务组信息）
     parentExecutionLog.push({
       id: subtaskLogId,
@@ -1301,7 +1361,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
       subtaskId: subtask.id,
       subtaskName: subtask.name,
       subtaskIndex: subtaskIndex,
-      taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+      taskGroup: taskGroup,
       taskGroupIndex: subtaskIndex + 1,
       taskGroupName: subtask.name,
       isSubtask: true
@@ -1312,7 +1372,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
-      // 每次重试前检查是否已取消
+      // 每次重试前检查是否已取消（使用原始 sessionId 检查取消状态）
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
         console.log('[Background] 子任务重试已被用户取消');
         throw createErrorWithLog('ReAct 循环已被用户取消', parentExecutionLog);
@@ -1333,14 +1393,14 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
           }
         ];
         
-        // 调用子任务的ReAct循环
+        // 调用子任务的ReAct循环（使用派生 sessionId 隔离流式消息）
         const subtaskResult = await reactLoop(
           subtaskMessages, 
           model, 
           subtaskTools, 
           tabId, 
           apiParams,
-          sessionId,
+          subtaskSessionId,
           { subtaskId: subtask.id, subtaskName: subtask.name },
           (subtaskLog) => {
             // 实时回调：将子任务日志合并到父日志并发送更新
@@ -2053,7 +2113,7 @@ function parseReflectionResult(rawContent) {
 async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId) {
   const postConfig = reflectionConfig.postReflection;
 
-  if (postConfig.maxRounds < 1) {
+  if (!reflectionConfig?.enabled || !postConfig?.enabled || postConfig.maxRounds < 1) {
     return { content: answer, reflectionLog: [], status: 'skipped', overallScore: null, wasRevised: false };
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "ai-helper-agent",
-  "version": "1.5.2",
+  "version": "1.6.2",
   "description": "AI Helper 代理服务 - 为 Chrome 扩展提供本地文件读写和系统命令执行能力",
   "type": "module",
   "main": "./src/server.js",
@@ -18,7 +18,9 @@
     "status": "node bin/agent.js status"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=18.0.0"

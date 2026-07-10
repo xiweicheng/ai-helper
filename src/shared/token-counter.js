@@ -385,7 +385,7 @@ export function generateMessagesSummary(trimmedMessages) {
  */
 export function filterApiMessages(messages) {
   const filtered = messages.map((msg, index) => {
-    const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, _reflection, _summary, ...rest } = msg;
+    const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, _reflection, _summary, messageId, ...rest } = msg;
 
     if (rest.role === 'tool') {
       if (!rest.tool_call_id) {

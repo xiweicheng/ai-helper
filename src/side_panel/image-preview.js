@@ -20,6 +20,38 @@ let previewDragStartTY = 0;
 let previewImageList = [];
 let previewImageIndex = 0;
 
+// ============================================================
+// 图片编辑状态（画笔、矩形、椭圆、箭头、直线等工具）
+// ============================================================
+
+let isEditingMode = false;
+let currentTool = 'brush';
+let brushColor = '#ff4757';
+let brushSize = 4;
+let brushOpacity = 1;
+let isDrawing = false;
+let startX = 0;
+let startY = 0;
+let lastX = 0;
+let lastY = 0;
+let currentX = 0;
+let currentY = 0;
+let undoStack = [];
+let editCanvas = null;
+let editCtx = null;
+let previewCanvas = null;
+let previewCtx = null;
+
+function downloadImage(dataUrl) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  link.download = `image_${timestamp}.jpg`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function updatePreviewTransform() {
   const img = document.getElementById('imagePreviewLarge');
   if (!img) return;
@@ -47,7 +79,14 @@ function resetPreviewTransform() {
 export function openImagePreview(dataUrl, sourceElement) {
   const overlay = document.getElementById('imagePreviewOverlay');
   const img = document.getElementById('imagePreviewLarge');
+  const editBtn = document.getElementById('imagePreviewEdit');
   if (!overlay || !img) return;
+
+  // 判断来源：消息区图片不需要编辑按钮
+  const isFromMessage = sourceElement && sourceElement.closest('.user-message-images');
+  if (editBtn) {
+    editBtn.style.display = isFromMessage ? 'none' : '';
+  }
 
   // 根据来源分组收集图片
   collectPreviewImages(dataUrl, sourceElement);
@@ -168,17 +207,33 @@ export function initImagePreviewOverlay() {
     resetPreviewTransform();
   };
 
-  // 点击遮罩关闭
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      closePreview();
-    }
-  });
+
 
   // 关闭按钮
   const closeBtn = overlay.querySelector('.image-preview-close');
   if (closeBtn) {
     closeBtn.addEventListener('click', closePreview);
+  }
+
+  // 下载按钮
+  const downloadBtn = document.getElementById('imagePreviewDownload');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const img = document.getElementById('imagePreviewLarge');
+      if (img && img.src) {
+        downloadImage(img.src);
+      }
+    });
+  }
+
+  // 编辑按钮
+  const editBtn = document.getElementById('imagePreviewEdit');
+  if (editBtn) {
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleEditingMode();
+    });
   }
 
   // 上一张/下一张按钮
@@ -212,6 +267,7 @@ export function initImagePreviewOverlay() {
   // 滚轮缩放
   overlay.addEventListener('wheel', (e) => {
     if (!overlay.classList.contains('show')) return;
+    if (isEditingMode) return;
     e.preventDefault();
     const rect = img.getBoundingClientRect();
     const mouseX = e.clientX - rect.left - rect.width / 2;
@@ -230,6 +286,7 @@ export function initImagePreviewOverlay() {
 
   // 拖拽平移
   img.addEventListener('mousedown', (e) => {
+    if (isEditingMode) return;
     if (!overlay.classList.contains('show') || previewScale <= 1) return;
     e.preventDefault();
     previewIsDragging = true;
@@ -255,6 +312,7 @@ export function initImagePreviewOverlay() {
 
   // 双击切换 1x / 2x
   img.addEventListener('dblclick', () => {
+    if (isEditingMode) return;
     if (!overlay.classList.contains('show')) return;
     if (previewScale > 1) {
       resetPreviewTransform();
@@ -265,6 +323,8 @@ export function initImagePreviewOverlay() {
       updatePreviewTransform();
     }
   });
+
+  initImageEditor();
 }
 
 /**
@@ -278,39 +338,41 @@ export function compressAndAttachImage(blob) {
   img.onload = () => {
     URL.revokeObjectURL(url);
 
-    // 计算缩放尺寸（最大 1024px）
-    let { width, height } = img;
-    const maxDim = 1024;
-    if (width > maxDim || height > maxDim) {
-      if (width > height) {
-        height = Math.round(height * (maxDim / width));
-        width = maxDim;
-      } else {
-        width = Math.round(width * (maxDim / height));
-        height = maxDim;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const originalUrl = reader.result;
+
+      let { width, height } = img;
+      const maxDim = 1024;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round(height * (maxDim / width));
+          width = maxDim;
+        } else {
+          width = Math.round(width * (maxDim / height));
+          height = maxDim;
+        }
       }
-    }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
+      const compressedUrl = canvas.toDataURL('image/jpeg', 0.65);
 
-    state.attachedImages.push({ dataUrl });
+      state.attachedImages.push({ originalUrl, compressedUrl });
 
-    // 更新预览
-    const previewBar = document.getElementById('imagePreviewBar');
-    const userInput = document.getElementById('userInput');
-    if (previewBar) previewBar.style.display = '';
+      const previewBar = document.getElementById('imagePreviewBar');
+      const userInput = document.getElementById('userInput');
+      if (previewBar) previewBar.style.display = '';
 
-    // 重新渲染预览
-    renderImagePreviewsFromChat();
+      renderImagePreviewsFromChat();
 
-    // 聚焦输入框
-    if (userInput) userInput.focus();
+      if (userInput) userInput.focus();
+    };
+    reader.readAsDataURL(blob);
   };
 
   img.onerror = () => {
@@ -341,12 +403,12 @@ export function renderImagePreviewsFromChat() {
     wrapper.className = 'image-preview-item';
 
     const thumb = document.createElement('img');
-    thumb.src = img.dataUrl;
+    thumb.src = img.originalUrl || img.dataUrl;
     thumb.className = 'image-preview-thumb';
     thumb.title = '点击查看大图';
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
-      openImagePreview(img.dataUrl, thumb);
+      openImagePreview(img.originalUrl || img.dataUrl, thumb);
     });
 
     const removeBtn = document.createElement('button');
@@ -379,7 +441,7 @@ export function buildUserContent(text) {
   for (const img of state.attachedImages) {
     parts.push({
       type: 'image_url',
-      image_url: { url: img.dataUrl }
+      image_url: { url: img.compressedUrl || img.dataUrl }
     });
   }
 
@@ -399,4 +461,533 @@ export function stripImagesFromContent(content) {
     return textParts.length === 1 ? textParts[0].text : textParts;
   }
   return content;
+}
+
+// ============================================================
+// 图片编辑功能实现
+// ============================================================
+
+function initImageEditor() {
+  editCanvas = document.getElementById('imagePreviewEditCanvas');
+  previewCanvas = document.getElementById('imagePreviewPreviewCanvas');
+  
+  if (editCanvas) {
+    editCtx = editCanvas.getContext('2d');
+    editCtx.lineCap = 'round';
+    editCtx.lineJoin = 'round';
+  }
+  
+  if (previewCanvas) {
+    previewCtx = previewCanvas.getContext('2d');
+    previewCtx.lineCap = 'round';
+    previewCtx.lineJoin = 'round';
+  }
+  
+  setupEditorToolbar();
+  
+  const img = document.getElementById('imagePreviewLarge');
+  if (img) {
+    img.addEventListener('load', syncCanvasSize);
+  }
+}
+
+function setupEditorToolbar() {
+  const toolbar = document.getElementById('imagePreviewEditorToolbar');
+  if (!toolbar) return;
+  
+  toolbar.querySelectorAll('[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toolbar.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTool = btn.dataset.tool;
+      
+      if (editCanvas) {
+        editCanvas.style.cursor = currentTool === 'eraser' ? 'cell' : 'crosshair';
+      }
+    });
+  });
+  
+  const colorPicker = document.getElementById('editorColorPicker');
+  if (colorPicker) {
+    colorPicker.addEventListener('input', (e) => {
+      brushColor = e.target.value;
+    });
+  }
+  
+  const brushSizeInput = document.getElementById('editorBrushSize');
+  if (brushSizeInput) {
+    brushSizeInput.addEventListener('input', (e) => {
+      brushSize = parseInt(e.target.value);
+    });
+  }
+  
+  const undoBtn = document.getElementById('editorUndoBtn');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', undo);
+  }
+  
+  const confirmBtn = document.getElementById('editorConfirmBtn');
+  if (confirmBtn) {
+    confirmBtn.addEventListener('click', confirmAnnotation);
+  }
+  
+  const cancelBtn = document.getElementById('editorCancelBtn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', cancelAnnotation);
+  }
+  
+  document.addEventListener('keydown', (e) => {
+    if (!isEditingMode) return;
+    
+    const keyMap = {
+      'b': 'brush',
+      'r': 'rectangle',
+      'e': 'ellipse',
+      'a': 'arrow',
+      'l': 'line'
+    };
+    
+    if (keyMap[e.key.toLowerCase()] && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      currentTool = keyMap[e.key.toLowerCase()];
+      toolbar.querySelectorAll('[data-tool]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tool === currentTool);
+      });
+    }
+    
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      e.preventDefault();
+      undo();
+    }
+    
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmAnnotation();
+    }
+    
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelAnnotation();
+    }
+  });
+}
+
+function toggleEditingMode() {
+  if (isEditingMode) {
+    exitEditingMode();
+  } else {
+    enterEditingMode();
+  }
+}
+
+function enterEditingMode() {
+  isEditingMode = true;
+  undoStack = [];
+  
+  const img = document.getElementById('imagePreviewLarge');
+  if (!img || !img.src) return;
+  
+  resetPreviewTransform();
+  
+  img.style.transform = 'none';
+  previewScale = 1;
+  previewTranslateX = 0;
+  previewTranslateY = 0;
+  
+  img.style.pointerEvents = 'none';
+  img.style.zIndex = '1';
+  
+  if (editCanvas) {
+    editCanvas.style.display = 'block';
+    editCanvas.style.pointerEvents = 'auto';
+    editCanvas.style.zIndex = '5';
+  }
+  if (previewCanvas) {
+    previewCanvas.style.display = 'block';
+    previewCanvas.style.pointerEvents = 'none';
+    previewCanvas.style.zIndex = '6';
+  }
+  
+  const toolbar = document.getElementById('imagePreviewEditorToolbar');
+  if (toolbar) toolbar.style.display = 'flex';
+  
+  const editBtn = document.getElementById('imagePreviewEdit');
+  if (editBtn) editBtn.style.display = 'none';
+  
+  const downloadBtn = document.getElementById('imagePreviewDownload');
+  if (downloadBtn) downloadBtn.style.display = 'none';
+  
+  const viewport = document.getElementById('imagePreviewViewport');
+  if (viewport) {
+    viewport.addEventListener('contextmenu', preventContextMenu);
+  }
+  
+  setTimeout(() => {
+    syncCanvasSize();
+  }, 50);
+  
+  undoStack = [];
+  
+  if (editCanvas) {
+    editCanvas.addEventListener('mousedown', startDrawing);
+  }
+  
+  document.addEventListener('mousemove', draw);
+  document.addEventListener('mouseup', stopDrawing);
+}
+
+function preventContextMenu(e) {
+  e.preventDefault();
+}
+
+function exitEditingMode() {
+  isEditingMode = false;
+  isDrawing = false;
+  
+  const img = document.getElementById('imagePreviewLarge');
+  if (img) {
+    img.style.pointerEvents = '';
+    img.style.zIndex = '';
+  }
+  
+  if (editCanvas) {
+    editCanvas.style.display = 'none';
+    editCanvas.removeEventListener('mousedown', startDrawing);
+  }
+  
+  if (previewCanvas) {
+    previewCanvas.style.display = 'none';
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  }
+  
+  const toolbar = document.getElementById('imagePreviewEditorToolbar');
+  if (toolbar) toolbar.style.display = 'none';
+  
+  const editBtn = document.getElementById('imagePreviewEdit');
+  if (editBtn) editBtn.style.display = '';
+  
+  const downloadBtn = document.getElementById('imagePreviewDownload');
+  if (downloadBtn) downloadBtn.style.display = '';
+  
+  const viewport = document.getElementById('imagePreviewViewport');
+  if (viewport) {
+    viewport.removeEventListener('contextmenu', preventContextMenu);
+  }
+  
+  document.removeEventListener('mousemove', draw);
+  document.removeEventListener('mouseup', stopDrawing);
+}
+
+function syncCanvasSize() {
+  const img = document.getElementById('imagePreviewLarge');
+  const viewport = document.getElementById('imagePreviewViewport');
+  
+  if (!img || !viewport || !editCanvas || !previewCanvas) return;
+  
+  const imgRect = img.getBoundingClientRect();
+  const viewportRect = viewport.getBoundingClientRect();
+  
+  const canvasWidth = Math.round(imgRect.width);
+  const canvasHeight = Math.round(imgRect.height);
+  
+  editCanvas.width = canvasWidth;
+  editCanvas.height = canvasHeight;
+  editCanvas.style.width = canvasWidth + 'px';
+  editCanvas.style.height = canvasHeight + 'px';
+  editCanvas.style.left = (viewportRect.width - canvasWidth) / 2 + 'px';
+  editCanvas.style.top = (viewportRect.height - canvasHeight) / 2 + 'px';
+  
+  previewCanvas.width = canvasWidth;
+  previewCanvas.height = canvasHeight;
+  previewCanvas.style.width = canvasWidth + 'px';
+  previewCanvas.style.height = canvasHeight + 'px';
+  previewCanvas.style.left = (viewportRect.width - canvasWidth) / 2 + 'px';
+  previewCanvas.style.top = (viewportRect.height - canvasHeight) / 2 + 'px';
+}
+
+function getCanvasCoordinates(e) {
+  if (!editCanvas) return { x: 0, y: 0 };
+  
+  const rect = editCanvas.getBoundingClientRect();
+  
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+}
+
+function startDrawing(e) {
+  if (!isEditingMode) return;
+  e.preventDefault();
+  
+  isDrawing = true;
+  const coords = getCanvasCoordinates(e);
+  startX = coords.x;
+  startY = coords.y;
+  lastX = coords.x;
+  lastY = coords.y;
+  currentX = coords.x;
+  currentY = coords.y;
+  
+  undoStack.push(editCanvas.toDataURL());
+  if (undoStack.length > 20) {
+    undoStack.shift();
+  }
+}
+
+function draw(e) {
+  if (!isDrawing || !isEditingMode) return;
+  e.preventDefault();
+  
+  const coords = getCanvasCoordinates(e);
+  currentX = coords.x;
+  currentY = coords.y;
+  
+  if (currentTool === 'brush') {
+    editCtx.save();
+    editCtx.beginPath();
+    editCtx.strokeStyle = brushColor;
+    editCtx.lineWidth = brushSize;
+    editCtx.globalAlpha = brushOpacity;
+    editCtx.lineCap = 'round';
+    editCtx.lineJoin = 'round';
+    
+    const dx = currentX - lastX;
+    const dy = currentY - lastY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 2) {
+      const steps = Math.ceil(distance);
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const x = lastX + dx * t;
+        const y = lastY + dy * t;
+        if (i === 1) {
+          editCtx.moveTo(lastX, lastY);
+        }
+        editCtx.lineTo(x, y);
+      }
+    } else {
+      editCtx.moveTo(lastX, lastY);
+      editCtx.lineTo(currentX, currentY);
+    }
+    
+    editCtx.stroke();
+    editCtx.restore();
+    
+    lastX = currentX;
+    lastY = currentY;
+  } else if (currentTool === 'eraser') {
+    editCtx.save();
+    editCtx.beginPath();
+    editCtx.lineWidth = brushSize * 2;
+    editCtx.lineCap = 'round';
+    editCtx.lineJoin = 'round';
+    editCtx.globalCompositeOperation = 'destination-out';
+    
+    const dx = currentX - lastX;
+    const dy = currentY - lastY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 2) {
+      const steps = Math.ceil(distance);
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const x = lastX + dx * t;
+        const y = lastY + dy * t;
+        if (i === 1) {
+          editCtx.moveTo(lastX, lastY);
+        }
+        editCtx.lineTo(x, y);
+      }
+    } else {
+      editCtx.moveTo(lastX, lastY);
+      editCtx.lineTo(currentX, currentY);
+    }
+    
+    editCtx.stroke();
+    editCtx.restore();
+    
+    lastX = currentX;
+    lastY = currentY;
+  } else {
+    if (!previewCtx) return;
+    
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    previewCtx.strokeStyle = brushColor;
+    previewCtx.lineWidth = brushSize;
+    previewCtx.globalAlpha = brushOpacity;
+    previewCtx.lineCap = 'round';
+    previewCtx.lineJoin = 'round';
+    
+    switch (currentTool) {
+      case 'rectangle':
+        drawRectangle();
+        break;
+      case 'ellipse':
+        drawEllipse();
+        break;
+      case 'arrow':
+        drawArrow();
+        break;
+      case 'line':
+        drawLine();
+        break;
+    }
+  }
+}
+
+function stopDrawing() {
+  if (!isDrawing) return;
+  isDrawing = false;
+  
+  if (currentTool !== 'brush' && currentTool !== 'eraser' && previewCtx) {
+    editCtx.drawImage(previewCanvas, 0, 0);
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  }
+}
+
+function drawRectangle() {
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  const width = Math.abs(currentX - startX);
+  const height = Math.abs(currentY - startY);
+  
+  if (event.shiftKey) {
+    const size = Math.max(width, height);
+    const startXAdjusted = currentX > startX ? startX : startX - size;
+    const startYAdjusted = currentY > startY ? startY : startY - size;
+    previewCtx.strokeRect(startXAdjusted, startYAdjusted, size, size);
+  } else {
+    previewCtx.strokeRect(x, y, width, height);
+  }
+}
+
+function drawEllipse() {
+  const x = Math.min(startX, currentX);
+  const y = Math.min(startY, currentY);
+  const width = Math.abs(currentX - startX);
+  const height = Math.abs(currentY - startY);
+  
+  if (event.shiftKey) {
+    const size = Math.max(width, height);
+    const startXAdjusted = currentX > startX ? startX : startX - size;
+    const startYAdjusted = currentY > startY ? startY : startY - size;
+    previewCtx.beginPath();
+    previewCtx.ellipse(startXAdjusted + size / 2, startYAdjusted + size / 2, size / 2, size / 2, 0, 0, Math.PI * 2);
+    previewCtx.stroke();
+  } else {
+    previewCtx.beginPath();
+    previewCtx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+    previewCtx.stroke();
+  }
+}
+
+function drawArrow() {
+  const angle = Math.atan2(currentY - startY, currentX - startX);
+  const headLength = 12;
+  
+  previewCtx.beginPath();
+  previewCtx.moveTo(startX, startY);
+  previewCtx.lineTo(currentX, currentY);
+  previewCtx.stroke();
+  
+  previewCtx.beginPath();
+  previewCtx.moveTo(currentX, currentY);
+  previewCtx.lineTo(
+    currentX - headLength * Math.cos(angle - Math.PI / 6),
+    currentY - headLength * Math.sin(angle - Math.PI / 6)
+  );
+  previewCtx.moveTo(currentX, currentY);
+  previewCtx.lineTo(
+    currentX - headLength * Math.cos(angle + Math.PI / 6),
+    currentY - headLength * Math.sin(angle + Math.PI / 6)
+  );
+  previewCtx.stroke();
+}
+
+function drawLine() {
+  previewCtx.beginPath();
+  previewCtx.moveTo(startX, startY);
+  previewCtx.lineTo(currentX, currentY);
+  previewCtx.stroke();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  
+  const lastState = undoStack.pop();
+  const img = new Image();
+  img.onload = () => {
+    try {
+      editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+      editCtx.drawImage(img, 0, 0, editCanvas.width, editCanvas.height);
+    } catch (e) {
+      console.error('Undo failed:', e);
+    }
+  };
+  img.onerror = () => {
+    console.error('Failed to load undo image');
+    if (undoStack.length > 0) {
+      undo();
+    }
+  };
+  img.src = lastState;
+}
+
+function confirmAnnotation() {
+  const img = document.getElementById('imagePreviewLarge');
+  const overlay = document.getElementById('imagePreviewOverlay');
+  if (!img || !editCanvas) return;
+  
+  const compositeCanvas = document.createElement('canvas');
+  compositeCanvas.width = img.naturalWidth;
+  compositeCanvas.height = img.naturalHeight;
+  const ctx = compositeCanvas.getContext('2d');
+  
+  ctx.drawImage(img, 0, 0);
+  
+  const scaleX = img.naturalWidth / editCanvas.width;
+  const scaleY = img.naturalHeight / editCanvas.height;
+  ctx.save();
+  ctx.scale(scaleX, scaleY);
+  ctx.drawImage(editCanvas, 0, 0);
+  ctx.restore();
+  
+  const annotatedUrl = compositeCanvas.toDataURL('image/jpeg', 0.85);
+  
+  updateAnnotatedImage(annotatedUrl);
+  
+  exitEditingMode();
+  
+  overlay.classList.remove('show');
+  resetPreviewTransform();
+}
+
+function updateAnnotatedImage(annotatedUrl) {
+  const currentUrl = document.getElementById('imagePreviewLarge').src;
+  
+  const imgIndex = state.attachedImages.findIndex(
+    img => img.originalUrl === currentUrl || img.compressedUrl === currentUrl
+  );
+  
+  if (imgIndex !== -1) {
+    state.attachedImages[imgIndex] = {
+      originalUrl: annotatedUrl,
+      compressedUrl: annotatedUrl
+    };
+    
+    renderImagePreviewsFromChat();
+  }
+  
+  const img = document.getElementById('imagePreviewLarge');
+  if (img) img.src = annotatedUrl;
+}
+
+function cancelAnnotation() {
+  if (editCtx) {
+    editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+  }
+  undoStack = [];
+  exitEditingMode();
 }

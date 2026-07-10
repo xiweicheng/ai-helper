@@ -1337,6 +1337,10 @@ textarea {
   border-left-color: #999;
 }
 .skill-card-body.disabled {
+  opacity: 0.6;
+}
+.skill-card-body.disabled .skill-card-desc,
+.skill-card-body.disabled .skill-card-params {
   display: none;
 }
 .skill-card.skill-disabled .skill-card-name {
@@ -1952,6 +1956,25 @@ textarea {
   opacity: 0;
   transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
 }
+.toolbox-list {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.toolbox-list::-webkit-scrollbar {
+  width: 6px;
+}
+.toolbox-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+.toolbox-list::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+.toolbox-list::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
 .toolbox-section:not(.disabled-section) .toolbox-section-content {
   max-height: 2000px;
   opacity: 1;
@@ -2024,6 +2047,11 @@ textarea {
   gap: 8px;
   font-size: 14px;
   font-weight: 500;
+}
+.mcp-server-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .mcp-server-status {
   font-size: 12px;
@@ -2168,6 +2196,40 @@ textarea {
 .skill-param-tag.required {
   background: #fee2e2;
   color: #b91c1c;
+}
+.skill-param-tag.skill-more-tag {
+  background: #e2e8f0;
+  color: #64748b;
+  font-style: italic;
+}
+.skill-expand-btn {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+  margin-bottom: 8px;
+  font-family: inherit;
+  transition: color 0.2s;
+}
+.skill-expand-btn:hover {
+  color: #5a6fd6;
+  text-decoration: underline;
+}
+.skill-expand-btn.skill-expand-resources {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-bottom: 0;
+  background: #e2e8f0;
+  color: #64748b;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+.skill-expand-btn.skill-expand-resources:hover {
+  background: #cbd5e1;
+  color: #475569;
+  text-decoration: none;
 }
 .skill-card-actions {
   display: flex;
