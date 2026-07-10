@@ -1523,6 +1523,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 拖拽上传文件
+  const inputWrapper = document.querySelector('.input-wrapper');
+  let dragCounter = 0;
+  if (inputWrapper) {
+    inputWrapper.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter++;
+      inputWrapper.classList.add('drag-over');
+    });
+    inputWrapper.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        inputWrapper.classList.remove('drag-over');
+      }
+    });
+    inputWrapper.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    inputWrapper.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounter = 0;
+      inputWrapper.classList.remove('drag-over');
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        attachFiles(files);
+      }
+    });
+  }
+
   // 截图按钮
   const screenshotBtn = document.getElementById('screenshotBtn');
   if (screenshotBtn) {
@@ -2342,8 +2377,10 @@ function updateFileInputVisibility() {
   if (fileInput) {
     if (state.agentPlatform?.connected) {
       fileInput.accept = '*';
+      fileAttachBtn && (fileAttachBtn.title = '上传文件到Agent工作目录，大模型通过工具直接操作');
     } else {
       fileInput.accept = '.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf';
+      fileAttachBtn && (fileAttachBtn.title = '上传文件并提取文本内容（支持PDF/Word/Excel/文本等）');
     }
   }
   updateTextareaPadding();
