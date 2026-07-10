@@ -2048,6 +2048,11 @@ textarea {
   font-size: 14px;
   font-weight: 500;
 }
+.mcp-server-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .mcp-server-status {
   font-size: 12px;
 }
