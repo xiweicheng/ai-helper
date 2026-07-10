@@ -18,7 +18,9 @@
     "status": "node bin/agent.js status"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=18.0.0"
