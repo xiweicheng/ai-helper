@@ -613,6 +613,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 直接使用消息中的 connected 值，不重新读 storage（storage 可能是过期状态）
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
       updateAgentIndicator(state.agentPlatform);
+      updateFileInputVisibility();
       // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
     }
@@ -621,6 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.log('[SidePanel] 收到 Agent 连接状态变更:', message.connected);
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
       updateAgentIndicator(state.agentPlatform);
+      updateFileInputVisibility();
       // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
     }
@@ -2332,8 +2334,17 @@ function updateTextareaPadding() {
  */
 function updateFileInputVisibility() {
   const fileAttachBtn = document.getElementById('fileAttachBtn');
+  const fileInput = document.getElementById('fileInput');
   if (fileAttachBtn) {
     fileAttachBtn.style.display = state.enableFileInput ? '' : 'none';
+  }
+  // Agent 连接时放开所有文件格式，未连接时限制为浏览器可提取格式
+  if (fileInput) {
+    if (state.agentPlatform?.connected) {
+      fileInput.accept = '*';
+    } else {
+      fileInput.accept = '.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf';
+    }
   }
   updateTextareaPadding();
   // 如果关闭了文件功能，清空已附加的文件

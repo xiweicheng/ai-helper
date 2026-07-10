@@ -930,7 +930,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       let userQuestion = match[2].trim();
       // 如果有文件附件，从显示文本中去除文件内容
       if (attachedFiles && attachedFiles.length > 0) {
-        const fileIdx = userQuestion.indexOf('\n\n[文件: ');
+        const fileIdx = userQuestion.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
         if (fileIdx !== -1) {
           userQuestion = userQuestion.substring(0, fileIdx);
         }
@@ -941,7 +941,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       // 如果有文件附件，从显示文本中去除文件内容
       let displayText = textContent;
       if (attachedFiles && attachedFiles.length > 0) {
-        const fileIdx = displayText.indexOf('\n\n[文件: ');
+        const fileIdx = displayText.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
         if (fileIdx !== -1) {
           displayText = displayText.substring(0, fileIdx);
         }
@@ -969,6 +969,10 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     // 如果消息包含文件附件，显示文件标签
     if (attachedFiles && attachedFiles.length > 0) {
+      // 存储文件信息供编辑时恢复
+      messageDiv.dataset.attachedFiles = JSON.stringify(attachedFiles.map(f => ({
+        name: f.name, size: f.size, type: f.type, text: f.text, status: f.status, agentPath: f.agentPath || ''
+      })));
       const filesContainer = document.createElement('div');
       filesContainer.className = 'user-message-files';
       const doneFiles = attachedFiles.filter(f => f.status === 'done');
@@ -3313,7 +3317,29 @@ function editAndResendMessage(messageDiv) {
     }
     renderImagePreviewsFromChat();
     
-    // 2. 恢复引用/选中上下文，显示在输入框上方
+    // 2. 恢复文件附件到 state.attachedFiles 并显示在输入框上方
+    state.attachedFiles = [];
+    if (messageDiv.dataset.attachedFiles) {
+      try {
+        const storedFiles = JSON.parse(messageDiv.dataset.attachedFiles);
+        for (const f of storedFiles) {
+          state.attachedFiles.push({
+            name: f.name,
+            size: f.size,
+            type: f.type,
+            text: f.text || '',
+            status: f.status || 'done',
+            agentPath: f.agentPath || ''
+          });
+        }
+      } catch (e) { /* 解析失败，跳过 */ }
+    }
+    // 导入 renderFilePreviews 来更新文件预览栏
+    import('./file-extract.js').then(mod => {
+      mod.renderFilePreviews();
+    });
+    
+    // 3. 恢复引用/选中上下文，显示在输入框上方
     // 保存当前已有的上下文状态（如果用户之前已经引用了消息或选中了内容）
     const existingQuotedContext = state.quotedContextText;
     const existingSelectedContext = state.selectedContextText;
@@ -3330,7 +3356,15 @@ function editAndResendMessage(messageDiv) {
     if (match) {
       const type = quotedMatch ? 'quoted' : 'selected';
       const contextText = match[1].trim();
-      const userQuestion = match[2].trim();
+      let userQuestion = match[2].trim();
+      
+      // 如果有文件，从编辑文本中去掉文件内容部分
+      if (state.attachedFiles.length > 0) {
+        const fileIdx = userQuestion.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
+        if (fileIdx !== -1) {
+          userQuestion = userQuestion.substring(0, fileIdx);
+        }
+      }
       
       // 更新 selectionIndicator 显示
       const indicator = document.getElementById('selectionIndicator');
@@ -3357,8 +3391,17 @@ function editAndResendMessage(messageDiv) {
       
       textToEdit = userQuestion;
     } else {
+      // 没有引用/选中上下文
       state.quotedContextText = existingQuotedContext;
       state.selectedContextText = existingSelectedContext;
+      
+      // 如果有文件，去掉文件内容
+      if (state.attachedFiles.length > 0) {
+        const fileIdx = textToEdit.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
+        if (fileIdx !== -1) {
+          textToEdit = textToEdit.substring(0, fileIdx);
+        }
+      }
     }
     
     const userInput = document.getElementById('userInput');

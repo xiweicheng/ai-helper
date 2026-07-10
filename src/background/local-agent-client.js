@@ -15,6 +15,7 @@
 //     POST   /api/fs/delete             - 删除文件/目录
 //     POST   /api/fs/search_files       - 按模式搜索文件
 //     POST   /api/fs/search_content     - 搜索文件内容
+//     POST   /api/files/upload          - 上传文件到工作目录
 //
 //   浏览器:
 //     POST   /api/browser/open          - 本地浏览器打开文件
@@ -222,6 +223,46 @@ async function readFile(filePath) {
 
 async function writeFile(filePath, content) {
   return agentRequest('/api/fs/write', { path: filePath, content });
+}
+
+/**
+ * 上传文件到 Agent 工作目录
+ * @param {File|Blob} file - 浏览器 File/Blob 对象
+ * @returns {Promise<{success: boolean, path?: string, name?: string, size?: number, error?: string}>}
+ */
+async function uploadFile(file) {
+  const config = await getAgentConfig();
+  if (!config.connected) {
+    return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  }
+  if (_agentReachable === false) {
+    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch(`${config.url}/api/files/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: formData,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return await response.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return { success: false, error: '文件上传超时 (60s)' };
+    }
+    return { success: false, error: `文件上传失败: ${err.message}` };
+  }
 }
 
 /**
@@ -544,6 +585,7 @@ export {
   agentRequest,
   readFile,
   writeFile,
+  uploadFile,
   openBrowser,
   listDir,
   deleteFile,

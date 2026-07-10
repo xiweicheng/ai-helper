@@ -16,7 +16,8 @@ const TEXT_EXTENSIONS = [
   '.py', '.java', '.c', '.cpp', '.h', '.go', '.rs', '.rb',
   '.php', '.sql', '.sh', '.bash', '.zsh', '.cfg', '.ini',
   '.toml', '.conf', '.log', '.csv', '.tsv', '.env', '.gitignore',
-  '.vue', '.svelte', '.astro'
+  '.vue', '.svelte', '.astro', '.rtf', '.svg', '.bat', '.ps1',
+  '.makefile', '.cmake', '.gradle', '.properties'
 ];
 
 /**
@@ -26,6 +27,7 @@ export function getFileCategory(fileName) {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.pdf')) return 'pdf';
   if (lower.endsWith('.docx')) return 'docx';
+  if (lower.endsWith('.doc')) return 'doc';
   if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) return 'xlsx';
   if (TEXT_EXTENSIONS.some(ext => lower.endsWith(ext))) return 'text';
   // 无扩展名或未知扩展名，尝试按 MIME 类型判断
@@ -39,7 +41,8 @@ export function getFileIcon(fileName) {
   const category = getFileCategory(fileName);
   switch (category) {
     case 'pdf': return '📄';
-    case 'docx': return '📝';
+    case 'docx':
+    case 'doc': return '📝';
     case 'xlsx': return '📊';
     case 'text': return '📃';
     default: return '📎';
@@ -126,6 +129,9 @@ export async function extractFileContent(file) {
       return await extractPdfFile(file);
     case 'docx':
       return await extractDocxFile(file);
+    case 'doc':
+      // 旧版 .doc 格式不被 mammoth.js 支持，直接给出提示
+      throw new Error('旧版 .doc 格式不支持，请用 Word 另存为 .docx 格式后再试');
     case 'xlsx':
       return await extractExcelFile(file);
     case 'text':
@@ -137,12 +143,11 @@ export async function extractFileContent(file) {
 }
 
 /**
- * 通过 Agent 端提取文件内容
+ * 上传文件到 Agent 工作目录
  * @param {File} file - 浏览器 File 对象
- * @returns {Promise<string>} 提取的文本内容
+ * @returns {Promise<{path: string, text?: string}>} Agent 返回的文件路径和可选文本
  */
-export async function extractFileViaAgent(file) {
-  // agentUrl 和 agentToken 存储在 chrome.storage.local 中（由 background 管理）
+export async function uploadFileToAgent(file) {
   const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
   const agentUrl = storage.agentUrl;
   const agentToken = storage.agentToken;
@@ -154,7 +159,7 @@ export async function extractFileViaAgent(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await fetch(`${agentUrl}/api/files/extract`, {
+  const response = await fetch(`${agentUrl}/api/files/upload`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${agentToken}`
@@ -164,11 +169,11 @@ export async function extractFileViaAgent(file) {
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
-    throw new Error(`Agent 文件提取失败 (${response.status}): ${errorBody}`);
+    throw new Error(`Agent 上传失败 (${response.status}): ${errorBody}`);
   }
 
   const result = await response.json();
-  return result.text || result.content || '';
+  return { path: result.path || '', text: result.text || '' };
 }
 
 /**
@@ -183,20 +188,31 @@ export async function processFile(file, index) {
   fileEntry.status = 'extracting';
   renderFilePreviews();
 
+  const category = getFileCategory(file.name);
+
   try {
-    // 优先使用 Agent 端处理
+    // 优先上传到 Agent 工作目录（支持任意文件格式，大模型通过工具操作原始文件）
     if (state.agentPlatform?.connected) {
       try {
-        fileEntry.text = await extractFileViaAgent(file);
+        const result = await uploadFileToAgent(file);
+        fileEntry.agentPath = result.path;
+        fileEntry.text = result.text || '';
         fileEntry.status = 'done';
         renderFilePreviews();
         return;
       } catch (agentErr) {
-        console.warn('[FileExtract] Agent 端提取失败，降级到浏览器端:', agentErr.message);
+        console.warn('[FileExtract] Agent 上传失败，降级到浏览器端提取:', agentErr.message);
       }
     }
 
-    // 浏览器端提取（降级方案）
+    // 浏览器端提取（Agent 不可用时的降级方案，仅支持部分格式）
+    if (category === 'unknown') {
+      throw new Error(`暂不支持 "${file.name}" 格式的浏览器端提取，请连接 Agent 后再试`);
+    }
+    if (category === 'doc') {
+      throw new Error('旧版 .doc 格式浏览器不支持，请用 Word 另存为 .docx 格式后再试');
+    }
+
     fileEntry.text = await extractFileContent(file);
     fileEntry.status = 'done';
   } catch (err) {
@@ -339,14 +355,22 @@ export function renderFilePreviews() {
  * @returns {string} 文件内容文本
  */
 export function buildFileContentText() {
-  const doneFiles = state.attachedFiles.filter(f => f.status === 'done' && f.text);
+  const doneFiles = state.attachedFiles.filter(f => f.status === 'done');
   if (doneFiles.length === 0) return '';
 
   const parts = [];
-  for (const file of doneFiles) {
-    // 限制单个文件内容最大 50000 字符，避免 token 爆炸
+  const agentFiles = doneFiles.filter(f => f.agentPath);
+  const browserFiles = doneFiles.filter(f => !f.agentPath && f.text);
+
+  // Agent 上传的文件：提供文件路径供大模型工具操作
+  for (const file of agentFiles) {
+    parts.push(`[工作目录文件: ${file.agentPath} (原名: ${file.name})]`);
+  }
+
+  // 浏览器提取的文件：直接附带文本内容
+  for (const file of browserFiles) {
     const text = file.text.length > 50000 ? file.text.substring(0, 50000) + '\n...(内容已截断)' : file.text;
-    parts.push(`[文件: ${file.name}]\n${text}`);
+    parts.push(`[文件内容: ${file.name}]\n${text}`);
   }
 
   return '\n\n' + parts.join('\n\n---\n\n');

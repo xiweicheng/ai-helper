@@ -159,6 +159,85 @@ function parseBody(req) {
 }
 
 /**
+ * 解析 multipart/form-data，提取文件数据
+ * @param {http.IncomingMessage} req
+ * @returns {Promise<{fileBuffer: Buffer, fileName: string, mimeType: string}>}
+ */
+function parseMultipartBody(req) {
+  return new Promise((resolve, reject) => {
+    const contentType = req.headers['content-type'] || '';
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) {
+      reject(new Error('不是有效的 multipart/form-data 请求'));
+      return;
+    }
+    const boundary = boundaryMatch[1].trim();
+    const boundaryBuffer = Buffer.from('--' + boundary);
+
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+    if (contentLength > MAX_BODY_SIZE) {
+      reject(new Error('文件过大，超出限制'));
+      return;
+    }
+
+    const chunks = [];
+    let totalSize = 0;
+
+    req.on('data', (chunk) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        reject(new Error('文件过大，超出限制'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+
+      // 找到文件部分的起始位置
+      const startIdx = buffer.indexOf(boundaryBuffer) + boundaryBuffer.length + 2; // +2 for \r\n
+      if (startIdx < boundaryBuffer.length + 2) {
+        reject(new Error('multipart 数据格式不正确'));
+        return;
+      }
+
+      // 找 headers 结束位置（\r\n\r\n）
+      const headersEnd = buffer.indexOf('\r\n\r\n', startIdx);
+      if (headersEnd === -1) {
+        reject(new Error('multipart headers 格式不正确'));
+        return;
+      }
+
+      // 解析 headers
+      const headersStr = buffer.slice(startIdx, headersEnd).toString();
+      const dispMatch = headersStr.match(/filename="([^"]*)"/);
+      const fileName = dispMatch ? dispMatch[1] : 'file';
+
+      // 找数据结束位置（下一个 boundary）
+      const dataStart = headersEnd + 4; // after \r\n\r\n
+      const dataEnd = buffer.indexOf(boundaryBuffer, dataStart) - 2; // -2 for \r\n before boundary
+
+      if (dataEnd <= dataStart) {
+        reject(new Error('找不到文件数据'));
+        return;
+      }
+
+      const fileBuffer = buffer.slice(dataStart, dataEnd);
+
+      resolve({
+        fileBuffer,
+        fileName,
+        mimeType: headersStr.match(/Content-Type:\s*(.+?)\r?\n/i)?.[1]?.trim() || 'application/octet-stream'
+      });
+    });
+
+    req.on('error', () => reject(new Error('读取文件失败')));
+  });
+}
+
+/**
  * 创建并启动服务器
  */
 export function startServer() {
@@ -269,6 +348,47 @@ export function startServer() {
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()
       });
+    }
+
+    // === 文件上传（multipart/form-data，必须在通用 JSON body 解析之前） ===
+    if (req.method === 'POST' && pathname === '/api/files/upload') {
+      try {
+        const { fileBuffer, fileName, mimeType } = await parseMultipartBody(req);
+
+        // 安全检查：过滤文件名中的危险字符
+        const safeName = fileName.replace(/[/\\:*?"<>|]/g, '_');
+        const destPath = join(config.workdir, safeName);
+
+        // 去重：如果文件已存在，添加后缀
+        let finalPath = destPath;
+        if (existsSync(finalPath)) {
+          const ext = safeName.lastIndexOf('.') > 0 ? safeName.substring(safeName.lastIndexOf('.')) : '';
+          const base = safeName.substring(0, safeName.length - ext.length) || safeName;
+          let counter = 1;
+          while (existsSync(finalPath)) {
+            finalPath = join(config.workdir, `${base}_${counter}${ext}`);
+            counter++;
+          }
+        }
+
+        // 确保工作目录存在
+        mkdirSync(config.workdir, { recursive: true });
+
+        // 写入文件
+        writeFileSync(finalPath, fileBuffer);
+
+        logFs('upload', { path: finalPath, size: fileBuffer.length, mimeType });
+
+        return jsonResponse(res, 200, {
+          success: true,
+          path: finalPath,
+          name: safeName,
+          size: fileBuffer.length
+        });
+      } catch (err) {
+        logError('fs', 'upload_error', { error: err.message });
+        return jsonResponse(res, 400, { success: false, error: `文件上传失败: ${err.message}` });
+      }
     }
 
     if (['POST', 'PUT', 'DELETE'].includes(req.method)) {

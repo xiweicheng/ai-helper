@@ -2711,16 +2711,20 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.user-message-file-tag.error {
-  background: rgba(229, 62, 62, 0.08);
-  border-color: rgba(229, 62, 62, 0.25);
-  color: #e53e3e;
-  cursor: help;
+.message.user .user-message-file-tag {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.95);
 }
-.user-message-file-tag.extracting {
-  background: rgba(240, 160, 64, 0.08);
-  border-color: rgba(240, 160, 64, 0.25);
-  color: #d0902c;
+.message.user .user-message-file-tag.error {
+  background: rgba(255, 77, 79, 0.25);
+  border-color: rgba(255, 77, 79, 0.4);
+  color: #fff;
+}
+.message.user .user-message-file-tag.extracting {
+  background: rgba(255, 193, 7, 0.25);
+  border-color: rgba(255, 193, 7, 0.4);
+  color: #fff;
 }
 
 /* ========== 文件预览栏 ========== */
