@@ -2552,11 +2552,21 @@ body {
   align-items: center;
 }
 .input-wrapper textarea {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
   padding-left: 44px;
-  padding-right: 132px;
+  padding-right: 44px;
+}
+.input-right-buttons {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  z-index: 1;
 }
 .input-inner-btn {
-  position: absolute;
   width: 32px;
   height: 32px;
   border: none;
@@ -2566,10 +2576,12 @@ body {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  z-index: 1;
+  flex-shrink: 0;
 }
 .prompt-inner-btn {
+  position: absolute;
   left: 8px;
+  z-index: 1;
   background: transparent;
   color: #999;
 }
@@ -2578,7 +2590,6 @@ body {
   background: rgba(102, 126, 234, 0.08);
 }
 .send-inner-btn {
-  right: 8px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
@@ -2608,7 +2619,6 @@ body {
   transform: none;
 }
 .screenshot-inner-btn {
-  right: 80px;
   background: transparent;
   color: #999;
 }
@@ -2813,7 +2823,6 @@ body {
 
 /* 文件按钮 */
 .file-attach-btn {
-  right: 44px;
   background: transparent;
   color: #999;
   transition: color 0.2s;

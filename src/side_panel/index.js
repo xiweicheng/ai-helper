@@ -2306,19 +2306,25 @@ function updateImagePreviewVisibility() {
       screenshotBtn.style.display = 'none';
     }
   }
-  // 根据截图按钮是否可见，调整 textarea 右侧内边距，防止文字与按钮重叠
-  if (userInput) {
-    if (state.enableImageInput) {
-      userInput.style.paddingRight = '84px';
-    } else {
-      userInput.style.paddingRight = '';
-    }
-  }
+  // 根据右侧按钮可见情况，动态调整 textarea 的 padding-right
+  updateTextareaPadding();
+
   // 如果关闭了图片功能，清空已附加的图片
   if (!state.enableImageInput) {
     state.attachedImages = [];
   }
   renderImagePreviews();
+}
+
+/**
+ * 根据右侧按钮可见情况，动态调整 textarea 的 padding-right
+ */
+function updateTextareaPadding() {
+  if (!userInput) return;
+  let rightPadding = 44; // 发送按钮(32) + 右侧间距(8) + 内边距(4)
+  if (state.enableImageInput) rightPadding += 32; // 截图按钮(32)
+  if (state.enableFileInput) rightPadding += 32; // 文件上传按钮(32)
+  userInput.style.paddingRight = rightPadding + 'px';
 }
 
 /**
@@ -2329,6 +2335,7 @@ function updateFileInputVisibility() {
   if (fileAttachBtn) {
     fileAttachBtn.style.display = state.enableFileInput ? '' : 'none';
   }
+  updateTextareaPadding();
   // 如果关闭了文件功能，清空已附加的文件
   if (!state.enableFileInput) {
     clearFiles();
