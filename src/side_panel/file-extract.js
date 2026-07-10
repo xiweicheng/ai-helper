@@ -2,6 +2,12 @@
 // 支持 PDF、Word(.docx)、Excel(.xlsx)、纯文本等文件类型
 
 import state from './state.js';
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+
+// 配置 PDF.js Worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
 
 // 文件类型映射
 const TEXT_EXTENSIONS = [
@@ -66,11 +72,6 @@ async function extractTextFile(file) {
  */
 async function extractPdfFile(file) {
   const arrayBuffer = await file.arrayBuffer();
-  // pdfjsLib 由 CDN 加载到全局作用域
-  if (typeof pdfjsLib === 'undefined') {
-    throw new Error('PDF.js 未加载，请检查网络连接');
-  }
-
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const textParts = [];
 
@@ -89,11 +90,6 @@ async function extractPdfFile(file) {
  */
 async function extractDocxFile(file) {
   const arrayBuffer = await file.arrayBuffer();
-  // mammoth 由 CDN 加载到全局作用域
-  if (typeof mammoth === 'undefined') {
-    throw new Error('mammoth.js 未加载，请检查网络连接');
-  }
-
   const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
 }
@@ -103,11 +99,6 @@ async function extractDocxFile(file) {
  */
 async function extractExcelFile(file) {
   const arrayBuffer = await file.arrayBuffer();
-  // XLSX 由 CDN 加载到全局作用域
-  if (typeof XLSX === 'undefined') {
-    throw new Error('SheetJS 未加载，请检查网络连接');
-  }
-
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const textParts = [];
 

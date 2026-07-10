@@ -30,8 +30,12 @@
   "content_scripts": [
     {
       "js": [
+        "libs/mammoth.browser.min.js",
         "libs/marked.min.js",
+        "libs/pdf.min.js",
+        "libs/pdf.worker.min.js",
         "libs/qrcode.min.js",
+        "libs/xlsx.full.min.js",
         "assets/content.js"
       ],
       "matches": [

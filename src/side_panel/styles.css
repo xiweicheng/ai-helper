@@ -2553,7 +2553,7 @@ body {
 }
 .input-wrapper textarea {
   padding-left: 44px;
-  padding-right: 44px;
+  padding-right: 132px;
 }
 .input-inner-btn {
   position: absolute;
@@ -2608,7 +2608,7 @@ body {
   transform: none;
 }
 .screenshot-inner-btn {
-  right: 44px;
+  right: 80px;
   background: transparent;
   color: #999;
 }
@@ -2813,11 +2813,14 @@ body {
 
 /* 文件按钮 */
 .file-attach-btn {
-  color: #888;
+  right: 44px;
+  background: transparent;
+  color: #999;
   transition: color 0.2s;
 }
 .file-attach-btn:hover {
   color: #667eea;
+  background: rgba(102, 126, 234, 0.08);
 }
 
 .welcome-message {
