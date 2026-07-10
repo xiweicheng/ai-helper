@@ -3254,6 +3254,10 @@ function editAndResendMessage(messageDiv) {
     renderImagePreviewsFromChat();
     
     // 2. 恢复引用/选中上下文，显示在输入框上方
+    // 保存当前已有的上下文状态（如果用户之前已经引用了消息或选中了内容）
+    const existingQuotedContext = state.quotedContextText;
+    const existingSelectedContext = state.selectedContextText;
+    
     state.quotedContextText = '';
     state.selectedContextText = '';
     
@@ -3292,6 +3296,9 @@ function editAndResendMessage(messageDiv) {
       }
       
       textToEdit = userQuestion;
+    } else {
+      state.quotedContextText = existingQuotedContext;
+      state.selectedContextText = existingSelectedContext;
     }
     
     const userInput = document.getElementById('userInput');
