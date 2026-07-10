@@ -1980,7 +1980,7 @@ function createPreSelectCard(entry) {
  * @param {number|null} reflectionScore - 反思评分
  * @param {string|null} reasoningContent - 推理/思考过程内容
  */
-function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null) {
+function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null, wasRevised = false) {
   if (!element) return;
   
   const messageContent = element.querySelector('.message-content');
@@ -2092,23 +2092,32 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     });
     
     // 移除与最终答案重复的 thinking-badge/thinking-content（最终答案统一由 final-answer 展示）
-    // 不按索引移除最后一个，而是只移除内容与最终答案匹配的那个，避免误删用户看到的思考文本
-    const thinkingBadges = processContent.querySelectorAll('.thinking-badge');
+    // 在 ReAct 模式下，最后一个 thinking-content 就是最终答案，应该始终移除它和它前面的 badge
+    // 除非 wasRevised 为 true（反思修改了答案，此时最终答案与最后一个 thinking-content 不同）
     const thinkingContents = processContent.querySelectorAll('.thinking-content');
     const finalText = extractTextContent(content).trim();
     
     if (thinkingContents.length > 0) {
-      // 从后往前找，移除第一个内容匹配最终答案的 thinking-content
-      for (let i = thinkingContents.length - 1; i >= 0; i--) {
-        const tcText = thinkingContents[i].textContent.trim();
-        if (finalText && tcText === finalText) {
-          thinkingContents[i].remove();
-          // 同时移除对应的 badgd（在 thinkingContents[i] 前面的最近一个 badge）
-          if (thinkingBadges[i] && thinkingBadges[i].classList.contains('thinking-badge')) {
-            thinkingBadges[i].remove();
+      const lastContent = thinkingContents[thinkingContents.length - 1];
+      const lastContentText = lastContent.textContent.trim();
+      
+      // 判断是否需要移除：
+      // 1. 未修订时：始终移除最后一个 thinking-content（因为它就是最终答案）
+      // 2. 已修订时：只有当内容相同时才移除（反思没有实际改变内容）
+      const shouldRemove = !wasRevised || (wasRevised && lastContentText === finalText);
+      
+      if (shouldRemove) {
+        // 通过 DOM 关系查找对应的 thinking-badge（在 thinking-content 前面）
+        let prevSibling = lastContent.previousElementSibling;
+        while (prevSibling) {
+          if (prevSibling.classList.contains('thinking-badge')) {
+            prevSibling.remove();
+            break;
           }
-          break;
+          prevSibling = prevSibling.previousElementSibling;
         }
+        
+        lastContent.remove();
       }
     }
     
@@ -2929,7 +2938,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'API_COMPLETE') {
         // 流式消息：在 resolve 前添加底部工具栏
         if (_se() && message.content) {
-          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent);
+          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent, message.wasRevised);
         }
         // 在 cleanupCallApi 之前捕获状态（cleanup 会清空 _streamingElements）
         const streamingEl = _se();

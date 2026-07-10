@@ -527,10 +527,22 @@ function renderSkills(skills) {
 
   let html = '';
 
-  // Workflow Skills
+  function truncateText(text, maxLength = 100) {
+  if (!text || text.length <= maxLength) return { content: text, truncated: false };
+  return {
+    content: text.substring(0, maxLength) + '...',
+    truncated: true,
+    full: text
+  };
+}
+
+// Workflow Skills
   if (workflowSkills.length > 0) {
     html += '<div class="skill-section-title">Workflow Skills（自动化流程）</div>';
-    html += workflowSkills.map(s => `
+    html += workflowSkills.map(s => {
+      const desc = truncateText(s.description || '', 120);
+      const hasParams = s.parameters && s.parameters.properties && Object.keys(s.parameters.properties).length > 0;
+      return `
       <div class="skill-card skill-card-workflow${s.enabled === false ? ' skill-disabled' : ''}">
         <div class="skill-card-header">
           <div class="skill-card-info">
@@ -543,10 +555,12 @@ function renderSkills(skills) {
           </div>
         </div>
         <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
-          <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
+          <div class="skill-card-desc">${escapeHtml(desc.content)}</div>
+          ${desc.truncated ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
+          ${hasParams ? `
           <div class="skill-card-params">
             ${renderSkillParams(s.parameters)}
-          </div>
+          </div>` : ''}
           <div class="skill-card-actions">
             ${s.enabled !== false ? `<button class="toolbox-btn toolbox-btn-primary" data-skill-name="${escapeHtml(s.name)}" data-action="run-skill">运行</button>` : ''}
             <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? '启用' : '停用'}</button>
@@ -554,7 +568,7 @@ function renderSkills(skills) {
           </div>
         </div>
       </div>
-    `).join('');
+    `}).join('');
   }
 
   // Agent Skills
@@ -564,6 +578,9 @@ function renderSkills(skills) {
       const isBuiltin = s.builtin === true;
       const canEdit = s.editable !== false;
       const canDelete = s.deletable !== false;
+      const desc = truncateText(s.description || '', 120);
+      const hasResources = s.resources && s.resources.length > 0;
+      const showResourcesInFull = !hasResources || s.resources.length <= 5;
       return `
       <div class="skill-card skill-card-agent${s.enabled === false ? ' skill-disabled' : ''}">
         <div class="skill-card-header">
@@ -578,10 +595,14 @@ function renderSkills(skills) {
           </div>
         </div>
         <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
-          <div class="skill-card-desc">${escapeHtml(s.description || '')}</div>
-          ${s.resources && s.resources.length > 0 ? `
+          <div class="skill-card-desc">${escapeHtml(desc.content)}</div>
+          ${desc.truncated ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
+          ${hasResources ? `
           <div class="skill-card-params">
-            ${s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')}
+            ${showResourcesInFull 
+              ? s.resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('')
+              : s.resources.slice(0, 5).map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('') + `<button class="skill-expand-btn skill-expand-resources" data-skill-name="${escapeHtml(s.name)}" data-target="resources" data-full="${encodeURIComponent(JSON.stringify(s.resources))}">+${s.resources.length - 5} 更多</button>`
+            }
           </div>` : ''}
           <div class="skill-card-actions">
             ${canEdit ? `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">编辑 SKILL.md</button>` : `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="view-agent-skill">查看详情</button>`}
@@ -1502,6 +1523,30 @@ function initToolbox() {
 
       const action = btn.dataset.action;
       const skillName = btn.dataset.skillName;
+
+      if (btn.classList.contains('skill-expand-btn')) {
+        const target = btn.dataset.target;
+        if (target === 'desc') {
+          const descEl = btn.previousElementSibling;
+          if (descEl && descEl.classList.contains('skill-card-desc')) {
+            const fullText = decodeURIComponent(btn.dataset.full || '');
+            descEl.textContent = fullText;
+            btn.remove();
+          }
+        } else if (target === 'resources') {
+          try {
+            const resources = JSON.parse(decodeURIComponent(btn.dataset.full || '[]'));
+            const paramsContainer = btn.parentElement;
+            if (paramsContainer && paramsContainer.classList.contains('skill-card-params')) {
+              const allTags = resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('');
+              paramsContainer.innerHTML = allTags;
+            }
+          } catch (e) {
+            console.error('Failed to expand resources:', e);
+          }
+        }
+        return;
+      }
 
       if (!action || !skillName) return;
 
