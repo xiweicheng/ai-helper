@@ -106,10 +106,11 @@ enabled: true
    - **Windows (PowerShell)**：\`New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.ai-helper-agent\\skills\\<skill-name>"\`
    - 如果 \`mkdir\` 报错，尝试不带参数或使用 \`agent_write_file\` 工具在目标路径写入一个临时文件，让系统自动创建父目录。
 
-5. **写入 SKILL.md**：使用 \`agent_write_file\` 工具将内容写入。
-   - **重要**：\`agent_write_file\` 不会展开 \`~\`，必须使用绝对路径！
-   - **macOS/Linux**：从当前工作目录推断用户主目录（工作目录通常是 \`/Users/<你的用户名>/...\`），完整路径为 \`/Users/<你的用户名>/.ai-helper-agent/skills/<skill-name>/SKILL.md\`
-   - **Windows**：\`C:\\Users\\<你的用户名>\\.ai-helper-agent\\skills\\<skill-name>\\SKILL.md\`
+5. **写入 SKILL.md**：使用 \`agent_write_file\` 工具将内容写入目标文件。
+
+   > ⚠️ **关键限制**：\`agent_write_file\` 不接受 \`~\` 或相对路径，**必须传入绝对路径**。
+
+   **推荐做法**：先用 \`agent_exec_command\` 获取用户主目录的绝对路径，再拼接完整路径。
 
 6. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词。建议用户在工具箱页面点击「重新加载」使技能生效。
 
