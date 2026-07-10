@@ -2799,31 +2799,36 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           // 后续 ReAct 迭代：在 stream-content 末尾添加新的思考指示器
           const contentDiv = _se().querySelector('.stream-content');
           if (contentDiv) {
-            const newThinking = document.createElement('div');
-            newThinking.className = 'thinking-indicator';
-            newThinking.innerHTML = `
-              <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
-                <circle cx="8" cy="12" r="1.5"/>
-                <circle cx="16" cy="12" r="1.5"/>
-              </svg>
-              <div class="thinking-dots"><span></span><span></span><span></span></div>
-              <span class="thinking-label">思考中...</span>
-              <button class="streaming-stop-btn" title="停止生成">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                </svg>
-              </button>
-            `;
-            // 绑定停止按钮事件
-            const stopBtn = newThinking.querySelector('.streaming-stop-btn');
-            if (stopBtn) {
-              stopBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                cancelStreamingTask(stopBtn);
-              });
+            const existingThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)');
+            if (existingThinking) {
+              console.warn('[STREAM_START] 已有可见的思考指示器，跳过创建:', existingThinking);
             }
-            contentDiv.appendChild(newThinking);
+            if (!existingThinking) {
+              const newThinking = document.createElement('div');
+              newThinking.className = 'thinking-indicator';
+              newThinking.innerHTML = `
+                <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+                  <circle cx="8" cy="12" r="1.5"/>
+                  <circle cx="16" cy="12" r="1.5"/>
+                </svg>
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                <span class="thinking-label">思考中...</span>
+                <button class="streaming-stop-btn" title="停止生成">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  </svg>
+                </button>
+              `;
+              const stopBtn = newThinking.querySelector('.streaming-stop-btn');
+              if (stopBtn) {
+                stopBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  cancelStreamingTask(stopBtn);
+                });
+              }
+              contentDiv.appendChild(newThinking);
+            }
           }
         }
         

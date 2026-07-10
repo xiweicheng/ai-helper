@@ -245,7 +245,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const loopTimeout = reactConfig.loopTimeout;
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
-  const streamConfig = config.streamConfig;
+  
+  // 子任务禁用流式输出（子任务的流式消息会干扰主任务的流式 UI 状态）
+  // 子任务的执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示
+  const isSubtask = taskContext && taskContext.subtaskId;
+  const streamConfig = isSubtask 
+    ? { ...config.streamConfig, streamEnabled: false }
+    : config.streamConfig;
   
   console.log('[Background] reactLoop 配置:', reactConfig);
   console.log('[Background] reactLoop 收到工具列表:', tools.map(t => t.function.name), '数量:', tools.length);
@@ -1341,6 +1347,9 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     const taskGroup = `subtask_group_${subtaskIndex}`;
     let lastError = null;
     
+    // 为子任务创建派生 sessionId，隔离流式消息（避免干扰主任务的流式输出状态）
+    const subtaskSessionId = sessionId ? `${sessionId}_subtask_${subtaskIndex}` : null;
+    
     // 添加子任务开始日志（包含任务组信息）
     parentExecutionLog.push({
       id: subtaskLogId,
@@ -1352,7 +1361,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
       subtaskId: subtask.id,
       subtaskName: subtask.name,
       subtaskIndex: subtaskIndex,
-      taskGroup: taskGroup,  // 任务组ID，用于前端分组展示
+      taskGroup: taskGroup,
       taskGroupIndex: subtaskIndex + 1,
       taskGroupName: subtask.name,
       isSubtask: true
@@ -1363,7 +1372,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
-      // 每次重试前检查是否已取消
+      // 每次重试前检查是否已取消（使用原始 sessionId 检查取消状态）
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
         console.log('[Background] 子任务重试已被用户取消');
         throw createErrorWithLog('ReAct 循环已被用户取消', parentExecutionLog);
@@ -1384,14 +1393,14 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
           }
         ];
         
-        // 调用子任务的ReAct循环
+        // 调用子任务的ReAct循环（使用派生 sessionId 隔离流式消息）
         const subtaskResult = await reactLoop(
           subtaskMessages, 
           model, 
           subtaskTools, 
           tabId, 
           apiParams,
-          sessionId,
+          subtaskSessionId,
           { subtaskId: subtask.id, subtaskName: subtask.name },
           (subtaskLog) => {
             // 实时回调：将子任务日志合并到父日志并发送更新
