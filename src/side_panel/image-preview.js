@@ -79,7 +79,14 @@ function resetPreviewTransform() {
 export function openImagePreview(dataUrl, sourceElement) {
   const overlay = document.getElementById('imagePreviewOverlay');
   const img = document.getElementById('imagePreviewLarge');
+  const editBtn = document.getElementById('imagePreviewEdit');
   if (!overlay || !img) return;
+
+  // 判断来源：消息区图片不需要编辑按钮
+  const isFromMessage = sourceElement && sourceElement.closest('.user-message-images');
+  if (editBtn) {
+    editBtn.style.display = isFromMessage ? 'none' : '';
+  }
 
   // 根据来源分组收集图片
   collectPreviewImages(dataUrl, sourceElement);
@@ -930,6 +937,7 @@ function undo() {
 
 function confirmAnnotation() {
   const img = document.getElementById('imagePreviewLarge');
+  const overlay = document.getElementById('imagePreviewOverlay');
   if (!img || !editCanvas) return;
   
   const compositeCanvas = document.createElement('canvas');
@@ -951,6 +959,9 @@ function confirmAnnotation() {
   updateAnnotatedImage(annotatedUrl);
   
   exitEditingMode();
+  
+  overlay.classList.remove('show');
+  resetPreviewTransform();
 }
 
 function updateAnnotatedImage(annotatedUrl) {

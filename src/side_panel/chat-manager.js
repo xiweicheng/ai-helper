@@ -3246,7 +3246,10 @@ function editAndResendMessage(messageDiv) {
         if (Array.isArray(parsed)) {
           const imageParts = parsed.filter(c => c.type === 'image_url');
           for (const imgPart of imageParts) {
-            state.attachedImages.push({ dataUrl: imgPart.image_url.url });
+            state.attachedImages.push({ 
+              originalUrl: imgPart.image_url.url, 
+              compressedUrl: imgPart.image_url.url 
+            });
           }
         }
       } catch (e) { /* 不是 JSON 格式，跳过图片解析 */ }
