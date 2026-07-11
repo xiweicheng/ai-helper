@@ -2684,7 +2684,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s;
+  transition: background 0.2s, opacity 0.2s;
+  opacity: 0;
+  pointer-events: none;
+}
+.image-preview-item:hover .image-preview-remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 .image-preview-remove:hover {
   background: rgba(229, 62, 62, 0.85);
