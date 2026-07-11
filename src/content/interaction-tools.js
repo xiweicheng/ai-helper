@@ -12,7 +12,20 @@ export function clickElement(selector, waitTime = 500, timeout = 3000) {
       return { success: false, error: '选择器不能为空' };
     }
     
-    const cleanedSelector = selector.trim().replace(/[`'"“”''""``]/g, '');
+    // Only strip wrapping quote pairs, preserve quotes inside CSS attribute selectors like a[href="/foo"]
+    let cleanedSelector = selector.trim();
+    // Matching wrapping quote pairs: "x", 'x', `x`, "x", 'x', 「x」
+    const wrapPatterns = [
+      [/^"([\s\S]*)"$/, '$1'],
+      [/^'([\s\S]*)'$/, '$1'],
+      [/^`([\s\S]*)`$/, '$1'],
+      [/^"([\s\S]*)"$/, '$1'],
+      [/^'([\s\S]*)'$/, '$1'],
+      [/^「([\s\S]*)」$/, '$1'],
+    ];
+    for (const [pattern, replacement] of wrapPatterns) {
+      cleanedSelector = cleanedSelector.replace(pattern, replacement);
+    }
     
     const element = document.querySelector(cleanedSelector);
     if (!element) {
