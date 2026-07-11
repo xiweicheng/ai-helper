@@ -132,7 +132,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
   /**
    * 工具结果截断：单条工具结果最大 token 数
-   * 避免 get_full_html / fetch_url 等大结果撑爆上下文
+   * 避免 get_page_content / fetch_url 等大结果撑爆上下文
    */
   const MAX_TOOL_RESULT_TOKENS = 6000;
 

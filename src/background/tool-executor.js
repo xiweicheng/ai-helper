@@ -303,11 +303,11 @@ export async function getTools(agentToolIds = null, agentId = null) {
           if (tool.id === 'capture_page') {
             const actionProp = cloned.function.parameters.properties.action;
             if (!visionEnabled) {
-              // 关闭图片识别时，仅保留 download 模式
-              actionProp.enum = ['download'];
-              actionProp.description = '操作模式：download=截图下载到本地';
+              // 关闭图片识别时，仅保留 download 和 fullpage 模式
+              actionProp.enum = ['download', 'fullpage'];
+              actionProp.description = '操作模式：download=下载截图，fullpage=全页截图';
               actionProp.default = 'download';
-              cloned.function.description = '截取当前标签页可见区域的截图并下载到本地';
+              cloned.function.description = '页面截图并下载到本地';
             }
           }
 
@@ -343,7 +343,7 @@ chrome.storage.onChanged.addListener((changes) => {
 
 /**
  * 执行页面截图工具
- * 支持三种模式：download（下载）、analyze（视觉分析）、both（下载+分析）
+ * 支持四种模式：download（下载）、analyze（视觉分析）、both（下载+分析）、fullpage（全页截图）
  * action 参数的可用选项会根据 enableImageInput 开关动态变化
  */
 export async function executeCapturePage(args, toolCallId, sessionId = null) {
@@ -355,6 +355,11 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
     visionMaxDim = 1024,
     visionQuality = 65
   } = args;
+
+  // fullpage 模式委托给 executeTakeFullPageScreenshot
+  if (action === 'fullpage') {
+    return executeTakeFullPageScreenshot({ format, quality }, toolCallId);
+  }
 
   try {
     let targetTabId;
@@ -878,11 +883,12 @@ const TOOL_HANDLERS = {
   agent_search_content: executeAgentSearchContent,
   wait_for_navigation: executeWaitForNavigation,
   dispatch_sub_agent: executeDispatchSubAgent,
-  take_full_page_screenshot: executeTakeFullPageScreenshot,
   agent_skill_run: executeSkillRun,
   agent_skill_load: executeSkillLoad,
-  copy_to_clipboard: executeCopyToClipboard,
-  paste_from_clipboard: executePasteFromClipboard,
+  // ── 合并后的工具 ──
+  get_page_content: executeGetPageContent,
+  extract_data: executeExtractData,
+  clipboard: executeClipboard,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -3251,6 +3257,120 @@ async function ensureOffscreenDocument() {
   } finally {
     creatingOffscreenDocument = null;
   }
+}
+
+// ── 合并后的工具处理函数 ──
+
+/**
+ * get_page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
+ * 根据 format 参数路由到对应的 content script 消息类型
+ */
+async function executeGetPageContent(args, toolCallId) {
+  const { format = 'text', selector, maxLength = 15000 } = args;
+
+  const messageTypeMap = {
+    text: 'GET_PAGE_TEXT',
+    html: 'GET_FULL_HTML',
+    markdown: 'PAGE_TO_MARKDOWN',
+    json: 'PAGE_TO_JSON'
+  };
+
+  const messageType = messageTypeMap[format];
+  if (!messageType) {
+    return { success: false, error: `不支持的格式: ${format}，可选: text, html, markdown, json`, tool_call_id: toolCallId };
+  }
+
+  try {
+    const tabId = await getActiveTabId();
+    if (!tabId) {
+      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+    }
+    const message = { type: messageType, selector, maxLength };
+    return await sendToContentScriptWithRetry(tabId, message, toolCallId);
+  } catch (e) {
+    return { success: false, error: e.message, tool_call_id: toolCallId };
+  }
+}
+
+/**
+ * extract_data：合并 extract_table/extract_metadata/extract_links/extract_forms/extract_images
+ * 根据 dataType 参数路由到对应的 content script 消息类型
+ */
+async function executeExtractData(args, toolCallId) {
+  const {
+    dataType,
+    selector,
+    filterType = 'all',
+    includeHeaders = true,
+    format = 'json',
+    includeImages = false,
+    minWidth = 0,
+    minHeight = 0,
+    maxResults = 100
+  } = args;
+
+  if (!dataType) {
+    return { success: false, error: '缺少 dataType 参数', tool_call_id: toolCallId };
+  }
+
+  const messageTypeMap = {
+    table: 'EXTRACT_TABLE',
+    metadata: 'EXTRACT_METADATA',
+    links: 'EXTRACT_LINKS',
+    forms: 'EXTRACT_FORMS',
+    images: 'EXTRACT_IMAGES'
+  };
+
+  const messageType = messageTypeMap[dataType];
+  if (!messageType) {
+    return { success: false, error: `不支持的数据类型: ${dataType}，可选: table, metadata, links, forms, images`, tool_call_id: toolCallId };
+  }
+
+  try {
+    const tabId = await getActiveTabId();
+    if (!tabId) {
+      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+    }
+
+    const message = { type: messageType, selector, filterType, includeHeaders, format, includeImages, minWidth, minHeight, maxResults };
+    return await sendToContentScriptWithRetry(tabId, message, toolCallId);
+  } catch (e) {
+    return { success: false, error: e.message, tool_call_id: toolCallId };
+  }
+}
+
+/**
+ * clipboard：合并 copy_to_clipboard/paste_from_clipboard/get_selected_content
+ * 根据 action 参数路由到对应的处理器
+ */
+async function executeClipboard(args, toolCallId) {
+  const { action, text, format = 'text' } = args;
+
+  if (!action) {
+    return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
+  }
+
+  if (action === 'copy') {
+    return executeCopyToClipboard({ text }, toolCallId);
+  }
+
+  if (action === 'paste') {
+    return executePasteFromClipboard({}, toolCallId);
+  }
+
+  if (action === 'get_selected') {
+    try {
+      const tabId = await getActiveTabId();
+      if (!tabId) {
+        return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      }
+      return await sendToContentScriptWithRetry(tabId, { type: 'GET_SELECTED_CONTENT', format }, toolCallId);
+    } catch (e) {
+      return { success: false, error: e.message, tool_call_id: toolCallId };
+    }
+  }
+
+  return { success: false, error: `不支持的操作: ${action}，可选: copy, paste, get_selected`, tool_call_id: toolCallId };
 }
 
 export async function executeCopyToClipboard(args, toolCallId) {

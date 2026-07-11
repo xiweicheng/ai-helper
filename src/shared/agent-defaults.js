@@ -37,7 +37,7 @@ export const AGENT_TEMPLATES = [
 - 始终指出问题的严重程度（严重/中等/建议）
 - 给出具体的代码修改建议，不要空泛评价
 - 关注可维护性，而不仅仅是功能正确性`,
-    toolIds: ['get_page_text', 'search_bookmarks', 'search_history', 'agent_read_file', 'agent_search_content', 'agent_search_files', 'agent_list_dir', 'search_conversation_memory'],
+    toolIds: ['get_page_content', 'search_bookmarks', 'search_history', 'agent_read_file', 'agent_search_content', 'agent_search_files', 'agent_list_dir', 'search_conversation_memory'],
     allowSubDispatch: false,
   },
   {
@@ -54,7 +54,7 @@ export const AGENT_TEMPLATES = [
 - 操作后验证结果，确保操作生效
 - 遇到错误要分析原因并尝试替代方案
 - 不要假设元素存在，不确定时先获取页面信息`,
-    toolIds: ['get_page_text', 'get_full_html', 'query_interactive_elements', 'click_element', 'fill_form', 'scroll_to', 'wait_for_element', 'keyboard_input', 'select_dropdown', 'capture_tab_screenshot', 'extract_table', 'extract_links', 'extract_forms', 'search_in_page', 'get_element_count', 'hover_element', 'wait_for_navigation', 'scroll_and_collect', 'drag_and_drop'],
+    toolIds: ['get_page_content', 'query_interactive_elements', 'click_element', 'fill_form', 'scroll_to', 'wait_for_element', 'keyboard_input', 'select_dropdown', 'capture_page', 'extract_data', 'search_in_page', 'hover_element', 'wait_for_navigation', 'scroll_and_collect', 'drag_and_drop'],
     allowSubDispatch: false,
   },
   {
@@ -68,10 +68,10 @@ export const AGENT_TEMPLATES = [
 
 分析原则：
 - 先了解数据结构再开始分析
-- 优先使用最合适的提取工具（表格用 extract_table，结构化数据用 page_to_json）
+- 优先使用最合适的提取方式（表格用 extract_data dataType=table，结构化数据用 get_page_content format=json）
 - 分析结果要有数据支撑，不要主观臆断
 - 用表格或图表方式呈现分析结论`,
-    toolIds: ['get_page_text', 'extract_table', 'extract_links', 'extract_images', 'extract_forms', 'extract_metadata', 'page_to_json', 'page_to_markdown', 'find_similar_elements', 'get_element_count', 'search_in_page', 'scroll_and_collect', 'fetch_url'],
+    toolIds: ['get_page_content', 'extract_data', 'find_similar_elements', 'query_interactive_elements', 'search_in_page', 'scroll_and_collect', 'fetch_url'],
     allowSubDispatch: false,
   },
   {
@@ -88,7 +88,7 @@ export const AGENT_TEMPLATES = [
 - 示例优先：关键概念必须配代码或配置示例
 - 面向读者：根据目标读者调整技术深度
 - 保持简洁：避免冗余，每段话都要有信息量`,
-    toolIds: ['get_page_text', 'page_to_markdown', 'copy_to_clipboard', 'search_bookmarks', 'search_history', 'search_conversation_memory'],
+    toolIds: ['get_page_content', 'clipboard', 'search_bookmarks', 'search_history', 'search_conversation_memory'],
     allowSubDispatch: false,
   },
 ];

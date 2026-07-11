@@ -21,7 +21,7 @@ export function getStoredConfig() {
         apiBase: result.apiBase || DEFAULT_API_BASE,
         apiKey: result.apiKey || '',
         modelName: result.modelName || DEFAULT_MODEL,
-        enabledTools: result.enabledTools || ['get_page_content', 'get_element_by_selector', 'get_selected_content'],
+        enabledTools: result.enabledTools || ['get_page_content', 'query_interactive_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {
           maxIterations: result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations,
