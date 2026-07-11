@@ -286,13 +286,19 @@ export async function switchToSession(sessionId) {
   if (targetSession.isGenerating && state.pendingCallApiSessionIds.has(sessionId)) {
     state.generatingSessionIds.add(sessionId);
   } else if (targetSession.isGenerating) {
-    // DB 中有生成标记但实际无后台任务，清理 DB 中的过期状态
-    console.log('[SessionStore] 检测到过期的 isGenerating 标记，已清理:', sessionId);
-    const session = await idb.getSession(sessionId);
-    if (session) {
-      session.isGenerating = false;
-      await idb.putSession(session);
-    }
+    // DB 中有生成标记但实际无后台任务，异步清理过期状态（不阻塞切换）
+    console.log('[SessionStore] 检测到过期的 isGenerating 标记，异步清理:', sessionId);
+    (async () => {
+      try {
+        const session = await idb.getSession(sessionId);
+        if (session) {
+          session.isGenerating = false;
+          await idb.putSession(session);
+        }
+      } catch (e) {
+        console.warn('[SessionStore] 清理过期 isGenerating 标记失败:', e);
+      }
+    })();
   }
 
   return targetSession;

@@ -658,56 +658,47 @@ function showCustomConfirm(message, title) {
  * 处理会话切换
  */
 async function handleSessionSwitch(sessionId) {
-  await saveCurrentSession();
+  // saveCurrentSession() 已在 switchToSession 内部调用，此处无需重复
   const result = await switchToSession(sessionId);
   if (!result) return;
 
-  const sessionsData = await loadSessions();
+  // 并行化：loadSessions + chrome.storage.local 读取 + getAgent 彼此独立
+  const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+  const [sessionsData, mcpToolsResult, savedResult, agent] = await Promise.all([
+    loadSessions(),
+    chrome.storage.local.get(['mcpTools']),
+    chrome.storage.local.get([agentToolsKey, 'enabledTools']),
+    state.activeAgentId ? getAgent(state.activeAgentId) : Promise.resolve(null),
+  ]);
+
   state.sessions = sessionsData.list;
   state.activeSessionId = sessionId;
 
-  const activeSession = sessionsData.list.find(s => s.id === sessionId);
-  if (activeSession) {
-    state.messageHistory = activeSession.messageHistory || [];
-    state.currentModel = activeSession.model || state.currentModel;
-    state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
-    // 从当前智能体的独立存储中加载工具配置（而非会话级别的旧 enabledTools）
-    const mcpToolsResult = await chrome.storage.local.get(['mcpTools']);
-    const mcpTools = mcpToolsResult.mcpTools || [];
-    const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
-    const savedResult = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
-    const isAgentSpecific = !!savedResult[agentToolsKey]; // 是否命中 agent-specific key
-    const savedTools = savedResult[agentToolsKey] || savedResult.enabledTools;
-    if (savedTools && savedTools.length > 0) {
-      const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
-      const existing = savedTools.filter(id => validIds.has(id));
-      if (isAgentSpecific) {
-        // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
-        const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-        state.enabledTools = [...existing, ...addedMcp];
-      } else {
-        // 全局降级：旧的 global enabledTools，保留自动添加新 builtin 工具的行为
-        const added = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
-        const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-        state.enabledTools = [...existing, ...added, ...addedMcp];
-      }
-      if (state.enabledTools.length !== savedTools.length) {
-        chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
-      }
+  // switchToSession 已设置 messageHistory/model/useTools/temperature/topP/activeAgentId
+  // 此处只需处理 enabledTools（依赖 chrome.storage）
+  const mcpTools = mcpToolsResult.mcpTools || [];
+  const isAgentSpecific = !!savedResult[agentToolsKey];
+  const savedTools = savedResult[agentToolsKey] || savedResult.enabledTools;
+  if (savedTools && savedTools.length > 0) {
+    const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+    const existing = savedTools.filter(id => validIds.has(id));
+    if (isAgentSpecific) {
+      const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...existing, ...addedMcp];
     } else {
-      state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+      const added = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
+      const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
+      state.enabledTools = [...existing, ...added, ...addedMcp];
     }
-    state.temperature = activeSession.temperature !== undefined ? activeSession.temperature : state.temperature;
-    state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
+    if (state.enabledTools.length !== savedTools.length) {
+      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+    }
+  } else {
+    state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
   }
 
   // 恢复当前 Agent 的工具限定列表
-  if (state.activeAgentId) {
-    const agent = await getAgent(state.activeAgentId);
-    state.activeAgentToolIds = agent ? agent.toolIds : null;
-  } else {
-    state.activeAgentToolIds = null;
-  }
+  state.activeAgentToolIds = agent ? agent.toolIds : null;
 
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId }

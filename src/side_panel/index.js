@@ -30,6 +30,7 @@ import {
   addMessage, addContextBubble, addLoadingMessage, removeLoadingMessage,
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
   restorePendingSessionsFromStorage, restoreMessageFromHtml,
+  bindExecutionLogDelegate, bindReflectionBadgeDelegate,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement
 } from './chat-manager.js';
@@ -1084,6 +1085,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised);
         }
       });
+      // 统一绑定事件委托（避免逐条消息重复绑定）
+      bindExecutionLogDelegate();
+      bindReflectionBadgeDelegate();
       renderMermaidCharts();
       addCodeCopyButtons();
     }

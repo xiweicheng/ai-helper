@@ -154,6 +154,10 @@ export async function loadChatHistory() {
         addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId);
       }
     });
+
+    // 消息恢复完成后统一绑定事件委托（避免 restoreMessageFromHtml 逐条调用重复绑定）
+    bindExecutionLogDelegate();
+    bindReflectionBadgeDelegate();
     
     const welcomeMessage = document.querySelector('.welcome-message');
     if (welcomeMessage && state.messageHistory.length > 0) {
@@ -564,6 +568,8 @@ export async function sendMessage() {
       // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
       if (!streamingConnected) {
         restoreMessageFromHtml(streamingHtml);
+        bindExecutionLogDelegate();
+        bindReflectionBadgeDelegate();
         const chatContainer = document.getElementById('chatContainer');
         if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
       }
@@ -1107,7 +1113,7 @@ let _processStartTime = 0;
 /** 累积的推理内容（思考过程） */
 let _reasoningContent = '';
 
-function bindExecutionLogDelegate() {
+export function bindExecutionLogDelegate() {
   if (executionLogDelegateBound) return;
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer) return;
@@ -1142,7 +1148,7 @@ function bindExecutionLogDelegate() {
 // ============================================================
 let reflectionBadgeDelegateBound = false;
 
-function bindReflectionBadgeDelegate() {
+export function bindReflectionBadgeDelegate() {
   if (reflectionBadgeDelegateBound) return;
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer) return;
@@ -1625,12 +1631,6 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
     }
   }
 
-  // 确保执行日志按钮的事件委托已绑定（页面刷新后消息从 HTML 恢复时，addMessage 中的 bindExecutionLogDelegate 不会被调用）
-  bindExecutionLogDelegate();
-
-  // 确保反思评分按钮的事件委托已绑定（同上）
-  bindReflectionBadgeDelegate();
-  
   // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
   messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn').forEach(btn => {
     delete btn.dataset.bound;
