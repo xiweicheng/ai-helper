@@ -489,9 +489,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             choices: [{
               message: {
                 role: 'assistant',
-                content: streamResult.content || null,
+                content: streamResult.content || '',
                 reasoning_content: streamResult.reasoningContent,
-                tool_calls: normalizedToolCalls
+                ...(normalizedToolCalls ? { tool_calls: normalizedToolCalls } : {})
               },
               finish_reason: streamResult.status === 'tool_calls' ? 'tool_calls' : (streamResult.truncated ? 'length' : 'stop')
             }],

@@ -31,7 +31,7 @@ import {
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
   restorePendingSessionsFromStorage, restoreMessageFromHtml,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
-  cancelStreamingTask
+  cancelStreamingTask, reconnectStreamingElement
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -1088,13 +1088,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       addCodeCopyButtons();
     }
 
-    // 如果切回的会话有正在执行的后台任务，显示加载状态
+    // 如果切回的会话有正在执行的后台流式任务，重建流式元素以恢复实时输出
     const hasPendingTask = state.pendingCallApiSessionIds.has(state.activeSessionId) && !!state.pendingCancelApi;
     console.log('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', state.activeSessionId, 'hasCancelApi:', !!state.pendingCancelApi);
     if (hasPendingTask) {
-      console.log('[SidePanel] 切回有后台任务的会话，显示加载状态');
-      const loadingId = addLoadingMessage();
-      state.substituteLoadingIds.set(state.activeSessionId, loadingId);
+      console.log('[SidePanel] 切回有后台任务的会话，重建流式输出元素');
+      reconnectStreamingElement(state.activeSessionId);
     }
 
     // 恢复该会话的滚动位置

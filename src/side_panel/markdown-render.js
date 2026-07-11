@@ -10,6 +10,7 @@ export function formatMarkdown(text) {
   
   // 提取 mermaid 图表并替换为占位符
   const mermaidBlocks = [];
+  const mermaidIdSeed = Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   text = text.replace(/```mermaid\n?([\s\S]*?)```/g, (match, content) => {
     const index = mermaidBlocks.length;
     mermaidBlocks.push(content.trim());
@@ -52,7 +53,12 @@ export function formatMarkdown(text) {
   
   // 还原 mermaid 图表占位符
   mermaidBlocks.forEach((content, index) => {
-    html = html.replace(`%%MERMAID_BLOCK_${index}%%`, `<div class="mermaid" data-raw-code="${encodeURIComponent(content)}">${content}</div>`);
+    const mermaidId = `mermaid-${mermaidIdSeed}-${index}`;
+    // 重要：必须 HTML 转义内容，避免 mermaid 代码中的尖括号（如 <rows>、<br/> 等）
+    // 被浏览器当作 HTML 标签解析，导致 content 内容变形或丢失
+    // data-raw-code 保留 URL 编码的原始代码，供下载/导出使用
+    // textContent 会被浏览器自动解码，mermaid 读取时仍是正确的原始内容
+    html = html.replace(`%%MERMAID_BLOCK_${index}%%`, `<div class="mermaid" id="${mermaidId}" data-raw-code="${encodeURIComponent(content)}">${escapeHtml(content)}</div>`);
   });
   
   // 还原代码块占位符
@@ -225,6 +231,56 @@ export function downloadTableAsExcel(tableBlock) {
 /**
  * 渲染所有 mermaid 图表
  */
+/**
+ * Extract meaningful error message from mermaid error object
+ */
+function getMermaidErrorDetail(err) {
+  if (!err) return '未知错误';
+  if (typeof err === 'string') return err;
+  // mermaid 可能抛出非标准 Error 对象
+  const msg = err.message || err.str || err.msg || err.text || '';
+  if (msg) return msg;
+  // 尝试 JSON 序列化
+  try { return JSON.stringify(err); } catch (e) { return String(err); }
+}
+
+const MERMAID_RENDER_MAX_RETRIES = 2;
+
+/**
+ * 渲染单个 mermaid 容器（带重试）
+ * 注意：mermaid.run() 失败时会修改 DOM 内容（替换为错误展示），
+ * 因此需要在渲染前保存原始内容，重试时恢复
+ */
+async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRIES) {
+  // 保存原始内容：优先使用 data-raw-code 属性（不受 DOM 修改影响）
+  const rawCode = container.getAttribute('data-raw-code');
+  const originalContent = rawCode ? decodeURIComponent(rawCode) : (container.textContent || '');
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    // 重试前恢复原始内容（mermaid.run 失败会修改 DOM）
+    if (attempt > 0) {
+      container.textContent = originalContent;
+    }
+
+    try {
+      await mermaid.run({ nodes: [container] });
+      return { success: true };
+    } catch (err) {
+      const detail = getMermaidErrorDetail(err);
+      // 某些错误重试无意义（如语法错误），直接返回失败
+      const noRetry = /(Parse error|syntax error|Lexical error|No diagram type detected)/i;
+      if (noRetry.test(detail) || attempt >= retries) {
+        console.error('[SidePanel] Mermaid 渲染失败，原始内容（前300字符）:', originalContent.substring(0, 300));
+        // 恢复原始内容，方便调用方显示友好的错误提示
+        container.textContent = originalContent;
+        return { success: false, detail, err };
+      }
+      // 重试前短暂等待
+      await new Promise(r => setTimeout(r, 200));
+    }
+  }
+}
+
 export async function renderMermaidCharts() {
   if (typeof mermaid === 'undefined') {
     console.warn('[SidePanel] Mermaid 库未加载');
@@ -243,19 +299,15 @@ export async function renderMermaidCharts() {
   // 逐个渲染 mermaid 元素，避免单个失败影响其他图表
   for (let i = 0; i < mermaidElements.length; i++) {
     const container = mermaidElements[i];
-    try {
-      await mermaid.run({
-        nodes: [container]
-      });
+    const result = await renderSingleMermaid(container);
+    
+    if (result.success) {
       console.log('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
-      
-      // 为每个渲染好的图表添加工具栏
       addMermaidControls(container);
-    } catch (error) {
-      console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', error);
-      // 只在没有 SVG 且没有工具栏时才显示错误信息
+    } else {
+      console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
       if (!container.querySelector('svg') && !container.querySelector('.mermaid-controls')) {
-        container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">图表渲染失败: ${error.message}</div>`;
+        container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">图表渲染失败: ${result.detail}</div>`;
       }
     }
   }
@@ -746,24 +798,17 @@ export async function renderMessageMermaid(messageDiv) {
     // 逐个渲染，避免批量模式下 DOM 引用失效导致工具栏添加失败
     for (let i = 0; i < mermaidElements.length; i++) {
       const container = mermaidElements[i];
-      try {
-        await mermaid.run({
-          nodes: [container]
-        });
+      const result = await renderSingleMermaid(container);
+      
+      // 渲染后重新查询，确保拿到最新的 DOM 引用
+      const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
+      
+      if (result.success && currentContainer) {
         console.log('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
-        
-        // 渲染后重新查询，确保拿到最新的 DOM 引用
-        const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
-        if (currentContainer) {
-          addMermaidControls(currentContainer);
-        }
-      } catch (err) {
-        console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', err);
-        // 重新查询后显示错误
-        const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
-        if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
-          currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${err.message}</div>`;
-        }
+        addMermaidControls(currentContainer);
+      } else if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
+        console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
+        currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${result.detail}</div>`;
       }
     }
     

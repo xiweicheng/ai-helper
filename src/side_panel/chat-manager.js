@@ -1094,6 +1094,8 @@ let executionLogDelegateBound = false;
 
 /** 当前流式消息 DOM 元素（按 sessionId 隔离，防止会话串台） */
 const _streamingElements = new Map();  // sessionId -> HTMLElement
+/** 当前流式消息已累积的文本内容（按 sessionId 隔离，用于切回会话时恢复流式输出） */
+const _streamedContentMap = new Map();  // sessionId -> accumulated content string
 let _pendingPreselectLog = null;  // 缓存的预筛选日志，STREAM_START 时添加到流式元素
 
 /** 思考开始时间（当前步骤的思考耗时） */
@@ -1635,6 +1637,58 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
   });
   
   chatContainer.appendChild(messageEl);
+}
+
+/**
+ * 切回有后台流式任务的会话时，将脱落的流式元素重新挂回 DOM，恢复实时输出。
+ * 旧元素保留了所有工具调用卡片、思考标记等状态（因为 STREAM_TOOL_CALL 等消息
+ * 在元素脱落期间仍会更新它），只需要补上脱落后缺失的文本内容。
+ * @param {string} sessionId - 会话 ID
+ */
+export function reconnectStreamingElement(sessionId) {
+  const oldEl = _streamingElements.get(sessionId);
+  if (!oldEl) {
+    // 没有旧元素（极端情况），不处理
+    return;
+  }
+
+  // 将旧元素重新插入 DOM，它保留了工具调用卡片、思考标记等完整状态
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+
+  chatContainer.appendChild(oldEl);
+
+  // 补充脱落后缺失的文本内容（STREAM_CHUNK 在脱落期间跳过了 DOM 更新）
+  const accumulated = _streamedContentMap.get(sessionId) || '';
+  if (accumulated) {
+    updateStreamingMessage(oldEl, accumulated);
+  }
+
+  // 关闭当前可见的思考指示器：正常 ReAct 流程中，每次 STREAM_TOOL_CALL 之后
+  // 会由 appendToolCallItems 隐藏思考指示器并插入"思考结果"badge。但元素脱落期间
+  // 如果错过了工具调用（或当前轮次没有工具调用），思考指示器会残留在可见状态。
+  // 这会导致后续 STREAM_START 触发 "已有可见的思考指示器" 警告并跳过创建新指示器。
+  // 主动隐藏残留指示器，确保后续迭代能正常创建新的思考指示器。
+  const visibleIndicators = oldEl.querySelectorAll('.thinking-indicator:not(.hidden)');
+  visibleIndicators.forEach(indicator => {
+    // 在思考指示器前面插入"思考结果"badge（与 appendToolCallItems 行为一致）
+    const parent = indicator.parentElement;
+    const prevSibling = indicator.previousElementSibling;
+    const badge = document.createElement('span');
+    badge.className = 'thinking-badge';
+    badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果';
+    if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+      parent.insertBefore(badge, prevSibling);
+    } else {
+      parent.insertBefore(badge, indicator);
+    }
+    indicator.classList.add('hidden');
+  });
+
+  // 滚动到底部
+  requestAnimationFrame(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
 }
 
 /**
@@ -2456,9 +2510,12 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   
   // 添加代码复制按钮、Mermaid 渲染等后处理
   addCodeCopyButtons();
-  renderMessageMermaid(element);
+  // Mermaid 渲染为异步操作，渲染完成后自动更新 htmlContent
+  renderMessageMermaid(element).then(() => {
+    element.dataset.htmlContent = element.outerHTML;
+  });
   
-  // 保存完整 HTML 到 dataset 供持久化使用
+  // 先保存当前 HTML 到 dataset（Mermaid 渲染完成后会更新）
   element.dataset.htmlContent = element.outerHTML;
 }
 
@@ -2681,6 +2738,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     state.pendingCancelApiMap.delete(mySessionId);
     state.pendingCallApiSessionIds.delete(mySessionId);
     _streamingElements.delete(mySessionId);  // 清理本会话的流式元素引用
+    _streamedContentMap.delete(mySessionId);  // 清理本会话的流式累积内容
     syncPendingSessionsToStorage();
   };
   
@@ -2910,6 +2968,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
         }
         
         _streamedContent = '';
+        _streamedContentMap.set(mySessionId, '');
         _thinkingStartTime = Date.now();
         _reasoningContent = '';
         return false;
@@ -2918,7 +2977,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       if (message.type === 'STREAM_CHUNK') {
         if (_se()) {
           _streamedContent += message.delta;
-          updateStreamingMessage(_se(), _streamedContent);
+          _streamedContentMap.set(mySessionId, _streamedContent);
+          // 如果流式元素已脱离 DOM（用户切换过会话），仍然累积内容到 Map，
+          // 但跳过 DOM 更新（等切回时通过 reconnectStreamingElement 恢复渲染）
+          if (_se().isConnected) {
+            updateStreamingMessage(_se(), _streamedContent);
+          }
         }
         return false;
       }

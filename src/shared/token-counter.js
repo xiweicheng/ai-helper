@@ -405,6 +405,15 @@ export function filterApiMessages(messages) {
         type: tc.type,
         function: tc.function
       }));
+    } else if (rest.role === 'assistant' && rest.tool_calls !== undefined) {
+      // 清理非数组的 tool_calls（如 null），防止服务端迭代 null 报错
+      console.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof rest.tool_calls})，已清除`);
+      delete rest.tool_calls;
+    }
+
+    // 确保 content 不为 null（部分 API 服务端对 null content 处理异常）
+    if (rest.role === 'assistant' && rest.content === null) {
+      rest.content = '';
     }
 
     return rest;
