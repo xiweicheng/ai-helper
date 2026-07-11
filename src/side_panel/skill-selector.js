@@ -11,9 +11,9 @@ const CACHE_TTL = 30000; // 30 秒缓存
  * 从后台获取技能列表
  * @returns {Promise<Array>}
  */
-async function fetchSkillList() {
+async function fetchSkillList(forceRefresh = false) {
   const now = Date.now();
-  if (skillListCache.length > 0 && (now - skillListCacheTime) < CACHE_TTL) {
+  if (!forceRefresh && skillListCache.length > 0 && (now - skillListCacheTime) < CACHE_TTL) {
     return skillListCache;
   }
 
@@ -53,8 +53,8 @@ export async function shouldShowSkillsTab() {
  * 获取已启用的技能列表（过滤掉停用的）
  * @returns {Promise<Array>}
  */
-export async function getEnabledSkills() {
-  const allSkills = await fetchSkillList();
+export async function getEnabledSkills(forceRefresh = false) {
+  const allSkills = await fetchSkillList(forceRefresh);
   return allSkills.filter(s => s.enabled !== false);
 }
 
@@ -66,7 +66,7 @@ export async function renderSkillList(filterText = '') {
   const skillListEl = document.getElementById('skillList');
   if (!skillListEl) return;
 
-  const skills = await getEnabledSkills();
+  const skills = await getEnabledSkills(true);
   const filterLower = filterText.toLowerCase();
 
   const filteredSkills = skills.filter(s => {
