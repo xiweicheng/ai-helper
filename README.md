@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **62 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、会话导入/导出等高级能力。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **51 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、会话导入/导出等高级能力。
 
 ## 为什么选择 AI Helper
 
@@ -9,7 +9,7 @@ AI Helper 是一个**深度集成浏览器能力**的智能助手，相比于普
 - **真正的浏览器操控能力**：不仅读取网页内容，还能**点击、填表、拖拽、滚动、等待元素、上传文件**——LLM 可以像人类一样操作网页。
 - **三级质量保障体系**：创新的**预筛选 → 工具级反思 → 子任务反思 → 后置反思**多级机制，确保输出质量而非简单返回 LLM 原始结果。
 - **Agent 多助手协作**：支持将复杂任务拆解为子任务，**分派给不同专业 Agent 并行处理**，实现真正的多 Agent 协作。
-- **工具预筛选**：60+ 个工具定义会消耗大量 Token，AI Helper 在每次调用主力模型前用一次**轻量 API 预判**，将工具缩减为 5-10 个相关项，大幅节省成本。
+- **工具预筛选**：50+ 个工具定义会消耗大量 Token，AI Helper 在每次调用主力模型前用一次**轻量 API 预判**，将工具缩减为 5-10 个相关项，大幅节省成本。
 - **Token 预算管理**：按模型上下文窗口动态计算可用 Token 预算，按 Token 数而非消息数进行智能截断，确保 tool_calls/tool 消息配对完整性。
 - **上下文压缩**：长引用内容自动摘要压缩，避免无关信息永久占据上下文空间，保证对话质量不下滑。
 
@@ -170,13 +170,13 @@ ai-helper/
 │   │   ├── stream-controller.js        # 流式响应控制器
 │   │   ├── token-recorder.js           # Token 使用统计记录器
 │   │   ├── config.js                    # 配置读写
-│   │   ├── constants.js                # 默认配置、62 个内建工具定义、分类映射
+│   │   ├── constants.js                # 默认配置、51 个内建工具定义、分类映射
 │   │   ├── state.js                    # 多会话取消控制、API 计数器
 │   │   └── tools/                       # 工具定义分目录
-│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (26)
+│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (17)
 │   │       ├── tab-tools.js            # 标签页管理 + 书签历史 (8)
 │   │       ├── storage-tools.js        # 存储管理 + 网络请求 (4)
-│   │       ├── media-tools.js          # 媒体输出 + 调试开发 (9)
+│   │       ├── media-tools.js          # 媒体输出 + 调试开发 (7)
 │   │       ├── ai-tools.js             # AI 协作 (6)
 │   │       └── agent-tools.js          # 本地代理 (9)
 │   ├── content/                         # 页面注入脚本
@@ -458,29 +458,20 @@ ai-helper/
 
 ---
 
-## 内建工具（62 项可配置 + MCP 动态扩展）
+## 内建工具（51 项可配置 + MCP 动态扩展）
 
-### 内容提取（16 个）
+### 内容提取（7 个）
 | 工具 | 说明 |
 |------|------|
-| `get_page_text` | 获取纯文本内容（标题、链接、字数统计） |
-| `get_full_html` | 获取完整 HTML（可选去样式） |
-| `query_interactive_elements` | 提取可交互元素（推荐优先使用，省 Token） |
-| `get_selected_content` | 获取用户选中内容（支持 HTML/纯文本） |
-| `extract_table` | 表格提取为 JSON/Markdown |
-| `extract_links` | 提取所有链接（可筛选内/外部） |
-| `extract_forms` | 识别表单结构（字段属性、CSS 选择器） |
-| `extract_images` | 提取图片 URL（含 CSS 背景图） |
-| `extract_metadata` | 提取网页元数据（OG、JSON-LD、Microdata） |
+| `get_page_content` | 获取页面内容（text/html/markdown/json 多格式） |
+| `extract_data` | 提取结构化数据（table/links/forms/images/metadata） |
+| `query_interactive_elements` | 提取可交互元素（推荐优先使用，省 Token，支持 countOnly 模式） |
 | `search_in_page` | 正则搜索页面文本（支持高亮） |
-| `page_to_markdown` | 网页转 Markdown（12+ 元素类型） |
-| `page_to_json` | 结构化数据提取为 JSON |
 | `find_similar_elements` | 查找相似结构元素 |
 | `get_iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_and_collect` | 滚动收集长内容（去重聚合） |
-| `get_element_count` | 快速元素计数（可见性过滤） |
 
-### 页面交互（7 个）
+### 页面交互（6 个）
 | 工具 | 说明 |
 |------|------|
 | `click_element` | 点击元素（CSS 选择器，自动清洗引号） |
@@ -489,14 +480,14 @@ ai-helper/
 | `scroll_to` | 滚动到指定位置/元素（支持对齐方式） |
 | `wait_for_element` | 等待元素出现/消失（严格可见性检测） |
 | `wait_for_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
-| `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件） |
 
-### 表单与输入（3 个）
+### 表单与输入（4 个）
 | 工具 | 说明 |
 |------|------|
 | `fill_form` | 批量填表（支持富文本编辑器/contenteditable） |
 | `keyboard_input` | 键盘输入（绕过 React 受控组件） |
 | `file_upload` | 文件上传（DataTransfer 注入） |
+| `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件） |
 
 ### 标签页管理（6 个）
 | 工具 | 说明 |
@@ -526,23 +517,20 @@ ai-helper/
 |------|------|
 | `fetch_url` | HTTP 请求（支持超时、重试、指数退避） |
 
-### 媒体与输出（7 个）
+### 媒体与输出（5 个）
 | 工具 | 说明 |
 |------|------|
-| `capture_page` | 标签页/元素区域截图（CDP 协议） |
-| `take_full_page_screenshot` | 全页截图（CDP `Page.captureScreenshot`） |
+| `capture_page` | 页面截图（支持可视区/全页/下载/视觉分析四种模式） |
+| `clipboard` | 剪贴板操作（复制/粘贴/获取页面选中文本） |
 | `generate_qrcode` | 生成二维码（QRCode 库 + Canvas 降级） |
-| `copy_to_clipboard` | 复制到剪贴板（Offscreen 文档桥接） |
-| `paste_from_clipboard` | 从剪贴板读取（Offscreen 文档桥接） |
 | `download_file` | 下载文件（需确认） |
 | `show_notification` | 桌面通知 |
 
-### 调试与开发（3 个）
+### 调试与开发（2 个）
 | 工具 | 说明 |
 |------|------|
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `get_browser_info` | 获取浏览器环境信息 |
-| `highlight_text` | 高亮页面文本（可清除） |
 
 ### AI 协作（6 个）
 | 工具 | 说明 |

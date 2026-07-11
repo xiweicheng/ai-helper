@@ -1,6 +1,6 @@
 # AI Helper — Web Intelligent Assistant
 
-> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **62 built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, and session import/export capabilities.
+> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **51 built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, and session import/export capabilities.
 
 ## Why AI Helper
 
@@ -9,7 +9,7 @@ AI Helper is a **deeply browser-integrated** smart assistant. Compared to generi
 - **True Browser Control**: Not just reading page content — it can **click, fill forms, drag, scroll, wait for elements, upload files** — the LLM operates web pages like a human.
 - **Three-Tier Quality Assurance**: An innovative **preselection → tool-level reflection → sub-task reflection → post-reflection** multi-tier mechanism ensures output quality rather than raw LLM results.
 - **Multi-Agent Collaboration**: Complex tasks can be decomposed and **dispatched to different specialized agents for parallel execution**, enabling true multi-agent teamwork.
-- **Tool Preselection**: 60+ tool definitions consume massive tokens. AI Helper runs a **lightweight API pre-check** before each main model call, reducing tools to 5-10 relevant ones for significant cost savings.
+- **Tool Preselection**: 50+ tool definitions consume massive tokens. AI Helper runs a **lightweight API pre-check** before each main model call, reducing tools to 5-10 relevant ones for significant cost savings.
 - **Token Budget Management**: Dynamically calculates available token budget per model context window, truncates by token count rather than message count, ensuring tool_calls/tool message pairing integrity.
 - **Context Compression**: Long quoted content is automatically summarized and compressed, preventing irrelevant information from permanently occupying context space and maintaining conversation quality.
 
@@ -24,7 +24,7 @@ AI Helper is a **deeply browser-integrated** smart assistant. Compared to generi
 | Multimodal Input | Image recognition (Vision API) + File extraction (PDF/Word/Excel) |
 | Skill System | Workflow + Agent skill types, supports creating skills from conversations |
 | MCP Protocol | Model Context Protocol, dynamic tool registration & multi-server management |
-| Multi-Agent | Custom agents, 5 built-in role templates, sub-task dispatch support |
+| Multi-Agent | Custom agents, 4 built-in role templates, sub-task dispatch support |
 
 ## Feature Preview
 
@@ -84,8 +84,7 @@ The project uses a **five-layer architecture**, communicating via Chrome Extensi
 ┌──────────────────────────────────────────────────────────────┐
 │           Offscreen Document (Auxiliary Layer)                 │
 │  src/offscreen/ (Clipboard Operations)                        │
-│  ├── offscreen.html + offscreen.js (copy_to_clipboard /       │
-│  │   paste_from_clipboard MV3-compatible implementation)      │
+│  │   ├── offscreen.html + offscreen.js (clipboard MV3-compatible implementation)      │
 └──────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────┐
@@ -172,16 +171,16 @@ ai-helper/
 │   │   ├── stream-controller.js        # Stream response controller
 │   │   ├── token-recorder.js           # Token usage stats recorder
 │   │   ├── config.js                    # Config R/W
-│   │   ├── constants.js                # Defaults, 62 built-in tools, category mapping
+│   │   ├── constants.js                # Defaults, 51 built-in tools, category mapping
 │   │   ├── state.js                    # Multi-session cancel control, API counter
 │   │   └── tools/                       # Tool definitions by category
-│   │       ├── browser-tools.js        # Page interaction + Form + Content (26)
-│   │       ├── tab-tools.js            # Tab mgmt + Bookmarks/History (8)
-│   │       ├── storage-tools.js        # Storage mgmt + Network (4)
-│   │       ├── media-tools.js          # Media output + Debug/Dev (9)
-│   │       ├── ai-tools.js             # AI Collaboration (6)
-│   │       └── agent-tools.js          # Local Agent (9)
-│   ├── content/                         # Page-injected scripts
+│   │       ├── browser-tools.js        │ Page interaction + Form + Content (17)
+│   │       ├── tab-tools.js            │ Tab mgmt + Bookmarks/History (8)
+│   │       ├── storage-tools.js        │ Storage mgmt + Network (4)
+│   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
+│   │       ├── ai-tools.js             │ AI Collaboration (6)
+│   │       └── agent-tools.js          │ Local Agent (9)
+│   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
 │   │   ├── page-tools.js               # Page content tools (extraction, search, a11y tree)
 │   │   ├── interaction-tools.js        # Interaction tools (click, fill, TTS, etc.)
@@ -297,7 +296,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
 1. **MCP Tool Dynamic Injection**: Before each inference cycle, automatically pulls the latest MCP tool list from Agent and injects it into RAW_TOOLS
-2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 60+ tools to 5-10 relevant ones, significantly cutting token usage
+2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 50+ tools to 5-10 relevant ones, significantly cutting token usage
 3. **Inference Loop**: LLM thinks → decides to call tools → executes tools → results fed back → continues reasoning
 4. **Token Budget Management**: Dynamically calculates available token budget per model context window (80%), truncates by token count, retains tool_calls/tool message pairing integrity
 5. **Context Pressure Monitoring**: Three-level monitoring (safe/warning/critical), auto-triggers summary compression
@@ -462,29 +461,20 @@ Hover over assistant messages to auto-generate floating navigation:
 
 ---
 
-## Built-in Tools (62 Configurable + MCP Dynamic Extensions)
+## Built-in Tools (51 Configurable + MCP Dynamic Extensions)
 
-### Content Extraction (16)
+### Content Extraction (7)
 | Tool | Description |
 |------|-------------|
-| `get_page_text` | Get plain text content (titles, links, word count) |
-| `get_full_html` | Get complete HTML (optional style removal) |
-| `query_interactive_elements` | Extract interactive elements (recommended for token savings) |
-| `get_selected_content` | Get user-selected content (HTML/plain text) |
-| `extract_table` | Table extraction as JSON/Markdown |
-| `extract_links` | Extract all links (filter internal/external) |
-| `extract_forms` | Identify form structures (field attributes, CSS selectors) |
-| `extract_images` | Extract image URLs (including CSS backgrounds) |
-| `extract_metadata` | Extract page metadata (OG, JSON-LD, Microdata) |
+| `get_page_content` | Get page content in multiple formats (text/html/markdown/json) |
+| `extract_data` | Extract structured data (table/links/forms/images/metadata) |
+| `query_interactive_elements` | Extract interactive elements (recommended for token savings, supports countOnly) |
 | `search_in_page` | Regex search page text (with highlight support) |
-| `page_to_markdown` | Convert page to Markdown (12+ element types) |
-| `page_to_json` | Structured data extraction as JSON |
 | `find_similar_elements` | Find similar structure elements |
 | `get_iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_and_collect` | Scroll and collect long content (dedup aggregation) |
-| `get_element_count` | Quick element count (visibility filtering) |
 
-### Page Interaction (7)
+### Page Interaction (6)
 | Tool | Description |
 |------|-------------|
 | `click_element` | Click element (CSS selector, auto-clean quotes) |
@@ -493,14 +483,14 @@ Hover over assistant messages to auto-generate floating navigation:
 | `scroll_to` | Scroll to position/element (with alignment options) |
 | `wait_for_element` | Wait for element appear/disappear (strict visibility check) |
 | `wait_for_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
-| `select_dropdown` | Dropdown selection (native select + custom components) |
 
-### Form & Input (3)
+### Form & Input (4)
 | Tool | Description |
 |------|-------------|
 | `fill_form` | Batch form filling (supports rich text editor/contenteditable) |
 | `keyboard_input` | Keyboard input (bypasses React controlled components) |
 | `file_upload` | File upload (DataTransfer injection) |
+| `select_dropdown` | Dropdown selection (native select + custom components) |
 
 ### Tab Management (6)
 | Tool | Description |
@@ -530,23 +520,20 @@ Hover over assistant messages to auto-generate floating navigation:
 |------|-------------|
 | `fetch_url` | HTTP requests (timeout, retry, exponential backoff) |
 
-### Media & Output (7)
+### Media & Output (5)
 | Tool | Description |
 |------|-------------|
-| `capture_page` | Tab/element area screenshot (CDP protocol) |
-| `take_full_page_screenshot` | Full page screenshot (CDP `Page.captureScreenshot`) |
+| `capture_page` | Page screenshot (viewport/fullpage/download/analyze four modes) |
+| `clipboard` | Clipboard operations (copy/paste/get page selection) |
 | `generate_qrcode` | Generate QR code (QRCode library + Canvas fallback) |
-| `copy_to_clipboard` | Copy to clipboard (Offscreen document bridge) |
-| `paste_from_clipboard` | Read from clipboard (Offscreen document bridge) |
 | `download_file` | Download files (requires confirmation) |
 | `show_notification` | Desktop notifications |
 
-### Debug & Dev (3)
+### Debug & Dev (2)
 | Tool | Description |
 |------|-------------|
 | `inject_css` | Inject CSS styles (global/scoped/inline) |
 | `get_browser_info` | Get browser environment info |
-| `highlight_text` | Highlight text on page (clearable) |
 
 ### AI Collaboration (6)
 | Tool | Description |
