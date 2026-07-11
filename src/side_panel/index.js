@@ -754,10 +754,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderTempPresets();
   }
 
+  // 根据当前温度找到最匹配的预设档位
+  function getClosestTempPreset() {
+    let closestIndex = 0;
+    let minDiff = Math.abs(PRESET_MODES[0].temp - state.temperature);
+    for (let i = 1; i < PRESET_MODES.length; i++) {
+      const diff = Math.abs(PRESET_MODES[i].temp - state.temperature);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+    return closestIndex;
+  }
+
   // 渲染温度预设列表
   function renderTempPresets() {
+    const selectedIndex = getClosestTempPreset();
     tempPresetList.innerHTML = PRESET_MODES.map((mode, index) => `
-      <div class="temp-preset-item ${index === state.selectedTempIndex ? 'selected' : ''}" data-index="${index}">
+      <div class="temp-preset-item ${index === selectedIndex ? 'selected' : ''}" data-index="${index}">
         <div class="temp-preset-radio"></div>
         <div class="temp-preset-info">
           <div class="temp-preset-name">${mode.label}</div>
@@ -800,19 +815,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tempIconValueEl = document.getElementById('tempIconValue');
     if (tempIconValueEl) tempIconValueEl.textContent = val.toFixed(2);
 
-    let closestIndex = 0;
-    let minDiff = Math.abs(PRESET_MODES[0].temp - val);
-    for (let i = 1; i < PRESET_MODES.length; i++) {
-      const diff = Math.abs(PRESET_MODES[i].temp - val);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIndex = i;
-      }
-    }
-    state.selectedTempIndex = closestIndex;
     renderTempPresets();
 
-    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: state.selectedTempIndex });
+    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: getClosestTempPreset() });
   });
 
   // 温度数字输入事件
@@ -824,20 +829,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.temperature = val;
     tempSlider.value = val;
     tempNumberInput.value = val.toFixed(2);
+    const tempIconValueEl = document.getElementById('tempIconValue');
+    if (tempIconValueEl) tempIconValueEl.textContent = val.toFixed(2);
 
-    let closestIndex = 0;
-    let minDiff = Math.abs(PRESET_MODES[0].temp - val);
-    for (let i = 1; i < PRESET_MODES.length; i++) {
-      const diff = Math.abs(PRESET_MODES[i].temp - val);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closestIndex = i;
-      }
-    }
-    state.selectedTempIndex = closestIndex;
     renderTempPresets();
 
-    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: state.selectedTempIndex });
+    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: getClosestTempPreset() });
   });
 
   // 温度选择器点击事件
