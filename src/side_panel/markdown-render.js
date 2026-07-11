@@ -252,6 +252,11 @@ const MERMAID_RENDER_MAX_RETRIES = 2;
  * 因此需要在渲染前保存原始内容，重试时恢复
  */
 async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRIES) {
+  // 已有 SVG（例如从虚拟 DOM 缓存恢复），跳过重渲染，直接复用
+  if (container.querySelector('svg')) {
+    return { success: true };
+  }
+
   // 保存原始内容：优先使用 data-raw-code 属性（不受 DOM 修改影响）
   const rawCode = container.getAttribute('data-raw-code');
   const originalContent = rawCode ? decodeURIComponent(rawCode) : (container.textContent || '');
@@ -327,10 +332,10 @@ export function formatMessageContent(text) {
  * 为 mermaid 容器添加缩放/拖拽/复制控件
  */
 export function addMermaidControls(container) {
-  // 检查是否已经添加工具栏
-  if (container.querySelector('.mermaid-controls')) {
-    console.log('[SidePanel] 工具栏已存在，跳过');
-    return;
+  // 移除旧的工具栏（例如从虚拟 DOM 缓存恢复的，事件监听器已失效）
+  const existingControls = container.querySelector('.mermaid-controls');
+  if (existingControls) {
+    existingControls.remove();
   }
   
   // 等待 SVG 渲染完成
@@ -845,9 +850,16 @@ function setupCodeCtrlClick() {
     // 点击目标是 <code> 元素，或代码块容器内的任意位置
     let codeEl = e.target.closest('code');
     if (!codeEl) {
-      const container = e.target.closest('.code-block-container');
-      if (container) {
-        codeEl = container.querySelector('code');
+      // 点击可能落在 <pre> 内边距或空白区域（<code> 是 <pre> 的子元素而非祖先）
+      const preEl = e.target.closest('pre');
+      if (preEl) {
+        codeEl = preEl.querySelector('code');
+      }
+      if (!codeEl) {
+        const container = e.target.closest('.code-block-container');
+        if (container) {
+          codeEl = container.querySelector('code');
+        }
       }
     }
     if (!codeEl) return;

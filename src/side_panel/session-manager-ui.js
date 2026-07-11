@@ -148,12 +148,13 @@ function bindAddButton() {
   const newAddBtn = addBtn.cloneNode(true);
   addBtn.parentNode.replaceChild(newAddBtn, addBtn);
   newAddBtn.addEventListener('click', async () => {
+    const previousSessionId = state.activeSessionId;
     await saveCurrentSession();
     const newSession = await createSession();
     state.activeSessionId = newSession.id;
     state.messageHistory = [];
     document.dispatchEvent(new CustomEvent('session-switched', {
-      detail: { sessionId: newSession.id }
+      detail: { sessionId: newSession.id, previousSessionId }
     }));
     renderSessionTabs();
   });
@@ -659,6 +660,7 @@ function showCustomConfirm(message, title) {
  */
 async function handleSessionSwitch(sessionId) {
   // saveCurrentSession() 已在 switchToSession 内部调用，此处无需重复
+  const previousSessionId = state.activeSessionId;
   const result = await switchToSession(sessionId);
   if (!result) return;
 
@@ -701,7 +703,7 @@ async function handleSessionSwitch(sessionId) {
   state.activeAgentToolIds = agent ? agent.toolIds : null;
 
   document.dispatchEvent(new CustomEvent('session-switched', {
-    detail: { sessionId }
+    detail: { sessionId, previousSessionId }
   }));
 
   renderSessionTabs();

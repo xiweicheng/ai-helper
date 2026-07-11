@@ -31,6 +31,7 @@ import {
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
   restorePendingSessionsFromStorage, restoreMessageFromHtml,
   bindExecutionLogDelegate, bindReflectionBadgeDelegate,
+  rebindAllMessages,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement
 } from './chat-manager.js';
@@ -585,6 +586,10 @@ function updateAgentIndicator(platformInfo) {
   }
 }
 
+// 会话 DOM 缓存：切会话时缓存静态 DOM，避免全量重建
+// key: sessionId, value: innerHTML 字符串
+const sessionDOMCache = new Map();
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 存储表格数据供工具栏按钮使用
   window.__tableBlocks = [];
@@ -1043,10 +1048,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadChatHistory();
 
   // 监听会话切换事件（由 session-manager-ui.js 触发）
-  document.addEventListener('session-switched', () => {
+  document.addEventListener('session-switched', (e) => {
+    const { sessionId, previousSessionId } = e.detail || {};
     const chatContainerEl = document.getElementById('chatContainer');
     const userInput = document.getElementById('userInput');
     if (!chatContainerEl) return;
+
+    // 缓存离开的会话 DOM（无流式任务时缓存，流式元素已被 detach 不在 DOM 中）
+    if (previousSessionId && !state.pendingCallApiSessionIds.has(previousSessionId)) {
+      sessionDOMCache.set(previousSessionId, chatContainerEl.innerHTML);
+    }
 
     // 如果图片已被上一会话消费（预览栏已隐藏），切换会话时清空图片附件
     const previewBar = document.getElementById('imagePreviewBar');
@@ -1064,9 +1075,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateSendBtnState();
     if (userInput) userInput.focus();
 
+    const hasPendingTask = state.pendingCallApiSessionIds.has(sessionId) && !!state.pendingCancelApi;
+    const cachedHTML = sessionDOMCache.get(sessionId);
+    const hasMessages = state.messageHistory && state.messageHistory.length > 0;
+
+    // 缓存命中：无流式任务且有消息 → 直接从缓存恢复（跳过全量 DOM 重建）
+    if (cachedHTML && !hasPendingTask && hasMessages) {
+      chatContainerEl.innerHTML = cachedHTML;
+      rebindAllMessages(chatContainerEl);
+      renderMermaidCharts();
+      addCodeCopyButtons();
+
+      // 恢复滚动位置
+      const scrollKey = 'scrollPosition_' + (sessionId || 'default');
+      chrome.storage.local.get([scrollKey], (result) => {
+        if (result[scrollKey] !== undefined) {
+          setTimeout(() => {
+            const el = document.getElementById('chatContainer');
+            if (el) el.scrollTop = result[scrollKey];
+          }, 150);
+        }
+      });
+      return;
+    }
+
+    // 缓存未命中或不可用：走全量重建路径
     chatContainerEl.innerHTML = '';
 
-    if (!state.messageHistory || state.messageHistory.length === 0) {
+    if (!hasMessages) {
       const welcomeDiv = document.createElement('div');
       welcomeDiv.className = 'welcome-message';
       welcomeDiv.innerHTML = `
@@ -1090,18 +1126,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       bindReflectionBadgeDelegate();
       renderMermaidCharts();
       addCodeCopyButtons();
+
+      // 初次构建后缓存当前会话 DOM
+      const isStreamingSession = state.pendingCallApiSessionIds.has(sessionId);
+      if (!isStreamingSession) {
+        sessionDOMCache.set(sessionId, chatContainerEl.innerHTML);
+      }
     }
 
     // 如果切回的会话有正在执行的后台流式任务，重建流式元素以恢复实时输出
-    const hasPendingTask = state.pendingCallApiSessionIds.has(state.activeSessionId) && !!state.pendingCancelApi;
-    console.log('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', state.activeSessionId, 'hasCancelApi:', !!state.pendingCancelApi);
+    console.log('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', sessionId, 'hasCancelApi:', !!state.pendingCancelApi);
     if (hasPendingTask) {
       console.log('[SidePanel] 切回有后台任务的会话，重建流式输出元素');
-      reconnectStreamingElement(state.activeSessionId);
+      reconnectStreamingElement(sessionId);
     }
 
     // 恢复该会话的滚动位置
-    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
+    const scrollKey = 'scrollPosition_' + (sessionId || 'default');
     chrome.storage.local.get([scrollKey], (result) => {
       if (result[scrollKey] !== undefined) {
         setTimeout(() => {
@@ -1110,6 +1151,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, 150);
       }
     });
+  });
+
+  // 监听后台流式任务完成事件，清除对应会话的 DOM 缓存
+  document.addEventListener('session-cache-invalidate', (e) => {
+    const { sessionId } = e.detail || {};
+    if (sessionId) {
+      sessionDOMCache.delete(sessionId);
+    }
   });
 
   // 模型选项点击事件（现在在tempDropdown内）

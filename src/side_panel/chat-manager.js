@@ -5,7 +5,7 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
-import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts } from './markdown-render.js';
+import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, formatMarkdown, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
@@ -491,6 +491,8 @@ export async function sendMessage() {
         } else {
           appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [] });
         }
+        // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
+        document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         return;
@@ -526,6 +528,8 @@ export async function sendMessage() {
         msgEntry.htmlContent = streamingHtml;
       }
       appendMessageToSession(mySessionId, msgEntry);
+      // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
+      document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
       return;
@@ -1637,6 +1641,120 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
   });
   
   chatContainer.appendChild(messageEl);
+}
+
+/**
+ * 批量重新绑定缓存恢复后的消息交互事件
+ * 用于从 sessionDOMCache 恢复时，一次性绑定所有事件，避免逐条 rebuild 的开销
+ * @param {HTMLElement} container - chatContainer 元素
+ */
+export function rebindAllMessages(container) {
+  // 思考过程折叠/展开
+  container.querySelectorAll('.thinking-process-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const processEl = header.closest('.thinking-process');
+      if (processEl) processEl.classList.toggle('collapsed');
+    });
+  });
+
+  // 工具卡片展开/折叠
+  container.querySelectorAll('.tool-call-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const item = header.closest('.tool-call-item');
+      if (item) item.classList.toggle('expanded');
+    });
+  });
+
+  // 底部工具栏按钮事件
+  container.querySelectorAll('.message-footer').forEach(footer => {
+    const messageEl = footer.closest('.message');
+    if (!messageEl) return;
+
+    const copyBtn = footer.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyAssistantMessage(messageEl, copyBtn);
+      });
+    }
+
+    const quoteBtn = footer.querySelector('.quote-btn');
+    if (quoteBtn) {
+      quoteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        quoteAndAsk(messageEl);
+      });
+    }
+
+    const exportTrigger = footer.querySelector('.export-trigger-btn');
+    const exportDropdown = footer.querySelector('.export-dropdown');
+    if (exportTrigger && exportDropdown) {
+      exportTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.export-dropdown.show').forEach(menu => {
+          if (menu !== exportDropdown) menu.classList.remove('show');
+        });
+        exportDropdown.classList.toggle('show');
+      });
+      exportDropdown.querySelector('.export-docx-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToDocx(messageEl, exportTrigger);
+        exportDropdown.classList.remove('show');
+      });
+      exportDropdown.querySelector('.export-pdf-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToPdf(messageEl, exportTrigger);
+        exportDropdown.classList.remove('show');
+      });
+    }
+
+    const prototypeBtn = footer.querySelector('.prototype-btn-small');
+    if (prototypeBtn) {
+      const logs = (() => {
+        try {
+          const raw = messageEl.dataset.executionLog;
+          return raw ? JSON.parse(raw) : [];
+        } catch { return []; }
+      })();
+      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+      if (prototypeCall) {
+        prototypeBtn.addEventListener('click', () => {
+          let prototypeId = prototypeCall.prototypeId;
+          if (!prototypeId && prototypeCall.observation) {
+            try {
+              const parsed = typeof prototypeCall.observation === 'string'
+                ? JSON.parse(prototypeCall.observation) : prototypeCall.observation;
+              prototypeId = parsed?.prototypeId;
+            } catch (e) {}
+          }
+          if (prototypeId) {
+            loadAndShowPrototype(prototypeId);
+          }
+        });
+      }
+    }
+
+    const deleteBtn = footer.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMessage(messageEl);
+      });
+    }
+  });
+
+  // 移除旧的 mermaid 工具栏（缓存恢复后需重建以绑定事件）
+  container.querySelectorAll('.mermaid-controls').forEach(c => c.remove());
+
+  // 清除代码块和表格工具栏按钮的 data-bound 标记，并重新绑定表格工具栏事件
+  container.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn').forEach(btn => {
+    delete btn.dataset.bound;
+  });
+  addTableToolbarEvents();
+
+  // 重新绑定事件委托
+  bindExecutionLogDelegate();
+  bindReflectionBadgeDelegate();
 }
 
 /**
