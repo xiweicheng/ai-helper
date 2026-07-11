@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Helper — 能操控浏览器的智能网页助手</title>
+<style>
+:root {
+  --bg-deep: #06060E;
+  --bg-surface: #0C0C1A;
+  --bg-card: #111128;
+  --border: #1E1E3A;
+  --text: #E2E2F0;
+  --text-muted: #7676A0;
+  --accent-cyan: #00D4FF;
+  --accent-purple: #7B5EFF;
+  --accent-green: #34D399;
+  --accent-amber: #FBBF24;
+  --radius: 12px;
+  --radius-lg: 20px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+  background: var(--bg-deep);
+  color: var(--text);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* --- Animated Background --- */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.04;
+  background-image:
+    linear-gradient(rgba(123,94,255,0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(123,94,255,0.3) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 30%, transparent 70%);
+}
+
+.bg-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+}
+.bg-orb-1 {
+  width: 600px; height: 600px;
+  background: var(--accent-cyan);
+  top: -200px; left: -100px;
+  animation: orbFloat1 20s ease-in-out infinite;
+}
+.bg-orb-2 {
+  width: 500px; height: 500px;
+  background: var(--accent-purple);
+  bottom: -150px; right: -100px;
+  animation: orbFloat2 25s ease-in-out infinite;
+}
+.bg-orb-3 {
+  width: 350px; height: 350px;
+  background: var(--accent-cyan);
+  top: 60%; left: 50%;
+  animation: orbFloat3 18s ease-in-out infinite;
+  opacity: 0.06;
+}
+
+@keyframes orbFloat1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(80px, 60px) scale(1.1); }
+  66% { transform: translate(-40px, -30px) scale(0.9); }
+}
+@keyframes orbFloat2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-60px, -80px) scale(1.15); }
+  66% { transform: translate(50px, 40px) scale(0.85); }
+}
+@keyframes orbFloat3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-30px, 50px) scale(1.2); }
+}
+
+/* --- Layout --- */
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+section { padding: 80px 0; }
+
+/* --- Hero --- */
+.hero {
+  display: flex;
+  align-items: center;
+  padding: 100px 0 80px;
+}
+.hero-content { max-width: 560px; flex-shrink: 0; }
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-cyan);
+  background: rgba(0,212,255,0.08);
+  border: 1px solid rgba(0,212,255,0.18);
+  margin-bottom: 32px;
+  animation: fadeInUp 0.8s ease-out;
+}
+.hero-badge .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--accent-cyan); }
+  50% { opacity: 0.4; box-shadow: 0 0 2px var(--accent-cyan); }
+}
+
+.hero h1 {
+  font-size: clamp(40px, 6vw, 68px);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+  animation: fadeInUp 0.8s ease-out 0.1s both;
+}
+.hero h1 .highlight {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero p.subtitle {
+  font-size: 18px;
+  color: var(--text-muted);
+  max-width: 560px;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.8s ease-out 0.2s both;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  animation: fadeInUp 0.8s ease-out 0.3s both;
+}
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+}
+.hero-stat .num {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 36px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-stat .label { font-size: 13px; color: var(--text-muted); }
+
+.browser-mockup {
+  margin-left: auto;
+  width: 460px;
+  flex-shrink: 0;
+  animation: fadeInRight 1s ease-out 0.4s both;
+}
+.browser-mockup .chrome-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.browser-mockup .chrome-dots { display: flex; gap: 6px; }
+.browser-mockup .chrome-dots span {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.browser-mockup .chrome-dots span:nth-child(1) { background: #FF5F57; }
+.browser-mockup .chrome-dots span:nth-child(2) { background: #FBBF24; }
+.browser-mockup .chrome-dots span:nth-child(3) { background: #34C759; }
+.browser-mockup .chrome-url {
+  flex: 1;
+  background: var(--bg-deep);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  text-align: center;
+}
+.browser-mockup .mockup-body {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  padding: 28px;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mockup-msg {
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  max-width: 85%;
+}
+.mockup-msg.user {
+  align-self: flex-end;
+  background: rgba(0,212,255,0.1);
+  border: 1px solid rgba(0,212,255,0.15);
+  color: var(--accent-cyan);
+}
+.mockup-msg.ai {
+  align-self: flex-start;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+}
+.mockup-msg.ai .tool-tag {
+  display: inline-block;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(123,94,255,0.12);
+  color: var(--accent-purple);
+  margin-bottom: 8px;
+}
+.mockup-thinking {
+  display: flex;
+  gap: 6px;
+  padding: 12px 16px;
+}
+.mockup-thinking span {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent-purple);
+  animation: thinkBounce 1.4s ease-in-out infinite;
+}
+.mockup-thinking span:nth-child(2) { animation-delay: 0.2s; }
+.mockup-thinking span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinkBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* --- Section Headers --- */
+.section-header {
+  text-align: center;
+  margin-bottom: 60px;
+}
+.section-header .tag {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-cyan);
+  margin-bottom: 16px;
+  display: block;
+}
+.section-header h2 {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.section-header p {
+  color: var(--text-muted);
+  margin-top: 12px;
+  font-size: 16px;
+}
+
+/* --- Why Section --- */
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.why-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  transition: border-color 0.3s, transform 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.why-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.why-card:hover {
+  border-color: rgba(0,212,255,0.3);
+  transform: translateY(-4px);
+}
+.why-card:hover::before { opacity: 1; }
+
+.why-card .icon {
+  width: 44px; height: 44px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  margin-bottom: 20px;
+}
+.why-card .icon.cyan { background: rgba(0,212,255,0.1); color: var(--accent-cyan); }
+.why-card .icon.purple { background: rgba(123,94,255,0.1); color: var(--accent-purple); }
+.why-card .icon.green { background: rgba(52,211,153,0.1); color: var(--accent-green); }
+.why-card .icon.amber { background: rgba(251,191,36,0.1); color: var(--accent-amber); }
+
+.why-card h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.why-card p {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+/* --- Architecture Section --- */
+.arch-diagram {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px;
+  overflow: hidden;
+}
+.arch-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.arch-node {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  position: relative;
+}
+.arch-node.panel { background: rgba(0,212,255,0.06); border-color: rgba(0,212,255,0.2); color: var(--accent-cyan); }
+.arch-node.core { background: rgba(123,94,255,0.06); border-color: rgba(123,94,255,0.2); color: var(--accent-purple); }
+.arch-node.content { background: rgba(52,211,153,0.06); border-color: rgba(52,211,153,0.2); color: var(--accent-green); }
+.arch-node.agent { background: rgba(251,191,36,0.06); border-color: rgba(251,191,36,0.2); color: var(--accent-amber); }
+
+.arch-arrow {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 20px;
+  padding: 4px 0;
+}
+.arch-divider {
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent);
+  margin: 24px 0;
+}
+
+/* --- Tools Section --- */
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.tool-category {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  transition: border-color 0.3s;
+}
+.tool-category:hover { border-color: rgba(123,94,255,0.3); }
+.tool-category .cat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.tool-category .cat-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.tool-category .cat-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.tool-category .cat-count {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.tool-category ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tool-category li {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  border: 1px solid rgba(255,255,255,0.04);
+  cursor: default;
+  transition: all 0.2s;
+}
+.tool-category li:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* --- Features Highlight --- */
+.features-list {
+  display: grid;
+  gap: 32px;
+}
+.feature-item {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  padding: 28px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.3s;
+}
+.feature-item:hover { border-color: rgba(0,212,255,0.25); }
+.feature-item .f-num {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 13px;
+  color: var(--accent-cyan);
+  min-width: 32px;
+  padding-top: 2px;
+}
+.feature-item h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.feature-item p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+
+/* --- Stats Bar --- */
+.stats-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 40px 48px;
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+.stat-item { text-align: center; }
+.stat-item .s-num {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 40px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.stat-item .s-label { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+/* --- Footer CTA --- */
+.cta-section {
+  text-align: center;
+  padding: 100px 0 120px;
+}
+.cta-section h2 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+.cta-section p {
+  color: var(--text-muted);
+  margin-bottom: 32px;
+  font-size: 16px;
+}
+.cta-platforms {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.cta-tag {
+  padding: 8px 20px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+
+.repo-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 100px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.3s;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+}
+.repo-link:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0,212,255,0.06);
+  transform: translateY(-2px);
+}
+.repo-link svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* --- Scroll Reveal --- */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+  .hero { padding: 60px 0 40px; }
+  .browser-mockup { width: 100%; margin-left: 0; }
+  .arch-diagram { padding: 24px; }
+  .arch-node { font-size: 12px; padding: 8px 14px; }
+  .stats-bar { padding: 28px 24px; }
+  .stat-item .s-num { font-size: 28px; }
+  .container { padding: 0 20px; }
+  section { padding: 50px 0; }
+}
+
+/* --- Top Nav --- */
+.top-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 16px 0;
+  background: rgba(6,6,14,0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(30,30,58,0.5);
+}
+.top-nav .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-logo {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.nav-logo span {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.nav-repos {
+  display: flex;
+  gap: 12px;
+}
+.nav-repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  transition: all 0.25s;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+}
+.nav-repo:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text);
+  background: rgba(0,212,255,0.06);
+}
+.nav-repo svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.nav-repo:hover svg { opacity: 1; }
+
+/* Clean scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav class="top-nav">
+  <div class="container">
+    <div class="nav-logo"><span>AI Helper</span></div>
+    <div class="nav-repos">
+      <a class="nav-repo" href="https://github.com/xiweicheng/ai-helper" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <a class="nav-repo" href="https://gitee.com/xiweicheng/ai-helper" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/></svg>
+        Gitee
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- Background Effects -->
+<div class="bg-grid"></div>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="bg-orb bg-orb-3"></div>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container" style="display:flex;align-items:center;gap:40px;flex-wrap:wrap;">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        Chrome 浏览器扩展 · Manifest V3
+      </div>
+      <h1>
+        让 AI <span class="highlight">住进浏览器</span>，<br>像人一样操控网页
+      </h1>
+      <p class="subtitle">
+        AI Helper 不仅仅是一个 Chat 工具。它基于 ReAct 推理循环，能真正操控浏览器——点击、填表、拖拽、提取数据，让 AI 替你完成网页上的复杂任务。
+      </p>
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <span class="num">51+</span>
+          <span class="label">内建工具</span>
+        </div>
+        <div class="hero-stat">
+          <span class="num">MCP</span>
+          <span class="label">协议动态扩展</span>
+        </div>
+        <div class="hero-stat">
+          <span class="num">3级</span>
+          <span class="label">反思质量保障</span>
+        </div>
+        <div class="hero-stat">
+          <span class="num">多Agent</span>
+          <span class="label">协作分派</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Browser Mockup -->
+    <div class="browser-mockup">
+      <div class="chrome-bar">
+        <div class="chrome-dots"><span></span><span></span><span></span></div>
+        <div class="chrome-url">ai-helper.sidepanel</div>
+      </div>
+      <div class="mockup-body">
+        <div class="mockup-msg user">帮我把这个页面上所有的商品信息提取出来，导出为 Excel</div>
+        <div class="mockup-msg ai">
+          <div class="tool-tag">🔧 get_page_content</div>
+          正在读取页面内容...
+        </div>
+        <div class="mockup-msg ai">
+          <div class="tool-tag">🔧 extract_data</div>
+          已提取 48 条商品数据，含名称、价格、评分
+        </div>
+        <div class="mockup-thinking">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="mockup-msg ai">
+          <div class="tool-tag">🔧 download_file</div>
+          已生成 Excel 文件，下载中...
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Why AI Helper -->
+<section>
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="tag">为什么选择 AI Helper</span>
+      <h2>不只是聊天，而是真正的浏览器智能体</h2>
+      <p>相较于普通 Chat 工具，AI Helper 拥有以下关键差异化能力</p>
+    </div>
+    <div class="why-grid">
+      <div class="why-card reveal">
+        <div class="icon cyan">🖱️</div>
+        <h3>真正的浏览器操控</h3>
+        <p>不仅读取网页内容，还能<strong>点击、填表、拖拽、滚动、等待元素、上传文件</strong>——LLM 可以像人类一样操作网页，无需你手动介入。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon green">🛡️</div>
+        <h3>三级质量保障体系</h3>
+        <p>预筛选 → 工具级反思 → 子任务反思 → 后置反思，7维度质量评分确保输出结果准确可靠，而非简单返回 LLM 原始输出。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon purple">🤖</div>
+        <h3>多 Agent 协作</h3>
+        <p>支持将复杂任务拆解为子任务，<strong>分派给不同专业 Agent 并行处理</strong>——代码审查、数据分析、文档撰写各司其职，协同完成。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon amber">⚡</div>
+        <h3>智能成本控制</h3>
+        <p>51+ 工具定义通过<strong>轻量 API 预筛选</strong>缩减为 5-10 个相关项，Token 预算动态管理，上下文自动压缩——大幅降低 API 调用成本。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<section style="padding-top: 0;">
+  <div class="container">
+    <div class="stats-bar reveal">
+      <div class="stat-item">
+        <div class="s-num">51</div>
+        <div class="s-label">内建工具</div>
+      </div>
+      <div class="stat-item">
+        <div class="s-num">7</div>
+        <div class="s-label">质量评分维度</div>
+      </div>
+      <div class="stat-item">
+        <div class="s-num">5</div>
+        <div class="s-label">内置 Agent 角色</div>
+      </div>
+      <div class="stat-item">
+        <div class="s-num">4</div>
+        <div class="s-label">多模态输入方式</div>
+      </div>
+      <div class="stat-item">
+        <div class="s-num">100+</div>
+        <div class="s-label">可配置参数</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Architecture -->
+<section>
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="tag">技术架构</span>
+      <h2>五层架构 · 消息驱动</h2>
+      <p>通过 Chrome Extension API 消息通道实现各层高效通信</p>
+    </div>
+    <div class="arch-diagram reveal">
+      <div class="arch-row">
+        <div class="arch-node panel">Side Panel<br><small>对话 UI · Markdown 渲染</small></div>
+      </div>
+      <div class="arch-arrow">↓ chrome.runtime.sendMessage</div>
+      <div class="arch-row">
+        <div class="arch-node core">Background Worker<br><small>ReAct 推理循环 · 工具调度</small></div>
+      </div>
+      <div class="arch-arrow">↓ chrome.tabs.sendMessage · HTTP/WS</div>
+      <div class="arch-row">
+        <div class="arch-node content">Content Script<br><small>页面工具执行</small></div>
+        <div class="arch-node agent">Local Agent (Node.js)<br><small>文件/命令/MCP/Skill</small></div>
+      </div>
+      <div class="arch-divider"></div>
+      <div class="arch-row" style="gap:32px;">
+        <div class="arch-node panel" style="font-size:12px;">IndexedDB<br><small>会话/原型/Token</small></div>
+        <div class="arch-node core" style="font-size:12px;">chrome.storage<br><small>配置/Agent 定义</small></div>
+        <div class="arch-node content" style="font-size:12px;">OpenAI API<br><small>LLM + Vision</small></div>
+        <div class="arch-node agent" style="font-size:12px;">MCP Protocol<br><small>第三方工具扩展</small></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Tool Categories -->
+<section>
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="tag">能力矩阵</span>
+      <h2>51+ 项内建工具 · 10 大类别</h2>
+      <p>覆盖浏览器操控的方方面面，还支持 MCP 协议动态扩展第三方工具</p>
+    </div>
+    <div class="tools-grid">
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(0,212,255,0.1);color:var(--accent-cyan);">📄</div>
+          <span class="cat-name">内容提取</span>
+          <span class="cat-count">7 tools</span>
+        </div>
+        <ul>
+          <li>get_page_content</li>
+          <li>extract_data</li>
+          <li>query_elements</li>
+          <li>search_in_page</li>
+          <li>scroll_and_collect</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(123,94,255,0.1);color:var(--accent-purple);">🖱️</div>
+          <span class="cat-name">页面交互</span>
+          <span class="cat-count">6 tools</span>
+        </div>
+        <ul>
+          <li>click_element</li>
+          <li>hover_element</li>
+          <li>drag_and_drop</li>
+          <li>scroll_to</li>
+          <li>wait_for_element</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(52,211,153,0.1);color:var(--accent-green);">📝</div>
+          <span class="cat-name">表单输入</span>
+          <span class="cat-count">4 tools</span>
+        </div>
+        <ul>
+          <li>fill_form</li>
+          <li>keyboard_input</li>
+          <li>file_upload</li>
+          <li>select_dropdown</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(251,191,36,0.1);color:var(--accent-amber);">🗂️</div>
+          <span class="cat-name">标签页管理</span>
+          <span class="cat-count">8 tools</span>
+        </div>
+        <ul>
+          <li>open_tab</li>
+          <li>switch_tab</li>
+          <li>get_tabs</li>
+          <li>reload_tab</li>
+          <li>search_bookmarks</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(0,212,255,0.1);color:var(--accent-cyan);">🤖</div>
+          <span class="cat-name">AI 协作</span>
+          <span class="cat-count">6 tools</span>
+        </div>
+        <ul>
+          <li>plan_task</li>
+          <li>dispatch_sub_agent</li>
+          <li>preview_ui_prototype</li>
+          <li>clarify_question</li>
+          <li>search_memory</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(123,94,255,0.1);color:var(--accent-purple);">🖥️</div>
+          <span class="cat-name">本地 Agent</span>
+          <span class="cat-count">9 tools</span>
+        </div>
+        <ul>
+          <li>agent_read_file</li>
+          <li>agent_write_file</li>
+          <li>agent_exec_command</li>
+          <li>agent_search_files</li>
+          <li>agent_search_content</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(52,211,153,0.1);color:var(--accent-green);">📸</div>
+          <span class="cat-name">媒体输出</span>
+          <span class="cat-count">5 tools</span>
+        </div>
+        <ul>
+          <li>capture_page</li>
+          <li>clipboard</li>
+          <li>generate_qrcode</li>
+          <li>download_file</li>
+          <li>show_notification</li>
+        </ul>
+      </div>
+      <div class="tool-category reveal">
+        <div class="cat-header">
+          <div class="cat-icon" style="background:rgba(251,191,36,0.1);color:var(--accent-amber);">🔌</div>
+          <span class="cat-name">MCP 动态扩展</span>
+          <span class="cat-count">∞</span>
+        </div>
+        <ul>
+          <li>JSON-RPC 2.0</li>
+          <li>Stdio 传输</li>
+          <li>多 Server 管理</li>
+          <li>自动工具发现</li>
+          <li>环境变量配置</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Key Features -->
+<section>
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="tag">核心亮点</span>
+      <h2>不止于工具调用</h2>
+      <p>从输入到输出，全链路打磨每一个环节</p>
+    </div>
+    <div class="features-list">
+      <div class="feature-item reveal">
+        <div class="f-num">01</div>
+        <div>
+          <h4>多模态输入 — 图片 + 文件随心问</h4>
+          <p>支持图片识别（Vision API）、PDF/Word/Excel 文件提取问答。内建图片标注编辑器，6 种标注工具，支持 Undo。有 Agent 时优先上传至工作目录供 AI 直接操作原始文件。</p>
+        </div>
+      </div>
+      <div class="feature-item reveal">
+        <div class="f-num">02</div>
+        <div>
+          <h4>ReAct 推理循环 — 思考与行动的闭环</h4>
+          <p>LLM 思考 → 决定调用工具 → 并行执行 → 结果反馈 → 继续推理。支持工具预筛选、Token 预算管理、上下文智能压缩、流式响应、多级超时控制和会话隔离取消。</p>
+        </div>
+      </div>
+      <div class="feature-item reveal">
+        <div class="f-num">03</div>
+        <div>
+          <h4>Skill 系统 + MCP 协议 — 能力无限扩展</h4>
+          <p>Workflow Skill 实现确定性自动化流程，Agent Skill 提供 AI 自主调用的知识扩展。MCP 协议支持动态注册第三方工具，多 Server 同时连接，工具自动合并。</p>
+        </div>
+      </div>
+      <div class="feature-item reveal">
+        <div class="f-num">04</div>
+        <div>
+          <h4>划词浮动工具栏 — 无处不在的 AI 入口</h4>
+          <p>选中任意网页文本即弹出毛玻璃风格工具栏，支持 AI 搜索、解释、翻译、总结、自定义提示词工具，可拖拽缩放的结果面板，让 AI 能力无缝融入浏览体验。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Value Section -->
+<section>
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="tag">价值与意义</span>
+      <h2>效率提升 × 能力平权</h2>
+    </div>
+    <div class="why-grid">
+      <div class="why-card reveal">
+        <div class="icon cyan">📈</div>
+        <h3>商业价值</h3>
+        <p>面向运营、产品、研究等职场人群，将原本需要数十分钟的手动网页操作压缩为一句话指令。智能工具预筛选 + Token 预算管理大幅降低 AI 调用成本，让企业级 AI 自动化成为可能。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon green">⚡</div>
+        <h3>效率提升</h3>
+        <p>批量填表、数据采集、多页面信息聚合——这些原本需要逐个页面手动操作的任务，现在由 AI 自动完成。用户只需用自然语言描述需求，AI 会规划步骤、调用工具、反思结果、交付成品。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon purple">🌍</div>
+        <h3>社会价值</h3>
+        <p>非技术用户无需学习编程即可通过自然语言操控浏览器完成复杂任务，降低技术门槛。划词工具栏让任何网页信息都能一键获得 AI 帮助，推动信息无障碍获取，实现技术能力平权。</p>
+      </div>
+      <div class="why-card reveal">
+        <div class="icon amber">🔓</div>
+        <h3>开放扩展</h3>
+        <p>基于 MCP 开放协议，任何开发者都可以为 AI Helper 编写工具扩展。Skill 系统支持从对话中自动沉淀技能，形成「越用越强」的正向循环。开源架构，社区共建。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <div class="container reveal">
+    <h2>让 AI 住进你的浏览器</h2>
+    <p>不再是在聊天窗口和网页之间来回切换<br>AI Helper 让大模型成为真正的浏览器智能体</p>
+    <div class="cta-platforms">
+      <span class="cta-tag">Chrome 114+</span>
+      <span class="cta-tag">Manifest V3</span>
+      <span class="cta-tag">OpenAI 兼容 API</span>
+      <span class="cta-tag">Side Panel</span>
+      <span class="cta-tag">Node.js Agent</span>
+      <span class="cta-tag">MCP Protocol</span>
+    </div>
+    <div class="repo-links">
+      <a class="repo-link" href="https://github.com/xiweicheng/ai-helper" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <a class="repo-link" href="https://gitee.com/xiweicheng/ai-helper" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/></svg>
+        Gitee
+      </a>
+    </div>
+  </div>
+</section>
+
+<script>
+// Scroll reveal animation
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Stagger reveal for children
+document.querySelectorAll('.why-grid, .tools-grid, .features-list').forEach(container => {
+  const children = container.querySelectorAll('.reveal');
+  children.forEach((child, i) => {
+    child.style.transitionDelay = `${i * 80}ms`;
+  });
+});
+</script>
+</body>
+</html>
