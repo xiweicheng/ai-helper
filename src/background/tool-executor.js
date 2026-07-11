@@ -1624,9 +1624,19 @@ export async function executeFetchUrl(args, toolCallId) {
     };
   }
   
+  // Service Worker 的 fetch() 对 headers 类型校验严格，所有值必须是 ByteString。
+  // AI 模型可能传入 non-string 类型的 header 值（如 number、boolean、null），
+  // 需要先做类型清洗，避免 "is not of type '(record<ByteString, ByteString>'" 错误。
+  const sanitizedHeaders = {};
+  if (headers && typeof headers === 'object') {
+    for (const [key, value] of Object.entries(headers)) {
+      sanitizedHeaders[key] = String(value ?? '');
+    }
+  }
+
   const fetchOptions = {
     method: method.toUpperCase(),
-    headers: headers
+    headers: sanitizedHeaders
   };
   
   // 只在有 body 且不是 GET/HEAD 方法时添加 body
