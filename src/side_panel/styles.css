@@ -3979,6 +3979,7 @@ body {
   display: none;
   max-height: 300px;
   overflow-y: auto;
+  scroll-padding-top: 65px;
   animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .prompt-dropdown.show {
@@ -4099,6 +4100,175 @@ body {
 .prompt-dropdown-header .prompt-manage-btn:hover {
   background: #eef1f6;
   color: #667eea;
+}
+.prompt-dropdown-header .skill-manage-btn {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.prompt-dropdown-header .skill-manage-btn svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+.prompt-dropdown-header .skill-manage-btn:hover {
+  background: #eef1f6;
+  color: #38a169;
+}
+
+/* 提示词/技能 Tab 栏 */
+.prompt-dropdown-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e8ecf1;
+  padding: 0 8px;
+}
+.prompt-tab {
+  flex: 1;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  color: #999;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+.prompt-tab:hover {
+  color: #667eea;
+}
+.prompt-tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+/* 技能指示器 */
+.skill-indicator {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  animation: slideDown 0.2s ease-out;
+  font-size: 13px;
+}
+.skill-indicator-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.skill-indicator-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-indicator-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.skill-indicator-close:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* 技能列表项 */
+.skill-list-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.skill-list-item:last-child {
+  border-bottom: none;
+}
+.skill-list-item:hover {
+  background: #f5f7fa;
+}
+.skill-list-item.selected {
+  background: #f0fff4;
+}
+.skill-list-item-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.skill-list-item-info {
+  flex: 1;
+  min-width: 0;
+}
+.skill-list-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-list-item.selected .skill-list-item-name {
+  color: #38a169;
+}
+.skill-list-item-desc {
+  font-size: 11px;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.skill-list-item-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f0f4ff;
+  color: #667eea;
+  flex-shrink: 0;
+}
+.skill-list-item.selected .skill-list-item-badge {
+  background: #e0f5e8;
+  color: #38a169;
+}
+
+/* 合并列表中的技能标识 */
+.merged-item-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.badge-skill {
+  background: #e0f5e8;
+  color: #38a169;
+}
+.merged-skill-item.selected .badge-skill {
+  background: #c6f0d4;
+  color: #2f855a;
 }
 
 /* 提示词管理列表项样式 */

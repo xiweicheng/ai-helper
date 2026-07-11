@@ -17,6 +17,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
+import { getSkillContextText, clearSkillSelection } from './skill-selector.js';
 
 // 从提取的子模块重导出（保持对外接口不变）
 export { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile };
@@ -291,6 +292,16 @@ export async function sendMessage() {
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
     state.selectedContextText = '';
+  }
+
+  // 注入技能上下文（如果已选中技能）
+  const skillContext = getSkillContextText();
+  if (skillContext) {
+    finalText = skillContext + finalText;
+    // 添加技能上下文气泡（用户可见）
+    addContextBubble('skill', `使用技能「${state.selectedSkill.name}」进行问答${state.selectedSkill.description ? '：' + state.selectedSkill.description : ''}`, false);
+    // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
+    clearSkillSelection();
   }
   
 
@@ -643,8 +654,8 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : '📌';
-  const label = type === 'quoted' ? '引用内容' : '选中内容';
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : '📌');
+  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : '选中内容');
   
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -3339,7 +3350,27 @@ function editAndResendMessage(messageDiv) {
       mod.renderFilePreviews();
     });
     
-    // 3. 恢复引用/选中上下文，显示在输入框上方
+    // 3. 恢复技能上下文（如果消息使用了技能）
+    clearSkillSelection();
+    const skillMatch = textContent_.match(/^\[已选技能:\s*([^\n\]]+)\]/);
+    if (skillMatch) {
+      const skillName = skillMatch[1].split(' - ')[0].trim();
+      state.selectedSkill = { name: skillName, description: '', type: 'agent' };
+      const skillIndicator = document.getElementById('skillIndicator');
+      const skillNameEl = document.getElementById('skillIndicatorName');
+      if (skillIndicator && skillNameEl) {
+        skillNameEl.textContent = skillName;
+        skillIndicator.style.display = 'flex';
+      }
+    }
+
+    // 4. 从文本中去掉技能前缀
+    let textContentClean = textContent_;
+    if (skillMatch) {
+      textContentClean = textContent_.replace(/^\[已选技能:[^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+    }
+
+    // 5. 恢复引用/选中上下文，显示在输入框上方
     // 保存当前已有的上下文状态（如果用户之前已经引用了消息或选中了内容）
     const existingQuotedContext = state.quotedContextText;
     const existingSelectedContext = state.selectedContextText;
@@ -3347,11 +3378,11 @@ function editAndResendMessage(messageDiv) {
     state.quotedContextText = '';
     state.selectedContextText = '';
     
-    const quotedMatch = textContent_.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
-    const selectedMatch = textContent_.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const quotedMatch = textContentClean.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const selectedMatch = textContentClean.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const match = quotedMatch || selectedMatch;
     
-    let textToEdit = textContent_;
+    let textToEdit = textContentClean;
     
     if (match) {
       const type = quotedMatch ? 'quoted' : 'selected';

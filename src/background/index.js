@@ -74,6 +74,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // | RELOAD_MCP_TOOLS              | side_panel  | 强制重载 MCP 工具列表        | 是   |
 // | GET_MCP_TOOLS                 | side_panel  | 获取 MCP 工具（30s 缓存）    | 是   |
 // | GET_AGENT_SKILL_PROMPTS       | side_panel  | 获取 Skill Prompt（60s 缓存）| 是   |
+// | GET_SKILL_LIST                | side_panel  | 获取 Skill 列表             | 是   |
 // | CAPTURE_TAB                   | side_panel  | 截取可见标签页              | 是   |
 // | CAPTURE_TAB_FROM_PAGE         | content     | 页面快捷键触发全屏截图       | 是   |
 // | CAPTURE_REGION_FROM_PAGE      | content     | 页面快捷键触发区域截图       | 是   |
@@ -157,6 +158,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true, prompts });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'GET_SKILL_LIST') {
+    // 获取技能列表（供 side_panel 技能选择器使用）
+    AgentClient.getSkillList().then(result => {
+      if (result?.success) {
+        sendResponse({ success: true, skills: result.skills || [] });
+      } else {
+        sendResponse({ success: false, skills: [], error: result?.error || '获取失败' });
+      }
+    }).catch(err => {
+      sendResponse({ success: false, skills: [], error: err.message });
     });
     return true;
   }

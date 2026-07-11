@@ -42,6 +42,10 @@ import {
   showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection
 } from './agent-at-selector.js';
 import {
+  initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
+  switchDropdownTab, getSkillContextText, clearSkillSelection
+} from './skill-selector.js';
+import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
@@ -1370,8 +1374,118 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ========== / 提示词选择器键盘处理 ==========
     if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
-      const promptItems = promptDropdown.querySelectorAll('.prompt-item');
+      // 合并列表模式（搜索时）
+      if (state.showMergedList) {
+        const mergedItems = promptDropdown.querySelectorAll('#promptList .prompt-item');
+        const visibleCount = mergedItems.length;
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (state.selectedPromptIndex < 0) {
+            state.selectedPromptIndex = 0;
+          } else {
+            state.selectedPromptIndex = (state.selectedPromptIndex + 1) % visibleCount;
+          }
+          updatePromptSelection(mergedItems);
+          return;
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (state.selectedPromptIndex < 0) {
+            state.selectedPromptIndex = visibleCount - 1;
+          } else if (state.selectedPromptIndex === 0) {
+            state.selectedPromptIndex = visibleCount - 1;
+          } else {
+            state.selectedPromptIndex = state.selectedPromptIndex - 1;
+          }
+          updatePromptSelection(mergedItems);
+          return;
+        }
+
+        if (e.key === 'Enter' && state.selectedPromptIndex >= 0) {
+          e.preventDefault();
+          const selected = mergedItems[state.selectedPromptIndex];
+          if (selected.dataset.type === 'skill') {
+            // 技能：触发点击选中
+            selected.click();
+          } else if (e.ctrlKey || e.metaKey) {
+            insertPromptToInputByCode(selected.dataset.code);
+          } else {
+            sendPromptByCode(selected.dataset.code);
+          }
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          hidePromptSelector();
+          return;
+        }
+        return;
+      }
+
+      // 技能 Tab 键盘处理
+      if (state.activeDropdownTab === 'skills') {
+        const skillItems = promptDropdown.querySelectorAll('#skillList .skill-list-item');
+        const visibleCount = skillItems.length;
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (state.selectedSkillIndex < 0) {
+            state.selectedSkillIndex = 0;
+          } else {
+            state.selectedSkillIndex = (state.selectedSkillIndex + 1) % visibleCount;
+          }
+          updateSkillSelection(skillItems);
+          return;
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (state.selectedSkillIndex < 0) {
+            state.selectedSkillIndex = visibleCount - 1;
+          } else if (state.selectedSkillIndex === 0) {
+            state.selectedSkillIndex = visibleCount - 1;
+          } else {
+            state.selectedSkillIndex = state.selectedSkillIndex - 1;
+          }
+          updateSkillSelection(skillItems);
+          return;
+        }
+
+        if (e.key === 'Enter' && state.selectedSkillIndex >= 0) {
+          e.preventDefault();
+          skillItems[state.selectedSkillIndex].click();
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          hidePromptSelector();
+          return;
+        }
+
+        // Tab 键切换 Tab
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          switchDropdownTab('prompts');
+          return;
+        }
+        return; // 其他按键在技能 Tab 下不处理
+      }
+
+      // 提示词 Tab 键盘处理
+      const promptItems = promptDropdown.querySelectorAll('#promptList .prompt-item');
       const visibleCount = promptItems.length;
+
+      if (e.key === 'Tab') {
+        // Tab 键切换到技能 Tab（如果可见）
+        const skillsTab = document.getElementById('skillsTab');
+        if (skillsTab && skillsTab.style.display !== 'none') {
+          e.preventDefault();
+          switchDropdownTab('skills');
+          return;
+        }
+      }
 
       if (visibleCount === 0) {
       } else if (e.key === 'ArrowDown') {
@@ -2318,6 +2432,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initPromptEvents);
+document.addEventListener('DOMContentLoaded', initSkillIndicatorEvents);
+document.addEventListener('DOMContentLoaded', initSkillTabEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);

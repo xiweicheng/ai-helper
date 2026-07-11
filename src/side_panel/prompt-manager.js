@@ -1,8 +1,9 @@
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, selectSkill, updateSkillSelection } from './skill-selector.js';
 
 // ==================== 清除选中内容上下文（sendPromptByCode 依赖） ====================
 
@@ -139,15 +140,28 @@ export function addPromptManageButton() {
 /**
  * 显示提示词选择器
  */
-export function showPromptSelector(filterText = '') {
+export async function showPromptSelector(filterText = '') {
   const promptSelector = document.getElementById('promptSelector');
   const promptDropdown = document.getElementById('promptDropdown');
 
   promptSelector.style.display = 'block';
   promptDropdown.classList.add('show');
 
-  // 渲染提示词列表
-  renderPromptList(filterText);
+  // 检查是否显示技能 Tab
+  const skillsTab = document.getElementById('skillsTab');
+  if (skillsTab) {
+    const showSkills = await shouldShowSkillsTab();
+    skillsTab.style.display = showSkills ? 'block' : 'none';
+  }
+
+  if (filterText) {
+    // 有搜索内容：合并显示提示词和技能
+    await renderMergedList(filterText);
+  } else {
+    // 无搜索内容：Tab 模式
+    await switchDropdownTab('prompts');
+    renderPromptList(filterText);
+  }
 }
 
 /**
@@ -160,12 +174,17 @@ export function hidePromptSelector() {
   promptSelector.style.display = 'none';
   promptDropdown.classList.remove('show');
   state.selectedPromptIndex = -1;
+  state.showMergedList = false;
+
+  // 恢复 Tab 栏显示
+  const tabsContainer = document.getElementById('promptDropdownTabs');
+  if (tabsContainer) tabsContainer.style.display = '';
 }
 
 /**
  * 切换提示词选择器显示/隐藏
  */
-export function togglePromptSelector() {
+export async function togglePromptSelector() {
   const promptSelector = document.getElementById('promptSelector');
   const promptDropdown = document.getElementById('promptDropdown');
   const userInput = document.getElementById('userInput');
@@ -173,7 +192,7 @@ export function togglePromptSelector() {
   if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
     hidePromptSelector();
   } else {
-    showPromptSelector();
+    await showPromptSelector();
     // 让输入框获得焦点，以便键盘事件可以触发
     userInput.focus();
   }
@@ -183,7 +202,11 @@ export function togglePromptSelector() {
  * 更新提示词列表（用于输入时实时过滤）
  */
 export function updatePromptList(filterText = '') {
-  renderPromptList(filterText);
+  if (filterText) {
+    renderMergedList(filterText);
+  } else {
+    renderPromptList(filterText);
+  }
 }
 
 /**
@@ -230,12 +253,116 @@ export function renderPromptList(filterText = '') {
 }
 
 /**
+ * 渲染合并列表（提示词 + 技能，用于搜索模式）
+ */
+async function renderMergedList(filterText = '') {
+  const promptList = document.getElementById('promptList');
+  const skillList = document.getElementById('skillList');
+  const tabsContainer = document.getElementById('promptDropdownTabs');
+  const headerText = document.querySelector('#promptDropdownHeader .prompt-dropdown-header-text');
+  const promptManageBtn = document.querySelector('#promptDropdownHeader .prompt-manage-btn');
+  const skillManageBtn = document.querySelector('#promptDropdownHeader .skill-manage-btn');
+
+  // 隐藏 Tab 栏和技能列表
+  if (tabsContainer) tabsContainer.style.display = 'none';
+  if (skillList) skillList.style.display = 'none';
+  if (promptList) promptList.style.display = 'block';
+  if (headerText) headerText.textContent = '方向键切换 · Enter发送/选中 · Ctrl+Enter带入 · Esc取消';
+  if (promptManageBtn) promptManageBtn.style.display = '';
+  if (skillManageBtn) skillManageBtn.style.display = 'none';
+
+  state.showMergedList = true;
+  state.activeDropdownTab = 'prompts';
+
+  const filterLower = filterText.toLowerCase();
+
+  // 过滤提示词
+  const filteredPrompts = state.customPrompts.filter(p => {
+    if (!filterText) return true;
+    return p.code.toLowerCase().includes(filterLower) ||
+           p.content.toLowerCase().includes(filterLower);
+  });
+
+  // 过滤技能
+  let filteredSkills = [];
+  const canShowSkills = await shouldShowSkillsTab();
+  if (canShowSkills) {
+    const skills = await getEnabledSkills();
+    filteredSkills = skills.filter(s => {
+      if (!filterText) return true;
+      return (s.name || '').toLowerCase().includes(filterLower) ||
+             (s.description || '').toLowerCase().includes(filterLower);
+    });
+  }
+
+  const totalItems = filteredPrompts.length + filteredSkills.length;
+  if (totalItems === 0) {
+    promptList.innerHTML = '<div class="prompt-empty">暂无匹配结果</div>';
+    state.selectedPromptIndex = -1;
+    return;
+  }
+
+  state.selectedPromptIndex = 0;
+  let mergedIndex = 0;
+
+  const promptHtml = filteredPrompts.map(p => {
+    const html = `
+      <div class="prompt-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="prompt" data-code="${p.code}">
+        <span class="prompt-item-index">${mergedIndex + 1}</span>
+        <span class="prompt-item-content">${p.content}</span>
+        <span class="prompt-item-code">/${p.code}</span>
+      </div>`;
+    mergedIndex++;
+    return html;
+  }).join('');
+
+  const skillHtml = filteredSkills.map(s => {
+    const isAgent = s.type === 'agent';
+    const icon = isAgent ? '🤖' : '⚙️';
+    const html = `
+      <div class="prompt-item merged-skill-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="skill" data-skill-name="${escapeHtml(s.name)}">
+        <span class="prompt-item-index">${mergedIndex + 1}</span>
+        <span class="prompt-item-content">${icon} ${escapeHtml(s.name)}${s.description ? ' - ' + escapeHtml(s.description) : ''}</span>
+        <span class="merged-item-badge badge-skill">技能</span>
+      </div>`;
+    mergedIndex++;
+    return html;
+  }).join('');
+
+  promptList.innerHTML = promptHtml + skillHtml;
+
+  // 绑定点击事件
+  promptList.querySelectorAll('.prompt-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      const type = item.dataset.type;
+      if (type === 'skill') {
+        const skillName = item.dataset.skillName;
+        const skills = await getEnabledSkills();
+        selectSkill(skillName, skills);
+        // 清空输入框中的过滤文本，方便用户输入问题
+        const userInput = document.getElementById('userInput');
+        if (userInput) userInput.value = '';
+        hidePromptSelector();
+      } else {
+        const code = item.dataset.code;
+        if (e.ctrlKey || e.metaKey) {
+          insertPromptToInputByCode(code);
+        } else {
+          sendPromptByCode(code);
+        }
+      }
+    });
+  });
+}
+
+/**
  * 更新提示词选中状态
  */
 export function updatePromptSelection(promptItems) {
   promptItems.forEach((item, index) => {
     if (index === state.selectedPromptIndex) {
       item.classList.add('selected');
+      item.scrollIntoView({ block: 'nearest' });
     } else {
       item.classList.remove('selected');
     }

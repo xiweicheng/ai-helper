@@ -15,6 +15,10 @@ export let selectedContextText = '';
 export let quotedContextText = '';
 export let customPrompts = [];
 export let selectedPromptIndex = -1;
+export let selectedSkillIndex = -1;   // 技能选择器当前选中索引
+export let selectedSkill = null;      // 当前选中的技能 { name, description, type }
+export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
+export let showMergedList = false;   // 是否显示合并列表（搜索模式）
 export let selectedAgentAtIndex = -1; // @ Agent 选择器当前选中索引
 export let draggedItemIndex = null;
 export let systemPrompt = '';
@@ -151,6 +155,14 @@ export default {
   set customPrompts(v) { customPrompts = v; },
   get selectedPromptIndex() { return selectedPromptIndex; },
   set selectedPromptIndex(v) { selectedPromptIndex = v; },
+  get selectedSkillIndex() { return selectedSkillIndex; },
+  set selectedSkillIndex(v) { selectedSkillIndex = v; },
+  get selectedSkill() { return selectedSkill; },
+  set selectedSkill(v) { selectedSkill = v; },
+  get activeDropdownTab() { return activeDropdownTab; },
+  set activeDropdownTab(v) { activeDropdownTab = v; },
+  get showMergedList() { return showMergedList; },
+  set showMergedList(v) { showMergedList = v; },
   get selectedAgentAtIndex() { return selectedAgentAtIndex; },
   set selectedAgentAtIndex(v) { selectedAgentAtIndex = v; },
   get draggedItemIndex() { return draggedItemIndex; },

@@ -590,7 +590,7 @@ function renderSkills(skills) {
             <span class="skill-card-icon">🤖</span>
             <span class="skill-card-name">${escapeHtml(s.name)}</span>
             <span class="skill-card-version">v${escapeHtml(s.version || '1.0')}</span>
-            <span class="skill-card-badge badge-agent">Agent</span>
+            <span class="skill-card-badge badge-agent">代理</span>
             ${isBuiltin ? '<span class="skill-card-badge badge-builtin">内置</span>' : ''}
             ${s.enabled === false ? '<span class="skill-card-badge badge-disabled">已停用</span>' : ''}
             <span class="skill-card-step-count">${s.resourceCount || 0} 资源</span>
