@@ -1,6 +1,5 @@
 // side_panel/index.js - Side Panel 入口文件
 
-import './styles.css';
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
