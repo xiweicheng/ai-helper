@@ -1662,28 +1662,29 @@ export function reconnectStreamingElement(sessionId) {
   const accumulated = _streamedContentMap.get(sessionId) || '';
   if (accumulated) {
     updateStreamingMessage(oldEl, accumulated);
-  }
 
-  // 关闭当前可见的思考指示器：正常 ReAct 流程中，每次 STREAM_TOOL_CALL 之后
-  // 会由 appendToolCallItems 隐藏思考指示器并插入"思考结果"badge。但元素脱落期间
-  // 如果错过了工具调用（或当前轮次没有工具调用），思考指示器会残留在可见状态。
-  // 这会导致后续 STREAM_START 触发 "已有可见的思考指示器" 警告并跳过创建新指示器。
-  // 主动隐藏残留指示器，确保后续迭代能正常创建新的思考指示器。
-  const visibleIndicators = oldEl.querySelectorAll('.thinking-indicator:not(.hidden)');
-  visibleIndicators.forEach(indicator => {
-    // 在思考指示器前面插入"思考结果"badge（与 appendToolCallItems 行为一致）
-    const parent = indicator.parentElement;
-    const prevSibling = indicator.previousElementSibling;
-    const badge = document.createElement('span');
-    badge.className = 'thinking-badge';
-    badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果';
-    if (prevSibling && prevSibling.classList.contains('thinking-content')) {
-      parent.insertBefore(badge, prevSibling);
-    } else {
-      parent.insertBefore(badge, indicator);
-    }
-    indicator.classList.add('hidden');
-  });
+    // 关闭当前可见的思考指示器：正常 ReAct 流程中，每次 STREAM_TOOL_CALL 之后
+    // 会由 appendToolCallItems 隐藏思考指示器并插入"思考结果"badge。但元素脱落期间
+    // 如果错过了工具调用（或当前轮次没有工具调用），思考指示器会残留在可见状态。
+    // 这会导致后续 STREAM_START 触发 "已有可见的思考指示器" 警告并跳过创建新指示器。
+    // 主动隐藏残留指示器，确保后续迭代能正常创建新的思考指示器。
+    // 注意：仅在 accumulated 非空时才执行，避免在内容被 STREAM_START 重置后
+    // 创建出"有 badge 但无对应思考内容"的空洞。
+    const visibleIndicators = oldEl.querySelectorAll('.thinking-indicator:not(.hidden)');
+    visibleIndicators.forEach(indicator => {
+      const parent = indicator.parentElement;
+      const prevSibling = indicator.previousElementSibling;
+      const badge = document.createElement('span');
+      badge.className = 'thinking-badge';
+      badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果';
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        parent.insertBefore(badge, prevSibling);
+      } else {
+        parent.insertBefore(badge, indicator);
+      }
+      indicator.classList.add('hidden');
+    });
+  }
 
   // 滚动到底部
   requestAnimationFrame(() => {
