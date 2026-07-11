@@ -109,34 +109,57 @@ else
     esac
 fi
 
-# ─── 5. 升级版本号 ───
-echo ""
-log_info "正在升级版本号 (${BUMP_TYPE})..."
-npm version "$BUMP_TYPE" --no-git-tag-version
+# ─── 5-7. 升级 + 确认 + 发布（支持重试）───
+FIRST_BUMP="$BUMP_TYPE"
+while true; do
+    echo ""
+    log_info "正在升级版本号 (${BUMP_TYPE})..."
+    npm version "$BUMP_TYPE" --no-git-tag-version
+    NEW_VERSION=$(node -e "const p=require('./package.json'); process.stdout.write(p.version)")
+    log_ok "版本已更新: v${CURRENT_VERSION} → v${NEW_VERSION}"
 
-NEW_VERSION=$(node -e "const p=require('./package.json'); process.stdout.write(p.version)")
-log_ok "版本已更新: v${CURRENT_VERSION} → v${NEW_VERSION}"
+    echo ""
+    read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        log_warn "已取消发布，回滚 package.json..."
+        git checkout package.json
+        log_info "版本已回滚到 v${CURRENT_VERSION}"
+        exit 0
+    fi
 
-# ─── 6. 二次确认 ───
-echo ""
-read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    log_warn "已取消发布，版本号已更新但未提交，回滚 package.json..."
-    node -e "const p=require('./package.json');p.version='${CURRENT_VERSION}';require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n')"
-    log_info "版本已回滚到 v${CURRENT_VERSION}"
-    exit 0
-fi
+    echo ""
+    log_info "正在发布到 npm..."
 
-# ─── 7. 发布到 npm ───
-echo ""
-log_info "正在发布到 npm..."
-if npm publish --registry "$NPM_REGISTRY"; then
-    log_ok "发布成功! ${PACKAGE_NAME}@${NEW_VERSION}"
-else
-    log_error "发布失败，请检查错误信息"
-    log_info "提示: 如版本号已存在，请回滚或手动指定新版本号"
-    exit 1
-fi
+    PUBLISH_OUTPUT=$(npm publish --registry "$NPM_REGISTRY" 2>&1) && PUBLISH_OK=true || PUBLISH_OK=false
+
+    if $PUBLISH_OK; then
+        echo "$PUBLISH_OUTPUT"
+        log_ok "发布成功! ${PACKAGE_NAME}@${NEW_VERSION}"
+        break
+    fi
+
+    # 发布失败
+    echo "$PUBLISH_OUTPUT" | tail -5
+    echo ""
+
+    if echo "$PUBLISH_OUTPUT" | grep -q "previously published"; then
+        log_warn "版本 ${NEW_VERSION} 已存在于 npm，需要更换版本号"
+    else
+        log_error "发布失败，请检查上方错误信息"
+    fi
+
+    read -r -p "是否重试其他版本号? [Y/n] " retry
+    if [[ "$retry" =~ ^[Nn]$ ]]; then
+        log_warn "回滚 package.json..."
+        git checkout package.json
+        log_info "版本已回滚到 v${CURRENT_VERSION}"
+        exit 1
+    fi
+
+    # 重试时默认用 patch 升级
+    BUMP_TYPE="patch"
+    CURRENT_VERSION="$NEW_VERSION"
+done
 
 # ─── 8. 验证发布 ───
 echo ""
