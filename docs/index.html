@@ -78,7 +78,8 @@
   .nav-cta {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff; padding: 8px 18px; border-radius: 8px;
-    text-decoration: none; font-size: 14px; font-weight: 600;
+    text-decoration: none; font-size: 14px; font-weight: 700;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.35);
     transition: opacity .2s;
   }
   .nav-cta:hover { opacity: 0.9; }
@@ -411,7 +412,12 @@
     .hero { padding: 120px 20px 60px; }
     .hero h1 { font-size: 36px; }
     .stats { gap: 32px; }
-    .arch-flow { flex-direction: column; }
+    .arch { padding: 32px 16px; }
+    .arch-flow {
+      flex-direction: column; align-items: center;
+      justify-content: center; min-width: unset; gap: 8px;
+    }
+    .arch-box { width: 100%; max-width: 300px; flex: none; }
     .arch-arrow { transform: rotate(90deg); }
     .nav-links a:not(.nav-cta) { display: none; }
   }
@@ -441,7 +447,7 @@
 <section class="hero">
   <div class="hero-badge">🎯 开源 · Chrome Extension</div>
   <h1>让你的浏览器<br><span>会思考</span></h1>
-  <p>基于大语言模型的 Chrome 智能助手。62 个内置工具，支持多智能体协作、Skill 系统、MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。</p>
+  <p>基于大语言模型的 Chrome 智能助手。62 个内置工具，支持多模态文件问答、图片标注编辑、多智能体协作、Skill 系统、MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -458,7 +464,7 @@
     <div class="stat-label">内置工具</div>
   </div>
   <div class="stat">
-    <div class="stat-num">12</div>
+    <div class="stat-num">11+</div>
     <div class="stat-label">工具分类</div>
   </div>
   <div class="stat">
@@ -519,14 +525,34 @@
       <p>代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。</p>
     </div>
     <div class="card">
+      <div class="card-icon">📎</div>
+      <h3>多模态文件问答</h3>
+      <p>上传 PDF/Word/Excel/文本文件直接提问。浏览器端智能提取内容，连接 Agent 后支持上传至工作目录深度操作。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">✏️</div>
+      <h3>图片标注编辑器</h3>
+      <p>内建画笔、矩形、椭圆、箭头、橡皮擦 6 种标注工具。支持颜色/粗细调节和 Ctrl+Z 撤销，编辑后直接发送。</p>
+    </div>
+    <div class="card">
       <div class="card-icon">👁️</div>
       <h3>视觉模型识图</h3>
-      <p>对接视觉语言模型，支持截图识图对话。直接上传图片让 AI 分析页面内容、识别元素、理解布局。</p>
+      <p>对接视觉语言模型，支持截图识图对话。独立 API 配置，自动图片压缩减少 Token 消耗。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💡</div>
+      <h3>上下文智能压缩</h3>
+      <p>长引用内容自动摘要压缩，按 Token 数智能截断。三级压力监测，避免无关信息永久占据上下文空间。</p>
     </div>
     <div class="card">
       <div class="card-icon">💰</div>
       <h3>Token 统计面板</h3>
       <p>实时追踪 Token 消耗，会话/今日/历史多维度统计。趋势图展示、预算管理、上下文压力三级监测。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">💾</div>
+      <h3>会话导出/导入</h3>
+      <p>批量导出对话为 .aihelper.json，支持完整消息历史、执行日志、质量评分。兼容新版/旧版格式导入恢复。</p>
     </div>
     <div class="card">
       <div class="card-icon">🔒</div>
@@ -591,7 +617,7 @@
     <div class="tool-cat">
       <div class="cat-icon">🤖</div>
       <div class="cat-name">AI 协作</div>
-      <div class="cat-count">5</div>
+      <div class="cat-count">6</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🖥️</div>
@@ -642,7 +668,7 @@
     </div>
     <div class="screenshot-card">
       <img src="images/丰富自动化LLM调用工具.png" alt="丰富自动化LLM调用工具" loading="lazy">
-      <div class="caption">丰富的自动化 LLM 调用工具 — 59 个内置工具按需调用</div>
+      <div class="caption">丰富的自动化 LLM 调用工具 — 62 个内置工具按需调用</div>
     </div>
     <div class="screenshot-card">
       <img src="images/强大灵活的系统配置能力.png" alt="强大灵活的系统配置能力" loading="lazy">
@@ -754,6 +780,11 @@
       <div class="arch-box">
         <div class="arch-title">Content Script</div>
         <div class="arch-desc">DOM 操作<br>页面注入<br>40+ 页面工具</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box">
+        <div class="arch-title">Offscreen 文档</div>
+        <div class="arch-desc">剪贴板操作<br>MV3 兼容桥接</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
