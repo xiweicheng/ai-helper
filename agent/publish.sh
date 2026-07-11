@@ -35,11 +35,18 @@ echo -e "${CYAN}  ai-helper-agent NPM 发布脚本${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-# ─── 1. 显示当前版本 ───
+# ─── 1. 检查 git 工作区是否干净 ───
+if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+    log_error "Git 工作区有未提交的更改，请先提交或暂存"
+    git status --short
+    exit 1
+fi
+
+# ─── 2. 显示当前版本 ───
 CURRENT_VERSION=$(node -e "const p=require('./package.json'); process.stdout.write(p.version)")
 log_info "当前版本: ${GREEN}v${CURRENT_VERSION}${NC}"
 
-# ─── 2. 确认版本升级方式 ───
+# ─── 3. 确认版本升级方式 ───
 if [ $# -ge 1 ]; then
     BUMP_TYPE="$1"
 else
@@ -61,12 +68,6 @@ fi
 
 echo ""
 log_info "升级类型: ${BUMP_TYPE}"
-
-# ─── 3. 检查 git 工作区是否干净 ───
-if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-    log_error "Git 工作区有未提交的更改，请先提交或暂存"
-    exit 1
-fi
 
 # ─── 4. 检查 npm 认证 ───
 log_info "检查 npm 认证..."
