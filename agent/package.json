@@ -16,7 +16,7 @@
     "start": "node bin/agent.js start",
     "stop": "node bin/agent.js stop",
     "status": "node bin/agent.js status",
-    "publish": "bash publish.sh"
+    "release": "bash publish.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
