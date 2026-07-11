@@ -103,7 +103,9 @@ export async function loadMcpTools() {
         execution: 'background',
         parallelizable: true,
         requiresConfirmation: false,
-        enabled: true
+        enabled: true,
+        serverId: t.serverId,
+        serverName: t.serverName
       }));
     await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
 

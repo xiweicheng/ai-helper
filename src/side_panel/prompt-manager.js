@@ -3,7 +3,10 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
-import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, selectSkill, updateSkillSelection } from './skill-selector.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
+
+// 提示词图标 SVG（与提示词管理按钮一致）
+const PROMPT_ICON_SVG = '<svg viewBox="0 0 1024 1024" width="12" height="12" fill="currentColor"><path d="M674.56 231.552l101.568 56.96-56.896-101.632 56.96-101.568-101.632 56.896-101.632-56.896 56.96 101.568-56.896 101.632 101.568-56.96zM186.944 629.76l-101.504-56.896 56.832 101.632-56.832 101.568 101.504-56.96 101.632 56.96-56.896-101.568 56.896-101.568-101.568 56.832zM85.44 85.312l56.832 101.568-56.832 101.632 101.504-56.96 101.632 56.96L231.68 186.88l56.896-101.568-101.568 56.896-101.568-56.896z m351.872 438.016l-99.2-99.136L424.32 337.984l99.072 99.264-86.08 86.144m-41.856-223.04L300.352 395.392a40.448 40.448 0 0 0 0 57.28l474.24 474.112a40.448 40.448 0 0 0 57.344 0l94.912-95.04a40.448 40.448 0 0 0 0-57.344L452.736 300.288a40.448 40.448 0 0 0-57.28 0z"/></svg>';
 
 // ==================== 清除选中内容上下文（sendPromptByCode 依赖） ====================
 
@@ -147,11 +150,16 @@ export async function showPromptSelector(filterText = '') {
   promptSelector.style.display = 'block';
   promptDropdown.classList.add('show');
 
-  // 检查是否显示技能 Tab
+  // 检查是否显示技能 Tab 和 MCP Tab
   const skillsTab = document.getElementById('skillsTab');
+  const mcpTab = document.getElementById('mcpTab');
   if (skillsTab) {
     const showSkills = await shouldShowSkillsTab();
     skillsTab.style.display = showSkills ? 'block' : 'none';
+  }
+  if (mcpTab) {
+    const showMcp = await shouldShowMcpTab();
+    mcpTab.style.display = showMcp ? 'block' : 'none';
   }
 
   if (filterText) {
@@ -233,6 +241,7 @@ export function renderPromptList(filterText = '') {
   promptList.innerHTML = filteredPrompts.map((prompt, index) => `
     <div class="prompt-item ${index === state.selectedPromptIndex ? 'selected' : ''}" data-index="${index}" data-code="${prompt.code}">
       <span class="prompt-item-index">${index + 1}</span>
+      <span class="prompt-item-icon">${PROMPT_ICON_SVG}</span>
       <span class="prompt-item-content">${prompt.content}</span>
       <span class="prompt-item-code">/${prompt.code}</span>
     </div>
@@ -253,23 +262,27 @@ export function renderPromptList(filterText = '') {
 }
 
 /**
- * 渲染合并列表（提示词 + 技能，用于搜索模式）
+ * 渲染合并列表（提示词 + 技能 + MCP，用于搜索模式）
  */
 async function renderMergedList(filterText = '') {
   const promptList = document.getElementById('promptList');
   const skillList = document.getElementById('skillList');
+  const mcpList = document.getElementById('mcpList');
   const tabsContainer = document.getElementById('promptDropdownTabs');
   const headerText = document.querySelector('#promptDropdownHeader .prompt-dropdown-header-text');
   const promptManageBtn = document.querySelector('#promptDropdownHeader .prompt-manage-btn');
   const skillManageBtn = document.querySelector('#promptDropdownHeader .skill-manage-btn');
+  const mcpManageBtn = document.querySelector('#promptDropdownHeader .mcp-manage-btn');
 
-  // 隐藏 Tab 栏和技能列表
+  // 隐藏 Tab 栏和其他列表
   if (tabsContainer) tabsContainer.style.display = 'none';
   if (skillList) skillList.style.display = 'none';
+  if (mcpList) mcpList.style.display = 'none';
   if (promptList) promptList.style.display = 'block';
   if (headerText) headerText.textContent = '方向键切换 · Enter发送/选中 · Ctrl+Enter带入 · Esc取消';
   if (promptManageBtn) promptManageBtn.style.display = '';
   if (skillManageBtn) skillManageBtn.style.display = 'none';
+  if (mcpManageBtn) mcpManageBtn.style.display = 'none';
 
   state.showMergedList = true;
   state.activeDropdownTab = 'prompts';
@@ -295,7 +308,19 @@ async function renderMergedList(filterText = '') {
     });
   }
 
-  const totalItems = filteredPrompts.length + filteredSkills.length;
+  // 过滤 MCP 服务
+  let filteredMcpServices = [];
+  const canShowMcp = await shouldShowMcpTab();
+  if (canShowMcp) {
+    const mcpServices = await getMcpServices();
+    filteredMcpServices = mcpServices.filter(s => {
+      if (!filterText) return true;
+      return (s.serverName || '').toLowerCase().includes(filterLower) ||
+             (s.serverId || '').toLowerCase().includes(filterLower);
+    });
+  }
+
+  const totalItems = filteredPrompts.length + filteredSkills.length + filteredMcpServices.length;
   if (totalItems === 0) {
     promptList.innerHTML = '<div class="prompt-empty">暂无匹配结果</div>';
     state.selectedPromptIndex = -1;
@@ -309,6 +334,7 @@ async function renderMergedList(filterText = '') {
     const html = `
       <div class="prompt-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="prompt" data-code="${p.code}">
         <span class="prompt-item-index">${mergedIndex + 1}</span>
+        <span class="prompt-item-icon">📋</span>
         <span class="prompt-item-content">${p.content}</span>
         <span class="prompt-item-code">/${p.code}</span>
       </div>`;
@@ -317,19 +343,28 @@ async function renderMergedList(filterText = '') {
   }).join('');
 
   const skillHtml = filteredSkills.map(s => {
-    const isAgent = s.type === 'agent';
-    const icon = isAgent ? '🤖' : '⚙️';
     const html = `
       <div class="prompt-item merged-skill-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="skill" data-skill-name="${escapeHtml(s.name)}">
         <span class="prompt-item-index">${mergedIndex + 1}</span>
-        <span class="prompt-item-content">${icon} ${escapeHtml(s.name)}${s.description ? ' - ' + escapeHtml(s.description) : ''}</span>
+        <span class="prompt-item-content">🧩 ${escapeHtml(s.name)}${s.description ? ' - ' + escapeHtml(s.description) : ''}</span>
         <span class="merged-item-badge badge-skill">技能</span>
       </div>`;
     mergedIndex++;
     return html;
   }).join('');
 
-  promptList.innerHTML = promptHtml + skillHtml;
+  const mcpHtml = filteredMcpServices.map(s => {
+    const html = `
+      <div class="prompt-item merged-mcp-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="mcp" data-server-id="${escapeHtml(s.serverId)}" data-server-name="${escapeHtml(s.serverName)}">
+        <span class="prompt-item-index">${mergedIndex + 1}</span>
+        <span class="prompt-item-content">🔌 ${escapeHtml(s.serverName)}</span>
+        <span class="merged-item-badge badge-mcp">MCP</span>
+      </div>`;
+    mergedIndex++;
+    return html;
+  }).join('');
+
+  promptList.innerHTML = promptHtml + skillHtml + mcpHtml;
 
   // 绑定点击事件
   promptList.querySelectorAll('.prompt-item').forEach(item => {
@@ -339,7 +374,14 @@ async function renderMergedList(filterText = '') {
         const skillName = item.dataset.skillName;
         const skills = await getEnabledSkills();
         selectSkill(skillName, skills);
-        // 清空输入框中的过滤文本，方便用户输入问题
+        const userInput = document.getElementById('userInput');
+        if (userInput) userInput.value = '';
+        hidePromptSelector();
+      } else if (type === 'mcp') {
+        const serverId = item.dataset.serverId;
+        const serverName = item.dataset.serverName;
+        const mcpServices = await getMcpServices();
+        selectMcpService(serverId, serverName, mcpServices);
         const userInput = document.getElementById('userInput');
         if (userInput) userInput.value = '';
         hidePromptSelector();

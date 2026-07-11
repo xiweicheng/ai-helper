@@ -43,7 +43,9 @@ import {
 } from './agent-at-selector.js';
 import {
   initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
-  switchDropdownTab, getSkillContextText, clearSkillSelection
+  switchDropdownTab, getSkillContextText, clearSkillSelection,
+  updateMcpSelection, renderMcpList, selectMcpService, getMcpServices,
+  initMcpIndicatorEvents
 } from './skill-selector.js';
 import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
@@ -1409,6 +1411,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (selected.dataset.type === 'skill') {
             // 技能：触发点击选中
             selected.click();
+          } else if (selected.dataset.type === 'mcp') {
+            // MCP 服务：触发点击选中
+            selected.click();
           } else if (e.ctrlKey || e.metaKey) {
             insertPromptToInputByCode(selected.dataset.code);
           } else {
@@ -1467,10 +1472,64 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Tab 键切换 Tab
         if (e.key === 'Tab') {
           e.preventDefault();
-          switchDropdownTab('prompts');
+          const mcpTab = document.getElementById('mcpTab');
+          if (mcpTab && mcpTab.style.display !== 'none') {
+            switchDropdownTab('mcp');
+          } else {
+            switchDropdownTab('prompts');
+          }
           return;
         }
         return; // 其他按键在技能 Tab 下不处理
+      }
+
+      // MCP Tab 键盘处理
+      if (state.activeDropdownTab === 'mcp') {
+        const mcpItems = promptDropdown.querySelectorAll('#mcpList .mcp-list-item');
+        const visibleCount = mcpItems.length;
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (state.selectedMcpServiceIndex < 0) {
+            state.selectedMcpServiceIndex = 0;
+          } else {
+            state.selectedMcpServiceIndex = (state.selectedMcpServiceIndex + 1) % visibleCount;
+          }
+          updateMcpSelection(mcpItems);
+          return;
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (state.selectedMcpServiceIndex < 0) {
+            state.selectedMcpServiceIndex = visibleCount - 1;
+          } else if (state.selectedMcpServiceIndex === 0) {
+            state.selectedMcpServiceIndex = visibleCount - 1;
+          } else {
+            state.selectedMcpServiceIndex = state.selectedMcpServiceIndex - 1;
+          }
+          updateMcpSelection(mcpItems);
+          return;
+        }
+
+        if (e.key === 'Enter' && state.selectedMcpServiceIndex >= 0) {
+          e.preventDefault();
+          mcpItems[state.selectedMcpServiceIndex].click();
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          hidePromptSelector();
+          return;
+        }
+
+        // Tab 键切换 Tab
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          switchDropdownTab('prompts');
+          return;
+        }
+        return; // 其他按键在 MCP Tab 下不处理
       }
 
       // 提示词 Tab 键盘处理
@@ -1480,9 +1539,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (e.key === 'Tab') {
         // Tab 键切换到技能 Tab（如果可见）
         const skillsTab = document.getElementById('skillsTab');
+        const mcpTab = document.getElementById('mcpTab');
         if (skillsTab && skillsTab.style.display !== 'none') {
           e.preventDefault();
           switchDropdownTab('skills');
+          return;
+        }
+        if (mcpTab && mcpTab.style.display !== 'none') {
+          e.preventDefault();
+          switchDropdownTab('mcp');
           return;
         }
       }
@@ -2434,6 +2499,7 @@ document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initSkillIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initSkillTabEvents);
+document.addEventListener('DOMContentLoaded', initMcpIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);

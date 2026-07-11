@@ -380,24 +380,32 @@
       <span class="selection-text" id="selectionText"></span>
       <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
     </div>
-    <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
-    <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
+    <!-- MCP 服务选中指示器 -->
+    <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
+      <span class="mcp-indicator-label">🔌 MCP</span>
+      <span class="mcp-indicator-name" id="mcpIndicatorName"></span>
+      <button class="mcp-indicator-close" id="mcpIndicatorClose" title="取消MCP服务">✕</button>
+    </div>
     <!-- 技能选中指示器 -->
     <div class="skill-indicator" id="skillIndicator" style="display: none;">
       <span class="skill-indicator-label">🧩 技能</span>
       <span class="skill-indicator-name" id="skillIndicatorName"></span>
       <button class="skill-indicator-close" id="skillIndicatorClose" title="取消技能">✕</button>
     </div>
+    <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
+    <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
     <!-- 提示词选择器 -->
     <div class="prompt-selector" id="promptSelector" style="display: none;">
       <div class="prompt-dropdown" id="promptDropdown">
         <div class="prompt-dropdown-tabs" id="promptDropdownTabs">
           <button class="prompt-tab active" data-tab="prompts">提示词</button>
           <button class="prompt-tab" data-tab="skills" id="skillsTab" style="display: none;">技能</button>
+          <button class="prompt-tab" data-tab="mcp" id="mcpTab" style="display: none;">MCP</button>
         </div>
         <div class="prompt-dropdown-header" id="promptDropdownHeader"><span class="prompt-dropdown-header-text">方向键切换 · Enter发送 · Ctrl+Enter带入文本框</span></div>
         <div id="promptList"></div>
         <div id="skillList" style="display: none;"></div>
+        <div id="mcpList" style="display: none;"></div>
       </div>
     </div>
     <!-- @ Agent 选择器 -->

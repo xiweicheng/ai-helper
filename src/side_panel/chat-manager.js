@@ -17,7 +17,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
-import { getSkillContextText, clearSkillSelection } from './skill-selector.js';
+import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
 
 // 从提取的子模块重导出（保持对外接口不变）
 export { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile };
@@ -302,6 +302,16 @@ export async function sendMessage() {
     addContextBubble('skill', `使用技能「${state.selectedSkill.name}」进行问答${state.selectedSkill.description ? '：' + state.selectedSkill.description : ''}`, false);
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
+  }
+
+  // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  const mcpContext = getMcpContextText();
+  if (mcpContext) {
+    finalText = mcpContext + finalText;
+    // 添加 MCP 上下文气泡
+    addContextBubble('mcp', `使用MCP服务「${state.selectedMcpService.serverName}」进行问答`, false);
+    // 清除 MCP 指示器
+    clearMcpService();
   }
   
 
@@ -654,8 +664,8 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : '📌');
-  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : '选中内容');
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : '📌'));
+  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : '选中内容'));
   
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -3352,6 +3362,7 @@ function editAndResendMessage(messageDiv) {
     
     // 3. 恢复技能上下文（如果消息使用了技能）
     clearSkillSelection();
+    clearMcpService();
     const skillMatch = textContent_.match(/^\[已选技能:\s*([^\n\]]+)\]/);
     if (skillMatch) {
       const skillName = skillMatch[1].split(' - ')[0].trim();
@@ -3364,10 +3375,26 @@ function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 4. 从文本中去掉技能前缀
+    // 3b. 恢复 MCP 服务上下文
+    const mcpMatch = textContent_.match(/^\[已选MCP服务:\s*([^\n\]]+)\]/);
+    if (mcpMatch) {
+      const mcpName = mcpMatch[1].split(' - ')[0].trim();
+      state.selectedMcpService = { serverId: '', serverName: mcpName, toolCount: 0 };
+      const mcpIndicator = document.getElementById('mcpIndicator');
+      const mcpNameEl = document.getElementById('mcpIndicatorName');
+      if (mcpIndicator && mcpNameEl) {
+        mcpNameEl.textContent = mcpName;
+        mcpIndicator.style.display = 'flex';
+      }
+    }
+
+    // 4. 从文本中去掉技能/MCP前缀
     let textContentClean = textContent_;
+    if (mcpMatch) {
+      textContentClean = textContent_.replace(/^\[已选MCP服务:[^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+    }
     if (skillMatch) {
-      textContentClean = textContent_.replace(/^\[已选技能:[^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+      textContentClean = textContentClean.replace(/^\[已选技能:[^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
     }
 
     // 5. 恢复引用/选中上下文，显示在输入框上方

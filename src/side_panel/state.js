@@ -17,6 +17,8 @@ export let customPrompts = [];
 export let selectedPromptIndex = -1;
 export let selectedSkillIndex = -1;   // 技能选择器当前选中索引
 export let selectedSkill = null;      // 当前选中的技能 { name, description, type }
+export let selectedMcpService = null;  // 当前选中的 MCP 服务 { serverId, serverName, toolCount }
+export let selectedMcpServiceIndex = -1; // MCP 服务选择器当前选中索引
 export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
 export let showMergedList = false;   // 是否显示合并列表（搜索模式）
 export let selectedAgentAtIndex = -1; // @ Agent 选择器当前选中索引
@@ -159,6 +161,10 @@ export default {
   set selectedSkillIndex(v) { selectedSkillIndex = v; },
   get selectedSkill() { return selectedSkill; },
   set selectedSkill(v) { selectedSkill = v; },
+  get selectedMcpService() { return selectedMcpService; },
+  set selectedMcpService(v) { selectedMcpService = v; },
+  get selectedMcpServiceIndex() { return selectedMcpServiceIndex; },
+  set selectedMcpServiceIndex(v) { selectedMcpServiceIndex = v; },
   get activeDropdownTab() { return activeDropdownTab; },
   set activeDropdownTab(v) { activeDropdownTab = v; },
   get showMergedList() { return showMergedList; },
