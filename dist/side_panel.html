@@ -380,6 +380,8 @@
       <span class="selection-text" id="selectionText"></span>
       <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
     </div>
+    <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
+    <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
     <!-- 技能选中指示器 -->
     <div class="skill-indicator" id="skillIndicator" style="display: none;">
       <span class="skill-indicator-label">🧩 技能</span>
@@ -405,8 +407,6 @@
         <div id="agentAtList"></div>
       </div>
     </div>
-    <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
-    <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
     <div class="input-wrapper">
       <input type="file" id="fileInput" multiple accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf" style="display:none;">
       <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" title="提示词">
