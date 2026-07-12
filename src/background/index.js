@@ -314,6 +314,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }).catch(() => {});
           }
 
+          // 自动预加载长期记忆：检查 messages 中是否已有记忆内容，避免重复注入
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
           console.log('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
           return {

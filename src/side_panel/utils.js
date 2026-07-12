@@ -281,6 +281,27 @@ ${subAgentList}`;
    - 提供完整的子任务列表，包含ID、名称、描述、依赖和所需工具
    - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）` : '';
 
+  // 长期记忆规则——仅在启用工具、记忆开关开启且 Agent 已连接时注入
+  const memoryRules = (state.useTools && state.isolateChat && state.agentPlatform?.connected) ? `
+
+## 长期记忆系统
+你拥有长期记忆能力，可以将重要信息持久化存储，在未来的对话中召回使用。
+
+**何时使用记忆**：
+- 用户明确说"记住xxx"、"帮我记一下"时，调用 agent_memory_store 存储
+- 对话中出现值得长期保留的信息（用户偏好、重要决策、项目规范等），主动判断是否需要存储
+- 当用户的问题可能涉及历史信息时，自主调用 agent_memory_recall 检索相关记忆（对话中话题切换后也应重新检索）
+- 记忆接近上限时会收到提示，届时调用 agent_memory_manage 进行审查整理
+
+**记忆类型**：
+- fact（事实记忆）：用户偏好、技术栈、项目决策、个人习惯等结构化事实
+- summary（对话摘要）：对某次重要对话的总结
+
+**存储原则**：
+- 只存储有长期价值的信息，避免存储临时/琐碎的内容
+- 为每条记忆添加适当的标签（tags）和重要性（importance）评分
+- 重要性评分参考：偏好/习惯 8-10，技术决策 7-9，一般知识 5-7，临时备注 3-5` : '';
+
   // 确定系统提示词内容：Agent > 全局 > 默认
   let promptContent;
   if (agent && agent.systemPrompt && agent.systemPrompt.trim()) {
@@ -298,7 +319,7 @@ ${subAgentList}`;
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）
 - 浏览器操作系统：${browserOS}
-- 当前时间：${currentTime}${agentInfo}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}
+- 当前时间：${currentTime}${agentInfo}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 `;
 
     // 注入 Agent Skill Prompts
@@ -320,7 +341,7 @@ ${subAgentList}`;
 - **技术问题解答**：擅长解答架构设计、算法优化、性能调优、Bug排查等技术问题
 - **代码审查**：能提供代码质量评估、最佳实践建议、潜在风险识别
 - **文档编写**：协助撰写技术文档、API说明、测试用例等
-- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}${dispatchToolRule}
+- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
 ## 回答原则
 1. **精准专业**：使用准确的技术术语，回答直击要点
