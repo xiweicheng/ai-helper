@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍉 3D切水果 - Fruit Slash 3D</title>
+    <style>
+        :root {
+            --bg: #1a0a2e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            cursor: none;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 40px;
+            color: #fff;
+        }
+
+        .hud-item {
+            text-align: center;
+        }
+        .hud-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 4px;
+        }
+        .hud-value {
+            font-size: 42px;
+            font-weight: 900;
+            color: #ffdd57;
+            text-shadow: 0 0 30px rgba(255, 221, 87, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+            line-height: 1;
+        }
+        .hud-value.combo {
+            color: #ff6b6b;
+            font-size: 48px;
+            text-shadow: 0 0 30px rgba(255, 107, 107, 0.7);
+            animation: comboPulse 0.3s ease-in-out;
+        }
+
+        @keyframes comboPulse {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.3);
+            }
+        }
+
+        .hearts {
+            position: absolute;
+            top: 24px;
+            right: 30px;
+            display: flex;
+            gap: 8px;
+        }
+        .heart {
+            font-size: 28px;
+            filter: drop-shadow(0 0 8px rgba(255, 60, 60, 0.6));
+            transition: all 0.3s ease;
+        }
+        .heart.lost {
+            opacity: 0.2;
+            transform: scale(0.7);
+            filter: grayscale(1);
+        }
+
+        #slash-trail {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        #combo-text {
+            position: absolute;
+            top: 35%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 56px;
+            font-weight: 900;
+            color: #ffdd57;
+            text-shadow: 0 0 40px rgba(255, 221, 87, 0.8);
+            opacity: 0;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        #combo-text.show {
+            opacity: 1;
+            animation: comboShow 0.8s ease-out forwards;
+        }
+
+        @keyframes comboShow {
+            0% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            30% {
+                transform: translate(-50%, -50%) scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 0;
+            }
+        }
+
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.7);
+            pointer-events: all;
+        }
+        #game-over.active {
+            display: flex;
+        }
+        #game-over h2 {
+            font-size: 64px;
+            color: #ff6b6b;
+            text-shadow: 0 0 40px rgba(255, 107, 107, 0.7);
+            margin-bottom: 10px;
+        }
+        #game-over .final-score {
+            font-size: 80px;
+            color: #ffdd57;
+            font-weight: 900;
+            text-shadow: 0 0 40px rgba(255, 221, 87, 0.5);
+        }
+        #game-over .best-score {
+            font-size: 24px;
+            color: #aaa;
+            margin-bottom: 40px;
+        }
+        #restart-btn {
+            padding: 16px 60px;
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: #fff;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            letter-spacing: 2px;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 30px rgba(255, 107, 107, 0.4);
+            pointer-events: all;
+        }
+        #restart-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(255, 107, 107, 0.6);
+        }
+
+        #start-hint {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 20px;
+            letter-spacing: 3px;
+            animation: hintPulse 2s ease-in-out infinite;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        @keyframes hintPulse {
+            0%,
+            100% {
+                opacity: 0.4;
+            }
+            50% {
+                opacity: 1;
+            }
+        }
+
+        /* 自定义光标 */
+        #cursor {
+            position: fixed;
+            pointer-events: none;
+            z-index: 999;
+            width: 40px;
+            height: 40px;
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        #cursor.active {
+            opacity: 1;
+        }
+        #cursor::before,
+        #cursor::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 2px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.6);
+        }
+        #cursor::before {
+            width: 3px;
+            height: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #cursor::after {
+            width: 100%;
+            height: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="hud">
+            <div class="hud-item">
+                <div class="hud-label">得分</div>
+                <div class="hud-value" id="score">0</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">最高分</div>
+                <div class="hud-value" style="font-size:24px;color:#aaa;" id="best-score">0</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">连击</div>
+                <div class="hud-value" id="combo" style="font-size:32px;">x1</div>
+            </div>
+        </div>
+        <div class="hearts" id="hearts">
+            <span class="heart">❤️</span>
+            <span class="heart">❤️</span>
+            <span class="heart">❤️</span>
+        </div>
+        <div id="combo-text"></div>
+        <canvas id="slash-trail"></canvas>
+        <div id="start-hint">🖱️ 滑动切水果!</div>
+        <div id="game-over">
+            <h2>游戏结束</h2>
+            <div class="final-score" id="final-score">0</div>
+            <div class="best-score" id="best-score-display">最高分: 0</div>
+            <button id="restart-btn">🔄 再来一局</button>
+        </div>
+        <div id="cursor"></div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // ==================== DOM 元素 ====================
+        const scoreEl = document.getElementById('score');
+        const bestScoreEl = document.getElementById('best-score');
+        const comboEl = document.getElementById('combo');
+        const comboTextEl = document.getElementById('combo-text');
+        const heartsEl = document.getElementById('hearts');
+        const slashTrailCanvas = document.getElementById('slash-trail');
+        const slashTrailCtx = slashTrailCanvas.getContext('2d');
+        const gameOverEl = document.getElementById('game-over');
+        const finalScoreEl = document.getElementById('final-score');
+        const bestScoreDisplayEl = document.getElementById('best-score-display');
+        const restartBtn = document.getElementById('restart-btn');
+        const startHint = document.getElementById('start-hint');
+        const cursorEl = document.getElementById('cursor');
+
+        // ==================== Three.js 初始化 ====================
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x1a0a2e, 8, 40);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 80);
+        camera.position.set(0, 2, 12);
+        camera.lookAt(0, 1, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.prepend(renderer.domElement);
+
+        // ==================== 光照 ====================
+        const ambientLight = new THREE.AmbientLight('#4a3080', 1.5);
+        scene.add(ambientLight);
+
+        const mainLight = new THREE.DirectionalLight('#ffffff', 3);
+        mainLight.position.set(5, 10, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 1024;
+        mainLight.shadow.mapSize.height = 1024;
+        mainLight.shadow.camera.near = 0.5;
+        mainLight.shadow.camera.far = 50;
+        mainLight.shadow.camera.left = -15;
+        mainLight.shadow.camera.right = 15;
+        mainLight.shadow.camera.top = 15;
+        mainLight.shadow.camera.bottom = -15;
+        scene.add(mainLight);
+
+        const rimLight = new THREE.DirectionalLight('#ff8866', 1.2);
+        rimLight.position.set(-3, 3, -5);
+        scene.add(rimLight);
+
+        const fillLight = new THREE.DirectionalLight('#6688ff', 1);
+        fillLight.position.set(0, 1, -3);
+        scene.add(fillLight);
+
+        // ==================== 地面 ====================
+        const groundGeo = new THREE.PlaneGeometry(30, 30);
+        const groundMat = new THREE.MeshStandardMaterial({
+            color: '#2a1050',
+            roughness: 0.9,
+            metalness: 0.1,
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -5;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 网格线地面效果
+        const gridHelper = new THREE.PolarGridHelper(12, 40, 30, 256, '#442266', '#331855');
+        gridHelper.position.y = -4.99;
+        scene.add(gridHelper);
+
+        // ==================== 粒子背景 ====================
+        const bgParticlesGeo = new THREE.BufferGeometry();
+        const bgParticlesCount = 300;
+        const bgPositions = new Float32Array(bgParticlesCount * 3);
+        for (let i = 0; i < bgParticlesCount; i++) {
+            bgPositions[i * 3] = (Math.random() - 0.5) * 30;
+            bgPositions[i * 3 + 1] = Math.random() * 20 - 2;
+            bgPositions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+        }
+        bgParticlesGeo.setAttribute('position', new THREE.BufferAttribute(bgPositions, 3));
+        const bgParticlesMat = new THREE.PointsMaterial({
+            color: '#8866cc',
+            size: 0.05,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        });
+        const bgParticles = new THREE.Points(bgParticlesGeo, bgParticlesMat);
+        scene.add(bgParticles);
+
+        // ==================== 水果纹理生成 ====================
+        function createFruitTexture(color1, color2, highlightColor, type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            const cx = 128,
+                cy = 128,
+                r = 110;
+
+            // 主体
+            const gradient = ctx.createRadialGradient(cx - 20, cy - 30, 10, cx, cy, r);
+            gradient.addColorStop(0, highlightColor);
+            gradient.addColorStop(0.4, color1);
+            gradient.addColorStop(1, color2);
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            if (type === 'watermelon') {
+                // 椭圆形西瓜
+                ctx.ellipse(cx, cy, 115, 105, 0, 0, Math.PI * 2);
+            } else {
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            }
+            ctx.fill();
+
+            // 条纹 (西瓜)
+            if (type === 'watermelon') {
+                ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                ctx.lineWidth = 4;
+                for (let i = -80; i <= 80; i += 24) {
+                    ctx.beginPath();
+                    ctx.ellipse(cx + i, cy, 40, 105, 0.15, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                // 高光条纹
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 6;
+                ctx.beginPath();
+                ctx.ellipse(cx - 40, cy - 20, 25, 60, -0.3, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // 高光点
+            const hlGrad = ctx.createRadialGradient(cx - 30, cy - 40, 5, cx - 30, cy - 40, 35);
+            hlGrad.addColorStop(0, 'rgba(255,255,255,0.5)');
+            hlGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = hlGrad;
+            ctx.beginPath();
+            ctx.arc(cx - 30, cy - 40, 35, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 小高光
+            const hl2 = ctx.createRadialGradient(cx - 25, cy - 35, 2, cx - 25, cy - 35, 12);
+            hl2.addColorStop(0, 'rgba(255,255,255,0.7)');
+            hl2.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = hl2;
+            ctx.beginPath();
+            ctx.arc(cx - 25, cy - 35, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapU = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        const fruitTypes = [
+            {
+                name: '西瓜',
+                color1: '#2d8a3e',
+                color2: '#1a5c28',
+                highlightColor: '#5cbf6f',
+                shape: 'watermelon',
+                points: 1,
+                scale: 0.85
+            },
+            {
+                name: '苹果',
+                color1: '#e74c3c',
+                color2: '#c0392b',
+                highlightColor: '#ff6b6b',
+                shape: 'sphere',
+                points: 1,
+                scale: 0.7
+            },
+            {
+                name: '橙子',
+                color1: '#f39c12',
+                color2: '#e67e22',
+                highlightColor: '#ffbe76',
+                shape: 'sphere',
+                points: 1,
+                scale: 0.72
+            },
+            {
+                name: '柠檬',
+                color1: '#f9e74a',
+                color2: '#d4c820',
+                highlightColor: '#fffb8a',
+                shape: 'lemon',
+                points: 2,
+                scale: 0.65
+            },
+            {
+                name: '猕猴桃',
+                color1: '#6ab04c',
+                color2: '#4a8c2a',
+                highlightColor: '#8fce6a',
+                shape: 'sphere',
+                points: 2,
+                scale: 0.62
+            },
+            {
+                name: '芒果',
+                color1: '#ff9f43',
+                color2: '#ee7a20',
+                highlightColor: '#ffbe76',
+                shape: 'mango',
+                points: 3,
+                scale: 0.7
+            },
+        ];
+
+        // ==================== 创建水果模型 ====================
+        function createFruitMesh(fruitType) {
+            const group = new THREE.Group();
+            group.userData = { fruitType, sliced: false, isBomb: false };
+
+            let geometry;
+            switch (fruitType.shape) {
+                case 'watermelon':
+                    geometry = new THREE.SphereGeometry(1, 48, 36);
+                    group.scale.set(1.1, 0.9, 1.1);
+                    break;
+                case 'lemon':
+                    geometry = new THREE.SphereGeometry(1, 40, 30);
+                    group.scale.set(1.3, 0.7, 1.0);
+                    break;
+                case 'mango':
+                    geometry = new THREE.SphereGeometry(1, 40, 30);
+                    group.scale.set(1.0, 0.65, 0.75);
+                    break;
+                default:
+                    geometry = new THREE.SphereGeometry(1, 48, 36);
+            }
+
+            const texture = createFruitTexture(
+                fruitType.color1, fruitType.color2, fruitType.highlightColor, fruitType.shape
+            );
+            const material = new THREE.MeshStandardMaterial({
+                map: texture,
+                roughness: 0.35,
+                metalness: 0.05,
+            });
+
+            const fruitMesh = new THREE.Mesh(geometry, material);
+            fruitMesh.castShadow = true;
+            fruitMesh.receiveShadow = true;
+            group.add(fruitMesh);
+
+            // 叶子/茎
+            const stemGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.5, 8);
+            const stemMat = new THREE.MeshStandardMaterial({ color: '#4a3728', roughness: 0.7 });
+            const stem = new THREE.Mesh(stemGeo, stemMat);
+            stem.position.y = 0.85;
+            group.add(stem);
+
+            // 小叶子
+            const leafGeo = new THREE.SphereGeometry(0.25, 8, 6);
+            leafGeo.scale(0.6, 0.2, 1);
+            const leafMat = new THREE.MeshStandardMaterial({
+                color: '#3d8b37',
+                roughness: 0.5,
+                side: THREE.DoubleSide
+            });
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            leaf.position.y = 0.95;
+            leaf.rotation.z = 0.3;
+            group.add(leaf);
+
+            const leaf2 = new THREE.Mesh(leafGeo.clone(), leafMat);
+            leaf2.position.y = 0.95;
+            leaf2.rotation.z = -0.5;
+            group.add(leaf2);
+
+            return group;
+        }
+
+        // ==================== 炸弹模型 ====================
+        function createBombMesh() {
+            const group = new THREE.Group();
+            group.userData = { sliced: false, isBomb: true };
+
+            // 炸弹主体
+            const bodyGeo = new THREE.SphereGeometry(0.55, 32, 28);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: '#1a1a1a',
+                roughness: 0.3,
+                metalness: 0.7,
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.castShadow = true;
+            group.add(body);
+
+            // 高光线
+            const highlightGeo = new THREE.TorusGeometry(0.5, 0.03, 16, 32);
+            const highlightMat = new THREE.MeshStandardMaterial({
+                color: '#ff4444',
+                roughness: 0.2,
+                metalness: 0.5,
+                emissive: '#ff0000',
+                emissiveIntensity: 0.6,
+            });
+            const highlight = new THREE.Mesh(highlightGeo, highlightMat);
+            highlight.rotation.x = Math.PI / 2;
+            group.add(highlight);
+
+            // 引信
+            const fuseGeo = new THREE.TorusGeometry(0.2, 0.03, 8, 12, Math.PI);
+            const fuseMat = new THREE.MeshStandardMaterial({
+                color: '#8B4513',
+                roughness: 0.6,
+            });
+            const fuse = new THREE.Mesh(fuseGeo, fuseMat);
+            fuse.position.y = 0.55;
+            fuse.rotation.x = Math.PI / 4;
+            group.add(fuse);
+
+            // 火花粒子
+            const sparkGeo = new THREE.SphereGeometry(0.08, 8, 8);
+            const sparkMat = new THREE.MeshBasicMaterial({ color: '#ffaa00' });
+            const spark = new THREE.Mesh(sparkGeo, sparkMat);
+            spark.position.y = 0.7;
+            spark.userData = { spark: true };
+            group.add(spark);
+
+            const topKnobGeo = new THREE.SphereGeometry(0.1, 8, 8);
+            const topKnob = new THREE.Mesh(topKnobGeo, fuseMat);
+            topKnob.position.y = 0.65;
+            group.add(topKnob);
+
+            return group;
+        }
+
+        // ==================== 粒子系统 ====================
+        class ParticleSystem {
+            constructor(scene) {
+                this.scene = scene;
+                this.particles = [];
+                this.geo = new THREE.SphereGeometry(0.08, 6, 4);
+            }
+
+            emit(position, color1, color2, count = 30) {
+                for (let i = 0; i < count; i++) {
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: Math.random() > 0.5 ? color1 : color2,
+                        transparent: true,
+                        opacity: 1,
+                    });
+                    const particle = new THREE.Mesh(this.geo, mat);
+                    particle.position.copy(position);
+                    particle.position.x += (Math.random() - 0.5) * 0.8;
+                    particle.position.y += (Math.random() - 0.5) * 0.8;
+                    particle.position.z += (Math.random() - 0.5) * 0.8;
+                    particle.userData = {
+                        velocity: new THREE.Vector3(
+                            (Math.random() - 0.5) * 6,
+                            Math.random() * 5 + 2,
+                            (Math.random() - 0.5) * 6
+                        ),
+                        life: 0.6 + Math.random() * 0.6,
+                        age: 0,
+                    };
+                    this.scene.add(particle);
+                    this.particles.push(particle);
+                }
+            }
+
+            emitExplosion(position) {
+                for (let i = 0; i < 60; i++) {
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: new THREE.Color().setHSL(0.08 + Math.random() * 0.15, 1, 0.4 + Math.random() * 0.5),
+                        transparent: true,
+                        opacity: 1,
+                    });
+                    const size = 0.05 + Math.random() * 0.2;
+                    const geo = new THREE.SphereGeometry(size, 4, 4);
+                    const particle = new THREE.Mesh(geo, mat);
+                    particle.position.copy(position);
+                    const dir = new THREE.Vector3(
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2,
+                        (Math.random() - 0.5) * 2
+                    ).normalize();
+                    particle.userData = {
+                        velocity: dir.multiplyScalar(3 + Math.random() * 8),
+                        life: 0.4 + Math.random() * 0.8,
+                        age: 0,
+                    };
+                    this.scene.add(particle);
+                    this.particles.push(particle);
+                }
+            }
+
+            update(dt) {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.userData.age += dt;
+                    p.userData.velocity.y -= 9.8 * dt;
+                    p.position.x += p.userData.velocity.x * dt;
+                    p.position.y += p.userData.velocity.y * dt;
+                    p.position.z += p.userData.velocity.z * dt;
+                    p.material.opacity = 1 - (p.userData.age / p.userData.life);
+                    p.scale.setScalar(1 - p.userData.age / p.userData.life * 0.8);
+
+                    if (p.userData.age >= p.userData.life || p.position.y < -5) {
+                        this.scene.remove(p);
+                        p.material.dispose();
+                        p.geometry.dispose();
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+        }
+
+        // ==================== 刀光特效 ====================
+        class SlashTrail {
+            constructor() {
+                this.points = [];
+                this.maxPoints = 30;
+                this.fadeSpeed = 2.5;
+            }
+
+            addPoint(x, y) {
+                this.points.push({ x, y, life: 0.3 });
+                if (this.points.length > this.maxPoints) this.points.shift();
+            }
+
+            update(dt) {
+                for (let i = this.points.length - 1; i >= 0; i--) {
+                    this.points[i].life -= dt * this.fadeSpeed;
+                    if (this.points[i].life <= 0) this.points.splice(i, 1);
+                }
+            }
+
+            draw(ctx, w, h) {
+                if (this.points.length < 2) return;
+                ctx.clearRect(0, 0, w, h);
+
+                for (let i = 1; i < this.points.length; i++) {
+                    const p0 = this.points[i - 1];
+                    const p1 = this.points[i];
+                    const alpha = Math.min(p0.life, p1.life);
+
+                    ctx.beginPath();
+                    ctx.moveTo(p0.x, p0.y);
+                    ctx.lineTo(p1.x, p1.y);
+                    ctx.strokeStyle = `rgba(255,255,255,${alpha * 0.9})`;
+                    ctx.lineWidth = 4 * alpha;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+
+                    // 发光外层
+                    ctx.beginPath();
+                    ctx.moveTo(p0.x, p0.y);
+                    ctx.lineTo(p1.x, p1.y);
+                    ctx.strokeStyle = `rgba(150,200,255,${alpha * 0.5})`;
+                    ctx.lineWidth = 12 * alpha;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // ==================== 游戏状态 ====================
+        const game = {
+            score: 0,
+            bestScore: parseInt(localStorage.getItem('fruitSlashBest') || '0'),
+            lives: 3,
+            combo: 0,
+            maxCombo: 0,
+            fruits: [],
+            active: false,
+            gameOver: false,
+            spawnTimer: 0,
+            spawnInterval: 1.0,
+            difficulty: 1,
+            lastSpawnTime: 0,
+            totalTime: 0,
+        };
+
+        // ==================== 游戏对象管理 ====================
+        const particleSystem = new ParticleSystem(scene);
+        const slashTrail = new SlashTrail();
+
+        function spawnFruit() {
+            const typesToSpawn = Math.random() < 0.12 ? [fruitTypes[Math.floor(Math.random() * fruitTypes.length)]] :
+                [fruitTypes[Math.floor(Math.random() * fruitTypes.length)],
+                    fruitTypes[Math.floor(Math.random() * fruitTypes.length)]
+                ];
+
+            typesToSpawn.forEach((type, idx) => {
+                const mesh = createFruitMesh(type);
+                const startX = (Math.random() - 0.5) * 6 + (idx - (typesToSpawn.length - 1) / 2) * 2.5;
+                mesh.position.set(startX, -3.5, (Math.random() - 0.5) * 4);
+                mesh.scale.multiplyScalar(type.scale);
+
+                const upSpeed = 8 + Math.random() * 5 + game.difficulty * 1.2;
+                const sideSpeed = (Math.random() - 0.5) * 2;
+                const spinSpeed = {
+                    x: (Math.random() - 0.5) * 8,
+                    y: (Math.random() - 0.5) * 8,
+                    z: (Math.random() - 0.5) * 8,
+                };
+
+                mesh.userData.velocity = new THREE.Vector3(sideSpeed, upSpeed, 0);
+                mesh.userData.spinSpeed = spinSpeed;
+                mesh.userData.spawnTime = game.totalTime;
+                mesh.userData.fruitTypeData = type;
+
+                mesh.position.y = -4;
+                scene.add(mesh);
+                game.fruits.push(mesh);
+            });
+
+            // 炸弹 (概率随难度增加)
+            if (Math.random() < 0.08 + game.difficulty * 0.02) {
+                const bomb = createBombMesh();
+                bomb.position.set((Math.random() - 0.5) * 6, -3.5, (Math.random() - 0.5) * 3);
+                bomb.userData.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    8 + Math.random() * 4,
+                    0
+                );
+                bomb.userData.spinSpeed = {
+                    x: (Math.random() - 0.5) * 6,
+                    y: (Math.random() - 0.5) * 6,
+                    z: (Math.random() - 0.5) * 6,
+                };
+                bomb.userData.spawnTime = game.totalTime;
+                scene.add(bomb);
+                game.fruits.push(bomb);
+            }
+        }
+
+        function removeFruit(fruit) {
+            const idx = game.fruits.indexOf(fruit);
+            if (idx > -1) game.fruits.splice(idx, 1);
+            scene.remove(fruit);
+            // 递归清理子对象
+            fruit.traverse(child => {
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+                if (child.geometry && child !== fruit) child.geometry.dispose();
+            });
+            if (fruit.geometry) fruit.geometry.dispose();
+        }
+
+        function sliceFruit(fruit, slicePoint) {
+            if (fruit.userData.sliced) return;
+            fruit.userData.sliced = true;
+
+            if (fruit.userData.isBomb) {
+                // 炸弹!
+                particleSystem.emitExplosion(fruit.position.clone());
+                game.lives--;
+                game.combo = 0;
+                updateHUD();
+                updateHearts();
+
+                // 屏幕震动
+                camera.position.x += (Math.random() - 0.5) * 0.5;
+                camera.position.y += (Math.random() - 0.5) * 0.3;
+
+                if (game.lives <= 0) {
+                    endGame();
+                }
+                removeFruit(fruit);
+                return;
+            }
+
+            // 切水果得分
+            game.combo++;
+            if (game.combo > game.maxCombo) game.maxCombo = game.combo;
+
+            const typeData = fruit.userData.fruitTypeData;
+            const points = (typeData ? typeData.points : 1) * Math.min(game.combo, 10);
+            game.score += points;
+
+            // 粒子效果
+            const innerColor = typeData ? typeData.highlightColor : '#ff6666';
+            const outerColor = typeData ? typeData.color1 : '#ff4444';
+            particleSystem.emit(fruit.position.clone(), innerColor, outerColor, 20 + game.combo * 3);
+
+            // 显示连击
+            if (game.combo >= 3) {
+                showComboText(game.combo);
+            }
+
+            // 水果分成两半效果 - 创建两个半水果
+            createSliceHalves(fruit, slicePoint);
+
+            updateHUD();
+            removeFruit(fruit);
+        }
+
+        function createSliceHalves(original, slicePoint) {
+            // 创建两个飞散的水果半体（简化版 - 使用缩小的小球+粒子）
+            for (let i = 0; i < 2; i++) {
+                const halfGeo = new THREE.SphereGeometry(0.5, 20, 14);
+                const halfMat = new THREE.MeshStandardMaterial({
+                    color: original.userData.fruitTypeData ?
+                        (i === 0 ? original.userData.fruitTypeData.highlightColor :
+                            original.userData.fruitTypeData.color2) :
+                        '#ff6666',
+                    roughness: 0.4,
+                    metalness: 0.05,
+                    transparent: true,
+                    opacity: 0.85,
+                });
+                const half = new THREE.Mesh(halfGeo, halfMat);
+                half.position.copy(original.position);
+                half.scale.copy(original.scale).multiplyScalar(0.55);
+                half.userData = {
+                    velocity: new THREE.Vector3(
+                        (i === 0 ? -1 : 1) * (1 + Math.random() * 3),
+                        1 + Math.random() * 3,
+                        (Math.random() - 0.5) * 2
+                    ),
+                    spinSpeed: {
+                        x: (Math.random() - 0.5) * 12,
+                        y: (Math.random() - 0.5) * 12,
+                        z: (Math.random() - 0.5) * 12,
+                    },
+                    life: 0.8,
+                    age: 0,
+                    isHalf: true,
+                };
+                scene.add(half);
+                game.fruits.push(half);
+            }
+        }
+
+        function showComboText(combo) {
+            comboTextEl.textContent = combo >= 10 ? `🔥 ${combo}连击!` :
+                combo >= 7 ? `⚡ ${combo}连击!` :
+                combo >= 5 ? `✨ ${combo}连击` :
+                `${combo}连击`;
+            comboTextEl.classList.remove('show');
+            void comboTextEl.offsetWidth;
+            comboTextEl.classList.add('show');
+            setTimeout(() => comboTextEl.classList.remove('show'), 800);
+        }
+
+        function updateHUD() {
+            scoreEl.textContent = Math.floor(game.score);
+            comboEl.textContent = `x${Math.min(game.combo, 10)}`;
+            if (game.combo >= 5) {
+                comboEl.classList.add('combo');
+                setTimeout(() => comboEl.classList.remove('combo'), 300);
+            }
+            if (game.score > game.bestScore) {
+                game.bestScore = Math.floor(game.score);
+                localStorage.setItem('fruitSlashBest', game.bestScore);
+            }
+            bestScoreEl.textContent = game.bestScore;
+        }
+
+        function updateHearts() {
+            const hearts = heartsEl.querySelectorAll('.heart');
+            hearts.forEach((h, i) => {
+                if (i >= game.lives) h.classList.add('lost');
+                else h.classList.remove('lost');
+            });
+        }
+
+        function endGame() {
+            game.gameOver = true;
+            game.active = false;
+            gameOverEl.classList.add('active');
+            finalScoreEl.textContent = Math.floor(game.score);
+            bestScoreDisplayEl.textContent = `最高分: ${game.bestScore}`;
+            startHint.style.display = 'none';
+            document.body.style.cursor = 'default';
+            cursorEl.classList.remove('active');
+        }
+
+        function restartGame() {
+            // 清理所有水果
+            while (game.fruits.length > 0) {
+                removeFruit(game.fruits[0]);
+            }
+            game.score = 0;
+            game.lives = 3;
+            game.combo = 0;
+            game.maxCombo = 0;
+            game.active = true;
+            game.gameOver = false;
+            game.spawnTimer = 0;
+            game.spawnInterval = 1.0;
+            game.difficulty = 1;
+            game.totalTime = 0;
+            gameOverEl.classList.remove('active');
+            startHint.style.display = 'block';
+            document.body.style.cursor = 'none';
+            updateHUD();
+            updateHearts();
+            camera.position.set(0, 2, 12);
+            camera.lookAt(0, 1, 0);
+            cursorEl.classList.add('active');
+        }
+
+        // ==================== 光线投射检测 ====================
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let prevMouse = new THREE.Vector2(-999, -999);
+        let isSlashing = false;
+        let slashSegmentPoints = [];
+
+        function checkSlash(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            if (isSlashing && prevMouse.x !== -999) {
+                const dx = mouse.x - prevMouse.x;
+                const dy = mouse.y - prevMouse.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > 0.005) {
+                    // 沿路径采样检测
+                    const steps = Math.ceil(dist / 0.01);
+                    for (let i = 1; i <= steps; i++) {
+                        const t = i / steps;
+                        const sx = prevMouse.x + dx * t;
+                        const sy = prevMouse.y + dy * t;
+
+                        raycaster.setFromCamera(new THREE.Vector2(sx, sy), camera);
+                        const intersects = raycaster.intersectObjects(game.fruits, true);
+
+                        if (intersects.length > 0) {
+                            let fruitObj = intersects[0].object;
+                            while (fruitObj && !game.fruits.includes(fruitObj)) {
+                                fruitObj = fruitObj.parent;
+                            }
+                            if (fruitObj && game.fruits.includes(fruitObj) && !fruitObj.userData.sliced) {
+                                sliceFruit(fruitObj, intersects[0].point);
+                            }
+                        }
+                    }
+                }
+            }
+
+            prevMouse.copy(mouse);
+            slashTrail.addPoint(event.clientX, event.clientY);
+        }
+
+        // ==================== 事件处理 ====================
+        window.addEventListener('mousedown', (e) => {
+            if (!game.active || game.gameOver) return;
+            isSlashing = true;
+            prevMouse.set(-999, -999);
+            slashTrail.points = [];
+            checkSlash(e);
+            startHint.style.display = 'none';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            cursorEl.style.left = e.clientX + 'px';
+            cursorEl.style.top = e.clientY + 'px';
+            if (!game.active || game.gameOver) return;
+            if (isSlashing) checkSlash(e);
+        });
+
+        window.addEventListener('mouseup', () => {
+            isSlashing = false;
+            prevMouse.set(-999, -999);
+        });
+
+        window.addEventListener('mouseleave', () => {
+            isSlashing = false;
+            prevMouse.set(-999, -999);
+            cursorEl.classList.remove('active');
+        });
+        window.addEventListener('mouseenter', () => {
+            if (game.active) cursorEl.classList.add('active');
+        });
+
+        // 触摸事件
+        window.addEventListener('touchstart', (e) => {
+            if (!game.active || game.gameOver) return;
+            e.preventDefault();
+            isSlashing = true;
+            prevMouse.set(-999, -999);
+            slashTrail.points = [];
+            const touch = e.touches[0];
+            checkSlash({ clientX: touch.clientX, clientY: touch.clientY });
+            startHint.style.display = 'none';
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!game.active || game.gameOver) return;
+            e.preventDefault();
+            if (isSlashing) {
+                const touch = e.touches[0];
+                checkSlash({ clientX: touch.clientX, clientY: touch.clientY });
+                cursorEl.style.left = touch.clientX + 'px';
+                cursorEl.style.top = touch.clientY + 'px';
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', () => {
+            isSlashing = false;
+            prevMouse.set(-999, -999);
+        });
+
+        restartBtn.addEventListener('click', restartGame);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            slashTrailCanvas.width = window.innerWidth;
+            slashTrailCanvas.height = window.innerHeight;
+        });
+
+        // ==================== 键盘快捷键 ====================
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                if (game.gameOver) restartGame();
+            }
+            if (e.key === ' ' && !game.active && !game.gameOver) {
+                game.active = true;
+                cursorEl.classList.add('active');
+                startHint.style.display = 'none';
+            }
+        });
+
+        // ==================== 初始化 ====================
+        slashTrailCanvas.width = window.innerWidth;
+        slashTrailCanvas.height = window.innerHeight;
+        bestScoreEl.textContent = game.bestScore;
+        updateHearts();
+        cursorEl.classList.add('active');
+        document.body.style.cursor = 'none';
+        game.active = true;
+
+        // ==================== 游戏循环 ====================
+        const clock = new THREE.Clock();
+        let bgTime = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min(clock.getDelta(), 0.1);
+
+            if (game.active && !game.gameOver) {
+                game.totalTime += dt;
+
+                // 难度递增
+                game.difficulty = 1 + Math.floor(game.totalTime / 25);
+                game.spawnInterval = Math.max(0.45, 1.0 - game.difficulty * 0.06);
+
+                // 生成水果
+                game.spawnTimer += dt;
+                if (game.spawnTimer >= game.spawnInterval) {
+                    game.spawnTimer = 0;
+                    spawnFruit();
+                    // 有时额外多生成一批
+                    if (Math.random() < 0.25 && game.difficulty > 2) {
+                        setTimeout(() => {
+                            if (game.active && !game.gameOver) spawnFruit();
+                        }, 150 + Math.random() * 200);
+                    }
+                }
+
+                // 更新水果
+                for (let i = game.fruits.length - 1; i >= 0; i--) {
+                    const fruit = game.fruits[i];
+                    const ud = fruit.userData;
+
+                    ud.velocity.y -= 9.8 * dt;
+                    fruit.position.x += ud.velocity.x * dt;
+                    fruit.position.y += ud.velocity.y * dt;
+                    fruit.position.z += (ud.velocity.z || 0) * dt;
+
+                    if (ud.spinSpeed) {
+                        fruit.rotation.x += ud.spinSpeed.x * dt;
+                        fruit.rotation.y += ud.spinSpeed.y * dt;
+                        fruit.rotation.z += ud.spinSpeed.z * dt;
+                    }
+
+                    // 处理半水果 - 生命周期
+                    if (ud.isHalf && ud.life !== undefined) {
+                        ud.age += dt;
+                        if (ud.age >= ud.life || fruit.position.y < -6) {
+                            removeFruit(fruit);
+                            continue;
+                        }
+                        fruit.material.opacity = 0.85 * (1 - ud.age / ud.life);
+                    }
+
+                    // 掉出屏幕
+                    if (fruit.position.y < -6 && !ud.sliced && !ud.isHalf) {
+                        if (!ud.isBomb) {
+                            // 没切到的水果扣连击
+                            game.combo = 0;
+                            updateHUD();
+                        }
+                        removeFruit(fruit);
+                        continue;
+                    }
+
+                    // 从高处落下
+                    if (fruit.position.y < -6 && ud.isHalf) {
+                        removeFruit(fruit);
+                    }
+                }
+            }
+
+            // 更新粒子
+            particleSystem.update(dt);
+
+            // 更新刀光
+            slashTrail.update(dt);
+            slashTrail.draw(slashTrailCtx, slashTrailCanvas.width, slashTrailCanvas.height);
+
+            // 背景粒子动画
+            bgTime += dt;
+            bgParticles.rotation.y += dt * 0.05;
+            bgParticles.rotation.x += dt * 0.02;
+
+            // 炸弹火花闪烁
+            game.fruits.forEach(f => {
+                if (f.userData.isBomb) {
+                    f.children.forEach(c => {
+                        if (c.userData && c.userData.spark) {
+                            c.material.color.setHSL(0.12, 1, 0.5 + Math.sin(bgTime * 20) * 0.4);
+                            c.scale.setScalar(0.7 + Math.sin(bgTime * 25) * 0.5);
+                        }
+                    });
+                }
+            });
+
+            // 地面呼吸光效
+            groundMat.emissive = new THREE.Color().setHSL(0.75, 0.5, 0.05 + Math.sin(bgTime * 0.5) * 0.03);
+            groundMat.emissiveIntensity = 0.3 + Math.sin(bgTime * 0.7) * 0.15;
+
+            // 相机呼吸晃动
+            if (game.active && !game.gameOver) {
+                const breathe = Math.sin(bgTime * 0.6) * 0.15;
+                camera.position.y = 2 + breathe;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // 启动!
+        animate();
+        console.log('🍉 3D切水果游戏已就绪!');
+        console.log('🖱️ 按住鼠标滑动切水果');
+        console.log('💣 避开炸弹!');
+        console.log('⌨️ 按 R 重新开始');
+    </script>
+</body>
+</html>
