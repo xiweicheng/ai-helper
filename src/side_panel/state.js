@@ -19,7 +19,10 @@ export let selectedSkillIndex = -1;   // 技能选择器当前选中索引
 export let selectedSkill = null;      // 当前选中的技能 { name, description, type }
 export let selectedMcpService = null;  // 当前选中的 MCP 服务 { serverId, serverName, toolCount }
 export let selectedMcpServiceIndex = -1; // MCP 服务选择器当前选中索引
+export let selectedPage = null;  // 当前选中的网页 { id, title, url, favIconUrl }
+export let selectedPageIndex = -1; // 页面选择器当前选中索引
 export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
+export let lastActiveDropdownTab = 'prompts'; // 上次激活的 Tab（用于记忆）
 export let showMergedList = false;   // 是否显示合并列表（搜索模式）
 export let selectedAgentAtIndex = -1; // @ Agent 选择器当前选中索引
 export let draggedItemIndex = null;
@@ -165,8 +168,14 @@ export default {
   set selectedMcpService(v) { selectedMcpService = v; },
   get selectedMcpServiceIndex() { return selectedMcpServiceIndex; },
   set selectedMcpServiceIndex(v) { selectedMcpServiceIndex = v; },
+  get selectedPage() { return selectedPage; },
+  set selectedPage(v) { selectedPage = v; },
+  get selectedPageIndex() { return selectedPageIndex; },
+  set selectedPageIndex(v) { selectedPageIndex = v; },
   get activeDropdownTab() { return activeDropdownTab; },
   set activeDropdownTab(v) { activeDropdownTab = v; },
+  get lastActiveDropdownTab() { return lastActiveDropdownTab; },
+  set lastActiveDropdownTab(v) { lastActiveDropdownTab = v; },
   get showMergedList() { return showMergedList; },
   set showMergedList(v) { showMergedList = v; },
   get selectedAgentAtIndex() { return selectedAgentAtIndex; },

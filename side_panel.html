@@ -373,6 +373,12 @@
       <span class="selection-text" id="selectionText"></span>
       <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
     </div>
+    <!-- 网页选中指示器 -->
+    <div class="page-indicator" id="pageIndicator" style="display: none;">
+      <span class="page-indicator-label">🌐 网页</span>
+      <span class="page-indicator-name" id="pageIndicatorName"></span>
+      <button class="page-indicator-close" id="pageIndicatorClose" title="取消网页">✕</button>
+    </div>
     <!-- MCP 服务选中指示器 -->
     <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
       <span class="mcp-indicator-label">🔌 MCP</span>
@@ -401,11 +407,16 @@
         <div id="mcpList" style="display: none;"></div>
       </div>
     </div>
-    <!-- @ Agent 选择器 -->
+    <!-- @ Agent/网页 选择器 -->
     <div class="prompt-selector" id="agentAtSelector" style="display: none;">
       <div class="prompt-dropdown" id="agentAtDropdown">
-        <div class="prompt-dropdown-header">方向键切换 · Enter切换Agent · Esc取消</div>
+        <div class="prompt-dropdown-tabs" id="agentAtTabs">
+          <button class="prompt-tab active" data-tab="agents">助手</button>
+          <button class="prompt-tab" data-tab="pages">网页</button>
+        </div>
+        <div class="prompt-dropdown-header">方向键切换 · Enter选择 · Esc取消<span class="agent-add-btn" id="agentAddBtn" title="新增/编辑助手">✚</span></div>
         <div id="agentAtList"></div>
+        <div id="agentPageList" style="display: none;"></div>
       </div>
     </div>
     <div class="input-wrapper">
@@ -413,7 +424,7 @@
       <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" title="提示词">
         <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M274.090667 107.861333l43.235555 116.792889 116.792889 43.235556-116.792889 43.235555-43.235555 116.736-43.235556-116.792889-116.736-43.235555 116.736-43.235556 43.235556-116.736zM717.937778 532.138667l51.825778 140.117333 140.117333 51.882667-140.117333 51.882666-51.882667 140.117334-51.825778-140.117334-140.174222-51.882666 140.174222-51.882667 51.825778-140.117333zM699.278222 190.350222a36.977778 36.977778 0 1 0-64.056889-36.977778L219.192889 873.927111a36.977778 36.977778 0 1 0 64.056889 36.977778l416.028444-720.554667z" fill="currentColor"/></svg>
       </button>
-      <textarea id="userInput" placeholder="输入'/'快捷提示、'@'切换助理、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
+      <textarea id="userInput" placeholder="输入'/'快捷提示、'@'切换助手或网页、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
       <div class="input-right-buttons">
         <button class="input-inner-btn screenshot-inner-btn" id="screenshotBtn" title="截取当前页面（Ctrl/Shift+点击可区域截图）" style="display:none;">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>

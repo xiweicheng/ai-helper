@@ -4013,6 +4013,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
 .prompt-item:last-child {
   border-bottom: none;
@@ -4033,6 +4034,11 @@ body {
   padding: 2px 6px;
   border-radius: 3px;
   margin-left: 8px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 .prompt-item.selected .prompt-item-code {
   background: #e0e8ff;
@@ -4044,7 +4050,7 @@ body {
   color: #bbb;
   text-align: center;
   flex-shrink: 0;
-  margin-right: 8px;
+  margin-right: 0;
 }
 .prompt-item.selected .prompt-item-index {
   color: #8899cc;
@@ -4070,10 +4076,47 @@ body {
 /* @ Agent 选择器样式 */
 .agent-at-icon {
   font-size: 16px;
-  margin-right: 8px;
+  margin-right: 0;
   flex-shrink: 0;
 }
 .agent-at-active .prompt-item-code {
+  color: #667eea;
+}
+
+/* 助手列表项右侧操作区 */
+.agent-item-actions {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 14px;
+  color: #667eea;
+}
+.agent-active-mark {
+  display: inline;
+}
+.agent-edit-btn {
+  display: none;
+  cursor: pointer;
+  color: #999;
+  transition: color 0.2s;
+}
+.agent-edit-btn:hover {
+  color: #667eea;
+}
+/* hover 时：隐藏 ✓，显示 ✎ */
+.prompt-item:hover .agent-active-mark {
+  display: none;
+}
+.prompt-item:hover .agent-edit-btn {
+  display: inline;
+}
+
+/* 网页列表项右侧选中标记 */
+.page-item-actions {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 14px;
   color: #667eea;
 }
 .prompt-manage-btn {
@@ -4163,6 +4206,32 @@ body {
   border-bottom-color: #667eea;
 }
 
+/* Agent 标签页中的新增按钮 */
+.agent-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 13px;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  cursor: pointer;
+  transition: background 0.2s;
+  vertical-align: middle;
+}
+.agent-add-btn:hover {
+  background: rgba(102, 126, 234, 0.25);
+}
+
+/* 网页 Tab / 搜索模式 下隐藏 ✚ 按钮 */
+#agentAtDropdown[data-active-tab="pages"] #agentAddBtn,
+#agentAtDropdown[data-active-tab="merged"] #agentAddBtn {
+  display: none !important;
+}
+
 /* 技能指示器 */
 .skill-indicator {
   background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
@@ -4203,6 +4272,49 @@ body {
   flex-shrink: 0;
 }
 .skill-indicator-close:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* 网页指示器 */
+.page-indicator {
+  background: linear-gradient(135deg, #3182ce 0%, #2b6cb0 100%);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  animation: slideDown 0.2s ease-out;
+  font-size: 13px;
+}
+.page-indicator-label {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.page-indicator-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-indicator-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.page-indicator-close:hover {
   background: rgba(255, 255, 255, 0.35);
 }
 

@@ -186,6 +186,7 @@ export function initSkillIndicatorEvents() {
  */
 export async function switchDropdownTab(tab) {
   state.activeDropdownTab = tab;
+  state.lastActiveDropdownTab = tab;
   state.showMergedList = false;
 
   const promptList = document.getElementById('promptList');

@@ -18,6 +18,7 @@ import { showExportDialog, hideExportDialog, performExport, initExportDialogEven
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { clearPageSelection } from './page-selector.js';
 
 // 从提取的子模块重导出（保持对外接口不变）
 export { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile };
@@ -316,6 +317,16 @@ export async function sendMessage() {
     addContextBubble('mcp', `使用MCP服务「${state.selectedMcpService.serverName}」进行问答`, false);
     // 清除 MCP 指示器
     clearMcpService();
+  }
+
+  // 注入网页上下文（如果已选中网页）
+  if (state.selectedPage) {
+    const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
+    finalText = pageCtx + finalText;
+    // 添加网页上下文气泡
+    addContextBubble('page', `网页「${state.selectedPage.title}」\n${state.selectedPage.url}`, false);
+    // 清除网页指示器
+    clearPageSelection();
   }
   
 
@@ -674,8 +685,8 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : '📌'));
-  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : '选中内容'));
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : '📌')));
+  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : (type === 'page' ? '网页问答' : '选中内容')));
   
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -3543,7 +3554,31 @@ function editAndResendMessage(messageDiv) {
       mod.renderFilePreviews();
     });
     
-    // 3. 恢复技能上下文（如果消息使用了技能）
+    // 3. 恢复网页上下文（如果消息选中了网页）
+    clearPageSelection();
+    const pageMatch = textContent_.match(/^\[网页上下文\]\n标题: (.+)\nURL: (.+)\ntabId: (\d+)\n/);
+    if (pageMatch) {
+      state.selectedPage = {
+        id: parseInt(pageMatch[3]),
+        title: pageMatch[1],
+        url: pageMatch[2],
+        favIconUrl: ''
+      };
+      const pageIndicator = document.getElementById('pageIndicator');
+      const pageNameEl = document.getElementById('pageIndicatorName');
+      if (pageIndicator && pageNameEl) {
+        const restoredTitle = pageMatch[1];
+        const restoredUrl = pageMatch[2];
+        if (restoredTitle && restoredTitle !== '无标题' && restoredUrl) {
+          pageNameEl.textContent = `${restoredTitle} · ${restoredUrl}`;
+        } else {
+          pageNameEl.textContent = restoredTitle || restoredUrl;
+        }
+        pageIndicator.style.display = 'flex';
+      }
+    }
+
+    // 3a. 恢复技能上下文（如果消息使用了技能）
     clearSkillSelection();
     clearMcpService();
     const skillMatch = textContent_.match(/^\[已选技能:\s*([^\n\]]+)\]/);
@@ -3571,8 +3606,11 @@ function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 4. 从文本中去掉技能/MCP前缀
+    // 4. 从文本中去掉网页/技能/MCP前缀
     let textContentClean = textContent_;
+    if (pageMatch) {
+      textContentClean = textContentClean.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+    }
     if (mcpMatch) {
       textContentClean = textContent_.replace(/^\[已选MCP服务:[^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
     }

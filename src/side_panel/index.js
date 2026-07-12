@@ -40,7 +40,7 @@ import {
   insertPromptToInputByCode, updatePromptSelection, initPromptEvents
 } from './prompt-manager.js';
 import {
-  showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection
+  showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab
 } from './agent-at-selector.js';
 import {
   initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
@@ -54,6 +54,7 @@ import {
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
   refreshToolPopupIfOpen
 } from './tool-panel.js';
+import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
 import { attachFiles, clearFiles } from './file-extract.js';
 
@@ -1043,6 +1044,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 加载保存的对话历史
   loadChatHistory();
 
+  // 自动聚焦输入框
+  const userInputEl = document.getElementById('userInput');
+  if (userInputEl) userInputEl.focus();
+
   // 监听会话切换事件（由 session-manager-ui.js 触发）
   document.addEventListener('session-switched', (e) => {
     const { sessionId, previousSessionId } = e.detail || {};
@@ -1237,6 +1242,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     promptTriggerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       promptTriggerBtn.blur();
+      // 关闭 @ 弹框（互斥）
+      hideAgentAtSelector();
       togglePromptSelector();
     });
   }
@@ -1385,36 +1392,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     const agentAtSelector = document.getElementById('agentAtSelector');
     const agentAtDropdown = document.getElementById('agentAtDropdown');
 
-    // ========== @ Agent 选择器键盘处理 ==========
+    // ========== @ Agent/网页 选择器键盘处理 ==========
     if (agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show')) {
-      const agentAtItems = agentAtDropdown.querySelectorAll('.prompt-item');
-      const visibleCount = agentAtItems.length;
+      const agentAtTabs = document.getElementById('agentAtTabs');
+      const isMerged = agentAtTabs && agentAtTabs.style.display === 'none';
+
+      // Tab 键切换标签（仅在非合并模式下）
+      if (!isMerged && e.key === 'Tab') {
+        e.preventDefault();
+        if (activeAtTab === 'agents') {
+          switchAtTab('pages');
+        } else {
+          switchAtTab('agents');
+        }
+        return;
+      }
+
+      // 获取当前列表容器
+      let listContainer, selectedIndex;
+      if (isMerged) {
+        // 合并模式：使用 agentAtList
+        listContainer = document.getElementById('agentAtList');
+        selectedIndex = state.selectedAgentAtIndex;
+      } else if (activeAtTab === 'pages') {
+        listContainer = document.getElementById('agentPageList');
+        selectedIndex = state.selectedPageIndex;
+      } else {
+        listContainer = document.getElementById('agentAtList');
+        selectedIndex = state.selectedAgentAtIndex;
+      }
+
+      const items = listContainer ? listContainer.querySelectorAll('.prompt-item') : [];
+      const visibleCount = items.length;
 
       if (visibleCount === 0) {
         // no items, pass through
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (state.selectedAgentAtIndex < 0) {
-          state.selectedAgentAtIndex = 0;
+        const newIdx = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleCount;
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'pages') {
+          state.selectedPageIndex = newIdx;
+          updatePageSelection(items);
         } else {
-          state.selectedAgentAtIndex = (state.selectedAgentAtIndex + 1) % visibleCount;
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
         }
-        updateAgentAtSelection(agentAtItems);
         return;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (state.selectedAgentAtIndex < 0) {
-          state.selectedAgentAtIndex = visibleCount - 1;
-        } else if (state.selectedAgentAtIndex === 0) {
-          state.selectedAgentAtIndex = visibleCount - 1;
+        const newIdx = selectedIndex < 0 ? visibleCount - 1 : (selectedIndex === 0 ? visibleCount - 1 : selectedIndex - 1);
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'pages') {
+          state.selectedPageIndex = newIdx;
+          updatePageSelection(items);
         } else {
-          state.selectedAgentAtIndex = state.selectedAgentAtIndex - 1;
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
         }
-        updateAgentAtSelection(agentAtItems);
         return;
-      } else if (e.key === 'Enter' && state.selectedAgentAtIndex >= 0) {
+      } else if (e.key === 'Enter' && selectedIndex >= 0) {
         e.preventDefault();
-        agentAtItems[state.selectedAgentAtIndex].click();
+        items[selectedIndex].click();
         return;
       } else if (e.key === 'Escape') {
         hideAgentAtSelector();
@@ -2548,6 +2591,7 @@ document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initSkillIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initSkillTabEvents);
 document.addEventListener('DOMContentLoaded', initMcpIndicatorEvents);
+document.addEventListener('DOMContentLoaded', initPageIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initClarifyEvents);
 document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
