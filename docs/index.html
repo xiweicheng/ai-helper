@@ -319,6 +319,45 @@
   .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
   .card p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
 
+  /* ─── 创意成果展示区卡片 ─── */
+  .showcase-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    display: flex; gap: 20px; align-items: center;
+    transition: all .3s;
+    text-decoration: none; color: inherit;
+    cursor: pointer;
+  }
+  .showcase-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px var(--accent-glow);
+  }
+  .showcase-thumb {
+    width: 72px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 16px;
+    font-size: 36px;
+    flex-shrink: 0;
+  }
+  .showcase-info { flex: 1; min-width: 0; }
+  .showcase-info h3 {
+    font-size: 18px; font-weight: 600; margin-bottom: 6px;
+  }
+  .showcase-info p {
+    font-size: 13px; color: var(--text-muted); line-height: 1.6;
+    margin-bottom: 10px;
+  }
+  .showcase-link {
+    font-size: 13px; font-weight: 600;
+    color: var(--accent);
+    transition: gap .2s;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .showcase-card:hover .showcase-link { gap: 8px; }
+
   /* ─── 工具分类 ─── */
   .tools-grid {
     display: grid;
@@ -435,6 +474,7 @@
       <a href="#tools">工具</a>
       <a href="#screenshots">截图</a>
       <a href="#arch">架构</a>
+      <a href="#showcase">创意成果</a>
       <a href="#start">快速开始</a>
       <a class="nav-cta" href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub</a>
       <a class="nav-cta" href="https://gitee.com/xiweicheng/ai-helper" target="_blank">Gitee</a>
@@ -833,6 +873,32 @@
       <p>如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。</p>
       <code>npm i -g ai-helper-agent &amp;&amp; ai-helper-agent start</code>
     </div>
+  </div>
+</section>
+
+<!-- 创意成果展示区 -->
+<section class="section" id="showcase">
+  <div class="section-title">
+    <h2>创意成果展示区</h2>
+    <p>AI Helper 驱动的创意项目，点击即可体验</p>
+  </div>
+  <div class="cards">
+    <a class="showcase-card" href="fruit-slash-3d.html" target="_blank">
+      <div class="showcase-thumb">🍉</div>
+      <div class="showcase-info">
+        <h3>3D 切水果</h3>
+        <p>基于 Three.js 的 3D 切水果小游戏，挥动鼠标切开缤纷水果，连击得分挑战高分。</p>
+        <span class="showcase-link">打开体验 →</span>
+      </div>
+    </a>
+    <a class="showcase-card" href="creative-product.html" target="_blank">
+      <div class="showcase-thumb">🎨</div>
+      <div class="showcase-info">
+        <h3>创意产品展示</h3>
+        <p>AI Helper 产品能力展示页，全方位呈现智能助手的核心功能与使用场景。</p>
+        <span class="showcase-link">打开体验 →</span>
+      </div>
+    </a>
   </div>
 </section>
 
