@@ -7,7 +7,7 @@
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/constants-ChQXXpBF.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/options-CkGnM7IS.css">
+  <link rel="stylesheet" crossorigin href="/assets/options-moHi8086.css">
 </head>
 <body>
   <div class="container">
@@ -45,8 +45,23 @@
 
     <div class="tab-panel active" data-tab="basic">
     <div class="form-group">
-      <label for="apiBase">API Base URL <span class="hint">（可选，有默认值）</span></label>
-      <input type="text" id="apiBase" placeholder="https://api.deepseek.com">
+      <label>API Base URL <span class="hint">（从下拉列表选择，或手动输入）</span></label>
+      <div class="model-selector">
+        <input type="text" id="apiBase" placeholder="https://api.deepseek.com">
+        <div class="model-dropdown" id="apiBaseDropdown">
+        </div>
+      </div>
+      <div class="add-model-section">
+        <button type="button" class="add-model-toggle-btn" id="addApiBaseToggleBtn" title="添加自定义 API Base URL">+ 添加地址</button>
+        <div class="add-model-form" id="addApiBaseForm" style="display:none;">
+          <input type="text" id="addApiBaseUrl" placeholder="API Base URL（如 https://api.example.com/v1）">
+          <input type="text" id="addApiBaseLabel" placeholder="标签/备注（可选，如 我的代理）">
+          <div class="add-model-form-actions">
+            <button type="button" class="btn-primary" id="confirmAddApiBaseBtn">确认添加</button>
+            <button type="button" class="btn-cancel" id="cancelAddApiBaseBtn">取消</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="form-group">
@@ -99,8 +114,23 @@
     </div>
 
     <div class="form-group" id="imageApiGroup" style="display:none;">
-      <label for="imageApiBase">API Base URL <span class="hint">（可选，留空则使用基础模型配置）</span></label>
-      <input type="text" id="imageApiBase" placeholder="https://api.deepseek.com" style="width:100%;">
+      <label>API Base URL <span class="hint">（从下拉列表选择，或手动输入；留空则使用基础模型配置）</span></label>
+      <div class="model-selector">
+        <input type="text" id="imageApiBase" placeholder="留空则使用基础模型配置">
+        <div class="model-dropdown" id="imageApiBaseDropdown">
+        </div>
+      </div>
+      <div class="add-model-section">
+        <button type="button" class="add-model-toggle-btn" id="addImageApiBaseToggleBtn" title="添加自定义图片 API Base URL">+ 添加地址</button>
+        <div class="add-model-form" id="addImageApiBaseForm" style="display:none;">
+          <input type="text" id="addImageApiBaseUrl" placeholder="API Base URL（如 https://api.example.com/v1）">
+          <input type="text" id="addImageApiBaseLabel" placeholder="标签/备注（可选，如 我的代理）">
+          <div class="add-model-form-actions">
+            <button type="button" class="btn-primary" id="confirmAddImageApiBaseBtn">确认添加</button>
+            <button type="button" class="btn-cancel" id="cancelAddImageApiBaseBtn">取消</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="form-group" id="imageApiKeyGroup" style="display:none;">

@@ -12,6 +12,20 @@ export const PRESET_MODELS = [
 // 图像识别模型完全由用户自定义，无预设模型
 export const PRESET_IMAGE_MODELS = [];
 
+// 预设 API Base URL 列表
+export const PRESET_API_BASES = [
+  'https://api.deepseek.com',
+  'https://api.openai.com/v1',
+  'https://api.anthropic.com/v1',
+  'https://api.moonshot.cn/v1',
+  'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  'https://api.baichuan-ai.com/v1',
+  'https://open.bigmodel.cn/api/paas/v4',
+  'https://api.siliconflow.cn/v1',
+  'https://api.lingyiwanwu.com/v1',
+  'https://ark.cn-beijing.volces.com/api/v3',
+];
+
 // 默认系统提示词
 export const DEFAULT_SYSTEM_PROMPT = `你是AI智能助手(AI Helper)，专为IT从业者（产品经理、架构师、开发工程师、测试工程师等）打造的AI技术助手。
 

@@ -370,6 +370,13 @@ textarea {
 .model-option-right .model-ctx-badge {
   margin-left: 0;
 }
+.api-base-url-hint {
+  font-size: 11px;
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .selected-ctx-badge {
   position: absolute;
   right: 36px;

@@ -2,6 +2,8 @@
 
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
+import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
+import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
 import {
   loadToolbarTools,
@@ -292,14 +294,277 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  // 图片识别 API Base 和 Token 自动保存
-  const imageApiBaseEl = document.getElementById('imageApiBase');
-  if (imageApiBaseEl) {
-    imageApiBaseEl.addEventListener('blur', function() {
-      chrome.storage.local.set({ imageApiBase: this.value.trim() });
+  // ==================== API Base URL 选择器事件 ====================
+
+  const apiBaseInput = document.getElementById('apiBase');
+  const apiBaseDropdown = document.getElementById('apiBaseDropdown');
+
+  if (apiBaseInput && apiBaseDropdown) {
+    apiBaseInput.addEventListener('click', function(e) {
+      e.stopPropagation();
+      // 点击时重置过滤状态，显示全部选项
+      apiBaseDropdown.querySelectorAll('.model-option').forEach(opt => { opt.style.display = ''; });
+      apiBaseDropdown.classList.toggle('show');
+      // 高亮当前值匹配的选项
+      const currentVal = apiBaseInput.value.trim();
+      updateApiBaseSelection(currentVal);
+    });
+
+    apiBaseDropdown.addEventListener('click', function(e) {
+      if (e.target.classList.contains('delete-model-btn')) {
+        e.stopPropagation();
+        const option = e.target.closest('.model-option');
+        const value = option.dataset.value;
+        removeApiBase(value);
+        return;
+      }
+      const option = e.target.closest('.model-option');
+      if (option) {
+        e.stopPropagation();
+        const value = option.dataset.value;
+        apiBaseInput.value = value;
+        updateApiBaseSelection(value);
+        apiBaseDropdown.classList.remove('show');
+        // 自动保存
+        chrome.storage.local.set({ apiBase: value });
+        showToast('✅ API Base URL 已切换，请确保 API Key 对应有效', 'info');
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!apiBaseDropdown.contains(e.target) && e.target !== apiBaseInput) {
+        apiBaseDropdown.classList.remove('show');
+      }
+    });
+
+    // 手动输入后失去焦点时自动保存并添加到下拉
+    apiBaseInput.addEventListener('blur', function() {
+      const val = this.value.trim();
+      if (val) {
+        chrome.storage.local.set({ apiBase: val });
+        addCustomApiBase(val);
+        updateApiBaseSelection(val);
+      }
+    });
+
+    // 输入时实时过滤下拉选项
+    apiBaseInput.addEventListener('input', function() {
+      const searchText = this.value.trim().toLowerCase();
+      apiBaseDropdown.classList.add('show');
+      const options = apiBaseDropdown.querySelectorAll('.model-option');
+      let hasMatch = false;
+      options.forEach(opt => {
+        const url = (opt.dataset.value || '').toLowerCase();
+        const label = (opt.dataset.label || '').toLowerCase();
+        if (!searchText || url.includes(searchText) || label.includes(searchText)) {
+          opt.style.display = '';
+          hasMatch = true;
+        } else {
+          opt.style.display = 'none';
+        }
+      });
+      // 如果输入内容无匹配且非空，显示所有（方便手动输入新地址）
+      if (!hasMatch && searchText) {
+        options.forEach(opt => { opt.style.display = ''; });
+      }
     });
   }
 
+  // ==================== API Base 添加表单事件 ====================
+
+  const addApiBaseToggleBtn = document.getElementById('addApiBaseToggleBtn');
+  const addApiBaseForm = document.getElementById('addApiBaseForm');
+  const addApiBaseUrl = document.getElementById('addApiBaseUrl');
+  const addApiBaseLabel = document.getElementById('addApiBaseLabel');
+  const confirmAddApiBaseBtn = document.getElementById('confirmAddApiBaseBtn');
+  const cancelAddApiBaseBtn = document.getElementById('cancelAddApiBaseBtn');
+
+  if (addApiBaseToggleBtn && addApiBaseForm) {
+    addApiBaseToggleBtn.addEventListener('click', function() {
+      const isVisible = addApiBaseForm.style.display !== 'none';
+      addApiBaseForm.style.display = isVisible ? 'none' : '';
+      addApiBaseToggleBtn.textContent = isVisible ? '+ 添加地址' : '− 收起';
+      if (!isVisible) {
+        addApiBaseUrl.value = '';
+        addApiBaseLabel.value = '';
+        addApiBaseUrl.focus();
+      }
+    });
+
+    cancelAddApiBaseBtn.addEventListener('click', function() {
+      addApiBaseForm.style.display = 'none';
+      addApiBaseToggleBtn.textContent = '+ 添加地址';
+      addApiBaseUrl.value = '';
+      addApiBaseLabel.value = '';
+    });
+
+    confirmAddApiBaseBtn.addEventListener('click', function() {
+      const url = addApiBaseUrl.value.trim();
+      const label = addApiBaseLabel.value.trim();
+      if (!url) {
+        showToast('❌ 请输入 API Base URL', 'error');
+        return;
+      }
+      // 简单校验 URL 格式
+      try {
+        new URL(url);
+      } catch {
+        showToast('❌ URL 格式不正确', 'error');
+        return;
+      }
+      addCustomApiBase(url, label);
+      apiBaseInput.value = url;
+      updateApiBaseSelection(url);
+      chrome.storage.local.set({ apiBase: url });
+      addApiBaseForm.style.display = 'none';
+      addApiBaseToggleBtn.textContent = '+ 添加地址';
+      addApiBaseUrl.value = '';
+      addApiBaseLabel.value = '';
+      showToast('✅ API Base URL 已添加', 'success');
+    });
+
+    // 回车键确认添加
+    addApiBaseUrl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') confirmAddApiBaseBtn.click();
+    });
+    addApiBaseLabel.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') confirmAddApiBaseBtn.click();
+    });
+  }
+
+  // ==================== 图片 API Base URL 选择器事件 ====================
+
+  const imageApiBaseInput = document.getElementById('imageApiBase');
+  const imageApiBaseDropdown = document.getElementById('imageApiBaseDropdown');
+
+  if (imageApiBaseInput && imageApiBaseDropdown) {
+    imageApiBaseInput.addEventListener('click', function(e) {
+      e.stopPropagation();
+      // 点击时重置过滤状态，显示全部选项
+      imageApiBaseDropdown.querySelectorAll('.model-option').forEach(opt => { opt.style.display = ''; });
+      imageApiBaseDropdown.classList.toggle('show');
+      const currentVal = imageApiBaseInput.value.trim();
+      updateImageApiBaseSelection(currentVal);
+    });
+
+    imageApiBaseDropdown.addEventListener('click', function(e) {
+      if (e.target.classList.contains('delete-model-btn')) {
+        e.stopPropagation();
+        const option = e.target.closest('.model-option');
+        const value = option.dataset.value;
+        removeImageApiBase(value);
+        return;
+      }
+      const option = e.target.closest('.model-option');
+      if (option) {
+        e.stopPropagation();
+        const value = option.dataset.value;
+        imageApiBaseInput.value = value;
+        updateImageApiBaseSelection(value);
+        imageApiBaseDropdown.classList.remove('show');
+        chrome.storage.local.set({ imageApiBase: value });
+        showToast('✅ 图片 API Base URL 已切换', 'info');
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!imageApiBaseDropdown.contains(e.target) && e.target !== imageApiBaseInput) {
+        imageApiBaseDropdown.classList.remove('show');
+      }
+    });
+
+    imageApiBaseInput.addEventListener('blur', function() {
+      const val = this.value.trim();
+      if (val) {
+        chrome.storage.local.set({ imageApiBase: val });
+        addCustomImageApiBase(val);
+        updateImageApiBaseSelection(val);
+      }
+    });
+
+    // 输入时实时过滤下拉选项
+    imageApiBaseInput.addEventListener('input', function() {
+      const searchText = this.value.trim().toLowerCase();
+      imageApiBaseDropdown.classList.add('show');
+      const options = imageApiBaseDropdown.querySelectorAll('.model-option');
+      let hasMatch = false;
+      options.forEach(opt => {
+        const url = (opt.dataset.value || '').toLowerCase();
+        const label = (opt.dataset.label || '').toLowerCase();
+        if (!searchText || url.includes(searchText) || label.includes(searchText)) {
+          opt.style.display = '';
+          hasMatch = true;
+        } else {
+          opt.style.display = 'none';
+        }
+      });
+      if (!hasMatch && searchText) {
+        options.forEach(opt => { opt.style.display = ''; });
+      }
+    });
+  }
+
+  // ==================== 图片 API Base 添加表单事件 ====================
+
+  const addImageApiBaseToggleBtn = document.getElementById('addImageApiBaseToggleBtn');
+  const addImageApiBaseForm = document.getElementById('addImageApiBaseForm');
+  const addImageApiBaseUrl = document.getElementById('addImageApiBaseUrl');
+  const addImageApiBaseLabel = document.getElementById('addImageApiBaseLabel');
+  const confirmAddImageApiBaseBtn = document.getElementById('confirmAddImageApiBaseBtn');
+  const cancelAddImageApiBaseBtn = document.getElementById('cancelAddImageApiBaseBtn');
+
+  if (addImageApiBaseToggleBtn && addImageApiBaseForm) {
+    addImageApiBaseToggleBtn.addEventListener('click', function() {
+      const isVisible = addImageApiBaseForm.style.display !== 'none';
+      addImageApiBaseForm.style.display = isVisible ? 'none' : '';
+      addImageApiBaseToggleBtn.textContent = isVisible ? '+ 添加地址' : '− 收起';
+      if (!isVisible) {
+        addImageApiBaseUrl.value = '';
+        addImageApiBaseLabel.value = '';
+        addImageApiBaseUrl.focus();
+      }
+    });
+
+    cancelAddImageApiBaseBtn.addEventListener('click', function() {
+      addImageApiBaseForm.style.display = 'none';
+      addImageApiBaseToggleBtn.textContent = '+ 添加地址';
+      addImageApiBaseUrl.value = '';
+      addImageApiBaseLabel.value = '';
+    });
+
+    confirmAddImageApiBaseBtn.addEventListener('click', function() {
+      const url = addImageApiBaseUrl.value.trim();
+      const label = addImageApiBaseLabel.value.trim();
+      if (!url) {
+        showToast('❌ 请输入 API Base URL', 'error');
+        return;
+      }
+      try {
+        new URL(url);
+      } catch {
+        showToast('❌ URL 格式不正确', 'error');
+        return;
+      }
+      addCustomImageApiBase(url, label);
+      imageApiBaseInput.value = url;
+      updateImageApiBaseSelection(url);
+      chrome.storage.local.set({ imageApiBase: url });
+      addImageApiBaseForm.style.display = 'none';
+      addImageApiBaseToggleBtn.textContent = '+ 添加地址';
+      addImageApiBaseUrl.value = '';
+      addImageApiBaseLabel.value = '';
+      showToast('✅ 图片 API Base URL 已添加', 'success');
+    });
+
+    addImageApiBaseUrl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') confirmAddImageApiBaseBtn.click();
+    });
+    addImageApiBaseLabel.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') confirmAddImageApiBaseBtn.click();
+    });
+  }
+
+  // 图片识别 API Key 自动保存
   const imageApiKeyEl = document.getElementById('imageApiKey');
   const toggleImageApiKeyBtn = document.getElementById('toggleImageApiKeyBtn');
   if (imageApiKeyEl) {

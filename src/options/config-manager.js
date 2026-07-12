@@ -1,6 +1,6 @@
 // options/config-manager.js - 配置管理与状态
 
-import { PRESET_MODELS, PRESET_IMAGE_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -616,6 +616,341 @@ export function updateImageModelSelection(selectedValue) {
   updateSelectedCtxBadge('imageModelInput', 'imageModelSelectedCtxBadge', 'imageModelDropdown');
 }
 
+// ============================================================
+// API Base URL 管理（预设 + 用户自定义，支持增删改）
+// ============================================================
+
+// 已被用户删除的预设 API Base URL 列表
+let deletedPresetApiBases = [];
+
+/**
+ * 构建单个 API Base 选项 DOM 元素
+ */
+function buildApiBaseOption(url, label, isCustom) {
+  const option = document.createElement('div');
+  option.className = 'model-option';
+  option.dataset.value = url;
+  if (label) option.dataset.label = label;
+  if (isCustom) option.dataset.isCustom = 'true';
+
+  const leftSpan = document.createElement('span');
+  leftSpan.className = 'model-option-left';
+  leftSpan.textContent = label || url;
+  option.appendChild(leftSpan);
+
+  const rightSpan = document.createElement('span');
+  rightSpan.className = 'model-option-right';
+
+  // 如果有标签，显示简短 URL 作为辅助信息
+  if (label) {
+    const urlHint = document.createElement('span');
+    urlHint.className = 'api-base-url-hint';
+    urlHint.textContent = url.length > 50 ? url.substring(0, 47) + '...' : url;
+    rightSpan.appendChild(urlHint);
+  }
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'delete-model-btn';
+  deleteBtn.title = '删除此地址';
+  deleteBtn.innerHTML = '×';
+  deleteBtn.style.display = 'inline-block';
+  rightSpan.appendChild(deleteBtn);
+  option.appendChild(rightSpan);
+
+  return option;
+}
+
+/**
+ * 添加 API Base URL 到下拉列表
+ */
+export function addCustomApiBase(url, label) {
+  const dropdown = document.getElementById('apiBaseDropdown');
+  if (!dropdown) return;
+
+  // 检查是否已存在
+  const existing = dropdown.querySelector(`.model-option[data-value="${CSS.escape(url)}"]`);
+  if (existing) {
+    // 更新 label
+    if (label) {
+      existing.dataset.label = label;
+      const leftSpan = existing.querySelector('.model-option-left');
+      if (leftSpan) leftSpan.textContent = label;
+    }
+    saveApiBases();
+    return;
+  }
+
+  // 如果之前被删过，从删除列表移除
+  if (PRESET_API_BASES.includes(url) && deletedPresetApiBases.includes(url)) {
+    deletedPresetApiBases = deletedPresetApiBases.filter(u => u !== url);
+  }
+
+  const isCustom = !PRESET_API_BASES.includes(url);
+  const option = buildApiBaseOption(url, label, isCustom);
+  dropdown.appendChild(option);
+
+  saveApiBases();
+}
+
+/**
+ * 从下拉列表移除 API Base URL
+ */
+export function removeApiBase(url) {
+  const dropdown = document.getElementById('apiBaseDropdown');
+  if (!dropdown) return;
+
+  const option = dropdown.querySelector(`.model-option[data-value="${CSS.escape(url)}"]`);
+  if (option) option.remove();
+
+  // 如果是预设，记录到删除列表
+  if (PRESET_API_BASES.includes(url) && !deletedPresetApiBases.includes(url)) {
+    deletedPresetApiBases.push(url);
+  }
+
+  // 如果当前选中的是被删除的 URL，清空输入框
+  const apiBaseInput = document.getElementById('apiBase');
+  if (apiBaseInput && apiBaseInput.value.trim() === url) {
+    apiBaseInput.value = '';
+  }
+
+  saveApiBases();
+}
+
+/**
+ * 保存 API Base URL 列表到存储
+ */
+export function saveApiBases() {
+  const dropdown = document.getElementById('apiBaseDropdown');
+  if (!dropdown) return;
+
+  const customBases = [];
+  dropdown.querySelectorAll('.model-option[data-is-custom="true"]').forEach(opt => {
+    customBases.push({
+      url: opt.dataset.value,
+      label: opt.dataset.label || ''
+    });
+  });
+
+  chrome.storage.local.set({
+    customApiBases: customBases,
+    deletedPresetApiBases
+  }, () => {
+    console.log('[Options] API Base URL 列表已保存:', customBases, '已删除预设:', deletedPresetApiBases);
+  });
+}
+
+/**
+ * 从存储加载 API Base URL 列表到下拉
+ */
+export function loadApiBases(callback) {
+  chrome.storage.local.get(['customApiBases', 'deletedPresetApiBases'], (result) => {
+    const dropdown = document.getElementById('apiBaseDropdown');
+    if (!dropdown) {
+      if (typeof callback === 'function') callback();
+      return;
+    }
+
+    deletedPresetApiBases = result.deletedPresetApiBases || [];
+    const customBases = result.customApiBases || [];
+
+    // 清空现有选项
+    dropdown.innerHTML = '';
+
+    // 先渲染预设（未被删除的）
+    PRESET_API_BASES.forEach(url => {
+      if (!deletedPresetApiBases.includes(url)) {
+        const option = buildApiBaseOption(url, null, false);
+        dropdown.appendChild(option);
+      }
+    });
+
+    // 再渲染用户自定义
+    customBases.forEach(item => {
+      if (typeof item === 'string') {
+        // 旧格式兼容
+        if (!PRESET_API_BASES.includes(item)) {
+          const option = buildApiBaseOption(item, null, true);
+          dropdown.appendChild(option);
+        }
+      } else if (item && item.url) {
+        const option = buildApiBaseOption(item.url, item.label || null, true);
+        dropdown.appendChild(option);
+      }
+    });
+
+    if (typeof callback === 'function') callback();
+  });
+}
+
+/**
+ * 更新 API Base 下拉选中状态
+ */
+export function updateApiBaseSelection(url) {
+  const dropdown = document.getElementById('apiBaseDropdown');
+  if (!dropdown) return;
+  dropdown.querySelectorAll('.model-option').forEach(opt => {
+    if (opt.dataset.value === url) {
+      opt.classList.add('selected');
+    } else {
+      opt.classList.remove('selected');
+    }
+  });
+}
+
+// ============================================================
+// 图片识别 API Base URL 管理（复用 PRESET_API_BASES，独立存储）
+// ============================================================
+
+let deletedPresetImageApiBases = [];
+
+function buildImageApiBaseOption(url, label, isCustom) {
+  const option = document.createElement('div');
+  option.className = 'model-option';
+  option.dataset.value = url;
+  if (label) option.dataset.label = label;
+  if (isCustom) option.dataset.isCustom = 'true';
+
+  const leftSpan = document.createElement('span');
+  leftSpan.className = 'model-option-left';
+  leftSpan.textContent = label || url;
+  option.appendChild(leftSpan);
+
+  const rightSpan = document.createElement('span');
+  rightSpan.className = 'model-option-right';
+
+  if (label) {
+    const urlHint = document.createElement('span');
+    urlHint.className = 'api-base-url-hint';
+    urlHint.textContent = url.length > 50 ? url.substring(0, 47) + '...' : url;
+    rightSpan.appendChild(urlHint);
+  }
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'delete-model-btn';
+  deleteBtn.title = '删除此地址';
+  deleteBtn.innerHTML = '×';
+  deleteBtn.style.display = 'inline-block';
+  rightSpan.appendChild(deleteBtn);
+  option.appendChild(rightSpan);
+
+  return option;
+}
+
+export function addCustomImageApiBase(url, label) {
+  const dropdown = document.getElementById('imageApiBaseDropdown');
+  if (!dropdown) return;
+
+  const existing = dropdown.querySelector(`.model-option[data-value="${CSS.escape(url)}"]`);
+  if (existing) {
+    if (label) {
+      existing.dataset.label = label;
+      const leftSpan = existing.querySelector('.model-option-left');
+      if (leftSpan) leftSpan.textContent = label;
+    }
+    saveImageApiBases();
+    return;
+  }
+
+  if (PRESET_API_BASES.includes(url) && deletedPresetImageApiBases.includes(url)) {
+    deletedPresetImageApiBases = deletedPresetImageApiBases.filter(u => u !== url);
+  }
+
+  const isCustom = !PRESET_API_BASES.includes(url);
+  const option = buildImageApiBaseOption(url, label, isCustom);
+  dropdown.appendChild(option);
+
+  saveImageApiBases();
+}
+
+export function removeImageApiBase(url) {
+  const dropdown = document.getElementById('imageApiBaseDropdown');
+  if (!dropdown) return;
+
+  const option = dropdown.querySelector(`.model-option[data-value="${CSS.escape(url)}"]`);
+  if (option) option.remove();
+
+  if (PRESET_API_BASES.includes(url) && !deletedPresetImageApiBases.includes(url)) {
+    deletedPresetImageApiBases.push(url);
+  }
+
+  const input = document.getElementById('imageApiBase');
+  if (input && input.value.trim() === url) {
+    input.value = '';
+  }
+
+  saveImageApiBases();
+}
+
+export function saveImageApiBases() {
+  const dropdown = document.getElementById('imageApiBaseDropdown');
+  if (!dropdown) return;
+
+  const customBases = [];
+  dropdown.querySelectorAll('.model-option[data-is-custom="true"]').forEach(opt => {
+    customBases.push({
+      url: opt.dataset.value,
+      label: opt.dataset.label || ''
+    });
+  });
+
+  chrome.storage.local.set({
+    customImageApiBases: customBases,
+    deletedPresetImageApiBases
+  }, () => {
+    console.log('[Options] 图片 API Base URL 列表已保存:', customBases);
+  });
+}
+
+export function loadImageApiBases(callback) {
+  chrome.storage.local.get(['customImageApiBases', 'deletedPresetImageApiBases'], (result) => {
+    const dropdown = document.getElementById('imageApiBaseDropdown');
+    if (!dropdown) {
+      if (typeof callback === 'function') callback();
+      return;
+    }
+
+    deletedPresetImageApiBases = result.deletedPresetImageApiBases || [];
+    const customBases = result.customImageApiBases || [];
+
+    dropdown.innerHTML = '';
+
+    PRESET_API_BASES.forEach(url => {
+      if (!deletedPresetImageApiBases.includes(url)) {
+        const option = buildImageApiBaseOption(url, null, false);
+        dropdown.appendChild(option);
+      }
+    });
+
+    customBases.forEach(item => {
+      if (typeof item === 'string') {
+        if (!PRESET_API_BASES.includes(item)) {
+          const option = buildImageApiBaseOption(item, null, true);
+          dropdown.appendChild(option);
+        }
+      } else if (item && item.url) {
+        const option = buildImageApiBaseOption(item.url, item.label || null, true);
+        dropdown.appendChild(option);
+      }
+    });
+
+    if (typeof callback === 'function') callback();
+  });
+}
+
+export function updateImageApiBaseSelection(url) {
+  const dropdown = document.getElementById('imageApiBaseDropdown');
+  if (!dropdown) return;
+  dropdown.querySelectorAll('.model-option').forEach(opt => {
+    if (opt.dataset.value === url) {
+      opt.classList.add('selected');
+    } else {
+      opt.classList.remove('selected');
+    }
+  });
+}
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([
@@ -758,6 +1093,20 @@ export function loadConfig() {
     loadImageModels(() => {
       if (result.imageModelName) {
         updateImageModelSelection(result.imageModelName);
+      }
+    });
+
+    // 加载 API Base URL 列表
+    loadApiBases(() => {
+      if (result.apiBase) {
+        updateApiBaseSelection(result.apiBase);
+      }
+    });
+
+    // 加载图片识别 API Base URL 列表
+    loadImageApiBases(() => {
+      if (result.imageApiBase) {
+        updateImageApiBaseSelection(result.imageApiBase);
       }
     });
   });
