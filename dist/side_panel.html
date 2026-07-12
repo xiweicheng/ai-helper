@@ -214,7 +214,7 @@
         <!-- 工具列表由 JS 动态生成 -->
       </div>
       <div class="modal-actions">
-        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="启用：任务执行前先调用模型筛选相关工具，减少无关工具干扰，但会增加一次 API 调用&#10;关闭：全部启用工具直接传给模型，无额外 API 开销，工具过多时可能影响准确性">
+        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token，也可能让模型看花了眼，反而选错">
           <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
           <span class="toggle-switch"></span>
           <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;">工具预筛选</span>
