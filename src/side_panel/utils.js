@@ -281,8 +281,8 @@ ${subAgentList}`;
    - 提供完整的子任务列表，包含ID、名称、描述、依赖和所需工具
    - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）` : '';
 
-  // 长期记忆规则——仅在启用工具、记忆开关开启且 Agent 已连接时注入
-  const memoryRules = (state.useTools && state.isolateChat && state.agentPlatform?.connected) ? `
+  // 长期记忆规则——仅在启用工具且 Agent 已连接时注入
+  const memoryRules = (state.useTools && state.agentPlatform?.connected) ? `
 
 ## 长期记忆系统
 你拥有长期记忆能力，可以将重要信息持久化存储，在未来的对话中召回使用。

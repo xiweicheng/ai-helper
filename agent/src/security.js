@@ -2,7 +2,7 @@
 import { resolve, normalize, sep, isAbsolute, join, dirname } from 'path';
 import { realpathSync } from 'fs';
 import { homedir, platform } from 'os';
-import { loadConfig } from './config.js';
+import { loadConfig, MEMORY_DIR } from './config.js';
 
 const isWin32 = platform() === 'win32';
 
@@ -60,6 +60,13 @@ function checkPath(pathStr) {
     return { allowed: false, reason: '路径无效' };
   }
 
+  // 展开 ~ 到用户主目录（扩展端无法知道 Agent 所在机器的 home 路径）
+  if (pathStr === '~') {
+    pathStr = homedir();
+  } else if (pathStr.startsWith('~/')) {
+    pathStr = join(homedir(), pathStr.slice(2));
+  }
+
   try {
     const config = loadConfig();
 
@@ -72,6 +79,12 @@ function checkPath(pathStr) {
     // 0. 硬阻止检查（优先级最高，不可绕过）
     if (isHardBlocked(normalized)) {
       return { allowed: false, reason: '禁止访问代理系统文件' };
+    }
+
+    // 0.5. 系统目录白名单：记忆存储目录（Agent 内部管理，可读写）
+    const memoryPrefix = normalize(join(MEMORY_DIR, sep));
+    if (normalized.startsWith(memoryPrefix) || normalized === normalize(MEMORY_DIR)) {
+      return { allowed: true, resolved: normalized };
     }
 
     const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths.map(p => normalizePathFormat(p)) : [normalizedWorkdir];

@@ -2979,7 +2979,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     };
 
     const listener = (message) => {
-      console.log('[SidePanel] 收到消息:', message);
+      // console.log('[SidePanel] 收到消息:', message);
       
       // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
       // 使用捕获的 mySessionId 而非 state.activeSessionId，确保切换会话后仍能收到本会话的响应

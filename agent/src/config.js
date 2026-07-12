@@ -8,6 +8,7 @@ const CONFIG_FILE = join(AGENT_DIR, 'config.json');
 const PAIRINGS_FILE = join(AGENT_DIR, 'pairings.json');
 const SKILLS_DIR = join(AGENT_DIR, 'skills');
 const WORKSPACE_DIR = join(AGENT_DIR, 'workspace');
+const MEMORY_DIR = join(AGENT_DIR, 'memory');
 
 const DEFAULTS = {
   port: 18910,
@@ -44,8 +45,8 @@ function ensureAgentDir() {
     if (!existsSync(AGENT_DIR)) {
       mkdirSync(AGENT_DIR, { recursive: true });
     }
-    // 确保 skills 和 workspace 子目录存在
-    for (const dir of [SKILLS_DIR, WORKSPACE_DIR]) {
+    // 确保 skills、workspace 和 memory 子目录存在
+    for (const dir of [SKILLS_DIR, WORKSPACE_DIR, MEMORY_DIR]) {
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
       }
@@ -198,4 +199,4 @@ export async function savePairing(extensionId, token) {
   });
 }
 
-export { AGENT_DIR, CONFIG_FILE };
+export { AGENT_DIR, CONFIG_FILE, MEMORY_DIR };

@@ -3424,7 +3424,8 @@ export async function executePasteFromClipboard(args, toolCallId) {
 // ==================== 长期记忆工具 ====================
 
 // 记忆文件路径（相对于 Agent 工作目录）
-const MEMORY_FILE_PATH = 'memory/global-memory.json';
+// 记忆文件存储在 Agent 配置目录下，通过 ~ 指向用户主目录与工作目录隔离
+const MEMORY_FILE_PATH = '~/.ai-helper-agent/memory/global-memory.json';
 const DEFAULT_MEMORY_DATA = {
   version: 1,
   updatedAt: new Date().toISOString(),

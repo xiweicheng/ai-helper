@@ -1,5 +1,5 @@
 // memory-tools - 长期记忆工具定义
-// 记忆文件路径：相对于 Agent 工作目录的 config/memory/global-memory.json
+// 记忆文件路径：~/.ai-helper-agent/memory/global-memory.json（Agent 系统配置目录）
 // 实际存储于 Agent 本地文件系统，通过 agent_read_file / agent_write_file 读写
 
 export const MEMORY_TOOLS = [
