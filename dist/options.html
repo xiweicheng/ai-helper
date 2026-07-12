@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Helper - 配置</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-BhkOd2Xb.js"></script>
+  <script type="module" crossorigin src="/assets/constants-L9mDXmaP.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/options-CwqJTfIC.css">
 </head>
@@ -36,7 +36,6 @@
 
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic">基础</button>
-      <button class="tab-nav-btn" data-tab="chat">对话</button>
       <button class="tab-nav-btn" data-tab="react">推理</button>
       <button class="tab-nav-btn" data-tab="reflection">反思</button>
       <button class="tab-nav-btn" data-tab="toolbar">划词</button>
@@ -168,65 +167,6 @@
     </div>
 
     </div><!-- /tab-basic -->
-
-    <!-- 对话配置区域 -->
-    <div class="tab-panel" data-tab="chat">
-    <div class="chat-config">
-      <h2>💬 对话配置</h2>
-      <p class="subtitle">控制对话历史和消息存储的行为参数</p>
-      
-      <div class="chat-config-item">
-        <label>
-          最大输入历史记录数
-          <span class="hint-text">（保存的用户输入历史条数）</span>
-        </label>
-        <input type="number" id="chatMaxInputHistory" min="10" max="100" value="20" placeholder="20">
-        <span class="unit">条</span>
-        <div class="range-labels">
-          <span>最小: 10</span>
-          <span>最大: 100</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          最大保留对话轮数
-          <span class="hint-text">（对话历史中保留的最大消息对数）</span>
-        </label>
-        <input type="number" id="chatMaxHistoryMessages" min="10" max="200" value="50" placeholder="50">
-        <span class="unit">轮</span>
-        <div class="range-labels">
-          <span>最小: 10</span>
-          <span>最大: 200</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          记忆历史限制条数
-          <span class="hint-text">（调用大模型时携带的最近记忆条数，需启用记忆才生效；置空表示不限制）</span>
-        </label>
-        <input type="number" id="chatMaxMemoryMessages" min="1" max="400" placeholder="不限制">
-        <span class="unit">条</span>
-        <div class="range-labels">
-          <span>最小: 1</span>
-          <span>最大: 400</span>
-        </div>
-      </div>
-      
-      
-      <div class="info-box" style="margin-top: 15px;">
-        <h3>💡 配置说明</h3>
-        <p>
-          <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
-          • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
-          • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
-          • <strong>上下文窗口</strong>：可在添加自定义模型时单独设置，或由系统根据模型名自动推断<br>
-          • 建议根据实际需求平衡存储成本和使用体验
-        </p>
-      </div>
-    </div>
-    </div><!-- /tab-chat -->
 
     <!-- ReAct 配置区域 -->
     <div class="tab-panel" data-tab="react">

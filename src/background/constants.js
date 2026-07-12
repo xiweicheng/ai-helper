@@ -59,8 +59,6 @@ export const DEFAULT_STREAM_CONFIG = {
 
 // 对话配置默认值
 export const DEFAULT_CHAT_CONFIG = {
-  maxInputHistory: 20,        // 最大输入历史记录数 (10-100)
-  maxHistoryMessages: 50,     // 最大保留对话轮数 (10-200)
   maxMemoryMessages: 20       // 记忆历史限制条数，默认20条
 };
 

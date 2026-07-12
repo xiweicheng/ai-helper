@@ -106,9 +106,7 @@ export async function saveCurrentSession() {
   currentSession.temperature = state.temperature;
   currentSession.topP = state.topP;
 
-  // 裁剪消息历史（仅限制消息条数，不再截断单条消息内容）
-  const maxMessages = state.chatConfig.maxHistoryMessages || 50;
-  currentSession.messageHistory = state.messageHistory.slice(-maxMessages).map((msg) => ({
+  currentSession.messageHistory = state.messageHistory.map((msg) => ({
     role: msg.role,
     content: msg.content || '',
     executionLog: msg.executionLog || [],

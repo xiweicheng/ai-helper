@@ -624,7 +624,7 @@ export function loadConfig() {
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
-    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMemoryMessages', 'enableExecutionLog',
+    'enableExecutionLog',
     'reflectionConfig',
     'streamEnabled', 'streamChunkDelay'
   ], function(result) {
@@ -708,13 +708,7 @@ export function loadConfig() {
     document.getElementById('toolConfirmationEnabled').dispatchEvent(new Event('change'));
 
     // 加载对话配置
-    document.getElementById('chatMaxInputHistory').value = 
-      result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory;
-    document.getElementById('chatMaxHistoryMessages').value = 
-      result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages;
-    if (result.chatMaxMemoryMessages !== undefined && result.chatMaxMemoryMessages !== null) {
-      document.getElementById('chatMaxMemoryMessages').value = result.chatMaxMemoryMessages;
-    }
+
     
     // 加载执行日志配置
     document.getElementById('enableExecutionLog').checked = 
@@ -824,11 +818,6 @@ export function saveConfig() {
   const preselectMinToolCount = parseInt(document.getElementById('preselectMinToolCount').value) || DEFAULT_REACT_CONFIG.preselectMinToolCount;
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   
-  // 获取对话配置
-  const chatMaxInputHistory = parseInt(document.getElementById('chatMaxInputHistory').value) || DEFAULT_CHAT_CONFIG.maxInputHistory;
-  const chatMaxHistoryMessages = parseInt(document.getElementById('chatMaxHistoryMessages').value) || DEFAULT_CHAT_CONFIG.maxHistoryMessages;
-  const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
-  const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
 
   // 获取流式输出配置
@@ -938,20 +927,6 @@ export function saveConfig() {
     return;
   }
   
-  // 验证对话配置范围
-  if (chatMaxInputHistory < 10 || chatMaxInputHistory > 100) {
-    showToast('❌ 最大输入历史记录数必须在 10-100 之间', 'error');
-    return;
-  }
-  if (chatMaxHistoryMessages < 10 || chatMaxHistoryMessages > 200) {
-    showToast('❌ 最大保留对话轮数必须在 10-200 之间', 'error');
-    return;
-  }
-  if (chatMaxMemoryMessages !== null && (chatMaxMemoryMessages < 1 || chatMaxMemoryMessages > 400)) {
-    showToast('❌ 记忆历史限制条数必须在 1-400 之间或置空', 'error');
-    return;
-  }
-  
   // API Base URL 有默认值
   if (!apiBase) {
     apiBase = 'https://api.deepseek.com';
@@ -980,10 +955,6 @@ export function saveConfig() {
     enableToolPreselect: enableToolPreselect,
     preselectMinToolCount: preselectMinToolCount,
     toolConfirmationEnabled: toolConfirmationEnabled,
-    // 对话配置
-    chatMaxInputHistory: chatMaxInputHistory,
-    chatMaxHistoryMessages: chatMaxHistoryMessages,
-    chatMaxMemoryMessages: chatMaxMemoryMessages,
     enableExecutionLog: enableExecutionLog,
     // 图片识别配置
     enableImageInput: enableImageInput,
@@ -1036,11 +1007,6 @@ export function saveConfig() {
         enableToolPreselect: enableToolPreselect,
         preselectMinToolCount: preselectMinToolCount,
         toolConfirmationEnabled: toolConfirmationEnabled
-      }, {
-        maxInputHistory: chatMaxInputHistory,
-        maxHistoryMessages: chatMaxHistoryMessages,
-        maxMemoryMessages: chatMaxMemoryMessages,
-        enableExecutionLog: enableExecutionLog
       }, reflectionConfig, agentConfig, { streamEnabled, streamChunkDelay });
     }
   });
@@ -1094,12 +1060,11 @@ export function initStatus() {
 }
 
 // 更新配置详情显示
-export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig, reflectionConfig, agentConfig, streamConfig) {
+export function updateConfigDetails(apiBase, modelName, reactConfig, reflectionConfig, agentConfig, streamConfig) {
   const details = document.getElementById('configDetails');
   const base = apiBase || 'https://api.deepseek.com';
   const model = modelName || 'deepseek-v4-pro';
   const react = reactConfig || DEFAULT_REACT_CONFIG;
-  const chat = chatConfig || DEFAULT_CHAT_CONFIG;
   const reflection = reflectionConfig || DEFAULT_REFLECTION_CONFIG;
   const stream = streamConfig || { streamEnabled: true, streamChunkDelay: 30 };
   
@@ -1151,11 +1116,6 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     &nbsp;&nbsp;温度系数: ${reflection.subtaskReflection?.temperature ?? '-'}<br>
     &nbsp;&nbsp;最大 Token: ${reflection.subtaskReflection?.maxTokens ?? '-'}<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>对话配置：</strong><br>
-    输入历史记录数: ${chat.maxInputHistory} 条<br>
-    最大对话轮数: ${chat.maxHistoryMessages} 轮<br>
-    记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
-    执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
     <strong>代理配置：</strong><br>
     代理地址: ${agentConfig.url || '未配置'}<br>

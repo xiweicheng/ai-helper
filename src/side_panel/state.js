@@ -48,8 +48,6 @@ export let agentPlatform = {
 
 // 配置常量 - 从 storage 获取，使用默认值作为后备
 export let chatConfig = {
-  maxInputHistory: 20,
-  maxHistoryMessages: 50,
   maxMemoryMessages: 20,
   enableExecutionLog: false
 };

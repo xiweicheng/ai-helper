@@ -1,11 +1,5 @@
 // config/constants.js - Configuration constants
 
-export const CHAT_CONFIG_KEYS = {
-  MAX_INPUT_HISTORY: 'chatMaxInputHistory',
-  MAX_HISTORY_MESSAGES: 'chatMaxHistoryMessages',
-  MAX_MEMORY_MESSAGES: 'chatMaxMemoryMessages',
-};
-
 export const REACT_CONFIG_KEYS = {
   MAX_ITERATIONS: 'reactMaxIterations',
   API_TIMEOUT: 'reactApiTimeout',
@@ -49,8 +43,3 @@ export const TOAST_TYPES = {
   INFO: 'info',
 };
 
-export const STORAGE_CHANGE_EVENTS = {
-  MODEL_NAME: 'modelName',
-  CUSTOM_MODELS: 'customModels',
-  CHAT_MAX_MEMORY_MESSAGES: 'chatMaxMemoryMessages',
-};

@@ -21,7 +21,7 @@ export function addToInputHistory(text) {
   state.inputHistory.push(trimmedText);
   
   // 限制历史记录数量，超过时移除最旧的（数组开头）
-  if (state.inputHistory.length > state.chatConfig.maxInputHistory) {
+  if (state.inputHistory.length > 20) {
     state.inputHistory.shift();
   }
   

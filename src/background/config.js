@@ -13,7 +13,6 @@ export function getStoredConfig() {
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
       'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
       'preselectMinToolCount', 'toolConfirmationEnabled',
-      'chatMaxInputHistory', 'chatMaxHistoryMessages',
       'reflectionConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
@@ -37,11 +36,6 @@ export function getStoredConfig() {
           // 反思配置（从 storage 读取，否则使用默认值）
           reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
         },
-        // 对话配置项
-        chatConfig: {
-          maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
-          maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages
-        },
         // 流式输出配置
         streamConfig: {
           streamEnabled: result.streamEnabled !== undefined ? result.streamEnabled : DEFAULT_STREAM_CONFIG.streamEnabled,
@@ -59,11 +53,9 @@ export function getStoredConfig() {
 export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels'
+      'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels'
     ], (result) => {
       resolve({
-        maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
-        maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages,
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
         enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
         customModelMap: normalizeCustomModels(result.customModels || [])
