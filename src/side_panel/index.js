@@ -973,7 +973,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.imageApiBase = result.imageApiBase || '';
     state.imageApiKey = result.imageApiKey || '';
     // 文件上传配置
-    state.enableFileInput = result.enableFileInput || false;
+    state.enableFileInput = true;
     updateImagePreviewVisibility();
     updateFileInputVisibility();
     addPromptManageButton();

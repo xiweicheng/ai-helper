@@ -2,6 +2,7 @@
 
 import { PRESET_MODELS, PRESET_IMAGE_MODELS, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 
+
 // Re-export PRESET_MODELS so index.js can use it
 export { PRESET_MODELS, PRESET_IMAGE_MODELS };
 
@@ -656,12 +657,6 @@ export function loadConfig() {
         imageApiKeyGroup.style.display = enableImageInputEl.checked ? '' : 'none';
       }
     }
-    if (result.enableFileInput !== undefined) {
-      const enableFileInputEl = document.getElementById('enableFileInput');
-      if (enableFileInputEl) {
-        enableFileInputEl.checked = result.enableFileInput;
-      }
-    }
     if (result.imageModelName) {
       setCurrentImageModel(result.imageModelName);
       const imageModelInput = document.getElementById('imageModelInput');
@@ -678,19 +673,25 @@ export function loadConfig() {
     document.getElementById('reactMaxIterations').value = 
       result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations;
     document.getElementById('reactApiTimeout').value = 
-      (result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout) / 1000;
+      Math.round((result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout) / 60000);
     document.getElementById('reactLoopTimeout').value = 
       Math.round((result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout) / 60000);
     document.getElementById('reactToolTimeout').value = 
-      Math.round((result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout) / 1000);
-    document.getElementById('enableToolPreselect').checked = 
-      result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect;
-    // 触发 change 事件，联动显示/隐藏预筛选最小工具数
-    document.getElementById('enableToolPreselect').dispatchEvent(new Event('change'));
+      Math.round((result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout) / 60000);
+    const preselectEl = document.getElementById('enableToolPreselect');
+    if (preselectEl) {
+      preselectEl.checked = 
+        result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect;
+      // 触发 change 事件，联动显示/隐藏预筛选最小工具数
+      preselectEl.dispatchEvent(new Event('change'));
+    }
     
     // 加载工具预筛选最小触发数量
-    document.getElementById('preselectMinToolCount').value = 
-      result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
+    const preselectMinEl = document.getElementById('preselectMinToolCount');
+    if (preselectMinEl) {
+      preselectMinEl.value = 
+        result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
+    }
     
     // 加载敏感操作确认开关
     document.getElementById('toolConfirmationEnabled').checked = 
@@ -770,9 +771,9 @@ export function saveConfig() {
   
   // 获取 ReAct 配置（时间单位转换）
   const reactMaxIterations = parseInt(document.getElementById('reactMaxIterations').value) || DEFAULT_REACT_CONFIG.maxIterations;
-  const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 60) * 1000;
+  const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 5) * 60000;
   const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
-  const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 30) * 1000;
+  const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
   const reactClarifyTimeout = DEFAULT_REACT_CONFIG.clarifyTimeout;
   const reactApiRetryCount = DEFAULT_REACT_CONFIG.apiRetryCount;
   const reactApiRetryBaseDelay = DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
@@ -784,11 +785,9 @@ export function saveConfig() {
 
   // 获取流式输出配置
   const streamEnabled = document.getElementById('streamEnabled')?.checked !== false;
-  const streamChunkDelay = DEFAULT_STREAM_CONFIG.streamChunkDelay;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
-  const enableFileInput = document.getElementById('enableFileInput')?.checked || false;
   const imageModelName = currentImageModel || '';
   const imageApiBase = document.getElementById('imageApiBase')?.value.trim() || '';
   const imageApiKey = document.getElementById('imageApiKey')?.value.trim() || '';
@@ -812,20 +811,20 @@ export function saveConfig() {
   };
   
   // 验证 ReAct 配置范围
-  if (reactMaxIterations < 1 || reactMaxIterations > 200) {
-    showToast('❌ 最大循环次数必须在 1-200 之间', 'error');
+  if (reactMaxIterations < 10 || reactMaxIterations > 200) {
+    showToast('❌ 最大循环次数必须在 10-200 之间', 'error');
     return;
   }
-  if (reactApiTimeout < 10000 || reactApiTimeout > 600000) {
-    showToast('❌ API 请求超时必须在 10-600 秒 之间', 'error');
+  if (reactApiTimeout < 60000 || reactApiTimeout > 600000) {
+    showToast('❌ API 请求超时必须在 1-10 分钟 之间', 'error');
     return;
   }
   if (reactLoopTimeout < 60000 || reactLoopTimeout > 3600000) {
     showToast('❌ 整体循环超时必须在 1-60 分钟 之间', 'error');
     return;
   }
-  if (reactToolTimeout < 5000 || reactToolTimeout > 1800000) {
-    showToast('❌ 工具执行超时必须在 5-1800 秒 之间', 'error');
+  if (reactToolTimeout < 60000 || reactToolTimeout > 1800000) {
+    showToast('❌ 工具执行超时必须在 1-30 分钟 之间', 'error');
     return;
   }
   
@@ -863,13 +862,10 @@ export function saveConfig() {
     imageModelName: imageModelName,
     imageApiBase: imageApiBase,
     imageApiKey: imageApiKey,
-    // 文件上传配置
-    enableFileInput: enableFileInput,
     // 反思配置
     reflectionConfig: reflectionConfig,
     // 流式输出配置
-    streamEnabled: streamEnabled,
-    streamChunkDelay: streamChunkDelay
+    streamEnabled: streamEnabled
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
@@ -897,19 +893,6 @@ export function saveConfig() {
           }
         } catch {}
       }
-
-      updateConfigDetails(apiBase, currentModel, {
-        maxIterations: reactMaxIterations,
-        apiTimeout: reactApiTimeout,
-        loopTimeout: reactLoopTimeout,
-        toolTimeout: reactToolTimeout,
-        clarifyTimeout: reactClarifyTimeout,
-        apiRetryCount: reactApiRetryCount,
-        apiRetryBaseDelay: reactApiRetryBaseDelay,
-        enableToolPreselect: enableToolPreselect,
-        preselectMinToolCount: preselectMinToolCount,
-        toolConfirmationEnabled: toolConfirmationEnabled
-      }, reflectionConfig, agentConfig, { streamEnabled, streamChunkDelay });
     }
   });
 }
@@ -955,54 +938,4 @@ export function showToast(message, type = 'info', duration = 3000) {
   }, duration);
 }
 
-// 初始化状态显示
-export function initStatus() {
-  const details = document.getElementById('configDetails');
-  details.textContent = '💡 提示：保存配置后，新配置将立即生效';
-}
 
-// 更新配置详情显示
-export function updateConfigDetails(apiBase, modelName, reactConfig, reflectionConfig, agentConfig, streamConfig) {
-  const details = document.getElementById('configDetails');
-  const base = apiBase || 'https://api.deepseek.com';
-  const model = modelName || 'deepseek-v4-pro';
-  const react = reactConfig || DEFAULT_REACT_CONFIG;
-  const reflection = reflectionConfig || DEFAULT_REFLECTION_CONFIG;
-  const stream = streamConfig || { streamEnabled: true, streamChunkDelay: 30 };
-  
-  const formatTime = (ms) => {
-    if (ms >= 60000) {
-      return `${Math.round(ms / 60000)}分钟`;
-    }
-    return `${Math.round(ms / 1000)}秒`;
-  };
-  
-  details.innerHTML = `
-    <strong>当前配置：</strong><br>
-    API Base: ${base}<br>
-    模型名称: ${model}<br>
-    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>推理配置：</strong><br>
-    最大循环次数: ${react.maxIterations} 次<br>
-    API 请求超时: ${formatTime(react.apiTimeout)}<br>
-    整体循环超时: ${formatTime(react.loopTimeout)}<br>
-    工具执行超时: ${formatTime(react.toolTimeout)}<br>
-    敏感操作确认: ${react.toolConfirmationEnabled ? '✅ 启用' : '❌ 关闭'}<br>
-    流式输出: ${stream.streamEnabled !== false ? '✅ 启用' : '❌ 关闭'}<br>
-    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>反思配置：</strong><br>
-    反思功能: ${reflection.enabled ? '✅ 启用' : '❌ 关闭'}<br>
-    后置反思: ${reflection.postReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
-    工具级反思: ${reflection.toolReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
-    子任务反思: ${reflection.subtaskReflection?.enabled ? '✅ 启用' : '❌ 关闭'}<br>
-    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    <strong>代理配置：</strong><br>
-    代理地址: ${agentConfig.url || '未配置'}<br>
-    连接状态: ${agentConfig.connected ? '✅ 已连接' : '⚠️ 未配对'}<br>
-    ${agentConfig.workdir ? `工作目录: ${agentConfig.workdir}<br>` : ''}` : ''}
-    <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">
-    💡 <strong>提示</strong>：澄清等待时间不计入整体循环超时<br>
-    ⚠️ API Key 如果过期或失效，需要重新生成并更新配置
-  `;
-}

@@ -28,7 +28,7 @@ export async function loadMcpTools() {
   try {
     // 检查全局 MCP 开关
     const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
-    if (mcpEnabled === false) {
+    if (mcpEnabled !== true) {
       console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
       return 0;
     }
@@ -276,7 +276,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
           if ((tool.id === 'agent_skill_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
           if (tool.id.startsWith('mcp_')) {
-            if (mcpEnabled === false || !agentConnected) return false;
+            if (mcpEnabled !== true || !agentConnected) return false;
             if (!mcpToolIds.has(tool.id)) return false;
           }
           return true;
@@ -309,7 +309,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
 // 监听全局 MCP 开关变化
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.mcpEnabled) {
-    const enabled = changes.mcpEnabled.newValue !== false;
+    const enabled = changes.mcpEnabled.newValue === true;
     console.log('[Background] MCP 全局开关变更:', enabled);
     if (enabled) {
       loadMcpTools().then(count => {

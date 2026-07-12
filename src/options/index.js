@@ -1,6 +1,6 @@
 // options/index.js - 选项页面入口
 
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast, initStatus, updateConfigDetails } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
 import {
@@ -197,15 +197,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  // ==================== 文件上传开关事件 ====================
-
-  const enableFileInputEl = document.getElementById('enableFileInput');
-  if (enableFileInputEl) {
-    enableFileInputEl.addEventListener('change', function() {
-      chrome.storage.local.set({ enableFileInput: this.checked });
-    });
-  }
-
   const imageModelInput = document.getElementById('imageModelInput');
   const imageModelDropdown = document.getElementById('imageModelDropdown');
 
@@ -350,9 +341,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   
-  // 初始化状态显示
-  initStatus();
-  
   // 重置系统提示词按钮事件
   const resetSystemPromptBtn = document.getElementById('resetSystemPromptBtn');
   if (resetSystemPromptBtn) {
@@ -362,11 +350,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // ==================== 工具栏配置事件 ====================
-  
-  // 工具栏直接显示数量变更
-  document.getElementById('toolbarMaxVisible').addEventListener('change', function() {
-    saveToolbarConfig();
-  });
   
   // 工具栏图标精简模式变更
   const iconOnlyCheckbox = document.getElementById('toolbarIconOnly');

@@ -519,7 +519,7 @@ async function renderAgentToolSelector(selectedToolIds) {
     allTools = allTools.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_'));
   }
   // MCP 全局开关关闭时，隐藏 MCP 工具
-  if (mcpEnabled === false) {
+  if (mcpEnabled !== true) {
     allTools = allTools.filter(t => !t.id.startsWith('mcp_'));
   }
   // Skill 全局开关关闭时，隐藏 Skill 相关工具

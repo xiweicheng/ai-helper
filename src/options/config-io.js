@@ -7,13 +7,13 @@ import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 const EXPORT_KEYS = [
   'apiBase', 'modelName', 'customModels', 'systemPrompt',
   'enableImageInput', 'imageModelName', 'imageModels',
-  'imageApiBase', 'enableFileInput',
+  'imageApiBase',
   'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout',
   'reactToolTimeout', 'reactClarifyTimeout', 'reactApiRetryCount',
   'toolConfirmationEnabled',
   'reflectionConfig',
   'enableExecutionLog',
-  'toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly',
+  'toolbarTools', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',
   'streamEnabled',
   // 新增：助手、工具、LLM参数、UI开关等配置

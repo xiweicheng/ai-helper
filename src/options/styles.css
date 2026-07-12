@@ -199,19 +199,6 @@ textarea {
   color: #744210;
   line-height: 1.6;
 }
-.config-details {
-  margin-top: 20px;
-  padding: 15px;
-  border-radius: 8px;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  font-size: 13px;
-  color: #4a5568;
-  line-height: 1.6;
-}
-.config-details strong {
-  color: #166534;
-}
 
 /* Toast 提示样式 */
 .toast-container {

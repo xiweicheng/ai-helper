@@ -40,7 +40,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     needsRefresh = true;
   }
   if (changes.mcpEnabled) {
-    globalMcpEnabled = changes.mcpEnabled.newValue !== false;
+    globalMcpEnabled = changes.mcpEnabled.newValue === true;
     console.log('[SidePanel] MCP 全局开关变更:', globalMcpEnabled);
     needsRefresh = true;
   }
@@ -65,12 +65,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 loadMcpToolsFromStorage();
 
 // 全局开关状态（从 chrome.storage 加载，通过 onChanged 实时更新）
-let globalMcpEnabled = true;
+let globalMcpEnabled = false;
 let globalSkillsEnabled = true;
 
 // 加载全局开关初始状态
 chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
-  globalMcpEnabled = result.mcpEnabled !== false;
+  globalMcpEnabled = result.mcpEnabled === true;
   globalSkillsEnabled = result.skillsEnabled !== false;
 });
 

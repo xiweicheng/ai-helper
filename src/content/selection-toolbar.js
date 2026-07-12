@@ -43,7 +43,7 @@ let suppressNextClick = false;
 let lastPanelPos = { x: 0, y: 0 };  // 保存面板位置，避免工具栏隐藏后无法获取
 let pendingSelection = null;  // 鼠标拖动选中时暂存，抬起时再显示工具栏
 let toolbarTools = null;  // 工具栏工具配置缓存
-let toolbarMaxVisible = 4;  // 直接显示的工具数量
+let toolbarMaxVisible = 5;  // 直接显示的工具数量（固定为5）
 let toolbarIconOnly = false; // 图标精简模式
 let overflowDropdownEl = null;  // 溢出下拉菜单
 let streamContent = '';       // 流式模式下累积的内容
@@ -666,7 +666,7 @@ function loadToolbarTools() {
       resolve(toolbarTools);
       return;
     }
-    chrome.storage.local.get(['toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly'], (result) => {
+    chrome.storage.local.get(['toolbarTools', 'toolbarIconOnly'], (result) => {
       const rawTools = (result.toolbarTools && result.toolbarTools.length > 0) 
         ? result.toolbarTools 
         : DEFAULT_TOOLS;
@@ -678,7 +678,6 @@ function loadToolbarTools() {
         }
         return t;
       });
-      toolbarMaxVisible = result.toolbarMaxVisible || 4;
       toolbarIconOnly = result.toolbarIconOnly || false;
       resolve(toolbarTools);
     });
@@ -1847,7 +1846,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     blockedDomains = changes.blockedDomains.newValue || [];
   }
   
-  if (areaName === 'local' && (changes.toolbarTools || changes.toolbarMaxVisible)) {
+  if (areaName === 'local' && changes.toolbarTools) {
     refreshToolbarCache();
   }
 });

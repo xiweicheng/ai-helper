@@ -59,7 +59,8 @@ export const DEFAULT_STREAM_CONFIG = {
 
 // 对话配置默认值
 export const DEFAULT_CHAT_CONFIG = {
-  maxMemoryMessages: 20       // 记忆历史限制条数，默认20条
+  maxMemoryMessages: 20,      // 记忆历史限制条数，默认20条
+  enableExecutionLog: true    // 执行日志默认开启
 };
 
 // ==================== 工具定义（按类别拆分到 tools/ 目录） ====================

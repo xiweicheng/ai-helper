@@ -1368,7 +1368,7 @@ function initToolbox() {
 
   // 加载全局开关状态
   chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
-    const mcpEnabled = result.mcpEnabled !== false;
+    const mcpEnabled = result.mcpEnabled === true;
     const skillsEnabled = result.skillsEnabled !== false;
     if (mcpToggle) mcpToggle.checked = mcpEnabled;
     if (skillToggle) skillToggle.checked = skillsEnabled;

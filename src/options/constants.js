@@ -53,7 +53,7 @@ export const DEFAULT_TOOLBAR_TOOLS = [
 ];
 
 // 工具栏默认直接显示数量
-export const DEFAULT_TOOLBAR_MAX_VISIBLE = 4;
+export const DEFAULT_TOOLBAR_MAX_VISIBLE = 5;
 export const DEFAULT_TOOLBAR_ICON_ONLY = false;
 // 选中内容工具栏开关（独立于划词问答开关）
 export const DEFAULT_ENABLE_SELECTION_TOOLBAR = true;
