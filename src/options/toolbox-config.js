@@ -224,7 +224,7 @@ function renderMcpServers(servers) {
             <span class="mcp-server-badge">${escapeHtml(s.transport || 'stdio')}</span>
           </div>
           <div class="mcp-server-header-right">
-            <label class="toolbox-toggle" title="${s.enabled !== false ? '启用中，点击禁用' : '已禁用，点击启用'}">
+            <label class="toolbox-toggle" title="${s.enabled !== false ? '启用中，点击停用' : '已停用，点击启用'}">
               <input type="checkbox" ${s.enabled !== false ? 'checked' : ''} data-mcp-id="${escapeHtml(s.id)}" data-action="toggle">
               <span class="toolbox-toggle-slider"></span>
             </label>

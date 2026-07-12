@@ -1,4 +1,4 @@
-// confirm-dialog.js - 敏感工具操作确认对话框
+// confirm-dialog.js - 敏感操作确认对话框
 
 import state from './state.js';
 

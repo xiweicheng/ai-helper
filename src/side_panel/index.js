@@ -1017,6 +1017,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.enableFileInput = changes.enableFileInput.newValue;
         updateFileInputVisibility();
       }
+      if (changes.enableExecutionLog) {
+        state.chatConfig.enableExecutionLog = changes.enableExecutionLog.newValue;
+      }
       if (changes.imageModelName) {
         state.imageModelName = changes.imageModelName.newValue || '';
       }
@@ -2099,7 +2102,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   isolateChatBtn.addEventListener('change', () => {
     state.isolateChat = isolateChatBtn.checked;
     chrome.storage.local.set({ isolateChat: state.isolateChat });
-    console.log('[SidePanel] 记忆对话:', state.isolateChat ? '已启用' : '已禁用');
+    console.log('[SidePanel] 记忆对话:', state.isolateChat ? '已启用' : '已停用');
   });
 
   // 划词问答开关
@@ -2108,7 +2111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     enableSelectionQueryBtn.addEventListener('change', () => {
       state.enableSelectionQuery = enableSelectionQueryBtn.checked;
       chrome.storage.local.set({ enableSelectionQuery: state.enableSelectionQuery });
-      console.log('[SidePanel] 划词问答:', state.enableSelectionQuery ? '已启用' : '已禁用');
+      console.log('[SidePanel] 划词问答:', state.enableSelectionQuery ? '已启用' : '已停用');
 
       if (!state.enableSelectionQuery && state.selectedContextText) {
         clearSelectedContext();

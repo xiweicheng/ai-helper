@@ -702,10 +702,11 @@ export function loadConfig() {
     document.getElementById('preselectMinToolCount').value = 
       result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
     
-    // 加载敏感工具操作确认开关
+    // 加载敏感操作确认开关
     document.getElementById('toolConfirmationEnabled').checked = 
       result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled;
-    
+    document.getElementById('toolConfirmationEnabled').dispatchEvent(new Event('change'));
+
     // 加载对话配置
     document.getElementById('chatMaxInputHistory').value = 
       result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory;
@@ -718,6 +719,7 @@ export function loadConfig() {
     // 加载执行日志配置
     document.getElementById('enableExecutionLog').checked = 
       result.enableExecutionLog || DEFAULT_CHAT_CONFIG.enableExecutionLog;
+    document.getElementById('enableExecutionLog').dispatchEvent(new Event('change'));
     
     // 加载反思配置
     const reflection = result.reflectionConfig || DEFAULT_REFLECTION_CONFIG;
@@ -750,6 +752,7 @@ export function loadConfig() {
     const streamEnabledEl = document.getElementById('streamEnabled');
     if (streamEnabledEl) {
       streamEnabledEl.checked = result.streamEnabled !== undefined ? result.streamEnabled : true;
+      streamEnabledEl.dispatchEvent(new Event('change'));
     }
     const streamChunkDelayEl = document.getElementById('streamChunkDelay');
     if (streamChunkDelayEl) {
@@ -1122,7 +1125,7 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     API 重试基础延迟: ${react.apiRetryBaseDelay}ms<br>
     工具预筛选: ${react.enableToolPreselect ? '✅ 启用' : '❌ 关闭'}<br>
     预筛选最小工具数: ${react.preselectMinToolCount ?? 3} 个<br>
-    敏感工具操作确认: ${react.toolConfirmationEnabled ? '✅ 启用' : '❌ 关闭'}<br>
+    敏感操作确认: ${react.toolConfirmationEnabled ? '✅ 启用' : '❌ 关闭'}<br>
     流式输出: ${stream.streamEnabled !== false ? '✅ 启用' : '❌ 关闭'}<br>
     流式渲染延迟: ${stream.streamChunkDelay ?? 30} ms<br>
     <hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">

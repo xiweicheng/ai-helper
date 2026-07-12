@@ -15,7 +15,7 @@ export const DEFAULT_REACT_CONFIG = {
   apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
   enableToolPreselect: true,  // 是否启用工具预筛选（默认开启）
   preselectMinToolCount: 3,   // 工具预筛选最小触发数量（工具数超过此值才启动预筛选）
-  toolConfirmationEnabled: true  // 是否启用敏感工具操作确认（关闭后敏感工具直接放行）
+  toolConfirmationEnabled: true  // 是否启用敏感操作确认（关闭后敏感操作直接放行）
 };
 
 // 反思配置默认值

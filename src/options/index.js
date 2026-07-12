@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       toolbarConfigEl.classList.add('disabled');
     }
     if (toolbarToggleLabelEl) {
-      toolbarToggleLabelEl.textContent = enableSelToolbarCheckbox.checked ? '已启用' : '已禁用';
+      toolbarToggleLabelEl.textContent = enableSelToolbarCheckbox.checked ? '已启用' : '已停用';
     }
   }
   
@@ -369,9 +369,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // 工具预筛选开关控制预筛选最小工具数显示
   if (enableToolPreselectCheckbox && preselectMinToolCountSection) {
-    const togglePreselectSection = () => {
+    const enableToolPreselectLabel = document.getElementById('enableToolPreselectLabel');
+    function togglePreselectSection() {
       preselectMinToolCountSection.style.display = enableToolPreselectCheckbox.checked ? '' : 'none';
-    };
+      if (enableToolPreselectLabel) {
+        enableToolPreselectLabel.textContent = enableToolPreselectCheckbox.checked ? '已启用' : '已停用';
+      }
+    }
     enableToolPreselectCheckbox.addEventListener('change', togglePreselectSection);
     // 初始状态（注意：loadConfig 会在 DOMContentLoaded 之后异步执行 set checked）
     // 这里先根据 checkbox 初始状态设置，loadConfig 加载后再触发 change 事件
@@ -406,7 +410,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     if (toolbarToggleLabel) {
-      toolbarToggleLabel.textContent = enabled ? '已启用' : '已禁用';
+      toolbarToggleLabel.textContent = enabled ? '已启用' : '已停用';
     }
   }
   
@@ -538,7 +542,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     if (reflectionToggleLabel) {
-      reflectionToggleLabel.textContent = enabled ? '已启用' : '已禁用';
+      reflectionToggleLabel.textContent = enabled ? '已启用' : '已停用';
     }
   }
   
@@ -595,12 +599,40 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 流式输出开关：控制流式渲染延迟的显示
   const streamEnabledEl = document.getElementById('streamEnabled');
   const streamChunkDelaySection = document.getElementById('streamChunkDelaySection');
+  const streamEnabledLabel = document.getElementById('streamEnabledLabel');
   if (streamEnabledEl && streamChunkDelaySection) {
     streamEnabledEl.addEventListener('change', function() {
       streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
+      if (streamEnabledLabel) {
+        streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
+      }
     });
     // 初始化时同步状态
     streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
+    if (streamEnabledLabel) {
+      streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
+    }
+  }
+
+  // 敏感操作确认开关状态标签
+  const toolConfirmationEnabledEl = document.getElementById('toolConfirmationEnabled');
+  const toolConfirmationEnabledLabel = document.getElementById('toolConfirmationEnabledLabel');
+  if (toolConfirmationEnabledEl && toolConfirmationEnabledLabel) {
+    toolConfirmationEnabledEl.addEventListener('change', function() {
+      toolConfirmationEnabledLabel.textContent = this.checked ? '已启用' : '已停用';
+    });
+    // 初始化同步（覆盖 HTML 默认值，防止 loadConfig 异步更新前的闪现）
+    toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? '已启用' : '已停用';
+  }
+
+  // 启用执行日志开关状态标签
+  const enableExecutionLogEl = document.getElementById('enableExecutionLog');
+  const enableExecutionLogLabel = document.getElementById('enableExecutionLogLabel');
+  if (enableExecutionLogEl && enableExecutionLogLabel) {
+    enableExecutionLogEl.addEventListener('change', function() {
+      enableExecutionLogLabel.textContent = this.checked ? '已启用' : '已停用';
+    });
+    enableExecutionLogLabel.textContent = enableExecutionLogEl.checked ? '已启用' : '已停用';
   }
 
   // ==================== Agent 配置 ====================

@@ -12,7 +12,7 @@ import { StreamController, readSSEStream } from './stream-controller.js';
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
 export const activeReactLoops = new Set();
 
-// 敏感工具中文显示名映射
+// 敏感操作中文显示名映射
 const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
   clear_page_data: '清除页面数据',
@@ -21,7 +21,7 @@ const TOOL_DISPLAY_NAMES = {
 };
 
 /**
- * 请求用户确认敏感工具操作
+ * 请求用户确认敏感操作
  * 发送消息到 Side Panel 显示确认对话框，等待用户响应
  */
 async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
@@ -673,7 +673,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           // 防御：流式模式下 tool_call.id 可能为空，用 index 生成回退 id
           const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
           
-          // 检查是否需要用户确认（敏感工具 + 开关开启）
+          // 检查是否需要用户确认（敏感操作 + 开关开启）
           const needsConfirmation = CONFIRMATION_REQUIRED_TOOLS.has(toolName) && reactConfig.toolConfirmationEnabled;
           if (needsConfirmation) {
             const confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);

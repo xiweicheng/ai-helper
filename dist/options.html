@@ -214,13 +214,6 @@
         </div>
       </div>
       
-      <div class="chat-config-item">
-        <label class="toggle-label">
-          <input type="checkbox" id="enableExecutionLog">
-          <span class="toggle-text">启用执行日志</span>
-          <span class="hint-text">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
-        </label>
-      </div>
       
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 配置说明</h3>
@@ -229,7 +222,6 @@
           • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
           • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
           • <strong>上下文窗口</strong>：可在添加自定义模型时单独设置，或由系统根据模型名自动推断<br>
-          • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
           • 建议根据实际需求平衡存储成本和使用体验
         </p>
       </div>
@@ -363,8 +355,8 @@
       
       <div class="react-config-item">
         <label>
-          敏感工具操作确认
-          <span class="hint-text">（模型调用敏感工具（如管理Cookie、下载文件、关闭标签页等）时，是否需要用户确认）</span>
+          敏感操作确认
+          <span class="hint-text">（模型执行敏感操作时，弹窗确认后再执行）</span>
         </label>
         <label class="toggle-label">
           <input type="checkbox" id="toolConfirmationEnabled" checked>
@@ -372,8 +364,24 @@
           <span id="toolConfirmationEnabledLabel">已启用</span>
         </label>
         <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          启用后，当模型调用敏感操作工具时，会弹出确认框等待用户确认。<br>
-          关闭后，所有工具操作将直接放行执行，无需确认。
+          启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。<br>
+          关闭后，所有操作将直接放行执行，无需确认。
+        </div>
+      </div>
+
+      <div class="react-config-item">
+        <label>
+          启用执行日志
+          <span class="hint-text">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="enableExecutionLog">
+          <span class="toggle-switch"></span>
+          <span id="enableExecutionLogLabel">已停用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          启用后，消息底部会显示"执行日志"按钮，点击可查看 API 调用和工具执行的详细过程。<br>
+          关闭后，消息底部不再显示该按钮。
         </div>
       </div>
 
@@ -388,7 +396,7 @@
           <span id="streamEnabledLabel">已启用</span>
         </label>
         <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          开启后 AI 回复会实时逐字显示，Agent 命令执行时也会实时输出，提供更快的反馈感知。<br>
+          开启后 AI 回复会实时逐字显示，代理端命令执行时也会实时输出，提供更快的反馈感知。<br>
           如果遇到兼容性问题，可关闭此开关回退到一次性输出模式。
         </div>
       </div>
