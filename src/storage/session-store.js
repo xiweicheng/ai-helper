@@ -7,9 +7,6 @@ import state from '../side_panel/state.js';
 
 let migrated = false;
 
-// 记录上一次活跃的会话 ID，用于关闭当前会话后回退到上一个
-let previousSessionId = null;
-
 /**
  * 初始化：尝试从 chrome.storage 迁移数据
  */
@@ -255,9 +252,6 @@ export async function switchToSession(sessionId) {
   if (sessionId === state.activeSessionId) return;
   await saveCurrentSession();
 
-  // 记录切换前的会话 ID，用于删除当前会话时回退
-  previousSessionId = state.activeSessionId;
-
   const targetSession = await idb.getSession(sessionId);
   if (!targetSession) {
     console.error('[SessionStore] 找不到会话:', sessionId);
@@ -316,15 +310,22 @@ export async function deleteStoreSession(sessionId) {
   // 清理该会话的 scrollPosition 存储，防止泄露
   chrome.storage.local.remove('scrollPosition_' + sessionId);
 
-  // 如果删除的是当前活跃会话，优先切换到上一个会话，其次第一个剩下的会话
+  // 如果删除的是当前活跃会话，就近激活：优先右侧紧邻，无右侧则左侧紧邻
   if (activeId === sessionId) {
-    const remaining = allSessions.filter((s) => s.id !== sessionId);
+    // 按显示顺序排序（与 loadSessions 保持一致）
+    const sorted = [...allSessions].sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+    const deletedIndex = sorted.findIndex(s => s.id === sessionId);
+    const remaining = sorted.filter((s) => s.id !== sessionId);
+
     if (remaining.length > 0) {
-      // 优先回退到上一次选中的会话
-      const fallback = remaining.find(s => s.id === previousSessionId);
-      await idb.setActiveSessionId(fallback ? fallback.id : remaining[0].id);
-      // 清除回退记录
-      previousSessionId = null;
+      // 就近激活：取同位置（右侧邻居），若已超出则取最后一个（左侧邻居）
+      const fallbackIndex = Math.min(deletedIndex, remaining.length - 1);
+      await idb.setActiveSessionId(remaining[fallbackIndex].id);
     } else {
       await idb.setActiveSessionId(null);
     }
