@@ -257,7 +257,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return callApiNonStream(messages, model, apiParams, sessionId);
           }
 
-          console.log('[Background] 获取到工具列表，数量:', tools.length, '工具:', tools.map(t => t.function.name));
+          console.log(`[Background] 获取到 ${tools.length} 个工具`);
 
           // 检查工具预筛选开关
           const config = await getStoredConfig();
@@ -302,7 +302,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
 
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
-          console.log('[Background] 预筛选后工具数量:', selectedTools.length, '工具:', selectedTools.map(t => t.function.name));
+          console.log(`[Background] 预筛选后 ${selectedTools.length} 个工具`);
           console.log('[Background] 预筛选执行日志:', JSON.stringify(preselectLog).substring(0, 500));
 
           // 发送预筛选日志到 Side Panel，使其在流式输出过程中也能看到

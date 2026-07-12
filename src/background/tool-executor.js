@@ -109,7 +109,7 @@ export async function loadMcpTools() {
       }));
     await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
 
-    console.log(`[Background] 已加载 ${registered} 个 MCP 工具:`, [...mcpToolIds].join(', '));
+    console.log(`[Background] 已加载 ${registered} 个 MCP 工具`);
     return registered;
   } catch (err) {
     console.log('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
@@ -252,7 +252,9 @@ export async function getTools(agentToolIds = null, agentId = null) {
 
       // 如果 Agent 指定了工具列表，与全局启用列表取交集
       const finalToolIds = agentToolIds ? enabledTools.filter(id => agentToolIds.includes(id)) : enabledTools;
-      console.log('[Background] Agent 工具过滤: agentToolIds=', agentToolIds, ', 全局启用:', enabledTools.length, ', 最终:', finalToolIds.length);
+      if (agentToolIds) {
+        console.log(`[Background] 工具过滤: ${enabledTools.length} 全局 → ${finalToolIds.length} 最终`);
+      }
 
       // 读取图片识别开关状态
       const visionEnabled = result.enableImageInput === true;
@@ -260,7 +262,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
       
-      console.log('[Background] 当前启用的工具配置:', finalToolIds, 'Agent已连通:', agentConnected, '图片识别:', visionEnabled);
+      console.log(`[Background] 工具配置: ${finalToolIds.length} 个启用, Agent=${agentConnected}, 图片识别=${visionEnabled}`);
       
       // 读取 MCP 全局开关和 Agent 连接状态
       const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
@@ -268,30 +270,14 @@ export async function getTools(agentToolIds = null, agentId = null) {
       const tools = BUILTIN_TOOLS
         .filter(tool => finalToolIds.includes(tool.id))
         .filter(tool => {
-          // Agent 未连通时，隐藏所有 agent_* 工具，避免大模型无效调用
-          if (tool.id.startsWith('agent_') && !agentConnected) {
-            console.log('[Background] Agent 未连通，隐藏工具:', tool.id);
-            return false;
-          }
+          // Agent 未连通时，隐藏所有 agent_* 工具
+          if (tool.id.startsWith('agent_') && !agentConnected) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
-          if ((tool.id === 'agent_skill_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) {
-            console.log('[Background] Skill 全局开关已关闭，隐藏 Skill 工具:', tool.id);
-            return false;
-          }
+          if ((tool.id === 'agent_skill_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
           if (tool.id.startsWith('mcp_')) {
-            if (mcpEnabled === false) {
-              console.log('[Background] MCP 全局开关已关闭，隐藏 MCP 工具:', tool.id);
-              return false;
-            }
-            if (!agentConnected) {
-              console.log('[Background] Agent 未连通，隐藏 MCP 工具:', tool.id);
-              return false;
-            }
-            if (!mcpToolIds.has(tool.id)) {
-              console.log('[Background] MCP Server 未连接，隐藏 MCP 工具:', tool.id);
-              return false;
-            }
+            if (mcpEnabled === false || !agentConnected) return false;
+            if (!mcpToolIds.has(tool.id)) return false;
           }
           return true;
         })
@@ -314,7 +300,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
           return cloned;
         });
       
-      console.log('[Background] 过滤后的工具列表:', tools.map(t => t.id), '数量:', tools.length);
+      console.log(`[Background] 最终可用工具: ${tools.length} 个`);
       resolve(tools);
     });
   });
