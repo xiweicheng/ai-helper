@@ -1,6 +1,6 @@
 # AI Helper — Web Intelligent Assistant
 
-> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **51 built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, and session import/export capabilities.
+> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **54 built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, long-term memory system, and session import/export capabilities.
 
 ## Why AI Helper
 
@@ -9,7 +9,7 @@ AI Helper is a **deeply browser-integrated** smart assistant. Compared to generi
 - **True Browser Control**: Not just reading page content — it can **click, fill forms, drag, scroll, wait for elements, upload files** — the LLM operates web pages like a human.
 - **Three-Tier Quality Assurance**: An innovative **preselection → tool-level reflection → sub-task reflection → post-reflection** multi-tier mechanism ensures output quality rather than raw LLM results.
 - **Multi-Agent Collaboration**: Complex tasks can be decomposed and **dispatched to different specialized agents for parallel execution**, enabling true multi-agent teamwork.
-- **Tool Preselection**: 50+ tool definitions consume massive tokens. AI Helper runs a **lightweight API pre-check** before each main model call, reducing tools to 5-10 relevant ones for significant cost savings.
+- **Tool Preselection**: 54+ tool definitions consume massive tokens. AI Helper runs a **lightweight API pre-check** before each main model call, reducing tools to 5-10 relevant ones for significant cost savings.
 - **Token Budget Management**: Dynamically calculates available token budget per model context window, truncates by token count rather than message count, ensuring tool_calls/tool message pairing integrity.
 - **Context Compression**: Long quoted content is automatically summarized and compressed, preventing irrelevant information from permanently occupying context space and maintaining conversation quality.
 
@@ -171,7 +171,7 @@ ai-helper/
 │   │   ├── stream-controller.js        # Stream response controller
 │   │   ├── token-recorder.js           # Token usage stats recorder
 │   │   ├── config.js                    # Config R/W
-│   │   ├── constants.js                # Defaults, 51 built-in tools, category mapping
+│   │   ├── constants.js                # Defaults, 54 built-in tools, category mapping
 │   │   ├── state.js                    # Multi-session cancel control, API counter
 │   │   └── tools/                       # Tool definitions by category
 │   │       ├── browser-tools.js        │ Page interaction + Form + Content (17)
@@ -179,7 +179,8 @@ ai-helper/
 │   │       ├── storage-tools.js        │ Storage mgmt + Network (4)
 │   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
 │   │       ├── ai-tools.js             │ AI Collaboration (6)
-│   │       └── agent-tools.js          │ Local Agent (9)
+│   │       ├── agent-tools.js          │ Local Agent (9)
+│   │       └── memory-tools.js         │ Long-term Memory (3)
 │   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
 │   │   ├── page-tools.js               # Page content tools (extraction, search, a11y tree)
@@ -296,7 +297,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
 1. **MCP Tool Dynamic Injection**: Before each inference cycle, automatically pulls the latest MCP tool list from Agent and injects it into RAW_TOOLS
-2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 50+ tools to 5-10 relevant ones, significantly cutting token usage
+2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 54+ tools to 5-10 relevant ones, significantly cutting token usage
 3. **Inference Loop**: LLM thinks → decides to call tools → executes tools → results fed back → continues reasoning
 4. **Token Budget Management**: Dynamically calculates available token budget per model context window (80%), truncates by token count, retains tool_calls/tool message pairing integrity
 5. **Context Pressure Monitoring**: Three-level monitoring (safe/warning/critical), auto-triggers summary compression
@@ -459,9 +460,21 @@ Hover over assistant messages to auto-generate floating navigation:
 - Floating panel, smooth scroll to target
 - 1.5s highlight flash effect
 
+### 19. Long-term Memory System
+
+AI Helper has long-term memory capabilities, storing and retrieving user information across sessions:
+
+- **Memory Storage**: AI automatically identifies important information (preferences, knowledge, decisions) and calls `agent_memory_store` to store it
+- **Memory Types**: Supports fact memory and conversation summary memory
+- **Smart Retrieval**: Use `agent_memory_recall` to search historical memories by keywords, tags, and type
+- **Memory Management**: Auto-review memory quality, merge duplicates, evict low-value memories
+- **Tag Classification**: Preference, knowledge, decision, and custom tag categories
+- **Importance Scoring**: 1-10 scale for priority sorting
+- **Auto-Archival**: Facts capped at 50, summaries at 20, exceeding triggers auto-compaction
+
 ---
 
-## Built-in Tools (51 Configurable + MCP Dynamic Extensions)
+## Built-in Tools (54 Configurable + MCP Dynamic Extensions)
 
 ### Content Extraction (7)
 | Tool | Description |
@@ -557,6 +570,13 @@ Hover over assistant messages to auto-generate floating navigation:
 | `agent_search_content` | Search text in files (ripgrep-accelerated) |
 | `agent_skill_load` | On-demand load Agent Skill full documentation |
 | `agent_skill_run` | Execute predefined Workflow Skill workflow |
+
+### Long-term Memory (3) — Requires Agent Service
+| Tool | Description |
+|------|-------------|
+| `agent_memory_store` | Store/update/delete long-term memory (preferences, knowledge, decisions, summaries) |
+| `agent_memory_recall` | Search stored memories by keywords or tags |
+| `agent_memory_manage` | Review memory quality, merge duplicates, evict low-value memories |
 
 ### MCP Tools (Dynamic Extension)
 When connected to third-party MCP servers, tools are automatically registered. Quantity depends on connected MCP Servers.
