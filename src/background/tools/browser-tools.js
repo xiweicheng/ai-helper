@@ -235,14 +235,14 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_page_content',
-      description: '获取页面内容，支持多种输出格式。**重要：可直接指定 tabId 提取任意标签页的内容，无需先调用 switch_tab 切换到该标签页。**不指定 tabId 时默认提取当前会话关联的标签页内容',
+      description: '获取页面内容，支持多种输出格式。不指定 tabId 时默认提取当前会话关联的标签页内容',
       parameters: {
         type: 'object',
         properties: {
           format: { type: 'string', enum: ['text', 'html', 'markdown', 'json'], description: '输出格式：text=纯文本，html=完整HTML，markdown=Markdown，json=结构化JSON', default: 'text' },
           selector: { type: 'string', description: '限制提取范围的CSS选择器' },
           maxLength: { type: 'integer', description: '最大字符数，默认15000', default: 15000 },
-          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取），指定后无需切换标签页即可直接提取' }
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取），不指定则使用当前会话关联的标签页' }
         },
         required: []
       }
@@ -257,7 +257,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'extract_data',
-      description: '提取页面结构化数据（表格/链接/表单/图片/元数据）。**重要：可直接指定 tabId 提取任意标签页的数据，无需先调用 switch_tab 切换到该标签页。**不指定 tabId 时默认提取当前会话关联的标签页内容',
+      description: '提取页面结构化数据（表格/链接/表单/图片/元数据）。不指定 tabId 时默认提取当前会话关联的标签页内容',
       parameters: {
         type: 'object',
         properties: {
