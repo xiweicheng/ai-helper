@@ -980,7 +980,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     const handler = BG_HANDLERS[toolName];
     if (handler) {
       console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
-      result = await handler(args, toolCallId, sessionId);
+      result = await handler(args, toolCallId, sessionId, tabId);
     } else {
       result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
     }
@@ -3265,8 +3265,8 @@ async function ensureOffscreenDocument() {
  * get_page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
  * 根据 format 参数路由到对应的 content script 消息类型
  */
-async function executeGetPageContent(args, toolCallId) {
-  const { format = 'text', selector, maxLength = 15000 } = args;
+async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId) {
+  const { format = 'text', selector, maxLength = 15000, tabId: argsTabId } = args;
 
   const messageTypeMap = {
     text: 'GET_PAGE_TEXT',
@@ -3281,12 +3281,12 @@ async function executeGetPageContent(args, toolCallId) {
   }
 
   try {
-    const tabId = await getActiveTabId();
-    if (!tabId) {
+    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
+    if (!targetTabId) {
       return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
     }
     const message = { type: messageType, selector, maxLength };
-    return await sendToContentScriptWithRetry(tabId, message, toolCallId);
+    return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
   } catch (e) {
     return { success: false, error: e.message, tool_call_id: toolCallId };
   }
@@ -3296,7 +3296,7 @@ async function executeGetPageContent(args, toolCallId) {
  * extract_data：合并 extract_table/extract_metadata/extract_links/extract_forms/extract_images
  * 根据 dataType 参数路由到对应的 content script 消息类型
  */
-async function executeExtractData(args, toolCallId) {
+async function executeExtractData(args, toolCallId, _sessionId, sessionTabId) {
   const {
     dataType,
     selector,
@@ -3306,7 +3306,8 @@ async function executeExtractData(args, toolCallId) {
     includeImages = false,
     minWidth = 0,
     minHeight = 0,
-    maxResults = 100
+    maxResults = 100,
+    tabId: argsTabId
   } = args;
 
   if (!dataType) {
@@ -3327,13 +3328,13 @@ async function executeExtractData(args, toolCallId) {
   }
 
   try {
-    const tabId = await getActiveTabId();
-    if (!tabId) {
+    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
+    if (!targetTabId) {
       return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
     }
 
     const message = { type: messageType, selector, filterType, includeHeaders, format, includeImages, minWidth, minHeight, maxResults };
-    return await sendToContentScriptWithRetry(tabId, message, toolCallId);
+    return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
   } catch (e) {
     return { success: false, error: e.message, tool_call_id: toolCallId };
   }
