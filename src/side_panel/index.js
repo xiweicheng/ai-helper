@@ -1020,6 +1020,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (changes.enableExecutionLog) {
         state.chatConfig.enableExecutionLog = changes.enableExecutionLog.newValue;
       }
+      if (changes.systemPrompt) {
+        state.systemPrompt = changes.systemPrompt.newValue || '';
+      }
       if (changes.imageModelName) {
         state.imageModelName = changes.imageModelName.newValue || '';
       }
