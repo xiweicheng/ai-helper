@@ -14,7 +14,7 @@ const EXPORT_KEYS = [
   'toolConfirmationEnabled',
   'reflectionConfig',
   'chatMaxInputHistory', 'chatMaxHistoryMessages',
-  'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow',
+  'chatMaxMemoryMessages', 'enableExecutionLog',
   'toolbarTools', 'toolbarMaxVisible', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',
   'streamEnabled', 'streamChunkDelay',

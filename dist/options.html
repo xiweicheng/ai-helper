@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Helper - 配置</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-KKNXHPHh.js"></script>
+  <script type="module" crossorigin src="/assets/constants-BhkOd2Xb.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/options-CwqJTfIC.css">
 </head>
@@ -93,18 +93,18 @@
 
     <div class="form-group">
       <label class="toggle-label">
-        <input type="checkbox" id="enableImageInput">
-        <span class="toggle-text">启用图片识别功能</span>
-      </label>
-      <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏发送图片给多模态模型进行分析）</span>
-    </div>
-
-    <div class="form-group">
-      <label class="toggle-label">
         <input type="checkbox" id="enableFileInput">
         <span class="toggle-text">启用文件上传功能</span>
       </label>
       <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏上传 PDF、Word、Excel、文本等文件，基于文件内容进行问答）</span>
+    </div>
+
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="enableImageInput">
+        <span class="toggle-text">启用图片识别功能</span>
+      </label>
+      <span class="hint" style="display:block;margin-top:4px;">（开启后可在侧边栏发送图片给多模态模型进行分析）</span>
     </div>
 
     <div class="form-group" id="imageApiGroup" style="display:none;">
@@ -203,19 +203,6 @@
       
       <div class="chat-config-item">
         <label>
-          单条消息最大字符数
-          <span class="hint-text">（上限参考值，已移除截断）</span>
-        </label>
-        <input type="number" id="chatMaxMessageLength" min="1000" max="200000" step="1000" value="100000" placeholder="100000">
-        <span class="unit">字符</span>
-        <div class="range-labels">
-          <span>最小: 1000</span>
-          <span>最大: 50000</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
           记忆历史限制条数
           <span class="hint-text">（调用大模型时携带的最近记忆条数，需启用记忆才生效；置空表示不限制）</span>
         </label>
@@ -224,19 +211,6 @@
         <div class="range-labels">
           <span>最小: 1</span>
           <span>最大: 400</span>
-        </div>
-      </div>
-      
-      <div class="chat-config-item">
-        <label>
-          上下文窗口大小
-          <span class="hint-text">（当前模型支持的上下文窗口大小，单位 tokens；设为 0 则根据模型名自动推断，支持主流模型 DeepSeek/GPT/Claude）</span>
-        </label>
-        <input type="number" id="chatContextWindow" min="0" max="2000000" step="1000" placeholder="0 = 自动推断">
-        <span class="unit">tokens</span>
-        <div class="range-labels">
-          <span>0 = 自动推断</span>
-          <span>最大: 2,000,000</span>
         </div>
       </div>
       
@@ -254,7 +228,7 @@
           <strong>对话配置</strong>控制对话历史的存储和显示行为。<br>
           • <strong>输入历史</strong>：用于快速重发历史输入，方便重复提问<br>
           • <strong>对话轮数</strong>：影响上下文记忆长度，过多会增加 API 成本<br>
-          • <strong>消息长度</strong>：上限参考值，已不再截断消息内容<br>
+          • <strong>上下文窗口</strong>：可在添加自定义模型时单独设置，或由系统根据模型名自动推断<br>
           • <strong>执行日志</strong>：启用后可在消息底部查看 API 调用和工具执行的详细记录<br>
           • 建议根据实际需求平衡存储成本和使用体验
         </p>

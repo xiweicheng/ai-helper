@@ -50,10 +50,8 @@ export let agentPlatform = {
 export let chatConfig = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 100000,
   maxMemoryMessages: 20,
-  enableExecutionLog: false,
-  contextWindow: 0   // 0 = 使用内置映射自动推断
+  enableExecutionLog: false
 };
 
 // 温度设置

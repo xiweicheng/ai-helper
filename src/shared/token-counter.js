@@ -180,7 +180,7 @@ function truncateJsonSmart(content, maxTokens) {
 
 /**
  * 模型上下文窗口配置（单位：tokens）
- * 作为内置默认值，用户可通过 chatConfig.contextWindow 覆盖
+ * 作为内置默认值，可通过添加自定义模型时设置上下文窗口来覆盖
  */
 export const MODEL_CONTEXT_WINDOWS = {
   'deepseek-v4-pro': 128000,

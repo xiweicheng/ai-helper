@@ -622,7 +622,7 @@ export async function sendPromptByCode(code) {
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪
-      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const configuredWindow = 0;
       const toolCount = state.enabledTools.length || 50;
       const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
       const historyBudget = Math.floor(messageBudget * 0.7);

@@ -67,10 +67,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     updateMemoryLimitLabel();
     console.log('[SidePanel] 记忆限制配置已更新:', state.chatConfig.maxMemoryMessages);
   }
-  if (areaName === 'local' && changes.chatContextWindow) {
-    state.chatConfig.contextWindow = changes.chatContextWindow.newValue || 0;
-    console.log('[SidePanel] 上下文窗口配置已更新:', state.chatConfig.contextWindow);
-  }
 });
 
 // ==================== 记忆限制相关 ====================
@@ -487,7 +483,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪
-      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const configuredWindow = 0;
       const toolCount = state.enabledTools.length || 50;
       const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
       const historyBudget = Math.floor(messageBudget * 0.7);

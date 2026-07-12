@@ -13,7 +13,7 @@ export function getStoredConfig() {
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
       'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
       'preselectMinToolCount', 'toolConfirmationEnabled',
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength',
+      'chatMaxInputHistory', 'chatMaxHistoryMessages',
       'reflectionConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
@@ -40,8 +40,7 @@ export function getStoredConfig() {
         // 对话配置项
         chatConfig: {
           maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
-          maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages,
-          maxMessageLength: result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength
+          maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages
         },
         // 流式输出配置
         streamConfig: {
@@ -60,15 +59,13 @@ export function getStoredConfig() {
 export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow', 'customModels'
+      'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels'
     ], (result) => {
       resolve({
         maxInputHistory: result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory,
         maxHistoryMessages: result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages,
-        maxMessageLength: result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength,
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
         enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
-        contextWindow: result.chatContextWindow !== undefined ? result.chatContextWindow : 0,
         customModelMap: normalizeCustomModels(result.customModels || [])
       });
     });

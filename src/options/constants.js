@@ -62,10 +62,8 @@ export const DEFAULT_ENABLE_SELECTION_TOOLBAR = true;
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 100000,
   maxMemoryMessages: 20,   // 记忆历史限制条数，默认20条
-  enableExecutionLog: false,  // 默认关闭执行日志
-  contextWindow: 0         // 上下文窗口大小（tokens），0=自动根据模型名推断
+  enableExecutionLog: false  // 默认关闭执行日志
 };
 
 // 导出从 background/constants.js 导入的反思配置

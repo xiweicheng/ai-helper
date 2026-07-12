@@ -624,7 +624,7 @@ export function loadConfig() {
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
     'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
     'preselectMinToolCount', 'toolConfirmationEnabled',
-    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMessageLength', 'chatMaxMemoryMessages', 'enableExecutionLog', 'chatContextWindow',
+    'chatMaxInputHistory', 'chatMaxHistoryMessages', 'chatMaxMemoryMessages', 'enableExecutionLog',
     'reflectionConfig',
     'streamEnabled', 'streamChunkDelay'
   ], function(result) {
@@ -711,15 +711,8 @@ export function loadConfig() {
       result.chatMaxInputHistory || DEFAULT_CHAT_CONFIG.maxInputHistory;
     document.getElementById('chatMaxHistoryMessages').value = 
       result.chatMaxHistoryMessages || DEFAULT_CHAT_CONFIG.maxHistoryMessages;
-    document.getElementById('chatMaxMessageLength').value = 
-      result.chatMaxMessageLength || DEFAULT_CHAT_CONFIG.maxMessageLength;
     if (result.chatMaxMemoryMessages !== undefined && result.chatMaxMemoryMessages !== null) {
       document.getElementById('chatMaxMemoryMessages').value = result.chatMaxMemoryMessages;
-    }
-    
-    // 加载上下文窗口大小
-    if (result.chatContextWindow !== undefined && result.chatContextWindow > 0) {
-      document.getElementById('chatContextWindow').value = result.chatContextWindow;
     }
     
     // 加载执行日志配置
@@ -831,11 +824,8 @@ export function saveConfig() {
   // 获取对话配置
   const chatMaxInputHistory = parseInt(document.getElementById('chatMaxInputHistory').value) || DEFAULT_CHAT_CONFIG.maxInputHistory;
   const chatMaxHistoryMessages = parseInt(document.getElementById('chatMaxHistoryMessages').value) || DEFAULT_CHAT_CONFIG.maxHistoryMessages;
-  const chatMaxMessageLength = parseInt(document.getElementById('chatMaxMessageLength').value) || DEFAULT_CHAT_CONFIG.maxMessageLength;
   const chatMaxMemoryMessagesInput = document.getElementById('chatMaxMemoryMessages').value.trim();
   const chatMaxMemoryMessages = chatMaxMemoryMessagesInput ? parseInt(chatMaxMemoryMessagesInput) : null;
-  const contextWindowInput = document.getElementById('chatContextWindow').value.trim();
-  const chatContextWindow = contextWindowInput ? parseInt(contextWindowInput) : 0;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
 
   // 获取流式输出配置
@@ -954,10 +944,6 @@ export function saveConfig() {
     showToast('❌ 最大保留对话轮数必须在 10-200 之间', 'error');
     return;
   }
-  if (chatMaxMessageLength < 1000 || chatMaxMessageLength > 200000) {
-    showToast('❌ 单条消息最大字符数必须在 1000-200000 之间', 'error');
-    return;
-  }
   if (chatMaxMemoryMessages !== null && (chatMaxMemoryMessages < 1 || chatMaxMemoryMessages > 400)) {
     showToast('❌ 记忆历史限制条数必须在 1-400 之间或置空', 'error');
     return;
@@ -994,9 +980,7 @@ export function saveConfig() {
     // 对话配置
     chatMaxInputHistory: chatMaxInputHistory,
     chatMaxHistoryMessages: chatMaxHistoryMessages,
-    chatMaxMessageLength: chatMaxMessageLength,
     chatMaxMemoryMessages: chatMaxMemoryMessages,
-    chatContextWindow: chatContextWindow,
     enableExecutionLog: enableExecutionLog,
     // 图片识别配置
     enableImageInput: enableImageInput,
@@ -1052,10 +1036,8 @@ export function saveConfig() {
       }, {
         maxInputHistory: chatMaxInputHistory,
         maxHistoryMessages: chatMaxHistoryMessages,
-        maxMessageLength: chatMaxMessageLength,
         maxMemoryMessages: chatMaxMemoryMessages,
-        enableExecutionLog: enableExecutionLog,
-        contextWindow: chatContextWindow
+        enableExecutionLog: enableExecutionLog
       }, reflectionConfig, agentConfig, { streamEnabled, streamChunkDelay });
     }
   });
@@ -1169,7 +1151,6 @@ export function updateConfigDetails(apiBase, modelName, reactConfig, chatConfig,
     <strong>对话配置：</strong><br>
     输入历史记录数: ${chat.maxInputHistory} 条<br>
     最大对话轮数: ${chat.maxHistoryMessages} 轮<br>
-    消息最大长度: ${chat.maxMessageLength} 字符<br>
     记忆历史限制条数: ${chat.maxMemoryMessages !== null ? chat.maxMemoryMessages + ' 条' : '不限制'}<br>
     执行日志: ${chat.enableExecutionLog ? '✅ 启用' : '❌ 关闭'}<br>
     ${agentConfig ? `<hr style="margin: 8px 0; border: none; border-top: 1px dashed #ccc;">

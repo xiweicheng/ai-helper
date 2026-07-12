@@ -34,9 +34,7 @@ export const PRESET_MODES = [
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,
   maxHistoryMessages: 50,
-  maxMessageLength: 100000,
   maxMemoryMessages: 20,
-  contextWindow: 0,
 };
 
 export const DEFAULT_REACT_CONFIG = {

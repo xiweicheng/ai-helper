@@ -3,7 +3,6 @@
 export const CHAT_CONFIG_KEYS = {
   MAX_INPUT_HISTORY: 'chatMaxInputHistory',
   MAX_HISTORY_MESSAGES: 'chatMaxHistoryMessages',
-  MAX_MESSAGE_LENGTH: 'chatMaxMessageLength',
   MAX_MEMORY_MESSAGES: 'chatMaxMemoryMessages',
 };
 

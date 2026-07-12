@@ -407,7 +407,7 @@ export async function sendMessage() {
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
       // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
-      const configuredWindow = state.chatConfig.contextWindow || 0;
+      const configuredWindow = 0;
       const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow, state.customModelMap);
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
@@ -464,7 +464,7 @@ export async function sendMessage() {
     apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
 
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
-    const configuredWindow = state.chatConfig.contextWindow || 0;
+    const configuredWindow = 0;
     const msgTokens = estimateMessagesTokens(messages);
     const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
     const pressure = assessContextPressure(msgTokens, contextWindow);

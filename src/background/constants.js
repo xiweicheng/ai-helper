@@ -61,9 +61,7 @@ export const DEFAULT_STREAM_CONFIG = {
 export const DEFAULT_CHAT_CONFIG = {
   maxInputHistory: 20,        // 最大输入历史记录数 (10-100)
   maxHistoryMessages: 50,     // 最大保留对话轮数 (10-200)
-  maxMessageLength: 100000,   // 单条消息最大字符数（仅作上限参考，不再截断存储）
-  maxMemoryMessages: 20,      // 记忆历史限制条数，默认20条
-  contextWindow: 0            // 上下文窗口大小（tokens），0=自动根据模型名推断
+  maxMemoryMessages: 20       // 记忆历史限制条数，默认20条
 };
 
 // ==================== 工具定义（按类别拆分到 tools/ 目录） ====================
