@@ -59,10 +59,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   activateByHash();
   window.addEventListener('hashchange', activateByHash);
   
-  // 提前声明 DOM 引用，避免 loadConfig 异步回调中的 TDZ 错误
-  const enableToolPreselectCheckbox = document.getElementById('enableToolPreselect');
-  const preselectMinToolCountSection = document.getElementById('preselectMinToolCountSection');
-
   loadConfig();
   
   // 加载工具栏配置
@@ -367,21 +363,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // ==================== 工具栏配置事件 ====================
   
-  // 工具预筛选开关控制预筛选最小工具数显示
-  if (enableToolPreselectCheckbox && preselectMinToolCountSection) {
-    const enableToolPreselectLabel = document.getElementById('enableToolPreselectLabel');
-    function togglePreselectSection() {
-      preselectMinToolCountSection.style.display = enableToolPreselectCheckbox.checked ? '' : 'none';
-      if (enableToolPreselectLabel) {
-        enableToolPreselectLabel.textContent = enableToolPreselectCheckbox.checked ? '已启用' : '已停用';
-      }
-    }
-    enableToolPreselectCheckbox.addEventListener('change', togglePreselectSection);
-    // 初始状态（注意：loadConfig 会在 DOMContentLoaded 之后异步执行 set checked）
-    // 这里先根据 checkbox 初始状态设置，loadConfig 加载后再触发 change 事件
-    togglePreselectSection();
-  }
-  
   // 工具栏直接显示数量变更
   document.getElementById('toolbarMaxVisible').addEventListener('change', function() {
     saveToolbarConfig();
@@ -517,15 +498,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     persistAndRender();
   });
   
-  // 子任务反思区域折叠/展开
-  const subtaskReflectionSection = document.getElementById('subtaskReflectionSection');
-  if (subtaskReflectionSection) {
-    subtaskReflectionSection.addEventListener('click', function(e) {
-      if (e.target.closest('.reflection-section-toggle') || e.target.closest('.reflection-config-item')) return;
-      this.classList.toggle('collapsed');
-    });
-  }
-  
   // 反思总开关控制
   const reflectionEnabled = document.getElementById('reflectionEnabled');
   const reflectionConfig = document.getElementById('reflectionConfig');
@@ -596,19 +568,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
 
   // ==================== 流式输出配置 ====================
-  // 流式输出开关：控制流式渲染延迟的显示
   const streamEnabledEl = document.getElementById('streamEnabled');
-  const streamChunkDelaySection = document.getElementById('streamChunkDelaySection');
   const streamEnabledLabel = document.getElementById('streamEnabledLabel');
-  if (streamEnabledEl && streamChunkDelaySection) {
+  if (streamEnabledEl && streamEnabledLabel) {
     streamEnabledEl.addEventListener('change', function() {
-      streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
       if (streamEnabledLabel) {
         streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
       }
     });
-    // 初始化时同步状态
-    streamChunkDelaySection.style.display = streamEnabledEl.checked ? '' : 'none';
     if (streamEnabledLabel) {
       streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
     }

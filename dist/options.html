@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Helper - 配置</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/constants-L9mDXmaP.js"></script>
+  <script type="module" crossorigin src="/assets/constants-pTlHBqx5.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/options-CwqJTfIC.css">
+  <link rel="stylesheet" crossorigin href="/assets/options-DmaH_b2o.css">
 </head>
 <body>
   <div class="container">
@@ -227,74 +227,6 @@
       
       <div class="react-config-item">
         <label>
-          澄清等待超时
-          <span class="hint-text">（用户澄清/选择的最长等待时间）</span>
-        </label>
-        <input type="number" id="reactClarifyTimeout" min="1" max="10" step="1" value="3" placeholder="3">
-        <span class="unit">分钟 (min)</span>
-        <div class="range-labels">
-          <span>最小: 1分钟</span>
-          <span>最大: 10分钟</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
-          API 重试次数
-          <span class="hint-text">（网络错误或服务异常时的重试次数）</span>
-        </label>
-        <input type="number" id="reactApiRetryCount" min="0" max="10" step="1" value="3" placeholder="3">
-        <span class="unit">次</span>
-        <div class="range-labels">
-          <span>最小: 0（不重试）</span>
-          <span>最大: 10次</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
-          API 重试基础延迟
-          <span class="hint-text">（每次重试的起始等待时间，指数递增）</span>
-        </label>
-        <input type="number" id="reactApiRetryBaseDelay" min="500" max="30000" step="500" value="1000" placeholder="1000">
-        <span class="unit">毫秒 (ms)</span>
-        <div class="range-labels">
-          <span>最小: 500ms</span>
-          <span>最大: 30000ms</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
-          工具预筛选
-          <span class="hint-text">（任务执行前自动调用模型筛选相关工具，减少无关工具干扰）</span>
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="enableToolPreselect" checked>
-          <span class="toggle-switch"></span>
-          <span id="enableToolPreselectLabel">已启用</span>
-        </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          启用后，每次任务执行前会先调用一次模型判断需要哪些工具。<br>
-          如果发现筛选不准确导致任务质量下降，可关闭此开关。
-        </div>
-      </div>
-      
-      <div class="react-config-item" id="preselectMinToolCountSection" style="display: none;">
-        <label>
-          预筛选最小工具数
-          <span class="hint-text">（工具总数超过此数量时，才会启动预筛选）</span>
-        </label>
-        <input type="number" id="preselectMinToolCount" min="1" max="20" step="1" value="3" placeholder="3">
-        <span class="unit">个</span>
-        <div class="range-labels">
-          <span>最小: 1</span>
-          <span>最大: 20</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
           敏感操作确认
           <span class="hint-text">（模型执行敏感操作时，弹窗确认后再执行）</span>
         </label>
@@ -341,18 +273,6 @@
         </div>
       </div>
 
-      <div class="react-config-item" id="streamChunkDelaySection">
-        <label>
-          流式渲染延迟
-          <span class="hint-text">（控制流式输出字符显示速度，0=瞬间渲染）</span>
-        </label>
-        <input type="number" id="streamChunkDelay" min="0" max="200" step="10" value="30" placeholder="30">
-        <span class="unit">毫秒 (ms)</span>
-        <div class="range-labels">
-          <span>最小: 0（瞬间）</span>
-          <span>最大: 200ms</span>
-        </div>
-      </div>
       
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 配置说明</h3>
@@ -381,182 +301,30 @@
       </div>
       <p class="subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
       
-      <div class="reflection-section" id="postReflectionSection" data-toggle="postReflectionEnabled">
-        <div class="reflection-section-header">
-          <span class="reflection-section-title">📝 后置反思（循环结束后评估质量）</span>
-          <div class="reflection-section-toggle">
-            <span class="reflection-toggle-text">启用</span>
-            <label class="reflection-toggle-switch">
-              <input type="checkbox" id="postReflectionEnabled" checked>
-              <span class="reflection-toggle-slider"></span>
-            </label>
-          </div>
+      <div class="reflection-toggles">
+        <div class="reflection-toggle-row" id="postReflectionSection">
+          <span class="reflection-row-icon">📝</span>
+          <span class="reflection-row-text">后置反思<span class="reflection-row-hint">（完成后评估结果质量）</span></span>
+          <label class="reflection-toggle-switch">
+            <input type="checkbox" id="postReflectionEnabled" checked>
+            <span class="reflection-toggle-slider"></span>
+          </label>
         </div>
-        <div class="reflection-section-content">
-          <div class="reflection-config-item">
-            <label>
-              最大反思轮数
-              <span class="hint-text">（0=不反思，1-3轮）</span>
-            </label>
-            <input type="number" id="reflectionPostMaxRounds" min="0" max="3" value="1" placeholder="1">
-            <div class="range-labels">
-              <span>0（关闭）</span>
-              <span>3</span>
-            </div>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              质量评分阈值
-              <span class="hint-text">（低于此值重新执行，1-10分）</span>
-            </label>
-            <input type="number" id="reflectionPostQualityThreshold" min="1" max="10" value="7" placeholder="7">
-            <span class="unit">/10</span>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              修订阈值
-              <span class="hint-text">（低于此值直接修订而非重新执行，1-10分）</span>
-            </label>
-            <input type="number" id="reflectionPostRefineThreshold" min="1" max="10" value="5" placeholder="5">
-            <span class="unit">/10</span>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              反思模型
-              <span class="hint-text">（留空使用当前模型）</span>
-            </label>
-            <input type="text" id="reflectionPostModel" placeholder="使用当前模型">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              温度系数
-              <span class="hint-text">（反思时的随机性，0-1）</span>
-            </label>
-            <input type="number" id="reflectionPostTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              最大 Token
-              <span class="hint-text">（反思响应的最大 token 数）</span>
-            </label>
-            <input type="number" id="reflectionPostMaxTokens" min="256" max="8192" step="256" value="2048" placeholder="2048">
-          </div>
+        <div class="reflection-toggle-row" id="toolReflectionSection">
+          <span class="reflection-row-icon">🔧</span>
+          <span class="reflection-row-text">工具级反思<span class="reflection-row-hint">（工具执行后评估结果）</span></span>
+          <label class="reflection-toggle-switch">
+            <input type="checkbox" id="toolReflectionEnabled" checked>
+            <span class="reflection-toggle-slider"></span>
+          </label>
         </div>
-      </div>
-
-      <div class="reflection-section" id="toolReflectionSection" data-toggle="toolReflectionEnabled">
-        <div class="reflection-section-header">
-          <span class="reflection-section-title">🔧 工具级反思（工具执行后评估结果）</span>
-          <div class="reflection-section-toggle">
-            <span class="reflection-toggle-text">启用</span>
-            <label class="reflection-toggle-switch">
-              <input type="checkbox" id="toolReflectionEnabled" checked>
-              <span class="reflection-toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="reflection-section-content">
-          <div class="reflection-config-item">
-            <label class="toggle-label">
-              <input type="checkbox" id="toolReflectionTriggerOnError" checked>
-              <span class="toggle-text">工具返回错误时触发</span>
-            </label>
-          </div>
-          <div class="reflection-config-item">
-            <label class="toggle-label">
-              <input type="checkbox" id="toolReflectionTriggerOnEmpty" checked>
-              <span class="toggle-text">工具返回空结果时触发</span>
-            </label>
-          </div>
-          <div class="reflection-config-item">
-            <label class="toggle-label">
-              <input type="checkbox" id="toolReflectionTriggerOnOversized" checked>
-              <span class="toggle-text">工具返回结果过大时触发</span>
-            </label>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              结果大小阈值
-              <span class="hint-text">（超过此字符数视为过大）</span>
-            </label>
-            <input type="number" id="toolReflectionOversizeThreshold" min="1000" max="200000" step="1000" value="50000" placeholder="50000">
-            <span class="unit">字符</span>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              连续失败触发次数
-              <span class="hint-text">（连续 N 次工具失败后触发反思）</span>
-            </label>
-            <input type="number" id="toolReflectionConsecutiveFails" min="1" max="10" value="3" placeholder="3">
-            <span class="unit">次</span>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              每轮最多触发次数
-              <span class="hint-text">（单轮迭代中工具反思的上限）</span>
-            </label>
-            <input type="number" id="toolReflectionMaxPerIteration" min="1" max="5" value="2" placeholder="2">
-            <span class="unit">次</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="reflection-section collapsible" id="subtaskReflectionSection" data-toggle="subtaskReflectionEnabled">
-        <div class="reflection-section-header">
-          <span class="reflection-section-title">
-            <span class="reflection-section-icon">▶</span>
-            📋 子任务反思（高级）
-          </span>
-          <div class="reflection-section-toggle">
-            <span class="reflection-toggle-text">启用</span>
-            <label class="reflection-toggle-switch">
-              <input type="checkbox" id="subtaskReflectionEnabled">
-              <span class="reflection-toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-        <div class="reflection-section-content">
-          <div class="reflection-config-item">
-            <label class="toggle-label">
-              <input type="checkbox" id="subtaskReflectionOnlyComplex" checked>
-              <span class="toggle-text">仅对复杂子任务生效</span>
-            </label>
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              最大反思轮数
-              <span class="hint-text">（0=不反思）</span>
-            </label>
-            <input type="number" id="subtaskReflectionMaxRounds" min="0" max="3" value="1" placeholder="1">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              评估维度
-              <span class="hint-text">（逗号分隔，如：completeness,relevance）</span>
-            </label>
-            <input type="text" id="subtaskReflectionDimensions" value="completeness,relevance" placeholder="completeness,relevance">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              反思模型
-              <span class="hint-text">（留空使用当前模型）</span>
-            </label>
-            <input type="text" id="subtaskReflectionModel" placeholder="使用当前模型">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              温度系数
-              <span class="hint-text">（反思时的随机性，0-1）</span>
-            </label>
-            <input type="number" id="subtaskReflectionTemperature" min="0" max="1" step="0.1" value="0.3" placeholder="0.3">
-          </div>
-          <div class="reflection-config-item">
-            <label>
-              最大 Token
-              <span class="hint-text">（反思响应的最大 token 数）</span>
-            </label>
-            <input type="number" id="subtaskReflectionMaxTokens" min="256" max="4096" step="256" value="1024" placeholder="1024">
-          </div>
+        <div class="reflection-toggle-row" id="subtaskReflectionSection">
+          <span class="reflection-row-icon">📋</span>
+          <span class="reflection-row-text">子任务反思<span class="reflection-row-hint">（高级功能，默认关闭）</span></span>
+          <label class="reflection-toggle-switch">
+            <input type="checkbox" id="subtaskReflectionEnabled">
+            <span class="reflection-toggle-slider"></span>
+          </label>
         </div>
       </div>
 
@@ -564,10 +332,8 @@
         <h3>💡 反思配置说明</h3>
         <p>
           <strong>后置反思</strong>：在推理循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。<br>
-          <strong>工具级反思</strong>：在每次工具调用后，AI 会检查执行结果是否符合预期，遇到错误或异常时自动调整策略。<br>
-          <strong>子任务反思</strong>：对于复杂任务拆解后的子任务进行单独评估，默认关闭。<br>
-          • 提高质量阈值会减少反思次数，但可能降低结果质量<br>
-          • 降低温度系数会使反思更保守、更一致<br>
+          <strong>工具级反思</strong>：在每次工具调用后，AI 会自动检查执行结果是否符合预期，遇到错误或异常时调整策略。<br>
+          <strong>子任务反思</strong>：对于复杂任务拆解后的子任务进行单独评估，默认关闭（高级功能）。<br>
           • 启用反思会增加 API 调用次数，建议根据需求权衡
         </p>
       </div>

@@ -10,7 +10,7 @@ export const DEFAULT_REACT_CONFIG = {
   apiTimeout: 300000,         // API 请求超时 (ms) (10000-600000)
   loopTimeout: 1800000,       // 整体循环超时 (ms) (60000-3600000)
   toolTimeout: 600000,        // 工具执行超时 (ms) (5000-600000)
-  clarifyTimeout: 180000,     // 澄清工具超时 (ms) (60000-600000)，独立配置
+  clarifyTimeout: 300000,     // 澄清工具超时 (ms) (60000-600000)，默认5分钟
   apiRetryCount: 3,           // API 调用失败重试次数 (0-10)
   apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
   enableToolPreselect: true,  // 是否启用工具预筛选（默认开启）

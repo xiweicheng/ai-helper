@@ -95,6 +95,9 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
   return Promise.race([promise, timeoutPromise]);
 }
 
+// 反思总轮数上限（模块级常量）
+const MAX_REFLECTION_ROUNDS = 10;
+
 /**
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
@@ -105,7 +108,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
   let iteration = 0;
   let totalReflectionRounds = 0; // 单次 ReAct 循环内反思总轮数，防止 API 调用次数远超 maxIterations
-  const MAX_REFLECTION_ROUNDS = 10; // 反思总轮数上限
   let currentMessages = [...messages];
   const toolResultCache = new Map(); // 单次 ReAct 循环内的工具结果缓存
   const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
@@ -1195,7 +1197,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         console.log('[Background] 触发后置反思...');
         const reflectionResult = await reflectOnResult(
           currentMessages, content, executionLog, model, config,
-          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId
+          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds
         );
         
         // 合并反思日志
@@ -2110,7 +2112,7 @@ function parseReflectionResult(rawContent) {
  *
  * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null, wasRevised: boolean }}
  */
-async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId) {
+async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds = 0) {
   const postConfig = reflectionConfig.postReflection;
 
   if (!reflectionConfig?.enabled || !postConfig?.enabled || postConfig.maxRounds < 1) {

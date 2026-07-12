@@ -40,7 +40,7 @@ export const DEFAULT_REACT_CONFIG = {
   apiTimeout: 300000,
   loopTimeout: 1800000,
   toolTimeout: 600000,
-  clarifyTimeout: 180000,
+  clarifyTimeout: 300000,
 };
 
 export const DEFAULT_API_BASE = 'https://api.deepseek.com';

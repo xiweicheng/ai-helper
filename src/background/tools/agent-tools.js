@@ -87,7 +87,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec_command',
-      description: '通过本地Agent执行系统命令。危险命令会被拦截，敏感命令初次调用需确认后传入force:true强制执行',
+      description: '执行系统命令（危险命令拦截，敏感命令需确认）',
       parameters: {
         type: 'object',
         properties: {

@@ -12,7 +12,7 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_store',
-      description: '存储/更新/删除长期记忆。当用户说"记住xxx"或对话中出现值得长期保留的信息时调用此工具',
+      description: '存储/更新/删除长期记忆',
       parameters: {
         type: 'object',
         properties: {
@@ -39,7 +39,7 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_recall',
-      description: '从长期记忆中检索相关信息。根据关键词、标签搜索已存储的记忆，返回匹配的结果',
+      description: '从长期记忆中检索信息（支持关键词/标签搜索）',
       parameters: {
         type: 'object',
         properties: {
@@ -61,7 +61,7 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_manage',
-      description: '管理长期记忆：审查记忆质量、合并重复记忆、淘汰低价值记忆。当记忆数量接近上限（facts≥40或summaries≥16）或用户要求整理时调用',
+      description: '审查记忆质量、合并重复、淘汰低价值记忆',
       parameters: {
         type: 'object',
         properties: {

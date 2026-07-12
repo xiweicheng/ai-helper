@@ -235,7 +235,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_page_content',
-      description: '获取页面内容，支持多种输出格式。不指定 tabId 时默认提取当前会话关联的标签页内容',
+      description: '获取页面内容（支持多种输出格式）',
       parameters: {
         type: 'object',
         properties: {
@@ -257,7 +257,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'extract_data',
-      description: '提取页面结构化数据（表格/链接/表单/图片/元数据）。不指定 tabId 时默认提取当前会话关联的标签页内容',
+      description: '提取页面结构化数据（表格/链接/表单等）',
       parameters: {
         type: 'object',
         properties: {

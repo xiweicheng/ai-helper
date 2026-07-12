@@ -6,7 +6,7 @@
   <title>AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/chunk-CMxvf4Kt.js"></script>
-  <script type="module" crossorigin src="/assets/constants-L9mDXmaP.js"></script>
+  <script type="module" crossorigin src="/assets/constants-pTlHBqx5.js"></script>
   <script type="module" crossorigin src="/assets/agent-defaults-DoYHi4BL.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -214,7 +214,7 @@
         <!-- 工具列表由 JS 动态生成 -->
       </div>
       <div class="modal-actions">
-        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="任务执行前先调用模型筛选相关工具，关闭后将全量工具直接传给模型">
+        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="启用：任务执行前先调用模型筛选相关工具，减少无关工具干扰，但会增加一次 API 调用&#10;关闭：全部启用工具直接传给模型，无额外 API 开销，工具过多时可能影响准确性">
           <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
           <span class="toggle-switch"></span>
           <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;">工具预筛选</span>
