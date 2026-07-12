@@ -75,7 +75,7 @@ function updateMemoryLimitLabel() {
   const label = document.getElementById('memoryLimitLabel');
   if (label) {
     if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
-      label.textContent = `(最近${state.chatConfig.maxMemoryMessages}条)`;
+      label.textContent = `(${state.chatConfig.maxMemoryMessages})`;
     } else {
       label.textContent = '(全)';
     }
