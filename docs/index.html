@@ -467,7 +467,7 @@
     <div class="stat-label">内置工具</div>
   </div>
   <div class="stat">
-    <div class="stat-num">11+</div>
+    <div class="stat-num">10+</div>
     <div class="stat-label">工具分类</div>
   </div>
   <div class="stat">
@@ -770,7 +770,7 @@
 <!-- 架构 -->
 <section class="section" id="arch">
   <div class="section-title">
-    <h2>五层架构</h2>
+    <h2>六层架构</h2>
     <p>Chrome Extension API 消息通道，各层职责清晰</p>
   </div>
   <div class="arch">
@@ -795,7 +795,7 @@
         <div class="arch-desc">剪贴板操作<br>MV3 兼容桥接</div>
       </div>
       <div class="arch-arrow">→</div>
-      <div class="arch-box">
+      <div class="arch-box highlight">
         <div class="arch-title">代理服务</div>
         <div class="arch-desc">文件读写<br>命令执行<br>Skill/MCP 扩展</div>
       </div>
@@ -818,8 +818,8 @@
     <div class="step">
       <div class="step-num">1</div>
       <h3>加载扩展</h3>
-      <p>下载项目后，在 chrome://extensions 开启开发者模式，加载 dist 目录。</p>
-      <code>git clone &amp;&amp; npm install &amp;&amp; npm run build</code>
+      <p>从 GitHub/Gitee 下载项目压缩包并解压，打开 chrome://extensions 开启开发者模式，点击「加载已解压的扩展程序」选择 dist 目录。</p>
+      <code>下载 ZIP → 解压 → 加载 dist 目录</code>
     </div>
     <div class="step">
       <div class="step-num">2</div>
@@ -830,7 +830,7 @@
     <div class="step">
       <div class="step-num">3</div>
       <h3>安装代理（可选）</h3>
-      <p>如需本地文件读写和命令执行，全局安装代理服务并启动。</p>
+      <p>如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。</p>
       <code>npm i -g ai-helper-agent &amp;&amp; ai-helper-agent start</code>
     </div>
   </div>
