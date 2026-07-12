@@ -2999,6 +2999,53 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
             }
           });
         }
+        
+        // 子任务进度显示：每个子任务独立一行，并行场景下互不干扰
+        if (message.subtaskTotal && message.subtaskTotal > 0) {
+          const se = _se();
+          if (se) {
+            const contentDiv = se.querySelector('.stream-content');
+            if (contentDiv) {
+              const si = message.subtaskIndex ?? 0;
+              const selector = `.subtask-progress[data-subtask-index="${si}"]`;
+              let progressEl = contentDiv.querySelector(selector);
+              if (!progressEl) {
+                progressEl = document.createElement('div');
+                progressEl.className = 'subtask-progress';
+                progressEl.dataset.subtaskIndex = si;
+                contentDiv.appendChild(progressEl);
+              }
+              
+              // 任务图标 + 序数标识
+              const taskIcon = `<svg class="subtask-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="8" y1="2" x2="8" y2="4"/><line x1="16" y1="2" x2="16" y2="4"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+              const idx = si + 1;
+              const total = message.subtaskTotal;
+              const name = message.subtaskName || '';
+              const badge = `<span class="subtask-badge">${idx}/${total}</span>`;
+              
+              if (message.status === 'success') {
+                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-done">完成</span>`;
+                progressEl.classList.add('subtask-progress-done');
+                progressEl.classList.remove('subtask-progress-active');
+              } else if (message.status === 'failed') {
+                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-failed">失败</span>`;
+                progressEl.classList.add('subtask-progress-failed');
+                progressEl.classList.remove('subtask-progress-active');
+              } else {
+                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-label"><span class="subtask-spinner"></span>执行中...</span>`;
+                progressEl.classList.add('subtask-progress-active');
+              }
+              
+              // 全部子任务完成时，为每个元素统一添加完成样式
+              const allDone = message.status === 'success' && idx >= total;
+              if (allDone) {
+                const allEls = contentDiv.querySelectorAll('.subtask-progress');
+                allEls.forEach(el => el.classList.add('subtask-progress-all-done'));
+              }
+            }
+          }
+        }
+        
         return false;
       }
       

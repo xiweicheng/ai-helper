@@ -1274,14 +1274,23 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     }
     if (deltaLog.length === 0) return; // 无变更，跳过发送
     
-    chrome.runtime.sendMessage({
+    const msg = {
       type: 'EXECUTION_STATUS_UPDATE',
       nodeName,
       status,
       executionLog: deltaLog,
       ...(sessionId ? { sessionId } : {}),
       ...extraFields
-    }).catch(err => {});
+    };
+    
+    // 子任务进度信息：让前端显示 "子任务 X/N: name 执行中..."
+    if (extraFields.subtaskTotal != null) {
+      msg.subtaskTotal = extraFields.subtaskTotal;
+      msg.subtaskIndex = extraFields.subtaskIndex;
+      msg.subtaskName = extraFields.subtaskName;
+    }
+    
+    chrome.runtime.sendMessage(msg).catch(err => {});
   }
   
   console.log('[Background] 开始执行子任务，策略:', strategy, '失败策略:', failureStrategy, '最大重试:', maxRetries, '数量:', subtasks.length);
@@ -1370,7 +1379,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     });
     
     // 发送子任务开始状态
-    sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', parentExecutionLog, { taskGroup: taskGroup });
+    sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
@@ -1420,7 +1429,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
               });
             });
             
-            sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', mergedLog, { taskGroup: taskGroup });
+            sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', mergedLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           },
           globalIteration
         );
@@ -1453,7 +1462,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
         }
         
         // 发送子任务完成状态（增量发送，避免 64MiB 限制）
-        sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`, 'success', parentExecutionLog, { taskGroup: taskGroup });
+        sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`, 'success', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
         
         // 记录已完成的子任务（用于回滚）
         completedSubtasks.push({ subtask, result: subtaskResult });
@@ -1558,7 +1567,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
           }
           
           // 发送子任务失败状态
-          sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`, 'failed', parentExecutionLog, { taskGroup: taskGroup });
+          sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`, 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           
           return {
             success: false,
