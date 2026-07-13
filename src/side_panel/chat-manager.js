@@ -2759,7 +2759,7 @@ function finalizeCancelledStream(element) {
   // 更新状态文本为"已取消"
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) {
-    statusDiv.textContent = '已取消';
+    statusDiv.textContent = '';
   }
   
   // 移除 streaming 动画类
@@ -3307,11 +3307,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
             if (reflectionConfig?.enabled) {
+              // 反思功能启用时，显示质量评估状态，让用户知道这段时间在做什么
               statusDiv.textContent = '质量评估中...';
             } else {
-              // 流式输出完成，但整体执行可能尚未结束（如后置反思等），
-              // 不在此处显示"处理完成"，待 API_COMPLETE 或最终执行状态更新后统一处理
-              statusDiv.textContent = '处理中...';
+              // 无反思时不需要显示冗余状态文字
+              statusDiv.textContent = '';
             }
           }
           // 不在此处移除 streaming 类，由 API_COMPLETE 统一处理
