@@ -617,21 +617,26 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
 
         try {
           const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          if (delta?.content) {
-            fullContent += delta.content;
+          // 兼容多种 SSE 格式：delta.content / message.content / text
+          let delta = parsed.choices?.[0]?.delta?.content
+            || parsed.choices?.[0]?.message?.content
+            || parsed.choices?.[0]?.text
+            || '';
+          if (delta) {
+            fullContent += delta;
 
             // 实时推送到 side panel 展示
             if (sessionId) {
               chrome.runtime.sendMessage({
                 type: 'VISION_ANALYSIS_CHUNK',
                 sessionId,
-                delta: delta.content
+                delta
               }).catch(() => {});
             }
           }
-        } catch {
-          // 解析失败跳过该行
+        } catch (err) {
+          // 解析失败时记录原始数据，方便排查不同模型的格式差异
+          console.warn('[Background] 图片识别 SSE 解析失败，原始数据:', data.substring(0, 200), '错误:', err.message);
         }
       }
     }
