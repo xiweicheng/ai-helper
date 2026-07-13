@@ -622,23 +622,26 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         if (currentFingerprint === lastToolCallFingerprint) {
           repeatedCallCount++;
           console.warn(`[Background] 检测到重复工具调用 (第${repeatedCallCount}次连续重复):`, 
-            assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', '));
+          assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', '));
           
           if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
-            throw createErrorWithLog(
-              `连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`,
-              executionLog
-            );
+            console.warn(`[Background] 连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`);
+            // throw createErrorWithLog(
+            //   `连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`,
+            //   executionLog
+            // );
           }
           
           if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
+            console.warn(`[Background] 【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`);
             // 注入警告消息，提示模型更换策略
-            const warnMsg = {
-              role: 'system',
-              content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
-            };
-            currentMessages.push(warnMsg);
-            console.log('[Background] 注入重复调用警告消息');
+            // 使用 role: 'user' 而非 'system'，避免插入中间的 system 消息破坏 filterApiMessages 的 assistant/tool 配对检测
+            // const warnMsg = {
+            //   role: 'user',
+            //   content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
+            // };
+            // currentMessages.push(warnMsg);
+            // console.log('[Background] 注入重复调用警告消息');
           }
         } else {
           lastToolCallFingerprint = currentFingerprint;

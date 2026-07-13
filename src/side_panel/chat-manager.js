@@ -148,6 +148,34 @@ export async function loadChatHistory() {
         } catch {}
       }
       
+      // 恢复上下文气泡（技能、MCP、文件、网页、引用/选中内容）
+      if (msg.role === 'user' && msg.contextBubbles && Array.isArray(msg.contextBubbles)) {
+        msg.contextBubbles.forEach(bubble => {
+          let bubbleText = '';
+          switch (bubble.type) {
+            case 'skill':
+              bubbleText = `使用技能「${bubble.name}」进行问答${bubble.description ? '：' + bubble.description : ''}`;
+              break;
+            case 'mcp':
+              bubbleText = `使用MCP服务「${bubble.serverName}」进行问答`;
+              break;
+            case 'page':
+              bubbleText = `网页「${bubble.title}」\n${bubble.url}`;
+              break;
+            case 'quoted':
+            case 'selected':
+              bubbleText = bubble.text || '';
+              break;
+            case 'file':
+              bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
+              break;
+          }
+          if (bubbleText) {
+            addContextBubble(bubble.type, bubbleText, false);
+          }
+        });
+      }
+      
       // 如果有保存的 HTML 内容（流式消息），直接恢复完整 DOM
       if (msg.htmlContent) {
         restoreMessageFromHtml(msg.htmlContent, msg.messageId);
@@ -282,6 +310,9 @@ export async function sendMessage() {
   const hasSelectedContext = state.enableSelectionQuery && state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
   
+  // 收集上下文气泡信息，用于持久化保存和刷新恢复
+  const contextBubbles = [];
+  
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
     // 压缩大段引用内容，防止永久占据上下文空间
@@ -289,6 +320,7 @@ export async function sendMessage() {
     finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     // 先添加独立引用内容气泡
     addContextBubble('quoted', ctx, false);
+    contextBubbles.push({ type: 'quoted', text: ctx });
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const ctx = state.selectedContextText.trim();
@@ -296,6 +328,7 @@ export async function sendMessage() {
     finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
+    contextBubbles.push({ type: 'selected', text: ctx });
     state.selectedContextText = '';
   }
 
@@ -305,6 +338,7 @@ export async function sendMessage() {
     finalText = skillContext + finalText;
     // 添加技能上下文气泡（用户可见）
     addContextBubble('skill', `使用技能「${state.selectedSkill.name}」进行问答${state.selectedSkill.description ? '：' + state.selectedSkill.description : ''}`, false);
+    contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
   }
@@ -315,6 +349,7 @@ export async function sendMessage() {
     finalText = mcpContext + finalText;
     // 添加 MCP 上下文气泡
     addContextBubble('mcp', `使用MCP服务「${state.selectedMcpService.serverName}」进行问答`, false);
+    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
     // 清除 MCP 指示器
     clearMcpService();
   }
@@ -325,6 +360,7 @@ export async function sendMessage() {
     finalText = pageCtx + finalText;
     // 添加网页上下文气泡
     addContextBubble('page', `网页「${state.selectedPage.title}」\n${state.selectedPage.url}`, false);
+    contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
     // 清除网页指示器
     clearPageSelection();
   }
@@ -337,6 +373,12 @@ export async function sendMessage() {
     if (fileContent) {
       finalText += fileContent;
     }
+    // 收集文件信息用于持久化
+    attachedFilesSnapshot.forEach(f => {
+      if (f.status === 'done') {
+        contextBubbles.push({ type: 'file', name: f.name, size: f.size, fileType: f.type });
+      }
+    });
   }
 
   // 显示用户消息（仅展示用户输入的文字+文件标签，上下文内容已通过上方独立气泡展示）
@@ -344,8 +386,8 @@ export async function sendMessage() {
   // attachedFilesSnapshot 用于渲染文件标签
   const { messageId: userMsgId } = addMessage('user', buildUserContent(text), true, [], null, false, finalText, null, attachedFilesSnapshot);
   
-  // 消息历史存储拼接后的完整上下文内容
-  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId });
+  // 消息历史存储拼接后的完整上下文内容（附带上下文气泡信息）
+  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId, contextBubbles });
   
   saveChatHistory();
   
@@ -1565,6 +1607,23 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
     });
   });
   
+  // 重新绑定 tool-call-result 点击展开完整输出（流式折叠内容）
+  messageEl.querySelectorAll('.tool-call-result').forEach(resultDiv => {
+    const codeBlock = resultDiv.querySelector('code');
+    if (!codeBlock) return;
+    // 从 data-full-content 属性获取完整内容（流式输出时存入）
+    const fullContent = codeBlock.dataset.fullContent;
+    if (!fullContent || fullContent.length <= 500) return;
+    const currentText = codeBlock.textContent || '';
+    let isExpanded = false;
+    resultDiv.style.cursor = 'pointer';
+    resultDiv.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isExpanded = !isExpanded;
+      codeBlock.textContent = isExpanded ? fullContent : currentText;
+    });
+  });
+  
   // 重新绑定底部工具栏按钮事件
   const footer = messageEl.querySelector('.message-footer');
   if (footer) {
@@ -2152,6 +2211,8 @@ function appendToolResult(result, streamingElement) {
     // 如果内容 > 500 字符，支持点击展开完整内容
     if (fullContent.length > 500) {
       const codeBlock = resultDiv.querySelector('code');
+      // 将完整内容存储到 data 属性，供历史消息恢复时使用
+      codeBlock.dataset.fullContent = fullContent;
       let isExpanded = false;
       resultDiv.style.cursor = 'pointer';
         resultDiv.addEventListener('click', () => {
@@ -3248,12 +3309,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
             if (reflectionConfig?.enabled) {
               statusDiv.textContent = '质量评估中...';
             } else {
-              statusDiv.textContent = '处理完成';
+              // 流式输出完成，但整体执行可能尚未结束（如后置反思等），
+              // 不在此处显示"处理完成"，待 API_COMPLETE 或最终执行状态更新后统一处理
+              statusDiv.textContent = '处理中...';
             }
           }
-          if (!reflectionConfig?.enabled) {
-            _se().classList.remove('streaming');
-          }
+          // 不在此处移除 streaming 类，由 API_COMPLETE 统一处理
         }
         return false;
       }

@@ -42,11 +42,20 @@ export async function shouldShowSkillsTab() {
   }
 
   // 检查 Skill 全局开关
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['skillsEnabled'], (result) => {
-      resolve(result.skillsEnabled !== false);
-    });
+  const storageResult = await new Promise((resolve) => {
+    chrome.storage.local.get(['skillsEnabled'], resolve);
   });
+  if (storageResult.skillsEnabled === false) {
+    return false;
+  }
+
+  // 检查是否有已启用的技能（没有启用技能时隐藏 Tab）
+  try {
+    const enabledSkills = await getEnabledSkills();
+    return enabledSkills.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**

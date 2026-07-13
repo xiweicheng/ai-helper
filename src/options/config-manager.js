@@ -1126,8 +1126,10 @@ export function saveConfig() {
   const reactClarifyTimeout = DEFAULT_REACT_CONFIG.clarifyTimeout;
   const reactApiRetryCount = DEFAULT_REACT_CONFIG.apiRetryCount;
   const reactApiRetryBaseDelay = DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
-  const enableToolPreselect = DEFAULT_REACT_CONFIG.enableToolPreselect;
-  const preselectMinToolCount = DEFAULT_REACT_CONFIG.preselectMinToolCount;
+  const preselectEl = document.getElementById('enableToolPreselect');
+  const enableToolPreselect = preselectEl ? preselectEl.checked : DEFAULT_REACT_CONFIG.enableToolPreselect;
+  const preselectMinEl = document.getElementById('preselectMinToolCount');
+  const preselectMinToolCount = preselectMinEl ? parseInt(preselectMinEl.value) || DEFAULT_REACT_CONFIG.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;

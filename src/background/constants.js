@@ -13,7 +13,7 @@ export const DEFAULT_REACT_CONFIG = {
   clarifyTimeout: 300000,     // 澄清工具超时 (ms) (60000-600000)，默认5分钟
   apiRetryCount: 3,           // API 调用失败重试次数 (0-10)
   apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
-  enableToolPreselect: true,  // 是否启用工具预筛选（默认开启）
+  enableToolPreselect: false, // 是否启用工具预筛选（默认关闭）
   preselectMinToolCount: 3,   // 工具预筛选最小触发数量（工具数超过此值才启动预筛选）
   toolConfirmationEnabled: true  // 是否启用敏感操作确认（关闭后敏感操作直接放行）
 };

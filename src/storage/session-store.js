@@ -115,6 +115,7 @@ export async function saveCurrentSession() {
     htmlContent: msg.htmlContent || undefined,
     messageId: msg.messageId || undefined,
     timestamp: msg.timestamp || undefined,
+    contextBubbles: msg.contextBubbles || undefined,
   }));
 
   currentSession.updatedAt = new Date().toISOString();
@@ -260,11 +261,9 @@ export async function switchToSession(sessionId) {
 
   state.activeSessionId = sessionId;
   state.messageHistory = targetSession.messageHistory || [];
-  state.currentModel = targetSession.model || state.currentModel;
+  // 会话切换时不恢复模型/温度/工具开关，保持当前全局设置
+  // 避免用户更改全局设置后切换到旧会话时被旧参数覆盖
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
-  // enabledTools 由智能体独立 key 管理，会话切换时不再从此处恢复
-  state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
-  state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.activeAgentId = targetSession.agentId || null;
   // 持久化当前智能体 ID，避免刷新后丢失
   if (targetSession.agentId) {

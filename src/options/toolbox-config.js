@@ -228,8 +228,7 @@ function renderMcpServers(servers) {
               <input type="checkbox" ${s.enabled !== false ? 'checked' : ''} data-mcp-id="${escapeHtml(s.id)}" data-action="toggle">
               <span class="toolbox-toggle-slider"></span>
             </label>
-            <div class="mcp-server-tools-count">${toolCount} 工具</div>
-          </div>
+            </div>
         </div>
         <div class="mcp-card-body${s.enabled === false ? ' disabled' : ''}">
           <div class="mcp-server-command">
@@ -558,7 +557,7 @@ function renderSkills(skills) {
         </div>
         <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
           <div class="skill-card-desc">${escapeHtml(desc.content)}</div>
-          ${desc.truncated ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
+          ${desc.truncated && s.enabled !== false ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
           ${hasParams ? `
           <div class="skill-card-params">
             ${renderSkillParams(s.parameters)}
@@ -598,7 +597,7 @@ function renderSkills(skills) {
         </div>
         <div class="skill-card-body${s.enabled === false ? ' disabled' : ''}">
           <div class="skill-card-desc">${escapeHtml(desc.content)}</div>
-          ${desc.truncated ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
+          ${desc.truncated && s.enabled !== false ? `<button class="skill-expand-btn" data-skill-name="${escapeHtml(s.name)}" data-target="desc" data-full="${encodeURIComponent(s.description || '')}">展开</button>` : ''}
           ${hasResources ? `
           <div class="skill-card-params">
             ${showResourcesInFull 
@@ -1221,6 +1220,58 @@ function notifyMcpChange() {
 }
 
 /**
+ * 更新 MCP 服务数量统计（显示在 section 标题旁）
+ */
+function updateMcpToolCount(servers) {
+  const mcpSection = document.getElementById('mcpSection');
+  if (!mcpSection) return;
+  let countEl = mcpSection.querySelector('.toolbox-tool-count');
+  if (!countEl) {
+    countEl = document.createElement('span');
+    countEl.className = 'toolbox-tool-count';
+    // 插入到标题 h2 之后（toggle 按钮保持在最右边不动）
+    const titleEl = mcpSection.querySelector('.toolbox-section-title');
+    if (titleEl) {
+      titleEl.insertAdjacentElement('afterend', countEl);
+    }
+  }
+  const enabled = servers.filter(s => s.enabled !== false).length;
+  const total = servers.length;
+  if (total === 0) {
+    countEl.style.display = 'none';
+  } else {
+    countEl.textContent = `已启用 ${enabled} / 共 ${total}`;
+    countEl.style.display = '';
+  }
+}
+
+/**
+ * 更新 Skill 启用/总数统计（显示在 section 标题旁）
+ */
+function updateSkillCount(skills) {
+  const skillSection = document.getElementById('skillSection');
+  if (!skillSection) return;
+  let countEl = skillSection.querySelector('.toolbox-tool-count');
+  if (!countEl) {
+    countEl = document.createElement('span');
+    countEl.className = 'toolbox-tool-count';
+    // 插入到标题 h2 之后（toggle 按钮保持在最右边不动）
+    const titleEl = skillSection.querySelector('.toolbox-section-title');
+    if (titleEl) {
+      titleEl.insertAdjacentElement('afterend', countEl);
+    }
+  }
+  const enabled = skills.filter(s => s.enabled !== false).length;
+  const total = skills.length;
+  if (total === 0) {
+    countEl.style.display = 'none';
+  } else {
+    countEl.textContent = `已启用 ${enabled} / 共 ${total}`;
+    countEl.style.display = '';
+  }
+}
+
+/**
  * 刷新整个工具箱面板
  */
 async function refreshToolbox() {
@@ -1229,8 +1280,16 @@ async function refreshToolbox() {
     loadSkills()
   ]);
 
-  renderMcpServers(mcpResult.servers || []);
-  renderSkills(skillResult.skills || []);
+  const mcpServers = mcpResult.servers || [];
+  const skills = skillResult.skills || [];
+
+  renderMcpServers(mcpServers);
+  renderSkills(skills);
+
+  // 更新 MCP 工具数量统计
+  updateMcpToolCount(mcpServers);
+  // 更新 Skill 启用/停用数量统计
+  updateSkillCount(skills);
 
   // 更新顶部连接状态提示
   const statusEl = document.getElementById('toolboxAgentStatus');

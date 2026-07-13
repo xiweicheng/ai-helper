@@ -27,6 +27,24 @@ export async function showAgentAtSelector(filterText = '') {
 
   // 根据是否有过滤文本决定展示模式
   await renderActiveAtList(filterText);
+
+  // 异步更新 Tab 标题的选项数量（不阻塞弹窗显示）
+  updateAtTabCounts();
+}
+
+/**
+ * 更新 @ 选择器 Tab 标题的选项数量
+ */
+async function updateAtTabCounts() {
+  try {
+    const [allAgents, allTabs] = await Promise.all([getAllAgents(), getOpenTabs()]);
+    const agentsTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="agents"]');
+    const pagesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="pages"]');
+    if (agentsTab) agentsTab.textContent = `助手 (${allAgents.length})`;
+    if (pagesTab) pagesTab.textContent = `网页 (${allTabs.length})`;
+  } catch {
+    // 获取失败则保持默认标题
+  }
 }
 
 /**

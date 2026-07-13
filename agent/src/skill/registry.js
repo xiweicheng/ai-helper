@@ -12,6 +12,35 @@ const skills = new Map();
 // 内置技能状态持久化文件
 const BUILTIN_STATE_FILE = join(dirname(SKILLS_DIR), 'builtin_skills_state.json');
 
+// 用户停用技能状态持久化文件（比直接写 SKILL.md 更可靠，避免文件写入失败导致状态丢失）
+const DISABLED_STATE_FILE = join(dirname(SKILLS_DIR), 'disabled_skills.json');
+
+/**
+ * 读取用户停用的技能列表
+ * @returns {Set<string>}
+ */
+function loadDisabledState() {
+  try {
+    if (existsSync(DISABLED_STATE_FILE)) {
+      const data = JSON.parse(readFileSync(DISABLED_STATE_FILE, 'utf-8'));
+      return new Set(data.disabled || []);
+    }
+  } catch (e) { /* 忽略 */ }
+  return new Set();
+}
+
+/**
+ * 保存用户停用的技能列表
+ * @param {Set<string>} disabledSet
+ */
+function saveDisabledState(disabledSet) {
+  try {
+    writeFileSync(DISABLED_STATE_FILE, JSON.stringify({ disabled: [...disabledSet] }, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[Skill Registry] 无法保存停用状态:', e.message);
+  }
+}
+
 /**
  * 读取内置技能的启用状态
  * @returns {Record<string, boolean>} name → enabled
@@ -80,6 +109,15 @@ export function initializeSkillRegistry() {
     const skill = skills.get(name);
     if (skill && skill.builtin) {
       skill.enabled = enabled;
+    }
+  }
+
+  // 5. 恢复用户手动停用的技能状态（所有类型，比 SKILL.md frontmatter 更可靠）
+  const disabledSet = loadDisabledState();
+  for (const name of disabledSet) {
+    const skill = skills.get(name);
+    if (skill) {
+      skill.enabled = false;
     }
   }
 
@@ -200,6 +238,11 @@ export function getAgentSkillPrompt(name) {
   if (!skill || skill.type !== 'agent') {
     return { success: false, error: `Skill "${name}" 不存在或不是 Agent Skill` };
   }
+  // 如果 skill 有 dirPath，在 prompt 前注入工作目录信息，方便 AI 解析相对路径引用
+  let prompt = skill.fullPrompt || skill.prompt || '';
+  if (skill.dirPath) {
+    prompt = `[技能工作目录: ${skill.dirPath}]\n\n${prompt}`;
+  }
   return {
     success: true,
     skill: {
@@ -208,7 +251,7 @@ export function getAgentSkillPrompt(name) {
       version: skill.version,
       resources: skill.resources
     },
-    prompt: skill.fullPrompt || skill.prompt || ''
+    prompt
   };
 }
 
@@ -271,17 +314,25 @@ export function toggleSkill(name) {
   const newEnabled = skill.enabled === false;
   skill.enabled = newEnabled;
 
-  // 内置技能无需持久化到文件（它们没有物理文件），但需要记住启用状态
+  // 1. 持久化到 disabled_skills.json（所有类型统一使用，比直接写 SKILL.md 更可靠）
+  const disabledSet = loadDisabledState();
+  if (newEnabled) {
+    disabledSet.delete(name);
+  } else {
+    disabledSet.add(name);
+  }
+  saveDisabledState(disabledSet);
+
+  // 2. 内置技能额外保存到 builtin_skills_state.json
   if (skill.builtin) {
     const state = loadBuiltinState();
     state[name] = newEnabled;
     saveBuiltinState(state);
-    return { success: true, enabled: newEnabled };
   }
 
+  // 3. 尝试更新技能源文件（best-effort，失败不影响状态）
   try {
     if (skill.type === 'agent' && skill.skillMdPath) {
-      // 更新 SKILL.md 的 frontmatter
       const content = readFileSync(skill.skillMdPath, 'utf-8');
       const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
       if (frontmatterMatch) {
@@ -295,15 +346,14 @@ export function toggleSkill(name) {
         writeFileSync(skill.skillMdPath, newContent, 'utf-8');
       }
     } else if (skill.type === 'workflow' && skill._filePath) {
-      // 更新 JSON 文件
       const content = readFileSync(skill._filePath, 'utf-8');
       const parsed = JSON.parse(content);
       parsed.enabled = newEnabled;
       writeFileSync(skill._filePath, JSON.stringify(parsed, null, 2), 'utf-8');
     }
   } catch (err) {
-    // 文件写入失败不影响内存状态，仅记录警告
-    console.warn(`[Skill Registry] 持久化 "${name}" 的启用状态失败:`, err.message);
+    // 写源文件失败不影响状态，disabled_skills.json 已经持久化
+    console.warn(`[Skill Registry] 更新 "${name}" 源文件失败（状态已通过 disabled_skills.json 保存）:`, err.message);
   }
 
   return { success: true, enabled: newEnabled };

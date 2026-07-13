@@ -130,7 +130,7 @@ async function openToolsPopup() {
   chrome.storage.local.get(['enableToolPreselect'], (result) => {
     const toggle = document.getElementById('toolsPreselectToggle');
     if (toggle) {
-      const enabled = result.enableToolPreselect !== undefined ? result.enableToolPreselect : true;
+      const enabled = result.enableToolPreselect !== undefined ? result.enableToolPreselect : false;
       toggle.checked = enabled;
     }
   });

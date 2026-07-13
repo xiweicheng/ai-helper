@@ -153,14 +153,17 @@ export async function showPromptSelector(filterText = '') {
   // 检查是否显示技能 Tab 和 MCP Tab
   const skillsTab = document.getElementById('skillsTab');
   const mcpTab = document.getElementById('mcpTab');
+  const showSkills = skillsTab ? await shouldShowSkillsTab() : false;
+  const showMcp = mcpTab ? await shouldShowMcpTab() : false;
   if (skillsTab) {
-    const showSkills = await shouldShowSkillsTab();
     skillsTab.style.display = showSkills ? 'block' : 'none';
   }
   if (mcpTab) {
-    const showMcp = await shouldShowMcpTab();
     mcpTab.style.display = showMcp ? 'block' : 'none';
   }
+
+  // 更新 Tab 标题，附加上选项数量（异步获取，不阻塞弹窗显示）
+  updateTabCounts(showSkills, showMcp);
 
   if (filterText) {
     // 有搜索内容：合并显示提示词和技能
@@ -203,6 +206,41 @@ export function hidePromptSelector() {
   // 恢复 Tab 栏显示
   const tabsContainer = document.getElementById('promptDropdownTabs');
   if (tabsContainer) tabsContainer.style.display = '';
+}
+
+/**
+ * 更新 Tab 标题，附加选项数量
+ * 异步获取数据，不阻塞弹窗显示
+ */
+async function updateTabCounts(showSkills, showMcp) {
+  try {
+    // 提示词数量
+    const promptCount = state.customPrompts.length;
+    const promptsTab = document.querySelector('#promptDropdownTabs .prompt-tab[data-tab="prompts"]');
+    if (promptsTab) {
+      promptsTab.textContent = `提示词 (${promptCount})`;
+    }
+
+    // 技能数量
+    if (showSkills) {
+      const skills = await getEnabledSkills();
+      const skillsTab = document.getElementById('skillsTab');
+      if (skillsTab) {
+        skillsTab.textContent = `技能 (${skills.length})`;
+      }
+    }
+
+    // MCP 服务数量
+    if (showMcp) {
+      const mcpServices = await getMcpServices();
+      const mcpTab = document.getElementById('mcpTab');
+      if (mcpTab) {
+        mcpTab.textContent = `MCP (${mcpServices.length})`;
+      }
+    }
+  } catch {
+    // 获取失败则保持默认标题
+  }
 }
 
 /**
