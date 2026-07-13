@@ -3053,21 +3053,42 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
 
       await new Promise((resolve, reject) => {
-        const totalTimeoutId = setTimeout(() => {
-          const errMsg = `命令执行超时 (${effectiveTimeout}ms)`;
-          console.warn('[AgentExec]', errMsg);
-          cleanupAndStop(errMsg).then(() => {
-            reject(new Error(errMsg));
-          });
-        }, effectiveTimeout);
+        let totalTimeoutId = null;
+        let lastActivityTime = Date.now();
+
+        const resetTimeout = () => {
+          if (totalTimeoutId) {
+            clearTimeout(totalTimeoutId);
+          }
+          lastActivityTime = Date.now();
+          const remainingTime = effectiveTimeout - (Date.now() - lastActivityTime);
+          if (remainingTime > 0) {
+            totalTimeoutId = setTimeout(() => {
+              const elapsedSinceLastActivity = Date.now() - lastActivityTime;
+              if (elapsedSinceLastActivity > idleTimeoutMs) {
+                const errMsg = `命令执行超时 (${effectiveTimeout}ms)，且超过 ${idleTimeoutMs}ms 无输出`;
+                console.warn('[AgentExec]', errMsg);
+                cleanupAndStop(errMsg).then(() => {
+                  reject(new Error(errMsg));
+                });
+              } else {
+                resetTimeout();
+              }
+            }, Math.min(remainingTime, idleTimeoutMs));
+          }
+        };
+
+        resetTimeout();
 
         const originalOnMessage = ws.onmessage;
         ws.onmessage = (event) => {
           originalOnMessage(event);
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'exit') {
-              clearTimeout(totalTimeoutId);
+            if (data.type === 'stdout' || data.type === 'stderr') {
+              resetTimeout();
+            } else if (data.type === 'exit') {
+              if (totalTimeoutId) clearTimeout(totalTimeoutId);
               resolve();
             }
           } catch {}
@@ -3075,14 +3096,14 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
 
         const originalOnClose = ws.onclose;
         ws.onclose = () => {
-          clearTimeout(totalTimeoutId);
+          if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnClose) originalOnClose();
           resolve();
         };
 
         const originalOnError = ws.onerror;
         ws.onerror = (err) => {
-          clearTimeout(totalTimeoutId);
+          if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnError) originalOnError(err);
           cleanupAndStop(err.message).then(() => {
             reject(err);

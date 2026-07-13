@@ -306,6 +306,7 @@ function injectStyles() {
       flex: 1;
       min-width: 0;
       padding: 4px 6px;
+      margin: 0;
       border: none;
       background: transparent;
       color: #333;

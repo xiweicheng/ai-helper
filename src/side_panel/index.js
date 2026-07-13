@@ -343,16 +343,30 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
     return;
   }
 
-  const selectionFloatingMenu = document.getElementById('selectionFloatingMenu');
-  const selectionMenuItems = document.getElementById('selectionMenuItems');
+  let selectionFloatingMenu = document.getElementById('selectionFloatingMenu');
+  let selectionMenuItems = document.getElementById('selectionMenuItems');
 
   if (!selectionFloatingMenu || !selectionMenuItems) {
-    return;
+    const chatContainer = document.getElementById('chatContainer');
+    if (!chatContainer) {
+      return;
+    }
+
+    selectionFloatingMenu = document.createElement('div');
+    selectionFloatingMenu.className = 'selection-floating-menu';
+    selectionFloatingMenu.id = 'selectionFloatingMenu';
+    selectionFloatingMenu.innerHTML = `
+      <div class="menu-header">基于选中内容提问</div>
+      <div id="selectionMenuItems"></div>
+    `;
+    chatContainer.appendChild(selectionFloatingMenu);
+    selectionMenuItems = document.getElementById('selectionMenuItems');
   }
 
   const menuPrompts = state.customPrompts.filter(p => p.enabledInMenu === true);
 
   if (menuPrompts.length === 0) {
+    console.log('[SidePanel] showFloatingMenu skipped: no prompts enabled in menu');
     return;
   }
 
@@ -526,6 +540,21 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
+
+      removeLoadingMessage(loadingId);
+
+      if (result.wasStreamed) {
+        if (result.streamingMsgId) {
+          state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId: result.streamingMsgId });
+          saveChatHistory();
+        }
+      } else {
+        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
+        await renderMessageMermaid(messageDiv);
+        state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
+        saveChatHistory();
+      }
+      return;
     } catch (errorResult) {
       removeLoadingMessage(loadingId);
 
@@ -540,16 +569,6 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
       throw errorResult;
     }
-
-    removeLoadingMessage(loadingId);
-
-    const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
-
-    await renderMessageMermaid(messageDiv);
-
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
-
-    saveChatHistory();
 
   } catch (error) {
   } finally {
@@ -869,14 +888,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (selection && !selection.isCollapsed && selection.toString().trim()) {
         const selectedText = selection.toString().trim();
         if (chatContainerEl.contains(selection.anchorNode)) {
-          if (selectedText !== state.lastSelectedText) {
-            state.lastSelectedText = selectedText;
-            state.currentSelectionRange = selection.getRangeAt(0).cloneRange();
+          state.lastSelectedText = selectedText;
+          state.currentSelectionRange = selection.getRangeAt(0).cloneRange();
 
-            setSelectedContext(selectedText);
+          setSelectedContext(selectedText);
 
-            showFloatingMenu(selection, selectedText, state.lastMouseX, state.lastMouseY);
-          }
+          showFloatingMenu(selection, selectedText, state.lastMouseX, state.lastMouseY);
         }
       } else {
         if (!chatContainerEl.contains(selection.anchorNode)) {
@@ -885,7 +902,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.hideFloatingMenu();
         }
       }
-    }, 10);
+    }, 50);
   });
 
   // 定时检查页面选中内容（仅在 enableSelectionQuery 开启时生效）
