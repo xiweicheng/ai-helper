@@ -769,8 +769,15 @@ export function startServer() {
 
       // 添加 MCP 服务器
       if (pathname === '/api/mcp/servers' && req.method === 'POST') {
-        if (!body.id || !body.command) {
-          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: id, command' });
+        const isHttp = body.transport === 'sse' || body.transport === 'streamableHttp' || body.transport === 'websocket';
+        if (!body.id) {
+          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: id' });
+        }
+        if (isHttp && !body.url) {
+          return jsonResponse(res, 400, { success: false, error: 'HTTP 传输需要提供 url' });
+        }
+        if (!isHttp && !body.command) {
+          return jsonResponse(res, 400, { success: false, error: 'stdio 传输需要提供 command' });
         }
         const result = await addMcpServer(body);
         logSystem('mcp_server_add', { serverId: body.id });

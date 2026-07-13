@@ -38,7 +38,7 @@ export const DEFAULT_CHAT_CONFIG = {
 export const DEFAULT_REACT_CONFIG = {
   maxIterations: 100,
   apiTimeout: 300000,
-  loopTimeout: 1800000,
+  loopTimeout: 7200000,
   toolTimeout: 600000,
   clarifyTimeout: 300000,
 };

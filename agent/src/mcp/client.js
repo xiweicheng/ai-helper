@@ -1,5 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+
+// 支持的传输协议类型
+const TRANSPORT_STDIO = 'stdio';
+const TRANSPORT_SSE = 'sse';
+const TRANSPORT_STREAMABLE_HTTP = 'streamableHttp';
+const TRANSPORT_WEBSOCKET = 'websocket';
 
 export class McpClient {
   constructor(serverConfig) {
@@ -13,17 +22,64 @@ export class McpClient {
     this.serverInfo = null;
   }
 
+  /**
+   * 根据配置创建对应的传输层实例
+   */
+  _createTransport() {
+    const transportType = this.serverConfig.transport || TRANSPORT_STDIO;
+    const headers = this.serverConfig.headers || {};
+
+    switch (transportType) {
+      case TRANSPORT_SSE: {
+        const url = this.serverConfig.url;
+        if (!url) throw new Error('SSE 传输需要提供 url');
+        console.log(`[MCP:${this.serverId}] 使用 SSE 传输，URL: ${url}`);
+        const opts = {};
+        if (Object.keys(headers).length > 0) {
+          opts.requestInit = { headers };
+        }
+        return new SSEClientTransport(new URL(url), opts);
+      }
+
+      case TRANSPORT_STREAMABLE_HTTP: {
+        const url = this.serverConfig.url;
+        if (!url) throw new Error('StreamableHTTP 传输需要提供 url');
+        console.log(`[MCP:${this.serverId}] 使用 StreamableHTTP 传输，URL: ${url}`);
+        const opts = {};
+        if (Object.keys(headers).length > 0) {
+          opts.requestInit = { headers };
+        }
+        return new StreamableHTTPClientTransport(new URL(url), opts);
+      }
+
+      case TRANSPORT_WEBSOCKET: {
+        const url = this.serverConfig.url;
+        if (!url) throw new Error('WebSocket 传输需要提供 url');
+        console.log(`[MCP:${this.serverId}] 使用 WebSocket 传输，URL: ${url}`);
+        return new WebSocketClientTransport(new URL(url));
+      }
+
+      case TRANSPORT_STDIO:
+      default: {
+        const command = this.serverConfig.command;
+        if (!command) throw new Error('stdio 传输需要提供 command');
+        console.log(`[MCP:${this.serverId}] 使用 stdio 传输，命令: ${command}`);
+        return new StdioClientTransport({
+          command: this.serverConfig.command,
+          args: this.serverConfig.args || [],
+          env: { ...(this.serverConfig.env || {}) },
+          cwd: this.serverConfig.cwd,
+          stderr: 'pipe'
+        });
+      }
+    }
+  }
+
   async connect() {
     if (this.connected) return { success: true };
 
     try {
-      this.transport = new StdioClientTransport({
-        command: this.serverConfig.command,
-        args: this.serverConfig.args || [],
-        env: { ...(this.serverConfig.env || {}) },
-        cwd: this.serverConfig.cwd,
-        stderr: 'pipe'
-      });
+      this.transport = this._createTransport();
 
       this.client = new Client({
         name: 'ai-helper-agent',

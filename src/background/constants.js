@@ -6,9 +6,9 @@ export const DEFAULT_MODEL = 'deepseek-v4-pro';
 
 // ReAct 循环配置默认值
 export const DEFAULT_REACT_CONFIG = {
-  maxIterations: 100,         // 最大循环次数 (1-100)
+  maxIterations: 100,         // 最大循环次数 (1-1000)
   apiTimeout: 300000,         // API 请求超时 (ms) (10000-600000)
-  loopTimeout: 1800000,       // 整体循环超时 (ms) (60000-3600000)
+  loopTimeout: 7200000,       // 整体循环超时 (ms) (60000-7200000)
   toolTimeout: 600000,        // 工具执行超时 (ms) (5000-600000)
   clarifyTimeout: 300000,     // 澄清工具超时 (ms) (60000-600000)，默认5分钟
   apiRetryCount: 3,           // API 调用失败重试次数 (0-10)

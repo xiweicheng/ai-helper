@@ -47,7 +47,7 @@ export const DEFAULT_SYSTEM_PROMPT = `你是AI智能助手(AI Helper)，专为IT
 export const DEFAULT_REACT_CONFIG = {
   maxIterations: 100,
   apiTimeout: 300000,
-  loopTimeout: 1800000,
+  loopTimeout: 7200000,
   toolTimeout: 600000,
   clarifyTimeout: 180000,
   apiRetryCount: 3,

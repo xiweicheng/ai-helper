@@ -478,7 +478,7 @@ export function getReactConfig() {
       resolve({
         maxIterations: result.reactMaxIterations || 30,
         apiTimeout: result.reactApiTimeout || 60000,
-        loopTimeout: result.reactLoopTimeout || 300000,
+        loopTimeout: result.reactLoopTimeout || 7200000,
         toolTimeout: result.reactToolTimeout || 30000,
         clarifyTimeout: result.reactClarifyTimeout || 180000
       });

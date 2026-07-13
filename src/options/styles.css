@@ -2127,7 +2127,7 @@ textarea {
   color: #888;
 }
 .mcp-server-command {
-  margin-bottom: 10px;
+  margin-bottom: 4px;
 }
 .mcp-server-command code {
   font-size: 12px;
@@ -2136,6 +2136,11 @@ textarea {
   border-radius: 4px;
   color: #555;
   word-break: break-all;
+}
+.mcp-server-meta {
+  font-size: 11px;
+  color: #999;
+  margin-bottom: 6px;
 }
 
 /* MCP 工具列表 */
@@ -2434,6 +2439,40 @@ textarea {
   gap: 8px;
   margin-bottom: 8px;
 }
+
+/* 传输协议选择器 - 按钮组 */
+.mcp-transport-group {
+  display: flex;
+  gap: 0;
+  margin-bottom: 8px;
+  background: #f0f2f5;
+  border-radius: 8px;
+  padding: 3px;
+}
+.mcp-transport-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.mcp-transport-btn:hover {
+  color: #333;
+  background: rgba(102, 126, 234, 0.08);
+}
+.mcp-transport-btn.active {
+  background: #fff;
+  color: #667eea;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
 .mcp-add-form-actions {
   display: flex;
   gap: 8px;
@@ -2468,13 +2507,20 @@ textarea {
   gap: 4px;
   align-items: center;
 }
+.mcp-env-row .mcp-env-key {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.mcp-env-row .mcp-env-value {
+  font-size: 13px;
+  padding: 8px 40px 8px 10px;
+  border-radius: 6px;
+  font-family: inherit;
+}
 .mcp-env-value-wrap.token-input-wrapper {
   /* 复用 API Key 的 token-input-wrapper 布局，微调适配 env 行 */
   flex: 2;
-}
-.mcp-env-value-wrap .token-input {
-  font-size: 13px;
-  padding: 8px 40px 8px 10px;
 }
 .mcp-env-add-row {
   color: #667eea !important;

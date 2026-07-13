@@ -1162,16 +1162,16 @@ export function saveConfig() {
   };
   
   // 验证 ReAct 配置范围
-  if (reactMaxIterations < 10 || reactMaxIterations > 200) {
-    showToast('❌ 最大循环次数必须在 10-200 之间', 'error');
+  if (reactMaxIterations < 10 || reactMaxIterations > 1000) {
+    showToast('❌ 最大循环次数必须在 10-1000 之间', 'error');
     return;
   }
   if (reactApiTimeout < 60000 || reactApiTimeout > 600000) {
     showToast('❌ API 请求超时必须在 1-10 分钟 之间', 'error');
     return;
   }
-  if (reactLoopTimeout < 60000 || reactLoopTimeout > 3600000) {
-    showToast('❌ 整体循环超时必须在 1-60 分钟 之间', 'error');
+  if (reactLoopTimeout < 60000 || reactLoopTimeout > 7200000) {
+    showToast('❌ 整体循环超时必须在 1-120 分钟 之间', 'error');
     return;
   }
   if (reactToolTimeout < 60000 || reactToolTimeout > 1800000) {
