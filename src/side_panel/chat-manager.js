@@ -10,7 +10,7 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
-import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus } from './execution-log-render.js';
@@ -149,6 +149,8 @@ export async function loadChatHistory() {
       }
       
       // 恢复上下文气泡（技能、MCP、文件、网页、引用/选中内容）
+      // 注意：quoted/selected 类型不在此处理，由 addMessage 内部解析 [引用内容]/[选中内容] 格式时统一渲染，
+      // 避免刷新后重复显示引用气泡
       if (msg.role === 'user' && msg.contextBubbles && Array.isArray(msg.contextBubbles)) {
         msg.contextBubbles.forEach(bubble => {
           let bubbleText = '';
@@ -161,10 +163,6 @@ export async function loadChatHistory() {
               break;
             case 'page':
               bubbleText = `网页「${bubble.title}」\n${bubble.url}`;
-              break;
-            case 'quoted':
-            case 'selected':
-              bubbleText = bubble.text || '';
               break;
             case 'file':
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
@@ -1012,13 +1010,19 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const type = quotedMatch ? 'quoted' : 'selected';
       const contextText = match[1].trim();
       let userQuestion = match[2].trim();
-      // 如果有文件附件，从显示文本中去除文件内容
+      // 去除文件附件（仅显示用）
       if (attachedFiles && attachedFiles.length > 0) {
         const fileIdx = userQuestion.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
         if (fileIdx !== -1) {
           userQuestion = userQuestion.substring(0, fileIdx);
         }
       }
+      // 去除上下文前缀（仅显示用）
+      userQuestion = userQuestion.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+      userQuestion = userQuestion.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+      userQuestion = userQuestion.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+      // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
+      userQuestion = userQuestion.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv._pendingContext = { type, contextText, userQuestion };
       messageDiv.textContent = userQuestion;
     } else {
@@ -1030,6 +1034,15 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
           displayText = displayText.substring(0, fileIdx);
         }
       }
+      // 去除上下文前缀（仅显示用，messageHistory 中保留完整内容供 AI 使用）
+      // 网页上下文: [网页上下文]\n标题: ...\nURL: ...\ntabId: ...\n
+      // 技能上下文: [已选技能: xxx - xxx]\n请使用「xxx」技能来处理以下问题：\n
+      // MCP上下文: [已选MCP服务: xxx]\n请使用「xxx」MCP服务来处理以下问题：\n
+      displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+      displayText = displayText.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+      displayText = displayText.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+      // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
+      displayText = displayText.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv.textContent = displayText;
     }
 
