@@ -793,6 +793,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const footerCopyBtn = document.createElement('button');
     footerCopyBtn.className = 'copy-btn';
+    footerCopyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
     footerCopyBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
@@ -801,7 +802,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     ].join('');
     footerCopyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      copyAssistantMessage(messageDiv, footerCopyBtn);
+      copyAssistantMessage(messageDiv, footerCopyBtn, e);
     });
     
     footer.appendChild(footerCopyBtn);
@@ -1108,7 +1109,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-toolbar-btn copy-btn';
-    copyBtn.title = '复制内容';
+    copyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
     copyBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
@@ -1652,17 +1653,17 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
   });
   
   // 重新绑定底部工具栏按钮事件
-  const footer = messageEl.querySelector('.message-footer');
-  if (footer) {
-    // 复制按钮
-    const copyBtn = footer.querySelector('.copy-btn');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        copyAssistantMessage(messageEl, copyBtn);
-      });
-    }
-    // 引用按钮
+    const footer = messageEl.querySelector('.message-footer');
+    if (footer) {
+      // 复制按钮
+      const copyBtn = footer.querySelector('.copy-btn');
+      if (copyBtn) {
+        copyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          copyAssistantMessage(messageEl, copyBtn, e);
+        });
+      }
+      // 引用按钮
     const quoteBtn = footer.querySelector('.quote-btn');
     if (quoteBtn) {
       quoteBtn.addEventListener('click', (e) => {
@@ -1776,7 +1777,7 @@ export function rebindAllMessages(container) {
     if (copyBtn) {
       copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        copyAssistantMessage(messageEl, copyBtn);
+        copyAssistantMessage(messageEl, copyBtn, e);
       });
     }
 
@@ -2629,6 +2630,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   // 复制按钮
   const copyBtn = document.createElement('button');
   copyBtn.className = 'copy-btn';
+  copyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
   copyBtn.innerHTML = [
     '<svg viewBox="0 0 16 16" fill="currentColor">',
     '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
@@ -2637,7 +2639,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   ].join('');
   copyBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    copyAssistantMessage(element, copyBtn);
+    copyAssistantMessage(element, copyBtn, e);
   });
   footer.appendChild(copyBtn);
   
@@ -3948,9 +3950,10 @@ function editAndResendMessage(messageDiv) {
   }
 }
 
-function copyAssistantMessage(messageDiv, copyBtn) {
+function copyAssistantMessage(messageDiv, copyBtn, event) {
   try {
     let textToCopy = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
+    let htmlToCopy = '';
     
     if (!textToCopy) {
       const lastMsg = state.messageHistory.find(msg => msg.role === 'assistant');
@@ -3960,55 +3963,141 @@ function copyAssistantMessage(messageDiv, copyBtn) {
         const markdownBody = messageDiv.querySelector('.markdown-body');
         if (markdownBody) {
           textToCopy = markdownBody.innerText;
+          htmlToCopy = markdownBody.innerHTML;
         } else {
           textToCopy = messageDiv.innerText;
+          htmlToCopy = messageDiv.innerHTML;
         }
       }
     }
     
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      const originalHTML = copyBtn.innerHTML;
-      copyBtn.innerHTML = `
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-        </svg>
-        <span>已复制</span>
-      `;
-      copyBtn.classList.add('copied');
-      
-      setTimeout(() => {
-        copyBtn.innerHTML = originalHTML;
-        copyBtn.classList.remove('copied');
-      }, 2000);
-    }).catch(err => {
-      const textArea = document.createElement('textarea');
-      textArea.value = textToCopy;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        const originalHTML = copyBtn.innerHTML;
-        copyBtn.innerHTML = `
-          <svg viewBox="0 0 16 16" fill="currentColor">
-            <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-          </svg>
-          <span>已复制</span>
-        `;
-        copyBtn.classList.add('copied');
-        setTimeout(() => {
-          copyBtn.innerHTML = originalHTML;
-          copyBtn.classList.remove('copied');
-        }, 2000);
-      } catch (e) {
-        showToast('复制失败，请手动选择内容复制', 'error');
+    if (!htmlToCopy) {
+      const markdownBody = messageDiv.querySelector('.markdown-body');
+      if (markdownBody) {
+        htmlToCopy = markdownBody.innerHTML;
+      } else if (textToCopy) {
+        htmlToCopy = formatMarkdown(textToCopy);
       }
-      document.body.removeChild(textArea);
-    });
+    }
+    
+    const isCtrlPressed = event && (event.ctrlKey || event.metaKey);
+    
+    if (isCtrlPressed && htmlToCopy) {
+      copyRichText(textToCopy, htmlToCopy, copyBtn);
+    } else {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        showCopySuccess(copyBtn);
+      }).catch(err => {
+        fallbackCopyText(textToCopy, copyBtn);
+      });
+    }
   } catch (error) {
     console.error('[SidePanel] 复制失败:', error);
     showToast('复制失败', 'error');
+  }
+}
+
+function showCopySuccess(copyBtn, isRichText = false) {
+  const originalHTML = copyBtn.innerHTML;
+  copyBtn.innerHTML = `
+    <svg viewBox="0 0 16 16" fill="currentColor">
+      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+    </svg>
+    <span>${isRichText ? '已复制富文本' : '已复制'}</span>
+  `;
+  copyBtn.classList.add('copied');
+  
+  setTimeout(() => {
+    copyBtn.innerHTML = originalHTML;
+    copyBtn.classList.remove('copied');
+  }, 2000);
+}
+
+function fallbackCopyText(text, copyBtn) {
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.position = 'fixed';
+  textArea.style.left = '-999999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    document.execCommand('copy');
+    showCopySuccess(copyBtn);
+  } catch (e) {
+    showToast('复制失败，请手动选择内容复制', 'error');
+  }
+  document.body.removeChild(textArea);
+}
+
+function copyRichText(text, html, copyBtn) {
+  const styledHtml = wrapHtmlWithStyles(html);
+  
+  if (typeof ClipboardItem !== 'undefined') {
+    const clipboardData = new ClipboardItem({
+      'text/plain': new Blob([text], { type: 'text/plain' }),
+      'text/html': new Blob([styledHtml], { type: 'text/html' })
+    });
+    
+    navigator.clipboard.write([clipboardData]).then(() => {
+      showCopySuccess(copyBtn, true);
+    }).catch(err => {
+      fallbackCopyRichText(text, styledHtml, copyBtn);
+    });
+  } else {
+    fallbackCopyRichText(text, styledHtml, copyBtn);
+  }
+}
+
+function wrapHtmlWithStyles(html) {
+  const styles = `
+    <style>
+      h1 { font-size: 24px; font-weight: bold; margin: 16px 0 8px; }
+      h2 { font-size: 20px; font-weight: bold; margin: 14px 0 6px; }
+      h3 { font-size: 18px; font-weight: bold; margin: 12px 0 6px; }
+      h4 { font-size: 16px; font-weight: bold; margin: 10px 0 6px; }
+      p { margin: 6px 0; line-height: 1.6; }
+      ul, ol { margin: 8px 0; padding-left: 24px; }
+      li { margin: 4px 0; }
+      blockquote { border-left: 4px solid #ddd; padding-left: 12px; margin: 8px 0; color: #666; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+      pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
+      pre code { background: none; padding: 0; }
+      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
+      th { background: #f9f9f9; font-weight: bold; }
+      strong { font-weight: bold; }
+      em { font-style: italic; }
+      a { color: #007bff; text-decoration: underline; }
+      img { max-width: 100%; }
+    </style>
+  `;
+  
+  return `<!DOCTYPE html><html><head>${styles}</head><body>${html}</body></html>`;
+}
+
+function fallbackCopyRichText(text, html, copyBtn) {
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.left = '-999999px';
+  container.style.top = '-999999px';
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  
+  const range = document.createRange();
+  range.selectNodeContents(container);
+  
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  
+  try {
+    document.execCommand('copy');
+    showCopySuccess(copyBtn);
+  } catch (e) {
+    fallbackCopyText(text, copyBtn);
+  } finally {
+    selection.removeAllRanges();
+    document.body.removeChild(container);
   }
 }
 function exportAssistantMessageToDocx(messageDiv, exportBtn) {
