@@ -1550,6 +1550,7 @@ function addStreamingMessage() {
   wrapper.dataset.messageId = messageId;
   wrapper.innerHTML = `
     <div class="message-content">
+      <div class="stream-content"></div>
       <div class="thinking-indicator">
         <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
@@ -1566,7 +1567,6 @@ function addStreamingMessage() {
           </svg>
         </button>
       </div>
-      <div class="stream-content"></div>
       <div class="stream-status hidden"></div>
     </div>
   `;
@@ -2024,28 +2024,23 @@ function appendToolCallItems(element, toolCalls) {
       // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
       const prevSibling = visibleThinking.previousElementSibling;
       if (prevSibling && prevSibling.classList.contains('thinking-content')) {
-        // thinking-content 在 thinking-indicator 前面，在 content 前面插入 badge
         contentDiv.insertBefore(badge, prevSibling);
       } else {
-        // 没有 thinking-content，在 thinking-indicator 前面插入 badge
         contentDiv.insertBefore(badge, visibleThinking);
       }
       visibleThinking.classList.add('hidden');
     } else {
-      // 思考指示器在 message-content 中（第一轮迭代）：找到最后一个 thinking-content，在它前面插入 badge
+      // 思考指示器在 message-content 中：找到最后一个 thinking-content，在它前面插入 badge
       const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
       if (thinkingContents.length > 0) {
         const lastContent = thinkingContents[thinkingContents.length - 1];
         const nextSibling = lastContent.nextElementSibling;
         if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
-          // 最后一个 thinking-content 是当前轮的，在它前面插入 badge
           contentDiv.insertBefore(badge, lastContent);
         } else {
-          // 最后一个 thinking-content 已经是上一轮的，在末尾插入 badge
           contentDiv.appendChild(badge);
         }
       } else {
-        // 没有 thinking-content，追加到末尾
         contentDiv.appendChild(badge);
       }
       visibleThinking.classList.add('hidden');
