@@ -456,6 +456,21 @@ export function filterApiMessages(messages) {
   return filtered;
 }
 
+/**
+ * 从消息 content 中移除图片数据，仅保留文本部分
+ * 用于发送历史消息时避免携带已无用的 Base64 图片
+ * @param {string|Array} content - 消息内容
+ * @returns {string|Array} 仅含文本的内容
+ */
+export function stripImagesFromContent(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const textParts = content.filter(c => c.type === 'text');
+    return textParts.length === 1 ? textParts[0].text : textParts;
+  }
+  return content;
+}
+
 // ============================================================
 // 引用内容压缩
 // ============================================================

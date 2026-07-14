@@ -4,7 +4,7 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 
@@ -378,7 +378,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const apiCallStartTime = Date.now();
       
       // 过滤消息中的内部字段，确保消息格式符合 API 要求
-      const filteredMessages = filterApiMessages(currentMessages);
+      let filteredMessages = filterApiMessages(currentMessages);
+      
+      // 剥离历史消息中的旧图片数据，只保留最后一条消息的图片
+      // 当图片已经被识别处理后，后续 API 调用不需要再携带 Base64 编码
+      for (let i = 0; i < filteredMessages.length - 1; i++) {
+        filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
+      }
       
       // 添加 API 调用开始的日志节点（状态为 processing）
       const apiLogId = crypto.randomUUID();
