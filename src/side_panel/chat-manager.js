@@ -621,12 +621,16 @@ export async function sendMessage() {
     if (wasStreamed && streamingHtml) {
       msgEntry.htmlContent = streamingHtml;
       // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
+      // 但首先检查 DOM 中是否已存在相同 messageId 的消息，防止重复渲染
       if (!streamingConnected) {
-        restoreMessageFromHtml(streamingHtml);
-        bindExecutionLogDelegate();
-        bindReflectionBadgeDelegate();
-        const chatContainer = document.getElementById('chatContainer');
-        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        const existingEl = document.querySelector(`[data-message-id="${assistantMsgId}"]`);
+        if (!existingEl) {
+          restoreMessageFromHtml(streamingHtml);
+          bindExecutionLogDelegate();
+          bindReflectionBadgeDelegate();
+          const chatContainer = document.getElementById('chatContainer');
+          if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
       }
     }
     
@@ -2485,13 +2489,89 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     
   } else {
     // ============================================
-    // 非 ReAct 模式：普通流式回答，直接渲染内容
+    // 非 ReAct 模式：普通流式回答
     // ============================================
     if (streamContent) {
       const textContent = extractTextContent(content);
-      // 如果 stream-content 中已有 thinking-content（首次有内容时创建），保持它
+      // 如果 stream-content 中已有 thinking-content（流式过程中创建），也包装到可折叠区域
       const hasThinkingContent = streamContent.querySelector('.thinking-content');
-      if (!hasThinkingContent && textContent && textContent.trim()) {
+      
+      if (hasThinkingContent) {
+        // 有思考内容：包装到 thinking-process 区域，创建独立的 final-answer 显示最终答案
+        const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
+        
+        const processHistory = document.createElement('div');
+        processHistory.className = 'thinking-process collapsed';
+        
+        const processHeader = document.createElement('div');
+        processHeader.className = 'thinking-process-header';
+        processHeader.innerHTML = `
+          <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+            <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
+          </svg>
+          <span class="thinking-process-title">思考过程</span>
+          <span class="thinking-process-duration">${totalDuration}</span>
+          <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        `;
+        
+        const processBody = document.createElement('div');
+        processBody.className = 'thinking-process-body';
+        const processContent = document.createElement('div');
+        processContent.className = 'thinking-process-content';
+        processBody.appendChild(processContent);
+        
+        // 移动 stream-content 的内容到 process-content
+        while (streamContent.firstChild) {
+          processContent.appendChild(streamContent.firstChild);
+        }
+        
+        // 移除与最终答案重复的最后一个 thinking-content 和对应的 badge
+        const thinkingContents = processContent.querySelectorAll('.thinking-content');
+        const finalText = textContent.trim();
+        if (thinkingContents.length > 0) {
+          const lastContent = thinkingContents[thinkingContents.length - 1];
+          const lastContentText = lastContent.textContent.trim();
+          const shouldRemove = !wasRevised || (wasRevised && lastContentText === finalText);
+          if (shouldRemove) {
+            let prevSibling = lastContent.previousElementSibling;
+            while (prevSibling) {
+              if (prevSibling.classList.contains('thinking-badge')) {
+                prevSibling.remove();
+                break;
+              }
+              prevSibling = prevSibling.previousElementSibling;
+            }
+            lastContent.remove();
+          }
+        }
+        
+        processHistory.appendChild(processHeader);
+        processHistory.appendChild(processBody);
+        
+        // 创建最终答案区域（始终可见，不折叠）
+        const finalAnswer = document.createElement('div');
+        finalAnswer.className = 'final-answer';
+        if (textContent && textContent.trim()) {
+          finalAnswer.innerHTML = formatMessageContent(textContent);
+        }
+        
+        // 清理 message-content 中的残留元素
+        const origThinking = messageContent.querySelector('.thinking-indicator');
+        if (origThinking) origThinking.remove();
+        
+        // 插入 process-history 和 final-answer
+        messageContent.appendChild(processHistory);
+        messageContent.appendChild(finalAnswer);
+        
+        // 点击头部切换折叠
+        processHeader.addEventListener('click', () => {
+          processHistory.classList.toggle('collapsed');
+        });
+      } else if (textContent && textContent.trim()) {
+        // 没有思考内容：直接渲染最终答案
         streamContent.innerHTML = formatMessageContent(textContent);
       }
     }
