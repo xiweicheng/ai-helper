@@ -2460,32 +2460,48 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
       }
     }
     
-    processHistory.appendChild(processHeader);
-    processHistory.appendChild(processBody);
+    // 检查 processContent 是否还有实际内容
+    // 如果为空，则不显示思考过程区域，只显示最终答案
+    const hasProcessContent = processContent.children.length > 0 && processContent.textContent.trim();
     
-    // 创建最终答案区域（始终可见，不折叠）
-    const finalAnswer = document.createElement('div');
-    finalAnswer.className = 'final-answer';
-    const textContent = extractTextContent(content);
-    if (textContent && textContent.trim()) {
-      finalAnswer.innerHTML = formatMessageContent(textContent);
+    if (hasProcessContent) {
+      processHistory.appendChild(processHeader);
+      processHistory.appendChild(processBody);
+      
+      // 创建最终答案区域（始终可见，不折叠）
+      const finalAnswer = document.createElement('div');
+      finalAnswer.className = 'final-answer';
+      const textContent = extractTextContent(content);
+      if (textContent && textContent.trim()) {
+        finalAnswer.innerHTML = formatMessageContent(textContent);
+      }
+      
+      // 清理 message-content 中的残留元素
+      // 移除原始的 thinking-indicator（来自 addStreamingMessage 模板）
+      const origThinking = messageContent.querySelector('.thinking-indicator');
+      if (origThinking) origThinking.remove();
+      // 清空 stream-content（所有子节点已移入思考过程区域）
+      if (streamContent) streamContent.innerHTML = '';
+      
+      // 插入 process-history 和 final-answer
+      messageContent.appendChild(processHistory);
+      messageContent.appendChild(finalAnswer);
+      
+      // 点击头部切换折叠
+      processHeader.addEventListener('click', () => {
+        processHistory.classList.toggle('collapsed');
+      });
+    } else {
+      // 思考过程区域为空：直接渲染最终答案，不显示思考过程区域
+      const origThinking = messageContent.querySelector('.thinking-indicator');
+      if (origThinking) origThinking.remove();
+      if (streamContent) {
+        const textContent = extractTextContent(content);
+        if (textContent && textContent.trim()) {
+          streamContent.innerHTML = formatMessageContent(textContent);
+        }
+      }
     }
-    
-    // 清理 message-content 中的残留元素
-    // 移除原始的 thinking-indicator（来自 addStreamingMessage 模板）
-    const origThinking = messageContent.querySelector('.thinking-indicator');
-    if (origThinking) origThinking.remove();
-    // 清空 stream-content（所有子节点已移入思考过程区域）
-    if (streamContent) streamContent.innerHTML = '';
-    
-    // 插入 process-history 和 final-answer
-    messageContent.appendChild(processHistory);
-    messageContent.appendChild(finalAnswer);
-    
-    // 点击头部切换折叠
-    processHeader.addEventListener('click', () => {
-      processHistory.classList.toggle('collapsed');
-    });
     
   } else {
     // ============================================
@@ -2548,28 +2564,41 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
           }
         }
         
-        processHistory.appendChild(processHeader);
-        processHistory.appendChild(processBody);
+        // 检查 processContent 是否还有实际内容
+        // 如果为空，则不显示思考过程区域，只显示最终答案
+        const hasProcessContent = processContent.children.length > 0 && processContent.textContent.trim();
         
-        // 创建最终答案区域（始终可见，不折叠）
-        const finalAnswer = document.createElement('div');
-        finalAnswer.className = 'final-answer';
-        if (textContent && textContent.trim()) {
-          finalAnswer.innerHTML = formatMessageContent(textContent);
+        if (hasProcessContent) {
+          processHistory.appendChild(processHeader);
+          processHistory.appendChild(processBody);
+          
+          // 创建最终答案区域（始终可见，不折叠）
+          const finalAnswer = document.createElement('div');
+          finalAnswer.className = 'final-answer';
+          if (textContent && textContent.trim()) {
+            finalAnswer.innerHTML = formatMessageContent(textContent);
+          }
+          
+          // 清理 message-content 中的残留元素
+          const origThinking = messageContent.querySelector('.thinking-indicator');
+          if (origThinking) origThinking.remove();
+          
+          // 插入 process-history 和 final-answer
+          messageContent.appendChild(processHistory);
+          messageContent.appendChild(finalAnswer);
+          
+          // 点击头部切换折叠
+          processHeader.addEventListener('click', () => {
+            processHistory.classList.toggle('collapsed');
+          });
+        } else {
+          // 思考过程区域为空：直接渲染最终答案，不显示思考过程区域
+          const origThinking = messageContent.querySelector('.thinking-indicator');
+          if (origThinking) origThinking.remove();
+          if (textContent && textContent.trim()) {
+            streamContent.innerHTML = formatMessageContent(textContent);
+          }
         }
-        
-        // 清理 message-content 中的残留元素
-        const origThinking = messageContent.querySelector('.thinking-indicator');
-        if (origThinking) origThinking.remove();
-        
-        // 插入 process-history 和 final-answer
-        messageContent.appendChild(processHistory);
-        messageContent.appendChild(finalAnswer);
-        
-        // 点击头部切换折叠
-        processHeader.addEventListener('click', () => {
-          processHistory.classList.toggle('collapsed');
-        });
       } else if (textContent && textContent.trim()) {
         // 没有思考内容：直接渲染最终答案
         streamContent.innerHTML = formatMessageContent(textContent);
