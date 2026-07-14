@@ -604,16 +604,17 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
       const { done, value } = readResult;
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: false });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') continue;
+        let data = '';
+        if (line.startsWith('data:')) {
+          data = line.substring(5).replace(/^\s+/, '');
+        }
+        
+        if (!data || data === '[DONE]') continue;
 
         try {
           const parsed = JSON.parse(data);

@@ -30,29 +30,21 @@ export class StreamController {
    * 返回 { type: 'content' | 'tool_call' | 'done' | 'ignore' }
    */
   feedLine(line) {
-    // 空行 / 注释行
     if (!line || line.startsWith(':')) {
       return { type: 'ignore' };
     }
 
-    // [DONE] 标记
-    if (line === 'data: [DONE]') {
-      return { type: 'done' };
-    }
-
-    // data: {...} 或 data:{...} 行（兼容带空格和不带空格两种格式）
     let jsonStr = null;
-    if (line.startsWith('data: ')) {
-      jsonStr = line.slice(6);
-    } else if (line.startsWith('data:')) {
-      jsonStr = line.slice(5);
+    if (line.startsWith('data:')) {
+      jsonStr = line.substring(5).replace(/^\s+/, '');
     }
     if (jsonStr === null) {
       return { type: 'ignore' };
     }
 
-    // 去除 jsonStr 首尾空白
-    jsonStr = jsonStr.trim();
+    if (jsonStr === '[DONE]') {
+      return { type: 'done' };
+    }
 
     let chunk;
     try {
@@ -293,7 +285,7 @@ export async function readSSEStream(reader, controller, abortSignal) {
       const { done, value } = readResult;
       if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: false });
       const lines = buffer.split('\n');
       // 最后一个可能是不完整的行
       buffer = lines.pop() || '';
