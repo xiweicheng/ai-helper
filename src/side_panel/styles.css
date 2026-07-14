@@ -5101,9 +5101,13 @@ body {
   transform: rotate(180deg);
 }
 
+.export-menu-container:hover .export-dropdown {
+  display: block;
+}
+
 .export-dropdown {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + 1px);
   right: 0;
   background: white;
   border: 1px solid #e0e0e0;
@@ -5114,6 +5118,7 @@ body {
   min-width: 140px;
   overflow: hidden;
   animation: exportMenuFadeIn 0.2s ease-out;
+  margin-bottom: -1px;
 }
 
 .export-dropdown.show {

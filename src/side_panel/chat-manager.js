@@ -4108,6 +4108,14 @@ function exportAssistantMessageToDocx(messageDiv, exportBtn) {
 
 function exportAssistantMessageToPdf(messageDiv, exportBtn) {
   try {
+    const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
+    const html2canvasFunc = window.html2canvas || null;
+    
+    if (!jsPDF || !html2canvasFunc) {
+      showToast('PDF 导出库未加载', 'error');
+      return;
+    }
+    
     let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
     
     if (!markdownContent) {
@@ -4119,129 +4127,131 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       }
     }
     
-    const htmlContent = formatMarkdown(markdownContent);
+    const dateStr = new Date().toLocaleString('zh-CN');
+    const timestamp = new Date().getTime();
+    const fileName = `pdf-${timestamp}.pdf`;
     
-    const footerText = `AI Helper - ${new Date().toLocaleString('zh-CN')}`;
-    
-    const fullHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>AI Helper 导出</title>
-        <style>
-          @page {
-            size: A4;
-            margin: 20mm;
-          }
-          body {
-            font-family: 'Calibri', 'Arial', sans-serif;
-            font-size: 11pt;
-            line-height: 1.6;
-            color: #333;
-            padding: 20px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 16pt;
-            margin-bottom: 8pt;
-            page-break-after: avoid;
-          }
-          h1 { font-size: 18pt; border-bottom: 1px solid #ccc; padding-bottom: 4pt; }
-          h2 { font-size: 15pt; border-bottom: 1px solid #ccc; padding-bottom: 4pt; }
-          h3 { font-size: 13pt; }
-          p { margin: 8pt 0; page-break-inside: avoid; }
-          code {
-            font-family: 'Consolas', 'Courier New', monospace;
-            background-color: #f5f5f5;
-            padding: 2pt 4pt;
-            border-radius: 3px;
-            font-size: 10pt;
-          }
-          pre {
-            background-color: #f5f5f5;
-            padding: 10pt;
-            border-radius: 5px;
-            overflow-x: auto;
-            page-break-inside: avoid;
-          }
-          pre code {
-            background-color: transparent;
-            padding: 0;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 10pt 0;
-          }
-          th, td {
-            border: 1px solid #ddd;
-            padding: 6pt 10pt;
-            text-align: left;
-          }
-          th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-          }
-          blockquote {
-            border-left: 4px solid #ddd;
-            margin: 10pt 0;
-            padding: 5pt 15pt;
-            color: #666;
-          }
-          ul, ol {
-            margin: 8pt 0;
-            padding-left: 25pt;
-          }
-          li { margin: 4pt 0; }
-          a { color: #0563c1; text-decoration: none; }
-          a:hover { text-decoration: underline; }
-          img { max-width: 100%; height: auto; page-break-inside: avoid; }
-          .footer {
-            margin-top: 30pt;
-            padding-top: 10pt;
-            border-top: 1px solid #ddd;
-            font-size: 9pt;
-            color: #999;
-            text-align: center;
-          }
-        </style>
-      </head>
-      <body>
-        ${htmlContent}
-        <div class="footer">${footerText}</div>
-      </body>
-      </html>
+    const container = document.createElement('div');
+    container.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 595px;
+      padding: 40px;
+      background: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #333;
+      box-sizing: border-box;
     `;
     
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      showToast('请允许弹出窗口以使用 PDF 导出功能', 'warning');
-      return;
-    }
+    const header = document.createElement('div');
+    header.style.cssText = `
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #ddd;
+    `;
+    header.innerHTML = `
+      <h1 style="margin: 0 0 10px 0; font-size: 20px; color: #333;">AI Helper 导出</h1>
+      <div style="font-size: 12px; color: #999;">${dateStr}</div>
+    `;
+    container.appendChild(header);
     
-    printWindow.document.write(fullHtml);
-    printWindow.document.close();
+    const content = document.createElement('div');
+    content.className = 'markdown-body';
+    content.innerHTML = formatMarkdown(markdownContent);
+    container.appendChild(content);
     
-    printWindow.onload = function() {
+    const footer = document.createElement('div');
+    footer.style.cssText = `
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+      font-size: 12px;
+      color: #999;
+    `;
+    footer.textContent = 'AI Helper';
+    container.appendChild(footer);
+    
+    document.body.appendChild(container);
+    
+    html2canvasFunc(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
+    }).then(canvas => {
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [595, 842]
+      });
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgX = (pdfWidth - imgWidth * ratio) / 2;
+      const imgY = 0;
+      const imgDisplayWidth = imgWidth * ratio;
+      const imgDisplayHeight = imgHeight * ratio;
+      
+      if (imgDisplayHeight <= pdfHeight) {
+        pdf.addImage(imgData, 'PNG', imgX, imgY, imgDisplayWidth, imgDisplayHeight);
+      } else {
+        let heightLeft = imgDisplayHeight;
+        let position = 0;
+        
+        while (heightLeft > 0) {
+          if (position > 0) {
+            pdf.addPage();
+          }
+          
+          const pageHeight = pdfHeight;
+          const cutHeight = Math.min(heightLeft, pageHeight);
+          const sourceY = (imgDisplayHeight - heightLeft) / ratio;
+          const sourceHeight = cutHeight / ratio;
+          
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = imgWidth;
+          tempCanvas.height = sourceHeight;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight);
+          
+          const tempImgData = tempCanvas.toDataURL('image/png');
+          pdf.addImage(tempImgData, 'PNG', imgX, position, imgDisplayWidth, cutHeight);
+          
+          heightLeft -= cutHeight;
+          position += pageHeight;
+        }
+      }
+      
+      pdf.save(fileName);
+      
+      const originalHTML = exportBtn.innerHTML;
+      exportBtn.innerHTML = `
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+        </svg>
+        <span>已导出</span>
+      `;
+      
       setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-      }, 500);
-    };
-    
-    const originalHTML = exportBtn.innerHTML;
-    exportBtn.innerHTML = `
-      <svg viewBox="0 0 16 16" fill="currentColor">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-      </svg>
-      <span>已触发</span>
-    `;
-    
-    setTimeout(() => {
-      exportBtn.innerHTML = originalHTML;
-    }, 2000);
-    
-    console.log('[SidePanel] PDF 导出已触发');
+        exportBtn.innerHTML = originalHTML;
+      }, 2000);
+      
+      document.body.removeChild(container);
+      console.log('[SidePanel] PDF 导出成功:', fileName);
+    }).catch(error => {
+      console.error('[SidePanel] PDF 导出失败:', error);
+      showToast('导出失败: ' + error.message, 'error');
+      document.body.removeChild(container);
+    });
   } catch (error) {
     console.error('[SidePanel] 导出 PDF 失败:', error);
     showToast('导出失败: ' + error.message, 'error');

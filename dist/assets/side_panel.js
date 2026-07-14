@@ -1520,100 +1520,39 @@ Character number: `+e.characterNumber},n.prototype.lineNumber=function(){return 
         <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
       </svg>
       <span>已导出</span>
-    `,setTimeout(()=>{t.innerHTML=s},2e3),console.log(`[SidePanel] Word 文档导出成功`)}catch(e){console.error(`[SidePanel] 导出 Word 失败:`,e),showToast(`导出失败: `+e.message,`error`)}}function exportAssistantMessageToPdf(e,t){try{let n=e.dataset.rawMarkdown||e.dataset.rawContent||``;if(!n){let t=e.querySelector(`.markdown-body`);n=t?t.innerText:e.innerText}let r=`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>AI Helper 导出</title>
-        <style>
-          @page {
-            size: A4;
-            margin: 20mm;
-          }
-          body {
-            font-family: 'Calibri', 'Arial', sans-serif;
-            font-size: 11pt;
-            line-height: 1.6;
-            color: #333;
-            padding: 20px;
-          }
-          h1, h2, h3, h4, h5, h6 {
-            margin-top: 16pt;
-            margin-bottom: 8pt;
-            page-break-after: avoid;
-          }
-          h1 { font-size: 18pt; border-bottom: 1px solid #ccc; padding-bottom: 4pt; }
-          h2 { font-size: 15pt; border-bottom: 1px solid #ccc; padding-bottom: 4pt; }
-          h3 { font-size: 13pt; }
-          p { margin: 8pt 0; page-break-inside: avoid; }
-          code {
-            font-family: 'Consolas', 'Courier New', monospace;
-            background-color: #f5f5f5;
-            padding: 2pt 4pt;
-            border-radius: 3px;
-            font-size: 10pt;
-          }
-          pre {
-            background-color: #f5f5f5;
-            padding: 10pt;
-            border-radius: 5px;
-            overflow-x: auto;
-            page-break-inside: avoid;
-          }
-          pre code {
-            background-color: transparent;
-            padding: 0;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 10pt 0;
-          }
-          th, td {
-            border: 1px solid #ddd;
-            padding: 6pt 10pt;
-            text-align: left;
-          }
-          th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-          }
-          blockquote {
-            border-left: 4px solid #ddd;
-            margin: 10pt 0;
-            padding: 5pt 15pt;
-            color: #666;
-          }
-          ul, ol {
-            margin: 8pt 0;
-            padding-left: 25pt;
-          }
-          li { margin: 4pt 0; }
-          a { color: #0563c1; text-decoration: none; }
-          a:hover { text-decoration: underline; }
-          img { max-width: 100%; height: auto; page-break-inside: avoid; }
-          .footer {
-            margin-top: 30pt;
-            padding-top: 10pt;
-            border-top: 1px solid #ddd;
-            font-size: 9pt;
-            color: #999;
-            text-align: center;
-          }
-        </style>
-      </head>
-      <body>
-        ${formatMarkdown(n)}
-        <div class="footer">${`AI Helper - ${new Date().toLocaleString(`zh-CN`)}`}</div>
-      </body>
-      </html>
-    `,i=window.open(``,`_blank`,`width=800,height=600`);if(!i){showToast(`请允许弹出窗口以使用 PDF 导出功能`,`warning`);return}i.document.write(r),i.document.close(),i.onload=function(){setTimeout(()=>{i.focus(),i.print()},500)};let a=t.innerHTML;t.innerHTML=`
-      <svg viewBox="0 0 16 16" fill="currentColor">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-      </svg>
-      <span>已触发</span>
-    `,setTimeout(()=>{t.innerHTML=a},2e3),console.log(`[SidePanel] PDF 导出已触发`)}catch(e){console.error(`[SidePanel] 导出 PDF 失败:`,e),showToast(`导出失败: `+e.message,`error`)}}function quoteAndAsk(e){try{let t=e.dataset.rawMarkdown||e.dataset.rawContent||``;if(!t){console.warn(`[SidePanel] 无法获取消息内容`);return}let n=document.getElementById(`userInput`);if(!n){console.warn(`[SidePanel] 找不到输入框`);return}let r=e.querySelector(`.quote-btn`),i=r?r.innerHTML:``;setQuoteContext(t),r&&(r.innerHTML=`
+    `,setTimeout(()=>{t.innerHTML=s},2e3),console.log(`[SidePanel] Word 文档导出成功`)}catch(e){console.error(`[SidePanel] 导出 Word 失败:`,e),showToast(`导出失败: `+e.message,`error`)}}function exportAssistantMessageToPdf(e,t){try{let n=window.jspdf&&window.jspdf.jsPDF?window.jspdf.jsPDF:null,r=window.html2canvas||null;if(!n||!r){showToast(`PDF 导出库未加载`,`error`);return}let i=e.dataset.rawMarkdown||e.dataset.rawContent||``;if(!i){let t=e.querySelector(`.markdown-body`);i=t?t.innerText:e.innerText}let a=new Date().toLocaleString(`zh-CN`),o=`pdf-${new Date().getTime()}.pdf`,s=document.createElement(`div`);s.style.cssText=`
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 595px;
+      padding: 40px;
+      background: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #333;
+      box-sizing: border-box;
+    `;let c=document.createElement(`div`);c.style.cssText=`
+      text-align: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #ddd;
+    `,c.innerHTML=`
+      <h1 style="margin: 0 0 10px 0; font-size: 20px; color: #333;">AI Helper 导出</h1>
+      <div style="font-size: 12px; color: #999;">${a}</div>
+    `,s.appendChild(c);let l=document.createElement(`div`);l.className=`markdown-body`,l.innerHTML=formatMarkdown(i),s.appendChild(l);let u=document.createElement(`div`);u.style.cssText=`
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 15px;
+      border-top: 1px solid #ddd;
+      font-size: 12px;
+      color: #999;
+    `,u.textContent=`AI Helper`,s.appendChild(u),document.body.appendChild(s),r(s,{scale:2,useCORS:!0,logging:!1,backgroundColor:`#ffffff`}).then(e=>{let r=e.toDataURL(`image/png`),i=new n({orientation:`portrait`,unit:`px`,format:[595,842]}),a=i.internal.pageSize.getWidth(),c=i.internal.pageSize.getHeight(),l=e.width,u=e.height,d=Math.min(a/l,c/u),f=(a-l*d)/2,p=0,m=l*d,h=u*d;if(h<=c)i.addImage(r,`PNG`,f,0,m,h);else{let t=h,n=0;for(;t>0;){n>0&&i.addPage();let r=c,a=Math.min(t,r),o=(h-t)/d,s=a/d,u=document.createElement(`canvas`);u.width=l,u.height=s,u.getContext(`2d`).drawImage(e,0,o,l,s,0,0,l,s);let p=u.toDataURL(`image/png`);i.addImage(p,`PNG`,f,n,m,a),t-=a,n+=r}}i.save(o);let g=t.innerHTML;t.innerHTML=`
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+        </svg>
+        <span>已导出</span>
+      `,setTimeout(()=>{t.innerHTML=g},2e3),document.body.removeChild(s),console.log(`[SidePanel] PDF 导出成功:`,o)}).catch(e=>{console.error(`[SidePanel] PDF 导出失败:`,e),showToast(`导出失败: `+e.message,`error`),document.body.removeChild(s)})}catch(e){console.error(`[SidePanel] 导出 PDF 失败:`,e),showToast(`导出失败: `+e.message,`error`)}}function quoteAndAsk(e){try{let t=e.dataset.rawMarkdown||e.dataset.rawContent||``;if(!t){console.warn(`[SidePanel] 无法获取消息内容`);return}let n=document.getElementById(`userInput`);if(!n){console.warn(`[SidePanel] 找不到输入框`);return}let r=e.querySelector(`.quote-btn`),i=r?r.innerHTML:``;setQuoteContext(t),r&&(r.innerHTML=`
         <svg viewBox="0 0 16 16" fill="currentColor">
           <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
         </svg>
@@ -1760,4 +1699,4 @@ Character number: `+e.characterNumber},n.prototype.lineNumber=function(){return 
         </td>
         <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${s}</td>
       </tr>`}).join(``),Ce()}function Ce(){let{column:e,asc:t}=be,n=[`name`,`callCount`,`successCount`,`successRate`,`duration`],r={name:`sortByName`,callCount:`sortByCallCount`,successCount:`sortBySuccessCount`,successRate:`sortBySuccessRate`,duration:`sortByDuration`};n.forEach(n=>{let i=document.getElementById(r[n]);if(!i)return;let a=i.querySelector(`.sort-indicator`);a&&(n===e?(a.textContent=t?`▲`:`▼`,a.style.color=`#667eea`):(a.textContent=``,a.style.color=``))})}document.querySelectorAll(`#toolStatsTable th[data-sort]`).forEach(e=>{e.addEventListener(`click`,()=>{let t=e.dataset.sort;be.column===t?be.asc=!be.asc:(be.column=t,be.asc=!1),xe()})}),ue.addEventListener(`click`,()=>{hideModal()}),de.addEventListener(`click`,()=>{hideModal(),clearChatHistory()});let we=document.getElementById(`confirmModal`);we.addEventListener(`click`,e=>{e.target===we&&hideModal()});let Te=document.getElementById(`selectionClose`);Te&&Te.addEventListener(`click`,e=>{e.preventDefault(),e.stopPropagation(),console.log(`[SidePanel] 用户点击关闭选中内容按钮`),clearSelectedContext$1(),window.hideFloatingMenu(),state_default.lastSelectedText=``,state_default.currentSelectionRange=null}),r.addEventListener(`input`,()=>{})}),loadChatConfig().then(()=>updateMemoryLimitLabel()),document.addEventListener(`DOMContentLoaded`,()=>{initMemoryLimitDropdown()}),document.addEventListener(`DOMContentLoaded`,initMessageToc),document.addEventListener(`DOMContentLoaded`,initPromptEvents),document.addEventListener(`DOMContentLoaded`,initSkillIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initSkillTabEvents),document.addEventListener(`DOMContentLoaded`,initMcpIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initPageIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initClarifyEvents),document.addEventListener(`DOMContentLoaded`,initConfirmEvents),document.addEventListener(`DOMContentLoaded`,initPrototypeEvents),document.addEventListener(`DOMContentLoaded`,initExportDialogEvents),document.addEventListener(`DOMContentLoaded`,()=>initAgentManager());function updateImagePreviewVisibility(){let e=document.getElementById(`imagePreviewBar`),t=document.getElementById(`screenshotBtn`);e&&(e.style.display=state_default.attachedImages.length>0?``:`none`),t&&(state_default.enableImageInput?t.style.removeProperty(`display`):t.style.display=`none`),updateTextareaPadding(),state_default.enableImageInput||(state_default.attachedImages=[]),renderImagePreviews()}function updateTextareaPadding(){if(!userInput)return;let e=44;state_default.enableImageInput&&(e+=32),state_default.enableFileInput&&(e+=32),userInput.style.paddingRight=e+`px`}function updateFileInputVisibility(){let e=document.getElementById(`fileAttachBtn`),t=document.getElementById(`fileInput`);e&&(e.style.display=state_default.enableFileInput?``:`none`),t&&(state_default.agentPlatform?.connected?(t.accept=`*`,e&&(e.title=`上传文件到Agent工作目录，大模型通过工具直接操作`)):(t.accept=`.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf`,e&&(e.title=`上传文件并提取文本内容（支持PDF/Word/Excel/文本等）`))),updateTextareaPadding(),state_default.enableFileInput||clearFiles()}function renderImagePreviews(){let e=document.getElementById(`imagePreviewBar`);if(e){if(e.innerHTML=``,state_default.attachedImages.length===0){e.style.display=`none`;return}e.style.display=``,state_default.attachedImages.forEach((t,n)=>{let r=document.createElement(`div`);r.className=`image-preview-item`;let i=document.createElement(`img`);i.src=t.dataUrl,i.className=`image-preview-thumb`,i.title=`点击查看大图`,i.style.cursor=`zoom-in`,i.addEventListener(`click`,()=>{openImagePreview(t.dataUrl,i)});let a=document.createElement(`button`);a.className=`image-preview-remove`,a.innerHTML=`×`,a.title=`移除图片`,a.addEventListener(`click`,e=>{e.stopPropagation(),state_default.attachedImages.splice(n,1),renderImagePreviews()}),r.appendChild(i),r.appendChild(a),e.appendChild(r)})}}async function captureFullPageScreenshot(){if(!state_default.enableImageInput){showToast(`请先开启图片输入功能`);return}try{let e=await chrome.runtime.sendMessage({type:`CAPTURE_TAB`});e?.dataUrl&&(compressAndAttachImage(await(await fetch(e.dataUrl)).blob()),showToast(`截图成功`))}catch(e){console.error(`[SidePanel] 全页面截图失败:`,e),showToast(`截图失败，请重试`)}}async function captureRegionScreenshot(){let e=await getCurrentActiveTabId();if(!e){showToast(`无法获取当前标签页`);return}try{let t=await chrome.tabs.sendMessage(e,{type:`START_REGION_SELECTION`});if(!t)return;console.log(`[SidePanel] 区域选择结果:`,t);let n=await chrome.runtime.sendMessage({type:`CAPTURE_TAB`});if(!n?.dataUrl){showToast(`截图失败，请重试`);return}let r=await cropImage(n.dataUrl,t);if(!r){showToast(`裁剪失败，请重试`);return}compressAndAttachImage(await(await fetch(r)).blob())}catch(e){console.error(`[SidePanel] 区域截图失败:`,e),showToast(`区域截图失败，请确保页面已加载且未被浏览器限制`)}}function cropImage(e,t){return new Promise((n,r)=>{let i=new Image;i.onload=()=>{let e=document.createElement(`canvas`),r=window.devicePixelRatio||1,a=t.x*r,o=t.y*r,s=t.width*r,c=t.height*r;e.width=s,e.height=c,e.getContext(`2d`).drawImage(i,a,o,s,c,0,0,s,c),n(e.toDataURL(`image/jpeg`,.85))},i.onerror=()=>r(Error(`图片加载失败`)),i.src=e})}async function handlePageScreenshotResult(e,t,n){if(!state_default.enableImageInput){showToast(`请先开启图片输入功能`);return}try{let r=e;t===`region`&&n&&(r=await cropImage(e,n)),compressAndAttachImage(await(await fetch(r)).blob()),showToast(`截图成功`)}catch(e){console.error(`[SidePanel] 页面快捷键截图处理失败:`,e),showToast(`截图处理失败，请重试`)}}
-//# sourceMappingURL=side_panel-DICYTd7W.js.map
+//# sourceMappingURL=side_panel-CljvkrFd.js.map
