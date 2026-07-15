@@ -162,9 +162,11 @@ const TOP_FRAME_ONLY_TYPES = new Set([
   'PAGE_TO_MARKDOWN',
   'PAGE_TO_JSON',
   'EXTRACT_METADATA',
+  'EXTRACT_TABLE',
   'GET_ELEMENT_COUNT',
   'SCROLL_AND_COLLECT',
   'GET_IFRAME_CONTENT',
+  'QUERY_INTERACTIVE_ELEMENTS',
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

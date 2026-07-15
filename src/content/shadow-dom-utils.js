@@ -1,7 +1,8 @@
 // content/shadow-dom-utils.js - Shadow DOM 和 iframe 深度操作工具
 
 /**
- * 递归穿透 Shadow DOM 查询单个元素
+ * 递归穿透 Shadow DOM 和同源 iframe 查询单个元素
+ * Shadow DOM 优先搜索（更深层的匹配更精确）
  * @param {string} selector - CSS选择器
  * @param {Document|ShadowRoot} root - 搜索根节点，默认为 document
  * @param {number} maxDepth - 最大递归深度，默认5
@@ -12,17 +13,30 @@ export function deepQuerySelector(selector, root = document, maxDepth = 5, depth
   if (depth > maxDepth) return null;
 
   try {
-    const result = root.querySelector?.(selector);
-    if (result) return result;
-
+    // 优先搜索 Shadow DOM 和 iframe（更深层匹配更精确）
     if (root.querySelectorAll) {
       for (const el of root.querySelectorAll('*')) {
         if (el.shadowRoot) {
           const found = deepQuerySelector(selector, el.shadowRoot, maxDepth, depth + 1);
           if (found) return found;
         }
+        if (el.tagName === 'IFRAME') {
+          try {
+            const iframeDoc = el.contentDocument || el.contentWindow?.document;
+            if (iframeDoc) {
+              const found = deepQuerySelector(selector, iframeDoc, maxDepth, depth + 1);
+              if (found) return found;
+            }
+          } catch {
+            // 跨域 iframe，跳过
+          }
+        }
       }
     }
+
+    // 再搜索当前根节点
+    const result = root.querySelector?.(selector);
+    if (result) return result;
   } catch {
     // 跨域或权限错误，跳过
   }
@@ -31,7 +45,7 @@ export function deepQuerySelector(selector, root = document, maxDepth = 5, depth
 }
 
 /**
- * 递归穿透 Shadow DOM 查询所有匹配元素
+ * 递归穿透 Shadow DOM 和同源 iframe 查询所有匹配元素
  * @param {string} selector - CSS选择器
  * @param {Document|ShadowRoot} root - 搜索根节点，默认为 document
  * @param {number} maxDepth - 最大递归深度，默认5
@@ -51,6 +65,16 @@ export function deepQuerySelectorAll(selector, root = document, maxDepth = 5, de
       root.querySelectorAll('*').forEach(el => {
         if (el.shadowRoot) {
           deepQuerySelectorAll(selector, el.shadowRoot, maxDepth, depth + 1, found);
+        }
+        if (el.tagName === 'IFRAME') {
+          try {
+            const iframeDoc = el.contentDocument || el.contentWindow?.document;
+            if (iframeDoc) {
+              deepQuerySelectorAll(selector, iframeDoc, maxDepth, depth + 1, found);
+            }
+          } catch {
+            // 跨域 iframe，跳过
+          }
         }
       });
     }
