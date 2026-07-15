@@ -6,6 +6,10 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 
+// 跟踪正在运行的 Agent 命令（sessionId → { execId, ws }）
+// 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
+const runningAgentCommands = new Map();
+
 // ==================== MCP 工具动态注册 ====================
 
 // 已动态注册的 MCP 工具 ID 集合（用于去重和清理）
@@ -3053,6 +3057,11 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         throw new Error('创建 WebSocket 连接失败');
       }
 
+      // 注册到 runningAgentCommands，以便取消时能关闭 WebSocket
+      if (sessionId) {
+        runningAgentCommands.set(sessionId, { execId, ws });
+      }
+
       await new Promise((resolve, reject) => {
         let totalTimeoutId = null;
         let lastActivityTime = Date.now();
@@ -3099,6 +3108,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         ws.onclose = () => {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnClose) originalOnClose();
+          runningAgentCommands.delete(sessionId);
           resolve();
         };
 
@@ -3106,6 +3116,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         ws.onerror = (err) => {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnError) originalOnError(err);
+          runningAgentCommands.delete(sessionId);
           cleanupAndStop(err.message).then(() => {
             reject(err);
           });
@@ -3113,6 +3124,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       });
     } catch (wsError) {
       console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
+      runningAgentCommands.delete(sessionId);
       if (wsError.message.includes('超时')) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
         appendAuditLog('command_exec', `命令执行超时: ${command}`, { command, cwd, exitCode: -1 });
@@ -3995,4 +4007,30 @@ async function executeAgentMemoryManage(args, toolCallId) {
   }
 
   return { success: false, error: `不支持的操作: ${action}`, tool_call_id: toolCallId };
+}
+
+/**
+ * 取消指定会话中正在运行的 Agent 命令
+ * 关闭 WebSocket 连接并调用 Agent API 停止命令进程
+ * @param {string} sessionId - 会话 ID
+ */
+export async function cancelRunningAgentCommands(sessionId) {
+  const entry = runningAgentCommands.get(sessionId);
+  if (!entry) return;
+  
+  runningAgentCommands.delete(sessionId);
+  
+  const { execId, ws } = entry;
+  console.log('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId);
+  
+  // 关闭 WebSocket 连接，阻止后续 AGENT_STREAM 消息发送
+  try { ws.close(); } catch (e) { /* ignore */ }
+  
+  // 通过 Agent API 停止命令进程
+  try {
+    await AgentClient.stopCommand(execId);
+    console.log('[Background] 已停止 Agent 命令进程:', execId);
+  } catch (err) {
+    console.warn('[Background] 停止 Agent 命令进程失败:', err.message);
+  }
 }

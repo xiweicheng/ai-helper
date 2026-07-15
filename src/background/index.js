@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
@@ -112,6 +112,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 优先使用 sessionId，兼容旧版 tabId
     if (sessionId) {
       cancelReactLoop(sessionId);
+      cancelRunningAgentCommands(sessionId);  // 关闭正在运行的命令 WebSocket
     } else {
       cancelReactLoop(tabId);
     }
