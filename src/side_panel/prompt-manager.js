@@ -703,12 +703,17 @@ export async function sendPromptByCode(code) {
 
     // 调用 background.js 的 API
     const apiParams = await getApiParams();
-    let content, executionLog;
+    let content, executionLog, wasStreamed = false, streamingHtml = null;
+    let streamingConnected = true, streamingMsgId = null;
 
     try {
       const result = await callApi(messages, model, state.useTools, apiParams);
       content = result.content;
       executionLog = result.executionLog || [];
+      wasStreamed = result.wasStreamed || false;
+      streamingHtml = result.streamingHtml || null;
+      streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
+      streamingMsgId = result.streamingMsgId || null;
     } catch (errorResult) {
       // 移除加载消息
       removeLoadingMessage(loadingId);
@@ -729,17 +734,26 @@ export async function sendPromptByCode(code) {
       throw errorResult; // 重新抛出以触发 finally 块
     }
 
-    // 移除加载消息
-    removeLoadingMessage(loadingId);
+    let assistantMsgId = null;
 
-    // 添加助手回复（传递执行日志）
-    const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
+    // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
+    if (!wasStreamed || !streamingHtml) {
+      removeLoadingMessage(loadingId);
 
-    // 渲染消息中的 mermaid 图表
-    await renderMessageMermaid(messageDiv);
+      if (!wasStreamed) {
+        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
+        assistantMsgId = messageId;
+        await renderMessageMermaid(messageDiv);
+      } else {
+        assistantMsgId = streamingMsgId;
+      }
+    } else {
+      // 流式模式且 streamingHtml 存在，使用流式消息的 messageId
+      assistantMsgId = streamingMsgId;
+    }
 
     // 将助手回复添加到消息历史（包含执行日志）
-    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
+    state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId: assistantMsgId });
 
     // 保存历史
     saveChatHistory();
