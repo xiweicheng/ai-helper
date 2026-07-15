@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shadow DOM & iframe 测试页面</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 28px;
+    }
+    
+    .section {
+      margin-bottom: 40px;
+      padding: 20px;
+      border-radius: 12px;
+      border-left: 4px solid #667eea;
+      background: #f8f9fa;
+    }
+    
+    .section-title {
+      color: #667eea;
+      font-size: 20px;
+      margin-bottom: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .section-title::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: #667eea;
+      border-radius: 50%;
+    }
+    
+    .test-text {
+      color: #555;
+      line-height: 1.8;
+      margin: 10px 0;
+      padding: 10px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+    
+    .iframe-container {
+      border: 2px dashed #667eea;
+      border-radius: 12px;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    
+    iframe {
+      width: 100%;
+      height: 300px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+    }
+    
+    .shadow-host {
+      border: 2px solid #28a745;
+      border-radius: 8px;
+      padding: 5px;
+      margin: 10px 0;
+    }
+    
+    .test-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+      transition: background 0.3s;
+    }
+    
+    .test-btn:hover {
+      background: #5a67d8;
+    }
+    
+    .test-input {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      width: 300px;
+      margin: 5px;
+    }
+    
+    .nested-iframe {
+      height: 200px;
+    }
+    
+    .code-block {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    
+    .table-container {
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e9ecef;
+    }
+    
+    th {
+      background: #667eea;
+      color: white;
+    }
+    
+    .highlight-box {
+      background: #fff3cd;
+      border: 1px solid #ffeeba;
+      border-radius: 8px;
+      padding: 15px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Shadow DOM & iframe 功能测试页面</h1>
+    
+    <div class="section">
+      <div class="section-title">普通 DOM 区域</div>
+      <div class="test-text">这是普通 DOM 中的文本内容，可以用来测试划词功能是否正常工作。</div>
+      <div class="test-text">普通 DOM 段落 2：选择这段文字测试工具栏弹出位置。</div>
+      <input type="text" class="test-input" placeholder="普通 DOM 输入框">
+      <button class="test-btn">普通 DOM 按钮</button>
+      
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr><th>姓名</th><th>部门</th><th>职位</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>张三</td><td>研发部</td><td>高级工程师</td></tr>
+            <tr><td>李四</td><td>产品部</td><td>产品经理</td></tr>
+            <tr><td>王五</td><td>设计部</td><td>UI设计师</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">Shadow DOM 区域（开放模式）</div>
+      <div class="highlight-box">
+        <strong>提示：</strong>以下内容位于 Shadow DOM 内部，普通的 querySelector 无法直接访问。
+      </div>
+      <div id="shadow-host-1" class="shadow-host"></div>
+      <div id="shadow-host-2" class="shadow-host"></div>
+      <div id="shadow-host-3" class="shadow-host"></div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">iframe 嵌套区域（同源）</div>
+      <div class="iframe-container">
+        <p><strong>iframe 1：</strong>包含普通 DOM 和 Shadow DOM 的页面</p>
+        <iframe src="test-iframe-content.html" id="iframe-1"></iframe>
+      </div>
+      
+      <div class="iframe-container">
+        <p><strong>iframe 2：</strong>嵌套 iframe 的页面（双层嵌套）</p>
+        <iframe src="test-nested-iframe.html" id="iframe-2"></iframe>
+      </div>
+    </div>
+    
+    <div class="section">
+      <div class="section-title">测试验证清单</div>
+      <ul style="line-height: 2;">
+        <li>✅ 在普通 DOM 区域划词 → 工具栏应正常显示</li>
+        <li>✅ 在 Shadow DOM 区域划词 → 工具栏应正常显示</li>
+        <li>✅ 在 iframe 内部划词 → 工具栏应正常显示</li>
+        <li>✅ 在 iframe 内部的 Shadow DOM 划词 → 工具栏应正常显示</li>
+        <li>✅ 使用 AI 工具获取页面内容 → 应包含所有区域的文本</li>
+        <li>✅ 点击 Shadow DOM 内的按钮 → 应能触发点击事件</li>
+        <li>✅ 在 Shadow DOM 输入框中输入内容 → 应能正常输入</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    function createShadowDOM(hostId, content) {
+      const host = document.getElementById(hostId);
+      const shadowRoot = host.attachShadow({ mode: 'open' });
+      
+      const style = document.createElement('style');
+      style.textContent = `
+        .shadow-content {
+          padding: 15px;
+          background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+          border-radius: 8px;
+          color: white;
+        }
+        .shadow-text {
+          margin: 10px 0;
+          line-height: 1.6;
+        }
+        .shadow-input {
+          padding: 8px;
+          border: none;
+          border-radius: 4px;
+          margin: 5px 0;
+          width: 250px;
+        }
+        .shadow-btn {
+          background: rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.4);
+          color: white;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .shadow-btn:hover {
+          background: rgba(255,255,255,0.3);
+        }
+        .shadow-link {
+          color: #fff;
+          text-decoration: underline;
+        }
+      `;
+      
+      shadowRoot.appendChild(style);
+      shadowRoot.innerHTML += content;
+    }
+
+    createShadowDOM('shadow-host-1', `
+      <div class="shadow-content">
+        <h3>Shadow DOM #1</h3>
+        <div class="shadow-text">这是 Shadow DOM 内部的文本内容，测试划词工具栏是否能检测到这里的选区。</div>
+        <div class="shadow-text">Shadow DOM 文本段落 2：选择这段文字验证选区检测功能。</div>
+        <input type="text" class="shadow-input" placeholder="Shadow DOM 输入框">
+        <button class="shadow-btn" onclick="alert('Shadow DOM 按钮被点击！')">Shadow DOM 按钮</button>
+        <a href="#" class="shadow-link">Shadow DOM 链接</a>
+      </div>
+    `);
+
+    createShadowDOM('shadow-host-2', `
+      <div class="shadow-content">
+        <h3>Shadow DOM #2 - 表格测试</h3>
+        <table style="width:100%; border-collapse:collapse; margin:10px 0;">
+          <tr style="background:rgba(0,0,0,0.1);">
+            <th style="padding:8px; text-align:left;">产品</th>
+            <th style="padding:8px; text-align:left;">价格</th>
+            <th style="padding:8px; text-align:left;">库存</th>
+          </tr>
+          <tr>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">笔记本电脑</td>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">¥8999</td>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">15</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">无线鼠标</td>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">¥199</td>
+            <td style="padding:8px; border-top:1px solid rgba(255,255,255,0.2);">100</td>
+          </tr>
+        </table>
+      </div>
+    `);
+
+    createShadowDOM('shadow-host-3', `
+      <div class="shadow-content">
+        <h3>Shadow DOM #3 - 嵌套 Shadow DOM</h3>
+        <div class="shadow-text">外层 Shadow DOM 文本</div>
+        <div id="inner-shadow-host"></div>
+      </div>
+    `);
+
+    setTimeout(() => {
+      const outerShadow = document.getElementById('shadow-host-3').shadowRoot;
+      const innerHost = outerShadow.getElementById('inner-shadow-host');
+      const innerShadow = innerHost.attachShadow({ mode: 'open' });
+      
+      innerShadow.innerHTML = `
+        <style>
+          div {
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 4px;
+            margin: 10px 0;
+          }
+        </style>
+        <div>
+          <strong>内层嵌套 Shadow DOM</strong>
+          <p>这是嵌套在 Shadow DOM 内部的另一个 Shadow DOM 中的文本。</p>
+          <input type="text" placeholder="嵌套 Shadow DOM 输入框">
+        </div>
+      `;
+    }, 100);
+  </script>
+</body>
+</html>

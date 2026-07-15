@@ -619,6 +619,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'SELECTION_AI_SEARCH' && message.prompt) {
       console.log('[SidePanel] 收到选中文本 AI 搜索:', message.selectedText?.substring(0, 50));
+      if (message.selectedText) {
+        setSelectedContext(message.selectedText);
+      }
       triggerSelectionSearch(message.prompt, message.selectedText);
       // 清除存储的待处理搜索
       chrome.storage.session.remove('pendingSelectionSearch').catch(() => {});
@@ -631,6 +634,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (message.type === 'DIRECT_SEND' && message.text) {
       console.log('[SidePanel] 收到直接发送:', message.text?.substring(0, 50));
+      if (message.selectedText) {
+        setSelectedContext(message.selectedText);
+      }
       directSend(message.text, message.selectedText || '');
       // 清除存储的待发送文本
       chrome.storage.session.remove('pendingDirectSend').catch(() => {});
@@ -664,6 +670,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (stored.pendingSelectionSearch && stored.pendingSelectionSearch.selectedText) {
     const { prompt, selectedText } = stored.pendingSelectionSearch;
     console.log('[SidePanel] 有待处理的选中文本搜索:', selectedText?.substring(0, 50));
+    setSelectedContext(selectedText);
     // 延迟执行，确保 UI 已完全初始化
     setTimeout(() => {
       triggerSelectionSearch(prompt, selectedText);
@@ -687,6 +694,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (sendStored.pendingDirectSend && sendStored.pendingDirectSend.text) {
     const { text, selectedText } = sendStored.pendingDirectSend;
     console.log('[SidePanel] 有待直接发送的文本:', text?.substring(0, 50));
+    if (selectedText) {
+      setSelectedContext(selectedText);
+    }
     setTimeout(() => {
       directSend(text, selectedText || '');
     }, 500);

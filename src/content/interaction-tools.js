@@ -1,5 +1,7 @@
 // content/interaction-tools.js - 页面交互与操作工具
 
+import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
+
 let pageSnapshot = null;
 let currentUtterance = null;
 
@@ -27,7 +29,7 @@ export function clickElement(selector, waitTime = 500, timeout = 3000) {
       cleanedSelector = cleanedSelector.replace(pattern, replacement);
     }
     
-    const element = document.querySelector(cleanedSelector);
+    const element = deepQuerySelector(cleanedSelector);
     if (!element) {
       return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
     }
@@ -86,7 +88,7 @@ export function fillForm(fields, waitTime = 500) {
     const results = [];
     fields.forEach(field => {
       const { selector, value, fieldType = 'text' } = field;
-      const element = document.querySelector(selector);
+      const element = deepQuerySelector(selector);
       
       if (!element) {
         results.push({ selector, success: false, error: '未找到元素' });
@@ -164,7 +166,7 @@ export function scrollToPosition(options) {
     } else if (target === 'coordinates') {
       window.scrollTo({ top: y, left: x, behavior });
     } else if (target === 'selector' && selector) {
-      const element = document.querySelector(selector);
+      const element = deepQuerySelector(selector);
       if (!element) {
         return { success: false, error: `未找到元素: ${selector}` };
       }
@@ -223,7 +225,7 @@ export function waitForElement(selector, state = 'appeared', timeout = 10000) {
     const startTime = Date.now();
     
     const check = () => {
-      const el = document.querySelector(selector);
+      const el = deepQuerySelector(selector);
       
       if (state === 'appeared' && el) {
         resolve({ success: true, message: `元素 ${selector} 已出现`, element: selector });
@@ -353,8 +355,8 @@ export function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, al
 export function dragAndDrop(sourceSelector, targetSelector) {
   return new Promise((resolve, reject) => {
     try {
-      const source = document.querySelector(sourceSelector);
-      const target = document.querySelector(targetSelector);
+      const source = deepQuerySelector(sourceSelector);
+      const target = deepQuerySelector(targetSelector);
       
       if (!source) {
         resolve({ success: false, error: `未找到源元素: ${sourceSelector}` });
@@ -423,7 +425,7 @@ export function dragAndDrop(sourceSelector, targetSelector) {
  */
 export function fileUpload(selector, fileName, fileContent, fileType = 'application/octet-stream') {
   try {
-    const input = document.querySelector(selector);
+    const input = deepQuerySelector(selector);
     
     if (!input) {
       return { success: false, error: `未找到文件上传控件: ${selector}` };

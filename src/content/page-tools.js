@@ -1,15 +1,15 @@
 // content/page-tools.js - 网页内容读取与提取工具
 
+import { deepQuerySelector, deepQuerySelectorAll, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
+
 /**
  * 获取当前网页的纯文本内容（增强版）
  */
 export function getPageText(options = {}) {
-  const { maxLength = 15000, includeHeadings = true, includeLinks = true } = options;
+  const { maxLength = 50000, includeHeadings = true, includeLinks = true } = options;
   
-  // 获取页面主体文本
-  const bodyText = document.body ? document.body.innerText : '';
+  const bodyText = deepGetText();
   
-  // 获取页面标题
   const title = document.title || '';
   
   const data = {
@@ -19,17 +19,15 @@ export function getPageText(options = {}) {
     wordCount: bodyText.split(/\s+/).length
   };
   
-  // 可选：包含标题层级
   if (includeHeadings) {
-    data.headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+    data.headings = Array.from(deepQuerySelectorAll('h1, h2, h3, h4, h5, h6'))
       .map(h => ({ level: h.tagName, text: h.textContent.trim() }))
       .filter(h => h.text.length > 0)
       .slice(0, 30);
   }
   
-  // 可选：包含链接列表
   if (includeLinks) {
-    data.links = Array.from(document.querySelectorAll('a'))
+    data.links = Array.from(deepQuerySelectorAll('a'))
       .map(a => ({ text: a.textContent.trim(), href: a.href }))
       .filter(link => link.text.length > 0)
       .slice(0, 50);
@@ -44,9 +42,8 @@ export function getPageText(options = {}) {
 export function getFullHtml(options = {}) {
   const { includeStyles = false, maxLength = 50000 } = options;
   
-  let html = document.documentElement.outerHTML;
+  let html = deepGetHtml();
   
-  // 如果不包含样式，移除内联样式
   if (!includeStyles) {
     html = html.replace(/\s*style="[^"]*"/gi, '');
   }
@@ -93,10 +90,10 @@ export function queryInteractiveElements(options = {}) {
     querySelectors = Object.values(selectors);
   }
   
-  // 查询元素
+  // 查询元素（穿透 Shadow DOM）
   querySelectors.forEach(selector => {
     try {
-      document.querySelectorAll(selector).forEach(el => {
+      deepQuerySelectorAll(selector).forEach(el => {
         // 生成唯一选择器
         const uniqueSelector = generateUniqueSelector(el);
         if (seenSelectors.has(uniqueSelector)) return;
@@ -269,7 +266,7 @@ export function getSelectedContent(format = 'text') {
  */
 export function extractTable(selector = 'table', includeHeaders = true, format = 'json') {
   try {
-    const table = document.querySelector(selector);
+    const table = deepQuerySelector(selector);
     if (!table) {
       return { success: false, error: `未找到匹配选择器的表格: ${selector}` };
     }
@@ -342,7 +339,7 @@ export async function pasteFromClipboard() {
  */
 export function hoverElement(selector) {
   try {
-    const element = document.querySelector(selector);
+    const element = deepQuerySelector(selector);
     if (!element) {
       return { success: false, error: `未找到元素: ${selector}` };
     }
@@ -1224,7 +1221,7 @@ export function findSimilarElements(selector, maxResults = 50) {
       return { success: false, error: '选择器不能为空' };
     }
 
-    const target = document.querySelector(selector);
+    const target = deepQuerySelector(selector);
     if (!target) {
       return { success: false, error: `未找到目标元素: ${selector}` };
     }
@@ -1305,8 +1302,8 @@ export function getIframeContent(selector = 'iframe', includeNested = false, max
           if (doc) {
             accessible = true;
             iframeTitle = doc.title || '';
-            textContent = (doc.body?.innerText || '').substring(0, maxLength);
-            htmlLength = (doc.documentElement?.outerHTML || '').length;
+            textContent = deepGetText(doc).substring(0, maxLength);
+            htmlLength = deepGetHtml(doc).length;
 
             if (includeNested && depth < 2) {
               doc.querySelectorAll('iframe').forEach(nestedIframe => {

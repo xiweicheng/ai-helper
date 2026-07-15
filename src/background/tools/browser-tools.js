@@ -235,7 +235,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_page_content',
-      description: '获取页面内容（支持多种输出格式）',
+      description: '获取页面内容（支持多种输出格式，自动穿透Shadow DOM和同源iframe）',
       parameters: {
         type: 'object',
         properties: {
@@ -355,7 +355,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_iframe_content',
-      description: '获取同源iframe文本内容',
+      description: '获取同源iframe文本内容（自动穿透Shadow DOM）',
       parameters: {
         type: 'object',
         properties: {
@@ -367,6 +367,7 @@ export const BROWSER_TOOLS = [
       }
     }
   },
+  
   {
     id: 'scroll_and_collect',
     category: 'content_extraction',
