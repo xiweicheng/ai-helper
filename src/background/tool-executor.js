@@ -3031,19 +3031,19 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       ws = await AgentClient.createExecWebSocket(wsUrl, (data) => {
         if (data.type === 'stdout') {
           stdoutCollected += data.data;
-          sendAgentStream(sessionId, execId, 'stdout', data.data);
+          sendAgentStream(sessionId, execId, toolCallId, 'stdout', data.data);
         } else if (data.type === 'stderr') {
           stderrCollected += data.data;
-          sendAgentStream(sessionId, execId, 'stderr', data.data);
+          sendAgentStream(sessionId, execId, toolCallId, 'stderr', data.data);
         } else if (data.type === 'exit') {
           exitCode = data.exitCode;
           killed = data.killed;
-          sendAgentStreamDone(sessionId, execId, exitCode);
+          sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
         }
       }, () => {
         if (exitCode === null) {
           exitCode = -1;
-          sendAgentStreamDone(sessionId, execId, -1);
+          sendAgentStreamDone(sessionId, execId, toolCallId, -1);
         }
       }, (err) => {
         console.warn('[AgentExec] WebSocket 错误:', err);
@@ -3114,7 +3114,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     } catch (wsError) {
       console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
       if (wsError.message.includes('超时')) {
-        sendAgentStreamDone(sessionId, execId, -1);
+        sendAgentStreamDone(sessionId, execId, toolCallId, -1);
         appendAuditLog('command_exec', `命令执行超时: ${command}`, { command, cwd, exitCode: -1 });
         return {
           success: false,

@@ -2212,59 +2212,77 @@ function appendToolResult(result, streamingElement) {
       ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
       : '';
     
-    // 格式化结果内容
-    const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
-    const contentPreview = contentText.length > 500 
-      ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
-      : contentText;
-    const fullContent = contentText;
+    // 通过 data-meta-type 判断是否为命令执行工具
+    // 命令执行工具有独立的流式输出区域（agent-stream-output），
+    // 此处只展示状态行，不重复展示完整输出内容
+    const isExecCommand = card.getAttribute('data-meta-type') === 'exec';
     
     const resultDiv = document.createElement('div');
     resultDiv.className = 'tool-call-result';
-    resultDiv.innerHTML = `
-      <div class="tool-result-header">
-        <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
-          ${result.success ? '' : ''}${result.success ? '成功' : '失败'}
-        </span>
-        ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
-        ${truncateNote}
-      </div>
-      <div class="tool-result-content">
-        <pre><code>${escapeHtml(contentPreview)}</code></pre>
-      </div>
-    `;
     
-    card.appendChild(resultDiv);
-    
-    // 如果内容 > 500 字符，支持点击展开完整内容
-    if (fullContent.length > 500) {
-      const codeBlock = resultDiv.querySelector('code');
-      // 将完整内容存储到 data 属性，供历史消息恢复时使用
-      codeBlock.dataset.fullContent = fullContent;
-      let isExpanded = false;
-      resultDiv.style.cursor = 'pointer';
+    if (isExecCommand) {
+      // 已有流式输出：只展示执行状态，不重复展示输出内容
+      resultDiv.innerHTML = `
+        <div class="tool-result-header">
+          <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+            ${result.success ? '成功' : '失败'}
+          </span>
+          ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+          ${truncateNote}
+        </div>
+      `;
+    } else {
+      // 没有流式输出（如非命令执行工具）：展示完整结果内容
+      const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
+      const contentPreview = contentText.length > 500 
+        ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
+        : contentText;
+      const fullContent = contentText;
+      
+      resultDiv.innerHTML = `
+        <div class="tool-result-header">
+          <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+            ${result.success ? '成功' : '失败'}
+          </span>
+          ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+          ${truncateNote}
+        </div>
+        <div class="tool-result-content">
+          <pre><code>${escapeHtml(contentPreview)}</code></pre>
+        </div>
+      `;
+      
+      // 如果内容 > 500 字符，支持点击展开完整内容
+      if (fullContent.length > 500) {
+        const codeBlock = resultDiv.querySelector('code');
+        codeBlock.dataset.fullContent = fullContent;
+        let isExpanded = false;
+        resultDiv.style.cursor = 'pointer';
         resultDiv.addEventListener('click', () => {
           isExpanded = !isExpanded;
           codeBlock.textContent = isExpanded ? fullContent : contentPreview;
         });
       }
-      
-      // 滚动到底部（等浏览器完成布局后）
-      // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
-      if (streamingElement.isConnected) {
-        requestAnimationFrame(() => {
-          const chatContainer = document.getElementById('chatContainer');
-          if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
-        });
-      }
-    };
-    
-    // 根据延迟决定是否立即渲染或延迟渲染
-    if (delay > 0) {
-      setTimeout(renderResult, delay);
-    } else {
-      renderResult();
     }
+    
+    card.appendChild(resultDiv);
+    
+    // 滚动到底部（等浏览器完成布局后）
+    // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
+    if (streamingElement.isConnected) {
+      requestAnimationFrame(() => {
+        const chatContainer = document.getElementById('chatContainer');
+        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+      });
+    }
+  };
+    
+  // 根据延迟决定是否立即渲染或延迟渲染
+  if (delay > 0) {
+    setTimeout(renderResult, delay);
+  } else {
+    renderResult();
+  }
 }
 
 /**
@@ -3441,7 +3459,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       }
       
       if (message.type === 'AGENT_STREAM') {
-        // Agent 命令实时输出
+        // Agent 命令实时输出 - 嵌入到对应的工具调用卡片内
         if (_se() && message.execId) {
           let agentEntry = _agentStreams[message.execId];
           if (!agentEntry) {
@@ -3455,9 +3473,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               </div>
               <pre class="agent-stream-content"><code></code></pre>
             `;
-            const sc = _se().querySelector('.stream-content');
-            if (sc) {
-              sc.appendChild(outputDiv);
+            // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部
+            let targetContainer = null;
+            if (message.toolCallId) {
+              const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);
+              if (card) {
+                targetContainer = card.querySelector('.tool-call-body');
+                if (targetContainer) {
+                  // 在卡片 body 末尾、参数展示之后插入输出区域
+                  targetContainer.appendChild(outputDiv);
+                }
+              }
+            }
+            // 降级：如果没有找到对应卡片，追加到 stream-content（兼容旧版）
+            if (!targetContainer || !outputDiv.isConnected) {
+              const sc = _se().querySelector('.stream-content');
+              if (sc) {
+                sc.appendChild(outputDiv);
+              }
             }
             agentEntry = { element: outputDiv, stdout: '', stderr: '' };
             _agentStreams[message.execId] = agentEntry;

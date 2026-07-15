@@ -350,12 +350,18 @@ export async function readSSEStream(reader, controller, abortSignal) {
 
 /**
  * 发送 Agent 命令实时输出
+ * @param {string} sessionId - 会话 ID
+ * @param {string} execId - Agent 执行 ID
+ * @param {string} toolCallId - 工具调用 ID，用于前端关联到对应的工具卡片
+ * @param {string} type - 'stdout' | 'stderr'
+ * @param {string} data - 输出数据
  */
-export function sendAgentStream(sessionId, execId, type, data) {
+export function sendAgentStream(sessionId, execId, toolCallId, type, data) {
   chrome.runtime.sendMessage({
     type: 'AGENT_STREAM',
     sessionId,
     execId,
+    toolCallId,
     streamType: type, // 'stdout' | 'stderr'
     data
   }).catch(() => {});
@@ -363,12 +369,17 @@ export function sendAgentStream(sessionId, execId, type, data) {
 
 /**
  * 发送 Agent 命令执行结束
+ * @param {string} sessionId - 会话 ID
+ * @param {string} execId - Agent 执行 ID
+ * @param {string} toolCallId - 工具调用 ID，用于前端关联到对应的工具卡片
+ * @param {number} exitCode - 命令退出码
  */
-export function sendAgentStreamDone(sessionId, execId, exitCode) {
+export function sendAgentStreamDone(sessionId, execId, toolCallId, exitCode) {
   chrome.runtime.sendMessage({
     type: 'AGENT_STREAM_DONE',
     sessionId,
     execId,
+    toolCallId,
     exitCode
   }).catch(() => {});
 }
