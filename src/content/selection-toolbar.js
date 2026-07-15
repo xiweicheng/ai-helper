@@ -52,6 +52,7 @@ let streamContent = '';       // 流式模式下累积的内容
 let shadowSelectionListeners = new Set(); // Shadow DOM 选择监听器集合
 let isTopFrame = window.top === window;   // 是否为顶层 frame
 let lastSentIframeText = '';              // 防止iframe重复发送相同选区
+let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区数据 { text, x, y }
 
 // 拖拽状态
 let dragState = null;
@@ -1403,22 +1404,19 @@ function onSelectionChange() {
   if (!isTopFrame) {
     const result = deepGetSelection();
     if (result.text && result.text.length >= 2) {
-      // 与上次发送的文本相同则跳过，防止点击工具栏时重复发送导致跳动
-      if (result.text === lastSentIframeText) return;
-      lastSentIframeText = result.text;
+      // 暂存选区数据，等待 mouseup 时再发送（与顶层 frame 行为一致）
       const pos = getRangeViewportPosition(result.range);
+      pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
+    } else if (currentSelectedText) {
+      // 选区被清除，通知顶层 frame 隐藏工具栏
+      currentSelectedText = '';
+      lastSentIframeText = '';
+      pendingIframeSelection = null;
       try {
-        chrome.runtime.sendMessage({
-          type: 'IFRAME_SELECTION',
-          text: result.text,
-          x: pos.x,
-          y: pos.y
-        }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'IFRAME_SELECTION_CLEAR' }).catch(() => {});
       } catch {
         // 扩展上下文失效时静默忽略
       }
-    } else {
-      lastSentIframeText = '';
     }
     return;
   }
@@ -1507,9 +1505,25 @@ function onDocumentClick(e) {
 function onMouseUp() {
   suppressNextClick = true;
   
-  // 子iframe：不发送选区消息，避免干扰顶层工具栏
-  // onSelectionChange 已经处理了初始选区的显示
-  if (!isTopFrame) return;
+  // 子iframe：在 mouseup 时发送选区消息（与顶层 frame 行为一致）
+  if (!isTopFrame) {
+    if (pendingIframeSelection) {
+      lastSentIframeText = pendingIframeSelection.text;
+      currentSelectedText = pendingIframeSelection.text;
+      try {
+        chrome.runtime.sendMessage({
+          type: 'IFRAME_SELECTION',
+          text: pendingIframeSelection.text,
+          x: pendingIframeSelection.x,
+          y: pendingIframeSelection.y
+        }).catch(() => {});
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
+      pendingIframeSelection = null;
+    }
+    return;
+  }
   
   // 工具栏已显示时，不重新定位（点击工具栏按钮导致）
   if (isToolbarVisible) return;
@@ -1857,6 +1871,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
   
+  if (message.type === 'IFRAME_SELECTION_CLEAR') {
+    if (!isTopFrame) return;
+    if (isToolbarVisible && !isAskMode) {
+      hideToolbar();
+      currentSelectedText = '';
+    }
+    return;
+  }
+  
   if (!isTopFrame) {
     return;
   }
@@ -2027,12 +2050,7 @@ export function initSelectionToolbar() {
   // 监听来自同源 iframe 的点击事件，关闭结果面板和工具栏
   window.addEventListener('message', (event) => {
     if (event.data?.type === 'IFRAME_CLICK_DISMISS' && isTopFrame) {
-      const now = Date.now();
-      // 工具栏刚显示 300ms 内不关闭（防止 mouseup 显示工具栏后 click 立即关闭）
-      if (isToolbarVisible && toolbarEl && now - lastToolbarShowTime > 300) {
-        hideToolbar();
-        currentSelectedText = '';
-      }
+      // 工具栏由 IFRAME_SELECTION_CLEAR 消息驱动隐藏，此处只处理结果面板
       if (isResultVisible && !isResultLocked) {
         hideResultPanel();
       }
