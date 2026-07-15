@@ -1331,6 +1331,7 @@ function showToolbar(x, y) {
   const viewportHeight = window.innerHeight;
   
   toolbarEl.style.display = 'flex';
+  lastToolbarShowTime = Date.now();
   
   requestAnimationFrame(() => {
     const rect = toolbarEl.getBoundingClientRect();
@@ -1471,9 +1472,15 @@ function onSelectionChange() {
   pendingSelection = true;
 }
 
+let lastIframeDismissTime = 0;           // 最后一次 iframe 关闭请求时间
+
 // ==================== 点击外部隐藏 ====================
 function onDocumentClick(e) {
-  if (!isTopFrame) return;
+  // 在 iframe 中点击时，通知顶层 frame 关闭结果面板和工具栏
+  if (!isTopFrame) {
+    window.top.postMessage({ type: 'IFRAME_CLICK_DISMISS' }, '*');
+    return;
+  }
   
   if (isResultVisible && resultPanelEl) {
     if (!resultPanelEl.contains(e.target) && !isResultLocked) {
@@ -2016,6 +2023,21 @@ export function initSelectionToolbar() {
   document.addEventListener('mouseup', onMouseUp, true);
   window.addEventListener('scroll', onScrollOrResize, true);
   window.addEventListener('resize', onResize);
+  
+  // 监听来自同源 iframe 的点击事件，关闭结果面板和工具栏
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'IFRAME_CLICK_DISMISS' && isTopFrame) {
+      const now = Date.now();
+      // 工具栏刚显示 300ms 内不关闭（防止 mouseup 显示工具栏后 click 立即关闭）
+      if (isToolbarVisible && toolbarEl && now - lastToolbarShowTime > 300) {
+        hideToolbar();
+        currentSelectedText = '';
+      }
+      if (isResultVisible && !isResultLocked) {
+        hideResultPanel();
+      }
+    }
+  });
   
   if (isTopFrame) {
     shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
