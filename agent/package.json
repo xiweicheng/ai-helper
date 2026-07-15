@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./src/server.js",
   "bin": {
-    "ai-helper-agent": "./bin/agent.js"
+    "ai-helper-agent": "./bin/agent.js",
+    "aha": "./bin/agent.js"
   },
   "files": [
     "bin/",

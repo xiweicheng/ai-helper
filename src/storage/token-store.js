@@ -50,7 +50,10 @@ export function getSessionTokenSummary(sessionId) {
   return withStore(STORE_NAME, 'readonly', (store, resolve) => {
     const req = store.getAll();
     req.onsuccess = () => {
-      const records = (req.result || []).filter(r => r.sessionId === sessionId);
+      const records = (req.result || []).filter(r => 
+        r.sessionId === sessionId || 
+        (sessionId && r.sessionId?.startsWith(sessionId + '_'))
+      );
       if (records.length === 0) {
         resolve({
           sessionId,

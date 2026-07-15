@@ -2455,7 +2455,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  background: transparent;
   cursor: pointer;
   user-select: none;
   font-size: 13px;
@@ -2464,7 +2464,7 @@ body {
   transition: background 0.2s;
 }
 .thinking-process-header:hover {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  background: rgba(124, 58, 237, 0.05);
 }
 .thinking-process-icon {
   width: 18px;
@@ -2472,12 +2472,74 @@ body {
   color: #8b5cf6;
 }
 .thinking-process-title {
-  flex: 1;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
+.thinking-process-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+.thinking-process-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.thinking-process-divider {
+  color: #ddd;
+  margin: 0 4px;
+}
+.stat-icon {
+  font-size: 12px;
+}
+.stat-icon.node-icon {
+  color: #60a5fa;
+}
+.stat-icon.success-icon {
+  color: #34d399;
+}
+.stat-icon.failed-icon {
+  color: #f87171;
+}
+.stat-label {
+  font-size: 12px;
+  color: #9ca3af;
+}
+.stat-value {
+  font-size: 12px;
+  font-weight: 600;
+}
+.thinking-process-stat.success .stat-value {
+  color: #34d399;
+}
+.thinking-process-stat.failed .stat-value {
+  color: #f87171;
+}
+
+@media (max-width: 420px) {
+  .thinking-process-stats {
+    gap: 4px;
+  }
+  .thinking-process-stat {
+    gap: 2px;
+  }
+  .thinking-process-divider {
+    margin: 0 2px;
+  }
+  .stat-label {
+    display: none;
+  }
+}
+
 .thinking-process-duration {
   font-size: 12px;
   color: #a78bfa;
   font-weight: normal;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .thinking-process-chevron {
   width: 16px;

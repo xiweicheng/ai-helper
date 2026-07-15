@@ -1109,7 +1109,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-toolbar-btn copy-btn';
-    copyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
+    copyBtn.title = '复制消息内容';
     copyBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
@@ -2396,18 +2396,43 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
     // 计算整体思考耗时
     const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
     
+    // 统计 ReAct 过程节点数量、成功数和失败数
+    const reactNodes = (executionLog || []).filter(e => e.nodeType === 'api_call' || e.nodeType === 'tool_exec');
+    const successCount = reactNodes.filter(e => e.status === 'success').length;
+    const failCount = reactNodes.filter(e => e.status === 'failed').length;
+    const nodeCount = reactNodes.length;
+    
     // 创建可折叠的思考过程区域
     const processHistory = document.createElement('div');
     processHistory.className = 'thinking-process collapsed';
     
     const processHeader = document.createElement('div');
     processHeader.className = 'thinking-process-header';
+    const statsHtml = nodeCount > 0 ? `
+      <span class="thinking-process-stat">
+        <span class="stat-icon node-icon">◉</span>
+        <span class="stat-label">总节点</span>
+        <span class="stat-value">${nodeCount}</span>
+      </span>
+      <span class="thinking-process-divider">|</span>
+      <span class="thinking-process-stat success">
+        <span class="stat-icon success-icon">✓</span>
+        <span class="stat-label">成功</span>
+        <span class="stat-value">${successCount}</span>
+      </span>
+      <span class="thinking-process-stat failed">
+        <span class="stat-icon failed-icon">✗</span>
+        <span class="stat-label">失败</span>
+        <span class="stat-value">${failCount}</span>
+      </span>
+    ` : '';
     processHeader.innerHTML = `
       <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
         <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
       </svg>
       <span class="thinking-process-title">思考过程</span>
+      <div class="thinking-process-stats">${statsHtml}</div>
       <span class="thinking-process-duration">${totalDuration}</span>
       <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
@@ -2527,17 +2552,42 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
         // 有思考内容：包装到 thinking-process 区域，创建独立的 final-answer 显示最终答案
         const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
         
+        // 统计 ReAct 过程节点数量、成功数和失败数（非 ReAct 模式只有 api_call）
+        const reactNodes = (executionLog || []).filter(e => e.nodeType === 'api_call' || e.nodeType === 'tool_exec');
+        const successCount = reactNodes.filter(e => e.status === 'success').length;
+        const failCount = reactNodes.filter(e => e.status === 'failed').length;
+        const nodeCount = reactNodes.length;
+        
         const processHistory = document.createElement('div');
         processHistory.className = 'thinking-process collapsed';
         
         const processHeader = document.createElement('div');
         processHeader.className = 'thinking-process-header';
+        const statsHtml = nodeCount > 0 ? `
+          <span class="thinking-process-stat">
+            <span class="stat-icon node-icon">◉</span>
+            <span class="stat-label">总节点</span>
+            <span class="stat-value">${nodeCount}</span>
+          </span>
+          <span class="thinking-process-divider">|</span>
+          <span class="thinking-process-stat success">
+            <span class="stat-icon success-icon">✓</span>
+            <span class="stat-label">成功</span>
+            <span class="stat-value">${successCount}</span>
+          </span>
+          <span class="thinking-process-stat failed">
+            <span class="stat-icon failed-icon">✗</span>
+            <span class="stat-label">失败</span>
+            <span class="stat-value">${failCount}</span>
+          </span>
+        ` : '';
         processHeader.innerHTML = `
           <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
             <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
           </svg>
           <span class="thinking-process-title">思考过程</span>
+          <div class="thinking-process-stats">${statsHtml}</div>
           <span class="thinking-process-duration">${totalDuration}</span>
           <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="6 9 12 15 18 9"/>
@@ -3960,10 +4010,10 @@ function copyAssistantMessage(messageDiv, copyBtn, event) {
       if (lastMsg) {
         textToCopy = lastMsg.content;
       } else {
-        const markdownBody = messageDiv.querySelector('.markdown-body');
-        if (markdownBody) {
-          textToCopy = markdownBody.innerText;
-          htmlToCopy = markdownBody.innerHTML;
+        const finalAnswer = messageDiv.querySelector('.final-answer .markdown-body') || messageDiv.querySelector('.markdown-body');
+        if (finalAnswer) {
+          textToCopy = finalAnswer.innerText;
+          htmlToCopy = finalAnswer.innerHTML;
         } else {
           textToCopy = messageDiv.innerText;
           htmlToCopy = messageDiv.innerHTML;
@@ -3972,9 +4022,9 @@ function copyAssistantMessage(messageDiv, copyBtn, event) {
     }
     
     if (!htmlToCopy) {
-      const markdownBody = messageDiv.querySelector('.markdown-body');
-      if (markdownBody) {
-        htmlToCopy = markdownBody.innerHTML;
+      const finalAnswer = messageDiv.querySelector('.final-answer .markdown-body') || messageDiv.querySelector('.markdown-body');
+      if (finalAnswer) {
+        htmlToCopy = finalAnswer.innerHTML;
       } else if (textToCopy) {
         htmlToCopy = formatMarkdown(textToCopy);
       }
