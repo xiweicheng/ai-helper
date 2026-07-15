@@ -1,5 +1,7 @@
 // content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
 
+import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
+
 // ==================== SVG 图标 ====================
 const ICONS = {
   search: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
@@ -47,6 +49,9 @@ let toolbarMaxVisible = 5;  // 直接显示的工具数量（固定为5）
 let toolbarIconOnly = false; // 图标精简模式
 let overflowDropdownEl = null;  // 溢出下拉菜单
 let streamContent = '';       // 流式模式下累积的内容
+let shadowSelectionListeners = new Set(); // Shadow DOM 选择监听器集合
+let isTopFrame = window.top === window;   // 是否为顶层 frame
+let lastSentIframeText = '';              // 防止iframe重复发送相同选区
 
 // 拖拽状态
 let dragState = null;
@@ -119,7 +124,9 @@ document.addEventListener('mouseup', () => {
 // 检查扩展上下文是否还有效
 function isExtensionValid() {
   try {
-    return !!(chrome && chrome.runtime && chrome.runtime.id);
+    if (typeof chrome !== 'object' || !chrome) return false;
+    if (typeof chrome.runtime !== 'object' || !chrome.runtime) return false;
+    return !!chrome.runtime.id;
   } catch {
     return false;
   }
@@ -663,25 +670,34 @@ const DEFAULT_TOOLS = [
 
 function loadToolbarTools() {
   return new Promise((resolve) => {
+    if (!isExtensionValid()) {
+      toolbarTools = [...DEFAULT_TOOLS];
+      resolve(toolbarTools);
+      return;
+    }
     if (toolbarTools) {
       resolve(toolbarTools);
       return;
     }
-    chrome.storage.local.get(['toolbarTools', 'toolbarIconOnly'], (result) => {
-      const rawTools = (result.toolbarTools && result.toolbarTools.length > 0) 
-        ? result.toolbarTools 
-        : DEFAULT_TOOLS;
-      // 内置工具始终使用默认的 systemPrompt
-      const defaultMap = new Map(DEFAULT_TOOLS.map(t => [t.id, t]));
-      toolbarTools = rawTools.map(t => {
-        if (t.builtin && defaultMap.has(t.id)) {
-          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt };
-        }
-        return t;
+    try {
+      chrome.storage.local.get(['toolbarTools', 'toolbarIconOnly'], (result) => {
+        const rawTools = (result.toolbarTools && result.toolbarTools.length > 0) 
+          ? result.toolbarTools 
+          : DEFAULT_TOOLS;
+        const defaultMap = new Map(DEFAULT_TOOLS.map(t => [t.id, t]));
+        toolbarTools = rawTools.map(t => {
+          if (t.builtin && defaultMap.has(t.id)) {
+            return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt };
+          }
+          return t;
+        });
+        toolbarIconOnly = result.toolbarIconOnly || false;
+        resolve(toolbarTools);
       });
-      toolbarIconOnly = result.toolbarIconOnly || false;
+    } catch {
+      toolbarTools = [...DEFAULT_TOOLS];
       resolve(toolbarTools);
-    });
+    }
   });
 }
 
@@ -747,7 +763,11 @@ function renderOverflowDropdown(overflowTools) {
     if (e.target.closest('.aih-dropdown-settings')) {
       e.stopPropagation();
       overflowDropdownEl.style.display = 'none';
-      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbar' }).catch(() => {});
+      try {
+        chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbar' }).catch(() => {});
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
       return;
     }
     
@@ -1265,25 +1285,33 @@ function sendToSidePanelInput(text) {
   if (!text || !isExtensionValid()) return;
   
   const selText = currentSelectedText || savedActionText || '';
-  chrome.runtime.sendMessage({
-    type: 'DIRECT_SEND',
-    text: text,
-    selectedText: selText
-  }).catch(err => {
-    console.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
-  });
+  try {
+    chrome.runtime.sendMessage({
+      type: 'DIRECT_SEND',
+      text: text,
+      selectedText: selText
+    }).catch(err => {
+      console.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
+    });
+  } catch {
+    // 扩展上下文失效时静默忽略
+  }
 }
 
 function sendToSidePanelInputWithContext(text, selectedText) {
   if (!text || !isExtensionValid()) return;
   
-  chrome.runtime.sendMessage({
-    type: 'DIRECT_SEND',
-    text: text,
-    selectedText: selectedText || ''
-  }).catch(err => {
-    console.error('[SelectionToolbar] 发送到侧边栏失败:', err);
-  });
+  try {
+    chrome.runtime.sendMessage({
+      type: 'DIRECT_SEND',
+      text: text,
+      selectedText: selectedText || ''
+    }).catch(err => {
+      console.error('[SelectionToolbar] 发送到侧边栏失败:', err);
+    });
+  } catch {
+    // 扩展上下文失效时静默忽略
+  }
 }
 
 function escapeHtml(text) {
@@ -1303,6 +1331,7 @@ function showToolbar(x, y) {
   const viewportHeight = window.innerHeight;
   
   toolbarEl.style.display = 'flex';
+  lastToolbarShowTime = Date.now();
   
   requestAnimationFrame(() => {
     const rect = toolbarEl.getBoundingClientRect();
@@ -1369,14 +1398,46 @@ function getPanelCenter(panel) {
 
 // ==================== 选中检测 ====================
 function onSelectionChange() {
+  if (!isExtensionValid()) return;
   if (!enableSelectionToolbar) return;
-  // 检查当前域名是否被屏蔽
+  if (!isTopFrame) {
+    const result = deepGetSelection();
+    if (result.text && result.text.length >= 2) {
+      // 与上次发送的文本相同则跳过，防止点击工具栏时重复发送导致跳动
+      if (result.text === lastSentIframeText) return;
+      lastSentIframeText = result.text;
+      const pos = getRangeViewportPosition(result.range);
+      try {
+        chrome.runtime.sendMessage({
+          type: 'IFRAME_SELECTION',
+          text: result.text,
+          x: pos.x,
+          y: pos.y
+        }).catch(() => {});
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
+    } else {
+      lastSentIframeText = '';
+    }
+    return;
+  }
   if (blockedDomains.length > 0 && blockedDomains.includes(window.location.hostname)) return;
-  // 检查是否临时隐藏
   if (toolbarTemporarilyHidden) return;
   
-  const selection = window.getSelection();
-  const text = selection ? selection.toString().trim() : '';
+  const mainSelection = window.getSelection();
+  let text = mainSelection ? mainSelection.toString().trim() : '';
+  let range = null;
+  
+  if (text && text.length >= 2 && mainSelection.rangeCount > 0) {
+    range = mainSelection.getRangeAt(0);
+  } else {
+    const shadowResult = deepGetSelection();
+    if (shadowResult.text && shadowResult.text.length >= 2) {
+      text = shadowResult.text;
+      range = shadowResult.range;
+    }
+  }
   
   if (!text || text.length < 2) {
     if (!isAskMode) hideToolbar();
@@ -1388,8 +1449,7 @@ function onSelectionChange() {
   const maxLength = 5000;
   const displayText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
   
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
+  if (range) {
     const container = range.commonAncestorContainer;
     const editable = container.nodeType === Node.TEXT_NODE 
       ? container.parentElement.closest('[contenteditable], input, textarea')
@@ -1405,27 +1465,23 @@ function onSelectionChange() {
     }
   }
   
-  if (text === currentSelectedText && isToolbarVisible) return;
-  
   currentSelectedText = displayText;
   
-  if (selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    
-    if (rect.width === 0 && rect.height === 0) return;
-    
-    // 暂存选中位置，等鼠标抬起时再显示工具栏
-    pendingSelection = {
-      x: rect.left + rect.width / 2,
-      y: rect.top
-    };
-  }
+  // 不在这里计算位置，等到鼠标抬起时再计算
+  // 这样可以确保位置是在选区完全稳定后才计算的
+  pendingSelection = true;
 }
+
+let lastIframeDismissTime = 0;           // 最后一次 iframe 关闭请求时间
 
 // ==================== 点击外部隐藏 ====================
 function onDocumentClick(e) {
-  // 结果面板可见时，点击外部关闭结果面板（锁定时不关闭）
+  // 在 iframe 中点击时，通知顶层 frame 关闭结果面板和工具栏
+  if (!isTopFrame) {
+    window.top.postMessage({ type: 'IFRAME_CLICK_DISMISS' }, '*');
+    return;
+  }
+  
   if (isResultVisible && resultPanelEl) {
     if (!resultPanelEl.contains(e.target) && !isResultLocked) {
       hideResultPanel();
@@ -1436,7 +1492,7 @@ function onDocumentClick(e) {
   if (!isToolbarVisible) return;
   if (!toolbarEl) return;
   
-  if (isAskMode) return; // 输入框模式下不关闭
+  if (isAskMode) return;
   
   if (suppressNextClick) {
     suppressNextClick = false;
@@ -1451,9 +1507,37 @@ function onDocumentClick(e) {
 function onMouseUp() {
   suppressNextClick = true;
   
-  // 鼠标抬起时，如果有暂存的选中位置，显示工具栏
+  // 子iframe：不发送选区消息，避免干扰顶层工具栏
+  // onSelectionChange 已经处理了初始选区的显示
+  if (!isTopFrame) return;
+  
+  // 工具栏已显示时，不重新定位（点击工具栏按钮导致）
+  if (isToolbarVisible) return;
+  
   if (pendingSelection && currentSelectedText) {
-    showToolbar(pendingSelection.x, pendingSelection.y);
+    let x = window.innerWidth / 2;
+    let y = window.innerHeight / 2;
+    
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) {
+        x = rect.left + rect.width / 2;
+        y = rect.top;
+      }
+    }
+    
+    if (x === window.innerWidth / 2 && y === window.innerHeight / 2) {
+      const shadowResult = deepGetSelection();
+      if (shadowResult.text && shadowResult.text.length >= 2) {
+        const pos = getRangeViewportPosition(shadowResult.range);
+        x = pos.x;
+        y = pos.y;
+      }
+    }
+    
+    showToolbar(x, y);
     pendingSelection = null;
   }
 }
@@ -1462,9 +1546,29 @@ function onMouseUp() {
 function onScrollOrResize() {
   if (isAskMode) return;
   
+  // 子iframe中：滚动时重新发送选区位置到顶层frame
+  if (!isTopFrame && currentSelectedText) {
+    const result = deepGetSelection();
+    if (result.text) {
+      const pos = getRangeViewportPosition(result.range);
+      try {
+        chrome.runtime.sendMessage({
+          type: 'IFRAME_SELECTION',
+          text: result.text,
+          x: pos.x,
+          y: pos.y
+        }).catch(() => {});
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
+    }
+    return;
+  }
+  
   if (!isToolbarVisible) return;
   
   // 滚动时：尝试根据当前选中内容重新定位工具栏
+  // 先尝试获取普通选区
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0 && currentSelectedText) {
     const range = selection.getRangeAt(0);
@@ -1474,7 +1578,15 @@ function onScrollOrResize() {
       return;
     }
   }
-  // 选中内容完全滚出可视区域时，隐藏工具栏
+  
+  // 再尝试获取 Shadow DOM 中的选区
+  const shadowResult = deepGetSelection();
+  if (shadowResult.text && shadowResult.text.length >= 2 && currentSelectedText) {
+    const pos = getRangeViewportPosition(shadowResult.range);
+    showToolbar(pos.x, pos.y);
+    return;
+  }
+  
   hideToolbar();
 }
 function onResize() {
@@ -1661,14 +1773,18 @@ function sendToAI(action, text, customSystemPrompt) {
     // 清除页面选中文本，避免 Side Panel 的 setInterval 重复检测到选中内容
     window.getSelection().removeAllRanges();
     
-    chrome.runtime.sendMessage({
-      type: 'SELECTION_TOOLBAR_ACTION',
-      action: action,
-      text: text,
-      prompt: message
-    }).catch(err => {
-      console.error('[SelectionToolbar] 发送消息失败:', err);
-    });
+    try {
+      chrome.runtime.sendMessage({
+        type: 'SELECTION_TOOLBAR_ACTION',
+        action: action,
+        text: text,
+        prompt: message
+      }).catch(err => {
+        console.error('[SelectionToolbar] 发送消息失败:', err);
+      });
+    } catch {
+      // 扩展上下文失效时静默忽略
+    }
     return;
   }
   
@@ -1710,6 +1826,40 @@ function sendToAI(action, text, customSystemPrompt) {
 // ==================== 监听 AI 响应 ====================
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isExtensionValid()) return;
+  
+  if (message.type === 'IFRAME_SELECTION') {
+    if (!isTopFrame) return;
+    
+    currentSelectedText = message.text;
+    
+    // 工具栏已显示时，只更新位置，不重新show（避免跳动）
+    if (isToolbarVisible && toolbarEl && currentSelectedText) {
+      requestAnimationFrame(() => {
+        const viewportWidth = window.innerWidth;
+        const toolbarWidth = toolbarEl.offsetWidth || 300;
+        const toolbarHeight = toolbarEl.offsetHeight || 40;
+        let left = message.x - toolbarWidth / 2;
+        if (left < 8) left = 8;
+        if (left + toolbarWidth > viewportWidth - 8) left = viewportWidth - toolbarWidth - 8;
+        let top = message.y - toolbarHeight - 8;
+        if (top < 8) top = message.y + 8;
+        toolbarEl.style.left = left + 'px';
+        toolbarEl.style.top = top + 'px';
+      });
+      return;
+    }
+    
+    pendingSelection = { x: message.x, y: message.y };
+    
+    if (currentSelectedText && currentSelectedText.length >= 2) {
+      showToolbar(message.x, message.y);
+    }
+    return;
+  }
+  
+  if (!isTopFrame) {
+    return;
+  }
   
   // 流式输出：开始（保留 loading 动画，等第一个 chunk 到达后再替换）
   if (message.type === 'SELECTION_TOOLBAR_STREAM_START') {
@@ -1805,19 +1955,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ==================== 域名屏蔽 ====================
 function blockCurrentDomain() {
+  if (!isExtensionValid()) return;
   const hostname = window.location.hostname;
-  chrome.storage.local.get(['blockedDomains'], (result) => {
-    const list = result.blockedDomains || [];
-    if (!list.includes(hostname)) {
-      list.push(hostname);
-      chrome.storage.local.set({ blockedDomains: list }, () => {
-        blockedDomains = list;
-        hideToolbar();
-        hideResultPanel();
-        currentSelectedText = '';
-      });
-    }
-  });
+  try {
+    chrome.storage.local.get(['blockedDomains'], (result) => {
+      try {
+        const list = result.blockedDomains || [];
+        if (!list.includes(hostname)) {
+          list.push(hostname);
+          chrome.storage.local.set({ blockedDomains: list }, () => {
+            blockedDomains = list;
+            hideToolbar();
+            hideResultPanel();
+            currentSelectedText = '';
+          });
+        }
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
+    });
+  } catch {
+    // 扩展上下文失效时静默忽略
+  }
 }
 
 // ==================== 监听开关状态变化 ====================
@@ -1865,7 +2024,32 @@ export function initSelectionToolbar() {
   window.addEventListener('scroll', onScrollOrResize, true);
   window.addEventListener('resize', onResize);
   
-  console.log('[SelectionToolbar] 初始化完成');
+  // 监听来自同源 iframe 的点击事件，关闭结果面板和工具栏
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'IFRAME_CLICK_DISMISS' && isTopFrame) {
+      const now = Date.now();
+      // 工具栏刚显示 300ms 内不关闭（防止 mouseup 显示工具栏后 click 立即关闭）
+      if (isToolbarVisible && toolbarEl && now - lastToolbarShowTime > 300) {
+        hideToolbar();
+        currentSelectedText = '';
+      }
+      if (isResultVisible && !isResultLocked) {
+        hideResultPanel();
+      }
+    }
+  });
+  
+  if (isTopFrame) {
+    shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
+    
+    const mutationObserver = new MutationObserver(() => {
+      removeSelectionListeners(shadowSelectionListeners);
+      shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
+    });
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+  }
+  
+  console.log('[SelectionToolbar] 初始化完成', isTopFrame ? '(顶层frame)' : '(子frame)');
 }
 
 export function destroySelectionToolbar() {
@@ -1874,6 +2058,8 @@ export function destroySelectionToolbar() {
   document.removeEventListener('mouseup', onMouseUp, true);
   window.removeEventListener('scroll', onScrollOrResize, true);
   window.removeEventListener('resize', onResize);
+  
+  removeSelectionListeners(shadowSelectionListeners);
   
   hideToolbar();
   hideResultPanel();

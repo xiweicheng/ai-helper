@@ -94,6 +94,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // ==================== 消息监听 ====================
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'IFRAME_SELECTION') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'IFRAME_SELECTION',
+        text: message.text,
+        x: message.x,
+        y: message.y
+      }).catch(() => {});
+    }
+    return false;
+  }
+
   if (message.type === 'CANCEL_REACT') {
     const { tabId, sessionId } = message;
     // 优先使用 sessionId，兼容旧版 tabId

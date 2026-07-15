@@ -21,6 +21,8 @@ import {
   shadowDomQuery, runJavascript, injectCss
 } from './advanced-tools.js';
 
+import { deepGetSelection } from './shadow-dom-utils.js';
+
 import { initSelectionToolbar } from './selection-toolbar.js';
 
 // ==================== 快捷键支持 ====================
@@ -153,10 +155,39 @@ const ASYNC_HANDLERS = new Set([
   'START_REGION_SELECTION',
 ]);
 
+// 这些工具类型只在顶层 frame 处理，避免 all_frames 响应冲突
+const TOP_FRAME_ONLY_TYPES = new Set([
+  'GET_PAGE_TEXT',
+  'GET_FULL_HTML',
+  'PAGE_TO_MARKDOWN',
+  'PAGE_TO_JSON',
+  'EXTRACT_METADATA',
+  'EXTRACT_TABLE',
+  'GET_ELEMENT_COUNT',
+  'SCROLL_AND_COLLECT',
+  'GET_IFRAME_CONTENT',
+  'QUERY_INTERACTIVE_ELEMENTS',
+]);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 页面级内容获取工具：只在顶层 frame 响应，避免 iframe 响应覆盖主页面内容
+  if (TOP_FRAME_ONLY_TYPES.has(message.type) && window.top !== window) {
+    return;
+  }
+
   // 旧版兼容：getSelectedText
   if (message.action === 'getSelectedText') {
-    sendResponse({ text: window.getSelection()?.toString() || '' });
+    // 优先使用 window.getSelection()，再回退到 deepGetSelection（穿透 Shadow DOM）
+    // 只有选区有内容时才响应，否则不响应让其他 frame 有机会
+    const winSel = window.getSelection()?.toString()?.trim() || '';
+    if (winSel) {
+      sendResponse({ text: winSel });
+      return;
+    }
+    const deep = deepGetSelection();
+    if (deep.text && deep.text.trim()) {
+      sendResponse({ text: deep.text.trim() });
+    }
     return;
   }
 
