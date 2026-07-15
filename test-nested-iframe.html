@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>嵌套 iframe 页面</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #e8f5e9;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .card-title {
+      color: #2e7d32;
+      font-size: 18px;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #4caf50;
+      padding-bottom: 10px;
+    }
+    
+    .text-content {
+      color: #555;
+      line-height: 1.7;
+      margin: 10px 0;
+    }
+    
+    iframe {
+      width: 100%;
+      height: 150px;
+      border: 2px solid #4caf50;
+      border-radius: 8px;
+      background: white;
+    }
+    
+    .nested-label {
+      color: #4caf50;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-title">📦 外层 iframe</div>
+    <div class="text-content">这是外层 iframe 的文本内容。</div>
+    <div class="text-content">外层段落 2：测试双层 iframe 嵌套场景。</div>
+    
+    <div class="nested-label">内层嵌套 iframe：</div>
+    <iframe src="test-iframe-content.html"></iframe>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🌲 外层 iframe 内的 Shadow DOM</div>
+    <div id="nested-shadow-host" style="border:2px dashed #28a745; border-radius:8px; padding:10px;"></div>
+  </div>
+
+  <script>
+    const host = document.getElementById('nested-shadow-host');
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    
+    shadowRoot.innerHTML = `
+      <style>
+        .container {
+          padding: 15px;
+          background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+          border-radius: 8px;
+          color: white;
+        }
+        .text {
+          margin: 10px 0;
+          line-height: 1.6;
+        }
+      </style>
+      <div class="container">
+        <h4>外层 iframe 的 Shadow DOM</h4>
+        <div class="text">这是嵌套 iframe 页面中 Shadow DOM 的文本内容。</div>
+        <div class="text">选择这段文字测试双层嵌套场景下的选区检测。</div>
+      </div>
+    `;
+  </script>
+</body>
+</html>

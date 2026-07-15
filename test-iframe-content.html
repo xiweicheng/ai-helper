@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iframe 内容页面</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: #f0f4f8;
+    }
+    
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .card-title {
+      color: #4a5568;
+      font-size: 18px;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
+    }
+    
+    .text-content {
+      color: #555;
+      line-height: 1.7;
+      margin: 10px 0;
+    }
+    
+    .shadow-box {
+      border: 2px dashed #28a745;
+      border-radius: 8px;
+      padding: 10px;
+      margin: 10px 0;
+    }
+    
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    
+    .input-field {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin: 5px;
+      width: 200px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+    }
+    
+    th, td {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    
+    th {
+      background: #667eea;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-title">📄 iframe 内部普通 DOM</div>
+    <div class="text-content">这是 iframe 内部的普通 DOM 文本内容。</div>
+    <div class="text-content">iframe 段落 2：测试划词功能是否能在 iframe 内正常工作。</div>
+    <input type="text" class="input-field" placeholder="iframe 输入框">
+    <button class="btn" onclick="alert('iframe 按钮被点击！')">iframe 按钮</button>
+    
+    <table>
+      <thead>
+        <tr><th>ID</th><th>名称</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>001</td><td>订单管理</td><td>已完成</td></tr>
+        <tr><td>002</td><td>用户注册</td><td>处理中</td></tr>
+        <tr><td>003</td><td>数据分析</td><td>待开始</td></tr>
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="card">
+    <div class="card-title">🌲 iframe 内部 Shadow DOM</div>
+    <div class="shadow-box" id="iframe-shadow-host"></div>
+  </div>
+
+  <script>
+    const host = document.getElementById('iframe-shadow-host');
+    const shadowRoot = host.attachShadow({ mode: 'open' });
+    
+    shadowRoot.innerHTML = `
+      <style>
+        .container {
+          padding: 15px;
+          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          border-radius: 8px;
+          color: white;
+        }
+        .text {
+          margin: 10px 0;
+          line-height: 1.6;
+        }
+        .btn {
+          background: rgba(255,255,255,0.2);
+          border: 1px solid rgba(255,255,255,0.4);
+          color: white;
+          padding: 6px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        input {
+          padding: 6px;
+          border: none;
+          border-radius: 4px;
+          margin: 5px 0;
+        }
+      </style>
+      <div class="container">
+        <h4>Shadow DOM 内部</h4>
+        <div class="text">这是 iframe 内部 Shadow DOM 中的文本，测试深度穿透能力。</div>
+        <div class="text">Shadow DOM 段落 2：选择这段文字验证选区检测。</div>
+        <input type="text" placeholder="Shadow DOM 输入框">
+        <button class="btn" onclick="alert('iframe 内 Shadow DOM 按钮被点击！')">Shadow DOM 按钮</button>
+      </div>
+    `;
+  </script>
+</body>
+</html>
