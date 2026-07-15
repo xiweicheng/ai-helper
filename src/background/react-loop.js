@@ -581,7 +581,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           thought: assistantMessage?.content || '',
           action: assistantMessage?.tool_calls?.length > 0 ? {
             name: assistantMessage.tool_calls[0].function?.name || assistantMessage.tool_calls[0].name,
-            params: JSON.parse(assistantMessage.tool_calls[0].function?.arguments || '{}')
+            params: (() => { try { return JSON.parse(assistantMessage.tool_calls[0].function?.arguments || '{}'); } catch { return {}; } })()
           } : null,
           apiRequest: {
             ...executionLog[apiLogIndex].apiRequest,
