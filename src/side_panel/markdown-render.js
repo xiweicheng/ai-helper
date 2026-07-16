@@ -709,6 +709,11 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
       svgWrapper.style.display = 'inline-block';
     }
     
+    // 恢复图表模式的不可选中状态
+    container.style.userSelect = 'none';
+    container.style.webkitUserSelect = 'none';
+    container.style.cursor = 'grab';
+    
     // 重新添加工具栏
     addMermaidControls(container);
   } else {
@@ -723,6 +728,11 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
     if (controls) {
       controls.remove();
     }
+    
+    // 源码模式允许文本选中
+    container.style.userSelect = 'text';
+    container.style.webkitUserSelect = 'text';
+    container.style.cursor = 'auto';
     
     // 创建源代码视图容器
     const sourceWrapper = document.createElement('div');
