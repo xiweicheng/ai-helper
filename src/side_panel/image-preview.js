@@ -328,6 +328,48 @@ export function initImagePreviewOverlay() {
 }
 
 /**
+ * 根据图片原始尺寸计算动态压缩参数
+ * AI 识别推荐尺寸：1024-1536 像素，质量 0.70-0.85 即可满足识别需求
+ * @param {number} width - 原始宽度
+ * @param {number} height - 原始高度
+ * @returns {Object} 包含 targetWidth, targetHeight, quality 的压缩参数
+ */
+function calculateCompressionParams(width, height) {
+  const maxDimension = Math.max(width, height);
+  
+  let targetMaxDim, quality;
+  
+  if (maxDimension <= 1280) {
+    targetMaxDim = maxDimension;
+    quality = 0.85;
+  } else if (maxDimension <= 2560) {
+    targetMaxDim = 1280;
+    quality = 0.80;
+  } else if (maxDimension <= 3840) {
+    targetMaxDim = 1536;
+    quality = 0.75;
+  } else {
+    targetMaxDim = 1920;
+    quality = 0.70;
+  }
+  
+  let targetWidth = width;
+  let targetHeight = height;
+  
+  if (maxDimension > targetMaxDim) {
+    if (width > height) {
+      targetHeight = Math.round(height * (targetMaxDim / width));
+      targetWidth = targetMaxDim;
+    } else {
+      targetWidth = Math.round(width * (targetMaxDim / height));
+      targetHeight = targetMaxDim;
+    }
+  }
+  
+  return { targetWidth, targetHeight, quality };
+}
+
+/**
  * 压缩图片并通过 canvas 转为 Base64，然后附加到 state.attachedImages
  * @param {Blob} blob - 原始图片 Blob
  */
@@ -342,25 +384,18 @@ export function compressAndAttachImage(blob) {
     reader.onloadend = () => {
       const originalUrl = reader.result;
 
-      let { width, height } = img;
-      const maxDim = 1024;
-      if (width > maxDim || height > maxDim) {
-        if (width > height) {
-          height = Math.round(height * (maxDim / width));
-          width = maxDim;
-        } else {
-          width = Math.round(width * (maxDim / height));
-          height = maxDim;
-        }
-      }
+      const { width: originalWidth, height: originalHeight } = img;
+      const { targetWidth, targetHeight, quality } = calculateCompressionParams(originalWidth, originalHeight);
 
       const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-      const compressedUrl = canvas.toDataURL('image/jpeg', 0.65);
+      const compressedUrl = canvas.toDataURL('image/jpeg', quality);
 
       state.attachedImages.push({ originalUrl, compressedUrl });
 
@@ -472,13 +507,13 @@ function initImageEditor() {
   previewCanvas = document.getElementById('imagePreviewPreviewCanvas');
   
   if (editCanvas) {
-    editCtx = editCanvas.getContext('2d');
+    editCtx = editCanvas.getContext('2d', { willReadFrequently: true });
     editCtx.lineCap = 'round';
     editCtx.lineJoin = 'round';
   }
   
   if (previewCanvas) {
-    previewCtx = previewCanvas.getContext('2d');
+    previewCtx = previewCanvas.getContext('2d', { willReadFrequently: true });
     previewCtx.lineCap = 'round';
     previewCtx.lineJoin = 'round';
   }
@@ -943,7 +978,7 @@ function confirmAnnotation() {
   const compositeCanvas = document.createElement('canvas');
   compositeCanvas.width = img.naturalWidth;
   compositeCanvas.height = img.naturalHeight;
-  const ctx = compositeCanvas.getContext('2d');
+  const ctx = compositeCanvas.getContext('2d', { willReadFrequently: true });
   
   ctx.drawImage(img, 0, 0);
   

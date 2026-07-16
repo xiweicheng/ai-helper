@@ -235,11 +235,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_page_content',
-      description: '获取页面内容（支持多种输出格式，自动穿透Shadow DOM和同源iframe）',
+      description: '获取页面内容（自动穿透Shadow DOM和同源iframe）',
       parameters: {
         type: 'object',
         properties: {
-          format: { type: 'string', enum: ['text', 'html', 'markdown', 'json'], description: '输出格式：text=纯文本，html=完整HTML，markdown=Markdown，json=结构化JSON', default: 'text' },
+          format: { type: 'string', enum: ['text', 'html'], description: '输出格式：text=纯文本，html=完整HTML', default: 'text' },
           selector: { type: 'string', description: '限制提取范围的CSS选择器' },
           maxLength: { type: 'integer', description: '最大字符数，默认15000', default: 15000 },
           tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取），不指定则使用当前会话关联的标签页' }

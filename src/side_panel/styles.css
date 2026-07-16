@@ -5202,11 +5202,18 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 10px 14px;
   font-size: 13px;
+  font-family: inherit;
   color: #333;
+  background: none;
+  border: none;
+  outline: none;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, opacity 0.3s;
+  text-align: left;
+  box-sizing: border-box;
 }
 
 .export-dropdown-item:hover {

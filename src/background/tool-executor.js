@@ -3304,14 +3304,12 @@ async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId)
 
   const messageTypeMap = {
     text: 'GET_PAGE_TEXT',
-    html: 'GET_FULL_HTML',
-    markdown: 'PAGE_TO_MARKDOWN',
-    json: 'PAGE_TO_JSON'
+    html: 'GET_FULL_HTML'
   };
 
   const messageType = messageTypeMap[format];
   if (!messageType) {
-    return { success: false, error: `不支持的格式: ${format}，可选: text, html, markdown, json`, tool_call_id: toolCallId };
+    return { success: false, error: `不支持的格式: ${format}，可选: text, html`, tool_call_id: toolCallId };
   }
 
   try {

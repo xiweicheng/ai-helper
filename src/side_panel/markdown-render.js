@@ -404,10 +404,10 @@ export function addMermaidControls(container) {
   console.log('[SidePanel] 工具栏 HTML 已添加');
   console.log('[SidePanel] container 子元素:', Array.from(container.children).map(c => c.className).join(', '));
   
-  // 缩放状态
+  // 缩放状态 - 支持无限缩放
   let scale = 1;
-  const MIN_SCALE = 0.3;
-  const MAX_SCALE = 10;
+  const MIN_SCALE = 0.01;
+  const MAX_SCALE = 100;
   const SCALE_STEP = 0.15;
   
   // 保存原始的 mermaid 源代码（优先使用 data-raw-code 属性中保存的原始代码）
@@ -564,7 +564,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
       const canvas = document.createElement('canvas');
       canvas.width = canvasWidth * scaleFactor;
       canvas.height = canvasHeight * scaleFactor;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       
       // 设置白色背景
       ctx.fillStyle = '#ffffff';
@@ -655,7 +655,7 @@ export function downloadMermaidPNG(svgElement, scale) {
       const canvas = document.createElement('canvas');
       canvas.width = canvasWidth * scaleFactor;
       canvas.height = canvasHeight * scaleFactor;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       
       // 设置白色背景
       ctx.fillStyle = '#ffffff';

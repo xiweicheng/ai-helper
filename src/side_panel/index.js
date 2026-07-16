@@ -2825,7 +2825,7 @@ function cropImage(dataUrl, rect) {
       canvas.width = sw;
       canvas.height = sh;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };

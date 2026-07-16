@@ -831,36 +831,46 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     const exportDropdown = document.createElement('div');
     exportDropdown.className = 'export-dropdown';
     exportDropdown.innerHTML = [
-      '<div class="export-dropdown-item export-docx-item">',
+      '<button class="export-dropdown-item export-docx-item" type="button">',
       '<svg t="1781245550030" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6544" width="32" height="32"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#8a8a8a" p-id="6545"></path><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#8a8a8a" p-id="6546"></path><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#8a8a8a" p-id="6547"></path></svg>',
       '<span>导出 Word</span>',
-      '</div>',
-      '<div class="export-dropdown-item export-md-item">',
+      '</button>',
+      '<button class="export-dropdown-item export-md-item" type="button">',
       '<svg t="1784038824502" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1666" width="32" height="32"><path d="M601.216 85.333333a42.666667 42.666667 0 0 1 30.485333 12.821334l209.450667 213.973333a42.666667 42.666667 0 0 1 12.181333 29.866667V853.333333a85.333333 85.333333 0 0 1-85.333333 85.333334H256a85.333333 85.333333 0 0 1-85.333333-85.333334V170.666667a85.333333 85.333333 0 0 1 85.333333-85.333334h345.216z m-35.584 64H256a21.333333 21.333333 0 0 0-21.333333 21.333334v682.666666a21.333333 21.333333 0 0 0 21.333333 21.333334h512a21.333333 21.333333 0 0 0 21.333333-21.333334V395.413333h-191.68a32 32 0 0 1-32-32L565.632 149.333333z m64 38.186667v143.893333h140.821333L629.632 187.52z" fill="#8a8a8a" p-id="1667"></path><path d="M384.341333 800l-3.072-0.106667a32 32 0 0 1-29.162666-34.624l21.973333-256c2.752-32.256 46.165333-40.490667 60.544-11.477333l77.290667 156.010667 78.805333-156.224c14.08-27.925333 55.082667-20.906667 60.074667 8.789333l0.384 3.050667 20.714666 256a32 32 0 0 1-63.786666 5.162666l-11.541334-142.549333-56.341333 111.722667c-11.413333 22.613333-42.88 23.381333-55.744 2.517333l-1.493333-2.730667-54.912-110.826666-12.181334 142.016a32 32 0 0 1-31.552 29.269333z" fill="#8a8a8a" p-id="1668"></path></svg>',
       '<span>导出 Markdown</span>',
-      '</div>',
-      '<div class="export-dropdown-item export-pdf-item">',
+      '</button>',
+      '<button class="export-dropdown-item export-pdf-item" type="button">',
       '<svg t="1781245863206" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8152" width="32" height="32"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#8a8a8a" p-id="8153"></path><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#8a8a8a" p-id="8154"></path></svg>',
       '<span>导出 PDF</span>',
-      '</div>'
+      '</button>',
+      '<button class="export-dropdown-item export-image-item" type="button">',
+      '<svg t="1784207887308" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5993" width="32" height="32"><path d="M400.696 268.795c-17.249 0-31.233 13.986-31.233 31.233v30.471c0 17.249 13.986 31.233 31.233 31.233s31.233-13.986 31.233-31.233v-30.471c0-17.249-13.985-31.233-31.233-31.233z" fill="#8a8a8a" p-id="5994"></path><path d="M623.649 361.734c17.249 0 31.234-13.986 31.234-31.233v-30.471c0-17.249-13.986-31.233-31.234-31.233s-31.233 13.986-31.233 31.233v30.471c-0.001 17.248 13.985 31.233 31.233 31.233z" fill="#8a8a8a" p-id="5995"></path><path d="M438.295 388.804c-14.656 9.104-19.155 28.362-10.050 43.013 11.209 18.047 41.976 48.59 86.157 48.59 43.958 0 75.1-30.313 86.574-48.223 9.303-14.529 5.068-33.847-9.455-43.15-14.539-9.298-33.852-5.068-43.15 9.455-0.122 0.199-13.38 19.45-33.969 19.45-20.009 0-32.444-18.128-33.278-19.373-9.166-14.423-28.28-18.805-42.829-9.761z" fill="#8a8a8a" p-id="5996"></path><path d="M824.508503 116.690676 571.592236 116.690676c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c40.181141 0 72.878844 32.692586 72.878844 72.878844l0 396.966057-189.334159-165.29465c-12.20088-10.655687-30.517037-10.207479-42.173518 0.9967L468.578048 674.16231 309.521472 517.519714c-11.895935-11.70253-30.903847-12.002358-43.154869-0.645706L126.957507 646.163629l0-394.126382c0-40.186258 32.692586-72.878844 72.878844-72.878844l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352S470.000444 116.690676 452.751594 116.690676L199.836351 116.690676c-74.632791 0-135.346571 60.71378-135.346571 135.346571l0 520.56405c0 74.632791 60.71378 135.346571 135.346571 135.346571l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352s-13.985526-31.233352-31.233352-31.233352L199.836351 845.481164c-40.186258 0-72.878844-32.692586-72.878844-72.878844l0-41.23924 160.003134-148.385539 159.428036 157.007917c12.048407 11.865235 31.361265 11.981892 43.546795 0.274246l198.576661-190.68697 208.876238 182.346001 0 40.683585c0 40.186258-32.697703 72.878844-72.878844 72.878844L571.592236 845.481164c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c74.627674 0 135.346571-60.71378 135.346571-135.346571L959.855074 252.037247C959.855074 177.404456 899.136178 116.690676 824.508503 116.690676z" fill="#8a8a8a" p-id="5997"></path></svg>',
+      '<span>导出图片</span>',
+      '</button>'
     ].join('');
     
-    exportDropdown.querySelector('.export-docx-item').addEventListener('click', (e) => {
+    const docxBtn = exportDropdown.querySelector('.export-docx-item');
+    docxBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      exportAssistantMessageToDocx(messageDiv, exportTriggerBtn);
-      exportDropdown.classList.remove('show');
+      exportAssistantMessageToDocx(messageDiv, docxBtn, exportDropdown);
     });
     
-    exportDropdown.querySelector('.export-md-item').addEventListener('click', (e) => {
+    const mdBtn = exportDropdown.querySelector('.export-md-item');
+    mdBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      exportAssistantMessageToMarkdown(messageDiv, exportTriggerBtn);
-      exportDropdown.classList.remove('show');
+      exportAssistantMessageToMarkdown(messageDiv, mdBtn, exportDropdown);
     });
     
-    exportDropdown.querySelector('.export-pdf-item').addEventListener('click', (e) => {
+    const pdfBtn = exportDropdown.querySelector('.export-pdf-item');
+    pdfBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      exportAssistantMessageToPdf(messageDiv, exportTriggerBtn);
-      exportDropdown.classList.remove('show');
+      exportAssistantMessageToPdf(messageDiv, pdfBtn, exportDropdown);
+    });
+    
+    const imageBtn = exportDropdown.querySelector('.export-image-item');
+    imageBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      exportAssistantMessageToImage(messageDiv, imageBtn, exportDropdown);
     });
     
     exportTriggerBtn.addEventListener('click', (e) => {
@@ -1685,18 +1695,19 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
       });
       exportDropdown.querySelector('.export-docx-item')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        exportAssistantMessageToDocx(messageEl, exportTrigger);
-        exportDropdown.classList.remove('show');
+        exportAssistantMessageToDocx(messageEl, e.currentTarget, exportDropdown);
       });
       exportDropdown.querySelector('.export-md-item')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        exportAssistantMessageToMarkdown(messageEl, exportTrigger);
-        exportDropdown.classList.remove('show');
+        exportAssistantMessageToMarkdown(messageEl, e.currentTarget, exportDropdown);
       });
       exportDropdown.querySelector('.export-pdf-item')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        exportAssistantMessageToPdf(messageEl, exportTrigger);
-        exportDropdown.classList.remove('show');
+        exportAssistantMessageToPdf(messageEl, e.currentTarget, exportDropdown);
+      });
+      exportDropdown.querySelector('.export-image-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToImage(messageEl, e.currentTarget, exportDropdown);
       });
     }
 
@@ -1802,13 +1813,19 @@ export function rebindAllMessages(container) {
       });
       exportDropdown.querySelector('.export-docx-item')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        exportAssistantMessageToDocx(messageEl, exportTrigger);
-        exportDropdown.classList.remove('show');
+        exportAssistantMessageToDocx(messageEl, e.currentTarget, exportDropdown);
+      });
+      exportDropdown.querySelector('.export-md-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToMarkdown(messageEl, e.currentTarget, exportDropdown);
       });
       exportDropdown.querySelector('.export-pdf-item')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        exportAssistantMessageToPdf(messageEl, exportTrigger);
-        exportDropdown.classList.remove('show');
+        exportAssistantMessageToPdf(messageEl, e.currentTarget, exportDropdown);
+      });
+      exportDropdown.querySelector('.export-image-item')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exportAssistantMessageToImage(messageEl, e.currentTarget, exportDropdown);
       });
     }
 
@@ -2737,36 +2754,46 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   const exportDropdown = document.createElement('div');
   exportDropdown.className = 'export-dropdown';
   exportDropdown.innerHTML = [
-    '<div class="export-dropdown-item export-docx-item">',
+    '<button class="export-dropdown-item export-docx-item" type="button">',
     '<svg t="1781245550030" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6544" width="32" height="32"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#8a8a8a" p-id="6545"></path><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#8a8a8a" p-id="6546"></path><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#8a8a8a" p-id="6547"></path></svg>',
     '<span>导出 Word</span>',
-    '</div>',
-    '<div class="export-dropdown-item export-md-item">',
+    '</button>',
+    '<button class="export-dropdown-item export-md-item" type="button">',
     '<svg t="1784038824502" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1666" width="32" height="32"><path d="M601.216 85.333333a42.666667 42.666667 0 0 1 30.485333 12.821334l209.450667 213.973333a42.666667 42.666667 0 0 1 12.181333 29.866667V853.333333a85.333333 85.333333 0 0 1-85.333333 85.333334H256a85.333333 85.333333 0 0 1-85.333333-85.333334V170.666667a85.333333 85.333333 0 0 1 85.333333-85.333334h345.216z m-35.584 64H256a21.333333 21.333333 0 0 0-21.333333 21.333334v682.666666a21.333333 21.333333 0 0 0 21.333333 21.333334h512a21.333333 21.333333 0 0 0 21.333333-21.333334V395.413333h-191.68a32 32 0 0 1-32-32L565.632 149.333333z m64 38.186667v143.893333h140.821333L629.632 187.52z" fill="#8a8a8a" p-id="1667"></path><path d="M384.341333 800l-3.072-0.106667a32 32 0 0 1-29.162666-34.624l21.973333-256c2.752-32.256 46.165333-40.490667 60.544-11.477333l77.290667 156.010667 78.805333-156.224c14.08-27.925333 55.082667-20.906667 60.074667 8.789333l0.384 3.050667 20.714666 256a32 32 0 0 1-63.786666 5.162666l-11.541334-142.549333-56.341333 111.722667c-11.413333 22.613333-42.88 23.381333-55.744 2.517333l-1.493333-2.730667-54.912-110.826666-12.181334 142.016a32 32 0 0 1-31.552 29.269333z" fill="#8a8a8a" p-id="1668"></path></svg>',
     '<span>导出 Markdown</span>',
-    '</div>',
-    '<div class="export-dropdown-item export-pdf-item">',
+    '</button>',
+    '<button class="export-dropdown-item export-pdf-item" type="button">',
     '<svg t="1781245863206" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8152" width="32" height="32"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#8a8a8a" p-id="8153"></path><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#8a8a8a" p-id="8154"></path></svg>',
     '<span>导出 PDF</span>',
-    '</div>'
+    '</button>',
+    '<button class="export-dropdown-item export-image-item" type="button">',
+    '<svg t="1784207887308" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5993" width="32" height="32"><path d="M400.696 268.795c-17.249 0-31.233 13.986-31.233 31.233v30.471c0 17.249 13.986 31.233 31.233 31.233s31.233-13.986 31.233-31.233v-30.471c0-17.249-13.985-31.233-31.233-31.233z" fill="#8a8a8a" p-id="5994"></path><path d="M623.649 361.734c17.249 0 31.234-13.986 31.234-31.233v-30.471c0-17.249-13.986-31.233-31.234-31.233s-31.233 13.986-31.233 31.233v30.471c-0.001 17.248 13.985 31.233 31.233 31.233z" fill="#8a8a8a" p-id="5995"></path><path d="M438.295 388.804c-14.656 9.104-19.155 28.362-10.050 43.013 11.209 18.047 41.976 48.59 86.157 48.59 43.958 0 75.1-30.313 86.574-48.223 9.303-14.529 5.068-33.847-9.455-43.15-14.539-9.298-33.852-5.068-43.15 9.455-0.122 0.199-13.38 19.45-33.969 19.45-20.009 0-32.444-18.128-33.278-19.373-9.166-14.423-28.28-18.805-42.829-9.761z" fill="#8a8a8a" p-id="5996"></path><path d="M824.508503 116.690676 571.592236 116.690676c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c40.181141 0 72.878844 32.692586 72.878844 72.878844l0 396.966057-189.334159-165.29465c-12.20088-10.655687-30.517037-10.207479-42.173518 0.9967L468.578048 674.16231 309.521472 517.519714c-11.895935-11.70253-30.903847-12.002358-43.154869-0.645706L126.957507 646.163629l0-394.126382c0-40.186258 32.692586-72.878844 72.878844-72.878844l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352S470.000444 116.690676 452.751594 116.690676L199.836351 116.690676c-74.632791 0-135.346571 60.71378-135.346571 135.346571l0 520.56405c0 74.632791 60.71378 135.346571 135.346571 135.346571l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352s-13.985526-31.233352-31.233352-31.233352L199.836351 845.481164c-40.186258 0-72.878844-32.692586-72.878844-72.878844l0-41.23924 160.003134-148.385539 159.428036 157.007917c12.048407 11.865235 31.361265 11.981892 43.546795 0.274246l198.576661-190.68697 208.876238 182.346001 0 40.683585c0 40.186258-32.697703 72.878844-72.878844 72.878844L571.592236 845.481164c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c74.627674 0 135.346571-60.71378 135.346571-135.346571L959.855074 252.037247C959.855074 177.404456 899.136178 116.690676 824.508503 116.690676z" fill="#8a8a8a" p-id="5997"></path></svg>',
+    '<span>导出图片</span>',
+    '</button>'
   ].join('');
   
-  exportDropdown.querySelector('.export-docx-item').addEventListener('click', (e) => {
+  const docxBtn = exportDropdown.querySelector('.export-docx-item');
+  docxBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    exportAssistantMessageToDocx(element, exportTriggerBtn);
-    exportDropdown.classList.remove('show');
+    exportAssistantMessageToDocx(element, docxBtn, exportDropdown);
   });
   
-  exportDropdown.querySelector('.export-md-item').addEventListener('click', (e) => {
+  const mdBtn = exportDropdown.querySelector('.export-md-item');
+  mdBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    exportAssistantMessageToMarkdown(element, exportTriggerBtn);
-    exportDropdown.classList.remove('show');
+    exportAssistantMessageToMarkdown(element, mdBtn, exportDropdown);
   });
   
-  exportDropdown.querySelector('.export-pdf-item').addEventListener('click', (e) => {
+  const pdfBtn = exportDropdown.querySelector('.export-pdf-item');
+  pdfBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    exportAssistantMessageToPdf(element, exportTriggerBtn);
-    exportDropdown.classList.remove('show');
+    exportAssistantMessageToPdf(element, pdfBtn, exportDropdown);
+  });
+  
+  const imageBtn = exportDropdown.querySelector('.export-image-item');
+  imageBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exportAssistantMessageToImage(element, imageBtn, exportDropdown);
   });
   
   exportTriggerBtn.addEventListener('click', (e) => {
@@ -4160,6 +4187,95 @@ function wrapHtmlWithStyles(html) {
   return `<!DOCTYPE html><html><head>${styles}</head><body>${html}</body></html>`;
 }
 
+let exportInProgressMap = new Map();
+
+function setExportButtonLoading(exportBtn, type, exportDropdown) {
+  if (!exportBtn) return;
+  
+  const btnKey = exportBtn.dataset.exportBtnKey || Date.now().toString();
+  exportBtn.dataset.exportBtnKey = btnKey;
+  
+  // 保存原始 SVG 图标
+  const originalSvg = exportBtn.querySelector('svg');
+  const originalSvgHTML = originalSvg ? originalSvg.outerHTML : '';
+  
+  exportInProgressMap.set(btnKey, {
+    originalSvgHTML: originalSvgHTML,
+    timer: null,
+    dropdown: exportDropdown || null
+  });
+  
+  // 替换图标为 loading spinner
+  if (originalSvg) {
+    originalSvg.outerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" style="animation: spin 0.8s linear infinite; width: 18px; height: 18px; flex-shrink: 0;">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="31.4" stroke-dashoffset="10" opacity="0.25"/>
+        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="31.4" stroke-dashoffset="10"/>
+      </svg>
+    `;
+  }
+  
+  exportBtn.disabled = true;
+  exportBtn.style.opacity = '0.6';
+  exportBtn.style.transition = 'all 0.3s ease';
+}
+
+function setExportButtonSuccess(exportBtn, type) {
+  if (!exportBtn) return;
+  
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  const state = btnKey ? exportInProgressMap.get(btnKey) : null;
+  
+  // 关闭下拉菜单
+  const dropdown = state && state.dropdown;
+  if (dropdown) {
+    dropdown.classList.remove('show');
+  }
+  
+  if (state && state.timer) clearTimeout(state.timer);
+  
+  // 恢复原始图标并启用按钮
+  const currentSvg = exportBtn.querySelector('svg');
+  if (currentSvg && state && state.originalSvgHTML) {
+    currentSvg.outerHTML = state.originalSvgHTML;
+  }
+  exportBtn.disabled = false;
+  exportBtn.style.opacity = '1';
+  exportBtn.style.transition = 'all 0.3s ease';
+  
+  if (btnKey) {
+    exportInProgressMap.delete(btnKey);
+  }
+}
+
+function resetExportButton(exportBtn) {
+  if (!exportBtn) return;
+  
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  const state = btnKey ? exportInProgressMap.get(btnKey) : null;
+  
+  // 关闭下拉菜单
+  const dropdown = state && state.dropdown;
+  if (dropdown) {
+    dropdown.classList.remove('show');
+  }
+  
+  if (state && state.timer) clearTimeout(state.timer);
+  
+  // 恢复原始图标并启用按钮
+  const currentSvg = exportBtn.querySelector('svg');
+  if (currentSvg && state && state.originalSvgHTML) {
+    currentSvg.outerHTML = state.originalSvgHTML;
+  }
+  exportBtn.disabled = false;
+  exportBtn.style.opacity = '1';
+  exportBtn.style.transition = 'all 0.3s ease';
+  
+  if (btnKey) {
+    exportInProgressMap.delete(btnKey);
+  }
+}
+
 function fallbackCopyRichText(text, html, copyBtn) {
   const container = document.createElement('div');
   container.style.position = 'fixed';
@@ -4185,7 +4301,15 @@ function fallbackCopyRichText(text, html, copyBtn) {
     document.body.removeChild(container);
   }
 }
-function exportAssistantMessageToDocx(messageDiv, exportBtn) {
+function exportAssistantMessageToDocx(messageDiv, exportBtn, exportDropdown) {
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  if (btnKey && exportInProgressMap.has(btnKey)) return;
+  
+  setExportButtonLoading(exportBtn, 'docx', exportDropdown);
+  
+  // 让浏览器先渲染 loading 状态
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
   try {
     let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
     
@@ -4286,32 +4410,33 @@ function exportAssistantMessageToDocx(messageDiv, exportBtn) {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     
-    const originalHTML = exportBtn.innerHTML;
-    exportBtn.innerHTML = `
-      <svg viewBox="0 0 16 16" fill="currentColor">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-      </svg>
-      <span>已导出</span>
-    `;
-    
-    setTimeout(() => {
-      exportBtn.innerHTML = originalHTML;
-    }, 2000);
-    
+    setExportButtonSuccess(exportBtn, 'docx');
     console.log('[SidePanel] Word 文档导出成功');
   } catch (error) {
     console.error('[SidePanel] 导出 Word 失败:', error);
     showToast('导出失败: ' + error.message, 'error');
+    resetExportButton(exportBtn);
   }
+  });
+  });
 }
 
-function exportAssistantMessageToPdf(messageDiv, exportBtn) {
+function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdown) {
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  if (btnKey && exportInProgressMap.has(btnKey)) return;
+  
+  setExportButtonLoading(exportBtn, 'pdf', exportDropdown);
+  
+  // 让浏览器先渲染 loading 状态
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
   try {
     const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
     const html2canvasFunc = window.html2canvas || null;
     
     if (!jsPDF || !html2canvasFunc) {
       showToast('PDF 导出库未加载', 'error');
+      resetExportButton(exportBtn);
       return;
     }
     
@@ -4326,7 +4451,6 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       }
     }
     
-    const dateStr = new Date().toLocaleString('zh-CN');
     const timestamp = new Date().getTime();
     const fileName = `pdf-${timestamp}.pdf`;
     
@@ -4345,35 +4469,10 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       box-sizing: border-box;
     `;
     
-    const header = document.createElement('div');
-    header.style.cssText = `
-      text-align: center;
-      margin-bottom: 20px;
-      padding-bottom: 15px;
-      border-bottom: 1px solid #ddd;
-    `;
-    header.innerHTML = `
-      <h1 style="margin: 0 0 10px 0; font-size: 20px; color: #333;">AI Helper 导出</h1>
-      <div style="font-size: 12px; color: #999;">${dateStr}</div>
-    `;
-    container.appendChild(header);
-    
     const content = document.createElement('div');
     content.className = 'markdown-body';
     content.innerHTML = formatMarkdown(markdownContent);
     container.appendChild(content);
-    
-    const footer = document.createElement('div');
-    footer.style.cssText = `
-      text-align: center;
-      margin-top: 30px;
-      padding-top: 15px;
-      border-top: 1px solid #ddd;
-      font-size: 12px;
-      color: #999;
-    `;
-    footer.textContent = 'AI Helper';
-    container.appendChild(footer);
     
     document.body.appendChild(container);
     
@@ -4381,7 +4480,8 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       scale: 2,
       useCORS: true,
       logging: false,
-      backgroundColor: '#ffffff'
+      backgroundColor: '#ffffff',
+      willReadFrequently: true
     }).then(canvas => {
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
@@ -4419,7 +4519,7 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = imgWidth;
           tempCanvas.height = sourceHeight;
-          const tempCtx = tempCanvas.getContext('2d');
+          const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
           tempCtx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight);
           
           const tempImgData = tempCanvas.toDataURL('image/png');
@@ -4432,17 +4532,7 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       
       pdf.save(fileName);
       
-      const originalHTML = exportBtn.innerHTML;
-      exportBtn.innerHTML = `
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-        </svg>
-        <span>已导出</span>
-      `;
-      
-      setTimeout(() => {
-        exportBtn.innerHTML = originalHTML;
-      }, 2000);
+      setExportButtonSuccess(exportBtn, 'pdf');
       
       document.body.removeChild(container);
       console.log('[SidePanel] PDF 导出成功:', fileName);
@@ -4450,14 +4540,26 @@ function exportAssistantMessageToPdf(messageDiv, exportBtn) {
       console.error('[SidePanel] PDF 导出失败:', error);
       showToast('导出失败: ' + error.message, 'error');
       document.body.removeChild(container);
+      resetExportButton(exportBtn);
     });
   } catch (error) {
     console.error('[SidePanel] 导出 PDF 失败:', error);
     showToast('导出失败: ' + error.message, 'error');
+    resetExportButton(exportBtn);
   }
+  });
+  });
 }
 
-function exportAssistantMessageToMarkdown(messageDiv, exportBtn) {
+function exportAssistantMessageToMarkdown(messageDiv, exportBtn, exportDropdown) {
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  if (btnKey && exportInProgressMap.has(btnKey)) return;
+  
+  setExportButtonLoading(exportBtn, 'md', exportDropdown);
+  
+  // 让浏览器先渲染 loading 状态
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
   try {
     let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
     
@@ -4470,6 +4572,7 @@ function exportAssistantMessageToMarkdown(messageDiv, exportBtn) {
     
     if (!markdownContent.trim()) {
       showToast('没有可导出的内容', 'error');
+      resetExportButton(exportBtn);
       return;
     }
     
@@ -4488,23 +4591,103 @@ function exportAssistantMessageToMarkdown(messageDiv, exportBtn) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    const originalHTML = exportBtn.innerHTML;
-    exportBtn.innerHTML = `
-      <svg viewBox="0 0 16 16" fill="currentColor">
-        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-      </svg>
-      <span>已导出</span>
-    `;
-    
-    setTimeout(() => {
-      exportBtn.innerHTML = originalHTML;
-    }, 2000);
-    
+    setExportButtonSuccess(exportBtn, 'md');
     console.log('[SidePanel] Markdown 导出成功:', fileName);
   } catch (error) {
     console.error('[SidePanel] 导出 Markdown 失败:', error);
     showToast('导出失败: ' + error.message, 'error');
+    resetExportButton(exportBtn);
   }
+  });
+  });
+}
+
+function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropdown) {
+  const btnKey = exportBtn.dataset.exportBtnKey;
+  if (btnKey && exportInProgressMap.has(btnKey)) return;
+  
+  setExportButtonLoading(exportBtn, 'image', exportDropdown);
+  
+  // 让浏览器先渲染 loading 状态
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+  try {
+    const html2canvasFunc = window.html2canvas || null;
+    
+    if (!html2canvasFunc) {
+      showToast('图片导出库未加载', 'error');
+      resetExportButton(exportBtn);
+      return;
+    }
+    
+    let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
+    
+    if (!markdownContent) {
+      const markdownBody = messageDiv.querySelector('.markdown-body');
+      if (markdownBody) {
+        markdownContent = markdownBody.innerText;
+      } else {
+        markdownContent = messageDiv.innerText;
+      }
+    }
+    
+    const timestamp = new Date().getTime();
+    const fileName = `image-${timestamp}.jpg`;
+    
+    const container = document.createElement('div');
+    container.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 595px;
+      padding: 40px;
+      background: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #333;
+      box-sizing: border-box;
+    `;
+    
+    const content = document.createElement('div');
+    content.className = 'markdown-body';
+    content.innerHTML = formatMarkdown(markdownContent);
+    container.appendChild(content);
+    
+    document.body.appendChild(container);
+    
+    html2canvasFunc(container, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      willReadFrequently: true
+    }).then(canvas => {
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const link = document.createElement('a');
+      link.href = imgData;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setExportButtonSuccess(exportBtn, 'image');
+      
+      document.body.removeChild(container);
+      console.log('[SidePanel] 图片导出成功:', fileName);
+    }).catch(error => {
+      console.error('[SidePanel] 图片导出失败:', error);
+      showToast('导出失败: ' + error.message, 'error');
+      document.body.removeChild(container);
+      resetExportButton(exportBtn);
+    });
+  } catch (error) {
+    console.error('[SidePanel] 导出图片失败:', error);
+    showToast('导出失败: ' + error.message, 'error');
+    resetExportButton(exportBtn);
+  }
+  });
+  });
 }
 
 function quoteAndAsk(messageDiv) {

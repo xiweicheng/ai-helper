@@ -877,27 +877,7 @@ function showTabContextMenu(event, session) {
   const deleteItem = createMenuItem('删除', () => {
     menu.remove();
     showDeleteModal(session, async () => {
-      const sessionsData = await loadSessions();
-      state.activeSessionId = sessionsData.activeSessionId;
-      state.sessions = sessionsData.list;
-      const active = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
-      if (active) {
-        state.messageHistory = active.messageHistory || [];
-        // 恢复新活跃会话的 Agent 绑定
-        state.activeAgentId = active.agentId || null;
-      } else {
-        state.messageHistory = [];
-        state.activeAgentId = null;
-      }
-      if (state.activeAgentId) {
-        const agent = await getAgent(state.activeAgentId);
-        state.activeAgentToolIds = agent ? agent.toolIds : null;
-      } else {
-        state.activeAgentToolIds = null;
-      }
-      document.dispatchEvent(new CustomEvent('session-switched'));
-      renderSessionTabs();
-      await renderAgentSelector();
+      await reloadAfterDelete();
     });
   }, 'danger');
   menu.appendChild(deleteItem);
@@ -927,6 +907,7 @@ function createMenuItem(label, onClick, className = '') {
  * 删除会话后重新加载状态，如果没有活跃会话则自动创建
  */
 async function reloadAfterDelete() {
+  const previousSessionId = state.activeSessionId;
   let sessionsData = await loadSessions();
   // 如果没有活跃会话了，自动创建一个新会话
   if (!sessionsData.activeSessionId) {
@@ -947,7 +928,9 @@ async function reloadAfterDelete() {
     state.activeAgentToolIds = null;
   }
 
-  document.dispatchEvent(new CustomEvent('session-switched'));
+  document.dispatchEvent(new CustomEvent('session-switched', {
+    detail: { sessionId: state.activeSessionId, previousSessionId }
+  }));
   renderSessionTabs();
   await renderAgentSelector();
 }
