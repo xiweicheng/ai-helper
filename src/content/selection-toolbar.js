@@ -1403,10 +1403,12 @@ function onSelectionChange() {
   if (!enableSelectionToolbar) return;
   if (!isTopFrame) {
     const result = deepGetSelection();
+    console.log('[SelectionToolbar] iframe onSelectionChange text:', result.text?.substring(0, 30), 'currentSelectedText:', !!currentSelectedText, 'pendingIframeSelection:', !!pendingIframeSelection);
     if (result.text && result.text.length >= 2) {
       // 暂存选区数据，等待 mouseup 时再发送（与顶层 frame 行为一致）
       const pos = getRangeViewportPosition(result.range);
       pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
+      console.log('[SelectionToolbar] iframe pendingIframeSelection 已设置');
     } else if (currentSelectedText) {
       // 选区被清除，通知顶层 frame 隐藏工具栏
       currentSelectedText = '';
@@ -1504,6 +1506,8 @@ function onDocumentClick(e) {
 
 function onMouseUp() {
   suppressNextClick = true;
+  
+  console.log('[SelectionToolbar] onMouseUp isTopFrame:', isTopFrame, 'pendingSelection:', pendingSelection, 'pendingIframeSelection:', !!pendingIframeSelection, 'currentSelectedText:', !!currentSelectedText, 'isToolbarVisible:', isToolbarVisible, 'toolbarEl:', !!toolbarEl);
   
   // 子iframe：在 mouseup 时发送选区消息（与顶层 frame 行为一致）
   if (!isTopFrame) {
@@ -1843,6 +1847,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'IFRAME_SELECTION') {
     if (!isTopFrame) return;
+    
+    console.log('[SelectionToolbar] 收到 IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
     
     currentSelectedText = message.text;
     

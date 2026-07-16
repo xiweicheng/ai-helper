@@ -178,17 +178,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 旧版兼容：getSelectedText
   if (message.action === 'getSelectedText') {
     // 优先使用 window.getSelection()，再回退到 deepGetSelection（穿透 Shadow DOM）
-    // 只有选区有内容时才响应，否则不响应让其他 frame 有机会
+    // 只有当前 frame 有焦点且选区有内容时才响应，避免多 frame 场景下返回旧 frame 的选区
     const winSel = window.getSelection()?.toString()?.trim() || '';
-    if (winSel) {
+    if (winSel && document.hasFocus()) {
       sendResponse({ text: winSel });
-      return;
+      return true;
     }
     const deep = deepGetSelection();
-    if (deep.text && deep.text.trim()) {
+    if (deep.text && deep.text.trim() && document.hasFocus()) {
       sendResponse({ text: deep.text.trim() });
     }
-    return;
+    return true;
   }
 
   const handler = HANDLERS[message.type];
