@@ -968,6 +968,8 @@ export function showRealtimeExecutionLogPanel(loadingId) {
   panel.addEventListener('click', (e) => {
     const header = e.target.closest('.timeline-header');
     if (header) {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       const content = header.parentElement;
       content.classList.toggle('expanded');
     }

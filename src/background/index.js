@@ -107,6 +107,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === 'IFRAME_CLICK_DISMISS') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { type: 'IFRAME_CLICK_DISMISS' }).catch(() => {});
+    }
+    return false;
+  }
+
+  if (message.type === 'IFRAME_SELECTION_CLEAR') {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { type: 'IFRAME_SELECTION_CLEAR' }).catch(() => {});
+    }
+    return false;
+  }
+
   if (message.type === 'CANCEL_REACT') {
     const { tabId, sessionId } = message;
     // 优先使用 sessionId，兼容旧版 tabId

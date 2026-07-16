@@ -1634,14 +1634,18 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
   const processHeader = messageEl.querySelector('.thinking-process-header');
   if (processHeader) {
     const processHistory = processHeader.closest('.thinking-process');
-    processHeader.addEventListener('click', () => {
+    processHeader.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       processHistory.classList.toggle('collapsed');
     });
   }
   
   // 重新绑定工具卡片展开/折叠
   messageEl.querySelectorAll('.tool-call-header').forEach(header => {
-    header.addEventListener('click', () => {
+    header.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       header.closest('.tool-call-item').classList.toggle('expanded');
     });
   });
@@ -1657,10 +1661,28 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
     let isExpanded = false;
     resultDiv.style.cursor = 'pointer';
     resultDiv.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       e.stopPropagation();
       isExpanded = !isExpanded;
       codeBlock.textContent = isExpanded ? fullContent : currentText;
     });
+  });
+  
+  // 向后兼容：为历史消息中未包裹的裸代码块添加复制按钮
+  // 旧版保存的 HTML 中代码块是裸 <pre><code>，缺少 .code-block-container 包裹
+  messageEl.querySelectorAll('.tool-call-body > pre, .tool-result-content > pre, .agent-stream-output > pre').forEach(preEl => {
+    if (preEl.parentElement.classList.contains('code-block-container')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block-container';
+    wrapper.style.position = 'relative';
+    wrapper.innerHTML = `<button class="code-copy-btn" title="复制代码">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
+      </svg>
+    </button>`;
+    preEl.parentElement.insertBefore(wrapper, preEl);
+    wrapper.appendChild(preEl);
   });
   
   // 重新绑定底部工具栏按钮事件
@@ -1764,9 +1786,26 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
  * @param {HTMLElement} container - chatContainer 元素
  */
 export function rebindAllMessages(container) {
+  // 向后兼容：为缓存恢复的旧版消息中未包裹的裸代码块添加复制按钮
+  container.querySelectorAll('.tool-call-body > pre, .tool-result-content > pre, .agent-stream-output > pre').forEach(preEl => {
+    if (preEl.parentElement.classList.contains('code-block-container')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block-container';
+    wrapper.style.position = 'relative';
+    wrapper.innerHTML = `<button class="code-copy-btn" title="复制代码">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
+      </svg>
+    </button>`;
+    preEl.parentElement.insertBefore(wrapper, preEl);
+    wrapper.appendChild(preEl);
+  });
+
   // 思考过程折叠/展开
   container.querySelectorAll('.thinking-process-header').forEach(header => {
-    header.addEventListener('click', () => {
+    header.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       const processEl = header.closest('.thinking-process');
       if (processEl) processEl.classList.toggle('collapsed');
     });
@@ -1774,7 +1813,9 @@ export function rebindAllMessages(container) {
 
   // 工具卡片展开/折叠
   container.querySelectorAll('.tool-call-header').forEach(header => {
-    header.addEventListener('click', () => {
+    header.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
       const item = header.closest('.tool-call-item');
       if (item) item.classList.toggle('expanded');
     });
@@ -2169,9 +2210,12 @@ function appendToolCallItems(element, toolCalls) {
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
-        <pre><code>${escapeHtml(formattedArgs)}</code></pre>
+        ${createCodeBlockHtml(escapeHtml(formattedArgs))}
       </div>
     `;
+    
+    // 绑定代码块复制按钮
+    addCodeCopyButtons();
     
     // 点击展开/折叠
     item.querySelector('.tool-call-header').addEventListener('click', () => {
@@ -2189,6 +2233,24 @@ function appendToolCallItems(element, toolCalls) {
       if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
     });
   }
+}
+
+/**
+ * 生成带复制按钮的代码块 HTML
+ * @param {string} codeContent - 代码内容（已转义）
+ * @param {string} extraPreClass - 额外给 <pre> 添加的 CSS 类名（可选）
+ * @returns {string} 完整的代码块 HTML
+ */
+function createCodeBlockHtml(codeContent, extraPreClass = '') {
+  const preClass = extraPreClass ? ` class="${extraPreClass}"` : '';
+  return `<div class="code-block-container" style="position: relative;">
+        <button class="code-copy-btn" title="复制代码">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
+          </svg>
+        </button>
+        <pre${preClass}><code>${codeContent}</code></pre>
+      </div>`;
 }
 
 /**
@@ -2266,7 +2328,7 @@ function appendToolResult(result, streamingElement) {
           ${truncateNote}
         </div>
         <div class="tool-result-content">
-          <pre><code>${escapeHtml(contentPreview)}</code></pre>
+          ${createCodeBlockHtml(escapeHtml(contentPreview))}
         </div>
       `;
       
@@ -2276,7 +2338,9 @@ function appendToolResult(result, streamingElement) {
         codeBlock.dataset.fullContent = fullContent;
         let isExpanded = false;
         resultDiv.style.cursor = 'pointer';
-        resultDiv.addEventListener('click', () => {
+        resultDiv.addEventListener('click', (e) => {
+          // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+          if (e.ctrlKey || e.metaKey) return;
           isExpanded = !isExpanded;
           codeBlock.textContent = isExpanded ? fullContent : contentPreview;
         });
@@ -2284,6 +2348,9 @@ function appendToolResult(result, streamingElement) {
     }
     
     card.appendChild(resultDiv);
+    
+    // 绑定代码块复制按钮
+    addCodeCopyButtons();
     
     // 滚动到底部（等浏览器完成布局后）
     // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
@@ -3500,7 +3567,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
                 <span class="agent-stream-icon">🖥️</span>
                 <span class="agent-stream-label">命令输出</span>
               </div>
-              <pre class="agent-stream-content"><code></code></pre>
+              ${createCodeBlockHtml('', 'agent-stream-content')}
             `;
             // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部
             let targetContainer = null;
@@ -3523,6 +3590,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
             }
             agentEntry = { element: outputDiv, stdout: '', stderr: '' };
             _agentStreams[message.execId] = agentEntry;
+            // 绑定代码块复制按钮
+            addCodeCopyButtons();
           }
           
           const codeEl = agentEntry.element.querySelector('code');

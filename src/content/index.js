@@ -25,6 +25,8 @@ import { deepGetSelection } from './shadow-dom-utils.js';
 
 import { initSelectionToolbar } from './selection-toolbar.js';
 
+console.log('[ContentScript] 内容脚本已加载 URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
+
 // ==================== 快捷键支持 ====================
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
