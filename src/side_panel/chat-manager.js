@@ -809,6 +809,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const quoteBtn = document.createElement('button');
     quoteBtn.className = 'quote-btn';
+    quoteBtn.title = '引用该内容问答';
     quoteBtn.innerHTML = [
       '<svg t="1781246498458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9645" width="14" height="14"><path d="M156.09136 606.57001a457.596822 457.596822 0 0 1 221.680239-392.516385 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z m406.752731 0a457.596822 457.596822 0 0 1 221.680239-392.007944 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z" fill="#8a8a8a" p-id="9646"></path></svg>',
       '<span>引用</span>'
@@ -2714,6 +2715,7 @@ function finalizeStreamingMessage(element, content, executionLog = [], reflectio
   // 引用按钮
   const quoteBtn = document.createElement('button');
   quoteBtn.className = 'quote-btn';
+  quoteBtn.title = '引用该内容问答';
   quoteBtn.innerHTML = [
     '<svg t="1781246498458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9645" width="14" height="14"><path d="M156.09136 606.57001a457.596822 457.596822 0 0 1 221.680239-392.516385 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z m406.752731 0a457.596822 457.596822 0 0 1 221.680239-392.007944 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z" fill="#8a8a8a" p-id="9646"></path></svg>',
     '<span>引用</span>'
@@ -4086,7 +4088,7 @@ function showCopySuccess(copyBtn, isRichText = false) {
     <svg viewBox="0 0 16 16" fill="currentColor">
       <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
     </svg>
-    <span>${isRichText ? '已复制富文本' : '已复制'}</span>
+    <span>${isRichText ? '已复制富文本' : '已复制Markdown'}</span>
   `;
   copyBtn.classList.add('copied');
   
