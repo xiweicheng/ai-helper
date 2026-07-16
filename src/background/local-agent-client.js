@@ -347,13 +347,15 @@ async function getAgentDetail() {
 /**
  * 创建 WebSocket 连接，用于接收命令执行的实时输出
  * Token 通过 getAgentConfig 获取，不再从 URL 传入
+ * 注意：空闲超时由调用方（tool-executor.js）的 Promise 超时统一管理，
+ * 此处不再设置 WebSocket 层空闲超时，避免双重超时冲突导致连接被意外关闭。
  * @param {string} wsUrl - WebSocket 连接地址
  * @param {Function} onMessage - 消息回调
  * @param {Function} onClose - 关闭回调
  * @param {Function} onError - 错误回调
- * @param {number} [idleTimeoutMs=60000] - 空闲超时时间（毫秒），默认 60 秒
+ * @param {number} [_idleTimeoutMs] - 已废弃，由调用方统一管理超时
  */
-async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeoutMs = 60000) {
+async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTimeoutMs) {
   const config = await getAgentConfig();
   if (!config.connected) {
     if (onError) onError(new Error('Agent 未配对'));
@@ -372,28 +374,11 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeo
 
   const ws = new WebSocket(authenticatedUrl);
 
-  let idleTimeoutId = setTimeout(() => {
-    console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
-    ws.close(4000, 'Idle timeout');
-    if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
-  }, idleTimeoutMs);
-
-  const resetIdleTimeout = () => {
-    clearTimeout(idleTimeoutId);
-    idleTimeoutId = setTimeout(() => {
-      console.warn('[AgentClient] WebSocket 空闲超时，关闭连接');
-      ws.close(4000, 'Idle timeout');
-      if (onError) onError(new Error(`命令执行空闲超时（${idleTimeoutMs}ms 无输出）`));
-    }, idleTimeoutMs);
-  };
-
   ws.onopen = () => {
     console.log('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
-    resetIdleTimeout();
   };
 
   ws.onmessage = (event) => {
-    resetIdleTimeout();
     try {
       const data = JSON.parse(event.data);
       if (onMessage) onMessage(data);
@@ -403,13 +388,11 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, idleTimeo
   };
 
   ws.onclose = () => {
-    clearTimeout(idleTimeoutId);
     console.log('[AgentClient] WebSocket 已关闭');
     if (onClose) onClose();
   };
 
   ws.onerror = (err) => {
-    clearTimeout(idleTimeoutId);
     console.error('[AgentClient] WebSocket 错误:', err);
     if (onError) onError(err);
   };

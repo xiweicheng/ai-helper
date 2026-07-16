@@ -3016,15 +3016,21 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     let exitCode = null;
     let killed = false;
     let ws = null;
+    let normalExit = false; // 标记是否正常收到 exit 消息
+    let stopped = false; // 标记后台进程是否已被终止
+    let idleTimeout = false; // 标记是否因空闲超时结束（挂起型命令，进程仍存活）
 
     const cleanupAndStop = async (reason) => {
+      // 关闭 WebSocket
       if (ws) {
         try { ws.close(); } catch {}
       }
-      if (execId && reason && reason.includes('超时')) {
+      // 非正常退出时，终止后台进程，防止孤儿进程持续运行
+      if (!normalExit && execId) {
+        stopped = true;
         try {
           await AgentClient.stopCommand(execId);
-          console.log('[AgentExec] 已终止超时的命令进程:', execId);
+          console.log('[AgentExec] 已终止命令进程:', execId, reason ? `(原因: ${reason})` : '');
         } catch (stopErr) {
           console.warn('[AgentExec] 终止命令进程失败:', stopErr.message);
         }
@@ -3045,10 +3051,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
         }
       }, () => {
-        if (exitCode === null) {
-          exitCode = -1;
-          sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        }
+        // WebSocket 正常关闭后的处理已由 Promise 的 onclose 统一管理
+        // 此处不再重复处理，避免与 Promise 的 resolve/reject 冲突
       }, (err) => {
         console.warn('[AgentExec] WebSocket 错误:', err);
       }, idleTimeoutMs);
@@ -3063,32 +3067,64 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
 
       await new Promise((resolve, reject) => {
+        const commandStartTime = Date.now();
         let totalTimeoutId = null;
-        let lastActivityTime = Date.now();
+        let lastOutputTime = Date.now();
+        let timeoutExtensions = 0;
+        const MAX_EXTENSIONS = 5; // 最多自动延长 5 次总超时
 
-        const resetTimeout = () => {
-          if (totalTimeoutId) {
-            clearTimeout(totalTimeoutId);
+        /**
+         * 调度下一次超时检查
+         * 双超时机制：
+         * 1. 空闲超时：无输出超过 idleTimeoutMs → 命令可能挂起，终止
+         * 2. 总超时：总执行时间超过 effectiveTimeout → 如有输出则自动延长，否则终止
+         */
+        const scheduleTimeoutCheck = () => {
+          if (totalTimeoutId) clearTimeout(totalTimeoutId);
+
+          const now = Date.now();
+          const elapsed = now - commandStartTime;
+          const idleTime = now - lastOutputTime;
+          const totalAllowed = effectiveTimeout * (1 + timeoutExtensions);
+
+          // 空闲超时：长时间无输出
+          if (idleTime >= idleTimeoutMs) {
+            // 挂起型命令（如服务启动）：进程可能仍在运行，不杀进程
+            // 关闭 WebSocket 但保留后台进程，返回已收集的输出
+            idleTimeout = true;
+            console.warn('[AgentExec] 命令空闲超时（', Math.round(idleTime / 1000), 's 无输出），可能为挂起型服务，保留后台进程');
+            if (ws) { try { ws.close(); } catch {} }
+            if (totalTimeoutId) clearTimeout(totalTimeoutId);
+            resolve();
+            return;
           }
-          lastActivityTime = Date.now();
-          const remainingTime = effectiveTimeout - (Date.now() - lastActivityTime);
-          if (remainingTime > 0) {
-            totalTimeoutId = setTimeout(() => {
-              const elapsedSinceLastActivity = Date.now() - lastActivityTime;
-              if (elapsedSinceLastActivity > idleTimeoutMs) {
-                const errMsg = `命令执行超时 (${effectiveTimeout}ms)，且超过 ${idleTimeoutMs}ms 无输出`;
-                console.warn('[AgentExec]', errMsg);
-                cleanupAndStop(errMsg).then(() => {
-                  reject(new Error(errMsg));
-                });
-              } else {
-                resetTimeout();
-              }
-            }, Math.min(remainingTime, idleTimeoutMs));
+
+          // 总超时检查
+          if (elapsed >= totalAllowed) {
+            if (timeoutExtensions < MAX_EXTENSIONS) {
+              // 命令仍在执行（最近有输出），自动延长总超时
+              timeoutExtensions++;
+              const newTotal = effectiveTimeout * (1 + timeoutExtensions);
+              console.log(`[AgentExec] 命令仍在执行，自动延长超时 (第${timeoutExtensions}次，总计${Math.round(newTotal / 1000)}s)`);
+              scheduleTimeoutCheck();
+              return;
+            } else {
+              const errMsg = `命令执行总超时（${Math.round(totalAllowed / 1000)}s，已延长${MAX_EXTENSIONS}次）`;
+              console.warn('[AgentExec]', errMsg);
+              cleanupAndStop(errMsg).then(() => {
+                reject(new Error(errMsg));
+              });
+              return;
+            }
           }
+
+          // 正常调度：取空闲超时和剩余总超时中较小的值
+          const remainingTotal = totalAllowed - elapsed;
+          const nextCheck = Math.min(idleTimeoutMs, remainingTotal);
+          totalTimeoutId = setTimeout(scheduleTimeoutCheck, nextCheck);
         };
 
-        resetTimeout();
+        scheduleTimeoutCheck();
 
         const originalOnMessage = ws.onmessage;
         ws.onmessage = (event) => {
@@ -3096,8 +3132,11 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'stdout' || data.type === 'stderr') {
-              resetTimeout();
+              // 有输出，更新最后输出时间，重新调度超时检查
+              lastOutputTime = Date.now();
+              scheduleTimeoutCheck();
             } else if (data.type === 'exit') {
+              normalExit = true;
               if (totalTimeoutId) clearTimeout(totalTimeoutId);
               resolve();
             }
@@ -3109,7 +3148,21 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnClose) originalOnClose();
           runningAgentCommands.delete(sessionId);
-          resolve();
+          // 空闲超时：进程保留，不杀进程，不 reject
+          if (idleTimeout) {
+            resolve();
+            return;
+          }
+          // 非正常退出时终止后台进程，防止孤儿进程
+          if (!normalExit) {
+            exitCode = -1;
+            sendAgentStreamDone(sessionId, execId, toolCallId, -1);
+            cleanupAndStop('WebSocket 连接意外关闭').then(() => {
+              reject(new Error('命令执行中断：WebSocket 连接意外关闭'));
+            });
+          } else {
+            resolve();
+          }
         };
 
         const originalOnError = ws.onerror;
@@ -3125,9 +3178,9 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     } catch (wsError) {
       console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
       runningAgentCommands.delete(sessionId);
-      if (wsError.message.includes('超时')) {
+      if (wsError.message.includes('超时') || wsError.message.includes('中断') || stopped) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        appendAuditLog('command_exec', `命令执行超时: ${command}`, { command, cwd, exitCode: -1 });
+        appendAuditLog('command_exec', `命令执行失败: ${command}`, { command, cwd, exitCode: -1, error: wsError.message });
         return {
           success: false,
           level: 'allow',
@@ -3136,8 +3189,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           stdout: stdoutCollected,
           stderr: stderrCollected,
           killed: true,
-          message: `命令执行超时（${effectiveTimeout}ms），已终止进程。\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\nstderr:\n```\n' + stderrCollected + '\n```' : ''}`,
-          error: `命令执行超时 (${effectiveTimeout}ms)`
+          message: `命令执行失败：${wsError.message}\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
+          error: wsError.message
         };
       }
       console.warn('[AgentExec] 回退到同步模式:', wsError.message);
@@ -3146,6 +3199,24 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     }
 
     appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode });
+    
+    // 空闲超时：挂起型命令（如服务启动），返回已收集的输出作为部分结果
+    if (idleTimeout) {
+      sendAgentStreamDone(sessionId, execId, toolCallId, 0);
+      console.log('[AgentExec] 空闲超时，返回部分结果（命令可能仍在后台运行）');
+      return {
+        success: true,
+        level: 'allow',
+        execId,
+        partial: true,
+        stdout: stdoutCollected,
+        stderr: stderrCollected,
+        message: `命令仍在后台运行（已空闲超时，进程未终止）。\n\n执行期间输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '(无输出)'}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}\n\n⚠️ 注意：此命令为挂起型进程（如服务/守护进程），进程仍在后台运行中。`,
+        hint: '命令为挂起型进程，仍在后台运行',
+        tool_call_id: toolCallId
+      };
+    }
+    
     const hasExitCode = exitCode !== null && exitCode !== undefined;
     const isSuccess = hasExitCode && exitCode === 0;
     return {

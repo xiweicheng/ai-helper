@@ -20,7 +20,7 @@ export function deepQuerySelector(selector, root = document, maxDepth = 5, depth
           const found = deepQuerySelector(selector, el.shadowRoot, maxDepth, depth + 1);
           if (found) return found;
         }
-        if (el.tagName === 'IFRAME') {
+        if ((el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
           try {
             const iframeDoc = el.contentDocument || el.contentWindow?.document;
             if (iframeDoc) {
@@ -66,7 +66,7 @@ export function deepQuerySelectorAll(selector, root = document, maxDepth = 5, de
         if (el.shadowRoot) {
           deepQuerySelectorAll(selector, el.shadowRoot, maxDepth, depth + 1, found);
         }
-        if (el.tagName === 'IFRAME') {
+        if ((el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
           try {
             const iframeDoc = el.contentDocument || el.contentWindow?.document;
             if (iframeDoc) {
@@ -153,7 +153,7 @@ export function deepGetText(root = document, maxDepth = 5, depth = 0, visited = 
           text += '\n' + deepGetText(el.shadowRoot, maxDepth, depth + 1, visited);
         }
 
-        if (el.tagName === 'IFRAME') {
+        if ((el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
           try {
             const iframeDoc = el.contentDocument || el.contentWindow?.document;
             if (iframeDoc && iframeDoc.body) {
@@ -205,7 +205,7 @@ export function deepGetHtml(root = document, maxDepth = 5, depth = 0, visited = 
           }
         }
 
-        if (el.tagName === 'IFRAME') {
+        if ((el.tagName === 'IFRAME' || el.tagName === 'FRAME')) {
           try {
             const iframeDoc = el.contentDocument || el.contentWindow?.document;
             if (iframeDoc && iframeDoc.documentElement) {

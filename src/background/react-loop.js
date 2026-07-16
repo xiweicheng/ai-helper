@@ -1058,7 +1058,17 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               };
             }
             
-            throw createErrorWithLog(toolError.message, executionLog);
+            // 工具执行失败时返回错误结果而非 throw，让 ReAct 循环继续下一轮
+            // 模型可以根据错误信息调整策略（如重试、换工具、或直接给出结论）
+            console.warn(`[Background] 工具 ${toolName} 执行失败，ReAct 循环继续:`, toolError.message);
+            sendExecutionStatusUpdate(`工具执行:${toolName}`, 'failed');
+            return {
+              error: toolError.message,
+              toolName,
+              toolCallId: toolCallId,
+              toolResult: { success: false, error: toolError.message },
+              toolResultStr: JSON.stringify({ success: false, error: toolError.message })
+            };
           }
         }
         
@@ -1156,19 +1166,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           // 按原始顺序处理结果，检查错误和 plan_task
           let planTaskHandled = false;
-          const parallelErrors = [];
           for (let i = 0; i < assistantMessage.tool_calls.length; i++) {
             const result = parallelResults[i];
             if (result.error) {
-              parallelErrors.push(`[${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name}]: ${result.error}`);
+              console.warn(`[Background] 并行工具执行失败: ${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name} - ${result.error}`);
             }
             if (result.planTaskHandled) {
               planTaskHandled = true;
             }
           }
-          if (parallelErrors.length > 0) {
-            throw createErrorWithLog(parallelErrors.join('; '));
-          }
+          // 并行工具失败不终止循环，让模型在下一轮根据错误信息调整策略
           
           // 处理反思优先级队列
           await processPendingReflections();

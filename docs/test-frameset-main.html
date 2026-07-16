@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Frameset 主内容面板</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #ffffff; }
+    h1 { color: #333; margin-top: 0; }
+    .section { margin-bottom: 32px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+    .section-title { font-size: 18px; font-weight: 600; color: #007aff; margin-bottom: 12px; }
+    .card { padding: 16px; background: white; border-radius: 6px; border: 1px solid #e9ecef; margin-bottom: 12px; }
+    iframe { border: 2px dashed #007aff; border-radius: 6px; width: 100%; height: 200px; }
+    .shadow-host { width: 100%; min-height: 100px; border: 2px dashed #28a745; border-radius: 6px; }
+    code { background: #f1f3f4; padding: 2px 6px; border-radius: 3px; font-family: 'SF Mono', Monaco, monospace; }
+    .test-info { background: #e7f3ff; border: 1px solid #b6d4fe; border-radius: 4px; padding: 12px; font-size: 13px; color: #0c63e4; }
+  </style>
+</head>
+<body>
+  <h1>Frameset 主内容面板</h1>
+  <p>这是 Frameset 布局中的主内容区域，包含多种测试场景。</p>
+  
+  <div class="test-info">
+    <strong>📝 测试指南：</strong><br>
+    1. 在本页面不同区域选中文字，测试工具栏显示<br>
+    2. 在 Shadow DOM 区域选中文字<br>
+    3. 在嵌套 iframe 中选中文字<br>
+    4. 尝试双击和拖拽选中两种方式
+  </div>
+
+  <!-- 普通文本区域 -->
+  <div class="section">
+    <div class="section-title">📄 普通文本区域</div>
+    <div class="card">
+      <p>这是普通的 HTML 文本内容，可以直接选中测试。Frameset 布局中每个 frame 都有独立的 document 对象，content script 会通过 all_frames 参数注入到每个 frame 中。</p>
+      <p>选中这段文字，测试划词工具栏是否正常出现，并能将内容带入输入框。</p>
+    </div>
+  </div>
+
+  <!-- Shadow DOM 区域 -->
+  <div class="section">
+    <div class="section-title">🌑 Shadow DOM 区域（绿色虚线框内）</div>
+    <div class="shadow-host" id="shadowHost"></div>
+    <p>上方绿色虚线框内是 Shadow DOM 内容，选中其中文字测试工具栏。</p>
+  </div>
+
+  <!-- 嵌套 iframe 区域 -->
+  <div class="section">
+    <div class="section-title">📦 嵌套 iframe 区域（蓝色虚线框内）</div>
+    <iframe src="test-frameset-inner.html" title="嵌套iframe测试"></iframe>
+    <p>上方蓝色虚线框内是嵌套的 iframe，选中其中文字测试工具栏。</p>
+  </div>
+
+  <script>
+    // 创建 Shadow DOM
+    const shadowHost = document.getElementById('shadowHost');
+    const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+    
+    shadowRoot.innerHTML = `
+      <style>
+        .shadow-content { padding: 16px; background: #f0fff4; color: #155724; }
+        .shadow-title { font-weight: bold; margin-bottom: 8px; }
+      </style>
+      <div class="shadow-content">
+        <div class="shadow-title">Shadow DOM 内部内容</div>
+        <p>这是位于 Shadow DOM 中的文本内容。Shadow DOM 会隔离样式和 DOM 结构，需要特殊处理才能检测选区。</p>
+        <p>选中这段文字，测试工具栏是否能正确显示在 Shadow DOM 选区上方。</p>
+      </div>
+    `;
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>嵌套 iframe 内容</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; background: #fff5f5; }
+    .inner-title { font-size: 16px; font-weight: 600; color: #dc3545; margin-bottom: 12px; }
+    .inner-content { background: white; padding: 12px; border-radius: 4px; }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="inner-title">🚀 嵌套 iframe 内部内容</div>
+  <div class="inner-content">
+    <p>这是嵌套在 iframe 中的文本内容，位于 frameset 的子 frame 内。</p>
+    <p>选中这里的文字，测试工具栏是否能正确显示。</p>
+    <ul>
+      <li>支持拖拽选中文字</li>
+      <li>支持双击选中文字</li>
+      <li>工具栏应出现在选区上方</li>
+      <li>选中内容应能带入输入框</li>
+    </ul>
+    <p>这是一段用于测试的长文本，确保选中足够长度的内容时工具栏依然正常工作。Frameset 和 iframe 的组合需要特殊处理才能正确传递选区信息。</p>
+  </div>
+</body>
+</html>
