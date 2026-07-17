@@ -12,6 +12,9 @@ import { StreamController, readSSEStream } from './stream-controller.js';
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
 export const activeReactLoops = new Set();
 
+// 已获得"当前任务放行"的会话集合，后续敏感操作自动通过
+const loopApprovedSessions = new Set();
+
 // 敏感操作中文显示名映射
 const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
@@ -26,7 +29,7 @@ const TOOL_DISPLAY_NAMES = {
  */
 async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   const toolLabel = TOOL_DISPLAY_NAMES[toolName] || toolName;
-  const confirmTimeout = 30000; // 30秒确认超时
+  const confirmTimeout = 180000; // 3分钟确认超时
   
   console.log(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
   
@@ -35,7 +38,12 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
       if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolName) {
         chrome.runtime.onMessage.removeListener(handler);
         clearTimeout(timeoutId);
-        console.log(`[Background] 用户确认结果: ${toolName} = ${message.confirmed}`);
+        console.log(`[Background] 用户确认结果: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
+        if (message.confirmed && message.scope === 'loop') {
+          // 当前任务放行：后续工具调用自动通过
+          loopApprovedSessions.add(sessionId);
+          console.log(`[Background] 会话 ${sessionId} 已设为当前任务放行`);
+        }
         resolve(message.confirmed);
       }
     };
@@ -102,7 +110,7 @@ const MAX_REFLECTION_ROUNDS = 10;
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
-export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = []) {
+export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null) {
   // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
   if (sessionId) activeReactLoops.add(sessionId);
 
@@ -294,6 +302,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         type: 'EXECUTION_STATUS_UPDATE',
         nodeName: nodeName,
         status: status,
+        callId: callId,
         executionLog: deltaLog
       };
       
@@ -479,7 +488,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 流式模式：读取 SSE 流
         if (streamConfig.streamEnabled !== false && fetchResponse.body) {
           console.log('[Background] 进入流式模式，streamEnabled:', streamConfig.streamEnabled);
-          const streamController = new StreamController(sessionId, streamConfig);
+          const streamController = new StreamController(sessionId, streamConfig, { callId });
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
           console.log('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
           
@@ -687,33 +696,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           // 检查是否需要用户确认（敏感操作 + 开关开启）
           const needsConfirmation = CONFIRMATION_REQUIRED_TOOLS.has(toolName) && reactConfig.toolConfirmationEnabled;
           if (needsConfirmation) {
-            const confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
-            if (!confirmed) {
-              // 用户拒绝，返回错误结果
-              const toolLogId = crypto.randomUUID();
-              executionLog.push({
-                id: toolLogId,
-                iteration,
-                timestamp: new Date().toISOString(),
-                status: 'cancelled',
-                nodeType: 'tool_exec',
-                nodeName: `工具执行:${toolName}`,
-                action: { name: toolName, params: toolArgs },
-                error: '用户拒绝了此操作'
-              });
-              sendExecutionStatusUpdate(`工具执行:${toolName}`, 'cancelled');
-              // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
-              currentMessages.push({
-                role: 'tool',
-                content: '用户拒绝了此操作',
-                tool_call_id: toolCallId
-              });
-              trimMessages();
-              return {
-                toolCall,
-                result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
-                toolResultStr: '用户拒绝了此操作',
-                toolLogEntry: {
+            // 如果该会话已获得"当前任务放行"，跳过确认
+            if (sessionId && loopApprovedSessions.has(sessionId)) {
+              console.log(`[Background] 会话 ${sessionId} 已获当前任务放行，跳过确认: ${toolName}`);
+            } else {
+              const confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
+              if (!confirmed) {
+                // 用户拒绝，返回错误结果
+                const toolLogId = crypto.randomUUID();
+                executionLog.push({
                   id: toolLogId,
                   iteration,
                   timestamp: new Date().toISOString(),
@@ -722,8 +713,31 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   nodeName: `工具执行:${toolName}`,
                   action: { name: toolName, params: toolArgs },
                   error: '用户拒绝了此操作'
-                }
-              };
+                });
+                sendExecutionStatusUpdate(`工具执行:${toolName}`, 'cancelled');
+                // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
+                currentMessages.push({
+                  role: 'tool',
+                  content: '用户拒绝了此操作',
+                  tool_call_id: toolCallId
+                });
+                trimMessages();
+                return {
+                  toolCall,
+                  result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
+                  toolResultStr: '用户拒绝了此操作',
+                  toolLogEntry: {
+                    id: toolLogId,
+                    iteration,
+                    timestamp: new Date().toISOString(),
+                    status: 'cancelled',
+                    nodeType: 'tool_exec',
+                    nodeName: `工具执行:${toolName}`,
+                    action: { name: toolName, params: toolArgs },
+                    error: '用户拒绝了此操作'
+                  }
+                };
+              }
             }
           }
           
@@ -1245,7 +1259,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     throw error;
   } finally {
     // 标记该 session 的 ReAct 循环已结束，用于 SW 重启检测
-    if (sessionId) activeReactLoops.delete(sessionId);
+    if (sessionId) {
+      activeReactLoops.delete(sessionId);
+      loopApprovedSessions.delete(sessionId);  // 清除"当前任务放行"状态
+    }
   }
 }
 
@@ -1819,7 +1836,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 /**
  * 调用 OpenAI 兼容 API（支持流式/非流式）
  */
-export function callApiNonStream(messages, model, apiParams = {}, sessionId = null, streamOptions = {}) {
+export function callApiNonStream(messages, model, apiParams = {}, sessionId = null, streamOptions = {}, callId = null) {
   return getStoredConfig().then(config => {
     // 如果传入了图片识别独立配置，则覆盖默认配置
     if (apiParams.imageApiBase) {
@@ -1874,7 +1891,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
       // 流式模式：读取 SSE 流
       if (useStream && response.body) {
-        const streamController = new StreamController(sessionId, config.streamConfig, streamOptions);
+        const streamController = new StreamController(sessionId, config.streamConfig, { ...streamOptions, callId });
         const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
         console.log('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
         return { content: result.content, usage: result.usage, reasoningContent: result.reasoningContent };

@@ -1728,6 +1728,7 @@ body {
   color: white;
   border-bottom-right-radius: 4px;
   position: relative;
+  white-space: pre-wrap;
 }
 
 .user-context-bubble {
@@ -5626,6 +5627,40 @@ body {
   box-shadow: none;
 }
 
+.clarify-btn.confirm-once {
+  color: white;
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.35);
+}
+
+.clarify-btn.confirm-once:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(39, 174, 96, 0.45);
+}
+
+.clarify-btn.confirm-loop {
+  color: white;
+  box-shadow: 0 4px 12px rgba(41, 128, 185, 0.35);
+}
+
+.clarify-btn.confirm-loop:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(41, 128, 185, 0.45);
+}
+
+.confirm-countdown {
+  color: #e67e22;
+}
+
+.confirm-countdown.warning {
+  color: #e74c3c;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* UI 原型预览弹窗样式 */
 .prototype-overlay {
   position: fixed;
@@ -6606,6 +6641,8 @@ body {
   width: 90%;
   max-width: 600px;
   max-height: 80vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -6862,7 +6899,8 @@ body {
 
 .execution-log-panel .timeline {
   padding: 16px 20px;
-  max-height: calc(80vh - 140px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 

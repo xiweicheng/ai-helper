@@ -505,13 +505,18 @@
             <div class="clarify-question" id="confirmMessage">模型请求执行敏感操作，是否允许？</div>
             <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: #e67e22; margin-top: 4px;"></div>
             <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: #666; margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px;"></div>
+            <div class="confirm-countdown" id="confirmCountdown" style="margin-top: 12px; font-size: 13px; color: #e67e22; display: flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span id="confirmCountdownText">剩余时间: 3:00</span>
+            </div>
           </div>
         </div>
       </div>
       
       <div class="clarify-footer">
         <button class="clarify-btn cancel" id="confirmDenyBtn">拒绝</button>
-        <button class="clarify-btn confirm" id="confirmApproveBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">允许</button>
+        <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">本次放行</button>
+        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" style="background: linear-gradient(135deg, #2980b9, #3498db);">当前任务放行</button>
       </div>
     </div>
   </div>

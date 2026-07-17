@@ -452,11 +452,18 @@ export async function sendMessage() {
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
       
-      const historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）
+      let historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      const maxMemory = state.chatConfig.maxMemoryMessages;
+      if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
+        historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
+        console.log(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+      }
+
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];
       
       // 从后往前保留历史消息，直到 token 量在预算内
-      const keptHistory = [];
+      let keptHistory = [];
       let keptTokens = estimateMessagesTokens([currentMsg]);
       for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
         const msg = historyWithoutCurrent[i];
@@ -487,7 +494,7 @@ export async function sendMessage() {
       } else {
         console.log(`[SidePanel] Token 预算内: ${keptHistory.length} 条历史消息 (预算: ${historyBudget} tokens)`);
       }
-      
+
       historyToSend = [...keptHistory, currentMsg];
       messages = [...messages, ...historyToSend];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
@@ -3194,6 +3201,23 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
+  
+  // 生成唯一的请求 ID，用于隔离新旧请求的流式消息，防止旧任务残留输出
+  const myCallId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  console.log('[SidePanel] callApi: 生成 callId:', myCallId);
+
+  // 如果当前会话有正在进行的 API 调用，先取消旧的，防止旧任务残留输出
+  if (state.pendingCancelApiMap && state.pendingCancelApiMap.has(mySessionId)) {
+    console.log('[SidePanel] callApi: 检测到会话已有进行中的 API 调用，先取消旧的');
+    const oldCancel = state.pendingCancelApiMap.get(mySessionId);
+    if (oldCancel) {
+      oldCancel({ message: '任务已被新请求替代', executionLog: [] });
+    }
+  }
+  if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.has(mySessionId)) {
+    state.pendingCallApiSessionIds.delete(mySessionId);
+    syncPendingSessionsToStorage();
+  }
 
   // 按 sessionId 隔离的流式元素访问器（防止多会话并行时串台）
   const _se = (val) => {
@@ -3353,6 +3377,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
       // 使用捕获的 mySessionId 而非 state.activeSessionId，确保切换会话后仍能收到本会话的响应
       if (message.sessionId && message.sessionId !== mySessionId) {
+        return false;
+      }
+      
+      // 过滤：只处理属于当前请求的流式消息，防止旧任务残留输出
+      if (message.callId && message.callId !== myCallId) {
         return false;
       }
       
@@ -3695,6 +3724,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       apiParams: apiParams,
       agentId: state.activeAgentId,
       agentToolIds: state.activeAgentToolIds,
+      callId: myCallId,
       // 图片识别独立配置（仅当启用且有图片时传递）
       imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
       imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''
@@ -4360,7 +4390,7 @@ async function convertSvgsToImages(container) {
       
       const imgTag = document.createElement('img');
       imgTag.src = dataUrl;
-      imgTag.style.cssText = `max-width:100%;width:${width}px;height:${height}px;`;
+      imgTag.style.cssText = `max-width:100%;width:${width}px;height:auto;`;
       svg.parentNode.replaceChild(imgTag, svg);
     } catch (e) {
       console.warn('[SidePanel] SVG 转图片失败:', e.name, e.message);

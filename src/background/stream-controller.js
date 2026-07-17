@@ -11,6 +11,7 @@
 export class StreamController {
   constructor(sessionId, streamConfig, options = {}) {
     this.sessionId = sessionId;
+    this.callId = options.callId || null;
     this.config = streamConfig;
     this.fullContent = '';
     this.reasoningContent = '';  // DeepSeek thinking mode 的推理内容
@@ -147,7 +148,8 @@ export class StreamController {
     this.isStreaming = true;
     this._sendFn({
       type: this._typePrefix + 'STREAM_START',
-      sessionId: this.sessionId
+      sessionId: this.sessionId,
+      callId: this.callId
     });
   }
 
@@ -178,6 +180,7 @@ export class StreamController {
     this._sendFn({
       type: this._typePrefix + 'STREAM_CHUNK',
       sessionId: this.sessionId,
+      callId: this.callId,
       delta: this._pendingChunk
     });
 
@@ -195,6 +198,7 @@ export class StreamController {
     this._sendFn({
       type: this._typePrefix + 'STREAM_DONE',
       sessionId: this.sessionId,
+      callId: this.callId,
       finalContent: this.fullContent,
       reasoningContent: this.reasoningContent || null,
       usage: this.usage,
@@ -211,6 +215,7 @@ export class StreamController {
     this._sendFn({
       type: this._typePrefix + 'STREAM_TOOL_CALL',
       sessionId: this.sessionId,
+      callId: this.callId,
       toolCalls: this.toolCalls,
       thinkingContent: this.fullContent
     });
@@ -312,6 +317,7 @@ export async function readSSEStream(reader, controller, abortSignal) {
           controller._sendFn({
             type: controller._typePrefix + 'STREAM_TOOL_CALL',
             sessionId: controller.sessionId,
+            callId: controller.callId,
             toolCalls: normalizedToolCalls,
             thinkingContent: controller.fullContent
           }).catch(() => {});
@@ -340,6 +346,8 @@ export async function readSSEStream(reader, controller, abortSignal) {
   } catch (error) {
     if (error.name === 'AbortError') {
       console.log('[StreamController] 流式读取已被取消');
+      // 不发送 STREAM_DONE，避免残留消息被新任务处理
+      throw error;
     } else {
       console.error('[StreamController] 流式读取错误:', error.message);
     }

@@ -102,7 +102,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         text: message.text,
         x: message.x,
         y: message.y
-      }).catch(() => {});
+      }, { frameId: 0 }).catch(() => {});
     }
     return false;
   }
@@ -250,7 +250,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, callId } = message;
     
     // 将图片识别独立配置合并到 apiParams 中
     if (imageApiBase) {
@@ -273,6 +273,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sessionId) {
       initialStatus.sessionId = sessionId;
     }
+    if (callId) {
+      initialStatus.callId = callId;
+    }
     chrome.runtime.sendMessage(initialStatus).catch(() => {});
     
     console.log('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
@@ -284,7 +287,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
             console.log('[Background] 没有可用工具，跳过预筛选，直接普通对话');
-            return callApiNonStream(messages, model, apiParams, sessionId);
+            return callApiNonStream(messages, model, apiParams, sessionId, {}, callId);
           }
 
           console.log(`[Background] 获取到 ${tools.length} 个工具`);
@@ -317,6 +320,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (sessionId) {
               statusUpdate.sessionId = sessionId;
             }
+            if (callId) {
+              statusUpdate.callId = callId;
+            }
             console.log('[Background] 发送预筛选状态更新:', statusUpdate);
             chrome.runtime.sendMessage(statusUpdate).then(() => {
               console.log('[Background] 预筛选状态更新发送成功');
@@ -340,12 +346,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             chrome.runtime.sendMessage({
               type: 'STREAM_PRESELECT',
               sessionId: sessionId,
+              callId: callId,
               preselectLog: preselectLog
             }).catch(() => {});
           }
 
           // 自动预加载长期记忆：检查 messages 中是否已有记忆内容，避免重复注入
-          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog);
+          const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog, callId);
           console.log('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
@@ -384,6 +391,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId: sessionId,
+          callId: callId,
           content: content,
           executionLog: truncatedLog,
           reflectionScore: reflectionScore,
@@ -408,6 +416,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId: sessionId,
+          callId: callId,
           error: error.message || 'API 调用失败',
           executionLog: truncatedErrLog
         }).catch(err => {
@@ -453,6 +462,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SELECTION_TOOLBAR_ACTION') {
     const { prompt, action, text, systemPrompt } = message;
     const tabId = sender.tab?.id;
+    const frameId = sender.frameId;
     
     console.log('[Background] 收到选中文本工具栏操作:', action, 'tabId:', tabId);
     
@@ -493,7 +503,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // 流式模式：通过 StreamController 向 content script 发送实时消息
           const streamSessionId = `toolbar_${tabId}_${Date.now()}`;
           const result = await callApiNonStream(messages, config.modelName, {}, streamSessionId, {
-            sendFn: (msg) => chrome.tabs.sendMessage(tabId, msg).catch(() => {}),
+            sendFn: (msg) => chrome.tabs.sendMessage(tabId, msg, { frameId }).catch(() => {}),
             typePrefix: 'SELECTION_TOOLBAR_'
           });
           const content = result.content !== undefined ? result.content : result;
@@ -530,7 +540,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             chrome.tabs.sendMessage(tabId, {
               type: 'SELECTION_TOOLBAR_RESULT',
               content: content
-            }).catch(() => {
+            }, { frameId }).catch(() => {
               console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
             });
           }
@@ -542,7 +552,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           chrome.tabs.sendMessage(tabId, {
             type: 'SELECTION_TOOLBAR_RESULT',
             error: error.message || 'API 调用失败'
-          }).catch(() => {});
+          }, { frameId }).catch(() => {});
         }
       }
     });

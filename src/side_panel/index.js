@@ -502,7 +502,14 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
       const historyBudget = Math.floor(messageBudget * 0.7);
       
-      const historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）
+      let historyWithoutCurrent = state.messageHistory.slice(0, -1);
+      const maxMemory = state.chatConfig.maxMemoryMessages;
+      if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
+        historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
+        console.log(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+      }
+
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];
       
       const keptHistory = [];
