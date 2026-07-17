@@ -2119,15 +2119,73 @@ body {
 }
 /* 子任务进度指示器（流式输出中显示子任务执行进度，每个子任务独立一行） */
 .subtask-progress {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
   margin: 4px 0;
   background: rgba(139, 92, 246, 0.06);
   border: 1px solid rgba(139, 92, 246, 0.15);
   border-radius: 6px;
   font-size: 13px;
+  overflow: hidden;
+}
+.subtask-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.subtask-header:hover {
+  background: rgba(139, 92, 246, 0.08);
+}
+.subtask-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #8b5cf6;
+  transition: transform 0.2s;
+}
+.subtask-expanded .subtask-chevron {
+  transform: rotate(180deg);
+}
+.subtask-detail-body {
+  display: none;
+  padding: 4px 14px 8px 34px;
+  border-top: 1px solid rgba(139, 92, 246, 0.1);
+}
+.subtask-expanded .subtask-detail-body {
+  display: block;
+}
+.subtask-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: #555;
+}
+.subtask-node-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.subtask-node-status {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+}
+.subtask-node.done .subtask-node-status { color: #22c55e; }
+.subtask-node.failed .subtask-node-status { color: #ef4444; }
+.subtask-node.processing .subtask-node-status { color: #f59e0b; }
+.subtask-node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.subtask-node-dur {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #999;
 }
 /* 任务图标 */
 .subtask-icon {

@@ -1692,6 +1692,24 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
     wrapper.appendChild(preEl);
   });
   
+  // 重新绑定子任务进度折叠/展开（事件委托）
+  messageEl.querySelectorAll('.subtask-progress').forEach(progressEl => {
+    progressEl.addEventListener('click', (e) => {
+      const header = e.target.closest('.subtask-header');
+      if (header) {
+        progressEl.classList.toggle('subtask-expanded');
+      }
+    });
+  });
+  
+  // 重新绑定命令终止按钮（事件委托）
+  messageEl.querySelectorAll('.tool-call-terminate-btn, .agent-stream-terminate-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showCommandTerminateDialog(state.activeSessionId);
+    });
+  });
+  
   // 重新绑定底部工具栏按钮事件
     const footer = messageEl.querySelector('.message-footer');
     if (footer) {
@@ -3495,7 +3513,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
           });
         }
         
-        // 子任务进度显示：每个子任务独立一行，并行场景下互不干扰
+        // 子任务进度显示：每个子任务独立一行，可折叠展开查看执行节点
         if (message.subtaskTotal && message.subtaskTotal > 0) {
           const se = _se();
           if (se) {
@@ -3504,6 +3522,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               const si = message.subtaskIndex ?? 0;
               const selector = `.subtask-progress[data-subtask-index="${si}"]`;
               let progressEl = contentDiv.querySelector(selector);
+              const wasExpanded = progressEl ? progressEl.classList.contains('subtask-expanded') : false;
               if (!progressEl) {
                 progressEl = document.createElement('div');
                 progressEl.className = 'subtask-progress';
@@ -3517,18 +3536,65 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               const total = message.subtaskTotal;
               const name = message.subtaskName || '';
               const badge = `<span class="subtask-badge">${idx}/${total}</span>`;
+              const chevron = `<svg class="subtask-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`;
               
+              let statusHtml = '';
               if (message.status === 'success') {
-                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-done">完成</span>`;
+                statusHtml = `<span class="subtask-status-done">完成</span>`;
                 progressEl.classList.add('subtask-progress-done');
                 progressEl.classList.remove('subtask-progress-active');
               } else if (message.status === 'failed') {
-                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-failed">失败</span>`;
+                statusHtml = `<span class="subtask-status-failed">失败</span>`;
                 progressEl.classList.add('subtask-progress-failed');
                 progressEl.classList.remove('subtask-progress-active');
               } else {
-                progressEl.innerHTML = `${taskIcon}${badge}<span class="subtask-name">${name}</span><span class="subtask-status-label"><span class="subtask-spinner"></span>执行中...</span>`;
+                statusHtml = `<span class="subtask-status-label"><span class="subtask-spinner"></span>执行中...</span>`;
                 progressEl.classList.add('subtask-progress-active');
+              }
+              
+              // 渲染折叠头部
+              progressEl.innerHTML = `
+                <div class="subtask-header">
+                  ${chevron}${taskIcon}${badge}<span class="subtask-name">${name}</span>${statusHtml}
+                </div>
+                <div class="subtask-detail-body"></div>
+              `;
+              
+              // 恢复展开状态
+              if (wasExpanded) {
+                progressEl.classList.add('subtask-expanded');
+              }
+              
+              // 填充执行节点详情
+              const detailBody = progressEl.querySelector('.subtask-detail-body');
+              if (detailBody) {
+                const subtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+                if (subtaskNodes.length > 0) {
+                  detailBody.innerHTML = subtaskNodes.map(node => {
+                    const icon = node.nodeType === 'tool_exec' ? '🔧' : node.nodeType === 'api_call' ? '📡' : node.nodeType === 'reflection' ? '🎯' : node.nodeType === 'preselect' ? '🔍' : '○';
+                    const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗' : '○';
+                    const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
+                    const dur = node.duration ? formatDuration(node.duration) : '';
+                    const name = escapeHtml(node.nodeName || '未知');
+                    return `<div class="subtask-node ${stClass}">
+                      <span class="subtask-node-icon">${icon}</span>
+                      <span class="subtask-node-status">${stIcon}</span>
+                      <span class="subtask-node-name">${name}</span>
+                      ${dur ? `<span class="subtask-node-dur">${dur}</span>` : ''}
+                    </div>`;
+                  }).join('');
+                }
+              }
+              
+              // 绑定折叠头部点击事件（事件委托，避免 innerHTML 重建丢失）
+              if (!progressEl._clickDelegated) {
+                progressEl._clickDelegated = true;
+                progressEl.addEventListener('click', (e) => {
+                  const header = e.target.closest('.subtask-header');
+                  if (header) {
+                    progressEl.classList.toggle('subtask-expanded');
+                  }
+                });
               }
               
               // 全部子任务完成时，为每个元素统一添加完成样式
