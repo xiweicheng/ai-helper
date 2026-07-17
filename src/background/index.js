@@ -71,6 +71,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // | 消息类型                      | 来源        | 用途                       | 异步 |
 // |-------------------------------|-------------|---------------------------|------|
 // | CANCEL_REACT                  | side_panel  | 取消 ReAct 循环             | 否   |
+// | TERMINATE_COMMAND             | side_panel  | 终止命令（不取消 ReAct）     | 否   |
 // | RELOAD_MCP_TOOLS              | side_panel  | 强制重载 MCP 工具列表        | 是   |
 // | GET_MCP_TOOLS                 | side_panel  | 获取 MCP 工具（30s 缓存）    | 是   |
 // | GET_AGENT_SKILL_PROMPTS       | side_panel  | 获取 Skill Prompt（60s 缓存）| 是   |
@@ -128,9 +129,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 优先使用 sessionId，兼容旧版 tabId
     if (sessionId) {
       cancelReactLoop(sessionId);
-      cancelRunningAgentCommands(sessionId);  // 关闭正在运行的命令 WebSocket
+      cancelRunningAgentCommands(sessionId);  // 关闭正在运行的命令 WebSocket + 杀进程
     } else {
       cancelReactLoop(tabId);
+    }
+    return false;
+  }
+
+  if (message.type === 'TERMINATE_COMMAND') {
+    const { sessionId, mode } = message;
+    // 终止当前会话正在运行的命令（不取消 ReAct 循环）
+    if (sessionId) {
+      cancelRunningAgentCommands(sessionId, mode || 'kill');
     }
     return false;
   }

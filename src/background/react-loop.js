@@ -943,7 +943,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
-                subtaskPlan, model, tabId, apiParams, sessionId, executionLog, globalIteration,
+                subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot
               );
               
@@ -1280,7 +1280,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map()) {
+export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map()) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -1333,8 +1333,8 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
     ? sortSubtasksByDependencies(subtasks) 
     : subtasks;
   
-  // 筛选每个子任务需要的工具
-  const toolSets = await prepareToolSetsForSubtasks(sortedSubtasks);
+  // 筛选每个子任务需要的工具（继承父任务工具范围）
+  const toolSets = await prepareToolSetsForSubtasks(sortedSubtasks, tools);
   
   /**
    * 回滚已完成的子任务
@@ -1429,7 +1429,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
         const subtaskMessages = [
           {
             role: 'system',
-            content: `你正在执行一个子任务。请专注完成此任务，不要询问用户。\n\n任务背景：${taskDescription}\n\n当前子任务：${subtask.description}\n\n可用工具：${subtaskTools.map(t => t.function.name).join(', ')}`
+            content: `你正在执行一个子任务。请专注完成此任务，不要询问用户。\n\n任务背景：${taskDescription}\n\n当前子任务：${subtask.description}\n\n你可以使用所有可用的工具来完成任务，根据实际情况自行选择合适的工具。`
           },
           {
             role: 'user',
@@ -1709,7 +1709,7 @@ export async function executeSubtasks(subtaskPlan, model, tabId, apiParams, sess
   } else {
     // 未知策略，降级为顺序执行
     console.warn(`[Background] 未知执行策略: ${strategy}，降级为顺序执行`);
-    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tabId, apiParams, sessionId, parentExecutionLog, globalIteration);
+    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration);
   }
   
   return results;
@@ -1753,9 +1753,13 @@ export function sortSubtasksByDependencies(subtasks) {
 
 /**
  * 为每个子任务准备工具集
+ * 子任务继承父任务的工具范围，不再额外限制
+ * @param {Array} subtasks - 子任务列表
+ * @param {Array} parentTools - 父任务的工具列表
  */
-export async function prepareToolSetsForSubtasks(subtasks) {
-  const allTools = await getTools();
+export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
+  // 如果未传入父任务工具，降级为获取全部工具（兼容旧调用）
+  const allTools = parentTools || await getTools();
   const toolSets = {};
   const allToolNames = allTools.map(t => t.function?.name).filter(Boolean);
   const allToolIds = allTools.map(t => t.id).filter(Boolean);
@@ -1763,7 +1767,7 @@ export async function prepareToolSetsForSubtasks(subtasks) {
   subtasks.forEach(subtask => {
     const requiredToolNames = subtask.requiredTools || [];
     if (requiredToolNames.length > 0) {
-      // 只选择子任务需要的工具（按工具名称或ID匹配，忽略大小写）
+      // 子任务指定了工具 → 从父任务工具范围中筛选
       toolSets[subtask.id] = allTools.filter(tool => {
         const toolName = (tool.function?.name || '').toLowerCase();
         const toolId = (tool.id || '').toLowerCase();
@@ -1788,9 +1792,9 @@ export async function prepareToolSetsForSubtasks(subtasks) {
       
       console.log(`[Background] 子任务 ${subtask.name} 需要工具: ${requiredToolNames.join(', ')}, 匹配到 ${toolSets[subtask.id].length} 个`);
     } else {
-      // 如果没有指定工具，使用空工具集（强制 LLM 明确指定工具）
-      toolSets[subtask.id] = [];
-      console.warn(`[Background] 子任务 ${subtask.name} 未指定所需工具，将使用空工具集`);
+      // 未指定工具 → 继承父任务全部工具范围
+      toolSets[subtask.id] = [...allTools];
+      console.log(`[Background] 子任务 ${subtask.name} 未指定所需工具，继承父任务全部 ${allTools.length} 个工具`);
     }
   });
   

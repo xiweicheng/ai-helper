@@ -10,7 +10,7 @@ import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
-import { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses } from './executor.js';
+import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses } from './executor.js';
 import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 import {
@@ -991,6 +991,10 @@ export function startServer() {
         if (!added) {
           ws.send(JSON.stringify({ type: 'error', error: '进程不存在或已结束', execId }));
         }
+        // 客户端断开时，从监听列表中移除；所有客户端都断开后取消超时
+        ws.on('close', () => {
+          disconnectWsClient(execId, ws);
+        });
       });
     } else {
       socket.destroy();

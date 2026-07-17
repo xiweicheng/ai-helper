@@ -70,7 +70,7 @@ export const AI_TOOLS = [
                 requiredTools: { type: 'array', items: { type: 'string' }, description: '此子任务需要的工具名称列表' },
                 estimatedSteps: { type: 'integer', description: '预估步骤数' }
               },
-              required: ['id', 'name', 'description', 'requiredTools']
+              required: ['id', 'name', 'description']
             },
             description: '拆解后的子任务列表'
           },

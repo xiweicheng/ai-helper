@@ -4080,26 +4080,32 @@ async function executeAgentMemoryManage(args, toolCallId) {
 
 /**
  * 取消指定会话中正在运行的 Agent 命令
- * 关闭 WebSocket 连接并调用 Agent API 停止命令进程
  * @param {string} sessionId - 会话 ID
+ * @param {string} [mode='kill'] - 终止模式
+ *   - 'kill': 关闭 WebSocket + 停止命令进程（默认）
+ *   - 'wait': 仅关闭 WebSocket，进程继续运行
  */
-export async function cancelRunningAgentCommands(sessionId) {
+export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
   const entry = runningAgentCommands.get(sessionId);
   if (!entry) return;
   
   runningAgentCommands.delete(sessionId);
   
   const { execId, ws } = entry;
-  console.log('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId);
+  console.log('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId, 'mode:', mode);
   
   // 关闭 WebSocket 连接，阻止后续 AGENT_STREAM 消息发送
   try { ws.close(); } catch (e) { /* ignore */ }
   
-  // 通过 Agent API 停止命令进程
-  try {
-    await AgentClient.stopCommand(execId);
-    console.log('[Background] 已停止 Agent 命令进程:', execId);
-  } catch (err) {
-    console.warn('[Background] 停止 Agent 命令进程失败:', err.message);
+  if (mode === 'kill') {
+    // 通过 Agent API 停止命令进程
+    try {
+      await AgentClient.stopCommand(execId);
+      console.log('[Background] 已停止 Agent 命令进程:', execId);
+    } catch (err) {
+      console.warn('[Background] 停止 Agent 命令进程失败:', err.message);
+    }
+  } else {
+    console.log('[Background] 仅断开 WebSocket，命令进程继续运行:', execId);
   }
 }

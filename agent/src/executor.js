@@ -1,5 +1,5 @@
 // agent/src/executor.js - 命令执行器（child_process + 流式输出）
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import crypto from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
@@ -252,7 +252,33 @@ function addWsClient(execId, wsClient) {
 }
 
 /**
- * 停止正在运行的命令
+ * 断开 WebSocket 客户端连接
+ * 当所有客户端都断开后，取消超时定时器，让进程自由运行（不再自动杀）
+ */
+function disconnectWsClient(execId, wsClient) {
+  const entry = runningProcesses.get(execId);
+  if (!entry) return false;
+
+  entry.wsClients.delete(wsClient);
+
+  // 所有客户端都断开了 → 取消超时，进程继续运行
+  if (entry.wsClients.size === 0) {
+    if (entry.timeoutId) {
+      clearTimeout(entry.timeoutId);
+      entry.timeoutId = null;
+    }
+    if (entry.forceKillId) {
+      clearTimeout(entry.forceKillId);
+      entry.forceKillId = null;
+    }
+  }
+  return true;
+}
+
+/**
+ * 停止正在运行的命令（跨平台兼容）
+ * - macOS/Linux: SIGTERM（优雅终止）→ 5s → SIGKILL（强制杀）
+ * - Windows: taskkill /PID（优雅终止）→ 5s → taskkill /F /PID（强制杀）
  */
 function killProcess(execId) {
   const entry = runningProcesses.get(execId);
@@ -260,11 +286,25 @@ function killProcess(execId) {
 
   if (entry.process.exitCode !== null) return false; // 已退出
 
-  try {
-    entry.process.kill('SIGTERM');
-  } catch {}
+  const isWin = os.platform() === 'win32';
+  const pid = entry.process.pid;
 
-  // 5秒后强制 kill（绑定到 entry 对象防止闭包引用旧变量）
+  if (isWin) {
+    // Windows: taskkill 支持优雅终止（/PID 发送 WM_CLOSE）和强制终止（/F）
+    exec(`taskkill /PID ${pid}`, (err) => {
+      if (err) {
+        // 尝试强制杀
+        exec(`taskkill /F /PID ${pid}`, () => {});
+      }
+    });
+  } else {
+    // macOS/Linux: SIGTERM 优雅终止
+    try {
+      entry.process.kill('SIGTERM');
+    } catch {}
+  }
+
+  // 清理旧的定时器
   if (entry.timeoutId) {
     clearTimeout(entry.timeoutId);
     entry.timeoutId = null;
@@ -272,10 +312,16 @@ function killProcess(execId) {
   if (entry.forceKillId) {
     clearTimeout(entry.forceKillId);
   }
+
+  // 5秒后强制杀（绑定到 entry 对象防止闭包引用旧变量）
   entry.forceKillId = setTimeout(() => {
     try {
       if (entry.process.exitCode === null) {
-        entry.process.kill('SIGKILL');
+        if (isWin) {
+          exec(`taskkill /F /PID ${pid}`, () => {});
+        } else {
+          entry.process.kill('SIGKILL');
+        }
       }
     } catch {}
     entry.forceKillId = null;
@@ -295,4 +341,4 @@ function getRunningProcesses() {
   return list;
 }
 
-export { executeCommand, executeCommandSync, addWsClient, killProcess, getRunningProcesses };
+export { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses };

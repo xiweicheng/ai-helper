@@ -2133,6 +2133,7 @@ function appendToolCallItems(element, toolCalls) {
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
     execute_command:       { metaType: 'exec' },
+    agent_exec_command:     { metaType: 'exec' },
     execute_agent_exec_command: { metaType: 'exec' },
     agent_read_file:       { metaType: 'file', action: '读取' },
     agent_write_file:      { metaType: 'file', action: '写入' },
@@ -2208,12 +2209,21 @@ function appendToolCallItems(element, toolCalls) {
     item.setAttribute('data-tool-call-id', tc.id || '');
     item.setAttribute('data-meta-type', meta.metaType);
     item.setAttribute('data-created-at', Date.now());
+    // 命令执行类工具：添加终止按钮
+    const isExecCommand = toolName === 'agent_exec_command' || toolName === 'execute_agent_exec_command';
+    const terminateBtnHtml = isExecCommand ? `
+        <button class="tool-call-terminate-btn" title="终止命令">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          </svg>
+        </button>` : '';
     item.innerHTML = `
       <div class="tool-call-header">
         ${iconSvg}
         <span class="tool-call-name">${escapeHtml(toolName)}</span>
         <div class="tool-call-summary">${summaryHtml}</div>
         <span class="tool-call-executing">执行中...</span>
+        ${terminateBtnHtml}
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
@@ -2223,6 +2233,17 @@ function appendToolCallItems(element, toolCalls) {
     
     // 绑定代码块复制按钮
     addCodeCopyButtons();
+    
+    // 绑定终止按钮事件（仅命令执行工具）
+    if (isExecCommand) {
+      const terminateBtn = item.querySelector('.tool-call-terminate-btn');
+      if (terminateBtn) {
+        terminateBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showCommandTerminateDialog(state.activeSessionId);
+        });
+      }
+    }
     
     // 点击展开/折叠
     item.querySelector('.tool-call-header').addEventListener('click', () => {
@@ -2289,6 +2310,11 @@ function appendToolResult(result, streamingElement) {
     // 移除执行中状态标识
     const executingBadge = card.querySelector('.tool-call-executing');
     if (executingBadge) executingBadge.remove();
+    // 命令已完成，隐藏终止按钮
+    const terminateBtn = card.querySelector('.tool-call-terminate-btn');
+    if (terminateBtn) {
+      terminateBtn.style.display = 'none';
+    }
     
     // 移除旧的结果（如果有）
     const oldResult = card.querySelector('.tool-call-result');
@@ -3082,6 +3108,77 @@ function finalizeCancelledStream(element) {
   element.classList.add('stream-cancelled');
 }
 
+/**
+ * 显示命令终止确认对话框
+ * @param {string} sessionId - 会话 ID
+ * @returns {Promise<string|null>} 'wait' | 'kill' | null（取消）
+ */
+function showCommandTerminateDialog(sessionId) {
+  return new Promise((resolve) => {
+    const existing = document.querySelector('.command-terminate-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'command-terminate-overlay';
+    
+    overlay.innerHTML = `
+      <div class="command-terminate-modal">
+        <div class="command-terminate-header">
+          <div class="command-terminate-icon">⏹</div>
+          <div class="command-terminate-title">终止命令执行</div>
+        </div>
+        <div class="command-terminate-body">
+          <p>请选择终止方式：</p>
+          <div class="command-terminate-options">
+            <button class="command-terminate-option wait-btn">
+              <div class="option-icon">🔌</div>
+              <div class="option-text">
+                <div class="option-title">终止等待</div>
+                <div class="option-desc">仅停止等待命令输出，后台进程继续运行。<br/>适用于挂起型服务（如 npm run dev）。</div>
+              </div>
+            </button>
+            <button class="command-terminate-option kill-btn">
+              <div class="option-icon">💀</div>
+              <div class="option-text">
+                <div class="option-title">终止命令</div>
+                <div class="option-desc">直接终止后台命令进程，释放资源。</div>
+              </div>
+            </button>
+          </div>
+        </div>
+        <div class="command-terminate-footer">
+          <button class="command-terminate-cancel">取消</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    const cleanup = () => {
+      overlay.remove();
+    };
+    
+    overlay.querySelector('.command-terminate-cancel').addEventListener('click', () => {
+      cleanup();
+      resolve(null);
+    });
+    
+    overlay.querySelector('.wait-btn').addEventListener('click', () => {
+      cleanup();
+      chrome.runtime.sendMessage({ type: 'TERMINATE_COMMAND', sessionId, mode: 'wait' });
+      resolve('wait');
+    });
+    
+    overlay.querySelector('.kill-btn').addEventListener('click', () => {
+      cleanup();
+      chrome.runtime.sendMessage({ type: 'TERMINATE_COMMAND', sessionId, mode: 'kill' });
+      resolve('kill');
+    });
+    
+    // 点击遮罩层不关闭（符合规范：仅通过弹窗自身按钮关闭）
+  });
+}
+
 function showDeleteConfirm(messagePreview) {
   return new Promise((resolve) => {
     const existing = document.querySelector('.delete-confirm-overlay');
@@ -3595,6 +3692,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
               <div class="agent-stream-header">
                 <span class="agent-stream-icon">🖥️</span>
                 <span class="agent-stream-label">命令输出</span>
+                <button class="agent-stream-terminate-btn" title="终止命令" data-exec-id="${message.execId}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  </svg>
+                </button>
               </div>
               ${createCodeBlockHtml('', 'agent-stream-content')}
             `;
@@ -3621,6 +3723,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
             _agentStreams[message.execId] = agentEntry;
             // 绑定代码块复制按钮
             addCodeCopyButtons();
+            // 绑定终止按钮事件
+            const terminateBtn = outputDiv.querySelector('.agent-stream-terminate-btn');
+            if (terminateBtn) {
+              terminateBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showCommandTerminateDialog(message.sessionId);
+              });
+            }
           }
           
           const codeEl = agentEntry.element.querySelector('code');
@@ -3650,6 +3760,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
             }
             if (message.exitCode !== 0) {
               agentEntry.element.classList.add('agent-stream-error');
+            }
+            // 命令已结束，隐藏终止按钮
+            const terminateBtn = agentEntry.element.querySelector('.agent-stream-terminate-btn');
+            if (terminateBtn) {
+              terminateBtn.style.display = 'none';
             }
           }
         }
