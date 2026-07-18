@@ -1645,6 +1645,16 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       showCommandTerminateDialog(state.activeSessionId);
     });
   });
+
+  // 重新绑定终止等待按钮（事件委托）
+  messageEl.querySelectorAll('.tool-call-abort-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
+      btn.disabled = true;
+      btn.title = '正在终止...';
+    });
+  });
   
   // 重新绑定底部工具栏按钮事件
     const footer = messageEl.querySelector('.message-footer');

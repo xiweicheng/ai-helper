@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -322,6 +322,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sessionId) {
       cancelRunningAgentCommands(sessionId, mode || 'kill');
     }
+    return false;
+  }
+
+  if (message.type === 'ABORT_CURRENT_TOOL') {
+    const { sessionId } = message;
+    // 终止当前工具的执行等待（不取消 ReAct 循环，不杀进程）
+    const aborted = abortCurrentTool(sessionId);
+    sendResponse({ success: aborted });
     return false;
   }
 

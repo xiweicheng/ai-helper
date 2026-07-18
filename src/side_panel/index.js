@@ -2648,6 +2648,10 @@ document.addEventListener('DOMContentLoaded', initConfirmEvents);
 document.addEventListener('DOMContentLoaded', initPrototypeEvents);
 document.addEventListener('DOMContentLoaded', initExportDialogEvents);
 document.addEventListener('DOMContentLoaded', () => initAgentManager());
+document.addEventListener('DOMContentLoaded', async () => {
+  const { refreshAgentNames } = await import('./chat-streaming.js');
+  refreshAgentNames();
+});
 
 // 图片辅助函数（updateImagePreviewVisibility / updateTextareaPadding / updateFileInputVisibility
 // / renderImagePreviews / captureFullPageScreenshot / captureRegionScreenshot

@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
@@ -41,6 +41,17 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   const confirmTimeout = 300000; // 5分钟确认超时
   
   logger.debug(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
+
+  // 为 close_tab 获取标签页标题和 URL，帮助用户判断
+  let extraMessage = '';
+  if (toolName === 'close_tab' && toolArgs.tabId !== undefined) {
+    try {
+      const tab = await chrome.tabs.get(parseInt(toolArgs.tabId, 10));
+      extraMessage = `\n\n标签页标题: ${tab.title || '无标题'}\n标签页 URL: ${tab.url || '未知'}`;
+    } catch (e) {
+      extraMessage = `\n\n（无法获取标签页信息: ${e.message}）`;
+    }
+  }
   
   return new Promise((resolve) => {
     const handler = (message) => {
@@ -74,7 +85,8 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
         args: toolArgs,
         toolCallId: toolName,
         sessionId,
-        timeout: confirmTimeout
+        timeout: confirmTimeout,
+        message: extraMessage ? `模型请求执行操作: ${toolLabel}${extraMessage}` : undefined
       }
     }).catch(err => {
       logger.debug('[Background] 发送确认对话框消息失败:', err.message);
@@ -1298,7 +1310,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult };
             
           } catch (toolError) {
-            logger.error('[Background] 工具执行失败:', toolError);
+            logger.warn('[Background] 工具执行失败（ReAct 循环继续）:', toolError.message);
             
             // 如果是澄清工具，恢复整体循环超时计时
             if (toolName === 'clarify_question') {
@@ -1346,6 +1358,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 模型可以根据错误信息调整策略（如重试、换工具、或直接给出结论）
             logger.warn(`[Background] 工具 ${toolName} 执行失败，ReAct 循环继续:`, toolError.message);
             sendExecutionStatusUpdate(`工具执行:${toolName}`, 'failed');
+
+            // 发送工具错误结果到 Side Panel 展示（更新 UI 中的工具卡片状态）
+            chrome.runtime.sendMessage({
+              type: 'STREAM_TOOL_RESULT',
+              sessionId,
+              result: {
+                toolCallId: toolCallId,
+                toolName,
+                success: false,
+                content: `错误: ${toolError.message}`,
+                truncated: false,
+                duration: Date.now() - toolStartTime
+              }
+            }).catch(() => {});
+
             return {
               error: toolError.message,
               toolName,
@@ -2112,21 +2139,42 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
     return executeTool(toolCall, tabId, sessionId);
   }
   
-  // 其他工具使用正常超时
+  // 其他工具使用正常超时 + 用户终止等待
   logger.debug(`[Background] 工具 ${toolName} 使用超时: ${timeoutMs}ms`);
+  
+  // 创建工具级 AbortController，支持用户手动终止等待
+  const toolAbortController = getOrCreateToolAbortController(sessionId);
   
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error(`工具执行超时 (${timeoutMs}ms): ${toolName}`));
     }, timeoutMs);
 
+    // 用户手动终止等待
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new Error(`工具执行已被用户终止: ${toolName}`));
+    };
+
+    if (toolAbortController && !toolAbortController.signal.aborted) {
+      toolAbortController.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     executeTool(toolCall, tabId, sessionId)
       .then(result => {
         clearTimeout(timeoutId);
+        if (toolAbortController) {
+          toolAbortController.signal.removeEventListener('abort', onAbort);
+          clearToolAbortController(sessionId);
+        }
         resolve(result);
       })
       .catch(error => {
         clearTimeout(timeoutId);
+        if (toolAbortController) {
+          toolAbortController.signal.removeEventListener('abort', onAbort);
+          clearToolAbortController(sessionId);
+        }
         reject(error);
       });
   });

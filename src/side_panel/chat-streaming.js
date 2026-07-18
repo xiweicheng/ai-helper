@@ -11,6 +11,32 @@ import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid } from '
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
+
+// Agent 名称缓存（用于 dispatch_sub_agent 工具卡片显示名称而非 ID）
+let agentNameCache = new Map(); // agentId -> agentName
+
+/**
+ * 刷新 Agent 名称缓存
+ */
+export async function refreshAgentNames() {
+  try {
+    const { getAllAgents } = await import('./agent-store.js');
+    const agents = await getAllAgents();
+    agentNameCache.clear();
+    for (const a of agents) {
+      agentNameCache.set(a.id, a.name || a.id);
+    }
+  } catch (e) {
+    // 静默失败
+  }
+}
+
+/**
+ * 根据 agentId 获取 agent 名称，找不到则返回 id 本身
+ */
+function getAgentName(agentId) {
+  return agentNameCache.get(agentId) || agentId;
+}
 import {
   exportAssistantMessageToDocx,
   exportAssistantMessageToPdf,
@@ -387,6 +413,7 @@ export function appendToolCallItems(element, toolCalls) {
     search_bookmarks:      { metaType: 'search' },
     search_history:        { metaType: 'search' },
     search_in_page:        { metaType: 'search' },
+    dispatch_sub_agent:    { metaType: 'subagent', action: '分派' },
   };
   
   toolCalls.forEach(tc => {
@@ -421,6 +448,18 @@ export function appendToolCallItems(element, toolCalls) {
       const query = args.query || args.keyword || args.text || '';
       summaryTitle = query || toolName;
       summaryHtml = `<span class="tool-call-search">🔍 ${escapeHtml(query) || escapeHtml(toolName)}</span>`;
+    } else if (meta.metaType === 'subagent') {
+      // 子 Agent 分派：优先显示 Agent 名称而非 ID
+      const agentId = args.subAgentId || args.agent_id || '';
+      const agentName = agentId ? getAgentName(agentId) : '';
+      const taskPreview = (args.task || '').substring(0, 80);
+      if (agentName && agentName !== agentId) {
+        summaryTitle = `${agentName} (${agentId}): ${taskPreview}`;
+        summaryHtml = `<span class="tool-call-subagent">🤖 <strong>${escapeHtml(agentName)}</strong> <span class="tool-call-subagent-id">(${escapeHtml(agentId)})</span>: ${escapeHtml(taskPreview)}</span>`;
+      } else {
+        summaryTitle = `${agentId}: ${taskPreview}`;
+        summaryHtml = `<span class="tool-call-subagent">🤖 <strong>${escapeHtml(agentId)}</strong>: ${escapeHtml(taskPreview)}</span>`;
+      }
     } else {
       const keys = Object.keys(args);
       if (keys.length === 0) {
@@ -464,6 +503,14 @@ export function appendToolCallItems(element, toolCalls) {
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           </svg>
         </button>` : '';
+    // 所有非命令执行工具：添加"终止等待"按钮（跳过当前工具等待，不杀进程）
+    // 命令执行工具已有独立的终止按钮（弹框两种终止模式），不需要此按钮
+    const abortToolBtnHtml = isExecCommand ? '' : `
+        <button class="tool-call-abort-btn" title="终止等待（跳过当前工具执行等待，不终止实际进程）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>`;
     item.innerHTML = `
       <div class="tool-call-header">
         ${iconSvg}
@@ -471,6 +518,7 @@ export function appendToolCallItems(element, toolCalls) {
         <div class="tool-call-summary">${summaryHtml}</div>
         <span class="tool-call-executing">执行中...</span>
         ${terminateBtnHtml}
+        ${abortToolBtnHtml}
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
@@ -496,6 +544,19 @@ export function appendToolCallItems(element, toolCalls) {
           showCommandTerminateDialog(state.activeSessionId);
         });
       }
+    }
+    
+    // 绑定"终止等待"按钮事件（所有工具）
+    const abortBtn = item.querySelector('.tool-call-abort-btn');
+    if (abortBtn) {
+      abortBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // 发送终止等待消息到后台，不弹确认框
+        chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
+        // 按钮变为已点击状态
+        abortBtn.disabled = true;
+        abortBtn.title = '正在终止...';
+      });
     }
     
     // 点击展开/折叠
@@ -563,10 +624,14 @@ export function appendToolResult(result, streamingElement) {
     // 移除执行中状态标识
     const executingBadge = card.querySelector('.tool-call-executing');
     if (executingBadge) executingBadge.remove();
-    // 命令已完成，隐藏终止按钮
+    // 命令已完成，隐藏终止按钮和终止等待按钮
     const terminateBtn = card.querySelector('.tool-call-terminate-btn');
     if (terminateBtn) {
       terminateBtn.style.display = 'none';
+    }
+    const abortBtn = card.querySelector('.tool-call-abort-btn');
+    if (abortBtn) {
+      abortBtn.style.display = 'none';
     }
     
     // 移除旧的结果（如果有）
@@ -1370,4 +1435,9 @@ export function finalizeCancelledStream(element) {
   // 移除 streaming 动画类
   element.classList.remove('streaming');
   element.classList.add('stream-cancelled');
+
+  // 隐藏所有"终止等待"按钮
+  element.querySelectorAll('.tool-call-abort-btn').forEach(el => el.style.display = 'none');
+  // 隐藏所有"终止命令"按钮
+  element.querySelectorAll('.tool-call-terminate-btn').forEach(el => el.style.display = 'none');
 }

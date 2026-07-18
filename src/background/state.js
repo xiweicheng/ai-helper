@@ -9,6 +9,9 @@ const cancelledSessions = new Map(); // sessionId -> boolean
 // 每个会话的 AbortController，用于中断正在进行的 fetch 请求
 const sessionAbortControllers = new Map(); // sessionId -> AbortController
 
+// 每个会话当前正在执行工具的 AbortController，用于用户手动终止等待
+const toolAbortControllers = new Map(); // sessionId -> AbortController
+
 // 每个会话的 API 调用计数器
 const dialogApiCallCounts = new Map(); // sessionId -> count
 
@@ -65,6 +68,7 @@ export function cancelReactLoop(sessionIdOrTabId) {
       logger.debug('[Background] 已取消会话的 fetch 请求，sessionId:', id);
     }
     sessionAbortControllers.clear();
+    toolAbortControllers.clear();
     logger.debug('[Background] 所有会话的 ReAct 循环已取消');
   } else {
     cancelledSessions.set(sessionIdOrTabId, true);
@@ -167,4 +171,41 @@ export function setCurrentReactTabId(id) {
 
 export function getCurrentReactTabId() {
   return getActiveReactTabId();
+}
+
+// ========== 工具级终止等待（不取消 ReAct 循环） ==========
+
+/**
+ * 获取或创建当前工具的 AbortController
+ * 每次工具执行前调用，创建新的 controller
+ */
+export function getOrCreateToolAbortController(sessionId) {
+  if (!sessionId) return null;
+  const controller = new AbortController();
+  toolAbortControllers.set(sessionId, controller);
+  return controller;
+}
+
+/**
+ * 终止当前会话正在等待的工具（不取消 ReAct 循环）
+ * 仅中断前端等待，不保证实际进程被终止
+ */
+export function abortCurrentTool(sessionId) {
+  if (!sessionId) return false;
+  const controller = toolAbortControllers.get(sessionId);
+  if (controller && !controller.signal.aborted) {
+    controller.abort();
+    toolAbortControllers.delete(sessionId);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 清理工具 AbortController
+ */
+export function clearToolAbortController(sessionId) {
+  if (sessionId) {
+    toolAbortControllers.delete(sessionId);
+  }
 }
