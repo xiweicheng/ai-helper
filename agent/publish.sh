@@ -121,8 +121,8 @@ while true; do
     echo ""
     read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        log_warn "已取消发布，回滚 package.json..."
-        git checkout package.json
+        log_warn "已取消发布，回滚 package.json 和 package-lock.json..."
+        git checkout package.json package-lock.json
         log_info "版本已回滚到 v${CURRENT_VERSION}"
         exit 0
     fi
@@ -150,8 +150,8 @@ while true; do
 
     read -r -p "是否重试其他版本号? [Y/n] " retry
     if [[ "$retry" =~ ^[Nn]$ ]]; then
-        log_warn "回滚 package.json..."
-        git checkout package.json
+        log_warn "回滚 package.json 和 package-lock.json..."
+        git checkout package.json package-lock.json
         log_info "版本已回滚到 v${CURRENT_VERSION}"
         exit 1
     fi
@@ -175,7 +175,7 @@ fi
 echo ""
 read -r -p "是否提交版本号变更并推送 git tag? [Y/n] " git_confirm
 if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
-    git add package.json
+    git add package.json package-lock.json
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
     log_info "推送 tag v${NEW_VERSION}..."
