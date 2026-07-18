@@ -686,7 +686,9 @@ function tryParseToolArgs(argsStr) {
     if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
       return match;
     }
-    return `"${key}": "${trimmedValue}"${delimiter}`;
+    // 转义值内部的双引号
+    const escapedValue = trimmedValue.replace(/"/g, '\\"');
+    return `"${key}": "${escapedValue}"${delimiter}`;
   });
   
   // 2c. 递归修复嵌套对象中的未加引号字符串值
@@ -699,9 +701,17 @@ function tryParseToolArgs(argsStr) {
       if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
         return match;
       }
-      return `"${key}": "${trimmedValue}"${delimiter}`;
+      // 转义值内部的双引号
+      const escapedValue = trimmedValue.replace(/"/g, '\\"');
+      return `"${key}": "${escapedValue}"${delimiter}`;
     });
   } while (fixed !== prevFixed);
+  
+  // 2d. 修复已加引号但内部双引号未转义的情况
+  // 匹配模式: "key": "value" 其中 value 内部包含未转义的双引号
+  fixed = fixed.replace(/"([^"]+)":\s*"([^"]*)(")([^"]*)"/g, (match, key, part1, unescapedQuote, part2) => {
+    return `"${key}": "${part1}\\"${part2}"`;
+  });
   
   // 阶段 2 最终尝试
   try {
