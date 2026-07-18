@@ -143,7 +143,7 @@ document.addEventListener('mouseup', () => {
 });
 
 // 检查扩展上下文是否还有效
-function isExtensionValid() {
+export function isExtensionValid() {
   try {
     if (typeof chrome !== 'object' || !chrome) return false;
     if (typeof chrome.runtime !== 'object' || !chrome.runtime) return false;

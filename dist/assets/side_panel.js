@@ -386,7 +386,329 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
           </div>
         </div>
       </div>
-    `}),r}function updateRealtimeExecutionLogPanel(e){let t=document.querySelector(`.execution-log-panel.realtime-mode`);if(!t)return;let n=t.querySelector(`.realtime-executing-node`);n&&(n.textContent=e.nodeName||`处理中...`);let r=e.executionLog||[],i=r.length,a=r.filter(e=>e.status===`success`).length,o=r.filter(e=>e.status===`failed`).length,s=r.filter(e=>e.nodeType===`subtask`).length,c=r.filter(e=>e.nodeType===`subtask`&&e.status===`success`).length,l=t.querySelector(`.combo-value`),u=t.querySelector(`.combo-stat.success .stat-value`),d=t.querySelector(`.combo-stat.failed .stat-value`),f=t.querySelector(`.combo-stat.subtask`);l&&(l.textContent=i),u&&(u.textContent=a),d&&(d.textContent=o),f&&(s>0?(f.style.display=``,f.querySelector(`.stat-value`).textContent=`${c}/${s}`):f.style.display=`none`);let p=t.querySelector(`.timeline`);p.innerHTML=r.length>0?renderExecutionTimeline(r):`<div class="realtime-waiting-message">等待执行中...</div>`,p.scrollTop=p.scrollHeight}function showRealtimeExecutionLogPanel(e){let t=document.querySelector(`.execution-log-panel.realtime-mode`);t&&t.remove();let n=document.createElement(`div`);n.className=`execution-log-panel realtime-mode`,n.innerHTML=`
+    `}),r}function renderExecutionLogForPanel(e){let t=[...e].sort((e,t)=>new Date(e.timestamp)-new Date(t.timestamp));if(!t.some(e=>e.taskGroup))return renderExecutionLogOriginal(t);let n=new Map,r=[];t.forEach(e=>{e.taskGroup?(n.has(e.taskGroup)||n.set(e.taskGroup,{groupId:e.taskGroup,groupIndex:e.taskGroupIndex,groupName:e.taskGroupName,entries:[],status:e.status}),n.get(e.taskGroup).entries.push(e),e.status&&(n.get(e.taskGroup).status=e.status)):r.push(e)});let i=renderMainTasks(r,t.length);return n.forEach((e,n)=>{let r=e.status||`processing`;i+=`
+      <div class="task-group-container" data-group-id="${n}">
+        <div class="task-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+          <div class="task-group-line"></div>
+          <div class="task-group-dot ${r}">
+            ${r===`success`?`✓`:r===`failed`?`✗`:`○`}
+          </div>
+          <div class="task-group-content">
+            <div class="task-group-title">
+              <span class="task-group-expand-icon">▼</span>
+              <span class="task-group-icon">📁</span>
+              <span class="task-group-index">${e.groupIndex}</span>
+              <span class="task-group-name">${escapeHtml$2(e.groupName)}</span>
+              <span class="task-group-count">(${e.entries.length} 步骤)</span>
+            </div>
+          </div>
+        </div>
+        <div class="task-group-timeline">
+          ${renderTaskGroupEntries(e.entries,t.length)}
+        </div>
+      </div>
+    `}),i}function renderMainTasks(e,t){if(e.length===0)return``;let n=``;return n+=`
+    <div class="main-tasks-container">
+      <div class="main-tasks-header">
+        <div class="main-tasks-line"></div>
+        <div class="main-tasks-dot processing">
+          ◉
+        </div>
+        <div class="main-tasks-content">
+          <div class="main-tasks-title">
+            <span class="main-tasks-icon">🏠</span>
+            <span class="main-tasks-name">主任务</span>
+            <span class="main-tasks-count">(${e.length} 步骤)</span>
+          </div>
+        </div>
+      </div>
+      <div class="main-tasks-timeline">
+  `,e.forEach((e,r)=>{n+=renderSingleEntry(e,r,t)}),n+=`
+      </div>
+    </div>
+  `,n}function renderTaskGroupEntries(e,t){let n=``;return e.forEach((e,r)=>{n+=renderSingleEntry(e,r,t)}),n}function renderSingleEntry(e,t,n){let r=e.nodeType===`subtask`,i=e.nodeType===`tool_exec`,a=e.nodeType===`api_call`,o=e.nodeType===`preselect`,s=e.nodeType===`reflection`,c=i&&e.action?.name===`plan_task`,l=``,u=``;s?(l=`reflection-level`,u=`🎯`):o?u=`📡`:c?(l=`plan-task-level`,u=`📋`):r?(l=`subtask-level`,u=`🔀`):i?(l=`tool-level`,u=`🔧`):a?(l=`api-level`,u=`📡`):i?u=`⚡`:a&&(u=`📡`);let d=`○`,f=e.status||`processing`;e.status===`success`?d=`✓`:e.status===`failed`&&(d=`✗`),s&&(f=`reflection ${f}`);let p=escapeHtml$2(e.nodeName||`未知节点`);if(e.subtaskCount&&(p+=` <span class="plan-badge">(${e.subtaskCount}个子任务, ${e.strategy===`sequential`?`顺序执行`:`并行执行`})</span>`),(a||o)&&e.apiRequest){let t=[];e.apiRequest.messageCount!==void 0&&e.apiRequest.messageCount!==null&&t.push(`💬<span title="本次模型API调用携带的消息数">${e.apiRequest.messageCount}条</span>`),!o&&e.apiRequest.toolCount!==void 0&&e.apiRequest.toolCount!==null&&t.push(`🔧<span title="本次模型API调用携带的工具定义数">${e.apiRequest.toolCount}个</span>`),t.length>0&&(p+=` <span class="api-info-badge">（${t.join(` `)}）</span>`)}return`
+    <div class="timeline-item ${l}">
+      <div class="timeline-line"></div>
+      <div class="timeline-dot ${f}">
+        ${d}
+      </div>
+      <div class="timeline-content">
+        <div class="timeline-header">
+          <span class="expand-icon">▼</span>
+          <span class="node-icon">${u}</span>
+          <span class="iteration-badge">[${t+1}/${n}]</span>
+          <span class="node-name" title="${escapeHtml$2(e.nodeName||`未知节点`)}">${p}</span>
+          <span class="duration-badge" title="耗时">${formatDuration(e.duration)}</span>
+        </div>
+        
+        <div class="timeline-details">
+          ${e.thought&&e.thought.trim()?`
+          <div class="timeline-section">
+            <div class="section-title">💡 思考</div>
+            <div class="section-content">${escapeHtml$2(e.thought)}</div>
+          </div>
+          `:``}
+          
+          ${!o&&e.action?`
+          <div class="timeline-section">
+            <div class="section-title">⚡ 工具调用</div>
+            <div class="section-content">
+              <strong>工具:</strong> ${escapeHtml$2(e.action.name)}<br>
+              <strong>参数:</strong> <code>${escapeHtml$2(JSON.stringify(e.action.params,null,2))}</code>
+            </div>
+          </div>
+          `:``}
+          
+          ${o&&e.action?.params?.selected?`
+          <div class="timeline-section">
+            <div class="section-title">🔍 筛选结果</div>
+            <div class="section-content">
+              <strong>选中工具:</strong> ${e.action.params.selected.map(e=>escapeHtml$2(e)).join(`, `)}<br>
+              <strong>数量:</strong> ${e.action.params.selected.length} 个
+            </div>
+          </div>
+          `:``}
+          
+          ${e.observation?`
+          <div class="timeline-section">
+            <div class="section-title">📝 观察结果</div>
+            <div class="section-content">${escapeHtml$2(e.observation)}</div>
+          </div>
+          `:``}
+          
+          ${e.apiRequest?`
+          <div class="timeline-section">
+            <div class="section-title">📡 API 请求</div>
+            <div class="section-content">
+              ${e.apiRequest.model?`<strong>模型:</strong> ${escapeHtml$2(e.apiRequest.model)}<br>`:``}
+              ${e.apiRequest.temperature===void 0?``:`<strong>温度:</strong> ${e.apiRequest.temperature}<br>`}
+              ${e.apiRequest.top_p===void 0?``:`<strong>top_p:</strong> ${e.apiRequest.top_p}<br>`}
+              ${e.apiRequest.messageCount===void 0?``:`<strong>消息数:</strong> ${e.apiRequest.messageCount}<br>`}
+              ${!o&&e.apiRequest.toolCount!==void 0?`<strong>工具数:</strong> ${e.apiRequest.toolCount}<br>`:``}
+            </div>
+          </div>
+          `:``}
+          
+          ${e.apiResponse?`
+          <div class="timeline-section">
+            <div class="section-title">📤 API 响应</div>
+            <div class="section-content">
+              ${e.apiResponse.finishReason?`<strong>完成原因:</strong> ${escapeHtml$2(e.apiResponse.finishReason)}<br>`:``}
+              ${e.apiResponse.toolCountAfter===void 0?``:`<strong>筛选后工具数:</strong> ${e.apiResponse.toolCountAfter} 个<br>`}
+              ${e.apiResponse.tokenUsage?`
+                <strong>Token 使用:</strong><br>
+                - Prompt: ${e.apiResponse.tokenUsage.prompt_tokens||0}<br>
+                - Completion: ${e.apiResponse.tokenUsage.completion_tokens||0}<br>
+                - Total: ${e.apiResponse.tokenUsage.total_tokens||0}
+              `:``}
+            </div>
+          </div>
+          `:``}
+          
+          ${e.error?`
+          <div class="timeline-section error">
+            <div class="section-title">❌ 错误信息</div>
+            <div class="section-content">${escapeHtml$2(e.error)}</div>
+          </div>
+          `:``}
+          
+          ${e.result?`
+          <div class="timeline-section">
+            <div class="section-title">✅ 子任务结果</div>
+            <div class="section-content">${escapeHtml$2(e.result)}</div>
+          </div>
+          `:``}
+          
+          ${s?`
+          <div class="timeline-section reflection-details">
+            ${e.overallScore!==void 0&&e.overallScore!==null?`
+            <div class="section-title">⭐ 综合评分: ${e.overallScore}/10</div>
+            `:``}
+            ${e.dimensions&&Object.keys(e.dimensions).length>0?`
+            <div class="reflection-dimensions">
+              ${Object.entries(e.dimensions).map(([e,t])=>`
+                <div class="dimension-item">
+                  <span class="dim-label">${e}</span>
+                  <span class="dim-bar"><span class="dim-fill" style="width:${t*10}%"></span></span>
+                  <span class="dim-score">${t}/10</span>
+                </div>
+              `).join(``)}
+            </div>
+            `:``}
+            ${e.issues&&e.issues.length>0?`
+            <div class="section-title">📋 发现的问题</div>
+            <div class="section-content"><ul>${e.issues.map(e=>`<li>${escapeHtml$2(e)}</li>`).join(``)}</ul></div>
+            `:``}
+            ${e.suggestions&&e.suggestions.length>0?`
+            <div class="section-title">💡 改进建议</div>
+            <div class="section-content"><ul>${e.suggestions.map(e=>`<li>${escapeHtml$2(e)}</li>`).join(``)}</ul></div>
+            `:``}
+            ${e.action?.decision?`
+            <div class="section-title">🎯 决策: ${escapeHtml$2(e.action.decision===`passed`?`✅ 通过`:e.action.decision===`revised`?`🔧 已修订`:e.action.decision===`needs_improvement`?`⚠️ 需改进`:e.action.decision)}</div>
+            `:``}
+            ${e.useful===void 0?``:`
+            <div class="section-title">${e.useful?`✅ 结果有用`:`⚠️ 结果无效`}</div>
+            ${e.reasoning?`<div class="section-content">${escapeHtml$2(e.reasoning)}</div>`:``}
+            ${e.suggestion?`<div class="section-content">建议: ${escapeHtml$2(e.suggestion)}</div>`:``}
+            `}
+          </div>
+          `:``}
+        </div>
+      </div>
+    </div>
+  `}function renderExecutionLogOriginal(e){let t=``,n=null;return e.forEach((r,i)=>{let a=r.nodeType===`subtask`,o=r.nodeType===`tool_exec`,s=r.nodeType===`api_call`,c=r.nodeType===`preselect`,l=r.nodeType===`reflection`,u=o&&r.action?.name===`plan_task`;a&&(n=r.subtaskIndex);let d=``,f=``;l?f=`🎯`:c?f=`🔍`:u?(d=`plan-task-level`,f=`📋`):a?(d=`subtask-level`,f=`🔀`):o&&n!==null?(d=`tool-level`,f=`🔧`):s&&n!==null?(d=`api-level`,f=`📡`):o?f=`⚡`:s&&(f=`📡`);let p=`○`,m=r.status||`processing`;r.status===`success`?p=`✓`:r.status===`failed`&&(p=`✗`);let h=escapeHtml$2(r.nodeName||`未知节点`);if(r.subtaskId&&(h=`<span class="subtask-badge">${n===null?``:n+1}</span> ${h}`),r.subtaskCount&&(h+=` <span class="plan-badge">(${r.subtaskCount}个子任务, ${r.strategy===`sequential`?`顺序执行`:`并行执行`})</span>`),(s||c||l)&&r.apiRequest){let e=[];r.apiRequest.messageCount!==void 0&&r.apiRequest.messageCount!==null&&e.push(`💬<span title="本次模型API调用携带的消息数">${r.apiRequest.messageCount}条</span>`),!c&&r.apiRequest.toolCount!==void 0&&r.apiRequest.toolCount!==null&&e.push(`🔧<span title="本次模型API调用携带的工具定义数">${r.apiRequest.toolCount}个</span>`),e.length>0&&(h+=` <span class="api-info-badge">（${e.join(` `)}）</span>`)}t+=`
+      <div class="timeline-item ${d}">
+        <div class="timeline-line"></div>
+        <div class="timeline-dot ${m}">
+          ${p}
+        </div>
+        <div class="timeline-content">
+          <div class="timeline-header">
+            <span class="expand-icon">▼</span>
+            <span class="node-icon">${f}</span>
+            <span class="iteration-badge">[${i+1}/${e.length}]</span>
+            <span class="node-name" title="${escapeHtml$2(r.nodeName||`未知节点`)}">${h}</span>
+            <span class="duration-badge" title="耗时">${formatDuration(r.duration)}</span>
+          </div>
+          
+          <div class="timeline-details">
+            ${r.thought&&r.thought.trim()?`
+            <div class="timeline-section">
+              <div class="section-title">💡 思考</div>
+              <div class="section-content">${escapeHtml$2(r.thought)}</div>
+            </div>
+            `:``}
+            
+            ${!c&&r.action?`
+            <div class="timeline-section">
+              <div class="section-title">⚡ 工具调用</div>
+              <div class="section-content">
+                <strong>工具:</strong> ${escapeHtml$2(r.action.name)}<br>
+                <strong>参数:</strong> <code>${escapeHtml$2(JSON.stringify(r.action.params,null,2))}</code>
+              </div>
+            </div>
+            `:``}
+            
+            ${c&&r.action?.params?.selected?`
+            <div class="timeline-section">
+              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-content">
+                <strong>选中工具:</strong> ${r.action.params.selected.map(e=>escapeHtml$2(e)).join(`, `)}<br>
+                <strong>数量:</strong> ${r.action.params.selected.length} 个
+              </div>
+            </div>
+            `:``}
+            
+            ${r.observation?`
+            <div class="timeline-section">
+              <div class="section-title">📝 观察结果</div>
+              <div class="section-content">${escapeHtml$2(r.observation)}</div>
+            </div>
+            `:``}
+            
+            ${r.apiRequest?`
+            <div class="timeline-section">
+              <div class="section-title">📡 API 请求</div>
+              <div class="section-content">
+                ${r.apiRequest.model?`<strong>模型:</strong> ${escapeHtml$2(r.apiRequest.model)}<br>`:``}
+                ${r.apiRequest.temperature===void 0?``:`<strong>温度:</strong> ${r.apiRequest.temperature}<br>`}
+                ${r.apiRequest.top_p===void 0?``:`<strong>top_p:</strong> ${r.apiRequest.top_p}<br>`}
+                ${r.apiRequest.messageCount===void 0?``:`<strong>消息数:</strong> ${r.apiRequest.messageCount}<br>`}
+                ${!c&&r.apiRequest.toolCount!==void 0?`<strong>工具数:</strong> ${r.apiRequest.toolCount}<br>`:``}
+              </div>
+            </div>
+            `:``}
+            
+            ${r.apiResponse?`
+            <div class="timeline-section">
+              <div class="section-title">📤 API 响应</div>
+              <div class="section-content">
+                ${r.apiResponse.finishReason?`<strong>完成原因:</strong> ${escapeHtml$2(r.apiResponse.finishReason)}<br>`:``}
+                ${r.apiResponse.toolCountAfter===void 0?``:`<strong>筛选后工具数:</strong> ${r.apiResponse.toolCountAfter} 个<br>`}
+                ${r.apiResponse.tokenUsage?`
+                  <strong>Token 使用:</strong><br>
+                  - Prompt: ${r.apiResponse.tokenUsage.prompt_tokens||0}<br>
+                  - Completion: ${r.apiResponse.tokenUsage.completion_tokens||0}<br>
+                  - Total: ${r.apiResponse.tokenUsage.total_tokens||0}
+                `:``}
+              </div>
+            </div>
+            `:``}
+            
+            ${r.error?`
+            <div class="timeline-section error">
+              <div class="section-title">❌ 错误信息</div>
+              <div class="section-content">${escapeHtml$2(r.error)}</div>
+            </div>
+            `:``}
+            
+            ${r.result?`
+            <div class="timeline-section">
+              <div class="section-title">✅ 子任务结果</div>
+              <div class="section-content">${escapeHtml$2(r.result)}</div>
+            </div>
+            `:``}
+            
+            ${l?`
+            <div class="timeline-section reflection-details">
+              ${r.prompt?`
+              <div class="timeline-section">
+                <div class="section-title">📊 评估提示词</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml$2(r.prompt)}</pre></div>
+              </div>
+              `:``}
+              ${r.rawContent?`
+              <div class="timeline-section">
+                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml$2(r.rawContent)}</pre></div>
+              </div>
+              `:``}
+              ${r.apiResponse?.tokenUsage?`
+              <div class="timeline-section">
+                <div class="section-title">📊 Token 使用</div>
+                <div class="section-content">
+                  - Prompt: ${r.apiResponse.tokenUsage.prompt_tokens||0}<br>
+                  - Completion: ${r.apiResponse.tokenUsage.completion_tokens||0}<br>
+                  - Total: ${r.apiResponse.tokenUsage.total_tokens||0}
+                </div>
+              </div>
+              `:``}
+              ${r.overallScore!==void 0&&r.overallScore!==null?`
+              <div class="section-title">⭐ 综合评分: ${r.overallScore}/10</div>
+              `:``}
+              ${r.dimensions&&Object.keys(r.dimensions).length>0?`
+              <div class="reflection-dimensions">
+                ${Object.entries(r.dimensions).map(([e,t])=>`
+                  <div class="dimension-item">
+                    <span class="dim-label">${e}</span>
+                    <span class="dim-bar"><span class="dim-fill" style="width:${t*10}%"></span></span>
+                    <span class="dim-score">${t}/10</span>
+                  </div>
+                `).join(``)}
+              </div>
+              `:``}
+              ${r.issues&&r.issues.length>0?`
+              <div class="section-title">📋 发现的问题</div>
+              <div class="section-content"><ul>${r.issues.map(e=>`<li>${escapeHtml$2(e)}</li>`).join(``)}</ul></div>
+              `:``}
+              ${r.suggestions&&r.suggestions.length>0?`
+              <div class="section-title">💡 改进建议</div>
+              <div class="section-content"><ul>${r.suggestions.map(e=>`<li>${escapeHtml$2(e)}</li>`).join(``)}</ul></div>
+              `:``}
+              ${r.action?.decision?`
+              <div class="section-title">🎯 决策: ${escapeHtml$2(r.action.decision===`passed`?`✅ 通过`:r.action.decision===`revised`?`🔧 已修订`:r.action.decision===`needs_improvement`?`⚠️ 需改进`:r.action.decision)}</div>
+              `:``}
+              ${r.useful===void 0?``:`
+              <div class="section-title">${r.useful?`✅ 结果有用`:`⚠️ 结果无效`}</div>
+              ${r.reasoning?`<div class="section-content">${escapeHtml$2(r.reasoning)}</div>`:``}
+              ${r.suggestion?`<div class="section-content">建议: ${escapeHtml$2(r.suggestion)}</div>`:``}
+              `}
+            </div>
+            `:``}
+          </div>
+        </div>
+      </div>
+    `}),t}function updateRealtimeExecutionLogPanel(e){let t=document.querySelector(`.execution-log-panel.realtime-mode`);if(!t)return;let n=t.querySelector(`.realtime-executing-node`);n&&(n.textContent=e.nodeName||`处理中...`);let r=e.executionLog||[],i=r.length,a=r.filter(e=>e.status===`success`).length,o=r.filter(e=>e.status===`failed`).length,s=r.filter(e=>e.nodeType===`subtask`).length,c=r.filter(e=>e.nodeType===`subtask`&&e.status===`success`).length,l=t.querySelector(`.combo-value`),u=t.querySelector(`.combo-stat.success .stat-value`),d=t.querySelector(`.combo-stat.failed .stat-value`),f=t.querySelector(`.combo-stat.subtask`);l&&(l.textContent=i),u&&(u.textContent=a),d&&(d.textContent=o),f&&(s>0?(f.style.display=``,f.querySelector(`.stat-value`).textContent=`${c}/${s}`):f.style.display=`none`);let p=t.querySelector(`.timeline`);p.innerHTML=r.length>0?renderExecutionTimeline(r):`<div class="realtime-waiting-message">等待执行中...</div>`,p.scrollTop=p.scrollHeight}function showRealtimeExecutionLogPanel(e){let t=document.querySelector(`.execution-log-panel.realtime-mode`);t&&t.remove();let n=document.createElement(`div`);n.className=`execution-log-panel realtime-mode`,n.innerHTML=`
     <div class="log-container">
       <div class="log-header">
         <div class="log-title">
@@ -1090,31 +1412,31 @@ Character number: `+e.characterNumber},n.prototype.lineNumber=function(){return 
       </div>
       <div class="stream-status hidden"></div>
     </div>
-  `,e.appendChild(t),requestAnimationFrame(()=>{e.scrollTop=e.scrollHeight});let r=t.querySelector(`.streaming-stop-btn`);return r&&r.addEventListener(`click`,e=>{e.stopPropagation(),cancelStreamingTask(r)}),t}function reconnectStreamingElement(e){let t=_streamingElements.get(e);if(!t)return;let n=document.getElementById(`chatContainer`);if(!n)return;n.appendChild(t);let r=_streamedContentMap.get(e)||``;r&&(updateStreamingMessage(t,r),t.querySelectorAll(`.thinking-indicator:not(.hidden)`).forEach(e=>{let t=e.parentElement,n=e.previousElementSibling,r=document.createElement(`span`);r.className=`thinking-badge`,r.innerHTML=`<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果`,n&&n.classList.contains(`thinking-content`)?t.insertBefore(r,n):t.insertBefore(r,e),e.classList.add(`hidden`)})),requestAnimationFrame(()=>{n.scrollTop=n.scrollHeight})}function updateStreamingMessage(e,t){let n=e.querySelector(`.stream-content`);if(!n)return;let r=n.querySelector(`.thinking-indicator:not(.hidden)`)||e.querySelector(`.thinking-indicator:not(.hidden)`);if(r){let e=r.querySelector(`.thinking-label`);if(e&&e.textContent===`思考中...`&&(e.textContent=`输出中...`),n.contains(r)){let e=r.previousElementSibling;if(e&&e.classList.contains(`thinking-content`))e.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.insertBefore(e,r)}}else{let e=n.querySelectorAll(`.thinking-content`);if(e.length===0){let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}else{let r=e[e.length-1],i=r.nextElementSibling;if(!i||!i.classList.contains(`thinking-badge`))r.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}}}}else{let e=n.querySelectorAll(`.thinking-badge`);if(e.length>0){let n=e[e.length-1],r=n.nextElementSibling;if(r&&r.classList.contains(`thinking-content`))r.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.after(e)}}else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}}e.isConnected&&requestAnimationFrame(()=>{let e=document.getElementById(`chatContainer`);e&&(e.scrollTop=e.scrollHeight)})}function appendToolCallItems(e,t){if(!e||!t?.length)return;let n=e.querySelector(`.stream-content`);if(!n)return;let r=e.querySelector(`.thinking-indicator:not(.hidden)`);if(r){let e=_thinkingStartTime>0?((Date.now()-_thinkingStartTime)/1e3).toFixed(1)+`s`:``,t=document.createElement(`span`);if(t.className=`thinking-badge`,t.innerHTML=`<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${e?` <span class="thinking-duration">`+e+`</span>`:``}`,n.contains(r)){let e=r.previousElementSibling;e&&e.classList.contains(`thinking-content`)?n.insertBefore(t,e):n.insertBefore(t,r),r.classList.add(`hidden`)}else{let e=n.querySelectorAll(`.thinking-content`);if(e.length>0){let r=e[e.length-1],i=r.nextElementSibling;!i||!i.classList.contains(`thinking-badge`)?n.insertBefore(t,r):n.appendChild(t)}else n.appendChild(t);r.classList.add(`hidden`),r.remove()}}let i={execute_command:{metaType:`exec`},agent_exec_command:{metaType:`exec`},execute_agent_exec_command:{metaType:`exec`},agent_read_file:{metaType:`file`,action:`读取`},agent_write_file:{metaType:`file`,action:`写入`},file_upload:{metaType:`file`,action:`上传`},download_file:{metaType:`file`,action:`下载`},fetch_url:{metaType:`web`,action:`请求`},click_element:{metaType:`web`,action:`点击`},fill_form:{metaType:`web`,action:`填写`},open_tab:{metaType:`web`,action:`打开`},search_bookmarks:{metaType:`search`},search_history:{metaType:`search`},search_in_page:{metaType:`search`}};t.forEach(e=>{let t=e.function?.name||`unknown`,r=i[t]||{metaType:`other`},a;try{a=JSON.parse(e.function?.arguments||`{}`)}catch{a={raw:e.function?.arguments||``}}let o=JSON.stringify(a,null,2),s=``;if(r.metaType===`exec`)s=`<code class="tool-call-cmd">$ ${escapeHtml$2(a.command||a.cmd||JSON.stringify(a))}</code>`;else if(r.metaType===`file`){let e=a.file_path||a.filePath||a.path||a.filename||a.fileName||a.url||``;s=`<span class="tool-call-file">${r.action===`读取`?`📖`:r.action===`写入`?`📝`:r.action===`上传`?`📤`:`📥`} ${escapeHtml$2(e)||escapeHtml$2(t)}</span>`}else if(r.metaType===`web`){let e=a.url||a.href||a.selector||``;s=`<span class="tool-call-web">${escapeHtml$2(r.action)}: ${escapeHtml$2(e)||escapeHtml$2(JSON.stringify(a).substring(0,80))}</span>`}else if(r.metaType===`search`)s=`<span class="tool-call-search">🔍 ${escapeHtml$2(a.query||a.keyword||a.text||``)||escapeHtml$2(t)}</span>`;else{let e=Object.keys(a);s=e.length===0?`<span>${escapeHtml$2(t)}</span>`:e.length===1?`<span>${escapeHtml$2(e[0])}: ${escapeHtml$2(JSON.stringify(a[e[0]]).substring(0,80))}</span>`:`<span>${e.slice(0,2).map(e=>`${escapeHtml$2(e)}=${escapeHtml$2(JSON.stringify(a[e]).substring(0,30))}`).join(`, `)}${e.length>2?` ...`:``}</span>`}let c=r.metaType===`exec`?`<svg class="tool-call-icon exec" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  `,e.appendChild(t),requestAnimationFrame(()=>{e.scrollTop=e.scrollHeight});let r=t.querySelector(`.streaming-stop-btn`);return r&&r.addEventListener(`click`,e=>{e.stopPropagation(),cancelStreamingTask(r)}),t}function reconnectStreamingElement(e){let t=_streamingElements.get(e);if(!t)return;let n=document.getElementById(`chatContainer`);if(!n)return;n.appendChild(t);let r=_streamedContentMap.get(e)||``;r&&(updateStreamingMessage(t,r),t.querySelectorAll(`.thinking-indicator:not(.hidden)`).forEach(e=>{let t=e.parentElement,n=e.previousElementSibling,r=document.createElement(`span`);r.className=`thinking-badge`,r.innerHTML=`<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果`,n&&n.classList.contains(`thinking-content`)?t.insertBefore(r,n):t.insertBefore(r,e),e.classList.add(`hidden`)})),requestAnimationFrame(()=>{n.scrollTop=n.scrollHeight})}function updateStreamingMessage(e,t){let n=e.querySelector(`.stream-content`);if(!n)return;let r=n.querySelector(`.thinking-indicator:not(.hidden)`)||e.querySelector(`.thinking-indicator:not(.hidden)`);if(r){let e=r.querySelector(`.thinking-label`);if(e&&e.textContent===`思考中...`&&(e.textContent=`输出中...`),n.contains(r)){let e=r.previousElementSibling;if(e&&e.classList.contains(`thinking-content`))e.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.insertBefore(e,r)}}else{let e=n.querySelectorAll(`.thinking-content`);if(e.length===0){let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}else{let r=e[e.length-1],i=r.nextElementSibling;if(!i||!i.classList.contains(`thinking-badge`))r.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}}}}else{let e=n.querySelectorAll(`.thinking-badge`);if(e.length>0){let n=e[e.length-1],r=n.nextElementSibling;if(r&&r.classList.contains(`thinking-content`))r.innerHTML=formatMessageContent(t);else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.after(e)}}else{let e=document.createElement(`div`);e.className=`thinking-content`,e.innerHTML=formatMessageContent(t),n.appendChild(e)}}e.isConnected&&requestAnimationFrame(()=>{let e=document.getElementById(`chatContainer`);e&&(e.scrollTop=e.scrollHeight)})}function appendToolCallItems(e,t){if(!e||!t?.length)return;let n=e.querySelector(`.stream-content`);if(!n)return;let r=e.querySelector(`.thinking-indicator:not(.hidden)`);if(r){let e=_thinkingStartTime>0?((Date.now()-_thinkingStartTime)/1e3).toFixed(1)+`s`:``,t=document.createElement(`span`);if(t.className=`thinking-badge`,t.innerHTML=`<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${e?` <span class="thinking-duration">`+e+`</span>`:``}`,n.contains(r)){let e=r.previousElementSibling;e&&e.classList.contains(`thinking-content`)?n.insertBefore(t,e):n.insertBefore(t,r),r.classList.add(`hidden`)}else{let e=n.querySelectorAll(`.thinking-content`);if(e.length>0){let r=e[e.length-1],i=r.nextElementSibling;!i||!i.classList.contains(`thinking-badge`)?n.insertBefore(t,r):n.appendChild(t)}else n.appendChild(t);r.classList.add(`hidden`),r.remove()}}let i={execute_command:{metaType:`exec`},agent_exec_command:{metaType:`exec`},execute_agent_exec_command:{metaType:`exec`},agent_read_file:{metaType:`file`,action:`读取`},agent_write_file:{metaType:`file`,action:`写入`},file_upload:{metaType:`file`,action:`上传`},download_file:{metaType:`file`,action:`下载`},fetch_url:{metaType:`web`,action:`请求`},click_element:{metaType:`web`,action:`点击`},fill_form:{metaType:`web`,action:`填写`},open_tab:{metaType:`web`,action:`打开`},search_bookmarks:{metaType:`search`},search_history:{metaType:`search`},search_in_page:{metaType:`search`}};t.forEach(e=>{let t=e.function?.name||`unknown`,r=i[t]||{metaType:`other`},a;try{a=JSON.parse(e.function?.arguments||`{}`)}catch{a={raw:e.function?.arguments||``}}let o=JSON.stringify(a,null,2),s=``,c=``;if(r.metaType===`exec`){let e=a.command||a.cmd||JSON.stringify(a);c=e,s=`<code class="tool-call-cmd">$ ${escapeHtml$2(e)}</code>`}else if(r.metaType===`file`){let e=a.file_path||a.filePath||a.path||a.filename||a.fileName||a.url||``,n=r.action===`读取`?`📖`:r.action===`写入`?`📝`:r.action===`上传`?`📤`:`📥`;c=e||t,s=`<span class="tool-call-file">${n} ${escapeHtml$2(e)||escapeHtml$2(t)}</span>`}else if(r.metaType===`web`){let e=a.url||a.href||a.selector||``;c=e||JSON.stringify(a),s=`<span class="tool-call-web">${escapeHtml$2(r.action)}: ${escapeHtml$2(e)||escapeHtml$2(JSON.stringify(a).substring(0,80))}</span>`}else if(r.metaType===`search`){let e=a.query||a.keyword||a.text||``;c=e||t,s=`<span class="tool-call-search">🔍 ${escapeHtml$2(e)||escapeHtml$2(t)}</span>`}else{let e=Object.keys(a);if(e.length===0)c=t,s=`<span>${escapeHtml$2(t)}</span>`;else if(e.length===1){let t=JSON.stringify(a[e[0]]);c=`${e[0]}: ${t}`,s=`<span>${escapeHtml$2(e[0])}: ${escapeHtml$2(t.substring(0,80))}</span>`}else c=e.map(e=>`${e}=${JSON.stringify(a[e])}`).join(`, `),s=`<span>${e.slice(0,2).map(e=>`${escapeHtml$2(e)}=${escapeHtml$2(JSON.stringify(a[e]).substring(0,30))}`).join(`, `)}${e.length>2?` ...`:``}</span>`}let l=r.metaType===`exec`?`<svg class="tool-call-icon exec" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
          </svg>`:r.metaType===`file`?`<svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
          </svg>`:`<svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-         </svg>`,l=document.createElement(`div`);l.className=`tool-call-item`,l.setAttribute(`data-tool-call-id`,e.id||``),l.setAttribute(`data-meta-type`,r.metaType),l.setAttribute(`data-created-at`,Date.now());let u=t===`agent_exec_command`||t===`execute_agent_exec_command`,d=u?`
+         </svg>`,u=document.createElement(`div`);u.className=`tool-call-item`,u.setAttribute(`data-tool-call-id`,e.id||``),u.setAttribute(`data-meta-type`,r.metaType),u.setAttribute(`data-created-at`,Date.now());let d=t===`agent_exec_command`||t===`execute_agent_exec_command`,f=d?`
         <button class="tool-call-terminate-btn" title="终止命令">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           </svg>
-        </button>`:``;if(l.innerHTML=`
+        </button>`:``;if(u.innerHTML=`
       <div class="tool-call-header">
-        ${c}
+        ${l}
         <span class="tool-call-name">${escapeHtml$2(t)}</span>
         <div class="tool-call-summary">${s}</div>
         <span class="tool-call-executing">执行中...</span>
-        ${d}
+        ${f}
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
       <div class="tool-call-body">
         ${createCodeBlockHtml(escapeHtml$2(o))}
       </div>
-    `,addCodeCopyButtons(),u){let e=l.querySelector(`.tool-call-terminate-btn`);e&&e.addEventListener(`click`,e=>{e.stopPropagation(),showCommandTerminateDialog(state_default.activeSessionId)})}l.querySelector(`.tool-call-header`).addEventListener(`click`,()=>{l.classList.toggle(`expanded`)}),n.appendChild(l)}),e.isConnected&&requestAnimationFrame(()=>{let e=document.getElementById(`chatContainer`);e&&(e.scrollTop=e.scrollHeight)})}function createCodeBlockHtml(e,t=``){return`<div class="code-block-container" style="position: relative;">
+    `,c){let e=u.querySelector(`.tool-call-summary`);e&&(e.title=c)}if(addCodeCopyButtons(),d){let e=u.querySelector(`.tool-call-terminate-btn`);e&&e.addEventListener(`click`,e=>{e.stopPropagation(),showCommandTerminateDialog(state_default.activeSessionId)})}u.querySelector(`.tool-call-header`).addEventListener(`click`,()=>{u.classList.toggle(`expanded`)}),n.appendChild(u)}),e.isConnected&&requestAnimationFrame(()=>{let e=document.getElementById(`chatContainer`);e&&(e.scrollTop=e.scrollHeight)})}function createCodeBlockHtml(e,t=``){return`<div class="code-block-container" style="position: relative;">
         <button class="code-copy-btn" title="复制代码">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
@@ -1496,4 +1818,4 @@ Character number: `+e.characterNumber},n.prototype.lineNumber=function(){return 
         </td>
         <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${s}</td>
       </tr>`}).join(``),Ce()}function Ce(){let{column:e,asc:t}=be,n=[`name`,`callCount`,`successCount`,`successRate`,`duration`],r={name:`sortByName`,callCount:`sortByCallCount`,successCount:`sortBySuccessCount`,successRate:`sortBySuccessRate`,duration:`sortByDuration`};n.forEach(n=>{let i=document.getElementById(r[n]);if(!i)return;let a=i.querySelector(`.sort-indicator`);a&&(n===e?(a.textContent=t?`▲`:`▼`,a.style.color=`#667eea`):(a.textContent=``,a.style.color=``))})}document.querySelectorAll(`#toolStatsTable th[data-sort]`).forEach(e=>{e.addEventListener(`click`,()=>{let t=e.dataset.sort;be.column===t?be.asc=!be.asc:(be.column=t,be.asc=!1),xe()})}),ue.addEventListener(`click`,()=>{hideModal()}),de.addEventListener(`click`,()=>{hideModal(),clearChatHistory()});let we=document.getElementById(`confirmModal`);we.addEventListener(`click`,e=>{e.target===we&&hideModal()});let Te=document.getElementById(`selectionClose`);Te&&Te.addEventListener(`click`,e=>{e.preventDefault(),e.stopPropagation(),logger.debug(`[SidePanel] 用户点击关闭选中内容按钮`),clearSelectedContext$1(),window.hideFloatingMenu(),state_default.lastSelectedText=``,state_default.currentSelectionRange=null}),r.addEventListener(`input`,()=>{})}),loadChatConfig().then(()=>updateMemoryLimitLabel()),document.addEventListener(`DOMContentLoaded`,()=>{initMemoryLimitDropdown()}),document.addEventListener(`DOMContentLoaded`,initMessageToc),document.addEventListener(`DOMContentLoaded`,initPromptEvents),document.addEventListener(`DOMContentLoaded`,initSkillIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initSkillTabEvents),document.addEventListener(`DOMContentLoaded`,initMcpIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initPageIndicatorEvents),document.addEventListener(`DOMContentLoaded`,initClarifyEvents),document.addEventListener(`DOMContentLoaded`,initConfirmEvents),document.addEventListener(`DOMContentLoaded`,initPrototypeEvents),document.addEventListener(`DOMContentLoaded`,initExportDialogEvents),document.addEventListener(`DOMContentLoaded`,()=>initAgentManager());
-//# sourceMappingURL=side_panel-q0X-KcWm.js.map
+//# sourceMappingURL=side_panel-CVLlFaH-.js.map

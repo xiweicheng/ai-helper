@@ -403,29 +403,35 @@ export function appendToolCallItems(element, toolCalls) {
     
     // 根据工具类型构建摘要行
     let summaryHtml = '';
+    let summaryTitle = '';  // 完整内容，用于 title 提示
     if (meta.metaType === 'exec') {
-      // 命令执行：展示实际命令
       const cmd = args.command || args.cmd || JSON.stringify(args);
+      summaryTitle = cmd;
       summaryHtml = `<code class="tool-call-cmd">$ ${escapeHtml(cmd)}</code>`;
     } else if (meta.metaType === 'file') {
-      // 文件操作：展示路径/文件名
       const path = args.file_path || args.filePath || args.path || args.filename || args.fileName || args.url || '';
       const icon = meta.action === '读取' ? '📖' : meta.action === '写入' ? '📝' : meta.action === '上传' ? '📤' : '📥';
+      summaryTitle = path || toolName;
       summaryHtml = `<span class="tool-call-file">${icon} ${escapeHtml(path) || escapeHtml(toolName)}</span>`;
     } else if (meta.metaType === 'web') {
       const url = args.url || args.href || args.selector || '';
+      summaryTitle = url || JSON.stringify(args);
       summaryHtml = `<span class="tool-call-web">${escapeHtml(meta.action)}: ${escapeHtml(url) || escapeHtml(JSON.stringify(args).substring(0, 80))}</span>`;
     } else if (meta.metaType === 'search') {
       const query = args.query || args.keyword || args.text || '';
+      summaryTitle = query || toolName;
       summaryHtml = `<span class="tool-call-search">🔍 ${escapeHtml(query) || escapeHtml(toolName)}</span>`;
     } else {
-      // 其他工具：显示关键参数
       const keys = Object.keys(args);
       if (keys.length === 0) {
+        summaryTitle = toolName;
         summaryHtml = `<span>${escapeHtml(toolName)}</span>`;
       } else if (keys.length === 1) {
-        summaryHtml = `<span>${escapeHtml(keys[0])}: ${escapeHtml(JSON.stringify(args[keys[0]]).substring(0, 80))}</span>`;
+        const val = JSON.stringify(args[keys[0]]);
+        summaryTitle = `${keys[0]}: ${val}`;
+        summaryHtml = `<span>${escapeHtml(keys[0])}: ${escapeHtml(val.substring(0, 80))}</span>`;
       } else {
+        summaryTitle = keys.map(k => `${k}=${JSON.stringify(args[k])}`).join(', ');
         const preview = keys.slice(0, 2).map(k => `${escapeHtml(k)}=${escapeHtml(JSON.stringify(args[k]).substring(0, 30))}`).join(', ');
         summaryHtml = `<span>${preview}${keys.length > 2 ? ' ...' : ''}</span>`;
       }
@@ -471,6 +477,12 @@ export function appendToolCallItems(element, toolCalls) {
         ${createCodeBlockHtml(escapeHtml(formattedArgs))}
       </div>
     `;
+    
+    // 设置摘要的 title 属性（完整内容，通过 JS 直接赋值避免 HTML 转义截断）
+    if (summaryTitle) {
+      const summaryDiv = item.querySelector('.tool-call-summary');
+      if (summaryDiv) summaryDiv.title = summaryTitle;
+    }
     
     // 绑定代码块复制按钮
     addCodeCopyButtons();

@@ -23,10 +23,9 @@ import {
 
 import { deepGetSelection } from './shadow-dom-utils.js';
 
-import { initSelectionToolbar } from './selection-toolbar.js';
-import logger from '../shared/logger.js';
+import { initSelectionToolbar, isExtensionValid } from './selection-toolbar.js';
 
-logger.debug('[ContentScript] 内容脚本已加载 URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
+console.log('[ContentScript] 内容脚本已加载 URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
 
 // ==================== 快捷键支持 ====================
 document.addEventListener('keydown', (e) => {
@@ -171,7 +170,8 @@ const TOP_FRAME_ONLY_TYPES = new Set([
   'QUERY_INTERACTIVE_ELEMENTS',
 ]);
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+if (isExtensionValid()) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 页面级内容获取工具：只在顶层 frame 响应，避免 iframe 响应覆盖主页面内容
   if (TOP_FRAME_ONLY_TYPES.has(message.type) && window.top !== window) {
     return;
@@ -207,6 +207,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 同步：直接回复
   sendResponse(result);
 });
+}
 
 // 初始化选中文本浮动工具栏
 initSelectionToolbar();

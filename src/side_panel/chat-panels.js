@@ -2,6 +2,7 @@
 // 从 chat-manager.js 拆分，包含执行日志面板与反思信息面板的渲染逻辑
 
 import { escapeHtml, formatDuration } from './utils.js';
+import { renderExecutionLogForPanel } from './execution-log-render.js';
 
 // ============================================================
 // 反思信息面板
