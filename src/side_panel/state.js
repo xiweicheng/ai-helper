@@ -86,7 +86,7 @@ export let currentClarifySessionId = null;  // 当前澄清所属的会话 ID
 export let currentConfirmToolCallId = null; // 当前确认对话框所属的 toolCallId
 export let currentConfirmSessionId = null;  // 当前确认对话框所属的会话 ID
 export let clarifyTimerInterval = null;
-export let clarifyTimeoutValue = 180000;  // 默认 3 分钟
+export let clarifyTimeoutValue = 300000;  // 默认 5 分钟
 
 // 消息目录状态
 export let messageTocContainer = null;

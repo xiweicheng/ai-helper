@@ -7,15 +7,19 @@
     "dev": "vite",
     "build": "vite build && node scripts/fix-build.js",
     "build:silent": "node scripts/silent-build.js",
-    "preview": "vite preview"
+    "preview": "vite",
+    "lint": "eslint src/"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^9.1.0",
     "@crxjs/vite-plugin": "^2.7.0",
+    "eslint": "^10.7.0",
     "sharp": "^0.35.2",
     "vite": "^8.0.0",
     "vite-plugin-static-copy": "^4.1.1"
   },
   "dependencies": {
+    "dompurify": "^3.4.12",
     "mammoth": "^1.6.0",
     "pdfjs-dist": "^3.11.174",
     "xlsx": "^0.18.5"

@@ -1,5 +1,6 @@
 // markdown-render.js - Markdown rendering utility functions
 
+import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
 
 /**
@@ -50,6 +51,12 @@ export function formatMarkdown(text) {
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
       .replace(/\n/g, '<br>');
   }
+  
+  html = DOMPurify.sanitize(html, {
+    FORBID_TAGS: ['style', 'iframe', 'script', 'object', 'embed', 'svg'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'oninput', 'onkeydown', 'onkeyup', 'onkeypress'],
+    ADD_ATTR: ['target']
+  });
   
   // 还原 mermaid 图表占位符
   mermaidBlocks.forEach((content, index) => {

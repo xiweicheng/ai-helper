@@ -1123,13 +1123,7 @@ export function saveConfig() {
   const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 5) * 60000;
   const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
   const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
-  const reactClarifyTimeout = DEFAULT_REACT_CONFIG.clarifyTimeout;
-  const reactApiRetryCount = DEFAULT_REACT_CONFIG.apiRetryCount;
-  const reactApiRetryBaseDelay = DEFAULT_REACT_CONFIG.apiRetryBaseDelay;
-  const preselectEl = document.getElementById('enableToolPreselect');
-  const enableToolPreselect = preselectEl ? preselectEl.checked : DEFAULT_REACT_CONFIG.enableToolPreselect;
-  const preselectMinEl = document.getElementById('preselectMinToolCount');
-  const preselectMinToolCount = preselectMinEl ? parseInt(preselectMinEl.value) || DEFAULT_REACT_CONFIG.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
+  // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
@@ -1201,11 +1195,7 @@ export function saveConfig() {
     reactApiTimeout: reactApiTimeout,
     reactLoopTimeout: reactLoopTimeout,
     reactToolTimeout: reactToolTimeout,
-    reactClarifyTimeout: reactClarifyTimeout,
-    reactApiRetryCount: reactApiRetryCount,
-    reactApiRetryBaseDelay: reactApiRetryBaseDelay,
-    enableToolPreselect: enableToolPreselect,
-    preselectMinToolCount: preselectMinToolCount,
+    // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
     toolConfirmationEnabled: toolConfirmationEnabled,
     enableExecutionLog: enableExecutionLog,
     // 图片识别配置

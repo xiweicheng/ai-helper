@@ -1,2 +1,16 @@
 node_modules/
 .npmrc
+
+*.log
+.env
+.env.local
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+*~

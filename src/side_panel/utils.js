@@ -2,6 +2,7 @@
 
 import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
+import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 
 /**
  * 显示 Toast 提示
@@ -480,7 +481,7 @@ export function getReactConfig() {
         apiTimeout: result.reactApiTimeout || 60000,
         loopTimeout: result.reactLoopTimeout || 7200000,
         toolTimeout: result.reactToolTimeout || 30000,
-        clarifyTimeout: result.reactClarifyTimeout || 180000
+        clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout
       });
     });
   });

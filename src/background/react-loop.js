@@ -30,7 +30,7 @@ const TOOL_DISPLAY_NAMES = {
  */
 async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   const toolLabel = TOOL_DISPLAY_NAMES[toolName] || toolName;
-  const confirmTimeout = 180000; // 3分钟确认超时
+  const confirmTimeout = 300000; // 5分钟确认超时
   
   console.log(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
   

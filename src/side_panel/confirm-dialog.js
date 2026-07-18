@@ -22,7 +22,7 @@ function formatCountdown(seconds) {
  * @param {Object} data - { toolName, toolLabel, args, message, toolCallId, sessionId, timeout }
  */
 export function showConfirmDialog(data) {
-  const { toolName, toolLabel, args, message, toolCallId, sessionId, timeout = 180000 } = data;
+  const { toolName, toolLabel, args, message, toolCallId, sessionId, timeout = 300000 } = data;
   
   console.log('[SidePanel] 显示确认对话框:', toolName, data);
   

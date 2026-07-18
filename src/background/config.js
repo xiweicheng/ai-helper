@@ -10,9 +10,9 @@ export function getStoredConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
-      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout', 'reactClarifyTimeout',
-      'reactApiRetryCount', 'reactApiRetryBaseDelay', 'enableToolPreselect',
-      'preselectMinToolCount', 'toolConfirmationEnabled',
+      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+      'enableToolPreselect',
+      'toolConfirmationEnabled',
       'reflectionConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
@@ -27,11 +27,11 @@ export function getStoredConfig() {
           apiTimeout: result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout,
           loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
           toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
-          clarifyTimeout: result.reactClarifyTimeout || DEFAULT_REACT_CONFIG.clarifyTimeout,
-          apiRetryCount: result.reactApiRetryCount !== undefined ? result.reactApiRetryCount : DEFAULT_REACT_CONFIG.apiRetryCount,
-          apiRetryBaseDelay: result.reactApiRetryBaseDelay !== undefined ? result.reactApiRetryBaseDelay : DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
+          clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout,
+          apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,
+          apiRetryBaseDelay: DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
           enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
-          preselectMinToolCount: result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount,
+          preselectMinToolCount: DEFAULT_REACT_CONFIG.preselectMinToolCount,
           toolConfirmationEnabled: result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled,
           // 反思配置（从 storage 读取，否则使用默认值）
           reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
