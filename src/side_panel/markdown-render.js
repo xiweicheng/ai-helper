@@ -923,7 +923,7 @@ export function addCodeCopyButtons() {
   copyButtons.forEach((btn, index) => {
     // 避免重复绑定
     if (btn.dataset.bound) {
-      logger.debug('[SidePanel] 按钮', index, '已绑定，跳过');
+      // logger.debug('[SidePanel] 按钮', index, '已绑定，跳过');
       return;
     }
     btn.dataset.bound = 'true';

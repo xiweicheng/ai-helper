@@ -4029,7 +4029,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         pauseStartTime = Date.now();
         clearTimeout(_timeoutCtx.timeoutId);
         _timeoutCtx.timeoutId = null;
-        logger.debug('[SidePanel] 前端超时已暂停（澄清工具执行中）');
+        logger.debug('[SidePanel] 前端超时已暂停（等待用户响应：澄清/敏感工具确认）');
       }
     };
     
@@ -4196,8 +4196,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         pauseTimeout();
         return false;
       }
-      
+
       if (message.type === 'CLARIFY_END') {
+        resumeTimeout();
+        return false;
+      }
+
+      // 敏感工具确认期间暂停单次请求超时（与澄清行为一致）
+      if (message.type === 'TOOL_CONFIRM_START') {
+        pauseTimeout();
+        return false;
+      }
+
+      if (message.type === 'TOOL_CONFIRM_END') {
         resumeTimeout();
         return false;
       }

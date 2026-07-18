@@ -942,7 +942,29 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             if (sessionId && loopApprovedSessions.has(sessionId)) {
               logger.debug(`[Background] 会话 ${sessionId} 已获当前任务放行，跳过确认: ${toolName}`);
             } else {
-              const confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
+              // 暂停整体循环超时 + 通知前端暂停单次请求超时
+              // （等待用户确认的时间不应计入超时，与 clarify_question 行为一致）
+              pauseLoopTimer();
+              chrome.runtime.sendMessage({
+                type: 'TOOL_CONFIRM_START',
+                ...(sessionId ? { sessionId } : {})
+              }).catch(err => {
+                logger.debug('[Background] 发送 TOOL_CONFIRM_START 消息失败:', err.message);
+              });
+
+              let confirmed;
+              try {
+                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
+              } finally {
+                // 无论确认/拒绝/超时，都恢复超时计时
+                resumeLoopTimer();
+                chrome.runtime.sendMessage({
+                  type: 'TOOL_CONFIRM_END',
+                  ...(sessionId ? { sessionId } : {})
+                }).catch(err => {
+                  logger.debug('[Background] 发送 TOOL_CONFIRM_END 消息失败:', err.message);
+                });
+              }
               if (!confirmed) {
                 // 用户拒绝，返回错误结果
                 const toolLogId = crypto.randomUUID();
