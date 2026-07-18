@@ -277,7 +277,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
-          if ((tool.id === 'agent_skill_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
+          if ((tool.id === 'agent_workflow_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
           if (tool.id.startsWith('mcp_')) {
             if (mcpEnabled !== true || !agentConnected) return false;
@@ -895,7 +895,7 @@ const TOOL_HANDLERS = {
   agent_search_content: executeAgentSearchContent,
   wait_for_navigation: executeWaitForNavigation,
   dispatch_sub_agent: executeDispatchSubAgent,
-  agent_skill_run: executeSkillRun,
+  agent_workflow_run: executeSkillRun,
   agent_skill_load: executeSkillLoad,
   agent_memory_store: executeAgentMemoryStore,
   agent_memory_recall: executeAgentMemoryRecall,

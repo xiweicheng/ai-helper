@@ -145,7 +145,9 @@ export function selectSkill(skillName, skills) {
   state.selectedSkill = {
     name: skill.name,
     description: skill.description || '',
-    type: skill.type || 'agent'
+    type: skill.type || 'agent',
+    stepCount: skill.stepCount || 0,
+    parameters: skill.parameters || {}
   };
 
   // 显示技能指示器
@@ -317,11 +319,20 @@ export function getSkillContextText() {
   text += `]\n`;
 
   if (isAgent) {
-    // Agent Skill：提示 AI 使用 agent_skill_load 加载，不要用 agent_skill_run
-    text += `请使用 \`agent_skill_load\` 加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。注意：这是一个 Agent Skill，不要使用 agent_skill_run。\n`;
+    // Agent Skill：提示 AI 使用 agent_skill_load 加载，不要用 agent_workflow_run
+    text += `请使用 \`agent_skill_load\` 加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。注意：这是一个 Agent Skill，不要使用 agent_workflow_run。\n`;
   } else {
-    // Workflow Skill：提示 AI 使用 agent_skill_run 执行
-    text += `请使用 \`agent_skill_run\` 执行「${skill.name}」技能来处理以下问题：\n`;
+    // Workflow Skill：提示 AI 使用 agent_workflow_run 执行，并附上参数定义
+    text += `请使用 \`agent_workflow_run\` 执行「${skill.name}」技能来处理以下问题`;
+    const params = skill.parameters;
+    if (params && params.properties && Object.keys(params.properties).length > 0) {
+      const required = params.required || [];
+      const paramList = Object.entries(params.properties)
+        .map(([key, def]) => `${key}（${required.includes(key) ? '必填' : '可选'}，${def.type || 'string'}：${def.description || ''}）`)
+        .join('、');
+      text += `，调用参数：${paramList}`;
+    }
+    text += `。\n`;
   }
   return text;
 }

@@ -378,7 +378,7 @@ async function fetchAgentSkillPrompts(agentToolIds) {
   // 如果 Agent 限定了工具列表，且列表中不包含任何 Skill 相关工具，则不注入 Skill 描述
   if (agentToolIds != null && Array.isArray(agentToolIds)
       && !agentToolIds.includes('agent_skill_load')
-      && !agentToolIds.includes('agent_skill_run')) {
+      && !agentToolIds.includes('agent_workflow_run')) {
     return '';
   }
 

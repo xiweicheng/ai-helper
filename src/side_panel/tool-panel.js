@@ -94,7 +94,7 @@ function getAgentFilteredTools() {
   }
   // Skill 全局开关关闭时，过滤掉 Skill 相关工具
   if (!globalSkillsEnabled) {
-    filtered = filtered.filter(t => t.id !== 'agent_skill_run' && t.id !== 'agent_skill_load');
+    filtered = filtered.filter(t => t.id !== 'agent_workflow_run' && t.id !== 'agent_skill_load');
   }
   // Agent 未连接时，隐藏所有 agent_* 和 mcp_* 工具（依赖代理服务的工具）
   const agentConnected = state.agentPlatform?.connected === true;
