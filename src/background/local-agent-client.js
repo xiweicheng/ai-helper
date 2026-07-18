@@ -1,3 +1,5 @@
+import logger from '../shared/logger.js';
+
 // background/local-agent-client.js - 代理通信客户端
 // 封装与代理服务的 HTTP 和 WebSocket 通信
 //
@@ -66,7 +68,7 @@ let _agentReachable = null;
  */
 function setAgentReachable(reachable) {
   if (_agentReachable !== reachable) {
-    console.log('[AgentClient] 代理可达性变更:', reachable ? '可达' : '不可达');
+    logger.debug('[AgentClient] 代理可达性变更:', reachable ? '可达' : '不可达');
   }
   _agentReachable = reachable;
 }
@@ -116,7 +118,7 @@ async function pairWithAgent(agentUrl, pairCode) {
     const data = await response.json();
     if (data.success && data.token) {
       await chrome.storage.local.set({ agentUrl, agentToken: data.token });
-      console.log('[AgentClient] 配对成功');
+      logger.debug('[AgentClient] 配对成功');
       return { success: true, token: data.token };
     }
     return { success: false, error: data.error || '配对失败' };
@@ -130,7 +132,7 @@ async function pairWithAgent(agentUrl, pairCode) {
  */
 async function unpairAgent() {
   await chrome.storage.local.remove(['agentUrl', 'agentToken']);
-  console.log('[AgentClient] 已断开配对');
+  logger.debug('[AgentClient] 已断开配对');
 }
 
 /**
@@ -375,7 +377,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
   const ws = new WebSocket(authenticatedUrl);
 
   ws.onopen = () => {
-    console.log('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
+    logger.debug('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
   };
 
   ws.onmessage = (event) => {
@@ -388,12 +390,12 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
   };
 
   ws.onclose = () => {
-    console.log('[AgentClient] WebSocket 已关闭');
+    logger.debug('[AgentClient] WebSocket 已关闭');
     if (onClose) onClose();
   };
 
   ws.onerror = (err) => {
-    console.error('[AgentClient] WebSocket 错误:', err);
+    logger.error('[AgentClient] WebSocket 错误:', err);
     if (onError) onError(err);
   };
 

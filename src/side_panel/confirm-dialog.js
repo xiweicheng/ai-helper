@@ -1,6 +1,7 @@
 // confirm-dialog.js - 敏感操作确认对话框
 
 import state from './state.js';
+import logger from '../shared/logger.js';
 
 let confirmResolve = null;
 let countdownTimer = null;
@@ -24,7 +25,7 @@ function formatCountdown(seconds) {
 export function showConfirmDialog(data) {
   const { toolName, toolLabel, args, message, toolCallId, sessionId, timeout = 300000 } = data;
   
-  console.log('[SidePanel] 显示确认对话框:', toolName, data);
+  logger.debug('[SidePanel] 显示确认对话框:', toolName, data);
   
   state.currentConfirmToolCallId = toolCallId;
   state.currentConfirmSessionId = sessionId || null;
@@ -107,7 +108,7 @@ export function showConfirmDialog(data) {
     // 自动超时处理：默认拒绝
     autoTimeoutId = setTimeout(() => {
       if (confirmResolve) {
-        console.log('[SidePanel] 确认对话框超时，自动拒绝');
+        logger.debug('[SidePanel] 确认对话框超时，自动拒绝');
         handleConfirmResponse(false, 'single');
       }
     }, timeout);
@@ -150,7 +151,7 @@ function handleConfirmResponse(confirmed, scope = 'single') {
     scope,
     sessionId: state.currentConfirmSessionId
   }).catch(err => {
-    console.log('[SidePanel] 发送确认响应失败:', err.message);
+    logger.debug('[SidePanel] 发送确认响应失败:', err.message);
   });
   
   state.currentConfirmToolCallId = null;

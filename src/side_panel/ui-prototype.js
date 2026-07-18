@@ -2,6 +2,7 @@
 
 import { getUiPrototype, listUiPrototypes, deleteUiPrototype } from '../storage/db.js';
 import { ICON_EYE_24, ICON_EXTERNAL_LINK_24, ICON_EDIT_PEN_24, ICON_TRASH_24, ICON_DOWNLOAD_24 } from './icons.js';
+import logger from '../shared/logger.js';
 
 let currentPrototype = null;
 let currentZoom = 1.0;
@@ -33,7 +34,7 @@ function wrapPrototypeHtml(html) {
 }
 
 export function showUiPrototypeDialog(prototypeData) {
-  console.log('[SidePanel] 显示 UI 原型预览:', prototypeData);
+  logger.debug('[SidePanel] 显示 UI 原型预览:', prototypeData);
   
   currentPrototype = prototypeData;
   resetZoom();
@@ -71,7 +72,7 @@ export function showUiPrototypeDialog(prototypeData) {
     overlay.classList.add('show');
   }
   
-  console.log('[SidePanel] UI 原型预览弹窗已显示');
+  logger.debug('[SidePanel] UI 原型预览弹窗已显示');
 }
 
 export function hideUiPrototypeDialog() {
@@ -87,7 +88,7 @@ export function hideUiPrototypeDialog() {
   
   currentPrototype = null;
   
-  console.log('[SidePanel] UI 原型预览弹窗已隐藏');
+  logger.debug('[SidePanel] UI 原型预览弹窗已隐藏');
 }
 
 export function continueOptimizePrototype() {
@@ -106,12 +107,12 @@ export function continueOptimizePrototype() {
     userInput.style.height = userInput.scrollHeight + 'px';
   }
   
-  console.log('[SidePanel] 继续优化原型:', prototypeId);
+  logger.debug('[SidePanel] 继续优化原型:', prototypeId);
 }
 
 export function downloadPrototype() {
   if (!currentPrototype || !currentPrototype.html) {
-    console.error('[SidePanel] 没有可下载的原型');
+    logger.error('[SidePanel] 没有可下载的原型');
     return;
   }
   
@@ -127,12 +128,12 @@ export function downloadPrototype() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   
-  console.log('[SidePanel] 原型已下载:', a.download);
+  logger.debug('[SidePanel] 原型已下载:', a.download);
 }
 
 export function openPrototypeInNewTab() {
   if (!currentPrototype || !currentPrototype.html) {
-    console.error('[SidePanel] 没有可打开的原型');
+    logger.error('[SidePanel] 没有可打开的原型');
     return;
   }
   
@@ -142,7 +143,7 @@ export function openPrototypeInNewTab() {
   
   chrome.tabs.create({ url: url, active: true });
   
-  console.log('[SidePanel] 原型已在新标签页打开');
+  logger.debug('[SidePanel] 原型已在新标签页打开');
 }
 
 export async function loadAndShowPrototype(prototypeId) {
@@ -150,14 +151,14 @@ export async function loadAndShowPrototype(prototypeId) {
     const prototype = await getUiPrototype(prototypeId);
     
     if (!prototype) {
-      console.error('[SidePanel] 未找到原型:', prototypeId);
+      logger.error('[SidePanel] 未找到原型:', prototypeId);
       return;
     }
     
     showUiPrototypeDialog(prototype);
     
   } catch (err) {
-    console.error('[SidePanel] 加载原型失败:', err);
+    logger.error('[SidePanel] 加载原型失败:', err);
   }
 }
 
@@ -178,12 +179,12 @@ export async function showPrototypeLibrary() {
     bindPrototypeLibraryControls(prototypes);
     
   } catch (err) {
-    console.error('[SidePanel] 加载原型页面库失败:', err);
+    logger.error('[SidePanel] 加载原型页面库失败:', err);
     listEl.innerHTML = '<div class="prototype-library-empty">加载失败</div>';
   }
   
   modal.classList.add('show');
-  console.log('[SidePanel] 原型页面库已显示');
+  logger.debug('[SidePanel] 原型页面库已显示');
 }
 
 function renderPrototypeLibraryList(prototypes) {
@@ -257,7 +258,7 @@ function renderPrototypeLibraryList(prototypes) {
             const path = localOpenBtn.dataset.path;
             chrome.runtime.sendMessage({ type: 'OPEN_LOCAL_PROTOTYPE', path }, (response) => {
               if (!response?.success) {
-                console.error('[SidePanel] 本地浏览器打开失败:', response?.error);
+                logger.error('[SidePanel] 本地浏览器打开失败:', response?.error);
               }
             });
           });
@@ -344,7 +345,7 @@ export function hidePrototypeLibrary() {
   if (modal) {
     modal.classList.remove('show');
   }
-  console.log('[SidePanel] 原型页面库已隐藏');
+  logger.debug('[SidePanel] 原型页面库已隐藏');
 }
 
 function continueOptimizeFromLibrary(prototypeId, title) {
@@ -356,14 +357,14 @@ function continueOptimizeFromLibrary(prototypeId, title) {
     userInput.style.height = userInput.scrollHeight + 'px';
   }
   
-  console.log('[SidePanel] 从原型页面库继续优化原型:', prototypeId);
+  logger.debug('[SidePanel] 从原型页面库继续优化原型:', prototypeId);
 }
 
 async function downloadPrototypeFromLibrary(prototypeId) {
   try {
     const prototype = await getUiPrototype(prototypeId);
     if (!prototype || !prototype.html) {
-      console.error('[SidePanel] 下载原型失败：未找到原型', prototypeId);
+      logger.error('[SidePanel] 下载原型失败：未找到原型', prototypeId);
       return;
     }
     
@@ -379,9 +380,9 @@ async function downloadPrototypeFromLibrary(prototypeId) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    console.log('[SidePanel] 原型已从原型库下载:', a.download);
+    logger.debug('[SidePanel] 原型已从原型库下载:', a.download);
   } catch (err) {
-    console.error('[SidePanel] 下载原型失败:', err);
+    logger.error('[SidePanel] 下载原型失败:', err);
   }
 }
 
@@ -399,7 +400,7 @@ async function deletePrototypeItem(prototypeId, title) {
     const prototype = await getUiPrototype(prototypeId);
     
     await deleteUiPrototype(prototypeId);
-    console.log('[SidePanel] 原型已删除:', prototypeId);
+    logger.debug('[SidePanel] 原型已删除:', prototypeId);
 
     // 级联删除本地文件
     if (prototype?.localPath) {
@@ -407,9 +408,9 @@ async function deletePrototypeItem(prototypeId, title) {
         { type: 'DELETE_LOCAL_PROTOTYPE', path: prototype.localPath },
         (response) => {
           if (response?.success) {
-            console.log('[SidePanel] 本地原型文件已删除:', prototype.localPath);
+            logger.debug('[SidePanel] 本地原型文件已删除:', prototype.localPath);
           } else {
-            console.warn('[SidePanel] 本地原型文件删除失败:', response?.error);
+            logger.warn('[SidePanel] 本地原型文件删除失败:', response?.error);
           }
         }
       );
@@ -417,7 +418,7 @@ async function deletePrototypeItem(prototypeId, title) {
 
     showPrototypeLibrary();
   } catch (err) {
-    console.error('[SidePanel] 删除原型失败:', err);
+    logger.error('[SidePanel] 删除原型失败:', err);
     alert('删除失败: ' + err.message);
   }
 }
@@ -574,7 +575,7 @@ export function initPrototypeEvents() {
       if (path) {
         chrome.runtime.sendMessage({ type: 'OPEN_LOCAL_PROTOTYPE', path }, (response) => {
           if (!response?.success) {
-            console.error('[SidePanel] 本地浏览器打开失败:', response?.error);
+            logger.error('[SidePanel] 本地浏览器打开失败:', response?.error);
           }
         });
       }
@@ -618,16 +619,16 @@ export function initPrototypeEvents() {
   
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_UI_PROTOTYPE') {
-      console.log('[SidePanel] 收到显示原型请求:', message);
+      logger.debug('[SidePanel] 收到显示原型请求:', message);
       // 如果已在本地浏览器打开，不自动弹窗（用户可通过圆形按钮手动打开）
       if (!message.data.localOpened) {
         loadAndShowPrototype(message.data.prototypeId);
       } else {
-        console.log('[SidePanel] 原型已在本地浏览器打开，跳过弹窗');
+        logger.debug('[SidePanel] 原型已在本地浏览器打开，跳过弹窗');
       }
       sendResponse({ success: true });
     }
   });
   
-  console.log('[SidePanel] UI 原型模块事件已初始化');
+  logger.debug('[SidePanel] UI 原型模块事件已初始化');
 }

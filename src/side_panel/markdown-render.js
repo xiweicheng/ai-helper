@@ -2,6 +2,7 @@
 
 import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
+import logger from '../shared/logger.js';
 
 /**
  * 格式化 Markdown 文本
@@ -228,9 +229,9 @@ export function downloadTableAsExcel(tableBlock) {
     link.click();
     document.body.removeChild(link);
     
-    console.log('[SidePanel] Excel 下载成功');
+    logger.debug('[SidePanel] Excel 下载成功');
   } catch (error) {
-    console.error('[SidePanel] 下载 Excel 失败:', error);
+    logger.error('[SidePanel] 下载 Excel 失败:', error);
     showToast('下载失败: ' + error.message, 'error');
   }
 }
@@ -282,7 +283,7 @@ async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRI
       // 某些错误重试无意义（如语法错误），直接返回失败
       const noRetry = /(Parse error|syntax error|Lexical error|No diagram type detected)/i;
       if (noRetry.test(detail) || attempt >= retries) {
-        console.error('[SidePanel] Mermaid 渲染失败，原始内容（前300字符）:', originalContent.substring(0, 300));
+        logger.error('[SidePanel] Mermaid 渲染失败，原始内容（前300字符）:', originalContent.substring(0, 300));
         // 恢复原始内容，方便调用方显示友好的错误提示
         container.textContent = originalContent;
         return { success: false, detail, err };
@@ -295,14 +296,14 @@ async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRI
 
 export async function renderMermaidCharts() {
   if (typeof mermaid === 'undefined') {
-    console.warn('[SidePanel] Mermaid 库未加载');
+    logger.warn('[SidePanel] Mermaid 库未加载');
     return;
   }
   
-  console.log('[SidePanel] ===== renderMermaidCharts 开始 =====');
+  logger.debug('[SidePanel] ===== renderMermaidCharts 开始 =====');
   
   const mermaidElements = document.querySelectorAll('.mermaid');
-  console.log('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
+  logger.debug('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
   
   if (mermaidElements.length === 0) {
     return;
@@ -314,17 +315,17 @@ export async function renderMermaidCharts() {
     const result = await renderSingleMermaid(container);
     
     if (result.success) {
-      console.log('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
+      logger.debug('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
       addMermaidControls(container);
     } else {
-      console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
+      logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
       if (!container.querySelector('svg') && !container.querySelector('.mermaid-controls')) {
         container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">图表渲染失败: ${result.detail}</div>`;
       }
     }
   }
   
-  console.log('[SidePanel] ===== renderMermaidCharts 完成 =====');
+  logger.debug('[SidePanel] ===== renderMermaidCharts 完成 =====');
 }
 
 /**
@@ -348,13 +349,13 @@ export function addMermaidControls(container) {
   // 等待 SVG 渲染完成
   const svgElement = container.querySelector('svg');
   if (!svgElement) {
-    console.warn('[SidePanel] SVG 元素未找到，当前内容:', container.innerHTML.substring(0, 100));
+    logger.warn('[SidePanel] SVG 元素未找到，当前内容:', container.innerHTML.substring(0, 100));
     return;
   }
   
-  console.log('[SidePanel] 找到 SVG 元素，开始添加工具栏');
-  console.log('[SidePanel] container 类名:', container.className);
-  console.log('[SidePanel] container HTML:', container.innerHTML.substring(0, 200));
+  logger.debug('[SidePanel] 找到 SVG 元素，开始添加工具栏');
+  logger.debug('[SidePanel] container 类名:', container.className);
+  logger.debug('[SidePanel] container HTML:', container.innerHTML.substring(0, 200));
   
   // 设置 container 为 relative 定位
   container.style.position = 'relative';
@@ -408,8 +409,8 @@ export function addMermaidControls(container) {
   `;
   
   container.appendChild(controls);
-  console.log('[SidePanel] 工具栏 HTML 已添加');
-  console.log('[SidePanel] container 子元素:', Array.from(container.children).map(c => c.className).join(', '));
+  logger.debug('[SidePanel] 工具栏 HTML 已添加');
+  logger.debug('[SidePanel] container 子元素:', Array.from(container.children).map(c => c.className).join(', '));
   
   // 缩放状态 - 支持无限缩放
   let scale = 1;
@@ -539,7 +540,7 @@ export function addMermaidControls(container) {
  */
 export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
   try {
-    console.log('[SidePanel] 开始复制到剪贴板');
+    logger.debug('[SidePanel] 开始复制到剪贴板');
     
     // 获取 SVG 的原始尺寸
     let svgWidth = svgElement.width.baseVal?.value || svgElement.getAttribute('width')?.replace('px', '') || 800;
@@ -553,7 +554,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
       svgHeight = parts[3];
     }
     
-    console.log('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
+    logger.debug('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
     
     // 将 SVG 转换为 base64 编码的 data URL
     const svgData = new XMLSerializer().serializeToString(svgElement);
@@ -588,16 +589,16 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
             navigator.clipboard.write([
               new ClipboardItem({ 'image/png': blob })
             ]).then(() => {
-              console.log('[SidePanel] 图片复制到剪贴板成功');
+              logger.debug('[SidePanel] 图片复制到剪贴板成功');
               showToast('Mermaid 图表已复制到剪贴板！', 'success');
             }).catch(err => {
-              console.error('[SidePanel] 复制到剪贴板失败:', err);
+              logger.error('[SidePanel] 复制到剪贴板失败:', err);
               // 降级：提示用户手动复制或使用下载功能
               showToast('复制失败，您的浏览器可能不支持此功能。请尝试使用下载按钮保存图表。', 'error');
             });
           } else {
             // 降级方案：提示用户
-            console.warn('[SidePanel] Clipboard API 不可用，降级为下载');
+            logger.warn('[SidePanel] Clipboard API 不可用，降级为下载');
             showToast('当前浏览器不支持图片复制功能，已自动转为下载。', 'warning');
             // 自动触发下载
             const downloadLink = document.createElement('a');
@@ -612,13 +613,13 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
     };
     
     img.onerror = function(error) {
-      console.error('[SidePanel] 图片转换失败:', error);
+      logger.error('[SidePanel] 图片转换失败:', error);
       showToast('图片转换失败，请重试', 'error');
     };
     
     img.src = dataUrl;
   } catch (error) {
-    console.error('[SidePanel] 复制到剪贴板失败:', error);
+    logger.error('[SidePanel] 复制到剪贴板失败:', error);
     showToast('复制失败: ' + error.message, 'error');
   }
 }
@@ -628,7 +629,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
  */
 export function downloadMermaidPNG(svgElement, scale) {
   try {
-    console.log('[SidePanel] 开始下载 PNG');
+    logger.debug('[SidePanel] 开始下载 PNG');
     
     // 获取 SVG 的原始尺寸
     let svgWidth = svgElement.width.baseVal?.value || svgElement.getAttribute('width')?.replace('px', '') || 800;
@@ -642,7 +643,7 @@ export function downloadMermaidPNG(svgElement, scale) {
       svgHeight = parts[3];
     }
     
-    console.log('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
+    logger.debug('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
     
     // 将 SVG 转换为 base64 编码的 data URL，避免跨域问题
     const svgData = new XMLSerializer().serializeToString(svgElement);
@@ -652,7 +653,7 @@ export function downloadMermaidPNG(svgElement, scale) {
     const img = new Image();
     
     img.onload = function() {
-      console.log('[SidePanel] SVG 图片加载成功');
+      logger.debug('[SidePanel] SVG 图片加载成功');
       
       const padding = 20;
       const scaleFactor = 2; // 2x 分辨率
@@ -682,18 +683,18 @@ export function downloadMermaidPNG(svgElement, scale) {
         document.body.removeChild(downloadLink);
         URL.revokeObjectURL(pngUrl);
         
-        console.log('[SidePanel] PNG 下载成功');
+        logger.debug('[SidePanel] PNG 下载成功');
       }, 'image/png');
     };
     
     img.onerror = function(error) {
-      console.error('[SidePanel] PNG 转换失败:', error);
+      logger.error('[SidePanel] PNG 转换失败:', error);
       showToast('PNG 转换失败，请重试', 'error');
     };
     
     img.src = dataUrl;
   } catch (error) {
-    console.error('[SidePanel] 下载 PNG 失败:', error);
+    logger.error('[SidePanel] 下载 PNG 失败:', error);
     showToast('下载失败: ' + error.message, 'error');
   }
 }
@@ -797,10 +798,10 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
  * 在消息添加后渲染 mermaid
  */
 export async function renderMessageMermaid(messageDiv) {
-  console.log('[SidePanel] ===== renderMessageMermaid 开始 =====');
+  logger.debug('[SidePanel] ===== renderMessageMermaid 开始 =====');
   
   if (typeof mermaid === 'undefined') {
-    console.warn('[SidePanel] Mermaid 库未加载');
+    logger.warn('[SidePanel] Mermaid 库未加载');
     return;
   }
   
@@ -809,10 +810,10 @@ export async function renderMessageMermaid(messageDiv) {
   
   // 获取消息中所有的 mermaid 元素
   const mermaidElements = messageDiv.querySelectorAll('.mermaid');
-  console.log('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
+  logger.debug('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
   
   if (mermaidElements.length === 0) {
-    console.log('[SidePanel] 未找到 mermaid 元素');
+    logger.debug('[SidePanel] 未找到 mermaid 元素');
     return;
   }
   
@@ -826,21 +827,21 @@ export async function renderMessageMermaid(messageDiv) {
       const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
       
       if (result.success && currentContainer) {
-        console.log('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
+        logger.debug('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
         addMermaidControls(currentContainer);
       } else if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
-        console.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
+        logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
         currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${result.detail}</div>`;
       }
     }
     
-    console.log('[SidePanel] Mermaid 渲染完成');
+    logger.debug('[SidePanel] Mermaid 渲染完成');
     
     // 验证工具栏是否添加成功
     const controls = messageDiv.querySelectorAll('.mermaid-controls');
-    console.log('[SidePanel] 工具栏添加结果:', controls.length, '个成功');
+    logger.debug('[SidePanel] 工具栏添加结果:', controls.length, '个成功');
   } catch (error) {
-    console.error('[SidePanel] Mermaid 渲染整体失败:', error);
+    logger.error('[SidePanel] Mermaid 渲染整体失败:', error);
   }
   
   // 添加代码块复制按钮事件
@@ -895,7 +896,7 @@ function setupCodeCtrlClick() {
       const label = isCodeBlock ? '代码块' : '代码';
       showToast(`${label}已复制到剪贴板`, 'success');
     }).catch((err) => {
-      console.error('[SidePanel] Ctrl+单击复制失败:', err);
+      logger.error('[SidePanel] Ctrl+单击复制失败:', err);
       // 降级方案
       const textArea = document.createElement('textarea');
       textArea.value = codeText;
@@ -909,7 +910,7 @@ function setupCodeCtrlClick() {
     });
   });
 
-  console.log('[SidePanel] Ctrl+单击复制代码事件已绑定');
+  logger.debug('[SidePanel] Ctrl+单击复制代码事件已绑定');
 }
 
 /**
@@ -917,33 +918,33 @@ function setupCodeCtrlClick() {
  */
 export function addCodeCopyButtons() {
   const copyButtons = document.querySelectorAll('.code-copy-btn');
-  console.log('[SidePanel] 找到代码复制按钮数量:', copyButtons.length);
+  logger.debug('[SidePanel] 找到代码复制按钮数量:', copyButtons.length);
   
   copyButtons.forEach((btn, index) => {
     // 避免重复绑定
     if (btn.dataset.bound) {
-      console.log('[SidePanel] 按钮', index, '已绑定，跳过');
+      logger.debug('[SidePanel] 按钮', index, '已绑定，跳过');
       return;
     }
     btn.dataset.bound = 'true';
     
     btn.addEventListener('click', (e) => {
-      console.log('[SidePanel] 代码复制按钮被点击');
+      logger.debug('[SidePanel] 代码复制按钮被点击');
       e.stopPropagation();
       // 从父容器获取代码，而不是全局查询
       const container = btn.closest('.code-block-container');
-      console.log('[SidePanel] 找到容器:', !!container);
+      logger.debug('[SidePanel] 找到容器:', !!container);
       if (container) {
         const codeElement = container.querySelector('pre code');
-        console.log('[SidePanel] 找到代码元素:', !!codeElement);
+        logger.debug('[SidePanel] 找到代码元素:', !!codeElement);
         if (codeElement) {
           const codeText = codeElement.textContent;
-          console.log('[SidePanel] 代码长度:', codeText.length);
+          logger.debug('[SidePanel] 代码长度:', codeText.length);
           copyToClipboard(codeText, btn);
         }
       }
     });
-    console.log('[SidePanel] 已绑定按钮', index);
+    logger.debug('[SidePanel] 已绑定按钮', index);
   });
   
   // 设置 Ctrl+单击复制（只绑定一次）

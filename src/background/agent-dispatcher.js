@@ -4,6 +4,7 @@ import { getTools } from './tool-executor.js';
 import { getStoredConfig } from './config.js';
 import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
+import logger from '../shared/logger.js';
 
 /**
  * 从浏览器存储中读取 Agent 定义
@@ -68,7 +69,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
     };
   }
 
-  console.log('[AgentDispatcher] 调度子 Agent:', subAgentId, '任务:', task.substring(0, 100));
+  logger.debug('[AgentDispatcher] 调度子 Agent:', subAgentId, '任务:', task.substring(0, 100));
 
   // 1. 加载子 Agent 定义
   const agent = await loadAgent(subAgentId);
@@ -80,11 +81,11 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
     };
   }
 
-  console.log('[AgentDispatcher] 子 Agent:', agent.name);
+  logger.debug('[AgentDispatcher] 子 Agent:', agent.name);
 
   // 2. 获取子 Agent 的工具列表
   const agentTools = await getTools(agent.toolIds, agent.id);
-  console.log('[AgentDispatcher] 子 Agent 工具数:', agentTools.length);
+  logger.debug('[AgentDispatcher] 子 Agent 工具数:', agentTools.length);
 
   // 3. 构建子 Agent 消息
   const systemPrompt = buildSubAgentPrompt(agent, task);
@@ -108,7 +109,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
 
     if (agentTools.length > 0) {
       // 有工具可用，走 ReAct 循环（使用派生 sessionId 隔离信令）
-      console.log('[AgentDispatcher] 子 Agent 使用 ReAct 模式，工具数:', agentTools.length, 'subSessionId:', subSessionId);
+      logger.debug('[AgentDispatcher] 子 Agent 使用 ReAct 模式，工具数:', agentTools.length, 'subSessionId:', subSessionId);
       const reactResult = await reactLoop(
         messages, model, agentTools,
         null,  // tabId - sub-agent 不需要 tab 访问
@@ -120,7 +121,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
       result = reactResult.content !== undefined ? reactResult.content : reactResult;
     } else {
       // 无工具，直接调用非流式 API（使用派生 sessionId 隔离信令）
-      console.log('[AgentDispatcher] 子 Agent 使用非流式模式（无工具）, subSessionId:', subSessionId);
+      logger.debug('[AgentDispatcher] 子 Agent 使用非流式模式（无工具）, subSessionId:', subSessionId);
       const apiResult = await callApiNonStream(messages, model, apiParams, subSessionId);
       result = apiResult.content !== undefined ? apiResult.content : apiResult;
     }
@@ -131,7 +132,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
       ? result.substring(0, maxResultLen) + '\n\n... (结果已截断)'
       : result;
 
-    console.log('[AgentDispatcher] 子 Agent 执行完成:', agent.name, '结果长度:', typeof trimmedResult === 'string' ? trimmedResult.length : 'N/A');
+    logger.debug('[AgentDispatcher] 子 Agent 执行完成:', agent.name, '结果长度:', typeof trimmedResult === 'string' ? trimmedResult.length : 'N/A');
 
     return {
       success: true,
@@ -139,7 +140,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
       tool_call_id: toolCallId,
     };
   } catch (error) {
-    console.error('[AgentDispatcher] 子 Agent 执行失败:', error);
+    logger.error('[AgentDispatcher] 子 Agent 执行失败:', error);
     return {
       success: false,
       error: `子 Agent [${agent.name}] 执行失败: ${error.message || error}`,

@@ -6,6 +6,7 @@
  */
 
 import state from './state.js';
+import logger from '../shared/logger.js';
 
 /**
  * 初始化消息目录功能
@@ -15,7 +16,7 @@ export function initMessageToc() {
   document.addEventListener('mouseover', handleMouseOver, true);
   document.addEventListener('mouseout', handleMouseOut, true);
   
-  console.log('[SidePanel] 消息目录功能已初始化');
+  logger.debug('[SidePanel] 消息目录功能已初始化');
 }
 
 /**

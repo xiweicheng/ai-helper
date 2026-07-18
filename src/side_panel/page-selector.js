@@ -2,6 +2,7 @@
 import state from './state.js';
 import { escapeHtml, adjustInputHeight } from './utils.js';
 import { hideAgentAtSelector } from './agent-at-selector.js';
+import logger from '../shared/logger.js';
 
 /**
  * 获取当前窗口所有打开的标签页
@@ -11,7 +12,7 @@ export async function getOpenTabs() {
     const tabs = await chrome.tabs.query({ currentWindow: true });
     return tabs;
   } catch (err) {
-    console.error('[PageSelector] 获取标签页失败:', err);
+    logger.error('[PageSelector] 获取标签页失败:', err);
     return [];
   }
 }
@@ -149,7 +150,7 @@ function selectPageByTabId(tabId) {
   // 通过代理获取 tab 信息
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
-      console.error('[PageSelector] 获取标签页信息失败:', chrome.runtime.lastError);
+      logger.error('[PageSelector] 获取标签页信息失败:', chrome.runtime.lastError);
       return;
     }
 

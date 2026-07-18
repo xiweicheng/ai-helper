@@ -1,6 +1,7 @@
 // options/config-manager.js - 配置管理与状态
 
 import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import logger from '../shared/logger.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -228,7 +229,7 @@ export function saveCustomModels() {
     });
   });
   chrome.storage.local.set({ customModels, deletedPresetModels }, () => {
-    console.log('[Options] 自定义模型已保存:', customModels, '已删除预设:', deletedPresetModels);
+    logger.debug('[Options] 自定义模型已保存:', customModels, '已删除预设:', deletedPresetModels);
   });
 }
 
@@ -357,7 +358,7 @@ export function loadCustomModels(callback) {
       // 如果存在旧格式数据，自动迁移为新格式
       if (needsMigration) {
         saveCustomModels();
-        console.log('[Options] 自定义模型已自动迁移为新格式');
+        logger.debug('[Options] 自定义模型已自动迁移为新格式');
       }
       
       // 调用回调函数
@@ -525,7 +526,7 @@ export function saveImageModels() {
     });
   });
   chrome.storage.local.set({ imageModels }, () => {
-    console.log('[Options] 图片识别模型已保存:', imageModels);
+    logger.debug('[Options] 图片识别模型已保存:', imageModels);
   });
 }
 
@@ -593,7 +594,7 @@ export function loadImageModels(callback) {
     // 如果存在旧格式数据，自动迁移
     if (needsMigration) {
       saveImageModels();
-      console.log('[Options] 图片识别模型已自动迁移为新格式');
+      logger.debug('[Options] 图片识别模型已自动迁移为新格式');
     }
 
     if (typeof callback === 'function') {
@@ -736,7 +737,7 @@ export function saveApiBases() {
     customApiBases: customBases,
     deletedPresetApiBases
   }, () => {
-    console.log('[Options] API Base URL 列表已保存:', customBases, '已删除预设:', deletedPresetApiBases);
+    logger.debug('[Options] API Base URL 列表已保存:', customBases, '已删除预设:', deletedPresetApiBases);
   });
 }
 
@@ -899,7 +900,7 @@ export function saveImageApiBases() {
     customImageApiBases: customBases,
     deletedPresetImageApiBases
   }, () => {
-    console.log('[Options] 图片 API Base URL 列表已保存:', customBases);
+    logger.debug('[Options] 图片 API Base URL 列表已保存:', customBases);
   });
 }
 

@@ -9,6 +9,7 @@ import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
+import logger from '../shared/logger.js';
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
 // 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）
@@ -18,10 +19,10 @@ cleanupExpiredReactCheckpoints()
     return getAllReactCheckpoints();
   })
   .then(all => {
-    console.log(`[Background] DB 自检通过，当前有 ${all.length} 个 checkpoint`);
+    logger.debug(`[Background] DB 自检通过，当前有 ${all.length} 个 checkpoint`);
   })
   .catch(err => {
-    console.warn('[Background] 清理过期 checkpoint 或 DB 自检失败:', err);
+    logger.warn('[Background] 清理过期 checkpoint 或 DB 自检失败:', err);
   });
 
 // chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
@@ -43,11 +44,11 @@ chrome.runtime.onConnect.addListener(async (port) => {
     // 判断是否为重连（SW 重启后的重连），而非首次连接
     const isReconnection = keepalivePorts.has(sessionId);
     keepalivePorts.set(sessionId, port);
-    console.log('[Background] keepalive 端口已连接, sessionId:', sessionId, isReconnection ? '(重连)' : '(首次)');
+    logger.debug('[Background] keepalive 端口已连接, sessionId:', sessionId, isReconnection ? '(重连)' : '(首次)');
 
     // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
     if (isReconnection && !activeReactLoops.has(sessionId)) {
-      console.warn('[Background] ⚠️ 检测到 SW 已重启，sessionId', sessionId, '的 API 调用已丢失');
+      logger.warn('[Background] ⚠️ 检测到 SW 已重启，sessionId', sessionId, '的 API 调用已丢失');
       // 检查是否存在 checkpoint，若存在则在通知中带上元数据，供前端展示"继续执行"按钮
       let checkpointMeta = null;
       try {
@@ -60,21 +61,21 @@ chrome.runtime.onConnect.addListener(async (port) => {
             messageCount: cp.currentMessages?.length || 0,
             subtaskPlan: cp.subtaskPlan ? { subtaskCount: cp.subtaskPlan.subtasks?.length || 0 } : null,
           };
-          console.log('[Background] 检测到可恢复的 checkpoint:', checkpointMeta);
+          logger.debug('[Background] 检测到可恢复的 checkpoint:', checkpointMeta);
         }
       } catch (e) {
-        console.warn('[Background] 读取 checkpoint 失败:', e.message);
+        logger.warn('[Background] 读取 checkpoint 失败:', e.message);
       }
       try {
         port.postMessage({ type: 'SW_RESTARTED', sessionId, checkpoint: checkpointMeta });
       } catch (e) {
-        console.warn('[Background] 发送 SW_RESTARTED 消息失败:', e.message);
+        logger.warn('[Background] 发送 SW_RESTARTED 消息失败:', e.message);
       }
     }
 
     port.onDisconnect.addListener(() => {
       keepalivePorts.delete(sessionId);
-      console.log('[Background] keepalive 端口已断开, sessionId:', sessionId);
+      logger.debug('[Background] keepalive 端口已断开, sessionId:', sessionId);
     });
   }
 });
@@ -192,7 +193,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
     }).catch(err => {
-      console.warn('[Background] GET_CHECKPOINT 查询失败:', err);
+      logger.warn('[Background] GET_CHECKPOINT 查询失败:', err);
       sendResponse({ exists: false });
     });
     return true;  // 异步响应
@@ -205,7 +206,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       deleteReactCheckpoint(sessionId).then(ok => {
         sendResponse({ success: ok });
       }).catch(err => {
-        console.warn('[Background] DELETE_CHECKPOINT 失败:', err);
+        logger.warn('[Background] DELETE_CHECKPOINT 失败:', err);
         sendResponse({ success: false });
       });
     } else {
@@ -223,7 +224,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
     }
 
-    console.log('[Background] 收到 RESUME_REACT，sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)');
+    logger.debug('[Background] 收到 RESUME_REACT，sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)');
 
     // 如果旧任务仍在运行（页面刷新后 SW 中的 reactLoop 可能还在），
     // 先取消旧任务，避免两个 reactLoop 同时运行导致状态冲突
@@ -253,10 +254,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .then(result => {
         // checkpoint 不存在或恢复失败返回 null
         if (!result) {
-          console.warn('[Background] RESUME_REACT: 未找到 checkpoint 或恢复失败');
+          logger.warn('[Background] RESUME_REACT: 未找到 checkpoint 或恢复失败');
           // 收集诊断信息，帮助定位问题
           getReactCheckpoint(sessionId).then(cp => {
-            console.warn('[Background] RESUME_REACT: 再次查询 checkpoint 结果:', cp ? '存在' : '不存在');
+            logger.warn('[Background] RESUME_REACT: 再次查询 checkpoint 结果:', cp ? '存在' : '不存在');
           }).catch(() => {});
           chrome.runtime.sendMessage({
             type: 'API_ERROR',
@@ -268,7 +269,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }).catch(() => {});
           return;
         }
-        console.log('[Background] RESUME_REACT 完成，内容长度:', result.content?.length);
+        logger.debug('[Background] RESUME_REACT 完成，内容长度:', result.content?.length);
         const truncatedLog = (result.executionLog || []).length > MAX_LOG_ENTRIES_FOR_MSG
           ? result.executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
           : (result.executionLog || []);
@@ -283,12 +284,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           wasRevised: result.wasRevised || false,
           resumed: true,  // 标记为恢复的任务
         }).catch(err => {
-          console.warn('[Background] 发送 RESUME 完成消息失败:', err);
+          logger.warn('[Background] 发送 RESUME 完成消息失败:', err);
         });
       })
       .catch(error => {
         const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
-        console.log('[Background] RESUME_REACT 失败:', isAborted ? '(用户取消)' : error.message);
+        logger.debug('[Background] RESUME_REACT 失败:', isAborted ? '(用户取消)' : error.message);
         const errLog = error.executionLog || [];
         const truncatedErrLog = errLog.length > MAX_LOG_ENTRIES_FOR_MSG ? errLog.slice(-MAX_LOG_ENTRIES_FOR_MSG) : errLog;
         chrome.runtime.sendMessage({
@@ -303,7 +304,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     };  // doResume 函数结束
 
     if (cancelOldTask) {
-      console.log('[Background] RESUME_REACT: 检测到旧任务仍在运行，先取消');
+      logger.debug('[Background] RESUME_REACT: 检测到旧任务仍在运行，先取消');
       cancelReactLoop(sessionId);
       cancelRunningAgentCommands(sessionId);
       // 给旧任务一点时间清理后再恢复
@@ -338,7 +339,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 带缓存的重载：30 秒内复用上次结果，避免每次查询都向 Agent 发网络请求
     const now = Date.now();
     if (mcpToolsCache && (now - mcpToolsCache.loadedAt) < 30000) {
-      console.log(`[Background] GET_MCP_TOOLS 使用缓存（${mcpToolsCache.tools.length} 个工具，${Math.round((now - mcpToolsCache.loadedAt) / 1000)}s 前）`);
+      logger.debug(`[Background] GET_MCP_TOOLS 使用缓存（${mcpToolsCache.tools.length} 个工具，${Math.round((now - mcpToolsCache.loadedAt) / 1000)}s 前）`);
       sendResponse({ success: true, tools: mcpToolsCache.tools });
       return true;
     }
@@ -356,7 +357,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           enabled: true
         }));
       mcpToolsCache = { tools: mcpTools, loadedAt: Date.now() };
-      console.log(`[Background] GET_MCP_TOOLS 返回 ${mcpTools.length} 个工具（共重载 ${count} 个）`);
+      logger.debug(`[Background] GET_MCP_TOOLS 返回 ${mcpTools.length} 个工具（共重载 ${count} 个）`);
       sendResponse({ success: true, tools: mcpTools });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
@@ -398,7 +399,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CAPTURE_TAB') {
     chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 100 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 截图失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 截图失败:', chrome.runtime.lastError.message);
         sendResponse({ error: chrome.runtime.lastError.message });
       } else {
         sendResponse({ dataUrl });
@@ -410,7 +411,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CAPTURE_TAB_FROM_PAGE') {
     chrome.tabs.captureVisibleTab(null, { format: 'jpeg', quality: 100 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 页面快捷键截图失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 页面快捷键截图失败:', chrome.runtime.lastError.message);
       } else {
         chrome.runtime.sendMessage({ type: 'SCREENSHOT_RESULT', dataUrl, mode: 'full' }).catch(() => {});
       }
@@ -429,7 +430,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
         if (chrome.runtime.lastError) {
-          console.error('[Background] 区域截图失败:', chrome.runtime.lastError.message);
+          logger.error('[Background] 区域截图失败:', chrome.runtime.lastError.message);
         } else {
           chrome.runtime.sendMessage({ type: 'SCREENSHOT_RESULT', dataUrl, mode: 'region', rect }).catch(() => {});
         }
@@ -472,7 +473,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     chrome.runtime.sendMessage(initialStatus).catch(() => {});
     
-    console.log('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
+    logger.debug('[Background] 收到 CALL_API 消息，sessionId:', sessionId, 'useTools:', useTools, 'tabId:', tabId, 'apiParams:', apiParams);
     
     const apiCall = useTools 
       ? (async () => {
@@ -480,11 +481,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
-            console.log('[Background] 没有可用工具，跳过预筛选，直接普通对话');
+            logger.debug('[Background] 没有可用工具，跳过预筛选，直接普通对话');
             return callApiNonStream(messages, model, apiParams, sessionId, {}, callId);
           }
 
-          console.log(`[Background] 获取到 ${tools.length} 个工具`);
+          logger.debug(`[Background] 获取到 ${tools.length} 个工具`);
 
           // 检查工具预筛选开关
           const config = await getStoredConfig();
@@ -495,7 +496,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (enableToolPreselect) {
             preselection = await preselectTools(messages, model, tools, apiParams);
           } else {
-            console.log('[Background] 工具预筛选已关闭，使用全量工具');
+            logger.debug('[Background] 工具预筛选已关闭，使用全量工具');
             preselection = {
               type: 'tools',
               tools,
@@ -517,23 +518,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (callId) {
               statusUpdate.callId = callId;
             }
-            console.log('[Background] 发送预筛选状态更新:', statusUpdate);
+            logger.debug('[Background] 发送预筛选状态更新:', statusUpdate);
             chrome.runtime.sendMessage(statusUpdate).then(() => {
-              console.log('[Background] 预筛选状态更新发送成功');
+              logger.debug('[Background] 预筛选状态更新发送成功');
             }).catch(err => {
-              console.error('[Background] 预筛选状态更新发送失败:', err);
+              logger.error('[Background] 预筛选状态更新发送失败:', err);
             });
           }
 
           // 模型直接回答了，无需再调主力模型
           if (preselection.type === 'answer') {
-            console.log('[Background] 预筛选模型直接回答，跳过主力模型调用');
+            logger.debug('[Background] 预筛选模型直接回答，跳过主力模型调用');
             return { content: preselection.content, executionLog: preselection.executionLog };
           }
 
           const { tools: selectedTools, executionLog: preselectLog } = preselection;
-          console.log(`[Background] 预筛选后 ${selectedTools.length} 个工具`);
-          console.log('[Background] 预筛选执行日志:', JSON.stringify(preselectLog).substring(0, 500));
+          logger.debug(`[Background] 预筛选后 ${selectedTools.length} 个工具`);
+          logger.debug('[Background] 预筛选执行日志:', JSON.stringify(preselectLog).substring(0, 500));
 
           // 发送预筛选日志到 Side Panel，使其在流式输出过程中也能看到
           if (preselectLog.length > 0) {
@@ -547,7 +548,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           // 自动预加载长期记忆：检查 messages 中是否已有记忆内容，避免重复注入
           const reactResult = await reactLoop(messages, model, selectedTools, tabId, apiParams, sessionId, null, null, { value: 1 }, preselectLog, callId);
-          console.log('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
+          logger.debug('[Background] ReAct 完成，executionLog 总条数:', reactResult.executionLog?.length);
           return {
             content: reactResult.content !== undefined ? reactResult.content : reactResult,
             executionLog: reactResult.executionLog || preselectLog,
@@ -577,7 +578,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }).catch(() => {});
         }
         
-        console.log('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
+        logger.debug('[Background] API 调用完成，内容长度:', content.length, '执行日志条目数:', executionLog.length);
         // 安全截断：防止 executionLog 超过 chrome.runtime.sendMessage 的 64MiB 限制
         const truncatedLog = executionLog.length > MAX_LOG_ENTRIES_FOR_MSG
           ? executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
@@ -592,15 +593,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           reasoningContent: reasoningContent,
           wasRevised: wasRevised
         }).catch(err => {
-          console.warn('[Background] 发送回传消息失败:', err);
+          logger.warn('[Background] 发送回传消息失败:', err);
         });
       })
       .catch(error => {
         const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
         if (isAborted) {
-          console.log('[Background] API 调用已被用户取消');
+          logger.debug('[Background] API 调用已被用户取消');
         } else {
-          console.error('[Background] API 调用失败:', error.message || error);
+          logger.error('[Background] API 调用失败:', error.message || error);
         }
         // 获取 executionLog（如果可用），安全截断防止 64MiB 限制
         const errExecutionLog = error.executionLog || [];
@@ -614,7 +615,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           error: error.message || 'API 调用失败',
           executionLog: truncatedErrLog
         }).catch(err => {
-          console.warn('[Background] 发送错误消息失败:', err);
+          logger.warn('[Background] 发送错误消息失败:', err);
         });
       });
     
@@ -658,14 +659,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     const frameId = sender.frameId;
     
-    console.log('[Background] 收到选中文本工具栏操作:', action, 'tabId:', tabId);
+    logger.debug('[Background] 收到选中文本工具栏操作:', action, 'tabId:', tabId);
     
     // AI搜索：打开侧边栏，在侧边栏中发起搜索
     if (action === 'ai-search') {
       // 在消息处理器中直接调用 sidePanel.open（必须在任何 await 之前，保留用户手势上下文）
       if (tabId) {
         chrome.sidePanel.open({ tabId }).catch(err => {
-          console.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
+          logger.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
         });
       }
       handleSelectionSearch(prompt, text, tabId);
@@ -712,7 +713,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }).catch(() => {});
           }
 
-          console.log('[Background] 选中文本工具栏流式 API 完成，内容长度:', content.length);
+          logger.debug('[Background] 选中文本工具栏流式 API 完成，内容长度:', content.length);
         } else {
           // 非流式模式：等待完整结果后一次性返回
           const result = await callApiNonStream(messages, config.modelName, {});
@@ -728,19 +729,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }).catch(() => {});
           }
 
-          console.log('[Background] 选中文本工具栏 API 完成，内容长度:', content.length);
+          logger.debug('[Background] 选中文本工具栏 API 完成，内容长度:', content.length);
 
           if (tabId) {
             chrome.tabs.sendMessage(tabId, {
               type: 'SELECTION_TOOLBAR_RESULT',
               content: content
             }, { frameId }).catch(() => {
-              console.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
+              logger.warn('[Background] 发送 SELECTION_TOOLBAR_RESULT 到 tab 失败');
             });
           }
         }
       } catch (error) {
-        console.error('[Background] 选中文本工具栏 API 失败:', error);
+        logger.error('[Background] 选中文本工具栏 API 失败:', error);
         
         if (tabId) {
           chrome.tabs.sendMessage(tabId, {
@@ -758,12 +759,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'FILL_SIDEPANEL_INPUT') {
     const tabId = sender.tab?.id;
     const text = message.text;
-    console.log('[Background] 收到追问填充请求:', text?.substring(0, 50));
+    logger.debug('[Background] 收到追问填充请求:', text?.substring(0, 50));
     
     // 打开侧边栏
     if (tabId) {
       chrome.sidePanel.open({ tabId }).catch(err => {
-        console.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
+        logger.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
       });
     }
     
@@ -780,7 +781,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       type: 'FILL_SIDEPANEL_INPUT',
       text: text
     }).catch(() => {
-      console.log('[Background] Side Panel 未打开，填充内容已存储，等待 Side Panel 加载');
+      logger.debug('[Background] Side Panel 未打开，填充内容已存储，等待 Side Panel 加载');
     });
     
     return false;
@@ -806,12 +807,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tabId = sender.tab?.id;
     const text = message.text;
     const selectedText = message.selectedText || '';
-    console.log('[Background] 收到直接发送请求:', text?.substring(0, 50));
+    logger.debug('[Background] 收到直接发送请求:', text?.substring(0, 50));
     
     // 打开侧边栏
     if (tabId) {
       chrome.sidePanel.open({ tabId }).catch(err => {
-        console.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
+        logger.warn('[Background] 打开 Side Panel 失败:', err?.message || err);
       });
     }
     
@@ -830,7 +831,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       text: text,
       selectedText: selectedText
     }).catch(() => {
-      console.log('[Background] Side Panel 未打开，发送内容已存储，等待 Side Panel 加载');
+      logger.debug('[Background] Side Panel 未打开，发送内容已存储，等待 Side Panel 加载');
     });
     
     return false;
@@ -869,13 +870,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const dirPath = message.path.replace(/\/[^/]+\.html$/, '');
         const result = await AgentClient.deleteFile(dirPath);
         if (result.success) {
-          console.log('[Background] 本地原型文件已删除:', dirPath);
+          logger.debug('[Background] 本地原型文件已删除:', dirPath);
         } else {
-          console.warn('[Background] 本地原型文件删除失败:', result.error);
+          logger.warn('[Background] 本地原型文件删除失败:', result.error);
         }
         sendResponse(result);
       } catch (err) {
-        console.warn('[Background] 本地原型文件删除失败:', err.message);
+        logger.warn('[Background] 本地原型文件删除失败:', err.message);
         sendResponse({ success: false, error: err.message });
       }
     })();
@@ -885,7 +886,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // 处理选中文本的 AI 搜索：存储搜索结果并通知 Side Panel
 async function handleSelectionSearch(prompt, selectedText, tabId) {
-  console.log('[Background] 处理选中文本 AI 搜索:', prompt.substring(0, 50) + '...');
+  logger.debug('[Background] 处理选中文本 AI 搜索:', prompt.substring(0, 50) + '...');
   
   // 存储待处理的搜索内容到 session storage
   await chrome.storage.session.set({
@@ -902,7 +903,7 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
     prompt: prompt,
     selectedText: selectedText
   }).catch(() => {
-    console.log('[Background] Side Panel 未打开，搜索内容已存储，等待 Side Panel 加载');
+    logger.debug('[Background] Side Panel 未打开，搜索内容已存储，等待 Side Panel 加载');
   });
 }
 
@@ -910,7 +911,7 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
  * 通过 CDP Page.printToPDF 生成 PDF
  */
 async function handleGeneratePdf(tabId, options) {
-  console.log('[Background] 开始生成 PDF, tabId:', tabId, 'options:', JSON.stringify(options));
+  logger.debug('[Background] 开始生成 PDF, tabId:', tabId, 'options:', JSON.stringify(options));
 
   // 附加 debugger 到目标标签页
   return new Promise((resolve) => {
@@ -941,7 +942,7 @@ async function handleGeneratePdf(tabId, options) {
             return;
           }
 
-          console.log('[Background] PDF 生成成功，数据大小:', result.data.length, '字符');
+          logger.debug('[Background] PDF 生成成功，数据大小:', result.data.length, '字符');
           resolve({
             success: true,
             data: result.data
@@ -993,23 +994,23 @@ async function performAgentHealthCheck() {
       AgentClient.setAgentReachable(connected);
       const status = connected ? 'connected' : 'disconnected';
       const detail = connected ? '代理服务已恢复' : '代理服务不可达';
-      console.log(`[Background] 代理健康检查状态变化: ${detail}`);
+      logger.debug(`[Background] 代理健康检查状态变化: ${detail}`);
       notifyAgentStatusChange(connected, status);
 
       // Agent 连接恢复时，重新加载 MCP 工具
       if (connected) {
         loadMcpTools().then(count => {
-          if (count > 0) console.log(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
+          if (count > 0) logger.debug(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
         }).catch(() => {});
       } else {
         // Agent 断开时清理 MCP 工具状态和缓存
         await unloadMcpTools();
         mcpToolsCache = null;
-        console.log('[Background] Agent 断开，已清理 MCP 工具');
+        logger.debug('[Background] Agent 断开，已清理 MCP 工具');
       }
     }
   } catch (err) {
-    console.warn('[Background] 代理健康检查异常:', err.message);
+    logger.warn('[Background] 代理健康检查异常:', err.message);
   }
 }
 
@@ -1031,7 +1032,7 @@ function notifyAgentStatusChange(connected, status) {
  */
 function startAgentHealthCheck() {
   stopAgentHealthCheck();
-  console.log('[Background] 启动 Agent 健康检查（30s 间隔）');
+  logger.debug('[Background] 启动 Agent 健康检查（30s 间隔）');
   
   // 立即执行一次
   performAgentHealthCheck();

@@ -6,6 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
+import { showToast } from './utils.js';
 import {
   createSession,
   switchToSession,
@@ -13,8 +14,10 @@ import {
   renameSession,
   loadSessions,
   saveCurrentSession,
-  reorderSessions
+  reorderSessions,
+  duplicateSession
 } from './session-manager.js';
+import logger from '../shared/logger.js';
 
 // ==================== 下拉面板状态 ====================
 let dropdownState = {
@@ -429,6 +432,23 @@ function renderDropdownList() {
     titleSpan.textContent = session.title || '新会话';
     item.appendChild(titleSpan);
 
+    // 操作按钮容器（复制 + 关闭）
+    const actionsWrapper = document.createElement('span');
+    actionsWrapper.className = 'session-dropdown-item-actions';
+
+    // 复制会话按钮
+    const duplicateBtn = document.createElement('span');
+    duplicateBtn.className = 'session-dropdown-item-duplicate';
+    duplicateBtn.title = '复制会话';
+    duplicateBtn.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"></rect><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"></path></svg>`;
+    duplicateBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeDropdown();
+      await handleDuplicateSession(session.id);
+    });
+    actionsWrapper.appendChild(duplicateBtn);
+
     // 关闭按钮
     const closeBtn = document.createElement('span');
     closeBtn.className = 'session-dropdown-item-close';
@@ -439,7 +459,9 @@ function renderDropdownList() {
       e.preventDefault();
       await handleDropdownCloseSession(session.id);
     });
-    item.appendChild(closeBtn);
+    actionsWrapper.appendChild(closeBtn);
+
+    item.appendChild(actionsWrapper);
 
     // 点击切换会话
     item.addEventListener('click', async (e) => {
@@ -721,6 +743,27 @@ async function handleSessionSwitch(sessionId) {
   updateToolsToggleState();
 }
 
+// ==================== 会话复制（对话分支） ====================
+
+/**
+ * 复制指定会话并切换到新会话
+ * 用于两个入口：右键菜单、下拉列表项的复制按钮
+ * @param {string} sourceSessionId - 源会话 ID
+ */
+async function handleDuplicateSession(sourceSessionId) {
+  if (!sourceSessionId) return;
+  try {
+    showToast('正在复制会话...', 'info', 1500);
+    const newSession = await duplicateSession(sourceSessionId);
+    // 复制完成后切换到新会话（handleSessionSwitch 会处理 state 更新、事件派发、UI 重新渲染）
+    await handleSessionSwitch(newSession.id);
+    showToast(`已复制会话「${newSession.title}」`, 'success');
+  } catch (err) {
+    logger.error('[SessionUI] 复制会话失败:', err);
+    showToast(`复制会话失败: ${err.message}`, 'error');
+  }
+}
+
 // ==================== UI 控件更新 ====================
 
 /**
@@ -872,6 +915,13 @@ function showTabContextMenu(event, session) {
     showRenameModal(session);
   });
   menu.appendChild(renameItem);
+
+  // 复制会话（对话分支）
+  const duplicateItem = createMenuItem('复制会话', () => {
+    menu.remove();
+    handleDuplicateSession(session.id);
+  });
+  menu.appendChild(duplicateItem);
 
   // 删除
   const deleteItem = createMenuItem('删除', () => {

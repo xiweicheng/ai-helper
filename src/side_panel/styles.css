@@ -1635,6 +1635,40 @@ body {
   background: rgba(229, 62, 62, 0.1);
 }
 
+/* 下拉列表项操作按钮容器（复制 + 关闭） */
+.session-dropdown-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 下拉列表项复制按钮 */
+.session-dropdown-item-duplicate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #bbb;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.session-dropdown-item:hover .session-dropdown-item-duplicate,
+.session-dropdown-item.highlighted .session-dropdown-item-duplicate {
+  opacity: 1;
+  visibility: visible;
+}
+
+.session-dropdown-item-duplicate:hover {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
 .session-dropdown-footer {
   position: sticky;
   bottom: 0;

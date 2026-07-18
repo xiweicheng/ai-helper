@@ -1,6 +1,7 @@
 // side_panel/skill-selector.js - 技能选择器（提示词下拉框中的技能 Tab）
 import state from './state.js';
 import { escapeHtml } from './utils.js';
+import logger from '../shared/logger.js';
 
 // 技能列表缓存
 let skillListCache = [];
@@ -161,7 +162,7 @@ export function selectSkill(skillName, skills) {
   if (promptSelector) promptSelector.style.display = 'none';
   if (promptDropdown) promptDropdown.classList.remove('show');
 
-  console.log('[SidePanel] 已选中技能:', skill.name);
+  logger.debug('[SidePanel] 已选中技能:', skill.name);
 }
 
 /**
@@ -176,7 +177,7 @@ export function clearSkillSelection() {
     indicator.style.display = 'none';
   }
 
-  console.log('[SidePanel] 已清除技能选择');
+  logger.debug('[SidePanel] 已清除技能选择');
 }
 
 /**
@@ -454,7 +455,7 @@ export function selectMcpService(serverId, serverName, services) {
   if (promptSelector) promptSelector.style.display = 'none';
   if (promptDropdown) promptDropdown.classList.remove('show');
 
-  console.log('[SidePanel] 已选中 MCP 服务:', serverName);
+  logger.debug('[SidePanel] 已选中 MCP 服务:', serverName);
 }
 
 /**
@@ -469,7 +470,7 @@ export function clearMcpService() {
     indicator.style.display = 'none';
   }
 
-  console.log('[SidePanel] 已清除 MCP 服务选择');
+  logger.debug('[SidePanel] 已清除 MCP 服务选择');
 }
 
 /**

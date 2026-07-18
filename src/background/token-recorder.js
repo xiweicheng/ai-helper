@@ -3,6 +3,7 @@
 
 import { recordTokenCall } from '../storage/token-store.js';
 import { getContextWindow } from '../shared/token-counter.js';
+import logger from '../shared/logger.js';
 
 /**
  * 记录单次 API 调用的 token 使用
@@ -29,6 +30,6 @@ export async function recordTokenUsage({ sessionId, model, usage, callType }) {
     });
   } catch (err) {
     // 静默失败，不影响主流程
-    console.warn('[TokenRecorder] 记录 token 统计失败:', err.message);
+    logger.warn('[TokenRecorder] 记录 token 统计失败:', err.message);
   }
 }

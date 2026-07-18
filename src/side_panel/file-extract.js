@@ -5,6 +5,7 @@ import state from './state.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import logger from '../shared/logger.js';
 
 // 配置 PDF.js Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
@@ -201,7 +202,7 @@ export async function processFile(file, index) {
         renderFilePreviews();
         return;
       } catch (agentErr) {
-        console.warn('[FileExtract] Agent 上传失败，降级到浏览器端提取:', agentErr.message);
+        logger.warn('[FileExtract] Agent 上传失败，降级到浏览器端提取:', agentErr.message);
       }
     }
 
@@ -216,7 +217,7 @@ export async function processFile(file, index) {
     fileEntry.text = await extractFileContent(file);
     fileEntry.status = 'done';
   } catch (err) {
-    console.error('[FileExtract] 文件提取失败:', file.name, err);
+    logger.error('[FileExtract] 文件提取失败:', file.name, err);
     fileEntry.status = 'error';
     fileEntry.error = err.message;
   }

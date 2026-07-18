@@ -4,13 +4,14 @@
 
 import * as idb from './db.js';
 import state from '../side_panel/state.js';
+import logger from '../shared/logger.js';
 
 // 会话删除时需要同步清理对应的 ReAct checkpoint
 async function cleanupCheckpointForSession(sessionId) {
   try {
     await idb.deleteReactCheckpoint(sessionId);
   } catch (e) {
-    console.warn('[session-store] 清理 ReAct checkpoint 失败:', e);
+    logger.warn('[session-store] 清理 ReAct checkpoint 失败:', e);
   }
 }
 
@@ -45,11 +46,11 @@ async function cleanupOrphanScrollPositions() {
 
     if (orphanKeys.length > 0) {
       await chrome.storage.local.remove(orphanKeys);
-      console.log(`[session-store] 清理了 ${orphanKeys.length} 个孤儿 scrollPosition key:`, orphanKeys);
+      logger.debug(`[session-store] 清理了 ${orphanKeys.length} 个孤儿 scrollPosition key:`, orphanKeys);
     }
   } catch (e) {
     // 非关键路径，静默失败
-    console.warn('[session-store] 清理孤儿 scrollPosition 失败:', e);
+    logger.warn('[session-store] 清理孤儿 scrollPosition 失败:', e);
   }
 }
 
@@ -263,7 +264,7 @@ export async function switchToSession(sessionId) {
 
   const targetSession = await idb.getSession(sessionId);
   if (!targetSession) {
-    console.error('[SessionStore] 找不到会话:', sessionId);
+    logger.error('[SessionStore] 找不到会话:', sessionId);
     return false;
   }
 
@@ -288,7 +289,7 @@ export async function switchToSession(sessionId) {
     state.generatingSessionIds.add(sessionId);
   } else if (targetSession.isGenerating) {
     // DB 中有生成标记但实际无后台任务，异步清理过期状态（不阻塞切换）
-    console.log('[SessionStore] 检测到过期的 isGenerating 标记，异步清理:', sessionId);
+    logger.debug('[SessionStore] 检测到过期的 isGenerating 标记，异步清理:', sessionId);
     (async () => {
       try {
         const session = await idb.getSession(sessionId);
@@ -297,7 +298,7 @@ export async function switchToSession(sessionId) {
           await idb.putSession(session);
         }
       } catch (e) {
-        console.warn('[SessionStore] 清理过期 isGenerating 标记失败:', e);
+        logger.warn('[SessionStore] 清理过期 isGenerating 标记失败:', e);
       }
     })();
   }
@@ -462,6 +463,55 @@ export async function restoreArchivedSession(archivedId) {
     archiveSessions.splice(archiveIdx, 1);
   }
   await idb.replaceArchivedSessions(archiveSessions);
+
+  return newSession;
+}
+
+/**
+ * 复制会话（完整快照，作为对话分支使用）
+ * 完整继承源会话的消息历史与配置（模型/工具/Agent/温度等）
+ * @param {string} sourceSessionId - 源会话 ID
+ * @returns {Promise<Object>} 新创建的会话
+ */
+export async function duplicateSession(sourceSessionId) {
+  await init();
+
+  const source = await idb.getSession(sourceSessionId);
+  if (!source) throw new Error('源会话不存在');
+
+  const newSessionId = generateSessionId();
+  const now = new Date().toISOString();
+
+  // 完整复制消息历史，深拷贝避免引用共享；重新生成 messageId 避免冲突
+  const clonedMessages = (source.messageHistory || []).map((msg) => ({
+    ...msg,
+    executionLog: Array.isArray(msg.executionLog) ? [...msg.executionLog] : [],
+    contextBubbles: Array.isArray(msg.contextBubbles) ? [...msg.contextBubbles] : undefined,
+    // 重新生成 messageId（遵循项目约定：所有消息必须有唯一 messageId）
+    messageId: 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8),
+  }));
+
+  const newSession = {
+    ...source,
+    id: newSessionId,
+    title: `${source.title || '新会话'} - 副本`,
+    messageHistory: clonedMessages,
+    // 重置运行时状态
+    isGenerating: false,
+    lastExecutionLog: [],
+    scrollPosition: 0,
+    createdAt: now,
+    updatedAt: now,
+    order: Date.now(),
+    // 分支元数据：仅记录来源，暂不做复杂分支功能
+    forkMetadata: {
+      sourceSessionId,
+      forkedAt: now,
+    },
+  };
+
+  await idb.putSession(newSession);
+  await idb.setActiveSessionId(newSessionId);
 
   return newSession;
 }

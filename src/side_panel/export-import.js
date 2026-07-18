@@ -5,6 +5,7 @@ import state from './state.js';
 import { showToast, escapeHtml } from './utils.js';
 import { loadSessions, importSessions } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
+import logger from '../shared/logger.js';
 
 /**
  * 显示导出会话选择弹窗
@@ -77,7 +78,7 @@ export async function showExportDialog() {
       updateSelectedCount();
     }
   } catch (err) {
-    console.error('[SidePanel] 加载会话列表失败:', err);
+    logger.error('[SidePanel] 加载会话列表失败:', err);
     listEl.innerHTML = '<div class="export-sessions-empty">加载失败</div>';
   }
 
@@ -170,10 +171,10 @@ export async function performExport() {
     URL.revokeObjectURL(url);
 
     hideExportDialog();
-    console.log('[SidePanel] 会话已导出:', fileName, '共', count, '个会话');
+    logger.debug('[SidePanel] 会话已导出:', fileName, '共', count, '个会话');
     showToast(`已导出 ${count} 个会话`, 'success');
   } catch (err) {
-    console.error('[SidePanel] 导出失败:', err);
+    logger.error('[SidePanel] 导出失败:', err);
     showToast('导出失败: ' + err.message, 'error');
   }
 }
@@ -254,10 +255,10 @@ export async function handleImportFile(file) {
     // 刷新会话标签栏
     await renderSessionTabs();
     
-    console.log('[SidePanel] 导入完成:', createdSessions.length, '个会话');
+    logger.debug('[SidePanel] 导入完成:', createdSessions.length, '个会话');
     showToast(`成功导入 ${createdSessions.length} 个会话`, 'success');
   } catch (err) {
-    console.error('[SidePanel] 导入失败:', err);
+    logger.error('[SidePanel] 导入失败:', err);
     showToast('导入失败: ' + err.message, 'error');
   }
 }

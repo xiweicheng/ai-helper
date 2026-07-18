@@ -6,6 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
+import logger from '../shared/logger.js';
 
 /**
  * 初始化 Agent 管理
@@ -15,7 +16,7 @@ export async function initAgentManager() {
   await renderAgentSelector();
   initAgentSelectorEvents();
   initAgentModalEvents();
-  console.log('[AgentMgr] Agent 管理器初始化完成, activeAgentId:', state.activeAgentId);
+  logger.debug('[AgentMgr] Agent 管理器初始化完成, activeAgentId:', state.activeAgentId);
 }
 
 /**
@@ -35,7 +36,7 @@ async function loadAgentState() {
   const currentAgentId = state.activeAgentId || activeId;
   const activeAgent = allAgents.find(a => a.id === currentAgentId || (!currentAgentId && a.id === 'default'));
   state.activeAgentToolIds = activeAgent ? activeAgent.toolIds : null;
-  console.log('[AgentMgr] Agent 状态已加载, activeAgentId:', state.activeAgentId, 'total:', allAgents.length, 'toolIds:', state.activeAgentToolIds);
+  logger.debug('[AgentMgr] Agent 状态已加载, activeAgentId:', state.activeAgentId, 'total:', allAgents.length, 'toolIds:', state.activeAgentToolIds);
 }
 
 /**
@@ -247,7 +248,7 @@ export async function switchAgent(agentId) {
   const agentName = agent ? agent.name : '默认助手';
   showToast(`已切换到：${agentName}`, 'info', 2000);
   
-  console.log('[AgentMgr] 已切换 Agent:', agentId, agentName);
+  logger.debug('[AgentMgr] 已切换 Agent:', agentId, agentName);
 }
 
 /**
@@ -624,7 +625,7 @@ async function saveAgent() {
     await renderAgentSelector();
     closeAgentEditor();
   } catch (err) {
-    console.error('[AgentMgr] 保存 Agent 失败:', err);
+    logger.error('[AgentMgr] 保存 Agent 失败:', err);
     showToast('保存失败：' + err.message, 'error');
   }
 }
@@ -652,7 +653,7 @@ async function deleteCurrentAgent() {
     await renderAgentSelector();
     closeAgentEditor();
   } catch (err) {
-    console.error('[AgentMgr] 删除 Agent 失败:', err);
+    logger.error('[AgentMgr] 删除 Agent 失败:', err);
     showToast('删除失败：' + err.message, 'error');
   }
 }

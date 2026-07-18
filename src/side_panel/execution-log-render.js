@@ -3,6 +3,7 @@
 
 import state from './state.js';
 import { escapeHtml, formatDuration } from './utils.js';
+import logger from '../shared/logger.js';
 
 // ============================================================
 // 执行日志渲染
@@ -1035,7 +1036,7 @@ export function updateExecutionStatus(loadingId, nodeName, status, executionLog)
   const loadingDiv = document.getElementById(loadingId);
   if (!loadingDiv) return;
   
-  console.log('[SidePanel] updateExecutionStatus 被调用:', nodeName, status, '日志数量:', executionLog?.length);
+  logger.debug('[SidePanel] updateExecutionStatus 被调用:', nodeName, status, '日志数量:', executionLog?.length);
   
   const nodeNameSpan = loadingDiv.querySelector('.current-node-name');
   if (nodeNameSpan) {

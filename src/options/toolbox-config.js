@@ -2,6 +2,7 @@
 // 依赖 Agent 连接，未连接时禁用所有操作
 
 import { showToast } from './config-manager.js';
+import logger from '../shared/logger.js';
 
 let agentBaseUrl = null;
 let agentToken = null;
@@ -1396,7 +1397,7 @@ function notifyMcpChange() {
   try {
     chrome.runtime.sendMessage({ type: 'RELOAD_MCP_TOOLS' }, (resp) => {
       if (resp?.success) {
-        console.log(`[Toolbox] Background 已重载 ${resp.count} 个 MCP 工具`);
+        logger.debug(`[Toolbox] Background 已重载 ${resp.count} 个 MCP 工具`);
       }
     });
   } catch (_) { /* 忽略错误，background 可能未运行 */ }
@@ -1838,7 +1839,7 @@ function initToolbox() {
               paramsContainer.innerHTML = allTags;
             }
           } catch (e) {
-            console.error('Failed to expand resources:', e);
+            logger.error('Failed to expand resources:', e);
           }
         }
         return;

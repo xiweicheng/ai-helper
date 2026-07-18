@@ -1,6 +1,7 @@
 // content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
 
 import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
+import logger from '../shared/logger.js';
 
 // ==================== SVG 图标 ====================
 const ICONS = {
@@ -62,7 +63,7 @@ if (!isTopFrame) {
     // 跨域无法访问 top.document，保持默认行为
   }
 }
-console.log('[SelectionToolbar] 模块加载 isTopFrame:', isTopFrame, 'top===window:', window.top === window, 'hasBody:', !!document.body, 'parent===top:', window.parent === window.top);
+logger.debug('[SelectionToolbar] 模块加载 isTopFrame:', isTopFrame, 'top===window:', window.top === window, 'hasBody:', !!document.body, 'parent===top:', window.parent === window.top);
 
 let lastSentIframeText = '';              // 防止iframe重复发送相同选区
 let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区数据 { text, x, y }
@@ -1310,7 +1311,7 @@ function sendToSidePanelInput(text) {
       text: text,
       selectedText: selText
     }).catch(err => {
-      console.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
+      logger.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
     });
   } catch {
     // 扩展上下文失效时静默忽略
@@ -1326,7 +1327,7 @@ function sendToSidePanelInputWithContext(text, selectedText) {
       text: text,
       selectedText: selectedText || ''
     }).catch(err => {
-      console.error('[SelectionToolbar] 发送到侧边栏失败:', err);
+      logger.error('[SelectionToolbar] 发送到侧边栏失败:', err);
     });
   } catch {
     // 扩展上下文失效时静默忽略
@@ -1421,12 +1422,12 @@ function onSelectionChange() {
   if (!enableSelectionToolbar) return;
   if (!isTopFrame) {
     const result = deepGetSelection();
-    console.log('[SelectionToolbar] iframe onSelectionChange text:', result.text?.substring(0, 30), 'currentSelectedText:', !!currentSelectedText, 'pendingIframeSelection:', !!pendingIframeSelection);
+    logger.debug('[SelectionToolbar] iframe onSelectionChange text:', result.text?.substring(0, 30), 'currentSelectedText:', !!currentSelectedText, 'pendingIframeSelection:', !!pendingIframeSelection);
     if (result.text && result.text.length >= 2) {
       // 暂存选区数据，等待 mouseup 时再发送（与顶层 frame 行为一致）
       const pos = getRangeViewportPosition(result.range);
       pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
-      console.log('[SelectionToolbar] iframe pendingIframeSelection 已设置');
+      logger.debug('[SelectionToolbar] iframe pendingIframeSelection 已设置');
     } else if (currentSelectedText) {
       // 选区被清除，通知顶层 frame 隐藏工具栏
       currentSelectedText = '';
@@ -1517,7 +1518,7 @@ function onDocumentClick(e) {
 }
 
 function onMouseUp() {
-  console.log('[SelectionToolbar] onMouseUp isTopFrame:', isTopFrame, 'pendingSelection:', pendingSelection, 'pendingIframeSelection:', !!pendingIframeSelection, 'currentSelectedText:', !!currentSelectedText, 'isToolbarVisible:', isToolbarVisible, 'toolbarEl:', !!toolbarEl);
+  logger.debug('[SelectionToolbar] onMouseUp isTopFrame:', isTopFrame, 'pendingSelection:', pendingSelection, 'pendingIframeSelection:', !!pendingIframeSelection, 'currentSelectedText:', !!currentSelectedText, 'isToolbarVisible:', isToolbarVisible, 'toolbarEl:', !!toolbarEl);
   
   // 子iframe：在 mouseup 时发送选区消息（与顶层 frame 行为一致）
   if (!isTopFrame) {
@@ -1680,7 +1681,7 @@ function copySelectedText(text) {
   copyToClipboard(text).then(() => {
     showCopyToast();
   }).catch(err => {
-    console.error('[SelectionToolbar] 复制失败:', err);
+    logger.error('[SelectionToolbar] 复制失败:', err);
     showCopyErrorToast();
   });
 }
@@ -1691,7 +1692,7 @@ function copyResultContent() {
   copyToClipboard(text).then(() => {
     showCopyToast();
   }).catch(err => {
-    console.error('[SelectionToolbar] 复制结果失败:', err);
+    logger.error('[SelectionToolbar] 复制结果失败:', err);
     showCopyErrorToast();
   });
 }
@@ -1807,7 +1808,7 @@ function showCopyToast() {
 
 function sendToAI(action, text, customSystemPrompt) {
   if (!isExtensionValid()) {
-    console.warn('[SelectionToolbar] 扩展上下文已失效，请刷新页面');
+    logger.warn('[SelectionToolbar] 扩展上下文已失效，请刷新页面');
     return;
   }
   
@@ -1834,7 +1835,7 @@ function sendToAI(action, text, customSystemPrompt) {
         text: text,
         prompt: message
       }).catch(err => {
-        console.error('[SelectionToolbar] 发送消息失败:', err);
+        logger.error('[SelectionToolbar] 发送消息失败:', err);
       });
     } catch {
       // 扩展上下文失效时静默忽略
@@ -1872,7 +1873,7 @@ function sendToAI(action, text, customSystemPrompt) {
     prompt: message,
     systemPrompt: customSystemPrompt || ''
   }).catch(err => {
-    console.error('[SelectionToolbar] 发送消息失败:', err);
+    logger.error('[SelectionToolbar] 发送消息失败:', err);
     showResultError(pos.x, pos.y, err.message);
   });
 }
@@ -1884,7 +1885,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'IFRAME_SELECTION') {
     if (!isTopFrame) return;
     
-    console.log('[SelectionToolbar] 收到 IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
+    logger.debug('[SelectionToolbar] 收到 IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
     
     currentSelectedText = message.text;
     
@@ -2076,7 +2077,7 @@ function loadToggleState() {
   chrome.storage.local.get(['enableSelectionToolbar', 'blockedDomains'], (result) => {
     enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? !!result.enableSelectionToolbar : true;
     blockedDomains = result.blockedDomains || [];
-    console.log('[SelectionToolbar] 开关状态:', enableSelectionToolbar ? '已启用' : '已禁用', '屏蔽域名:', blockedDomains.length);
+    logger.debug('[SelectionToolbar] 开关状态:', enableSelectionToolbar ? '已启用' : '已禁用', '屏蔽域名:', blockedDomains.length);
   });
 }
 
@@ -2176,7 +2177,7 @@ export function initSelectionToolbar() {
     mutationObserver.observe(document.body, { childList: true, subtree: true });
   }
   
-  console.log('[SelectionToolbar] 初始化完成', isTopFrame ? '(顶层frame)' : '(子frame)');
+  logger.debug('[SelectionToolbar] 初始化完成', isTopFrame ? '(顶层frame)' : '(子frame)');
 }
 
 export function destroySelectionToolbar() {

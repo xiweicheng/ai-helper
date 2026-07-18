@@ -1,3 +1,5 @@
+import logger from './logger.js';
+
 // shared/token-counter.js - Token 估算工具
 // 使用字符数估算 token 数，无需引入 tiktoken 等重量级依赖
 
@@ -389,7 +391,7 @@ export function filterApiMessages(messages) {
 
     if (rest.role === 'tool') {
       if (!rest.tool_call_id) {
-        console.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
+        logger.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
         return null;
       }
       return {
@@ -407,7 +409,7 @@ export function filterApiMessages(messages) {
       }));
     } else if (rest.role === 'assistant' && rest.tool_calls !== undefined) {
       // 清理非数组的 tool_calls（如 null），防止服务端迭代 null 报错
-      console.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof rest.tool_calls})，已清除`);
+      logger.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof rest.tool_calls})，已清除`);
       delete rest.tool_calls;
     }
 
@@ -438,7 +440,7 @@ export function filterApiMessages(messages) {
 
       if (matchedCalls.length === 0) {
         // 完全没有匹配的 tool 响应 → 清除所有 tool_calls
-        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息 tool_calls 无匹配 tool 响应，已清除');
+        logger.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息 tool_calls 无匹配 tool 响应，已清除');
         delete msg.tool_calls;
         if (!msg.content) {
           filtered.splice(i, 1);
@@ -447,7 +449,7 @@ export function filterApiMessages(messages) {
       } else if (matchedCalls.length < msg.tool_calls.length) {
         // 部分匹配 → 只保留有响应的 tool_calls
         const unmatched = msg.tool_calls.filter(tc => !followingToolIds.has(tc.id));
-        console.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息', unmatched.length, '个 tool_call 无对应响应，已移除，保留', matchedCalls.length, '个');
+        logger.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息', unmatched.length, '个 tool_call 无对应响应，已移除，保留', matchedCalls.length, '个');
         msg.tool_calls = matchedCalls;
       }
     }
@@ -490,6 +492,6 @@ export function compressQuotedContext(ctx) {
     return { compressed: ctx, wasCompressed: false };
   }
   const truncated = truncateByTokens(ctx, MAX_QUOTED_CONTEXT_TOKENS);
-  console.log(`[TokenCounter] 引用内容压缩: ${tokens} → ${estimateTokens(truncated)} tokens`);
+  logger.debug(`[TokenCounter] 引用内容压缩: ${tokens} → ${estimateTokens(truncated)} tokens`);
   return { compressed: truncated, wasCompressed: true };
 }

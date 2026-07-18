@@ -2,6 +2,7 @@
 
 import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
+import logger from '../shared/logger.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -97,7 +98,7 @@ export async function exportConfig() {
     hideExportDialog();
     showToast('配置已导出', 'success');
   } catch (err) {
-    console.error('[Options] 导出配置失败:', err);
+    logger.error('[Options] 导出配置失败:', err);
     showToast('导出失败: ' + err.message, 'error');
   }
 }
@@ -207,7 +208,7 @@ export async function handleImportFile(file) {
 
     showImportPreview(data);
   } catch (err) {
-    console.error('[Options] 导入文件解析失败:', err);
+    logger.error('[Options] 导入文件解析失败:', err);
     showToast('导入失败: 无法解析文件格式', 'error');
   }
 }
@@ -256,7 +257,7 @@ export async function confirmImport() {
       });
     }, 300);
   } catch (err) {
-    console.error('[Options] 导入配置失败:', err);
+    logger.error('[Options] 导入配置失败:', err);
     showToast('导入失败: ' + err.message, 'error');
   }
 }

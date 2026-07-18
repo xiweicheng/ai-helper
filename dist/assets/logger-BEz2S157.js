@@ -1,0 +1,2 @@
+var e={DEBUG:0,INFO:1,WARN:2,ERROR:3},t=e.DEBUG;function n(e){t=e}function r(){return t}function i(...n){t<=e.DEBUG&&console.debug(`[AIH]`,...n)}function a(...n){t<=e.INFO&&console.info(`[AIH]`,...n)}function o(...n){t<=e.WARN&&console.warn(`[AIH]`,...n)}function s(...n){t<=e.ERROR&&console.error(`[AIH]`,...n)}var c={debug:i,info:a,warn:o,error:s,setLogLevel:n,getLogLevel:r};export{c as t};
+//# sourceMappingURL=logger-BEz2S157.js.map

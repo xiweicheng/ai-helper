@@ -5,6 +5,7 @@ import { switchAgent, openAgentEditor } from './agent-manager.js';
 import { escapeHtml } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
+import logger from '../shared/logger.js';
 
 // 当前 @ 弹出框激活的 Tab：'agents' | 'pages'
 export let activeAtTab = 'agents';
@@ -373,7 +374,7 @@ function selectPageByAt(tabId) {
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
-      console.error('[AgentAtSelector] 获取标签页信息失败:', chrome.runtime.lastError);
+      logger.error('[AgentAtSelector] 获取标签页信息失败:', chrome.runtime.lastError);
       return;
     }
     selectPage(tab);

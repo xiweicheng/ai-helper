@@ -2,6 +2,7 @@
 
 import { getSessionTokenSummary, getOverallTokenSummary, clearSessionTokenStats, clearAllTokenStats } from '../storage/token-store.js';
 import { escapeHtml } from './utils.js';
+import logger from '../shared/logger.js';
 
 /**
  * 初始化 Token 统计面板
@@ -74,7 +75,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       renderOverallSummary(overallSummary);
       renderRecentCalls(sessionSummary.records || []);
     } catch (err) {
-      console.error('[TokenStats] 加载统计失败:', err);
+      logger.error('[TokenStats] 加载统计失败:', err);
       if (loading) loading.style.display = 'none';
       if (empty) {
         empty.textContent = '加载失败';

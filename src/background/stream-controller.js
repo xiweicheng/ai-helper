@@ -1,3 +1,5 @@
+import logger from '../shared/logger.js';
+
 // background/stream-controller.js - 流式输出控制器
 // 负责 SSE 解析、chunk 节流发送、usage 提取、tool_calls 检测
 
@@ -121,7 +123,7 @@ export class StreamController {
 
     if (finishReason === 'tool_calls') {
       // 打印完整的 tool_calls 摘要（而非每个 chunk 都打印）
-      console.log(`[StreamController] tool_calls 完成: ${this.toolCalls.length} 个调用`, 
+      logger.debug(`[StreamController] tool_calls 完成: ${this.toolCalls.length} 个调用`, 
         this.toolCalls.map(tc => ({ name: tc.function?.name, argsLen: tc.function?.arguments?.length })));
       return { type: 'tool_calls' };
     }
@@ -345,11 +347,11 @@ export async function readSSEStream(reader, controller, abortSignal) {
     return { status: 'done', ...controller.getResult() };
   } catch (error) {
     if (error.name === 'AbortError') {
-      console.log('[StreamController] 流式读取已被取消');
+      logger.debug('[StreamController] 流式读取已被取消');
       // 不发送 STREAM_DONE，避免残留消息被新任务处理
       throw error;
     } else {
-      console.error('[StreamController] 流式读取错误:', error.message);
+      logger.error('[StreamController] 流式读取错误:', error.message);
     }
     controller.finish();
     throw error;

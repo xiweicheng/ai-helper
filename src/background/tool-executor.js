@@ -5,6 +5,7 @@ import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSes
 import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
+import logger from '../shared/logger.js';
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws }）
 // 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
@@ -33,7 +34,7 @@ export async function loadMcpTools() {
     // 检查全局 MCP 开关
     const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
     if (mcpEnabled !== true) {
-      console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
+      logger.debug('[Background] MCP 全局开关已关闭，跳过工具加载');
       return 0;
     }
 
@@ -47,7 +48,7 @@ export async function loadMcpTools() {
     ]);
 
     if (!toolsResult.success || !toolsResult.tools || toolsResult.tools.length === 0) {
-      console.log('[Background] 无可用的 MCP 工具');
+      logger.debug('[Background] 无可用的 MCP 工具');
       return 0;
     }
 
@@ -64,7 +65,7 @@ export async function loadMcpTools() {
     let registered = 0;
     for (const tool of toolsResult.tools) {
       if (disabledServerIds.has(tool.serverId)) {
-        console.log(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
+        logger.debug(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
         continue;
       }
 
@@ -113,10 +114,10 @@ export async function loadMcpTools() {
       }));
     await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
 
-    console.log(`[Background] 已加载 ${registered} 个 MCP 工具`);
+    logger.debug(`[Background] 已加载 ${registered} 个 MCP 工具`);
     return registered;
   } catch (err) {
-    console.log('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
+    logger.debug('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
     return 0;
   } finally {
     releaseLock();
@@ -186,7 +187,7 @@ async function appendAuditLog(category, action, details = {}) {
     entries.unshift({ timestamp: new Date().toISOString(), category, action, details });
     if (entries.length > MAX_AUDIT_ENTRIES) entries.length = MAX_AUDIT_ENTRIES;
     await chrome.storage.local.set({ [AUDIT_LOG_KEY]: entries });
-  } catch (e) { console.warn('[Background] 审计日志写入失败:', e); }
+  } catch (e) { logger.warn('[Background] 审计日志写入失败:', e); }
 }
 
 // Agent 连通性缓存（避免每次 getTools 都做网络探测）
@@ -226,12 +227,12 @@ async function checkAgentConnectivity() {
     const connected = response.ok;
     agentConnectivityCache = { connected, checkedAt: now };
     AgentClient.setAgentReachable(connected);
-    console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
+    logger.debug('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
     return connected;
   } catch (err) {
     agentConnectivityCache = { connected: false, checkedAt: now };
     AgentClient.setAgentReachable(false);
-    console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
+    logger.debug('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
     return false;
   }
 }
@@ -251,13 +252,13 @@ export async function getTools(agentToolIds = null, agentId = null) {
       // 如果没有保存的配置，使用默认值（全部启用）
       if (!enabledTools || !Array.isArray(enabledTools) || enabledTools.length === 0) {
         enabledTools = BUILTIN_TOOLS.map(t => t.id);
-        console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
+        logger.debug('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
 
       // 如果 Agent 指定了工具列表，与全局启用列表取交集
       const finalToolIds = agentToolIds ? enabledTools.filter(id => agentToolIds.includes(id)) : enabledTools;
       if (agentToolIds) {
-        console.log(`[Background] 工具过滤: ${enabledTools.length} 全局 → ${finalToolIds.length} 最终`);
+        logger.debug(`[Background] 工具过滤: ${enabledTools.length} 全局 → ${finalToolIds.length} 最终`);
       }
 
       // 读取图片识别开关状态
@@ -266,7 +267,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
       
-      console.log(`[Background] 工具配置: ${finalToolIds.length} 个启用, Agent=${agentConnected}, 图片识别=${visionEnabled}`);
+      logger.debug(`[Background] 工具配置: ${finalToolIds.length} 个启用, Agent=${agentConnected}, 图片识别=${visionEnabled}`);
       
       // 读取 MCP 全局开关和 Agent 连接状态
       const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
@@ -304,7 +305,7 @@ export async function getTools(agentToolIds = null, agentId = null) {
           return cloned;
         });
       
-      console.log(`[Background] 最终可用工具: ${tools.length} 个`);
+      logger.debug(`[Background] 最终可用工具: ${tools.length} 个`);
       resolve(tools);
     });
   });
@@ -314,20 +315,20 @@ export async function getTools(agentToolIds = null, agentId = null) {
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.mcpEnabled) {
     const enabled = changes.mcpEnabled.newValue === true;
-    console.log('[Background] MCP 全局开关变更:', enabled);
+    logger.debug('[Background] MCP 全局开关变更:', enabled);
     if (enabled) {
       loadMcpTools().then(count => {
-        console.log('[Background] MCP 工具已重新加载:', count, '个');
+        logger.debug('[Background] MCP 工具已重新加载:', count, '个');
       });
     } else {
       unloadMcpTools().then(() => {
-        console.log('[Background] MCP 工具已全部卸载');
+        logger.debug('[Background] MCP 工具已全部卸载');
       });
     }
   }
   if (changes.skillsEnabled) {
     // Skill 开关变更时，由侧边栏 fetchAgentSkillPrompts 自行判断，无需额外处理
-    console.log('[Background] Skill 全局开关变更:', changes.skillsEnabled.newValue !== false);
+    logger.debug('[Background] Skill 全局开关变更:', changes.skillsEnabled.newValue !== false);
   }
 });
 
@@ -380,7 +381,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
       targetTitle = tabs[0].title || '';
     }
 
-    console.log('[Background] 执行截图: tabId=', targetTabId, 'url=', targetUrl, 'action=', action,
+    logger.debug('[Background] 执行截图: tabId=', targetTabId, 'url=', targetUrl, 'action=', action,
       'format=', format, 'quality=', quality, 'visionMaxDim=', visionMaxDim, 'visionQuality=', visionQuality);
 
     const dataUrl = await new Promise((resolve, reject) => {
@@ -398,7 +399,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
     });
 
     const sizeKB = (dataUrl.length / 1024).toFixed(1);
-    console.log('[Background] 截图完成，大小:', sizeKB, 'KB');
+    logger.debug('[Background] 截图完成，大小:', sizeKB, 'KB');
 
     // 存储截图供 side_panel 展示
     chrome.storage.local.set({ _lastVisionScreenshot: { dataUrl, sizeKB, url: targetUrl, title: targetTitle, timestamp: Date.now() } }).catch(() => {});
@@ -415,7 +416,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
       // 使用大模型指定的参数压缩截图
       const compressedDataUrl = await compressImageForVision(dataUrl, visionMaxDim, visionQuality / 100);
       const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
-      console.log('[Background] 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
+      logger.debug('[Background] 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
 
       // 调用图片识别 API 对压缩后的截图进行视觉分析
       const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle, sessionId);
@@ -473,7 +474,7 @@ async function compressImageForVision(dataUrl, maxDim = 1024, jpegQuality = 0.65
       reader.readAsDataURL(compressedBlob);
     });
   } catch (err) {
-    console.warn('[Background] 图片压缩失败，使用原始截图:', err.message);
+    logger.warn('[Background] 图片压缩失败，使用原始截图:', err.message);
     return dataUrl;
   }
 }
@@ -494,11 +495,11 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
   const useStream = visionConfig.streamEnabled !== false; // 默认 true
 
   if (!apiBase || !apiKey) {
-    console.log('[Background] 图片识别 API 未配置，返回截图基本信息');
+    logger.debug('[Background] 图片识别 API 未配置，返回截图基本信息');
     return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。`;
   }
 
-  console.log('[Background] 调用图片识别 API 分析截图，模型:', model, '端点:', apiBase, '流式:', useStream);
+  logger.debug('[Background] 调用图片识别 API 分析截图，模型:', model, '端点:', apiBase, '流式:', useStream);
 
   const visionPrompt = `请详细描述这张网页截图的内容，包括：
 1. 页面整体布局和主要区块
@@ -544,7 +545,7 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      console.error('[Background] 图片识别 API 请求失败:', response.status, errorText);
+      logger.error('[Background] 图片识别 API 请求失败:', response.status, errorText);
       return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败（API 返回 ${response.status}），请检查图片识别 API 配置。`;
     }
 
@@ -560,16 +561,16 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
     }
 
     if (!analysis) {
-      console.error('[Background] 图片识别 API 结果为空');
+      logger.error('[Background] 图片识别 API 结果为空');
       return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别返回结果为空，请重试。`;
     }
 
-    console.log('[Background] 图片识别分析完成，结果长度:', analysis.length);
+    logger.debug('[Background] 图片识别分析完成，结果长度:', analysis.length);
     return `页面截图分析结果：\n\n**页面**: ${pageTitle}\n**地址**: ${pageUrl}\n\n${analysis}`;
 
   } catch (err) {
     clearTimeout(timeout);
-    console.error('[Background] 图片识别 API 调用异常:', err.message);
+    logger.error('[Background] 图片识别 API 调用异常:', err.message);
     if (err.name === 'AbortError') {
       return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。`;
     }
@@ -641,7 +642,7 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
           }
         } catch (err) {
           // 解析失败时记录原始数据，方便排查不同模型的格式差异
-          console.warn('[Background] 图片识别 SSE 解析失败，原始数据:', data.substring(0, 200), '错误:', err.message);
+          logger.warn('[Background] 图片识别 SSE 解析失败，原始数据:', data.substring(0, 200), '错误:', err.message);
         }
       }
     }
@@ -668,7 +669,7 @@ function tryParseToolArgs(argsStr) {
   try {
     return JSON.parse(trimmed);
   } catch {
-    console.warn('[Background] 工具参数直接解析失败，尝试修复...');
+    logger.warn('[Background] 工具参数直接解析失败，尝试修复...');
   }
   
   // 阶段 2: 修复常见问题后重试
@@ -716,10 +717,10 @@ function tryParseToolArgs(argsStr) {
   // 阶段 2 最终尝试
   try {
     const result = JSON.parse(fixed);
-    console.log('[Background] 工具参数修复解析成功:', result);
+    logger.debug('[Background] 工具参数修复解析成功:', result);
     return result;
   } catch (e) {
-    console.error('[Background] 工具参数修复解析也失败:', e, '修复后字符串:', fixed.substring(0, 200));
+    logger.error('[Background] 工具参数修复解析也失败:', e, '修复后字符串:', fixed.substring(0, 200));
     return null;
   }
 }
@@ -754,13 +755,13 @@ function normalizeToolResult(result, toolCallId) {
         result.content = JSON.stringify(rest);
         result.metadata = rest;
       }
-      console.warn('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
+      logger.warn('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
     }
     if (!result.tool_call_id) result.tool_call_id = toolCallId;
     return result;
   }
   if (typeof result === 'string') {
-    console.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
+    logger.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
     return { success: true, content: result, tool_call_id: toolCallId };
   }
   return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
@@ -782,7 +783,7 @@ async function recordToolStats(toolName, result, duration) {
     toolStats[toolName] = entry;
     chrome.storage.local.set({ [toolStatsKey]: toolStats });
   } catch (e) {
-    console.warn('[Background] 记录工具统计失败:', e);
+    logger.warn('[Background] 记录工具统计失败:', e);
   }
 }
 
@@ -809,7 +810,7 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
     chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
-        console.warn('[Background] 发送消息到 content script 失败:', errorMsg);
+        logger.warn('[Background] 发送消息到 content script 失败:', errorMsg);
 
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) {
@@ -823,7 +824,7 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             return;
           }
 
-          console.log('[Background] 尝试自动注入 content script 到 Tab:', tabId);
+          logger.debug('[Background] 尝试自动注入 content script 到 Tab:', tabId);
           const manifest = chrome.runtime.getManifest();
           const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
           // 查找包含 "content" 关键词的脚本文件，兼容源/构建两种 manifest 路径格式
@@ -838,11 +839,11 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             files: injectFiles
           })
             .then(() => {
-              console.log('[Background] Content script 注入成功, 重试发送消息');
+              logger.debug('[Background] Content script 注入成功, 重试发送消息');
               setTimeout(() => {
                 chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
                   if (chrome.runtime.lastError) {
-                    console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
+                    logger.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
                     resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
                   } else {
                     resolve({ ...retryResponse, tool_call_id: toolCallId });
@@ -851,7 +852,7 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
               }, 500);
             })
             .catch(err => {
-              console.error('[Background] 注入 content script 失败:', err);
+              logger.error('[Background] 注入 content script 失败:', err);
               resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
             });
         });
@@ -954,7 +955,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   let toolCallId = id;
   let args = {};
   
-  console.log('[Background] 工具调用原始数据:', JSON.stringify(toolCall));
+  logger.debug('[Background] 工具调用原始数据:', JSON.stringify(toolCall));
   
   // 解析参数
   if (functionObj && functionObj.arguments) {
@@ -962,31 +963,31 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     const argsStrRaw = typeof functionObj.arguments === 'string'
       ? functionObj.arguments
       : JSON.stringify(functionObj.arguments);
-    console.log('[Background] toolCall.function.arguments 类型:', typeof functionObj.arguments, '长度:', argsStrRaw.length);
+    logger.debug('[Background] toolCall.function.arguments 类型:', typeof functionObj.arguments, '长度:', argsStrRaw.length);
     try {
       const parsed = tryParseToolArgs(argsStrRaw);
       args = parsed || {};
     } catch (e) {
-      console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStrRaw.substring(0, 300));
+      logger.error('[Background] 解析工具参数失败:', e, '原始值:', argsStrRaw.substring(0, 300));
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
     }
     if (Object.keys(args).length === 0 && argsStrRaw && argsStrRaw.length > 0 && argsStrRaw !== '{}') {
-      console.error('[Background] 参数解析后为空对象！原始 arguments:', argsStrRaw.substring(0, 300));
+      logger.error('[Background] 参数解析后为空对象！原始 arguments:', argsStrRaw.substring(0, 300));
     }
   } else if (typeof argsStr === 'object') {
     args = argsStr || {};
   } else if (typeof argsStr === 'string') {
-    console.log('[Background] 使用备用 argsStr 解析:', argsStr.substring(0, 300));
+    logger.debug('[Background] 使用备用 argsStr 解析:', argsStr.substring(0, 300));
     try {
       const parsed = tryParseToolArgs(argsStr);
       args = parsed || {};
     } catch (e) {
-      console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
+      logger.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
     }
   }
   
-  console.log('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
+  logger.debug('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
 
   const executionType = TOOL_EXECUTION_MAP[toolName];
   let result;
@@ -994,7 +995,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   if (executionType === 'background') {
     const handler = BG_HANDLERS[toolName];
     if (handler) {
-      console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
+      logger.debug(`[Background] ${toolName} 直接执行，不通过 content script`);
       result = await handler(args, toolCallId, sessionId, tabId);
     } else {
       result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
@@ -1034,23 +1035,23 @@ export function executeSearchBookmarks(args, toolCallId) {
   const query = args.query || '';
   const maxResults = parseInt(args.maxResults, 10) || 10;
   
-  console.log('[Background] 执行书签搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults);
+  logger.debug('[Background] 执行书签搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults);
   
   return new Promise((resolve) => {
     if (!chrome.bookmarks) {
-      console.error('[Background] chrome.bookmarks API 不可用');
+      logger.error('[Background] chrome.bookmarks API 不可用');
       resolve(makeResult(false, '浏览器不支持书签 API'));
       return;
     }
     
     // 如果查询为空，获取书签树根节点来列出所有书签
     if (!query || query.trim() === '') {
-      console.log('[Background] 空查询，获取书签根节点...');
+      logger.debug('[Background] 空查询，获取书签根节点...');
       chrome.bookmarks.getTree((bookmarksTree) => {
-        console.log('[Background] chrome.bookmarks.getTree 回调, 树节点数量:', bookmarksTree ? bookmarksTree.length : 'null');
+        logger.debug('[Background] chrome.bookmarks.getTree 回调, 树节点数量:', bookmarksTree ? bookmarksTree.length : 'null');
         
         if (chrome.runtime.lastError) {
-          console.error('[Background] chrome.bookmarks.getTree 错误:', chrome.runtime.lastError.message);
+          logger.error('[Background] chrome.bookmarks.getTree 错误:', chrome.runtime.lastError.message);
           resolve(makeResult(false, '获取书签失败: ' + chrome.runtime.lastError.message));
           return;
         }
@@ -1070,7 +1071,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         }
         collectBookmarks(bookmarksTree);
         
-        console.log('[Background] 收集到的书签总数:', allBookmarks.length);
+        logger.debug('[Background] 收集到的书签总数:', allBookmarks.length);
         
         if (allBookmarks.length === 0) {
           resolve(makeResult(true, '浏览器中暂无书签'));
@@ -1090,25 +1091,25 @@ export function executeSearchBookmarks(args, toolCallId) {
         const resultText = `浏览器中共有 ${allBookmarks.length} 个书签，显示前 ${formattedResults.length} 个：\n` +
           formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
         
-        console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
+        logger.debug('[Background] 书签搜索成功，返回结果:', formattedResults.length);
         resolve(makeResult(true, resultText));
       });
       return;
     }
     
     // 有查询关键词，执行搜索
-    console.log('[Background] 调用 chrome.bookmarks.search...');
+    logger.debug('[Background] 调用 chrome.bookmarks.search...');
     chrome.bookmarks.search(query, (results) => {
-      console.log('[Background] chrome.bookmarks.search 回调, 结果数量:', results ? results.length : 'null');
+      logger.debug('[Background] chrome.bookmarks.search 回调, 结果数量:', results ? results.length : 'null');
       
       if (chrome.runtime.lastError) {
-        console.error('[Background] chrome.bookmarks.search 错误:', chrome.runtime.lastError.message);
+        logger.error('[Background] chrome.bookmarks.search 错误:', chrome.runtime.lastError.message);
         resolve(makeResult(false, '搜索书签失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
-        console.log('[Background] 未找到匹配的书签');
+        logger.debug('[Background] 未找到匹配的书签');
         resolve(makeResult(true, '未找到匹配的书签。提示：尝试使用具体关键词搜索'));
         return;
       }
@@ -1126,7 +1127,7 @@ export function executeSearchBookmarks(args, toolCallId) {
       const resultText = `找到 ${results.length} 个匹配的书签，显示前 ${formattedResults.length} 个：\n` +
         formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
       
-      console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
+      logger.debug('[Background] 书签搜索成功，返回结果:', formattedResults.length);
       resolve(makeResult(true, resultText));
     });
   });
@@ -1141,11 +1142,11 @@ export function executeSearchHistory(args, toolCallId) {
   const startTime = args.startTime || null;
   const endTime = args.endTime || null;
   
-  console.log('[Background] 执行历史记录搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, '时间范围:', startTime, '-', endTime);
+  logger.debug('[Background] 执行历史记录搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, '时间范围:', startTime, '-', endTime);
   
   return new Promise((resolve) => {
     if (!chrome.history) {
-      console.error('[Background] chrome.history API 不可用');
+      logger.error('[Background] chrome.history API 不可用');
       resolve(makeResult(false, '浏览器不支持历史 API'));
       return;
     }
@@ -1162,18 +1163,18 @@ export function executeSearchHistory(args, toolCallId) {
       searchOptions.endTime = endTime;
     }
     
-    console.log('[Background] 调用 chrome.history.search, 选项:', JSON.stringify(searchOptions));
+    logger.debug('[Background] 调用 chrome.history.search, 选项:', JSON.stringify(searchOptions));
     chrome.history.search(searchOptions, (results) => {
-      console.log('[Background] chrome.history.search 回调, 结果数量:', results ? results.length : 'null');
+      logger.debug('[Background] chrome.history.search 回调, 结果数量:', results ? results.length : 'null');
       
       if (chrome.runtime.lastError) {
-        console.error('[Background] chrome.history.search 错误:', chrome.runtime.lastError.message);
+        logger.error('[Background] chrome.history.search 错误:', chrome.runtime.lastError.message);
         resolve(makeResult(false, '搜索历史失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
       if (!results || results.length === 0) {
-        console.log('[Background] 未找到匹配的访问记录');
+        logger.debug('[Background] 未找到匹配的访问记录');
         resolve(makeResult(true, '未找到匹配的访问记录。提示：尝试使用具体关键词搜索'));
         return;
       }
@@ -1189,7 +1190,7 @@ export function executeSearchHistory(args, toolCallId) {
       const resultText = `找到 ${results.length} 个匹配的访问记录：\n` +
         formattedResults.map((h, i) => `${i+1}. ${h.title}\n   URL: ${h.url}\n   最后访问: ${h.lastVisitTime}\n   访问次数: ${h.visitCount}`).join('\n\n');
       
-      console.log('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
+      logger.debug('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
       resolve(makeResult(true, resultText));
     });
   });
@@ -1204,7 +1205,7 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
   const maxResults = parseInt(args.maxResults, 10) || 5;
   const searchScope = args.searchScope || 'current_session';
 
-  console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope, 'sessionId=', sessionId);
+  logger.debug('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope, 'sessionId=', sessionId);
 
   try {
     // 确保从 chrome.storage 迁移完成
@@ -1296,10 +1297,10 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
         })
         .join('\n\n---\n\n');
 
-    console.log('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
+    logger.debug('[Background] 对话记忆搜索成功，返回:', relevant.length, '条结果');
     return makeResult(true, resultText);
   } catch (err) {
-    console.error('[Background] 对话记忆搜索失败:', err);
+    logger.error('[Background] 对话记忆搜索失败:', err);
     return makeResult(false, `搜索对话记录时出错: ${err.message}`);
   }
 }
@@ -1318,9 +1319,9 @@ export function triggerScreenshotDownload(dataUrl, format) {
     saveAs: false
   }, (downloadId) => {
     if (chrome.runtime.lastError) {
-      console.error('[Background] 下载失败:', chrome.runtime.lastError.message);
+      logger.error('[Background] 下载失败:', chrome.runtime.lastError.message);
     } else {
-      console.log('[Background] 截图已触发下载，ID:', downloadId, '文件名:', fileName);
+      logger.debug('[Background] 截图已触发下载，ID:', downloadId, '文件名:', fileName);
     }
   });
 }
@@ -1336,7 +1337,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
   // 确保 options 是数组，防止 LLM 返回非数组类型
   const options = Array.isArray(args.options) ? args.options : (args.options ? [String(args.options)] : []);
   
-  console.log('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
+  logger.debug('[Background] 执行澄清工具:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   
   // 获取配置以使用合适的超时时间
   const config = await getStoredConfig();
@@ -1378,7 +1379,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
       if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
         cleanup();
         
-        console.log('[Background] 收到澄清响应:', msg);
+        logger.debug('[Background] 收到澄清响应:', msg);
         
         const { selectedOption, customInput, additionalInfo } = msg;
         
@@ -1406,7 +1407,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
       data: clarifyData
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 发送澄清消息失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 发送澄清消息失败:', chrome.runtime.lastError.message);
         cleanup(); // 确保清理
         resolve({ 
           success: false, 
@@ -1416,11 +1417,11 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         return;
       }
       
-      console.log('[Background] 澄清对话框已发送到 Side Panel，超时:', clarifyTimeout, 'ms');
+      logger.debug('[Background] 澄清对话框已发送到 Side Panel，超时:', clarifyTimeout, 'ms');
       
       // 设置超时处理（使用配置的澄清超时时间）
       timeoutId = setTimeout(() => {
-        console.error('[Background] 澄清对话框超时');
+        logger.error('[Background] 澄清对话框超时');
         cleanup(); // 确保清理
         
         // 通知前端倒计时结束
@@ -1462,7 +1463,7 @@ export function executeShowNotification(args, toolCallId) {
     soundType = 'default' 
   } = args;
   
-  console.log('[Background] 执行浏览器通知:', args, 'toolCallId:', toolCallId);
+  logger.debug('[Background] 执行浏览器通知:', args, 'toolCallId:', toolCallId);
   
   return new Promise((resolve) => {
     // 使用 chrome.notifications API 创建通知
@@ -1477,12 +1478,12 @@ export function executeShowNotification(args, toolCallId) {
     
     chrome.notifications.create(notificationOptions, (notificationId) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 创建通知失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 创建通知失败:', chrome.runtime.lastError.message);
         resolve(makeResult(false, '通知创建失败: ' + chrome.runtime.lastError.message));
         return;
       }
       
-      console.log('[Background] 通知已创建，ID:', notificationId);
+      logger.debug('[Background] 通知已创建，ID:', notificationId);
       
       // 播放提示音 - 发送消息到 side_panel 播放
       if (playSound) {
@@ -1593,7 +1594,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
         const errorText = await response.text().catch(() => '');
         lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
         const delay = baseDelay * Math.pow(2, attempt);
-        console.log(`[Background] API 返回 ${response.status}，${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
+        logger.debug(`[Background] API 返回 ${response.status}，${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
         if (onRetry) onRetry(attempt + 1, lastError, delay);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
@@ -1611,7 +1612,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
       }
 
       const delay = baseDelay * Math.pow(2, attempt);
-      console.log(`[Background] API 调用失败，${delay}ms 后重试 (${attempt + 1}/${maxRetries}):`, error.message);
+      logger.debug(`[Background] API 调用失败，${delay}ms 后重试 (${attempt + 1}/${maxRetries}):`, error.message);
       if (onRetry) onRetry(attempt + 1, error, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -1623,7 +1624,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
 export async function executeFetchUrl(args, toolCallId) {
   const { url, method = 'GET', headers = {}, body, timeout = 30000 } = args;
   
-  console.log('[Background] 执行 HTTP 请求:', 'method=', method, 'url=', url, 'timeout=', timeout);
+  logger.debug('[Background] 执行 HTTP 请求:', 'method=', method, 'url=', url, 'timeout=', timeout);
   
   // 验证 URL 格式
   if (!url) {
@@ -1665,11 +1666,11 @@ export async function executeFetchUrl(args, toolCallId) {
     fetchOptions.body = typeof body === 'object' ? JSON.stringify(body) : body;
   }
   
-  console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
+  logger.debug('[Background] fetch 选项:', JSON.stringify(fetchOptions));
   
   try {
     const response = await fetchWithRetry(url, fetchOptions, timeout);
-    console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
+    logger.debug('[Background] HTTP 响应状态:', response.status, response.statusText);
     
     try {
       const text = await response.text();
@@ -1681,10 +1682,10 @@ export async function executeFetchUrl(args, toolCallId) {
         contentLength: text.length,
         url: response.url
       };
-      console.log('[Background] HTTP 响应内容长度:', text.length);
+      logger.debug('[Background] HTTP 响应内容长度:', text.length);
       return { ...result, tool_call_id: toolCallId };
     } catch (textError) {
-      console.error('[Background] 读取响应内容失败:', textError);
+      logger.error('[Background] 读取响应内容失败:', textError);
       return {
         success: false,
         error: `读取响应内容失败: ${textError.message}`,
@@ -1696,10 +1697,10 @@ export async function executeFetchUrl(args, toolCallId) {
     let errorMessage = error.message;
     
     if (error.name === 'AbortError') {
-      console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
+      logger.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
       errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢。如需获取数据，可尝试：\n1. 适当增大 timeout 参数重新请求\n2. 检查该 URL 在浏览器中是否能快速访问\n3. 如果是 API 接口，尝试缩小请求范围`;
     } else {
-      console.error('[Background] HTTP 请求失败:', error.name, error.message);
+      logger.error('[Background] HTTP 请求失败:', error.name, error.message);
       if (error.message === 'Failed to fetch') {
         errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
       } else if (error.message.includes('CORS')) {
@@ -1721,7 +1722,7 @@ export async function executeFetchUrl(args, toolCallId) {
  * 获取浏览器信息
  */
 export function executeGetBrowserInfo(args, toolCallId) {
-  console.log('[Background] 获取浏览器信息');
+  logger.debug('[Background] 获取浏览器信息');
   
   const info = {
     success: true,
@@ -1752,7 +1753,7 @@ export function executeGetBrowserInfo(args, toolCallId) {
 export function executeDownloadFile(args, toolCallId) {
   const { url, filename } = args;
   
-  console.log('[Background] 下载文件:', 'url=', url, 'filename=', filename);
+  logger.debug('[Background] 下载文件:', 'url=', url, 'filename=', filename);
   
   return new Promise((resolve) => {
     // 提取文件名
@@ -1768,10 +1769,10 @@ export function executeDownloadFile(args, toolCallId) {
       saveAs: true
     }, (downloadId) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 下载失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 下载失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });
       } else {
-        console.log('[Background] 下载已创建，ID:', downloadId);
+        logger.debug('[Background] 下载已创建，ID:', downloadId);
         resolve({ 
           success: true, 
           message: `文件下载已开始`,
@@ -1790,12 +1791,12 @@ export function executeOpenTab(args, toolCallId) {
   const { url, active: rawActive = true } = args;
   const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
   
-  console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active);
+  logger.debug('[Background] 打开新标签页:', 'url=', url, 'active=', active);
   
   return new Promise((resolve) => {
     chrome.tabs.create({ url: url, active: active }, (tab) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 打开标签页失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 打开标签页失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });
       } else {
         resolve({ 
@@ -1816,12 +1817,12 @@ export function executeSwitchTab(args, toolCallId) {
   const { tabId: rawTabId } = args;
   const tabId = parseInt(rawTabId, 10);
   
-  console.log('[Background] 切换标签页:', 'tabId=', tabId);
+  logger.debug('[Background] 切换标签页:', 'tabId=', tabId);
   
   return new Promise((resolve) => {
     chrome.tabs.update(tabId, { active: true }, (tab) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 切换标签页失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 切换标签页失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });
       } else {
         resolve({ 
@@ -1842,7 +1843,7 @@ export function executeCloseTab(args, toolCallId) {
   const { tabId: rawTabId } = args;
   const tabId = rawTabId !== undefined ? parseInt(rawTabId, 10) : undefined;
   
-  console.log('[Background] 关闭标签页:', 'tabId=', tabId);
+  logger.debug('[Background] 关闭标签页:', 'tabId=', tabId);
   
   return new Promise((resolve) => {
     const targetTabId = tabId || null;
@@ -1879,12 +1880,12 @@ export function executeCloseTab(args, toolCallId) {
 export function executeGetTabs(args, toolCallId) {
   const { includeUrl = true, includeTitle = true } = args;
   
-  console.log('[Background] 获取标签页列表:', 'includeUrl=', includeUrl, 'includeTitle=', includeTitle);
+  logger.debug('[Background] 获取标签页列表:', 'includeUrl=', includeUrl, 'includeTitle=', includeTitle);
   
   return new Promise((resolve) => {
     chrome.tabs.query({ currentWindow: true }, (tabs) => {
       if (chrome.runtime.lastError) {
-        console.error('[Background] 获取标签页失败:', chrome.runtime.lastError.message);
+        logger.error('[Background] 获取标签页失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });
       } else {
         const result = tabs.map(tab => {
@@ -2012,7 +2013,7 @@ export function executeManageCookies(args, toolCallId) {
 export function executePlanTask(args, toolCallId) {
   const { taskDescription, subtasks = [], isComplex = true, strategy = 'sequential' } = args;
   
-  console.log('[Background] 执行任务规划工具:', JSON.stringify(args));
+  logger.debug('[Background] 执行任务规划工具:', JSON.stringify(args));
   
   // 验证必要参数
   if (!taskDescription) {
@@ -2126,7 +2127,7 @@ export function executeClearPageData(args, toolCallId) {
       cleanupTasks.push(new Promise((resolveTask) => {
         chrome.cookies.getAll({}, (cookies) => {
           if (chrome.runtime.lastError) {
-            console.warn('[Background] 获取 cookies 失败:', chrome.runtime.lastError.message);
+            logger.warn('[Background] 获取 cookies 失败:', chrome.runtime.lastError.message);
             resolveTask();
             return;
           }
@@ -2167,7 +2168,7 @@ export function executeClearPageData(args, toolCallId) {
           storageTypes: ['localStorage', 'sessionStorage']
         }, (response) => {
           if (chrome.runtime.lastError) {
-            console.warn('[Background] 发送 CLEAR_PAGE_DATA 消息失败:', chrome.runtime.lastError.message);
+            logger.warn('[Background] 发送 CLEAR_PAGE_DATA 消息失败:', chrome.runtime.lastError.message);
             // 尝试注入 content script 后再试
             const manifest = chrome.runtime.getManifest();
             const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
@@ -2216,7 +2217,7 @@ export function executeClearPageData(args, toolCallId) {
           localStorage: true
         }, () => {
           if (chrome.runtime.lastError) {
-            console.warn('[Background] browsingData.remove 失败:', chrome.runtime.lastError.message);
+            logger.warn('[Background] browsingData.remove 失败:', chrome.runtime.lastError.message);
           } else {
             if (!cleared.includes('cookies')) cleared.push('cookies');
             if (!cleared.includes('localStorage')) cleared.push('localStorage');
@@ -2339,7 +2340,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
   
   // ── action=get：获取已创建的原型代码 ──
   if (action === 'get') {
-    console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
+    logger.debug('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
     
     if (!prototypeId || !prototypeId.trim()) {
       return { success: false, error: '缺少 prototypeId 参数', tool_call_id: toolCallId };
@@ -2352,7 +2353,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
         return { success: false, error: `未找到原型: ${prototypeId}`, tool_call_id: toolCallId };
       }
       
-      console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
+      logger.debug('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
       
       return { 
         success: true, 
@@ -2364,13 +2365,13 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
         tool_call_id: toolCallId 
       };
     } catch (err) {
-      console.error('[Background] 获取 UI 原型失败:', err);
+      logger.error('[Background] 获取 UI 原型失败:', err);
       return { success: false, error: '获取失败: ' + err.message, tool_call_id: toolCallId };
     }
   }
   
   // ── action=preview：创建并预览原型 ──
-  console.log('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
+  logger.debug('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
   
   if (!html || !html.trim()) {
     return { success: false, error: '缺少 HTML 参数', tool_call_id: toolCallId };
@@ -2398,7 +2399,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
       return { success: false, error: '保存原型失败', tool_call_id: toolCallId };
     }
     
-    console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
+    logger.debug('[Background] UI 原型已保存，ID:', newPrototypeId);
 
     // ── 尝试通过 Agent 写入本地文件并使用本地浏览器打开 ──
     let localOpened = false;
@@ -2412,7 +2413,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
 
         if (writeResult.success) {
           localPath = writeResult.path; // agent 返回的绝对路径
-          console.log('[Background] 原型已写入本地:', localPath);
+          logger.debug('[Background] 原型已写入本地:', localPath);
 
           // 更新 IndexedDB 记录，保存 localPath（包含完整数据，避免覆盖）
           await saveUiPrototype({ ...prototypeData, localPath });
@@ -2421,17 +2422,17 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
           const openResult = await AgentClient.openBrowser(localPath);
           if (openResult.success) {
             localOpened = true;
-            console.log('[Background] 原型已在本地浏览器打开:', localPath);
+            logger.debug('[Background] 原型已在本地浏览器打开:', localPath);
           } else {
-            console.warn('[Background] 本地浏览器打开失败:', openResult.error);
+            logger.warn('[Background] 本地浏览器打开失败:', openResult.error);
           }
         } else {
-          console.warn('[Background] Agent 本地文件写入失败:', writeResult.error);
+          logger.warn('[Background] Agent 本地文件写入失败:', writeResult.error);
         }
       }
     } catch (err) {
       // 写入或打开失败，不影响主流程，走兜底
-      console.warn('[Background] Agent 本地原型写入/打开失败，回退到 Side Panel:', err.message);
+      logger.warn('[Background] Agent 本地原型写入/打开失败，回退到 Side Panel:', err.message);
     }
 
     chrome.runtime.sendMessage({
@@ -2454,7 +2455,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
       tool_call_id: toolCallId 
     };
   } catch (err) {
-    console.error('[Background] 执行 UI 原型预览失败:', err);
+    logger.error('[Background] 执行 UI 原型预览失败:', err);
     return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
   }
 }
@@ -2553,7 +2554,7 @@ async function executeWaitForNavigation(args, toolCallId) {
     if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
     const tabId = tabs[0].id;
 
-    console.log('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
+    logger.debug('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
 
     return new Promise((resolve) => {
       let resolved = false;
@@ -2561,7 +2562,7 @@ async function executeWaitForNavigation(args, toolCallId) {
         if (!resolved) {
           resolved = true;
           chrome.tabs.onUpdated.removeListener(listener);
-          console.warn('[Background] 等待导航超时:', timeout + 'ms');
+          logger.warn('[Background] 等待导航超时:', timeout + 'ms');
           resolve({ success: false, error: `等待导航超时 (${timeout}ms)`, tool_call_id: toolCallId });
         }
       }, timeout);
@@ -2633,12 +2634,12 @@ async function executeTakeFullPageScreenshot(args, toolCallId) {
     if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
     const tabId = tabs[0].id;
 
-    console.log('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
+    logger.debug('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
 
     return new Promise((resolve) => {
       chrome.debugger.attach({ tabId }, '1.3', async () => {
         if (chrome.runtime.lastError) {
-          console.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
+          logger.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
           chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
@@ -2656,14 +2657,14 @@ async function executeTakeFullPageScreenshot(args, toolCallId) {
           triggerScreenshotDownload(fullDataUrl, format);
           resolve({ success: true, dataUrl: fullDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
         } catch (emulationErr) {
-          console.warn('[Background] Emulation 方案失败，回退到 scroll-and-stitch:', emulationErr.message);
+          logger.warn('[Background] Emulation 方案失败，回退到 scroll-and-stitch:', emulationErr.message);
           try {
             // 方案 B：scroll-and-stitch 分段拼接（兜底）
             const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
             triggerScreenshotDownload(stitchedDataUrl, format);
             resolve({ success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功（分段拼接）', tool_call_id: toolCallId });
           } catch (stitchErr) {
-            console.error('[Background] scroll-and-stitch 也失败:', stitchErr.message);
+            logger.error('[Background] scroll-and-stitch 也失败:', stitchErr.message);
             chrome.debugger.detach({ tabId }, () => {});
             chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
               if (chrome.runtime.lastError) {
@@ -2724,7 +2725,7 @@ async function captureViaEmulation(tabId, format, quality) {
     dpr = 1;
   }
 
-  console.log('[Background] Emulation 页面尺寸:', pageW, 'x', pageH, 'dpr:', dpr);
+  logger.debug('[Background] Emulation 页面尺寸:', pageW, 'x', pageH, 'dpr:', dpr);
 
   // 2. 临时拉高视口
   await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
@@ -2754,7 +2755,7 @@ async function captureViaEmulation(tabId, format, quality) {
   await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
   chrome.debugger.detach({ tabId }, () => {});
 
-  console.log('[Background] Emulation 全页截图成功, 数据长度:', result.data?.length);
+  logger.debug('[Background] Emulation 全页截图成功, 数据长度:', result.data?.length);
   return `data:image/${format === 'jpeg' ? 'jpeg' : 'png'};base64,${result.data}`;
 }
 
@@ -2796,7 +2797,7 @@ async function captureViaStitch(tabId, format, quality) {
     viewH = 720;
   }
 
-  console.log('[Background] Stitch 页面尺寸（懒加载后）:', pageW, 'x', pageH, 'viewport:', viewH);
+  logger.debug('[Background] Stitch 页面尺寸（懒加载后）:', pageW, 'x', pageH, 'viewport:', viewH);
 
   // 4. 逐段滚动截图（带重叠）
   const chunks = [];
@@ -2814,7 +2815,7 @@ async function captureViaStitch(tabId, format, quality) {
     });
 
     chunks.push({ data: result.data, y, h: chunkH, w: pageW });
-    console.log('[Background] Stitch 分段:', y, '-', y + chunkH);
+    logger.debug('[Background] Stitch 分段:', y, '-', y + chunkH);
     y += (viewH - STITCH_OVERLAP);
   }
 
@@ -2852,7 +2853,7 @@ async function scrollPageToBottom(tabId) {
     rounds++;
   }
 
-  console.log('[Background] 预滚动完成, 最终 scrollY:', currentScrollY, '轮次:', rounds);
+  logger.debug('[Background] 预滚动完成, 最终 scrollY:', currentScrollY, '轮次:', rounds);
 }
 
 /**
@@ -3008,9 +3009,9 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         stopped = true;
         try {
           await AgentClient.stopCommand(execId);
-          console.log('[AgentExec] 已终止命令进程:', execId, reason ? `(原因: ${reason})` : '');
+          logger.debug('[AgentExec] 已终止命令进程:', execId, reason ? `(原因: ${reason})` : '');
         } catch (stopErr) {
-          console.warn('[AgentExec] 终止命令进程失败:', stopErr.message);
+          logger.warn('[AgentExec] 终止命令进程失败:', stopErr.message);
         }
       }
     };
@@ -3032,7 +3033,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         // WebSocket 正常关闭后的处理已由 Promise 的 onclose 统一管理
         // 此处不再重复处理，避免与 Promise 的 resolve/reject 冲突
       }, (err) => {
-        console.warn('[AgentExec] WebSocket 错误:', err);
+        logger.warn('[AgentExec] WebSocket 错误:', err);
       }, idleTimeoutMs);
 
       if (!ws) {
@@ -3070,7 +3071,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
             // 挂起型命令（如服务启动）：进程可能仍在运行，不杀进程
             // 关闭 WebSocket 但保留后台进程，返回已收集的输出
             idleTimeout = true;
-            console.warn('[AgentExec] 命令空闲超时（', Math.round(idleTime / 1000), 's 无输出），可能为挂起型服务，保留后台进程');
+            logger.warn('[AgentExec] 命令空闲超时（', Math.round(idleTime / 1000), 's 无输出），可能为挂起型服务，保留后台进程');
             if (ws) { try { ws.close(); } catch {} }
             if (totalTimeoutId) clearTimeout(totalTimeoutId);
             resolve();
@@ -3083,12 +3084,12 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
               // 命令仍在执行（最近有输出），自动延长总超时
               timeoutExtensions++;
               const newTotal = effectiveTimeout * (1 + timeoutExtensions);
-              console.log(`[AgentExec] 命令仍在执行，自动延长超时 (第${timeoutExtensions}次，总计${Math.round(newTotal / 1000)}s)`);
+              logger.debug(`[AgentExec] 命令仍在执行，自动延长超时 (第${timeoutExtensions}次，总计${Math.round(newTotal / 1000)}s)`);
               scheduleTimeoutCheck();
               return;
             } else {
               const errMsg = `命令执行总超时（${Math.round(totalAllowed / 1000)}s，已延长${MAX_EXTENSIONS}次）`;
-              console.warn('[AgentExec]', errMsg);
+              logger.warn('[AgentExec]', errMsg);
               cleanupAndStop(errMsg).then(() => {
                 reject(new Error(errMsg));
               });
@@ -3154,7 +3155,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         };
       });
     } catch (wsError) {
-      console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
+      logger.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
       runningAgentCommands.delete(sessionId);
       if (wsError.message.includes('超时') || wsError.message.includes('中断') || stopped) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
@@ -3171,7 +3172,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           error: wsError.message
         };
       }
-      console.warn('[AgentExec] 回退到同步模式:', wsError.message);
+      logger.warn('[AgentExec] 回退到同步模式:', wsError.message);
       const result = await AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout);
       return formatAgentExecResult(result, command, cwd, toolCallId);
     }
@@ -3181,7 +3182,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     // 空闲超时：挂起型命令（如服务启动），返回已收集的输出作为部分结果
     if (idleTimeout) {
       sendAgentStreamDone(sessionId, execId, toolCallId, 0);
-      console.log('[AgentExec] 空闲超时，返回部分结果（命令可能仍在后台运行）');
+      logger.debug('[AgentExec] 空闲超时，返回部分结果（命令可能仍在后台运行）');
       return {
         success: true,
         level: 'allow',
@@ -3914,7 +3915,7 @@ async function executeAgentMemoryRecall(args, toolCallId, sessionId) {
   try {
     await writeMemoryFile(memoryData);
   } catch (e) {
-    console.warn('[Memory] 更新访问计数失败:', e.message);
+    logger.warn('[Memory] 更新访问计数失败:', e.message);
   }
 
   // 格式化输出
@@ -4070,7 +4071,7 @@ export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
   runningAgentCommands.delete(sessionId);
   
   const { execId, ws } = entry;
-  console.log('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId, 'mode:', mode);
+  logger.debug('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId, 'mode:', mode);
   
   // 关闭 WebSocket 连接，阻止后续 AGENT_STREAM 消息发送
   try { ws.close(); } catch (e) { /* ignore */ }
@@ -4079,11 +4080,11 @@ export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
     // 通过 Agent API 停止命令进程
     try {
       await AgentClient.stopCommand(execId);
-      console.log('[Background] 已停止 Agent 命令进程:', execId);
+      logger.debug('[Background] 已停止 Agent 命令进程:', execId);
     } catch (err) {
-      console.warn('[Background] 停止 Agent 命令进程失败:', err.message);
+      logger.warn('[Background] 停止 Agent 命令进程失败:', err.message);
     }
   } else {
-    console.log('[Background] 仅断开 WebSocket，命令进程继续运行:', execId);
+    logger.debug('[Background] 仅断开 WebSocket，命令进程继续运行:', execId);
   }
 }

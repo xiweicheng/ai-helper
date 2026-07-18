@@ -2,6 +2,7 @@
 // 从 chat-manager.js 提取
 
 import state from './state.js';
+import logger from '../shared/logger.js';
 
 // ============================================================
 // 图片预览缩放/拖拽状态
@@ -412,7 +413,7 @@ export function compressAndAttachImage(blob) {
 
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    console.error('[ChatManager] 图片加载失败');
+    logger.error('[ChatManager] 图片加载失败');
   };
 
   img.src = url;
@@ -958,11 +959,11 @@ function undo() {
       editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
       editCtx.drawImage(img, 0, 0, editCanvas.width, editCanvas.height);
     } catch (e) {
-      console.error('Undo failed:', e);
+      logger.error('Undo failed:', e);
     }
   };
   img.onerror = () => {
-    console.error('Failed to load undo image');
+    logger.error('Failed to load undo image');
     if (undoStack.length > 0) {
       undo();
     }

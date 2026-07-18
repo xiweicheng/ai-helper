@@ -1,6 +1,7 @@
 // options/toolbar-config.js - 工具栏配置管理
 
 import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR } from './constants.js';
+import logger from '../shared/logger.js';
 
 let editingToolIndex = -1; // -1 表示新增，>=0 表示编辑
 
@@ -155,7 +156,7 @@ export function saveToolbarConfig() {
       toolbarIconOnly: iconOnly,
       enableSelectionToolbar: enableSelectionToolbar
     }, () => {
-      console.log('[Options] 工具栏配置已保存');
+      logger.debug('[Options] 工具栏配置已保存');
     });
   });
 }
@@ -183,7 +184,7 @@ export function deleteTool(tools, index) {
   const tool = sorted[index];
   
   if (tool.builtin) {
-    console.warn('[Options] 不能删除内置工具');
+    logger.warn('[Options] 不能删除内置工具');
     return tools;
   }
   

@@ -2,6 +2,7 @@ import state from './state.js';
 import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.js';
 import { showToast, escapeHtml } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
+import logger from '../shared/logger.js';
 
 // MCP 工具缓存（从 chrome.storage.local 读取）
 let mcpToolsCache = [];
@@ -36,17 +37,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   if (changes.mcpTools) {
     mcpToolsCache = changes.mcpTools.newValue || [];
-    console.log('[SidePanel] MCP 工具缓存已更新:', mcpToolsCache.length, '个');
+    logger.debug('[SidePanel] MCP 工具缓存已更新:', mcpToolsCache.length, '个');
     needsRefresh = true;
   }
   if (changes.mcpEnabled) {
     globalMcpEnabled = changes.mcpEnabled.newValue === true;
-    console.log('[SidePanel] MCP 全局开关变更:', globalMcpEnabled);
+    logger.debug('[SidePanel] MCP 全局开关变更:', globalMcpEnabled);
     needsRefresh = true;
   }
   if (changes.skillsEnabled) {
     globalSkillsEnabled = changes.skillsEnabled.newValue !== false;
-    console.log('[SidePanel] Skill 全局开关变更:', globalSkillsEnabled);
+    logger.debug('[SidePanel] Skill 全局开关变更:', globalSkillsEnabled);
     needsRefresh = true;
   }
 
@@ -159,7 +160,7 @@ async function openToolsPopup() {
   // 显示弹窗（使用 modal-overlay 的 show 类）
   toolsPopupOverlay.classList.add('show');
   
-  console.log('[SidePanel] 打开工具弹窗');
+  logger.debug('[SidePanel] 打开工具弹窗');
 }
 
 function closeToolsPopup() {
@@ -178,7 +179,7 @@ function closeToolsPopup() {
   // 隐藏弹窗
   toolsPopupOverlay.classList.remove('show');
   
-  console.log('[SidePanel] 关闭工具弹窗');
+  logger.debug('[SidePanel] 关闭工具弹窗');
 }
 
 function renderToolsPopupList() {
@@ -463,7 +464,7 @@ function saveToolsFromPopup() {
   // 保存到当前智能体独立的 storage key
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
   chrome.storage.local.set({ [agentToolsKey]: state.enabledTools }, () => {
-    console.log('[SidePanel] 工具配置已保存到智能体:', agentToolsKey, state.enabledTools);
+    logger.debug('[SidePanel] 工具配置已保存到智能体:', agentToolsKey, state.enabledTools);
   });
   
   // 同步更新当前会话的 enabledTools，避免下次加载时被旧会话数据覆盖
@@ -473,7 +474,7 @@ function saveToolsFromPopup() {
   const preselectToggle = document.getElementById('toolsPreselectToggle');
   if (preselectToggle) {
     chrome.storage.local.set({ enableToolPreselect: preselectToggle.checked }, () => {
-      console.log('[SidePanel] 工具预筛选开关已保存:', preselectToggle.checked);
+      logger.debug('[SidePanel] 工具预筛选开关已保存:', preselectToggle.checked);
     });
   }
   

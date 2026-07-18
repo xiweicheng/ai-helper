@@ -98,3 +98,13 @@ export async function importSessions(sessionsData) {
 export async function appendMessageToSession(sessionId, message) {
   return store.appendMessageToSession(sessionId, message);
 }
+
+/**
+ * 复制会话（完整快照，作为对话分支）
+ * 完整继承源会话的消息历史与配置，自动激活新会话
+ * @param {string} sourceSessionId - 源会话 ID
+ * @returns {Promise<Object>} 新创建的会话
+ */
+export async function duplicateSession(sourceSessionId) {
+  return store.duplicateSession(sourceSessionId);
+}

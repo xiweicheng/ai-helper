@@ -4,6 +4,7 @@ import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
+import logger from '../shared/logger.js';
 
 // 提示词图标 SVG（与提示词管理按钮一致）
 const PROMPT_ICON_SVG = '<svg viewBox="0 0 1024 1024" width="12" height="12" fill="currentColor"><path d="M674.56 231.552l101.568 56.96-56.896-101.632 56.96-101.568-101.632 56.896-101.632-56.896 56.96 101.568-56.896 101.632 101.568-56.96zM186.944 629.76l-101.504-56.896 56.832 101.632-56.832 101.568 101.504-56.96 101.632 56.96-56.896-101.568 56.896-101.568-101.568 56.832zM85.44 85.312l56.832 101.568-56.832 101.632 101.504-56.96 101.632 56.96L231.68 186.88l56.896-101.568-101.568 56.896-101.568-56.896z m351.872 438.016l-99.2-99.136L424.32 337.984l99.072 99.264-86.08 86.144m-41.856-223.04L300.352 395.392a40.448 40.448 0 0 0 0 57.28l474.24 474.112a40.448 40.448 0 0 0 57.344 0l94.912-95.04a40.448 40.448 0 0 0 0-57.344L452.736 300.288a40.448 40.448 0 0 0-57.28 0z"/></svg>';
@@ -14,7 +15,7 @@ const PROMPT_ICON_SVG = '<svg viewBox="0 0 1024 1024" width="12" height="12" fil
  * 清除选中内容上下文
  */
 function clearSelectedContext() {
-  console.log('[SidePanel] 清除选中内容上下文');
+  logger.debug('[SidePanel] 清除选中内容上下文');
   state.selectedContextText = '';
   state.quotedContextText = '';
   const indicator = document.getElementById('selectionIndicator');
@@ -22,7 +23,7 @@ function clearSelectedContext() {
 
   if (indicator) {
     indicator.classList.remove('show');
-    console.log('[SidePanel] 已隐藏选中内容提示条');
+    logger.debug('[SidePanel] 已隐藏选中内容提示条');
   }
 
   // 隐藏浮动菜单
@@ -44,7 +45,7 @@ function clearSelectedContext() {
     if (startIndex > 0) {
       userInput.value = lines.slice(startIndex).join('\n');
       userInput.dispatchEvent(new Event('input'));
-      console.log('[SidePanel] 已移除输入框中的选中内容前缀');
+      logger.debug('[SidePanel] 已移除输入框中的选中内容前缀');
     }
   }
 
@@ -547,7 +548,7 @@ export function insertPromptToInputByCode(code) {
   // 自动调整输入框高度
   adjustInputHeight();
 
-  console.log('[SidePanel] 已追加提示词到输入框:', prompt.code, prompt.content);
+  logger.debug('[SidePanel] 已追加提示词到输入框:', prompt.code, prompt.content);
 }
 
 /**
@@ -559,7 +560,7 @@ export async function sendPromptByCode(code) {
 
   // 防止重复点击
   if (state.isGenerating) {
-    console.log('[SidePanel] 正在生成中，请稍候...');
+    logger.debug('[SidePanel] 正在生成中，请稍候...');
     return;
   }
 
@@ -643,10 +644,10 @@ export async function sendPromptByCode(code) {
     // 确保配置已加载
     await ensureChatConfigLoaded();
 
-    console.log('[SidePanel] 发送消息调试信息:');
-    console.log('  - isolateChat:', state.isolateChat);
-    console.log('  - chatConfig:', state.chatConfig);
-    console.log('  - messageHistory.length:', state.messageHistory.length);
+    logger.debug('[SidePanel] 发送消息调试信息:');
+    logger.debug('  - isolateChat:', state.isolateChat);
+    logger.debug('  - chatConfig:', state.chatConfig);
+    logger.debug('  - messageHistory.length:', state.messageHistory.length);
 
     // 构建 messages
     let messages = [
@@ -670,7 +671,7 @@ export async function sendPromptByCode(code) {
       const maxMemory = state.chatConfig.maxMemoryMessages;
       if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
         historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        console.log(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+        logger.debug(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
       }
 
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];

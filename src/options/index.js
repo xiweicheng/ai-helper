@@ -20,6 +20,7 @@ import {
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
+import logger from '../shared/logger.js';
 
 let currentTools = [];
 
@@ -1144,10 +1145,10 @@ function initAgentConfig() {
               connected: true
             };
             await chrome.storage.local.set({ agentPlatform: platformInfo });
-            console.log('[Options] Agent 平台信息已保存:', platformInfo);
+            logger.debug('[Options] Agent 平台信息已保存:', platformInfo);
           }
         } catch (e) {
-          console.warn('[Options] 获取 Agent 平台信息失败:', e);
+          logger.warn('[Options] 获取 Agent 平台信息失败:', e);
         }
 
         // 获取完整状态和配置
@@ -1171,7 +1172,7 @@ function initAgentConfig() {
             updateStatusUI('connected', labelParts.join(' | '), merged);
           }
         } catch (e) {
-          console.warn('[Options] 获取 Agent 详情失败:', e);
+          logger.warn('[Options] 获取 Agent 详情失败:', e);
         }
 
         // 通知 Side Panel 状态变化（直接在 storage 写入完成后即时通知）
