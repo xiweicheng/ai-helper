@@ -1141,7 +1141,6 @@ export function saveConfig() {
   const reflectionConfig = {
     enabled: document.getElementById('reflectionEnabled').checked,
     postReflection: {
-      enabled: document.getElementById('postReflectionEnabled').checked,
       ...DEFAULT_REFLECTION_CONFIG.postReflection,
       enabled: document.getElementById('postReflectionEnabled').checked
     },

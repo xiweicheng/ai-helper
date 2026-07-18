@@ -497,38 +497,6 @@ export function pageToPdf(fileName = 'page.pdf', landscape = false, scale = 1, p
   });
 }
 
-export function runJavascript(code, timeout = 5000) {
-  return new Promise((resolve) => {
-    try {
-      let result;
-      try {
-        result = eval(code);
-      } catch (evalError) {
-        resolve({ success: false, error: evalError.message });
-        return;
-      }
-
-      if (result && typeof result.then === 'function') {
-        const timeoutId = setTimeout(() => {
-          resolve({ success: false, error: `执行超时 (${timeout}ms)` });
-        }, timeout);
-        result.then(value => {
-          clearTimeout(timeoutId);
-          resolve({ success: true, result: value, type: typeof value });
-        }).catch(err => {
-          clearTimeout(timeoutId);
-          resolve({ success: false, error: err.message });
-        });
-        return;
-      }
-
-      resolve({ success: true, result: result, type: typeof result });
-    } catch (error) {
-      resolve({ success: false, error: error.message });
-    }
-  });
-}
-
 export function injectCss(css, targetSelector = null, injectMode = 'style') {
   try {
     if (!css || typeof css !== 'string') {

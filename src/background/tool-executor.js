@@ -2093,38 +2093,6 @@ export function executePlanTask(args, toolCallId) {
   });
 }
 
-export function evaluateExpression(expr, variables) {
-  if (typeof expr === 'string' && expr.startsWith('{{') && expr.endsWith('}}')) {
-    const code = expr.slice(2, -2).trim();
-    try {
-      return new Function(...Object.keys(variables), `return ${code}`)(...Object.values(variables));
-    } catch (e) {
-      return expr;
-    }
-  }
-  return expr;
-}
-
-export function substituteVariables(obj, variables) {
-  if (typeof obj === 'string') {
-    return evaluateExpression(obj, variables);
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(item => substituteVariables(item, variables));
-  }
-  if (typeof obj === 'object' && obj !== null) {
-    const result = {};
-    Object.keys(obj).forEach(key => {
-      result[key] = substituteVariables(obj[key], variables);
-    });
-    return result;
-  }
-  return obj;
-}
-
-
-
-
 /**
  * 清除页面数据（localStorage, sessionStorage, cookies, cache）
  */

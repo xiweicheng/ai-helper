@@ -18,7 +18,7 @@ import {
 
 import {
   videoControl, generateQRCode,
-  shadowDomQuery, runJavascript, injectCss
+  shadowDomQuery, injectCss
 } from './advanced-tools.js';
 
 import { deepGetSelection } from './shadow-dom-utils.js';
@@ -60,8 +60,8 @@ document.addEventListener('keydown', (e) => {
 //   高亮/选区(2):   HIGHLIGHT_TEXT, REMOVE_HIGHLIGHTS
 //   元素分析(1):   SHADOW_DOM_QUERY
 //   媒体/输出(4):   MANAGE_STORAGE, TEXT_TO_SPEECH, INJECT_CSS, VIDEO_CONTROL
-//   异步工具(11):  COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_FOR_ELEMENT, DRAG_AND_DROP,
-//                  SELECT_DROPDOWN, COLOR_PICKER, GENERATE_QRCODE, RUN_JAVASCRIPT,
+//   异步工具(10):  COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_FOR_ELEMENT, DRAG_AND_DROP,
+//                  SELECT_DROPDOWN, COLOR_PICKER, GENERATE_QRCODE,
 //                  GET_ELEMENT_COUNT, SCROLL_AND_COLLECT, START_REGION_SELECTION
 //   特殊(1):       CLEAR_PAGE_DATA（内联逻辑）
 //
@@ -117,7 +117,6 @@ const HANDLERS = {
   SELECT_DROPDOWN:           (msg) => selectDropdown(msg.triggerSelector, msg.optionText, msg.optionSelector, msg.timeout),
   COLOR_PICKER:              ()   => pickColor(),
   GENERATE_QRCODE:           (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
-  RUN_JAVASCRIPT:            (msg) => runJavascript(msg.code, msg.timeout),
   GET_ELEMENT_COUNT:         (msg) => getElementCount(msg.selector, msg.includeHidden),
   SCROLL_AND_COLLECT:        (msg) => scrollAndCollect(msg),
 
@@ -153,7 +152,7 @@ const ASYNC_HANDLERS = new Set([
   'SELECT_DROPDOWN', 'SCROLL_AND_COLLECT',
   'WATCH_ELEMENT', 'COLOR_PICKER',
   'GENERATE_QRCODE', 'SCREENSHOT_ELEMENT',
-  'PAGE_TO_PDF', 'RUN_JAVASCRIPT',
+  'PAGE_TO_PDF',
   'START_REGION_SELECTION',
 ]);
 
