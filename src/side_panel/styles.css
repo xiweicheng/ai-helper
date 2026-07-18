@@ -1995,11 +1995,7 @@ body {
 }
 /* Agent 命令实时输出 */
 .agent-stream-output {
-  margin: 12px 0;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #f8f9fa;
+  padding: 0 12px 10px 40px;
 }
 .agent-stream-header {
   display: flex;
@@ -2460,6 +2456,13 @@ body {
   white-space: nowrap;
   animation: executing-pulse 1s ease-in-out infinite;
 }
+.tool-call-header .tool-result-status {
+  flex-shrink: 0;
+}
+.tool-call-header .tool-result-duration {
+  flex-shrink: 0;
+  color: #999;
+}
 .tool-call-executing::before {
   content: '';
   display: inline-block;
@@ -2740,18 +2743,17 @@ body {
   color: #888;
 }
 .tool-result-status {
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
 }
 .tool-result-status.success {
   color: #059669;
-  background: rgba(5, 150, 105, 0.1);
 }
 .tool-result-status.fail {
   color: #dc2626;
-  background: rgba(220, 38, 38, 0.1);
 }
 .tool-result-duration {
   color: #999;

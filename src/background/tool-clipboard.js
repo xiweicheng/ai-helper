@@ -1,7 +1,7 @@
 // background/tool-clipboard.js - 剪贴板工具（使用 Offscreen Document）
 // 从 tool-executor.js 拆分，包含 clipboard / get_page_content / extract_data 工具实现
 
-import { getActiveTabId, sendToContentScriptWithRetry } from './tool-helpers.js';
+import { getActiveTabId, sendToContentScriptWithRetry, makeResult } from './tool-helpers.js';
 
 // ==================== 剪贴板工具（使用 Offscreen Document） ====================
 
@@ -52,18 +52,18 @@ export async function executeGetPageContent(args, toolCallId, _sessionId, sessio
 
   const messageType = messageTypeMap[format];
   if (!messageType) {
-    return { success: false, error: `不支持的格式: ${format}，可选: text, html`, tool_call_id: toolCallId };
+    return makeResult(false, `不支持的格式: ${format}，可选: text, html`, toolCallId);
   }
 
   try {
     const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
     if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      return makeResult(false, '没有可用的标签页', toolCallId);
     }
     const message = { type: messageType, selector, maxLength };
     return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
   } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
+    return makeResult(false, e.message, toolCallId);
   }
 }
 
@@ -86,7 +86,7 @@ export async function executeExtractData(args, toolCallId, _sessionId, sessionTa
   } = args;
 
   if (!dataType) {
-    return { success: false, error: '缺少 dataType 参数', tool_call_id: toolCallId };
+    return makeResult(false, '缺少 dataType 参数', toolCallId);
   }
 
   const messageTypeMap = {
@@ -99,19 +99,19 @@ export async function executeExtractData(args, toolCallId, _sessionId, sessionTa
 
   const messageType = messageTypeMap[dataType];
   if (!messageType) {
-    return { success: false, error: `不支持的数据类型: ${dataType}，可选: table, metadata, links, forms, images`, tool_call_id: toolCallId };
+    return makeResult(false, `不支持的数据类型: ${dataType}，可选: table, metadata, links, forms, images`, toolCallId);
   }
 
   try {
     const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
     if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      return makeResult(false, '没有可用的标签页', toolCallId);
     }
 
     const message = { type: messageType, selector, filterType, includeHeaders, format, includeImages, minWidth, minHeight, maxResults };
     return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
   } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
+    return makeResult(false, e.message, toolCallId);
   }
 }
 
@@ -123,7 +123,7 @@ export async function executeClipboard(args, toolCallId) {
   const { action, text, format = 'text' } = args;
 
   if (!action) {
-    return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
+    return makeResult(false, '缺少 action 参数', toolCallId);
   }
 
   if (action === 'copy') {
@@ -138,21 +138,21 @@ export async function executeClipboard(args, toolCallId) {
     try {
       const tabId = await getActiveTabId();
       if (!tabId) {
-        return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+        return makeResult(false, '没有可用的标签页', toolCallId);
       }
       return await sendToContentScriptWithRetry(tabId, { type: 'GET_SELECTED_CONTENT', format }, toolCallId);
     } catch (e) {
-      return { success: false, error: e.message, tool_call_id: toolCallId };
+      return makeResult(false, e.message, toolCallId);
     }
   }
 
-  return { success: false, error: `不支持的操作: ${action}，可选: copy, paste, get_selected`, tool_call_id: toolCallId };
+  return makeResult(false, `不支持的操作: ${action}，可选: copy, paste, get_selected`, toolCallId);
 }
 
 export async function executeCopyToClipboard(args, toolCallId) {
   const { text } = args;
   if (text === undefined || text === null) {
-    return { success: false, error: '缺少 text 参数', tool_call_id: toolCallId };
+    return makeResult(false, '缺少 text 参数', toolCallId);
   }
 
   try {
@@ -162,12 +162,12 @@ export async function executeCopyToClipboard(args, toolCallId) {
       text: text
     });
     if (response?.success) {
-      return { success: true, message: response.message || '已复制到剪贴板', tool_call_id: toolCallId };
+      return makeResult(true, response.message || '已复制到剪贴板', toolCallId);
     } else {
-      return { success: false, error: response?.error || '复制失败', tool_call_id: toolCallId };
+      return makeResult(false, response?.error || '复制失败', toolCallId);
     }
   } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
+    return makeResult(false, e.message, toolCallId);
   }
 }
 
@@ -178,12 +178,12 @@ export async function executePasteFromClipboard(args, toolCallId) {
       type: 'PASTE_FROM_CLIPBOARD'
     });
     if (response?.success) {
-      return { success: true, text: response.text, tool_call_id: toolCallId };
+      return { ...makeResult(true, response.text || '', toolCallId), text: response.text };
     } else {
-      return { success: false, error: response?.error || '粘贴失败', tool_call_id: toolCallId };
+      return makeResult(false, response?.error || '粘贴失败', toolCallId);
     }
   } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
+    return makeResult(false, e.message, toolCallId);
   }
 }
 

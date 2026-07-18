@@ -356,7 +356,7 @@ export async function executeTakeFullPageScreenshot(args, toolCallId) {
 
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    if (!tabs.length) return makeResult(false, '无法获取当前标签页', toolCallId);
     const tabId = tabs[0].id;
 
     logger.debug('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
@@ -404,7 +404,7 @@ export async function executeTakeFullPageScreenshot(args, toolCallId) {
       });
     });
   } catch (err) {
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+    return makeResult(false, '执行失败: ' + err.message, toolCallId);
   }
 }
 

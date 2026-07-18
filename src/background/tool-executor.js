@@ -119,7 +119,7 @@ export async function loadMcpTools() {
       TOOL_EXECUTION_MAP[toolId] = 'background';
       TOOL_HANDLERS[toolId] = async (args, toolCallId) => {
         const result = await AgentClient.callMcpTool(tool.serverId, tool.name, args);
-        return { success: result.success, content: result.content || result.error || '', tool_call_id: toolCallId };
+        return makeResult(result.success, result.content || result.error || '', toolCallId);
       };
       mcpToolIds.add(toolId);
       registered++;
@@ -483,7 +483,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       args = parsed || {};
     } catch (e) {
       logger.error('[Background] 解析工具参数失败:', e, '原始值:', argsStrRaw.substring(0, 300));
-      return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
+      return makeResult(false, '工具参数解析失败', toolCallId);
     }
     if (Object.keys(args).length === 0 && argsStrRaw && argsStrRaw.length > 0 && argsStrRaw !== '{}') {
       logger.error('[Background] 参数解析后为空对象！原始 arguments:', argsStrRaw.substring(0, 300));
@@ -497,7 +497,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       args = parsed || {};
     } catch (e) {
       logger.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
-      return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
+      return makeResult(false, '工具参数解析失败', toolCallId);
     }
   }
   
@@ -1667,30 +1667,28 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     logger.debug('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
     
     if (!prototypeId || !prototypeId.trim()) {
-      return { success: false, error: '缺少 prototypeId 参数', tool_call_id: toolCallId };
+      return makeResult(false, '缺少 prototypeId 参数', toolCallId);
     }
     
     try {
       const prototype = await getUiPrototype(prototypeId.trim());
       
       if (!prototype) {
-        return { success: false, error: `未找到原型: ${prototypeId}`, tool_call_id: toolCallId };
+        return makeResult(false, `未找到原型: ${prototypeId}`, toolCallId);
       }
       
       logger.debug('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
       
       return { 
-        success: true, 
-        message: `已获取原型 "${prototype.title}" 的代码`,
+        ...makeResult(true, `已获取原型 "${prototype.title}" 的代码`, toolCallId),
         prototypeId: prototype.id,
         title: prototype.title,
         description: prototype.description || '',
-        html: prototype.html,
-        tool_call_id: toolCallId 
+        html: prototype.html
       };
     } catch (err) {
       logger.error('[Background] 获取 UI 原型失败:', err);
-      return { success: false, error: '获取失败: ' + err.message, tool_call_id: toolCallId };
+      return makeResult(false, '获取失败: ' + err.message, toolCallId);
     }
   }
   
@@ -1698,11 +1696,11 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
   logger.debug('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
   
   if (!html || !html.trim()) {
-    return { success: false, error: '缺少 HTML 参数', tool_call_id: toolCallId };
+    return makeResult(false, '缺少 HTML 参数', toolCallId);
   }
   
   if (!title || !title.trim()) {
-    return { success: false, error: '缺少 title 参数', tool_call_id: toolCallId };
+    return makeResult(false, '缺少 title 参数', toolCallId);
   }
   
   try {
@@ -1720,7 +1718,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     const saved = await saveUiPrototype(prototypeData);
     
     if (!saved) {
-      return { success: false, error: '保存原型失败', tool_call_id: toolCallId };
+      return makeResult(false, '保存原型失败', toolCallId);
     }
     
     logger.debug('[Background] UI 原型已保存，ID:', newPrototypeId);
@@ -1771,16 +1769,14 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     }).catch(() => {});
     
     return { 
-      success: true, 
-      message: localOpened ? `UI 原型 "${title}" 已创建并在本地浏览器打开` : `UI 原型 "${title}" 已创建并预览`,
+      ...makeResult(true, localOpened ? `UI 原型 "${title}" 已创建并在本地浏览器打开` : `UI 原型 "${title}" 已创建并预览`, toolCallId),
       prototypeId: newPrototypeId,
       localOpened,
-      localPath,
-      tool_call_id: toolCallId 
+      localPath
     };
   } catch (err) {
     logger.error('[Background] 执行 UI 原型预览失败:', err);
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+    return makeResult(false, '执行失败: ' + err.message, toolCallId);
   }
 }
 
@@ -1791,23 +1787,21 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
  */
 async function executeSkillRun(args, toolCallId) {
   const { name, params = {} } = args;
-  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
+  if (!name) return makeResult(false, '缺少 name 参数', toolCallId);
 
   try {
     const result = await AgentClient.runSkill(name, params);
     if (result.success) {
       return {
-        success: true,
-        content: result.message || `Skill "${name}" 执行完成`,
+        ...makeResult(true, result.message || `Skill "${name}" 执行完成`, toolCallId),
         execId: result.execId,
         partial: result.partial || false,
-        results: result.results,
-        tool_call_id: toolCallId
+        results: result.results
       };
     }
-    return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
+    return makeResult(false, result.error || 'Skill 执行失败', toolCallId);
   } catch (err) {
-    return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
+    return makeResult(false, `Skill 执行异常: ${err.message}`, toolCallId);
   }
 }
 
@@ -1819,16 +1813,14 @@ const skillLoadCache = new Map(); // name → { timestamp, prompt, skill }
 
 async function executeSkillLoad(args, toolCallId) {
   const { name } = args;
-  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
+  if (!name) return makeResult(false, '缺少 name 参数', toolCallId);
 
   // 检查缓存（60 秒内有效）
   const cached = skillLoadCache.get(name);
   if (cached && (Date.now() - cached.timestamp < 60000)) {
     return {
-      success: true,
-      content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${cached.prompt}`,
-      skill: cached.skill,
-      tool_call_id: toolCallId
+      ...makeResult(true, `已加载 Agent Skill "${name}" 的完整说明：\n\n${cached.prompt}`, toolCallId),
+      skill: cached.skill
     };
   }
 
@@ -1838,15 +1830,13 @@ async function executeSkillLoad(args, toolCallId) {
       // 写入缓存
       skillLoadCache.set(name, { timestamp: Date.now(), prompt: result.prompt, skill: result.skill });
       return {
-        success: true,
-        content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${result.prompt}`,
-        skill: result.skill,
-        tool_call_id: toolCallId
+        ...makeResult(true, `已加载 Agent Skill "${name}" 的完整说明：\n\n${result.prompt}`, toolCallId),
+        skill: result.skill
       };
     }
-    return { success: false, error: result.error || 'Skill 加载失败', tool_call_id: toolCallId };
+    return makeResult(false, result.error || 'Skill 加载失败', toolCallId);
   } catch (err) {
-    return { success: false, error: `Skill 加载异常: ${err.message}`, tool_call_id: toolCallId };
+    return makeResult(false, `Skill 加载异常: ${err.message}`, toolCallId);
   }
 }
 
@@ -1855,13 +1845,13 @@ async function executeSkillLoad(args, toolCallId) {
  */
 async function executeAgentReadFile(args, toolCallId) {
   const { path } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return makeResult(false, '缺少 path 参数', toolCallId);
   
   const result = await AgentClient.readFile(path);
   if (result.success) {
-    return { success: true, content: result.content, size: result.size, path: result.path, tool_call_id: toolCallId };
+    return { ...makeResult(true, result.content, toolCallId), size: result.size, path: result.path };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 // ========== P0/P1 新增工具 (2026-06-28) ==========
@@ -1875,7 +1865,7 @@ async function executeWaitForNavigation(args, toolCallId) {
 
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
+    if (!tabs.length) return makeResult(false, '无法获取当前标签页', toolCallId);
     const tabId = tabs[0].id;
 
     logger.debug('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
@@ -1887,7 +1877,7 @@ async function executeWaitForNavigation(args, toolCallId) {
           resolved = true;
           chrome.tabs.onUpdated.removeListener(listener);
           logger.warn('[Background] 等待导航超时:', timeout + 'ms');
-          resolve({ success: false, error: `等待导航超时 (${timeout}ms)`, tool_call_id: toolCallId });
+          resolve(makeResult(false, `等待导航超时 (${timeout}ms)`, toolCallId));
         }
       }, timeout);
 
@@ -1895,17 +1885,17 @@ async function executeWaitForNavigation(args, toolCallId) {
       chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError || !tab) {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: false, error: '标签页不可用', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve(makeResult(false, '标签页不可用', toolCallId)); }
           return;
         }
         if (tab.status === 'complete' && waitUntil === 'load') {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面已加载完成', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve({ ...makeResult(true, '页面已加载完成', toolCallId), status: 'complete', url: tab.url }); }
           return;
         }
         if (tab.status === 'complete' && waitUntil === 'domcontentloaded') {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面 DOM 已就绪', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve({ ...makeResult(true, '页面 DOM 已就绪', toolCallId), status: 'complete', url: tab.url }); }
           return;
         }
       });
@@ -1922,7 +1912,7 @@ async function executeWaitForNavigation(args, toolCallId) {
                 resolved = true;
                 clearTimeout(timeoutId);
                 chrome.tabs.onUpdated.removeListener(listener);
-                resolve({ success: true, status: 'complete', url: tab.url, message: '网络空闲，页面加载完成', tool_call_id: toolCallId });
+                resolve({ ...makeResult(true, '网络空闲，页面加载完成', toolCallId), status: 'complete', url: tab.url });
               }
             }, 500);
           }
@@ -1930,7 +1920,7 @@ async function executeWaitForNavigation(args, toolCallId) {
           resolved = true;
           clearTimeout(timeoutId);
           chrome.tabs.onUpdated.removeListener(listener);
-          resolve({ success: true, status: 'complete', url: tab.url, message: '页面加载完成', tool_call_id: toolCallId });
+          resolve({ ...makeResult(true, '页面加载完成', toolCallId), status: 'complete', url: tab.url });
         } else if (changeInfo.status === 'loading' && waitUntil === 'domcontentloaded') {
           // 对于 domcontentloaded，loading 状态已经意味着 DOM 开始解析
           // 但我们仍然等 complete（稳妥）
@@ -1940,7 +1930,7 @@ async function executeWaitForNavigation(args, toolCallId) {
       chrome.tabs.onUpdated.addListener(listener);
     });
   } catch (err) {
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+    return makeResult(false, '执行失败: ' + err.message, toolCallId);
   }
 }
 
@@ -1964,14 +1954,14 @@ async function executeWaitForNavigation(args, toolCallId) {
  */
 async function executeAgentWriteFile(args, toolCallId) {
   const { path, content } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
-  if (content === undefined || content === null) return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
+  if (!path) return makeResult(false, '缺少 path 参数', toolCallId);
+  if (content === undefined || content === null) return makeResult(false, '缺少 content 参数', toolCallId);
   
   const result = await AgentClient.writeFile(path, content);
   if (result.success) {
-    return { success: true, message: `文件已写入: ${result.path} (${result.size} 字节)`, path: result.path, size: result.size, tool_call_id: toolCallId };
+    return { ...makeResult(true, `文件已写入: ${result.path} (${result.size} 字节)`, toolCallId), path: result.path, size: result.size };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 /**
@@ -1988,9 +1978,9 @@ async function executeAgentListDir(args, toolCallId) {
       `  📁 ${dirs.length} 个目录\n` +
       `  📄 ${files.length} 个文件\n\n` +
       (result.entries || []).map(e => `  ${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.type === 'file' ? ` (${e.size} 字节)` : ''}`).join('\n');
-    return { success: true, content: text, path: result.path, entries: result.entries, tool_call_id: toolCallId };
+    return { ...makeResult(true, text, toolCallId), path: result.path, entries: result.entries };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 /**
@@ -1998,14 +1988,14 @@ async function executeAgentListDir(args, toolCallId) {
  */
 async function executeAgentDeleteFile(args, toolCallId) {
   const { path } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return makeResult(false, '缺少 path 参数', toolCallId);
   
   const result = await AgentClient.deleteFile(path);
   if (result.success) {
     appendAuditLog('file_delete', `删除文件: ${result.path}`, { path: result.path });
-    return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
+    return { ...makeResult(true, `已删除: ${result.path}`, toolCallId), path: result.path };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 /**
@@ -2066,7 +2056,7 @@ async function requestCommandConfirmation(command, reason, toolCallId, sessionId
  */
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const { command, cwd, force, timeout } = args;
-  if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
+  if (!command) return makeResult(false, '缺少 command 参数', toolCallId);
 
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
@@ -2081,10 +2071,10 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     let initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
 
     if (initResult.level === 'deny') {
-      return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+      return { ...makeResult(false, initResult.error || '命令执行被拒绝', toolCallId), level: 'deny' };
     }
     if (!initResult.success && !initResult.level) {
-      return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
+      return makeResult(false, initResult.error || '命令执行失败', toolCallId);
     }
     if (initResult.level === 'confirm') {
       // 敏感命令弹框确认（等待用户响应期间暂停前端超时，与 clarify 行为一致）
@@ -2109,10 +2099,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
 
       if (!confirmed) {
         return {
-          success: false,
-          error: '用户拒绝了此命令的执行',
-          command,
-          tool_call_id: toolCallId
+          ...makeResult(false, '用户拒绝了此命令的执行', toolCallId),
+          command
         };
       }
 
@@ -2121,14 +2109,14 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       initResult = await AgentClient.execCommand(command, cwd, true);
 
       if (initResult.level === 'deny') {
-        return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+        return { ...makeResult(false, initResult.error || '命令执行被拒绝', toolCallId), level: 'deny' };
       }
       if (!initResult.success && !initResult.level) {
-        return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
+        return makeResult(false, initResult.error || '命令执行失败', toolCallId);
       }
       if (initResult.level === 'confirm') {
         // force=true 时 Agent 端应跳过灰名单，不应再返回 confirm
-        return { success: false, error: '命令仍需确认（不应发生）', tool_call_id: toolCallId };
+        return makeResult(false, '命令仍需确认（不应发生）', toolCallId);
       }
     }
 
@@ -2365,24 +2353,22 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
 function formatAgentExecResult(result, command, cwd, toolCallId) {
   // 黑名单拦截
   if (result.level === 'deny') {
-    return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+    return { ...makeResult(false, result.error || '命令执行被拒绝', toolCallId), level: 'deny' };
   }
 
   // 网络/认证错误
   if (!result.success && !result.level) {
-    return { success: false, error: result.error || '命令执行失败', tool_call_id: toolCallId };
+    return makeResult(false, result.error || '命令执行失败', toolCallId);
   }
   
   // 灰名单 - 需要确认
   if (result.level === 'confirm') {
     return {
-      success: true,
+      ...makeResult(true, `⚠️ 命令需要用户确认：${result.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`, toolCallId),
       level: 'confirm',
-      message: `⚠️ 命令需要用户确认：${result.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
       reason: result.reason,
       command,
-      cwd,
-      tool_call_id: toolCallId
+      cwd
     };
   }
   
@@ -2390,17 +2376,16 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
   appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
   const hasExitCode = result.exitCode !== null && result.exitCode !== undefined;
   const isSuccess = hasExitCode && result.exitCode === 0;
+  const message = `命令执行完毕 ${hasExitCode ? '(exitCode: ' + result.exitCode + ')' : '(无 exitCode)'}\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`;
   return {
-    success: isSuccess,
+    ...makeResult(isSuccess, message, toolCallId),
     level: 'allow',
     execId: result.execId,
     exitCode: hasExitCode ? result.exitCode : undefined,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     killed: result.killed || false,
-    message: `命令执行完毕 ${hasExitCode ? '(exitCode: ' + result.exitCode + ')' : '(无 exitCode)'}\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`,
-    error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${result.exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
-    tool_call_id: toolCallId
+    error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${result.exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined
   };
 }
 
@@ -2409,21 +2394,20 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
  */
 async function executeAgentSearchFiles(args, toolCallId) {
   const { path, pattern, recursive, maxResults } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return makeResult(false, '缺少 path 参数', toolCallId);
   
   const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
   if (result.success) {
     const engineLabel = result.engine === 'fd' ? ' (引擎: fd)' : ' (引擎: Node.js)';
+    const message = `找到 ${result.total} 个文件${engineLabel}\n\n${result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n')}${result.total > 50 ? '\n\n... (仅显示前 50 条)' : ''}`;
     return {
-      success: true,
+      ...makeResult(true, message, toolCallId),
       results: result.results,
       total: result.total,
-      engine: result.engine,
-      message: `找到 ${result.total} 个文件${engineLabel}\n\n${result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n')}${result.total > 50 ? '\n\n... (仅显示前 50 条)' : ''}`,
-      tool_call_id: toolCallId
+      engine: result.engine
     };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 /**
@@ -2431,8 +2415,8 @@ async function executeAgentSearchFiles(args, toolCallId) {
  */
 async function executeAgentSearchContent(args, toolCallId) {
   const { path, pattern, filePattern, caseSensitive, maxResults, contextLines } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
-  if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
+  if (!path) return makeResult(false, '缺少 path 参数', toolCallId);
+  if (!pattern) return makeResult(false, '缺少 pattern 参数', toolCallId);
   
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
@@ -2441,16 +2425,15 @@ async function executeAgentSearchContent(args, toolCallId) {
   );
   if (result.success) {
     const engineLabel = result.engine === 'rg' ? ' (引擎: ripgrep)' : ' (引擎: Node.js)';
+    const message = `找到 ${result.total} 条匹配${engineLabel}\n\n${result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n')}${result.total > 30 ? '\n\n... (仅显示前 30 条)' : ''}`;
     return {
-      success: true,
+      ...makeResult(true, message, toolCallId),
       results: result.results,
       total: result.total,
-      engine: result.engine,
-      message: `找到 ${result.total} 条匹配${engineLabel}\n\n${result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n')}${result.total > 30 ? '\n\n... (仅显示前 30 条)' : ''}`,
-      tool_call_id: toolCallId
+      engine: result.engine
     };
   }
-  return { success: false, error: result.error, tool_call_id: toolCallId };
+  return makeResult(false, result.error, toolCallId);
 }
 
 // 剪贴板工具（clipboard / get_page_content / extract_data）已拆分到 tool-clipboard.js

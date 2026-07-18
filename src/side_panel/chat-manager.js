@@ -2588,32 +2588,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             // 创建新的 Agent 输出区域
             const outputDiv = document.createElement('div');
             outputDiv.className = 'agent-stream-output';
-            outputDiv.innerHTML = `
-              <div class="agent-stream-header">
-                <span class="agent-stream-icon">🖥️</span>
-                <span class="agent-stream-label">命令输出</span>
-                <button class="agent-stream-terminate-btn" title="终止命令" data-exec-id="${message.execId}">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  </svg>
-                </button>
-              </div>
-              ${createCodeBlockHtml('', 'agent-stream-content')}
-            `;
-            // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部
-            let targetContainer = null;
+            outputDiv.innerHTML = createCodeBlockHtml('', 'agent-stream-content');
+            // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部（与非命令工具的 .tool-call-result 展示形式一致）
             if (message.toolCallId) {
               const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);
               if (card) {
-                targetContainer = card.querySelector('.tool-call-body');
-                if (targetContainer) {
-                  // 在卡片 body 末尾、参数展示之后插入输出区域
-                  targetContainer.appendChild(outputDiv);
-                }
+                // 插入到卡片内部末尾，与非命令工具的 .tool-call-result 位置一致
+                card.appendChild(outputDiv);
               }
             }
             // 降级：如果没有找到对应卡片，追加到 stream-content（兼容旧版）
-            if (!targetContainer || !outputDiv.isConnected) {
+            if (!outputDiv.isConnected) {
               const sc = _se().querySelector('.stream-content');
               if (sc) {
                 sc.appendChild(outputDiv);
@@ -2623,14 +2608,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             _agentStreams[message.execId] = agentEntry;
             // 绑定代码块复制按钮
             addCodeCopyButtons();
-            // 绑定终止按钮事件
-            const terminateBtn = outputDiv.querySelector('.agent-stream-terminate-btn');
-            if (terminateBtn) {
-              terminateBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showCommandTerminateDialog(message.sessionId);
-              });
-            }
           }
           
           const codeEl = agentEntry.element.querySelector('code');
@@ -2652,20 +2629,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         // Agent 命令执行结束
         if (message.execId) {
           const agentEntry = _agentStreams[message.execId];
-          if (agentEntry) {
-            const headerEl = agentEntry.element.querySelector('.agent-stream-label');
-            if (headerEl) {
-              const exitLabel = message.exitCode === 0 ? '完成' : `退出 (code: ${message.exitCode})`;
-              headerEl.textContent = `命令输出 - ${exitLabel}`;
-            }
-            if (message.exitCode !== 0) {
-              agentEntry.element.classList.add('agent-stream-error');
-            }
-            // 命令已结束，隐藏终止按钮
-            const terminateBtn = agentEntry.element.querySelector('.agent-stream-terminate-btn');
-            if (terminateBtn) {
-              terminateBtn.style.display = 'none';
-            }
+          if (agentEntry && message.exitCode !== 0) {
+            agentEntry.element.classList.add('agent-stream-error');
           }
         }
         return false;

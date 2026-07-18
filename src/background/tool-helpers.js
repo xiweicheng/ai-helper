@@ -105,7 +105,7 @@ export function normalizeToolResult(result, toolCallId) {
         result.content = JSON.stringify(rest);
         result.metadata = rest;
       }
-      logger.warn('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
+      logger.debug('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
     }
     if (!result.tool_call_id) result.tool_call_id = toolCallId;
     return result;

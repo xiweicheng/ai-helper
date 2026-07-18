@@ -571,57 +571,50 @@ export function appendToolResult(result, streamingElement) {
     // 此处只展示状态行，不重复展示完整输出内容
     const isExecCommand = card.getAttribute('data-meta-type') === 'exec';
     
-    const resultDiv = document.createElement('div');
-    resultDiv.className = 'tool-call-result';
+    // 将状态和耗时插入到标题栏中（替换执行中位置）
+    const header = card.querySelector('.tool-call-header');
+    const statusHtml = `
+      <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
+        ${result.success 
+          ? '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>' 
+          : '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>'}
+      </span>
+      ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+      ${truncateNote}
+    `;
+    header.insertAdjacentHTML('beforeend', statusHtml);
     
-    if (isExecCommand) {
-      // 已有流式输出：只展示执行状态，不重复展示输出内容
-      resultDiv.innerHTML = `
-        <div class="tool-result-header">
-          <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
-            ${result.success ? '成功' : '失败'}
-          </span>
-          ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
-          ${truncateNote}
-        </div>
-      `;
-    } else {
-      // 没有流式输出（如非命令执行工具）：展示完整结果内容
+    // 命令执行类工具：已有流式输出，不再创建下方结果区（状态已移到标题栏）
+    if (!isExecCommand) {
+      // 非命令执行工具：展示结果内容（不含状态行，状态已在标题栏）
       const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
       const contentPreview = contentText.length > 500 
         ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
         : contentText;
       const fullContent = contentText;
       
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'tool-call-result';
       resultDiv.innerHTML = `
-        <div class="tool-result-header">
-          <span class="tool-result-status ${result.success ? 'success' : 'fail'}">
-            ${result.success ? '成功' : '失败'}
-          </span>
-          ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
-          ${truncateNote}
-        </div>
         <div class="tool-result-content">
           ${createCodeBlockHtml(escapeHtml(contentPreview))}
         </div>
       `;
       
-      // 如果内容 > 500 字符，支持点击展开完整内容
       if (fullContent.length > 500) {
         const codeBlock = resultDiv.querySelector('code');
         codeBlock.dataset.fullContent = fullContent;
         let isExpanded = false;
         resultDiv.style.cursor = 'pointer';
         resultDiv.addEventListener('click', (e) => {
-          // Ctrl/Meta + Click 用于复制，不触发展开/折叠
           if (e.ctrlKey || e.metaKey) return;
           isExpanded = !isExpanded;
           codeBlock.textContent = isExpanded ? fullContent : contentPreview;
         });
       }
+      
+      card.appendChild(resultDiv);
     }
-    
-    card.appendChild(resultDiv);
     
     // 绑定代码块复制按钮
     addCodeCopyButtons();
