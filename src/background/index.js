@@ -4,10 +4,25 @@ import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, 
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
-import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
+import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import * as AgentClient from './local-agent-client.js';
+import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
+
+// SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
+// 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）
+cleanupExpiredReactCheckpoints()
+  .then(() => {
+    // 自检：列出当前所有 checkpoint，验证 store 工作正常
+    return getAllReactCheckpoints();
+  })
+  .then(all => {
+    console.log(`[Background] DB 自检通过，当前有 ${all.length} 个 checkpoint`);
+  })
+  .catch(err => {
+    console.warn('[Background] 清理过期 checkpoint 或 DB 自检失败:', err);
+  });
 
 // chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
 const MAX_LOG_ENTRIES_FOR_MSG = 1000;
@@ -22,7 +37,7 @@ let skillPromptsCache = null;
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
 const keepalivePorts = new Map(); // sessionId -> Port
 
-chrome.runtime.onConnect.addListener((port) => {
+chrome.runtime.onConnect.addListener(async (port) => {
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
     // 判断是否为重连（SW 重启后的重连），而非首次连接
@@ -33,8 +48,25 @@ chrome.runtime.onConnect.addListener((port) => {
     // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
     if (isReconnection && !activeReactLoops.has(sessionId)) {
       console.warn('[Background] ⚠️ 检测到 SW 已重启，sessionId', sessionId, '的 API 调用已丢失');
+      // 检查是否存在 checkpoint，若存在则在通知中带上元数据，供前端展示"继续执行"按钮
+      let checkpointMeta = null;
       try {
-        port.postMessage({ type: 'SW_RESTARTED', sessionId });
+        const cp = await getReactCheckpoint(sessionId);
+        if (cp) {
+          checkpointMeta = {
+            iteration: cp.iteration,
+            interruptedReason: cp.interruptedReason,
+            updatedAt: cp.updatedAt,
+            messageCount: cp.currentMessages?.length || 0,
+            subtaskPlan: cp.subtaskPlan ? { subtaskCount: cp.subtaskPlan.subtasks?.length || 0 } : null,
+          };
+          console.log('[Background] 检测到可恢复的 checkpoint:', checkpointMeta);
+        }
+      } catch (e) {
+        console.warn('[Background] 读取 checkpoint 失败:', e.message);
+      }
+      try {
+        port.postMessage({ type: 'SW_RESTARTED', sessionId, checkpoint: checkpointMeta });
       } catch (e) {
         console.warn('[Background] 发送 SW_RESTARTED 消息失败:', e.message);
       }
@@ -134,6 +166,153 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       cancelReactLoop(tabId);
     }
     return false;
+  }
+
+  // 查询指定会话是否存在可恢复的 ReAct checkpoint
+  // 前端加载会话时调用，用于决定是否展示"继续执行"按钮
+  if (message.type === 'GET_CHECKPOINT') {
+    const { sessionId } = message;
+    if (!sessionId) {
+      sendResponse({ exists: false });
+      return false;
+    }
+    getReactCheckpoint(sessionId).then(cp => {
+      if (!cp) {
+        sendResponse({ exists: false });
+        return;
+      }
+      sendResponse({
+        exists: true,
+        checkpoint: {
+          iteration: cp.iteration,
+          interruptedReason: cp.interruptedReason,
+          updatedAt: cp.updatedAt,
+          messageCount: cp.currentMessages?.length || 0,
+          subtaskPlan: cp.subtaskPlan ? { subtaskCount: cp.subtaskPlan.subtasks?.length || 0 } : null,
+        }
+      });
+    }).catch(err => {
+      console.warn('[Background] GET_CHECKPOINT 查询失败:', err);
+      sendResponse({ exists: false });
+    });
+    return true;  // 异步响应
+  }
+
+  // 删除指定会话的 checkpoint（用户主动放弃恢复时调用）
+  if (message.type === 'DELETE_CHECKPOINT') {
+    const { sessionId } = message;
+    if (sessionId) {
+      deleteReactCheckpoint(sessionId).then(ok => {
+        sendResponse({ success: ok });
+      }).catch(err => {
+        console.warn('[Background] DELETE_CHECKPOINT 失败:', err);
+        sendResponse({ success: false });
+      });
+    } else {
+      sendResponse({ success: false });
+    }
+    return true;
+  }
+
+  // 从 checkpoint 恢复 ReAct 循环
+  // 与 CALL_API 类似的消息流，但使用 checkpoint 中的 currentMessages 作为初始消息
+  if (message.type === 'RESUME_REACT') {
+    const { sessionId, callId: resumeCallId, userGuidance = '' } = message;
+    if (!sessionId) {
+      sendResponse({ error: '缺少 sessionId' });
+      return false;
+    }
+
+    console.log('[Background] 收到 RESUME_REACT，sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)');
+
+    // 如果旧任务仍在运行（页面刷新后 SW 中的 reactLoop 可能还在），
+    // 先取消旧任务，避免两个 reactLoop 同时运行导致状态冲突
+    const cancelOldTask = activeReactLoops.has(sessionId);
+
+    const doResume = () => {
+      // 重置 API 调用计数器（恢复视为新的一轮 API 调用起点）
+      resetDialogApiCallCount(sessionId);
+
+      // 立即发送初始状态
+      const initialStatus = {
+        type: 'EXECUTION_STATUS_UPDATE',
+        nodeName: '从 checkpoint 恢复中...',
+        status: 'processing',
+        executionLog: [],
+        sessionId,
+      };
+      if (resumeCallId) {
+        initialStatus.callId = resumeCallId;
+      }
+      chrome.runtime.sendMessage(initialStatus).catch(() => {});
+
+      // 关键：将 resumeCallId 传递给 resumeReactLoopFromCheckpoint，
+      // 确保 reactLoop 内部的 StreamController 使用新的 callId 发送 STREAM_* 消息，
+      // 与前端 listener 的 myCallId 匹配，否则流式消息会被过滤掉
+      resumeReactLoopFromCheckpoint(sessionId, userGuidance, resumeCallId)
+        .then(result => {
+        // checkpoint 不存在或恢复失败返回 null
+        if (!result) {
+          console.warn('[Background] RESUME_REACT: 未找到 checkpoint 或恢复失败');
+          // 收集诊断信息，帮助定位问题
+          getReactCheckpoint(sessionId).then(cp => {
+            console.warn('[Background] RESUME_REACT: 再次查询 checkpoint 结果:', cp ? '存在' : '不存在');
+          }).catch(() => {});
+          chrome.runtime.sendMessage({
+            type: 'API_ERROR',
+            sessionId,
+            callId: resumeCallId,
+            error: '未找到可恢复的任务 checkpoint，可能已过期或被清理。请检查 Service Worker 控制台中的诊断日志（搜索 "checkpoint" 关键字）。',
+            executionLog: [],
+            resumed: true,
+          }).catch(() => {});
+          return;
+        }
+        console.log('[Background] RESUME_REACT 完成，内容长度:', result.content?.length);
+        const truncatedLog = (result.executionLog || []).length > MAX_LOG_ENTRIES_FOR_MSG
+          ? result.executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
+          : (result.executionLog || []);
+        chrome.runtime.sendMessage({
+          type: 'API_COMPLETE',
+          sessionId,
+          callId: resumeCallId,
+          content: result.content || '',
+          executionLog: truncatedLog,
+          reflectionScore: result.reflectionScore,
+          reasoningContent: result.reasoningContent || null,
+          wasRevised: result.wasRevised || false,
+          resumed: true,  // 标记为恢复的任务
+        }).catch(err => {
+          console.warn('[Background] 发送 RESUME 完成消息失败:', err);
+        });
+      })
+      .catch(error => {
+        const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
+        console.log('[Background] RESUME_REACT 失败:', isAborted ? '(用户取消)' : error.message);
+        const errLog = error.executionLog || [];
+        const truncatedErrLog = errLog.length > MAX_LOG_ENTRIES_FOR_MSG ? errLog.slice(-MAX_LOG_ENTRIES_FOR_MSG) : errLog;
+        chrome.runtime.sendMessage({
+          type: 'API_ERROR',
+          sessionId,
+          callId: resumeCallId,
+          error: error.message || '恢复失败',
+          executionLog: truncatedErrLog,
+          resumed: true,
+        }).catch(() => {});
+      });
+    };  // doResume 函数结束
+
+    if (cancelOldTask) {
+      console.log('[Background] RESUME_REACT: 检测到旧任务仍在运行，先取消');
+      cancelReactLoop(sessionId);
+      cancelRunningAgentCommands(sessionId);
+      // 给旧任务一点时间清理后再恢复
+      setTimeout(doResume, 300);
+    } else {
+      doResume();
+    }
+
+    return false;  // 异步通过 sendMessage 回传结果
   }
 
   if (message.type === 'TERMINATE_COMMAND') {
@@ -261,7 +440,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.type === 'CALL_API') {
     const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, callId } = message;
-    
+
     // 将图片识别独立配置合并到 apiParams 中
     if (imageApiBase) {
       apiParams.imageApiBase = imageApiBase;
@@ -269,9 +448,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (imageApiKey) {
       apiParams.imageApiKey = imageApiKey;
     }
-    
+
     // 重置当前会话的 API 调用计数器
     resetDialogApiCallCount(sessionId);
+
+    // 注意：不再在此处删除旧 checkpoint。
+    // 原因：deleteReactCheckpoint 是异步的，可能与 reactLoop 内部的 saveCheckpointNow 产生竞态条件
+    // （delete 在 save 之后执行，导致新保存的 checkpoint 被误删）。
+    // saveCheckpointNow 使用 store.put()（覆盖写），会自动替换旧 checkpoint，无需预先删除。
     
     // 立即发送初始状态更新，避免用户在工具预筛选等前置步骤期间看不到任何反馈
     const initialStatus = {

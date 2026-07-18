@@ -7,6 +7,7 @@ import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
+import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 
 // 活跃的 ReAct 循环 sessionId 集合，用于检测 SW 静默重启
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
@@ -105,6 +106,188 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
 
 // 反思总轮数上限（模块级常量）
 const MAX_REFLECTION_ROUNDS = 10;
+
+/**
+ * 序列化 checkpoint 并写入 IndexedDB
+ * 失败不阻塞主流程，仅记录日志
+ */
+async function persistCheckpoint(sessionId, data) {
+  if (!sessionId) return;
+  try {
+    const ok = await saveReactCheckpoint({ sessionId, ...data });
+    if (ok) {
+      console.log(`[Background] checkpoint 已保存 (sessionId=${sessionId}, iteration=${data.iteration}, reason=${data.interruptedReason})`);
+      // 验证写入：读回确认 checkpoint 确实落盘（防止 IndexedDB 升级阻塞导致静默失败）
+      try {
+        const verified = await getReactCheckpoint(sessionId);
+        if (!verified) {
+          console.error(`[Background] ⚠️ checkpoint 写入返回成功但读回为空！sessionId=${sessionId}，可能是 DB store 不存在或事务未提交`);
+        } else {
+          console.log(`[Background] checkpoint 写入验证通过，消息数=${verified.currentMessages?.length || 0}`);
+        }
+      } catch (verifyErr) {
+        console.error('[Background] checkpoint 读回验证失败:', verifyErr.message);
+      }
+    } else {
+      console.error(`[Background] checkpoint 保存返回 false (sessionId=${sessionId}, iteration=${data.iteration})，可能是 reactCheckpoints store 不存在，DB 升级被阻塞`);
+    }
+  } catch (e) {
+    console.error('[Background] 保存 checkpoint 失败:', e.message, e.stack);
+  }
+}
+
+/**
+ * 任务完成后清理 checkpoint
+ */
+async function clearCheckpoint(sessionId) {
+  if (!sessionId) return;
+  try {
+    await deleteReactCheckpoint(sessionId);
+    console.log(`[Background] checkpoint 已清理 (sessionId=${sessionId})`);
+  } catch (e) {
+    console.warn('[Background] 清理 checkpoint 失败:', e.message);
+  }
+}
+
+/**
+ * 清理不完整的消息配对
+ * 任务中断时，checkpoint 中可能存在：
+ * 1. 孤立的 tool 消息（前面没有对应的 assistant(tool_calls)）→ API 400 错误
+ * 2. 孤立的 assistant(tool_calls)（后面没有对应的 tool 消息）→ 模型会困惑
+ * @param {Array} messages - 消息数组
+ * @returns {Array} 清理后的消息数组
+ */
+function cleanupIncompleteMessagePairs(messages) {
+  if (!messages || messages.length === 0) return messages;
+
+  const cleaned = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    // 孤立的 tool 消息：前面不是 assistant(tool_calls)，跳过
+    if (msg.role === 'tool') {
+      const prevMsg = i > 0 ? messages[i - 1] : null;
+      if (!prevMsg || prevMsg.role !== 'assistant' || !prevMsg.tool_calls) {
+        console.warn('[Background] cleanupIncompleteMessagePairs: 跳过孤立的 tool 消息（index=' + i + '）');
+        i++;
+        continue;
+      }
+    }
+
+    // assistant(tool_calls)：检查后面是否有对应的 tool 消息
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // 检查下一条消息是否是 tool
+      const nextMsg = i + 1 < messages.length ? messages[i + 1] : null;
+      if (!nextMsg || nextMsg.role !== 'tool') {
+        // 孤立的 assistant(tool_calls)：清除 tool_calls，保留消息内容（可能是思考过程）
+        console.warn('[Background] cleanupIncompleteMessagePairs: 孤立的 assistant(tool_calls)，清除 tool_calls（index=' + i + '）');
+        cleaned.push({ ...msg, tool_calls: undefined });
+        i++;
+        continue;
+      }
+    }
+
+    cleaned.push(msg);
+    i++;
+  }
+
+  if (cleaned.length !== messages.length) {
+    console.log('[Background] cleanupIncompleteMessagePairs: 清理完成，消息数:', messages.length, '→', cleaned.length);
+  }
+
+  return cleaned;
+}
+
+/**
+ * 从 checkpoint 恢复 ReAct 循环
+ * 供 background/index.js 的 RESUME_REACT 消息处理调用
+ *
+ * @param {string} sessionId - 会话 ID
+ * @param {string} [userGuidance=''] - 用户追加的任务描述（可选）
+ * @param {string} [resumeCallId=null] - 恢复请求的 callId，用于流式消息过滤（必须与前端 listener 的 myCallId 一致）
+ * @returns {Promise<{content, executionLog, reasoningContent}|null>}
+ */
+export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = '', resumeCallId = null) {
+  if (!sessionId) return null;
+  const checkpoint = await getReactCheckpoint(sessionId);
+  if (!checkpoint) {
+    console.warn(`[Background] 未找到 sessionId=${sessionId} 的 checkpoint，无法恢复`);
+    // 诊断：列出所有已保存的 checkpoint，帮助排查 sessionId 不匹配问题
+    let diagInfo = '';
+    try {
+      const all = await getAllReactCheckpoints();
+      if (all.length === 0) {
+        console.warn('[Background] IndexedDB 中没有任何 checkpoint 记录（可能从未保存成功）');
+        diagInfo = '（IndexedDB 中无任何 checkpoint 记录）';
+      } else {
+        console.warn('[Background] 当前 IndexedDB 中的 checkpoint 列表:', all.map(cp => ({
+          sessionId: cp.sessionId,
+          iteration: cp.iteration,
+          updatedAt: new Date(cp.updatedAt).toISOString(),
+          reason: cp.interruptedReason,
+        })));
+        diagInfo = `（共 ${all.length} 个 checkpoint: ${all.map(cp => cp.sessionId).join(', ')}）`;
+      }
+    } catch (e) {
+      console.error('[Background] 读取 checkpoint 列表失败:', e);
+      diagInfo = `（读取 checkpoint 列表失败: ${e.message}）`;
+    }
+    // 将诊断信息附加到返回值，供前端展示
+    return null;
+  }
+
+  console.log(`[Background] 从 checkpoint 恢复 ReAct 循环: sessionId=${sessionId}, iteration=${checkpoint.iteration}, messages=${checkpoint.currentMessages?.length}, userGuidance=${userGuidance ? '有' : '无'}, resumeCallId=${resumeCallId}`);
+
+  // 恢复 currentMessages：深拷贝避免修改 checkpoint 原始数据
+  let restoredMessages = JSON.parse(JSON.stringify(checkpoint.currentMessages || []));
+
+  // 清理不完整的消息配对：任务中断时可能存在孤立的 tool 消息（前面没有 assistant(tool_calls)）
+  // 或孤立的 assistant(tool_calls)（后面没有 tool 消息），这些都会导致 API 400 错误
+  restoredMessages = cleanupIncompleteMessagePairs(restoredMessages);
+
+  // 如果用户提供了追加描述，作为 user 消息注入到消息末尾
+  // 让模型基于"之前已完成的工具调用 + 用户新的指导"继续执行
+  if (userGuidance && userGuidance.trim()) {
+    const guidanceMsg = {
+      role: 'user',
+      content: `[任务恢复提示] 任务此前在执行过程中被中断，现在从断点继续。\n\n用户追加说明：${userGuidance.trim()}\n\n请基于之前已完成的工具调用结果，结合上述说明继续完成任务。不要重复已完成的步骤。`,
+    };
+    restoredMessages.push(guidanceMsg);
+    console.log('[Background] 已注入用户追加描述，消息总数:', restoredMessages.length);
+  } else {
+    // 即使没有用户描述，也注入一个系统级提示，告知模型任务是被恢复的
+    const resumeHintMsg = {
+      role: 'user',
+      content: `[任务恢复提示] 任务此前在执行过程中被中断，现在从断点继续。请基于之前已完成的工具调用结果继续完成任务，不要重复已完成的步骤。`,
+    };
+    restoredMessages.push(resumeHintMsg);
+    console.log('[Background] 已注入默认恢复提示，消息总数:', restoredMessages.length);
+  }
+
+  // 恢复时合并 checkpoint 状态并调用 reactLoop
+  // taskContext 为 null 表示主任务（子任务的 checkpoint 不通过此入口恢复，子任务中断视为整体失败）
+  // 关键：使用 resumeCallId（新 callId）而非 checkpoint.callId（旧 callId），
+  // 否则前端 listener 按 myCallId 过滤时会丢弃所有 STREAM_* 消息，导致无流式输出
+  const result = await reactLoop(
+    restoredMessages,
+    checkpoint.model,
+    await getTools(),  // 重新获取工具列表（避免工具配置变化导致的不一致）
+    checkpoint.tabId,
+    checkpoint.apiParams || {},
+    sessionId,
+    null,  // 主任务恢复时不带 taskContext
+    null,  // onLogUpdate
+    checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
+    checkpoint.executionLog || [],
+    resumeCallId || checkpoint.callId || null  // 优先使用新的 resumeCallId
+  );
+
+  // 恢复成功后清理 checkpoint
+  await clearCheckpoint(sessionId);
+  return result;
+}
 
 /**
  * ReAct 推理循环
@@ -216,10 +399,61 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     const newTokens = estimateMessagesTokens(currentMessages);
     console.log(`[Background] ReAct Token 裁剪: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} 条)`);
   };
-  
+
   const executionLog = [...initialLog];
   let currentSubtaskIndex = null;
   let subtaskPlan = null;
+
+  /**
+   * 保存当前 ReAct 循环状态为 checkpoint
+   * 仅主任务（无 taskContext）保存，子任务不保存（避免与父任务 checkpoint 冲突）
+   * 节流：两次保存间隔至少 1500ms，避免高频写 IndexedDB
+   * @param {string} reason - 保存原因
+   * @param {boolean} force - 是否强制保存（绕过节流），用于 catch 块确保中断状态被保存
+   */
+  let lastCheckpointSaveTime = 0;
+  const CHECKPOINT_THROTTLE_MS = 1500;
+  async function saveCheckpointNow(reason = '', force = false) {
+    // 子任务不保存 checkpoint（子任务中断视为整体失败，由父任务重试）
+    if (taskContext) {
+      console.log(`[Background] saveCheckpointNow 跳过（子任务）: reason=${reason}`);
+      return;
+    }
+    if (!sessionId) {
+      console.warn('[Background] saveCheckpointNow 跳过（sessionId 为空）');
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - lastCheckpointSaveTime < CHECKPOINT_THROTTLE_MS) {
+      console.log(`[Background] saveCheckpointNow 节流跳过: reason=${reason}, 距上次保存 ${now - lastCheckpointSaveTime}ms < ${CHECKPOINT_THROTTLE_MS}ms`);
+      return;
+    }
+    lastCheckpointSaveTime = now;
+
+    console.log(`[Background] saveCheckpointNow 开始保存: sessionId=${sessionId}, reason=${reason}, force=${force}, iteration=${iteration}, messages=${currentMessages.length}, callId=${callId}`);
+
+    await persistCheckpoint(sessionId, {
+      currentMessages: currentMessages.map(msg => {
+        // 过滤掉无法序列化的字段（如函数）
+        const clean = { ...msg };
+        if (typeof clean.content === 'function') clean.content = String(clean.content);
+        return clean;
+      }),
+      executionLog: [...executionLog],
+      iteration,
+      globalIteration: { value: globalIteration?.value || iteration },
+      subtaskPlan,
+      currentSubtaskIndex,
+      totalReflectionRounds,
+      model: model || config?.modelName,
+      apiParams,
+      taskContext: null,  // 主任务 checkpoint 永远是 null
+      tabId,
+      callId,
+      interruptedReason: reason || 'in_progress',
+    });
+  }
   
   // 缓存全量工具列表，用于 plan_task 拆解时临时展开
   let fullToolsCache = null;
@@ -326,6 +560,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   
   // 发送初始状态
   sendExecutionStatusUpdate('准备开始执行...', 'processing');
+
+  // 初始 checkpoint：在主循环开始前保存一次，确保即使第一次 API 调用期间用户刷新页面，
+  // 也有 checkpoint 可供恢复（否则要等到第一个工具执行完才有 checkpoint）
+  await saveCheckpointNow('initial', true);
   
   /**
    * 暂停整体循环超时计时（用于澄清工具）
@@ -363,6 +601,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 再次清除取消状态，防止在 await getStoredConfig() 等异步操作期间
   // 收到前一个请求残留的 CANCEL_REACT 消息导致的误取消
   resetReactCancel(sessionId || tabId);
+
+  // 任务是否正常完成（用于 finally 决定是否清理 checkpoint）
+  let taskCompleted = false;
 
   try {
     while (iteration < maxIterations) {
@@ -1193,15 +1434,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           
           // 处理反思优先级队列
           await processPendingReflections();
-          
+
           if (planTaskHandled) {
+            await saveCheckpointNow('plan_task_completed');
             continue;
           }
         } else {
           // 顺序执行路径
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
-            
+
             if (result.planTaskHandled) {
               // plan_task 处理了子任务，跳出当前 for 循环，由外层 while 重新迭代
               // 使用 break 而非 continue，避免在子任务执行后继续执行其他已过时的工具调用
@@ -1209,18 +1451,23 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               break;
             }
           }
-          
+
           // 所有工具执行完毕后，处理反思优先级队列
           await processPendingReflections();
         }
-        
+
+        // 工具执行完毕，保存 checkpoint（覆盖 plan_task 子任务执行后的状态）
+        await saveCheckpointNow('tools_completed');
         continue;
       }
       
       const content = assistantMessage?.content || '';
       const reasoningContent = assistantMessage?.reasoning_content || null;
       console.log('[Background] ReAct 循环完成，最终内容长度:', content.length);
-      
+
+      // 任务正常完成，保存最终 checkpoint（供反思失败时仍可续接）
+      await saveCheckpointNow('final_answer');
+
       // 后置反思：对最终答案进行质量评估
       const reflectionConfig = reactConfig.reflection;
       if (reflectionConfig?.enabled && reflectionConfig?.postReflection?.enabled && shouldReflect(executionLog, taskContext)) {
@@ -1229,13 +1476,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           currentMessages, content, executionLog, model, config,
           reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds
         );
-        
+
         // 合并反思日志
         if (reflectionResult.reflectionLog && reflectionResult.reflectionLog.length > 0) {
           executionLog.push(...reflectionResult.reflectionLog);
         }
 
         sendExecutionStatusUpdate('执行完成', 'success');
+        taskCompleted = true;
         return {
           content: reflectionResult.content,
           executionLog,
@@ -1244,18 +1492,25 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           reasoningContent
         };
       }
-      
+
       // 发送完成状态
       sendExecutionStatusUpdate('执行完成', 'success');
-      
+
       // 返回执行日志和内容
+      taskCompleted = true;
       return { content, executionLog, reasoningContent };
     }
-    
+
     const error = new Error(`ReAct 循环超过最大迭代次数 (${maxIterations})`);
     error.executionLog = executionLog;
     throw error;
   } catch (error) {
+    // 任务异常中断：强制保存 checkpoint 供后续恢复（绕过节流）
+    // 取消（AbortError）和真实错误都保存，让用户可以选择是否续接
+    const isUserCancel = error.name === 'AbortError' ||
+                         error.message === '请求已被用户取消' ||
+                         error.message === 'ReAct 循环已被用户取消';
+    await saveCheckpointNow(isUserCancel ? 'user_cancelled' : 'error', true);
     throw error;
   } finally {
     // 标记该 session 的 ReAct 循环已结束，用于 SW 重启检测
@@ -1263,6 +1518,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       activeReactLoops.delete(sessionId);
       loopApprovedSessions.delete(sessionId);  // 清除"当前任务放行"状态
     }
+    // 注意：不在 finally 中清理 checkpoint！
+    // 原因：页面刷新后 SW 中的 reactLoop 可能继续运行并正常完成，
+    // 此时 API_COMPLETE 无法送达前端（页面已刷新），如果清理了 checkpoint，
+    // 用户将无法恢复。checkpoint 的清理依赖以下机制：
+    // 1. 新 CALL_API 启动时清理（index.js）
+    // 2. resumeReactLoopFromCheckpoint 恢复成功后清理
+    // 3. 会话删除时清理（session-store.js）
+    // 4. TTL 7 天过期自动清理（SW 启动时）
   }
 }
 

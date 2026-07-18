@@ -5,6 +5,15 @@
 import * as idb from './db.js';
 import state from '../side_panel/state.js';
 
+// 会话删除时需要同步清理对应的 ReAct checkpoint
+async function cleanupCheckpointForSession(sessionId) {
+  try {
+    await idb.deleteReactCheckpoint(sessionId);
+  } catch (e) {
+    console.warn('[session-store] 清理 ReAct checkpoint 失败:', e);
+  }
+}
+
 let migrated = false;
 
 /**
@@ -116,6 +125,7 @@ export async function saveCurrentSession() {
     messageId: msg.messageId || undefined,
     timestamp: msg.timestamp || undefined,
     contextBubbles: msg.contextBubbles || undefined,
+    resumable: msg.resumable || false,
   }));
 
   currentSession.updatedAt = new Date().toISOString();
@@ -306,6 +316,9 @@ export async function deleteStoreSession(sessionId) {
 
   // 清理该会话的 scrollPosition 存储，防止泄露
   chrome.storage.local.remove('scrollPosition_' + sessionId);
+
+  // 同步清理该会话的 ReAct checkpoint
+  await cleanupCheckpointForSession(sessionId);
 
   // 如果删除的是当前活跃会话，就近激活：优先右侧紧邻，无右侧则左侧紧邻
   if (activeId === sessionId) {

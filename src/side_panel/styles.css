@@ -7963,6 +7963,37 @@ body {
   height: 14px;
 }
 
+/* "继续执行"按钮：从中断的 checkpoint 恢复 ReAct 任务 */
+.resume-task-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid #3182ce;
+  background: rgba(49, 130, 206, 0.08);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #3182ce;
+  transition: all 0.2s;
+  margin-left: 4px;
+}
+
+.resume-task-btn:hover:not(:disabled) {
+  background: rgba(49, 130, 206, 0.18);
+  border-color: #2b6cb0;
+}
+
+.resume-task-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.resume-task-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
 .message.user .message-toolbar-btn.delete-btn {
   width: 28px;
   height: 28px;

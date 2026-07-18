@@ -176,9 +176,9 @@ export async function loadChatHistory() {
       
       // 如果有保存的 HTML 内容（流式消息），直接恢复完整 DOM
       if (msg.htmlContent) {
-        restoreMessageFromHtml(msg.htmlContent, msg.messageId);
+        restoreMessageFromHtml(msg.htmlContent, msg.messageId, msg.resumable);
       } else {
-        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId);
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId, [], msg.resumable);
       }
     });
 
@@ -291,6 +291,324 @@ export function hideModal() {
 // ============================================================
 // 消息发送
 // ============================================================
+
+/**
+ * 显示"继续执行"对话框，让用户可选地追加任务描述
+ * 遵循 no-native-dialogs 规则：自定义 UI，不点击遮罩关闭
+ * @returns {Promise<string|null>} 用户输入的描述（空字符串也表示确认），null 表示取消
+ */
+function showResumeDialog() {
+  return new Promise((resolve) => {
+    // 构建弹窗 DOM
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay resume-dialog-overlay';
+    overlay.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;align-items:center;justify-content:center;';
+
+    const container = document.createElement('div');
+    container.className = 'modal-container resume-dialog-container';
+    container.style.cssText = 'background:#fff;border-radius:8px;padding:24px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+
+    const title = document.createElement('h3');
+    title.textContent = '继续执行任务';
+    title.style.cssText = 'margin:0 0 8px 0;font-size:16px;color:#1a202c;';
+
+    const desc = document.createElement('p');
+    desc.textContent = '可以追加描述以调整任务方向（可选，留空则按原任务继续）';
+    desc.style.cssText = 'margin:0 0 16px 0;font-size:13px;color:#718096;line-height:1.5;';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'resume-dialog-textarea';
+    textarea.placeholder = '例如：请跳过已完成的步骤，直接进入测试阶段...';
+    textarea.style.cssText = 'width:100%;min-height:80px;padding:8px 12px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.5;';
+    textarea.rows = 3;
+
+    const btnContainer = document.createElement('div');
+    btnContainer.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:16px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = 'padding:6px 16px;border:1px solid #cbd5e0;background:#fff;color:#4a5568;border-radius:4px;cursor:pointer;font-size:13px;';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = '继续执行';
+    confirmBtn.style.cssText = 'padding:6px 16px;border:none;background:#3182ce;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;';
+
+    btnContainer.appendChild(cancelBtn);
+    btnContainer.appendChild(confirmBtn);
+    container.appendChild(title);
+    container.appendChild(desc);
+    container.appendChild(textarea);
+    container.appendChild(btnContainer);
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    // 自动聚焦
+    requestAnimationFrame(() => textarea.focus());
+
+    const cleanup = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKeydown);
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve(null);
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        cleanup();
+        resolve(textarea.value.trim());
+      }
+    };
+
+    cancelBtn.addEventListener('click', () => { cleanup(); resolve(null); });
+    confirmBtn.addEventListener('click', () => { cleanup(); resolve(textarea.value.trim()); });
+    // 不允许点击遮罩层关闭（遵循 no-native-dialogs 规则）
+    document.addEventListener('keydown', onKeydown);
+  });
+}
+
+/**
+ * 清除指定会话中所有消息的 resumable 标记
+ * 当 checkpoint 不存在时调用，移除所有"继续执行"按钮，避免用户反复点击无效按钮
+ * 同时更新 messageHistory 和 DOM
+ */
+function _clearResumableFlagsForSession(sessionId) {
+  if (!sessionId) return;
+  let changed = false;
+  // 清除 messageHistory 中的 resumable 标记
+  for (const msg of state.messageHistory) {
+    if (msg.resumable) {
+      msg.resumable = false;
+      changed = true;
+    }
+  }
+  // 清除 DOM 中的"继续执行"按钮
+  const chatContainer = document.getElementById('chatContainer');
+  if (chatContainer) {
+    const resumableEls = chatContainer.querySelectorAll('.message[data-resumable="true"]');
+    resumableEls.forEach(el => {
+      el.removeAttribute('data-resumable');
+      const btn = el.querySelector('.resume-task-btn');
+      if (btn) btn.remove();
+    });
+  }
+  if (changed) {
+    saveChatHistory();
+  }
+}
+
+/**
+ * 异步验证 checkpoint 是否存在，不存在则隐藏"继续执行"按钮
+ * 在 addMessage / restoreMessageFromHtml 渲染带 resumable 标记的消息后调用
+ */
+async function _verifyCheckpointAndHideButton(messageDiv, sessionId) {
+  if (!messageDiv || !sessionId) return;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
+    if (!resp?.exists) {
+      // checkpoint 不存在：移除按钮和标记
+      messageDiv.removeAttribute('data-resumable');
+      const btn = messageDiv.querySelector('.resume-task-btn');
+      if (btn) btn.remove();
+      // 同步更新 messageHistory
+      const messageId = messageDiv.dataset.messageId;
+      const msg = state.messageHistory.find(m => m.messageId === messageId);
+      if (msg && msg.resumable) {
+        msg.resumable = false;
+        saveChatHistory();
+      }
+    }
+  } catch (e) {
+    // 通信失败时保持按钮可见（乐观策略）
+  }
+}
+
+/**
+ * 从 checkpoint 恢复中断的 ReAct 任务
+ * 不会向 messageHistory 添加新的 user 消息，仅触发后台 RESUME_REACT
+ * 成功/失败后像 sendMessage 一样添加 assistant 消息
+ *
+ * 实现说明：复用 callApi 的流式输出基础设施（STREAM_START/STREAM_CHUNK/STREAM_DONE/API_COMPLETE），
+ * 通过 options.resumeFromCheckpoint 切换 callApi 内部的消息发送类型（CALL_API → RESUME_REACT），
+ * 避免重复维护两套流式监听逻辑。
+ *
+ * @param {string} sessionId - 要恢复的会话 ID
+ * @param {string} [userGuidance=''] - 用户追加的任务描述（可选）
+ * @returns {Promise<boolean>} 是否成功完成
+ */
+export async function resumeTask(sessionId, userGuidance = '') {
+  if (!sessionId) {
+    console.warn('[SidePanel] resumeTask: 缺少 sessionId');
+    return false;
+  }
+
+  // 如果当前活跃会话不是要恢复的会话，先切换
+  if (state.activeSessionId !== sessionId) {
+    console.warn('[SidePanel] resumeTask: 当前活跃会话与目标会话不一致，请先切换到目标会话');
+    return false;
+  }
+
+  // 如果已有进行中的 API 调用，拒绝恢复
+  if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.has(sessionId)) {
+    console.warn('[SidePanel] resumeTask: 当前会话已有进行中的任务');
+    return false;
+  }
+
+  console.log('[SidePanel] resumeTask: 开始恢复任务, sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)');
+
+  // 前置检查：验证 checkpoint 是否存在，避免无效的恢复请求
+  // 如果 checkpoint 不存在（已过期/被清理/从未保存），直接给出友好提示，不发送 RESUME_REACT
+  try {
+    const checkpointResp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
+    if (!checkpointResp?.exists) {
+      console.warn('[SidePanel] resumeTask: checkpoint 不存在，无法恢复, sessionId:', sessionId);
+      const errorContent = '❌ 恢复失败：未找到可恢复的任务 checkpoint。\n\n可能原因：\n• 任务已正常完成（checkpoint 已被清理）\n• 任务中断时间过久（超过 7 天已过期）\n• 任务执行初期被中断（断点未及保存）\n\n建议重新发起任务。';
+      const { messageId } = addMessage('assistant', errorContent, true, []);
+      state.messageHistory.push({ role: 'assistant', content: errorContent, executionLog: [], messageId, resumable: false, resumed: true });
+      saveChatHistory();
+      // 同步清除原消息的 resumable 标记，避免用户反复点击无效按钮
+      _clearResumableFlagsForSession(sessionId);
+      return false;
+    }
+    console.log('[SidePanel] resumeTask: checkpoint 验证通过, iteration:', checkpointResp.checkpoint?.iteration);
+  } catch (e) {
+    console.warn('[SidePanel] resumeTask: 验证 checkpoint 时通信失败，继续尝试恢复:', e.message);
+    // 通信失败时不阻止恢复，让 SW 端再判断一次
+  }
+
+  const mySessionId = sessionId;
+  const loadingId = addLoadingMessage();
+
+  // 标记为生成中，让发送按钮切换为停止按钮（供用户中途取消恢复任务）
+  state.isGenerating = true;
+
+  let content = '';
+  let executionLog = [];
+  let reflectionScore = null;
+  let wasRevised = false;
+  let wasStreamed = false;
+  let streamingHtml = null;
+  let streamingConnected = true;
+  let streamingMsgId = null;
+
+  try {
+    // 复用 callApi 的流式输出基础设施，通过 resumeFromCheckpoint 切换为发送 RESUME_REACT
+    const result = await callApi(null, null, false, {}, {
+      resumeFromCheckpoint: true,
+      userGuidance,
+      loadingId,
+    });
+    content = result.content;
+    executionLog = result.executionLog || [];
+    reflectionScore = result.reflectionScore;
+    wasRevised = result.wasRevised || false;
+    wasStreamed = result.wasStreamed || false;
+    streamingHtml = result.streamingHtml || null;
+    streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
+    streamingMsgId = result.streamingMsgId || null;
+  } catch (errorResult) {
+    // 已切换到其他会话：保存到原会话历史，不修改当前 DOM
+    if (state.activeSessionId !== mySessionId) {
+      const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
+                        errorResult.message === '任务已被用户停止';
+      if (errorResult.message === '任务已被用户停止') {
+        appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], resumable, resumed: true });
+      } else if (errorResult.swRestarted) {
+        appendMessageToSession(mySessionId, { role: 'assistant', content: '⚠️ 后台服务重启，恢复中断', executionLog: errorResult.executionLog || [], resumable, resumed: true });
+      } else {
+        const errorContent = '❌ 恢复失败：' + (errorResult.message || '未知错误');
+        // 恢复失败时不标记 resumable，避免在错误消息上再显示"继续执行"按钮（防止无限错误循环）
+        appendMessageToSession(mySessionId, { role: 'assistant', content: errorContent, executionLog: errorResult.executionLog || [], resumable: false, resumed: true });
+      }
+      document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
+      removeLoadingMessage(loadingId);
+      return false;
+    }
+
+    // 用户主动取消
+    if (errorResult.message === '任务已被用户停止') {
+      removeLoadingMessage(loadingId);
+      const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
+      state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId, resumable: true, resumed: true });
+      saveChatHistory();
+      return false;
+    }
+
+    // SW 重启
+    if (errorResult.swRestarted) {
+      removeLoadingMessage(loadingId);
+      const resumable = !!errorResult.checkpoint;
+      const { messageId } = addMessage('assistant', '⚠️ 后台服务重启，恢复中断', false, errorResult.executionLog || []);
+      state.messageHistory.push({ role: 'assistant', content: '⚠️ 后台服务重启，恢复中断', executionLog: errorResult.executionLog || [], messageId, resumable, resumed: true });
+      saveChatHistory();
+      return false;
+    }
+
+    // 其他错误（如 checkpoint 不存在）
+    removeLoadingMessage(loadingId);
+    const errorContent = '❌ 恢复失败：' + (errorResult.message || '未知错误');
+    const { element: messageDiv, messageId } = addMessage('assistant', errorContent, true, errorResult.executionLog || []);
+    // 恢复失败时不标记 resumable，避免在错误消息上再显示"继续执行"按钮（防止无限错误循环）
+    state.messageHistory.push({ role: 'assistant', content: errorContent, executionLog: errorResult.executionLog || [], messageId, resumable: false, resumed: true });
+    saveChatHistory();
+    return false;
+  } finally {
+    // 无论成功/失败/取消，都重置生成状态，恢复发送按钮
+    state.generatingSessionIds.delete(mySessionId);
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
+  }
+
+  // 恢复成功：SW 已清理 checkpoint，前端同步移除所有"继续执行"按钮
+  // 避免用户在已恢复的任务上看到无效的"继续执行"按钮
+  _clearResumableFlagsForSession(mySessionId);
+
+  // 成功路径：检查是否已切换会话
+  if (state.activeSessionId !== mySessionId) {
+    const msgEntry = { role: 'assistant', content, executionLog, reflectionScore, wasRevised, resumed: true };
+    if (wasStreamed && streamingHtml) {
+      msgEntry.htmlContent = streamingHtml;
+    }
+    appendMessageToSession(mySessionId, msgEntry);
+    document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
+    removeLoadingMessage(loadingId);
+    return true;
+  }
+
+  // 流式输出已渲染消息：跳过 removeLoadingMessage 和 addMessage
+  if (wasStreamed && streamingHtml) {
+    // 流式消息已通过 STREAM_START/STREAM_CHUNK/API_COMPLETE 在 callApi 内部完成渲染
+    // 仅需记录到 messageHistory（必须保存 htmlContent，否则刷新后流式输出内容丢失）
+    const assistantMsgId = streamingMsgId;
+    state.messageHistory.push({
+      role: 'assistant',
+      content,
+      executionLog,
+      reflectionScore,
+      wasRevised,
+      messageId: assistantMsgId,
+      resumed: true,
+      htmlContent: streamingHtml,
+    });
+    saveChatHistory();
+    return true;
+  }
+
+  // 非流式降级路径：移除 loading，添加 assistant 消息
+  removeLoadingMessage(loadingId);
+  const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+  state.messageHistory.push({
+    role: 'assistant',
+    content,
+    executionLog,
+    reflectionScore,
+    wasRevised,
+    messageId,
+    resumed: true,
+  });
+  saveChatHistory();
+  if (messageDiv) renderMessageMermaid(messageDiv);
+  return true;
+}
 
 export async function sendMessage() {
   const userInput = document.getElementById('userInput');
@@ -544,10 +862,15 @@ export async function sendMessage() {
       // 检查是否已切换到其他会话
       if (state.activeSessionId !== mySessionId) {
         // 保存结果到原会话的历史中，不修改当前 DOM
+        // 中断的任务标记 resumable，供切回时显示"继续执行"按钮
+        const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
+                          errorResult.message === '任务已被用户停止';
         if (errorResult.message === '任务已被用户停止') {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [] });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], resumable });
+        } else if (errorResult.swRestarted) {
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '⚠️ 后台服务重启，任务中断', executionLog: errorResult.executionLog || [], resumable });
         } else {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [] });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [], resumable });
         }
         // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
@@ -555,27 +878,39 @@ export async function sendMessage() {
         state.substituteLoadingIds.delete(mySessionId);
         return;
       }
-      
+
       // 用户主动取消：显示取消记录，但不作为错误
       if (errorResult.message === '任务已被用户停止') {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
-        const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
-        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId });
+        const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || [], null, false, null, null, [], true);
+        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId, resumable: true });
         saveChatHistory();
         return;
       }
-      
+
+      // SW 重启：后台服务异常，但 checkpoint 可能存在
+      if (errorResult.swRestarted) {
+        removeLoadingMessage(loadingId);
+        state.substituteLoadingIds.delete(mySessionId);
+        const resumable = !!errorResult.checkpoint;
+        const { messageId } = addMessage('assistant', '⚠️ 后台服务重启，任务中断', false, errorResult.executionLog || [], null, false, null, null, [], resumable);
+        state.messageHistory.push({ role: 'assistant', content: '⚠️ 后台服务重启，任务中断', executionLog: errorResult.executionLog || [], messageId, resumable });
+        saveChatHistory();
+        return;
+      }
+
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
-      
+
       content = '❌ 请求失败：' + (errorResult.message || '未知错误');
       executionLog = errorResult.executionLog || [];
-      
-      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore);
-      
-      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId });
-      
+
+      // 普通错误也可能存在 checkpoint（reactLoop catch 块会保存）
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, false, null, null, [], true);
+
+      state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
+
       throw errorResult;
     }
     
@@ -765,7 +1100,7 @@ export function addContextBubble(type, contextText, scroll = true) {
   return bubbleDiv;
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = []) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
@@ -1032,7 +1367,42 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       deleteMessage(messageDiv);
     });
     footer.appendChild(deleteBtn);
-    
+
+    // "继续执行"按钮：仅当消息标记为 resumable 时显示
+    // 用于从中断的 checkpoint 恢复 ReAct 任务
+    if (resumable) {
+      const resumeBtn = document.createElement('button');
+      resumeBtn.className = 'resume-task-btn';
+      resumeBtn.type = 'button';
+      resumeBtn.title = '从上次中断处继续执行任务';
+      resumeBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        <span>继续执行</span>
+      `;
+      resumeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (resumeBtn.disabled) return;
+        // 先弹出对话框，让用户可选地追加任务描述
+        const guidance = await showResumeDialog();
+        if (guidance === null) return;  // 用户取消
+        resumeBtn.disabled = true;
+        resumeBtn.style.opacity = '0.6';
+        resumeBtn.style.cursor = 'not-allowed';
+        resumeTask(state.activeSessionId, guidance).finally(() => {
+          resumeBtn.disabled = false;
+          resumeBtn.style.opacity = '';
+          resumeBtn.style.cursor = '';
+        });
+      });
+      footer.appendChild(resumeBtn);
+      // 在 messageDiv 上标记，便于恢复时识别
+      messageDiv.dataset.resumable = 'true';
+      // 异步验证 checkpoint 是否存在，不存在则隐藏按钮（避免刷新后按钮失效）
+      _verifyCheckpointAndHideButton(messageDiv, state.activeSessionId);
+    }
+
     messageDiv.appendChild(footer);
   } else {
     const quotedMatch = textContent.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -1620,18 +1990,53 @@ function addStreamingMessage() {
  * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
  * @param {string} htmlContent - 消息的 outerHTML
  */
-export function restoreMessageFromHtml(htmlContent, messageId = null) {
+export function restoreMessageFromHtml(htmlContent, messageId = null, resumable = false) {
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer || !htmlContent) return;
-  
+
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = htmlContent;
   const messageEl = tempDiv.firstElementChild;
   if (!messageEl) return;
-  
+
   // 使用传入的 messageId 覆盖 HTML 中的 ID（确保与 state.messageHistory 一致）
   if (messageId) {
     messageEl.dataset.messageId = messageId;
+  }
+
+  // 如果标记为可恢复，在 footer 中添加"继续执行"按钮（HTML 中可能不存在）
+  if (resumable) {
+    messageEl.dataset.resumable = 'true';
+    const footer = messageEl.querySelector(':scope > .message-footer');
+    if (footer && !footer.querySelector('.resume-task-btn')) {
+      const resumeBtn = document.createElement('button');
+      resumeBtn.className = 'resume-task-btn';
+      resumeBtn.type = 'button';
+      resumeBtn.title = '从上次中断处继续执行任务';
+      resumeBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        <span>继续执行</span>
+      `;
+      resumeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (resumeBtn.disabled) return;
+        const guidance = await showResumeDialog();
+        if (guidance === null) return;
+        resumeBtn.disabled = true;
+        resumeBtn.style.opacity = '0.6';
+        resumeBtn.style.cursor = 'not-allowed';
+        resumeTask(state.activeSessionId, guidance).finally(() => {
+          resumeBtn.disabled = false;
+          resumeBtn.style.opacity = '';
+          resumeBtn.style.cursor = '';
+        });
+      });
+      footer.appendChild(resumeBtn);
+      // 异步验证 checkpoint 是否存在，不存在则隐藏按钮（避免刷新后按钮失效）
+      _verifyCheckpointAndHideButton(messageEl, state.activeSessionId);
+    }
   }
   
   // 移除 streaming 类（持久化后不再是流式状态）
@@ -1795,6 +2200,25 @@ export function restoreMessageFromHtml(htmlContent, messageId = null) {
         deleteMessage(messageEl);
       });
     }
+
+    // 重新绑定"继续执行"按钮事件（HTML 中已存在的情况）
+    const existingResumeBtn = footer.querySelector('.resume-task-btn');
+    if (existingResumeBtn) {
+      existingResumeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (existingResumeBtn.disabled) return;
+        const guidance = await showResumeDialog();
+        if (guidance === null) return;
+        existingResumeBtn.disabled = true;
+        existingResumeBtn.style.opacity = '0.6';
+        existingResumeBtn.style.cursor = 'not-allowed';
+        resumeTask(state.activeSessionId, guidance).finally(() => {
+          existingResumeBtn.disabled = false;
+          existingResumeBtn.style.opacity = '';
+          existingResumeBtn.style.cursor = '';
+        });
+      });
+    }
   }
 
   // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
@@ -1926,6 +2350,25 @@ export function rebindAllMessages(container) {
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         deleteMessage(messageEl);
+      });
+    }
+
+    // 重新绑定"继续执行"按钮事件
+    const resumeBtn = footer.querySelector('.resume-task-btn');
+    if (resumeBtn) {
+      resumeBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (resumeBtn.disabled) return;
+        const guidance = await showResumeDialog();
+        if (guidance === null) return;
+        resumeBtn.disabled = true;
+        resumeBtn.style.opacity = '0.6';
+        resumeBtn.style.cursor = 'not-allowed';
+        resumeTask(state.activeSessionId, guidance).finally(() => {
+          resumeBtn.disabled = false;
+          resumeBtn.style.opacity = '';
+          resumeBtn.style.cursor = '';
+        });
       });
     }
   });
@@ -3107,20 +3550,38 @@ export function cancelStreamingTask(stopBtn) {
 }
 
 /**
- * 清理被取消的流式消息：移除思考中占位和状态文本
+ * 清理被取消的流式消息：移除思考中占位和状态文本，更新所有"执行中"状态为"已取消"
  */
 function finalizeCancelledStream(element) {
   if (!element) return;
-  
+
   // 隐藏所有思考指示器
   element.querySelectorAll('.thinking-indicator').forEach(el => el.classList.add('hidden'));
-  
+
   // 更新状态文本为"已取消"
   const statusDiv = element.querySelector('.stream-status');
   if (statusDiv) {
     statusDiv.textContent = '';
   }
-  
+
+  // 工具调用卡片：将"执行中..."替换为"已取消"
+  element.querySelectorAll('.tool-call-executing').forEach(el => {
+    el.textContent = '已取消';
+    el.classList.add('tool-call-cancelled');
+  });
+
+  // 子任务状态：将"执行中..."替换为"已取消"
+  element.querySelectorAll('.subtask-status-label').forEach(el => {
+    const spinner = el.querySelector('.subtask-spinner');
+    if (spinner) spinner.remove();
+    if (el.textContent.includes('执行中')) {
+      el.textContent = '已取消';
+    }
+  });
+
+  // 移除所有 spinner 动画
+  element.querySelectorAll('.subtask-spinner, .thinking-spinner, .loading-dots').forEach(el => el.remove());
+
   // 移除 streaming 动画类
   element.classList.remove('streaming');
   element.classList.add('stream-cancelled');
@@ -3304,7 +3765,14 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
   console.log(`[SidePanel] 已删除消息: ${role}, messageId: ${messageId}`);
 }
 
-export async function callApi(messages, model, useTools = false, apiParams = {}) {
+export async function callApi(messages, model, useTools = false, apiParams = {}, options = {}) {
+  // options.resumeFromCheckpoint: 是否为从 checkpoint 恢复任务
+  //   - true 时忽略 messages/model/useTools，发送 RESUME_REACT 而非 CALL_API
+  //   - 由 resumeTask 调用，复用 callApi 的流式输出基础设施
+  // options.userGuidance: 恢复时用户追加的任务描述（可选）
+  // options.loadingId: 外部传入的 loading 消息 ID（resumeTask 复用 callApi 时使用）
+  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null } = options;
+
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
   
@@ -3316,10 +3784,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
   const mySessionId = state.activeSessionId;
-  
+
   // 生成唯一的请求 ID，用于隔离新旧请求的流式消息，防止旧任务残留输出
-  const myCallId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  console.log('[SidePanel] callApi: 生成 callId:', myCallId);
+  // 恢复模式使用 resume_ 前缀，便于日志区分
+  const myCallId = resumeFromCheckpoint
+    ? `resume_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+    : `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  console.log(`[SidePanel] callApi: 生成 callId: ${myCallId}${resumeFromCheckpoint ? ' (恢复模式)' : ''}`);
+
+  // 恢复模式：将外部传入的 loadingId 注入到 apiParams._loadingId，
+  // 让 STREAM_START 处理逻辑能正确移除 resumeTask 创建的 loading 消息
+  if (resumeFromCheckpoint && externalLoadingId) {
+    apiParams = { ...apiParams, _loadingId: externalLoadingId };
+  }
 
   // 如果当前会话有正在进行的 API 调用，先取消旧的，防止旧任务残留输出
   if (state.pendingCancelApiMap && state.pendingCancelApiMap.has(mySessionId)) {
@@ -3348,17 +3825,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
 
   // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
-  const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null };
+  const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null, checkpoint: null };
   keepalivePort.onMessage.addListener((msg) => {
     if (msg.type === 'SW_RESTARTED' && msg.sessionId === mySessionId) {
       console.warn('[SidePanel] ⚠️ 收到 SW_RESTARTED 通知，后台已重启，API 调用已丢失');
       _swRestartCtx.restarted = true;
+      _swRestartCtx.checkpoint = msg.checkpoint || null;
       // 如果 Promise executor 已经初始化（rejectFn 已设置），直接触发清理和拒绝
       if (_swRestartCtx.rejectFn && _swRestartCtx.cleanup) {
         _swRestartCtx.cleanup();
         _swRestartCtx.rejectFn({
-          message: '后台服务异常重启，API 调用已中断，请重试',
-          executionLog: []
+          message: '后台服务异常重启，API 调用已中断',
+          executionLog: [],
+          checkpoint: _swRestartCtx.checkpoint,
+          swRestarted: true,
         });
       }
     }
@@ -3388,7 +3868,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
     // SW 重启检测：如果在 Promise 执行前已经收到 SW_RESTARTED 通知，立即 reject
     if (_swRestartCtx.restarted) {
       cleanupCallApi();
-      reject({ message: '后台服务异常重启，API 调用已中断，请重试', executionLog: [] });
+      reject({
+        message: '后台服务异常重启，API 调用已中断',
+        executionLog: [],
+        checkpoint: _swRestartCtx.checkpoint,
+        swRestarted: true,
+      });
       return;
     }
 
@@ -3894,22 +4379,35 @@ export async function callApi(messages, model, useTools = false, apiParams = {})
       chrome.runtime.onMessage.removeListener(listener);
     };
 
-    console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
-    chrome.runtime.sendMessage({
-      type: 'CALL_API',
-      sessionId: state.activeSessionId,
-      messages: messages,
-      model: model,
-      useTools: useTools,
-      tabId: state.currentTabId,
-      apiParams: apiParams,
-      agentId: state.activeAgentId,
-      agentToolIds: state.activeAgentToolIds,
-      callId: myCallId,
-      // 图片识别独立配置（仅当启用且有图片时传递）
-      imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
-      imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''
-    });
+    if (resumeFromCheckpoint) {
+      // 恢复模式：发送 RESUME_REACT，由 background 读取 checkpoint 并恢复 ReAct 循环
+      // 流式消息（STREAM_START/STREAM_CHUNK/STREAM_DONE/API_COMPLETE/API_ERROR）的处理
+      // 与 CALL_API 完全一致，复用上面的 listener
+      console.log('[SidePanel] 发送 RESUME_REACT 消息，sessionId:', state.activeSessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)', 'timeout:', timeoutMs);
+      chrome.runtime.sendMessage({
+        type: 'RESUME_REACT',
+        sessionId: state.activeSessionId,
+        callId: myCallId,
+        userGuidance: userGuidance || '',
+      });
+    } else {
+      console.log('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
+      chrome.runtime.sendMessage({
+        type: 'CALL_API',
+        sessionId: state.activeSessionId,
+        messages: messages,
+        model: model,
+        useTools: useTools,
+        tabId: state.currentTabId,
+        apiParams: apiParams,
+        agentId: state.activeAgentId,
+        agentToolIds: state.activeAgentToolIds,
+        callId: myCallId,
+        // 图片识别独立配置（仅当启用且有图片时传递）
+        imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
+        imageApiKey: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiKey || '') : ''
+      });
+    }
   });
 }
 

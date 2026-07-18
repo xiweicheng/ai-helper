@@ -2,7 +2,14 @@
 // 提供 Promise 化的 IndexedDB 操作，支持 side panel 和 service worker 共享访问
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
+
+// ReAct Checkpoint TTL：7 天
+export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// chrome.storage.local 中 checkpoint 的 key 前缀（后备存储）
+// 当 IndexedDB 的 reactCheckpoints store 不可用时，使用 chrome.storage.local 作为可靠后备
+const CHECKPOINT_KEY_PREFIX = 'react_checkpoint_';
 
 /**
  * 获取数据库连接（单例）
@@ -45,15 +52,40 @@ function openDB() {
         tokenStatsStore.createIndex('sessionId', 'sessionId', { unique: false });
         tokenStatsStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
+
+      // ReAct Checkpoint 存储（keyPath: sessionId）—— 用于任务中断后续接
+      if (!db.objectStoreNames.contains('reactCheckpoints')) {
+        const checkpointStore = db.createObjectStore('reactCheckpoints', { keyPath: 'sessionId' });
+        checkpointStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
     };
 
     request.onsuccess = (event) => {
-      resolve(event.target.result);
+      const db = event.target.result;
+
+      // 关键：当其他连接（如 side_panel 持有的旧连接）触发版本变更时，
+      // 主动关闭当前连接，避免阻塞 DB 升级。
+      // 没有此处理会导致 SW 升级 DB 时被旧连接阻塞，reactCheckpoints store 无法创建，
+      // 表现为 checkpoint 写入静默失败 → 恢复时"未找到 checkpoint"。
+      db.onversionchange = (event) => {
+        console.log('[IDB] 检测到 versionchange 事件，主动关闭当前连接以允许升级');
+        try { event.target.close(); } catch (e) {}
+        // 重置单例缓存，下次 getDB() 会重新打开
+        dbPromise = null;
+      };
+
+      resolve(db);
     };
 
     request.onerror = (event) => {
       console.error('[IDB] 打开数据库失败:', event.target.error);
       reject(event.target.error);
+    };
+
+    // 处理被阻塞的升级（其他连接持有旧版本时触发）
+    request.onblocked = () => {
+      console.warn('[IDB] 数据库升级被阻塞（其他连接未关闭），等待重试...');
+      // 不直接 reject，让调用方稍后重试 getDB() 时自然获得新连接
     };
   });
 }
@@ -94,7 +126,51 @@ export function withStore(storeName, mode, callback, isRetry = false) {
       let resolvedValue = null;
       let settled = false;
 
-      const tx = db.transaction(storeName, mode);
+      // 检查 store 是否存在；不存在时强制重置连接并重试（触发 DB 升级创建缺失的 store）
+      // 这是 "reactCheckpoints store 不存在导致 checkpoint 静默失败" 的根因修复
+      if (!db.objectStoreNames.contains(storeName)) {
+        console.error(`[IDB] store "${storeName}" 不存在！当前 DB 版本: ${db.version}, store 列表: [${Array.from(db.objectStoreNames).join(', ')}]`);
+        if (!isRetry) {
+          settled = true;
+          // 强制重置连接，下次 getDB() 会重新打开并触发 onupgradeneeded（如果版本有变化）
+          // 但如果 DB 已经是最新版本但 store 仍然缺失（连接陈旧），需要先关闭再重开
+          try { db.close(); } catch (e) {}
+          resetDBConnection();
+          // 延迟重试，给 DB 重开一点时间
+          setTimeout(() => {
+            withStore(storeName, mode, callback, true)
+              .then(resolve)
+              .catch(reject);
+          }, 50);
+          return;
+        } else {
+          settled = true;
+          reject(new Error(`Store "${storeName}" does not exist in database (version ${db.version})`));
+          return;
+        }
+      }
+
+      let tx;
+      try {
+        tx = db.transaction(storeName, mode);
+      } catch (e) {
+        // transaction() 可能抛出同步异常（如连接已关闭）
+        console.error(`[IDB] 创建事务失败 (${storeName}):`, e.message);
+        if (!isRetry) {
+          settled = true;
+          resetDBConnection();
+          setTimeout(() => {
+            withStore(storeName, mode, callback, true)
+              .then(resolve)
+              .catch(reject);
+          }, 50);
+          return;
+        } else {
+          settled = true;
+          reject(e);
+          return;
+        }
+      }
       const store = tx.objectStore(storeName);
 
       // 回调中的 resolve 仅保存结果，实际 resolve 在 tx.oncomplete 中执行
@@ -467,4 +543,201 @@ export async function ensureMigration() {
 
   // 尝试迁移
   await migrateFromChromeStorage();
+}
+
+// ==================== React Checkpoints CRUD ====================
+//
+// checkpoint 数据结构：
+// {
+//   sessionId: string,           // 主键
+//   currentMessages: Array,      // 完整的 API 消息数组（含 tool_calls/tool 消息对）
+//   executionLog: Array,         // 执行日志
+//   iteration: number,           // 当前迭代次数
+//   globalIteration: { value },  // 全局迭代计数
+//   subtaskPlan: Object|null,    // 任务拆解计划
+//   currentSubtaskIndex: number|null,  // 当前子任务索引
+//   totalReflectionRounds: number,     // 反思轮数
+//   model: string,               // 使用的模型
+//   apiParams: Object,           // API 参数
+//   taskContext: Object|null,    // 任务上下文（子任务/子代理）
+//   tabId: number|null,          // 标签页 ID
+//   callId: string|null,         // 调用 ID
+//   interruptedReason: string,   // 中断原因
+//   createdAt: number,           // 创建时间戳
+//   updatedAt: number,           // 更新时间戳
+// }
+
+/**
+ * 保存/更新 ReAct checkpoint
+ * 采用双写策略：IndexedDB + chrome.storage.local（后备）
+ * 当 IndexedDB 的 reactCheckpoints store 不存在或写入失败时，chrome.storage.local 确保数据不丢失
+ * @param {Object} checkpoint - 必须包含 sessionId
+ * @returns {Promise<boolean>}
+ */
+export async function saveReactCheckpoint(checkpoint) {
+  if (!checkpoint?.sessionId) return false;
+  const now = Date.now();
+  const data = {
+    ...checkpoint,
+    updatedAt: now,
+    createdAt: checkpoint.createdAt || now,
+  };
+  const key = CHECKPOINT_KEY_PREFIX + checkpoint.sessionId;
+
+  // 策略：先写 chrome.storage.local（可靠），再尝试 IndexedDB（性能优化）
+  // 这样即使 IndexedDB 完全不可用，checkpoint 也不会丢失
+  let storageOk = false;
+  try {
+    await chrome.storage.local.set({ [key]: data });
+    storageOk = true;
+  } catch (e) {
+    console.warn('[Storage] chrome.storage.local 保存 checkpoint 失败:', e.message);
+  }
+
+  // 同时写入 IndexedDB（如果可用），供 getAllReactCheckpoints 高效查询
+  let idbOk = false;
+  try {
+    idbOk = await withStore('reactCheckpoints', 'readwrite', (store, resolve) => {
+      const request = store.put(data);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => resolve(false);
+    });
+  } catch (e) {
+    // IndexedDB 不可用（store 不存在等），不影响主流程
+    console.warn('[Storage] IndexedDB 保存 checkpoint 失败（已降级到 chrome.storage.local）:', e.message);
+  }
+
+  if (!storageOk && !idbOk) {
+    console.error('[Storage] checkpoint 保存完全失败：chrome.storage.local 和 IndexedDB 均不可用');
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 获取指定会话的 ReAct checkpoint
+ * 优先从 IndexedDB 读取，不存在时降级到 chrome.storage.local
+ * @param {string} sessionId
+ * @returns {Promise<Object|null>}
+ */
+export async function getReactCheckpoint(sessionId) {
+  if (!sessionId) return null;
+
+  // 优先尝试 IndexedDB
+  try {
+    const result = await withStore('reactCheckpoints', 'readonly', (store, resolve) => {
+      const request = store.get(sessionId);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => resolve(null);
+    });
+    if (result) return result;
+  } catch (e) {
+    // IndexedDB 不可用，继续尝试 chrome.storage.local
+  }
+
+  // 降级：从 chrome.storage.local 读取
+  try {
+    const key = CHECKPOINT_KEY_PREFIX + sessionId;
+    const data = await chrome.storage.local.get(key);
+    return data[key] || null;
+  } catch (e) {
+    console.warn('[Storage] chrome.storage.local 读取 checkpoint 失败:', e.message);
+    return null;
+  }
+}
+
+/**
+ * 删除指定会话的 ReAct checkpoint
+ * 同时从 IndexedDB 和 chrome.storage.local 中删除
+ * @param {string} sessionId
+ * @returns {Promise<boolean>}
+ */
+export async function deleteReactCheckpoint(sessionId) {
+  if (!sessionId) return false;
+  let ok = false;
+
+  // 从 chrome.storage.local 删除
+  try {
+    const key = CHECKPOINT_KEY_PREFIX + sessionId;
+    await chrome.storage.local.remove(key);
+    ok = true;
+  } catch (e) {
+    console.warn('[Storage] chrome.storage.local 删除 checkpoint 失败:', e.message);
+  }
+
+  // 从 IndexedDB 删除
+  try {
+    await withStore('reactCheckpoints', 'readwrite', (store, resolve) => {
+      const request = store.delete(sessionId);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => resolve(false);
+    });
+    ok = true;
+  } catch (e) {
+    // IndexedDB 不可用，不影响
+  }
+
+  return ok;
+}
+
+/**
+ * 获取所有 ReAct checkpoint（用于 TTL 清理和诊断）
+ * 合并 IndexedDB 和 chrome.storage.local 中的结果
+ * @returns {Promise<Array>}
+ */
+export async function getAllReactCheckpoints() {
+  // 从 chrome.storage.local 获取所有 checkpoint
+  let storageCheckpoints = [];
+  try {
+    const all = await chrome.storage.local.get(null);
+    for (const [key, value] of Object.entries(all)) {
+      if (key.startsWith(CHECKPOINT_KEY_PREFIX) && value?.sessionId) {
+        storageCheckpoints.push(value);
+      }
+    }
+  } catch (e) {
+    console.warn('[Storage] chrome.storage.local 获取所有 checkpoint 失败:', e.message);
+  }
+
+  // 从 IndexedDB 获取
+  let idbCheckpoints = [];
+  try {
+    idbCheckpoints = await withStore('reactCheckpoints', 'readonly', (store, resolve) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
+    });
+  } catch (e) {
+    // IndexedDB 不可用
+  }
+
+  // 合并去重（以 sessionId 为键，IndexedDB 优先）
+  const merged = new Map();
+  for (const cp of storageCheckpoints) {
+    merged.set(cp.sessionId, cp);
+  }
+  for (const cp of idbCheckpoints) {
+    merged.set(cp.sessionId, cp);
+  }
+  return Array.from(merged.values());
+}
+
+/**
+ * 清理过期的 ReAct checkpoint（TTL: 7 天）
+ * 应在 SW 启动时调用
+ * @returns {Promise<number>} 清理的条数
+ */
+export async function cleanupExpiredReactCheckpoints() {
+  const all = await getAllReactCheckpoints();
+  const now = Date.now();
+  const expired = all.filter(c => (c.updatedAt || 0) < now - REACT_CHECKPOINT_TTL_MS);
+  if (expired.length === 0) return 0;
+
+  let deleted = 0;
+  for (const cp of expired) {
+    const ok = await deleteReactCheckpoint(cp.sessionId);
+    if (ok) deleted++;
+  }
+  console.log(`[IDB] 清理了 ${deleted} 个过期的 ReAct checkpoint`);
+  return deleted;
 }
