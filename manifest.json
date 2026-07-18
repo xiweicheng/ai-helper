@@ -33,7 +33,8 @@
       "js": ["libs/qrcode.min.js", "libs/marked.min.js", "src/content/index.js"],
       "css": ["styles/styles.css"],
       "run_at": "document_idle",
-      "all_frames": true
+      "all_frames": true,
+      "type": "module"
     }
   ],
   "background": {
