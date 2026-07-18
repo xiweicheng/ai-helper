@@ -491,7 +491,7 @@ export function appendToolCallItems(element, toolCalls) {
          </svg>`;
     
     const item = document.createElement('div');
-    item.className = 'tool-call-item';
+    item.className = 'tool-call-item expanded';
     item.setAttribute('data-tool-call-id', tc.id || '');
     item.setAttribute('data-meta-type', meta.metaType);
     item.setAttribute('data-created-at', Date.now());

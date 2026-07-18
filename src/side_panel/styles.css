@@ -2581,12 +2581,6 @@ body {
   background: rgba(99, 102, 241, 0.08);
   box-shadow: 0 1px 3px rgba(99, 102, 241, 0.08);
 }
-.message-wrapper.streaming .tool-call-item .tool-call-body {
-  display: block;
-}
-.message-wrapper.streaming .tool-call-item .tool-call-chevron {
-  transform: rotate(180deg);
-}
 /* 预筛选卡片样式 */
 .preselect-card .tool-call-icon {
   color: #f59e0b;
