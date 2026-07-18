@@ -1465,8 +1465,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const reasoningContent = assistantMessage?.reasoning_content || null;
       console.log('[Background] ReAct 循环完成，最终内容长度:', content.length);
 
-      // 任务正常完成，保存最终 checkpoint（供反思失败时仍可续接）
+      // 任务正常完成：先保存最终 checkpoint（供反思失败时仍可续接），然后清理
       await saveCheckpointNow('final_answer');
+      
+      // 任务正常完成后清理 checkpoint（只有中断时才保留 checkpoint）
+      await clearCheckpoint(sessionId);
 
       // 后置反思：对最终答案进行质量评估
       const reflectionConfig = reactConfig.reflection;

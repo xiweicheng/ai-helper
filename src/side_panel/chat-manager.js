@@ -194,6 +194,10 @@ export async function loadChatHistory() {
     renderMermaidCharts();
     addCodeCopyButtons();
     
+    // 检查是否存在未清理的 checkpoint（页面关闭/刷新导致任务中断，没有创建恢复入口卡片）
+    // 如果存在，自动添加一个"继续执行"提示卡片
+    await _checkForAbandonedCheckpoint();
+    
     const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
     chrome.storage.local.get([scrollKey], (result) => {
       if (result[scrollKey] !== undefined) {
@@ -424,6 +428,92 @@ async function _verifyCheckpointAndHideButton(messageDiv, sessionId) {
 }
 
 /**
+ * 检查是否存在被遗弃的 checkpoint（页面关闭/刷新导致任务中断，没有创建恢复入口卡片）
+ * 如果存在且 messageHistory 中没有 resumable 标记的消息，自动添加恢复提示卡片
+ */
+export async function _checkForAbandonedCheckpoint() {
+  const sessionId = state.activeSessionId;
+  if (!sessionId) return;
+
+  // 检查 messageHistory 中是否已经有带 resumable: true 的消息（避免重复添加）
+  const hasResumableMessage = state.messageHistory.some(msg => msg.resumable);
+  
+  // 检查 DOM 中是否有"继续执行"按钮
+  // 会话切换时可能用旧缓存恢复，缓存中可能没有按钮（因为按钮是异步添加的）
+  const chatContainer = document.getElementById('chatContainer');
+  const hasResumeBtnInDOM = chatContainer && chatContainer.querySelector('.resume-task-btn');
+  
+  // 如果 messageHistory 中已有 resumable 消息且 DOM 中已有按钮，无需重复添加
+  if (hasResumableMessage && hasResumeBtnInDOM) {
+    return;
+  }
+
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
+    if (resp?.exists) {
+      console.log('[SidePanel] 发现被遗弃的 checkpoint，自动添加恢复提示卡片');
+      
+      // 清除该会话的 DOM 缓存，确保下次切换会话时走全量重建路径
+      // 避免缓存中包含不完整的恢复卡片（没有按钮）导致重复
+      document.dispatchEvent(new CustomEvent('session-cache-invalidate', {
+        detail: { sessionId }
+      }));
+      
+      const checkpoint = resp.checkpoint;
+      const duration = checkpoint.updatedAt ? formatDuration(Date.now() - checkpoint.updatedAt) : '';
+      const elapsedText = duration ? `（中断 ${duration} 前）` : '';
+      
+      const content = `⚠️ 任务执行被中断${elapsedText}\n\n检测到您有一个未完成的任务，是否继续执行？`;
+      
+      // 如果 messageHistory 中已有 resumable 消息但 DOM 中没有按钮，更新消息内容并重新渲染
+      if (hasResumableMessage) {
+        const resumableMsg = state.messageHistory.find(msg => msg.resumable);
+        if (resumableMsg) {
+          resumableMsg.content = content;
+          saveChatHistory();
+        }
+        // 移除旧的 resumable 消息元素（用多种方式查找）
+        if (chatContainer) {
+          let oldResumableEl = chatContainer.querySelector('.message[data-resumable="true"]');
+          if (!oldResumableEl) {
+            const messages = chatContainer.querySelectorAll('.message.assistant');
+            for (const msgEl of messages) {
+              const textContent = msgEl.textContent || '';
+              if (textContent.includes('任务执行被中断')) {
+                oldResumableEl = msgEl;
+                break;
+              }
+            }
+          }
+          if (oldResumableEl) {
+            oldResumableEl.remove();
+          }
+        }
+      }
+      
+      const { element: messageDiv, messageId } = addMessage('assistant', content, true, [], null, false, null, null, [], true);
+      
+      // 如果之前没有 resumable 消息，添加到 messageHistory
+      if (!hasResumableMessage) {
+        state.messageHistory.push({ 
+          role: 'assistant', 
+          content, 
+          executionLog: [], 
+          messageId, 
+          resumable: true,
+          interrupted: true,
+        });
+        saveChatHistory();
+      }
+
+      _verifyCheckpointAndHideButton(messageDiv, sessionId);
+    }
+  } catch (e) {
+    console.warn('[SidePanel] 检查被遗弃的 checkpoint 失败:', e.message);
+  }
+}
+
+/**
  * 从 checkpoint 恢复中断的 ReAct 任务
  * 不会向 messageHistory 添加新的 user 消息，仅触发后台 RESUME_REACT
  * 成功/失败后像 sendMessage 一样添加 assistant 消息
@@ -616,6 +706,12 @@ export async function sendMessage() {
   
   const text = userInput.value.trim();
   if (!text || state.isGenerating) return;
+  
+  // 清除旧的恢复卡片和后台 checkpoint
+  // 新任务开始意味着用户放弃之前的中断恢复
+  _clearResumableFlagsForSession(state.activeSessionId);
+  // 同时删除后台存储的 checkpoint（IndexedDB + chrome.storage.local）
+  chrome.runtime.sendMessage({ type: 'DELETE_CHECKPOINT', sessionId: state.activeSessionId });
   
   const welcomeMessage = chatContainer.querySelector('.welcome-message');
   if (welcomeMessage) {

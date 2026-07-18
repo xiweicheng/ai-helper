@@ -32,7 +32,8 @@ import {
   bindExecutionLogDelegate, bindReflectionBadgeDelegate,
   rebindAllMessages,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
-  cancelStreamingTask, reconnectStreamingElement
+  cancelStreamingTask, reconnectStreamingElement,
+  _checkForAbandonedCheckpoint
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -1092,7 +1093,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!chatContainerEl) return;
 
     // 缓存离开的会话 DOM（无流式任务时缓存，流式元素已被 detach 不在 DOM 中）
-    if (previousSessionId && !state.pendingCallApiSessionIds.has(previousSessionId)) {
+    // 如果当前会话有 resumable 消息（恢复卡片），不缓存（避免缓存中包含不完整的恢复卡片）
+    const hasResumable = previousSessionId && state.messageHistory?.some(msg => msg.resumable);
+    if (previousSessionId && !state.pendingCallApiSessionIds.has(previousSessionId) && !hasResumable) {
       sessionDOMCache.set(previousSessionId, chatContainerEl.innerHTML);
     }
 
@@ -1133,6 +1136,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           }, 150);
         }
       });
+      // 检查被遗弃的 checkpoint
+      _checkForAbandonedCheckpoint();
       return;
     }
 
@@ -1169,6 +1174,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!isStreamingSession) {
         sessionDOMCache.set(sessionId, chatContainerEl.innerHTML);
       }
+
+      // 检查被遗弃的 checkpoint（页面关闭/刷新导致任务中断）
+      _checkForAbandonedCheckpoint();
     }
 
     // 如果切回的会话有正在执行的后台流式任务，重建流式元素以恢复实时输出
