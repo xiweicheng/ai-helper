@@ -1353,8 +1353,9 @@ function sendToAI(action, text, customSystemPrompt) {
 }
 
 // ==================== 监听 AI 响应 ====================
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!isExtensionValid()) return;
+if (isExtensionValid()) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!isExtensionValid()) return;
   
   if (message.type === 'IFRAME_SELECTION') {
     if (!isTopFrame) return;
@@ -1517,6 +1518,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   }
 });
+}
 
 // ==================== 域名屏蔽 ====================
 function blockCurrentDomain() {
@@ -1555,26 +1557,28 @@ function loadToggleState() {
   });
 }
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (!isExtensionValid()) return;
-  
-  if (areaName === 'local' && changes.enableSelectionToolbar) {
-    enableSelectionToolbar = !!(changes.enableSelectionToolbar.newValue);
-    if (!enableSelectionToolbar) {
-      hideToolbar();
-      hideResultPanel();
-      currentSelectedText = '';
+if (isExtensionValid()) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (!isExtensionValid()) return;
+    
+    if (areaName === 'local' && changes.enableSelectionToolbar) {
+      enableSelectionToolbar = !!(changes.enableSelectionToolbar.newValue);
+      if (!enableSelectionToolbar) {
+        hideToolbar();
+        hideResultPanel();
+        currentSelectedText = '';
+      }
     }
-  }
-  
-  if (areaName === 'local' && changes.blockedDomains) {
-    blockedDomains = changes.blockedDomains.newValue || [];
-  }
-  
-  if (areaName === 'local' && changes.toolbarTools) {
-    refreshToolbarCache();
-  }
-});
+    
+    if (areaName === 'local' && changes.blockedDomains) {
+      blockedDomains = changes.blockedDomains.newValue || [];
+    }
+    
+    if (areaName === 'local' && changes.toolbarTools) {
+      refreshToolbarCache();
+    }
+  });
+}
 
 // ==================== 导出的启动/停止函数 ====================
 export function initSelectionToolbar() {

@@ -13,6 +13,7 @@
   "devDependencies": {
     "@antfu/eslint-config": "^9.1.0",
     "@crxjs/vite-plugin": "^2.7.0",
+    "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "sharp": "^0.35.2",
     "vite": "^8.0.0",

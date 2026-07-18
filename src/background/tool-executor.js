@@ -13,13 +13,32 @@ import {
   getActiveTabId, sendToContentScriptWithRetry
 } from './tool-helpers.js';
 import { fetchWithTimeout, fetchWithRetry, executeFetchUrl } from './tool-network.js';
+import { executeAgentMemoryStore, executeAgentMemoryRecall, executeAgentMemoryManage } from './tool-memory.js';
+import { executeGetPageContent, executeExtractData, executeClipboard, executeCopyToClipboard, executePasteFromClipboard } from './tool-clipboard.js';
+import { executeCapturePage, executeTakeFullPageScreenshot, triggerScreenshotDownload } from './tool-screenshot.js';
 
 // 重导出（保持对外接口不变：react-loop.js / tool-preselector.js 仍从本模块导入）
 export { fetchWithTimeout, fetchWithRetry, executeFetchUrl };
+// 重导出剪贴板工具（保持对外接口不变）
+export { executeCopyToClipboard, executePasteFromClipboard } from './tool-clipboard.js';
+export { triggerScreenshotDownload } from './tool-screenshot.js';
+// 重导出截图下载工具（保持对外接口不变）
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws }）
 // 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
 const runningAgentCommands = new Map();
+
+// 背景工具处理器映射（仅包含 execution: 'background' 且有 handler 的工具）
+// 声明放在前面，避免 rebuildBgHandlers 调用时出现 ReferenceError
+const BG_HANDLERS = {};
+
+// Content Script 工具参数构建器映射
+// 声明放在前面，避免工具执行时出现 ReferenceError
+const CONTENT_PAYLOADS = {};
+
+// Background 工具处理器注册表（单一数据源）
+// 声明放在前面，避免 rebuildBgHandlers 调用时出现 ReferenceError
+const TOOL_HANDLERS = {};
 
 // ==================== MCP 工具动态注册 ====================
 
@@ -168,6 +187,8 @@ export async function unloadMcpTools() {
 
 /**
  * 重建 BG_HANDLERS（RAW_TOOLS 变化后需要重新派生）
+ * 注意：直接使用 tool.execution 属性而非 TOOL_EXECUTION_MAP，
+ * 因为 TOOL_EXECUTION_MAP 在 constants.js 中定义后不会随动态添加的 MCP 工具更新
  */
 function rebuildBgHandlers() {
   for (const key of Object.keys(BG_HANDLERS)) {
@@ -342,326 +363,6 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-/**
- * 执行页面截图工具
- * 支持四种模式：download（下载）、analyze（视觉分析）、both（下载+分析）、fullpage（全页截图）
- * action 参数的可用选项会根据 enableImageInput 开关动态变化
- */
-export async function executeCapturePage(args, toolCallId, sessionId = null) {
-  const {
-    action = 'both',
-    tabId,
-    format = 'jpeg',
-    quality = 60,
-    visionMaxDim = 1024,
-    visionQuality = 65
-  } = args;
-
-  // fullpage 模式委托给 executeTakeFullPageScreenshot
-  if (action === 'fullpage') {
-    return executeTakeFullPageScreenshot({ format, quality }, toolCallId);
-  }
-
-  try {
-    let targetTabId;
-    let targetWindowId;
-    let targetUrl = '';
-    let targetTitle = '';
-
-    if (tabId) {
-      try {
-        const tab = await chrome.tabs.get(tabId);
-        targetTabId = tab.id;
-        targetWindowId = tab.windowId;
-        targetUrl = tab.url || '';
-        targetTitle = tab.title || '';
-        await chrome.tabs.update(targetTabId, { active: true });
-        await new Promise(r => setTimeout(r, 300));
-      } catch {
-        return makeResult(false, `标签页 ${tabId} 不存在或无法访问`, { tool_call_id: toolCallId });
-      }
-    } else {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs.length) {
-        return makeResult(false, '无法获取当前标签页', { tool_call_id: toolCallId });
-      }
-      targetTabId = tabs[0].id;
-      targetWindowId = tabs[0].windowId;
-      targetUrl = tabs[0].url || '';
-      targetTitle = tabs[0].title || '';
-    }
-
-    logger.debug('[Background] 执行截图: tabId=', targetTabId, 'url=', targetUrl, 'action=', action,
-      'format=', format, 'quality=', quality, 'visionMaxDim=', visionMaxDim, 'visionQuality=', visionQuality);
-
-    const dataUrl = await new Promise((resolve, reject) => {
-      chrome.tabs.captureVisibleTab(
-        targetWindowId,
-        { format, quality },
-        (capturedDataUrl) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(capturedDataUrl);
-          }
-        }
-      );
-    });
-
-    const sizeKB = (dataUrl.length / 1024).toFixed(1);
-    logger.debug('[Background] 截图完成，大小:', sizeKB, 'KB');
-
-    // 存储截图供 side_panel 展示
-    chrome.storage.local.set({ _lastVisionScreenshot: { dataUrl, sizeKB, url: targetUrl, title: targetTitle, timestamp: Date.now() } }).catch(() => {});
-
-    // 根据 action 执行不同操作
-    const needDownload = (action === 'download' || action === 'both');
-    const needAnalyze = (action === 'analyze' || action === 'both');
-
-    if (needDownload) {
-      triggerScreenshotDownload(dataUrl, format);
-    }
-
-    if (needAnalyze) {
-      // 使用大模型指定的参数压缩截图
-      const compressedDataUrl = await compressImageForVision(dataUrl, visionMaxDim, visionQuality / 100);
-      const compressedKB = (compressedDataUrl.length / 1024).toFixed(1);
-      logger.debug('[Background] 截图压缩后大小:', compressedKB, 'KB (maxDim:', visionMaxDim, 'quality:', visionQuality, ')');
-
-      // 调用图片识别 API 对压缩后的截图进行视觉分析
-      const visionResult = await analyzeScreenshotWithVision(compressedDataUrl, targetUrl, targetTitle, sessionId);
-
-      if (needDownload) {
-        // both 模式：下载 + 分析
-        return makeResult(true, `截图已下载到本地（${sizeKB} KB）。\n\n${visionResult}`, { tool_call_id: toolCallId });
-      }
-      return makeResult(true, visionResult, { tool_call_id: toolCallId });
-    }
-
-    // 纯 download 模式
-    const imageSizeMB = (dataUrl.length / 1024 / 1024).toFixed(2);
-    const fmt = format === 'png' ? 'png' : 'jpg';
-    return makeResult(true, `截图成功！\n图片大小约 ${imageSizeMB} MB\n格式: ${fmt}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`, { tool_call_id: toolCallId });
-  } catch (err) {
-    return makeResult(false, `截图失败: ${err.message}`, { tool_call_id: toolCallId });
-  }
-}
-
-/**
- * 使用 OffscreenCanvas 压缩截图图片
- * @param {string} dataUrl - 原始截图 data URL
- * @param {number} maxDim - 最大长边像素（大模型可动态指定）
- * @param {number} jpegQuality - JPEG 质量 0-1（大模型可动态指定）
- */
-async function compressImageForVision(dataUrl, maxDim = 1024, jpegQuality = 0.65) {
-  try {
-    const response = await fetch(dataUrl);
-    const blob = await response.blob();
-    const bitmap = await createImageBitmap(blob);
-
-    let { width, height } = bitmap;
-
-    if (width > maxDim || height > maxDim) {
-      if (width > height) {
-        height = Math.round(height * (maxDim / width));
-        width = maxDim;
-      } else {
-        width = Math.round(width * (maxDim / height));
-        height = maxDim;
-      }
-    }
-
-    const canvas = new OffscreenCanvas(width, height);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, width, height);
-
-    const compressedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: jpegQuality });
-
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(compressedBlob);
-    });
-  } catch (err) {
-    logger.warn('[Background] 图片压缩失败，使用原始截图:', err.message);
-    return dataUrl;
-  }
-}
-
-/**
- * 调用图片识别 API 对截图进行视觉分析
- * 返回文本描述结果
- */
-async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionId = null) {
-  // 读取图片识别配置（独立 API 端点、Key、模型）+ 流式开关
-  const visionConfig = await new Promise((resolve) => {
-    chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName', 'streamEnabled'], resolve);
-  });
-
-  const apiBase = visionConfig.imageApiBase || visionConfig.apiBase;
-  const apiKey = visionConfig.imageApiKey || visionConfig.apiKey;
-  const model = visionConfig.imageModelName || visionConfig.modelName;
-  const useStream = visionConfig.streamEnabled !== false; // 默认 true
-
-  if (!apiBase || !apiKey) {
-    logger.debug('[Background] 图片识别 API 未配置，返回截图基本信息');
-    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。`;
-  }
-
-  logger.debug('[Background] 调用图片识别 API 分析截图，模型:', model, '端点:', apiBase, '流式:', useStream);
-
-  const visionPrompt = `请详细描述这张网页截图的内容，包括：
-1. 页面整体布局和主要区块
-2. 可见的文本内容（标题、段落、按钮文字等）
-3. UI 元素（导航栏、按钮、输入框、表格、图片等）
-4. 页面的视觉状态和风格
-5. 如有明显错误、异常或问题，请指出
-
-截图来源: ${pageTitle} (${pageUrl})`;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
-
-  try {
-    const fetchBody = {
-      model: model,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: visionPrompt },
-          { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } }
-        ]
-      }],
-      max_tokens: 2000
-    };
-
-    // 根据流式开关决定是否启用 stream
-    if (useStream) {
-      fetchBody.stream = true;
-    }
-
-    const response = await fetch(`${apiBase}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(fetchBody),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      logger.error('[Background] 图片识别 API 请求失败:', response.status, errorText);
-      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败（API 返回 ${response.status}），请检查图片识别 API 配置。`;
-    }
-
-    let analysis;
-
-    if (useStream) {
-      // 流式模式：SSE 逐块读取，实时推送到 side panel
-      analysis = await readVisionSSEStream(response, controller, sessionId);
-    } else {
-      // 非流式模式：JSON 一次性返回
-      const data = await response.json();
-      analysis = data.choices?.[0]?.message?.content;
-    }
-
-    if (!analysis) {
-      logger.error('[Background] 图片识别 API 结果为空');
-      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别返回结果为空，请重试。`;
-    }
-
-    logger.debug('[Background] 图片识别分析完成，结果长度:', analysis.length);
-    return `页面截图分析结果：\n\n**页面**: ${pageTitle}\n**地址**: ${pageUrl}\n\n${analysis}`;
-
-  } catch (err) {
-    clearTimeout(timeout);
-    logger.error('[Background] 图片识别 API 调用异常:', err.message);
-    if (err.name === 'AbortError') {
-      return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。`;
-    }
-    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败: ${err.message}`;
-  }
-}
-
-/**
- * 流式读取视觉 API 的 SSE 响应，逐块推送到 side panel 实时展示，完成后返回完整文本
- */
-async function readVisionSSEStream(response, abortController, sessionId = null) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let fullContent = '';
-
-  try {
-    while (true) {
-      let readResult;
-      if (abortController && abortController.signal) {
-        readResult = await Promise.race([
-          reader.read(),
-          new Promise((_, reject) => {
-            if (abortController.signal.aborted) {
-              reject(new DOMException('Aborted', 'AbortError'));
-              return;
-            }
-            const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
-            abortController.signal.addEventListener('abort', onAbort, { once: true });
-          })
-        ]);
-      } else {
-        readResult = await reader.read();
-      }
-
-      const { done, value } = readResult;
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: false });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        let data = '';
-        if (line.startsWith('data:')) {
-          data = line.substring(5).replace(/^\s+/, '');
-        }
-        
-        if (!data || data === '[DONE]') continue;
-
-        try {
-          const parsed = JSON.parse(data);
-          // 兼容多种 SSE 格式：delta.content / message.content / text
-          let delta = parsed.choices?.[0]?.delta?.content
-            || parsed.choices?.[0]?.message?.content
-            || parsed.choices?.[0]?.text
-            || '';
-          if (delta) {
-            fullContent += delta;
-
-            // 实时推送到 side panel 展示
-            if (sessionId) {
-              chrome.runtime.sendMessage({
-                type: 'VISION_ANALYSIS_CHUNK',
-                sessionId,
-                delta
-              }).catch(() => {});
-            }
-          }
-        } catch (err) {
-          // 解析失败时记录原始数据，方便排查不同模型的格式差异
-          logger.warn('[Background] 图片识别 SSE 解析失败，原始数据:', data.substring(0, 200), '错误:', err.message);
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return fullContent;
-}
 
 // tryParseToolArgs / makeResult / normalizeToolResult / recordToolStats
 // / getActiveTabId / sendToContentScriptWithRetry 已拆分到 tool-helpers.js
@@ -670,7 +371,8 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
 
 // Background 工具处理器注册表（单一数据源）
 // 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
-const TOOL_HANDLERS = {
+// 使用 Object.assign 赋值，因为 TOOL_HANDLERS 已在文件顶部声明
+Object.assign(TOOL_HANDLERS, {
   search_bookmarks: executeSearchBookmarks,
   search_history: executeSearchHistory,
   capture_page: executeCapturePage,
@@ -708,10 +410,9 @@ const TOOL_HANDLERS = {
   get_page_content: executeGetPageContent,
   extract_data: executeExtractData,
   clipboard: executeClipboard,
-};
+});
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
-const BG_HANDLERS = {};
 for (const tool of RAW_TOOLS) {
   if (tool.execution === 'background' && TOOL_HANDLERS[tool.id]) {
     BG_HANDLERS[tool.id] = TOOL_HANDLERS[tool.id];
@@ -720,7 +421,6 @@ for (const tool of RAW_TOOLS) {
 
 // 从 RAW_TOOLS 自动派生 CONTENT_PAYLOADS（根据 function.parameters.properties 自动透传所有参数）
 // 新增 content_script 工具时：只需在 RAW_TOOLS 添加定义，payload 自动生成
-const CONTENT_PAYLOADS = {};
 for (const tool of RAW_TOOLS) {
   if (tool.execution === 'content_script') {
     const props = tool.function.parameters?.properties;
@@ -745,6 +445,17 @@ CONTENT_PAYLOADS.search_in_page = a => ({
   query: a.query || a.pattern, mode: a.mode, caseSensitive: a.caseSensitive,
   contextLength: a.contextLength, maxResults: a.maxResults, highlight: a.highlight
 });
+
+// 模块初始化验证：检查关键映射是否正确填充
+(function verifyToolMaps() {
+  const bgKeys = Object.keys(BG_HANDLERS);
+  const cpKeys = Object.keys(CONTENT_PAYLOADS);
+  const thKeys = Object.keys(TOOL_HANDLERS);
+  logger.debug('[Background] 模块初始化: BG_HANDLERS=' + bgKeys.length +
+    ', CONTENT_PAYLOADS=' + cpKeys.length +
+    ', TOOL_HANDLERS=' + thKeys.length +
+    ', RAW_TOOLS=' + RAW_TOOLS.length);
+})();
 
 /**
  * 执行工具调用
@@ -792,7 +503,17 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   
   logger.debug('[Background] 执行工具:', toolName, args, 'id:', toolCallId);
 
-  const executionType = TOOL_EXECUTION_MAP[toolName];
+  // 优先从 TOOL_EXECUTION_MAP 获取执行类型（常量映射，性能好）
+  let executionType = TOOL_EXECUTION_MAP[toolName];
+
+  // 回退：从 RAW_TOOLS 查找（支持动态添加的工具）
+  if (!executionType) {
+    const toolDef = RAW_TOOLS.find(t => t.id === toolName);
+    if (toolDef) {
+      executionType = toolDef.execution;
+    }
+  }
+
   let result;
 
   if (executionType === 'background') {
@@ -801,10 +522,33 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       logger.debug(`[Background] ${toolName} 直接执行，不通过 content script`);
       result = await handler(args, toolCallId, sessionId, tabId);
     } else {
+      logger.error('[Background] BG_HANDLERS 中未找到 handler:', toolName);
       result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
     }
   } else if (executionType === 'content_script') {
-    const buildPayload = CONTENT_PAYLOADS[toolName];
+    // 优先从 CONTENT_PAYLOADS 获取 payload 构建器
+    let buildPayload = CONTENT_PAYLOADS[toolName];
+
+    // 回退：动态构建 payload（支持动态添加的工具）
+    if (!buildPayload) {
+      const toolDef = RAW_TOOLS.find(t => t.id === toolName);
+      if (toolDef) {
+        const props = toolDef.function.parameters?.properties;
+        if (props) {
+          const propKeys = Object.keys(props);
+          buildPayload = (a) => {
+            const payload = {};
+            for (const key of propKeys) {
+              payload[key] = a[key];
+            }
+            return payload;
+          };
+        } else {
+          buildPayload = () => ({});
+        }
+      }
+    }
+    
     if (buildPayload) {
       const messageType = toolName.toUpperCase();
       const messagePayload = buildPayload(args);
@@ -1108,26 +852,6 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
   }
 }
 
-/**
- * 触发截图下载
- */
-export function triggerScreenshotDownload(dataUrl, format) {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const fileName = `screenshot_${timestamp}.${format === 'png' ? 'png' : 'jpg'}`;
-  
-  // 直接将 Base64 data URL 传给 chrome.downloads
-  chrome.downloads.download({
-    url: dataUrl,
-    filename: 'Downloads/' + fileName,
-    saveAs: false
-  }, (downloadId) => {
-    if (chrome.runtime.lastError) {
-      logger.error('[Background] 下载失败:', chrome.runtime.lastError.message);
-    } else {
-      logger.debug('[Background] 截图已触发下载，ID:', downloadId, '文件名:', fileName);
-    }
-  });
-}
 
 /**
  * 执行问题澄清工具
@@ -1757,10 +1481,25 @@ export function executeClearPageData(args, toolCallId) {
             // 尝试注入 content script 后再试
             const manifest = chrome.runtime.getManifest();
             const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
-            const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
+            const contentFile = contentJsFiles.find(f => f.includes('content-')) || contentJsFiles.find(f => /content/i.test(f)) || 'content.js';
+            const contentUrl = chrome.runtime.getURL(contentFile);
             chrome.scripting.executeScript({
               target: { tabId: tab.id },
-              files: [contentFile]
+              func: (url) => {
+                return new Promise((resolve) => {
+                  if (document.getElementById('__aih_content_script__')) {
+                    resolve(true);
+                    return;
+                  }
+                  const script = document.createElement('script');
+                  script.id = '__aih_content_script__';
+                  script.src = url;
+                  script.onload = () => resolve(true);
+                  script.onerror = () => resolve(false);
+                  document.head.appendChild(script);
+                });
+              },
+              args: [contentUrl]
             }).then(() => {
               setTimeout(() => {
                 chrome.tabs.sendMessage(tab.id, {
@@ -2211,281 +1950,14 @@ async function executeWaitForNavigation(args, toolCallId) {
  * 避免 captureBeyondViewport 在 fixed/sticky 元素上的重复渲染 bug。
  * 失败时回退到 scroll-and-stitch 分段截图拼接方案。
  */
-async function executeTakeFullPageScreenshot(args, toolCallId) {
-  const { format = 'png', quality = 80 } = args;
-
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
-    const tabId = tabs[0].id;
-
-    logger.debug('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
-
-    return new Promise((resolve) => {
-      chrome.debugger.attach({ tabId }, '1.3', async () => {
-        if (chrome.runtime.lastError) {
-          logger.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
-          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-            } else {
-              triggerScreenshotDownload(dataUrl, 'png');
-              resolve({ success: true, dataUrl, fullPage: false, message: 'debugger 不可用，返回可视区截图', tool_call_id: toolCallId });
-            }
-          });
-          return;
-        }
-
-        try {
-          // 方案 A：Emulation 视口拉伸（首选，速度快无拼接痕迹）
-          const fullDataUrl = await captureViaEmulation(tabId, format, quality);
-          triggerScreenshotDownload(fullDataUrl, format);
-          resolve({ success: true, dataUrl: fullDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
-        } catch (emulationErr) {
-          logger.warn('[Background] Emulation 方案失败，回退到 scroll-and-stitch:', emulationErr.message);
-          try {
-            // 方案 B：scroll-and-stitch 分段拼接（兜底）
-            const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
-            triggerScreenshotDownload(stitchedDataUrl, format);
-            resolve({ success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功（分段拼接）', tool_call_id: toolCallId });
-          } catch (stitchErr) {
-            logger.error('[Background] scroll-and-stitch 也失败:', stitchErr.message);
-            chrome.debugger.detach({ tabId }, () => {});
-            chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-              if (chrome.runtime.lastError) {
-                resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-              } else {
-                triggerScreenshotDownload(dataUrl, 'png');
-                resolve({ success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId });
-              }
-            });
-          }
-        }
-      });
-    });
-  } catch (err) {
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
-  }
-}
-
-/**
- * CDP sendCommand 的 Promise 包装
- */
-function cdpSend(tabId, method, params = {}) {
-  return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(result);
-      }
-    });
-  });
-}
 
 // Emulation 方案最大视口高度（Chrome GPU 纹理上限约 16384，取安全值）
-const MAX_EMULATION_HEIGHT = 8192;
 
-/**
- * 方案 A：通过 Emulation.setDeviceMetricsOverride 拉高视口后截图
- * 仅适用于页面高度不超过 MAX_EMULATION_HEIGHT 的情况，超过则抛错由 stitch 兜底。
- * 返回 dataUrl
- */
-async function captureViaEmulation(tabId, format, quality) {
-  // 1. 获取页面真实尺寸
-  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
-    expression: 'JSON.stringify({ w: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth || 0, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0, window.innerHeight), dpr: window.devicePixelRatio || 1 })',
-    returnByValue: true
-  });
 
-  let pageW, pageH, dpr;
-  try {
-    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
-    pageW = Math.min(parsed.w || 1280, 10000);
-    pageH = Math.min(parsed.h || 720, MAX_EMULATION_HEIGHT);
-    dpr = Math.min(parsed.dpr || 1, 2);
-  } catch {
-    pageW = 1280;
-    pageH = 5000;
-    dpr = 1;
-  }
 
-  logger.debug('[Background] Emulation 页面尺寸:', pageW, 'x', pageH, 'dpr:', dpr);
 
-  // 2. 临时拉高视口
-  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
-    width: Math.ceil(pageW),
-    height: Math.ceil(pageH),
-    deviceScaleFactor: dpr,
-    mobile: false,
-    screenWidth: Math.ceil(pageW),
-    screenHeight: Math.ceil(pageH)
-  });
 
-  // 3. 等待布局完成
-  await new Promise(r => setTimeout(r, 300));
 
-  // 4. 截取完整页面（不加 captureBeyondViewport）
-  const screenshotParams = {
-    format: format === 'jpeg' ? 'jpeg' : 'png',
-    clip: { x: 0, y: 0, width: pageW, height: pageH, scale: 1 }
-  };
-  if (format === 'jpeg') {
-    screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
-  }
-
-  const result = await cdpSend(tabId, 'Page.captureScreenshot', screenshotParams);
-
-  // 5. 恢复视口
-  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
-  chrome.debugger.detach({ tabId }, () => {});
-
-  logger.debug('[Background] Emulation 全页截图成功, 数据长度:', result.data?.length);
-  return `data:image/${format === 'jpeg' ? 'jpeg' : 'png'};base64,${result.data}`;
-}
-
-const STITCH_OVERLAP = 60;  // 分片之间的重叠像素，避免边界遗漏
-
-/**
- * 方案 B：分段滚动截图 + Canvas 拼接
- * 先滚动到底部触发懒加载，再逐段截图拼接。
- * 返回 dataUrl
- */
-async function captureViaStitch(tabId, format, quality) {
-  // 1. 设为 DPR=1，确保截图分片的像素尺寸与 CSS 尺寸一致
-  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
-    width: 1280,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: false
-  });
-  await new Promise(r => setTimeout(r, 200));
-
-  // 2. 先滚动到页面底部，触发懒加载内容
-  await scrollPageToBottom(tabId);
-
-  // 3. 重新获取最终页面总高度（懒加载后可能变大）
-  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
-    expression: 'JSON.stringify({ w: window.innerWidth, h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0), vh: window.innerHeight })',
-    returnByValue: true
-  });
-
-  let pageW, pageH, viewH;
-  try {
-    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
-    pageW = parsed.w || 1280;
-    pageH = parsed.h || 720;
-    viewH = parsed.vh || 720;
-  } catch {
-    pageW = 1280;
-    pageH = 720;
-    viewH = 720;
-  }
-
-  logger.debug('[Background] Stitch 页面尺寸（懒加载后）:', pageW, 'x', pageH, 'viewport:', viewH);
-
-  // 4. 逐段滚动截图（带重叠）
-  const chunks = [];
-  let y = 0;
-  while (y < pageH) {
-    await cdpSend(tabId, 'Runtime.evaluate', {
-      expression: `window.scrollTo(0, ${y})`
-    });
-    await new Promise(r => setTimeout(r, 600));
-
-    const chunkH = Math.min(viewH, pageH - y);
-    const result = await cdpSend(tabId, 'Page.captureScreenshot', {
-      format: 'png',
-      clip: { x: 0, y: 0, width: pageW, height: chunkH, scale: 1 }
-    });
-
-    chunks.push({ data: result.data, y, h: chunkH, w: pageW });
-    logger.debug('[Background] Stitch 分段:', y, '-', y + chunkH);
-    y += (viewH - STITCH_OVERLAP);
-  }
-
-  // 5. 恢复视口
-  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
-  chrome.debugger.detach({ tabId }, () => {});
-
-  // 6. Canvas 拼接
-  return stitchChunksToDataUrl(chunks, pageW, pageH, format, quality);
-}
-
-/**
- * 逐步滚动到页面底部，触发所有懒加载内容
- */
-async function scrollPageToBottom(tabId) {
-  const evaluate = (expr) => cdpSend(tabId, 'Runtime.evaluate', {
-    expression: expr, returnByValue: true
-  });
-
-  // 先获取视口高度
-  const vhResult = await evaluate('window.innerHeight');
-  const vh = parseInt(vhResult.result?.value) || 800;
-
-  let prevScrollY = -1;
-  let currentScrollY = 0;
-  let rounds = 0;
-  const maxRounds = 50; // 安全上限
-
-  while (currentScrollY !== prevScrollY && rounds < maxRounds) {
-    prevScrollY = currentScrollY;
-    await evaluate(`window.scrollBy(0, ${vh})`);
-    await new Promise(r => setTimeout(r, 300));
-    const posResult = await evaluate('window.scrollY');
-    currentScrollY = parseInt(posResult.result?.value) || 0;
-    rounds++;
-  }
-
-  logger.debug('[Background] 预滚动完成, 最终 scrollY:', currentScrollY, '轮次:', rounds);
-}
-
-/**
- * 将多个 base64 分片用 OffscreenCanvas 拼接为完整图片
- */
-async function stitchChunksToDataUrl(chunks, totalW, totalH, format, quality) {
-  const canvas = new OffscreenCanvas(totalW, totalH);
-  const ctx = canvas.getContext('2d');
-
-  for (const chunk of chunks) {
-    const blob = base64ToBlob(chunk.data, 'image/png');
-    const bitmap = await createImageBitmap(blob);
-    // DPR=1 下 bitmap 像素尺寸与 CSS 尺寸一致，直接按坐标绘制
-    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, chunk.y, chunk.w, chunk.h);
-    bitmap.close();
-  }
-
-  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
-  const outputBlob = await canvas.convertToBlob({
-    type: mimeType,
-    quality: format === 'jpeg' ? (quality || 80) / 100 : undefined
-  });
-  const arrayBuffer = await outputBlob.arrayBuffer();
-  const uint8Array = new Uint8Array(arrayBuffer);
-  let binary = '';
-  for (let i = 0; i < uint8Array.length; i++) {
-    binary += String.fromCharCode(uint8Array[i]);
-  }
-  return `data:${mimeType};base64,${btoa(binary)}`;
-}
-
-/**
- * base64 字符串 → Blob
- */
-function base64ToBlob(base64, mimeType = 'image/png') {
-  const byteChars = atob(base64);
-  const byteArrays = [];
-  for (let offset = 0; offset < byteChars.length; offset += 512) {
-    const slice = byteChars.slice(offset, offset + 512);
-    const byteNumbers = new Array(slice.length);
-    for (let i = 0; i < slice.length; i++) {
-      byteNumbers[i] = slice.charCodeAt(i);
-    }
-    byteArrays.push(new Uint8Array(byteNumbers));
-  }
-  return new Blob(byteArrays, { type: mimeType });
-}
 
 /**
  * Agent 文件写入
@@ -2981,752 +2453,9 @@ async function executeAgentSearchContent(args, toolCallId) {
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }
 
-// ==================== 剪贴板工具（使用 Offscreen Document） ====================
+// 剪贴板工具（clipboard / get_page_content / extract_data）已拆分到 tool-clipboard.js
 
-let creatingOffscreenDocument = null;
-
-async function ensureOffscreenDocument() {
-  const offscreenUrl = chrome.runtime.getURL('offscreen/offscreen.html');
-  const existingContexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [offscreenUrl]
-  });
-
-  if (existingContexts.length > 0) {
-    return;
-  }
-
-  if (creatingOffscreenDocument) {
-    await creatingOffscreenDocument;
-    return;
-  }
-
-  creatingOffscreenDocument = chrome.offscreen.createDocument({
-    url: 'offscreen/offscreen.html',
-    reasons: ['CLIPBOARD'],
-    justification: '用于读写系统剪贴板内容'
-  });
-
-  try {
-    await creatingOffscreenDocument;
-  } finally {
-    creatingOffscreenDocument = null;
-  }
-}
-
-// ── 合并后的工具处理函数 ──
-
-/**
- * get_page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
- * 根据 format 参数路由到对应的 content script 消息类型
- */
-async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId) {
-  const { format = 'text', selector, maxLength = 15000, tabId: argsTabId } = args;
-
-  const messageTypeMap = {
-    text: 'GET_PAGE_TEXT',
-    html: 'GET_FULL_HTML'
-  };
-
-  const messageType = messageTypeMap[format];
-  if (!messageType) {
-    return { success: false, error: `不支持的格式: ${format}，可选: text, html`, tool_call_id: toolCallId };
-  }
-
-  try {
-    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
-    if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
-    }
-    const message = { type: messageType, selector, maxLength };
-    return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
-  } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
-  }
-}
-
-/**
- * extract_data：合并 extract_table/extract_metadata/extract_links/extract_forms/extract_images
- * 根据 dataType 参数路由到对应的 content script 消息类型
- */
-async function executeExtractData(args, toolCallId, _sessionId, sessionTabId) {
-  const {
-    dataType,
-    selector,
-    filterType = 'all',
-    includeHeaders = true,
-    format = 'json',
-    includeImages = false,
-    minWidth = 0,
-    minHeight = 0,
-    maxResults = 100,
-    tabId: argsTabId
-  } = args;
-
-  if (!dataType) {
-    return { success: false, error: '缺少 dataType 参数', tool_call_id: toolCallId };
-  }
-
-  const messageTypeMap = {
-    table: 'EXTRACT_TABLE',
-    metadata: 'EXTRACT_METADATA',
-    links: 'EXTRACT_LINKS',
-    forms: 'EXTRACT_FORMS',
-    images: 'EXTRACT_IMAGES'
-  };
-
-  const messageType = messageTypeMap[dataType];
-  if (!messageType) {
-    return { success: false, error: `不支持的数据类型: ${dataType}，可选: table, metadata, links, forms, images`, tool_call_id: toolCallId };
-  }
-
-  try {
-    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
-    if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
-    }
-
-    const message = { type: messageType, selector, filterType, includeHeaders, format, includeImages, minWidth, minHeight, maxResults };
-    return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
-  } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
-  }
-}
-
-/**
- * clipboard：合并 copy_to_clipboard/paste_from_clipboard/get_selected_content
- * 根据 action 参数路由到对应的处理器
- */
-async function executeClipboard(args, toolCallId) {
-  const { action, text, format = 'text' } = args;
-
-  if (!action) {
-    return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
-  }
-
-  if (action === 'copy') {
-    return executeCopyToClipboard({ text }, toolCallId);
-  }
-
-  if (action === 'paste') {
-    return executePasteFromClipboard({}, toolCallId);
-  }
-
-  if (action === 'get_selected') {
-    try {
-      const tabId = await getActiveTabId();
-      if (!tabId) {
-        return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
-      }
-      return await sendToContentScriptWithRetry(tabId, { type: 'GET_SELECTED_CONTENT', format }, toolCallId);
-    } catch (e) {
-      return { success: false, error: e.message, tool_call_id: toolCallId };
-    }
-  }
-
-  return { success: false, error: `不支持的操作: ${action}，可选: copy, paste, get_selected`, tool_call_id: toolCallId };
-}
-
-export async function executeCopyToClipboard(args, toolCallId) {
-  const { text } = args;
-  if (text === undefined || text === null) {
-    return { success: false, error: '缺少 text 参数', tool_call_id: toolCallId };
-  }
-
-  try {
-    await ensureOffscreenDocument();
-    const response = await chrome.runtime.sendMessage({
-      type: 'COPY_TO_CLIPBOARD',
-      text: text
-    });
-    if (response?.success) {
-      return { success: true, message: response.message || '已复制到剪贴板', tool_call_id: toolCallId };
-    } else {
-      return { success: false, error: response?.error || '复制失败', tool_call_id: toolCallId };
-    }
-  } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
-  }
-}
-
-export async function executePasteFromClipboard(args, toolCallId) {
-  try {
-    await ensureOffscreenDocument();
-    const response = await chrome.runtime.sendMessage({
-      type: 'PASTE_FROM_CLIPBOARD'
-    });
-    if (response?.success) {
-      return { success: true, text: response.text, tool_call_id: toolCallId };
-    } else {
-      return { success: false, error: response?.error || '粘贴失败', tool_call_id: toolCallId };
-    }
-  } catch (e) {
-    return { success: false, error: e.message, tool_call_id: toolCallId };
-  }
-}
-
-// ==================== 长期记忆工具 ====================
-
-// 记忆文件路径（相对于 Agent 工作目录）
-// 记忆文件存储在 Agent 配置目录下，通过 ~ 指向用户主目录与工作目录隔离
-const MEMORY_FILE_PATH = '~/.ai-helper-agent/memory/global-memory.json';
-const DEFAULT_MEMORY_DATA = {
-  version: 1,
-  updatedAt: new Date().toISOString(),
-  stats: { totalFacts: 0, totalSummaries: 0, lastReviewAt: null },
-  facts: [],
-  summaries: [],
-  meta: { maxFacts: 50, maxSummaries: 20, reviewThreshold: 0.8 }
-};
-
-/**
- * 读取记忆文件
- * @returns {{success: boolean, data?: object, error?: string}}
- */
-async function readMemoryFile() {
-  const result = await AgentClient.readFile(MEMORY_FILE_PATH);
-  if (!result.success) {
-    // 文件不存在时返回空数据结构
-    if (result.error && (result.error.includes('ENOENT') || result.error.includes('not found') || result.error.includes('不存在'))) {
-      return { success: true, data: { ...DEFAULT_MEMORY_DATA, updatedAt: new Date().toISOString() } };
-    }
-    return { success: false, error: result.error };
-  }
-  try {
-    const data = JSON.parse(result.content);
-    // 确保数据结构完整
-    return {
-      success: true,
-      data: {
-        ...DEFAULT_MEMORY_DATA,
-        ...data,
-        meta: { ...DEFAULT_MEMORY_DATA.meta, ...(data.meta || {}) }
-      }
-    };
-  } catch (e) {
-    return { success: false, error: `记忆文件解析失败: ${e.message}` };
-  }
-}
-
-/**
- * 写入记忆文件
- * @param {object} data - 要写入的记忆数据
- */
-async function writeMemoryFile(data) {
-  data.updatedAt = new Date().toISOString();
-  data.stats.totalFacts = (data.facts || []).length;
-  data.stats.totalSummaries = (data.summaries || []).length;
-  data.version = data.version || 1;
-  return AgentClient.writeFile(MEMORY_FILE_PATH, JSON.stringify(data, null, 2));
-}
-
-/**
- * 生成记忆ID
- */
-function generateMemoryId(type) {
-  const prefix = type === 'fact' ? 'fact' : 'sum';
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 6);
-  return `${prefix}_${timestamp}_${random}`;
-}
-
-/**
- * 计算记忆价值分数（用于淘汰判断）
- */
-function calcMemoryValue(memory, now) {
-  const importance = memory.importance || 5;
-  const accessCount = memory.accessCount || 0;
-  const createdAt = new Date(memory.createdAt).getTime();
-  const ageDays = (now - createdAt) / (1000 * 60 * 60 * 24);
-
-  // 时间衰减因子
-  let decay;
-  if (ageDays <= 7) decay = 1.0;
-  else if (ageDays <= 30) decay = 0.8;
-  else if (ageDays <= 90) decay = 0.5;
-  else decay = 0.2;
-
-  return importance * (1 + Math.log(accessCount + 1)) * decay;
-}
-
-/**
- * agent_memory_store - 存储/更新/删除长期记忆
- */
-async function executeAgentMemoryStore(args, toolCallId) {
-  const { action, type, category, content, title, tags, importance, memoryId, sourceSessionId } = args;
-
-  if (!action) return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
-  if (!type) return { success: false, error: '缺少 type 参数', tool_call_id: toolCallId };
-  if (!content && action !== 'delete') return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
-
-  // 读取现有记忆文件
-  const readResult = await readMemoryFile();
-  if (!readResult.success) return { success: false, error: `读取记忆文件失败: ${readResult.error}`, tool_call_id: toolCallId };
-
-  const memoryData = readResult.data;
-  const now = new Date().toISOString();
-  const targetArray = type === 'fact' ? memoryData.facts : memoryData.summaries;
-
-  if (action === 'add') {
-    // 新增记忆
-    const newMemory = {
-      id: generateMemoryId(type),
-      type,
-      category: category || 'custom',
-      content,
-      tags: tags || [],
-      importance: importance || 5,
-      accessCount: 0,
-      lastAccessAt: null,
-      createdAt: now,
-      updatedAt: now,
-      sourceSessionId: sourceSessionId || null
-    };
-    if (type === 'summary' && title) {
-      newMemory.title = title;
-    }
-
-    // 简单去重：检查是否有内容完全相同的记忆
-    const duplicate = targetArray.find(m => m.content === content && m.type === type);
-    if (duplicate) {
-      duplicate.updatedAt = now;
-      duplicate.tags = tags || duplicate.tags;
-      duplicate.importance = importance || duplicate.importance;
-      duplicate.sourceSessionId = sourceSessionId || duplicate.sourceSessionId;
-      const writeResult = await writeMemoryFile(memoryData);
-      if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-      return {
-        success: true,
-        message: `已更新已有记忆: ${duplicate.id}（内容相同，已合并）`,
-        memory: duplicate,
-        action: 'updated',
-        stats: memoryData.stats,
-        tool_call_id: toolCallId
-      };
-    }
-
-    targetArray.push(newMemory);
-    const writeResult = await writeMemoryFile(memoryData);
-    if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-
-    // 检查是否接近上限
-    const maxFacts = memoryData.meta.maxFacts;
-    const maxSummaries = memoryData.meta.maxSummaries;
-    const factRatio = memoryData.facts.length / maxFacts;
-    const summaryRatio = memoryData.summaries.length / maxSummaries;
-    let warning = '';
-    if (factRatio >= 0.8 || summaryRatio >= 0.8) {
-      warning = `\n⚠️ 记忆数量接近上限（事实: ${memoryData.facts.length}/${maxFacts}, 摘要: ${memoryData.summaries.length}/${maxSummaries}），建议调用 agent_memory_manage 进行审查整理。`;
-    }
-
-    return {
-      success: true,
-      message: `已添加记忆: ${newMemory.id} (${type})${warning}`,
-      memory: newMemory,
-      action: 'added',
-      stats: memoryData.stats,
-      tool_call_id: toolCallId
-    };
-  }
-
-  if (action === 'update') {
-    if (!memoryId) return { success: false, error: 'update 操作需要 memoryId 参数', tool_call_id: toolCallId };
-
-    const idx = targetArray.findIndex(m => m.id === memoryId);
-    if (idx === -1) {
-      // 尝试在另一个数组中查找
-      const otherArray = type === 'fact' ? memoryData.summaries : memoryData.facts;
-      const otherIdx = otherArray.findIndex(m => m.id === memoryId);
-      if (otherIdx !== -1) {
-        return { success: false, error: `记忆 ${memoryId} 类型不匹配（实际类型: ${otherArray[otherIdx].type}）`, tool_call_id: toolCallId };
-      }
-      return { success: false, error: `未找到记忆: ${memoryId}`, tool_call_id: toolCallId };
-    }
-
-    const existing = targetArray[idx];
-    if (content !== undefined) existing.content = content;
-    if (tags !== undefined) existing.tags = tags;
-    if (importance !== undefined) existing.importance = importance;
-    if (category !== undefined) existing.category = category;
-    if (type === 'summary' && title !== undefined) existing.title = title;
-    existing.updatedAt = now;
-
-    const writeResult = await writeMemoryFile(memoryData);
-    if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-
-    return {
-      success: true,
-      message: `已更新记忆: ${memoryId}`,
-      memory: existing,
-      action: 'updated',
-      stats: memoryData.stats,
-      tool_call_id: toolCallId
-    };
-  }
-
-  if (action === 'delete') {
-    if (!memoryId) return { success: false, error: 'delete 操作需要 memoryId 参数', tool_call_id: toolCallId };
-
-    const idx = targetArray.findIndex(m => m.id === memoryId);
-    if (idx === -1) {
-      const otherArray = type === 'fact' ? memoryData.summaries : memoryData.facts;
-      const otherIdx = otherArray.findIndex(m => m.id === memoryId);
-      if (otherIdx !== -1) {
-        const removed = otherArray.splice(otherIdx, 1)[0];
-        const writeResult = await writeMemoryFile(memoryData);
-        if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-        return {
-          success: true,
-          message: `已删除记忆: ${memoryId}`,
-          removed,
-          stats: memoryData.stats,
-          tool_call_id: toolCallId
-        };
-      }
-      return { success: false, error: `未找到记忆: ${memoryId}`, tool_call_id: toolCallId };
-    }
-
-    const removed = targetArray.splice(idx, 1)[0];
-    const writeResult = await writeMemoryFile(memoryData);
-    if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-
-    return {
-      success: true,
-      message: `已删除记忆: ${memoryId}`,
-      removed,
-      stats: memoryData.stats,
-      tool_call_id: toolCallId
-    };
-  }
-
-  return { success: false, error: `不支持的操作: ${action}`, tool_call_id: toolCallId };
-}
-
-// 每 session 已召回的记忆 ID 集合，防止同一对话重复返回相同记忆
-const sessionRecalledMemoryIds = new Map();
-
-/**
- * agent_memory_recall - 从长期记忆中检索相关信息
- */
-async function executeAgentMemoryRecall(args, toolCallId, sessionId) {
-  const { query, tags, memoryType = 'all', limit = 10 } = args;
-
-  const readResult = await readMemoryFile();
-  if (!readResult.success) return { success: false, error: `读取记忆文件失败: ${readResult.error}`, tool_call_id: toolCallId };
-
-  const memoryData = readResult.data;
-  const now = Date.now();
-
-  // 收集所有记忆
-  let candidates = [];
-  if (memoryType === 'all' || memoryType === 'fact') {
-    candidates.push(...memoryData.facts.map(m => ({ ...m, _source: 'facts' })));
-  }
-  if (memoryType === 'all' || memoryType === 'summary') {
-    candidates.push(...memoryData.summaries.map(m => ({ ...m, _source: 'summaries' })));
-  }
-
-  if (candidates.length === 0) {
-    return {
-      success: true,
-      message: '记忆文件为空，暂无存储的记忆。',
-      results: [],
-      total: 0,
-      tool_call_id: toolCallId
-    };
-  }
-
-  // 按标签筛选
-  if (tags && tags.length > 0) {
-    candidates = candidates.filter(m => {
-      const memTags = (m.tags || []).map(t => t.toLowerCase());
-      return tags.some(t => memTags.includes(t.toLowerCase()));
-    });
-  }
-
-  // 按关键词搜索
-  if (query && query.trim()) {
-    // 停用词列表：常见中英文虚词，避免噪音匹配
-    const STOP_WORDS = new Set([
-      '的', '是', '了', '在', '我', '你', '他', '她', '它', '们', '这', '那', '不', '也', '就',
-      '都', '会', '要', '能', '可', '把', '被', '让', '给', '对', '从', '到', '和', '与', '或',
-      '但', '而', '还', '又', '只', '很', '更', '最', '有', '没', '吗', '呢', '吧', '啊',
-      '什么', '怎么', '为什么', '哪里', '哪个', '多少',
-      'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-      'may', 'might', 'can', 'shall', 'must', 'need', 'dare',
-      'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
-      'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'into',
-      'and', 'or', 'not', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
-      'so', 'no', 'up', 'out', 'just', 'now', 'here', 'there', 'all', 'each', 'every'
-    ]);
-
-    /**
-     * 中英文混合关键词提取
-     * - CJK 文本（无空格）：使用二元组（bigram）提取，如"长期记忆"→["长期","期记","记忆"]
-     * - 英文/数字：保持完整单词
-     */
-    function extractKeywords(text) {
-      const clean = text.toLowerCase().trim();
-      // 取前 200 字符避免 bigram 膨胀
-      const snippet = clean.length > 200 ? clean.slice(0, 200) : clean;
-      // 按语义边界拆分：CJK 连续块 | 字母连续块 | 数字连续块 | 分隔符
-      const segments = snippet.split(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+|[a-z]+|\d+|[^a-z\d\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)/i);
-
-      const tokens = [];
-      for (const seg of segments) {
-        if (!seg || seg.trim().length === 0) continue;
-
-        if (/^[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(seg)) {
-          // CJK 字符块：滑动窗口取二元组
-          for (let i = 0; i <= seg.length - 2; i++) {
-            tokens.push(seg.substring(i, i + 2));
-          }
-        } else if (/^[a-z\d]+$/.test(seg)) {
-          // 英文/数字：保持完整单词
-          if (seg.length >= 2) {
-            tokens.push(seg);
-          }
-        }
-      }
-      // 去重、过滤停用词、限制最多 30 个关键词（避免膨胀）
-      return [...new Set(tokens)]
-        .filter(k => k.length >= 2 && !STOP_WORDS.has(k))
-        .slice(0, 30);
-    }
-
-    const keywords = extractKeywords(query);
-
-    if (keywords.length > 0) {
-      const scored = candidates.map(m => {
-        let score = 0;
-        const content = (m.content || '').toLowerCase();
-        const title = (m.title || '').toLowerCase();
-        const memTags = (m.tags || []).map(t => t.toLowerCase());
-
-        for (const kw of keywords) {
-          if (content.includes(kw)) score += 3;
-          if (title.includes(kw)) score += 2;
-          if (memTags.some(t => t.includes(kw))) score += 2;
-        }
-
-        return { memory: m, score };
-      });
-
-      // 有匹配关键词的才返回，按分数排序
-      candidates = scored
-        .filter(s => s.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .map(s => s.memory);
-    }
-  }
-
-  // 去重（同一记忆可能同时在 facts 和 summaries 中？不会，但还是处理一下）
-  const seen = new Set();
-  let results = candidates.filter(m => {
-    if (seen.has(m.id)) return false;
-    seen.add(m.id);
-    return true;
-  }).slice(0, limit);
-
-  // Session 级去重：排除本对话已召回过的记忆
-  let alreadyRecalled = [];
-  if (sessionId) {
-    const recalledSet = sessionRecalledMemoryIds.get(sessionId);
-    if (recalledSet && recalledSet.size > 0) {
-      const newResults = [];
-      for (const m of results) {
-        if (recalledSet.has(m.id)) {
-          alreadyRecalled.push(m);
-        } else {
-          newResults.push(m);
-        }
-      }
-      // 如果全部已召回过，告知 LLM 无需重复
-      if (newResults.length === 0 && results.length > 0) {
-        return {
-          success: true,
-          message: '当前对话中已检索过所有相关记忆，无需重复。如有新的检索需求，请提供不同的关键词。',
-          results: [],
-          total: 0,
-          alreadyRecalledCount: alreadyRecalled.length,
-          query,
-          tool_call_id: toolCallId
-        };
-      }
-      results = newResults;
-    }
-  }
-
-  // 记录本次召回的记忆 ID
-  if (sessionId && results.length > 0) {
-    if (!sessionRecalledMemoryIds.has(sessionId)) {
-      sessionRecalledMemoryIds.set(sessionId, new Set());
-    }
-    const recalledSet = sessionRecalledMemoryIds.get(sessionId);
-    for (const m of results) {
-      recalledSet.add(m.id);
-    }
-  }
-
-  // 更新访问计数
-  const updatedFacts = new Set();
-  const updatedSummaries = new Set();
-  for (const m of results) {
-    const source = m._source === 'facts' ? memoryData.facts : memoryData.summaries;
-    const found = source.find(sm => sm.id === m.id);
-    if (found) {
-      found.accessCount = (found.accessCount || 0) + 1;
-      found.lastAccessAt = new Date().toISOString();
-      delete m._source;
-    }
-  }
-
-  // 写回更新后的访问计数（非关键操作，失败不阻塞返回）
-  try {
-    await writeMemoryFile(memoryData);
-  } catch (e) {
-    logger.warn('[Memory] 更新访问计数失败:', e.message);
-  }
-
-  // 格式化输出
-  const resultText = results.length === 0
-    ? '未找到匹配的记忆。'
-    : `找到 ${results.length} 条相关记忆:\n\n` + results.map((m, i) => {
-        let text = `**${i + 1}. [${m.type === 'fact' ? '事实' : '摘要'}] ${m.id}**\n`;
-        text += `   内容: ${m.content}\n`;
-        if (m.title) text += `   标题: ${m.title}\n`;
-        if (m.tags && m.tags.length > 0) text += `   标签: ${m.tags.join(', ')}\n`;
-        text += `   重要性: ${m.importance}/10 | 访问: ${m.accessCount}次 | 创建: ${m.createdAt}`;
-        return text;
-      }).join('\n\n');
-
-  return {
-    success: true,
-    message: resultText,
-    results: results.map(m => {
-      const { _source, ...rest } = m;
-      return rest;
-    }),
-    total: results.length,
-    query,
-    tool_call_id: toolCallId
-  };
-}
-
-/**
- * agent_memory_manage - 管理长期记忆：审查、压缩、淘汰
- */
-async function executeAgentMemoryManage(args, toolCallId) {
-  const { action } = args;
-
-  if (!action) return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
-
-  const readResult = await readMemoryFile();
-  if (!readResult.success) return { success: false, error: `读取记忆文件失败: ${readResult.error}`, tool_call_id: toolCallId };
-
-  const memoryData = readResult.data;
-  const now = Date.now();
-
-  if (action === 'review') {
-    // 审查所有记忆，计算价值分数，返回淘汰建议
-    const allMemories = [
-      ...memoryData.facts.map(m => ({ ...m, _source: 'facts' })),
-      ...memoryData.summaries.map(m => ({ ...m, _source: 'summaries' }))
-    ];
-
-    const scored = allMemories.map(m => ({
-      id: m.id,
-      type: m.type,
-      category: m.category,
-      content: m.content,
-      title: m.title,
-      tags: m.tags,
-      importance: m.importance,
-      accessCount: m.accessCount || 0,
-      lastAccessAt: m.lastAccessAt,
-      createdAt: m.createdAt,
-      value: calcMemoryValue(m, now).toFixed(2),
-      _source: m._source
-    })).sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
-
-    const factsCount = memoryData.facts.length;
-    const summariesCount = memoryData.summaries.length;
-    const maxFacts = memoryData.meta.maxFacts;
-    const maxSummaries = memoryData.meta.maxSummaries;
-
-    const lowValueThreshold = 10; // 价值分数低于此值标记为候选淘汰
-    const candidates = scored.filter(s => parseFloat(s.value) < lowValueThreshold);
-
-    const reviewText =
-      `## 记忆审查报告\n\n` +
-      `**概况**: 事实 ${factsCount}/${maxFacts}, 摘要 ${summariesCount}/${maxSummaries}\n` +
-      `**上次审查**: ${memoryData.stats.lastReviewAt || '从未审查'}\n\n` +
-      `**低价值记忆候选** (价值 < ${lowValueThreshold}):\n\n` +
-      (candidates.length === 0
-        ? '无候选淘汰项，所有记忆价值良好。\n'
-        : candidates.map((c, i) =>
-            `${i + 1}. **[${c.type}] ${c.id}** (价值: ${c.value})\n` +
-            `   内容: ${c.content}\n` +
-            `   创建: ${c.createdAt} | 最后访问: ${c.lastAccessAt || '从未'} | 访问: ${c.accessCount}次\n`
-          ).join('\n')
-      ) +
-      `\n**建议操作**:\n` +
-      `- 对于确实过时/不再适用的记忆，使用 agent_memory_store action=delete 删除\n` +
-      `- 对于内容相似的记忆，使用 agent_memory_store action=update 合并\n` +
-      `- 对于仍有用但价值低的记忆，可保留不做处理`;
-
-    return {
-      success: true,
-      message: reviewText,
-      scored: scored.map(s => { const { _source, ...rest } = s; return rest; }),
-      candidates: candidates.map(s => { const { _source, ...rest } = s; return rest; }),
-      stats: memoryData.stats,
-      tool_call_id: toolCallId
-    };
-  }
-
-  if (action === 'compact') {
-    // 压缩：移除低价值记忆
-    const threshold = 10;
-    let removedFacts = 0;
-    let removedSummaries = 0;
-
-    memoryData.facts = memoryData.facts.filter(m => {
-      const value = calcMemoryValue(m, now);
-      if (value < threshold) {
-        removedFacts++;
-        return false;
-      }
-      return true;
-    });
-
-    memoryData.summaries = memoryData.summaries.filter(m => {
-      const value = calcMemoryValue(m, now);
-      if (value < threshold) {
-        removedSummaries++;
-        return false;
-      }
-      return true;
-    });
-
-    memoryData.stats.lastReviewAt = new Date().toISOString();
-
-    const writeResult = await writeMemoryFile(memoryData);
-    if (!writeResult.success) return { success: false, error: `写入记忆文件失败: ${writeResult.error}`, tool_call_id: toolCallId };
-
-    return {
-      success: true,
-      message: `记忆压缩完成。移除了 ${removedFacts} 条事实记忆和 ${removedSummaries} 条摘要记忆（价值低于 ${threshold}）。当前: 事实 ${memoryData.stats.totalFacts}, 摘要 ${memoryData.stats.totalSummaries}`,
-      removedFacts,
-      removedSummaries,
-      stats: memoryData.stats,
-      tool_call_id: toolCallId
-    };
-  }
-
-  return { success: false, error: `不支持的操作: ${action}`, tool_call_id: toolCallId };
-}
+// 长期记忆工具（agent_memory_store / agent_memory_recall / agent_memory_manage）已拆分到 tool-memory.js
 
 /**
  * 取消指定会话中正在运行的 Agent 命令

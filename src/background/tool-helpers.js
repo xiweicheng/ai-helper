@@ -177,16 +177,30 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
           logger.debug('[Background] 尝试自动注入 content script 到 Tab:', tabId);
           const manifest = chrome.runtime.getManifest();
           const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
-          // 查找包含 "content" 关键词的脚本文件，兼容源/构建两种 manifest 路径格式
-           const contentFileIdx = contentJsFiles.findIndex(f => /content/i.test(f) && f.endsWith('.js'));
-           const injectFiles = contentFileIdx !== -1 ? [contentJsFiles[contentFileIdx]] : contentJsFiles;
-           if (contentFileIdx === -1 && injectFiles.length === 0) {
-             resolve({ success: false, error: '无法找到 content script 文件', tool_call_id: toolCallId });
-             return;
-           }
+          const contentFileIdx = contentJsFiles.findIndex(f => /content/i.test(f) && f.endsWith('.js'));
+          if (contentFileIdx === -1) {
+            resolve({ success: false, error: '无法找到 content script 文件', tool_call_id: toolCallId });
+            return;
+          }
+          const contentFilePath = contentJsFiles[contentFileIdx];
+          const contentUrl = chrome.runtime.getURL(contentFilePath);
           chrome.scripting.executeScript({
             target: { tabId: tabId },
-            files: injectFiles
+            func: (url) => {
+              return new Promise((resolve) => {
+                if (document.getElementById('__aih_content_script__')) {
+                  resolve(true);
+                  return;
+                }
+                const script = document.createElement('script');
+                script.id = '__aih_content_script__';
+                script.src = url;
+                script.onload = () => resolve(true);
+                script.onerror = () => resolve(false);
+                document.head.appendChild(script);
+              });
+            },
+            args: [contentUrl]
           })
             .then(() => {
               logger.debug('[Background] Content script 注入成功, 重试发送消息');
