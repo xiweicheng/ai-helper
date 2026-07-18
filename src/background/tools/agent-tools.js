@@ -83,7 +83,7 @@ export const AGENT_TOOLS = [
     category: 'local_agent',
     execution: 'background',
     parallelizable: false,
-    requiresConfirmation: true,
+    requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'agent_exec_command',

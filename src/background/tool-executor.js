@@ -2952,6 +2952,58 @@ async function executeAgentDeleteFile(args, toolCallId) {
 }
 
 /**
+ * 请求用户确认敏感命令执行（Agent 端返回 level='confirm' 时调用）
+ * 发送 SHOW_CONFIRM_DIALOG 到前端弹框，等待 TOOL_CONFIRMATION_RESPONSE 响应
+ * @param {string} command - 要执行的命令
+ * @param {string} reason - 需要确认的原因
+ * @param {string} toolCallId - 工具调用 ID（用于匹配确认响应）
+ * @param {string} [sessionId] - 会话 ID
+ * @returns {Promise<boolean>} 用户是否确认
+ */
+async function requestCommandConfirmation(command, reason, toolCallId, sessionId) {
+  const confirmTimeout = 300000; // 5分钟确认超时
+
+  logger.debug(`[Background] 请求用户确认敏感命令: ${command}`, { reason });
+
+  return new Promise((resolve) => {
+    const handler = (message) => {
+      if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolCallId) {
+        chrome.runtime.onMessage.removeListener(handler);
+        clearTimeout(timeoutId);
+        logger.debug(`[Background] 命令确认结果: ${command} = ${message.confirmed}`);
+        resolve(message.confirmed);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handler);
+
+    const timeoutId = setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(handler);
+      logger.debug(`[Background] 命令确认超时，默认拒绝: ${command}`);
+      resolve(false);
+    }, confirmTimeout);
+
+    chrome.runtime.sendMessage({
+      type: 'SHOW_CONFIRM_DIALOG',
+      data: {
+        toolName: 'agent_exec_command',
+        toolLabel: '命令执行',
+        args: { command, reason },
+        message: `⚠️ 敏感命令需要确认：${reason}`,
+        toolCallId,
+        sessionId,
+        timeout: confirmTimeout
+      }
+    }).catch(err => {
+      logger.debug('[Background] 发送命令确认对话框消息失败:', err.message);
+      chrome.runtime.onMessage.removeListener(handler);
+      clearTimeout(timeoutId);
+      resolve(true); // 发送失败，直接放行
+    });
+  });
+}
+
+/**
  * Agent 命令执行
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
  */
@@ -2969,8 +3021,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 
   if (useAgentStream) {
-    const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
-    
+    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
+
     if (initResult.level === 'deny') {
       return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
     }
@@ -2978,15 +3030,49 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
     }
     if (initResult.level === 'confirm') {
-      return {
-        success: true,
-        level: 'confirm',
-        message: `⚠️ 命令需要用户确认：${initResult.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
-        reason: initResult.reason,
-        command,
-        cwd,
-        tool_call_id: toolCallId
-      };
+      // 敏感命令弹框确认（等待用户响应期间暂停前端超时，与 clarify 行为一致）
+      chrome.runtime.sendMessage({
+        type: 'TOOL_CONFIRM_START',
+        ...(sessionId ? { sessionId } : {})
+      }).catch(err => {
+        logger.debug('[Background] 发送 TOOL_CONFIRM_START 消息失败:', err.message);
+      });
+
+      let confirmed;
+      try {
+        confirmed = await requestCommandConfirmation(command, initResult.reason, toolCallId, sessionId);
+      } finally {
+        chrome.runtime.sendMessage({
+          type: 'TOOL_CONFIRM_END',
+          ...(sessionId ? { sessionId } : {})
+        }).catch(err => {
+          logger.debug('[Background] 发送 TOOL_CONFIRM_END 消息失败:', err.message);
+        });
+      }
+
+      if (!confirmed) {
+        return {
+          success: false,
+          error: '用户拒绝了此命令的执行',
+          command,
+          tool_call_id: toolCallId
+        };
+      }
+
+      // 用户确认，用 force=true 重新调用 Agent
+      logger.debug(`[Background] 用户已确认敏感命令，用 force=true 重新执行: ${command}`);
+      initResult = await AgentClient.execCommand(command, cwd, true);
+
+      if (initResult.level === 'deny') {
+        return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+      }
+      if (!initResult.success && !initResult.level) {
+        return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
+      }
+      if (initResult.level === 'confirm') {
+        // force=true 时 Agent 端应跳过灰名单，不应再返回 confirm
+        return { success: false, error: '命令仍需确认（不应发生）', tool_call_id: toolCallId };
+      }
     }
 
     const { execId, wsUrl } = initResult;
