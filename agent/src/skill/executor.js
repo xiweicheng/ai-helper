@@ -1,7 +1,7 @@
 // skill/executor.js - Skill 执行引擎
 // 解析 Skill 定义的步骤 DAG，按拓扑排序执行，支持并行
 import { render } from './template.js';
-import { readFileSync } from 'fs';
+import { readFile, writeFile, readdir, stat } from 'fs/promises';
 import { checkPath, checkCommand } from '../security.js';
 import { join } from 'path';
 
@@ -48,28 +48,27 @@ async function executeToolCall(toolName, args) {
   try {
     switch (toolName) {
       case 'agent_read_file': {
-        const check = checkPath(args.path);
+        const check = await checkPath(args.path);
         if (!check.allowed) return { success: false, error: check.reason };
-        const content = readFileSync(check.resolved, 'utf-8');
+        const content = await readFile(check.resolved, 'utf-8');
         return { success: true, content, size: content.length, path: check.resolved };
       }
 
       case 'agent_write_file': {
-        const check = checkPath(args.path);
+        const check = await checkPath(args.path);
         if (!check.allowed) return { success: false, error: check.reason };
-        const { writeFileSync } = await import('fs');
-        writeFileSync(check.resolved, String(args.content || ''), 'utf-8');
+        await writeFile(check.resolved, String(args.content || ''), 'utf-8');
         return { success: true, message: `文件已写入: ${check.resolved}` };
       }
 
       case 'agent_list_dir': {
-        const check = checkPath(args.path || '.');
+        const check = await checkPath(args.path || '.');
         if (!check.allowed) return { success: false, error: check.reason };
-        const { readdirSync, statSync } = await import('fs');
-        const entries = readdirSync(check.resolved).map(name => {
-          const s = statSync(join(check.resolved, name));
+        const names = await readdir(check.resolved);
+        const entries = await Promise.all(names.map(async (name) => {
+          const s = await stat(join(check.resolved, name));
           return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size };
-        });
+        }));
         return { success: true, entries, path: check.resolved };
       }
 
@@ -82,14 +81,21 @@ async function executeToolCall(toolName, args) {
         if (cmdCheck.level === 'confirm') {
           return { success: false, error: `需要用户确认的命令: ${cmdCheck.reason}` };
         }
-        const { execSync } = await import('child_process');
-        const result = execSync(args.command, {
-          cwd: args.cwd || process.cwd(),
-          encoding: 'utf-8',
-          timeout: 30000,
-          maxBuffer: 10 * 1024 * 1024
+        const { exec } = await import('child_process');
+        return new Promise((resolve) => {
+          exec(args.command, {
+            cwd: args.cwd || process.cwd(),
+            encoding: 'utf-8',
+            timeout: 30000,
+            maxBuffer: 10 * 1024 * 1024
+          }, (error, stdout, stderr) => {
+            if (error) {
+              resolve({ success: false, error: error.message, stdout, stderr });
+            } else {
+              resolve({ success: true, stdout, exitCode: 0, stderr });
+            }
+          });
         });
-        return { success: true, stdout: result, exitCode: 0 };
       }
 
       case 'agent_search_files': {

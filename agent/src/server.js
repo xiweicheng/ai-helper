@@ -1,7 +1,8 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, writeFileSync, readdirSync, statSync, unlinkSync, rmdirSync, existsSync, chmodSync, mkdirSync } from 'fs';
+import { readFileSync } from 'fs';
+import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
@@ -96,6 +97,14 @@ function detectShell() {
     return envShell;
   }
   return '/bin/bash';
+}
+
+/**
+ * 异步检查文件/目录是否存在
+ */
+async function exists(path) {
+  try { await stat(path); return true; }
+  catch { return false; }
 }
 
 const PLATFORM_INFO = {
@@ -361,21 +370,21 @@ export function startServer() {
 
         // 去重：如果文件已存在，添加后缀
         let finalPath = destPath;
-        if (existsSync(finalPath)) {
+        if (await exists(finalPath)) {
           const ext = safeName.lastIndexOf('.') > 0 ? safeName.substring(safeName.lastIndexOf('.')) : '';
           const base = safeName.substring(0, safeName.length - ext.length) || safeName;
           let counter = 1;
-          while (existsSync(finalPath)) {
+          while (await exists(finalPath)) {
             finalPath = join(config.workdir, `${base}_${counter}${ext}`);
             counter++;
           }
         }
 
         // 确保工作目录存在
-        mkdirSync(config.workdir, { recursive: true });
+        await mkdir(config.workdir, { recursive: true });
 
         // 写入文件
-        writeFileSync(finalPath, fileBuffer);
+        await writeFile(finalPath, fileBuffer);
 
         logFs('upload', { path: finalPath, size: fileBuffer.length, mimeType });
 
@@ -446,23 +455,23 @@ export function startServer() {
 
       // 读取文件
       if (pathname === '/api/fs/read') {
-        const check = checkPath(body.path);
+        const check = await checkPath(body.path);
         if (!check.allowed) {
           logSecurity('fs_read_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!existsSync(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件不存在' });
-        const fstat = statSync(check.resolved);
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件不存在' });
+        const fstat = await stat(check.resolved);
         if (fstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: '路径是目录' });
         if (fstat.size > maxSize) return jsonResponse(res, 400, { success: false, error: `文件过大 (${fstat.size} > ${maxSize})` });
-        const content = readFileSync(check.resolved, 'utf-8');
+        const content = await readFile(check.resolved, 'utf-8');
         logFs('read', { path: check.resolved, size: fstat.size });
         return jsonResponse(res, 200, { success: true, content, size: fstat.size, path: check.resolved });
       }
 
       // 写入文件
       if (pathname === '/api/fs/write') {
-        const check = checkPath(body.path);
+        const check = await checkPath(body.path);
         if (!check.allowed) {
           logSecurity('fs_write_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -471,8 +480,8 @@ export function startServer() {
         const buf = Buffer.from(rawContent, 'utf-8');
         if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
         // 确保父目录存在
-        mkdirSync(dirname(check.resolved), { recursive: true });
-        writeFileSync(check.resolved, rawContent, 'utf-8');
+        await mkdir(dirname(check.resolved), { recursive: true });
+        await writeFile(check.resolved, rawContent, 'utf-8');
 
         // 如果写入的是脚本文件，剥离执行权限防止直接运行
         const SCRIPT_EXT_RE = /\.(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)$/i;
@@ -480,7 +489,7 @@ export function startServer() {
         const hasShebang = rawContent.startsWith('#!');
         if (isScriptExt || hasShebang) {
           try {
-            chmodSync(check.resolved, 0o644);
+            await chmod(check.resolved, 0o644);
           } catch {}
         }
 
@@ -491,39 +500,40 @@ export function startServer() {
       // 列出目录
       if (pathname === '/api/fs/list') {
         const dirPath = body.path || '.';
-        const check = checkPath(dirPath);
+        const check = await checkPath(dirPath);
         if (!check.allowed) {
           logSecurity('fs_list_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!existsSync(check.resolved)) return jsonResponse(res, 404, { success: false, error: '目录不存在' });
-        const dstat = statSync(check.resolved);
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '目录不存在' });
+        const dstat = await stat(check.resolved);
         if (!dstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: '路径不是目录' });
-        const entries = readdirSync(check.resolved).map(name => {
+        const names = await readdir(check.resolved);
+        const entries = await Promise.all(names.map(async (name) => {
           const fullPath = join(check.resolved, name);
           try {
-            const s = statSync(fullPath);
+            const s = await stat(fullPath);
             return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size, mtime: s.mtimeMs };
           } catch { return { name, type: 'unknown', size: 0, mtime: 0 }; }
-        });
+        }));
         logFs('list', { path: check.resolved, entryCount: entries.length });
         return jsonResponse(res, 200, { success: true, entries, path: check.resolved });
       }
 
       // 删除文件/目录
       if (pathname === '/api/fs/delete') {
-        const check = checkPath(body.path);
+        const check = await checkPath(body.path);
         if (!check.allowed) {
           logSecurity('fs_delete_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!existsSync(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
-        const fstat2 = statSync(check.resolved);
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+        const fstat2 = await stat(check.resolved);
         const isDir = fstat2.isDirectory();
         if (isDir) {
-          rmdirSync(check.resolved, { recursive: true });
+          await rmdir(check.resolved, { recursive: true });
         } else {
-          unlinkSync(check.resolved);
+          await unlink(check.resolved);
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size });
         return jsonResponse(res, 200, { success: true, path: check.resolved });
@@ -535,12 +545,12 @@ export function startServer() {
         if (!targetPath || typeof targetPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
         }
-        const check = checkPath(targetPath);
+        const check = await checkPath(targetPath);
         if (!check.allowed) {
           logSecurity('browser_open_blocked', { path: targetPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!existsSync(check.resolved)) {
+        if (!await exists(check.resolved)) {
           return jsonResponse(res, 404, { success: false, error: '文件不存在' });
         }
 
@@ -575,7 +585,7 @@ export function startServer() {
 
         // 校验 cwd
         let resolvedCwd = cwd || config.workdir;
-        const cwdCheck = checkPath(resolvedCwd);
+        const cwdCheck = await checkPath(resolvedCwd);
         if (!cwdCheck.allowed) {
           logSecurity('exec_cwd_blocked', { command, cwd: resolvedCwd, reason: cwdCheck.reason });
           return jsonResponse(res, 403, { success: false, error: '执行目录校验失败: ' + cwdCheck.reason });
@@ -932,7 +942,7 @@ export function startServer() {
         return jsonResponse(res, 404, { success: false, error: `资源 "${resource}" 不存在` });
       }
       try {
-        const content = readFileSync(resInfo.path, 'utf-8');
+        const content = await readFile(resInfo.path, 'utf-8');
         return jsonResponse(res, 200, { success: true, name: resource, content, size: resInfo.size });
       } catch (err) {
         return jsonResponse(res, 500, { success: false, error: `读取资源失败: ${err.message}` });
@@ -1045,7 +1055,7 @@ export function startServer() {
     }
 
     // 关闭所有 MCP 连接
-    try { shutdownMcpRegistry(); } catch {}
+    try { await shutdownMcpRegistry(); } catch {}
 
     // 等待 server 和 wss 关闭
     await Promise.all([
@@ -1054,7 +1064,7 @@ export function startServer() {
     ]);
 
     // 清理 PID 文件
-    try { if (existsSync(PID_FILE)) unlinkSync(PID_FILE); } catch {}
+    try { if (await exists(PID_FILE)) await unlink(PID_FILE); } catch {}
 
     logSystem('server_stop', { reason: 'shutdown' });
     process.exit(0);

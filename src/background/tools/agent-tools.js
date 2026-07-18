@@ -155,7 +155,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill_load',
-      description: '加载Agent Skill的完整说明文档',
+      description: '加载 Agent Skill（SKILL.md 类型）的完整说明文档。仅用于 Agent Skill，不可用于 Workflow Skill。',
       parameters: {
         type: 'object',
         properties: {
@@ -174,7 +174,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill_run',
-      description: '执行预定义的Workflow Skill',
+      description: '执行 Workflow Skill（JSON/YAML 格式的确定性自动化流程）。仅限 Workflow Skill，不可用于 Agent Skill（SKILL.md 类型）。',
       parameters: {
         type: 'object',
         properties: {

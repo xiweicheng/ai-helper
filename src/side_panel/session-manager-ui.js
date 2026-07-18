@@ -430,6 +430,7 @@ function renderDropdownList() {
     const titleSpan = document.createElement('span');
     titleSpan.className = 'session-dropdown-item-title';
     titleSpan.textContent = session.title || '新会话';
+    titleSpan.title = session.title || '新会话';
     item.appendChild(titleSpan);
 
     // 操作按钮容器（复制 + 关闭）

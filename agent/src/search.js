@@ -1,6 +1,6 @@
 // agent/src/search.js - 文件搜索（fd/rg 优先 + Node.js 回退）
 import { spawn } from 'child_process';
-import { readdirSync, statSync, readFileSync, existsSync } from 'fs';
+import { readdir, stat, readFile } from 'fs/promises';
 import { join, basename, extname, resolve } from 'path';
 import { checkPath } from './security.js';
 
@@ -124,18 +124,28 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
 }
 
 /**
- * Node.js 原生递归搜索文件（回退方案）
+ * 让出事件循环，防止长时间同步操作阻塞其他请求
  */
-function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
+function yieldEventLoop() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+/**
+ * Node.js 原生递归搜索文件（回退方案，异步 + 分片防止阻塞事件循环）
+ */
+async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
   const results = [];
 
-  function walk(dir, depth) {
+  async function walk(dir, depth) {
     if (results.length >= maxResults) return;
     if (!recursive && depth > 1) return;
 
     let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
+    try { entries = await readdir(dir, { withFileTypes: true }); }
     catch { return; }
+
+    // 每处理一个目录后让出事件循环
+    await yieldEventLoop();
 
     for (const entry of entries) {
       if (results.length >= maxResults) return;
@@ -144,11 +154,11 @@ function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
-        walk(fullPath, depth + 1);
+        await walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
         if (matchGlob(entry.name, filePattern)) {
           try {
-            const s = statSync(fullPath);
+            const s = await stat(fullPath);
             results.push({ path: fullPath, name: entry.name, size: s.size, mtime: s.mtimeMs });
           } catch {
             results.push({ path: fullPath, name: entry.name, size: 0, mtime: 0 });
@@ -158,7 +168,7 @@ function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
     }
   }
 
-  walk(rootPath, 0);
+  await walk(rootPath, 0);
   return results;
 }
 
@@ -171,17 +181,19 @@ function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
  * @returns {Array<{path, name, size, mtime}>}
  */
 export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200) {
-  const pathCheck = checkPath(rootPath);
+  const pathCheck = await checkPath(rootPath);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }
 
   const resolved = pathCheck.resolved;
-  if (!existsSync(resolved)) {
+  try {
+    await stat(resolved);
+  } catch {
     return { success: false, error: '搜索路径不存在' };
   }
 
-  const s = statSync(resolved);
+  const s = await stat(resolved);
   if (!s.isDirectory()) {
     return { success: false, error: '搜索路径不是目录' };
   }
@@ -190,7 +202,7 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
   if (fdAvailable) {
     results = await searchWithFd(resolved, filePattern, recursive, maxResults);
   } else {
-    results = searchFilesNative(resolved, filePattern, recursive, maxResults);
+    results = await searchFilesNative(resolved, filePattern, recursive, maxResults);
   }
 
   return {
@@ -271,18 +283,21 @@ function parseRgOutput(output, contextLines) {
 }
 
 /**
- * Node.js 原生搜索文件内容（回退方案）
+ * Node.js 原生搜索文件内容（回退方案，异步 + 分片防止阻塞事件循环）
  */
-function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines) {
+async function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines) {
   const results = [];
   const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
-  function walk(dir) {
+  async function walk(dir) {
     if (results.length >= maxResults) return;
 
     let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); }
+    try { entries = await readdir(dir, { withFileTypes: true }); }
     catch { return; }
+
+    // 每处理一个目录后让出事件循环
+    await yieldEventLoop();
 
     for (const entry of entries) {
       if (results.length >= maxResults) return;
@@ -291,7 +306,7 @@ function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxR
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
-        walk(fullPath);
+        await walk(fullPath);
       } else if (entry.isFile()) {
         if (filePattern && !matchGlob(entry.name, filePattern)) continue;
         // 跳过压缩和映射文件
@@ -299,10 +314,10 @@ function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxR
         if (entry.name.endsWith('.map')) continue;
 
         try {
-          const s = statSync(fullPath);
+          const s = await stat(fullPath);
           if (s.size > 1024 * 1024) continue; // 跳过 1MB 以上的文件
 
-          const content = readFileSync(fullPath, 'utf-8');
+          const content = await readFile(fullPath, 'utf-8');
           const fileLines = content.split('\n');
 
           for (let i = 0; i < fileLines.length; i++) {
@@ -328,7 +343,7 @@ function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxR
     }
   }
 
-  walk(rootPath);
+  await walk(rootPath);
   return results;
 }
 
@@ -343,13 +358,15 @@ function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxR
  * @returns {{ success: boolean, results: Array, total: number, engine: string }}
  */
 export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, maxResults = 100, contextLines = 2) {
-  const pathCheck = checkPath(rootPath);
+  const pathCheck = await checkPath(rootPath);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }
 
   const resolved = pathCheck.resolved;
-  if (!existsSync(resolved)) {
+  try {
+    await stat(resolved);
+  } catch {
     return { success: false, error: '搜索路径不存在' };
   }
 
@@ -361,7 +378,7 @@ export async function searchContent(rootPath, pattern, filePattern = null, caseS
   if (rgAvailable) {
     results = await searchContentWithRg(resolved, pattern, filePattern, maxResults, contextLines);
   } else {
-    results = searchContentNative(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
+    results = await searchContentNative(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
   }
 
   return {

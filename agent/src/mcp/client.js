@@ -143,13 +143,18 @@ export class McpClient {
     }
   }
 
-  disconnect() {
+  async disconnect() {
     this.connected = false;
     this.tools = [];
 
     if (this.client) {
-      try { this.client.close(); } catch {}
+      try { await this.client.close(); } catch {}
       this.client = null;
+    }
+
+    if (this.transport) {
+      try { await this.transport.close(); } catch {}
+      this.transport = null;
     }
 
     console.log(`[MCP:${this.serverId}] 已断开连接`);

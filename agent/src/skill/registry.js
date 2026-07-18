@@ -212,7 +212,9 @@ export function getAgentSkillPrompts() {
   const parts = [];
   parts.push('## 可用技能 (Skills)');
   parts.push('');
-  parts.push('以下是可用的专业技能列表。当用户需求匹配某个技能时，使用 `agent_skill_load` 工具加载该技能的完整说明。');
+  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求匹配某个技能时，使用 `agent_skill_load` 工具加载该技能的完整说明，然后由 AI 根据说明自主调用相关工具完成任务。');
+  parts.push('');
+  parts.push('**重要**：这些是 Agent Skill，不是 Workflow Skill。请勿使用 `agent_skill_run` 工具来执行它们，`agent_skill_run` 仅用于 JSON/YAML 格式的 Workflow Skill（确定性自动化流程），不能用于 Agent Skill。');
   parts.push('');
 
   for (const skill of agentSkills) {

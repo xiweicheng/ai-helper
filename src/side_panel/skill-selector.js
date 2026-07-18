@@ -308,11 +308,21 @@ export function getSkillContextText() {
   if (!state.selectedSkill) return '';
 
   const skill = state.selectedSkill;
+  const isAgent = skill.type === 'agent';
+
   let text = `[已选技能: ${skill.name}`;
   if (skill.description) {
     text += ` - ${skill.description}`;
   }
-  text += `]\n请使用「${skill.name}」技能来处理以下问题：\n`;
+  text += `]\n`;
+
+  if (isAgent) {
+    // Agent Skill：提示 AI 使用 agent_skill_load 加载，不要用 agent_skill_run
+    text += `请使用 \`agent_skill_load\` 加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。注意：这是一个 Agent Skill，不要使用 agent_skill_run。\n`;
+  } else {
+    // Workflow Skill：提示 AI 使用 agent_skill_run 执行
+    text += `请使用 \`agent_skill_run\` 执行「${skill.name}」技能来处理以下问题：\n`;
+  }
   return text;
 }
 

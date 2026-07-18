@@ -1,6 +1,6 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
 import { resolve, normalize, sep, isAbsolute, join, dirname } from 'path';
-import { realpathSync } from 'fs';
+import { realpath } from 'fs/promises';
 import { homedir, platform } from 'os';
 import { loadConfig, MEMORY_DIR } from './config.js';
 
@@ -52,10 +52,10 @@ function isHardBlocked(normalizedPath) {
 
 /**
  * 检查路径是否在白名单内
- * 使用 realpathSync 防止符号链接绕过
+ * 使用 realpath 防止符号链接绕过
  * @returns {{ allowed: boolean, reason?: string, resolved?: string }}
  */
-function checkPath(pathStr) {
+async function checkPath(pathStr) {
   if (!pathStr || typeof pathStr !== 'string') {
     return { allowed: false, reason: '路径无效' };
   }
@@ -106,7 +106,7 @@ function checkPath(pathStr) {
     // realpath 校验：防止符号链接绕过
     let realPath;
     try {
-      realPath = realpathSync(resolved);
+      realPath = await realpath(resolved);
     } catch (err) {
       if (err.code === 'ENOENT') {
         let existing = resolved;
@@ -116,7 +116,7 @@ function checkPath(pathStr) {
             break;
           }
           try {
-            realPath = realpathSync(parent) + sep + normalized.slice(resolve(parent).length).replace(/^[/\\]/, '');
+            realPath = await realpath(parent) + sep + normalized.slice(resolve(parent).length).replace(/^[/\\]/, '');
             break;
           } catch (parentErr) {
             if (parentErr.code === 'ENOENT') {

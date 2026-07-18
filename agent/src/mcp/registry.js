@@ -124,7 +124,7 @@ export async function connectMcpServer(serverId) {
   // 先断开已有连接
   const existingClient = clients.get(serverId);
   if (existingClient) {
-    existingClient.disconnect();
+    await existingClient.disconnect();
     clients.delete(serverId);
   }
 
@@ -140,10 +140,10 @@ export async function connectMcpServer(serverId) {
 /**
  * 断开指定 MCP Server
  */
-export function disconnectMcpServer(serverId) {
+export async function disconnectMcpServer(serverId) {
   const client = clients.get(serverId);
   if (client) {
-    client.disconnect();
+    await client.disconnect();
     clients.delete(serverId);
     return { success: true };
   }
@@ -153,10 +153,10 @@ export function disconnectMcpServer(serverId) {
 /**
  * 关闭所有 MCP 连接（Agent 关闭时调用）
  */
-export function shutdownMcpRegistry() {
+export async function shutdownMcpRegistry() {
   console.log('[MCP Registry] 关闭所有 MCP 连接...');
   for (const [id, client] of clients) {
-    try { client.disconnect(); } catch {}
+    try { await client.disconnect(); } catch {}
   }
   clients.clear();
 }
