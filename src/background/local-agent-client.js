@@ -364,42 +364,55 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     return null;
   }
 
-  // 代理服务已知不可达时，直接返回 null，避免阻塞等待超时
   if (_agentReachable === false) {
     if (onError) onError(new Error('代理服务未连接，请确认代理服务已启动'));
     return null;
   }
 
-  // WebSocket 无法设置自定义 HTTP 头，认证 token 通过 URL query 参数传递
-  const separator = wsUrl.includes('?') ? '&' : '?';
-  const authenticatedUrl = `${wsUrl}${separator}token=${encodeURIComponent(config.token)}`;
-
-  const ws = new WebSocket(authenticatedUrl);
-
-  ws.onopen = () => {
-    logger.debug('[AgentClient] WebSocket 已连接:', wsUrl, '(with token)');
-  };
-
-  ws.onmessage = (event) => {
+  // 从用户配置的 agentUrl 中提取主机和端口，用于替换 wsUrl 中的 0.0.0.0
+  // 这样可以支持连接远程 Agent（如果用户配置了远程地址）
+  let normalizedWsUrl = wsUrl;
+  if (wsUrl.includes('0.0.0.0') && config.url) {
     try {
-      const data = JSON.parse(event.data);
-      if (onMessage) onMessage(data);
+      const configUrl = new URL(config.url);
+      const wsProtocol = configUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      normalizedWsUrl = wsUrl.replace(/^ws[s]?:\/\/0\.0\.0\.0:/, `${wsProtocol}//${configUrl.hostname}:`);
     } catch {
-      if (onMessage) onMessage({ type: 'raw', data: event.data });
+      normalizedWsUrl = wsUrl.replace('0.0.0.0', '127.0.0.1');
     }
-  };
+  }
+  const separator = normalizedWsUrl.includes('?') ? '&' : '?';
+  const authenticatedUrl = `${normalizedWsUrl}${separator}token=${encodeURIComponent(config.token)}`;
 
-  ws.onclose = () => {
-    logger.debug('[AgentClient] WebSocket 已关闭');
-    if (onClose) onClose();
-  };
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(authenticatedUrl);
 
-  ws.onerror = (err) => {
-    logger.error('[AgentClient] WebSocket 错误:', err);
-    if (onError) onError(err);
-  };
+    ws.onopen = () => {
+      logger.debug('[AgentClient] WebSocket 已连接:', normalizedWsUrl, '(with token)');
+      resolve(ws);
+    };
 
-  return ws;
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (onMessage) onMessage(data);
+      } catch {
+        if (onMessage) onMessage({ type: 'raw', data: event.data });
+      }
+    };
+
+    ws.onclose = () => {
+      logger.debug('[AgentClient] WebSocket 已关闭');
+      if (onClose) onClose();
+    };
+
+    ws.onerror = (event) => {
+      const error = event instanceof Error ? event : new Error('WebSocket 连接失败');
+      logger.error('[AgentClient] WebSocket 错误:', error.message || event);
+      if (onError) onError(error);
+      reject(error);
+    };
+  });
 }
 
 // ========== MCP 相关 API ==========

@@ -2687,6 +2687,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     let normalExit = false; // 标记是否正常收到 exit 消息
     let stopped = false; // 标记后台进程是否已被终止
     let idleTimeout = false; // 标记是否因空闲超时结束（挂起型命令，进程仍存活）
+    let cancelled = false; // 标记是否用户主动取消，用于区分主动终止和意外断开
 
     const cleanupAndStop = async (reason) => {
       // 关闭 WebSocket
@@ -2731,7 +2732,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
 
       // 注册到 runningAgentCommands，以便取消时能关闭 WebSocket
       if (sessionId) {
-        runningAgentCommands.set(sessionId, { execId, ws });
+        runningAgentCommands.set(sessionId, { execId, ws, cancelRef: { cancelled: false } });
       }
 
       await new Promise((resolve, reject) => {
@@ -2806,6 +2807,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
             } else if (data.type === 'exit') {
               normalExit = true;
               if (totalTimeoutId) clearTimeout(totalTimeoutId);
+              try { ws.close(); } catch {}
               resolve();
             }
           } catch {}
@@ -2815,7 +2817,16 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         ws.onclose = () => {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnClose) originalOnClose();
+          // 用户主动取消：走正常结束路径，不触发错误处理
+          const entry = runningAgentCommands.get(sessionId);
+          const isCancelled = entry?.cancelRef?.cancelled || cancelled;
           runningAgentCommands.delete(sessionId);
+          if (isCancelled) {
+            exitCode = -1;
+            sendAgentStreamDone(sessionId, execId, toolCallId, -1);
+            resolve();
+            return;
+          }
           // 空闲超时：进程保留，不杀进程，不 reject
           if (idleTimeout) {
             resolve();
@@ -2837,18 +2848,30 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         ws.onerror = (err) => {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
           if (originalOnError) originalOnError(err);
+          // 用户主动取消：不触发错误处理，走正常结束路径
+          const entry = runningAgentCommands.get(sessionId);
+          const isCancelled = entry?.cancelRef?.cancelled || cancelled;
           runningAgentCommands.delete(sessionId);
+          if (isCancelled) {
+            exitCode = -1;
+            sendAgentStreamDone(sessionId, execId, toolCallId, -1);
+            resolve();
+            return;
+          }
           cleanupAndStop(err.message).then(() => {
             reject(err);
           });
         };
       });
     } catch (wsError) {
-      console.warn('[AgentExec] WebSocket 流式失败:', wsError.message);
+      const errorMessage = wsError.message || (wsError instanceof Error ? '未知错误' : String(wsError));
+      console.warn('[AgentExec] WebSocket 流式失败:', errorMessage);
+      // 确保关闭 WebSocket，防止连接泄露
+      if (ws) { try { ws.close(); } catch {} }
       runningAgentCommands.delete(sessionId);
-      if (wsError.message.includes('超时') || wsError.message.includes('中断') || stopped) {
+      if (errorMessage.includes('超时') || errorMessage.includes('中断') || stopped) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        appendAuditLog('command_exec', `命令执行失败: ${command}`, { command, cwd, exitCode: -1, error: wsError.message });
+        appendAuditLog('command_exec', `命令执行失败: ${command}`, { command, cwd, exitCode: -1, error: errorMessage });
         return {
           success: false,
           level: 'allow',
@@ -2857,11 +2880,11 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           stdout: stdoutCollected,
           stderr: stderrCollected,
           killed: true,
-          message: `命令执行失败：${wsError.message}\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
-          error: wsError.message
+          message: `命令执行失败：${errorMessage}\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
+          error: errorMessage
         };
       }
-      console.warn('[AgentExec] 回退到同步模式:', wsError.message);
+      console.warn('[AgentExec] 回退到同步模式:', errorMessage);
       const result = await AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout);
       return formatAgentExecResult(result, command, cwd, toolCallId);
     }
@@ -2872,6 +2895,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     if (idleTimeout) {
       sendAgentStreamDone(sessionId, execId, toolCallId, 0);
       console.log('[AgentExec] 空闲超时，返回部分结果（命令可能仍在后台运行）');
+      const message = `命令仍在后台运行（已空闲超时，进程未终止）。\n\n执行期间输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '(无输出)'}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}\n\n⚠️ 注意：此命令为挂起型进程（如服务/守护进程），进程仍在后台运行中。`;
       return {
         success: true,
         level: 'allow',
@@ -2879,7 +2903,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         partial: true,
         stdout: stdoutCollected,
         stderr: stderrCollected,
-        message: `命令仍在后台运行（已空闲超时，进程未终止）。\n\n执行期间输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '(无输出)'}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}\n\n⚠️ 注意：此命令为挂起型进程（如服务/守护进程），进程仍在后台运行中。`,
+        content: message,
+        message,
         hint: '命令为挂起型进程，仍在后台运行',
         tool_call_id: toolCallId
       };
@@ -2887,6 +2912,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     
     const hasExitCode = exitCode !== null && exitCode !== undefined;
     const isSuccess = hasExitCode && exitCode === 0;
+    const message = `命令执行完毕 ${hasExitCode ? '(exitCode: ' + exitCode + ')' : '(无 exitCode)'}\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`;
     return {
       success: isSuccess,
       level: 'allow',
@@ -2895,7 +2921,8 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       stdout: stdoutCollected,
       stderr: stderrCollected,
       killed,
-      message: `命令执行完毕 ${hasExitCode ? '(exitCode: ' + exitCode + ')' : '(无 exitCode)'}\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`,
+      content: message,
+      message,
       error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
       tool_call_id: toolCallId
     };
@@ -3757,12 +3784,17 @@ export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
   const entry = runningAgentCommands.get(sessionId);
   if (!entry) return;
   
-  runningAgentCommands.delete(sessionId);
-  
-  const { execId, ws } = entry;
+  const { execId, ws, cancelRef } = entry;
   console.log('[Background] 取消运行中的 Agent 命令，execId:', execId, 'sessionId:', sessionId, 'mode:', mode);
   
+  // 设置取消标志，让 WebSocket 的 onclose/onerror handler 能识别是用户主动终止
+  if (cancelRef) {
+    cancelRef.cancelled = true;
+  }
+  
   // 关闭 WebSocket 连接，阻止后续 AGENT_STREAM 消息发送
+  // 注意：不立即删除 runningAgentCommands，让 onclose/onerror handler 自己删除
+  // 这样 handler 可以检查 cancelRef.cancelled 标志
   try { ws.close(); } catch (e) { /* ignore */ }
   
   if (mode === 'kill') {
