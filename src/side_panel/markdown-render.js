@@ -944,7 +944,7 @@ export function addCodeCopyButtons() {
         }
       }
     });
-    logger.debug('[SidePanel] 已绑定按钮', index);
+    // logger.debug('[SidePanel] 已绑定按钮', index);
   });
   
   // 设置 Ctrl+单击复制（只绑定一次）
