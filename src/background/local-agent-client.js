@@ -386,8 +386,11 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(authenticatedUrl);
+    let settled = false;
 
     ws.onopen = () => {
+      if (settled) return;
+      settled = true;
       logger.debug('[AgentClient] WebSocket 已连接:', normalizedWsUrl, '(with token)');
       resolve(ws);
     };
@@ -407,6 +410,8 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     };
 
     ws.onerror = (event) => {
+      if (settled) return;
+      settled = true;
       const error = event instanceof Error ? event : new Error('WebSocket 连接失败');
       logger.error('[AgentClient] WebSocket 错误:', error.message || event);
       if (onError) onError(error);
