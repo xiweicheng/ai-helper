@@ -805,21 +805,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
   
-  // 页面导出 PDF（通过 CDP Page.printToPDF）
-  if (message.type === 'GENERATE_PDF') {
-    const tabId = sender.tab?.id;
-    if (!tabId) {
-      sendResponse({ success: false, error: '无法获取标签页 ID' });
-      return false;
-    }
-
-    handleGeneratePdf(tabId, message.options)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ success: false, error: error.message }));
-
-    return true; // 异步响应
-  }
-
   // 选中文本工具栏追问：直接发送到侧边栏
   if (message.type === 'DIRECT_SEND') {
     const tabId = sender.tab?.id;
@@ -922,52 +907,6 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
     selectedText: selectedText
   }).catch(() => {
     logger.debug('[Background] Side Panel 未打开，搜索内容已存储，等待 Side Panel 加载');
-  });
-}
-
-/**
- * 通过 CDP Page.printToPDF 生成 PDF
- */
-async function handleGeneratePdf(tabId, options) {
-  logger.debug('[Background] 开始生成 PDF, tabId:', tabId, 'options:', JSON.stringify(options));
-
-  // 附加 debugger 到目标标签页
-  return new Promise((resolve) => {
-    const debuggee = { tabId };
-
-    chrome.debugger.attach(debuggee, '1.3', () => {
-      if (chrome.runtime.lastError) {
-        resolve({ success: false, error: `附加 debugger 失败: ${chrome.runtime.lastError.message}` });
-        return;
-      }
-
-      // 先启用 Page 域
-      chrome.debugger.sendCommand(debuggee, 'Page.enable', {}, () => {
-        // 忽略 enable 的错误（可能已经启用）
-
-        // 调用 Page.printToPDF
-        chrome.debugger.sendCommand(debuggee, 'Page.printToPDF', options, (result) => {
-          // 尝试分离 debugger（忽略分离错误）
-          chrome.debugger.detach(debuggee, () => {});
-
-          if (chrome.runtime.lastError) {
-            resolve({ success: false, error: `PDF 生成失败: ${chrome.runtime.lastError.message}` });
-            return;
-          }
-
-          if (!result || !result.data) {
-            resolve({ success: false, error: 'PDF 生成失败：返回数据为空' });
-            return;
-          }
-
-          logger.debug('[Background] PDF 生成成功，数据大小:', result.data.length, '字符');
-          resolve({
-            success: true,
-            data: result.data
-          });
-        });
-      });
-    });
   });
 }
 

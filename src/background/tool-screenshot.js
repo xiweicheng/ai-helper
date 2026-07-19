@@ -349,7 +349,7 @@ export function triggerScreenshotDownload(dataUrl, format) {
 }
 
 /**
- * executeTakeFullPageScreenshot - 全页面截图（通过 CDP 模拟或分片拼接）
+ * executeTakeFullPageScreenshot - 全页面截图（通过滚动拼接方案）
  */
 export async function executeTakeFullPageScreenshot(args, toolCallId) {
   const { format = 'png', quality = 80 } = args;
@@ -361,156 +361,60 @@ export async function executeTakeFullPageScreenshot(args, toolCallId) {
 
     logger.debug('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
 
-    return new Promise((resolve) => {
-      chrome.debugger.attach({ tabId }, '1.3', async () => {
+    try {
+      const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
+      triggerScreenshotDownload(stitchedDataUrl, format);
+      return { success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId };
+    } catch (stitchErr) {
+      logger.error('[Background] 全页截图失败:', stitchErr.message);
+      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
         if (chrome.runtime.lastError) {
-          logger.warn('[Background] debugger 不可用，回退到可见区截图:', chrome.runtime.lastError.message);
-          chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-            if (chrome.runtime.lastError) {
-              resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-            } else {
-              triggerScreenshotDownload(dataUrl, 'png');
-              resolve({ success: true, dataUrl, fullPage: false, message: 'debugger 不可用，返回可视区截图', tool_call_id: toolCallId });
-            }
-          });
-          return;
-        }
-
-        try {
-          // 方案 A：Emulation 视口拉伸（首选，速度快无拼接痕迹）
-          const fullDataUrl = await captureViaEmulation(tabId, format, quality);
-          triggerScreenshotDownload(fullDataUrl, format);
-          resolve({ success: true, dataUrl: fullDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId });
-        } catch (emulationErr) {
-          logger.warn('[Background] Emulation 方案失败，回退到 scroll-and-stitch:', emulationErr.message);
-          try {
-            // 方案 B：scroll-and-stitch 分段拼接（兜底）
-            const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
-            triggerScreenshotDownload(stitchedDataUrl, format);
-            resolve({ success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功（分段拼接）', tool_call_id: toolCallId });
-          } catch (stitchErr) {
-            logger.error('[Background] scroll-and-stitch 也失败:', stitchErr.message);
-            chrome.debugger.detach({ tabId }, () => {});
-            chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-              if (chrome.runtime.lastError) {
-                resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-              } else {
-                triggerScreenshotDownload(dataUrl, 'png');
-                resolve({ success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId });
-              }
-            });
-          }
+          return { success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId };
+        } else {
+          triggerScreenshotDownload(dataUrl, 'png');
+          return { success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId };
         }
       });
-    });
+    }
   } catch (err) {
     return makeResult(false, '执行失败: ' + err.message, toolCallId);
   }
 }
 
 /**
- * CDP sendCommand 的 Promise 包装
+ * 向 content script 发送消息并等待响应
  */
-function cdpSend(tabId, method, params = {}) {
+function sendToContent(tabId, message) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
         reject(new Error(chrome.runtime.lastError.message));
       } else {
-        resolve(result);
+        resolve(response);
       }
     });
   });
 }
 
 /**
- * 方案 A：通过 Emulation.setDeviceMetricsOverride 拉高视口后截图
- * 仅适用于页面高度不超过 MAX_EMULATION_HEIGHT 的情况，超过则抛错由 stitch 兜底。
- * 返回 dataUrl
- */
-async function captureViaEmulation(tabId, format, quality) {
-  // 1. 获取页面真实尺寸
-  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
-    expression: 'JSON.stringify({ w: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth || 0, window.innerWidth), h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0, window.innerHeight), dpr: window.devicePixelRatio || 1 })',
-    returnByValue: true
-  });
-
-  let pageW, pageH, dpr;
-  try {
-    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
-    pageW = Math.min(parsed.w || 1280, 10000);
-    pageH = Math.min(parsed.h || 720, MAX_EMULATION_HEIGHT);
-    dpr = Math.min(parsed.dpr || 1, 2);
-  } catch {
-    pageW = 1280;
-    pageH = 5000;
-    dpr = 1;
-  }
-
-  logger.debug('[Background] Emulation 页面尺寸:', pageW, 'x', pageH, 'dpr:', dpr);
-
-  // 2. 临时拉高视口
-  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
-    width: Math.ceil(pageW),
-    height: Math.ceil(pageH),
-    deviceScaleFactor: dpr,
-    mobile: false,
-    screenWidth: Math.ceil(pageW),
-    screenHeight: Math.ceil(pageH)
-  });
-
-  // 3. 等待布局完成
-  await new Promise(r => setTimeout(r, 300));
-
-  // 4. 截取完整页面（不加 captureBeyondViewport）
-  const screenshotParams = {
-    format: format === 'jpeg' ? 'jpeg' : 'png',
-    clip: { x: 0, y: 0, width: pageW, height: pageH, scale: 1 }
-  };
-  if (format === 'jpeg') {
-    screenshotParams.quality = Math.min(100, Math.max(1, quality || 80));
-  }
-
-  const result = await cdpSend(tabId, 'Page.captureScreenshot', screenshotParams);
-
-  // 5. 恢复视口
-  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
-  chrome.debugger.detach({ tabId }, () => {});
-
-  logger.debug('[Background] Emulation 全页截图成功, 数据长度:', result.data?.length);
-  return `data:image/${format === 'jpeg' ? 'jpeg' : 'png'};base64,${result.data}`;
-}
-
-/**
- * 方案 B：分段滚动截图 + Canvas 拼接
+ * 方案：分段滚动截图 + Canvas 拼接
  * 先滚动到底部触发懒加载，再逐段截图拼接。
  * 返回 dataUrl
  */
 async function captureViaStitch(tabId, format, quality) {
-  // 1. 设为 DPR=1，确保截图分片的像素尺寸与 CSS 尺寸一致
-  await cdpSend(tabId, 'Emulation.setDeviceMetricsOverride', {
-    width: 1280,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: false
-  });
-  await new Promise(r => setTimeout(r, 200));
-
-  // 2. 先滚动到页面底部，触发懒加载内容
+  // 1. 先滚动到页面底部，触发懒加载内容
   await scrollPageToBottom(tabId);
 
-  // 3. 重新获取最终页面总高度（懒加载后可能变大）
-  const pageMetrics = await cdpSend(tabId, 'Runtime.evaluate', {
-    expression: 'JSON.stringify({ w: window.innerWidth, h: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0), vh: window.innerHeight })',
-    returnByValue: true
+  // 2. 获取最终页面总高度（懒加载后可能变大）
+  const pageMetrics = await sendToContent(tabId, {
+    type: 'GET_PAGE_METRICS'
   });
 
   let pageW, pageH, viewH;
   try {
-    const parsed = JSON.parse(pageMetrics.result?.value || '{}');
-    pageW = parsed.w || 1280;
-    pageH = parsed.h || 720;
-    viewH = parsed.vh || 720;
+    pageW = pageMetrics?.width || 1280;
+    pageH = pageMetrics?.height || 720;
+    viewH = pageMetrics?.viewportHeight || 720;
   } catch {
     pageW = 1280;
     pageH = 720;
@@ -519,31 +423,40 @@ async function captureViaStitch(tabId, format, quality) {
 
   logger.debug('[Background] Stitch 页面尺寸（懒加载后）:', pageW, 'x', pageH, 'viewport:', viewH);
 
-  // 4. 逐段滚动截图（带重叠）
+  // 3. 逐段滚动截图（带重叠）
   const chunks = [];
   let y = 0;
   while (y < pageH) {
-    await cdpSend(tabId, 'Runtime.evaluate', {
-      expression: `window.scrollTo(0, ${y})`
+    await sendToContent(tabId, {
+      type: 'SCROLL_TO',
+      position: { x: 0, y }
     });
     await new Promise(r => setTimeout(r, 600));
 
     const chunkH = Math.min(viewH, pageH - y);
-    const result = await cdpSend(tabId, 'Page.captureScreenshot', {
-      format: 'png',
-      clip: { x: 0, y: 0, width: pageW, height: chunkH, scale: 1 }
+    const dataUrl = await new Promise((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(result);
+        }
+      });
     });
 
-    chunks.push({ data: result.data, y, h: chunkH, w: pageW });
+    const base64Data = dataUrl.split(',')[1];
+    chunks.push({ data: base64Data, y, h: chunkH, w: pageW });
     logger.debug('[Background] Stitch 分段:', y, '-', y + chunkH);
     y += (viewH - STITCH_OVERLAP);
   }
 
-  // 5. 恢复视口
-  await cdpSend(tabId, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
-  chrome.debugger.detach({ tabId }, () => {});
+  // 4. 恢复滚动位置到顶部
+  await sendToContent(tabId, {
+    type: 'SCROLL_TO',
+    position: { x: 0, y: 0 }
+  });
 
-  // 6. Canvas 拼接
+  // 5. Canvas 拼接
   return stitchChunksToDataUrl(chunks, pageW, pageH, format, quality);
 }
 
@@ -551,25 +464,28 @@ async function captureViaStitch(tabId, format, quality) {
  * 逐步滚动到页面底部，触发所有懒加载内容
  */
 async function scrollPageToBottom(tabId) {
-  const evaluate = (expr) => cdpSend(tabId, 'Runtime.evaluate', {
-    expression: expr, returnByValue: true
-  });
-
   // 先获取视口高度
-  const vhResult = await evaluate('window.innerHeight');
-  const vh = parseInt(vhResult.result?.value) || 800;
+  const vhResult = await sendToContent(tabId, {
+    type: 'GET_VIEWPORT_HEIGHT'
+  });
+  const vh = parseInt(vhResult?.height) || 800;
 
   let prevScrollY = -1;
   let currentScrollY = 0;
   let rounds = 0;
-  const maxRounds = 50; // 安全上限
+  const maxRounds = 50;
 
   while (currentScrollY !== prevScrollY && rounds < maxRounds) {
     prevScrollY = currentScrollY;
-    await evaluate(`window.scrollBy(0, ${vh})`);
+    await sendToContent(tabId, {
+      type: 'SCROLL_BY',
+      delta: { x: 0, y: vh }
+    });
     await new Promise(r => setTimeout(r, 300));
-    const posResult = await evaluate('window.scrollY');
-    currentScrollY = parseInt(posResult.result?.value) || 0;
+    const posResult = await sendToContent(tabId, {
+      type: 'GET_SCROLL_POSITION'
+    });
+    currentScrollY = parseInt(posResult?.scrollY) || 0;
     rounds++;
   }
 

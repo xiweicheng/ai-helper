@@ -446,56 +446,7 @@ export function shadowDomQuery(selector, deep = true, maxDepth = 5, maxResults =
   }
 }
 
-export function pageToPdf(fileName = 'page.pdf', landscape = false, scale = 1, printBackground = true, margins = null) {
-  return new Promise((resolve) => {
-    try {
-      const options = {
-        landscape,
-        scale,
-        printBackground,
-        displayHeaderFooter: false,
-        marginTop: margins?.top !== undefined ? margins.top : 1,
-        marginBottom: margins?.bottom !== undefined ? margins.bottom : 1,
-        marginLeft: margins?.left !== undefined ? margins.left : 1,
-        marginRight: margins?.right !== undefined ? margins.right : 1,
-        paperWidth: 8.27,  // A4
-        paperHeight: 11.69 // A4
-      };
 
-      chrome.runtime.sendMessage({
-        type: 'GENERATE_PDF',
-        options: options
-      }, (response) => {
-        if (!response) {
-          resolve({ success: false, error: 'PDF 生成失败：Background 无响应' });
-          return;
-        }
-
-        if (!response.success) {
-          resolve({ success: false, error: response.error || 'PDF 生成失败' });
-          return;
-        }
-
-        // 将 base64 PDF 数据下载到本地
-        const link = document.createElement('a');
-        link.href = `data:application/pdf;base64,${response.data}`;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        resolve({
-          success: true,
-          message: 'PDF 已生成并开始下载',
-          fileName: fileName,
-          size: response.data ? Math.round(response.data.length * 3 / 4) : 0 // 估算字节数
-        });
-      });
-    } catch (error) {
-      resolve({ success: false, error: error.message });
-    }
-  });
-}
 
 export function injectCss(css, targetSelector = null, injectMode = 'style') {
   try {

@@ -15,8 +15,6 @@
     "notifications",
     "tabs",
     "cookies",
-    "debugger",
-    "browsingData",
     "offscreen"
   ],
   "host_permissions": [
