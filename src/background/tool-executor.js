@@ -2087,7 +2087,7 @@ export function executePlanTask(args, toolCallId) {
 }
 
 /**
- * 清除页面数据（localStorage, sessionStorage, cookies, cache）
+ * 清除页面数据（localStorage, sessionStorage, cookies）
  */
 export function executeClearPageData(args, toolCallId) {
   const { site } = args;

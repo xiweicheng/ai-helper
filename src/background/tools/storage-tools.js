@@ -58,7 +58,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'clear_page_data',
-      description: '清除当前站点的存储和缓存数据',
+      description: '清除当前站点的 cookies、localStorage 和 sessionStorage',
       parameters: {
         type: 'object',
         properties: {
