@@ -181,6 +181,34 @@ function initMemoryLimitDropdown() {
 
 // ==================== 模型选择相关 ====================
 
+/**
+ * 保存模型到当前 Agent（自定义助手）或全局（默认助手）
+ */
+async function saveModelToAgentOrGlobal(modelName) {
+  if (state.activeAgentId && state.activeAgentId !== 'default') {
+    // 自定义助手：保存到 Agent 配置
+    try {
+      const { updateAgent } = await import('./agent-store.js');
+      await updateAgent(state.activeAgentId, { model: modelName });
+    } catch { /* ignore */ }
+  }
+  // 同时保存到全局（兼容旧逻辑及默认助手）
+  chrome.storage.local.set({ modelName });
+}
+
+/**
+ * 保存温度到当前 Agent（自定义助手）或全局（默认助手）
+ */
+async function saveTempToAgentOrGlobal(temperature, topP, selectedTempIndex) {
+  if (state.activeAgentId && state.activeAgentId !== 'default') {
+    try {
+      const { updateAgent } = await import('./agent-store.js');
+      await updateAgent(state.activeAgentId, { temperature, topP });
+    } catch { /* ignore */ }
+  }
+  chrome.storage.local.set({ temperature, topP, selectedTempIndex });
+}
+
 function updateModelSelection(selectedValue) {
   document.querySelectorAll('.model-option').forEach(option => {
     if (option.dataset.value === selectedValue) {
@@ -294,7 +322,7 @@ function loadCustomModelsToDropdown(customModels, callback) {
         e.stopPropagation();
         state.currentModel = modelName;
         updateModelSelection(modelName);
-        chrome.storage.local.set({ modelName: modelName });
+        saveModelToAgentOrGlobal(modelName);
       });
 
       tempDropdown.querySelector('.model-section').appendChild(option);
@@ -842,7 +870,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     updateTempUI();
 
-    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: state.selectedTempIndex });
+    saveTempToAgentOrGlobal(state.temperature, state.topP, state.selectedTempIndex);
   }
 
   // 温度滑块事件
@@ -858,7 +886,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     renderTempPresets();
 
-    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: getClosestTempPreset() });
+    saveTempToAgentOrGlobal(state.temperature, state.topP, getClosestTempPreset());
   });
 
   // 温度数字输入事件
@@ -875,7 +903,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     renderTempPresets();
 
-    chrome.storage.local.set({ temperature: state.temperature, topP: state.topP, selectedTempIndex: getClosestTempPreset() });
+    saveTempToAgentOrGlobal(state.temperature, state.topP, getClosestTempPreset());
   });
 
   // 温度选择器点击事件
@@ -1220,8 +1248,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       const value = option.dataset.value;
       state.currentModel = value;
       updateModelSelection(value);
-      chrome.storage.local.set({ modelName: value });
+      saveModelToAgentOrGlobal(value);
     });
+  });
+
+  // 监听 Agent 切换后模型/温度变化，更新 UI
+  document.addEventListener('agent-model-changed', () => {
+    updateModelSelection(state.currentModel);
+    // 温度 UI 更新
+    const tempSlider = document.getElementById('tempSlider');
+    const tempNumberInput = document.getElementById('tempNumberValue');
+    const tempIconValueEl = document.getElementById('tempIconValue');
+    if (tempSlider) tempSlider.value = state.temperature;
+    if (tempNumberInput) tempNumberInput.value = state.temperature.toFixed(2);
+    if (tempIconValueEl) tempIconValueEl.textContent = state.temperature.toFixed(2);
+    // 刷新温度预设高亮
+    renderTempPresets();
   });
 
   // 点击其他地方关闭下拉框和浮动菜单

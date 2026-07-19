@@ -374,15 +374,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'GET_AGENT_SKILL_PROMPTS') {
-    // 带缓存：60 秒内复用上次结果
+    // 带缓存：60 秒内复用上次结果（未指定 skillNames 时）
     const now = Date.now();
-    if (skillPromptsCache && (now - skillPromptsCache.loadedAt) < 60000) {
+    const skillNames = message.skillNames || null;
+    // 如果指定了 skillNames，不使用缓存（因为过滤条件不同）
+    if (!skillNames && skillPromptsCache && (now - skillPromptsCache.loadedAt) < 60000) {
       sendResponse({ success: true, prompts: skillPromptsCache.prompts });
       return true;
     }
-    AgentClient.getAgentSkillPrompts().then(result => {
+    
+    const fetchPrompts = skillNames && skillNames.length > 0
+      ? AgentClient.getAgentSkillPromptsFiltered(skillNames)
+      : AgentClient.getAgentSkillPrompts();
+    
+    fetchPrompts.then(result => {
       const prompts = result.success ? (result.prompts || '') : '';
-      skillPromptsCache = { prompts, loadedAt: Date.now() };
+      // 仅全量请求时缓存（过滤请求不缓存）
+      if (!skillNames) {
+        skillPromptsCache = { prompts, loadedAt: Date.now() };
+      }
       sendResponse({ success: true, prompts });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });

@@ -516,6 +516,29 @@ async function getAgentSkillPrompts() {
 }
 
 /**
+ * 获取指定技能名称的 Agent Skill Prompt 汇总（按名称过滤）
+ * @param {string[]} skillNames - 技能名称列表
+ * @returns {Promise<{success: boolean, prompts: string, error?: string}>}
+ */
+async function getAgentSkillPromptsFiltered(skillNames) {
+  if (!skillNames || skillNames.length === 0) {
+    return { success: true, prompts: '' };
+  }
+  try {
+    const results = await Promise.all(
+      skillNames.map(name => getAgentSkillPrompt(name).catch(() => null))
+    );
+    const prompts = results
+      .filter(r => r && r.success && r.prompt)
+      .map(r => r.prompt)
+      .join('\n\n');
+    return { success: true, prompts };
+  } catch {
+    return { success: false, prompts: '', error: '获取技能提示词失败' };
+  }
+}
+
+/**
  * 按需加载单个 Agent Skill 的完整内容
  */
 async function getAgentSkillPrompt(name) {
@@ -600,6 +623,7 @@ export {
   toggleSkill,
   // Agent Skill (Markdown) API
   getAgentSkillPrompts,
+  getAgentSkillPromptsFiltered,
   getAgentSkillPrompt,
   saveMarkdownSkill,
   getMarkdownSkill,

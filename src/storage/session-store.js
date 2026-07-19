@@ -272,8 +272,11 @@ export async function switchToSession(sessionId) {
 
   state.activeSessionId = sessionId;
   state.messageHistory = targetSession.messageHistory || [];
-  // 会话切换时不恢复模型/温度/工具开关，保持当前全局设置
-  // 避免用户更改全局设置后切换到旧会话时被旧参数覆盖
+  // 会话切换时从会话恢复 model/temperature
+  // 如果会话绑定了 Agent，优先使用 Agent 配置；否则使用会话存储的值
+  state.currentModel = targetSession.model || state.currentModel;
+  state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
+  state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
   state.activeAgentId = targetSession.agentId || null;
   // 持久化当前智能体 ID，避免刷新后丢失
@@ -281,6 +284,27 @@ export async function switchToSession(sessionId) {
     chrome.storage.local.set({ activeAgentId: targetSession.agentId });
   } else {
     chrome.storage.local.remove('activeAgentId');
+  }
+
+  // 如果会话绑定了自定义 Agent，尝试从 Agent 配置中加载模型/温度
+  if (targetSession.agentId && targetSession.agentId !== 'default') {
+    try {
+      const { getAgent } = await import('../side_panel/agent-store.js');
+      const agent = await getAgent(targetSession.agentId);
+      if (agent) {
+        if (agent.model) {
+          state.currentModel = agent.model;
+          chrome.storage.local.set({ modelName: agent.model });
+        }
+        if (agent.temperature !== null && agent.temperature !== undefined) {
+          state.temperature = agent.temperature;
+          state.topP = agent.topP !== null && agent.topP !== undefined ? agent.topP : 1.0;
+          chrome.storage.local.set({ temperature: agent.temperature, topP: state.topP });
+        }
+        // 触发 UI 更新
+        document.dispatchEvent(new CustomEvent('agent-model-changed'));
+      }
+    } catch { /* Agent 加载失败，使用会话存储值 */ }
   }
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
   // 仅当 pendingCallApiSessionIds 中也存在该 session 时才恢复，防止 SW 重启后

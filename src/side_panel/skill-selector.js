@@ -76,7 +76,19 @@ export async function renderSkillList(filterText = '') {
   const skillListEl = document.getElementById('skillList');
   if (!skillListEl) return;
 
-  const skills = await getEnabledSkills(true);
+  let skills = await getEnabledSkills(true);
+
+  // 按当前 Agent 的 skillIds 过滤
+  const currentAgentId = state.activeAgentId;
+  if (currentAgentId) {
+    const { getAgent } = await import('./agent-store.js');
+    const agent = await getAgent(currentAgentId);
+    if (agent && agent.skillIds != null && Array.isArray(agent.skillIds)) {
+      const allowedSet = new Set(agent.skillIds);
+      skills = skills.filter(s => allowedSet.has(s.name));
+    }
+  }
+
   const filterLower = filterText.toLowerCase();
 
   const filteredSkills = skills.filter(s => {
@@ -352,25 +364,60 @@ export async function shouldShowMcpTab() {
   }
 
   return new Promise((resolve) => {
-    chrome.storage.local.get(['mcpEnabled', 'mcpTools'], (result) => {
+    chrome.storage.local.get(['mcpEnabled', 'mcpTools'], async (result) => {
       if (!result.mcpEnabled) {
         resolve(false);
         return;
       }
       const tools = result.mcpTools || [];
-      resolve(tools.length > 0);
+      if (tools.length === 0) {
+        resolve(false);
+        return;
+      }
+
+      // 检查当前 Agent 是否允许 MCP 工具
+      if (state.activeAgentId) {
+        try {
+          const { getAgent } = await import('./agent-store.js');
+          const agent = await getAgent(state.activeAgentId);
+          if (agent && agent.toolIds != null && Array.isArray(agent.toolIds)) {
+            // Agent 有具体的工具列表，检查是否包含任何 MCP 工具
+            const hasMcpTool = agent.toolIds.some(id => id.startsWith('mcp_'));
+            if (!hasMcpTool) {
+              resolve(false);
+              return;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      resolve(true);
     });
   });
 }
 
 /**
  * 从 chrome.storage 获取 MCP 服务列表（按 serverId 分组）
+ * 如果当前 Agent 限定了 toolIds，只返回绑定工具中涉及的 MCP 服务
  * @returns {Promise<Array<{serverId, serverName, toolCount}>>}
  */
 export async function getMcpServices() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['mcpTools'], (result) => {
-      const tools = result.mcpTools || [];
+  return new Promise(async (resolve) => {
+    chrome.storage.local.get(['mcpTools'], async (result) => {
+      let tools = result.mcpTools || [];
+
+      // 如果当前 Agent 有具体的 toolIds 限定，只保留 Agent 允许的 MCP 工具
+      if (state.activeAgentId) {
+        try {
+          const { getAgent } = await import('./agent-store.js');
+          const agent = await getAgent(state.activeAgentId);
+          if (agent && agent.toolIds != null && Array.isArray(agent.toolIds)) {
+            const allowedSet = new Set(agent.toolIds);
+            tools = tools.filter(t => allowedSet.has(t.id));
+          }
+        } catch { /* ignore */ }
+      }
+
       const serverMap = new Map();
       tools.forEach(t => {
         const sid = t.serverId || 'unknown';

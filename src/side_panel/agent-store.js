@@ -48,6 +48,7 @@ export async function createAgent(agentData) {
     icon: agentData.icon || '🤖',
     systemPrompt: agentData.systemPrompt || '',
     toolIds: agentData.toolIds || null,  // null = 继承全局
+    skillIds: agentData.skillIds || null, // null = 继承全部启用技能
     isBuiltin: false,
     allowSubDispatch: agentData.allowSubDispatch !== undefined ? agentData.allowSubDispatch : false,
     model: agentData.model || null,

@@ -326,7 +326,7 @@ ${subAgentList}`;
 
     // 注入 Agent Skill Prompts
     try {
-      const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds);
+      const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds, agent?.skillIds);
       if (skillPrompts) {
         finalPrompt += `\n${skillPrompts}\n`;
       }
@@ -360,7 +360,7 @@ ${subAgentList}`;
 
   // 注入 Agent Skill Prompts
   try {
-    const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds);
+    const skillPrompts = await fetchAgentSkillPrompts(agent?.toolIds, agent?.skillIds);
     if (skillPrompts) {
       defaultPrompt += `\n${skillPrompts}\n`;
     }
@@ -372,13 +372,19 @@ ${subAgentList}`;
 /**
  * 从后台获取 Agent Skill Prompts
  * @param {string[]|null|undefined} agentToolIds - Agent 的工具 ID 列表，null/undefined 表示使用全部工具
+ * @param {string[]|null|undefined} agentSkillIds - Agent 的技能名称列表，null/undefined 表示全部技能，[] 表示无技能
  * @returns {Promise<string>}
  */
-async function fetchAgentSkillPrompts(agentToolIds) {
+async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
   // 如果 Agent 限定了工具列表，且列表中不包含任何 Skill 相关工具，则不注入 Skill 描述
   if (agentToolIds != null && Array.isArray(agentToolIds)
       && !agentToolIds.includes('agent_skill_load')
       && !agentToolIds.includes('agent_workflow_run')) {
+    return '';
+  }
+
+  // 如果 Agent 指定了 skillIds 为空数组，则不注入任何技能
+  if (Array.isArray(agentSkillIds) && agentSkillIds.length === 0) {
     return '';
   }
 
@@ -390,7 +396,12 @@ async function fetchAgentSkillPrompts(agentToolIds) {
           resolve('');
           return;
         }
-        chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPTS' }, (response) => {
+        const message = { type: 'GET_AGENT_SKILL_PROMPTS' };
+        // 如果指定了技能名称列表，传递给后台过滤
+        if (agentSkillIds != null && Array.isArray(agentSkillIds) && agentSkillIds.length > 0) {
+          message.skillNames = agentSkillIds;
+        }
+        chrome.runtime.sendMessage(message, (response) => {
           if (chrome.runtime.lastError) {
             resolve('');
             return;

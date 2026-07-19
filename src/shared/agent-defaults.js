@@ -11,6 +11,7 @@ export const BUILTIN_AGENTS = [
     icon: '🤖',
     systemPrompt: null,  // null = 使用全局 systemPrompt
     toolIds: null,       // null = 使用全局 enabledTools
+    skillIds: null,      // null = 使用全部启用技能
     isBuiltin: true,
     allowSubDispatch: false,
     model: null,

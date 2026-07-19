@@ -4,6 +4,7 @@ import { getTools } from './tool-executor.js';
 import { getStoredConfig } from './config.js';
 import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
+import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 
 /**
@@ -22,13 +23,32 @@ async function loadAgent(agentId) {
 }
 
 /**
- * 构建子 Agent 的系统提示词
+ * 构建子 Agent 的系统提示词（含技能过滤）
  */
-function buildSubAgentPrompt(agent, task) {
+async function buildSubAgentPrompt(agent, task) {
   let prompt = agent.systemPrompt || '';
   if (!prompt.trim()) {
     prompt = `你是AI智能助手，请完成以下任务。`;
   }
+
+  // 注入 Skill Prompts（如果有绑定的技能）
+  try {
+    let skillPrompts = '';
+    if (agent.skillIds != null && Array.isArray(agent.skillIds) && agent.skillIds.length > 0) {
+      // 只注入指定技能的 Prompts
+      const result = await AgentClient.getAgentSkillPromptsFiltered(agent.skillIds);
+      skillPrompts = result.prompts || '';
+    } else if (agent.skillIds == null) {
+      // 未指定 skillIds，注入全部启用技能
+      const result = await AgentClient.getAgentSkillPrompts();
+      skillPrompts = result.prompts || '';
+    }
+    // agent.skillIds 为 [] 时不注入任何技能
+    if (skillPrompts) {
+      prompt += '\n\n' + skillPrompts;
+    }
+  } catch { /* 获取失败不影响主流程 */ }
+
   return `${prompt}
 
 ## 当前任务
@@ -88,7 +108,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   logger.debug('[AgentDispatcher] 子 Agent 工具数:', agentTools.length);
 
   // 3. 构建子 Agent 消息
-  const systemPrompt = buildSubAgentPrompt(agent, task);
+  const systemPrompt = await buildSubAgentPrompt(agent, task);
   const messages = [{ role: 'system', content: systemPrompt }];
 
   // 4. 获取配置

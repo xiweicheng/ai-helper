@@ -3,9 +3,11 @@ import state from './state.js';
 import { getAllAgents, createAgent, updateAgent, deleteAgent, getAgent, setActiveAgentId, getActiveAgentId, createAgentFromTemplate } from './agent-store.js';
 import { AGENT_TEMPLATES } from '../shared/agent-defaults.js';
 import { BUILTIN_TOOLS } from './constants.js';
+import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
+import { getEnabledSkills } from './skill-selector.js';
 import logger from '../shared/logger.js';
 
 /**
@@ -206,6 +208,22 @@ export async function switchAgent(agentId) {
   await setActiveAgentId(agentId);
   // 立即保存当前会话，确保刷新后数据不丢失
   saveCurrentSession().catch(() => {});
+
+  // 加载 Agent 绑定的模型和温度（自定义助手优先使用 Agent 配置，默认助手保持全局）
+  if (agent && !agent.isBuiltin) {
+    if (agent.model) {
+      state.currentModel = agent.model;
+      chrome.storage.local.set({ modelName: agent.model });
+    }
+    if (agent.temperature !== null && agent.temperature !== undefined) {
+      state.temperature = agent.temperature;
+      state.topP = agent.topP !== null && agent.topP !== undefined ? agent.topP : 1.0;
+      chrome.storage.local.set({ temperature: agent.temperature, topP: state.topP });
+    }
+    // 触发 UI 更新事件
+    document.dispatchEvent(new CustomEvent('agent-model-changed'));
+  }
+
   await renderAgentSelector();
 
   // 加载当前智能体的工具启用/禁用状态
@@ -282,6 +300,18 @@ function initAgentModalEvents() {
       const action = btn.dataset.action;
       if (action === 'selectAll') selectAllTools();
       else if (action === 'deselectAll') deselectAllTools();
+    });
+  }
+
+  // 技能快捷操作按钮
+  const skillActions = document.getElementById('agentSkillActions');
+  if (skillActions) {
+    skillActions.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === 'selectAllSkills') selectAllSkills();
+      else if (action === 'deselectAllSkills') deselectAllSkills();
     });
   }
 
@@ -380,6 +410,16 @@ function deselectAllTools() {
   checkboxes.forEach(cb => { cb.checked = false; });
 }
 
+function selectAllSkills() {
+  const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
+  checkboxes.forEach(cb => { cb.checked = true; });
+}
+
+function deselectAllSkills() {
+  const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
+  checkboxes.forEach(cb => { cb.checked = false; });
+}
+
 function toggleCategorySelection(category) {
   const items = document.querySelectorAll(`#agentToolList .agent-tool-item[data-category="${category}"]`);
   const checkboxes = [];
@@ -400,6 +440,10 @@ export async function openAgentEditor(agentId) {
   const modal = document.getElementById('agentEditModal');
   if (!modal) return;
 
+  // 填充模型 datalist + 温度预设下拉
+  await populateModelDatalist();
+  populateTempPresetDropdown(-1);
+
   // 重置表单
   modal.querySelector('#agentEditId').value = '';
   modal.querySelector('#agentEditName').value = '';
@@ -410,6 +454,7 @@ export async function openAgentEditor(agentId) {
   modal.querySelector('#agentEditPrompt').value = '';
   modal.querySelector('#agentEditAllowSub').checked = false;
   modal.querySelector('#agentTemplateSelect').value = '';
+  modal.querySelector('#agentEditModel').value = '';
 
   const deleteBtn = modal.querySelector('#agentDeleteBtn');
   const titleEl = modal.querySelector('#agentEditTitle');
@@ -428,10 +473,16 @@ export async function openAgentEditor(agentId) {
     modal.querySelector('#agentEditDesc').value = agent.description || '';
     modal.querySelector('#agentEditPrompt').value = agent.systemPrompt || '';
     modal.querySelector('#agentEditAllowSub').checked = agent.allowSubDispatch || false;
+    modal.querySelector('#agentEditModel').value = agent.model || '';
+    // 反查温度预设档位
+    const presetIdx = findTempPresetIndex(agent.temperature, agent.topP);
+    populateTempPresetDropdown(presetIdx);
     deleteBtn.style.display = 'block';
 
     // 渲染工具选择
     renderAgentToolSelector(agent.toolIds);
+    // 渲染技能选择
+    renderAgentSkillSelector(agent.skillIds);
   } else {
     // 新建模式
     titleEl.textContent = '创建新助手';
@@ -439,12 +490,39 @@ export async function openAgentEditor(agentId) {
     
     // 渲染空工具选择
     renderAgentToolSelector(null);
-
-    // 渲染模板选项
-    renderTemplateOptions();
+    // 渲染空技能选择
+    renderAgentSkillSelector(null);
   }
 
+  // 渲染模板选项（新建和编辑模式均支持切换模板）
+  renderTemplateOptions();
+
   modal.style.display = 'flex';
+
+  // 模型输入框：聚焦时暂清内容以显示完整下拉，失焦时恢复
+  const modelInput = modal.querySelector('#agentEditModel');
+  if (modelInput) {
+    const savedValue = modelInput.value;
+    // 移除旧事件（避免重复绑定）
+    const newInput = modelInput.cloneNode(true);
+    modelInput.parentNode.replaceChild(newInput, modelInput);
+    newInput.value = savedValue;
+    // mousedown 先于 focus 触发，同步清空值让 datalist 展示全部选项而非过滤后的
+    newInput.addEventListener('mousedown', () => {
+      const val = newInput.value;
+      if (val) {
+        newInput.dataset._saved = val;
+        newInput.value = '';
+      }
+    });
+    newInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (!newInput.value) {
+          newInput.value = newInput.dataset._saved || '';
+        }
+      }, 150);
+    });
+  }
 }
 
 /**
@@ -488,9 +566,15 @@ function onTemplateSelect(e) {
   modal.querySelector('#agentEditDesc').value = template.description;
   modal.querySelector('#agentEditPrompt').value = template.systemPrompt;
   modal.querySelector('#agentEditAllowSub').checked = template.allowSubDispatch || false;
+  modal.querySelector('#agentEditModel').value = template.model || '';
+  // 反查温度预设档位
+  const presetIdx = findTempPresetIndex(template.temperature, template.topP);
+  populateTempPresetDropdown(presetIdx);
   
   // 渲染工具选择
   renderAgentToolSelector(template.toolIds);
+  // 渲染技能选择
+  renderAgentSkillSelector(template.skillIds || null);
 
   showToast(`已加载模板：${template.name}`, 'info', 2000);
 }
@@ -590,6 +674,144 @@ function getSelectedToolIds() {
 }
 
 /**
+ * 渲染技能选择列表
+ * @param {string[]|null} selectedSkillNames - 已选技能名称列表，null 表示全部未选
+ */
+async function renderAgentSkillSelector(selectedSkillNames) {
+  const container = document.getElementById('agentSkillList');
+  if (!container) return;
+
+  let skills = [];
+  try {
+    skills = await getEnabledSkills();
+  } catch { /* ignore */ }
+
+  const selectedSet = new Set(selectedSkillNames || []);
+  const totalCount = skills.length;
+
+  if (skills.length === 0) {
+    container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;text-align:center;">暂无启用技能（请先确认 Agent 已连接且技能开关已开启）</div>';
+    const countEl = document.getElementById('agentSkillCount');
+    if (countEl) countEl.textContent = '(0)';
+    return;
+  }
+
+  container.innerHTML = skills.map(skill => {
+    const checked = selectedSet.has(skill.name) ? 'checked' : '';
+    return `
+      <label class="agent-tool-item" title="${escapeAttr(skill.description || '')}">
+        <input type="checkbox" value="${escapeAttr(skill.name)}" ${checked}>
+        <span class="agent-tool-name">${escapeHtml(skill.name)}</span>
+        <span class="agent-tool-desc">${escapeHtml((skill.description || '').substring(0, 40))}${(skill.description || '').length > 40 ? '...' : ''}</span>
+      </label>`;
+  }).join('');
+
+  const countEl = document.getElementById('agentSkillCount');
+  if (countEl) {
+    countEl.textContent = `(${totalCount})`;
+  }
+}
+
+/**
+ * 获取当前选中的技能名称列表
+ */
+function getSelectedSkillNames() {
+  const container = document.getElementById('agentSkillList');
+  if (!container) return null;
+  const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+  const names = [];
+  checkboxes.forEach(cb => names.push(cb.value));
+  return names.length > 0 ? names : null;
+}
+
+/**
+ * 填充模型 datalist（从 storage 读取模型列表）
+ */
+async function populateModelDatalist() {
+  const datalist = document.getElementById('agentModelList');
+  if (!datalist) return;
+
+  const presetModels = ['deepseek-v4-pro', 'deepseek-v4-flash'];
+
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['customModels', 'deletedPresetModels'], (result) => {
+      const deletedPresets = new Set(result.deletedPresetModels || []);
+      const options = presetModels.filter(m => !deletedPresets.has(m));
+
+      // 添加自定义模型
+      const customModels = result.customModels || [];
+      customModels.forEach(item => {
+        let modelName;
+        if (typeof item === 'string') modelName = item;
+        else if (item && item.name) modelName = item.name;
+        if (modelName && !options.includes(modelName)) {
+          options.push(modelName);
+        }
+      });
+
+      datalist.innerHTML = options.map(m => `<option value="${escapeAttr(m)}">`).join('');
+      resolve();
+    });
+  });
+}
+
+/**
+ * 填充温度预设下拉框
+ */
+function populateTempPresetDropdown(selectedIndex) {
+  const select = document.getElementById('agentEditTempPreset');
+  if (!select) return;
+
+  // 保留第一个"不设置"选项，追加预设档位
+  while (select.options.length > 1) select.remove(1);
+
+  PRESET_MODES.forEach((mode, index) => {
+    const option = document.createElement('option');
+    option.value = index;
+    option.textContent = `${mode.label}（${mode.temp.toFixed(2)}）`;
+    select.appendChild(option);
+  });
+
+  // 设置选中项
+  if (selectedIndex !== undefined && selectedIndex >= 0) {
+    select.value = selectedIndex;
+  } else {
+    select.value = '';
+  }
+}
+
+/**
+ * 获取温度预设选择结果
+ * @returns {{ temperature: number|null, topP: number|null }}
+ */
+function getSelectedTempPreset() {
+  const select = document.getElementById('agentEditTempPreset');
+  if (!select || select.value === '') {
+    return { temperature: null, topP: null };
+  }
+  const index = parseInt(select.value);
+  if (isNaN(index) || index < 0 || index >= PRESET_MODES.length) {
+    return { temperature: null, topP: null };
+  }
+  const mode = PRESET_MODES[index];
+  return { temperature: mode.temp, topP: mode.topP };
+}
+
+/**
+ * 从 Agent 的 temperature/topP 反查预设档位索引
+ */
+function findTempPresetIndex(temperature, topP) {
+  if (temperature === null || temperature === undefined) return -1;
+  for (let i = 0; i < PRESET_MODES.length; i++) {
+    const m = PRESET_MODES[i];
+    if (Math.abs(m.temp - temperature) < 0.001 && Math.abs(m.topP - (topP || 1.0)) < 0.001) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * 保存 Agent
  */
 async function saveAgent() {
@@ -603,13 +825,17 @@ async function saveAgent() {
   const systemPrompt = modal.querySelector('#agentEditPrompt').value.trim();
   const allowSubDispatch = modal.querySelector('#agentEditAllowSub').checked;
   const toolIds = getSelectedToolIds();
+  const skillIds = getSelectedSkillNames();
+  const modelVal = modal.querySelector('#agentEditModel').value.trim();
+  const model = modelVal || null;
+  const { temperature, topP } = getSelectedTempPreset();
 
   if (!name) {
     showToast('请输入助手名称', 'warning');
     return;
   }
 
-  const data = { name, icon, description, systemPrompt, allowSubDispatch, toolIds };
+  const data = { name, icon, description, systemPrompt, allowSubDispatch, toolIds, skillIds, model, temperature, topP };
 
   try {
     if (agentId) {

@@ -9,7 +9,7 @@
   <script type="module" crossorigin src="/assets/logger-BEz2S157.js"></script>
   <script type="module" crossorigin src="/assets/file-extract-BgbTjgak.js"></script>
   <script type="module" crossorigin src="/assets/constants-Cf-BwN40.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-DQo1pPgD.js"></script>
+  <script type="module" crossorigin src="/assets/agent-defaults-COg-lpaZ.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -839,6 +839,30 @@
           <button type="button" class="agent-tool-action-btn" data-action="deselectAll">取消全选</button>
         </div>
         <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">可用技能 <span id="agentSkillCount" style="color: #999;"></span>（不勾选则使用全部启用技能）</label>
+        <div id="agentSkillActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
+          <button type="button" class="agent-tool-action-btn" data-action="selectAllSkills">全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="deselectAllSkills">取消全选</button>
+        </div>
+        <div id="agentSkillList" style="max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">模型设置（留空则使用全局设置）</label>
+        <div style="display: flex; gap: 12px;">
+          <div style="flex: 1;">
+            <input type="text" id="agentEditModel" placeholder="选择或输入模型名称" list="agentModelList" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+            <datalist id="agentModelList"></datalist>
+          </div>
+          <div style="width: 160px;">
+            <select id="agentEditTempPreset" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; color: #333;">
+              <option value="">不设置（使用全局）</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <div style="margin-bottom: 16px; display: flex; gap: 16px;">
