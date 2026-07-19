@@ -613,6 +613,7 @@ async function renderAgentToolSelector(selectedToolIds) {
   }
 
   const selectedSet = new Set(selectedToolIds || []);
+  const selectedCount = selectedToolIds ? selectedToolIds.length : allTools.length;
   const categoryNames = {
     'page_interaction': '🖱️ 页面交互',
     'form_operation': '📝 表单操作',
@@ -641,7 +642,9 @@ async function renderAgentToolSelector(selectedToolIds) {
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {
     const catName = categoryNames[cat] || cat;
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="点击切换该分类全选/取消全选">${catName} <span style="font-weight:400;color:#bbb;">(${tools.length})</span></div>`;
+    const catTotal = tools.length;
+    const catSelected = tools.filter(t => selectedSet.has(t.id)).length;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="点击切换该分类全选/取消全选">${catName} <span style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
       html += `
@@ -657,7 +660,7 @@ async function renderAgentToolSelector(selectedToolIds) {
   // 更新总工具数
   const countEl = document.getElementById('agentToolCount');
   if (countEl) {
-    countEl.textContent = `(${totalCount})`;
+    countEl.textContent = `(已选 ${selectedCount} / 共 ${totalCount})`;
   }
 }
 
@@ -687,6 +690,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
   } catch { /* ignore */ }
 
   const selectedSet = new Set(selectedSkillNames || []);
+  const selectedCount = selectedSkillNames ? selectedSkillNames.length : skills.length;
   const totalCount = skills.length;
 
   if (skills.length === 0) {
@@ -708,7 +712,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
 
   const countEl = document.getElementById('agentSkillCount');
   if (countEl) {
-    countEl.textContent = `(${totalCount})`;
+    countEl.textContent = `(已选 ${selectedCount} / 共 ${totalCount})`;
   }
 }
 

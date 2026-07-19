@@ -50,10 +50,10 @@ export async function shouldShowSkillsTab() {
     return false;
   }
 
-  // 检查是否有已启用的技能（没有启用技能时隐藏 Tab）
+  // 检查是否有当前 Agent 可见的技能（考虑 Agent skillIds 绑定）
   try {
-    const enabledSkills = await getEnabledSkills();
-    return enabledSkills.length > 0;
+    const visibleSkills = await getVisibleSkills();
+    return visibleSkills.length > 0;
   } catch {
     return false;
   }
@@ -69,16 +69,14 @@ export async function getEnabledSkills(forceRefresh = false) {
 }
 
 /**
- * 渲染技能列表
- * @param {string} filterText - 过滤文本
+ * 获取当前 Agent 可见的技能列表（已启用 + 按 Agent skillIds 过滤）
+ * 用于输入框下拉展示，与 Agent 绑定联动
+ * @param {boolean} forceRefresh - 是否强制刷新缓存
+ * @returns {Promise<Array>}
  */
-export async function renderSkillList(filterText = '') {
-  const skillListEl = document.getElementById('skillList');
-  if (!skillListEl) return;
+export async function getVisibleSkills(forceRefresh = false) {
+  let skills = await getEnabledSkills(forceRefresh);
 
-  let skills = await getEnabledSkills(true);
-
-  // 按当前 Agent 的 skillIds 过滤
   const currentAgentId = state.activeAgentId;
   if (currentAgentId) {
     const { getAgent } = await import('./agent-store.js');
@@ -88,6 +86,19 @@ export async function renderSkillList(filterText = '') {
       skills = skills.filter(s => allowedSet.has(s.name));
     }
   }
+
+  return skills;
+}
+
+/**
+ * 渲染技能列表
+ * @param {string} filterText - 过滤文本
+ */
+export async function renderSkillList(filterText = '') {
+  const skillListEl = document.getElementById('skillList');
+  if (!skillListEl) return;
+
+  let skills = await getVisibleSkills(true);
 
   const filterLower = filterText.toLowerCase();
 

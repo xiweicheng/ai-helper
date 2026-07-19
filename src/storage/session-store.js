@@ -287,6 +287,8 @@ export async function switchToSession(sessionId) {
   }
 
   // 如果会话绑定了自定义 Agent，尝试从 Agent 配置中加载模型/温度
+  // 注意：自定义 Agent 的参数只更新 state，不写入 chrome.storage.local 全局键，
+  // 避免覆盖默认 Agent 的全局模型/温度值
   if (targetSession.agentId && targetSession.agentId !== 'default') {
     try {
       const { getAgent } = await import('../side_panel/agent-store.js');
@@ -294,17 +296,25 @@ export async function switchToSession(sessionId) {
       if (agent) {
         if (agent.model) {
           state.currentModel = agent.model;
-          chrome.storage.local.set({ modelName: agent.model });
         }
         if (agent.temperature !== null && agent.temperature !== undefined) {
           state.temperature = agent.temperature;
           state.topP = agent.topP !== null && agent.topP !== undefined ? agent.topP : 1.0;
-          chrome.storage.local.set({ temperature: agent.temperature, topP: state.topP });
         }
         // 触发 UI 更新
         document.dispatchEvent(new CustomEvent('agent-model-changed'));
       }
     } catch { /* Agent 加载失败，使用会话存储值 */ }
+  } else {
+    // 默认 Agent：从 chrome.storage.local 读取全局模型/温度（所有默认 Agent 会话共享）
+    try {
+      const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
+      if (global.modelName) state.currentModel = global.modelName;
+      if (global.temperature !== undefined) state.temperature = global.temperature;
+      if (global.topP !== undefined) state.topP = global.topP;
+    } catch { /* 读取失败，使用会话存储值 */ }
+    // 触发 UI 更新，确保弹窗 slider/输入框与图标一致
+    document.dispatchEvent(new CustomEvent('agent-model-changed'));
   }
   // 使用按会话隔离的 generatingSessionIds Set 恢复生成状态
   // 仅当 pendingCallApiSessionIds 中也存在该 session 时才恢复，防止 SW 重启后

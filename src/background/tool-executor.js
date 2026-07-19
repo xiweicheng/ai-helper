@@ -240,8 +240,10 @@ async function checkAgentConnectivity() {
  * 获取启用的工具列表
  * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
  * @param {string[]|null} agentToolIds - Agent 指定的工具 ID 列表，null = 使用全局 enabledTools
+ * @param {string|null} agentId - Agent ID
+ * @param {string[]|null} agentSkillIds - Agent 绑定的技能名称列表，非空时自动包含 skill 工具
  */
-export async function getTools(agentToolIds = null, agentId = null) {
+export async function getTools(agentToolIds = null, agentId = null, agentSkillIds = null) {
   return new Promise((resolve) => {
     const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
     chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput'], async (result) => {
@@ -258,6 +260,17 @@ export async function getTools(agentToolIds = null, agentId = null) {
       const finalToolIds = agentToolIds ? enabledTools.filter(id => agentToolIds.includes(id)) : enabledTools;
       if (agentToolIds) {
         console.log(`[Background] 工具过滤: ${enabledTools.length} 全局 → ${finalToolIds.length} 最终`);
+      }
+
+      // 如果 Agent 绑定了技能，自动加入技能调度工具（agent_skill_load/agent_workflow_run）
+      const hasSkillIds = agentSkillIds != null && Array.isArray(agentSkillIds) && agentSkillIds.length > 0;
+      if (hasSkillIds) {
+        for (const skillToolId of ['agent_skill_load', 'agent_workflow_run']) {
+          if (!finalToolIds.includes(skillToolId)) {
+            finalToolIds.push(skillToolId);
+            console.log(`[Background] 自动加入技能工具: ${skillToolId}`);
+          }
+        }
       }
 
       // 读取图片识别开关状态

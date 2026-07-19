@@ -376,16 +376,20 @@ ${subAgentList}`;
  * @returns {Promise<string>}
  */
 async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
-  // 如果 Agent 限定了工具列表，且列表中不包含任何 Skill 相关工具，则不注入 Skill 描述
-  if (agentToolIds != null && Array.isArray(agentToolIds)
-      && !agentToolIds.includes('agent_skill_load')
-      && !agentToolIds.includes('agent_workflow_run')) {
-    return '';
-  }
-
   // 如果 Agent 指定了 skillIds 为空数组，则不注入任何技能
   if (Array.isArray(agentSkillIds) && agentSkillIds.length === 0) {
     return '';
+  }
+
+  // 如果 Agent 未指定技能列表（skillIds 为 null/undefined），
+  // 且限定了工具列表且不含 Skill 工具，则跳过（AI 无法调用技能工具）
+  const hasSkillIds = agentSkillIds != null && Array.isArray(agentSkillIds) && agentSkillIds.length > 0;
+  if (!hasSkillIds) {
+    if (agentToolIds != null && Array.isArray(agentToolIds)
+        && !agentToolIds.includes('agent_skill_load')
+        && !agentToolIds.includes('agent_workflow_run')) {
+      return '';
+    }
   }
 
   return new Promise((resolve) => {
@@ -421,13 +425,9 @@ async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
  * 直接从 storage 获取最新值，避免异步加载未完成时获取到默认值
  */
 export function getApiParams() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['temperature', 'topP'], (result) => {
-      resolve({
-        temperature: result.temperature !== undefined ? parseFloat(result.temperature.toFixed(2)) : parseFloat(state.temperature.toFixed(2)),
-        top_p: result.topP !== undefined ? parseFloat(result.topP.toFixed(2)) : parseFloat(state.topP.toFixed(2))
-      });
-    });
+  return Promise.resolve({
+    temperature: parseFloat(state.temperature.toFixed(2)),
+    top_p: parseFloat(state.topP.toFixed(2))
   });
 }
 

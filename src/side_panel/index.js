@@ -186,14 +186,15 @@ function initMemoryLimitDropdown() {
  */
 async function saveModelToAgentOrGlobal(modelName) {
   if (state.activeAgentId && state.activeAgentId !== 'default') {
-    // 自定义助手：保存到 Agent 配置
+    // 自定义助手：仅保存到 Agent 配置，不污染全局默认值
     try {
       const { updateAgent } = await import('./agent-store.js');
       await updateAgent(state.activeAgentId, { model: modelName });
     } catch { /* ignore */ }
+  } else {
+    // 默认助手：保存到全局 storage
+    chrome.storage.local.set({ modelName });
   }
-  // 同时保存到全局（兼容旧逻辑及默认助手）
-  chrome.storage.local.set({ modelName });
 }
 
 /**
@@ -201,12 +202,15 @@ async function saveModelToAgentOrGlobal(modelName) {
  */
 async function saveTempToAgentOrGlobal(temperature, topP, selectedTempIndex) {
   if (state.activeAgentId && state.activeAgentId !== 'default') {
+    // 自定义助手：仅保存到 Agent 配置，不污染全局默认值
     try {
       const { updateAgent } = await import('./agent-store.js');
       await updateAgent(state.activeAgentId, { temperature, topP });
     } catch { /* ignore */ }
+  } else {
+    // 默认助手：保存到全局 storage
+    chrome.storage.local.set({ temperature, topP, selectedTempIndex });
   }
-  chrome.storage.local.set({ temperature, topP, selectedTempIndex });
 }
 
 function updateModelSelection(selectedValue) {
@@ -804,11 +808,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 加载保存的温度设置
+  // 加载保存的温度设置（仅默认 Agent 使用全局存储值，自定义 Agent 由 loadChatHistory 设置）
   chrome.storage.local.get(['temperature', 'topP', 'selectedTempIndex'], (result) => {
-    if (result.temperature !== undefined) state.temperature = result.temperature;
-    if (result.topP !== undefined) state.topP = result.topP;
-    if (result.selectedTempIndex !== undefined) state.selectedTempIndex = result.selectedTempIndex;
+    if (!state.activeAgentId || state.activeAgentId === 'default') {
+      if (result.temperature !== undefined) state.temperature = result.temperature;
+      if (result.topP !== undefined) state.topP = result.topP;
+      if (result.selectedTempIndex !== undefined) state.selectedTempIndex = result.selectedTempIndex;
+    }
 
     updateTempUI();
   });
@@ -1257,7 +1263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateModelSelection(state.currentModel);
     // 温度 UI 更新
     const tempSlider = document.getElementById('tempSlider');
-    const tempNumberInput = document.getElementById('tempNumberValue');
+    const tempNumberInput = document.getElementById('tempNumberInput');
     const tempIconValueEl = document.getElementById('tempIconValue');
     if (tempSlider) tempSlider.value = state.temperature;
     if (tempNumberInput) tempNumberInput.value = state.temperature.toFixed(2);

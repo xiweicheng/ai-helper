@@ -186,6 +186,37 @@ export async function loadChatHistory() {
       state.topP = activeSession.topP !== undefined ? activeSession.topP : state.topP;
       // 恢复会话绑定的智能体 ID
       state.activeAgentId = activeSession.agentId || null;
+
+      // 如果会话绑定了自定义 Agent，优先使用 Agent 配置的模型/温度
+      // 注意：自定义 Agent 的参数只更新 state，不写入 chrome.storage.local 全局键，
+      // 避免覆盖默认 Agent 的全局模型/温度值
+      if (state.activeAgentId && state.activeAgentId !== 'default') {
+        try {
+          const { getAgent } = await import('./agent-store.js');
+          const agent = await getAgent(state.activeAgentId);
+          if (agent) {
+            if (agent.model) {
+              state.currentModel = agent.model;
+            }
+            if (agent.temperature !== null && agent.temperature !== undefined) {
+              state.temperature = agent.temperature;
+              state.topP = agent.topP !== null && agent.topP !== undefined ? agent.topP : 1.0;
+            }
+            // 触发 UI 更新
+            document.dispatchEvent(new CustomEvent('agent-model-changed'));
+          }
+        } catch { /* Agent 加载失败，使用会话存储值 */ }
+      } else {
+        // 默认 Agent：从 chrome.storage.local 读取全局模型/温度（所有默认 Agent 会话共享）
+        try {
+          const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
+          if (global.modelName) state.currentModel = global.modelName;
+          if (global.temperature !== undefined) state.temperature = global.temperature;
+          if (global.topP !== undefined) state.topP = global.topP;
+        } catch { /* 读取失败，使用会话存储值 */ }
+        // 触发 UI 更新，确保弹窗 slider/输入框与图标一致
+        document.dispatchEvent(new CustomEvent('agent-model-changed'));
+      }
     }
     
     state.messageHistory.forEach(msg => {
@@ -488,10 +519,12 @@ export async function sendMessage() {
   try {
     await ensureChatConfigLoaded();
     
-    // 获取当前 Agent 及其工具配置
+    // 获取当前 Agent 及其工具/技能配置
     const currentAgent = await getCurrentAgentPrompt();
     const agentToolIds = getCurrentAgentToolIds(currentAgent);
+    const agentSkillIds = currentAgent?.skillIds ?? null;
     state.activeAgentToolIds = agentToolIds;
+    state.activeAgentSkillIds = agentSkillIds;
     
     logger.debug('[SidePanel] 发送消息调试信息:');
     logger.debug('  - agent:', currentAgent ? currentAgent.name : '默认助手');
@@ -2726,6 +2759,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         apiParams: apiParams,
         agentId: state.activeAgentId,
         agentToolIds: state.activeAgentToolIds,
+        agentSkillIds: state.activeAgentSkillIds,
         callId: myCallId,
         // 图片识别独立配置（仅当启用且有图片时传递）
         imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',

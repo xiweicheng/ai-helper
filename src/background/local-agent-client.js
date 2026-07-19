@@ -508,6 +508,44 @@ async function toggleSkill(name) {
 
 // ========== Agent Skill (Markdown) API ==========
 
+// 技能列表缓存（含类型），用于过滤 Workflow 技能避免无效 API 调用
+let skillsCache = null;       // { names: Set<string>, loadedAt: number }
+let skillsCachePromise = null;
+
+/**
+ * 获取 Agent 类型的技能名称集合（带缓存，60 秒有效）
+ */
+async function getAgentSkillNamesSet() {
+  const now = Date.now();
+  if (skillsCache && (now - skillsCache.loadedAt) < 60000) {
+    return skillsCache.agentNames;
+  }
+
+  // 防止并发重复请求
+  if (skillsCachePromise) {
+    await skillsCachePromise;
+    return skillsCache.agentNames;
+  }
+
+  skillsCachePromise = (async () => {
+    try {
+      const result = await agentGet('/api/skill/list');
+      const skills = result?.success ? (result.skills || []) : [];
+      const agentNames = new Set(
+        skills.filter(s => s.type === 'agent').map(s => s.name)
+      );
+      skillsCache = { agentNames, loadedAt: Date.now() };
+    } catch {
+      // 获取失败时不缓存，下次重试
+    } finally {
+      skillsCachePromise = null;
+    }
+  })();
+
+  await skillsCachePromise;
+  return skillsCache?.agentNames || new Set();
+}
+
 /**
  * 获取 Agent Skill 的 Prompt 汇总（用于 System Prompt 注入）
  */
@@ -517,6 +555,7 @@ async function getAgentSkillPrompts() {
 
 /**
  * 获取指定技能名称的 Agent Skill Prompt 汇总（按名称过滤）
+ * 自动过滤掉 Workflow 技能，仅对 Agent 类型的技能发起请求
  * @param {string[]} skillNames - 技能名称列表
  * @returns {Promise<{success: boolean, prompts: string, error?: string}>}
  */
@@ -525,8 +564,14 @@ async function getAgentSkillPromptsFiltered(skillNames) {
     return { success: true, prompts: '' };
   }
   try {
+    // 获取 Agent 类型的技能名集合，过滤掉 Workflow 技能
+    const agentSkillNames = await getAgentSkillNamesSet();
+    const filteredNames = skillNames.filter(name => agentSkillNames.has(name));
+    if (filteredNames.length === 0) {
+      return { success: true, prompts: '' };
+    }
     const results = await Promise.all(
-      skillNames.map(name => getAgentSkillPrompt(name).catch(() => null))
+      filteredNames.map(name => getAgentSkillPrompt(name).catch(() => null))
     );
     const prompts = results
       .filter(r => r && r.success && r.prompt)

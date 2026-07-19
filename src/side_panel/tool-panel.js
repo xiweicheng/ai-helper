@@ -88,9 +88,8 @@ function getAgentFilteredTools() {
   const toolIds = state.activeAgentToolIds;
   let filtered = allTools;
   if (toolIds !== null && toolIds !== undefined) {
-    // MCP 工具是动态注册的，不参与 Agent 白名单过滤
     const filterSet = new Set(toolIds);
-    filtered = allTools.filter(t => t.id.startsWith('mcp_') || filterSet.has(t.id));
+    filtered = allTools.filter(t => filterSet.has(t.id));
   }
   // Skill 全局开关关闭时，过滤掉 Skill 相关工具
   if (!globalSkillsEnabled) {

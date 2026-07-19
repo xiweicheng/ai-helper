@@ -104,7 +104,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   logger.debug('[AgentDispatcher] 子 Agent:', agent.name);
 
   // 2. 获取子 Agent 的工具列表
-  const agentTools = await getTools(agent.toolIds, agent.id);
+  const agentTools = await getTools(agent.toolIds, agent.id, agent.skillIds);
   logger.debug('[AgentDispatcher] 子 Agent 工具数:', agentTools.length);
 
   // 3. 构建子 Agent 消息

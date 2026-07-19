@@ -3,7 +3,7 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
-import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
 import logger from '../shared/logger.js';
 
 // 提示词图标 SVG（与提示词管理按钮一致）
@@ -222,9 +222,9 @@ async function updateTabCounts(showSkills, showMcp) {
       promptsTab.textContent = `提示词 (${promptCount})`;
     }
 
-    // 技能数量
+    // 技能数量（按当前 Agent 可见的技能计）
     if (showSkills) {
-      const skills = await getEnabledSkills();
+      const skills = await getVisibleSkills();
       const skillsTab = document.getElementById('skillsTab');
       if (skillsTab) {
         skillsTab.textContent = `技能 (${skills.length})`;
@@ -355,7 +355,7 @@ async function renderMergedList(filterText = '') {
   let filteredSkills = [];
   const canShowSkills = await shouldShowSkillsTab();
   if (canShowSkills) {
-    const skills = await getEnabledSkills();
+    const skills = await getVisibleSkills();
     filteredSkills = skills.filter(s => {
       if (!filterText) return true;
       return (s.name || '').toLowerCase().includes(filterLower) ||
@@ -427,7 +427,7 @@ async function renderMergedList(filterText = '') {
       const type = item.dataset.type;
       if (type === 'skill') {
         const skillName = item.dataset.skillName;
-        const skills = await getEnabledSkills();
+        const skills = await getVisibleSkills();
         selectSkill(skillName, skills);
         const userInput = document.getElementById('userInput');
         if (userInput) userInput.value = '';
