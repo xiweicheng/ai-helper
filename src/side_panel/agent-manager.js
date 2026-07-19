@@ -209,19 +209,27 @@ export async function switchAgent(agentId) {
   // 立即保存当前会话，确保刷新后数据不丢失
   saveCurrentSession().catch(() => {});
 
-  // 加载 Agent 绑定的模型和温度（自定义助手优先使用 Agent 配置，默认助手保持全局）
+  // 加载 Agent 绑定的模型和温度
+  // 自定义助手：仅更新 state，不写入 chrome.storage.local 全局键，避免覆盖默认助手全局值
   if (agent && !agent.isBuiltin) {
     if (agent.model) {
       state.currentModel = agent.model;
-      chrome.storage.local.set({ modelName: agent.model });
     }
     if (agent.temperature !== null && agent.temperature !== undefined) {
       state.temperature = agent.temperature;
       state.topP = agent.topP !== null && agent.topP !== undefined ? agent.topP : 1.0;
-      chrome.storage.local.set({ temperature: agent.temperature, topP: state.topP });
     }
     // 触发 UI 更新事件
     document.dispatchEvent(new CustomEvent('agent-model-changed'));
+  } else if (!agent || agent.isBuiltin) {
+    // 切换到默认助手：从全局 storage 恢复模型/温度
+    try {
+      const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
+      if (global.modelName) state.currentModel = global.modelName;
+      if (global.temperature !== undefined) state.temperature = global.temperature;
+      if (global.topP !== undefined) state.topP = global.topP;
+      document.dispatchEvent(new CustomEvent('agent-model-changed'));
+    } catch { /* ignore */ }
   }
 
   await renderAgentSelector();

@@ -10,6 +10,7 @@ export function getStoredConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
+      'temperature', 'topP',
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
       'enableToolPreselect',
       'toolConfirmationEnabled',
@@ -20,6 +21,8 @@ export function getStoredConfig() {
         apiBase: result.apiBase || DEFAULT_API_BASE,
         apiKey: result.apiKey || '',
         modelName: result.modelName || DEFAULT_MODEL,
+        temperature: result.temperature !== undefined ? result.temperature : undefined,
+        topP: result.topP !== undefined ? result.topP : undefined,
         enabledTools: result.enabledTools || ['get_page_content', 'query_interactive_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {

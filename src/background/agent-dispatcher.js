@@ -118,8 +118,12 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   const subSessionId = sessionId ? `${sessionId}_sub_${subAgentId}` : `sub_${subAgentId}`;
 
   const apiParams = {
-    temperature: agent.temperature !== null ? agent.temperature : config.temperature,
-    top_p: agent.topP !== null ? agent.topP : config.topP,
+    temperature: agent.temperature !== null && agent.temperature !== undefined
+      ? agent.temperature
+      : (config.temperature !== undefined ? config.temperature : 0.2),
+    top_p: agent.topP !== null && agent.topP !== undefined
+      ? agent.topP
+      : (config.topP !== undefined ? config.topP : 1.0),
   };
 
   const model = agent.model || config.modelName || 'deepseek-v4-pro';
