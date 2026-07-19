@@ -656,10 +656,10 @@ async function renderAgentToolSelector(selectedToolIds) {
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
       html += `
-        <label class="agent-tool-item" data-category="${escapeAttr(cat)}" title="${escapeAttr(tool.description)}">
+        <label class="agent-tool-item" data-category="${escapeAttr(cat)}">
           <input type="checkbox" value="${escapeAttr(tool.id)}" ${checked} data-tool-id="${escapeAttr(tool.id)}">
-          <span class="agent-tool-name">${escapeHtml(tool.name)}</span>
-          <span class="agent-tool-desc">${escapeHtml(tool.description.substring(0, 40))}${tool.description.length > 40 ? '...' : ''}</span>
+          <span class="agent-tool-name" title="${escapeAttr(tool.name)}">${escapeHtml(tool.name)}</span>
+          <span class="agent-tool-desc" title="${escapeAttr(tool.description)}">${escapeHtml(tool.description.substring(0, 40))}${tool.description.length > 40 ? '...' : ''}</span>
         </label>`;
     }
   }
@@ -711,10 +711,10 @@ async function renderAgentSkillSelector(selectedSkillNames) {
   container.innerHTML = skills.map(skill => {
     const checked = selectedSet.has(skill.name) ? 'checked' : '';
     return `
-      <label class="agent-tool-item" title="${escapeAttr(skill.description || '')}">
+      <label class="agent-tool-item">
         <input type="checkbox" value="${escapeAttr(skill.name)}" ${checked}>
-        <span class="agent-tool-name">${escapeHtml(skill.name)}</span>
-        <span class="agent-tool-desc">${escapeHtml((skill.description || '').substring(0, 40))}${(skill.description || '').length > 40 ? '...' : ''}</span>
+        <span class="agent-tool-name" title="${escapeAttr(skill.name)}">${escapeHtml(skill.name)}</span>
+        <span class="agent-tool-desc" title="${escapeAttr(skill.description || '')}">${escapeHtml((skill.description || '').substring(0, 40))}${(skill.description || '').length > 40 ? '...' : ''}</span>
       </label>`;
   }).join('');
 

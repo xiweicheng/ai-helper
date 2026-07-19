@@ -1,6 +1,6 @@
 // side_panel/skill-selector.js - 技能选择器（提示词下拉框中的技能 Tab）
 import state from './state.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, escapeAttr } from './utils.js';
 import logger from '../shared/logger.js';
 
 // 技能列表缓存
@@ -125,8 +125,8 @@ export async function renderSkillList(filterText = '') {
         <span class="skill-list-item-index">${index + 1}</span>
         <span class="skill-list-item-icon">🧩</span>
         <div class="skill-list-item-info">
-          <div class="skill-list-item-name">${escapeHtml(skill.name)}</div>
-          ${desc ? `<div class="skill-list-item-desc">${escapeHtml(desc)}</div>` : ''}
+          <div class="skill-list-item-name" title="${escapeAttr(skill.name)}">${escapeHtml(skill.name)}</div>
+          ${desc ? `<div class="skill-list-item-desc" title="${escapeAttr(desc)}">${escapeHtml(desc)}</div>` : ''}
         </div>
         <span class="skill-list-item-badge">${badge}</span>
       </div>

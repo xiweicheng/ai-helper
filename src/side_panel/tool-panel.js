@@ -1,6 +1,6 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.js';
-import { showToast, escapeHtml } from './utils.js';
+import { showToast, escapeHtml, escapeAttr } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
 
@@ -277,8 +277,8 @@ function renderToolsPopupList() {
       toolItem.innerHTML = `
         <input type="checkbox" id="tool_${tool.id}" ${isChecked ? 'checked' : ''}>
         <div class="popup-tool-content">
-          <div class="popup-tool-name">${escapeHtml(tool.name)}</div>
-          <div class="popup-tool-desc">${escapeHtml(tool.description)}</div>
+          <div class="popup-tool-name" title="${escapeAttr(tool.name)}">${escapeHtml(tool.name)}</div>
+          <div class="popup-tool-desc" title="${escapeAttr(tool.description)}">${escapeHtml(tool.description)}</div>
         </div>
       `;
       
