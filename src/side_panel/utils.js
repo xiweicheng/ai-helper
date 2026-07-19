@@ -133,13 +133,19 @@ function getBrowserOS() {
   return 'Unknown';
 }
 
-function getCommandExecutionEnv() {
+function getCommandExecutionEnv(agentToolIds = null) {
   if (!state.agentPlatform || !state.agentPlatform.connected) {
     return null;
   }
 
-  const hasExecCommandTool = state.enabledTools && state.enabledTools.includes('agent_exec_command');
-  if (!hasExecCommandTool) {
+  // 全局 enabledTools 中是否包含 agent_exec_command
+  const globalHasExec = state.enabledTools && state.enabledTools.includes('agent_exec_command');
+  if (!globalHasExec) {
+    return null;
+  }
+
+  // 如果 Agent 限制了工具列表，且不包含 agent_exec_command，则不注入命令环境提示
+  if (agentToolIds != null && Array.isArray(agentToolIds) && !agentToolIds.includes('agent_exec_command')) {
     return null;
   }
 
@@ -200,6 +206,17 @@ function getCommandExecutionEnv() {
 }
 
 /**
+ * 检查当前 Agent 是否拥有指定工具
+ * @param {string} toolId - 工具 ID
+ * @param {string[]|null|undefined} agentToolIds - Agent 的工具 ID 列表；null/undefined = 全部可用
+ * @returns {boolean}
+ */
+function agentHasTool(toolId, agentToolIds) {
+  if (agentToolIds == null) return true;
+  return Array.isArray(agentToolIds) && agentToolIds.includes(toolId);
+}
+
+/**
  * 获取系统提示词
  * 优先级：Agent 自定义 > 全局自定义 > 默认
  * @param {Object} [agent] - 可选，当前使用的 Agent 对象
@@ -207,7 +224,7 @@ function getCommandExecutionEnv() {
 export async function getSystemPrompt(agent = null) {
   const currentTime = new Date().toLocaleString('zh-CN');
   const browserOS = getBrowserOS();
-  const execEnv = getCommandExecutionEnv();
+  const execEnv = getCommandExecutionEnv(agent?.toolIds);
 
   let agentInfo = '';
   let commandEnvSection = '';
@@ -240,11 +257,11 @@ ${['PowerShell', 'CMD'].includes(execEnv.shellType) ? `
 `}`;
   }
   
-  // dispatch_sub_agent 工具说明——有可用子 Agent 时注入
+  // dispatch_sub_agent 工具说明——有可用子 Agent 且当前 Agent 有此工具时注入
   let dispatchToolRule = '';
   const allAgents = await getAllAgents();
   const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent?.id || ''));
-  if (subAgents.length > 0) {
+  if (subAgents.length > 0 && agentHasTool('dispatch_sub_agent', agent?.toolIds)) {
     const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
     dispatchToolRule = `
   
@@ -258,8 +275,8 @@ ${['PowerShell', 'CMD'].includes(execEnv.shellType) ? `
 ${subAgentList}`;
   }
 
-  // 任务拆解相关规则——仅在启用工具时注入，节省 token
-  const taskPlanningRules = state.useTools ? `
+  // 任务拆解相关规则——仅在启用工具且当前 Agent 拥有 plan_task 时注入
+  const taskPlanningRules = (state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? `
 
 ## 任务拆解规则
 1. **任务大小判断**：
@@ -283,8 +300,10 @@ ${subAgentList}`;
    - 提供完整的子任务列表，包含ID、名称、描述、依赖和所需工具
    - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）` : '';
 
-  // 长期记忆规则——仅在启用工具且 Agent 已连接时注入
-  const memoryRules = (state.useTools && state.agentPlatform?.connected) ? `
+  // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
+  const memoryTools = ['agent_memory_store', 'agent_memory_recall', 'agent_memory_manage'];
+  const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
+  const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
 ## 长期记忆系统
 你拥有长期记忆能力，可以将重要信息持久化存储，在未来的对话中召回使用。
@@ -343,14 +362,14 @@ ${subAgentList}`;
 - **技术问题解答**：擅长解答架构设计、算法优化、性能调优、Bug排查等技术问题
 - **代码审查**：能提供代码质量评估、最佳实践建议、潜在风险识别
 - **文档编写**：协助撰写技术文档、API说明、测试用例等
-- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${state.useTools ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '\n- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序和所需工具' : ''}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
 ## 回答原则
 1. **精准专业**：使用准确的技术术语，回答直击要点
 2. **代码优先**：涉及代码时，优先给出可运行的代码示例，并添加必要注释
 3. **结构清晰**：善用Markdown格式（标题、列表、代码块、表格等）组织内容
 4. **实用导向**：提供可落地的解决方案，避免空泛的理论
-5. **安全合规**：不生成违反安全规范的代码，不涉及敏感信息处理${state.useTools ? '\n6. **任务驱动**：复杂任务先规划后执行，使用 plan_task 工具进行拆解' : ''}
+5. **安全合规**：不生成违反安全规范的代码，不涉及敏感信息处理${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '\n6. **任务驱动**：复杂任务先规划后执行，使用 plan_task 工具进行拆解' : ''}
 
 ## 当前环境
 - 运行环境：Chrome 浏览器扩展（Side Panel）

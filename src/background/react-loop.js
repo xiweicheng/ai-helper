@@ -474,15 +474,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     });
   }
   
-  // 缓存全量工具列表，用于 plan_task 拆解时临时展开
-  let fullToolsCache = null;
-  async function getFullTools() {
-    if (!fullToolsCache) {
-      fullToolsCache = await getTools();
-    }
-    return fullToolsCache;
-  }
-  
   resetReactCancel(sessionId || tabId);
   setCurrentReactTabId(tabId);
   
@@ -659,11 +650,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const apiLogId = crypto.randomUUID();
       const currentCount = getDialogApiCallCount(sessionId);
       
-      // 如果工具集中包含 plan_task，展开为全量工具，确保任务拆解时模型能感知所有可用工具
+      // 如果工具集中包含 plan_task，展示当前可用工具即可（Agent 已做了工具过滤）
+      // 不再展开为全量工具，避免绕过 Agent 的工具限制
       const hasPlanTask = tools.some(t => t.function?.name === 'plan_task');
-      const apiTools = hasPlanTask ? await getFullTools() : tools;
+      const apiTools = tools;
       if (hasPlanTask) {
-        logger.debug('[Background] 当前迭代包含 plan_task，使用全量工具进行任务拆解，工具数:', apiTools.length);
+        logger.debug('[Background] 当前迭代包含 plan_task，使用 Agent 限定工具进行任务拆解，工具数:', apiTools.length);
       }
 
       // 上下文压力评估：在每次 API 调用前检查 token 使用量
