@@ -4,7 +4,7 @@ import logger from '../shared/logger.js';
 // 提供 Promise 化的 IndexedDB 操作，支持 side panel 和 service worker 共享访问
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 // ReAct Checkpoint TTL：7 天
 export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -59,6 +59,13 @@ function openDB() {
       if (!db.objectStoreNames.contains('reactCheckpoints')) {
         const checkpointStore = db.createObjectStore('reactCheckpoints', { keyPath: 'sessionId' });
         checkpointStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+
+      // 消息收藏存储（keyPath: id）
+      if (!db.objectStoreNames.contains('bookmarks')) {
+        const bookmarksStore = db.createObjectStore('bookmarks', { keyPath: 'id' });
+        bookmarksStore.createIndex('sessionId', 'sessionId', { unique: false });
+        bookmarksStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
 
@@ -742,4 +749,65 @@ export async function cleanupExpiredReactCheckpoints() {
   }
   logger.debug(`[IDB] 清理了 ${deleted} 个过期的 ReAct checkpoint`);
   return deleted;
+}
+
+// ==================== Bookmarks CRUD ====================
+
+/**
+ * 获取所有收藏
+ * @returns {Promise<Array>}
+ */
+export function getAllBookmarks() {
+  return withStore('bookmarks', 'readonly', (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+}
+
+/**
+ * 保存收藏
+ * @param {Object} bookmark - { id, sessionId, messageId, content, sessionTitle, createdAt, pinned }
+ * @returns {Promise<boolean>}
+ */
+export function putBookmark(bookmark) {
+  return withStore('bookmarks', 'readwrite', (store, resolve) => {
+    const request = store.put(bookmark);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+  });
+}
+
+/**
+ * 删除收藏
+ * @param {string} id
+ * @returns {Promise<boolean>}
+ */
+export function deleteBookmark(id) {
+  return withStore('bookmarks', 'readwrite', (store, resolve) => {
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+  });
+}
+
+/**
+ * 更新收藏的置顶状态
+ * @param {string} id
+ * @param {boolean} pinned
+ * @returns {Promise<boolean>}
+ */
+export function updateBookmarkPin(id, pinned) {
+  return withStore('bookmarks', 'readwrite', (store, resolve) => {
+    const getReq = store.get(id);
+    getReq.onsuccess = () => {
+      const bm = getReq.result;
+      if (!bm) { resolve(false); return; }
+      bm.pinned = pinned;
+      const putReq = store.put(bm);
+      putReq.onsuccess = () => resolve(true);
+      putReq.onerror = () => resolve(false);
+    };
+    getReq.onerror = () => resolve(false);
+  });
 }

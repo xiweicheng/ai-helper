@@ -733,6 +733,14 @@ async function handleSessionSwitch(sessionId) {
   updateUIControls();
   renderAgentSelector();
   
+  // 刷新收藏面板（会话切换后更新收藏列表和按钮状态）
+  try {
+    const { refreshBookmarkPanel, updateBookmarkButtons } = await import('./bookmark-panel.js');
+    refreshBookmarkPanel();
+    // 延迟更新按钮状态，确保 DOM 已渲染
+    setTimeout(() => updateBookmarkButtons(), 100);
+  } catch (e) {}
+  
   // 如果工具弹窗打开，联动刷新
   const toolsPopupOverlay = document.getElementById('toolsPopupOverlay');
   if (toolsPopupOverlay && toolsPopupOverlay.classList.contains('show')) {

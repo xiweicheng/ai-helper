@@ -674,7 +674,14 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
  * 返回 null 表示所有解析尝试均失败
  */
 function tryParseToolArgs(argsStr) {
-  if (!argsStr || typeof argsStr !== 'string') return null;
+  if (!argsStr) return null;
+  
+  // 如果已经是对象，直接返回
+  if (typeof argsStr === 'object') {
+    return argsStr;
+  }
+  
+  if (typeof argsStr !== 'string') return null;
   
   const trimmed = argsStr.trim();
   if (!trimmed) return null;
@@ -973,20 +980,16 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   
   // 解析参数
   if (functionObj && functionObj.arguments) {
-    // 防御：arguments 可能是 string 或已解析的 object
-    const argsStrRaw = typeof functionObj.arguments === 'string'
-      ? functionObj.arguments
-      : JSON.stringify(functionObj.arguments);
-    console.log('[Background] toolCall.function.arguments 类型:', typeof functionObj.arguments, '长度:', argsStrRaw.length);
+    console.log('[Background] toolCall.function.arguments 类型:', typeof functionObj.arguments);
     try {
-      const parsed = tryParseToolArgs(argsStrRaw);
+      const parsed = tryParseToolArgs(functionObj.arguments);
       args = parsed || {};
     } catch (e) {
-      console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStrRaw.substring(0, 300));
+      console.error('[Background] 解析工具参数失败:', e, '原始值:', JSON.stringify(functionObj.arguments).substring(0, 300));
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
     }
-    if (Object.keys(args).length === 0 && argsStrRaw && argsStrRaw.length > 0 && argsStrRaw !== '{}') {
-      console.error('[Background] 参数解析后为空对象！原始 arguments:', argsStrRaw.substring(0, 300));
+    if (Object.keys(args).length === 0 && functionObj.arguments && JSON.stringify(functionObj.arguments).length > 0 && JSON.stringify(functionObj.arguments) !== '{}') {
+      console.error('[Background] 参数解析后为空对象！原始 arguments:', JSON.stringify(functionObj.arguments).substring(0, 300));
     }
   } else if (typeof argsStr === 'object') {
     args = argsStr || {};

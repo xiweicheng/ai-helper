@@ -18,6 +18,8 @@ import { showExportDialog, hideExportDialog, performExport, initExportDialogEven
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
+import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { clearPageSelection } from './page-selector.js';
 import logger from '../shared/logger.js';
 
@@ -1134,6 +1136,42 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       footer.appendChild(prototypeBtn);
     }
     
+    // 收藏按钮
+    const bookmarkBtn = document.createElement('button');
+    bookmarkBtn.className = 'bookmark-btn';
+    bookmarkBtn.title = '收藏消息';
+    bookmarkBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+    `;
+    // 检查是否已收藏，设置初始状态
+    if (isBookmarked(state.activeSessionId, messageId)) {
+      bookmarkBtn.classList.add('bookmarked');
+      bookmarkBtn.title = '取消收藏';
+      bookmarkBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+    }
+    bookmarkBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const sid = state.activeSessionId;
+      const mid = messageDiv.dataset.messageId;
+      if (bookmarkBtn.classList.contains('bookmarked')) {
+        await removeBookmark(sid, mid);
+        updateBookmarkBtnState(bookmarkBtn, sid, mid);
+        // 刷新面板
+        const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+        refreshBookmarkPanel();
+      } else {
+        const textContent = messageDiv.dataset.textContent_ || '';
+        const sessionTitle = state.sessions.find(s => s.id === sid)?.title || '';
+        await addBookmark(sid, mid, textContent, sessionTitle);
+        updateBookmarkBtnState(bookmarkBtn, sid, mid);
+        const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+        refreshBookmarkPanel();
+      }
+    });
+    footer.appendChild(bookmarkBtn);
+    
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
     deleteBtn.title = '删除消息';
@@ -1769,6 +1807,31 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       }
     }
 
+    // 重新绑定收藏按钮事件
+    const bookmarkBtn = footer.querySelector('.bookmark-btn');
+    if (bookmarkBtn) {
+      // 先恢复正确的视觉状态
+      updateBookmarkBtnState(bookmarkBtn, state.activeSessionId, messageEl.dataset.messageId);
+      bookmarkBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const sid = state.activeSessionId;
+        const mid = messageEl.dataset.messageId;
+        if (bookmarkBtn.classList.contains('bookmarked')) {
+          await removeBookmark(sid, mid);
+          updateBookmarkBtnState(bookmarkBtn, sid, mid);
+          const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+          refreshBookmarkPanel();
+        } else {
+          const textContent = messageEl.dataset.textContent_ || '';
+          const sessionTitle = state.sessions.find(s => s.id === sid)?.title || '';
+          await addBookmark(sid, mid, textContent, sessionTitle);
+          updateBookmarkBtnState(bookmarkBtn, sid, mid);
+          const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+          refreshBookmarkPanel();
+        }
+      });
+    }
+
     // 重新绑定删除按钮事件
     const deleteBtn = footer.querySelector('.delete-btn');
     if (deleteBtn) {
@@ -1920,6 +1983,31 @@ export function rebindAllMessages(container) {
           }
         });
       }
+    }
+
+    // 重新绑定收藏按钮事件
+    const bookmarkBtn = footer.querySelector('.bookmark-btn');
+    if (bookmarkBtn) {
+      // 先恢复正确的视觉状态
+      updateBookmarkBtnState(bookmarkBtn, state.activeSessionId, messageEl.dataset.messageId);
+      bookmarkBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const sid = state.activeSessionId;
+        const mid = messageEl.dataset.messageId;
+        if (bookmarkBtn.classList.contains('bookmarked')) {
+          await removeBookmark(sid, mid);
+          updateBookmarkBtnState(bookmarkBtn, sid, mid);
+          const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+          refreshBookmarkPanel();
+        } else {
+          const textContent = messageEl.dataset.textContent_ || '';
+          const sessionTitle = state.sessions.find(s => s.id === sid)?.title || '';
+          await addBookmark(sid, mid, textContent, sessionTitle);
+          updateBookmarkBtnState(bookmarkBtn, sid, mid);
+          const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+          refreshBookmarkPanel();
+        }
+      });
     }
 
     const deleteBtn = footer.querySelector('.delete-btn');

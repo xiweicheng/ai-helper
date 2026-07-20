@@ -6,6 +6,8 @@ import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCur
 import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
+import { initBookmarkPanel } from './bookmark-panel.js';
+import { loadBookmarks } from './bookmark-manager.js';
 import logger from '../shared/logger.js';
 
 /** 格式化上下文窗口大小：>=1M 显示 "1.2M"，>=1K 显示 "128K" */
@@ -1170,16 +1172,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderMermaidCharts();
       addCodeCopyButtons();
 
-      // 恢复滚动位置
-      const scrollKey = 'scrollPosition_' + (sessionId || 'default');
-      chrome.storage.local.get([scrollKey], (result) => {
-        if (result[scrollKey] !== undefined) {
-          setTimeout(() => {
-            const el = document.getElementById('chatContainer');
-            if (el) el.scrollTop = result[scrollKey];
-          }, 150);
-        }
-      });
+      // 恢复滚动位置（收藏定位时跳过，由 navigateToBookmark 自行处理）
+      if (!e.detail?.skipScrollRestore) {
+        const scrollKey = 'scrollPosition_' + (sessionId || 'default');
+        chrome.storage.local.get([scrollKey], (result) => {
+          if (result[scrollKey] !== undefined) {
+            setTimeout(() => {
+              const el = document.getElementById('chatContainer');
+              if (el) el.scrollTop = result[scrollKey];
+            }, 150);
+          }
+        });
+      }
       // 检查被遗弃的 checkpoint
       _checkForAbandonedCheckpoint();
       return;
@@ -1230,16 +1234,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       reconnectStreamingElement(sessionId);
     }
 
-    // 恢复该会话的滚动位置
-    const scrollKey = 'scrollPosition_' + (sessionId || 'default');
-    chrome.storage.local.get([scrollKey], (result) => {
-      if (result[scrollKey] !== undefined) {
-        setTimeout(() => {
-          const el = document.getElementById('chatContainer');
-          if (el) el.scrollTop = result[scrollKey];
-        }, 150);
-      }
-    });
+    // 恢复该会话的滚动位置（收藏定位时跳过，由 navigateToBookmark 自行处理）
+    if (!e.detail?.skipScrollRestore) {
+      const scrollKey = 'scrollPosition_' + (sessionId || 'default');
+      chrome.storage.local.get([scrollKey], (result) => {
+        if (result[scrollKey] !== undefined) {
+          setTimeout(() => {
+            const el = document.getElementById('chatContainer');
+            if (el) el.scrollTop = result[scrollKey];
+          }, 150);
+        }
+      });
+    }
   });
 
   // 监听后台流式任务完成事件，清除对应会话的 DOM 缓存
@@ -2689,6 +2695,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', initMessageToc);
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadBookmarks();
+  initBookmarkPanel();
+  // 收藏加载完成后刷新所有消息的收藏按钮状态（消息可能先于收藏加载渲染）
+  const { updateBookmarkButtons, updateBookmarkBadge } = await import('./bookmark-panel.js');
+  updateBookmarkButtons();
+  updateBookmarkBadge();
+});
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initSkillIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initSkillTabEvents);

@@ -8092,3 +8092,308 @@ body {
   color: #e53e3e;
   box-shadow: 0 2px 8px rgba(229, 62, 62, 0.2);
 }
+
+/* ========== 收藏按钮 ========== */
+.message.assistant .bookmark-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  transition: all 0.2s;
+}
+
+.message.assistant .bookmark-btn:hover {
+  background: rgba(255, 193, 7, 0.1);
+  color: #f0a500;
+}
+
+.message.assistant .bookmark-btn.bookmarked {
+  color: #f0a500;
+}
+
+.message.assistant .bookmark-btn.bookmarked:hover {
+  background: rgba(255, 193, 7, 0.15);
+  color: #e09600;
+}
+
+.message.assistant .bookmark-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ========== 收藏面板容器 ========== */
+.bookmark-panel-container {
+  position: fixed;
+  right: 0;
+  top: calc(50% - 80px);
+  transform: translateY(-50%);
+  z-index: 999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  width: 280px;
+  background: rgba(0, 0, 0, 0.001);
+}
+
+/* 收藏入口按钮 */
+.bookmark-panel-toggle {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: linear-gradient(135deg, rgba(240, 165, 0, 0.85) 0%, rgba(230, 126, 34, 0.85) 100%);
+  color: white;
+  border: none;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 6px;
+  cursor: pointer;
+  font-size: 14px;
+  box-shadow: -2px 2px 8px rgba(240, 165, 0, 0.3);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+}
+
+.bookmark-panel-toggle:hover {
+  opacity: 1;
+  box-shadow: -3px 3px 12px rgba(240, 165, 0, 0.4);
+}
+
+.bookmark-panel-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 收藏数量徽标 */
+.bookmark-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e74c3c;
+  color: white;
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* 收藏面板 */
+.bookmark-panel {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%) translateX(0);
+  background: rgba(255, 255, 255, 1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  width: 300px;
+  max-height: 65vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.bookmark-panel.expanded {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%);
+}
+
+.bookmark-panel-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  font-weight: 600;
+  color: #333;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fafafa;
+  border-radius: 8px 8px 0 0;
+  flex-shrink: 0;
+}
+
+.bookmark-panel-count {
+  font-weight: normal;
+  color: #999;
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.bookmark-panel-content {
+  padding: 8px;
+  overflow-y: auto;
+  max-height: calc(65vh - 40px);
+}
+
+.bookmark-panel-empty {
+  text-align: center;
+  padding: 30px 10px;
+  color: #ccc;
+  font-size: 13px;
+}
+
+/* 收藏分组 */
+.bookmark-section {
+  margin-bottom: 12px;
+}
+
+.bookmark-section:last-child {
+  margin-bottom: 0;
+}
+
+.bookmark-section-title {
+  font-size: 11px;
+  color: #999;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  text-transform: none;
+  font-weight: 600;
+}
+
+/* 收藏条目 */
+.bookmark-item {
+  padding: 8px 10px;
+  margin: 2px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+  position: relative;
+}
+
+.bookmark-item:hover {
+  background: rgba(240, 165, 0, 0.05);
+  border-color: rgba(240, 165, 0, 0.15);
+}
+
+.bookmark-item.pinned {
+  background: rgba(240, 165, 0, 0.04);
+  border-color: rgba(240, 165, 0, 0.1);
+}
+
+.bookmark-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.bookmark-item-session {
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
+}
+
+.bookmark-item-time {
+  font-size: 10px;
+  color: #ccc;
+  flex-shrink: 0;
+}
+
+.bookmark-item-content {
+  font-size: 12px;
+  color: #555;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 50px;
+}
+
+.bookmark-item-actions {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.bookmark-item:hover .bookmark-item-actions {
+  opacity: 1;
+}
+
+.bookmark-item-pin,
+.bookmark-item-remove {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: #bbb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.bookmark-item-pin svg,
+.bookmark-item-remove svg {
+  width: 13px;
+  height: 13px;
+}
+
+.bookmark-item-pin:hover {
+  background: rgba(240, 165, 0, 0.15);
+  color: #f0a500;
+}
+
+.bookmark-item-remove:hover {
+  background: rgba(229, 62, 62, 0.1);
+  color: #e53e3e;
+}
+
+/* 滚动条样式 */
+.bookmark-panel-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.bookmark-panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bookmark-panel-content::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}
+
+.bookmark-panel-content::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+}
+
+/* 收藏消息高亮动画 */
+.bookmark-highlight {
+  animation: bookmarkHighlightPulse 2s ease;
+}
+
+@keyframes bookmarkHighlightPulse {
+  0% { box-shadow: 0 0 0 0 rgba(240, 165, 0, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(240, 165, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(240, 165, 0, 0); }
+}

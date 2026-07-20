@@ -94,6 +94,9 @@ export let messageTocContainer = null;
 export let isMouseOverToc = false;
 export let tocHideTimer = null;
 
+// 消息收藏
+export let bookmarks = [];
+
 // 划词问答弹出菜单状态
 export let lastSelectedText = '';
 export let currentSelectionRange = null;
@@ -255,6 +258,8 @@ export default {
   set isMouseOverToc(v) { isMouseOverToc = v; },
   get tocHideTimer() { return tocHideTimer; },
   set tocHideTimer(v) { tocHideTimer = v; },
+  get bookmarks() { return bookmarks; },
+  set bookmarks(v) { bookmarks = v; },
   get lastSelectedText() { return lastSelectedText; },
   set lastSelectedText(v) { lastSelectedText = v; },
   get currentSelectionRange() { return currentSelectionRange; },

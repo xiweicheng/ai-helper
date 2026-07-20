@@ -11,6 +11,8 @@ import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid } from '
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
+import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
+import { updateBookmarkBtnState } from './bookmark-panel.js';
 
 // Agent 名称缓存（用于 dispatch_sub_agent 工具卡片显示名称而非 ID）
 let agentNameCache = new Map(); // agentId -> agentName
@@ -1329,6 +1331,40 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     });
     footer.appendChild(prototypeBtn);
   }
+
+  // 收藏按钮
+  const bookmarkBtn = document.createElement('button');
+  bookmarkBtn.className = 'bookmark-btn';
+  bookmarkBtn.title = '收藏消息';
+  bookmarkBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+    </svg>
+  `;
+  if (isBookmarked(state.activeSessionId, element.dataset.messageId)) {
+    bookmarkBtn.classList.add('bookmarked');
+    bookmarkBtn.title = '取消收藏';
+    bookmarkBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+  }
+  bookmarkBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const sid = state.activeSessionId;
+    const mid = element.dataset.messageId;
+    if (bookmarkBtn.classList.contains('bookmarked')) {
+      await removeBookmark(sid, mid);
+      updateBookmarkBtnState(bookmarkBtn, sid, mid);
+      const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+      refreshBookmarkPanel();
+    } else {
+      const textContent = element.dataset.textContent_ || '';
+      const sessionTitle = state.sessions.find(s => s.id === sid)?.title || '';
+      await addBookmark(sid, mid, textContent, sessionTitle);
+      updateBookmarkBtnState(bookmarkBtn, sid, mid);
+      const { refreshBookmarkPanel } = await import('./bookmark-panel.js');
+      refreshBookmarkPanel();
+    }
+  });
+  footer.appendChild(bookmarkBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'delete-btn';
