@@ -1015,6 +1015,19 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     const handler = BG_HANDLERS[toolName];
     if (handler) {
       console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
+      
+      const toolsNeedingTabId = [
+        'get_page_content', 'extract_data', 'take_screenshot', 'take_full_page_screenshot',
+        'click_element', 'scroll_to', 'hover_element', 'search_in_page',
+        'input_text', 'select_option', 'submit_form', 'wait_for_navigation',
+        'reload_tab', 'close_tab'
+      ];
+      
+      if (toolsNeedingTabId.includes(toolName) && !args.tabId && tabId) {
+        args = { ...args, tabId };
+        console.log(`[Background] ${toolName} 使用会话绑定的 tabId: ${tabId}`);
+      }
+      
       result = await handler(args, toolCallId, sessionId, tabId);
     } else {
       result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
@@ -1799,7 +1812,7 @@ export function executeOpenTab(args, toolCallId) {
       } else {
         resolve({ 
           success: true, 
-          message: `已打开新标签页`,
+          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如get_page_content、click_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url 
         });
@@ -1825,7 +1838,7 @@ export function executeSwitchTab(args, toolCallId) {
       } else {
         resolve({ 
           success: true, 
-          message: `已切换到标签页 ${tabId}`,
+          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如get_page_content、click_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url 
         });
@@ -1876,12 +1889,16 @@ export function executeCloseTab(args, toolCallId) {
  * 获取当前窗口的所有标签页
  */
 export function executeGetTabs(args, toolCallId) {
-  const { includeUrl = true, includeTitle = true } = args;
+  const { mode = 'all', includeUrl = true, includeTitle = true } = args;
   
-  console.log('[Background] 获取标签页列表:', 'includeUrl=', includeUrl, 'includeTitle=', includeTitle);
+  console.log('[Background] 获取标签页列表:', 'mode=', mode, 'includeUrl=', includeUrl, 'includeTitle=', includeTitle);
   
   return new Promise((resolve) => {
-    chrome.tabs.query({ currentWindow: true }, (tabs) => {
+    const queryOptions = mode === 'active' 
+      ? { active: true, currentWindow: true } 
+      : { currentWindow: true };
+      
+    chrome.tabs.query(queryOptions, (tabs) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 获取标签页失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });

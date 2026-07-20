@@ -67,7 +67,6 @@ export const AI_TOOLS = [
                 name: { type: 'string', description: '子任务名称' },
                 description: { type: 'string', description: '子任务详细描述' },
                 dependencies: { type: 'array', items: { type: 'string' }, description: '依赖的前置子任务ID列表' },
-                requiredTools: { type: 'array', items: { type: 'string' }, description: '此子任务需要的工具名称列表' },
                 estimatedSteps: { type: 'integer', description: '预估步骤数' }
               },
               required: ['id', 'name', 'description']

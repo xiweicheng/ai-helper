@@ -13,8 +13,8 @@ const MEMORY_DIR = join(AGENT_DIR, 'memory');
 const DEFAULTS = {
   port: 18910,
   host: '127.0.0.1',
-  workdir: process.cwd(),
-  allowedPaths: [],
+  workdir: WORKSPACE_DIR,
+  allowedPaths: [WORKSPACE_DIR],
   pairCodeTTL: 30,
   commandTimeout: 300000,
   fileMaxSize: 50 * 1024 * 1024
@@ -101,6 +101,11 @@ export function loadConfig() {
   // 自动将 skills 目录加入白名单，确保 AI 可以直接写入 skill 文件
   if (!configCache.allowedPaths.includes(SKILLS_DIR)) {
     configCache.allowedPaths.push(SKILLS_DIR);
+  }
+
+  // 自动将 workspace 目录加入白名单，确保 AI 可以访问工作目录
+  if (!configCache.allowedPaths.includes(WORKSPACE_DIR)) {
+    configCache.allowedPaths.push(WORKSPACE_DIR);
   }
 
   return configCache;

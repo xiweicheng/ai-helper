@@ -2738,7 +2738,8 @@ body {
 }
 .thinking-process-body {
   max-height: 3000px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   transition: max-height 0.3s ease;
 }
 .thinking-process.collapsed .thinking-process-body {

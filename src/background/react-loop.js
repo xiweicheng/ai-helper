@@ -2067,49 +2067,17 @@ export function sortSubtasksByDependencies(subtasks) {
 
 /**
  * 为每个子任务准备工具集
- * 子任务继承父任务的工具范围，不再额外限制
+ * 子任务继承父任务的全部工具范围，不再根据 requiredTools 额外限制
  * @param {Array} subtasks - 子任务列表
  * @param {Array} parentTools - 父任务的工具列表
  */
 export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
-  // 如果未传入父任务工具，降级为获取全部工具（兼容旧调用）
   const allTools = parentTools || await getTools();
   const toolSets = {};
-  const allToolNames = allTools.map(t => t.function?.name).filter(Boolean);
-  const allToolIds = allTools.map(t => t.id).filter(Boolean);
   
   subtasks.forEach(subtask => {
-    const requiredToolNames = subtask.requiredTools || [];
-    if (requiredToolNames.length > 0) {
-      // 子任务指定了工具 → 从父任务工具范围中筛选
-      toolSets[subtask.id] = allTools.filter(tool => {
-        const toolName = (tool.function?.name || '').toLowerCase();
-        const toolId = (tool.id || '').toLowerCase();
-        return requiredToolNames.some(req => {
-          if (typeof req !== 'string') return false;
-          const reqLower = req.toLowerCase();
-          return toolName === reqLower || toolId === reqLower;
-        });
-      });
-      
-      // 检查是否有工具未匹配到
-      const unmatchedTools = requiredToolNames.filter(req => {
-        if (typeof req !== 'string') return false;
-        const reqLower = req.toLowerCase();
-        return !allToolNames.some(name => (name || '').toLowerCase() === reqLower) &&
-               !allToolIds.some(id => (id || '').toLowerCase() === reqLower);
-      });
-      
-      if (unmatchedTools.length > 0) {
-        logger.warn(`[Background] 子任务 ${subtask.name} 指定的工具不存在: ${unmatchedTools.join(', ')}`);
-      }
-      
-      logger.debug(`[Background] 子任务 ${subtask.name} 需要工具: ${requiredToolNames.join(', ')}, 匹配到 ${toolSets[subtask.id].length} 个`);
-    } else {
-      // 未指定工具 → 继承父任务全部工具范围
-      toolSets[subtask.id] = [...allTools];
-      logger.debug(`[Background] 子任务 ${subtask.name} 未指定所需工具，继承父任务全部 ${allTools.length} 个工具`);
-    }
+    toolSets[subtask.id] = [...allTools];
+    logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务全部 ${allTools.length} 个工具`);
   });
   
   return toolSets;

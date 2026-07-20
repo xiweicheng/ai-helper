@@ -53,9 +53,9 @@ export const TAB_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '要关闭的标签页ID，不填则关闭当前' }
+          tabId: { type: 'integer', description: '要关闭的标签页ID（可通过 get_tabs 获取）' }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -68,10 +68,11 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'get_tabs',
-      description: '获取所有标签页列表',
+      description: '获取标签页列表或当前激活的标签页信息',
       parameters: {
         type: 'object',
         properties: {
+          mode: { type: 'string', enum: ['all', 'active'], description: '获取模式：all=所有标签页，active=仅当前激活的标签页', default: 'all' },
           includeUrl: { type: 'boolean', description: '包含URL', default: true },
           includeTitle: { type: 'boolean', description: '包含标题', default: true }
         },
@@ -111,10 +112,10 @@ export const TAB_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '目标标签页ID，不指定则刷新当前' },
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           bypassCache: { type: 'boolean', description: '跳过缓存强制刷新', default: false }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },

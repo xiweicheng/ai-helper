@@ -14,11 +14,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: 'CSS选择器' },
           waitTime: { type: 'integer', description: '点击后等待时间（ms），默认500', default: 500 },
           timeout: { type: 'integer', description: '元素查找超时（ms），默认3000', default: 3000 }
         },
-        required: ['selector']
+        required: ['tabId', 'selector']
       }
     }
   },
@@ -35,6 +36,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates'], description: '滚动目标类型', default: 'selector' },
           selector: { type: 'string', description: '目标元素选择器' },
           x: { type: 'integer', description: 'X坐标', default: 0 },
@@ -42,7 +44,7 @@ export const BROWSER_TOOLS = [
           align: { type: 'string', enum: ['start', 'center', 'end', 'nearest'], description: '对齐方式', default: 'center' },
           behavior: { type: 'string', enum: ['smooth', 'auto'], description: '滚动行为', default: 'smooth' }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -59,9 +61,10 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: 'CSS选择器' }
         },
-        required: ['selector']
+        required: ['tabId', 'selector']
       }
     }
   },
@@ -78,11 +81,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: 'CSS选择器' },
           state: { type: 'string', enum: ['appeared', 'disappeared', 'visible', 'hidden'], description: '等待状态', default: 'appeared' },
           timeout: { type: 'integer', description: '超时（ms），默认10000', default: 10000 }
         },
-        required: ['selector']
+        required: ['tabId', 'selector']
       }
     }
   },
@@ -99,10 +103,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           sourceSelector: { type: 'string', description: '源元素CSS选择器' },
           targetSelector: { type: 'string', description: '目标元素CSS选择器' }
         },
-        required: ['sourceSelector', 'targetSelector']
+        required: ['tabId', 'sourceSelector', 'targetSelector']
       }
     }
   },
@@ -119,10 +124,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           timeout: { type: 'integer', description: '超时（ms），默认30000', default: 30000 },
           waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'], description: '等待目标', default: 'load' }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -139,6 +145,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           fields: {
             type: 'array',
             items: {
@@ -154,7 +161,7 @@ export const BROWSER_TOOLS = [
           },
           waitTime: { type: 'integer', description: '填充后等待（ms），默认500', default: 500 }
         },
-        required: ['fields']
+        required: ['tabId', 'fields']
       }
     }
   },
@@ -171,13 +178,14 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           key: { type: 'string', description: '按键名，如Enter、Escape、Ctrl+S' },
           text: { type: 'string', description: '直接输入的文本' },
           ctrlKey: { type: 'boolean', description: '按下Ctrl', default: false },
           shiftKey: { type: 'boolean', description: '按下Shift', default: false },
           altKey: { type: 'boolean', description: '按下Alt', default: false }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -194,12 +202,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: 'input[type=file]的选择器' },
           fileName: { type: 'string', description: '文件名' },
           fileContent: { type: 'string', description: '文件内容（base64或文本）' },
           fileType: { type: 'string', description: 'MIME类型', default: 'application/octet-stream' }
         },
-        required: ['selector', 'fileName', 'fileContent']
+        required: ['tabId', 'selector', 'fileName', 'fileContent']
       }
     }
   },
@@ -216,12 +225,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页ID（可通过 get_tabs 获取）' },
           triggerSelector: { type: 'string', description: '下拉触发器CSS选择器' },
           optionText: { type: 'string', description: '要选择的选项文本' },
           optionSelector: { type: 'string', description: '选项容器选择器（可选）' },
           timeout: { type: 'integer', description: '等待超时（ms），默认5000', default: 5000 }
         },
-        required: ['triggerSelector', 'optionText']
+        required: ['tabId', 'triggerSelector', 'optionText']
       }
     }
   },
@@ -239,12 +249,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           format: { type: 'string', enum: ['text', 'html'], description: '输出格式：text=纯文本，html=完整HTML', default: 'text' },
           selector: { type: 'string', description: '限制提取范围的CSS选择器' },
-          maxLength: { type: 'integer', description: '最大字符数，默认15000', default: 15000 },
-          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取），不指定则使用当前会话关联的标签页' }
+          maxLength: { type: 'integer', description: '最大字符数，默认15000', default: 15000 }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -261,6 +271,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'], description: '数据类型' },
           selector: { type: 'string', description: '限定提取范围的CSS选择器' },
           filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: '链接过滤（仅dataType=links时有效）', default: 'all' },
@@ -269,10 +280,9 @@ export const BROWSER_TOOLS = [
           includeImages: { type: 'boolean', description: '链接中含图片链接（仅links时），默认false', default: false },
           minWidth: { type: 'integer', description: '图片最小宽度（仅images时），默认0', default: 0 },
           minHeight: { type: 'integer', description: '图片最小高度（仅images时），默认0', default: 0 },
-          maxResults: { type: 'integer', description: '最大结果数，默认100', default: 100 },
-          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取），不指定则使用当前会话关联的标签页' }
+          maxResults: { type: 'integer', description: '最大结果数，默认100', default: 100 }
         },
-        required: ['dataType']
+        required: ['tabId', 'dataType']
       }
     }
   },
@@ -289,6 +299,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           filterByText: { type: 'string', description: '按文本内容过滤' },
           elementTypes: {
             type: 'array',
@@ -298,7 +309,7 @@ export const BROWSER_TOOLS = [
           maxResults: { type: 'integer', description: '最大返回数量，默认100', default: 100 },
           countOnly: { type: 'boolean', description: '仅返回匹配数量（省Token），默认false', default: false }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -315,6 +326,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           query: { type: 'string', description: '搜索关键词' },
           mode: { type: 'string', enum: ['plain', 'regex'], description: '搜索模式', default: 'plain' },
           caseSensitive: { type: 'boolean', description: '区分大小写', default: false },
@@ -322,7 +334,7 @@ export const BROWSER_TOOLS = [
           maxResults: { type: 'integer', description: '最大匹配数，默认20', default: 20 },
           highlight: { type: 'boolean', description: '高亮匹配结果', default: false }
         },
-        required: ['query']
+        required: ['tabId', 'query']
       }
     }
   },
@@ -339,10 +351,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: '参考元素CSS选择器' },
           maxResults: { type: 'integer', description: '最大结果数，默认50', default: 50 }
         },
-        required: ['selector']
+        required: ['tabId', 'selector']
       }
     }
   },
@@ -359,11 +372,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           selector: { type: 'string', description: 'iframe的CSS选择器，默认所有', default: 'iframe' },
           includeNested: { type: 'boolean', description: '递归获取嵌套iframe', default: false },
           maxLength: { type: 'integer', description: '每个iframe最大文本长度', default: 10000 }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },
@@ -381,12 +395,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
+          tabId: { type: 'integer', description: '目标标签页的ID（可通过 get_tabs 获取）' },
           scrollPixels: { type: 'integer', description: '每次滚动像素，默认800', default: 800 },
           maxScrolls: { type: 'integer', description: '最大滚动次数，默认20', default: 20 },
           pauseMs: { type: 'integer', description: '滚动间暂停（ms），默认500', default: 500 },
           selector: { type: 'string', description: '限定收集区域的选择器' }
         },
-        required: []
+        required: ['tabId']
       }
     }
   },

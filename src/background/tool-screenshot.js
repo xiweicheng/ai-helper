@@ -352,29 +352,31 @@ export function triggerScreenshotDownload(dataUrl, format) {
  * executeTakeFullPageScreenshot - 全页面截图（通过滚动拼接方案）
  */
 export async function executeTakeFullPageScreenshot(args, toolCallId) {
-  const { format = 'png', quality = 80 } = args;
+  const { tabId, format = 'png', quality = 80 } = args;
 
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return makeResult(false, '无法获取当前标签页', toolCallId);
-    const tabId = tabs[0].id;
+    let targetTabId = tabId;
+    if (!targetTabId) {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tabs.length) return makeResult(false, '无法获取当前标签页', toolCallId);
+      targetTabId = tabs[0].id;
+    }
 
-    logger.debug('[Background] 执行全页截图: tabId=', tabId, 'format=', format);
+    logger.debug('[Background] 执行全页截图: tabId=', targetTabId, 'format=', format);
 
     try {
-      const stitchedDataUrl = await captureViaStitch(tabId, format, quality);
+      const stitchedDataUrl = await captureViaStitch(targetTabId, format, quality);
       triggerScreenshotDownload(stitchedDataUrl, format);
       return { success: true, dataUrl: stitchedDataUrl, fullPage: true, message: '全页截图成功', tool_call_id: toolCallId };
     } catch (stitchErr) {
       logger.error('[Background] 全页截图失败:', stitchErr.message);
-      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-        if (chrome.runtime.lastError) {
-          return { success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId };
-        } else {
-          triggerScreenshotDownload(dataUrl, 'png');
-          return { success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId };
-        }
-      });
+      try {
+        const dataUrl = await captureVisibleTab(targetTabId, { format: 'png' });
+        triggerScreenshotDownload(dataUrl, 'png');
+        return { success: true, dataUrl, fullPage: false, message: '全页截图失败，返回可视区截图', tool_call_id: toolCallId };
+      } catch (err) {
+        return makeResult(false, '可视区截图也失败: ' + err.message, toolCallId);
+      }
     }
   } catch (err) {
     return makeResult(false, '执行失败: ' + err.message, toolCallId);
@@ -392,6 +394,27 @@ function sendToContent(tabId, message) {
       } else {
         resolve(response);
       }
+    });
+  });
+}
+
+/**
+ * 捕获指定标签页的可视区域截图
+ */
+function captureVisibleTab(tabId, options) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      chrome.tabs.captureVisibleTab(tab.windowId, options, (dataUrl) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(dataUrl);
+        }
+      });
     });
   });
 }
@@ -434,15 +457,7 @@ async function captureViaStitch(tabId, format, quality) {
     await new Promise(r => setTimeout(r, 600));
 
     const chunkH = Math.min(viewH, pageH - y);
-    const dataUrl = await new Promise((resolve, reject) => {
-      chrome.tabs.captureVisibleTab(null, { format: 'png' }, (result) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(result);
-        }
-      });
-    });
+    const dataUrl = await captureVisibleTab(tabId, { format: 'png' });
 
     const base64Data = dataUrl.split(',')[1];
     chunks.push({ data: base64Data, y, h: chunkH, w: pageW });
