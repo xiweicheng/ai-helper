@@ -296,6 +296,27 @@ ${subAgentList}`;
 
 **原则**：只存储有长期价值的信息，为每条记忆添加标签（tags）和重要性（importance）评分` : '';
 
+  // 获取永久记忆（注意事项），注入系统提示词
+  // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）
+  let permanentNotesSection = '';
+  if (state.agentPlatform?.connected) {
+    try {
+      const notes = await fetchPermanentNotes();
+      if (notes && notes.length > 0) {
+        const notesText = notes
+          .map((n, i) => `${i + 1}. [重要性: ${n.importance || 5}] ${n.content}${n.tags && n.tags.length ? ` (标签: ${n.tags.join(', ')})` : ''}`)
+          .join('\n');
+        permanentNotesSection = `
+
+## 永久注意事项
+以下是你必须遵守的永久注意事项，这些规则在所有对话中都始终生效：
+
+${notesText}
+`;
+      }
+    } catch { /* 获取失败不影响主流程 */ }
+  }
+
   // 确定系统提示词内容：Agent > 全局 > 默认
   let promptContent;
   if (agent && agent.systemPrompt && agent.systemPrompt.trim()) {
@@ -308,7 +329,7 @@ ${subAgentList}`;
 
   // 如果 Agent 有自定义 prompt，用它拼接环境信息
   if (promptContent) {
-    let finalPrompt = `${promptContent}
+    let finalPrompt = `${promptContent}${permanentNotesSection}
 
 ## 当前环境
 - 当前时间：${currentTime}
@@ -327,7 +348,7 @@ ${subAgentList}`;
   }
   
   // 返回默认系统提示词
-  let defaultPrompt = `你是AI智能助手(AI Helper)，专为IT从业者打造的AI技术助手。
+  let defaultPrompt = `你是AI智能助手(AI Helper)，专为IT从业者打造的AI技术助手。${permanentNotesSection}
 
 ## 能力范围
 - 编程开发与调试（Java/Python/JavaScript/Go/C++等主流语言及框架）
@@ -405,6 +426,26 @@ async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
       });
     } catch {
       resolve('');
+    }
+  });
+}
+
+/**
+ * 从后台获取永久记忆（注意事项），用于注入系统提示词
+ * @returns {Promise<Array<{id, content, tags, importance}>>}
+ */
+async function fetchPermanentNotes() {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'GET_PERMANENT_NOTES' }, (response) => {
+        if (chrome.runtime.lastError || !response?.success) {
+          resolve([]);
+          return;
+        }
+        resolve(response.facts || []);
+      });
+    } catch {
+      resolve([]);
     }
   });
 }

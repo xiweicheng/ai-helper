@@ -9,6 +9,7 @@ import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
+import { readMemoryFile } from './tool-memory.js';
 import logger from '../shared/logger.js';
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
@@ -653,6 +654,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getChatConfig().then((config) => {
       sendResponse(config);
     });
+    return true;
+  }
+
+  // 获取永久记忆（注意事项），用于注入系统提示词
+  if (message.type === 'GET_PERMANENT_NOTES') {
+    readMemoryFile()
+      .then((result) => {
+        if (!result.success) {
+          sendResponse({ success: false, facts: [], error: result.error });
+          return;
+        }
+        // 只返回 fact 类型记忆（永久注意事项），按重要性降序排列
+        const facts = (result.data.facts || [])
+          .sort((a, b) => (b.importance || 0) - (a.importance || 0));
+        sendResponse({ success: true, facts });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, facts: [], error: err.message });
+      });
     return true;
   }
   

@@ -23,7 +23,7 @@ const DEFAULT_MEMORY_DATA = {
  * 读取记忆文件
  * @returns {{success: boolean, data?: object, error?: string}}
  */
-async function readMemoryFile() {
+export async function readMemoryFile() {
   const result = await AgentClient.readFile(MEMORY_FILE_PATH);
   if (!result.success) {
     // 文件不存在时返回空数据结构
