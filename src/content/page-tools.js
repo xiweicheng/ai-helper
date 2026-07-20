@@ -3,19 +3,17 @@
 // 共享工具函数已拆分到 page-utils.js
 
 import { deepQuerySelector, deepQuerySelectorAll, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
-import { removeHighlights } from './page-utils.js';
 
-// 重导出共享工具函数（保持向后兼容：content/index.js 仍从本模块导入 removeHighlights）
-export { generateUniqueSelector, getElementText, getElementValue, getElementSelector, removeHighlights } from './page-utils.js';
+// 重导出共享工具函数
+export { generateUniqueSelector, getElementText, getElementValue, getElementSelector } from './page-utils.js';
 // 重导出内容提取类工具
 export {
   extractMetadata, extractLinks, extractForms, extractImages,
-  pageToMarkdown, pageToJson, getIframeContent, searchInPage
+  getIframeContent, searchInPage
 } from './page-extract.js';
 // 重导出交互查询类工具
 export {
-  queryInteractiveElements, findSimilarElements,
-  getElementCount, scrollAndCollect, readAccessibilityTree
+  queryInteractiveElements, findSimilarElements, readAccessibilityTree
 } from './page-interaction.js';
 
 /**

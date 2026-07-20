@@ -2906,6 +2906,14 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
               if (totalTimeoutId) clearTimeout(totalTimeoutId);
               try { ws.close(); } catch {}
               finish('resolve');
+            } else if (data.type === 'error') {
+              // Agent 端返回错误（如进程不存在、spawn 失败等），立即结束不等待超时
+              console.warn('[AgentExec] Agent 返回错误:', data.error, 'execId:', data.execId);
+              if (totalTimeoutId) clearTimeout(totalTimeoutId);
+              try { ws.close(); } catch {}
+              cleanupAndStop(data.error || 'Agent 执行错误').then(() => {
+                finish(new Error(data.error || 'Agent 端命令执行失败'));
+              });
             }
           } catch {}
         };

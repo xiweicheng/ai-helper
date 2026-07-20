@@ -3,7 +3,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
-import { estimateMessagesTokens, getMessageBudget, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
+import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import logger from '../shared/logger.js';
@@ -536,10 +536,13 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
-      // Token 预算驱动：根据模型上下文窗口动态裁剪
+      // Token 预算驱动：使用实际系统提示词 token 数而非固定估算值
       const configuredWindow = 0;
-      const toolCount = state.enabledTools.length || 50;
-      const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
+      const actualSystemTokens = estimateTokens(messages[0]?.content || '');
+      const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
+      // 消息预算 = 上下文窗口 - 实际系统提示词 - 输出预留(4096) - 安全余量(2000)
+      // 非工具模式下不发送工具定义，故工具开销为 0
+      const messageBudget = contextWindow - actualSystemTokens - 4096 - 2000;
       const historyBudget = Math.floor(messageBudget * 0.7);
       
       // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）

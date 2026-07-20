@@ -4,7 +4,7 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
@@ -335,9 +335,24 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
   const getReactTokenBudget = (modelName) => {
     if (reactTokenBudget === null) {
-      // getMessageBudget 已减去了系统提示词、工具定义和输出预留
-      reactTokenBudget = getMessageBudget(modelName, tools.length, 0, chatConfig.customModelMap);
-      logger.debug(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName})`);
+      // 使用实际系统提示词和工具定义的 token 数，而非固定估算值
+      const actualSystemTokens = estimateTokens(
+        typeof currentMessages[0]?.content === 'string'
+          ? currentMessages[0].content
+          : JSON.stringify(currentMessages[0]?.content || '')
+      );
+      const actualToolDefTokens = estimateTokens(
+        JSON.stringify(tools.map(t => { const { id, ...clean } = t; return clean; }))
+      );
+      const contextWindow = getContextWindow(modelName, 0, chatConfig.customModelMap);
+      // 消息预算 = 上下文窗口 - 实际系统提示词 - 实际工具定义 - 输出预留(4096) - 安全余量(2000)
+      reactTokenBudget = contextWindow - actualSystemTokens - actualToolDefTokens - 4096 - 2000;
+      // 确保预算为正数
+      if (reactTokenBudget < 1000) {
+        logger.warn(`[Background] ReAct Token 预算过低: ${reactTokenBudget}，使用最小预算 1000`);
+        reactTokenBudget = 1000;
+      }
+      logger.debug(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName}, 实际系统提示词: ${actualSystemTokens}, 实际工具定义: ${actualToolDefTokens}, 上下文窗口: ${contextWindow})`);
     }
     return reactTokenBudget;
   };
@@ -658,12 +673,36 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         logger.debug('[Background] 当前迭代包含 plan_task，使用 Agent 限定工具进行任务拆解，工具数:', apiTools.length);
       }
 
-      // 上下文压力评估：在每次 API 调用前检查 token 使用量
+      // 上下文压力评估与主动裁剪：在每次 API 调用前检查并防止超限
       const filteredTokens = estimateMessagesTokens(filteredMessages);
-      const toolTokens = estimateToolsTokens(apiTools.length);
-      const pressure = assessContextPressure(filteredTokens + toolTokens, getContextWindow(model || config.modelName, 0, chatConfig.customModelMap));
+      const contextWindow = getContextWindow(model || config.modelName, 0, chatConfig.customModelMap);
+      
+      // 计算实际工具定义 token 数（而非估算值）
+      const actualToolTokens = estimateTokens(
+        JSON.stringify(apiTools.map(t => { const { id, ...clean } = t; return clean; }))
+      );
+      const totalEstimate = filteredTokens + actualToolTokens + 4096; // +输出预留
+      const pressure = assessContextPressure(totalEstimate, contextWindow);
+      
       if (pressure.level !== 'safe') {
-        logger.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, ${filteredTokens} tokens ${filteredMessages.length} 条消息)`);
+        logger.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, 消息: ${filteredTokens}, 工具: ${actualToolTokens}, 预估总计: ${totalEstimate}/${contextWindow} tokens)`);
+        
+        // 当总预估超过上下文窗口 85%，主动裁剪消息以留出安全余量
+        if (pressure.level === 'critical' || totalEstimate > contextWindow * 0.85) {
+          const reactBudget = getReactTokenBudget(model || 'default');
+          const targetBudget = Math.floor(reactBudget * 0.75); // 裁剪到预算的 75%
+          logger.warn(`[Background] 上下文压力过高，主动裁剪消息: 当前 ${filteredTokens} tokens → 目标预算 ${targetBudget}`);
+          const trimmed = trimMessagesByBudget(currentMessages, Math.max(targetBudget, 2000));
+          if (trimmed.trimmedCount > 0) {
+            currentMessages = trimmed.messages;
+            filteredMessages = filterApiMessages(currentMessages);
+            // 重新剥离历史图片
+            for (let i = 0; i < filteredMessages.length - 1; i++) {
+              filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
+            }
+            logger.warn(`[Background] 主动裁剪完成: ${trimmed.trimmedCount} 条消息被移除，剩余 ${currentMessages.length} 条, ${estimateMessagesTokens(filteredMessages)} tokens`);
+          }
+        }
       }
       
       executionLog.push({

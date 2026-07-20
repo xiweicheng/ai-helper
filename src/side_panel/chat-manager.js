@@ -542,9 +542,12 @@ export async function sendMessage() {
     
     if (state.isolateChat) {
       let historyToSend = state.messageHistory;
-      // Token 预算驱动：根据模型上下文窗口动态裁剪，替代固定条数限制
+      // Token 预算驱动：使用实际系统提示词 token 数而非固定估算值
       const configuredWindow = 0;
-      const messageBudget = getMessageBudget(model, state.enabledTools.length, configuredWindow, state.customModelMap);
+      const actualSystemTokens = estimateTokens(messages[0]?.content || '');
+      const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
+      // 消息预算 = 上下文窗口 - 实际系统提示词 - 输出预留(4096) - 安全余量(2000)
+      const messageBudget = contextWindow - actualSystemTokens - 4096 - 2000;
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
       

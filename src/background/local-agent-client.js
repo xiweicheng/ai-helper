@@ -369,15 +369,20 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     return null;
   }
 
-  // 从用户配置的 agentUrl 中提取主机和端口，用于替换 wsUrl 中的 0.0.0.0
+  // 从用户配置的 agentUrl 中提取主机和端口，用于替换 wsUrl 中的本地地址
   // 这样可以支持连接远程 Agent（如果用户配置了远程地址）
   let normalizedWsUrl = wsUrl;
-  if (wsUrl.includes('0.0.0.0') && config.url) {
+  if (config.url) {
     try {
       const configUrl = new URL(config.url);
-      const wsProtocol = configUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-      normalizedWsUrl = wsUrl.replace(/^ws[s]?:\/\/0\.0\.0\.0:/, `${wsProtocol}//${configUrl.hostname}:`);
+      // 匹配本地地址：0.0.0.0、127.0.0.1、localhost
+      const localhostPattern = /^ws[s]?:\/\/(0\.0\.0\.0|127\.0\.0\.1|localhost):/;
+      if (localhostPattern.test(wsUrl)) {
+        const wsProtocol = configUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        normalizedWsUrl = wsUrl.replace(localhostPattern, `${wsProtocol}//${configUrl.hostname}:`);
+      }
     } catch {
+      // fallback: 尝试简单替换
       normalizedWsUrl = wsUrl.replace('0.0.0.0', '127.0.0.1');
     }
   }

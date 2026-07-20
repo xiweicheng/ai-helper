@@ -966,6 +966,14 @@ export function startServer() {
     jsonResponse(res, 404, { success: false, error: '未知的 API 路径' });
   }
 
+  // 追踪所有活跃 socket 连接，用于优雅关闭时强制断开
+  const activeSockets = new Set();
+
+  server.on('connection', (socket) => {
+    activeSockets.add(socket);
+    socket.on('close', () => activeSockets.delete(socket));
+  });
+
   // ==================== WebSocket Server ====================
   const wss = new WebSocketServer({ noServer: true });
 
@@ -1000,6 +1008,9 @@ export function startServer() {
         const added = addWsClient(execId, ws);
         if (!added) {
           ws.send(JSON.stringify({ type: 'error', error: '进程不存在或已结束', execId }));
+          // 进程已不存在，发送错误后关闭 WebSocket，避免客户端空等
+          ws.close();
+          return;
         }
         // 客户端断开时，从监听列表中移除；所有客户端都断开后取消超时
         ws.on('close', () => {
@@ -1042,11 +1053,19 @@ export function startServer() {
     }
   });
 
-  // 优雅关闭（异步 + 防并发）
+  // 优雅关闭（异步 + 防并发 + 超时兜底）
   async function shutdown() {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('[Agent] 正在关闭...');
+
+    // 超时兜底：10 秒后强制退出，防止 server.close() 等待连接挂起
+    const forceExitTimer = setTimeout(() => {
+      console.log('[Agent] 优雅关闭超时，强制退出');
+      process.exit(1);
+    }, 10000);
+    forceExitTimer.unref();
+
     stopPairCodeRotation();
 
     // 终止所有运行中的进程
@@ -1057,6 +1076,16 @@ export function startServer() {
     // 关闭所有 MCP 连接
     try { await shutdownMcpRegistry(); } catch {}
 
+    // 强制断开所有 WebSocket 客户端
+    wss.clients.forEach((client) => {
+      try { client.terminate(); } catch {}
+    });
+
+    // 强制销毁所有活跃 HTTP socket，避免 server.close() 挂起等待
+    for (const socket of activeSockets) {
+      try { socket.destroy(); } catch {}
+    }
+
     // 等待 server 和 wss 关闭
     await Promise.all([
       new Promise(resolve => server.close(resolve)),
@@ -1066,6 +1095,7 @@ export function startServer() {
     // 清理 PID 文件
     try { if (await exists(PID_FILE)) await unlink(PID_FILE); } catch {}
 
+    clearTimeout(forceExitTimer);
     logSystem('server_stop', { reason: 'shutdown' });
     process.exit(0);
   }
