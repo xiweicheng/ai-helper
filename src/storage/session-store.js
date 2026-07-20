@@ -355,6 +355,20 @@ export async function deleteStoreSession(sessionId) {
   // 同步清理该会话的 ReAct checkpoint
   await cleanupCheckpointForSession(sessionId);
 
+  // 清理该会话的收藏
+  try {
+    const allBookmarks = await idb.getAllBookmarks();
+    const toDelete = allBookmarks.filter(b => b.sessionId === sessionId);
+    for (const bm of toDelete) {
+      await idb.deleteBookmark(bm.id);
+    }
+    if (toDelete.length > 0) {
+      logger.info(`[SessionStore] 已清理 ${toDelete.length} 条收藏（会话 ${sessionId} 已删除）`);
+    }
+  } catch (e) {
+    logger.warn('[SessionStore] 清理收藏失败:', e);
+  }
+
   // 如果删除的是当前活跃会话，就近激活：优先右侧紧邻，无右侧则左侧紧邻
   if (activeId === sessionId) {
     // 按显示顺序排序（与 loadSessions 保持一致）

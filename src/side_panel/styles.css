@@ -8149,8 +8149,8 @@ body {
   background: linear-gradient(135deg, rgba(240, 165, 0, 0.85) 0%, rgba(230, 126, 34, 0.85) 100%);
   color: white;
   border: none;
-  border-radius: 8px 0 0 8px;
-  padding: 10px 6px;
+  border-radius: 6px 0 0 6px;
+  padding: 8px 4px;
   cursor: pointer;
   font-size: 14px;
   box-shadow: -2px 2px 8px rgba(240, 165, 0, 0.3);
@@ -8167,8 +8167,8 @@ body {
 }
 
 .bookmark-panel-toggle svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /* 收藏数量徽标 */
@@ -8241,7 +8241,7 @@ body {
 .bookmark-panel-content {
   padding: 8px;
   overflow-y: auto;
-  max-height: calc(65vh - 40px);
+  max-height: calc(65vh - 80px);
 }
 
 .bookmark-panel-empty {
@@ -8249,6 +8249,37 @@ body {
   padding: 30px 10px;
   color: #ccc;
   font-size: 13px;
+}
+
+/* 收藏搜索框 */
+.bookmark-search {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.bookmark-search-input {
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  background: #f9f9f9;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.bookmark-search-input:focus {
+  border-color: rgba(240, 165, 0, 0.5);
+  background: #fff;
+}
+
+/* 搜索高亮 */
+.bookmark-highlight-match {
+  background: rgba(240, 165, 0, 0.25);
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 /* 收藏分组 */

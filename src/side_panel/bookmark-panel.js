@@ -1,9 +1,9 @@
 // ========== 消息收藏面板 ==========
 
 import state from './state.js';
-import { getSortedBookmarks, removeBookmarkById, toggleBookmarkPin, isBookmarked } from './bookmark-manager.js';
+import { getSortedBookmarks, removeBookmarkById, removeBookmark, toggleBookmarkPin, isBookmarked } from './bookmark-manager.js';
 import { switchToSession } from './session-manager.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, showToast } from './utils.js';
 import logger from '../shared/logger.js';
 
 /**
@@ -23,8 +23,14 @@ export function initBookmarkPanel() {
     </button>
     <div class="bookmark-panel" id="bookmarkPanel">
       <div class="bookmark-panel-header">
-        <span>📑 收藏</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#f0a500;">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span>收藏</span>
         <span class="bookmark-panel-count" id="bookmarkPanelCount"></span>
+      </div>
+      <div class="bookmark-search">
+        <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容..." />
       </div>
       <div class="bookmark-panel-content" id="bookmarkPanelContent">
         <div class="bookmark-panel-empty">暂无收藏</div>
@@ -36,15 +42,41 @@ export function initBookmarkPanel() {
   // 绑定事件
   const toggle = document.getElementById('bookmarkPanelToggle');
   const panel = document.getElementById('bookmarkPanel');
+  const searchInput = document.getElementById('bookmarkSearchInput');
 
   toggle.addEventListener('click', () => {
     const isOpen = panel.classList.contains('expanded');
     if (isOpen) {
       panel.classList.remove('expanded');
+      // 关闭时清理搜索框和 hover 标记
+      searchInput.value = '';
+      container.classList.remove('hover-expanded');
     } else {
       refreshBookmarkPanel();
       panel.classList.add('expanded');
     }
+  });
+
+  // Hover 自动展开
+  container.addEventListener('mouseenter', () => {
+    if (!panel.classList.contains('expanded')) {
+      refreshBookmarkPanel();
+      panel.classList.add('expanded');
+      container.classList.add('hover-expanded');
+    }
+  });
+
+  container.addEventListener('mouseleave', () => {
+    if (container.classList.contains('hover-expanded')) {
+      panel.classList.remove('expanded');
+      searchInput.value = '';
+      container.classList.remove('hover-expanded');
+    }
+  });
+
+  // 搜索过滤
+  searchInput.addEventListener('input', () => {
+    refreshBookmarkPanel(searchInput.value);
   });
 
   // 点击面板外部关闭
@@ -52,6 +84,8 @@ export function initBookmarkPanel() {
     if (panel.classList.contains('expanded')) {
       if (!container.contains(e.target)) {
         panel.classList.remove('expanded');
+        searchInput.value = '';
+        container.classList.remove('hover-expanded');
       }
     }
   });
@@ -88,6 +122,10 @@ export function initBookmarkPanel() {
     // 点击条目：导航到消息
     await navigateToBookmark(sessionId, messageId);
     panel.classList.remove('expanded');
+    // 清理搜索框和 hover 标记
+    const searchInput = document.getElementById('bookmarkSearchInput');
+    if (searchInput) searchInput.value = '';
+    container.classList.remove('hover-expanded');
   });
 
   logger.debug('[BookmarkPanel] 收藏面板已初始化');
@@ -95,15 +133,16 @@ export function initBookmarkPanel() {
 
 /**
  * 刷新收藏面板内容
+ * @param {string} [searchQuery] - 搜索关键词
  */
-export function refreshBookmarkPanel() {
+export function refreshBookmarkPanel(searchQuery) {
   const content = document.getElementById('bookmarkPanelContent');
   const count = document.getElementById('bookmarkPanelCount');
   if (!content || !count) return;
 
   const currentSessionId = state.activeSessionId;
-  const currentBookmarks = getSortedBookmarks(currentSessionId);
-  const otherBookmarks = currentSessionId
+  let currentBookmarks = getSortedBookmarks(currentSessionId);
+  let otherBookmarks = currentSessionId
     ? state.bookmarks.filter(b => b.sessionId !== currentSessionId).sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
@@ -111,11 +150,35 @@ export function refreshBookmarkPanel() {
       })
     : [];
 
+  // 搜索过滤
+  const query = (searchQuery || '').trim().toLowerCase();
+  if (query) {
+    currentBookmarks = currentBookmarks.filter(b =>
+      (b.content || '').toLowerCase().includes(query) ||
+      (b.sessionTitle || '').toLowerCase().includes(query)
+    );
+    otherBookmarks = otherBookmarks.filter(b =>
+      (b.content || '').toLowerCase().includes(query) ||
+      (b.sessionTitle || '').toLowerCase().includes(query)
+    );
+  }
+
   const total = state.bookmarks.length;
-  count.textContent = total > 0 ? `${total} 条` : '';
+  const filteredTotal = currentBookmarks.length + otherBookmarks.length;
+  if (query) {
+    count.textContent = `搜索 ${filteredTotal}/${total}`;
+  } else {
+    count.textContent = total > 0 ? `${total} 条` : '';
+  }
 
   if (total === 0) {
     content.innerHTML = '<div class="bookmark-panel-empty">暂无收藏</div>';
+    updateBookmarkBadge();
+    return;
+  }
+
+  if (query && filteredTotal === 0) {
+    content.innerHTML = '<div class="bookmark-panel-empty">无匹配结果</div>';
     updateBookmarkBadge();
     return;
   }
@@ -126,7 +189,7 @@ export function refreshBookmarkPanel() {
   if (currentBookmarks.length > 0) {
     html += `<div class="bookmark-section">
       <div class="bookmark-section-title">当前会话</div>
-      ${renderBookmarkItems(currentBookmarks)}
+      ${renderBookmarkItems(currentBookmarks, query)}
     </div>`;
   }
 
@@ -134,7 +197,7 @@ export function refreshBookmarkPanel() {
   if (otherBookmarks.length > 0) {
     html += `<div class="bookmark-section">
       <div class="bookmark-section-title">其他会话</div>
-      ${renderBookmarkItems(otherBookmarks)}
+      ${renderBookmarkItems(otherBookmarks, query)}
     </div>`;
   }
 
@@ -144,14 +207,25 @@ export function refreshBookmarkPanel() {
 
 /**
  * 渲染收藏条目列表
+ * @param {Array} bookmarks
+ * @param {string} [searchQuery] - 搜索关键词，用于高亮
  */
-function renderBookmarkItems(bookmarks) {
+function renderBookmarkItems(bookmarks, searchQuery) {
+  const query = (searchQuery || '').trim().toLowerCase();
   return bookmarks.map(bm => {
-    const displayContent = bm.content
-      ? (bm.content.length > 60 ? bm.content.substring(0, 60) + '...' : bm.content)
-      : '(无文本内容)';
+    const rawContent = bm.content || '';
+    const rawTitle = bm.sessionTitle || '未知会话';
+    let displayContent = rawContent.length > 60 ? rawContent.substring(0, 60) + '...' : rawContent;
+    let sessionTitle = rawTitle;
+
+    // 搜索高亮
+    if (query) {
+      displayContent = highlightText(displayContent, query);
+      sessionTitle = highlightText(sessionTitle, query);
+    }
+
+    if (!displayContent) displayContent = '(无文本内容)';
     const pinnedClass = bm.pinned ? 'pinned' : '';
-    const sessionTitle = bm.sessionTitle || '未知会话';
     const time = new Date(bm.createdAt).toLocaleString('zh-CN', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
     });
@@ -159,10 +233,10 @@ function renderBookmarkItems(bookmarks) {
     return `
       <div class="bookmark-item ${pinnedClass}" data-bookmark-id="${bm.id}" data-session-id="${bm.sessionId}" data-message-id="${bm.messageId}">
         <div class="bookmark-item-header">
-          <span class="bookmark-item-session" title="${escapeHtml(sessionTitle)}">${escapeHtml(sessionTitle)}</span>
+          <span class="bookmark-item-session" title="${escapeHtml(rawTitle)}">${sessionTitle}</span>
           <span class="bookmark-item-time">${time}</span>
         </div>
-        <div class="bookmark-item-content" title="${escapeHtml(bm.content || '')}">${escapeHtml(displayContent)}</div>
+        <div class="bookmark-item-content" title="${escapeHtml(rawContent)}">${displayContent}</div>
         <div class="bookmark-item-actions">
           <button class="bookmark-item-pin" title="${bm.pinned ? '取消置顶' : '置顶'}">
             <svg viewBox="0 0 24 24" fill="${bm.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -182,6 +256,17 @@ function renderBookmarkItems(bookmarks) {
 }
 
 /**
+ * 文本高亮：将匹配部分包裹在 <mark> 标签中
+ */
+function highlightText(text, query) {
+  if (!query) return text;
+  // 先转义 HTML，再做高亮
+  const escaped = escapeHtml(text);
+  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  return escaped.replace(regex, '<mark class="bookmark-highlight-match">$1</mark>');
+}
+
+/**
  * 导航到收藏的消息
  */
 async function navigateToBookmark(sessionId, messageId) {
@@ -191,7 +276,14 @@ async function navigateToBookmark(sessionId, messageId) {
   if (state.activeSessionId !== sessionId) {
     try {
       const previousSessionId = state.activeSessionId;
-      await switchToSession(sessionId);
+      const switched = await switchToSession(sessionId);
+      // 切换失败说明会话已不存在，移除孤儿收藏
+      if (switched === false || state.activeSessionId !== sessionId) {
+        await removeBookmark(sessionId, messageId);
+        refreshBookmarkPanel();
+        showToast('会话已不存在，收藏已自动移除', 'warning');
+        return;
+      }
       // 触发 DOM 更新（session-switched 事件会重建 chatContainer）
       document.dispatchEvent(new CustomEvent('session-switched', {
         detail: { sessionId, previousSessionId, skipScrollRestore: true }
@@ -221,6 +313,12 @@ async function navigateToBookmark(sessionId, messageId) {
       setTimeout(() => {
         messageEl.classList.remove('bookmark-highlight');
       }, 2000);
+    } else {
+      // 消息已不存在，移除孤儿收藏
+      removeBookmark(sessionId, messageId).then(() => {
+        refreshBookmarkPanel();
+        showToast('消息已不存在，收藏已自动移除', 'warning');
+      });
     }
   }, 500);
 }
