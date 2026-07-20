@@ -174,7 +174,6 @@ export function loadAllSkills() {
       if (skill) {
         skill.type = 'workflow';
         allSkills.push(skill);
-        console.log(`[Skill Loader] 加载 Workflow Skill: "${skill.name}" v${skill.version} (${skill.steps.length} 步骤)`);
       }
     }
   }

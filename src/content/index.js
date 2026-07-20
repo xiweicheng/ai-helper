@@ -144,14 +144,11 @@ const HANDLERS = {
   // ── 区域截图选择 ──
   START_REGION_SELECTION: () => startRegionSelection(),
 
-  // ── 页面度量（截图用）──
+  // ── 页面度量 ──
   GET_PAGE_METRICS: () => ({
     width: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth || 0, window.innerWidth),
     height: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 0, window.innerHeight),
-    viewportHeight: window.innerHeight,
   }),
-  GET_VIEWPORT_HEIGHT: () => ({ height: window.innerHeight }),
-  GET_SCROLL_POSITION: () => ({ scrollX: window.scrollX, scrollY: window.scrollY }),
 };
 
 /** 异步工具的 message type 集合，用于判断是否需要 return true */

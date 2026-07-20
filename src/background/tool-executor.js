@@ -5,7 +5,7 @@ import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSes
 import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
-import { executeTakeFullPageScreenshot, triggerScreenshotDownload } from './tool-screenshot.js';
+import { triggerScreenshotDownload } from './tool-screenshot.js';
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws, resolve }）
 // 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
@@ -313,9 +313,9 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           if (tool.id === 'capture_page') {
             const actionProp = cloned.function.parameters.properties.action;
             if (!visionEnabled) {
-              // 关闭图片识别时，仅保留 download 和 fullpage 模式
-              actionProp.enum = ['download', 'fullpage'];
-              actionProp.description = '操作模式：download=下载截图，fullpage=全页截图';
+              // 关闭图片识别时，仅保留 download 模式
+              actionProp.enum = ['download'];
+              actionProp.description = '操作模式：download=下载截图';
               actionProp.default = 'download';
               cloned.function.description = '页面截图并下载到本地';
             }
@@ -353,7 +353,7 @@ chrome.storage.onChanged.addListener((changes) => {
 
 /**
  * 执行页面截图工具
- * 支持四种模式：download（下载）、analyze（视觉分析）、both（下载+分析）、fullpage（全页截图）
+ * 支持三种模式：download（下载）、analyze（视觉分析）、both（下载+分析）
  * action 参数的可用选项会根据 enableImageInput 开关动态变化
  */
 export async function executeCapturePage(args, toolCallId, sessionId = null) {
@@ -365,11 +365,6 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
     visionMaxDim = 1024,
     visionQuality = 65
   } = args;
-
-  // fullpage 模式委托给 executeTakeFullPageScreenshot
-  if (action === 'fullpage') {
-    return executeTakeFullPageScreenshot({ format, quality }, toolCallId);
-  }
 
   try {
     let targetTabId;
@@ -1017,7 +1012,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
       
       const toolsNeedingTabId = [
-        'get_page_content', 'extract_data', 'take_screenshot', 'take_full_page_screenshot',
+        'get_page_content', 'extract_data',
         'click_element', 'scroll_to', 'hover_element', 'search_in_page',
         'input_text', 'select_option', 'submit_form', 'wait_for_navigation',
         'reload_tab', 'close_tab'

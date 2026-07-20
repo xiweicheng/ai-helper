@@ -197,7 +197,6 @@ export function loadAllMarkdownSkills(skillsDir) {
       const skill = loadMarkdownSkill(entryPath);
       if (skill) {
         skills.push(skill);
-        console.log(`[Markdown Loader] 加载 Agent Skill: "${skill.name}" v${skill.version} (${skill.resources.length} 个资源)`);
       }
     } catch { /* skip */ }
   }

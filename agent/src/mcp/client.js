@@ -97,8 +97,7 @@ export class McpClient {
       const toolsResult = await this.client.listTools({});
       if (toolsResult && toolsResult.tools) {
         this.tools = toolsResult.tools;
-        console.log(`[MCP:${this.serverId}] 发现 ${this.tools.length} 个工具:`,
-          this.tools.map(t => t.name).join(', '));
+        console.log(`[MCP:${this.serverId}] 发现 ${this.tools.length} 个工具`);
       } else {
         this.tools = [];
       }

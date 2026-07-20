@@ -100,11 +100,11 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'capture_page',
-      description: '页面截图（支持可视区/全页/下载/视觉分析）',
+      description: '页面截图（支持下载/视觉分析）',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['download', 'analyze', 'both', 'fullpage'], description: '操作模式：download=下载，analyze=视觉分析，both=下载+分析，fullpage=全页截图', default: 'both' },
+          action: { type: 'string', enum: ['download', 'analyze', 'both'], description: '操作模式：download=下载，analyze=视觉分析，both=下载+分析', default: 'both' },
           tabId: { type: 'integer', description: '目标标签页ID（analyze/both模式）' },
           format: { type: 'string', enum: ['jpeg', 'png'], description: '截图格式', default: 'jpeg' },
           quality: { type: 'integer', description: 'JPEG质量0-100，默认60', default: 60 },
