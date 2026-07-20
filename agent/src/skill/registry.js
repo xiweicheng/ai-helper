@@ -209,7 +209,12 @@ export function getAgentSkillPrompts() {
   const parts = [];
   parts.push('## 可用技能 (Skills)');
   parts.push('');
-  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求匹配某个技能时，使用 `agent_skill_load` 工具加载该技能的完整说明，然后由 AI 根据说明自主调用相关工具完成任务。');
+  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求与某个技能高度匹配时，使用 `agent_skill_load` 工具加载该技能的完整说明，然后根据说明自主完成任务。');
+  parts.push('');
+  parts.push('**使用策略**：');
+  parts.push('- 仅在用户需求明确匹配技能描述时才加载，不要为一般性的编程/技术问题加载技能');
+  parts.push('- 一次只加载一个技能，加载后根据 SKILL.md 说明执行');
+  parts.push('- 技能加载会消耗较多 token，避免无故加载');
   parts.push('');
 
   for (const skill of agentSkills) {

@@ -693,13 +693,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // 其他操作（解释、翻译、总结、自定义工具）：直接调用 API
     const systemPrompts = {
-      'explain': '你是一个知识解释助手。用1-3句话简洁解释用户选中的内容，必要时补充一个简短示例。不要展开长篇论述，不要询问用户是否需要更多信息。',
-      'translate': '你是一个翻译助手。自动检测输入语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加任何解释、说明或额外文字。',
-      'summary': '你是一个信息提炼助手。用3-5个要点总结用户选中的内容，每条要点一句话，提炼核心信息即可。'
+      'explain': '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
+      'translate': '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。',
+      'summary': '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。'
     };
     
     // 自定义工具使用传入的 systemPrompt，内置工具使用默认的
-    const systemContent = systemPrompt || systemPrompts[action] || '你是一个有帮助的AI助手，请用简洁的语言回答用户的问题。';
+    const systemContent = systemPrompt || systemPrompts[action] || '你正在处理用户在网页上选中的内容，请用简洁的语言回答用户的问题。';
     
     const messages = [
       { role: 'system', content: systemContent },

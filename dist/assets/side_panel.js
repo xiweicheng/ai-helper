@@ -3,16 +3,12 @@ import{r as e}from"./chunk-CMxvf4Kt.js";import{t}from"./logger-BEz2S157.js";impo
       <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
     </svg>`,n.classList.add(`copied`),setTimeout(()=>{n.innerHTML=e,n.classList.remove(`copied`)},2e3)}).catch(r=>{t.error(`[SidePanel] 复制失败:`,r);let i=document.createElement(`textarea`);i.value=e,i.style.position=`fixed`,i.style.left=`-999999px`,document.body.appendChild(i),i.select();try{document.execCommand(`copy`);let e=n.innerHTML;n.innerHTML=`<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-      </svg>`,n.classList.add(`copied`),setTimeout(()=>{n.innerHTML=e,n.classList.remove(`copied`)},2e3)}catch{N(`复制失败`,`error`)}document.body.removeChild(i)})}function Ce(){if(typeof navigator<`u`&&navigator.userAgent){let e=navigator.userAgent;if(e.includes(`Windows`))return`Windows`;if(e.includes(`Mac OS`)||e.includes(`Macintosh`))return`macOS`;if(e.includes(`Linux`)&&!e.includes(`Android`))return`Linux`}return`Unknown`}function we(e=null){if(!k.agentPlatform||!k.agentPlatform.connected||!(k.enabledTools&&k.enabledTools.includes(`agent_exec_command`))||e!=null&&Array.isArray(e)&&!e.includes(`agent_exec_command`))return null;let t=k.agentPlatform,n=`unknown`,r=t.shell||`/bin/sh`,i=``;return t.platformName&&(t.platformName.toLowerCase().includes(`windows`)?(n=`Windows`,r.toLowerCase().includes(`powershell`)?(r=`PowerShell`,i="（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）"):r.toLowerCase().includes(`cmd`)||r.toLowerCase().includes(`command`)?(r=`CMD`,i="（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）"):r.toLowerCase().includes(`bash`)||t.platformName.toLowerCase().includes(`git`)?(r=`Git Bash`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）"):(r=`PowerShell`,i=`（请使用 PowerShell 语法）`)):t.platformName.toLowerCase().includes(`mac`)||t.platformName.toLowerCase().includes(`darwin`)?(n=`macOS`,r=r.toLowerCase().includes(`zsh`)?`zsh`:r.toLowerCase().includes(`bash`)?`bash`:`zsh`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）"):t.platformName.toLowerCase().includes(`linux`)&&(n=`Linux`,r=r.toLowerCase().includes(`bash`)?`bash`:r.toLowerCase().includes(`zsh`)?`zsh`:r.toLowerCase().includes(`fish`)?`fish`:`bash`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）")),{osType:n,shellType:r,platformName:t.platformName,arch:t.arch,workdir:t.workdir||``,commandHint:i}}function Te(e,t){return t==null?!0:Array.isArray(t)&&t.includes(e)}async function Ee(e=null){let t=new Date().toLocaleString(`zh-CN`),n=Ce(),r=we(e?.toolIds),i=``,a=``;r&&(i=`\n- 本地 Agent：${r.platformName} (${r.arch})，默认 shell: ${r.shellType}，工作目录: ${r.workdir||`未设置`}`,a=`
+      </svg>`,n.classList.add(`copied`),setTimeout(()=>{n.innerHTML=e,n.classList.remove(`copied`)},2e3)}catch{N(`复制失败`,`error`)}document.body.removeChild(i)})}function Ce(){if(typeof navigator<`u`&&navigator.userAgent){let e=navigator.userAgent;if(e.includes(`Windows`))return`Windows`;if(e.includes(`Mac OS`)||e.includes(`Macintosh`))return`macOS`;if(e.includes(`Linux`)&&!e.includes(`Android`))return`Linux`}return`Unknown`}function we(e=null){if(!k.agentPlatform||!k.agentPlatform.connected||!(k.enabledTools&&k.enabledTools.includes(`agent_exec_command`))||e!=null&&Array.isArray(e)&&!e.includes(`agent_exec_command`))return null;let t=k.agentPlatform,n=`unknown`,r=t.shell||`/bin/sh`,i=``;return t.platformName&&(t.platformName.toLowerCase().includes(`windows`)?(n=`Windows`,r.toLowerCase().includes(`powershell`)?(r=`PowerShell`,i="（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）"):r.toLowerCase().includes(`cmd`)||r.toLowerCase().includes(`command`)?(r=`CMD`,i="（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）"):r.toLowerCase().includes(`bash`)||t.platformName.toLowerCase().includes(`git`)?(r=`Git Bash`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）"):(r=`PowerShell`,i=`（请使用 PowerShell 语法）`)):t.platformName.toLowerCase().includes(`mac`)||t.platformName.toLowerCase().includes(`darwin`)?(n=`macOS`,r=r.toLowerCase().includes(`zsh`)?`zsh`:r.toLowerCase().includes(`bash`)?`bash`:`zsh`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）"):t.platformName.toLowerCase().includes(`linux`)&&(n=`Linux`,r=r.toLowerCase().includes(`bash`)?`bash`:r.toLowerCase().includes(`zsh`)?`zsh`:r.toLowerCase().includes(`fish`)?`fish`:`bash`,i="（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）")),{osType:n,shellType:r,platformName:t.platformName,arch:t.arch,workdir:t.workdir||``,commandHint:i}}function Te(e,t){return t==null?!0:Array.isArray(t)&&t.includes(e)}async function Ee(e=null){let t=new Date().toLocaleString(`zh-CN`),n=Ce(),r=we(e?.toolIds),i=``,a=``;r&&(i=`\n- 本地终端：${r.shellType} / ${r.platformName} (${r.arch})`,a=`
 
 ## 命令执行环境
-- **操作系统**: ${r.osType}
-- **默认 Shell**: ${r.shellType}
+- **操作系统/Shell**: ${r.osType} / ${r.shellType}
 - **工作目录**: ${r.workdir||`未设置`}
-- **命令格式提示**: ${r.commandHint}
-
-### 命令格式规范
-${[`PowerShell`,`CMD`].includes(r.shellType)?"\n- **文件操作**: 使用 PowerShell/CMD 命令，如 `Get-ChildItem`(ls), `Set-Content`(写文件), `Remove-Item`(删除), `New-Item -ItemType Directory`(创建目录)\n- **环境变量**: 使用 `$env:VAR_NAME` 访问，如 `$env:PATH`\n- **管道**: 使用 `|`，如 `Get-ChildItem | Where-Object { $_.Name -like '*.txt' }`\n- **字符串**: 使用双引号 `\"` 或单引号 `'`\n- **避免**: 不要使用 Linux 特有命令如 `cat`(用 `Get-Content`), `rm`(用 `Remove-Item`), `ls`(用 `Get-ChildItem`)\n":"\n- **文件操作**: 使用 Unix 命令，如 `ls`, `cat`, `rm`, `mkdir`, `cp`, `mv`\n- **环境变量**: 使用 `$VAR_NAME` 访问，如 `$PATH`\n- **管道**: 使用 `|`，如 `ls -la | grep .txt`\n- **字符串**: 使用双引号 `\"` 或单引号 `'`\n- **路径**: 使用正斜杠 `/`，如 `/c/Users/username/project`（Windows 上 Git Bash）或 `/home/user/project`（Linux/macOS）\n- **避免**: 不要使用 Windows 特有命令如 `dir`, `del`, `copy`\n"}`);let o=``,s=(await he()).filter(t=>t.allowSubDispatch&&t.id!==(e?.id||``));s.length>0&&Te(`dispatch_sub_agent`,e?.toolIds)&&(o=`
+- ${r.commandHint}`);let o=``,s=(await he()).filter(t=>t.allowSubDispatch&&t.id!==(e?.id||``));s.length>0&&Te(`dispatch_sub_agent`,e?.toolIds)&&(o=`
   
 ## Sub-Agent 调度
 你可以使用 dispatch_sub_agent 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
@@ -25,66 +21,49 @@ ${s.map(e=>`- **${e.id}** (${e.icon} ${e.name}): ${e.description||`无描述`}`)
 `)}`);let c=k.useTools&&Te(`plan_task`,e?.toolIds)?`
 
 ## 任务拆解规则
-1. **任务大小判断**：
-   - 简单任务（单一操作，如"点击按钮"、"获取页面文本"）：直接执行，不拆解
-   - 中等任务（需要2-3个步骤，如"登录网站"）：根据复杂度决定是否拆解
-   - 复杂任务（多个步骤、有依赖关系、需要多种工具，如"爬取多个页面并汇总数据"）：必须拆解
-
-2. **拆解原则**：
-   - 将大任务分解为2-5个独立子任务
-   - 每个子任务应有明确的目标和输出
-   - 识别子任务之间的依赖关系
-
-3. **调用 plan_task 工具**：
-   - 当判断需要拆解任务时，调用 plan_task 工具
-   - 必须提供 taskDescription 参数（原始任务描述）
-   - 提供完整的子任务列表，包含ID、名称、描述和依赖
-   - 指定执行策略：sequential（顺序执行）、parallel（并行执行）或 conditional（条件执行）`:``,l=[`agent_memory_store`,`agent_memory_recall`,`agent_memory_manage`].some(t=>Te(t,e?.toolIds)),u=k.useTools&&k.agentPlatform?.connected&&l?`
+- 复杂任务（多个步骤、有依赖关系）应拆解为2-5个独立子任务，每个子任务有明确目标和输出
+- 简单/中等任务直接执行，不要过度拆解
+- 使用 plan_task 工具提交拆解方案，必须提供 taskDescription 参数`:``,l=[`agent_memory_store`,`agent_memory_recall`,`agent_memory_manage`].some(t=>Te(t,e?.toolIds)),u=k.useTools&&k.agentPlatform?.connected&&l?`
 
 ## 长期记忆系统
-你拥有长期记忆能力，可以将重要信息持久化存储，在未来的对话中召回使用。
+你可以将重要信息持久化存储，在未来的对话中召回使用。
 
-**何时使用记忆**：
-- 用户明确说"记住xxx"、"帮我记一下"时，调用 agent_memory_store 存储
-- 对话中出现值得长期保留的信息（用户偏好、重要决策、项目规范等），主动判断是否需要存储
-- 当用户的问题可能涉及历史信息时，自主调用 agent_memory_recall 检索相关记忆（对话中话题切换后也应重新检索）
-- 记忆接近上限时会收到提示，届时调用 agent_memory_manage 进行审查整理
+**使用时机**：
+- 用户明确要求记住某信息时，调用 agent_memory_store 存储
+- 对话中出现值得长期保留的信息（偏好、决策、规范等），主动存储
+- 涉及历史信息时，自主调用 agent_memory_recall 检索
+- 记忆接近上限时，调用 agent_memory_manage 整理
 
 **记忆类型**：
-- fact（事实记忆）：用户偏好、技术栈、项目决策、个人习惯等结构化事实
-- summary（对话摘要）：对某次重要对话的总结
+- fact：用户偏好、技术栈、项目决策等结构化事实
+- summary：重要对话的摘要
 
-**存储原则**：
-- 只存储有长期价值的信息，避免存储临时/琐碎的内容
-- 为每条记忆添加适当的标签（tags）和重要性（importance）评分
-- 重要性评分参考：偏好/习惯 8-10，技术决策 7-9，一般知识 5-7，临时备注 3-5`:``,d;if(d=e&&e.systemPrompt&&e.systemPrompt.trim()?e.systemPrompt:k.systemPrompt&&k.systemPrompt.trim()?k.systemPrompt:null,d){let r=`${d}
+**原则**：只存储有长期价值的信息，为每条记忆添加标签（tags）和重要性（importance）评分`:``,d;if(d=e&&e.systemPrompt&&e.systemPrompt.trim()?e.systemPrompt:k.systemPrompt&&k.systemPrompt.trim()?k.systemPrompt:null,d){let r=`${d}
 
 ## 当前环境
-- 运行环境：Chrome 浏览器扩展（Side Panel）
-- 浏览器操作系统：${n}
-- 当前时间：${t}${i}${a}${c}${o}${u}
-`;try{let t=await De(e?.toolIds,e?.skillIds);t&&(r+=`\n${t}\n`)}catch{}return r}let f=`你是AI智能助手(AI Helper)，专为IT从业者（产品经理、架构师、开发工程师、测试工程师等）打造的AI技术助手。
+- 当前时间：${t}
+- 浏览器：Chrome 扩展 (Side Panel) / ${n}${i}${a}${c}${o}${u}
+`;try{let t=await De(e?.toolIds,e?.skillIds);t&&(r+=`\n${t}\n`)}catch{}return r}let f=`你是AI智能助手(AI Helper)，专为IT从业者打造的AI技术助手。
 
-## 你的能力
-- **编程开发**：精通主流编程语言（Java/Python/JavaScript/Go/C++等）及框架，能编写、调试、优化代码
-- **技术问题解答**：擅长解答架构设计、算法优化、性能调优、Bug排查等技术问题
-- **代码审查**：能提供代码质量评估、最佳实践建议、潜在风险识别
-- **文档编写**：协助撰写技术文档、API说明、测试用例等
-- **工具使用**：可调用浏览器工具获取当前网页内容或选中文本，辅助解答与网页相关的问题${k.useTools&&Te(`plan_task`,e?.toolIds)?`
-- **任务规划**：能够将复杂任务拆解为多个子任务，规划执行顺序`:``}${c}${o}${u}
+## 能力范围
+- 编程开发与调试（Java/Python/JavaScript/Go/C++等主流语言及框架）
+- 架构设计、算法优化、性能调优与Bug排查
+- 代码审查与最佳实践建议
+- 技术文档编写（API文档、README、测试用例等）
+- 浏览器工具调用（获取网页内容、操作页面元素等）${k.useTools&&Te(`plan_task`,e?.toolIds)?`
+- 复杂任务拆解与规划执行`:``}
 
-## 回答原则
-1. **精准专业**：使用准确的技术术语，回答直击要点
-2. **代码优先**：涉及代码时，优先给出可运行的代码示例，并添加必要注释
-3. **结构清晰**：善用Markdown格式（标题、列表、代码块、表格等）组织内容
-4. **实用导向**：提供可落地的解决方案，避免空泛的理论
-5. **安全合规**：不生成违反安全规范的代码，不涉及敏感信息处理${k.useTools&&Te(`plan_task`,e?.toolIds)?`
-6. **任务驱动**：复杂任务先规划后执行，使用 plan_task 工具进行拆解`:``}
+## 回答要求
+1. 使用准确的技术术语，直击要点
+2. 涉及代码时给出可运行的代码示例
+3. 用Markdown格式组织内容（标题、列表、代码块、表格）
+4. 提供可落地的解决方案，避免空泛理论
+5. 不生成违反安全规范的代码${k.useTools&&Te(`plan_task`,e?.toolIds)?`
+6. 复杂任务先规划后执行`:``}${c}${o}${u}
 
 ## 当前环境
-- 运行环境：Chrome 浏览器扩展（Side Panel）
-- 浏览器操作系统：${n}
-- 当前时间：${t}${i}${a}
+- 当前时间：${t}
+- 浏览器：Chrome 扩展 (Side Panel) / ${n}${i}${a}
 `;try{let t=await De(e?.toolIds,e?.skillIds);t&&(f+=`\n${t}\n`)}catch{}return f}async function De(e,t){return Array.isArray(t)&&t.length===0||!(t!=null&&Array.isArray(t)&&t.length>0)&&e!=null&&Array.isArray(e)&&!e.includes(`agent_skill_load`)&&!e.includes(`agent_workflow_run`)?``:new Promise(e=>{try{chrome.storage.local.get([`skillsEnabled`],n=>{if(n.skillsEnabled===!1){e(``);return}let r={type:`GET_AGENT_SKILL_PROMPTS`};t!=null&&Array.isArray(t)&&t.length>0&&(r.skillNames=t),chrome.runtime.sendMessage(r,t=>{if(chrome.runtime.lastError){e(``);return}e(t?.prompts||``)})})}catch{e(``)}})}function Oe(){return Promise.resolve({temperature:parseFloat(k.temperature.toFixed(2)),top_p:parseFloat(k.topP.toFixed(2))})}function ke(){return new Promise(e=>{chrome.runtime.sendMessage({type:`GET_CHAT_CONFIG`},n=>{n&&(k.chatConfig=n,t.debug(`[SidePanel] 对话配置已加载:`,k.chatConfig)),e(n)})})}async function Ae(){return new Promise(e=>{chrome.runtime.sendMessage({type:`GET_CHAT_CONFIG`},n=>{n&&(k.chatConfig=n,t.debug(`[SidePanel] 同步加载对话配置:`,k.chatConfig)),e()})})}async function je(){return new Promise(e=>{chrome.tabs.query({active:!0,currentWindow:!0},n=>{n&&n.length>0&&n[0].id?(k.currentTabId=n[0].id,t.debug(`[SidePanel] 获取当前 Tab ID:`,k.currentTabId,`URL:`,n[0].url),e(k.currentTabId)):(t.warn(`[SidePanel] 未获取到有效的 Tab ID`),e(null))})})}function Me(){return new Promise(e=>{chrome.storage.local.get([`reactMaxIterations`,`reactApiTimeout`,`reactLoopTimeout`,`reactToolTimeout`,`reactClarifyTimeout`],t=>{e({maxIterations:t.reactMaxIterations||30,apiTimeout:t.reactApiTimeout||6e4,loopTimeout:t.reactLoopTimeout||72e5,toolTimeout:t.reactToolTimeout||3e4,clarifyTimeout:n.clarifyTimeout})})})}function Ne(e){if(!e||!e.trim()||e.trim()==`/`)return;let t=e.trim(),n=k.inputHistory.indexOf(t);n!==-1&&k.inputHistory.splice(n,1),k.inputHistory.push(t),k.inputHistory.length>20&&k.inputHistory.shift(),Pe()}function Pe(){try{chrome.storage.local.set({inputHistory:k.inputHistory}),t.debug(`[SidePanel] 输入历史已保存，数量:`,k.inputHistory.length)}catch(e){t.error(`[SidePanel] 保存输入历史失败:`,e)}}function Fe(){document.addEventListener(`mouseover`,Ie,!0),document.addEventListener(`mouseout`,Le,!0),t.debug(`[SidePanel] 消息目录功能已初始化`)}function Ie(e){if(!(e.target instanceof Element))return;if(e.target.closest(`.message-toc-container`)){k.isMouseOverToc=!0;return}let t=e.target.closest(`.message.assistant`);if(!t)return;let n=t.querySelectorAll(`.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6`);if(n.length===0){ze();return}Re(t,n)}function Le(e){if(!(e.target instanceof Element))return;if(e.target.closest(`.message-toc-container`)){k.isMouseOverToc=!1,k.tocHideTimer&&=(clearTimeout(k.tocHideTimer),null);return}if(!e.target.closest(`.message.assistant`))return;let t=e.relatedTarget;t&&(t.closest(`.message-toc-container`)||t.closest(`.message.assistant`))||k.isMouseOverToc||(k.tocHideTimer&&clearTimeout(k.tocHideTimer),k.tocHideTimer=setTimeout(()=>{k.isMouseOverToc||ze(),k.tocHideTimer=null},800))}function Re(e,t){let n=Array.from(t);k.messageTocContainer&&ze(),n.forEach((e,t)=>{e.id||=`toc-heading-${Date.now()}-${t}`});let r=document.createElement(`div`);r.className=`message-toc-container`,r.dataset.headingsCount=n.length;let i=0,a=n.map(e=>{let t=parseInt(e.tagName.charAt(1)),n=e.textContent.trim(),r=n.length>30?n.substring(0,30)+`...`:n,a=`H${t}`;return i++,`
       <li class="message-toc-item level-${t}" 
           data-target="${e.id}"
@@ -1554,4 +1533,4 @@ In order to be iterable, non-array objects must have a [Symbol.iterator]() metho
         </td>
         <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${s}</td>
       </tr>`}).join(``),Ge()}function Ge(){let{column:e,asc:t}=He,n=[`name`,`callCount`,`successCount`,`successRate`,`duration`],r={name:`sortByName`,callCount:`sortByCallCount`,successCount:`sortBySuccessCount`,successRate:`sortBySuccessRate`,duration:`sortByDuration`};n.forEach(n=>{let i=document.getElementById(r[n]);if(!i)return;let a=i.querySelector(`.sort-indicator`);a&&(n===e?(a.textContent=t?`▲`:`▼`,a.style.color=`#667eea`):(a.textContent=``,a.style.color=``))})}document.querySelectorAll(`#toolStatsTable th[data-sort]`).forEach(e=>{e.addEventListener(`click`,()=>{let t=e.dataset.sort;He.column===t?He.asc=!He.asc:(He.column=t,He.asc=!1),Ue()})}),Me.addEventListener(`click`,()=>{il()}),Ne.addEventListener(`click`,()=>{il(),nl()});let Ke=document.getElementById(`confirmModal`);Ke.addEventListener(`click`,e=>{e.target===Ke&&il()});let qe=document.getElementById(`selectionClose`);qe&&qe.addEventListener(`click`,e=>{e.preventDefault(),e.stopPropagation(),t.debug(`[SidePanel] 用户点击关闭选中内容按钮`),$c(),window.hideFloatingMenu(),k.lastSelectedText=``,k.currentSelectionRange=null}),a.addEventListener(`input`,()=>{})}),ke().then(()=>ru()),document.addEventListener(`DOMContentLoaded`,()=>{au()}),document.addEventListener(`DOMContentLoaded`,Fe),document.addEventListener(`DOMContentLoaded`,Kl),document.addEventListener(`DOMContentLoaded`,Di),document.addEventListener(`DOMContentLoaded`,Ai),document.addEventListener(`DOMContentLoaded`,zi),document.addEventListener(`DOMContentLoaded`,qs),document.addEventListener(`DOMContentLoaded`,Xe),document.addEventListener(`DOMContentLoaded`,rt),document.addEventListener(`DOMContentLoaded`,Rt),document.addEventListener(`DOMContentLoaded`,wo),document.addEventListener(`DOMContentLoaded`,()=>Vi()),document.addEventListener(`DOMContentLoaded`,async()=>{let{refreshAgentNames:e}=await wr(async()=>{let{refreshAgentNames:e}=await Promise.resolve().then(()=>xc);return{refreshAgentNames:e}},void 0);e()});
-//# sourceMappingURL=side_panel-B97nuttC.js.map
+//# sourceMappingURL=side_panel-DsoFFhRW.js.map
