@@ -990,7 +990,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', JSON.stringify(functionObj.arguments).substring(0, 300));
       return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
     }
-    if (Object.keys(args).length === 0 && functionObj.arguments && JSON.stringify(functionObj.arguments).length > 0 && JSON.stringify(functionObj.arguments) !== '{}') {
+    const rawArgs = typeof functionObj.arguments === 'string' ? functionObj.arguments.trim() : JSON.stringify(functionObj.arguments);
+    if (Object.keys(args).length === 0 && rawArgs.length > 0 && rawArgs !== '{}') {
       console.error('[Background] 参数解析后为空对象！原始 arguments:', JSON.stringify(functionObj.arguments).substring(0, 300));
     }
   } else if (typeof argsStr === 'object') {
