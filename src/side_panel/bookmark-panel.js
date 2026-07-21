@@ -19,7 +19,7 @@ export function initBookmarkPanel() {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
       </svg>
-      <span class="bookmark-badge" id="bookmarkBadge" style="display:none;"></span>
+  
     </button>
     <div class="bookmark-panel" id="bookmarkPanel">
       <div class="bookmark-panel-header">
@@ -30,7 +30,12 @@ export function initBookmarkPanel() {
         <span class="bookmark-panel-count" id="bookmarkPanelCount"></span>
       </div>
       <div class="bookmark-search">
-        <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容..." />
+        <div class="bookmark-search-input-wrapper">
+          <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容..." />
+          <button class="bookmark-search-clear" id="bookmarkSearchClear" title="清除搜索" style="display:none;">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+          </button>
+        </div>
       </div>
       <div class="bookmark-panel-content" id="bookmarkPanelContent">
         <div class="bookmark-panel-empty">暂无收藏</div>
@@ -66,8 +71,10 @@ export function initBookmarkPanel() {
     }
   });
 
-  container.addEventListener('mouseleave', () => {
+  container.addEventListener('mouseleave', (e) => {
     if (container.classList.contains('hover-expanded')) {
+      // 搜索输入框有焦点时不自动关闭（搜索时列表可能变短，导致鼠标脱离区域）
+      if (document.activeElement === searchInput) return;
       panel.classList.remove('expanded');
       searchInput.value = '';
       container.classList.remove('hover-expanded');
@@ -75,8 +82,29 @@ export function initBookmarkPanel() {
   });
 
   // 搜索过滤
+  const searchClear = document.getElementById('bookmarkSearchClear');
   searchInput.addEventListener('input', () => {
     refreshBookmarkPanel(searchInput.value);
+    searchClear.style.display = searchInput.value ? '' : 'none';
+  });
+
+  // 清除搜索按钮
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchClear.style.display = 'none';
+    refreshBookmarkPanel();
+    searchInput.focus();
+  });
+
+  // 搜索框失焦后，如果面板是 hover 展开的且鼠标已离开容器，则自动关闭
+  searchInput.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (container.classList.contains('hover-expanded') && !container.matches(':hover')) {
+        panel.classList.remove('expanded');
+        searchInput.value = '';
+        container.classList.remove('hover-expanded');
+      }
+    }, 150);
   });
 
   // 点击面板外部关闭
@@ -327,21 +355,12 @@ async function navigateToBookmark(sessionId, messageId) {
  * 更新收藏入口按钮的徽标
  */
 export function updateBookmarkBadge() {
-  const badge = document.getElementById('bookmarkBadge');
   const container = document.getElementById('bookmarkPanelContainer');
   const count = state.bookmarks.length;
   
   // 无收藏时隐藏整个入口
   if (container) {
     container.style.display = count > 0 ? '' : 'none';
-  }
-  
-  if (!badge) return;
-  if (count > 0) {
-    badge.textContent = count > 99 ? '99+' : count;
-    badge.style.display = 'flex';
-  } else {
-    badge.style.display = 'none';
   }
 }
 

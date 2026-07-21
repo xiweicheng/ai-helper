@@ -1031,6 +1031,13 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     exportMenuContainer.appendChild(exportDropdown);
     footer.appendChild(exportMenuContainer);
     
+    const rightActionsContainer = document.createElement('div');
+    rightActionsContainer.className = 'footer-right-actions';
+    rightActionsContainer.style.marginLeft = 'auto';
+    rightActionsContainer.style.display = 'flex';
+    rightActionsContainer.style.alignItems = 'center';
+    rightActionsContainer.style.gap = '8px';
+
     const hasExecutionLog = executionLog && executionLog.length > 0;
     const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
     
@@ -1058,7 +1065,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         '<polyline points="12 6 12 12 16 14"></polyline>',
         '</svg>'
       ].join('');
-      footer.appendChild(logBtn);
+      rightActionsContainer.appendChild(logBtn);
     }
 
     // 2. 质量评估图标（独立的评分徽章）
@@ -1086,7 +1093,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         wasRevised
       });
 
-      footer.appendChild(scoreBadge);
+      rightActionsContainer.appendChild(scoreBadge);
     } else if (!hasReflection && postReflection && postReflection.status === 'failed' && state.chatConfig?.enableExecutionLog) {
     // 仅当存在 post 反思节点且状态为 failed 时才显示警告（不包括工具级反思失败）
       const warnBadge = document.createElement('button');
@@ -1094,7 +1101,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       warnBadge.type = 'button';
       warnBadge.title = '反思评估失败（点击查看执行日志）';
       warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
-      footer.appendChild(warnBadge);
+      rightActionsContainer.appendChild(warnBadge);
     }
     
     const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
@@ -1133,7 +1140,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
           logger.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
         }
       });
-      footer.appendChild(prototypeBtn);
+      rightActionsContainer.appendChild(prototypeBtn);
     }
     
     // 收藏按钮
@@ -1170,7 +1177,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         refreshBookmarkPanel();
       }
     });
-    footer.appendChild(bookmarkBtn);
+    rightActionsContainer.appendChild(bookmarkBtn);
     
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
@@ -1185,7 +1192,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       e.stopPropagation();
       deleteMessage(messageDiv);
     });
-    footer.appendChild(deleteBtn);
+    rightActionsContainer.appendChild(deleteBtn);
+
+    footer.appendChild(rightActionsContainer);
 
     // "继续执行"按钮：仅当消息标记为 resumable 时显示
     // 用于从中断的 checkpoint 恢复 ReAct 任务
@@ -1862,8 +1871,11 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
   }
 
   // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
-  messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn').forEach(btn => {
+  messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn, .export-table-img-btn').forEach(btn => {
     delete btn.dataset.bound;
+    delete btn.dataset.boundMd;
+    delete btn.dataset.boundExcel;
+    delete btn.dataset.boundImg;
   });
   
   chatContainer.appendChild(messageEl);
@@ -2042,8 +2054,11 @@ export function rebindAllMessages(container) {
   container.querySelectorAll('.mermaid-controls').forEach(c => c.remove());
 
   // 清除代码块和表格工具栏按钮的 data-bound 标记，并重新绑定表格工具栏事件
-  container.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn').forEach(btn => {
+  container.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn, .export-table-img-btn').forEach(btn => {
     delete btn.dataset.bound;
+    delete btn.dataset.boundMd;
+    delete btn.dataset.boundExcel;
+    delete btn.dataset.boundImg;
   });
   addTableToolbarEvents();
 

@@ -1241,6 +1241,13 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   exportMenuContainer.appendChild(exportTriggerBtn);
   exportMenuContainer.appendChild(exportDropdown);
   footer.appendChild(exportMenuContainer);
+
+  const rightActionsContainer = document.createElement('div');
+  rightActionsContainer.className = 'footer-right-actions';
+  rightActionsContainer.style.marginLeft = 'auto';
+  rightActionsContainer.style.display = 'flex';
+  rightActionsContainer.style.alignItems = 'center';
+  rightActionsContainer.style.gap = '8px';
   
   // 执行日志按钮（如果启用且有日志）
   if (executionLog && executionLog.length > 0 && state.chatConfig?.enableExecutionLog) {
@@ -1254,7 +1261,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       '<polyline points="12 6 12 12 16 14"></polyline>',
       '</svg>'
     ].join('');
-    footer.appendChild(logBtn);
+    rightActionsContainer.appendChild(logBtn);
   }
   
   // 质量评估徽章（反思评分）
@@ -1287,14 +1294,14 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       wasRevised: false
     });
     
-    footer.appendChild(scoreBadge);
+    rightActionsContainer.appendChild(scoreBadge);
   } else if (!hasReflection && postReflection && postReflection.status === 'failed' && state.chatConfig?.enableExecutionLog) {
     const warnBadge = document.createElement('button');
     warnBadge.className = 'reflection-score-btn';
     warnBadge.type = 'button';
     warnBadge.title = '反思评估失败（点击查看执行日志）';
     warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
-    footer.appendChild(warnBadge);
+    rightActionsContainer.appendChild(warnBadge);
   }
   
   // 原型预览按钮
@@ -1329,7 +1336,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         logger.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
       }
     });
-    footer.appendChild(prototypeBtn);
+    rightActionsContainer.appendChild(prototypeBtn);
   }
 
   // 收藏按钮
@@ -1364,7 +1371,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       refreshBookmarkPanel();
     }
   });
-  footer.appendChild(bookmarkBtn);
+  rightActionsContainer.appendChild(bookmarkBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'delete-btn';
@@ -1379,7 +1386,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     e.stopPropagation();
     deleteMessage(element);
   });
-  footer.appendChild(deleteBtn);
+  rightActionsContainer.appendChild(deleteBtn);
+
+  footer.appendChild(rightActionsContainer);
 
   element.querySelector('.message-content').appendChild(footer);
   

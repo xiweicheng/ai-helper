@@ -157,7 +157,7 @@ export function createTableHTML(tableData) {
       tableHTML += `<th class="table-header-cell-wrapper">
         ${headerCell}
         <div class="table-toolbar">
-          <button class="table-toolbar-btn copy-md-btn" title="复制 Markdown 表格" data-table-full="${encodeURIComponent(full)}">
+          <button class="table-toolbar-btn copy-md-btn" title="复制 Markdown 表格&#10;按住 Ctrl/⌘ 点击复制富文本表格" data-table-full="${encodeURIComponent(full)}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
             </svg>
@@ -166,6 +166,12 @@ export function createTableHTML(tableData) {
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
               <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+            </svg>
+          </button>
+          <button class="table-toolbar-btn export-table-img-btn" title="导出表格为图片">
+            <svg viewBox="0 0 16 16" fill="currentColor">
+              <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
+              <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
             </svg>
           </button>
         </div>
@@ -1006,36 +1012,83 @@ function extractTableFromDOM(btn) {
 export function addTableToolbarEvents() {
   // 复制 Markdown 表格按钮
   document.querySelectorAll('.copy-md-btn').forEach((btn, index) => {
-    if (btn.dataset.bound) return;
-    btn.dataset.bound = 'true';
+    if (btn.dataset.boundMd) return;
+    btn.dataset.boundMd = 'true';
     
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // 1. 新格式：从 data 属性读取（HTML 恢复后也能工作）
+
+      // 获取表格 DOM 数据
+      const getDomData = () => {
+        const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
+        if (full) {
+          const tableIndex = btn.dataset.tableIndex;
+          const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
+          return { full, tableBlock };
+        }
+        return null;
+      };
+
+      // Ctrl/Command + 点击：复制富文本表格
+      if (e.ctrlKey || e.metaKey) {
+        const tableEl = btn.closest('.table-container-wrapper')?.querySelector('table');
+        if (tableEl) {
+          try {
+            // 克隆表格并清理工具栏，构建富文本 HTML
+            const clone = tableEl.cloneNode(true);
+            clone.querySelectorAll('.table-toolbar').forEach(el => el.remove());
+            const richHTML = clone.outerHTML;
+            const blob = new Blob([richHTML], { type: 'text/html' });
+            const item = new ClipboardItem({ 'text/html': blob });
+            navigator.clipboard.write([item]).then(() => {
+              showToast('已复制富文本表格');
+            }).catch(() => {
+              // Fallback: 使用 execCommand
+              const listener = (ev) => {
+                ev.clipboardData.setData('text/html', richHTML);
+                ev.preventDefault();
+              };
+              document.addEventListener('copy', listener, { once: true });
+              document.execCommand('copy');
+              document.removeEventListener('copy', listener);
+              showToast('已复制富文本表格');
+            });
+          } catch (err) {
+            showToast('复制失败', 'error');
+          }
+        }
+        return;
+      }
+
+      // 普通点击：复制 Markdown 表格
+      // 1. 新格式：从 data 属性读取
       const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
       if (full) {
         copyToClipboard(full, btn);
+        showToast('已复制 Markdown 表格');
         return;
       }
-      // 2. 旧格式：从 window.__tableBlocks 读取（实时渲染时）
+      // 2. 旧格式：从 window.__tableBlocks 读取
       const tableIndex = btn.dataset.tableIndex;
       const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
       if (tableBlock) {
         copyToClipboard(tableBlock.full, btn);
+        showToast('已复制 Markdown 表格');
         return;
       }
-      // 3. 最终 fallback：从 DOM 提取表格数据（历史消息，既有旧格式又是 restore）
+      // 3. 最终 fallback：从 DOM 提取表格数据
       const domData = extractTableFromDOM(btn);
       if (domData) {
         copyToClipboard(domData.full, btn);
+        showToast('已复制 Markdown 表格');
       }
     });
   });
   
   // 下载 Excel 按钮
   document.querySelectorAll('.download-excel-btn').forEach((btn, index) => {
-    if (btn.dataset.bound) return;
-    btn.dataset.bound = 'true';
+    if (btn.dataset.boundExcel) return;
+    btn.dataset.boundExcel = 'true';
     
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1057,6 +1110,44 @@ export function addTableToolbarEvents() {
       const domData = extractTableFromDOM(btn);
       if (domData) {
         downloadTableAsExcel(domData);
+      }
+    });
+  });
+
+  // 导出表格为图片按钮
+  document.querySelectorAll('.export-table-img-btn').forEach((btn) => {
+    if (btn.dataset.boundImg) return;
+    btn.dataset.boundImg = 'true';
+
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tableWrapper = btn.closest('.table-container-wrapper');
+      if (!tableWrapper) return;
+
+      try {
+        const html2canvasFunc = window.html2canvas || null;
+        if (!html2canvasFunc) {
+          showToast('图片导出库未加载', 'error');
+          return;
+        }
+
+        const canvas = await html2canvasFunc(tableWrapper, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        const link = document.createElement('a');
+        link.download = `table-${Date.now()}.jpg`;
+        link.href = canvas.toDataURL('image/jpeg', 0.95);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('表格图片已导出');
+      } catch (err) {
+        logger.error('[SidePanel] 导出表格图片失败:', err);
+        showToast('导出图片失败', 'error');
       }
     });
   });

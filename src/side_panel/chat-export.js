@@ -235,6 +235,10 @@ export function exportAssistantMessageToDocx(messageDiv, exportBtn, exportDropdo
     tempContainer.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
     tempContainer.innerHTML = htmlContent;
     document.body.appendChild(tempContainer);
+
+    // 移除表格工具栏按钮（Word 中不需要）
+    tempContainer.querySelectorAll('.table-toolbar').forEach(el => el.remove());
+
     await renderMermaidInContainer(tempContainer);
     await convertSvgsToImages(tempContainer);
     const renderedHtml = tempContainer.innerHTML;
@@ -300,10 +304,19 @@ export function exportAssistantMessageToDocx(messageDiv, exportBtn, exportDropdo
             color: #666;
           }
           ul, ol {
-            margin: 8pt 0;
-            padding-left: 25pt;
+            margin: 10pt 0 10pt 40pt;
+            padding-left: 0;
+            list-style-position: outside;
+          }
+          ul ul, ol ol, ul ol, ol ul {
+            margin-left: 30pt;
           }
           li { margin: 4pt 0; }
+          td ul, td ol {
+            margin: 4pt 0 4pt 24pt;
+            padding-left: 0;
+          }
+          td li { margin: 2pt 0; }
           a { color: #0563c1; text-decoration: none; }
           a:hover { text-decoration: underline; }
           img { max-width: 100%; height: auto; }
