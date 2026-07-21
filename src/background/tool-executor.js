@@ -214,30 +214,32 @@ async function checkAgentConnectivity() {
     return agentConnectivityCache.connected;
   }
 
-  // 第一步：检查 storage 是否有配对的凭据
-  const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-  if (!storage.agentUrl || !storage.agentToken) {
+  // 第一步：检查 storage 是否有已配对的活跃代理
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = result.pairedAgents || [];
+  const active = agents.find(a => a.id === result.activeAgentId);
+  if (!active) {
     agentConnectivityCache = { connected: false, checkedAt: now };
-    AgentClient.setAgentReachable(false);
+    AgentClient.setAgentReachable('__global__', false);
     return false;
   }
 
-  // 第二步：有凭据，但需确认 代理服务是否可达（1.5 秒超时）
+  // 第二步：有凭据，但需确认代理服务是否可达（1.5 秒超时）
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
-    const response = await fetch(`${storage.agentUrl}/api/status`, {
+    const response = await fetch(`${active.url}/api/status`, {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
     const connected = response.ok;
     agentConnectivityCache = { connected, checkedAt: now };
-    AgentClient.setAgentReachable(connected);
+    AgentClient.setAgentReachable(active.id, connected);
     console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
     return connected;
   } catch (err) {
     agentConnectivityCache = { connected: false, checkedAt: now };
-    AgentClient.setAgentReachable(false);
+    AgentClient.setAgentReachable(active.id, false);
     console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
     return false;
   }

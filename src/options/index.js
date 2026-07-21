@@ -20,6 +20,7 @@ import {
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
+import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 
 let currentTools = [];
@@ -889,6 +890,7 @@ function persistAndRender() {
 function initAgentConfig() {
   const agentUrlInput = document.getElementById('agentUrl');
   const pairCodeInput = document.getElementById('agentPairCode');
+  const agentNameInput = document.getElementById('agentName');
   const connectBtn = document.getElementById('agentConnectBtn');
   const disconnectBtn = document.getElementById('agentDisconnectBtn');
   const statusDot = document.getElementById('agentStatusDot');
@@ -900,15 +902,258 @@ function initAgentConfig() {
   const agentWorkdirEl = document.getElementById('agentWorkdir');
   const agentDetailToggle = document.getElementById('agentDetailToggle');
   const agentDetailPanel = document.getElementById('agentDetailPanel');
+  const pairedAgentsSection = document.getElementById('pairedAgentsSection');
+  const pairedAgentsList = document.getElementById('pairedAgentsList');
+  const addAgentTitle = document.getElementById('addAgentTitle');
 
   if (!agentUrlInput || !connectBtn) return;
 
-  // 缓存最新的详情数据
   let lastDetailData = null;
 
-  /**
-   * 格式化字节大小
-   */
+  // ========== 多代理列表渲染 ==========
+
+  /** ping 代理检查在线状态 */
+  async function pingAgent(url) {
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 2000);
+      const resp = await fetch(`${url}/api/status`, { signal: controller.signal });
+      clearTimeout(tid);
+      return resp.ok;
+    } catch { return false; }
+  }
+
+  /** 渲染已配对代理列表 */
+  async function renderPairedAgents() {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const activeId = storage.activeAgentId;
+
+    if (agents.length === 0) {
+      pairedAgentsSection.style.display = 'none';
+      addAgentTitle.textContent = '添加新代理';
+      return;
+    }
+
+    pairedAgentsSection.style.display = '';
+    addAgentTitle.textContent = '再添加一个代理';
+
+    // 并行 ping 所有代理获取在线状态
+    const statusResults = await Promise.all(agents.map(async (a) => {
+      const online = await pingAgent(a.url);
+      return { agentId: a.id, online };
+    }));
+
+    pairedAgentsList.innerHTML = agents.map((a) => {
+      const isActive = a.id === activeId;
+      const status = statusResults.find(s => s.agentId === a.id);
+      const online = status?.online;
+      const dotClass = isActive
+        ? (online === true ? 'active-online' : online === false ? 'active-offline' : 'active-checking')
+        : (online === true ? 'online' : online === false ? 'offline' : 'checking');
+      const statusLabel = online === true ? '在线' : online === false ? '离线' : '检测中';
+
+      return `
+        <div class="paired-agent-item${isActive ? ' active' : ''}" data-agent-id="${a.id}">
+          <span class="paired-agent-dot ${dotClass}" title="${isActive ? '当前使用 · ' : ''}${statusLabel}"></span>
+          <span class="paired-agent-name" data-agent-id="${a.id}" data-original="${escHtml(a.name)}" title="点击编辑名称">${escHtml(a.name)}</span>
+          <span class="paired-agent-url">${escHtml(a.url)}</span>
+          <span class="paired-agent-status-text ${online === true ? 'online' : online === false ? 'offline' : 'checking'}">${statusLabel}</span>
+          <div class="paired-agent-actions">
+            ${isActive
+              ? '<button class="paired-agent-btn switch-btn" disabled>当前</button>'
+              : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">切换</button>`
+            }
+            <button class="paired-agent-btn delete-btn" data-action="delete" data-id="${a.id}">删除</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    // 名称点击编辑
+    pairedAgentsList.querySelectorAll('.paired-agent-name').forEach(nameEl => {
+      nameEl.addEventListener('click', () => {
+        if (nameEl.querySelector('input')) return; // 已在编辑中
+        const agentId = nameEl.dataset.agentId;
+        const original = nameEl.dataset.original;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = original;
+        input.className = 'paired-agent-name-input';
+        input.style.cssText = 'flex:1;font-size:14px;font-weight:500;border:1px solid #667eea;border-radius:4px;padding:2px 6px;outline:none;color:#2d3748;';
+        nameEl.innerHTML = '';
+        nameEl.appendChild(input);
+        input.focus();
+        input.select();
+
+        const finishEdit = async () => {
+          const newName = input.value.trim() || original;
+          input.remove();
+          nameEl.textContent = newName;
+          nameEl.dataset.original = newName;
+
+          // 保存到 storage
+          const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+          const agents = storage.pairedAgents || [];
+          const idx = agents.findIndex(a => a.id === agentId);
+          if (idx !== -1) {
+            agents[idx].name = newName;
+            await chrome.storage.local.set({ pairedAgents: agents });
+          }
+        };
+
+        input.addEventListener('blur', finishEdit);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { input.blur(); }
+          if (e.key === 'Escape') {
+            input.value = original;
+            input.blur();
+          }
+        });
+      });
+    });
+
+    // 事件委托
+    pairedAgentsList.querySelectorAll('.paired-agent-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const agentId = btn.dataset.id;
+        if (action === 'switch') {
+          await switchToAgent(agentId);
+        } else if (action === 'delete') {
+          await deletePairedAgent(agentId);
+        }
+      });
+    });
+  }
+
+  /** 切换到指定代理 */
+  async function switchToAgent(agentId) {
+    const agents = await chrome.storage.local.get('pairedAgents');
+    const agent = (agents.pairedAgents || []).find(a => a.id === agentId);
+    if (!agent) return;
+
+    // 写入 storage 设为活跃
+    await chrome.storage.local.set({ activeAgentId: agentId });
+    agentUrlInput.value = agent.url;
+
+    // 获取代理详情并展示
+    await fetchAndShowAgentDetail(agent.url, agent.token);
+
+    // 通知 background + Side Panel
+    chrome.runtime.sendMessage({
+      type: 'AGENT_CONNECTION_CHANGED',
+      connected: true,
+      agentId
+    }).catch(() => {});
+
+    showToast(`已切换到: ${agent.name}`, 'success');
+
+    // 重新渲染列表
+    await renderPairedAgents();
+  }
+
+  /** 删除已配对代理 */
+  async function deletePairedAgent(agentId) {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+
+    // 自定义确认弹窗
+    const confirmed = await showCustomConfirm(
+      `确定要删除代理 "${agent.name}" (${agent.url}) 吗？\n删除后需重新配对才能使用。`,
+      '删除代理'
+    );
+    if (!confirmed) return;
+
+    const newAgents = agents.filter(a => a.id !== agentId);
+    let newActiveId = storage.activeAgentId;
+
+    if (storage.activeAgentId === agentId) {
+      newActiveId = newAgents.length > 0 ? newAgents[0].id : null;
+    }
+
+    await chrome.storage.local.set({
+      pairedAgents: newAgents,
+      activeAgentId: newActiveId
+    });
+
+    // 如果删的是活跃代理，切换到第一个
+    if (newActiveId && newActiveId !== storage.activeAgentId) {
+      const newActive = newAgents.find(a => a.id === newActiveId);
+      chrome.runtime.sendMessage({
+        type: 'AGENT_CONNECTION_CHANGED',
+        connected: true,
+        agentId: newActiveId
+      }).catch(() => {});
+    } else if (!newActiveId) {
+      chrome.runtime.sendMessage({
+        type: 'AGENT_CONNECTION_CHANGED',
+        connected: false
+      }).catch(() => {});
+    }
+
+    showToast(`已删除代理: ${agent.name}`, 'info');
+    await renderPairedAgents();
+    await refreshActiveAgentUI();
+  }
+
+  /** 获取活跃代理详情并更新状态 UI */
+  async function fetchAndShowAgentDetail(url, token) {
+    updateStatusUI('checking', '正在获取代理信息...');
+
+    try {
+      const statusResp = await fetch(`${url}/api/status`);
+      if (!statusResp.ok) {
+        updateStatusUI('disconnected', '代理服务不可达');
+        return;
+      }
+      const statusData = await statusResp.json();
+
+      // 获取详细信息
+      try {
+        const detailResp = await fetch(`${url}/api/status/detail`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (detailResp.ok) {
+          const detailData = await detailResp.json();
+          const merged = mergeDetail(statusData, detailData);
+          const labelParts = [`Agent v${merged.version}`];
+          if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
+          if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
+          updateStatusUI('connected', labelParts.join(' | '), merged);
+        } else {
+          updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+        }
+      } catch {
+        updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+      }
+    } catch {
+      updateStatusUI('disconnected', '无法连接到代理 - 请确认代理服务已启动');
+    }
+  }
+
+  /** 刷新活跃代理的 UI（状态 + 详情） */
+  async function refreshActiveAgentUI() {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const activeId = storage.activeAgentId;
+
+    if (!activeId || agents.length === 0) {
+      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+      return;
+    }
+
+    const active = agents.find(a => a.id === activeId);
+    if (active) {
+      agentUrlInput.value = active.url;
+      await fetchAndShowAgentDetail(active.url, active.token);
+    }
+  }
+
+  // ========== 原有详情渲染辅助函数 ==========
+
   function formatBytes(bytes) {
     if (bytes == null || bytes === 0) return '无限制';
     const units = ['B', 'KB', 'MB', 'GB'];
@@ -918,9 +1163,6 @@ function initAgentConfig() {
     return (Math.round(val * 10) / 10) + ' ' + units[i];
   }
 
-  /**
-   * 格式化毫秒时长
-   */
   function formatDuration(ms) {
     if (ms == null || ms === 0) return '无限制';
     if (ms < 1000) return ms + 'ms';
@@ -928,9 +1170,6 @@ function initAgentConfig() {
     return (ms / 60000).toFixed(1) + ' min';
   }
 
-  /**
-   * 渲染 Agent 详情面板
-   */
   function renderAgentDetail(data) {
     lastDetailData = data;
     if (!agentDetailPanel) return;
@@ -978,15 +1217,15 @@ function initAgentConfig() {
     return div.innerHTML;
   }
 
-  /**
-   * 更新连接状态 UI
-   */
   function updateStatusUI(status, message, detailData) {
     agentStatus.className = 'agent-status ' + status;
     statusText.textContent = message;
 
+    // 配对表单始终可见，方便随时添加新代理
+    pairCodeGroup.style.display = '';
+
     if (status === 'connected') {
-      pairCodeGroup.style.display = 'none';
+      // 有活跃代理时显示断开按钮
       disconnectGroup.style.display = '';
       agentStatus.className = 'agent-status connected';
 
@@ -998,9 +1237,9 @@ function initAgentConfig() {
         renderAgentDetail(detailData);
       }
     } else if (status === 'checking') {
+      disconnectGroup.style.display = 'none';
       agentStatus.className = 'agent-status checking';
     } else {
-      pairCodeGroup.style.display = '';
       disconnectGroup.style.display = 'none';
       agentInfo.style.display = 'none';
       agentStatus.className = 'agent-status disconnected';
@@ -1010,9 +1249,6 @@ function initAgentConfig() {
     }
   }
 
-  /**
-   * 合并公开状态和认证详情为统一数据结构
-   */
   function mergeDetail(statusData, detailData) {
     return {
       version: detailData?.version || statusData?.version,
@@ -1032,77 +1268,8 @@ function initAgentConfig() {
     };
   }
 
-  /**
-   * 检查 Agent 连接状态
-   */
-  async function checkAgentStatus() {
-    updateStatusUI('checking', '正在检查连接...');
+  // ========== 连接 / 断开 ==========
 
-    const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-    const storedUrl = result.agentUrl;
-    const storedToken = result.agentToken;
-
-    if (!storedUrl) {
-      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
-      agentUrlInput.value = 'http://127.0.0.1:18910';
-      return;
-    }
-
-    agentUrlInput.value = storedUrl;
-
-    try {
-      const response = await fetch(`${storedUrl}/api/status`);
-      if (response.ok) {
-        const statusData = await response.json();
-        // 更新平台信息
-        const platformInfo = {
-          platformName: statusData.platformName || 'Unknown',
-          platform: statusData.platform || 'unknown',
-          arch: statusData.arch || 'unknown',
-          shell: statusData.shell || '/bin/sh',
-          homeDir: statusData.homeDir || '',
-          workdir: '',
-          connected: true
-        };
-        await chrome.storage.local.set({ agentPlatform: platformInfo });
-
-        if (!storedToken) {
-          updateStatusUI('disconnected', 'Agent 在线 - 请填入配对码完成配对');
-          return;
-        }
-        // 获取详细信息（含工作目录和配置）
-        try {
-          const detailResp = await fetch(`${storedUrl}/api/status/detail`, {
-            headers: { 'Authorization': `Bearer ${storedToken}` }
-          });
-          if (detailResp.ok) {
-            const detailData = await detailResp.json();
-            platformInfo.workdir = detailData.workdir || '';
-            await chrome.storage.local.set({ agentPlatform: platformInfo });
-
-            const merged = mergeDetail(statusData, detailData);
-            const labelParts = [`Agent v${merged.version}`];
-            if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
-            if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
-            updateStatusUI('connected', labelParts.join(' | '), merged);
-          } else {
-            updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
-          }
-        } catch {
-          updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
-        }
-      } else {
-        updateStatusUI('disconnected', '连接失败 - Token 已失效，请重新配对');
-      }
-    } catch {
-      await chrome.storage.local.remove('agentPlatform');
-      updateStatusUI('disconnected', '无法连接到代理 - 请确认代理服务已启动');
-    }
-  }
-
-  /**
-   * 连接 Agent
-   */
   async function connectToAgent() {
     const url = agentUrlInput.value.trim() || 'http://127.0.0.1:18910';
     const code = pairCodeInput.value.trim();
@@ -1125,81 +1292,116 @@ function initAgentConfig() {
       const data = await response.json();
 
       if (data.success && data.token) {
-        await chrome.storage.local.set({ agentUrl: url, agentToken: data.token });
-        pairCodeInput.value = '';
-        updateStatusUI('connected', '配对成功');
-        showToast('✅ 配对成功！Agent 已连接', 'success');
-
-        // 获取 Agent 平台信息并存储
-        try {
-          const statusResp = await fetch(`${url}/api/status`);
-          if (statusResp.ok) {
-            const statusData = await statusResp.json();
-            const platformInfo = {
-              platformName: statusData.platformName || 'Unknown',
-              platform: statusData.platform || 'unknown',
-              arch: statusData.arch || 'unknown',
-              shell: statusData.shell || '/bin/sh',
-              homeDir: statusData.homeDir || '',
-              workdir: statusData.workdir || '',
-              connected: true
-            };
-            await chrome.storage.local.set({ agentPlatform: platformInfo });
-            logger.debug('[Options] Agent 平台信息已保存:', platformInfo);
-          }
-        } catch (e) {
-          logger.warn('[Options] 获取 Agent 平台信息失败:', e);
+        // 使用自定义名称，留空则自动获取
+        const customName = agentNameInput?.value.trim();
+        let name = customName || null;
+        if (!name) {
+          try {
+            const statusResp = await fetch(`${url}/api/status`);
+            if (statusResp.ok) {
+              const statusData = await statusResp.json();
+              const parts = [];
+              if (statusData.platformName) parts.push(statusData.platformName);
+              if (statusData.arch) parts.push(statusData.arch);
+              name = parts.length > 0 ? parts.join(' ') : new URL(url).hostname;
+            }
+          } catch { name = new URL(url).hostname; }
+          if (!name) name = '未命名代理';
         }
 
-        // 获取完整状态和配置
+        // 生成 ID 并加入列表
+        const id = `pa_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        const newAgent = { id, name, url, token: data.token, pairedAt: new Date().toISOString() };
+
+        const storage = await chrome.storage.local.get('pairedAgents');
+        const agents = storage.pairedAgents || [];
+        agents.push(newAgent);
+        await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: id });
+
+        pairCodeInput.value = '';
+        if (agentNameInput) agentNameInput.value = '';
+        showToast(`配对成功！已添加: ${name}`, 'success');
+
+        // 展示详情
         try {
           const [statusResp2, detailResp2] = await Promise.all([
             fetch(`${url}/api/status`),
             fetch(`${url}/api/status/detail`, { headers: { 'Authorization': `Bearer ${data.token}` } })
           ]);
           if (statusResp2.ok && detailResp2.ok) {
-            const statusData2 = await statusResp2.json();
-            const detailData2 = await detailResp2.json();
-            // 更新 workdir 到平台信息
-            const platformInfo = (await chrome.storage.local.get('agentPlatform')).agentPlatform || {};
-            platformInfo.workdir = detailData2.workdir || '';
-            await chrome.storage.local.set({ agentPlatform: platformInfo });
-
-            const merged = mergeDetail(statusData2, detailData2);
+            const merged = mergeDetail(await statusResp2.json(), await detailResp2.json());
             const labelParts = [`Agent v${merged.version}`];
             if (merged.platformName && merged.arch) labelParts.push(`${merged.platformName} ${merged.arch}`);
             if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
             updateStatusUI('connected', labelParts.join(' | '), merged);
           }
-        } catch (e) {
-          logger.warn('[Options] 获取 Agent 详情失败:', e);
-        }
+        } catch { /* ignore */ }
 
-        // 通知 Side Panel 状态变化（直接在 storage 写入完成后即时通知）
-        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true }).catch(() => {});
+        // 重新渲染列表
+        await renderPairedAgents();
+
+        chrome.runtime.sendMessage({
+          type: 'AGENT_CONNECTION_CHANGED',
+          connected: true,
+          agentId: id
+        }).catch(() => {});
       } else {
         updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
-        showToast('❌ ' + (data.error || '配对失败'), 'error');
+        showToast(data.error || '配对失败', 'error');
       }
     } catch (err) {
       updateStatusUI('disconnected', '连接失败 - 请确认代理服务已启动');
-      showToast('❌ 无法连接到 Agent: ' + err.message, 'error');
+      showToast('无法连接到 Agent: ' + err.message, 'error');
     } finally {
       connectBtn.disabled = false;
       connectBtn.textContent = '连接';
     }
   }
 
-  /**
-   * 断开 Agent 连接
-   */
   async function disconnectAgent() {
-    await chrome.storage.local.remove(['agentUrl', 'agentToken', 'agentPlatform']);
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const activeId = storage.activeAgentId;
+    if (!activeId) return;
+
+    const agents = storage.pairedAgents || [];
+    const active = agents.find(a => a.id === activeId);
+    if (!active) return;
+
+    // 确认弹框：显示代理名称和地址
+    const confirmed = await showCustomConfirm(
+      `断开后将移出代理列表，需重新配对才能恢复。\n\n代理名称：${active.name}\n代理地址：${active.url}`,
+      '断开代理连接'
+    );
+    if (!confirmed) return;
+
+    const newAgents = agents.filter(a => a.id !== activeId);
+    const newActiveId = newAgents.length > 0 ? newAgents[0].id : null;
+
+    await chrome.storage.local.set({
+      pairedAgents: newAgents,
+      activeAgentId: newActiveId
+    });
+
     pairCodeInput.value = '';
-    updateStatusUI('disconnected', '已断开连接');
-    showToast('已断开 Agent 连接', 'info');
-    // 通知 Side Panel 状态变化
-    chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false }).catch(() => {});
+    showToast('已断开当前代理', 'info');
+
+    if (newActiveId) {
+      const newActive = newAgents.find(a => a.id === newActiveId);
+      if (newActive) {
+        agentUrlInput.value = newActive.url;
+        await fetchAndShowAgentDetail(newActive.url, newActive.token);
+      }
+    } else {
+      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+    }
+
+    await renderPairedAgents();
+
+    chrome.runtime.sendMessage({
+      type: 'AGENT_CONNECTION_CHANGED',
+      connected: !!newActiveId,
+      agentId: newActiveId
+    }).catch(() => {});
   }
 
   // 详情面板折叠切换
@@ -1216,11 +1418,13 @@ function initAgentConfig() {
   connectBtn.addEventListener('click', connectToAgent);
   disconnectBtn.addEventListener('click', disconnectAgent);
 
-  // 回车键快速配对
   pairCodeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') connectToAgent();
   });
 
-  // 启动时检查状态
-  checkAgentStatus();
+  // 启动时：渲染列表 + 展示活跃代理状态
+  (async () => {
+    await renderPairedAgents();
+    await refreshActiveAgentUI();
+  })();
 }

@@ -1215,22 +1215,21 @@ export function saveConfig() {
       const status = document.getElementById('status');
       status.style.display = 'none';
 
-      // 读取 Agent 配置
-      const agentResult = await chrome.storage.local.get(['agentUrl', 'agentToken']);
+      // 读取 Agent 配置（已配对代理列表）
+      const agentResult = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
       let agentConfig = null;
-      if (agentResult.agentUrl) {
-        agentConfig = { url: agentResult.agentUrl, connected: !!agentResult.agentToken };
+      const agents = agentResult.pairedAgents || [];
+      const activeAgent = agents.find(a => a.id === agentResult.activeAgentId);
+      if (activeAgent) {
+        agentConfig = { url: activeAgent.url, connected: true, name: activeAgent.name };
         // 尝试获取工作目录
         try {
-          if (agentResult.agentToken) {
-            const resp = await fetch(`${agentResult.agentUrl}/api/status/detail`, {
-              headers: { 'Authorization': `Bearer ${agentResult.agentToken}` }
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              agentConfig.workdir = data.workdir;
-              agentConfig.connected = true;
-            }
+          const resp = await fetch(`${activeAgent.url}/api/status/detail`, {
+            headers: { 'Authorization': `Bearer ${activeAgent.token}` }
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            agentConfig.workdir = data.workdir;
           }
         } catch {}
       }

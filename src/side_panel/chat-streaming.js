@@ -150,9 +150,11 @@ export function setReasoningContent(content) {
 
 /**
  * 创建流式消息容器（包含思考指示器、停止按钮）
+ * @param {string} [targetSessionId] - 目标会话 ID，仅当与当前活跃会话匹配时才挂载到 DOM
+ *   不传则始终挂载到 DOM（兼容旧调用）
  * @returns {HTMLElement} 流式消息 wrapper
  */
-export function addStreamingMessage() {
+export function addStreamingMessage(targetSessionId) {
   const chatContainer = document.getElementById('chatContainer');
   const wrapper = document.createElement('div');
   wrapper.className = 'message-wrapper assistant streaming';
@@ -180,10 +182,15 @@ export function addStreamingMessage() {
       <div class="stream-status hidden"></div>
     </div>
   `;
-  chatContainer.appendChild(wrapper);
-  requestAnimationFrame(() => {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
-  });
+
+  // 仅当目标会话与当前活跃会话匹配时才挂载到 DOM，防止串台
+  const shouldMount = !targetSessionId || targetSessionId === state.activeSessionId;
+  if (shouldMount && chatContainer) {
+    chatContainer.appendChild(wrapper);
+    requestAnimationFrame(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+  }
 
   // 绑定流式消息内的停止按钮
   const streamingStopBtn = wrapper.querySelector('.streaming-stop-btn');

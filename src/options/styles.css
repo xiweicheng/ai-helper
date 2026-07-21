@@ -1807,6 +1807,20 @@ textarea {
   font-size: 14px;
   font-weight: 500;
 }
+.agent-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.agent-status-row .agent-status {
+  flex: 1;
+  margin-bottom: 0;
+}
+.agent-status-row #disconnectGroup {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
 .agent-status.connected {
   background: #f0fff4;
   border: 1px solid #c6f6d5;
@@ -1896,6 +1910,154 @@ textarea {
   padding: 1px 6px;
   border-radius: 3px;
   font-size: 12px;
+}
+
+/* ========== 多代理列表样式 ========== */
+.paired-agents-section {
+  margin-bottom: 20px;
+}
+.paired-agents-section h3 {
+  font-size: 14px;
+  color: #667eea;
+  margin-bottom: 10px;
+}
+.paired-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.paired-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+.paired-agent-item:hover {
+  border-color: #667eea;
+  background: #f5f6ff;
+}
+.paired-agent-item.active {
+  border-color: #667eea;
+  background: #f0f4ff;
+}
+.paired-agent-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+/* 非活跃代理：空心圆点 */
+.paired-agent-dot.online {
+  background: transparent;
+  border: 2.5px solid #48bb78;
+}
+.paired-agent-dot.offline {
+  background: transparent;
+  border: 2.5px solid #cbd5e0;
+}
+.paired-agent-dot.checking {
+  background: transparent;
+  border: 2.5px solid #ecc94b;
+}
+/* 活跃代理：实心圆点 + 外层光环 */
+.paired-agent-dot.active-online {
+  background: #48bb78;
+  box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.2);
+}
+.paired-agent-dot.active-offline {
+  background: #cbd5e0;
+  box-shadow: 0 0 0 3px rgba(203, 213, 224, 0.3);
+}
+.paired-agent-dot.active-checking {
+  background: #ecc94b;
+  box-shadow: 0 0 0 3px rgba(236, 201, 75, 0.2);
+}
+.paired-agent-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2d3748;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.paired-agent-name:hover {
+  background: rgba(102, 126, 234, 0.08);
+}
+.paired-agent-url {
+  font-size: 11px;
+  color: #a0aec0;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.paired-agent-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.paired-agent-btn {
+  padding: 4px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  color: #4a5568;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.paired-agent-btn:hover {
+  background: #667eea;
+  color: #fff;
+  border-color: #667eea;
+}
+.paired-agent-btn.delete-btn {
+  color: #e53e3e;
+  border-color: #fed7d7;
+  background: #fff5f5;
+}
+.paired-agent-btn.delete-btn:hover {
+  background: #e53e3e;
+  color: #fff;
+  border-color: #e53e3e;
+}
+.paired-agent-item.active .paired-agent-btn.switch-btn {
+  background: #667eea;
+  color: #fff;
+  border-color: #667eea;
+  cursor: default;
+}
+.paired-agent-status-text {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.paired-agent-status-text.online {
+  color: #48bb78;
+}
+.paired-agent-status-text.offline {
+  color: #a0aec0;
+}
+
+/* 添加代理区域 */
+.add-agent-section {
+  border-top: 1px solid #e8e8e8;
+  padding-top: 16px;
+  margin-top: 4px;
+}
+.add-agent-section h3 {
+  font-size: 14px;
+  color: #667eea;
+  margin-bottom: 12px;
 }
 
 /* ========== 工具箱 Tab 样式 ========== */

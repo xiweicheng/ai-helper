@@ -2638,7 +2638,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         state.currentExecutionStatus = null;
         
         if (!_se()) {
-          _se(addStreamingMessage());
+          _se(addStreamingMessage(mySessionId));
           setProcessStartTime(Date.now());
 
           // 如果有待处理的预筛选日志，立即添加预筛选卡片到 message-content 最前面
@@ -2711,7 +2711,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       if (message.type === 'STREAM_TOOL_CALL') {
         if (!_se()) {
           // 如果流式元素还没有创建，立即创建
-          _se(addStreamingMessage());
+          _se(addStreamingMessage(mySessionId));
           setProcessStartTime(Date.now());
         }
         if (_se() && message.toolCalls?.length > 0) {

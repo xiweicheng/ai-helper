@@ -14,13 +14,13 @@ import logger from '../shared/logger.js';
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
 // 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）
-cleanupExpiredReactCheckpoints()
-  .then(() => {
-    // 自检：列出当前所有 checkpoint，验证 store 工作正常
-    return getAllReactCheckpoints();
-  })
-  .then(all => {
-    logger.debug(`[Background] DB 自检通过，当前有 ${all.length} 个 checkpoint`);
+// 同时执行旧格式 Agent 数据迁移
+Promise.all([
+  cleanupExpiredReactCheckpoints().then(() => getAllReactCheckpoints()),
+  AgentClient.migrateFromLegacyFormat()
+])
+  .then(([all, migrated]) => {
+    logger.debug(`[Background] DB 自检通过，当前有 ${all.length} 个 checkpoint` + (migrated ? '，已完成旧格式 Agent 迁移' : ''));
   })
   .catch(err => {
     logger.warn('[Background] 清理过期 checkpoint 或 DB 自检失败:', err);
@@ -861,19 +861,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === 'TRIGGER_AGENT_HEALTH_CHECK') {
     // 重置状态标记，确保无论状态是否变化都会通知 Side Panel
-    wasAgentConnected = null;
+    _agentLastStatus.clear();
     performAgentHealthCheck();
     return false;
   }
   if (message.type === 'AGENT_CONNECTION_CHANGED') {
-    // 直接转发到 Side Panel，不依赖健康检查 ping
+    // 选项页配对/断开后通知 Side Panel，同时触发健康检查
     chrome.runtime.sendMessage({
       type: 'AGENT_CONNECTION_CHANGED',
-      connected: message.connected
+      connected: message.connected,
+      agentId: message.agentId
     }).catch(() => {});
     if (message.connected) {
-      // 连接成功，同时触发健康检查以确保 background 内部状态正确
-      wasAgentConnected = null;
+      _agentLastStatus.clear();
       performAgentHealthCheck();
     }
     return false;
@@ -933,57 +933,75 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
 // ==================== Agent 健康检查 ====================
 
 let agentHealthCheckInterval = null;
-let wasAgentConnected = null; // 上次检查的连接状态
+const _agentLastStatus = new Map(); // agentId -> boolean（上次检查的状态）
 
 /**
- * 执行 Agent 健康检查，状态变化时通知 Side Panel
+ * 执行 Agent 健康检查，遍历所有配对代理，状态变化时通知 Side Panel
  */
 async function performAgentHealthCheck() {
   try {
-    const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-    const isPaired = !!(storage.agentUrl && storage.agentToken);
-    
-    if (!isPaired) {
-      if (wasAgentConnected !== false) {
-        wasAgentConnected = false;
+    const agents = await AgentClient.getPairedAgents();
+
+    if (agents.length === 0) {
+      // 没有任何已配对代理
+      if (_agentLastStatus.size > 0) {
+        _agentLastStatus.clear();
         clearAgentConnectivityCache();
-        AgentClient.setAgentReachable(false);
+        AgentClient.setAgentReachable('__global__', false);
         notifyAgentStatusChange(false, '未配对');
       }
       return;
     }
-    
-    // Ping 代理服务确认可达性
-    let connected = false;
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const response = await fetch(`${storage.agentUrl}/api/status`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      connected = response.ok;
-    } catch (err) {
-      connected = false;
-    }
-    
-    if (wasAgentConnected !== connected) {
-      wasAgentConnected = connected;
-      clearAgentConnectivityCache();
-      AgentClient.setAgentReachable(connected);
-      const status = connected ? 'connected' : 'disconnected';
-      const detail = connected ? '代理服务已恢复' : '代理服务不可达';
-      logger.debug(`[Background] 代理健康检查状态变化: ${detail}`);
-      notifyAgentStatusChange(connected, status);
 
-      // Agent 连接恢复时，重新加载 MCP 工具
-      if (connected) {
-        loadMcpTools().then(count => {
-          if (count > 0) logger.debug(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
-        }).catch(() => {});
-      } else {
-        // Agent 断开时清理 MCP 工具状态和缓存
-        await unloadMcpTools();
-        mcpToolsCache = null;
-        logger.debug('[Background] Agent 断开，已清理 MCP 工具');
+    // 并行检查所有代理
+    const results = await Promise.allSettled(
+      agents.map(async (agent) => {
+        let connected = false;
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2000);
+          const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          connected = response.ok;
+        } catch {
+          connected = false;
+        }
+
+        const prev = _agentLastStatus.get(agent.id);
+        if (prev !== connected) {
+          _agentLastStatus.set(agent.id, connected);
+          AgentClient.setAgentReachable(agent.id, connected);
+          logger.debug(`[Background] 代理 ${agent.name} 状态变化: ${connected ? '在线' : '离线'}`);
+          return { agentId: agent.id, name: agent.name, connected, changed: true };
+        }
+        return { agentId: agent.id, name: agent.name, connected, changed: false };
+      })
+    );
+
+    // 汇总状态变化
+    const changedAgents = results
+      .filter(r => r.status === 'fulfilled' && r.value.changed)
+      .map(r => r.value);
+
+    if (changedAgents.length > 0) {
+      clearAgentConnectivityCache();
+
+      // 检查活跃代理状态是否变化
+      const activeAgent = await AgentClient.getActiveAgent();
+      const activeChanged = changedAgents.find(a => a.agentId === activeAgent?.id);
+
+      if (activeChanged) {
+        notifyAgentStatusChange(activeChanged.connected, activeChanged.connected ? '在线' : '离线', activeChanged.agentId);
+
+        if (activeChanged.connected) {
+          loadMcpTools().then(count => {
+            if (count > 0) logger.debug(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
+          }).catch(() => {});
+        } else {
+          await unloadMcpTools();
+          mcpToolsCache = null;
+          logger.debug('[Background] Agent 断开，已清理 MCP 工具');
+        }
       }
     }
   } catch (err) {
@@ -992,13 +1010,14 @@ async function performAgentHealthCheck() {
 }
 
 /**
- * 通知 Side Panel 代理 状态变化
+ * 通知 Side Panel 代理状态变化
  */
-function notifyAgentStatusChange(connected, status) {
+function notifyAgentStatusChange(connected, status, agentId) {
   chrome.runtime.sendMessage({
     type: 'AGENT_STATUS_CHANGE',
     connected,
-    status
+    status,
+    agentId
   }).catch(() => {
     // Side Panel 可能未打开，忽略错误
   });
@@ -1024,7 +1043,7 @@ function stopAgentHealthCheck() {
   if (agentHealthCheckInterval) {
     clearInterval(agentHealthCheckInterval);
     agentHealthCheckInterval = null;
-    wasAgentConnected = null;
+    _agentLastStatus.clear();
   }
 }
 

@@ -129,13 +129,16 @@ export function showAgentSkillViewer(skillName, data) {
 // ==================== Agent 连接与 API ====================
 
 /**
- * 获取 Agent 连接信息
+ * 获取 Agent 连接信息（从 pairedAgents 列表获取活跃代理）
  */
 export async function getAgentConnection() {
-  const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-  state.agentBaseUrl = result.agentUrl || null;
-  state.agentToken = result.agentToken || null;
-  state.agentConnected = !!(state.agentBaseUrl && state.agentToken);
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = result.pairedAgents || [];
+  const active = agents.find(a => a.id === result.activeAgentId);
+
+  state.agentBaseUrl = active?.url || null;
+  state.agentToken = active?.token || null;
+  state.agentConnected = !!active;
   return { url: state.agentBaseUrl, token: state.agentToken, connected: state.agentConnected };
 }
 

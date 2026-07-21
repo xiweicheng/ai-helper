@@ -636,7 +636,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 /**
  * 更新 Side Panel 头部的 Agent 连接指示器
  */
-function updateAgentIndicator(platformInfo) {
+async function updateAgentIndicator(platformInfo) {
   const dot = document.getElementById('headerAgentDot');
   const btn = document.getElementById('headerAgentIndicator');
   if (!dot || !btn) return;
@@ -646,7 +646,16 @@ function updateAgentIndicator(platformInfo) {
     btn.title = '代理未连接 - 点击前往设置';
   } else {
     dot.className = 'header-agent-dot connected';
-    const parts = ['代理已连接 - 支持MCP和Skill'];
+    // 尝试获取当前活跃代理的名称
+    let proxyName = '';
+    try {
+      const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+      const agents = storage.pairedAgents || [];
+      const active = agents.find(a => a.id === storage.activeAgentId);
+      if (active) proxyName = active.name;
+    } catch { /* ignore */ }
+
+    const parts = [proxyName || '代理已连接'];
     if (platformInfo.platformName) parts.push(platformInfo.platformName);
     if (platformInfo.arch) parts.push(platformInfo.arch);
     btn.title = parts.join(' | ') + ' - 点击前往设置';
@@ -703,12 +712,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       refreshToolPopupIfOpen();
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
-      // 直接从选项页通知更新，不依赖 storage 读取
-      logger.debug('[SidePanel] 收到 Agent 连接状态变更:', message.connected);
+      // 选项页配对/断开/切换时更新
+      logger.debug('[SidePanel] 收到 Agent 连接状态变更:', message.connected, message.agentId);
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
+
+      // 如果切换到了新代理，获取其平台信息
+      if (message.connected && message.agentId) {
+        (async () => {
+          try {
+            const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+            const agents = storage.pairedAgents || [];
+            const active = agents.find(a => a.id === storage.activeAgentId);
+            if (active) {
+              const statusResp = await fetch(`${active.url}/api/status`);
+              if (statusResp.ok) {
+                const statusData = await statusResp.json();
+                state.agentPlatform = {
+                  platformName: statusData.platformName || 'Unknown',
+                  platform: statusData.platform || 'unknown',
+                  arch: statusData.arch || 'unknown',
+                  shell: statusData.shell || '/bin/sh',
+                  homeDir: statusData.homeDir || '',
+                  workdir: statusData.workdir || '',
+                  connected: true
+                };
+              }
+            }
+          } catch { /* ignore */ }
+          updateAgentIndicator(state.agentPlatform);
+        })();
+      }
+
       updateAgentIndicator(state.agentPlatform);
       updateFileInputVisibility();
-      // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
     }
     if (message.type === 'SCREENSHOT_RESULT' && message.dataUrl) {

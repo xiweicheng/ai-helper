@@ -155,6 +155,13 @@ export async function _checkForAbandonedCheckpoint() {
   const sessionId = state.activeSessionId;
   if (!sessionId) return;
 
+  // 如果该会话有正在执行的后台任务（pendingCallApiSessionIds 包含该会话 ID），
+  // 说明任务仍在运行中，checkpoint 存在是正常的（ReAct 循环定期保存），
+  // 不应显示"任务中断"卡片
+  if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.has(sessionId)) {
+    return;
+  }
+
   // 检查 messageHistory 中是否已经有带 resumable: true 的消息（避免重复添加）
   const hasResumableMessage = state.messageHistory.some(msg => msg.resumable);
 

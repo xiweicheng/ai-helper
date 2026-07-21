@@ -55,59 +55,176 @@ import logger from '../shared/logger.js';
 //
 // 所有需认证的请求通过 Bearer Token（agentRequest/agentGet）发送
 
+// ==================== 多代理端数据结构 ====================
+// pairedAgents: [{ id, name, url, token, pairedAt }]
+// activeAgentId: string — 当前活跃代理的 ID
+// _agentReachability: Map<agentId, boolean|null> — 可达性内存缓存
+
 /**
- * 代理服务可达性状态
- * null = 尚未检测（未知），true = 可达，false = 不可达
+ * 代理服务可达性状态（按 agentId 区分）
+ * null = 尚未检测，true = 可达，false = 不可达
  * 由 background/index.js 中的健康检查周期性更新
  */
-let _agentReachable = null;
+const _agentReachability = new Map();
 
 /**
  * 设置代理可达性状态
- * @param {boolean} reachable
+ * @param {string} agentId
+ * @param {boolean|null} reachable
  */
-function setAgentReachable(reachable) {
-  if (_agentReachable !== reachable) {
-    logger.debug('[AgentClient] 代理可达性变更:', reachable ? '可达' : '不可达');
+function setAgentReachable(agentId, reachable) {
+  const prev = _agentReachability.get(agentId);
+  if (prev !== reachable) {
+    logger.debug('[AgentClient] 代理可达性变更:', agentId, reachable ? '可达' : '不可达');
   }
-  _agentReachable = reachable;
+  _agentReachability.set(agentId, reachable);
 }
 
 /**
- * 查询代理是否可达
+ * 查询指定代理是否可达
+ * @param {string} agentId
  * @returns {boolean|null} null=未知, true=可达, false=不可达
  */
-function isAgentReachable() {
-  return _agentReachable;
+function isAgentReachable(agentId) {
+  return _agentReachability.get(agentId) ?? null;
 }
 
 /**
- * 获取代理 连接配置
- * @returns {Promise<{url: string|null, token: string|null, connected: boolean}>}
+ * 查询当前活跃代理是否可达（兼容旧接口）
+ * @returns {boolean|null}
+ */
+function isActiveAgentReachable() {
+  // 遍历所有代理，任一可达即认为可达
+  for (const val of _agentReachability.values()) {
+    if (val === true) return true;
+  }
+  return null;
+}
+
+/** 生成唯一代理 ID */
+function generateAgentId() {
+  return `pa_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * 从旧格式数据迁移到新格式（启动时调用一次）
+ * @returns {Promise<boolean>} 是否发生了迁移
+ */
+async function migrateFromLegacyFormat() {
+  try {
+    const result = await chrome.storage.local.get(['agentUrl', 'agentToken', 'agentPlatform', 'pairedAgents']);
+    // 已有新格式数据，跳过
+    if (result.pairedAgents && result.pairedAgents.length > 0) {
+      return false;
+    }
+    // 有旧格式数据，执行迁移
+    if (result.agentUrl && result.agentToken) {
+      const platformInfo = result.agentPlatform || {};
+      const name = platformInfo.platformName
+        ? `${platformInfo.platformName} ${platformInfo.arch || ''}`.trim()
+        : '默认代理';
+      const id = generateAgentId();
+      const agents = [{
+        id,
+        name,
+        url: result.agentUrl,
+        token: result.agentToken,
+        pairedAt: new Date().toISOString()
+      }];
+      await chrome.storage.local.set({
+        pairedAgents: agents,
+        activeAgentId: id
+      });
+      await chrome.storage.local.remove(['agentUrl', 'agentToken', 'agentPlatform']);
+      logger.debug('[AgentClient] 已从旧格式迁移代理配置:', name);
+      return true;
+    }
+  } catch (err) {
+    logger.warn('[AgentClient] 旧格式迁移失败:', err.message);
+  }
+  return false;
+}
+
+/**
+ * 获取当前活跃代理的连接配置
+ * @returns {Promise<{url: string|null, token: string|null, connected: boolean, agentId: string|null}>}
  */
 async function getAgentConfig() {
-  const result = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-  const url = result.agentUrl || null;
-  const token = result.agentToken || null;
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = result.pairedAgents || [];
+  const activeId = result.activeAgentId;
+
+  if (!activeId || agents.length === 0) {
+    return { url: null, token: null, connected: false, agentId: null };
+  }
+
+  const active = agents.find(a => a.id === activeId);
+  if (!active) {
+    // 活跃代理不在列表中，自动选第一个
+    const first = agents[0];
+    await chrome.storage.local.set({ activeAgentId: first.id });
+    return { url: first.url, token: first.token, connected: true, agentId: first.id };
+  }
+
   return {
-    url,
-    token,
-    connected: !!(url && token)
+    url: active.url,
+    token: active.token,
+    connected: true,
+    agentId: active.id
   };
 }
 
 /**
- * 检查 Agent 是否已配对
+ * 获取所有已配对代理列表
+ * @returns {Promise<Array<{id, name, url, token, pairedAt}>>}
  */
-async function isAgentPaired() {
-  const config = await getAgentConfig();
-  return config.connected;
+async function getPairedAgents() {
+  const result = await chrome.storage.local.get('pairedAgents');
+  return result.pairedAgents || [];
 }
 
 /**
- * 发起配对请求
+ * 获取活跃代理的完整信息
+ * @returns {Promise<Object|null>}
  */
-async function pairWithAgent(agentUrl, pairCode) {
+async function getActiveAgent() {
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = result.pairedAgents || [];
+  if (!result.activeAgentId || agents.length === 0) return null;
+  return agents.find(a => a.id === result.activeAgentId) || agents[0] || null;
+}
+
+/**
+ * 切换活跃代理
+ * @param {string} agentId
+ * @returns {Promise<boolean>}
+ */
+async function switchActiveAgent(agentId) {
+  const agents = await getPairedAgents();
+  if (!agents.some(a => a.id === agentId)) {
+    logger.warn('[AgentClient] 切换失败，代理不存在:', agentId);
+    return false;
+  }
+  await chrome.storage.local.set({ activeAgentId: agentId });
+  logger.debug('[AgentClient] 已切换到代理:', agentId);
+  return true;
+}
+
+/**
+ * 检查 Agent 是否已配对（有任意已配对代理即可）
+ */
+async function isAgentPaired() {
+  const agents = await getPairedAgents();
+  return agents.length > 0;
+}
+
+/**
+ * 发起配对请求，成功后加入列表并设为活跃
+ * @param {string} agentUrl
+ * @param {string} pairCode
+ * @param {string} [customName] - 自定义名称，不传则自动从 /api/status 获取
+ */
+async function pairWithAgent(agentUrl, pairCode, customName) {
   try {
     const extensionId = chrome.runtime.id;
     const response = await fetch(`${agentUrl}/api/pair`, {
@@ -117,9 +234,35 @@ async function pairWithAgent(agentUrl, pairCode) {
     });
     const data = await response.json();
     if (data.success && data.token) {
-      await chrome.storage.local.set({ agentUrl, agentToken: data.token });
-      logger.debug('[AgentClient] 配对成功');
-      return { success: true, token: data.token };
+      // 尝试获取平台信息生成默认名称
+      let name = customName;
+      if (!name) {
+        try {
+          const statusResp = await fetch(`${agentUrl}/api/status`);
+          if (statusResp.ok) {
+            const statusData = await statusResp.json();
+            const parts = [];
+            if (statusData.platformName) parts.push(statusData.platformName);
+            if (statusData.arch) parts.push(statusData.arch);
+            name = parts.length > 0 ? parts.join(' ') : new URL(agentUrl).hostname;
+          }
+        } catch {
+          name = new URL(agentUrl).hostname;
+        }
+        if (!name) name = '未命名代理';
+      }
+
+      const id = generateAgentId();
+      const newAgent = { id, name, url: agentUrl, token: data.token, pairedAt: new Date().toISOString() };
+
+      // 追加到列表并设为活跃
+      const result = await chrome.storage.local.get('pairedAgents');
+      const agents = result.pairedAgents || [];
+      agents.push(newAgent);
+      await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: id });
+
+      logger.debug('[AgentClient] 配对成功:', name);
+      return { success: true, token: data.token, agentId: id, name };
     }
     return { success: false, error: data.error || '配对失败' };
   } catch (err) {
@@ -128,11 +271,42 @@ async function pairWithAgent(agentUrl, pairCode) {
 }
 
 /**
- * 断开配对
+ * 断开指定代理的配对
+ * @param {string} agentId
  */
-async function unpairAgent() {
-  await chrome.storage.local.remove(['agentUrl', 'agentToken']);
-  logger.debug('[AgentClient] 已断开配对');
+async function unpairAgent(agentId) {
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  let agents = result.pairedAgents || [];
+  agents = agents.filter(a => a.id !== agentId);
+
+  // 如果删除的是活跃代理，自动切换到第一个
+  if (result.activeAgentId === agentId) {
+    const newActiveId = agents.length > 0 ? agents[0].id : null;
+    await chrome.storage.local.set({
+      pairedAgents: agents,
+      activeAgentId: newActiveId
+    });
+  } else {
+    await chrome.storage.local.set({ pairedAgents: agents });
+  }
+
+  // 清理可达性缓存
+  _agentReachability.delete(agentId);
+  logger.debug('[AgentClient] 已断开代理:', agentId);
+}
+
+/**
+ * 更新代理名称
+ * @param {string} agentId
+ * @param {string} name
+ */
+async function updateAgentName(agentId, name) {
+  const agents = await getPairedAgents();
+  const idx = agents.findIndex(a => a.id === agentId);
+  if (idx === -1) return false;
+  agents[idx].name = name;
+  await chrome.storage.local.set({ pairedAgents: agents });
+  return true;
 }
 
 /**
@@ -149,7 +323,7 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
   }
 
   // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
-  if (_agentReachable === false) {
+  if (config.agentId && _agentReachability.get(config.agentId) === false) {
     return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
   }
 
@@ -195,7 +369,7 @@ async function agentGet(path, timeoutMs = 30000) {
   }
 
   // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
-  if (_agentReachable === false) {
+  if (config.agentId && _agentReachability.get(config.agentId) === false) {
     return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
   }
 
@@ -237,7 +411,7 @@ async function uploadFile(file) {
   if (!config.connected) {
     return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
   }
-  if (_agentReachable === false) {
+  if (config.agentId && _agentReachability.get(config.agentId) === false) {
     return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
   }
 
@@ -364,7 +538,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     return null;
   }
 
-  if (_agentReachable === false) {
+  if (config.agentId && _agentReachability.get(config.agentId) === false) {
     if (onError) onError(new Error('代理服务未连接，请确认代理服务已启动'));
     return null;
   }
@@ -652,12 +826,19 @@ async function importSkillFromUrl(url) {
 }
 
 export {
+  migrateFromLegacyFormat,
+  generateAgentId,
   setAgentReachable,
   isAgentReachable,
+  isActiveAgentReachable,
   getAgentConfig,
+  getPairedAgents,
+  getActiveAgent,
+  switchActiveAgent,
   isAgentPaired,
   pairWithAgent,
   unpairAgent,
+  updateAgentName,
   agentRequest,
   readFile,
   writeFile,

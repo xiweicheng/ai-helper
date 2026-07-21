@@ -20,28 +20,21 @@ const EXPORT_KEYS = [
   'customAgents', 'activeAgentId',
   'temperature', 'topP', 'selectedTempIndex',
   'customPrompts',
-  'agentUrl', 'agentPlatform', 'agentStreamEnabled',
+  'pairedAgents', 'agentStreamEnabled',
   'enableTools', 'isolateChat', 'enableSelectionQuery',
   'deletedPresetModels',
   'mcpEnabled', 'skillsEnabled',
 ];
 
-// 敏感的密钥 key
+// 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
 const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
 
-/**
- * 从 chrome.storage.local 收集当前配置
- * @param {boolean} includeSecrets - 是否包含 API 密钥
- * @returns {Promise<Object>} 配置对象
- */
 async function collectConfig(includeSecrets) {
   const allKeys = includeSecrets ? [...EXPORT_KEYS, ...SECRET_KEYS] : EXPORT_KEYS;
   
   return new Promise((resolve) => {
-    // 获取所有 storage 数据，以便收集动态 key（如 agentEnabledTools_*）
     chrome.storage.local.get(null, (result) => {
       const config = {};
-      // 静态白名单 key
       for (const key of allKeys) {
         if (result[key] !== undefined) {
           config[key] = result[key];
@@ -52,6 +45,10 @@ async function collectConfig(includeSecrets) {
         if (key.startsWith('agentEnabledTools_')) {
           config[key] = result[key];
         }
+      }
+      // 不包含密钥时，清除 pairedAgents 中的 token
+      if (!includeSecrets && config.pairedAgents) {
+        config.pairedAgents = config.pairedAgents.map(a => ({ ...a, token: '' }));
       }
       resolve(config);
     });

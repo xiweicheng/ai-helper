@@ -149,9 +149,11 @@ export async function extractFileContent(file) {
  * @returns {Promise<{path: string, text?: string}>} Agent 返回的文件路径和可选文本
  */
 export async function uploadFileToAgent(file) {
-  const storage = await chrome.storage.local.get(['agentUrl', 'agentToken']);
-  const agentUrl = storage.agentUrl;
-  const agentToken = storage.agentToken;
+  const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = storage.pairedAgents || [];
+  const active = agents.find(a => a.id === storage.activeAgentId);
+  const agentUrl = active?.url;
+  const agentToken = active?.token;
 
   if (!agentUrl || !agentToken) {
     throw new Error('Agent 未配对');
