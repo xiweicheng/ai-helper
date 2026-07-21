@@ -2788,6 +2788,15 @@ body {
   margin-bottom: 4px;
   color: #888;
 }
+.tool-result-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .tool-result-status {
   display: inline-flex;
   align-items: center;

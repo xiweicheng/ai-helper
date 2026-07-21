@@ -2737,7 +2737,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             // 创建新的 Agent 输出区域
             const outputDiv = document.createElement('div');
             outputDiv.className = 'agent-stream-output';
-            outputDiv.innerHTML = createCodeBlockHtml('', 'agent-stream-content');
+            outputDiv.innerHTML = `
+              <div class="tool-result-title">执行结果</div>
+              ${createCodeBlockHtml('', 'agent-stream-content')}
+            `;
             // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部（与非命令工具的 .tool-call-result 展示形式一致）
             if (message.toolCallId) {
               const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);

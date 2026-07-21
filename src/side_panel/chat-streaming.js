@@ -683,6 +683,7 @@ export function appendToolResult(result, streamingElement) {
       const resultDiv = document.createElement('div');
       resultDiv.className = 'tool-call-result';
       resultDiv.innerHTML = `
+        <div class="tool-result-title">执行结果</div>
         <div class="tool-result-content">
           ${createCodeBlockHtml(escapeHtml(contentPreview))}
         </div>
