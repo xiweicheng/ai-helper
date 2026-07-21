@@ -1039,7 +1039,7 @@ export function loadConfig() {
     
     // 加载执行日志配置
     document.getElementById('enableExecutionLog').checked = 
-      result.enableExecutionLog || DEFAULT_CHAT_CONFIG.enableExecutionLog;
+      result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog;
     document.getElementById('enableExecutionLog').dispatchEvent(new Event('change'));
     
     // 加载反思配置
