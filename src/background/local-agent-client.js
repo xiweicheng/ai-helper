@@ -238,7 +238,7 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
       let name = customName;
       if (!name) {
         try {
-          const statusResp = await fetch(`${agentUrl}/api/status`);
+          const statusResp = await fetch(`${agentUrl}/api/status`, { cache: 'no-cache' });
           if (statusResp.ok) {
             const statusData = await statusResp.json();
             const parts = [];
@@ -506,7 +506,7 @@ async function getAgentStatus() {
     return { success: false, error: 'Agent 未配对' };
   }
   try {
-    const response = await fetch(`${config.url}/api/status`);
+    const response = await fetch(`${config.url}/api/status`, { cache: 'no-cache' });
     return await response.json();
   } catch (err) {
     return { success: false, error: `无法连接到 Agent: ${err.message}` };

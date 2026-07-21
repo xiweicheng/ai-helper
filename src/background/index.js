@@ -960,7 +960,7 @@ async function performAgentHealthCheck() {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 2000);
-          const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal });
+          const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
           clearTimeout(timeoutId);
           connected = response.ok;
         } catch {

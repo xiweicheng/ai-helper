@@ -917,7 +917,7 @@ function initAgentConfig() {
     try {
       const controller = new AbortController();
       const tid = setTimeout(() => controller.abort(), 2000);
-      const resp = await fetch(`${url}/api/status`, { signal: controller.signal });
+      const resp = await fetch(`${url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
       clearTimeout(tid);
       return resp.ok;
     } catch { return false; }
@@ -1104,7 +1104,7 @@ function initAgentConfig() {
     updateStatusUI('checking', '正在获取代理信息...');
 
     try {
-      const statusResp = await fetch(`${url}/api/status`);
+      const statusResp = await fetch(`${url}/api/status`, { cache: 'no-cache' });
       if (!statusResp.ok) {
         updateStatusUI('disconnected', '代理服务不可达');
         return;
@@ -1114,6 +1114,7 @@ function initAgentConfig() {
       // 获取详细信息
       try {
         const detailResp = await fetch(`${url}/api/status/detail`, {
+          cache: 'no-cache',
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (detailResp.ok) {
