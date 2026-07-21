@@ -671,8 +671,9 @@ export function appendToolResult(result, streamingElement) {
     header.insertAdjacentHTML('beforeend', statusHtml);
     
     // 命令执行类工具：已有流式输出，不再创建下方结果区（状态已移到标题栏）
-    if (!isExecCommand) {
-      // 非命令执行工具：展示结果内容（不含状态行，状态已在标题栏）
+    // 但如果执行失败且没有流式输出（如被安全规则拦截），需要展示错误信息
+    if (!isExecCommand || !result.success) {
+      // 非命令执行工具，或命令执行工具失败时：展示结果内容（不含状态行，状态已在标题栏）
       const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
       const contentPreview = contentText.length > 500 
         ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 

@@ -1319,10 +1319,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   name: toolName,
                   params: toolArgs
                 },
-                observation: toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr,
+                observation: isToolSuccess ? (toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr) : undefined,
                 prototypeId: toolResult?.prototypeId || null
               };
-              // 失败时传递 error 字段，确保执行日志面板能展示具体错误原因
               if (!isToolSuccess && toolResult?.error) {
                 logEntry.error = toolResult.error;
               }

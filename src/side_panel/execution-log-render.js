@@ -485,7 +485,7 @@ function renderSingleEntry(entry, index, totalCount) {
           </div>
           ` : ''}
           
-          ${entry.observation ? `
+          ${entry.observation && entry.observation !== entry.error ? `
           <div class="timeline-section">
             <div class="section-title">📝 观察结果</div>
             <div class="section-content">${escapeHtml(entry.observation)}</div>

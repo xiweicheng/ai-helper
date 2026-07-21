@@ -8452,7 +8452,7 @@ body {
 
 /* 收藏消息高亮动画 */
 .bookmark-highlight {
-  animation: bookmarkHighlightPulse 2s ease;
+  animation: messageFadeIn 0.3s ease-out, bookmarkHighlightPulse 2s ease;
   position: relative;
 }
 
