@@ -2770,6 +2770,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         } else if (data.type === 'exit') {
           exitCode = data.exitCode;
           killed = data.killed;
+          normalExit = true; // 竞态修复：回放消息可能在 wrapper 设置前到达
           sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
         }
       }, () => {
@@ -2794,6 +2795,12 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         if (sessionId) {
           const entry = runningAgentCommands.get(sessionId);
           if (entry) entry.resolve = resolve;
+        }
+        
+        // 竞态修复：exit 回放消息已在 onMessage 回调中处理完毕，无需包装 handler
+        if (normalExit) {
+          resolve();
+          return;
         }
         
         const commandStartTime = Date.now();
