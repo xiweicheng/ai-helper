@@ -51,8 +51,13 @@ function getShellForExec() {
   return { shell: '/bin/bash', args: ['-c'] };
 }
 
-// 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId }
+// 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId, stdoutBuf, stderrBuf }
 const runningProcesses = new Map();
+
+// 已完成进程缓存（解决竞态条件：进程完成太快，WebSocket 客户端来不及连接）
+// execId → { stdoutBuf, stderrBuf, exitCode, killed, cleanupTimeout }
+const completedProcesses = new Map();
+const COMPLETED_CACHE_TTL = 30000; // 30秒后清理
 
 // 安全的子进程环境变量白名单（不泄露宿主敏感信息）
 const SAFE_ENV_KEYS = [
@@ -127,7 +132,8 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   let finished = false; // 防止 close/error 重复处理
 
   // 存储到 entry 中供 clearTimers 读取
-  const entry = { process: proc, wsClients };
+  // stdoutBuf/stderrBuf 始终收集，用于回放给延迟连接的 WS 客户端
+  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '' };
   runningProcesses.set(execId, entry);
 
   // 超时控制
@@ -160,6 +166,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   proc.stdout.on('data', (chunk) => {
     const str = chunk.toString();
     if (collectOutput) stdoutCollected += str;
+    entry.stdoutBuf += str;
     broadcast({ type: 'stdout', data: str, execId });
   });
 
@@ -167,6 +174,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   proc.stderr.on('data', (chunk) => {
     const str = chunk.toString();
     if (collectOutput) stderrCollected += str;
+    entry.stderrBuf += str;
     broadcast({ type: 'stderr', data: str, execId });
   });
 
@@ -175,12 +183,24 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     if (finished) return;
     finished = true;
     clearTimers();
-    broadcast({ type: 'exit', exitCode: typeof exitCode === 'number' ? exitCode : -1, execId, killed });
+    const finalExitCode = typeof exitCode === 'number' ? exitCode : -1;
+    broadcast({ type: 'exit', exitCode: finalExitCode, execId, killed });
+    // 移入已完成缓存，解决竞态条件：延迟连接的 WS 客户端可回放输出
+    const cleanupTimeout = setTimeout(() => {
+      completedProcesses.delete(execId);
+    }, COMPLETED_CACHE_TTL);
+    completedProcesses.set(execId, {
+      stdoutBuf: entry.stdoutBuf,
+      stderrBuf: entry.stderrBuf,
+      exitCode: finalExitCode,
+      killed,
+      cleanupTimeout
+    });
     runningProcesses.delete(execId);
     if (onComplete) {
       onComplete({
         execId,
-        exitCode: typeof exitCode === 'number' ? exitCode : -1,
+        exitCode: finalExitCode,
         killed,
         stdout: collectOutput ? stdoutCollected : undefined,
         stderr: collectOutput ? stderrCollected : undefined
@@ -194,6 +214,18 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     finished = true;
     clearTimers();
     broadcast({ type: 'error', error: err.message, execId });
+    // 移入已完成缓存
+    const cleanupTimeout = setTimeout(() => {
+      completedProcesses.delete(execId);
+    }, COMPLETED_CACHE_TTL);
+    completedProcesses.set(execId, {
+      stdoutBuf: entry.stdoutBuf,
+      stderrBuf: entry.stderrBuf,
+      exitCode: -1,
+      killed: false,
+      error: err.message,
+      cleanupTimeout
+    });
     runningProcesses.delete(execId);
     if (onComplete) {
       onComplete({
@@ -241,11 +273,29 @@ function executeCommandSync(command, cwd) {
 
 /**
  * 添加 WebSocket 客户端到已有进程的监听中
+ * 如果进程已结束，从 completedProcesses 缓存回放全部输出
  */
 function addWsClient(execId, wsClient) {
   const entry = runningProcesses.get(execId);
   if (entry) {
     entry.wsClients.add(wsClient);
+    return true;
+  }
+  // 进程已结束，检查缓存并回放全部输出
+  const completed = completedProcesses.get(execId);
+  if (completed) {
+    if (completed.stdoutBuf) {
+      wsClient.send(JSON.stringify({ type: 'stdout', data: completed.stdoutBuf, execId }));
+    }
+    if (completed.stderrBuf) {
+      wsClient.send(JSON.stringify({ type: 'stderr', data: completed.stderrBuf, execId }));
+    }
+    if (completed.error) {
+      wsClient.send(JSON.stringify({ type: 'error', error: completed.error, execId }));
+    }
+    wsClient.send(JSON.stringify({ type: 'exit', exitCode: completed.exitCode, execId, killed: completed.killed }));
+    clearTimeout(completed.cleanupTimeout);
+    completedProcesses.delete(execId);
     return true;
   }
   return false;
