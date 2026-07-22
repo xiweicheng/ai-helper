@@ -200,6 +200,49 @@ async function saveModelToAgentOrGlobal(modelName) {
 }
 
 /**
+ * 主动验证活跃代理的实际连通性（启动时调用，不依赖缓存）
+ */
+async function verifyActiveAgentConnectivity() {
+  try {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const activeId = storage.activeAgentId;
+    const active = agents.find(a => a.id === activeId && !a.disabled);
+
+    if (!active) {
+      state.agentPlatform = { connected: false };
+      updateAgentIndicator(state.agentPlatform);
+      return;
+    }
+
+    try {
+      const resp = await fetch(`${active.url}/api/status`, { cache: 'no-cache' });
+      if (resp.ok) {
+        const data = await resp.json();
+        state.agentPlatform = {
+          platformName: data.platformName || 'Unknown',
+          platform: data.platform || 'unknown',
+          arch: data.arch || 'unknown',
+          shell: data.shell || '/bin/sh',
+          homeDir: data.homeDir || '',
+          workdir: data.workdir || '',
+          connected: true
+        };
+      } else {
+        state.agentPlatform = { connected: false };
+      }
+    } catch {
+      state.agentPlatform = { connected: false };
+    }
+
+    updateAgentIndicator(state.agentPlatform);
+    updateFileInputVisibility();
+  } catch {
+    // 静默失败
+  }
+}
+
+/**
  * 保存温度到当前 Agent（自定义助手）或全局（默认助手）
  */
 async function saveTempToAgentOrGlobal(temperature, topP, selectedTempIndex) {
@@ -714,17 +757,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 选项页配对/断开/切换时更新
       logger.debug('[SidePanel] 收到 Agent 连接状态变更:', message.connected, message.agentId);
-      state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
 
-      // 如果切换到了新代理，获取其平台信息
-      if (message.connected && message.agentId) {
+      if (!message.connected) {
+        state.agentPlatform = { connected: false };
+        updateAgentIndicator(state.agentPlatform);
+        updateFileInputVisibility();
+        refreshToolPopupIfOpen();
+        return;
+      }
+
+      // connected = true：不立即显示绿色，先验证连通性
+      if (message.agentId) {
         (async () => {
           try {
             const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
             const agents = storage.pairedAgents || [];
-            const active = agents.find(a => a.id === storage.activeAgentId);
+            const active = agents.find(a => a.id === storage.activeAgentId && !a.disabled);
             if (active) {
-              const statusResp = await fetch(`${active.url}/api/status`);
+              const statusResp = await fetch(`${active.url}/api/status`, { cache: 'no-cache' });
               if (statusResp.ok) {
                 const statusData = await statusResp.json();
                 state.agentPlatform = {
@@ -736,16 +786,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                   workdir: statusData.workdir || '',
                   connected: true
                 };
+              } else {
+                state.agentPlatform = { connected: false };
               }
             }
-          } catch { /* ignore */ }
+          } catch {
+            state.agentPlatform = { connected: false };
+          }
           updateAgentIndicator(state.agentPlatform);
+          updateFileInputVisibility();
+          refreshToolPopupIfOpen();
         })();
       }
-
-      updateAgentIndicator(state.agentPlatform);
-      updateFileInputVisibility();
-      refreshToolPopupIfOpen();
     }
     if (message.type === 'SCREENSHOT_RESULT' && message.dataUrl) {
       logger.debug('[SidePanel] 收到页面快捷键截图结果:', message.mode);
@@ -1082,8 +1134,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.agentPlatform = result.agentPlatform;
     }
     updateAgentIndicator(state.agentPlatform);
-    // 触发一次实时代理健康检查，确保连接状态准确
+    // 触发一次实时代理健康检查，同时主动验证活跃代理连通性
     chrome.runtime.sendMessage({ type: 'TRIGGER_AGENT_HEALTH_CHECK' }).catch(() => {});
+    verifyActiveAgentConnectivity();
     // 图片识别配置
     state.enableImageInput = result.enableImageInput || false;
     state.imageModelName = result.imageModelName || '';

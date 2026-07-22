@@ -9,6 +9,37 @@ import logger from '../shared/logger.js';
 let exportInProgressMap = new Map();
 
 /**
+ * 安全地将 canvas 转为 data URL（PNG 对大画布可能失败，自动降级为 JPEG）
+ * @param {HTMLCanvasElement} canvas
+ * @returns {{ dataUrl: string, format: string }} format 为 'PNG' 或 'JPEG'
+ */
+function safeCanvasToDataUrl(canvas) {
+  // 先尝试 PNG
+  try {
+    const pngData = canvas.toDataURL('image/png');
+    if (pngData && pngData.length > 100) {
+      return { dataUrl: pngData, format: 'PNG' };
+    }
+  } catch (e) {
+    logger.debug('[ChatExport] PNG toDataURL 失败，降级为 JPEG:', e.message);
+  }
+
+  // PNG 失败或数据异常小，降级为 JPEG
+  try {
+    const jpgData = canvas.toDataURL('image/jpeg', 0.92);
+    return { dataUrl: jpgData, format: 'JPEG' };
+  } catch (e) {
+    // 最后尝试低质量 JPEG
+    try {
+      const jpgLowData = canvas.toDataURL('image/jpeg', 0.5);
+      return { dataUrl: jpgLowData, format: 'JPEG' };
+    } catch (e2) {
+      throw new Error('Canvas toDataURL 失败: ' + e2.message);
+    }
+  }
+}
+
+/**
  * 在容器中渲染所有 mermaid 图表（异步）
  * @param {HTMLElement} container - 包含 .mermaid 元素的容器
  */
@@ -107,7 +138,7 @@ export async function convertSvgsToImages(container) {
       ctx.scale(2, 2);
       ctx.drawImage(img, 0, 0, width, height);
 
-      const dataUrl = canvas.toDataURL('image/png');
+      const { dataUrl, format } = safeCanvasToDataUrl(canvas);
       URL.revokeObjectURL(url);
 
       const imgTag = document.createElement('img');
@@ -236,8 +267,8 @@ export function exportAssistantMessageToDocx(messageDiv, exportBtn, exportDropdo
     tempContainer.innerHTML = htmlContent;
     document.body.appendChild(tempContainer);
 
-    // 移除表格工具栏按钮（Word 中不需要）
-    tempContainer.querySelectorAll('.table-toolbar').forEach(el => el.remove());
+    // 移除不需要的 UI 元素（Word 中不需要表格工具栏和代码复制按钮）
+    tempContainer.querySelectorAll('.table-toolbar, .code-copy-btn').forEach(el => el.remove());
 
     await renderMermaidInContainer(tempContainer);
     await convertSvgsToImages(tempContainer);
@@ -416,7 +447,7 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       backgroundColor: '#ffffff',
       willReadFrequently: true
     }).then(canvas => {
-      const imgData = canvas.toDataURL('image/png');
+      const { dataUrl: imgData, format: imgFormat } = safeCanvasToDataUrl(canvas);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
@@ -434,7 +465,7 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       const imgDisplayHeight = imgHeight * ratio;
 
       if (imgDisplayHeight <= pdfHeight) {
-        pdf.addImage(imgData, 'PNG', imgX, imgY, imgDisplayWidth, imgDisplayHeight);
+        pdf.addImage(imgData, imgFormat, imgX, imgY, imgDisplayWidth, imgDisplayHeight);
       } else {
         let heightLeft = imgDisplayHeight;
         let position = 0;
@@ -455,8 +486,8 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
           const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
           tempCtx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight);
 
-          const tempImgData = tempCanvas.toDataURL('image/png');
-          pdf.addImage(tempImgData, 'PNG', imgX, position, imgDisplayWidth, cutHeight);
+          const { dataUrl: tempImgData, format: tempFormat } = safeCanvasToDataUrl(tempCanvas);
+          pdf.addImage(tempImgData, tempFormat, imgX, position, imgDisplayWidth, cutHeight);
 
           heightLeft -= cutHeight;
           position += pageHeight;

@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands, clearSkillLoadCache } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
@@ -123,6 +123,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // | GENERATE_PDF                  | content     | CDP 生成 PDF               | 是   |
 // | TRIGGER_AGENT_HEALTH_CHECK    | side_panel  | 手动触发 Agent 健康检查      | 否   |
 // | AGENT_CONNECTION_CHANGED      | options     | Agent 配对状态变更通知       | 否   |
+// | OPTIONS_PAGE_OPEN             | options     | 配置页面已打开，触发全量心跳  | 否   |
+// | OPTIONS_PAGE_CLOSED           | options     | 配置页面已关闭，仅维护活跃代理 | 否   |
 // | OPEN_LOCAL_PROTOTYPE          | side_panel  | 本地浏览器打开原型文件        | 是   |
 // | DELETE_LOCAL_PROTOTYPE        | side_panel  | 删除本地原型文件             | 是   |
 //
@@ -865,15 +867,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     performAgentHealthCheck();
     return false;
   }
+  if (message.type === 'OPTIONS_PAGE_OPEN') {
+    _optionsPageOpen = true;
+    _agentLastStatus.clear();
+    performAgentHealthCheck(); // 立即触发全量心跳
+    return false;
+  }
+  if (message.type === 'OPTIONS_PAGE_CLOSED') {
+    _optionsPageOpen = false;
+    return false;
+  }
   if (message.type === 'AGENT_CONNECTION_CHANGED') {
-    // 选项页配对/断开后通知 Side Panel，同时触发健康检查
     chrome.runtime.sendMessage({
       type: 'AGENT_CONNECTION_CHANGED',
       connected: message.connected,
       agentId: message.agentId
     }).catch(() => {});
-    if (message.connected) {
+    if (message.connected && message.agentId) {
+      // 1. 清空所有 agent 特定缓存（Skills/MCP/Prompts）
+      AgentClient.clearSkillsCache();
+      skillPromptsCache = null;
+      mcpToolsCache = null;
+      clearSkillLoadCache();
+
+      // 2. 清空健康检查历史 + 连通性缓存
       _agentLastStatus.clear();
+      clearAgentConnectivityCache();
+
+      // 3. 乐观标记新代理可达，停止所有旧重连
+      AgentClient.setAgentReachable(message.agentId, true);
+      _stopAllAutoReconnect();
+
+      // 4. 加载新代理的 MCP 工具
+      loadMcpTools().then(count => {
+        if (count > 0) logger.debug(`[Background] 切换代理后加载了 ${count} 个 MCP 工具`);
+      }).catch(() => {});
+
+      // 5. 延迟验证连通性
+      setTimeout(() => {
+        performAgentHealthCheck();
+      }, 3000);
+    } else if (!message.connected) {
+      // 断开时停止所有重连 + 清理缓存
+      _stopAllAutoReconnect();
+      mcpToolsCache = null;
+      skillPromptsCache = null;
+      clearSkillLoadCache();
       performAgentHealthCheck();
     }
     return false;
@@ -933,17 +972,53 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
 // ==================== Agent 健康检查 ====================
 
 let agentHealthCheckInterval = null;
-const _agentLastStatus = new Map(); // agentId -> boolean（上次检查的状态）
+let _optionsPageOpen = false;        // 配置页面是否打开（影响非活跃代理心跳）
+const _agentLastStatus = new Map();  // agentId -> boolean（上次检查的状态）
+const _autoReconnectTimers = new Map(); // agentId -> { timer, retries } — 自动重连
+
+/**
+ * 执行单次代理可达性检测（5秒超时 + 重试）
+ */
+async function checkSingleAgentReachable(agent) {
+  let connected = false;
+  const timeoutMs = 5000;
+
+  // 首次检测
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
+    clearTimeout(timeoutId);
+    connected = response.ok;
+  } catch {
+    connected = false;
+  }
+
+  // 首次失败后重试一次（给远程代理连接建立时间）
+  if (!connected) {
+    await new Promise(r => setTimeout(r, 500));
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
+      clearTimeout(timeoutId);
+      connected = response.ok;
+    } catch {
+      connected = false;
+    }
+  }
+
+  return connected;
+}
 
 /**
  * 执行 Agent 健康检查，遍历所有配对代理，状态变化时通知 Side Panel
  */
 async function performAgentHealthCheck() {
   try {
-    const agents = await AgentClient.getPairedAgents();
+    const allAgents = await AgentClient.getPairedAgents();
 
-    if (agents.length === 0) {
-      // 没有任何已配对代理
+    if (allAgents.length === 0) {
       if (_agentLastStatus.size > 0) {
         _agentLastStatus.clear();
         clearAgentConnectivityCache();
@@ -953,19 +1028,21 @@ async function performAgentHealthCheck() {
       return;
     }
 
-    // 并行检查所有代理
+    const activeAgent = await AgentClient.getActiveAgent();
+
+    // 过滤停用的代理
+    const enabledAgents = allAgents.filter(a => !a.disabled);
+
+    // 仅检查的代理范围：配置页面打开 → 全部启用代理；否则 → 仅活跃代理
+    const agentsToCheck = _optionsPageOpen
+      ? enabledAgents
+      : (activeAgent && !activeAgent.disabled ? [activeAgent] : []);
+
+    if (agentsToCheck.length === 0) return;
+
     const results = await Promise.allSettled(
-      agents.map(async (agent) => {
-        let connected = false;
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 2000);
-          const response = await fetch(`${agent.url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
-          clearTimeout(timeoutId);
-          connected = response.ok;
-        } catch {
-          connected = false;
-        }
+      agentsToCheck.map(async (agent) => {
+        const connected = await checkSingleAgentReachable(agent);
 
         const prev = _agentLastStatus.get(agent.id);
         if (prev !== connected) {
@@ -978,7 +1055,6 @@ async function performAgentHealthCheck() {
       })
     );
 
-    // 汇总状态变化
     const changedAgents = results
       .filter(r => r.status === 'fulfilled' && r.value.changed)
       .map(r => r.value);
@@ -986,14 +1062,13 @@ async function performAgentHealthCheck() {
     if (changedAgents.length > 0) {
       clearAgentConnectivityCache();
 
-      // 检查活跃代理状态是否变化
-      const activeAgent = await AgentClient.getActiveAgent();
       const activeChanged = changedAgents.find(a => a.agentId === activeAgent?.id);
 
       if (activeChanged) {
         notifyAgentStatusChange(activeChanged.connected, activeChanged.connected ? '在线' : '离线', activeChanged.agentId);
 
         if (activeChanged.connected) {
+          _stopAutoReconnect(activeChanged.agentId);
           loadMcpTools().then(count => {
             if (count > 0) logger.debug(`[Background] Agent 重连后加载了 ${count} 个 MCP 工具`);
           }).catch(() => {});
@@ -1001,11 +1076,104 @@ async function performAgentHealthCheck() {
           await unloadMcpTools();
           mcpToolsCache = null;
           logger.debug('[Background] Agent 断开，已清理 MCP 工具');
+          // 启动自动重连
+          _startAutoReconnect(activeAgent);
         }
       }
     }
   } catch (err) {
     logger.warn('[Background] 代理健康检查异常:', err.message);
+  }
+}
+
+/**
+ * 启动自动重连（每 15 秒重试，最多 20 次）
+ */
+function _startAutoReconnect(agent) {
+  if (!agent || agent.disabled) return;
+
+  const existing = _autoReconnectTimers.get(agent.id);
+  if (existing) return; // 已在重连中
+
+  const schedule = (retries) => {
+    if (retries >= 20) {
+      _autoReconnectTimers.delete(agent.id);
+      logger.debug(`[Background] 代理 ${agent.name} 自动重连已放弃（超过最大重试次数）`);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      // 重试前检查：代理是否已被删除或停用
+      const currentAgents = await AgentClient.getPairedAgents();
+      const current = currentAgents.find(a => a.id === agent.id);
+      if (!current || current.disabled) {
+        _autoReconnectTimers.delete(agent.id);
+        logger.debug(`[Background] 代理 ${agent.name} 已${current?.disabled ? '停用' : '删除'}，停止自动重连`);
+        return;
+      }
+
+      logger.debug(`[Background] 代理 ${agent.name} 自动重连尝试 ${retries + 1}/20`);
+      const connected = await checkSingleAgentReachable(agent);
+
+      if (connected) {
+        _autoReconnectTimers.delete(agent.id);
+        _agentLastStatus.set(agent.id, true);
+        AgentClient.setAgentReachable(agent.id, true);
+        clearAgentConnectivityCache();
+
+        notifyAgentStatusChange(true, '在线', agent.id);
+        _refreshActiveAgentState(agent.id);
+
+        loadMcpTools().then(count => {
+          if (count > 0) logger.debug(`[Background] Agent ${agent.name} 重连成功，加载了 ${count} 个 MCP 工具`);
+        }).catch(() => {});
+        logger.debug(`[Background] 代理 ${agent.name} 自动重连成功`);
+      } else {
+        // 继续重试
+        schedule(retries + 1);
+      }
+    }, 15000);
+
+    _autoReconnectTimers.set(agent.id, { timer, retries });
+  };
+
+  schedule(0);
+}
+
+/**
+ * 停止自动重连
+ */
+function _stopAutoReconnect(agentId) {
+  const entry = _autoReconnectTimers.get(agentId);
+  if (entry) {
+    clearTimeout(entry.timer);
+    _autoReconnectTimers.delete(agentId);
+  }
+}
+
+/**
+ * 停止所有重连计时器
+ */
+function _stopAllAutoReconnect() {
+  for (const [agentId, entry] of _autoReconnectTimers) {
+    clearTimeout(entry.timer);
+  }
+  _autoReconnectTimers.clear();
+}
+
+/**
+ * 重连成功后刷新活跃代理状态（MCP 工具等）
+ */
+async function _refreshActiveAgentState(agentId) {
+  try {
+    const activeAgent = await AgentClient.getActiveAgent();
+    if (activeAgent && activeAgent.id === agentId) {
+      loadMcpTools().then(count => {
+        if (count > 0) logger.debug(`[Background] 活跃代理重连后加载了 ${count} 个 MCP 工具`);
+      }).catch(() => {});
+    }
+  } catch (e) {
+    logger.warn('[Background] 刷新活跃代理状态失败:', e.message);
   }
 }
 

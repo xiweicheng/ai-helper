@@ -196,12 +196,16 @@ async function appendAuditLog(category, action, details = {}) {
   } catch (e) { console.warn('[Background] 审计日志写入失败:', e); }
 }
 
-// Agent 连通性缓存（避免每次 getTools 都做网络探测）
-let agentConnectivityCache = { connected: null, checkedAt: 0 };
+// Agent 连通性缓存（按 agentId 隔离，避免切换代理后命中旧缓存）
+const agentConnectivityCacheMap = new Map(); // Map<agentId, { connected: boolean, checkedAt: number }>
 const AGENT_CACHE_TTL = 30000; // 30 秒内复用缓存
 
-export function clearAgentConnectivityCache() {
-  agentConnectivityCache = { connected: null, checkedAt: 0 };
+export function clearAgentConnectivityCache(agentId) {
+  if (agentId) {
+    agentConnectivityCacheMap.delete(agentId);
+  } else {
+    agentConnectivityCacheMap.clear();
+  }
 }
 
 /**
@@ -209,36 +213,40 @@ export function clearAgentConnectivityCache() {
  * 有缓存时直接返回，避免每次调用都发网络请求
  */
 async function checkAgentConnectivity() {
-  const now = Date.now();
-  if (agentConnectivityCache.connected !== null && (now - agentConnectivityCache.checkedAt) < AGENT_CACHE_TTL) {
-    return agentConnectivityCache.connected;
-  }
-
   // 第一步：检查 storage 是否有已配对的活跃代理
   const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
   const agents = result.pairedAgents || [];
   const active = agents.find(a => a.id === result.activeAgentId);
+
   if (!active) {
-    agentConnectivityCache = { connected: false, checkedAt: now };
+    agentConnectivityCacheMap.clear();
     AgentClient.setAgentReachable('__global__', false);
     return false;
   }
 
-  // 第二步：有凭据，但需确认代理服务是否可达（1.5 秒超时）
+  // 第二步：检查缓存（按 agentId 隔离）
+  const now = Date.now();
+  const cached = agentConnectivityCacheMap.get(active.id);
+  if (cached && cached.connected !== null && (now - cached.checkedAt) < AGENT_CACHE_TTL) {
+    return cached.connected;
+  }
+
+  // 第三步：有凭据，但需确认代理服务是否可达（5 秒超时，给远程代理充足时间）
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(`${active.url}/api/status`, {
-      signal: controller.signal
+      signal: controller.signal,
+      cache: 'no-cache'
     });
     clearTimeout(timeoutId);
     const connected = response.ok;
-    agentConnectivityCache = { connected, checkedAt: now };
+    agentConnectivityCacheMap.set(active.id, { connected, checkedAt: now });
     AgentClient.setAgentReachable(active.id, connected);
     console.log('[Background] Agent 连通性检测:', connected ? '可达' : '不可达 (status=' + response.status + ')');
     return connected;
   } catch (err) {
-    agentConnectivityCache = { connected: false, checkedAt: now };
+    agentConnectivityCacheMap.set(active.id, { connected: false, checkedAt: now });
     AgentClient.setAgentReachable(active.id, false);
     console.log('[Background] Agent 连通性检测: 不可达 (' + (err.name === 'AbortError' ? '超时' : err.message) + ')');
     return false;
@@ -2485,6 +2493,13 @@ async function executeSkillRun(args, toolCallId) {
  */
 // 单次会话中已加载的 Skill 缓存（避免重复网络请求）
 const skillLoadCache = new Map(); // name → { timestamp, prompt, skill }
+
+/**
+ * 清空 Skill 加载缓存（切换代理时调用）
+ */
+export function clearSkillLoadCache() {
+  skillLoadCache.clear();
+}
 
 async function executeSkillLoad(args, toolCallId) {
   const { name } = args;

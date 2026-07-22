@@ -2047,6 +2047,46 @@ textarea {
 .paired-agent-status-text.offline {
   color: #a0aec0;
 }
+.paired-agent-status-text.disabled {
+  color: #a0aec0;
+  font-style: italic;
+}
+/* 停用的代理项 */
+.paired-agent-item.disabled {
+  opacity: 0.6;
+}
+.paired-agent-item.disabled .paired-agent-name {
+  text-decoration: line-through;
+}
+.paired-agent-dot.disabled {
+  background: transparent;
+  border: 2.5px solid #a0aec0;
+}
+.paired-agent-dot.active-disabled {
+  background: #a0aec0;
+  box-shadow: 0 0 0 3px rgba(160, 174, 192, 0.2);
+}
+/* 停用/启用按钮 */
+.paired-agent-btn.disable-btn {
+  color: #718096;
+  border-color: #e2e8f0;
+  background: #f7fafc;
+}
+.paired-agent-btn.disable-btn:hover {
+  background: #edf2f7;
+  color: #4a5568;
+  border-color: #cbd5e0;
+}
+.paired-agent-btn.enable-btn {
+  color: #2b6cb0;
+  border-color: #bee3f8;
+  background: #ebf8ff;
+}
+.paired-agent-btn.enable-btn:hover {
+  background: #3182ce;
+  color: #fff;
+  border-color: #3182ce;
+}
 
 /* 添加代理区域 */
 .add-agent-section {

@@ -56,7 +56,7 @@ import logger from '../shared/logger.js';
 // 所有需认证的请求通过 Bearer Token（agentRequest/agentGet）发送
 
 // ==================== 多代理端数据结构 ====================
-// pairedAgents: [{ id, name, url, token, pairedAt }]
+// pairedAgents: [{ id, name, url, token, pairedAt, disabled }]
 // activeAgentId: string — 当前活跃代理的 ID
 // _agentReachability: Map<agentId, boolean|null> — 可达性内存缓存
 
@@ -206,6 +206,9 @@ async function switchActiveAgent(agentId) {
     return false;
   }
   await chrome.storage.local.set({ activeAgentId: agentId });
+
+  _agentReachability.delete(agentId);
+
   logger.debug('[AgentClient] 已切换到代理:', agentId);
   return true;
 }
@@ -306,6 +309,27 @@ async function updateAgentName(agentId, name) {
   if (idx === -1) return false;
   agents[idx].name = name;
   await chrome.storage.local.set({ pairedAgents: agents });
+  return true;
+}
+
+/**
+ * 切换代理的停用状态
+ * @param {string} agentId
+ * @param {boolean} disabled
+ */
+async function toggleAgentDisabled(agentId, disabled) {
+  const agents = await getPairedAgents();
+  const idx = agents.findIndex(a => a.id === agentId);
+  if (idx === -1) return false;
+  agents[idx].disabled = !!disabled;
+  await chrome.storage.local.set({ pairedAgents: agents });
+
+  // 停用的代理清除可达性缓存
+  if (disabled) {
+    _agentReachability.delete(agentId);
+  }
+
+  logger.debug(`[AgentClient] 代理 ${agents[idx].name} 已${disabled ? '停用' : '启用'}`);
   return true;
 }
 
@@ -710,6 +734,14 @@ let skillsCache = null;       // { names: Set<string>, loadedAt: number }
 let skillsCachePromise = null;
 
 /**
+ * 清空技能缓存（切换代理时调用，避免返回旧代理的技能列表）
+ */
+function clearSkillsCache() {
+  skillsCache = null;
+  skillsCachePromise = null;
+}
+
+/**
  * 获取 Agent 类型的技能名称集合（带缓存，60 秒有效）
  */
 async function getAgentSkillNamesSet() {
@@ -839,6 +871,7 @@ export {
   pairWithAgent,
   unpairAgent,
   updateAgentName,
+  toggleAgentDisabled,
   agentRequest,
   readFile,
   writeFile,
@@ -871,6 +904,7 @@ export {
   deleteSkill,
   toggleSkill,
   // Agent Skill (Markdown) API
+  clearSkillsCache,
   getAgentSkillPrompts,
   getAgentSkillPromptsFiltered,
   getAgentSkillPrompt,

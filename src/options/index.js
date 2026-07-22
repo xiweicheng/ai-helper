@@ -938,37 +938,79 @@ function initAgentConfig() {
     pairedAgentsSection.style.display = '';
     addAgentTitle.textContent = '再添加一个代理';
 
-    // 并行 ping 所有代理获取在线状态
-    const statusResults = await Promise.all(agents.map(async (a) => {
-      const online = await pingAgent(a.url);
-      return { agentId: a.id, online };
-    }));
-
+    // 先渲染列表，状态统一显示"检测中"，停用的显示"已停用"
     pairedAgentsList.innerHTML = agents.map((a) => {
       const isActive = a.id === activeId;
-      const status = statusResults.find(s => s.agentId === a.id);
-      const online = status?.online;
-      const dotClass = isActive
-        ? (online === true ? 'active-online' : online === false ? 'active-offline' : 'active-checking')
-        : (online === true ? 'online' : online === false ? 'offline' : 'checking');
-      const statusLabel = online === true ? '在线' : online === false ? '离线' : '检测中';
+      const isDisabled = !!a.disabled;
+      let dotClass, statusLabel, statusClass;
+
+      if (isDisabled) {
+        dotClass = isActive ? 'active-disabled' : 'disabled';
+        statusLabel = '已停用';
+        statusClass = 'disabled';
+      } else {
+        dotClass = isActive ? 'active-checking' : 'checking';
+        statusLabel = '检测中';
+        statusClass = 'checking';
+      }
 
       return `
-        <div class="paired-agent-item${isActive ? ' active' : ''}" data-agent-id="${a.id}">
-          <span class="paired-agent-dot ${dotClass}" title="${isActive ? '当前使用 · ' : ''}${statusLabel}"></span>
+        <div class="paired-agent-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
+          <span class="paired-agent-dot ${dotClass}" title="${statusLabel}"></span>
           <span class="paired-agent-name" data-agent-id="${a.id}" data-original="${escHtml(a.name)}" title="点击编辑名称">${escHtml(a.name)}</span>
           <span class="paired-agent-url">${escHtml(a.url)}</span>
-          <span class="paired-agent-status-text ${online === true ? 'online' : online === false ? 'offline' : 'checking'}">${statusLabel}</span>
+          <span class="paired-agent-status-text ${statusClass}">${statusLabel}</span>
           <div class="paired-agent-actions">
-            ${isActive
-              ? '<button class="paired-agent-btn switch-btn" disabled>当前</button>'
-              : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">切换</button>`
+            ${isDisabled
+              ? `<button class="paired-agent-btn enable-btn" data-action="enable" data-id="${a.id}">启用</button>`
+              : (isActive
+                ? '<button class="paired-agent-btn switch-btn active-hint" disabled>当前</button>'
+                : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">切换</button>`
+              )
             }
+            ${isDisabled ? '' : `<button class="paired-agent-btn disable-btn" data-action="disable" data-id="${a.id}">停用</button>`}
             <button class="paired-agent-btn delete-btn" data-action="delete" data-id="${a.id}">删除</button>
           </div>
         </div>`;
     }).join('');
 
+    bindPairedAgentEvents(agents);
+
+    // 异步 ping 所有非停用代理，逐个回填状态
+    agents.forEach((a) => {
+      if (a.disabled) return; // 停用的代理跳过 ping
+      pingAgent(a.url).then((online) => {
+        _updateAgentItemStatus(a.id, online);
+      });
+    });
+  }
+
+  /** 更新单个代理列表项的状态 */
+  function _updateAgentItemStatus(agentId, online) {
+    const item = pairedAgentsList.querySelector(`[data-agent-id="${agentId}"]`);
+    if (!item) return;
+
+    const dotEl = item.querySelector('.paired-agent-dot');
+    const statusEl = item.querySelector('.paired-agent-status-text');
+    const isActive = item.classList.contains('active');
+
+    const dotClass = isActive
+      ? (online ? 'active-online' : 'active-offline')
+      : (online ? 'online' : 'offline');
+    const statusLabel = online ? '在线' : '离线';
+
+    if (dotEl) {
+      dotEl.className = `paired-agent-dot ${dotClass}`;
+      dotEl.title = `${isActive ? '当前使用 · ' : ''}${statusLabel}`;
+    }
+    if (statusEl) {
+      statusEl.className = `paired-agent-status-text ${online ? 'online' : 'offline'}`;
+      statusEl.textContent = statusLabel;
+    }
+  }
+
+  /** 绑定代理列表事件（名称编辑 + 切换 + 删除） */
+  function bindPairedAgentEvents(agents) {
     // 名称点击编辑
     pairedAgentsList.querySelectorAll('.paired-agent-name').forEach(nameEl => {
       nameEl.addEventListener('click', () => {
@@ -991,13 +1033,12 @@ function initAgentConfig() {
           nameEl.textContent = newName;
           nameEl.dataset.original = newName;
 
-          // 保存到 storage
           const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-          const agents = storage.pairedAgents || [];
-          const idx = agents.findIndex(a => a.id === agentId);
+          const currentAgents = storage.pairedAgents || [];
+          const idx = currentAgents.findIndex(a => a.id === agentId);
           if (idx !== -1) {
-            agents[idx].name = newName;
-            await chrome.storage.local.set({ pairedAgents: agents });
+            currentAgents[idx].name = newName;
+            await chrome.storage.local.set({ pairedAgents: currentAgents });
           }
         };
 
@@ -1012,7 +1053,7 @@ function initAgentConfig() {
       });
     });
 
-    // 事件委托
+    // 事件委托：切换 + 停用/启用 + 删除
     pairedAgentsList.querySelectorAll('.paired-agent-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1020,6 +1061,10 @@ function initAgentConfig() {
         const agentId = btn.dataset.id;
         if (action === 'switch') {
           await switchToAgent(agentId);
+        } else if (action === 'disable') {
+          await disableAgent(agentId);
+        } else if (action === 'enable') {
+          await enableAgent(agentId);
         } else if (action === 'delete') {
           await deletePairedAgent(agentId);
         }
@@ -1099,6 +1144,53 @@ function initAgentConfig() {
     await refreshActiveAgentUI();
   }
 
+  /** 停用指定代理 */
+  async function disableAgent(agentId) {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const agent = agents.find(a => a.id === agentId);
+    if (!agent) return;
+
+    // 如果停用的是当前活跃代理，先切换到其他可用代理（或断开）
+    if (storage.activeAgentId === agentId) {
+      const next = agents.find(a => a.id !== agentId && !a.disabled);
+      if (next) {
+        await chrome.storage.local.set({ activeAgentId: next.id });
+        chrome.runtime.sendMessage({
+          type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: next.id
+        }).catch(() => {});
+      } else {
+        // 没有其他可用代理，断开连接
+        await chrome.storage.local.set({ activeAgentId: null });
+        chrome.runtime.sendMessage({
+          type: 'AGENT_CONNECTION_CHANGED', connected: false
+        }).catch(() => {});
+      }
+    }
+
+    const idx = agents.findIndex(a => a.id === agentId);
+    agents[idx].disabled = true;
+    await chrome.storage.local.set({ pairedAgents: agents });
+
+    showToast(`已停用代理: ${agent.name}`, 'info');
+    await renderPairedAgents();
+    await refreshActiveAgentUI();
+  }
+
+  /** 启用指定代理 */
+  async function enableAgent(agentId) {
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const idx = agents.findIndex(a => a.id === agentId);
+    if (idx === -1) return;
+
+    agents[idx].disabled = false;
+    await chrome.storage.local.set({ pairedAgents: agents });
+
+    showToast(`已启用代理: ${agents[idx].name}`, 'success');
+    await renderPairedAgents();
+  }
+
   /** 获取活跃代理详情并更新状态 UI */
   async function fetchAndShowAgentDetail(url, token) {
     updateStatusUI('checking', '正在获取代理信息...');
@@ -1142,7 +1234,8 @@ function initAgentConfig() {
     const activeId = storage.activeAgentId;
 
     if (!activeId || agents.length === 0) {
-      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+      const hasAgents = agents.length > 0;
+      updateStatusUI('disconnected', hasAgents ? '未连接 - 请从列表中选择代理切换' : '未连接 - 请添加代理配对');
       return;
     }
 
@@ -1393,7 +1486,7 @@ function initAgentConfig() {
         await fetchAndShowAgentDetail(newActive.url, newActive.token);
       }
     } else {
-      updateStatusUI('disconnected', '未连接 - 请填入配对码完成配对');
+      updateStatusUI('disconnected', '未连接 - 请添加代理配对');
     }
 
     await renderPairedAgents();
@@ -1428,4 +1521,12 @@ function initAgentConfig() {
     await renderPairedAgents();
     await refreshActiveAgentUI();
   })();
+
+  // 通知 background：配置页面已打开，触发全量心跳
+  chrome.runtime.sendMessage({ type: 'OPTIONS_PAGE_OPEN' }).catch(() => {});
+
+  // 页面关闭时通知 background 停止全量心跳
+  window.addEventListener('beforeunload', () => {
+    chrome.runtime.sendMessage({ type: 'OPTIONS_PAGE_CLOSED' }).catch(() => {});
+  });
 }

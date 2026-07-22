@@ -478,6 +478,11 @@
         </div>
       </div>
 
+      <!-- 保存配置按钮（放在配对码下方，方便快速点击） -->
+      <div style="margin-top: 16px;">
+        <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
+      </div>
+
       <div class="info-box" style="margin-top: 15px;">
         <h3>💡 使用说明</h3>
         <p>
@@ -502,11 +507,12 @@
       <div class="warning-box" style="margin-top: 10px;">
         <h3>⚠️ 安全提示</h3>
         <p>
-          代理服务仅监听 127.0.0.1，外部网络无法访问。<br>
+          代理服务默认仅监听本机地址（127.0.0.1），如需远程连接请修改启动参数。<br>
           文件操作限制在配置的工作目录内，不可越权访问。<br>
           危险命令（如 rm -rf /）会被自动拦截。
         </p>
       </div>
+
     </div>
     </div><!-- /tab-agent -->
 
@@ -570,8 +576,6 @@
 
       <input type="file" id="importSkillFile" accept=".json" style="display:none;">
     </div><!-- /tab-toolbox -->
-
-    <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
 
     <div class="status" id="status"></div>
   </div>
