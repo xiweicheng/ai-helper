@@ -483,6 +483,15 @@ async function deleteFile(filePath) {
 }
 
 /**
+ * 下载文件或目录（目录自动打包为 zip，返回 base64 内容）
+ * @param {string} filePath - 文件或目录路径
+ * @returns {Promise<{success: boolean, type?: string, name?: string, size?: number, content?: string, mimeType?: string, error?: string}>}
+ */
+async function downloadFile(filePath) {
+  return agentRequest('/api/fs/download', { path: filePath }, 'POST', 120000);
+}
+
+/**
  * 按文件名模式搜索文件
  */
 async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200) {
@@ -879,6 +888,7 @@ export {
   openBrowser,
   listDir,
   deleteFile,
+  downloadFile,
   searchFiles,
   searchContent,
   execCommand,

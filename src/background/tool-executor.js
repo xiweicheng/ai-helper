@@ -768,6 +768,18 @@ function makeResult(success, content, extra = {}) {
 }
 
 /**
+ * 格式化文件大小为可读字符串
+ */
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+/**
  * 安全网：统一工具结果格式为 { success, content, error?, ... }
  * 所有 handler 都应该使用 makeResult() 返回，此函数仅处理异常情况
  */
@@ -922,6 +934,7 @@ const TOOL_HANDLERS = {
   agent_write_file: executeAgentWriteFile,
   agent_list_dir: executeAgentListDir,
   agent_delete_file: executeAgentDeleteFile,
+  agent_download_file: executeAgentDownloadFile,
   agent_exec_command: executeAgentExecCommand,
   agent_search_files: executeAgentSearchFiles,
   agent_search_content: executeAgentSearchContent,
@@ -2677,6 +2690,54 @@ async function executeAgentDeleteFile(args, toolCallId) {
     return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 文件/目录下载
+ * 单文件直接返回 base64 内容触发下载，目录自动打包为 zip
+ */
+async function executeAgentDownloadFile(args, toolCallId) {
+  const { path } = args;
+  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+
+  const result = await AgentClient.downloadFile(path);
+  if (!result.success) {
+    return { success: false, error: result.error, tool_call_id: toolCallId };
+  }
+
+  try {
+    const mimeType = result.mimeType || 'application/octet-stream';
+    const dataUrl = `data:${mimeType};base64,${result.content}`;
+
+    const downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download({
+        url: dataUrl,
+        filename: result.name,
+        saveAs: false
+      }, (id) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve(id);
+        }
+      });
+    });
+
+    const desc = result.type === 'directory'
+      ? `目录 "${path}" 已打包为 ${result.name} 并开始下载 (${formatFileSize(result.size)})`
+      : `文件 "${result.name}" 已开始下载 (${formatFileSize(result.size)})`;
+    return {
+      success: true,
+      content: desc,
+      name: result.name,
+      size: result.size,
+      type: result.type,
+      downloadId,
+      tool_call_id: toolCallId
+    };
+  } catch (err) {
+    return { success: false, error: `下载触发失败: ${err.message}`, tool_call_id: toolCallId };
+  }
 }
 
 /**

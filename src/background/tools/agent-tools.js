@@ -79,6 +79,25 @@ export const AGENT_TOOLS = [
     }
   },
   {
+    id: 'agent_download_file',
+    category: 'local_agent',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'agent_download_file',
+      description: '通过本地Agent下载工作目录下的文件或目录。单文件直接下载，目录自动打包为zip后下载',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '要下载的文件或目录路径' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
     id: 'agent_exec_command',
     category: 'local_agent',
     execution: 'background',

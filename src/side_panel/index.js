@@ -7,8 +7,44 @@ import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWin
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
+import { initWorkspacePanel, updateWorkspacePanelVisibility } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
 import logger from '../shared/logger.js';
+
+window.showCustomConfirm = function(message, title = '确认操作') {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('customConfirmOverlay');
+    const titleEl = document.getElementById('customConfirmTitle');
+    const messageEl = document.getElementById('customConfirmMessage');
+    const cancelBtn = document.getElementById('customConfirmCancelBtn');
+    const okBtn = document.getElementById('customConfirmOkBtn');
+
+    if (!overlay || !titleEl || !messageEl || !cancelBtn || !okBtn) {
+      resolve(confirm(message));
+      return;
+    }
+
+    const cleanup = () => {
+      overlay.style.display = 'none';
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlayClick);
+    };
+
+    const onOk = () => { cleanup(); resolve(true); };
+    const onCancel = () => { cleanup(); resolve(false); };
+    const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
+
+    titleEl.textContent = title;
+    const escapedMsg = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    messageEl.innerHTML = escapedMsg.replace(/\n/g, '<br>');
+    overlay.style.display = 'flex';
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlayClick);
+  });
+};
 
 /** 格式化上下文窗口大小：>=1M 显示 "1.2M"，>=1K 显示 "128K" */
 function formatCtxWindow(tokens) {
@@ -703,6 +739,9 @@ async function updateAgentIndicator(platformInfo) {
     if (platformInfo.arch) parts.push(platformInfo.arch);
     btn.title = parts.join(' | ') + ' - 点击前往设置';
   }
+
+  // 同步更新工作目录面板入口可见性
+  updateWorkspacePanelVisibility(platformInfo?.connected === true);
 }
 
 // 会话 DOM 缓存：切会话时缓存静态 DOM，避免全量重建
@@ -2486,47 +2525,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const modalCancelBtn = document.getElementById('modalCancelBtn');
   const modalConfirmBtn = document.getElementById('modalConfirmBtn');
 
-  // ==================== 自定义确认弹窗 ====================
-
-  /**
-   * 显示自定义确认弹窗，返回 Promise<boolean>
-   * @param {string} message - 提示信息
-   * @param {string} title - 标题（可选）
-   */
-  function showCustomConfirm(message, title = '确认操作') {
-    return new Promise((resolve) => {
-      const overlay = document.getElementById('customConfirmOverlay');
-      const titleEl = document.getElementById('customConfirmTitle');
-      const messageEl = document.getElementById('customConfirmMessage');
-      const cancelBtn = document.getElementById('customConfirmCancelBtn');
-      const okBtn = document.getElementById('customConfirmOkBtn');
-
-      if (!overlay || !titleEl || !messageEl || !cancelBtn || !okBtn) {
-        resolve(confirm(message)); // fallback
-        return;
-      }
-
-      const cleanup = () => {
-        overlay.style.display = 'none';
-        okBtn.removeEventListener('click', onOk);
-        cancelBtn.removeEventListener('click', onCancel);
-        overlay.removeEventListener('click', onOverlayClick);
-      };
-
-      const onOk = () => { cleanup(); resolve(true); };
-      const onCancel = () => { cleanup(); resolve(false); };
-      const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
-
-      titleEl.textContent = title;
-      messageEl.textContent = message;
-      overlay.style.display = 'flex';
-
-      okBtn.addEventListener('click', onOk);
-      cancelBtn.addEventListener('click', onCancel);
-      overlay.addEventListener('click', onOverlayClick);
-    });
-  }
-
   // ==================== 工具使用统计子弹窗 ====================
 
   const toolStatsOverlay = document.getElementById('toolStatsOverlay');
@@ -2787,6 +2785,7 @@ document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', async () => {
   await loadBookmarks();
   initBookmarkPanel();
+  initWorkspacePanel();
   // 收藏加载完成后刷新所有消息的收藏按钮状态（消息可能先于收藏加载渲染）
   const { updateBookmarkButtons, updateBookmarkBadge } = await import('./bookmark-panel.js');
   updateBookmarkButtons();

@@ -3,10 +3,11 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { homedir } from 'os';
-import { spawn } from 'child_process';
+import { homedir, tmpdir } from 'os';
+import { spawn, execSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
@@ -105,6 +106,35 @@ function detectShell() {
 async function exists(path) {
   try { await stat(path); return true; }
   catch { return false; }
+}
+
+/**
+ * 根据文件扩展名返回 MIME 类型
+ */
+function getMimeType(filePath) {
+  const ext = (filePath.split('.').pop() || '').toLowerCase();
+  const mimeMap = {
+    txt: 'text/plain', md: 'text/markdown', json: 'application/json',
+    js: 'application/javascript', mjs: 'application/javascript', ts: 'application/typescript',
+    jsx: 'text/jsx', tsx: 'text/tsx',
+    html: 'text/html', htm: 'text/html', css: 'text/css', scss: 'text/x-scss', less: 'text/x-less',
+    xml: 'application/xml', yaml: 'text/yaml', yml: 'text/yaml',
+    py: 'text/x-python', java: 'text/x-java', c: 'text/x-c', cpp: 'text/x-c++', h: 'text/x-c',
+    go: 'text/x-go', rs: 'text/x-rust', rb: 'text/x-ruby', php: 'text/x-php',
+    sql: 'text/x-sql', sh: 'text/x-sh', bash: 'text/x-sh', zsh: 'text/x-sh',
+    cfg: 'text/plain', ini: 'text/plain', toml: 'text/plain', conf: 'text/plain',
+    log: 'text/plain', csv: 'text/csv', tsv: 'text/tab-separated-values',
+    env: 'text/plain', vue: 'text/x-vue', svelte: 'text/x-svelte', astro: 'text/x-astro', rtf: 'application/rtf',
+    svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon',
+    pdf: 'application/pdf',
+    doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    zip: 'application/zip', gz: 'application/gzip', tar: 'application/x-tar',
+    mp3: 'audio/mpeg', wav: 'audio/wav', mp4: 'video/mp4', webm: 'video/webm',
+  };
+  return mimeMap[ext] || 'application/octet-stream';
 }
 
 const PLATFORM_INFO = {
@@ -537,6 +567,129 @@ export function startServer() {
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size });
         return jsonResponse(res, 200, { success: true, path: check.resolved });
+      }
+
+      // 下载文件/目录（返回 base64 内容，目录自动打包为 zip）
+      if (pathname === '/api/fs/download') {
+        const targetPath = body.path;
+        if (!targetPath || typeof targetPath !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        }
+        const check = await checkPath(targetPath);
+        if (!check.allowed) {
+          logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        if (!await exists(check.resolved)) {
+          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+        }
+
+        try {
+          const fstat = await stat(check.resolved);
+          if (fstat.isDirectory()) {
+            // 目录：打包为 zip
+            const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
+            try {
+              const dirName = basename(check.resolved);
+              const parentDir = dirname(check.resolved);
+              execSync(`cd "${parentDir}" && zip -rq "${tmpFile}" "${dirName}"`, {
+                timeout: 120000,
+                maxBuffer: 10 * 1024 * 1024,
+                stdio: ['ignore', 'pipe', 'pipe']
+              });
+              const zipBuffer = await readFile(tmpFile);
+              logFs('download', { path: check.resolved, type: 'directory', zipSize: zipBuffer.length });
+              return jsonResponse(res, 200, {
+                success: true,
+                type: 'directory',
+                name: `${dirName}.zip`,
+                size: zipBuffer.length,
+                content: zipBuffer.toString('base64'),
+                mimeType: 'application/zip'
+              });
+            } finally {
+              try { await unlink(tmpFile); } catch {}
+            }
+          } else {
+            // 单个文件
+            if (fstat.size > maxSize) {
+              return jsonResponse(res, 400, { success: false, error: `文件过大 (${fstat.size} > ${maxSize})` });
+            }
+            const buf = await readFile(check.resolved);
+            const mimeType = getMimeType(check.resolved);
+            logFs('download', { path: check.resolved, type: 'file', size: buf.length });
+            return jsonResponse(res, 200, {
+              success: true,
+              type: 'file',
+              name: basename(check.resolved),
+              size: buf.length,
+              content: buf.toString('base64'),
+              mimeType
+            });
+          }
+        } catch (err) {
+          logError('fs', 'download_error', { path: targetPath, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
+        }
+      }
+
+      // 批量下载多个文件/目录（在后端打包为 zip）
+      if (pathname === '/api/fs/download-multi') {
+        const paths = body.paths;
+        if (!Array.isArray(paths) || paths.length === 0) {
+          return jsonResponse(res, 400, { success: false, error: '缺少 paths 参数或为空数组' });
+        }
+
+        const resolvedPaths = [];
+        for (const p of paths) {
+          const check = await checkPath(p);
+          if (!check.allowed) {
+            logSecurity('fs_download_blocked', { path: p, reason: check.reason });
+            return jsonResponse(res, 403, { success: false, error: `路径 "${p}" 不允许访问` });
+          }
+          if (!await exists(check.resolved)) {
+            return jsonResponse(res, 404, { success: false, error: `路径 "${p}" 不存在` });
+          }
+          resolvedPaths.push(check.resolved);
+        }
+
+        try {
+          const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
+          try {
+            const zipArgs = resolvedPaths.map(p => `"${basename(p)}"`).join(' ');
+            const commonParent = resolvedPaths.reduce((a, b) => {
+              const partsA = a.split('/').filter(Boolean);
+              const partsB = b.split('/').filter(Boolean);
+              const common = [];
+              for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+                if (partsA[i] === partsB[i]) common.push(partsA[i]);
+                else break;
+              }
+              return '/' + common.join('/');
+            });
+
+            execSync(`cd "${commonParent}" && zip -rq "${tmpFile}" ${zipArgs}`, {
+              timeout: 120000,
+              maxBuffer: 10 * 1024 * 1024,
+              stdio: ['ignore', 'pipe', 'pipe']
+            });
+            const zipBuffer = await readFile(tmpFile);
+            logFs('download_multi', { paths: resolvedPaths, zipSize: zipBuffer.length });
+            return jsonResponse(res, 200, {
+              success: true,
+              type: 'archive',
+              name: `workspace_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`,
+              size: zipBuffer.length,
+              content: zipBuffer.toString('base64'),
+              mimeType: 'application/zip'
+            });
+          } finally {
+            try { await unlink(tmpFile); } catch {}
+          }
+        } catch (err) {
+          logError('fs', 'download_multi_error', { paths, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `打包失败: ${err.message}` });
+        }
       }
 
       // 在本地浏览器中打开文件

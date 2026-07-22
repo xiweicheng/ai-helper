@@ -251,7 +251,7 @@ export async function loadChatHistory() {
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
               break;
           }
-          if (bubbleText) {
+          if (bubbleText && bubble.type !== 'file') {
             addContextBubble(bubble.type, bubbleText, false);
           }
         });
@@ -261,7 +261,12 @@ export async function loadChatHistory() {
       if (msg.htmlContent) {
         restoreMessageFromHtml(msg.htmlContent, msg.messageId, msg.resumable);
       } else {
-        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId, [], msg.resumable);
+        const attachedFiles = (msg.contextBubbles || []).filter(b => b.type === 'file').map(b => ({
+          name: b.name,
+          size: b.size || 0,
+          type: b.fileType || ''
+        }));
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId, attachedFiles, msg.resumable);
       }
     });
 
@@ -854,8 +859,8 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : '📌')));
-  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : (type === 'page' ? '网页问答' : '选中内容')));
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : '📌'))));
+  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : (type === 'page' ? '网页问答' : (type === 'file' ? '文件问答' : '选中内容'))));
   
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -3023,7 +3028,7 @@ function editAndResendMessage(messageDiv) {
       if (state.attachedFiles.length > 0) {
         const fileIdx = userQuestion.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
         if (fileIdx !== -1) {
-          userQuestion = userQuestion.substring(0, fileIdx);
+          userQuestion = userQuestion.substring(0, fileIdx).trim();
         }
       }
       
@@ -3060,7 +3065,7 @@ function editAndResendMessage(messageDiv) {
       if (state.attachedFiles.length > 0) {
         const fileIdx = textToEdit.search(/\n\n\[(?:工作目录)?文件(?:内容)?:/);
         if (fileIdx !== -1) {
-          textToEdit = textToEdit.substring(0, fileIdx);
+          textToEdit = textToEdit.substring(0, fileIdx).trim();
         }
       }
     }
