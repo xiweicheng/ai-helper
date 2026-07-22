@@ -760,15 +760,16 @@ async function handleFileUpload(e) {
     }
   }
 
+  // 注意：必须在重置 input 前捕获文件名，因为 input.value='' 会清空 FileList，
+  // 导致随后引用的 files.length 变为 0（files 是 e.target.files 的引用）。
+  const lastUploadedName = files.length > 0 ? files[files.length - 1].name : null;
   e.target.value = '';
   if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
   if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
   if (successCount > 0) {
     await refreshCurrent();
-    if (files.length > 0) {
-      requestAnimationFrame(() => {
-        scrollToNewFile(files[files.length - 1].name);
-      });
+    if (lastUploadedName) {
+      scrollToNewFile(lastUploadedName);
     }
   }
 }
@@ -1137,15 +1138,32 @@ async function askSelectedFiles() {
   await attachFilesForQuestion(paths);
 }
 
-function scrollToNewFile(fileName) {
+function scrollToNewFile(fileName, retryCount = 0) {
   const content = document.getElementById('workspacePanelContent');
-  if (!content) return;
+  if (!content) {
+    logger.warn('[WorkspacePanel] scrollToNewFile: content not found');
+    return;
+  }
 
-  const item = content.querySelector(`[data-name="${escapeHtml(fileName)}"]`);
+  const escapedName = escapeHtml(fileName);
+  logger.debug('[WorkspacePanel] scrollToNewFile: searching for', escapedName, 'retry:', retryCount);
+  
+  const item = content.querySelector(`[data-name="${escapedName}"]`);
   if (item) {
     item.scrollIntoView({ behavior: 'smooth', block: 'center' });
     item.classList.add('highlight-new');
     setTimeout(() => item.classList.remove('highlight-new'), 2000);
+    logger.debug('[WorkspacePanel] scrollToNewFile: found and scrolled to', escapedName);
+  } else {
+    logger.warn('[WorkspacePanel] scrollToNewFile: item not found for', escapedName);
+    const allItems = content.querySelectorAll('[data-name]');
+    logger.debug('[WorkspacePanel] scrollToNewFile: available items:', Array.from(allItems).map(i => i.dataset.name));
+    
+    if (retryCount < 3) {
+      setTimeout(() => {
+        scrollToNewFile(fileName, retryCount + 1);
+      }, 200);
+    }
   }
 }
 
