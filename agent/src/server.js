@@ -6,7 +6,8 @@ import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir } from 
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir, tmpdir } from 'os';
-import { spawn, execSync } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
 import { randomBytes } from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
@@ -46,6 +47,7 @@ import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromU
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
+const execFileAsync = promisify(execFile);
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
@@ -592,10 +594,10 @@ export function startServer() {
             try {
               const dirName = basename(check.resolved);
               const parentDir = dirname(check.resolved);
-              execSync(`cd "${parentDir}" && zip -rq "${tmpFile}" "${dirName}"`, {
+              await execFileAsync('zip', ['-rq', tmpFile, dirName], {
+                cwd: parentDir,
                 timeout: 120000,
-                maxBuffer: 10 * 1024 * 1024,
-                stdio: ['ignore', 'pipe', 'pipe']
+                maxBuffer: 10 * 1024 * 1024
               });
               const zipBuffer = await readFile(tmpFile);
               logFs('download', { path: check.resolved, type: 'directory', zipSize: zipBuffer.length });
@@ -656,7 +658,7 @@ export function startServer() {
         try {
           const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
           try {
-            const zipArgs = resolvedPaths.map(p => `"${basename(p)}"`).join(' ');
+            const zipArgs = resolvedPaths.map(p => basename(p));
             const commonParent = resolvedPaths.reduce((a, b) => {
               const partsA = a.split('/').filter(Boolean);
               const partsB = b.split('/').filter(Boolean);
@@ -668,10 +670,10 @@ export function startServer() {
               return '/' + common.join('/');
             });
 
-            execSync(`cd "${commonParent}" && zip -rq "${tmpFile}" ${zipArgs}`, {
+            await execFileAsync('zip', ['-rq', tmpFile, ...zipArgs], {
+              cwd: commonParent,
               timeout: 120000,
-              maxBuffer: 10 * 1024 * 1024,
-              stdio: ['ignore', 'pipe', 'pipe']
+              maxBuffer: 10 * 1024 * 1024
             });
             const zipBuffer = await readFile(tmpFile);
             logFs('download_multi', { paths: resolvedPaths, zipSize: zipBuffer.length });
@@ -689,6 +691,105 @@ export function startServer() {
         } catch (err) {
           logError('fs', 'download_multi_error', { paths, error: err.message });
           return jsonResponse(res, 500, { success: false, error: `打包失败: ${err.message}` });
+        }
+      }
+
+      // 流式下载（直接返回二进制流，避免 base64 膨胀和前端同步解码）
+      // 支持单文件/目录（path）或多文件打包（paths）
+      if (pathname === '/api/fs/download-stream') {
+        const targetPath = body.path;
+        const paths = body.paths;
+
+        // 辅助：设置下载响应头并返回二进制
+        const sendBinary = (buffer, filename, mimeType) => {
+          const encodedName = encodeURIComponent(filename);
+          res.writeHead(200, {
+            'Content-Type': mimeType || 'application/octet-stream',
+            'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+            'Content-Length': buffer.length
+          });
+          res.end(buffer);
+        };
+
+        try {
+          if (paths && Array.isArray(paths) && paths.length > 0) {
+            // 多文件打包流式下载
+            const resolvedPaths = [];
+            for (const p of paths) {
+              const check = await checkPath(p);
+              if (!check.allowed) {
+                logSecurity('fs_download_blocked', { path: p, reason: check.reason });
+                return jsonResponse(res, 403, { success: false, error: `路径 "${p}" 不允许访问` });
+              }
+              if (!await exists(check.resolved)) {
+                return jsonResponse(res, 404, { success: false, error: `路径 "${p}" 不存在` });
+              }
+              resolvedPaths.push(check.resolved);
+            }
+
+            const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
+            try {
+              const zipArgs = resolvedPaths.map(p => basename(p));
+              const commonParent = resolvedPaths.reduce((a, b) => {
+                const partsA = a.split('/').filter(Boolean);
+                const partsB = b.split('/').filter(Boolean);
+                const common = [];
+                for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
+                  if (partsA[i] === partsB[i]) common.push(partsA[i]);
+                  else break;
+                }
+                return '/' + common.join('/');
+              });
+              await execFileAsync('zip', ['-rq', tmpFile, ...zipArgs], {
+                cwd: commonParent, timeout: 120000, maxBuffer: 10 * 1024 * 1024
+              });
+              const zipBuffer = await readFile(tmpFile);
+              logFs('download_multi_stream', { paths: resolvedPaths, zipSize: zipBuffer.length });
+              const zipName = `workspace_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`;
+              return sendBinary(zipBuffer, zipName, 'application/zip');
+            } finally {
+              try { await unlink(tmpFile); } catch {}
+            }
+          } else if (targetPath && typeof targetPath === 'string') {
+            // 单文件/目录流式下载
+            const check = await checkPath(targetPath);
+            if (!check.allowed) {
+              logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
+              return jsonResponse(res, 403, { success: false, error: check.reason });
+            }
+            if (!await exists(check.resolved)) {
+              return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+            }
+
+            const fstat = await stat(check.resolved);
+            if (fstat.isDirectory()) {
+              // 目录打包
+              const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
+              try {
+                const dirName = basename(check.resolved);
+                const parentDir = dirname(check.resolved);
+                await execFileAsync('zip', ['-rq', tmpFile, dirName], {
+                  cwd: parentDir, timeout: 120000, maxBuffer: 10 * 1024 * 1024
+                });
+                const zipBuffer = await readFile(tmpFile);
+                logFs('download_stream', { path: check.resolved, type: 'directory', zipSize: zipBuffer.length });
+                return sendBinary(zipBuffer, `${dirName}.zip`, 'application/zip');
+              } finally {
+                try { await unlink(tmpFile); } catch {}
+              }
+            } else {
+              // 单文件直接返回（不受 maxSize 限制，流式传输）
+              const buf = await readFile(check.resolved);
+              const mimeType = getMimeType(check.resolved);
+              logFs('download_stream', { path: check.resolved, type: 'file', size: buf.length });
+              return sendBinary(buf, basename(check.resolved), mimeType);
+            }
+          } else {
+            return jsonResponse(res, 400, { success: false, error: '缺少 path 或 paths 参数' });
+          }
+        } catch (err) {
+          logError('fs', 'download_stream_error', { path: targetPath, paths, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
         }
       }
 

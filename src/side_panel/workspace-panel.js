@@ -1,10 +1,12 @@
 // workspace-panel.js - 工作目录文件管理器 UI
 
 import {
-  getWorkspaceRoot, resetWorkspaceRoot,
-  listDirectory, readFileContent, downloadFile, downloadFiles,
+  getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig,
+  listDirectory, readFileContent,
+  downloadFileStream, downloadFilesStream,
+  searchFilesRemote,
   getFileIcon, formatFileSize, formatTime,
-  supportsPreview, isImageFile, getMimeType
+  supportsPreview, getMimeType
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
 import { showToast } from './utils.js';
@@ -281,12 +283,25 @@ async function navigateToPath(path) {
   await loadDirectory(path);
 }
 
+// 目录列表 LRU 缓存（key: path, value: { entries, timestamp }）
+const dirCache = new Map();
+const DIR_CACHE_TTL = 30000; // 30秒
+const DIR_CACHE_MAX = 20;
+
 /**
- * 加载目录内容
+ * 加载目录内容（带 LRU 缓存）
  */
 async function loadDirectory(dirPath) {
   const content = document.getElementById('workspacePanelContent');
   content.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
+
+  // 查缓存
+  const cached = dirCache.get(dirPath);
+  if (cached && Date.now() - cached.timestamp < DIR_CACHE_TTL) {
+    cachedEntries = cached.entries;
+    renderCurrentEntries();
+    return;
+  }
 
   const result = await listDirectory(dirPath);
   if (!result.success) {
@@ -298,7 +313,17 @@ async function loadDirectory(dirPath) {
     ...e,
     path: `${dirPath}/${e.name}`.replace(/\/+/g, '/')
   }));
+  // 写缓存 + 简单 LRU 淘汰
+  dirCache.set(dirPath, { entries: cachedEntries, timestamp: Date.now() });
+  if (dirCache.size > DIR_CACHE_MAX) {
+    dirCache.delete(dirCache.keys().next().value);
+  }
   renderCurrentEntries();
+}
+
+/** 失效指定路径的目录缓存 */
+function invalidateDirCache(path) {
+  dirCache.delete(path);
 }
 
 /**
@@ -393,7 +418,7 @@ async function handleFileListClick(e) {
   const selectEl = e.target.closest('.workspace-file-select');
   if (selectEl) {
     e.stopPropagation();
-    toggleSelection(path, type);
+    toggleSelection(path);
     return;
   }
 
@@ -451,46 +476,48 @@ async function handleFileListClick(e) {
 }
 
 /**
- * 切换选择状态
+ * 切换选择状态（增量更新 DOM，避免全量重建）
  */
-function toggleSelection(path, type) {
-  // 目录不可多选下载（简化处理：只允许选择文件）
-  if (type === 'directory') {
-    if (selectedPaths.has(path)) {
-      selectedPaths.delete(path);
-    } else {
-      selectedPaths.add(path);
-    }
+function toggleSelection(path) {
+  if (selectedPaths.has(path)) {
+    selectedPaths.delete(path);
   } else {
-    if (selectedPaths.has(path)) {
-      selectedPaths.delete(path);
-    } else {
-      selectedPaths.add(path);
-    }
+    selectedPaths.add(path);
   }
   updateDownloadBtn();
   updateSelectAllState();
-  // 刷新 checkbox 状态
-  renderCurrentEntries();
+  // 增量更新对应行，不重建整个列表
+  const item = Array.from(document.querySelectorAll('.workspace-file-item'))
+    .find(el => el.dataset.path === path);
+  if (item) {
+    const isSelected = selectedPaths.has(path);
+    item.classList.toggle('selected', isSelected);
+    const cb = item.querySelector('.workspace-checkbox');
+    if (cb) cb.classList.toggle('checked', isSelected);
+  }
 }
 
 /**
- * 全选/取消全选
+ * 全选/取消全选（增量更新）
  */
 function toggleSelectAll() {
   const allPaths = cachedEntries.map(e => `${currentPath}/${e.name}`.replace(/\/+/g, '/'));
-  const allSelected = allPaths.every(p => selectedPaths.has(p));
+  const allSelected = allPaths.length > 0 && allPaths.every(p => selectedPaths.has(p));
 
   if (allSelected) {
-    // 取消全选
     for (const p of allPaths) selectedPaths.delete(p);
   } else {
-    // 全选
     for (const p of allPaths) selectedPaths.add(p);
   }
   updateDownloadBtn();
   updateSelectAllState();
-  renderCurrentEntries();
+  // 增量更新所有行
+  for (const item of document.querySelectorAll('.workspace-file-item')) {
+    const isSelected = selectedPaths.has(item.dataset.path);
+    item.classList.toggle('selected', isSelected);
+    const cb = item.querySelector('.workspace-checkbox');
+    if (cb) cb.classList.toggle('checked', isSelected);
+  }
 }
 
 /**
@@ -534,6 +561,9 @@ function updateSortIndicators() {
 /**
  * 预览文件
  */
+const PREVIEW_MAX_SIZE = 1024 * 1024;   // 预览文件大小上限 1MB
+const PREVIEW_MAX_LINES = 10000;         // 预览最大渲染行数
+
 async function previewFile(filePath, fileName) {
   const previewArea = document.getElementById('workspacePreviewArea');
   const previewContent = document.getElementById('workspacePreviewContent');
@@ -546,50 +576,45 @@ async function previewFile(filePath, fileName) {
   lineCountEl.textContent = '';
   previewContent.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
   previewArea.style.display = 'flex';
+  copyBtn.style.display = '';
+  downloadBtn.style.display = '';
 
   // 存储当前预览文件路径供下载/复制使用
   previewArea.dataset.previewPath = filePath;
   previewArea.dataset.previewName = fileName;
 
-  if (isImageFile(fileName)) {
-    copyBtn.style.display = 'none';
-    downloadBtn.style.display = '';
-    const result = await downloadFile(filePath);
-    if (result.success && result.content) {
-      const mime = result.mimeType || getMimeType(fileName);
-      previewContent.innerHTML = `<div class="workspace-preview-image"><img src="data:${mime};base64,${result.content}" alt="${escapeHtml(fileName)}" style="max-width:100%;max-height:100%;object-fit:contain;"></div>`;
-    } else {
-      previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+  // 大文件保护：从缓存中获取文件大小，超限则拒绝预览
+  const entry = cachedEntries.find(e => e.path === filePath)
+    || searchResults.find(e => e.fullPath === filePath);
+  const fileSize = entry ? entry.size : 0;
+  if (fileSize > PREVIEW_MAX_SIZE) {
+    previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+    return;
+  }
+
+  // 文本文件预览
+  const result = await readFileContent(filePath);
+  if (result.success) {
+    const lang = getLanguageClass(fileName);
+    const text = result.content || '';
+    const lines = text.split('\n');
+    lineCountEl.textContent = `${lines.length} 行`;
+
+    // 超大行数截断保护，避免创建过多 DOM 节点
+    const truncated = lines.length > PREVIEW_MAX_LINES;
+    const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
+
+    let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+    for (let i = 0; i < displayLines.length; i++) {
+      numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
     }
-  } else if (fileName.toLowerCase().endsWith('.pdf')) {
-    copyBtn.style.display = 'none';
-    downloadBtn.style.display = '';
-    const result = await downloadFile(filePath);
-    if (result.success && result.content) {
-      previewContent.innerHTML = `<iframe src="data:application/pdf;base64,${result.content}" style="width:100%;height:100%;border:none;"></iframe>`;
-    } else {
-      previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+    if (truncated) {
+      numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
     }
+    numberedHtml += '</tbody></table>';
+    previewContent.innerHTML = numberedHtml;
   } else {
-    copyBtn.style.display = '';
-    downloadBtn.style.display = '';
-    // 文本文件预览
-    const result = await readFileContent(filePath);
-    if (result.success) {
-      const lang = getLanguageClass(fileName);
-      const text = result.content || '';
-      const lines = text.split('\n');
-      lineCountEl.textContent = `${lines.length} 行`;
-      // 带行号渲染
-      let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
-      for (let i = 0; i < lines.length; i++) {
-        numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
-      }
-      numberedHtml += '</tbody></table>';
-      previewContent.innerHTML = numberedHtml;
-    } else {
-      previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
-    }
+    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
   }
 }
 
@@ -635,16 +660,16 @@ function closePreview() {
 }
 
 /**
- * 下载单个文件/目录
+ * 下载单个文件/目录（流式，避免 base64 膨胀）
  */
 async function doDownloadSingle(filePath, fileName) {
   try {
-    const result = await downloadFile(filePath);
+    const result = await downloadFileStream(filePath);
     if (!result.success) {
       showToast(`下载失败: ${result.error}`, 'error');
       return;
     }
-    triggerBrowserDownload(result.content, result.name || fileName, result.mimeType || 'application/octet-stream');
+    triggerBrowserDownload(result.blob, result.name || fileName);
     showToast(`已开始下载: ${result.name || fileName}`, 'success');
   } catch (err) {
     showToast(`下载失败: ${err.message}`, 'error');
@@ -666,9 +691,9 @@ async function downloadSelected() {
 
   showToast('正在打包...', 'info');
   try {
-    const result = await downloadFiles(paths);
-    if (result.success && result.content) {
-      triggerBrowserDownload(result.content, result.name || 'workspace.zip', result.mimeType || 'application/zip');
+    const result = await downloadFilesStream(paths);
+    if (result.success && result.blob) {
+      triggerBrowserDownload(result.blob, result.name || 'workspace.zip');
       showToast(`已下载 ${paths.length} 个文件（ZIP 压缩包）`, 'success');
     } else {
       showToast(`打包失败: ${result.error || '未知错误'}`, 'error');
@@ -679,28 +704,17 @@ async function downloadSelected() {
 }
 
 /**
- * 触发浏览器下载
+ * 触发浏览器下载（直接使用 Blob，无需 base64 解码）
  */
-function triggerBrowserDownload(base64Content, fileName, mimeType) {
-  const byteChars = atob(base64Content);
-  const byteNums = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) {
-    byteNums[i] = byteChars.charCodeAt(i);
-  }
-  const byteArr = new Uint8Array(byteNums);
-  const blob = new Blob([byteArr], { type: mimeType });
+function triggerBrowserDownload(blob, fileName) {
   const blobUrl = URL.createObjectURL(blob);
-
   const a = document.createElement('a');
   a.href = blobUrl;
   a.download = fileName;
   document.body.appendChild(a);
-  
-  setTimeout(() => {
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-  }, 0);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 }
 
 /**
@@ -714,31 +728,43 @@ function triggerUpload() {
 }
 
 /**
- * 处理文件上传
+ * 处理文件上传（按钮触发）
  */
 async function handleFileUpload(e) {
   const files = e.target.files;
   if (!files || files.length === 0) return;
+  // 先转数组，防止 input.value='' 清空 FileList 后引用失效
+  const fileArr = Array.from(files);
+  e.target.value = '';
+  await uploadFiles(fileArr);
+}
+
+/**
+ * 上传文件到当前目录（并发，限并发数 3）
+ */
+async function uploadFiles(fileList) {
+  const files = Array.from(fileList);
+  if (files.length === 0) return;
 
   const config = await getAgentConfig();
   if (!config) {
     showToast('Agent 未连接，无法上传', 'error');
-    e.target.value = '';
     return;
   }
 
   let successCount = 0;
   let failCount = 0;
+  const CONCURRENCY = 3;
 
-  for (const file of files) {
-    try {
+  for (let i = 0; i < files.length; i += CONCURRENCY) {
+    const batch = files.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(batch.map(async (file) => {
       const reader = new FileReader();
       const content = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result.split(',')[1]); // base64 content
+        reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-
       const targetPath = `${currentPath}/${file.name}`.replace(/\/+/g, '/');
       const resp = await fetch(`${config.url}/api/fs/write`, {
         method: 'POST',
@@ -749,28 +775,19 @@ async function handleFileUpload(e) {
         body: JSON.stringify({ path: targetPath, content, encoding: 'base64' })
       });
       const data = await resp.json();
-      if (data.success) {
-        successCount++;
-      } else {
-        failCount++;
-      }
-    } catch (err) {
-      failCount++;
-      logger.warn('[WorkspacePanel] 上传失败:', file.name, err.message);
+      if (!data.success) throw new Error(data.error || '上传失败');
+    }));
+    for (const r of results) {
+      if (r.status === 'fulfilled') successCount++;
+      else failCount++;
     }
   }
 
-  // 注意：必须在重置 input 前捕获文件名，因为 input.value='' 会清空 FileList，
-  // 导致随后引用的 files.length 变为 0（files 是 e.target.files 的引用）。
-  const lastUploadedName = files.length > 0 ? files[files.length - 1].name : null;
-  e.target.value = '';
   if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
   if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
   if (successCount > 0) {
     await refreshCurrent();
-    if (lastUploadedName) {
-      scrollToNewFile(lastUploadedName);
-    }
+    scrollToNewFile(files[files.length - 1].name);
   }
 }
 
@@ -797,71 +814,10 @@ function setupDragDrop() {
     e.preventDefault();
     e.stopPropagation();
     panel.classList.remove('drag-over');
-
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
-
-    const config = await getAgentConfig();
-    if (!config) {
-      showToast('Agent 未连接，无法上传', 'error');
-      return;
-    }
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const file of files) {
-      try {
-        const reader = new FileReader();
-        const content = await new Promise((resolve, reject) => {
-          reader.onload = () => resolve(reader.result.split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-
-        const targetPath = `${currentPath}/${file.name}`.replace(/\/+/g, '/');
-        const resp = await fetch(`${config.url}/api/fs/write`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.token}`
-          },
-          body: JSON.stringify({ path: targetPath, content, encoding: 'base64' })
-        });
-        const data = await resp.json();
-        if (data.success) successCount++;
-        else failCount++;
-      } catch (err) {
-        failCount++;
-      }
-    }
-
-    if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
-    if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
-    if (successCount > 0) {
-      await refreshCurrent();
-      if (files.length > 0) {
-        scrollToNewFile(files[files.length - 1].name);
-      }
-    }
+    await uploadFiles(files);
   });
-}
-
-/**
- * 获取 Agent 连接配置
- */
-async function getAgentConfig() {
-  try {
-    const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = result.pairedAgents || [];
-    const activeId = result.activeAgentId;
-    if (!activeId || agents.length === 0) return null;
-    const active = agents.find(a => a.id === activeId) || agents[0];
-    if (!active) return null;
-    return { url: active.url, token: active.token };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -879,6 +835,7 @@ async function navigateBack() {
  */
 async function refreshCurrent() {
   if (currentPath) {
+    invalidateDirCache(currentPath);
     selectedPaths.clear();
     updateDownloadBtn();
     await loadDirectory(currentPath);
@@ -1013,7 +970,7 @@ async function performSearch() {
   }
 
   showToast('搜索中...', 'info');
-  const results = await searchFiles(currentPath, searchQuery);
+  const results = await searchFilesRemote(currentPath, searchQuery);
   searchResults = results;
   isSearchMode = true;
   renderCurrentEntries();
@@ -1027,32 +984,6 @@ function clearSearch() {
   searchResults = [];
   document.getElementById('workspaceSearchClear').style.display = 'none';
   renderCurrentEntries();
-}
-
-async function searchFiles(dirPath, query) {
-  const results = [];
-  try {
-    const list = await listDirectory(dirPath);
-    if (!list.success || !list.entries) return results;
-
-    for (const entry of list.entries) {
-      const fullPath = `${dirPath}/${entry.name}`.replace(/\/+/g, '/');
-      if (entry.name.toLowerCase().includes(query.toLowerCase())) {
-        results.push({
-          ...entry,
-          fullPath,
-          matchPath: dirPath
-        });
-      }
-      if (entry.type === 'directory') {
-        const subResults = await searchFiles(fullPath, query);
-        results.push(...subResults);
-      }
-    }
-  } catch (err) {
-    logger.warn('[WorkspacePanel] 搜索失败:', err.message);
-  }
-  return results;
 }
 
 async function handleDeleteFile(path, name, type) {
@@ -1140,30 +1071,18 @@ async function askSelectedFiles() {
 
 function scrollToNewFile(fileName, retryCount = 0) {
   const content = document.getElementById('workspacePanelContent');
-  if (!content) {
-    logger.warn('[WorkspacePanel] scrollToNewFile: content not found');
-    return;
-  }
+  if (!content) return;
 
-  const escapedName = escapeHtml(fileName);
-  logger.debug('[WorkspacePanel] scrollToNewFile: searching for', escapedName, 'retry:', retryCount);
-  
-  const item = content.querySelector(`[data-name="${escapedName}"]`);
+  // 用 dataset 精确匹配，避免 querySelector 选择器转义问题
+  const item = Array.from(content.querySelectorAll('.workspace-file-item'))
+    .find(el => el.dataset.name === fileName);
+
   if (item) {
     item.scrollIntoView({ behavior: 'smooth', block: 'center' });
     item.classList.add('highlight-new');
     setTimeout(() => item.classList.remove('highlight-new'), 2000);
-    logger.debug('[WorkspacePanel] scrollToNewFile: found and scrolled to', escapedName);
-  } else {
-    logger.warn('[WorkspacePanel] scrollToNewFile: item not found for', escapedName);
-    const allItems = content.querySelectorAll('[data-name]');
-    logger.debug('[WorkspacePanel] scrollToNewFile: available items:', Array.from(allItems).map(i => i.dataset.name));
-    
-    if (retryCount < 3) {
-      setTimeout(() => {
-        scrollToNewFile(fileName, retryCount + 1);
-      }, 200);
-    }
+  } else if (retryCount < 5) {
+    setTimeout(() => scrollToNewFile(fileName, retryCount + 1), 150);
   }
 }
 

@@ -109,7 +109,7 @@ let _agentConfig = null;
 /**
  * 获取 Agent 连接配置
  */
-async function getAgentConfig() {
+export async function getAgentConfig() {
   if (_agentConfig && _agentConfig.url && _agentConfig.token) return _agentConfig;
   try {
     const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
@@ -206,4 +206,91 @@ export async function downloadFile(filePath) {
  */
 export async function downloadFiles(paths) {
   return agentRequest('/api/fs/download-multi', { paths });
+}
+
+/**
+ * 搜索文件（后端递归搜索，单次请求，避免前端多次串行请求）
+ */
+export async function searchFilesRemote(dirPath, query, maxResults = 200) {
+  const result = await agentRequest('/api/fs/search_files', {
+    path: dirPath,
+    pattern: `*${query}*`,
+    recursive: true,
+    maxResults
+  });
+  if (!result.success) return [];
+  return (result.results || []).map(r => {
+    const dir = r.path.substring(0, r.path.lastIndexOf('/'));
+    return {
+      name: r.name,
+      type: 'file',
+      size: r.size,
+      mtime: r.mtime,
+      fullPath: r.path,
+      matchPath: dir
+    };
+  });
+}
+
+/**
+ * 从 Content-Disposition 头提取文件名
+ */
+function extractFilename(cd, fallback) {
+  if (!cd) return fallback;
+  const match = cd.match(/filename\*=UTF-8''(.+?)(?:;|$)/) || cd.match(/filename="(.+?)"/);
+  return match ? decodeURIComponent(match[1]) : fallback;
+}
+
+/**
+ * 流式下载文件或目录（返回 Blob，避免 base64 膨胀）
+ */
+export async function downloadFileStream(filePath) {
+  const config = await getAgentConfig();
+  if (!config) return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  try {
+    const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({ path: filePath })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      return { success: false, error: err.error || '下载失败' };
+    }
+    const blob = await resp.blob();
+    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split('/').pop());
+    return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
+  } catch (err) {
+    return { success: false, error: `请求失败: ${err.message}` };
+  }
+}
+
+/**
+ * 流式批量下载（返回 Blob）
+ */
+export async function downloadFilesStream(paths) {
+  const config = await getAgentConfig();
+  if (!config) return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  try {
+    const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({ paths })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      return { success: false, error: err.error || '下载失败' };
+    }
+    const blob = await resp.blob();
+    const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
+    return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
+  } catch (err) {
+    return { success: false, error: `请求失败: ${err.message}` };
+  }
 }
