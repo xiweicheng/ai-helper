@@ -2,7 +2,24 @@
 import { BUILTIN_AGENTS, generateAgentId } from '../shared/agent-defaults.js';
 
 const STORAGE_KEY = 'customAgents';
-const ACTIVE_KEY = 'activeAgentId';
+const ACTIVE_KEY = 'activeAssistantId';
+const LEGACY_ACTIVE_KEY = 'activeAgentId';
+
+let migratedActiveKey = false;
+
+async function migrateLegacyActiveKey() {
+  if (migratedActiveKey) return;
+  migratedActiveKey = true;
+
+  const result = await chrome.storage.local.get([LEGACY_ACTIVE_KEY, ACTIVE_KEY]);
+  const legacyValue = result[LEGACY_ACTIVE_KEY];
+  const newValue = result[ACTIVE_KEY];
+
+  if (legacyValue && !newValue && !legacyValue.startsWith('pa_')) {
+    await chrome.storage.local.set({ [ACTIVE_KEY]: legacyValue });
+    await chrome.storage.local.remove(LEGACY_ACTIVE_KEY);
+  }
+}
 
 /**
  * 获取所有 Agent（内置 + 用户自定义）
@@ -111,6 +128,7 @@ export async function deleteAgent(agentId) {
  * @returns {Promise<string|null>}
  */
 export async function getActiveAgentId() {
+  await migrateLegacyActiveKey();
   const result = await chrome.storage.local.get([ACTIVE_KEY]);
   return result[ACTIVE_KEY] || null;
 }

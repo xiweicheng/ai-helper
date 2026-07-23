@@ -1570,6 +1570,16 @@ function initAgentConfig() {
   // 通知 background：配置页面已打开，触发全量心跳
   chrome.runtime.sendMessage({ type: 'OPTIONS_PAGE_OPEN' }).catch(() => {});
 
+  // 监听 background 发送的代理状态变化消息，实时更新配置页面 UI
+  chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+    if (message.type === 'AGENT_STATUS_CHANGE') {
+      (async () => {
+        await renderPairedAgents();
+        await refreshActiveAgentUI();
+      })();
+    }
+  });
+
   // 页面关闭时通知 background 停止全量心跳
   window.addEventListener('beforeunload', () => {
     chrome.runtime.sendMessage({ type: 'OPTIONS_PAGE_CLOSED' }).catch(() => {});

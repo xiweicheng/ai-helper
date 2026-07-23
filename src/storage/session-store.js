@@ -281,9 +281,9 @@ export async function switchToSession(sessionId) {
   state.activeAgentId = targetSession.agentId || null;
   // 持久化当前智能体 ID，避免刷新后丢失
   if (targetSession.agentId) {
-    chrome.storage.local.set({ activeAgentId: targetSession.agentId });
+    chrome.storage.local.set({ activeAssistantId: targetSession.agentId });
   } else {
-    chrome.storage.local.remove('activeAgentId');
+    chrome.storage.local.remove('activeAssistantId');
   }
 
   // 如果会话绑定了自定义 Agent，尝试从 Agent 配置中加载模型/温度

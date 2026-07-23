@@ -1157,6 +1157,55 @@ function updateBreadcrumb() {
       selectedPaths.clear();
       await navigateToPath(targetPath);
     });
+    
+    // 拖拽到面包屑目录支持
+    link.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer.types.includes('application/x-workspace-move')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      link.classList.add('drop-target');
+    });
+    
+    link.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      link.classList.remove('drop-target');
+    });
+    
+    link.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      link.classList.remove('drop-target');
+      
+      if (!e.dataTransfer.types.includes('application/x-workspace-move')) return;
+      
+      try {
+        const moveData = JSON.parse(e.dataTransfer.getData('application/x-workspace-move'));
+        const srcPath = moveData.path;
+        const destDir = link.dataset.path;
+        const srcName = moveData.name;
+        
+        if (srcPath === destDir) return;
+        if (destDir.startsWith(srcPath + '/')) {
+          showToast('不能将目录移动到其子目录中', 'error');
+          return;
+        }
+        
+        showToast('移动中...', 'info');
+        const result = await moveFs(srcPath, destDir);
+        if (result.success) {
+          showToast(`"${srcName}" 已移动到 "${destDir.split('/').pop()}"`, 'success');
+          invalidateDirCache(currentPath);
+          invalidateDirCache(destDir);
+          await refreshCurrent();
+        } else {
+          showToast(`移动失败: ${result.error}`, 'error');
+        }
+      } catch (err) {
+        showToast(`移动失败: ${err.message}`, 'error');
+      }
+    });
   });
 }
 

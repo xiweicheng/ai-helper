@@ -8635,6 +8635,12 @@ body {
   background: rgba(74, 144, 217, 0.1);
 }
 
+.workspace-breadcrumb-link.drop-target {
+  background: rgba(74, 144, 217, 0.35);
+  border: 1px dashed #4a90d9;
+  box-shadow: 0 0 8px rgba(74, 144, 217, 0.4);
+}
+
 .workspace-breadcrumb-disabled {
   color: #bbb;
   cursor: default;
