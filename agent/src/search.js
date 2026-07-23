@@ -1,6 +1,7 @@
 // agent/src/search.js - 文件搜索（fd/rg 优先 + Node.js 回退）
 import { spawn } from 'child_process';
 import { readdir, stat, readFile } from 'fs/promises';
+import { statSync } from 'fs';
 import { join, basename, extname, resolve } from 'path';
 import { checkPath } from './security.js';
 
@@ -81,11 +82,15 @@ function matchGlob(filename, pattern) {
 }
 
 /**
- * 使用 fd 搜索文件（快速）
+ * 使用 fd 搜索文件和目录（快速）
  */
 function searchWithFd(rootPath, filePattern, recursive, maxResults) {
   return new Promise((resolve) => {
-    const args = ['--glob', filePattern, '--type', 'f', '--max-results', String(maxResults)];
+    const args = ['--glob', filePattern, '--type', 'f', '--type', 'd', '--max-results', String(maxResults)];
+    // 排除默认忽略的目录
+    for (const dir of DEFAULT_IGNORE_DIRS) {
+      args.push('--exclude', dir);
+    }
     if (!recursive) args.push('--max-depth', '1');
     args.push(rootPath);
 
@@ -111,9 +116,9 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
       const results = lines.map(p => {
         try {
           const s = statSync(p);
-          return { path: p, name: basename(p), size: s.size, mtime: s.mtimeMs };
+          return { path: p, name: basename(p), type: s.isDirectory() ? 'directory' : 'file', size: s.size, mtime: s.mtimeMs };
         } catch {
-          return { path: p, name: basename(p), size: 0, mtime: 0 };
+          return { path: p, name: basename(p), type: 'file', size: 0, mtime: 0 };
         }
       });
       resolve(results);
@@ -131,7 +136,7 @@ function yieldEventLoop() {
 }
 
 /**
- * Node.js 原生递归搜索文件（回退方案，异步 + 分片防止阻塞事件循环）
+ * Node.js 原生递归搜索文件和目录（回退方案，异步 + 分片防止阻塞事件循环）
  */
 async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
   const results = [];
@@ -154,14 +159,23 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
+        // 目录也参与搜索匹配
+        if (matchGlob(entry.name, filePattern)) {
+          try {
+            const s = await stat(fullPath);
+            results.push({ path: fullPath, name: entry.name, type: 'directory', size: s.size, mtime: s.mtimeMs });
+          } catch {
+            results.push({ path: fullPath, name: entry.name, type: 'directory', size: 0, mtime: 0 });
+          }
+        }
         await walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
         if (matchGlob(entry.name, filePattern)) {
           try {
             const s = await stat(fullPath);
-            results.push({ path: fullPath, name: entry.name, size: s.size, mtime: s.mtimeMs });
+            results.push({ path: fullPath, name: entry.name, type: 'file', size: s.size, mtime: s.mtimeMs });
           } catch {
-            results.push({ path: fullPath, name: entry.name, size: 0, mtime: 0 });
+            results.push({ path: fullPath, name: entry.name, type: 'file', size: 0, mtime: 0 });
           }
         }
       }

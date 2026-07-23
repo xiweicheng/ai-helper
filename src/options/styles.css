@@ -200,6 +200,27 @@ textarea {
   line-height: 1.6;
 }
 
+/* 可折叠说明块 */
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.collapsible-header:hover {
+  opacity: 0.85;
+}
+.collapsible-arrow {
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: inherit;
+}
+.collapsible-header.open .collapsible-arrow,
+.collapsible.open .collapsible-arrow {
+  transform: rotate(90deg);
+}
+
 /* Toast 提示样式 */
 .toast-container {
   position: fixed;

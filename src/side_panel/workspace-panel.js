@@ -5,6 +5,7 @@ import {
   listDirectory, readFileContent,
   downloadFileStream, downloadFilesStream,
   searchFilesRemote,
+  renameFs, createDir, moveFs, deleteFs,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getMimeType
 } from './workspace-manager.js';
@@ -69,6 +70,13 @@ export function initWorkspacePanel() {
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
           </svg>
         </button>
+        <button class="workspace-toolbar-btn" id="workspaceNewFolderBtn" title="新建文件夹">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <line x1="12" y1="11" x2="12" y2="17"/>
+            <line x1="9" y1="14" x2="15" y2="14"/>
+          </svg>
+        </button>
         <button class="workspace-toolbar-btn" id="workspaceAskBtn" title="基于选中的文件进行问答" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <circle cx="12" cy="12" r="10"/>
@@ -83,7 +91,7 @@ export function initWorkspacePanel() {
         </button>
         <span class="workspace-toolbar-selected" id="workspaceSelectedCount" style="display:none;"></span>
         <div class="workspace-search-box">
-          <input type="text" id="workspaceSearchInput" placeholder="搜索文件..." />
+          <input type="text" id="workspaceSearchInput" placeholder="搜索..." />
           <button id="workspaceSearchClear" title="清除" style="display:none;">×</button>
           <button id="workspaceSearchBtn" title="搜索">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
@@ -131,6 +139,7 @@ export function initWorkspacePanel() {
   document.body.appendChild(container);
 
   bindEvents();
+  loadSearchHistory();
   logger.debug('[WorkspacePanel] 工作目录面板已初始化');
 }
 
@@ -171,6 +180,10 @@ function bindEvents() {
     e.stopPropagation();
     triggerUpload();
   });
+  document.getElementById('workspaceNewFolderBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleNewFolder();
+  });
   document.getElementById('workspaceAskBtn').addEventListener('click', (e) => {
     e.stopPropagation();
     askSelectedFiles();
@@ -190,6 +203,31 @@ function bindEvents() {
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       clearSearch();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (searchHistory.length === 0) return;
+      if (searchHistoryIndex === -1) {
+        searchHistoryIndex = searchHistory.length - 1;
+      } else if (searchHistoryIndex > 0) {
+        searchHistoryIndex--;
+      }
+      searchInput.value = searchHistory[searchHistoryIndex];
+      searchQuery = searchInput.value.trim();
+      document.getElementById('workspaceSearchClear').style.display = searchQuery ? '' : 'none';
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (searchHistoryIndex === -1 || searchHistoryIndex >= searchHistory.length - 1) {
+        searchHistoryIndex = -1;
+        // 恢复为搜索历史激活前的原始值
+        searchInput.value = '';
+        searchQuery = '';
+        document.getElementById('workspaceSearchClear').style.display = 'none';
+      } else {
+        searchHistoryIndex++;
+        searchInput.value = searchHistory[searchHistoryIndex];
+        searchQuery = searchInput.value.trim();
+        document.getElementById('workspaceSearchClear').style.display = searchQuery ? '' : 'none';
+      }
     }
   });
   document.getElementById('workspaceSearchBtn').addEventListener('click', performSearch);
@@ -220,9 +258,39 @@ function bindEvents() {
   document.getElementById('workspacePreviewClose').addEventListener('click', closePreview);
   document.getElementById('workspacePreviewCopyBtn').addEventListener('click', copyPreviewContent);
   document.getElementById('workspacePreviewDownloadBtn').addEventListener('click', downloadPreviewFile);
+  
+  // 预览标题快捷键：Ctrl/Cmd + 单击复制文件名，Ctrl/Cmd + Shift + 单击复制完整路径
+  document.getElementById('workspacePreviewFilename').addEventListener('click', async (e) => {
+    const previewArea = document.getElementById('workspacePreviewArea');
+    const fileName = previewArea.dataset.previewName;
+    const filePath = previewArea.dataset.previewPath;
+    if (!fileName) return;
+    
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault();
+      try {
+        await navigator.clipboard.writeText(fileName);
+        showToast(`已复制文件名: ${fileName}`);
+      } catch {
+        showToast('复制失败', 'error');
+      }
+    } else if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      if (!filePath) return;
+      try {
+        await navigator.clipboard.writeText(filePath);
+        showToast(`已复制路径: ${filePath}`);
+      } catch {
+        showToast('复制失败', 'error');
+      }
+    }
+  });
 
-  // 拖拽上传
+  // 拖拽支持
   setupDragDrop();
+
+  // 监听 Agent 切换/断开
+  chrome.storage.local.onChanged.addListener(handleStorageChange);
 
   // 隐藏的文件上传 input
   const fileInput = document.createElement('input');
@@ -280,7 +348,13 @@ async function navigateToPath(path) {
   updateBackButton();
   updateDownloadBtn();
   updateSortIndicators();
-  await loadDirectory(path);
+  if (isSearchMode && searchQuery) {
+    const results = await searchFilesRemote(path, searchQuery);
+    searchResults = results;
+    renderCurrentEntries();
+  } else {
+    await loadDirectory(path);
+  }
 }
 
 // 目录列表 LRU 缓存（key: path, value: { entries, timestamp }）
@@ -311,7 +385,7 @@ async function loadDirectory(dirPath) {
 
   cachedEntries = (result.entries || []).map(e => ({
     ...e,
-    path: `${dirPath}/${e.name}`.replace(/\/+/g, '/')
+    path: normalizePath(`${dirPath}/${e.name}`)
   }));
   // 写缓存 + 简单 LRU 淘汰
   dirCache.set(dirPath, { entries: cachedEntries, timestamp: Date.now() });
@@ -319,6 +393,13 @@ async function loadDirectory(dirPath) {
     dirCache.delete(dirCache.keys().next().value);
   }
   renderCurrentEntries();
+}
+
+/**
+ * 规范化路径（统一使用 / 分隔符，处理 Windows \ 和 Linux /）
+ */
+function normalizePath(p) {
+  return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
 /** 失效指定路径的目录缓存 */
@@ -377,23 +458,24 @@ function renderCurrentEntries() {
     const size = entry.type === 'directory' ? '—' : formatFileSize(entry.size);
     const time = formatTime(entry.mtime);
     const canPreview = entry.type === 'file' && supportsPreview(entry.name);
-    const fullPath = isSearchMode ? entry.fullPath : `${currentPath}/${entry.name}`.replace(/\/+/g, '/');
+    const fullPath = isSearchMode ? entry.fullPath : normalizePath(`${currentPath}/${entry.name}`);
     const isSelected = selectedPaths.has(fullPath);
     const relativePath = isSearchMode && entry.matchPath !== currentPath ? 
       entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' : '';
 
     html += `
-      <div class="workspace-file-item ${entry.type} ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(fullPath)}" data-type="${entry.type}" data-name="${escapeHtml(entry.name)}">
+      <div class="workspace-file-item ${entry.type} ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(fullPath)}" data-type="${entry.type}" data-name="${escapeHtml(entry.name)}" draggable="true">
         <span class="workspace-file-select" data-action="select">
           <span class="workspace-checkbox ${isSelected ? 'checked' : ''}"></span>
         </span>
         <span class="workspace-file-icon">${icon}</span>
-        <span class="workspace-file-name" title="${escapeHtml(relativePath + entry.name)}">${escapeHtml(relativePath + entry.name)}</span>
+        <span class="workspace-file-name" title="${escapeHtml(relativePath + entry.name)}">${escapeHtml(entry.name)}</span>
         <span class="workspace-file-size">${size}</span>
         <span class="workspace-file-time">${time}</span>
         <span class="workspace-file-actions">
           ${canPreview ? '<button class="workspace-file-btn preview" title="预览" data-action="preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' : ''}
           <button class="workspace-file-btn download" title="下载" data-action="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+          <button class="workspace-file-btn rename" title="重命名" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
           <button class="workspace-file-btn ask" title="基于文件问答" data-action="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
           <button class="workspace-file-btn delete" title="删除" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
         </span>
@@ -433,6 +515,8 @@ async function handleFileListClick(e) {
       await attachFilesForQuestion([path]);
     } else if (action === 'delete') {
       await handleDeleteFile(path, item.dataset.name, type);
+    } else if (action === 'rename') {
+      await handleRenameFile(path, item.dataset.name, type);
     }
     return;
   }
@@ -467,12 +551,7 @@ async function handleFileListClick(e) {
     return;
   }
 
-  // 点击文件：预览或下载
-  if (supportsPreview(item.dataset.name)) {
-    await previewFile(path, item.dataset.name);
-  } else {
-    await doDownloadSingle(path, item.dataset.name);
-  }
+  // 点击文件：不做任何操作（预览和下载有各自独立的按钮）
 }
 
 /**
@@ -501,7 +580,7 @@ function toggleSelection(path) {
  * 全选/取消全选（增量更新）
  */
 function toggleSelectAll() {
-  const allPaths = cachedEntries.map(e => `${currentPath}/${e.name}`.replace(/\/+/g, '/'));
+  const allPaths = cachedEntries.map(e => normalizePath(`${currentPath}/${e.name}`));
   const allSelected = allPaths.length > 0 && allPaths.every(p => selectedPaths.has(p));
 
   if (allSelected) {
@@ -524,7 +603,7 @@ function toggleSelectAll() {
  * 更新全选 checkbox 状态
  */
 function updateSelectAllState() {
-  const allPaths = cachedEntries.map(e => `${currentPath}/${e.name}`.replace(/\/+/g, '/'));
+  const allPaths = cachedEntries.map(e => normalizePath(`${currentPath}/${e.name}`));
   const selectAll = document.getElementById('workspaceSelectAll');
   if (!selectAll) return;
   const checkbox = selectAll.querySelector('.workspace-checkbox');
@@ -753,19 +832,36 @@ async function uploadFiles(fileList) {
   }
 
   let successCount = 0;
+  let skippedCount = 0;
   let failCount = 0;
   const CONCURRENCY = 3;
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     const batch = files.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(batch.map(async (file) => {
+      const targetPath = normalizePath(`${currentPath}/${file.name}`);
+      
+      // 检查文件是否已存在
+      const existsCheck = await fetch(`${config.url}/api/fs/read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.token}`
+        },
+        body: JSON.stringify({ path: targetPath })
+      });
+      const existsData = await existsCheck.json();
+      if (existsData.success) {
+        throw new Error(`文件 "${file.name}" 已存在，跳过上传`);
+      }
+
       const reader = new FileReader();
       const content = await new Promise((resolve, reject) => {
         reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      const targetPath = `${currentPath}/${file.name}`.replace(/\/+/g, '/');
+
       const resp = await fetch(`${config.url}/api/fs/write`, {
         method: 'POST',
         headers: {
@@ -778,12 +874,22 @@ async function uploadFiles(fileList) {
       if (!data.success) throw new Error(data.error || '上传失败');
     }));
     for (const r of results) {
-      if (r.status === 'fulfilled') successCount++;
-      else failCount++;
+      if (r.status === 'fulfilled') {
+        successCount++;
+      } else {
+        if (r.reason.message.includes('已存在')) {
+          skippedCount++;
+        } else {
+          failCount++;
+        }
+      }
     }
   }
 
-  if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
+  let successMsg = '';
+  if (successCount > 0) successMsg += `成功上传 ${successCount} 个文件`;
+  if (successMsg) showToast(successMsg, 'success');
+  if (skippedCount > 0) showToast(`${skippedCount} 个文件已存在，跳过上传`, 'info');
   if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
   if (successCount > 0) {
     await refreshCurrent();
@@ -792,32 +898,180 @@ async function uploadFiles(fileList) {
 }
 
 /**
- * 设置拖拽上传
+ * 设置拖拽支持（外部上传 + 内部文件移动）
  */
 function setupDragDrop() {
   const panel = document.getElementById('workspacePanel');
   if (!panel) return;
 
-  panel.addEventListener('dragover', (e) => {
+  // 为文件行绑定 dragstart，作为内部拖拽源
+  const content = document.getElementById('workspacePanelContent');
+  content.addEventListener('dragstart', (e) => {
+    const item = e.target.closest('.workspace-file-item');
+    if (!item) return;
+    const path = item.dataset.path;
+    const name = item.dataset.name;
+    // 设置拖拽数据，标记为内部移动
+    e.dataTransfer.setData('application/x-workspace-move', JSON.stringify({ path, name }));
+    e.dataTransfer.effectAllowed = 'move';
+    item.classList.add('dragging');
+    // 拖拽结束后清理
+    const onDragEnd = () => {
+      item.classList.remove('dragging');
+      item.removeEventListener('dragend', onDragEnd);
+    };
+    item.addEventListener('dragend', onDragEnd);
+  });
+
+  // 目录行的 dragover/dragleave 反馈
+  content.addEventListener('dragover', (e) => {
+    // 始终阻止事件冒泡，避免触发 input-wrapper 的拖拽门板
     e.preventDefault();
     e.stopPropagation();
+    const dirItem = e.target.closest('.workspace-file-item.directory');
+    // 高亮目标目录
+    const allDirs = content.querySelectorAll('.workspace-file-item.directory.drop-target');
+    allDirs.forEach(d => d.classList.remove('drop-target'));
+    
+    if (dirItem) {
+      // 拖到目录上：高亮目录，不显示面板蒙版
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-workspace-move') ? 'move' : 'copy';
+      dirItem.classList.add('drop-target');
+      panel.classList.remove('drag-over');
+    } else {
+      // 拖到非目录区域：显示面板拖拽蒙版
+      if (!e.dataTransfer.types.includes('application/x-workspace-move')) {
+        panel.classList.add('drag-over');
+      }
+    }
+  });
+
+  content.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const allDirs = content.querySelectorAll('.workspace-file-item.directory.drop-target');
+    allDirs.forEach(d => d.classList.remove('drop-target'));
+    // 离开文件列表区域时移除面板蒙版
+    panel.classList.remove('drag-over');
+  });
+
+  content.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const dirItem = e.target.closest('.workspace-file-item.directory');
+    // 清理高亮和拖拽蒙版
+    content.querySelectorAll('.workspace-file-item.directory.drop-target').forEach(d => d.classList.remove('drop-target'));
+    panel.classList.remove('drag-over');
+
+    if (dirItem && e.dataTransfer.types.includes('application/x-workspace-move')) {
+      // 内部拖拽：移动文件到目录
+      try {
+        const moveData = JSON.parse(e.dataTransfer.getData('application/x-workspace-move'));
+        const srcPath = moveData.path;
+        const destDir = dirItem.dataset.path;
+        const srcName = moveData.name;
+
+        if (srcPath === destDir) return; // 不能拖到自己上
+        if (srcPath.startsWith(destDir + '/')) {
+          showToast('不能将目录移动到其子目录中', 'error');
+          return;
+        }
+
+        showToast('移动中...', 'info');
+        const result = await moveFs(srcPath, destDir);
+        if (result.success) {
+          showToast(`"${srcName}" 已移动到目标目录`, 'success');
+          invalidateDirCache(currentPath);
+          invalidateDirCache(destDir);
+          const destDirName = destDir.split('/').pop();
+          await refreshCurrent();
+          scrollToNewFile(destDirName);
+        } else {
+          showToast(`移动失败: ${result.error}`, 'error');
+        }
+      } catch (err) {
+        showToast(`移动失败: ${err.message}`, 'error');
+      }
+      return;
+    }
+
+    // 外部文件拖到目录项上：上传到该目录，并进入该目录查看
+    if (dirItem && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const destDir = dirItem.dataset.path;
+      const destDirName = destDir.split('/').pop();
+      // 保存当前路径到历史，然后导航到目标目录
+      pathHistory.push(currentPath);
+      currentPath = destDir;
+      await uploadFiles(e.dataTransfer.files);
+      updateBreadcrumb();
+      updateBackButton();
+      return;
+    }
+
+    // 外部文件拖到非目录文件项上：上传到当前目录
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await uploadFiles(e.dataTransfer.files);
+      return;
+    }
+  });
+
+  // 面板级别的拖拽（外部文件上传）
+  panel.addEventListener('dragover', (e) => {
+    // 始终阻止事件冒泡，避免触发 input-wrapper 的拖拽门板
+    e.preventDefault();
+    e.stopPropagation();
+    // 内部拖拽不触发面板级别高亮
+    if (e.dataTransfer.types.includes('application/x-workspace-move')) return;
     panel.classList.add('drag-over');
   });
 
   panel.addEventListener('dragleave', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.dataTransfer.types.includes('application/x-workspace-move')) return;
     panel.classList.remove('drag-over');
   });
 
   panel.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    // 内部拖拽已在 content 级处理
+    if (e.dataTransfer.types.includes('application/x-workspace-move')) return;
     panel.classList.remove('drag-over');
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
     await uploadFiles(files);
   });
+}
+
+/**
+ * 监听 storage 变化（Agent 切换/断开）
+ */
+function handleStorageChange(changes, namespace) {
+  if (namespace !== 'local') return;
+  if (!changes.pairedAgents && !changes.activeAgentId) return;
+
+  const changedAgentId =
+    (changes.activeAgentId && changes.activeAgentId.newValue) ||
+    (changes.pairedAgents && changes.pairedAgents.newValue);
+  const oldAgentId =
+    (changes.activeAgentId && changes.activeAgentId.oldValue) ||
+    (changes.pairedAgents && changes.pairedAgents.oldValue);
+
+  if (changedAgentId === oldAgentId) return;
+
+  // Agent 变化，重置缓存并刷新
+  logger.debug('[WorkspacePanel] Agent 已变更，刷新工作目录');
+  resetWorkspaceRoot();
+  currentPath = null;
+  invalidateDirCache(currentPath);
+  // 清空整个 dirCache
+  dirCache.clear();
+
+  const panel = document.getElementById('workspacePanel');
+  if (panel && panel.classList.contains('expanded')) {
+    openPanel();
+  }
 }
 
 /**
@@ -834,13 +1088,26 @@ async function navigateBack() {
  * 刷新当前目录
  */
 async function refreshCurrent() {
-  if (currentPath) {
-    invalidateDirCache(currentPath);
-    selectedPaths.clear();
-    updateDownloadBtn();
-    await loadDirectory(currentPath);
-    closePreview();
+  if (!currentPath) {
+    const root = workspaceRoot || await getWorkspaceRoot();
+    if (!root) {
+      showToast('无法刷新，请确认 Agent 已连接', 'error');
+      return;
+    }
+    workspaceRoot = root;
+    currentPath = root;
   }
+  invalidateDirCache(currentPath);
+  selectedPaths.clear();
+  updateDownloadBtn();
+  if (isSearchMode && searchQuery) {
+    const results = await searchFilesRemote(currentPath, searchQuery);
+    searchResults = results;
+    renderCurrentEntries();
+  } else {
+    await loadDirectory(currentPath);
+  }
+  closePreview();
 }
 
 /**
@@ -853,11 +1120,17 @@ function updateBreadcrumb() {
     return;
   }
 
-  const parts = currentPath.split('/').filter(Boolean);
+  const parts = normalizePath(currentPath).split('/').filter(Boolean);
   let html = '';
   let accumulatedPath = '';
+  // 检测 Windows 盘符（如 D:）
+  const isWindowsDrive = parts.length > 0 && /^[A-Za-z]:$/.test(parts[0]);
   for (let i = 0; i < parts.length; i++) {
-    accumulatedPath += '/' + parts[i];
+    if (i === 0 && isWindowsDrive) {
+      accumulatedPath = parts[i] + '/';
+    } else {
+      accumulatedPath += (accumulatedPath.endsWith('/') ? '' : '/') + parts[i];
+    }
     const isLast = i === parts.length - 1;
     const isClickable = !workspaceRoot || accumulatedPath === workspaceRoot || accumulatedPath.startsWith(workspaceRoot + '/');
     if (i > 0) html += '<span class="workspace-breadcrumb-sep">/</span>';
@@ -954,6 +1227,31 @@ function closePanelInternal() {
 let searchQuery = '';
 let searchResults = [];
 let isSearchMode = false;
+let searchHistory = [];
+let searchHistoryIndex = -1;
+
+// 加载搜索历史
+function loadSearchHistory() {
+  try {
+    chrome.storage.local.get(['workspaceSearchHistory'], (result) => {
+      searchHistory = result.workspaceSearchHistory || [];
+    });
+  } catch {}
+}
+
+/**
+ * 添加搜索历史（去重、最多20条）
+ */
+function addSearchHistory(query) {
+  if (!query.trim()) return;
+  const idx = searchHistory.indexOf(query);
+  if (idx !== -1) searchHistory.splice(idx, 1);
+  searchHistory.push(query);
+  if (searchHistory.length > 20) searchHistory.shift();
+  try {
+    chrome.storage.local.set({ workspaceSearchHistory: searchHistory });
+  } catch {}
+}
 
 function handleSearchInput(e) {
   searchQuery = e.target.value.trim();
@@ -969,6 +1267,9 @@ async function performSearch() {
     return;
   }
 
+  addSearchHistory(searchQuery);
+  searchHistoryIndex = -1;
+
   showToast('搜索中...', 'info');
   const results = await searchFilesRemote(currentPath, searchQuery);
   searchResults = results;
@@ -976,14 +1277,14 @@ async function performSearch() {
   renderCurrentEntries();
 }
 
-function clearSearch() {
+async function clearSearch() {
   const searchInput = document.getElementById('workspaceSearchInput');
   searchInput.value = '';
   searchQuery = '';
   isSearchMode = false;
   searchResults = [];
   document.getElementById('workspaceSearchClear').style.display = 'none';
-  renderCurrentEntries();
+  await loadDirectory(currentPath);
 }
 
 async function handleDeleteFile(path, name, type) {
@@ -1027,6 +1328,110 @@ async function handleDeleteFile(path, name, type) {
     }
   } catch (err) {
     showToast(`删除失败: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * 显示输入对话框（自定义 UI，返回 Promise<string|null>）
+ */
+function showInputDialog(title, defaultValue = '', placeholder = '') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay show';
+    overlay.innerHTML = `
+      <div class="modal-container input-dialog" style="min-width:320px;">
+        <div class="modal-title">${escapeHtml(title)}</div>
+        <input type="text" class="modal-input" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" autofocus style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin:8px 0;box-sizing:border-box;">
+        <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">取消</button>
+          <button class="modal-btn-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('.modal-input');
+    const confirmBtn = overlay.querySelector('.modal-btn-confirm');
+    const cancelBtn = overlay.querySelector('.modal-btn-cancel');
+
+    const cleanup = () => {
+      overlay.remove();
+    };
+
+    const doConfirm = () => {
+      const val = input.value.trim();
+      cleanup();
+      resolve(val || null);
+    };
+
+    confirmBtn.addEventListener('click', doConfirm);
+    cancelBtn.addEventListener('click', () => { cleanup(); resolve(null); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doConfirm();
+      if (e.key === 'Escape') { cleanup(); resolve(null); }
+    });
+    // 自动聚焦
+    setTimeout(() => input.select(), 50);
+  });
+}
+
+/**
+ * 处理文件/目录重命名（仅修改不含后缀的文件名部分）
+ */
+async function handleRenameFile(path, name, type) {
+  // 提取不含后缀的部分
+  let baseName = name;
+  let ext = '';
+  const dotIndex = name.lastIndexOf('.');
+  if (type !== 'directory' && dotIndex > 0) {
+    baseName = name.substring(0, dotIndex);
+    ext = name.substring(dotIndex);
+  }
+
+  const newBase = await showInputDialog(
+    `重命名${type === 'directory' ? '目录' : '文件'}`,
+    baseName,
+    '输入新名称'
+  );
+  if (!newBase || newBase === baseName) return;
+
+  const newName = newBase + ext;
+  try {
+    const result = await renameFs(path, newName);
+    if (result.success) {
+      showToast(`已重命名为 "${newName}"`, 'success');
+      invalidateDirCache(currentPath);
+      await refreshCurrent();
+      scrollToNewFile(newName);
+    } else {
+      showToast(`重命名失败: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`重命名失败: ${err.message}`, 'error');
+  }
+}
+
+/**
+ * 处理新建文件夹
+ */
+async function handleNewFolder() {
+  if (!currentPath) return;
+
+  const dirName = await showInputDialog('新建文件夹', '', '输入文件夹名称');
+  if (!dirName) return;
+
+  const dirPath = normalizePath(`${currentPath}/${dirName}`);
+  try {
+    const result = await createDir(dirPath);
+    if (result.success) {
+      showToast(`已创建文件夹 "${dirName}"`, 'success');
+      invalidateDirCache(currentPath);
+      await refreshCurrent();
+      scrollToNewFile(dirName);
+    } else {
+      showToast(`创建失败: ${result.error}`, 'error');
+    }
+  } catch (err) {
+    showToast(`创建失败: ${err.message}`, 'error');
   }
 }
 

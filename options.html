@@ -472,45 +472,38 @@
         <div class="form-group" id="pairCodeGroup">
           <label>配对码 <span class="hint">（在 Agent 终端窗口中查看）</span></label>
           <div style="display: flex; gap: 8px;">
-            <input type="text" id="agentPairCode" placeholder="4位配对码" maxlength="4" style="flex: 1; text-align: center; font-size: 20px; letter-spacing: 8px;" autocomplete="off">
+            <input type="text" id="agentPairCode" placeholder="6位配对码" maxlength="6" style="flex: 1; text-align: center; font-size: 20px; letter-spacing: 8px;" autocomplete="off">
             <button class="btn btn-primary" id="agentConnectBtn" style="width: auto; flex-shrink: 0; min-width: 80px;">连接</button>
           </div>
         </div>
       </div>
 
-      <!-- 保存配置按钮（放在配对码下方，方便快速点击） -->
-      <div style="margin-top: 16px;">
-        <button class="btn btn-primary" id="saveBtn">💾 保存配置</button>
-      </div>
-
-      <div class="info-box" style="margin-top: 15px;">
-        <h3>💡 使用说明</h3>
-        <p>
-          <strong>方式一：NPM 全局安装（推荐）</strong><br>
-          1. <code>npm install -g ai-helper-agent</code>（要求 Node.js ≥ 18）<br>
-          2. <code>ai-helper-agent start</code> 或简写 <code>aha start</code><br>
-          3. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
-          <br>
-          <strong>方式二：本地源码运行（开发调试）</strong><br>
-          1. <code>cd agent && node bin/agent.js start</code><br>
-          2. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
-          <br>
-          <strong>命令别名</strong>：<code>ai-helper-agent</code> 可简写为 <code>aha</code>，所有命令均支持<br>
-          <br>
-          后台运行：<br>
-          　方式一：<code>ai-helper-agent start --background</code> 或 <code>aha start --background</code><br>
-          　方式二：<code>node bin/agent.js start --background</code><br>
-          更多命令：<code>ai-helper-agent help</code> 或 <code>aha help</code>
-        </p>
-      </div>
-
-      <div class="warning-box" style="margin-top: 10px;">
-        <h3>⚠️ 安全提示</h3>
-        <p>
-          代理服务默认仅监听本机地址（127.0.0.1），如需远程连接请修改启动参数。<br>
-          文件操作限制在配置的工作目录内，不可越权访问。<br>
-          危险命令（如 rm -rf /）会被自动拦截。
-        </p>
+      <div class="info-box collapsible collapsed" style="margin-top: 15px;">
+        <h3 class="collapsible-header">💡 使用说明及安全提示 <span class="collapsible-arrow">▶</span></h3>
+        <div class="collapsible-body" style="display:none;">
+          <p>
+            <strong>方式一：NPM 全局安装（推荐）</strong><br>
+            1. <code>npm install -g ai-helper-agent</code>（要求 Node.js ≥ 18）<br>
+            2. <code>ai-helper-agent start</code> 或简写 <code>aha start</code><br>
+            3. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+            <br>
+            <strong>方式二：本地源码运行（开发调试）</strong><br>
+            1. <code>cd agent && node bin/agent.js start</code><br>
+            2. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+            <br>
+            <strong>命令别名</strong>：<code>ai-helper-agent</code> 可简写为 <code>aha</code>，所有命令均支持<br>
+            <br>
+            后台运行：<br>
+            　方式一：<code>ai-helper-agent start --background</code> 或 <code>aha start --background</code><br>
+            　方式二：<code>node bin/agent.js start --background</code><br>
+            更多命令：<code>ai-helper-agent help</code> 或 <code>aha help</code><br>
+            <br>
+            <strong>⚠️ 安全提示</strong><br>
+            代理服务默认仅监听本机地址（127.0.0.1），如需远程连接请修改启动参数。<br>
+            文件操作限制在配置的工作目录内，不可越权访问。<br>
+            危险命令（如 rm -rf /）会被自动拦截。
+          </p>
+        </div>
       </div>
 
     </div>
@@ -576,6 +569,11 @@
 
       <input type="file" id="importSkillFile" accept=".json" style="display:none;">
     </div><!-- /tab-toolbox -->
+
+    <!-- 全局保存按钮（所有 tab 可见） -->
+    <div style="margin-top: 20px; padding: 0 24px 24px;">
+      <button class="btn btn-primary" id="saveBtn" style="width: 100%; padding: 12px;">💾 保存配置</button>
+    </div>
 
     <div class="status" id="status"></div>
   </div>

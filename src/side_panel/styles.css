@@ -8701,7 +8701,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 15px;
   min-height: 34px;
   background: #f0f2f5;
   border-bottom: 1px solid #e0e0e0;
@@ -8911,6 +8911,13 @@ body {
   z-index: 100;
   pointer-events: none;
   border-radius: 12px;
+}
+
+/* 拖拽目标目录高亮 */
+.workspace-file-item.directory.drop-target {
+  background: rgba(74, 144, 217, 0.12) !important;
+  border-color: #4a90d9 !important;
+  box-shadow: inset 0 0 0 2px #4a90d9;
 }
 
 .workspace-file-size {
@@ -9152,10 +9159,9 @@ body {
   padding: 0 6px 0 10px;
   border: 1px solid #ddd;
   margin-left: auto;
-  margin-right: 8px;
   flex-shrink: 1;
   min-width: 0;
-  width: 160px;
+  width: 120px;
   max-width: 200px;
   height: 28px;
 }

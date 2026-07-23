@@ -223,7 +223,7 @@ export async function searchFilesRemote(dirPath, query, maxResults = 200) {
     const dir = r.path.substring(0, r.path.lastIndexOf('/'));
     return {
       name: r.name,
-      type: 'file',
+      type: r.type || 'file',
       size: r.size,
       mtime: r.mtime,
       fullPath: r.path,
@@ -293,4 +293,37 @@ export async function downloadFilesStream(paths) {
   } catch (err) {
     return { success: false, error: `请求失败: ${err.message}` };
   }
+}
+
+/**
+ * 删除文件或目录
+ */
+export async function deleteFs(path) {
+  return agentRequest('/api/fs/delete', { path });
+}
+
+/**
+ * 重命名文件或目录
+ * @param {string} filePath - 原路径
+ * @param {string} newName - 新文件名（包含后缀）
+ */
+export async function renameFs(filePath, newName) {
+  return agentRequest('/api/fs/rename', { path: filePath, newName });
+}
+
+/**
+ * 创建目录
+ * @param {string} dirPath - 新目录完整路径
+ */
+export async function createDir(dirPath) {
+  return agentRequest('/api/fs/mkdir', { path: dirPath });
+}
+
+/**
+ * 移动文件或目录
+ * @param {string} srcPath - 源路径
+ * @param {string} destDir - 目标目录路径
+ */
+export async function moveFs(srcPath, destDir) {
+  return agentRequest('/api/fs/move', { path: srcPath, destDir });
 }

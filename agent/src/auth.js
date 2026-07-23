@@ -2,7 +2,7 @@
 import crypto from 'crypto';
 import { loadConfig, loadPairings, savePairing } from './config.js';
 
-// 当前有效的配对码（30秒刷新一次）
+// 当前有效的配对码（定时刷新 + 一次性使用）
 let currentPairCode = null;
 let pairCodeTimer = null;
 
@@ -12,11 +12,26 @@ let lastAuthTime = 0;
 // 判定"活跃"的时间窗口：此时间内有过认证则认为仍有扩展连接
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // 5 分钟
 
+// 配对码字符表：排除易混淆字符（0/O、1/I/l）；6 位字母数字（≈21亿种，抗暴破）
+const PAIR_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PAIR_CODE_LEN = 6;
+
+// 配对失败锁定：连续失败 PAIR_FAIL_LIMIT 次后锁定 PAIR_LOCK_DURATION_MS 毫秒
+let pairFailCount = 0;
+let pairLockUntil = 0;
+const PAIR_FAIL_LIMIT = 5;
+const PAIR_LOCK_DURATION_MS = 60 * 1000; // 60 秒
+
 /**
- * 生成随机配对码（4位数字，使用密码学安全的随机数）
+ * 生成随机配对码（6位字母数字，使用密码学安全的随机数，排除易混淆字符）
  */
 function generatePairCode() {
-  return String(crypto.randomInt(1000, 10000));
+  const bytes = crypto.randomBytes(PAIR_CODE_LEN);
+  let code = '';
+  for (let i = 0; i < PAIR_CODE_LEN; i++) {
+    code += PAIR_CODE_CHARS[bytes[i] % PAIR_CODE_CHARS.length];
+  }
+  return code;
 }
 
 /**
@@ -89,17 +104,38 @@ function verifyToken(token) {
 
 /**
  * 处理配对请求（异步，支持写入锁）
+ * 安全策略：
+ *   - 失败锁定：连续失败 PAIR_FAIL_LIMIT 次后临时锁定，并立即轮换配对码使已观测码失效
+ *   - 一次性使用：配对成功后立即轮换配对码，防止配对码被重复利用
  */
 async function handlePairRequest(code, extensionId) {
+  // 锁定期内直接拒绝（不泄露是否处于锁定状态细节）
+  if (Date.now() < pairLockUntil) {
+    return { success: false, error: '配对尝试过于频繁，请稍后再试' };
+  }
   if (!code || !extensionId) {
     return { success: false, error: '缺少配对码或扩展ID' };
   }
   if (code !== currentPairCode) {
+    pairFailCount++;
+    if (pairFailCount >= PAIR_FAIL_LIMIT) {
+      pairLockUntil = Date.now() + PAIR_LOCK_DURATION_MS;
+      pairFailCount = 0;
+      // 锁定时立即轮换配对码，使攻击者已观测到的配对码失效
+      currentPairCode = generatePairCode();
+      console.log('[Agent] 配对失败次数过多，已临时锁定 60s 并轮换配对码');
+    }
     return { success: false, error: '配对码无效' };
   }
+  // 配对码正确：重置失败计数
+  pairFailCount = 0;
+
   // 检查是否已有配对
   const pairings = loadPairings();
   if (pairings[extensionId]) {
+    // 一次性使用：成功后立即轮换配对码
+    currentPairCode = generatePairCode();
+    console.log('[Agent] 配对码校验通过，配对码已轮换（一次性使用）');
     return { success: true, token: pairings[extensionId].token, message: '已配对，返回现有 token' };
   }
   // 生成新 token 并保存
@@ -109,6 +145,9 @@ async function handlePairRequest(code, extensionId) {
   } catch (err) {
     return { success: false, error: `配对保存失败: ${err.message}` };
   }
+  // 一次性使用：成功后立即轮换配对码
+  currentPairCode = generatePairCode();
+  console.log('[Agent] 配对成功，配对码已轮换（一次性使用）');
   return { success: true, token, message: '配对成功' };
 }
 

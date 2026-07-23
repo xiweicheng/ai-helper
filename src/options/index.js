@@ -58,6 +58,51 @@ document.addEventListener('DOMContentLoaded', async function() {
       switchTab(this.dataset.tab);
     });
   });
+
+  // 初始化可折叠说明块（所有 .info-box 和 .warning-box 默认折叠）
+  document.querySelectorAll('.info-box, .warning-box').forEach(box => {
+    const h3 = box.querySelector('h3');
+    if (!h3 || box.classList.contains('collapsible')) return;
+
+    // 添加 collapsible 结构和箭头
+    box.classList.add('collapsible', 'collapsed');
+    h3.classList.add('collapsible-header');
+    const arrow = document.createElement('span');
+    arrow.className = 'collapsible-arrow';
+    arrow.textContent = '▶';
+    h3.appendChild(arrow);
+
+    // 将 h3 之后的内容包裹到 collapsible-body
+    const body = document.createElement('div');
+    body.className = 'collapsible-body';
+    body.style.display = 'none';
+    while (h3.nextSibling) {
+      body.appendChild(h3.nextSibling);
+    }
+    box.appendChild(body);
+  });
+  
+  // 统一为所有 collapsible 元素绑定点击事件
+  document.querySelectorAll('.collapsible .collapsible-header').forEach(h3 => {
+    const box = h3.closest('.collapsible');
+    const body = box?.querySelector('.collapsible-body');
+    const arrow = h3.querySelector('.collapsible-arrow');
+    if (!box || !body) return;
+    h3.addEventListener('click', () => {
+      const isOpen = box.classList.contains('open');
+      if (isOpen) {
+        box.classList.remove('open');
+        box.classList.add('collapsed');
+        body.style.display = 'none';
+        if (arrow) arrow.textContent = '▶';
+      } else {
+        box.classList.add('open');
+        box.classList.remove('collapsed');
+        body.style.display = '';
+        if (arrow) arrow.textContent = '▼';
+      }
+    });
+  });
   
   // 根据 hash 激活对应 tab
   activateByHash();
@@ -1368,8 +1413,8 @@ function initAgentConfig() {
     const url = agentUrlInput.value.trim() || 'http://127.0.0.1:18910';
     const code = pairCodeInput.value.trim();
 
-    if (!code || code.length !== 4) {
-      showToast('请输入4位配对码', 'warning');
+    if (!code || code.length !== 6) {
+      showToast('请输入6位配对码', 'warning');
       return;
     }
 

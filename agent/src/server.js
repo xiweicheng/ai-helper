@@ -1,20 +1,20 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync } from 'fs';
-import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir } from 'fs/promises';
+import { readFileSync, createWriteStream, statSync, existsSync } from 'fs';
+import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
+import { ZipArchive } from 'archiver';
 import { homedir, tmpdir } from 'os';
-import { spawn, execFile } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
-import { verifyToken, getCurrentPairCode, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
+import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses } from './executor.js';
-import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
+import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 import {
   initializeMcpRegistry,
@@ -42,16 +42,54 @@ import {
   getAgentSkillPrompt,
   getSkillsDir
 } from './skill/registry.js';
-import { getSkillExecutionStatus } from './skill/executor.js';
 import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './skill/loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
-const execFileAsync = promisify(execFile);
+
+/**
+ * 跨平台 ZIP 打包（使用 archiver，替换 spawn zip）
+ * @param {string[]} sourceNames - 源文件/目录名（basename）
+ * @param {string} cwd - 工作目录（压缩时以此为当前目录）
+ * @param {string} outputPath - 输出 ZIP 文件路径
+ * @returns {Promise<Buffer>} ZIP 文件 Buffer
+ */
+async function createZipBuffer(sourceNames, cwd, outputPath) {
+  return new Promise((resolve, reject) => {
+    const output = createWriteStream(outputPath);
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    const chunks = [];
+
+    output.on('close', () => {
+      resolve(Buffer.concat(chunks));
+    });
+    output.on('error', reject);
+
+    archive.on('error', reject);
+    archive.on('data', (chunk) => chunks.push(chunk));
+
+    archive.pipe(output);
+
+    for (const name of sourceNames) {
+      const fullPath = join(cwd, name);
+      try {
+        const s = statSync(fullPath);
+        if (s.isDirectory()) {
+          archive.directory(fullPath, name);
+        } else {
+          archive.file(fullPath, { name });
+        }
+      } catch {
+        // 跳过不存在的文件
+      }
+    }
+
+    archive.finalize();
+  });
+}
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
-const MAX_LOG_QUERY_LIMIT = 1000;        // 日志查询最大条数
 const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制
 
@@ -74,7 +112,7 @@ function detectShell() {
       ];
       for (const path of gitBashPaths) {
         try {
-          if (require('fs').existsSync(path)) {
+          if (existsSync(path)) {
             return path;
           }
         } catch {}
@@ -153,15 +191,35 @@ const PLATFORM_INFO = {
 };
 
 /**
+ * 判断请求来源是否允许跨域读取响应
+ * 安全策略：仅放行 Chrome 扩展来源（chrome-extension://<id>）。
+ *   - 恶意网页（http/https origin）不返回 ACAO，浏览器阻止其跨域读取（保护无认证端点 /api/status、/api/pair 等）
+ *   - 无 Origin 的请求（curl / 本地脚本）：不设 ACAO，非浏览器客户端不受 CORS 限制仍可访问
+ *   - 扩展请求：返回其 Origin，扩展 fetch 可正常跨域读取
+ */
+function getAllowedOrigin(req) {
+  const origin = req?.headers?.origin;
+  if (typeof origin === 'string' && origin.startsWith('chrome-extension://')) {
+    return origin;
+  }
+  return null;
+}
+
+/**
  * JSON 响应辅助
  */
 function jsonResponse(res, status, data) {
-  res.writeHead(status, {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-  });
+  };
+  const allowedOrigin = getAllowedOrigin(res.req);
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+    headers['Vary'] = 'Origin';
+  }
+  res.writeHead(status, headers);
   res.end(JSON.stringify(data));
 }
 
@@ -191,8 +249,10 @@ function parseBody(req) {
 
     req.on('end', () => {
       const body = Buffer.concat(chunks).toString();
+      // 空 body 视为 {}（兼容无 body 的 POST 请求，如 /api/skill/reload）
+      if (body.trim() === '') { resolve({}); return; }
       try { resolve(JSON.parse(body)); }
-      catch { resolve({}); }
+      catch { reject(new Error('请求体不是有效的 JSON')); }
     });
 
     req.on('error', () => reject(new Error('读取请求失败')));
@@ -306,13 +366,18 @@ export function startServer() {
   });
 
   async function handleRequest(req, res) {
-    // CORS 预检
+    // CORS 预检（仅放行 Chrome 扩展来源）
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+      const optHeaders = {
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-      });
+      };
+      const allowedOrigin = getAllowedOrigin(req);
+      if (allowedOrigin) {
+        optHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
+        optHeaders['Vary'] = 'Origin';
+      }
+      res.writeHead(204, optHeaders);
       return res.end();
     }
 
@@ -340,23 +405,17 @@ export function startServer() {
       return jsonResponse(res, result.success ? 200 : 400, result);
     }
 
-    // 健康检查 + 平台信息
+    // 健康检查 + 平台信息（无认证：仅返回必要的平台标识，不泄露 hostname/homeDir/shell 等宿主敏感信息）
     if (req.method === 'GET' && pathname === '/api/status') {
       return jsonResponse(res, 200, {
         success: true,
         version: AGENT_VERSION,
         running: true,
-        ...PLATFORM_INFO,
+        platform: PLATFORM_INFO.platform,
+        arch: PLATFORM_INFO.arch,
+        nodeVersion: PLATFORM_INFO.nodeVersion,
         searchTools: getSearchToolsAvailable()
       });
-    }
-
-    // Agent 关闭（无需认证，仅限本地访问）
-    if (req.method === 'POST' && pathname === '/api/shutdown') {
-      logSystem('shutdown', { reason: 'api_request' });
-      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
-      shutdown();
-      return;
     }
 
     // ---------- 需要认证的接口 ----------
@@ -372,14 +431,27 @@ export function startServer() {
       return jsonResponse(res, 403, { success: false, error: '认证 token 无效' });
     }
 
+    // Agent 关闭（需认证 + 仅限本地来源，防止远程无认证关闭 Agent 造成 DoS）
+    if (req.method === 'POST' && pathname === '/api/shutdown') {
+      const remoteAddr = req.socket.remoteAddress || '';
+      const isLocal = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
+      if (!isLocal) {
+        logSecurity('shutdown_remote_blocked', { remoteAddr, extId });
+        return jsonResponse(res, 403, { success: false, error: '关闭 Agent 仅允许本地请求' });
+      }
+      logSystem('shutdown', { reason: 'api_request', extId });
+      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
+      shutdown();
+      return;
+    }
+
     const maxSize = config.fileMaxSize || DEFAULT_MAX_SIZE;
 
-    // 认证后的状态信息
+    // 认证后的状态信息（不再下发 pairCode：配对码仅用于一次性配对，避免已配对端横向获取）
     if (req.method === 'GET' && pathname === '/api/status/detail') {
       return jsonResponse(res, 200, {
         success: true,
         version: AGENT_VERSION,
-        pairCode: getCurrentPairCode(),
         pairCodeTTL: config.pairCodeTTL,
         workdir: config.workdir,
         allowedPaths: config.allowedPaths,
@@ -594,12 +666,7 @@ export function startServer() {
             try {
               const dirName = basename(check.resolved);
               const parentDir = dirname(check.resolved);
-              await execFileAsync('zip', ['-rq', tmpFile, dirName], {
-                cwd: parentDir,
-                timeout: 120000,
-                maxBuffer: 10 * 1024 * 1024
-              });
-              const zipBuffer = await readFile(tmpFile);
+              const zipBuffer = await createZipBuffer([dirName], parentDir, tmpFile);
               logFs('download', { path: check.resolved, type: 'directory', zipSize: zipBuffer.length });
               return jsonResponse(res, 200, {
                 success: true,
@@ -660,22 +727,20 @@ export function startServer() {
           try {
             const zipArgs = resolvedPaths.map(p => basename(p));
             const commonParent = resolvedPaths.reduce((a, b) => {
-              const partsA = a.split('/').filter(Boolean);
-              const partsB = b.split('/').filter(Boolean);
+              const sep = '/';
+              const partsA = a.replace(/\\/g, '/').split('/').filter(Boolean);
+              const partsB = b.replace(/\\/g, '/').split('/').filter(Boolean);
               const common = [];
               for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
                 if (partsA[i] === partsB[i]) common.push(partsA[i]);
                 else break;
               }
-              return '/' + common.join('/');
+              const result = sep + common.join(sep);
+              // Windows 盘符处理：C:/Users -> 而不是 /C:/Users
+              return result;
             });
 
-            await execFileAsync('zip', ['-rq', tmpFile, ...zipArgs], {
-              cwd: commonParent,
-              timeout: 120000,
-              maxBuffer: 10 * 1024 * 1024
-            });
-            const zipBuffer = await readFile(tmpFile);
+            const zipBuffer = await createZipBuffer(zipArgs, commonParent, tmpFile);
             logFs('download_multi', { paths: resolvedPaths, zipSize: zipBuffer.length });
             return jsonResponse(res, 200, {
               success: true,
@@ -740,10 +805,7 @@ export function startServer() {
                 }
                 return '/' + common.join('/');
               });
-              await execFileAsync('zip', ['-rq', tmpFile, ...zipArgs], {
-                cwd: commonParent, timeout: 120000, maxBuffer: 10 * 1024 * 1024
-              });
-              const zipBuffer = await readFile(tmpFile);
+              const zipBuffer = await createZipBuffer(zipArgs, commonParent, tmpFile);
               logFs('download_multi_stream', { paths: resolvedPaths, zipSize: zipBuffer.length });
               const zipName = `workspace_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`;
               return sendBinary(zipBuffer, zipName, 'application/zip');
@@ -768,10 +830,7 @@ export function startServer() {
               try {
                 const dirName = basename(check.resolved);
                 const parentDir = dirname(check.resolved);
-                await execFileAsync('zip', ['-rq', tmpFile, dirName], {
-                  cwd: parentDir, timeout: 120000, maxBuffer: 10 * 1024 * 1024
-                });
-                const zipBuffer = await readFile(tmpFile);
+                const zipBuffer = await createZipBuffer([dirName], parentDir, tmpFile);
                 logFs('download_stream', { path: check.resolved, type: 'directory', zipSize: zipBuffer.length });
                 return sendBinary(zipBuffer, `${dirName}.zip`, 'application/zip');
               } finally {
@@ -790,6 +849,109 @@ export function startServer() {
         } catch (err) {
           logError('fs', 'download_stream_error', { path: targetPath, paths, error: err.message });
           return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
+        }
+      }
+
+      // 创建目录
+      if (pathname === '/api/fs/mkdir') {
+        const dirPath = body.path;
+        if (!dirPath || typeof dirPath !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        }
+        const check = await checkPath(dirPath);
+        if (!check.allowed) {
+          logSecurity('fs_mkdir_blocked', { path: dirPath, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        try {
+          await mkdir(check.resolved, { recursive: false });
+          logFs('mkdir', { path: check.resolved });
+          return jsonResponse(res, 200, { success: true, path: check.resolved });
+        } catch (err) {
+          if (err.code === 'EEXIST') {
+            return jsonResponse(res, 409, { success: false, error: '目录已存在' });
+          }
+          throw err;
+        }
+      }
+
+      // 重命名文件/目录（仅修改文件名，不跨目录）
+      if (pathname === '/api/fs/rename') {
+        const oldPath = body.path;
+        const newName = body.newName;
+        if (!oldPath || typeof oldPath !== 'string' || !newName || typeof newName !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 或 newName 参数' });
+        }
+        if (newName.includes('/') || newName.includes('\\')) {
+          return jsonResponse(res, 400, { success: false, error: '新名称不能包含路径分隔符' });
+        }
+        const check = await checkPath(oldPath);
+        if (!check.allowed) {
+          logSecurity('fs_rename_blocked', { path: oldPath, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        if (!await exists(check.resolved)) {
+          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+        }
+        const newFullPath = join(dirname(check.resolved), newName);
+        // 确保目标路径也在允许范围内
+        const newCheck = await checkPath(newFullPath);
+        if (!newCheck.allowed) {
+          logSecurity('fs_rename_blocked', { path: newFullPath, reason: newCheck.reason });
+          return jsonResponse(res, 403, { success: false, error: `目标路径不允许: ${newCheck.reason}` });
+        }
+        try {
+          await rename(check.resolved, newFullPath);
+          logFs('rename', { from: check.resolved, to: newFullPath });
+          return jsonResponse(res, 200, { success: true, newPath: newFullPath, newName });
+        } catch (err) {
+          if (err.code === 'ENOTEMPTY' || err.code === 'EEXIST') {
+            return jsonResponse(res, 409, { success: false, error: '目标名称已存在' });
+          }
+          throw err;
+        }
+      }
+
+      // 移动文件/目录
+      if (pathname === '/api/fs/move') {
+        const srcPath = body.path;
+        const destDir = body.destDir;
+        if (!srcPath || typeof srcPath !== 'string' || !destDir || typeof destDir !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 或 destDir 参数' });
+        }
+        const srcCheck = await checkPath(srcPath);
+        if (!srcCheck.allowed) {
+          logSecurity('fs_move_blocked', { path: srcPath, reason: srcCheck.reason });
+          return jsonResponse(res, 403, { success: false, error: srcCheck.reason });
+        }
+        const destCheck = await checkPath(destDir);
+        if (!destCheck.allowed) {
+          logSecurity('fs_move_blocked', { path: destDir, reason: destCheck.reason });
+          return jsonResponse(res, 403, { success: false, error: destCheck.reason });
+        }
+        if (!await exists(srcCheck.resolved)) {
+          return jsonResponse(res, 404, { success: false, error: '源文件/目录不存在' });
+        }
+        const destStat = await stat(destCheck.resolved).catch(() => null);
+        if (!destStat || !destStat.isDirectory()) {
+          return jsonResponse(res, 400, { success: false, error: '目标不是有效目录' });
+        }
+        const itemName = basename(srcCheck.resolved);
+        const destPath = join(destCheck.resolved, itemName);
+        const destCheck2 = await checkPath(destPath);
+        if (!destCheck2.allowed) {
+          logSecurity('fs_move_blocked', { path: destPath, reason: destCheck2.reason });
+          return jsonResponse(res, 403, { success: false, error: `移动目标路径不允许: ${destCheck2.reason}` });
+        }
+        try {
+          await rename(srcCheck.resolved, destPath);
+          logFs('move', { from: srcCheck.resolved, to: destPath });
+          return jsonResponse(res, 200, { success: true, newPath: destPath });
+        } catch (err) {
+          if (err.code === 'ENOTEMPTY' || err.code === 'EEXIST') {
+            return jsonResponse(res, 409, { success: false, error: '目标位置已存在同名文件/目录' });
+          }
+          throw err;
         }
       }
 
@@ -1097,27 +1259,6 @@ export function startServer() {
       }
     }
 
-    // 运行中进程列表（需认证）
-    if (req.method === 'GET' && pathname === '/api/exec/running') {
-      return jsonResponse(res, 200, { success: true, processes: getRunningProcesses() });
-    }
-
-    // 日志查询（需认证）
-    if (req.method === 'GET' && pathname === '/api/logs') {
-      const date = url.searchParams.get('date') || undefined;
-      const category = url.searchParams.get('category') || undefined;
-      const rawLimit = parseInt(url.searchParams.get('limit') || '200', 10);
-      const limit = Math.min(isNaN(rawLimit) ? 200 : rawLimit, MAX_LOG_QUERY_LIMIT);
-      const offset = parseInt(url.searchParams.get('offset') || '0', 10);
-      const result = queryLogs({ date, category, limit, offset });
-      return jsonResponse(res, 200, { success: true, ...result });
-    }
-
-    // 日志日期列表（需认证）
-    if (req.method === 'GET' && pathname === '/api/logs/dates') {
-      return jsonResponse(res, 200, { success: true, dates: getLogDates() });
-    }
-
     // ========== Skill 管理接口（仅 GET 路由） ==========
 
     // Skill 列表
@@ -1130,13 +1271,6 @@ export function startServer() {
       const name = url.searchParams.get('name');
       if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
       return jsonResponse(res, 200, getSkill(name));
-    }
-
-    // Skill 执行状态查询
-    if (req.method === 'GET' && pathname === '/api/skill/status') {
-      const execId = url.searchParams.get('execId');
-      if (!execId) return jsonResponse(res, 400, { success: false, error: '缺少 execId 参数' });
-      return jsonResponse(res, 200, getSkillExecutionStatus(execId));
     }
 
     // Agent Skill Prompts（用于 AI System Prompt 注入）
@@ -1244,6 +1378,9 @@ export function startServer() {
     if (pathParts[1] === 'ws' && pathParts[2] === 'exec') {
       const execId = pathParts[3];
 
+      // WebSocket 认证：优先用 Authorization Header；回退到 ?token= query 是因为
+      // 浏览器 WebSocket API 不支持自定义 Header（插件端 new WebSocket() 无法设置 Header）。
+      // 安全注意：query token 可能被代理日志/Referer 记录，故此处绝不将 token 写入任何日志。
       const authHeader = request.headers.authorization;
       let token = null;
       if (authHeader && authHeader.startsWith('Bearer ')) {

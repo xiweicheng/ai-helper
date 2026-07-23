@@ -1,11 +1,16 @@
 // skill/markdown-loader.js - Markdown Skill 加载器
 // 扫描子目录中的 SKILL.md，解析 YAML frontmatter 和正文内容
 import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, rmSync } from 'fs';
-import { join, basename, extname } from 'path';
-import { execSync } from 'child_process';
+import { join, basename, extname, normalize, sep } from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { randomBytes } from 'crypto';
 import { tmpdir } from 'os';
+import { lookup as dnsLookup } from 'dns/promises';
 import https from 'https';
 import http from 'http';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * 解析 YAML frontmatter（--- 包裹的元数据）
@@ -267,6 +272,78 @@ export function deleteMarkdownSkillDir(skillsDir, name) {
   }
 }
 
+// Skill 下载大小上限（20MB）
+const MAX_SKILL_DOWNLOAD_SIZE = 20 * 1024 * 1024;
+
+/**
+ * 判断 IP 字符串是否为私有/环回/链路本地等内网地址
+ */
+function isPrivateIp(ip) {
+  // IPv4
+  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = parseInt(v4[1], 10);
+    const b = parseInt(v4[2], 10);
+    if (a === 10) return true;                            // 10.0.0.0/8
+    if (a === 127) return true;                           // 127.0.0.0/8 环回（全段）
+    if (a === 0) return true;                             // 0.0.0.0/8
+    if (a === 169 && b === 254) return true;              // 169.254.0.0/16 链路本地（含云元数据）
+    if (a === 172 && b >= 16 && b <= 31) return true;     // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;              // 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true;    // 100.64.0.0/10 CGNAT
+    return false;
+  }
+  // IPv6（含 ::ffff:IPv4 映射）
+  const v6 = ip.toLowerCase().replace(/^\[|]$/g, '');
+  const mapped = v6.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mapped) return isPrivateIp(mapped[1]);
+  if (v6 === '::1' || v6 === '::') return true;           // 环回/未指定
+  if (v6.startsWith('fc') || v6.startsWith('fd')) return true;  // fc00::/7 唯一本地
+  if (/^fe[89ab]/.test(v6)) return true;                  // fe80::/10 链路本地
+  return false;
+}
+
+/**
+ * 校验 URL 主机是否为公网地址（含 DNS 解析，防 DNS 重绑定与 IP 编码绕过）
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+async function assertPublicHost(hostname) {
+  if (!hostname) return { ok: false, error: '缺少 hostname' };
+  const blockedHostnames = ['localhost', 'ip6-localhost', 'ip6-loopback'];
+  if (blockedHostnames.includes(hostname.toLowerCase())) {
+    return { ok: false, error: '禁止访问本地地址' };
+  }
+  // 直接 IP 形式（含 IPv6）：直接判断
+  const stripped = hostname.replace(/^\[|]$/g, '');
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(stripped) || /^[0-9a-f:]+$/i.test(stripped)) {
+    if (isPrivateIp(stripped)) return { ok: false, error: '禁止访问内网地址' };
+    return { ok: true };
+  }
+  // 域名：DNS 解析后判断所有结果（防 DNS 重绑定：解析阶段即拒绝内网 IP）
+  try {
+    const results = await dnsLookup(hostname, { all: true });
+    if (results.length === 0) return { ok: false, error: `域名解析为空: ${hostname}` };
+    for (const r of results) {
+      if (isPrivateIp(r.address)) {
+        return { ok: false, error: `域名 ${hostname} 解析到内网地址 ${r.address}` };
+      }
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: `域名解析失败: ${hostname}` };
+  }
+}
+
+/**
+ * 校验 Skill 名称：仅允许字母、数字、下划线、短横线，防止命令注入与路径穿越
+ */
+function sanitizeSkillName(name) {
+  if (typeof name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(name)) {
+    return null;
+  }
+  return name;
+}
+
 /**
  * 从 Zip 文件导入 Skill
  * 要求 zip 包内有一个顶层目录，目录中包含 SKILL.md
@@ -276,15 +353,15 @@ export function deleteMarkdownSkillDir(skillsDir, name) {
  * @returns {Promise<{ success: boolean, error?: string, skill?: Object }>}
  */
 export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName) {
-  const tmpDir = join(tmpdir(), `ai-helper-skill-import-${Date.now()}`);
-  const tmpZip = join(tmpdir(), `ai-helper-skill-${Date.now()}.zip`);
+  const tmpDir = join(tmpdir(), `ai-helper-skill-import-${Date.now()}-${randomBytes(4).toString('hex')}`);
+  const tmpZip = join(tmpdir(), `ai-helper-skill-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
 
   try {
     mkdirSync(tmpDir, { recursive: true });
     writeFileSync(tmpZip, zipBuffer);
 
-    // 解压到临时目录
-    execSync(`unzip -o "${tmpZip}" -d "${tmpDir}"`, { encoding: 'utf-8', timeout: 30000 });
+    // 解压到临时目录（execFile 数组参数，不经 shell，杜绝命令注入）
+    await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000 });
 
     // 查找 SKILL.md
     const entries = readdirSync(tmpDir);
@@ -316,15 +393,29 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
 
     const content = readFileSync(foundSkillMd, 'utf-8');
     const { frontmatter } = parseFrontmatter(content);
-    const name = skillName || frontmatter.name || basename(skillDir === tmpDir ? tmpDir : skillDir);
+    const rawName = skillName || frontmatter.name || basename(skillDir === tmpDir ? tmpDir : skillDir);
 
-    // 复制到 skills 目录
-    const destDir = join(skillsDir, name);
+    // 名称安全校验：防止命令注入与路径穿越（name 来源于 zip 内可控内容）
+    const safeName = sanitizeSkillName(rawName);
+    if (!safeName) {
+      return { success: false, error: `无效的 Skill 名称: "${rawName}"（仅允许字母、数字、下划线、短横线）` };
+    }
+
+    // 目标目录越界校验：确保 destDir 仍在 skillsDir 之下
+    const destDir = join(skillsDir, safeName);
+    const normalizedDest = normalize(destDir);
+    const normalizedSkills = normalize(skillsDir);
+    if (normalizedDest !== normalizedSkills &&
+        !(normalizedDest.startsWith(normalizedSkills + sep))) {
+      return { success: false, error: '目标路径越界，拒绝写入' };
+    }
+
     if (existsSync(destDir)) {
       rmSync(destDir, { recursive: true, force: true });
     }
 
-    execSync(`cp -r "${skillDir}/" "${destDir}"`, { encoding: 'utf-8' });
+    // 复制（execFile 数组参数，不经 shell）
+    await execFileAsync('cp', ['-r', skillDir + '/.', destDir], { timeout: 30000 });
 
     // 重新加载
     const skill = loadMarkdownSkill(destDir);
@@ -347,31 +438,24 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
  * @returns {Promise<{ success: boolean, error?: string, skill?: Object }>}
  */
 export async function importMarkdownSkillFromUrl(skillsDir, url) {
-  // URL 安全检查
+  // URL 基础校验
+  let parsed;
   try {
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return { success: false, error: '仅支持 http/https 协议的 URL' };
-    }
-    // 禁止访问内网地址
-    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]') {
-      return { success: false, error: '禁止访问本地地址' };
-    }
-    // 禁止访问私有网络
-    const octets = parsed.hostname.split('.');
-    if (octets.length === 4) {
-      const first = parseInt(octets[0], 10);
-      const second = parseInt(octets[1], 10);
-      if (first === 10) return { success: false, error: '禁止访问内网地址' };
-      if (first === 172 && second >= 16 && second <= 31) return { success: false, error: '禁止访问内网地址' };
-      if (first === 192 && second === 168) return { success: false, error: '禁止访问内网地址' };
-    }
+    parsed = new URL(url);
   } catch {
     return { success: false, error: '无效的 URL' };
   }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { success: false, error: '仅支持 http/https 协议的 URL' };
+  }
+  // 主机安全校验（含 DNS 解析，防 DNS 重绑定与 IP 编码绕过）
+  const hostCheck = await assertPublicHost(parsed.hostname);
+  if (!hostCheck.ok) {
+    return { success: false, error: hostCheck.error };
+  }
 
   try {
-    const buffer = await downloadFile(url);
+    const buffer = await downloadFile(url, 5);
     return await importMarkdownSkillFromZip(skillsDir, buffer);
   } catch (err) {
     return { success: false, error: `下载失败: ${err.message}` };
@@ -380,31 +464,63 @@ export async function importMarkdownSkillFromUrl(skillsDir, url) {
 
 /**
  * 下载文件到 Buffer（支持 http/https，最多重定向 5 次）
+ * 安全：每次重定向目标都重新校验主机（防 302 跳转到内网/云元数据端点）；限制响应体大小
  */
 function downloadFile(url, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https') ? https : http;
-    const chunks = [];
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error('无效的重定向 URL'));
+      return;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      reject(new Error('仅支持 http/https 协议'));
+      return;
+    }
+    // 重定向目标必须重新校验主机（防止 302 跳转到内网/元数据端点）
+    assertPublicHost(parsed.hostname).then((hostCheck) => {
+      if (!hostCheck.ok) {
+        reject(new Error(`重定向被拦截: ${hostCheck.error}`));
+        return;
+      }
+      const protocol = parsed.protocol === 'https:' ? https : http;
+      const chunks = [];
+      let totalSize = 0;
 
-    protocol.get(url, { timeout: 60000 }, (res) => {
-      // 处理重定向（带次数限制）
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        if (maxRedirects <= 0) {
-          reject(new Error('重定向次数过多'));
+      const req = protocol.get(url, { timeout: 60000 }, (res) => {
+        // 处理重定向（带次数限制 + 主机重校验）
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          if (maxRedirects <= 0) {
+            reject(new Error('重定向次数过多'));
+            return;
+          }
+          downloadFile(res.headers.location, maxRedirects - 1).then(resolve).catch(reject);
           return;
         }
-        downloadFile(res.headers.location, maxRedirects - 1).then(resolve).catch(reject);
-        return;
-      }
 
-      if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
-        return;
-      }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          return;
+        }
 
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-      res.on('error', reject);
-    }).on('error', reject);
+        res.on('data', (chunk) => {
+          totalSize += chunk.length;
+          if (totalSize > MAX_SKILL_DOWNLOAD_SIZE) {
+            reject(new Error(`下载内容超过上限 ${MAX_SKILL_DOWNLOAD_SIZE} 字节`));
+            req.destroy();
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      });
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy(new Error('下载超时'));
+      });
+    }).catch(reject);
   });
 }
