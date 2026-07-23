@@ -14,14 +14,10 @@ export async function initializeMcpRegistry() {
   const config = loadMcpConfig();
   let connected = 0;
   let failed = 0;
-
-  console.log(`[MCP Registry] 初始化，共配置 ${config.servers.length} 个 MCP Server`);
+  const failedServers = [];
 
   for (const server of config.servers) {
-    if (!server.enabled) {
-      console.log(`[MCP Registry] 跳过禁用的 Server: ${server.id}`);
-      continue;
-    }
+    if (!server.enabled) continue;
 
     const client = new McpClient(server);
     const result = await client.connect();
@@ -29,12 +25,21 @@ export async function initializeMcpRegistry() {
       clients.set(server.id, client);
       connected++;
     } else {
-      console.error(`[MCP Registry] 连接失败 "${server.id}":`, result.error);
       failed++;
+      failedServers.push({ id: server.id, error: result.error });
     }
   }
 
-  console.log(`[MCP Registry] 初始化完成: ${connected} 已连接, ${failed} 失败`);
+  if (config.servers.length > 0) {
+    if (failed > 0) {
+      console.log(`[MCP] ${connected}/${config.servers.length} 已连接`);
+      for (const fs of failedServers) {
+        console.error(`[MCP] ${fs.id} 连接失败: ${fs.error}`);
+      }
+    } else if (connected > 0) {
+      console.log(`[MCP] ${connected} 个 Server 已连接`);
+    }
+  }
   return { connected, failed };
 }
 
@@ -154,7 +159,6 @@ export async function disconnectMcpServer(serverId) {
  * 关闭所有 MCP 连接（Agent 关闭时调用）
  */
 export async function shutdownMcpRegistry() {
-  console.log('[MCP Registry] 关闭所有 MCP 连接...');
   for (const [id, client] of clients) {
     try { await client.disconnect(); } catch {}
   }

@@ -1423,25 +1423,25 @@ export function startServer() {
     }
   });
 
-  server.listen(port, host, async () => {
+  server.listen(port, host, () => {
     console.log(`[Agent] HTTP 服务已启动: http://${host}:${port}`);
     console.log(`[Agent] WebSocket 服务已启动: ws://${host}:${port}`);
     startPairCodeRotation();
 
-    // 初始化 MCP 注册表（异步，不阻塞请求）
-    try {
-      await initializeMcpRegistry();
-    } catch (err) {
-      console.error('[Agent] MCP 注册表初始化失败:', err.message);
-    }
+    // 后台异步初始化 MCP 和 Skill，不阻塞主流程
+    (async () => {
+      try {
+        await initializeMcpRegistry();
+      } catch (err) {
+        console.error('[Agent] MCP 注册表初始化失败:', err.message);
+      }
 
-    // 初始化 Skill 注册表
-    try {
-      const skillCount = initializeSkillRegistry();
-      console.log(`[Agent] Skill 注册表已初始化: ${skillCount} 个 Skill`);
-    } catch (err) {
-      console.error('[Agent] Skill 注册表初始化失败:', err.message);
-    }
+      try {
+        await initializeSkillRegistry();
+      } catch (err) {
+        console.error('[Agent] Skill 注册表初始化失败:', err.message);
+      }
+    })();
   });
 
   // 优雅关闭（异步 + 防并发 + 超时兜底）

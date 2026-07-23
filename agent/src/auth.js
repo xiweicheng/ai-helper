@@ -54,21 +54,15 @@ function startPairCodeRotation() {
 
   // 有配对且最近有活跃连接，无需刷新配对码
   if (hasPairings && isRecentlyActive) {
-    console.log(`[Agent] 已有 ${Object.keys(pairings).length} 个配对扩展，最近 ${Math.round((Date.now() - lastAuthTime) / 1000)}s 前有认证活动，跳过配对码刷新`);
     currentPairCode = generatePairCode();
-    console.log(`[Agent] 当前配对码（用于新增配对）: ${currentPairCode}`);
+    console.log(`\n[Agent] 配对码: ${currentPairCode}\n`);
     return;
-  }
-
-  // 有配对但无活跃连接，给出提示
-  if (hasPairings && !isRecentlyActive) {
-    console.log(`[Agent] 存在配对记录但无活跃连接（超过 ${ACTIVE_WINDOW_MS / 60000} 分钟），恢复配对码刷新`);
   }
 
   const ttl = (config.pairCodeTTL || 30) * 1000;
 
   currentPairCode = generatePairCode();
-  console.log(`[Agent] 当前配对码: ${currentPairCode}`);
+  console.log(`\n[Agent] 配对码: ${currentPairCode}\n`);
 
   if (pairCodeTimer) clearInterval(pairCodeTimer);
   pairCodeTimer = setInterval(() => {
@@ -116,7 +110,7 @@ async function handlePairRequest(code, extensionId) {
   if (!code || !extensionId) {
     return { success: false, error: '缺少配对码或扩展ID' };
   }
-  if (code !== currentPairCode) {
+  if (code.toUpperCase() !== currentPairCode) {
     pairFailCount++;
     if (pairFailCount >= PAIR_FAIL_LIMIT) {
       pairLockUntil = Date.now() + PAIR_LOCK_DURATION_MS;

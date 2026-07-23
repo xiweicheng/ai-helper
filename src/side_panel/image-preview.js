@@ -330,7 +330,8 @@ export function initImagePreviewOverlay() {
 
 /**
  * 根据图片原始尺寸计算动态压缩参数
- * AI 识别推荐尺寸：1024-1536 像素，质量 0.70-0.85 即可满足识别需求
+ * AI 识别推荐尺寸：768-1280 像素，质量 0.55-0.75 即可满足识别需求
+ * 大幅降低压缩尺寸以减少 token 消耗，防止上下文超长
  * @param {number} width - 原始宽度
  * @param {number} height - 原始高度
  * @returns {Object} 包含 targetWidth, targetHeight, quality 的压缩参数
@@ -340,18 +341,21 @@ function calculateCompressionParams(width, height) {
   
   let targetMaxDim, quality;
   
-  if (maxDimension <= 1280) {
+  if (maxDimension <= 768) {
     targetMaxDim = maxDimension;
-    quality = 0.85;
-  } else if (maxDimension <= 2560) {
-    targetMaxDim = 1280;
-    quality = 0.80;
-  } else if (maxDimension <= 3840) {
-    targetMaxDim = 1536;
     quality = 0.75;
-  } else {
-    targetMaxDim = 1920;
+  } else if (maxDimension <= 1280) {
+    targetMaxDim = 768;
     quality = 0.70;
+  } else if (maxDimension <= 2560) {
+    targetMaxDim = 1024;
+    quality = 0.65;
+  } else if (maxDimension <= 3840) {
+    targetMaxDim = 1280;
+    quality = 0.60;
+  } else {
+    targetMaxDim = 1280;
+    quality = 0.55;
   }
   
   let targetWidth = width;

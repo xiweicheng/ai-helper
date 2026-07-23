@@ -237,18 +237,26 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
     });
     const data = await response.json();
     if (data.success && data.token) {
-      // 尝试获取平台信息生成默认名称
       let name = customName;
       if (!name) {
         try {
-          const statusResp = await fetch(`${agentUrl}/api/status`, { cache: 'no-cache' });
-          if (statusResp.ok) {
-            const statusData = await statusResp.json();
-            const parts = [];
-            if (statusData.platformName) parts.push(statusData.platformName);
-            if (statusData.arch) parts.push(statusData.arch);
-            name = parts.length > 0 ? parts.join(' ') : new URL(agentUrl).hostname;
-          }
+          const [statusResp, detailResp] = await Promise.all([
+            fetch(`${agentUrl}/api/status`, { cache: 'no-cache' }),
+            fetch(`${agentUrl}/api/status/detail`, { 
+              cache: 'no-cache',
+              headers: { 'Authorization': `Bearer ${data.token}` }
+            })
+          ]);
+          
+          const statusData = statusResp.ok ? await statusResp.json() : {};
+          const detailData = detailResp.ok ? await detailResp.json() : {};
+          
+          const parts = [];
+          if (detailData.platformName) parts.push(detailData.platformName);
+          else if (statusData.platformName) parts.push(statusData.platformName);
+          if (detailData.arch) parts.push(detailData.arch);
+          else if (statusData.arch) parts.push(statusData.arch);
+          name = parts.length > 0 ? parts.join(' ') : new URL(agentUrl).hostname;
         } catch {
           name = new URL(agentUrl).hostname;
         }

@@ -44,8 +44,6 @@ export async function initSearchTools() {
     const [fd, rg] = await Promise.all([checkFdAvailable(), checkRgAvailable()]);
     fdAvailable = fd;
     rgAvailable = rg;
-    console.log(`[Agent] fd (文件搜索): ${fd ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
-    console.log(`[Agent] rg (内容搜索): ${rg ? '✅ 可用' : '❌ 未安装，使用 Node.js 回退'}`);
     return { fd: fdAvailable, rg: rgAvailable };
   })();
   return searchToolsInitPromise;

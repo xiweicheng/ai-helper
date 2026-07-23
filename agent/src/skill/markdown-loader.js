@@ -206,7 +206,6 @@ export function loadAllMarkdownSkills(skillsDir) {
     } catch { /* skip */ }
   }
 
-  console.log(`[Markdown Loader] 共加载 ${skills.length} 个 Agent Skill`);
   return skills;
 }
 

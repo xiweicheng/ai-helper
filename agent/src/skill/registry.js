@@ -121,9 +121,10 @@ export function initializeSkillRegistry() {
   const workflowCount = [...skills.values()].filter(s => s.type === 'workflow').length;
   const agentCount = [...skills.values()].filter(s => s.type === 'agent').length;
   const enabledCount = [...skills.values()].filter(s => s.enabled !== false).length;
-  const builtinCount = [...skills.values()].filter(s => s.builtin).length;
 
-  console.log(`[Skill Registry] 初始化完成，共注册 ${skills.size} 个 Skill (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}，内置 ${builtinCount}`);
+  if (skills.size > 0) {
+    console.log(`[Skill] ${skills.size} 个已注册 (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}`);
+  }
   return skills.size;
 }
 

@@ -1238,8 +1238,13 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     messageDiv.appendChild(footer);
   } else {
-    const quotedMatch = textContent.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
-    const selectedMatch = textContent.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    let displayText = textContent;
+    displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+    displayText = displayText.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+    displayText = displayText.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+    
+    const quotedMatch = displayText.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const selectedMatch = displayText.match(/^\[选中内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const match = quotedMatch || selectedMatch;
     
     if (match) {
@@ -3013,8 +3018,8 @@ function editAndResendMessage(messageDiv) {
     state.quotedContextText = '';
     state.selectedContextText = '';
     
-    const quotedMatch = textContentClean.match(/^\[引用内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
-    const selectedMatch = textContentClean.match(/^\[选中内容\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const quotedMatch = textContentClean.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
+    const selectedMatch = textContentClean.match(/^\[选中内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const match = quotedMatch || selectedMatch;
     
     let textToEdit = textContentClean;

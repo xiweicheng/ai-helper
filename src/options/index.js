@@ -973,6 +973,7 @@ function initAgentConfig() {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
     const activeId = storage.activeAgentId;
+    _lastActiveAgentOnline = null;
 
     if (agents.length === 0) {
       pairedAgentsSection.style.display = 'none';
@@ -1030,6 +1031,8 @@ function initAgentConfig() {
     });
   }
 
+  let _lastActiveAgentOnline = null;
+
   /** 更新单个代理列表项的状态 */
   function _updateAgentItemStatus(agentId, online) {
     const item = pairedAgentsList.querySelector(`[data-agent-id="${agentId}"]`);
@@ -1051,6 +1054,19 @@ function initAgentConfig() {
     if (statusEl) {
       statusEl.className = `paired-agent-status-text ${online ? 'online' : 'offline'}`;
       statusEl.textContent = statusLabel;
+    }
+
+    if (isActive && _lastActiveAgentOnline !== null && _lastActiveAgentOnline !== online) {
+      chrome.runtime.sendMessage({
+        type: 'AGENT_STATUS_CHANGE',
+        connected: online,
+        status: online ? '在线' : '离线',
+        agentId
+      }).catch(() => {});
+    }
+
+    if (isActive) {
+      _lastActiveAgentOnline = online;
     }
   }
 
@@ -1391,19 +1407,19 @@ function initAgentConfig() {
   function mergeDetail(statusData, detailData) {
     return {
       version: detailData?.version || statusData?.version,
-      platformName: statusData?.platformName,
-      platform: statusData?.platform,
-      arch: statusData?.arch,
-      hostname: statusData?.hostname,
-      shell: statusData?.shell,
-      homeDir: statusData?.homeDir,
-      nodeVersion: statusData?.nodeVersion,
-      searchTools: statusData?.searchTools,
+      platformName: detailData?.platformName || statusData?.platformName,
+      platform: detailData?.platform || statusData?.platform,
+      arch: detailData?.arch || statusData?.arch,
+      hostname: detailData?.hostname || statusData?.hostname,
+      shell: detailData?.shell || statusData?.shell,
+      homeDir: detailData?.homeDir || statusData?.homeDir,
+      nodeVersion: detailData?.nodeVersion || statusData?.nodeVersion,
+      searchTools: detailData?.searchTools || statusData?.searchTools,
       workdir: detailData?.workdir || statusData?.workdir || '',
-      allowedPaths: detailData?.allowedPaths || [],
-      commandTimeout: detailData?.commandTimeout,
-      fileMaxSize: detailData?.fileMaxSize,
-      pairCodeTTL: detailData?.pairCodeTTL
+      allowedPaths: detailData?.allowedPaths || statusData?.allowedPaths || [],
+      commandTimeout: detailData?.commandTimeout || statusData?.commandTimeout,
+      fileMaxSize: detailData?.fileMaxSize || statusData?.fileMaxSize,
+      pairCodeTTL: detailData?.pairCodeTTL || statusData?.pairCodeTTL
     };
   }
 
@@ -1431,19 +1447,24 @@ function initAgentConfig() {
       const data = await response.json();
 
       if (data.success && data.token) {
-        // 使用自定义名称，留空则自动获取
         const customName = agentNameInput?.value.trim();
         let name = customName || null;
         if (!name) {
           try {
-            const statusResp = await fetch(`${url}/api/status`);
-            if (statusResp.ok) {
-              const statusData = await statusResp.json();
-              const parts = [];
-              if (statusData.platformName) parts.push(statusData.platformName);
-              if (statusData.arch) parts.push(statusData.arch);
-              name = parts.length > 0 ? parts.join(' ') : new URL(url).hostname;
-            }
+            const [statusResp, detailResp] = await Promise.all([
+              fetch(`${url}/api/status`),
+              fetch(`${url}/api/status/detail`, { headers: { 'Authorization': `Bearer ${data.token}` } })
+            ]);
+            
+            const statusData = statusResp.ok ? await statusResp.json() : {};
+            const detailData = detailResp.ok ? await detailResp.json() : {};
+            
+            const parts = [];
+            if (detailData.platformName) parts.push(detailData.platformName);
+            else if (statusData.platformName) parts.push(statusData.platformName);
+            if (detailData.arch) parts.push(detailData.arch);
+            else if (statusData.arch) parts.push(statusData.arch);
+            name = parts.length > 0 ? parts.join(' ') : new URL(url).hostname;
           } catch { name = new URL(url).hostname; }
           if (!name) name = '未命名代理';
         }

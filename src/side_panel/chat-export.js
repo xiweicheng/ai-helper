@@ -387,7 +387,6 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
 
   setExportButtonLoading(exportBtn, 'pdf', exportDropdown);
 
-  // 让浏览器先渲染 loading 状态
   requestAnimationFrame(() => {
     requestAnimationFrame(async () => {
   try {
@@ -419,12 +418,12 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       position: fixed;
       left: -9999px;
       top: -9999px;
-      width: 595px;
-      padding: 40px;
+      width: 900px;
+      padding: 50px;
       background: white;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
       font-size: 14px;
-      line-height: 1.6;
+      line-height: 1.7;
       color: #333;
       box-sizing: border-box;
     `;
@@ -436,7 +435,6 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
 
     document.body.appendChild(container);
 
-    // 渲染 mermaid 图表，并转为图片（html2canvas 无法正确处理 SVG）
     await renderMermaidInContainer(container);
     await convertSvgsToImages(container);
 
@@ -448,24 +446,34 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       willReadFrequently: true
     }).then(canvas => {
       const { dataUrl: imgData, format: imgFormat } = safeCanvasToDataUrl(canvas);
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'px',
-        format: [595, 842]
-      });
 
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
       const imgWidth = canvas.width;
       const imgHeight = canvas.height;
+      const imgRatio = imgWidth / imgHeight;
+
+      const PORTRAIT_WIDTH = 595;
+      const PORTRAIT_HEIGHT = 842;
+      const LANDSCAPE_WIDTH = 842;
+      const LANDSCAPE_HEIGHT = 595;
+
+      const useLandscape = imgRatio > 1.2 || imgHeight / imgWidth > 3;
+
+      const pdfWidth = useLandscape ? LANDSCAPE_WIDTH : PORTRAIT_WIDTH;
+      const pdfHeight = useLandscape ? LANDSCAPE_HEIGHT : PORTRAIT_HEIGHT;
+
+      const pdf = new jsPDF({
+        orientation: useLandscape ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [pdfWidth, pdfHeight]
+      });
+
       const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const imgX = (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = 0;
       const imgDisplayWidth = imgWidth * ratio;
       const imgDisplayHeight = imgHeight * ratio;
+      const imgX = (pdfWidth - imgDisplayWidth) / 2;
 
       if (imgDisplayHeight <= pdfHeight) {
-        pdf.addImage(imgData, imgFormat, imgX, imgY, imgDisplayWidth, imgDisplayHeight);
+        pdf.addImage(imgData, imgFormat, imgX, 0, imgDisplayWidth, imgDisplayHeight);
       } else {
         let heightLeft = imgDisplayHeight;
         let position = 0;

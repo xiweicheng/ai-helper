@@ -33,7 +33,6 @@ export class McpClient {
       case TRANSPORT_SSE: {
         const url = this.serverConfig.url;
         if (!url) throw new Error('SSE 传输需要提供 url');
-        console.log(`[MCP:${this.serverId}] 使用 SSE 传输，URL: ${url}`);
         const opts = {};
         if (Object.keys(headers).length > 0) {
           opts.requestInit = { headers };
@@ -44,7 +43,6 @@ export class McpClient {
       case TRANSPORT_STREAMABLE_HTTP: {
         const url = this.serverConfig.url;
         if (!url) throw new Error('StreamableHTTP 传输需要提供 url');
-        console.log(`[MCP:${this.serverId}] 使用 StreamableHTTP 传输，URL: ${url}`);
         const opts = {};
         if (Object.keys(headers).length > 0) {
           opts.requestInit = { headers };
@@ -55,7 +53,6 @@ export class McpClient {
       case TRANSPORT_WEBSOCKET: {
         const url = this.serverConfig.url;
         if (!url) throw new Error('WebSocket 传输需要提供 url');
-        console.log(`[MCP:${this.serverId}] 使用 WebSocket 传输，URL: ${url}`);
         return new WebSocketClientTransport(new URL(url));
       }
 
@@ -63,7 +60,6 @@ export class McpClient {
       default: {
         const command = this.serverConfig.command;
         if (!command) throw new Error('stdio 传输需要提供 command');
-        console.log(`[MCP:${this.serverId}] 使用 stdio 传输，命令: ${command}`);
         return new StdioClientTransport({
           command: this.serverConfig.command,
           args: this.serverConfig.args || [],
@@ -92,12 +88,10 @@ export class McpClient {
         serverInfo: this.client.getServerVersion(),
         capabilities: this.client.getServerCapabilities()
       };
-      console.log(`[MCP:${this.serverId}] Initialize 成功, server:`, this.serverInfo.serverInfo?.name);
 
       const toolsResult = await this.client.listTools({});
       if (toolsResult && toolsResult.tools) {
         this.tools = toolsResult.tools;
-        console.log(`[MCP:${this.serverId}] 发现 ${this.tools.length} 个工具`);
       } else {
         this.tools = [];
       }
@@ -155,8 +149,6 @@ export class McpClient {
       try { await this.transport.close(); } catch {}
       this.transport = null;
     }
-
-    console.log(`[MCP:${this.serverId}] 已断开连接`);
   }
 
   getStatus() {
