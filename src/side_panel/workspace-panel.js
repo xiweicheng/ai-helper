@@ -355,6 +355,7 @@ async function navigateToPath(path) {
   } else {
     await loadDirectory(path);
   }
+  updateSelectAllState();
 }
 
 // 目录列表 LRU 缓存（key: path, value: { entries, timestamp }）
@@ -580,7 +581,8 @@ function toggleSelection(path) {
  * 全选/取消全选（增量更新）
  */
 function toggleSelectAll() {
-  const allPaths = cachedEntries.map(e => normalizePath(`${currentPath}/${e.name}`));
+  const entries = isSearchMode ? searchResults : cachedEntries;
+  const allPaths = entries.map(e => isSearchMode ? e.fullPath : normalizePath(`${currentPath}/${e.name}`));
   const allSelected = allPaths.length > 0 && allPaths.every(p => selectedPaths.has(p));
 
   if (allSelected) {
@@ -603,13 +605,14 @@ function toggleSelectAll() {
  * 更新全选 checkbox 状态
  */
 function updateSelectAllState() {
-  const allPaths = cachedEntries.map(e => normalizePath(`${currentPath}/${e.name}`));
+  const entries = isSearchMode ? searchResults : cachedEntries;
+  const allPaths = entries.map(e => isSearchMode ? e.fullPath : normalizePath(`${currentPath}/${e.name}`));
   const selectAll = document.getElementById('workspaceSelectAll');
   if (!selectAll) return;
   const checkbox = selectAll.querySelector('.workspace-checkbox');
   if (allPaths.length === 0) {
     checkbox.classList.remove('checked');
-    checkbox.classList.add('indeterminate');
+    checkbox.classList.remove('indeterminate');
   } else if (allPaths.every(p => selectedPaths.has(p))) {
     checkbox.classList.add('checked');
     checkbox.classList.remove('indeterminate');
@@ -1108,6 +1111,7 @@ async function refreshCurrent() {
     await loadDirectory(currentPath);
   }
   closePreview();
+  updateSelectAllState();
 }
 
 /**
@@ -1313,6 +1317,7 @@ async function performSearch() {
     isSearchMode = false;
     searchResults = [];
     renderCurrentEntries();
+    updateSelectAllState();
     return;
   }
 
@@ -1324,6 +1329,7 @@ async function performSearch() {
   searchResults = results;
   isSearchMode = true;
   renderCurrentEntries();
+  updateSelectAllState();
 }
 
 async function clearSearch() {
@@ -1334,6 +1340,7 @@ async function clearSearch() {
   searchResults = [];
   document.getElementById('workspaceSearchClear').style.display = 'none';
   await loadDirectory(currentPath);
+  updateSelectAllState();
 }
 
 async function handleDeleteFile(path, name, type) {

@@ -413,17 +413,22 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
     const timestamp = new Date().getTime();
     const fileName = `pdf-${timestamp}.pdf`;
 
+    const PDF_WIDTH = 595;
+    const PDF_HEIGHT = 842;
+    const PADDING = 40;
+    const CONTENT_WIDTH = PDF_WIDTH - PADDING * 2;
+
     const container = document.createElement('div');
     container.style.cssText = `
       position: fixed;
       left: -9999px;
       top: -9999px;
-      width: 900px;
-      padding: 50px;
+      width: ${CONTENT_WIDTH}px;
+      padding: ${PADDING}px;
       background: white;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-      font-size: 14px;
-      line-height: 1.7;
+      font-size: 12px;
+      line-height: 1.6;
       color: #333;
       box-sizing: border-box;
     `;
@@ -438,6 +443,10 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
     await renderMermaidInContainer(container);
     await convertSvgsToImages(container);
 
+    const containerHeight = container.scrollHeight;
+    const pageContentHeight = PDF_HEIGHT - PADDING * 2;
+    const totalPages = Math.ceil(containerHeight / pageContentHeight);
+
     html2canvasFunc(container, {
       scale: 2,
       useCORS: true,
@@ -445,61 +454,36 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       backgroundColor: '#ffffff',
       willReadFrequently: true
     }).then(canvas => {
-      const { dataUrl: imgData, format: imgFormat } = safeCanvasToDataUrl(canvas);
-
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const imgRatio = imgWidth / imgHeight;
-
-      const PORTRAIT_WIDTH = 595;
-      const PORTRAIT_HEIGHT = 842;
-      const LANDSCAPE_WIDTH = 842;
-      const LANDSCAPE_HEIGHT = 595;
-
-      const useLandscape = imgRatio > 1.2 || imgHeight / imgWidth > 3;
-
-      const pdfWidth = useLandscape ? LANDSCAPE_WIDTH : PORTRAIT_WIDTH;
-      const pdfHeight = useLandscape ? LANDSCAPE_HEIGHT : PORTRAIT_HEIGHT;
-
       const pdf = new jsPDF({
-        orientation: useLandscape ? 'landscape' : 'portrait',
+        orientation: 'portrait',
         unit: 'px',
-        format: [pdfWidth, pdfHeight]
+        format: [PDF_WIDTH, PDF_HEIGHT]
       });
 
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const imgDisplayWidth = imgWidth * ratio;
-      const imgDisplayHeight = imgHeight * ratio;
-      const imgX = (pdfWidth - imgDisplayWidth) / 2;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      const scaleRatio = canvasHeight / containerHeight;
+      const pageCanvasHeight = pageContentHeight * scaleRatio;
 
-      if (imgDisplayHeight <= pdfHeight) {
-        pdf.addImage(imgData, imgFormat, imgX, 0, imgDisplayWidth, imgDisplayHeight);
-      } else {
-        let heightLeft = imgDisplayHeight;
-        let position = 0;
-
-        while (heightLeft > 0) {
-          if (position > 0) {
-            pdf.addPage();
-          }
-
-          const pageHeight = pdfHeight;
-          const cutHeight = Math.min(heightLeft, pageHeight);
-          const sourceY = (imgDisplayHeight - heightLeft) / ratio;
-          const sourceHeight = cutHeight / ratio;
-
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = imgWidth;
-          tempCanvas.height = sourceHeight;
-          const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-          tempCtx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight);
-
-          const { dataUrl: tempImgData, format: tempFormat } = safeCanvasToDataUrl(tempCanvas);
-          pdf.addImage(tempImgData, tempFormat, imgX, position, imgDisplayWidth, cutHeight);
-
-          heightLeft -= cutHeight;
-          position += pageHeight;
+      for (let page = 0; page < totalPages; page++) {
+        if (page > 0) {
+          pdf.addPage();
         }
+
+        const startY = page * pageCanvasHeight;
+        const endY = Math.min(startY + pageCanvasHeight, canvasHeight);
+        const pageHeight = endY - startY;
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvasWidth;
+        tempCanvas.height = pageHeight;
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        tempCtx.drawImage(canvas, 0, startY, canvasWidth, pageHeight, 0, 0, canvasWidth, pageHeight);
+
+        const { dataUrl: tempImgData, format: tempFormat } = safeCanvasToDataUrl(tempCanvas);
+        
+        const imgHeight = pageHeight / scaleRatio;
+        pdf.addImage(tempImgData, tempFormat, 0, 0, PDF_WIDTH, imgHeight);
       }
 
       pdf.save(fileName);

@@ -8992,6 +8992,15 @@ body {
   color: #27ae60;
 }
 
+.workspace-file-btn.rename {
+  color: #8b5cf6;
+}
+
+.workspace-file-btn.rename:hover {
+  color: #7c3aed;
+  background: rgba(139, 92, 246, 0.1);
+}
+
 /* 预览遮罩层 - 覆盖在文件列表上方 */
 .workspace-preview-overlay {
   position: absolute;
@@ -9224,12 +9233,38 @@ body {
 
 .workspace-file-item.highlight-new {
   background: rgba(74, 144, 217, 0.15);
-  animation: workspaceHighlight 2s ease-out;
+  animation: workspaceHighlightPulse 2s ease;
+  position: relative;
 }
 
-@keyframes workspaceHighlight {
-  0% { background: rgba(74, 144, 217, 0.3); }
-  100% { background: transparent; }
+.workspace-file-item.highlight-new::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  animation: workspaceHighlightBorder 2s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes workspaceHighlightPulse {
+  0% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0.7), inset 0 0 0 0 rgba(74, 144, 217, 0.3); }
+  15% { box-shadow: 0 0 0 8px rgba(74, 144, 217, 0), inset 0 0 15px 3px rgba(74, 144, 217, 0.3); }
+  30% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0); }
+  45% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0.7), inset 0 0 0 0 rgba(74, 144, 217, 0.3); }
+  60% { box-shadow: 0 0 0 6px rgba(74, 144, 217, 0), inset 0 0 12px 2px rgba(74, 144, 217, 0.25); }
+  75% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 144, 217, 0); }
+}
+
+@keyframes workspaceHighlightBorder {
+  0% { border-color: transparent; }
+  10% { border-color: rgba(74, 144, 217, 0.9); }
+  35% { border-color: rgba(74, 144, 217, 0); }
+  50% { border-color: rgba(74, 144, 217, 0.8); }
+  75% { border-color: rgba(74, 144, 217, 0); }
+  100% { border-color: transparent; }
 }
 
 .workspace-file-btn.ask {
