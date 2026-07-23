@@ -251,23 +251,35 @@ async function verifyActiveAgentConnectivity() {
       return;
     }
 
-    try {
-      const resp = await fetch(`${active.url}/api/status`, { cache: 'no-cache' });
-      if (resp.ok) {
-        const data = await resp.json();
-        state.agentPlatform = {
-          platformName: data.platformName || 'Unknown',
-          platform: data.platform || 'unknown',
-          arch: data.arch || 'unknown',
-          shell: data.shell || '/bin/sh',
-          homeDir: data.homeDir || '',
-          workdir: data.workdir || '',
-          connected: true
-        };
-      } else {
+    // 已配对的 Agent 有 token，直接调认证接口获取完整信息
+    if (active.token) {
+      try {
+        const detailResp = await fetch(`${active.url}/api/status/detail`, {
+          cache: 'no-cache',
+          headers: { 'Authorization': `Bearer ${active.token}` }
+        });
+        if (detailResp.ok) {
+          const data = await detailResp.json();
+          if (data.success) {
+            state.agentPlatform = {
+              platformName: data.platformName || 'Unknown',
+              platform: data.platform || 'unknown',
+              arch: data.arch || 'unknown',
+              shell: data.shell || '/bin/sh',
+              homeDir: data.homeDir || '',
+              workdir: data.workdir || '',
+              connected: true
+            };
+          } else {
+            state.agentPlatform = { connected: false };
+          }
+        } else {
+          state.agentPlatform = { connected: false };
+        }
+      } catch {
         state.agentPlatform = { connected: false };
       }
-    } catch {
+    } else {
       state.agentPlatform = { connected: false };
     }
 

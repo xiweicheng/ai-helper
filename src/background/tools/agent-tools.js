@@ -87,7 +87,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_download_file',
-      description: '通过本地Agent下载工作目录下的文件或目录。单文件直接下载，目录自动打包为zip后下载',
+      description: '通过本地Agent下载工作目录下的文件或目录',
       parameters: {
         type: 'object',
         properties: {
