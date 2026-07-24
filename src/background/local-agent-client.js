@@ -874,6 +874,32 @@ async function importSkillFromUrl(url) {
   return agentRequest('/api/skill/import-url', { url });
 }
 
+// ========== Agent 管理 API ==========
+
+/**
+ * 重启代理服务
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+async function restartAgent() {
+  try {
+    return await agentRequest('/api/agent/restart', {}, 'POST', 10000);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 更新并重启代理服务
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+async function updateAgent() {
+  try {
+    return await agentRequest('/api/agent/update', {}, 'POST', 15000);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 export {
   migrateFromLegacyFormat,
   generateAgentId,
@@ -930,5 +956,8 @@ export {
   getMarkdownSkill,
   getSkillResource,
   importSkillFromZip,
-  importSkillFromUrl
+  importSkillFromUrl,
+  // Agent 管理
+  restartAgent,
+  updateAgent
 };

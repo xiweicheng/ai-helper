@@ -445,6 +445,117 @@ export function startServer() {
       return;
     }
 
+    // 重启 Agent（需认证）
+    if (req.method === 'POST' && pathname === '/api/agent/restart') {
+      logSystem('restart', { reason: 'api_request', extId });
+      jsonResponse(res, 200, { success: true, message: 'Agent 正在重启...' });
+
+      // 获取当前启动参数并重新 spawn
+      const restartArgs = [];
+      const agentScript = process.argv[1]; // agent/bin/agent.js
+      // 读取配置重建启动命令
+      const restartPort = config.port || 18910;
+      const restartHost = config.host || '127.0.0.1';
+
+      const child = spawn(process.execPath, [
+        ...process.execArgv,
+        agentScript,
+        'start',
+        '--background',
+        '--port', String(restartPort),
+        '--host', restartHost,
+        '--workdir', config.workdir || process.cwd()
+      ], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: process.cwd(),
+        env: { ...process.env },
+        windowsHide: true
+      });
+
+      child.on('error', (err) => {
+        logError('restart_spawn_failed', err.message);
+      });
+      child.unref();
+
+      // 延迟后关闭当前进程
+      setTimeout(() => shutdown(), 500);
+      return;
+    }
+
+    // 更新并重启 Agent（需认证）
+    if (req.method === 'POST' && pathname === '/api/agent/update') {
+      logSystem('update', { reason: 'api_request', extId });
+      jsonResponse(res, 200, { success: true, message: 'Agent 正在更新并重启...' });
+
+      const agentScript = process.argv[1];
+      const restartPort = config.port || 18910;
+      const restartHost = config.host || '127.0.0.1';
+
+      // 异步执行更新 + 重启
+      (async () => {
+        const updateLog = [];
+        try {
+          const agentDir = dirname(dirname(agentScript)); // agent 目录
+
+          // 1. 尝试 git pull
+          if (existsSync(join(agentDir, '.git'))) {
+            updateLog.push('检测到 git 仓库，执行 git pull...');
+            await new Promise((resolve) => {
+              const git = spawn('git', ['pull'], { cwd: agentDir, shell: true });
+              git.stdout.on('data', d => updateLog.push(d.toString().trim()));
+              git.stderr.on('data', d => updateLog.push(d.toString().trim()));
+              git.on('close', resolve);
+            });
+          } else {
+            updateLog.push('未检测到 git 仓库，跳过 git pull');
+          }
+
+          // 2. npm install
+          if (existsSync(join(agentDir, 'package.json'))) {
+            updateLog.push('执行 npm install...');
+            await new Promise((resolve) => {
+              const npm = spawn('npm', ['install', '--no-audit', '--no-fund'], { cwd: agentDir, shell: true });
+              npm.stdout.on('data', d => updateLog.push(d.toString().trim()));
+              npm.stderr.on('data', d => updateLog.push(d.toString().trim()));
+              npm.on('close', resolve);
+            });
+          }
+
+          updateLog.push('更新完成，准备重启...');
+        } catch (err) {
+          updateLog.push(`更新出错: ${err.message}`);
+        }
+
+        console.log('[Agent Update]', updateLog.join('\n'));
+
+        // 重启
+        const child = spawn(process.execPath, [
+          ...process.execArgv,
+          agentScript,
+          'start',
+          '--background',
+          '--port', String(restartPort),
+          '--host', restartHost,
+          '--workdir', config.workdir || process.cwd()
+        ], {
+          detached: true,
+          stdio: 'ignore',
+          cwd: process.cwd(),
+          env: { ...process.env },
+          windowsHide: true
+        });
+
+        child.on('error', (err) => {
+          logError('update_restart_spawn_failed', err.message);
+        });
+        child.unref();
+
+        setTimeout(() => shutdown(), 500);
+      })();
+      return;
+    }
+
     const maxSize = config.fileMaxSize || DEFAULT_MAX_SIZE;
 
     // 认证后的状态信息（不再下发 pairCode：配对码仅用于一次性配对，避免已配对端横向获取）

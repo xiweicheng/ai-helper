@@ -917,6 +917,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return false;
   }
+  // 重启代理
+  if (message.type === 'AGENT_RESTART') {
+    (async () => {
+      const result = await AgentClient.restartAgent();
+      sendResponse(result);
+    })();
+    return true;
+  }
+  // 更新代理
+  if (message.type === 'AGENT_UPDATE') {
+    (async () => {
+      const result = await AgentClient.updateAgent();
+      sendResponse(result);
+    })();
+    return true;
+  }
   // 在本地浏览器打开原型文件
   if (message.type === 'OPEN_LOCAL_PROTOTYPE') {
     (async () => {

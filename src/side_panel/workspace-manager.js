@@ -269,6 +269,51 @@ export async function downloadFileStream(filePath) {
 }
 
 /**
+ * 带进度回调的流式下载（单文件/目录）
+ * @param {string} filePath
+ * @param {function} onProgress - ({ loaded, total, percent }) => void
+ */
+export async function downloadFileStreamWithProgress(filePath, onProgress) {
+  const config = await getAgentConfig();
+  if (!config) return { success: false, error: 'Agent 未配对' };
+  try {
+    const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({ path: filePath })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      return { success: false, error: err.error || '下载失败' };
+    }
+
+    const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      if (onProgress && contentLength > 0) {
+        onProgress({ loaded, total: contentLength, percent: Math.round((loaded / contentLength) * 100) });
+      }
+    }
+
+    const blob = new Blob(chunks);
+    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split('/').pop());
+    return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
+  } catch (err) {
+    return { success: false, error: `请求失败: ${err.message}` };
+  }
+}
+
+/**
  * 流式批量下载（返回 Blob）
  */
 export async function downloadFilesStream(paths) {
@@ -288,6 +333,51 @@ export async function downloadFilesStream(paths) {
       return { success: false, error: err.error || '下载失败' };
     }
     const blob = await resp.blob();
+    const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
+    return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
+  } catch (err) {
+    return { success: false, error: `请求失败: ${err.message}` };
+  }
+}
+
+/**
+ * 带进度回调的批量下载
+ * @param {string[]} paths
+ * @param {function} onProgress - ({ loaded, total, percent }) => void
+ */
+export async function downloadFilesStreamWithProgress(paths, onProgress) {
+  const config = await getAgentConfig();
+  if (!config) return { success: false, error: 'Agent 未配对' };
+  try {
+    const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({ paths })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      return { success: false, error: err.error || '下载失败' };
+    }
+
+    const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      if (onProgress && contentLength > 0) {
+        onProgress({ loaded, total: contentLength, percent: Math.round((loaded / contentLength) * 100) });
+      }
+    }
+
+    const blob = new Blob(chunks);
     const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {

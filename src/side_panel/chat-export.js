@@ -615,6 +615,7 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
         const tables = content.querySelectorAll('table');
 
         if (tables.length > 0) {
+          // 创建包含表格的 wrapper，直接截图后裁剪空白区域
           const wrapper = document.createElement('div');
           wrapper.style.cssText = `
             position: fixed;
@@ -622,71 +623,78 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
             top: -9999px;
             background: #ffffff;
             box-sizing: border-box;
+            padding: 8px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
             font-size: 14px;
             line-height: 1.6;
+            display: inline-block;
           `;
 
           tables.forEach(t => {
             const clone = t.cloneNode(true);
+            clone.style.margin = '0';
             wrapper.appendChild(clone);
           });
 
           document.body.appendChild(wrapper);
-
-          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-          const wrapperRect = wrapper.getBoundingClientRect();
-          let minX = wrapperRect.width, maxX = 0, minY = wrapperRect.height, maxY = 0;
-
-          wrapper.querySelectorAll('table').forEach(t => {
-            const r = t.getBoundingClientRect();
-            const relX = r.left - wrapperRect.left;
-            const relY = r.top - wrapperRect.top;
-            minX = Math.min(minX, relX);
-            maxX = Math.max(maxX, relX + r.width);
-            minY = Math.min(minY, relY);
-            maxY = Math.max(maxY, relY + r.height);
-          });
-
-          document.body.removeChild(wrapper);
           document.body.removeChild(tempContainer);
 
-          const pad = 8;
-          const cropW = maxX - minX + pad * 2;
-          const cropH = maxY - minY + pad * 2;
-
-          const finalWrapper = document.createElement('div');
-          finalWrapper.style.cssText = `
-            position: fixed;
-            left: -9999px;
-            top: -9999px;
-            width: ${cropW}px;
-            background: #ffffff;
-            padding: ${pad}px;
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-            font-size: 14px;
-            line-height: 1.6;
-          `;
-
-          tables.forEach(t => {
-            const clone = t.cloneNode(true);
-            finalWrapper.appendChild(clone);
-          });
-
-          document.body.appendChild(finalWrapper);
-
           await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-          html2canvasFunc(finalWrapper, {
+          html2canvasFunc(wrapper, {
             scale: 2,
             useCORS: true,
             logging: false,
             backgroundColor: '#ffffff',
             willReadFrequently: true
           }).then(canvas => {
-            const imgData = canvas.toDataURL('image/jpeg', 0.92);
+            // 像素级裁剪：找到非白色像素的边界
+            const ctx = canvas.getContext('2d');
+            const canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = canvasData.data;
+
+            let top = canvas.height, bottom = 0, left = canvas.width, right = 0;
+
+            for (let y = 0; y < canvas.height; y++) {
+              for (let x = 0; x < canvas.width; x++) {
+                const idx = (y * canvas.width + x) * 4;
+                const r = pixels[idx];
+                const g = pixels[idx + 1];
+                const b = pixels[idx + 2];
+                // 非白色像素（允许接近白色）
+                if (r < 250 || g < 250 || b < 250) {
+                  if (y < top) top = y;
+                  if (y > bottom) bottom = y;
+                  if (x < left) left = x;
+                  if (x > right) right = x;
+                }
+              }
+            }
+
+            // 如果没找到非白色像素，使用原始 canvas
+            if (top > bottom || left > right) {
+              top = 0;
+              bottom = canvas.height - 1;
+              left = 0;
+              right = canvas.width - 1;
+            }
+
+            // 加 8px padding
+            top = Math.max(0, top - 8);
+            bottom = Math.min(canvas.height - 1, bottom + 8);
+            left = Math.max(0, left - 8);
+            right = Math.min(canvas.width - 1, right + 8);
+
+            const cropW = right - left + 1;
+            const cropH = bottom - top + 1;
+
+            const croppedCanvas = document.createElement('canvas');
+            croppedCanvas.width = cropW;
+            croppedCanvas.height = cropH;
+            const cropCtx = croppedCanvas.getContext('2d');
+            cropCtx.drawImage(canvas, left, top, cropW, cropH, 0, 0, cropW, cropH);
+
+            const imgData = croppedCanvas.toDataURL('image/jpeg', 0.92);
             const link = document.createElement('a');
             link.href = imgData;
             link.download = fileName;
@@ -695,12 +703,12 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
             document.body.removeChild(link);
 
             setExportButtonSuccess(exportBtn, 'image');
-            document.body.removeChild(finalWrapper);
-            logger.debug('[SidePanel] 图片导出成功:', fileName);
+            document.body.removeChild(wrapper);
+            logger.debug('[SidePanel] 图片导出成功（表格裁剪）:', fileName);
           }).catch(error => {
             logger.error('[SidePanel] 图片导出失败:', error);
             showToast('导出失败: ' + error.message, 'error');
-            if (finalWrapper.parentNode) document.body.removeChild(finalWrapper);
+            if (wrapper.parentNode) document.body.removeChild(wrapper);
             resetExportButton(exportBtn);
           });
           return;

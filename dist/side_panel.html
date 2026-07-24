@@ -12,7 +12,7 @@
   <script type="module" crossorigin src="/assets/agent-store-DkCFPHow.js"></script>
   <script type="module" crossorigin src="/assets/state-CrT0tB5k.js"></script>
   <script type="module" crossorigin src="/assets/session-manager-CrnWCV6H.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-CMw2BUR-.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-CYr2QJKX.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -34,9 +34,39 @@
           <div class="agent-dropdown-footer" id="agentDropdownFooter"></div>
         </div>
       </div>
-      <button class="header-agent-indicator" id="headerAgentIndicator" title="Agent 状态">
-        <span class="header-agent-dot unknown" id="headerAgentDot"></span>
-      </button>
+      <div class="header-agent-wrapper" id="headerAgentWrapper">
+        <button class="header-agent-trigger" id="headerAgentTrigger" title="代理状态">
+          <span class="header-agent-dot unknown" id="headerAgentDot"></span>
+          <span class="header-agent-name" id="headerAgentName">未连接</span>
+          <svg class="header-agent-chevron" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="header-agent-dropdown" id="headerAgentDropdown" style="display:none;">
+          <div class="agent-dd-copy-row" id="agentDdCopyRow">
+            <span class="agent-dd-copy-label">代理地址</span>
+            <button class="agent-dd-copy-btn" id="agentDdCopyBtn" title="复制代理地址">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              复制
+            </button>
+          </div>
+          <div class="agent-dd-list" id="agentDdList"></div>
+          <div class="agent-dd-footer">
+            <div class="agent-dd-footer-actions">
+              <button class="agent-dd-action-btn restart" id="agentDdRestartBtn" title="重启代理服务">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                重启
+              </button>
+              <button class="agent-dd-action-btn update" id="agentDdUpdateBtn" title="更新并重启代理">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                更新
+              </button>
+            </div>
+            <button class="agent-dd-add-btn" id="agentDdAddBtn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              新增/编辑代理
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="header-more-wrapper" id="headerMoreWrapper">
         <button class="clear-chat-btn" id="headerMoreBtn" title="更多操作">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

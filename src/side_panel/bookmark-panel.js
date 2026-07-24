@@ -10,6 +10,25 @@ import logger from '../shared/logger.js';
  * 初始化收藏面板：创建固定入口按钮和面板 DOM
  */
 export function initBookmarkPanel() {
+
+  /**
+   * 搜索匹配（支持 & AND / | OR 高级语法）
+   */
+  function matchSearch(text, query) {
+    if (!query) return true;
+    const lowerText = text.toLowerCase();
+    if (query.includes('&') || query.includes('|')) {
+      const orGroups = query.split('|').map(g => g.trim()).filter(Boolean);
+      for (const group of orGroups) {
+        const andTerms = group.split('&').map(t => t.trim()).filter(Boolean);
+        if (andTerms.length === 0) continue;
+        if (andTerms.every(term => lowerText.includes(term))) return true;
+      }
+      return false;
+    }
+    return lowerText.includes(query);
+  }
+
   // 创建容器
   const container = document.createElement('div');
   container.className = 'bookmark-panel-container';
@@ -26,12 +45,15 @@ export function initBookmarkPanel() {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#f0a500;">
           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
         </svg>
-        <span>收藏</span>
+        <span>消息收藏</span>
         <span class="bookmark-panel-count" id="bookmarkPanelCount"></span>
+        <button class="bookmark-panel-close-btn" id="bookmarkPanelClose" title="关闭">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
+        </button>
       </div>
       <div class="bookmark-search">
         <div class="bookmark-search-input-wrapper">
-          <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容..." />
+          <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容（支持 & | 组合搜索）..." />
           <button class="bookmark-search-clear" id="bookmarkSearchClear" title="清除搜索" style="display:none;">
             <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
           </button>
@@ -48,73 +70,107 @@ export function initBookmarkPanel() {
   const toggle = document.getElementById('bookmarkPanelToggle');
   const panel = document.getElementById('bookmarkPanel');
   const searchInput = document.getElementById('bookmarkSearchInput');
+  const closeBtn = document.getElementById('bookmarkPanelClose');
+
+  // 初始化收藏搜索历史
+  state.bookmarkSearchHistory = [];
+  state.bookmarkSearchHistoryIndex = -1;
+  try {
+    chrome.storage.local.get(['bookmarkSearchHistory'], (result) => {
+      if (result.bookmarkSearchHistory) {
+        state.bookmarkSearchHistory = result.bookmarkSearchHistory;
+      }
+    });
+  } catch (e) { /* 非扩展上下文 */ }
+
+  /**
+   * 添加到收藏搜索历史
+   */
+  function addToBookmarkSearchHistory(text) {
+    if (!text || !text.trim()) return;
+    const trimmed = text.trim();
+    const history = state.bookmarkSearchHistory;
+    const idx = history.indexOf(trimmed);
+    if (idx !== -1) history.splice(idx, 1);
+    history.push(trimmed);
+    if (history.length > 20) history.shift();
+    state.bookmarkSearchHistoryIndex = -1;
+    try {
+      chrome.storage.local.set({ bookmarkSearchHistory: history });
+    } catch (e) { /* 非扩展上下文 */ }
+  }
 
   toggle.addEventListener('click', () => {
     const isOpen = panel.classList.contains('expanded');
     if (isOpen) {
       panel.classList.remove('expanded');
-      // 关闭时清理搜索框和 hover 标记
-      searchInput.value = '';
-      container.classList.remove('hover-expanded');
     } else {
-      refreshBookmarkPanel();
+      refreshBookmarkPanel(searchInput.value);
       panel.classList.add('expanded');
     }
   });
 
-  // Hover 自动展开
-  container.addEventListener('mouseenter', () => {
-    if (!panel.classList.contains('expanded')) {
-      refreshBookmarkPanel();
-      panel.classList.add('expanded');
-      container.classList.add('hover-expanded');
-    }
-  });
-
-  container.addEventListener('mouseleave', (e) => {
-    if (container.classList.contains('hover-expanded')) {
-      // 搜索输入框有焦点时不自动关闭（搜索时列表可能变短，导致鼠标脱离区域）
-      if (document.activeElement === searchInput) return;
-      panel.classList.remove('expanded');
-      searchInput.value = '';
-      container.classList.remove('hover-expanded');
-    }
+  // 关闭按钮
+  closeBtn.addEventListener('click', () => {
+    panel.classList.remove('expanded');
   });
 
   // 搜索过滤
   const searchClear = document.getElementById('bookmarkSearchClear');
   searchInput.addEventListener('input', () => {
-    refreshBookmarkPanel(searchInput.value);
-    searchClear.style.display = searchInput.value ? '' : 'none';
+    const val = searchInput.value.trim();
+    refreshBookmarkPanel(val);
+    searchClear.style.display = val ? '' : 'none';
   });
 
   // 清除搜索按钮
   searchClear.addEventListener('click', () => {
     searchInput.value = '';
     searchClear.style.display = 'none';
+    state.bookmarkSearchHistoryIndex = -1;
     refreshBookmarkPanel();
-    searchInput.focus();
   });
 
-  // 搜索框失焦后，如果面板是 hover 展开的且鼠标已离开容器，则自动关闭
-  searchInput.addEventListener('blur', () => {
-    setTimeout(() => {
-      if (container.classList.contains('hover-expanded') && !container.matches(':hover')) {
-        panel.classList.remove('expanded');
-        searchInput.value = '';
-        container.classList.remove('hover-expanded');
+  // 键盘事件
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const query = searchInput.value.trim();
+      if (query) {
+        addToBookmarkSearchHistory(query);
+        refreshBookmarkPanel(query);
       }
-    }, 150);
-  });
-
-  // 点击面板外部关闭
-  document.addEventListener('click', (e) => {
-    if (panel.classList.contains('expanded')) {
-      if (!container.contains(e.target)) {
-        panel.classList.remove('expanded');
+    } else if (e.key === 'Escape') {
+      if (state.bookmarkSearchHistoryIndex >= 0) {
+        state.bookmarkSearchHistoryIndex = -1;
         searchInput.value = '';
-        container.classList.remove('hover-expanded');
+        refreshBookmarkPanel();
+        searchClear.style.display = 'none';
       }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const history = state.bookmarkSearchHistory;
+      if (history.length === 0) return;
+      if (state.bookmarkSearchHistoryIndex === -1) {
+        state.bookmarkSearchHistoryIndex = history.length - 1;
+      } else if (state.bookmarkSearchHistoryIndex > 0) {
+        state.bookmarkSearchHistoryIndex--;
+      }
+      searchInput.value = history[state.bookmarkSearchHistoryIndex] || '';
+      searchClear.style.display = searchInput.value ? '' : 'none';
+      refreshBookmarkPanel(searchInput.value);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const history = state.bookmarkSearchHistory;
+      if (state.bookmarkSearchHistoryIndex >= 0 && state.bookmarkSearchHistoryIndex < history.length - 1) {
+        state.bookmarkSearchHistoryIndex++;
+        searchInput.value = history[state.bookmarkSearchHistoryIndex] || '';
+      } else {
+        state.bookmarkSearchHistoryIndex = -1;
+        searchInput.value = '';
+      }
+      searchClear.style.display = searchInput.value ? '' : 'none';
+      refreshBookmarkPanel(searchInput.value);
     }
   });
 
@@ -147,13 +203,8 @@ export function initBookmarkPanel() {
       return;
     }
 
-    // 点击条目：导航到消息
+    // 点击条目：导航到消息（面板保持打开，方便多次定位）
     await navigateToBookmark(sessionId, messageId);
-    panel.classList.remove('expanded');
-    // 清理搜索框和 hover 标记
-    const searchInput = document.getElementById('bookmarkSearchInput');
-    if (searchInput) searchInput.value = '';
-    container.classList.remove('hover-expanded');
   });
 
   logger.debug('[BookmarkPanel] 收藏面板已初始化');
@@ -178,17 +229,26 @@ export function refreshBookmarkPanel(searchQuery) {
       })
     : [];
 
-  // 搜索过滤
-  const query = (searchQuery || '').trim().toLowerCase();
-  if (query) {
-    currentBookmarks = currentBookmarks.filter(b =>
-      (b.content || '').toLowerCase().includes(query) ||
-      (b.sessionTitle || '').toLowerCase().includes(query)
-    );
-    otherBookmarks = otherBookmarks.filter(b =>
-      (b.content || '').toLowerCase().includes(query) ||
-      (b.sessionTitle || '').toLowerCase().includes(query)
-    );
+  // 搜索过滤（支持 & AND / | OR 高级语法）
+  const rawQuery = (searchQuery || '').trim();
+  const query = rawQuery.toLowerCase();
+  const isAdvanced = query.includes('&') || query.includes('|');
+  if (rawQuery) {
+    const filterFn = (b) => {
+      const text = ((b.content || '') + ' ' + (b.sessionTitle || '')).toLowerCase();
+      if (isAdvanced) {
+        const orGroups = query.split('|').map(g => g.trim()).filter(Boolean);
+        for (const group of orGroups) {
+          const andTerms = group.split('&').map(t => t.trim()).filter(Boolean);
+          if (andTerms.length === 0) continue;
+          if (andTerms.every(term => text.includes(term))) return true;
+        }
+        return false;
+      }
+      return text.includes(query);
+    };
+    currentBookmarks = currentBookmarks.filter(filterFn);
+    otherBookmarks = otherBookmarks.filter(filterFn);
   }
 
   const total = state.bookmarks.length;
@@ -290,7 +350,11 @@ function highlightText(text, query) {
   if (!query) return text;
   // 先转义 HTML，再做高亮
   const escaped = escapeHtml(text);
-  const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  // 支持 & / | 多词高亮
+  const terms = query.split(/[&|]/).map(t => t.trim()).filter(Boolean);
+  if (terms.length === 0) return escaped;
+  const escapedTerms = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
   return escaped.replace(regex, '<mark class="bookmark-highlight-match">$1</mark>');
 }
 
