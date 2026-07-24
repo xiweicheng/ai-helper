@@ -2175,16 +2175,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const lastAtIndex = value.lastIndexOf('@');
 
     // 优先级：在同一个触发区域（空格后或行首），/ 和 @ 都需要在合法位置触发
-    // 确定 / 是否在合法位置
+    // 确定 / 是否在合法位置（且后面没有空格，输入空格表示匹配结束）
     let slashValid = false;
     if (lastSlashIndex !== -1) {
       slashValid = (lastSlashIndex === 0 || value[lastSlashIndex - 1] === '\n' || value[lastSlashIndex - 1] === ' ');
+      if (slashValid) {
+        const afterSlash = value.substring(lastSlashIndex + 1);
+        if (afterSlash.includes(' ') || afterSlash.includes('\n')) {
+          slashValid = false;
+        }
+      }
     }
 
-    // 确定 @ 是否在合法位置
+    // 确定 @ 是否在合法位置（且后面没有空格，输入空格表示匹配结束）
     let atValid = false;
     if (lastAtIndex !== -1) {
       atValid = (lastAtIndex === 0 || value[lastAtIndex - 1] === '\n' || value[lastAtIndex - 1] === ' ');
+      if (atValid) {
+        const afterAt = value.substring(lastAtIndex + 1);
+        if (afterAt.includes(' ') || afterAt.includes('\n')) {
+          atValid = false;
+        }
+      }
     }
 
     // 当 / 和 @ 同时存在时，取最后出现的一个

@@ -8589,6 +8589,13 @@ body {
   margin-bottom: 6px;
 }
 
+.workspace-agent-name {
+  font-size: 11px;
+  font-weight: 400;
+  color: #888;
+  flex-shrink: 0;
+}
+
 .workspace-panel-close {
   margin-left: auto;
   width: 20px;

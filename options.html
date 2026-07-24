@@ -485,23 +485,23 @@
             <strong>方式一：NPM 全局安装（推荐）</strong><br>
             1. <code>npm install -g ai-helper-agent</code>（要求 Node.js ≥ 18）<br>
             2. <code>ai-helper-agent start</code> 或简写 <code>aha start</code><br>
-            3. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+            3. 终端显示 6 位配对码，在此页面填入并点击"连接"<br>
             <br>
             <strong>方式二：本地源码运行（开发调试）</strong><br>
             1. <code>cd agent && node bin/agent.js start</code><br>
-            2. 终端显示 4 位配对码，在此页面填入并点击"连接"<br>
+            2. 终端显示 6 位配对码，在此页面填入并点击"连接"<br>
             <br>
             <strong>命令别名</strong>：<code>ai-helper-agent</code> 可简写为 <code>aha</code>，所有命令均支持<br>
             <br>
             后台运行：<br>
-            　方式一：<code>ai-helper-agent start --background</code> 或 <code>aha start --background</code><br>
-            　方式二：<code>node bin/agent.js start --background</code><br>
+            　方式一：<code>ai-helper-agent start -b</code> 或 <code>aha start -b</code><br>
+            　方式二：<code>node bin/agent.js start -b</code><br>
             更多命令：<code>ai-helper-agent help</code> 或 <code>aha help</code><br>
             <br>
             <strong>⚠️ 安全提示</strong><br>
             代理服务默认仅监听本机地址（127.0.0.1），如需远程连接请修改启动参数。<br>
-            文件操作限制在配置的工作目录内，不可越权访问。<br>
-            危险命令（如 rm -rf /）会被自动拦截。
+            文件操作限制在工作目录和白名单允许目录内，不可越权访问。<br>
+            高危命令自动拦截，敏感命令确认后放行。
           </p>
         </div>
       </div>

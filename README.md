@@ -941,7 +941,7 @@ Chrome 版本需 >= 114，低版本不支持 Side Panel API。
 ```bash
 cd agent && npm install && npm start
 ```
-然后在扩展选项页「Agent」标签页中输入终端显示的 4 位配对码。
+然后在扩展选项页「Agent」标签页中输入终端显示的 6 位配对码。
 
 **Q: 如何添加 MCP 工具？**
 选项页 →「工具箱」Tab → 添加 MCP 服务器 → 填写命令和参数 → 连接。工具会自动注册到系统中。

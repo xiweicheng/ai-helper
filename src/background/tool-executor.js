@@ -3127,7 +3127,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     }
     
     const hasExitCode = exitCode !== null && exitCode !== undefined;
-    const isSuccess = hasExitCode && exitCode === 0;
+    const isSuccess = hasExitCode && exitCode >= 0 && exitCode <= 127;
     const message = `命令执行完毕 ${hasExitCode ? '(exitCode: ' + exitCode + ')' : '(无 exitCode)'}\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`;
     return {
       success: isSuccess,
@@ -3183,7 +3183,7 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
   // 命令执行完毕，返回完整输出
   appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
   const hasExitCode = result.exitCode !== null && result.exitCode !== undefined;
-  const isSuccess = hasExitCode && result.exitCode === 0;
+  const isSuccess = hasExitCode && result.exitCode >= 0 && result.exitCode <= 127;
   return {
     success: isSuccess,
     level: 'allow',

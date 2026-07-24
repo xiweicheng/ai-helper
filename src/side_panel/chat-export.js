@@ -564,88 +564,180 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
 
   setExportButtonLoading(exportBtn, 'image', exportDropdown);
 
-  // 让浏览器先渲染 loading 状态
   requestAnimationFrame(() => {
     requestAnimationFrame(async () => {
-  try {
-    const html2canvasFunc = window.html2canvas || null;
+      try {
+        const html2canvasFunc = window.html2canvas || null;
 
-    if (!html2canvasFunc) {
-      showToast('图片导出库未加载', 'error');
-      resetExportButton(exportBtn);
-      return;
-    }
+        if (!html2canvasFunc) {
+          showToast('图片导出库未加载', 'error');
+          resetExportButton(exportBtn);
+          return;
+        }
 
-    let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
+        let markdownContent = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
 
-    if (!markdownContent) {
-      const markdownBody = messageDiv.querySelector('.markdown-body');
-      if (markdownBody) {
-        markdownContent = markdownBody.innerText;
-      } else {
-        markdownContent = messageDiv.innerText;
+        if (!markdownContent) {
+          const markdownBody = messageDiv.querySelector('.markdown-body');
+          if (markdownBody) {
+            markdownContent = markdownBody.innerText;
+          } else {
+            markdownContent = messageDiv.innerText;
+          }
+        }
+
+        const timestamp = new Date().getTime();
+        const fileName = `image-${timestamp}.jpg`;
+
+        // 先在新容器中渲染内容以检测是否仅含表格
+        const tempContainer = document.createElement('div');
+        tempContainer.style.cssText = `
+          position: fixed;
+          left: -9999px;
+          top: -9999px;
+          background: white;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #333;
+          box-sizing: border-box;
+        `;
+
+        const content = document.createElement('div');
+        content.className = 'markdown-body';
+        content.innerHTML = formatMarkdown(markdownContent);
+        tempContainer.appendChild(content);
+        document.body.appendChild(tempContainer);
+
+        await renderMermaidInContainer(tempContainer);
+        await convertSvgsToImages(tempContainer);
+
+        const tables = content.querySelectorAll('table');
+
+        if (tables.length > 0) {
+          const wrapper = document.createElement('div');
+          wrapper.style.cssText = `
+            position: fixed;
+            left: -9999px;
+            top: -9999px;
+            background: #ffffff;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+          `;
+
+          tables.forEach(t => {
+            const clone = t.cloneNode(true);
+            wrapper.appendChild(clone);
+          });
+
+          document.body.appendChild(wrapper);
+
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+          const wrapperRect = wrapper.getBoundingClientRect();
+          let minX = wrapperRect.width, maxX = 0, minY = wrapperRect.height, maxY = 0;
+
+          wrapper.querySelectorAll('table').forEach(t => {
+            const r = t.getBoundingClientRect();
+            const relX = r.left - wrapperRect.left;
+            const relY = r.top - wrapperRect.top;
+            minX = Math.min(minX, relX);
+            maxX = Math.max(maxX, relX + r.width);
+            minY = Math.min(minY, relY);
+            maxY = Math.max(maxY, relY + r.height);
+          });
+
+          document.body.removeChild(wrapper);
+          document.body.removeChild(tempContainer);
+
+          const pad = 8;
+          const cropW = maxX - minX + pad * 2;
+          const cropH = maxY - minY + pad * 2;
+
+          const finalWrapper = document.createElement('div');
+          finalWrapper.style.cssText = `
+            position: fixed;
+            left: -9999px;
+            top: -9999px;
+            width: ${cropW}px;
+            background: #ffffff;
+            padding: ${pad}px;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+          `;
+
+          tables.forEach(t => {
+            const clone = t.cloneNode(true);
+            finalWrapper.appendChild(clone);
+          });
+
+          document.body.appendChild(finalWrapper);
+
+          await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+          html2canvasFunc(finalWrapper, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            willReadFrequently: true
+          }).then(canvas => {
+            const imgData = canvas.toDataURL('image/jpeg', 0.92);
+            const link = document.createElement('a');
+            link.href = imgData;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            setExportButtonSuccess(exportBtn, 'image');
+            document.body.removeChild(finalWrapper);
+            logger.debug('[SidePanel] 图片导出成功:', fileName);
+          }).catch(error => {
+            logger.error('[SidePanel] 图片导出失败:', error);
+            showToast('导出失败: ' + error.message, 'error');
+            if (finalWrapper.parentNode) document.body.removeChild(finalWrapper);
+            resetExportButton(exportBtn);
+          });
+          return;
+        }
+
+        tempContainer.style.width = '595px';
+        tempContainer.style.padding = '40px';
+
+        html2canvasFunc(tempContainer, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          willReadFrequently: true
+        }).then(canvas => {
+          const imgData = canvas.toDataURL('image/jpeg', 0.92);
+          const link = document.createElement('a');
+          link.href = imgData;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          setExportButtonSuccess(exportBtn, 'image');
+          document.body.removeChild(tempContainer);
+          logger.debug('[SidePanel] 图片导出成功:', fileName);
+        }).catch(error => {
+          logger.error('[SidePanel] 图片导出失败:', error);
+          showToast('导出失败: ' + error.message, 'error');
+          if (tempContainer.parentNode) document.body.removeChild(tempContainer);
+          resetExportButton(exportBtn);
+        });
+      } catch (error) {
+        logger.error('[SidePanel] 导出图片失败:', error);
+        showToast('导出失败: ' + error.message, 'error');
+        resetExportButton(exportBtn);
       }
-    }
-
-    const timestamp = new Date().getTime();
-    const fileName = `image-${timestamp}.jpg`;
-
-    const container = document.createElement('div');
-    container.style.cssText = `
-      position: fixed;
-      left: -9999px;
-      top: -9999px;
-      width: 595px;
-      padding: 40px;
-      background: white;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #333;
-      box-sizing: border-box;
-    `;
-
-    const content = document.createElement('div');
-    content.className = 'markdown-body';
-    content.innerHTML = formatMarkdown(markdownContent);
-    container.appendChild(content);
-
-    document.body.appendChild(container);
-
-    // 渲染 mermaid 图表，并转为图片（html2canvas 无法正确处理 SVG）
-    await renderMermaidInContainer(container);
-    await convertSvgsToImages(container);
-
-    html2canvasFunc(container, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: '#ffffff',
-      willReadFrequently: true
-    }).then(canvas => {
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      const link = document.createElement('a');
-      link.href = imgData;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      setExportButtonSuccess(exportBtn, 'image');
-
-      document.body.removeChild(container);
-      logger.debug('[SidePanel] 图片导出成功:', fileName);
-    }).catch(error => {
-      logger.error('[SidePanel] 图片导出失败:', error);
-      showToast('导出失败: ' + error.message, 'error');
-      document.body.removeChild(container);
-      resetExportButton(exportBtn);
     });
-  } catch (error) {
-    logger.error('[SidePanel] 导出图片失败:', error);
-    showToast('导出失败: ' + error.message, 'error');
-    resetExportButton(exportBtn);
-  }
-  });
   });
 }

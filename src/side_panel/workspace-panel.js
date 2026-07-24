@@ -50,6 +50,7 @@ export function initWorkspacePanel() {
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
           <span>工作目录</span>
+          <span class="workspace-agent-name" id="workspaceAgentName"></span>
           <button class="workspace-panel-close" id="workspacePanelClose" title="关闭面板">×</button>
         </div>
         <div class="workspace-panel-breadcrumb" id="workspaceBreadcrumb"></div>
@@ -140,6 +141,7 @@ export function initWorkspacePanel() {
 
   bindEvents();
   loadSearchHistory();
+  updateWorkspaceAgentName();
   logger.debug('[WorkspacePanel] 工作目录面板已初始化');
 }
 
@@ -312,6 +314,7 @@ async function openPanel() {
   const panel = document.getElementById('workspacePanel');
   if (panel.classList.contains('expanded')) return;
   panel.classList.add('expanded');
+  await updateWorkspaceAgentName();
   if (!currentPath) {
     await navigateToRoot();
   }
@@ -1050,37 +1053,57 @@ function setupDragDrop() {
 /**
  * 监听 storage 变化（Agent 切换/断开）
  */
+async function updateWorkspaceAgentName() {
+  try {
+    const agentNameEl = document.getElementById('workspaceAgentName');
+    if (!agentNameEl) return;
+
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const activeId = storage.activeAgentId;
+
+    if (activeId) {
+      const activeAgent = agents.find(a => a.id === activeId);
+      if (activeAgent && activeAgent.name) {
+        agentNameEl.textContent = ` · ${activeAgent.name}`;
+        agentNameEl.style.display = '';
+        return;
+      }
+    }
+
+    agentNameEl.textContent = '';
+    agentNameEl.style.display = 'none';
+  } catch (e) {
+    logger.debug('[WorkspacePanel] 更新代理名称失败:', e);
+  }
+}
+
 async function handleStorageChange(changes, namespace) {
   if (namespace !== 'local') return;
   if (!changes.pairedAgents && !changes.activeAgentId) return;
 
-  const changedAgentId =
-    (changes.activeAgentId && changes.activeAgentId.newValue) ||
-    (changes.pairedAgents && changes.pairedAgents.newValue);
-  const oldAgentId =
-    (changes.activeAgentId && changes.activeAgentId.oldValue) ||
-    (changes.pairedAgents && changes.pairedAgents.oldValue);
+  await updateWorkspaceAgentName();
 
-  if (changedAgentId === oldAgentId) return;
+  const newAgentId = changes.activeAgentId?.newValue;
+  const oldAgentId = changes.activeAgentId?.oldValue;
 
-  // Agent 变化，重置缓存并刷新
-  logger.debug('[WorkspacePanel] Agent 已变更，刷新工作目录');
+  if (newAgentId !== oldAgentId) {
+    logger.debug('[WorkspacePanel] Agent 已变更，刷新工作目录');
 
-  // 完全清除旧代理状态
-  resetWorkspaceRoot();
-  workspaceRoot = null;
-  currentPath = null;
-  pathHistory = [];
-  selectedPaths.clear();
-  searchQuery = '';
-  searchResults = [];
-  isSearchMode = false;
-  dirCache.clear();
+    resetWorkspaceRoot();
+    workspaceRoot = null;
+    currentPath = null;
+    pathHistory = [];
+    selectedPaths.clear();
+    searchQuery = '';
+    searchResults = [];
+    isSearchMode = false;
+    dirCache.clear();
 
-  const panel = document.getElementById('workspacePanel');
-  if (panel && panel.classList.contains('expanded')) {
-    // 面板已展开时直接 navigateToRoot，而非 openPanel()（后者面板展开时会 return）
-    await navigateToRoot();
+    const panel = document.getElementById('workspacePanel');
+    if (panel && panel.classList.contains('expanded')) {
+      await navigateToRoot();
+    }
   }
 }
 

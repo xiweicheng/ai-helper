@@ -88,7 +88,7 @@ async function createZipBuffer(sourceNames, cwd, outputPath) {
   });
 }
 
-const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_BODY_SIZE = 200 * 1024 * 1024; // 200MB
 const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
 const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制
