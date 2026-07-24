@@ -8,7 +8,7 @@
   <script type="module" crossorigin src="/assets/constants-B28YokE5.js"></script>
   <script type="module" crossorigin src="/assets/logger-BEz2S157.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/options-B7IJfAgM.css">
+  <link rel="stylesheet" crossorigin href="/assets/options-DocPTEmH.css">
 </head>
 <body>
   <div class="container">
@@ -506,7 +506,7 @@
             <strong>⚠️ 安全提示</strong><br>
             代理服务默认仅监听本机地址（127.0.0.1），如需远程连接请修改启动参数。<br>
             文件操作限制在工作目录和白名单允许目录内，不可越权访问。<br>
-            高危命令自动拦截，敏感命令确认后放行。
+            高危命令自动拦截，敏感命令支持配置化确认放行。
           </p>
         </div>
       </div>
@@ -577,7 +577,15 @@
 
     <!-- 全局保存按钮（所有 tab 可见） -->
     <div style="margin-top: 20px; padding: 0 24px 24px;">
-      <button class="btn btn-primary" id="saveBtn" style="width: 100%; padding: 12px;">💾 保存配置</button>
+      <button class="btn btn-save" id="saveBtn">
+        <svg class="save-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
+        <span>保存配置</span>
+        <span class="save-shine"></span>
+      </button>
     </div>
 
     <div class="status" id="status"></div>

@@ -1331,10 +1331,15 @@ function initAgentConfig() {
 
     const rows = [];
 
-    if (data.searchTools) {
-      const fdOk = data.searchTools.fd ? '✅' : '❌';
-      const rgOk = data.searchTools.rg ? '✅' : '❌';
-      rows.push(`<div class="detail-row"><span class="detail-label">搜索引擎</span><span class="detail-value">fd ${fdOk} &nbsp; rg ${rgOk}</span></div>`);
+    if (data.version) {
+      rows.push(`<div class="detail-row"><span class="detail-label">版本</span><span class="detail-value">${escHtml(data.version)}</span></div>`);
+    }
+    if (data.platformName) {
+      const archInfo = data.arch ? ` (${data.arch})` : '';
+      rows.push(`<div class="detail-row"><span class="detail-label">系统</span><span class="detail-value">${escHtml(data.platformName)}${archInfo}</span></div>`);
+    } else if (data.platform) {
+      const archInfo = data.arch ? ` (${data.arch})` : '';
+      rows.push(`<div class="detail-row"><span class="detail-label">系统</span><span class="detail-value">${escHtml(data.platform)}${archInfo}</span></div>`);
     }
     if (data.hostname) {
       rows.push(`<div class="detail-row"><span class="detail-label">主机名</span><span class="detail-value">${escHtml(data.hostname)}</span></div>`);
@@ -1347,6 +1352,9 @@ function initAgentConfig() {
     }
     if (data.nodeVersion) {
       rows.push(`<div class="detail-row"><span class="detail-label">Node.js</span><span class="detail-value">${escHtml(data.nodeVersion)}</span></div>`);
+    }
+    if (data.runningProcesses != null) {
+      rows.push(`<div class="detail-row"><span class="detail-label">运行中进程</span><span class="detail-value">${data.runningProcesses}</span></div>`);
     }
     if (data.commandTimeout != null) {
       rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
@@ -1415,6 +1423,7 @@ function initAgentConfig() {
       homeDir: detailData?.homeDir || statusData?.homeDir,
       nodeVersion: detailData?.nodeVersion || statusData?.nodeVersion,
       searchTools: detailData?.searchTools || statusData?.searchTools,
+      runningProcesses: detailData?.runningProcesses ?? statusData?.runningProcesses,
       workdir: detailData?.workdir || statusData?.workdir || '',
       allowedPaths: detailData?.allowedPaths || statusData?.allowedPaths || [],
       commandTimeout: detailData?.commandTimeout || statusData?.commandTimeout,

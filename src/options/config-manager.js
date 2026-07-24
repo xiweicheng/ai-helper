@@ -1215,6 +1215,12 @@ export function saveConfig() {
       const status = document.getElementById('status');
       status.style.display = 'none';
 
+      const saveBtn = document.getElementById('saveBtn');
+      if (saveBtn) {
+        saveBtn.classList.add('saved');
+        setTimeout(() => saveBtn.classList.remove('saved'), 1500);
+      }
+
       // 读取 Agent 配置（已配对代理列表）
       const agentResult = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
       let agentConfig = null;
