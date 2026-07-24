@@ -27,7 +27,7 @@ export function estimateTokens(text) {
 
 /**
  * 估算消息数组的总 token 数
- * @param {Array<{role: string, content: string, tool_calls?: Array, tool_call_id?: string}>} messages
+ * @param {Array<{role: string, content: string, tool_calls?: Array, tool_call_id?: string, reasoning_content?: string}>} messages
  * @returns {number}
  */
 export function estimateMessagesTokens(messages) {
@@ -39,13 +39,14 @@ export function estimateMessagesTokens(messages) {
     } else if (m.content) {
       content = JSON.stringify(m.content);
     }
-    // tool_calls 也消耗 token
     if (m.tool_calls) {
       content += JSON.stringify(m.tool_calls);
     }
-    // tool_call_id 也消耗少量 token
     if (m.tool_call_id) {
       content += m.tool_call_id;
+    }
+    if (m.reasoning_content) {
+      content += m.reasoning_content;
     }
     return sum + estimateTokens(content) + MESSAGE_OVERHEAD;
   }, 0);
@@ -379,6 +380,8 @@ export function generateMessagesSummary(trimmedMessages) {
   return '[历史摘要]\n' + summaryParts.join('\n');
 }
 
+const API_ALLOWED_FIELDS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'reasoning_content', 'prefix']);
+
 /**
  * 过滤消息中的内部字段，确保消息格式符合 API 要求
  * 同时扫描并修复 assistant(tool_calls) 与 tool 消息的配对关系
@@ -387,38 +390,37 @@ export function generateMessagesSummary(trimmedMessages) {
  */
 export function filterApiMessages(messages) {
   const filtered = messages.map((msg, index) => {
-    const { executionLog, subtaskId, subtaskName, subtaskIndex, refusal, _reflection, _summary, messageId, ...rest } = msg;
+    const result = {};
+    for (const key of API_ALLOWED_FIELDS) {
+      if (key in msg) {
+        result[key] = msg[key];
+      }
+    }
 
-    if (rest.role === 'tool') {
-      if (!rest.tool_call_id) {
+    if (result.role === 'tool') {
+      if (!result.tool_call_id) {
         logger.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
         return null;
       }
-      return {
-        role: rest.role,
-        content: rest.content,
-        tool_call_id: rest.tool_call_id
-      };
+      return result;
     }
 
-    if (rest.role === 'assistant' && Array.isArray(rest.tool_calls)) {
-      rest.tool_calls = rest.tool_calls.map(tc => ({
+    if (result.role === 'assistant' && Array.isArray(result.tool_calls)) {
+      result.tool_calls = result.tool_calls.map(tc => ({
         id: tc.id,
         type: tc.type,
         function: tc.function
       }));
-    } else if (rest.role === 'assistant' && rest.tool_calls !== undefined) {
-      // 清理非数组的 tool_calls（如 null），防止服务端迭代 null 报错
-      logger.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof rest.tool_calls})，已清除`);
-      delete rest.tool_calls;
+    } else if (result.role === 'assistant' && result.tool_calls !== undefined) {
+      logger.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof result.tool_calls})，已清除`);
+      delete result.tool_calls;
     }
 
-    // 确保 content 不为 null（部分 API 服务端对 null content 处理异常）
-    if (rest.role === 'assistant' && rest.content === null) {
-      rest.content = '';
+    if (result.role === 'assistant' && result.content === null) {
+      result.content = '';
     }
 
-    return rest;
+    return result;
   }).filter(msg => msg !== null);
 
   // 扫描并修复 tool_calls/tool 配对：验证 tool_call_id 与 tool_calls[].id 严格匹配

@@ -7,7 +7,7 @@ import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWin
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
-import { initWorkspacePanel, updateWorkspacePanelVisibility } from './workspace-panel.js';
+import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
 import logger from '../shared/logger.js';
 
@@ -824,20 +824,63 @@ document.addEventListener('DOMContentLoaded', async () => {
             const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
             const agents = storage.pairedAgents || [];
             const active = agents.find(a => a.id === storage.activeAgentId && !a.disabled);
-            if (active) {
-              const statusResp = await fetch(`${active.url}/api/status`, { cache: 'no-cache' });
-              if (statusResp.ok) {
-                const statusData = await statusResp.json();
-                state.agentPlatform = {
-                  platformName: statusData.platformName || 'Unknown',
-                  platform: statusData.platform || 'unknown',
-                  arch: statusData.arch || 'unknown',
-                  shell: statusData.shell || '/bin/sh',
-                  homeDir: statusData.homeDir || '',
-                  workdir: statusData.workdir || '',
-                  connected: true
-                };
-              } else {
+
+            if (!active) {
+              state.agentPlatform = { connected: false };
+              updateAgentIndicator(state.agentPlatform);
+              updateFileInputVisibility();
+              refreshToolPopupIfOpen();
+              resetAndRefreshWorkspace();
+              return;
+            }
+
+            // 已配对的 Agent 有 token，优先调用认证接口获取完整信息
+            if (active.token) {
+              try {
+                const detailResp = await fetch(`${active.url}/api/status/detail`, {
+                  cache: 'no-cache',
+                  headers: { 'Authorization': `Bearer ${active.token}` }
+                });
+                if (detailResp.ok) {
+                  const data = await detailResp.json();
+                  if (data.success) {
+                    state.agentPlatform = {
+                      platformName: data.platformName || 'Unknown',
+                      platform: data.platform || 'unknown',
+                      arch: data.arch || 'unknown',
+                      shell: data.shell || '/bin/sh',
+                      homeDir: data.homeDir || '',
+                      workdir: data.workdir || '',
+                      connected: true
+                    };
+                  } else {
+                    state.agentPlatform = { connected: false };
+                  }
+                } else {
+                  state.agentPlatform = { connected: false };
+                }
+              } catch {
+                state.agentPlatform = { connected: false };
+              }
+            } else {
+              // 无 token 时回退到无认证接口（兼容未配对场景）
+              try {
+                const statusResp = await fetch(`${active.url}/api/status`, { cache: 'no-cache' });
+                if (statusResp.ok) {
+                  const statusData = await statusResp.json();
+                  state.agentPlatform = {
+                    platformName: statusData.platformName || 'Unknown',
+                    platform: statusData.platform || 'unknown',
+                    arch: statusData.arch || 'unknown',
+                    shell: statusData.shell || '/bin/sh',
+                    homeDir: statusData.homeDir || '',
+                    workdir: statusData.workdir || '',
+                    connected: true
+                  };
+                } else {
+                  state.agentPlatform = { connected: false };
+                }
+              } catch {
                 state.agentPlatform = { connected: false };
               }
             }
@@ -847,6 +890,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           updateAgentIndicator(state.agentPlatform);
           updateFileInputVisibility();
           refreshToolPopupIfOpen();
+          // 代理切换后重置并刷新工作目录
+          resetAndRefreshWorkspace();
         })();
       }
     }

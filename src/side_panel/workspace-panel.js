@@ -1050,7 +1050,7 @@ function setupDragDrop() {
 /**
  * 监听 storage 变化（Agent 切换/断开）
  */
-function handleStorageChange(changes, namespace) {
+async function handleStorageChange(changes, namespace) {
   if (namespace !== 'local') return;
   if (!changes.pairedAgents && !changes.activeAgentId) return;
 
@@ -1065,15 +1065,22 @@ function handleStorageChange(changes, namespace) {
 
   // Agent 变化，重置缓存并刷新
   logger.debug('[WorkspacePanel] Agent 已变更，刷新工作目录');
+
+  // 完全清除旧代理状态
   resetWorkspaceRoot();
+  workspaceRoot = null;
   currentPath = null;
-  invalidateDirCache(currentPath);
-  // 清空整个 dirCache
+  pathHistory = [];
+  selectedPaths.clear();
+  searchQuery = '';
+  searchResults = [];
+  isSearchMode = false;
   dirCache.clear();
 
   const panel = document.getElementById('workspacePanel');
   if (panel && panel.classList.contains('expanded')) {
-    openPanel();
+    // 面板已展开时直接 navigateToRoot，而非 openPanel()（后者面板展开时会 return）
+    await navigateToRoot();
   }
 }
 
@@ -1251,6 +1258,26 @@ function getLanguageClass(fileName) {
 export async function refreshWorkspacePanel() {
   if (currentPath) {
     await loadDirectory(currentPath);
+  }
+}
+
+/**
+ * 重置所有缓存并刷新工作目录（代理切换后调用）
+ */
+export async function resetAndRefreshWorkspace() {
+  resetWorkspaceRoot();
+  workspaceRoot = null;
+  currentPath = null;
+  pathHistory = [];
+  selectedPaths.clear();
+  searchQuery = '';
+  searchResults = [];
+  isSearchMode = false;
+  dirCache.clear();
+
+  const panel = document.getElementById('workspacePanel');
+  if (panel && panel.classList.contains('expanded')) {
+    await navigateToRoot();
   }
 }
 

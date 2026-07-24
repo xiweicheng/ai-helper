@@ -3,7 +3,7 @@
 
 import state from './state.js';
 import { showToast } from './utils.js';
-import { formatMarkdown } from './markdown-render.js';
+import { formatMarkdown, cleanTableForClipboard } from './markdown-render.js';
 import logger from '../shared/logger.js';
 
 /**
@@ -94,7 +94,14 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
     const isCtrlPressed = event && (event.ctrlKey || event.metaKey);
 
     if (isCtrlPressed && htmlToCopy) {
-      copyRichText(textToCopy, htmlToCopy, copyBtn);
+      const tempContainer = document.createElement('div');
+      tempContainer.innerHTML = htmlToCopy;
+      tempContainer.querySelectorAll('table').forEach(table => {
+        const cleanTable = cleanTableForClipboard(table);
+        table.parentNode.replaceChild(cleanTable, table);
+      });
+      const cleanedHtml = tempContainer.innerHTML;
+      copyRichText(textToCopy, cleanedHtml, copyBtn);
     } else {
       navigator.clipboard.writeText(textToCopy).then(() => {
         showCopySuccess(copyBtn);

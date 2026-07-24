@@ -1034,10 +1034,8 @@ export function addTableToolbarEvents() {
         const tableEl = btn.closest('.table-container-wrapper')?.querySelector('table');
         if (tableEl) {
           try {
-            // 克隆表格并清理工具栏，构建富文本 HTML
-            const clone = tableEl.cloneNode(true);
-            clone.querySelectorAll('.table-toolbar').forEach(el => el.remove());
-            const richHTML = clone.outerHTML;
+            const cleanTable = cleanTableForClipboard(tableEl);
+            const richHTML = cleanTable.outerHTML;
             const blob = new Blob([richHTML], { type: 'text/html' });
             const item = new ClipboardItem({ 'text/html': blob });
             navigator.clipboard.write([item]).then(() => {
@@ -1151,4 +1149,16 @@ export function addTableToolbarEvents() {
       }
     });
   });
+}
+
+export function cleanTableForClipboard(element) {
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll('.table-header-cell-wrapper').forEach(th => {
+    const headerText = th.textContent.trim();
+    th.innerHTML = '';
+    th.textContent = headerText;
+    th.classList.remove('table-header-cell-wrapper');
+  });
+  clone.querySelectorAll('.table-toolbar').forEach(el => el.remove());
+  return clone;
 }
