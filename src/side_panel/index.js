@@ -790,6 +790,11 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
   // 代理列表
   if (allAgents.length === 0) {
     list.innerHTML = '<div class="agent-dd-empty">暂无已配对代理</div>';
+    // 禁用底部操作按钮
+    const restartBtn = document.getElementById('agentDdRestartBtn');
+    const updateBtn = document.getElementById('agentDdUpdateBtn');
+    if (restartBtn) restartBtn.disabled = true;
+    if (updateBtn) updateBtn.disabled = true;
     return;
   }
 
@@ -812,7 +817,10 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
     return `
       <div class="agent-dd-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
         <span class="agent-dd-item-dot ${dotClass}"></span>
-        <span class="agent-dd-item-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+        <div class="agent-dd-item-info">
+          <span class="agent-dd-item-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+          <span class="agent-dd-item-url" title="${escapeHtml(a.url || '')}">${escapeHtml(a.url || '')}</span>
+        </div>
         <span class="agent-dd-item-status">${statusLabel}</span>
         ${isActive ? '<span class="agent-dd-item-check">&#10003;</span>' : ''}
         <div class="agent-dd-item-toolbar">
@@ -830,6 +838,13 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
       </div>
     `;
   }).join('');
+
+  // 根据活跃代理连接状态启禁底部操作按钮
+  const restartBtn = document.getElementById('agentDdRestartBtn');
+  const updateBtn = document.getElementById('agentDdUpdateBtn');
+  const btnEnabled = !!(activeAgent && connected);
+  if (restartBtn) restartBtn.disabled = !btnEnabled;
+  if (updateBtn) updateBtn.disabled = !btnEnabled;
 }
 
 /**
@@ -946,9 +961,16 @@ async function initAgentDropdown() {
   // 重启代理
   restartBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
-    const confirmed = await window.showCustomConfirm('重启代理', '确定要重启代理服务吗？重启期间服务将短暂不可用。');
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const active = agents.find(a => a.id === storage.activeAgentId);
+    const name = active?.name || '未知';
+    const url = active?.url || '未知';
+    const confirmed = await window.showCustomConfirm(
+      `代理名称：${name}\n代理地址：${url}\n\n确定要重启代理服务吗？重启期间服务将短暂不可用。`,
+      '重启代理'
+    );
     if (!confirmed) return;
-
     try {
       // 通过 background 调用
       chrome.runtime.sendMessage({ type: 'AGENT_RESTART' }, (response) => {
@@ -966,9 +988,16 @@ async function initAgentDropdown() {
   // 更新并重启代理
   updateBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
-    const confirmed = await window.showCustomConfirm('更新代理', '确定要更新代理吗？将先拉取最新代码/依赖，然后重启服务。更新期间服务不可用。');
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const active = agents.find(a => a.id === storage.activeAgentId);
+    const name = active?.name || '未知';
+    const url = active?.url || '未知';
+    const confirmed = await window.showCustomConfirm(
+      `代理名称：${name}\n代理地址：${url}\n\n确定要更新代理吗？将先拉取最新代码/依赖，然后重启服务。更新期间服务不可用。`,
+      '更新代理'
+    );
     if (!confirmed) return;
-
     showToast('正在更新代理（可能需要几分钟）...', 'info');
     try {
       chrome.runtime.sendMessage({ type: 'AGENT_UPDATE' }, (response) => {
@@ -1040,18 +1069,23 @@ async function initAgentDropdown() {
       }
       case 'disconnect': {
         // 显示确认框
+        const agent = agents.find(a => a.id === agentId);
         const confirmed = await window.showCustomConfirm(
-          '断开代理',
-          '确定要断开该代理吗？断开后不会删除配对信息。'
+          `断开后将移出代理列表，需重新配对才能恢复。\n\n代理名称：${agent?.name || agentId}\n代理地址：${agent?.url || ''}`,
+          '断开代理连接'
         );
         if (!confirmed) return;
-        // 断开：设置为非活跃
-        if (storage.activeAgentId === agentId) {
-          const remaining = agents.filter(a => a.id !== agentId && !a.disabled);
-          const newActive = remaining.length > 0 ? remaining[0].id : null;
-          await chrome.storage.local.set({ activeAgentId: newActive || '' });
+        // 从列表中移除该代理
+        agents = agents.filter(a => a.id !== agentId);
+        const newActiveId = storage.activeAgentId === agentId
+          ? (agents.find(a => !a.disabled)?.id || null)
+          : storage.activeAgentId;
+        await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: newActiveId || '' });
+        if (newActiveId) {
+          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: newActiveId });
+        } else {
+          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
         }
-        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false, agentId });
         break;
       }
       case 'delete': {
