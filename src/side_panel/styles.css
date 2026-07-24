@@ -64,6 +64,13 @@ body {
     padding: 4px 6px;
     gap: 0;
   }
+  .header-agent-name {
+    display: none;
+  }
+  .header-agent-trigger {
+    padding: 4px 6px;
+    gap: 0;
+  }
 }
 .header .clear-chat-btn {
   background: transparent;
@@ -156,24 +163,26 @@ body {
 .header-agent-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
-  padding: 4px 10px;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 4px 8px;
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   transition: all 0.2s;
-  max-width: 180px;
-  overflow: hidden;
 }
 
 .header-agent-trigger:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.header-agent-trigger .header-agent-chevron {
+  opacity: 0.7;
+  transition: transform 0.2s;
 }
 
 .header-agent-dot {
@@ -209,7 +218,7 @@ body {
 }
 
 .header-agent-name.truncated {
-  cursor: help;
+  cursor: pointer;
 }
 
 .header-agent-chevron {
@@ -222,15 +231,15 @@ body {
 .header-agent-dropdown {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  right: -20px;
   min-width: 280px;
   max-width: 340px;
-  background: rgba(30, 30, 40, 0.98);
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid #e8e8e8;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   z-index: 1000;
   overflow: hidden;
 }
@@ -240,14 +249,14 @@ body {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid #f0f0f0;
   gap: 8px;
 }
 
 .agent-dd-copy-label {
   flex: 1;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #999;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -258,8 +267,8 @@ body {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(74, 144, 217, 0.15);
-  border: 1px solid rgba(74, 144, 217, 0.3);
+  background: rgba(74, 144, 217, 0.08);
+  border: 1px solid rgba(74, 144, 217, 0.2);
   border-radius: 5px;
   color: #4a90d9;
   font-size: 11px;
@@ -269,8 +278,8 @@ body {
 }
 
 .agent-dd-copy-btn:hover {
-  background: rgba(74, 144, 217, 0.25);
-  border-color: rgba(74, 144, 217, 0.5);
+  background: rgba(74, 144, 217, 0.15);
+  border-color: rgba(74, 144, 217, 0.4);
 }
 
 /* 代理列表 */
@@ -283,7 +292,7 @@ body {
 .agent-dd-empty {
   text-align: center;
   padding: 20px;
-  color: rgba(255, 255, 255, 0.3);
+  color: #bbb;
   font-size: 12px;
 }
 
@@ -300,11 +309,11 @@ body {
 }
 
 .agent-dd-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: #f5f5f5;
 }
 
 .agent-dd-item.active {
-  background: rgba(74, 144, 217, 0.1);
+  background: rgba(74, 144, 217, 0.06);
 }
 
 .agent-dd-item.disabled {
@@ -330,10 +339,28 @@ body {
   background: #a0aec0;
 }
 
+.agent-dd-item-dot.online {
+  background: #48bb78;
+}
+
+.agent-dd-item-dot.offline {
+  background: #cbd5e0;
+}
+
+.agent-dd-item-dot.checking {
+  background: #ecc94b;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .agent-dd-item-name {
   flex: 1;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -341,7 +368,7 @@ body {
 
 .agent-dd-item-status {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
+  color: #999;
   flex-shrink: 0;
 }
 
@@ -362,9 +389,11 @@ body {
   gap: 2px;
   opacity: 0;
   transition: opacity 0.2s;
-  background: rgba(30, 30, 40, 0.95);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #e8e8e8;
   border-radius: 5px;
   padding: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .agent-dd-item:hover .agent-dd-item-toolbar {
@@ -380,7 +409,7 @@ body {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #999;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.15s;
@@ -388,34 +417,34 @@ body {
 }
 
 .agent-dd-tool-btn:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.1);
+  color: #333;
+  background: #f0f0f0;
 }
 
 .agent-dd-tool-btn.delete:hover {
-  color: #fc8181;
-  background: rgba(252, 129, 129, 0.15);
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.1);
 }
 
 .agent-dd-tool-btn.disconnect:hover {
-  color: #f6ad55;
-  background: rgba(246, 173, 85, 0.15);
+  color: #dd6b20;
+  background: rgba(221, 107, 32, 0.1);
 }
 
 .agent-dd-tool-btn.enable:hover,
 .agent-dd-tool-btn.switch:hover {
-  color: #48bb78;
-  background: rgba(72, 187, 120, 0.15);
+  color: #38a169;
+  background: rgba(56, 161, 105, 0.1);
 }
 
 .agent-dd-tool-btn.stop:hover {
-  color: #a0aec0;
-  background: rgba(160, 174, 192, 0.15);
+  color: #718096;
+  background: rgba(113, 128, 150, 0.1);
 }
 
 /* 底部按钮 */
 .agent-dd-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid #f0f0f0;
   padding: 4px;
 }
 
@@ -432,28 +461,28 @@ body {
   justify-content: center;
   gap: 4px;
   padding: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #f8f8f8;
+  border: 1px solid #e8e8e8;
   border-radius: 5px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #666;
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .agent-dd-action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: #f0f0f0;
+  color: #333;
 }
 
 .agent-dd-action-btn.restart:hover {
-  color: #f6ad55;
-  border-color: rgba(246, 173, 85, 0.3);
+  color: #dd6b20;
+  border-color: rgba(221, 107, 32, 0.3);
 }
 
 .agent-dd-action-btn.update:hover {
-  color: #68d391;
-  border-color: rgba(104, 211, 145, 0.3);
+  color: #38a169;
+  border-color: rgba(56, 161, 105, 0.3);
 }
 
 .agent-dd-add-btn {
@@ -466,15 +495,15 @@ body {
   background: transparent;
   border: none;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.5);
+  color: #999;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .agent-dd-add-btn:hover {
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.05);
+  color: #333;
+  background: #f5f5f5;
 }
 
 /* 滚动条 */
@@ -487,7 +516,7 @@ body {
 }
 
 .agent-dd-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: #ddd;
   border-radius: 2px;
 }
 

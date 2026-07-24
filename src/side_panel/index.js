@@ -731,6 +731,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 async function updateAgentIndicator(platformInfo) {
   const dot = document.getElementById('headerAgentDot');
   const nameEl = document.getElementById('headerAgentName');
+  const trigger = document.getElementById('headerAgentTrigger');
   if (!dot || !nameEl) return;
 
   // 获取当前活跃代理信息
@@ -748,15 +749,23 @@ async function updateAgentIndicator(platformInfo) {
     dot.className = 'header-agent-dot disconnected';
     nameEl.textContent = activeAgent ? (activeAgent.name.length > 12 ? activeAgent.name.substring(0, 12) + '...' : activeAgent.name) : '未连接';
     nameEl.classList.toggle('truncated', !!activeAgent);
+    trigger.title = activeAgent ? activeAgent.name : '';
   } else {
     dot.className = 'header-agent-dot connected';
     const displayName = activeAgent.name.length > 12 ? activeAgent.name.substring(0, 12) + '...' : activeAgent.name;
     nameEl.textContent = displayName;
     nameEl.classList.toggle('truncated', activeAgent.name.length > 12);
+    trigger.title = activeAgent.name;
   }
 
   // 更新下拉列表
   updateAgentDropdown(activeAgent, allAgents, connected);
+
+  // 如果下拉已打开，Ping 各代理更新在线状态
+  const dropdown = document.getElementById('headerAgentDropdown');
+  if (dropdown && dropdown.style.display !== 'none') {
+    pingAllAgents();
+  }
 
   // 同步更新工作目录面板入口可见性
   updateWorkspacePanelVisibility(connected);
@@ -787,10 +796,18 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
   list.innerHTML = allAgents.map(a => {
     const isActive = a.id === activeAgent?.id;
     const isDisabled = !!a.disabled;
-    let dotClass = 'disconnected';
-    if (connected && !isDisabled && isActive) dotClass = 'connected';
-    if (isDisabled) dotClass = 'disabled';
-    const statusLabel = isDisabled ? '已停用' : (connected && isActive ? '已连接' : '未连接');
+    let dotClass, statusLabel;
+    if (isDisabled) {
+      dotClass = 'disabled';
+      statusLabel = '已停用';
+    } else if (isActive) {
+      dotClass = connected ? 'connected' : 'disconnected';
+      statusLabel = connected ? '已连接' : '未连接';
+    } else {
+      // 非活跃代理：初始显示检测中，稍后 ping 更新
+      dotClass = 'checking';
+      statusLabel = '检测中...';
+    }
 
     return `
       <div class="agent-dd-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
@@ -802,16 +819,63 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
           ${isDisabled
             ? `<button class="agent-dd-tool-btn enable" data-action="enable" data-id="${a.id}" title="启用">▶</button>`
             : (isActive
-              ? '<button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>'
-              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="切换">⇄</button>`
+              ? `<button class="agent-dd-tool-btn disconnect" data-action="disconnect" data-id="${a.id}" title="断开">✕</button>
+                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
+              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="切换">⇄</button>
+                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
             )
           }
-          <button class="agent-dd-tool-btn disconnect" data-action="disconnect" data-id="${a.id}" title="断开">✕</button>
           <button class="agent-dd-tool-btn delete" data-action="delete" data-id="${a.id}" title="删除">🗑</button>
         </div>
       </div>
     `;
   }).join('');
+}
+
+/**
+ * Ping 单个代理，返回是否在线
+ */
+async function pingAgentUrl(url) {
+  try {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${url}/api/status`, { signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 更新下拉列表中单个代理项的在线状态
+ */
+function updateAgentItemOnlineStatus(agentId, online) {
+  const item = document.querySelector(`.agent-dd-item[data-agent-id="${agentId}"]`);
+  if (!item) return;
+  const dot = item.querySelector('.agent-dd-item-dot');
+  const statusEl = item.querySelector('.agent-dd-item-status');
+  if (dot) {
+    dot.classList.remove('checking', 'connected', 'disconnected');
+    dot.classList.add(online ? 'online' : 'offline');
+  }
+  if (statusEl && statusEl.textContent === '检测中...') {
+    statusEl.textContent = online ? '在线' : '离线';
+  }
+}
+
+/**
+ * Ping 所有非停用代理并更新列表状态
+ */
+async function pingAllAgents() {
+  try {
+    const storage = await chrome.storage.local.get(['pairedAgents']);
+    const agents = storage.pairedAgents || [];
+    // 并行 ping 所有非停用代理
+    await Promise.all(agents.filter(a => !a.disabled).map(async (a) => {
+      const online = await pingAgentUrl(a.url);
+      updateAgentItemOnlineStatus(a.id, online);
+    }));
+  } catch { /* ignore */ }
 }
 
 /**
@@ -833,8 +897,9 @@ async function initAgentDropdown() {
     const isOpen = dropdown.style.display !== 'none';
     dropdown.style.display = isOpen ? 'none' : '';
     if (!isOpen) {
-      // 打开时刷新列表
+      // 打开时刷新列表并检测各代理在线状态
       updateAgentIndicator(state.agentPlatform || {});
+      pingAllAgents();
     }
   });
 
@@ -846,7 +911,8 @@ async function initAgentDropdown() {
   });
 
   // 复制地址
-  copyBtn.addEventListener('click', async () => {
+  copyBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
     const activeAgentId = state.activeAgentId;
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
@@ -855,13 +921,26 @@ async function initAgentDropdown() {
       await navigator.clipboard.writeText(active.url);
       showToast('已复制代理地址', 'success');
     }
-    dropdown.style.display = 'none';
   });
 
-  // 新增/编辑代理 → 跳转选项页
-  addBtn.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+  // 新增/编辑代理 → 跳转选项页，定位到代理 Tab
+  addBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
+    // 设置标记，选项页加载后自动切到代理 Tab
+    await chrome.storage.local.set({ optionsInitialTab: 'agent' });
+    // 检查是否已有打开的选项页
+    const tabs = await chrome.tabs.query({});
+    const optionsUrl = chrome.runtime.getURL('options/index.html');
+    const existingTab = tabs.find(t => t.url && t.url.startsWith(optionsUrl));
+    if (existingTab) {
+      chrome.tabs.update(existingTab.id, { active: true });
+      // 发送消息切换 Tab
+      try {
+        chrome.tabs.sendMessage(existingTab.id, { type: 'SWITCH_TAB', tab: 'agent' });
+      } catch (e) { /* content script 未就绪 */ }
+    } else {
+      chrome.runtime.openOptionsPage();
+    }
   });
 
   // 重启代理
@@ -907,23 +986,53 @@ async function initAgentDropdown() {
   // 代理列表操作（事件委托）
   document.getElementById('agentDdList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.agent-dd-tool-btn');
-    if (!btn) return;
-    e.stopPropagation();
+    const item = e.target.closest('.agent-dd-item');
 
-    const action = btn.dataset.action;
-    const agentId = btn.dataset.id;
+    if (btn) {
+      // 点击工具栏按钮
+      e.stopPropagation();
+      handleAgentDdAction(btn.dataset.action, btn.dataset.id);
+      return;
+    }
+
+    // 点击列表项本身（非按钮区域）：非停用且非活跃代理 → 切换
+    if (item && !item.classList.contains('disabled') && !item.classList.contains('active')) {
+      e.stopPropagation();
+      handleAgentDdAction('switch', item.dataset.agentId);
+    }
+  });
+
+  /**
+   * 处理代理下拉列表操作
+   */
+  async function handleAgentDdAction(action, agentId) {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     let agents = storage.pairedAgents || [];
 
     switch (action) {
       case 'enable': {
+        // 仅启用：设置 disabled=false，不改变 activeAgentId
         agents = agents.map(a => a.id === agentId ? { ...a, disabled: false } : a);
-        await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: agentId });
-        // 触发连接变更
-        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId });
+        await chrome.storage.local.set({ pairedAgents: agents });
         break;
       }
-      case 'disable':
+      case 'disable': {
+        // 仅停用：设置 disabled=true，不改变 activeAgentId
+        agents = agents.map(a => a.id === agentId ? { ...a, disabled: true } : a);
+        let newActiveId = storage.activeAgentId;
+        // 如果停用的是当前活跃代理，自动切到下一个可用代理
+        if (storage.activeAgentId === agentId) {
+          const nextActive = agents.find(a => a.id !== agentId && !a.disabled);
+          newActiveId = nextActive?.id || null;
+        }
+        await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: newActiveId || '' });
+        if (newActiveId) {
+          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: newActiveId });
+        } else {
+          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
+        }
+        break;
+      }
       case 'switch': {
         await chrome.storage.local.set({ activeAgentId: agentId });
         chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId });
@@ -966,8 +1075,9 @@ async function initAgentDropdown() {
       }
     }
     // 关闭下拉
-    dropdown.style.display = 'none';
-  });
+    const dropdown = document.getElementById('headerAgentDropdown');
+    if (dropdown) dropdown.style.display = 'none';
+  }
 }
 
 // 会话 DOM 缓存：切会话时缓存静态 DOM，避免全量重建

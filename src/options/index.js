@@ -107,6 +107,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 根据 hash 激活对应 tab
   activateByHash();
   window.addEventListener('hashchange', activateByHash);
+
+  // 检查是否从侧边栏跳转过来，自动切换到代理 Tab
+  chrome.storage.local.get(['optionsInitialTab'], (result) => {
+    if (result.optionsInitialTab) {
+      switchTab(result.optionsInitialTab);
+      chrome.storage.local.remove('optionsInitialTab');
+    }
+  });
+
+  // 监听侧边栏发来的切换 Tab 消息
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'SWITCH_TAB' && msg.tab) {
+      switchTab(msg.tab);
+    }
+  });
   
   loadConfig();
   
