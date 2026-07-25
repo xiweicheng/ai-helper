@@ -4196,14 +4196,14 @@ async function executeAgentSwitch(args, toolCallId) {
     }
     
     const reachable = AgentClient.isAgentReachable(targetAgent.id);
-    const warning = reachable === false ? `（注意：该代理当前离线）` : '';
+    const warning = reachable !== true ? `（注意：该代理当前离线）` : '';
     
     return {
       success: true,
       content: `已成功切换到代理 "${targetAgent.name}" (${targetAgent.id})${warning}`,
       agentId: targetAgent.id,
       agentName: targetAgent.name,
-      offline: reachable === false,
+      offline: reachable !== true,
       tool_call_id: toolCallId
     };
   } catch (err) {
