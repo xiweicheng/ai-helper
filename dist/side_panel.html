@@ -12,7 +12,7 @@
   <script type="module" crossorigin src="/assets/agent-store-BtsVyTdE.js"></script>
   <script type="module" crossorigin src="/assets/state-DdSKuKNx.js"></script>
   <script type="module" crossorigin src="/assets/session-manager-H1wCyPw-.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-DINOOgR8.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-BdMW2J6f.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -113,6 +113,16 @@
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
             </svg>
             Token 统计
+          </button>
+          <button class="header-dropdown-item" id="auditLogBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            命令执行审计
           </button>
           <button class="header-dropdown-item" id="shortcutsBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -916,6 +926,45 @@
       <div class="modal-actions" style="flex-shrink: 0; padding-top: 12px; margin-top: 0;">
         <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" title="删除此助手">删除</button>
         <button class="modal-btn confirm" id="agentSaveBtn" style="background: #667eea;">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 命令执行审计弹窗 -->
+  <div class="modal-overlay" id="auditLogOverlay" style="display: none; z-index: 4000;">
+    <div class="modal-container" style="max-width: 640px; width: 90%; height: 520px; display: flex; flex-direction: column;">
+      <button class="prompt-modal-close" id="auditLogClose" title="关闭">×</button>
+      <button id="auditLogRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title">📋 命令执行审计</div>
+      <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <span style="font-size: 12px; color: #999;">分类筛选:</span>
+        <select id="auditLogCategoryFilter" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+          <option value="">全部</option>
+          <option value="exec">命令执行</option>
+          <option value="fs">文件操作</option>
+          <option value="auth">认证</option>
+          <option value="security">安全</option>
+          <option value="system">系统</option>
+        </select>
+        <span style="font-size: 12px; color: #999; margin-left: 8px;">条数:</span>
+        <select id="auditLogLimit" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+          <option value="50">最近50条</option>
+          <option value="100">最近100条</option>
+          <option value="200" selected>最近200条</option>
+          <option value="500">最近500条</option>
+        </select>
+      </div>
+      <div style="margin-bottom: 10px; position: relative;">
+        <input type="text" id="auditLogSearch" placeholder="搜索操作名、命令或路径..." style="width: 100%; padding: 8px 32px 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
+        <button type="button" id="auditLogSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 14px; cursor: pointer; display: none; padding: 2px 6px; line-height: 1; border-radius: 50%;" title="清除">✕</button>
+      </div>
+      <div style="flex: 1; overflow-y: auto;" id="auditLogContent">
+        <div id="auditLogLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
+        <div id="auditLogEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无审计日志</div>
+        <div id="auditLogList" style="display: none;"></div>
+      </div>
+      <div style="padding-top: 8px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center;">
+        默认查询最近7天的审计日志
       </div>
     </div>
   </div>

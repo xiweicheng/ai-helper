@@ -968,6 +968,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  // 查询审计日志
+  if (message.type === 'QUERY_AUDIT_LOGS') {
+    AgentClient.queryAuditLogs({ category: message.category, limit: message.limit }).then(result => {
+      sendResponse(result);
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
 });
 
 // 处理选中文本的 AI 搜索：存储搜索结果并通知 Side Panel

@@ -54,8 +54,25 @@ function getShellForExec() {
 // 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId, stdoutBuf, stderrBuf }
 const runningProcesses = new Map();
 
-// 已完成进程缓存（解决竞态条件：进程完成太快，WebSocket 客户端来不及连接）
-// execId → { stdoutBuf, stderrBuf, exitCode, killed, cleanupTimeout }
+// 输出缓冲区上限（5MB），防止长时间命令内存无限增长
+const MAX_OUTPUT_BUFFER = 5 * 1024 * 1024;
+
+/**
+ * 安全追加字符串到缓冲区，超过上限时截断并标记
+ * @param {string} buf - 当前缓冲区
+ * @param {string} chunk - 要追加的字符串
+ * @param {object} truncState - 截断状态对象 { truncated: boolean }
+ * @returns {string} 更新后的缓冲区
+ */
+function appendWithLimit(buf, chunk, truncState) {
+  if (truncState.truncated) return buf;
+  if (buf.length + chunk.length > MAX_OUTPUT_BUFFER) {
+    truncState.truncated = true;
+    const remaining = MAX_OUTPUT_BUFFER - buf.length;
+    return buf + (remaining > 0 ? chunk.slice(0, remaining) : '');
+  }
+  return buf + chunk;
+}
 const completedProcesses = new Map();
 const COMPLETED_CACHE_TTL = 30000; // 30秒后清理
 
@@ -120,6 +137,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     cwd: workdir,
     env: buildSafeEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,       // 独立进程组，防止 kill 父进程后子进程成为孤儿
     windowsHide: true
   });
 
@@ -134,7 +152,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   // 存储到 entry 中供 clearTimers 读取
   // stdoutBuf/stderrBuf 始终收集，用于回放给延迟连接的 WS 客户端
   // command/startTime 用于状态详情面板展示运行中进程
-  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '', command, startTime: Date.now() };
+  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '', truncStdout: false, truncStderr: false, command, startTime: Date.now() };
   runningProcesses.set(execId, entry);
 
   // 超时控制
@@ -167,7 +185,12 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   proc.stdout.on('data', (chunk) => {
     const str = chunk.toString();
     if (collectOutput) stdoutCollected += str;
-    entry.stdoutBuf += str;
+    const truncState = { truncated: entry.truncStdout };
+    entry.stdoutBuf = appendWithLimit(entry.stdoutBuf, str, truncState);
+    entry.truncStdout = truncState.truncated;
+    if (truncState.truncated) {
+      broadcast({ type: 'stdout_truncated', message: 'stdout 输出超过 5MB 上限，已截断', execId });
+    }
     broadcast({ type: 'stdout', data: str, execId });
   });
 
@@ -175,7 +198,12 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   proc.stderr.on('data', (chunk) => {
     const str = chunk.toString();
     if (collectOutput) stderrCollected += str;
-    entry.stderrBuf += str;
+    const truncState = { truncated: entry.truncStderr };
+    entry.stderrBuf = appendWithLimit(entry.stderrBuf, str, truncState);
+    entry.truncStderr = truncState.truncated;
+    if (truncState.truncated) {
+      broadcast({ type: 'stderr_truncated', message: 'stderr 输出超过 5MB 上限，已截断', execId });
+    }
     broadcast({ type: 'stderr', data: str, execId });
   });
 
@@ -327,9 +355,9 @@ function disconnectWsClient(execId, wsClient) {
 }
 
 /**
- * 停止正在运行的命令（跨平台兼容）
- * - macOS/Linux: SIGTERM（优雅终止）→ 5s → SIGKILL（强制杀）
- * - Windows: taskkill /PID（优雅终止）→ 5s → taskkill /F /PID（强制杀）
+ * 停止正在运行的命令（跨平台兼容，递归终止全部子进程）
+ * - macOS/Linux: SIGTERM to process group（-pid）→ 5s → SIGKILL to process group
+ * - Windows: taskkill /T /PID（递归终止进程树）→ 5s → taskkill /F /T /PID
  */
 function killProcess(execId) {
   const entry = runningProcesses.get(execId);
@@ -341,18 +369,20 @@ function killProcess(execId) {
   const pid = entry.process.pid;
 
   if (isWin) {
-    // Windows: taskkill 支持优雅终止（/PID 发送 WM_CLOSE）和强制终止（/F）
-    exec(`taskkill /PID ${pid}`, (err) => {
+    // Windows: /T 递归终止整个进程树
+    exec(`taskkill /T /PID ${pid}`, (err) => {
       if (err) {
-        // 尝试强制杀
-        exec(`taskkill /F /PID ${pid}`, () => {});
+        exec(`taskkill /F /T /PID ${pid}`, () => {});
       }
     });
   } else {
-    // macOS/Linux: SIGTERM 优雅终止
+    // Unix: 负 PID 表示杀整个进程组（detached + 未调用 setsid 时有效）
     try {
-      entry.process.kill('SIGTERM');
-    } catch {}
+      process.kill(-pid, 'SIGTERM');
+    } catch {
+      // 回退到单进程
+      try { entry.process.kill('SIGTERM'); } catch {}
+    }
   }
 
   // 清理旧的定时器
@@ -364,14 +394,15 @@ function killProcess(execId) {
     clearTimeout(entry.forceKillId);
   }
 
-  // 5秒后强制杀（绑定到 entry 对象防止闭包引用旧变量）
+  // 5秒后强制杀整个进程组
   entry.forceKillId = setTimeout(() => {
     try {
       if (entry.process.exitCode === null) {
         if (isWin) {
-          exec(`taskkill /F /PID ${pid}`, () => {});
+          exec(`taskkill /F /T /PID ${pid}`, () => {});
         } else {
-          entry.process.kill('SIGKILL');
+          try { process.kill(-pid, 'SIGKILL'); }
+          catch { try { entry.process.kill('SIGKILL'); } catch {} }
         }
       }
     } catch {}

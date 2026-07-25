@@ -952,12 +952,10 @@ function initAgentConfig() {
   const pairCodeInput = document.getElementById('agentPairCode');
   const agentNameInput = document.getElementById('agentName');
   const connectBtn = document.getElementById('agentConnectBtn');
-  const disconnectBtn = document.getElementById('agentDisconnectBtn');
   const statusDot = document.getElementById('agentStatusDot');
   const statusText = document.getElementById('agentStatusText');
   const agentStatus = document.getElementById('agentStatus');
   const pairCodeGroup = document.getElementById('pairCodeGroup');
-  const disconnectGroup = document.getElementById('disconnectGroup');
   const agentInfo = document.getElementById('agentInfo');
   const agentWorkdirEl = document.getElementById('agentWorkdir');
   const agentDetailToggle = document.getElementById('agentDetailToggle');
@@ -999,7 +997,7 @@ function initAgentConfig() {
     pairedAgentsSection.style.display = '';
     addAgentTitle.textContent = '再添加一个代理';
 
-    // 先渲染列表，状态统一显示"检测中"，停用的显示"已停用"
+    // 先渲染列表，状态统一显示"检测中"，停用的显示"已停用"，活跃的显示"已连接"
     pairedAgentsList.innerHTML = agents.map((a) => {
       const isActive = a.id === activeId;
       const isDisabled = !!a.disabled;
@@ -1009,8 +1007,12 @@ function initAgentConfig() {
         dotClass = isActive ? 'active-disabled' : 'disabled';
         statusLabel = '已停用';
         statusClass = 'disabled';
+      } else if (isActive) {
+        dotClass = 'active-checking';
+        statusLabel = '已连接';
+        statusClass = 'connected';
       } else {
-        dotClass = isActive ? 'active-checking' : 'checking';
+        dotClass = 'checking';
         statusLabel = '检测中';
         statusClass = 'checking';
       }
@@ -1025,8 +1027,8 @@ function initAgentConfig() {
             ${isDisabled
               ? `<button class="paired-agent-btn enable-btn" data-action="enable" data-id="${a.id}">启用</button>`
               : (isActive
-                ? '<button class="paired-agent-btn switch-btn active-hint" disabled>当前</button>'
-                : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">切换</button>`
+                ? `<button class="paired-agent-btn disconnect-btn" data-action="deactivate" data-id="${a.id}">断开</button>`
+                : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">连接</button>`
               )
             }
             ${isDisabled ? '' : `<button class="paired-agent-btn disable-btn" data-action="disable" data-id="${a.id}">停用</button>`}
@@ -1060,7 +1062,9 @@ function initAgentConfig() {
     const dotClass = isActive
       ? (online ? 'active-online' : 'active-offline')
       : (online ? 'online' : 'offline');
-    const statusLabel = online ? '在线' : '离线';
+    const statusLabel = isActive
+      ? (online ? '已连接' : '未连接')
+      : (online ? '在线' : '离线');
 
     if (dotEl) {
       dotEl.className = `paired-agent-dot ${dotClass}`;
@@ -1129,7 +1133,7 @@ function initAgentConfig() {
       });
     });
 
-    // 事件委托：切换 + 停用/启用 + 删除
+    // 事件委托：切换 + 断开 + 停用/启用 + 删除
     pairedAgentsList.querySelectorAll('.paired-agent-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1137,6 +1141,8 @@ function initAgentConfig() {
         const agentId = btn.dataset.id;
         if (action === 'switch') {
           await switchToAgent(agentId);
+        } else if (action === 'deactivate') {
+          await deactivateAgent(agentId);
         } else if (action === 'disable') {
           await disableAgent(agentId);
         } else if (action === 'enable') {
@@ -1168,10 +1174,13 @@ function initAgentConfig() {
       agentId
     }).catch(() => {});
 
-    showToast(`已切换到: ${agent.name}`, 'success');
+    showToast(`已连接到: ${agent.name}`, 'success');
 
     // 重新渲染列表
     await renderPairedAgents();
+
+    // 刷新工具箱面板（MCP/Skill 数据随代理切换联动）
+    refreshToolbox().catch(() => {});
   }
 
   /** 删除已配对代理 */
@@ -1218,6 +1227,10 @@ function initAgentConfig() {
     showToast(`已删除代理: ${agent.name}`, 'info');
     await renderPairedAgents();
     await refreshActiveAgentUI();
+    // 切换了代理时同步刷新工具箱
+    if (newActiveId !== storage.activeAgentId) {
+      refreshToolbox().catch(() => {});
+    }
   }
 
   /** 停用指定代理 */
@@ -1251,6 +1264,10 @@ function initAgentConfig() {
     showToast(`已停用代理: ${agent.name}`, 'info');
     await renderPairedAgents();
     await refreshActiveAgentUI();
+    // 切换了代理时同步刷新工具箱
+    if (storage.activeAgentId === agentId) {
+      refreshToolbox().catch(() => {});
+    }
   }
 
   /** 启用指定代理 */
@@ -1311,7 +1328,7 @@ function initAgentConfig() {
 
     if (!activeId || agents.length === 0) {
       const hasAgents = agents.length > 0;
-      updateStatusUI('disconnected', hasAgents ? '未连接 - 请从列表中选择代理切换' : '未连接 - 请添加代理配对');
+      updateStatusUI('disconnected', hasAgents ? '未连接 - 请从列表中选择代理连接' : '未连接 - 请添加代理配对');
       return;
     }
 
@@ -1338,6 +1355,29 @@ function initAgentConfig() {
     if (ms < 1000) return ms + 'ms';
     if (ms < 60000) return (ms / 1000).toFixed(0) + 's';
     return (ms / 60000).toFixed(1) + ' min';
+  }
+
+  // 格式化 Agent 运行时长（秒 → 可读格式）
+  function formatUptime(seconds) {
+    if (seconds == null || seconds < 0) return '-';
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'min ' + (seconds % 60) + 's';
+    if (seconds < 86400) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      return h + 'h ' + m + 'min';
+    }
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    return d + 'd ' + h + 'h';
+  }
+
+  // 格式化 CPU 时间（微秒 → 可读格式）
+  function formatCpuTime(us) {
+    if (us == null || us < 0) return '-';
+    if (us < 1000) return us + 'μs';
+    if (us < 1000000) return (us / 1000).toFixed(1) + 'ms';
+    return (us / 1000000).toFixed(2) + 's';
   }
 
   // 格式化运行时长（用于进程已运行时间，始终显示具体值，不出现"无限制"）
@@ -1395,6 +1435,13 @@ function initAgentConfig() {
       const label = count > 0 ? `运行中进程 (${count})` : '运行中进程';
       rows.push(`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${formatRunningProcesses(data.runningProcesses)}</span></div>`);
     }
+    if (data.resourceUsage) {
+      const ru = data.resourceUsage;
+      rows.push(`<div class="detail-row"><span class="detail-label">内存使用</span><span class="detail-value">堆 ${ru.memoryUsedMB}MB / 总 ${ru.memoryTotalMB}MB · RSS ${ru.memoryRssMB}MB</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">运行时长</span><span class="detail-value">${formatUptime(ru.uptimeSeconds)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">CPU 用户态</span><span class="detail-value">${formatCpuTime(ru.cpuUser)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">CPU 内核态</span><span class="detail-value">${formatCpuTime(ru.cpuSystem)}</span></div>`);
+    }
     if (data.commandTimeout != null) {
       rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
     }
@@ -1430,8 +1477,6 @@ function initAgentConfig() {
     pairCodeGroup.style.display = '';
 
     if (status === 'connected') {
-      // 有活跃代理时显示断开按钮
-      disconnectGroup.style.display = '';
       agentStatus.className = 'agent-status connected';
 
       if (detailData) {
@@ -1442,10 +1487,8 @@ function initAgentConfig() {
         renderAgentDetail(detailData);
       }
     } else if (status === 'checking') {
-      disconnectGroup.style.display = 'none';
       agentStatus.className = 'agent-status checking';
     } else {
-      disconnectGroup.style.display = 'none';
       agentInfo.style.display = 'none';
       agentStatus.className = 'agent-status disconnected';
       if (agentDetailToggle) agentDetailToggle.style.display = 'none';
@@ -1471,7 +1514,8 @@ function initAgentConfig() {
       commandTimeout: detailData?.commandTimeout || statusData?.commandTimeout,
       fileMaxSize: detailData?.fileMaxSize || statusData?.fileMaxSize,
       uploadMaxSize: detailData?.uploadMaxSize ?? statusData?.uploadMaxSize,
-      pairCodeTTL: detailData?.pairCodeTTL || statusData?.pairCodeTTL
+      pairCodeTTL: detailData?.pairCodeTTL || statusData?.pairCodeTTL,
+      resourceUsage: detailData?.resourceUsage || null
     };
   }
 
@@ -1570,49 +1614,21 @@ function initAgentConfig() {
     }
   }
 
-  async function disconnectAgent() {
+  /** 断开连接：仅取消激活，不删除配对信息 */
+  async function deactivateAgent(agentId) {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const activeId = storage.activeAgentId;
-    if (!activeId) return;
+    if (storage.activeAgentId !== agentId) return;
 
-    const agents = storage.pairedAgents || [];
-    const active = agents.find(a => a.id === activeId);
-    if (!active) return;
+    await chrome.storage.local.set({ activeAgentId: null });
 
-    // 确认弹框：显示代理名称和地址
-    const confirmed = await showCustomConfirm(
-      `断开后将移出代理列表，需重新配对才能恢复。\n\n代理名称：${active.name}\n代理地址：${active.url}`,
-      '断开代理连接'
-    );
-    if (!confirmed) return;
-
-    const newAgents = agents.filter(a => a.id !== activeId);
-    const newActiveId = newAgents.length > 0 ? newAgents[0].id : null;
-
-    await chrome.storage.local.set({
-      pairedAgents: newAgents,
-      activeAgentId: newActiveId
-    });
-
-    pairCodeInput.value = '';
-    showToast('已断开当前代理', 'info');
-
-    if (newActiveId) {
-      const newActive = newAgents.find(a => a.id === newActiveId);
-      if (newActive) {
-        agentUrlInput.value = newActive.url;
-        await fetchAndShowAgentDetail(newActive.url, newActive.token);
-      }
-    } else {
-      updateStatusUI('disconnected', '未连接 - 请添加代理配对');
-    }
+    updateStatusUI('disconnected', '未连接 - 请从列表中选择代理连接');
+    showToast('已断开连接', 'info');
 
     await renderPairedAgents();
 
     chrome.runtime.sendMessage({
       type: 'AGENT_CONNECTION_CHANGED',
-      connected: !!newActiveId,
-      agentId: newActiveId
+      connected: false
     }).catch(() => {});
   }
 
@@ -1628,7 +1644,6 @@ function initAgentConfig() {
 
   // 绑定事件
   connectBtn.addEventListener('click', connectToAgent);
-  disconnectBtn.addEventListener('click', disconnectAgent);
 
   pairCodeInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') connectToAgent();
@@ -1649,6 +1664,8 @@ function initAgentConfig() {
       (async () => {
         await renderPairedAgents();
         await refreshActiveAgentUI();
+        // 同步刷新工具箱面板
+        refreshToolbox().catch(() => {});
       })();
     }
   });

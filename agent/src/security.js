@@ -28,6 +28,9 @@ const HARD_BLOCKED_PATHS = [
   join(AGENT_DIR, 'pairings.json'),   // 配对记录
   join(AGENT_DIR, 'mcp_servers.json'),// MCP 服务器配置
   join(AGENT_DIR, 'logs') + sep,      // 日志目录
+  join(AGENT_DIR, '.trash') + sep,    // 回收站目录（通过 /api/trash 端点管理）
+  join(AGENT_DIR, 'builtin_skills_state.json'), // 内置技能状态
+  join(AGENT_DIR, 'disabled_skills.json'),      // 停用技能状态
 ];
 
 /**

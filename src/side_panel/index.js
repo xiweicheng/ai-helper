@@ -836,7 +836,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
             : (isActive
               ? `<button class="agent-dd-tool-btn disconnect" data-action="disconnect" data-id="${a.id}" title="断开">✕</button>
                  <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
-              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="切换">⇄</button>
+              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="连接">⇄</button>
                  <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
             )
           }
@@ -1191,24 +1191,9 @@ async function initAgentDropdown() {
         break;
       }
       case 'disconnect': {
-        // 显示确认框
-        const agent = agents.find(a => a.id === agentId);
-        const confirmed = await window.showCustomConfirm(
-          `断开后将移出代理列表，需重新配对才能恢复。\n\n代理名称：${agent?.name || agentId}\n代理地址：${agent?.url || ''}`,
-          '断开代理连接'
-        );
-        if (!confirmed) return;
-        // 从列表中移除该代理
-        agents = agents.filter(a => a.id !== agentId);
-        const newActiveId = storage.activeAgentId === agentId
-          ? (agents.find(a => !a.disabled)?.id || null)
-          : storage.activeAgentId;
-        await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: newActiveId || '' });
-        if (newActiveId) {
-          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: newActiveId });
-        } else {
-          chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
-        }
+        // 仅取消激活，保留配对信息，下次可重新切换
+        await chrome.storage.local.set({ activeAgentId: '' });
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
         break;
       }
       case 'delete': {
@@ -2836,6 +2821,184 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (window.openTokenStats) window.openTokenStats();
     });
   }
+
+  // ==================== 命令执行审计 ====================
+  const auditLogBtn = document.getElementById('auditLogBtn');
+  const auditLogOverlay = document.getElementById('auditLogOverlay');
+  const auditLogClose = document.getElementById('auditLogClose');
+  const auditLogRefreshBtn = document.getElementById('auditLogRefreshBtn');
+  const auditLogCategoryFilter = document.getElementById('auditLogCategoryFilter');
+  const auditLogLimit = document.getElementById('auditLogLimit');
+  const auditLogSearch = document.getElementById('auditLogSearch');
+  const auditLogSearchClear = document.getElementById('auditLogSearchClear');
+  const auditLogLoading = document.getElementById('auditLogLoading');
+  const auditLogEmpty = document.getElementById('auditLogEmpty');
+  const auditLogList = document.getElementById('auditLogList');
+
+  // 缓存原始查询结果，用于前端搜索过滤
+  let auditLogRawEntries = [];
+
+  const CATEGORY_LABELS_MAP = {
+    auth: '认证', fs: '文件', exec: '命令', security: '安全', system: '系统'
+  };
+  const LEVEL_LABELS_MAP = { info: 'INFO', warn: 'WARN', error: 'ERROR' };
+  const LEVEL_CLASS_MAP = { info: 'audit-level-info', warn: 'audit-level-warn', error: 'audit-level-error' };
+
+  function formatAuditTime(timestamp) {
+    if (!timestamp) return '-';
+    const d = new Date(timestamp);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function formatAuditDetails(entry) {
+    // 提取 action 之外的关键字段
+    const skipKeys = new Set(['timestamp', 'level', 'category', 'action']);
+    const parts = [];
+    for (const [key, val] of Object.entries(entry)) {
+      if (skipKeys.has(key)) continue;
+      const str = typeof val === 'string' ? val : JSON.stringify(val);
+      const display = str.length > 60 ? str.slice(0, 60) + '...' : str;
+      parts.push(`${key}: ${display}`);
+    }
+    return parts.join('；');
+  }
+
+  async function loadAuditLogs() {
+    if (!auditLogLoading || !auditLogEmpty || !auditLogList) return;
+    auditLogLoading.style.display = 'block';
+    auditLogEmpty.style.display = 'none';
+    auditLogList.style.display = 'none';
+
+    const category = auditLogCategoryFilter?.value || null;
+    const limit = parseInt(auditLogLimit?.value || '200', 10);
+
+    try {
+      const result = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'QUERY_AUDIT_LOGS', category, limit }, (response) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(response);
+        });
+      });
+
+      auditLogLoading.style.display = 'none';
+
+      if (!result || !result.success) {
+        auditLogEmpty.style.display = 'block';
+        auditLogEmpty.textContent = '查询失败: ' + (result?.error || '未知错误');
+        return;
+      }
+
+      auditLogRawEntries = result.entries || [];
+      renderAuditLogs();
+    } catch (err) {
+      auditLogLoading.style.display = 'none';
+      auditLogEmpty.style.display = 'block';
+      auditLogEmpty.textContent = '加载失败: ' + err.message;
+    }
+  }
+
+  function renderAuditLogs() {
+    if (!auditLogList) return;
+    const keyword = (auditLogSearch?.value || '').trim().toLowerCase();
+    let entries = auditLogRawEntries;
+
+    // 前端关键词过滤：匹配 action、category、以及所有 detail 字段的值
+    if (keyword) {
+      entries = entries.filter((e) => {
+        const searchText = [
+          e.action || '',
+          e.category || '',
+          ...Object.entries(e).filter(([k]) => !['timestamp', 'level', 'category', 'action'].includes(k)).map(([, v]) => typeof v === 'string' ? v : JSON.stringify(v))
+        ].join(' ').toLowerCase();
+        return searchText.includes(keyword);
+      });
+    }
+
+    // 更新搜索框清除按钮
+    if (auditLogSearchClear) {
+      auditLogSearchClear.style.display = keyword ? 'block' : 'none';
+    }
+
+    auditLogLoading.style.display = 'none';
+    if (entries.length === 0) {
+      auditLogEmpty.style.display = 'block';
+      auditLogEmpty.textContent = keyword ? '没有匹配的审计日志' : '暂无审计日志';
+      auditLogList.style.display = 'none';
+      return;
+    }
+
+    auditLogEmpty.style.display = 'none';
+    auditLogList.style.display = 'block';
+    auditLogList.innerHTML = entries.map((entry) => {
+      const cat = CATEGORY_LABELS_MAP[entry.category] || entry.category || '-';
+      const level = LEVEL_LABELS_MAP[entry.level] || entry.level?.toUpperCase() || 'INFO';
+      const levelClass = LEVEL_CLASS_MAP[entry.level] || 'audit-level-info';
+      const time = formatAuditTime(entry.timestamp);
+      const details = formatAuditDetails(entry);
+      return `<div class="audit-entry">
+        <div class="audit-entry-header">
+          <span class="audit-time">${time}</span>
+          <span class="audit-level ${levelClass}">${level}</span>
+          <span class="audit-category">${cat}</span>
+          <span class="audit-action">${entry.action || '-'}</span>
+        </div>
+        ${details ? `<div class="audit-details">${details}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function showAuditLog() {
+    if (auditLogOverlay) {
+      auditLogOverlay.style.display = 'flex';
+      loadAuditLogs();
+    }
+  }
+
+  function hideAuditLog() {
+    if (auditLogOverlay) auditLogOverlay.style.display = 'none';
+  }
+
+  if (auditLogBtn) {
+    auditLogBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      showAuditLog();
+    });
+  }
+
+  if (auditLogClose) {
+    auditLogClose.addEventListener('click', hideAuditLog);
+  }
+
+  if (auditLogRefreshBtn) {
+    auditLogRefreshBtn.addEventListener('click', loadAuditLogs);
+  }
+
+  if (auditLogCategoryFilter) {
+    auditLogCategoryFilter.addEventListener('change', loadAuditLogs);
+  }
+
+  if (auditLogLimit) {
+    auditLogLimit.addEventListener('change', loadAuditLogs);
+  }
+
+  // 搜索框输入过滤（前端筛选，不重新请求后端）
+  if (auditLogSearch) {
+    auditLogSearch.addEventListener('input', () => {
+      renderAuditLogs();
+    });
+  }
+
+  // 清除搜索框
+  if (auditLogSearchClear) {
+    auditLogSearchClear.addEventListener('click', () => {
+      if (auditLogSearch) auditLogSearch.value = '';
+      renderAuditLogs();
+    });
+  }
+
+  // ==================== 审计日志 END ====================
 
   // 初始化 Token 统计面板
   initTokenStatsPanel(() => state.activeSessionId, showCustomConfirm);

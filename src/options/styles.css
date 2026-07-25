@@ -2131,11 +2131,15 @@ textarea {
   color: #fff;
   border-color: #e53e3e;
 }
-.paired-agent-item.active .paired-agent-btn.switch-btn {
-  background: #667eea;
+.paired-agent-btn.disconnect-btn {
+  color: #e53e3e;
+  border-color: #fed7d7;
+  background: #fff5f5;
+}
+.paired-agent-btn.disconnect-btn:hover {
+  background: #e53e3e;
   color: #fff;
-  border-color: #667eea;
-  cursor: default;
+  border-color: #e53e3e;
 }
 .paired-agent-status-text {
   font-size: 11px;
@@ -2143,6 +2147,10 @@ textarea {
 }
 .paired-agent-status-text.online {
   color: #48bb78;
+}
+.paired-agent-status-text.connected {
+  color: #48bb78;
+  font-weight: 600;
 }
 .paired-agent-status-text.offline {
   color: #a0aec0;

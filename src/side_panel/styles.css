@@ -10718,3 +10718,75 @@ body {
 .workspace-upload-progress.download-mode .workspace-upload-progress-speed {
   color: #9b59b6;
 }
+
+/* ==================== 审计日志弹窗 ==================== */
+.audit-entry {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+}
+
+.audit-entry:last-child {
+  border-bottom: none;
+}
+
+.audit-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.audit-time {
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.audit-level {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.audit-level-info {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.audit-level-warn {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.audit-level-error {
+  background: #fff1f0;
+  color: #f5222d;
+}
+
+.audit-category {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #f0f0f0;
+  color: #666;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.audit-action {
+  color: #333;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.audit-details {
+  margin-top: 4px;
+  padding-left: 4px;
+  color: #888;
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}

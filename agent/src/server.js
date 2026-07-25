@@ -13,8 +13,9 @@ import os from 'os';
 import { loadConfig } from './config.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
+import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup } from './trash.js';
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses } from './executor.js';
-import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError } from './logger.js';
+import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
 import {
   initializeMcpRegistry,
@@ -46,6 +47,7 @@ import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromU
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
+const AGENT_START_TIME = Date.now();
 
 /**
  * 跨平台 ZIP 打包（使用 archiver，替换 spawn zip）
@@ -607,6 +609,7 @@ export function startServer() {
 
     // 认证后的状态信息（不再下发 pairCode：配对码仅用于一次性配对，避免已配对端横向获取）
     if (req.method === 'GET' && pathname === '/api/status/detail') {
+      const mem = process.memoryUsage();
       return jsonResponse(res, 200, {
         success: true,
         version: AGENT_VERSION,
@@ -617,6 +620,14 @@ export function startServer() {
         fileMaxSize: config.fileMaxSize,       // 读取大小限制（/api/fs/read、/api/fs/download）
         uploadMaxSize: MAX_UPLOAD_SIZE,        // 上传大小限制（/api/fs/upload-stream，流式不占内存可更大）
         runningProcesses: getRunningProcesses(),
+        resourceUsage: {
+          memoryUsedMB: Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100,
+          memoryTotalMB: Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100,
+          memoryRssMB: Math.round(mem.rss / 1024 / 1024 * 100) / 100,
+          uptimeSeconds: Math.round((Date.now() - AGENT_START_TIME) / 1000),
+          cpuUser: process.cpuUsage().user,
+          cpuSystem: process.cpuUsage().system
+        },
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()
       });
@@ -627,8 +638,8 @@ export function startServer() {
       try {
         const { fileBuffer, fileName, mimeType } = await parseMultipartBody(req);
 
-        // 安全检查：过滤文件名中的危险字符
-        const safeName = fileName.replace(/[/\\:*?"<>|]/g, '_');
+        // 安全检查：过滤危险字符 + basename 防路径穿越（.. 等）
+        const safeName = basename(fileName.replace(/[/\\:*?"<>|]/g, '_')) || 'unnamed_file';
         const destPath = join(config.workdir, safeName);
 
         // 去重：如果文件已存在，添加后缀
@@ -896,7 +907,7 @@ export function startServer() {
         return jsonResponse(res, 200, { success: true, info });
       }
 
-      // 删除文件/目录
+      // 删除文件/目录（移至回收站，7天后自动清理）
       if (pathname === '/api/fs/delete') {
         const check = await checkPath(body.path);
         if (!check.allowed) {
@@ -906,13 +917,13 @@ export function startServer() {
         if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
         const fstat2 = await stat(check.resolved);
         const isDir = fstat2.isDirectory();
-        if (isDir) {
-          await rmdir(check.resolved, { recursive: true });
-        } else {
-          await unlink(check.resolved);
+        const trashResult = await moveToTrash(check.resolved);
+        if (!trashResult.success) {
+          logError('fs', 'trash_error', { path: check.resolved, error: trashResult.error });
+          return jsonResponse(res, 500, { success: false, error: trashResult.error });
         }
-        logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size });
-        return jsonResponse(res, 200, { success: true, path: check.resolved });
+        logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size, trashId: trashResult.trashId });
+        return jsonResponse(res, 200, { success: true, path: check.resolved, trashId: trashResult.trashId, message: '已移至回收站（7天后自动清理）' });
       }
 
       // 下载文件/目录（返回 base64 内容，目录自动打包为 zip）
@@ -1383,6 +1394,40 @@ export function startServer() {
 
       // === Skill 操作（需要 body） ===
 
+      // 回收站恢复
+      if (pathname === '/api/trash/restore') {
+        if (!body.trashId) return jsonResponse(res, 400, { success: false, error: '缺少 trashId 参数' });
+        const result = await restoreFromTrash(body.trashId);
+        if (result.success) {
+          logFs('trash_restore', { trashId: body.trashId, restoredPath: result.restoredPath });
+        } else {
+          logSecurity('trash_restore_failed', { trashId: body.trashId, reason: result.error });
+        }
+        return jsonResponse(res, result.success ? 200 : 400, result);
+      }
+
+      // 审计日志查询
+      if (pathname === '/api/logs/query') {
+        const limit = Math.min(body.limit || 200, 500); // 单次最多 500 条
+        const cat = body.category || null;
+        // 默认只查询最近 7 天的日志
+        const today = new Date();
+        const dates = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          dates.push(d.toISOString().slice(0, 10));
+        }
+        let allEntries = [];
+        for (const date of dates) {
+          const result = queryLogs({ date, category: cat, limit: limit - allEntries.length, offset: 0 });
+          allEntries = allEntries.concat(result.entries);
+          if (allEntries.length >= limit) break;
+        }
+        allEntries = allEntries.slice(0, limit);
+        return jsonResponse(res, 200, { success: true, entries: allEntries, total: allEntries.length, dates });
+      }
+
       // 执行 Skill
       if (pathname === '/api/skill/run') {
         if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
@@ -1512,6 +1557,21 @@ export function startServer() {
         }
         if (!isHttp && !body.command) {
           return jsonResponse(res, 400, { success: false, error: 'stdio 传输需要提供 command' });
+        }
+        // stdio 传输：对 command + args 做安全校验，防止 MCP 成为命令管控后门
+        if (!isHttp) {
+          const fullCmd = body.args?.length > 0
+            ? `${body.command} ${body.args.join(' ')}`
+            : body.command;
+          const cmdCheck = checkCommand(fullCmd, false);
+          if (cmdCheck.level === 'deny') {
+            logSecurity('mcp_stdio_denied', { command: fullCmd, reason: cmdCheck.reason });
+            return jsonResponse(res, 403, { success: false, error: `MCP 命令被拦截: ${cmdCheck.reason}` });
+          }
+          if (cmdCheck.level === 'confirm') {
+            logSecurity('mcp_stdio_confirm_required', { command: fullCmd, reason: cmdCheck.reason });
+            return jsonResponse(res, 200, { success: true, level: 'confirm', reason: cmdCheck.reason, message: `MCP 命令需要确认: ${cmdCheck.reason}` });
+          }
         }
         const result = await addMcpServer(body);
         logSystem('mcp_server_add', { serverId: body.id });
@@ -1647,6 +1707,12 @@ export function startServer() {
 
     // ========== MCP 管理接口（仅 GET 路由） ==========
 
+    // 回收站列表
+    if (req.method === 'GET' && pathname === '/api/trash/list') {
+      const result = await listTrash();
+      return jsonResponse(res, 200, result);
+    }
+
     // MCP Servers 列表
     if (req.method === 'GET' && pathname === '/api/mcp/servers') {
       return jsonResponse(res, 200, getMcpServersStatus());
@@ -1736,6 +1802,9 @@ export function startServer() {
     console.log(`[Agent] WebSocket 服务已启动: ws://${host}:${port}`);
     startPairCodeRotation();
 
+    // 启动回收站定期清理（每6小时）+ 启动时清理一次过期文件
+    startPeriodicCleanup();
+
     // 后台异步初始化 MCP 和 Skill，不阻塞主流程
     (async () => {
       try {
@@ -1766,6 +1835,7 @@ export function startServer() {
     forceExitTimer.unref();
 
     stopPairCodeRotation();
+    stopPeriodicCleanup();
 
     // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {

@@ -912,6 +912,35 @@ async function stopAgent() {
   }
 }
 
+// ========== 审计日志 API ==========
+
+/**
+ * 查询审计日志（最近7天，最多500条）
+ * @param {Object} options - { category?, limit? }
+ */
+async function queryAuditLogs(options = {}) {
+  return agentRequest('/api/logs/query', {
+    category: options.category || null,
+    limit: Math.min(options.limit || 200, 500)
+  });
+}
+
+// ========== 回收站 API ==========
+
+/**
+ * 获取回收站列表
+ */
+async function getTrashList() {
+  return agentGet('/api/trash/list');
+}
+
+/**
+ * 恢复回收站条目
+ */
+async function restoreTrash(trashId) {
+  return agentRequest('/api/trash/restore', { trashId });
+}
+
 export {
   migrateFromLegacyFormat,
   generateAgentId,
@@ -972,5 +1001,10 @@ export {
   // Agent 管理
   restartAgent,
   updateAgent,
-  stopAgent
+  stopAgent,
+  // 审计日志
+  queryAuditLogs,
+  // 回收站
+  getTrashList,
+  restoreTrash
 };

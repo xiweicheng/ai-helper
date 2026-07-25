@@ -10,6 +10,8 @@ export const state = {
   agentBaseUrl: null,
   agentToken: null,
   agentConnected: false,
+  agentName: null,
+  agentId: null,
   cachedMcpServers: [],
   editingMcpId: null,
   // 刷新回调：由主入口注册，避免循环依赖
@@ -139,7 +141,15 @@ export async function getAgentConnection() {
   state.agentBaseUrl = active?.url || null;
   state.agentToken = active?.token || null;
   state.agentConnected = !!active;
-  return { url: state.agentBaseUrl, token: state.agentToken, connected: state.agentConnected };
+  state.agentName = active?.name || null;
+  state.agentId = active?.id || null;
+  return {
+    url: state.agentBaseUrl,
+    token: state.agentToken,
+    connected: state.agentConnected,
+    agentName: state.agentName,
+    agentId: state.agentId
+  };
 }
 
 /**

@@ -112,7 +112,8 @@ export async function refreshToolbox() {
   const statusEl = document.getElementById('toolboxAgentStatus');
   if (statusEl) {
     if (state.agentConnected) {
-      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> 代理已连接 - 支持MCP和Skill`;
+      const agentName = state.agentName || '未知代理';
+      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> 当前代理：<strong>${escapeHtml(agentName)}</strong> — 支持MCP和Skill`;
       statusEl.className = 'toolbox-agent-status connected';
     } else {
       statusEl.innerHTML = `<span class="toolbox-status-dot disconnected"></span> 代理未连接 — 请在「代理」Tab 中连接`;
