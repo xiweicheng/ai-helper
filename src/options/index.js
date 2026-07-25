@@ -1374,8 +1374,11 @@ function initAgentConfig() {
     if (data.commandTimeout != null) {
       rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
     }
+    if (data.uploadMaxSize != null) {
+      rows.push(`<div class="detail-row"><span class="detail-label">上传大小限制</span><span class="detail-value">${formatBytes(data.uploadMaxSize)}</span></div>`);
+    }
     if (data.fileMaxSize != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">文件大小限制</span><span class="detail-value">${formatBytes(data.fileMaxSize)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">读取大小限制</span><span class="detail-value">${formatBytes(data.fileMaxSize)}</span></div>`);
     }
     if (data.allowedPaths && data.allowedPaths.length > 0) {
       const pathsHtml = data.allowedPaths.map(p => `<code>${escHtml(p)}</code>`).join('<br>');
@@ -1443,6 +1446,7 @@ function initAgentConfig() {
       allowedPaths: detailData?.allowedPaths || statusData?.allowedPaths || [],
       commandTimeout: detailData?.commandTimeout || statusData?.commandTimeout,
       fileMaxSize: detailData?.fileMaxSize || statusData?.fileMaxSize,
+      uploadMaxSize: detailData?.uploadMaxSize ?? statusData?.uploadMaxSize,
       pairCodeTTL: detailData?.pairCodeTTL || statusData?.pairCodeTTL
     };
   }

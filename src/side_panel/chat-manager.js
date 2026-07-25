@@ -6,7 +6,7 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
-import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions } from './session-manager.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
@@ -772,6 +772,8 @@ export async function sendMessage() {
     // 合并在此处统一保存，减少 IndexedDB 写入次数
     saveChatHistory();
     state.generatingSessionIds.delete(mySessionId);
+    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
+    markSessionCompleted(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
     userInput.focus();
     state.attachedImages = [];

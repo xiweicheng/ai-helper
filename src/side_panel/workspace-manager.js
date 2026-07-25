@@ -272,8 +272,9 @@ export async function downloadFileStream(filePath) {
  * 带进度回调的流式下载（单文件/目录）
  * @param {string} filePath
  * @param {function} onProgress - ({ loaded, total, percent }) => void
+ * @param {AbortSignal} [signal] - 取消信号
  */
-export async function downloadFileStreamWithProgress(filePath, onProgress) {
+export async function downloadFileStreamWithProgress(filePath, onProgress, signal) {
   const config = await getAgentConfig();
   if (!config) return { success: false, error: 'Agent 未配对' };
   try {
@@ -283,7 +284,8 @@ export async function downloadFileStreamWithProgress(filePath, onProgress) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.token}`
       },
-      body: JSON.stringify({ path: filePath })
+      body: JSON.stringify({ path: filePath }),
+      signal
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
@@ -292,6 +294,10 @@ export async function downloadFileStreamWithProgress(filePath, onProgress) {
 
     const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
     const reader = resp.body.getReader();
+    // abort 时取消 reader，释放底层连接
+    if (signal) {
+      signal.addEventListener('abort', () => { try { reader.cancel(); } catch {} });
+    }
     const chunks = [];
     let loaded = 0;
 
@@ -309,6 +315,7 @@ export async function downloadFileStreamWithProgress(filePath, onProgress) {
     const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split('/').pop());
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
+    if (err.name === 'AbortError') return { success: false, error: '已取消', aborted: true };
     return { success: false, error: `请求失败: ${err.message}` };
   }
 }
@@ -344,8 +351,9 @@ export async function downloadFilesStream(paths) {
  * 带进度回调的批量下载
  * @param {string[]} paths
  * @param {function} onProgress - ({ loaded, total, percent }) => void
+ * @param {AbortSignal} [signal] - 取消信号
  */
-export async function downloadFilesStreamWithProgress(paths, onProgress) {
+export async function downloadFilesStreamWithProgress(paths, onProgress, signal) {
   const config = await getAgentConfig();
   if (!config) return { success: false, error: 'Agent 未配对' };
   try {
@@ -355,7 +363,8 @@ export async function downloadFilesStreamWithProgress(paths, onProgress) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${config.token}`
       },
-      body: JSON.stringify({ paths })
+      body: JSON.stringify({ paths }),
+      signal
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
@@ -364,6 +373,9 @@ export async function downloadFilesStreamWithProgress(paths, onProgress) {
 
     const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
     const reader = resp.body.getReader();
+    if (signal) {
+      signal.addEventListener('abort', () => { try { reader.cancel(); } catch {} });
+    }
     const chunks = [];
     let loaded = 0;
 
@@ -381,6 +393,7 @@ export async function downloadFilesStreamWithProgress(paths, onProgress) {
     const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
+    if (err.name === 'AbortError') return { success: false, error: '已取消', aborted: true };
     return { success: false, error: `请求失败: ${err.message}` };
   }
 }

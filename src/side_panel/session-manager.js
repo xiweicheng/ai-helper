@@ -3,6 +3,66 @@
 
 import state from './state.js';
 import * as store from '../storage/session-store.js';
+import logger from '../shared/logger.js';
+
+// chrome.storage.local 中存储已完成会话 ID 列表的键名
+const COMPLETED_SESSIONS_KEY = 'completedSessionIds';
+
+/**
+ * 从 chrome.storage.local 恢复 completedSessionIds 到内存
+ * 在 Side Panel 初始化时调用，保证刷新后仍能显示"完成待查看"提示
+ */
+export async function restoreCompletedSessions() {
+  try {
+    const result = await chrome.storage.local.get([COMPLETED_SESSIONS_KEY]);
+    const ids = result[COMPLETED_SESSIONS_KEY] || [];
+    state.completedSessionIds = new Set(ids);
+  } catch (e) {
+    logger.warn('[SessionManager] 恢复 completedSessionIds 失败:', e);
+  }
+}
+
+/**
+ * 将当前 completedSessionIds 持久化到 chrome.storage.local
+ */
+async function persistCompletedSessions() {
+  try {
+    await chrome.storage.local.set({
+      [COMPLETED_SESSIONS_KEY]: Array.from(state.completedSessionIds),
+    });
+  } catch (e) {
+    logger.warn('[SessionManager] 持久化 completedSessionIds 失败:', e);
+  }
+}
+
+/**
+ * 标记某会话的后台任务已完成，等待用户查看
+ * 仅当该会话不是当前活跃会话（用户已切走）时才标记，否则无需提示
+ * @param {string} sessionId 完成任务的会话 ID
+ */
+export async function markSessionCompleted(sessionId) {
+  if (!sessionId) return;
+  // 用户仍停留在该会话，无需提示
+  if (sessionId === state.activeSessionId) return;
+  // 已在完成集合中，避免重复写入
+  if (state.completedSessionIds.has(sessionId)) return;
+  state.completedSessionIds.add(sessionId);
+  await persistCompletedSessions();
+  document.dispatchEvent(new CustomEvent('generating-state-changed'));
+}
+
+/**
+ * 清除某会话的"完成待查看"标记
+ * 用户切回该会话查看后调用
+ * @param {string} sessionId 已查看的会话 ID
+ */
+export async function clearSessionCompleted(sessionId) {
+  if (!sessionId) return;
+  if (!state.completedSessionIds.has(sessionId)) return;
+  state.completedSessionIds.delete(sessionId);
+  await persistCompletedSessions();
+  document.dispatchEvent(new CustomEvent('generating-state-changed'));
+}
 
 // ==================== 对外 API（与旧版本 API 签名完全兼容） ====================
 
@@ -52,7 +112,13 @@ export async function switchToSession(sessionId) {
  * 删除指定会话
  */
 export async function deleteSession(sessionId) {
-  return store.deleteStoreSession(sessionId);
+  const result = await store.deleteStoreSession(sessionId);
+  // 同步清理该会话的"完成待查看"标记，避免脏数据残留
+  if (state.completedSessionIds.has(sessionId)) {
+    state.completedSessionIds.delete(sessionId);
+    await persistCompletedSessions();
+  }
+  return result;
 }
 
 /**

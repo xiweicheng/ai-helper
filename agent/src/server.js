@@ -1,9 +1,9 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, createWriteStream, statSync, existsSync } from 'fs';
+import { readFileSync, createWriteStream, createReadStream, statSync, existsSync } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { ZipArchive } from 'archiver';
 import { homedir, tmpdir } from 'os';
@@ -88,10 +88,11 @@ async function createZipBuffer(sourceNames, cwd, outputPath) {
   });
 }
 
-const MAX_BODY_SIZE = 200 * 1024 * 1024; // 200MB
+const MAX_BODY_SIZE = 200 * 1024 * 1024; // 200MB（JSON body 解析上限，旧 base64 上传受此限制）
 const MAX_SEARCH_RESULTS = 5000;         // 单次搜索最大结果数
 const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
-const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制
+const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制（read/list 等读取操作）
+const MAX_UPLOAD_SIZE = 200 * 1024 * 1024; // 流式上传最大 200MB（与 MAX_BODY_SIZE 一致，流式无 base64 膨胀，实际可传 200MB 原文件）
 
 function detectShell() {
   const platform = os.platform();
@@ -450,21 +451,24 @@ export function startServer() {
       logSystem('restart', { reason: 'api_request', extId });
       jsonResponse(res, 200, { success: true, message: 'Agent 正在重启...' });
 
-      // 获取当前启动参数并重新 spawn
-      const restartArgs = [];
-      const agentScript = process.argv[1]; // agent/bin/agent.js
-      // 读取配置重建启动命令
+      // 转成绝对路径，避免相对路径在 detached 子进程中失效
+      const agentScript = resolve(process.argv[1]);
       const restartPort = config.port || 18910;
       const restartHost = config.host || '127.0.0.1';
+      const restartWorkdir = resolve(config.workdir || process.cwd());
+      const currentPid = process.pid;
 
+      // spawn 两阶段重启包装器（detached，独立于老进程存活）
+      // 包装器会先等老进程退出 + 端口释放，再启动新进程
       const child = spawn(process.execPath, [
         ...process.execArgv,
         agentScript,
-        'start',
-        '--background',
+        '_restart-helper',
+        '--old-pid', String(currentPid),
         '--port', String(restartPort),
         '--host', restartHost,
-        '--workdir', config.workdir || process.cwd()
+        '--workdir', restartWorkdir,
+        '--script', agentScript
       ], {
         detached: true,
         stdio: 'ignore',
@@ -478,7 +482,7 @@ export function startServer() {
       });
       child.unref();
 
-      // 延迟后关闭当前进程
+      // 延迟后关闭当前进程，让 _restart-helper 接管
       setTimeout(() => shutdown(), 500);
       return;
     }
@@ -486,58 +490,76 @@ export function startServer() {
     // 更新并重启 Agent（需认证）
     if (req.method === 'POST' && pathname === '/api/agent/update') {
       logSystem('update', { reason: 'api_request', extId });
-      jsonResponse(res, 200, { success: true, message: 'Agent 正在更新并重启...' });
 
-      const agentScript = process.argv[1];
+      const agentScript = resolve(process.argv[1]);
       const restartPort = config.port || 18910;
       const restartHost = config.host || '127.0.0.1';
+      const restartWorkdir = resolve(config.workdir || process.cwd());
+      const currentPid = process.pid;
 
-      // 异步执行更新 + 重启
+      // 同步执行 npm 全局安装，完成后才返回结果（前端能收到真实成功/失败）
       (async () => {
-        const updateLog = [];
+        let npmSuccess = false;
+        let npmError = '';
+        const npmOutput = [];
+
         try {
-          const agentDir = dirname(dirname(agentScript)); // agent 目录
-
-          // 1. 尝试 git pull
-          if (existsSync(join(agentDir, '.git'))) {
-            updateLog.push('检测到 git 仓库，执行 git pull...');
-            await new Promise((resolve) => {
-              const git = spawn('git', ['pull'], { cwd: agentDir, shell: true });
-              git.stdout.on('data', d => updateLog.push(d.toString().trim()));
-              git.stderr.on('data', d => updateLog.push(d.toString().trim()));
-              git.on('close', resolve);
+          // npm install -g ai-helper-agent@latest
+          // 不指定 --registry，继承用户环境配置（公司内网/外网自适应）
+          const result = await new Promise((resolvePromise) => {
+            const npm = spawn('npm', ['install', '-g', 'ai-helper-agent@latest', '--no-audit', '--no-fund'], {
+              shell: true,
+              env: { ...process.env }
             });
-          } else {
-            updateLog.push('未检测到 git 仓库，跳过 git pull');
-          }
+            npm.stdout.on('data', d => npmOutput.push(d.toString().trim()));
+            npm.stderr.on('data', d => npmOutput.push(d.toString().trim()));
+            npm.on('error', (err) => resolvePromise({ success: false, error: err.message }));
 
-          // 2. npm install
-          if (existsSync(join(agentDir, 'package.json'))) {
-            updateLog.push('执行 npm install...');
-            await new Promise((resolve) => {
-              const npm = spawn('npm', ['install', '--no-audit', '--no-fund'], { cwd: agentDir, shell: true });
-              npm.stdout.on('data', d => updateLog.push(d.toString().trim()));
-              npm.stderr.on('data', d => updateLog.push(d.toString().trim()));
-              npm.on('close', resolve);
+            // 超时保护（90s），防止 npm 卡住导致前端长等待
+            const timer = setTimeout(() => {
+              try { npm.kill('SIGTERM'); } catch {}
+              resolvePromise({ success: false, error: 'npm install 超时（90s）' });
+            }, 90000);
+            timer.unref();
+
+            npm.on('close', (code) => {
+              clearTimeout(timer);
+              resolvePromise({ success: code === 0, code });
             });
+          });
+          npmSuccess = result.success;
+          if (!npmSuccess) {
+            npmError = result.error || `npm install 退出码: ${result.code}`;
           }
-
-          updateLog.push('更新完成，准备重启...');
         } catch (err) {
-          updateLog.push(`更新出错: ${err.message}`);
+          npmError = err.message;
         }
 
-        console.log('[Agent Update]', updateLog.join('\n'));
+        if (!npmSuccess) {
+          // 更新失败：不重启，保持老进程运行，提示用户手动执行
+          logError('update_npm_failed', npmError + ' | output: ' + npmOutput.join('\n').slice(-500));
+          jsonResponse(res, 200, {
+            success: false,
+            error: '更新失败，请手动执行：npm install -g ai-helper-agent@latest',
+            details: npmError
+          });
+          return;
+        }
 
-        // 重启
+        // 更新成功：返回响应并触发两阶段重启
+        logSystem('update_success', { output: npmOutput.join('\n').slice(-500) });
+        jsonResponse(res, 200, { success: true, message: '更新成功，Agent 正在重启...' });
+
+        // spawn 两阶段重启包装器
         const child = spawn(process.execPath, [
           ...process.execArgv,
           agentScript,
-          'start',
-          '--background',
+          '_restart-helper',
+          '--old-pid', String(currentPid),
           '--port', String(restartPort),
           '--host', restartHost,
-          '--workdir', config.workdir || process.cwd()
+          '--workdir', restartWorkdir,
+          '--script', agentScript
         ], {
           detached: true,
           stdio: 'ignore',
@@ -567,7 +589,8 @@ export function startServer() {
         workdir: config.workdir,
         allowedPaths: config.allowedPaths,
         commandTimeout: config.commandTimeout,
-        fileMaxSize: config.fileMaxSize,
+        fileMaxSize: config.fileMaxSize,       // 读取大小限制（/api/fs/read、/api/fs/download）
+        uploadMaxSize: MAX_UPLOAD_SIZE,        // 上传大小限制（/api/fs/upload-stream，流式不占内存可更大）
         runningProcesses: getRunningProcesses(),
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable()
@@ -612,6 +635,78 @@ export function startServer() {
       } catch (err) {
         logError('fs', 'upload_error', { error: err.message });
         return jsonResponse(res, 400, { success: false, error: `文件上传失败: ${err.message}` });
+      }
+    }
+
+    // === 流式文件上传（raw binary body，目标路径通过 query 传递，避免 base64 膨胀） ===
+    // 必须在通用 JSON body 解析之前拦截，因为 body 是二进制而非 JSON
+    if (req.method === 'POST' && pathname === '/api/fs/upload-stream') {
+      const targetPath = url.searchParams.get('path');
+      if (!targetPath || typeof targetPath !== 'string') {
+        return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+      }
+      const check = await checkPath(targetPath);
+      if (!check.allowed) {
+        logSecurity('fs_upload_stream_blocked', { path: targetPath, reason: check.reason });
+        return jsonResponse(res, 403, { success: false, error: check.reason });
+      }
+
+      const maxSize = MAX_UPLOAD_SIZE;
+      const declaredSize = parseInt(req.headers['content-length'] || '0', 10);
+      if (declaredSize > maxSize) {
+        return jsonResponse(res, 400, { success: false, error: `文件过大 (${declaredSize} > ${maxSize})` });
+      }
+
+      await mkdir(dirname(check.resolved), { recursive: true });
+
+      try {
+        const written = await new Promise((resolve, reject) => {
+          const ws = createWriteStream(check.resolved);
+          let totalWritten = 0;
+          let aborted = false;
+
+          // 计数 + 超限保护（防止 Content-Length 造假或缺失）
+          const onReqData = (chunk) => {
+            totalWritten += chunk.length;
+            if (totalWritten > maxSize) {
+              aborted = true;
+              try { ws.destroy(); } catch {}
+              try { req.destroy(); } catch {}
+              reject(new Error(`文件过大 (已接收 ${totalWritten} > ${maxSize})`));
+            }
+          };
+          req.on('data', onReqData);
+          req.on('error', (err) => {
+            if (aborted) return;
+            aborted = true;
+            try { ws.destroy(); } catch {}
+            reject(err);
+          });
+          ws.on('error', (err) => {
+            if (aborted) return;
+            aborted = true;
+            reject(err);
+          });
+          ws.on('finish', () => {
+            if (aborted) return;
+            resolve(totalWritten);
+          });
+
+          req.pipe(ws);
+        });
+
+        // 脚本文件剥离执行权限
+        const SCRIPT_EXT_RE = /\.(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)$/i;
+        if (SCRIPT_EXT_RE.test(check.resolved)) {
+          try { await chmod(check.resolved, 0o644); } catch {}
+        }
+
+        logFs('upload_stream', { path: check.resolved, size: written });
+        return jsonResponse(res, 200, { success: true, size: written, path: check.resolved });
+      } catch (err) {
+        logError('fs', 'upload_stream_error', { path: check.resolved, error: err.message });
+        try { await unlink(check.resolved); } catch {}  // 清理半成品文件
+        return jsonResponse(res, 400, { success: false, error: `上传失败: ${err.message}` });
       }
     }
 
@@ -692,23 +787,32 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
         const rawContent = 'content' in body ? String(body.content) : '';
-        const buf = Buffer.from(rawContent, 'utf-8');
+        const encoding = body.encoding === 'base64' ? 'base64' : 'utf-8';
+        // base64 编码：先解码为二进制 Buffer 再写入，避免把 base64 字符串当文本写入导致文件损坏
+        const buf = encoding === 'base64'
+          ? Buffer.from(rawContent, 'base64')
+          : Buffer.from(rawContent, 'utf-8');
         if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
         // 确保父目录存在
         await mkdir(dirname(check.resolved), { recursive: true });
-        await writeFile(check.resolved, rawContent, 'utf-8');
+        if (encoding === 'base64') {
+          // 二进制内容直接写入 Buffer
+          await writeFile(check.resolved, buf);
+        } else {
+          await writeFile(check.resolved, rawContent, 'utf-8');
+        }
 
         // 如果写入的是脚本文件，剥离执行权限防止直接运行
         const SCRIPT_EXT_RE = /\.(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)$/i;
         const isScriptExt = SCRIPT_EXT_RE.test(check.resolved);
-        const hasShebang = rawContent.startsWith('#!');
+        const hasShebang = encoding === 'utf-8' && rawContent.startsWith('#!');
         if (isScriptExt || hasShebang) {
           try {
             await chmod(check.resolved, 0o644);
           } catch {}
         }
 
-        logFs('write', { path: check.resolved, size: buf.length });
+        logFs('write', { path: check.resolved, size: buf.length, encoding });
         return jsonResponse(res, 200, { success: true, size: buf.length, path: check.resolved });
       }
 
@@ -876,15 +980,39 @@ export function startServer() {
         const targetPath = body.path;
         const paths = body.paths;
 
-        // 辅助：设置下载响应头并返回二进制
+        // 辅助：设置下载响应头并分块流式返回二进制
+        // 分块写入避免一次性 res.end(buffer) 导致客户端进度条瞬间跳到 100%
         const sendBinary = (buffer, filename, mimeType) => {
           const encodedName = encodeURIComponent(filename);
           res.writeHead(200, {
             'Content-Type': mimeType || 'application/octet-stream',
             'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
-            'Content-Length': buffer.length
+            'Content-Length': buffer.length,
+            'Cache-Control': 'no-cache'
           });
-          res.end(buffer);
+
+          // 分块写入：每块 64KB，写完一块让出事件循环，让 TCP 有机会发送数据
+          // 客户端 reader.read() 会持续拿到 64KB 左右的 chunk，进度条平滑更新
+          const CHUNK_SIZE = 64 * 1024;
+          let offset = 0;
+          const writeNext = () => {
+            if (res.writableEnded) return;
+            if (offset >= buffer.length) {
+              res.end();
+              return;
+            }
+            const end = Math.min(offset + CHUNK_SIZE, buffer.length);
+            const chunk = buffer.subarray(offset, end);
+            offset = end;
+            if (res.write(chunk)) {
+              // 缓冲区未满，用 setImmediate 让出事件循环，让 TCP 有机会发送
+              setImmediate(writeNext);
+            } else {
+              // 缓冲区满了，等待 drain 事件再继续
+              res.once('drain', writeNext);
+            }
+          };
+          writeNext();
         };
 
         try {
@@ -948,11 +1076,23 @@ export function startServer() {
                 try { await unlink(tmpFile); } catch {}
               }
             } else {
-              // 单文件直接返回（不受 maxSize 限制，流式传输）
-              const buf = await readFile(check.resolved);
+              // 单文件：用 createReadStream 流式传输，避免 readFile 把整个文件读入内存导致 OOM
               const mimeType = getMimeType(check.resolved);
-              logFs('download_stream', { path: check.resolved, type: 'file', size: buf.length });
-              return sendBinary(buf, basename(check.resolved), mimeType);
+              const encodedName = encodeURIComponent(basename(check.resolved));
+              res.writeHead(200, {
+                'Content-Type': mimeType || 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+                'Content-Length': fstat.size,
+                'Cache-Control': 'no-cache'
+              });
+              const rs = createReadStream(check.resolved);
+              rs.on('error', (err) => {
+                logError('fs', 'download_stream_read_error', { path: check.resolved, error: err.message });
+                try { res.destroy(); } catch {}
+              });
+              logFs('download_stream', { path: check.resolved, type: 'file', size: fstat.size });
+              rs.pipe(res);
+              return;
             }
           } else {
             return jsonResponse(res, 400, { success: false, error: '缺少 path 或 paths 参数' });

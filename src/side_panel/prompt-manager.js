@@ -2,6 +2,7 @@ import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
+import { markSessionCompleted } from './session-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
 import logger from '../shared/logger.js';
@@ -770,6 +771,8 @@ export async function sendPromptByCode(code) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
   } finally {
     state.generatingSessionIds.delete(mySessionId);
+    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
+    markSessionCompleted(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
     userInput.focus();
     state.attachedImages = [];

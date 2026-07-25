@@ -894,7 +894,7 @@ async function restartAgent() {
  */
 async function updateAgent() {
   try {
-    return await agentRequest('/api/agent/update', {}, 'POST', 15000);
+    return await agentRequest('/api/agent/update', {}, 'POST', 120000);
   } catch (err) {
     return { success: false, error: err.message };
   }

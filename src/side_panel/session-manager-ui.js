@@ -15,7 +15,8 @@ import {
   loadSessions,
   saveCurrentSession,
   reorderSessions,
-  duplicateSession
+  duplicateSession,
+  clearSessionCompleted
 } from './session-manager.js';
 import logger from '../shared/logger.js';
 
@@ -80,6 +81,12 @@ export async function renderSessionTabs() {
       const indicator = document.createElement('span');
       indicator.className = 'session-tab-indicator';
       tab.appendChild(indicator);
+    } else if (state.completedSessionIds.has(session.id) && session.id !== state.activeSessionId) {
+      // 后台任务已完成、等待用户查看的会话：显示静态完成标记（区别于生成中的脉动圆点）
+      const completedIndicator = document.createElement('span');
+      completedIndicator.className = 'session-tab-completed-indicator';
+      completedIndicator.title = '任务已完成，点击查看';
+      tab.appendChild(completedIndicator);
     }
 
     tab.addEventListener('click', async (e) => {
@@ -426,6 +433,16 @@ function renderDropdownList() {
       item.classList.add('highlighted');
     }
 
+    // 后台任务已完成、等待查看的会话：在标题前显示静态完成标记
+    const isCompletedPending = state.completedSessionIds.has(session.id) && session.id !== state.activeSessionId
+      && !session.isGenerating && !state.generatingSessionIds.has(session.id);
+    if (isCompletedPending) {
+      const completedDot = document.createElement('span');
+      completedDot.className = 'session-dropdown-item-completed';
+      completedDot.title = '任务已完成，点击查看';
+      item.appendChild(completedDot);
+    }
+
     // 标题
     const titleSpan = document.createElement('span');
     titleSpan.className = 'session-dropdown-item-title';
@@ -728,6 +745,9 @@ async function handleSessionSwitch(sessionId) {
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId, previousSessionId }
   }));
+
+  // 用户已切回该会话查看，清除"完成待查看"标记
+  clearSessionCompleted(sessionId);
 
   renderSessionTabs();
   updateUIControls();

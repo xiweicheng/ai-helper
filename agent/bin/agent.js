@@ -399,6 +399,113 @@ if (command === 'start') {
   console.log(`[Agent] 工作目录: ${cfg.workdir}`);
   restartServer();
 
+// ==================== _restart-helper（内部命令，两阶段重启包装器） ====================
+} else if (command === '_restart-helper') {
+  // 由 /api/agent/restart 和 /api/agent/update 调用，detached 运行
+  // 职责：等待老进程退出 + 端口释放后，再以 --background 模式启动新进程
+  // 解决直接 spawn 新进程时 isRunning 检查劝退、端口 EADDRINUSE 的时序问题
+  const helperConfig = applyCliArgs({ port: 18910, host: '127.0.0.1' }, process.argv.slice(3));
+  const oldPidIdx = process.argv.indexOf('--old-pid');
+  const oldPid = oldPidIdx > -1 ? parseInt(process.argv[oldPidIdx + 1], 10) : 0;
+  const scriptIdx = process.argv.indexOf('--script');
+  const agentScript = scriptIdx > -1 ? process.argv[scriptIdx + 1] : process.argv[1];
+
+  const port = helperConfig.port;
+  const host = helperConfig.host;
+  const workdir = helperConfig.workdir || process.cwd();
+
+  const log = (msg) => console.log(`[Agent Restart Helper] ${msg}`);
+  log(`等待老进程 ${oldPid} 退出...`);
+
+  // 1. 等待老进程退出（轮询 PID 探活，process.kill(pid,0) 不发信号只检测存在性）
+  const waitForOldExit = (pid, timeoutMs = 15000) => new Promise((resolve) => {
+    if (!pid) return resolve(true);
+    const start = Date.now();
+    const timer = setInterval(() => {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        clearInterval(timer);
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        clearInterval(timer);
+        log('等待老进程退出超时，尝试强制终止...');
+        try { process.kill(pid, 'SIGKILL'); } catch {}
+        resolve(false);
+      }
+    }, 200);
+  });
+
+  // 2. 等待端口释放（fetch /api/status 失败即视为释放）
+  const waitForPortRelease = async (host, port, timeoutMs = 10000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const resp = await fetch(`http://${host}:${port}/api/status`);
+        if (resp.ok) {
+          await new Promise(r => setTimeout(r, 300));
+          continue;
+        }
+      } catch {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  (async () => {
+    await waitForOldExit(oldPid);
+    await waitForPortRelease(host, port);
+    // 额外等待，确保 socket 完全回收
+    await new Promise(r => setTimeout(r, 500));
+
+    log('老进程已退出，端口已释放，启动新进程...');
+
+    // 清理旧 PID 文件，避免新进程 isRunning 检查误判
+    removePidFile();
+    ensureAgentDir();
+
+    // 以 --background 模式启动新进程（此时老进程已退出，isRunning 通过、端口可用）
+    const child = spawn(process.execPath, [
+      ...process.execArgv,
+      agentScript,
+      'start',
+      '--background',
+      '--port', String(port),
+      '--host', host,
+      '--workdir', workdir
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: process.cwd(),
+      env: { ...process.env },
+      windowsHide: true
+    });
+
+    let spawnFailed = false;
+    child.on('error', (err) => {
+      spawnFailed = true;
+      log(`启动失败: ${err.message}`);
+      process.exit(1);
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    if (!spawnFailed && child.pid) {
+      try {
+        writeFileSync(PID_FILE, String(child.pid));
+      } catch (err) {
+        log(`PID 文件写入失败: ${err.message}`);
+      }
+      child.unref();
+      log(`新进程已启动 (PID: ${child.pid})`);
+    }
+
+    process.exit(spawnFailed ? 1 : 0);
+  })();
+
 // ==================== status ====================
 } else if (command === 'status') {
   const config = readAgentConfig();

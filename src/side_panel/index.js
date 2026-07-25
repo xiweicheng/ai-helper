@@ -10,6 +10,7 @@ import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
+import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import logger from '../shared/logger.js';
 
 window.showCustomConfirm = function(message, title = '确认操作') {
@@ -717,6 +718,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   } catch (error) {
   } finally {
     state.generatingSessionIds.delete(mySessionId);
+    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
+    markSessionCompleted(mySessionId);
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
     const userInput = document.getElementById('userInput');
     userInput.focus();
@@ -994,7 +997,7 @@ async function initAgentDropdown() {
     const name = active?.name || '未知';
     const url = active?.url || '未知';
     const confirmed = await window.showCustomConfirm(
-      `代理名称：${name}\n代理地址：${url}\n\n确定要更新代理吗？将先拉取最新代码/依赖，然后重启服务。更新期间服务不可用。`,
+      `代理名称：${name}\n代理地址：${url}\n\n确定要更新代理吗？将通过 npm 安装最新版本，然后重启服务。更新期间服务不可用。`,
       '更新代理'
     );
     if (!confirmed) return;
@@ -1127,6 +1130,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 恢复持久化的 pendingCallApiSessionIds（Side Panel 重开后不丢失后台任务状态）
   await restorePendingSessionsFromStorage();
+  // 恢复"任务已完成待查看"的会话标记，刷新后仍能提示用户
+  await restoreCompletedSessions();
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {

@@ -3,6 +3,9 @@
 // default 对象通过 getter/setter 代理到同名 let 变量，确保两种导入方式共享同一份数据
 
 export let generatingSessionIds = new Set();  // Set of sessionIds currently generating
+// 后台任务已完成、但用户尚未切回查看的会话 ID 集合
+// 用于在会话标签上显示"完成待查看"提示，用户切回该会话后清除
+export let completedSessionIds = new Set();
 export let messageHistory = [];
 export let currentModel = 'deepseek-v4-pro';
 export let activeSessionId = null;   // 当前活跃会话 ID
@@ -136,6 +139,8 @@ export default {
     document.dispatchEvent(new CustomEvent('generating-state-changed'));
   },
   get generatingSessionIds() { return generatingSessionIds; },
+  get completedSessionIds() { return completedSessionIds; },
+  set completedSessionIds(v) { completedSessionIds = v; },
   get messageHistory() { return messageHistory; },
   set messageHistory(v) { messageHistory = v; },
   get currentModel() { return currentModel; },

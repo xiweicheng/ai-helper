@@ -749,38 +749,75 @@ function closePreview() {
 }
 
 /**
- * 下载单个文件/目录（带进度条 + 按钮禁用防重复点击）
+ * 下载单个文件/目录（增强进度面板 + 取消 + 文件行内进度条）
  */
 async function doDownloadSingle(filePath, fileName) {
   if (downloadInProgress) return;
   downloadInProgress = true;
   setDownloadButtonsDisabled(true);
 
-  // 在文件行底部显示进度条
-  const progressBar = showFileProgress(fileName);
+  // 文件行内进度条（视觉关联，用路径匹配避免同名文件冲突）
+  const inlineBar = showFileProgress(filePath);
+  // 取消控制器
+  const controller = new AbortController();
+
+  // 速度计算（滑动窗口）
+  const speedSamples = [];
+  const calcSpeed = () => {
+    if (speedSamples.length < 2) return 0;
+    const first = speedSamples[0];
+    const last = speedSamples[speedSamples.length - 1];
+    const dt = (last.time - first.time) / 1000;
+    if (dt <= 0) return 0;
+    return (last.loaded - first.loaded) / dt;
+  };
+
+  // 浮动进度面板（详细信息 + 取消按钮）
+  const progressPanel = showUploadProgressPanel(() => controller.abort());
+  progressPanel.classList.add('download-mode');
+  updateUploadProgressPanel(progressPanel, { percent: 0, fileName, loaded: 0, totalBytes: 0, speed: 0 });
 
   try {
-    const result = await downloadFileStreamWithProgress(filePath, ({ percent }) => {
-      updateFileProgress(progressBar, percent);
-    });
+    const result = await downloadFileStreamWithProgress(filePath, ({ loaded, total, percent }) => {
+      updateFileProgress(inlineBar, percent);
+      const now = Date.now();
+      speedSamples.push({ time: now, loaded });
+      if (speedSamples.length > 8) speedSamples.shift();
+      updateUploadProgressPanel(progressPanel, {
+        percent, fileName, loaded, totalBytes: total, speed: calcSpeed()
+      });
+    }, controller.signal);
 
+    if (result.aborted) {
+      completeUploadProgressPanel(progressPanel, '下载已取消', true);
+      showToast('下载已取消', 'info');
+      return;
+    }
     if (!result.success) {
+      completeUploadProgressPanel(progressPanel, '下载失败', true);
       showToast(`下载失败: ${result.error}`, 'error');
       return;
     }
     triggerBrowserDownload(result.blob, result.name || fileName);
+    completeUploadProgressPanel(progressPanel, '下载完成', false);
     showToast(`已下载: ${result.name || fileName}`, 'success');
   } catch (err) {
-    showToast(`下载失败: ${err.message}`, 'error');
+    if (err.name === 'AbortError') {
+      completeUploadProgressPanel(progressPanel, '下载已取消', true);
+      showToast('下载已取消', 'info');
+    } else {
+      completeUploadProgressPanel(progressPanel, '下载失败', true);
+      showToast(`下载失败: ${err.message}`, 'error');
+    }
   } finally {
-    removeFileProgress(progressBar);
+    setTimeout(() => removeFileProgress(inlineBar), 600);
     downloadInProgress = false;
     setDownloadButtonsDisabled(false);
   }
 }
 
 /**
- * 下载选中的文件/目录（多选时在后端打包为 ZIP，带进度条）
+ * 下载选中的文件/目录（多选时在后端打包为 ZIP，增强进度面板 + 取消）
  */
 async function downloadSelected() {
   if (selectedPaths.size === 0 || downloadInProgress) return;
@@ -795,24 +832,55 @@ async function downloadSelected() {
   downloadInProgress = true;
   setDownloadButtonsDisabled(true);
 
-  // 多文件下载：显示浮动进度面板
-  const progressPanel = showFloatingProgress(`正在打包 ${paths.length} 个文件...`);
+  const controller = new AbortController();
+  const speedSamples = [];
+  const calcSpeed = () => {
+    if (speedSamples.length < 2) return 0;
+    const first = speedSamples[0];
+    const last = speedSamples[speedSamples.length - 1];
+    const dt = (last.time - first.time) / 1000;
+    if (dt <= 0) return 0;
+    return (last.loaded - first.loaded) / dt;
+  };
+
+  const label = `${paths.length} 个文件`;
+  const progressPanel = showUploadProgressPanel(() => controller.abort());
+  progressPanel.classList.add('download-mode');
+  // 初始：后端打包阶段还没开始发送数据，提示"准备中"
+  updateUploadProgressPanel(progressPanel, { percent: 0, fileName: label, loaded: 0, totalBytes: 0, speed: 0 });
 
   try {
-    const result = await downloadFilesStreamWithProgress(paths, ({ percent }) => {
-      updateFloatingProgress(progressPanel, percent, `打包中 ${percent}%`);
-    });
+    const result = await downloadFilesStreamWithProgress(paths, ({ loaded, total, percent }) => {
+      const now = Date.now();
+      speedSamples.push({ time: now, loaded });
+      if (speedSamples.length > 8) speedSamples.shift();
+      updateUploadProgressPanel(progressPanel, {
+        percent, fileName: label, loaded, totalBytes: total, speed: calcSpeed()
+      });
+    }, controller.signal);
 
+    if (result.aborted) {
+      completeUploadProgressPanel(progressPanel, '下载已取消', true);
+      showToast('下载已取消', 'info');
+      return;
+    }
     if (result.success && result.blob) {
       triggerBrowserDownload(result.blob, result.name || 'workspace.zip');
+      completeUploadProgressPanel(progressPanel, `已下载 ${paths.length} 个文件`, false);
       showToast(`已下载 ${paths.length} 个文件（ZIP 压缩包）`, 'success');
     } else {
-      showToast(`打包失败: ${result.error || '未知错误'}`, 'error');
+      completeUploadProgressPanel(progressPanel, '下载失败', true);
+      showToast(`下载失败: ${result.error || '未知错误'}`, 'error');
     }
   } catch (err) {
-    showToast(`打包失败: ${err.message}`, 'error');
+    if (err.name === 'AbortError') {
+      completeUploadProgressPanel(progressPanel, '下载已取消', true);
+      showToast('下载已取消', 'info');
+    } else {
+      completeUploadProgressPanel(progressPanel, '下载失败', true);
+      showToast(`下载失败: ${err.message}`, 'error');
+    }
   } finally {
-    removeFloatingProgress(progressPanel);
     downloadInProgress = false;
     setDownloadButtonsDisabled(false);
   }
@@ -868,11 +936,11 @@ function setDownloadButtonsDisabled(disabled) {
 }
 
 /**
- * 在文件行底部显示进度条
+ * 在文件行底部显示进度条（用路径匹配，避免同名文件冲突）
  */
-function showFileProgress(fileName) {
+function showFileProgress(filePath) {
   const fileItem = Array.from(document.querySelectorAll('.workspace-file-item'))
-    .find(el => el.dataset.name === fileName);
+    .find(el => el.dataset.path === filePath);
   if (!fileItem) return null;
 
   const bar = document.createElement('div');
@@ -892,35 +960,99 @@ function removeFileProgress(progressEl) {
   if (progressEl) progressEl.remove();
 }
 
+// ==================== 上传/下载通用进度面板 ====================
+
 /**
- * 显示浮动进度面板（多文件下载）
+ * 创建浮动进度面板（含文件名、字节、速度、计数、取消按钮）
+ * @param {function} onCancel - 取消回调
+ * @returns {HTMLElement} 面板元素
  */
-function showFloatingProgress(message) {
+function showUploadProgressPanel(onCancel) {
   const panel = document.createElement('div');
-  panel.className = 'workspace-floating-progress';
+  panel.className = 'workspace-upload-progress';
   panel.innerHTML = `
-    <div class="workspace-floating-progress-text">${message}</div>
-    <div class="workspace-floating-progress-track">
-      <div class="workspace-floating-progress-bar"></div>
+    <div class="workspace-upload-progress-header">
+      <span class="workspace-upload-progress-title">上传中...</span>
+      <button class="workspace-upload-progress-cancel" title="取消上传">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="14" height="14">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="workspace-upload-progress-file"></div>
+    <div class="workspace-upload-progress-track">
+      <div class="workspace-upload-progress-bar"></div>
+    </div>
+    <div class="workspace-upload-progress-stats">
+      <span class="workspace-upload-progress-bytes"></span>
+      <span class="workspace-upload-progress-speed"></span>
     </div>
   `;
   document.body.appendChild(panel);
+  const cancelBtn = panel.querySelector('.workspace-upload-progress-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      cancelBtn.style.display = 'none';
+      if (typeof onCancel === 'function') onCancel();
+    });
+  }
   return panel;
 }
 
-function updateFloatingProgress(panel, percent, message) {
+/**
+ * 更新上传进度面板
+ * @param {HTMLElement} panel
+ * @param {object} opts - { percent, completed, total, fileName, loaded, totalBytes, speed }
+ */
+function updateUploadProgressPanel(panel, opts) {
   if (!panel) return;
-  const bar = panel.querySelector('.workspace-floating-progress-bar');
-  const text = panel.querySelector('.workspace-floating-progress-text');
+  const { percent, completed, total, fileName, loaded, totalBytes, speed } = opts;
+  const title = panel.querySelector('.workspace-upload-progress-title');
+  const fileEl = panel.querySelector('.workspace-upload-progress-file');
+  const bar = panel.querySelector('.workspace-upload-progress-bar');
+  const bytesEl = panel.querySelector('.workspace-upload-progress-bytes');
+  const speedEl = panel.querySelector('.workspace-upload-progress-speed');
+
+  // 根据 download-mode class 决定标题前缀
+  const prefix = panel.classList.contains('download-mode') ? '下载中' : '上传中';
+  if (title) {
+    if (completed != null && total != null) {
+      title.textContent = `${prefix} ${completed}/${total} · ${percent}%`;
+    } else {
+      title.textContent = `${prefix} ${percent}%`;
+    }
+  }
+  if (fileEl && fileName) {
+    fileEl.textContent = fileName;
+    fileEl.title = fileName;
+  }
   if (bar) bar.style.width = percent + '%';
-  if (text) text.textContent = message;
+  if (bytesEl) {
+    if (loaded != null && totalBytes != null && totalBytes > 0) {
+      bytesEl.textContent = `${formatFileSize(loaded)} / ${formatFileSize(totalBytes)}`;
+    } else if (loaded != null) {
+      bytesEl.textContent = formatFileSize(loaded);
+    }
+  }
+  if (speedEl) {
+    speedEl.textContent = speed > 0 ? `${formatFileSize(speed)}/s` : '';
+  }
 }
 
-function removeFloatingProgress(panel) {
-  if (panel) {
-    panel.classList.add('workspace-floating-progress-done');
-    setTimeout(() => panel.remove(), 500);
-  }
+/**
+ * 标记上传完成（显示完成状态，延迟移除）
+ */
+function completeUploadProgressPanel(panel, message, isError) {
+  if (!panel) return;
+  const title = panel.querySelector('.workspace-upload-progress-title');
+  const cancelBtn = panel.querySelector('.workspace-upload-progress-cancel');
+  const bar = panel.querySelector('.workspace-upload-progress-bar');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+  if (title) title.textContent = message;
+  if (bar && !isError) bar.style.width = '100%';
+  panel.classList.add('workspace-upload-progress-done');
+  if (isError) panel.classList.add('workspace-upload-progress-error');
+  setTimeout(() => { try { panel.remove(); } catch {} }, 1500);
 }
 
 /**
@@ -946,31 +1078,8 @@ function setUploadButtonDisabled(disabled) {
 }
 
 /**
- * 显示上传浮动进度
- */
-function showUploadProgress(total, current) {
-  let panel = document.querySelector('.workspace-floating-progress');
-  if (!panel) {
-    panel = document.createElement('div');
-    panel.className = 'workspace-floating-progress';
-    panel.innerHTML = `
-      <div class="workspace-floating-progress-text"></div>
-      <div class="workspace-floating-progress-track">
-        <div class="workspace-floating-progress-bar"></div>
-      </div>
-    `;
-    document.body.appendChild(panel);
-  }
-  const text = panel.querySelector('.workspace-floating-progress-text');
-  const bar = panel.querySelector('.workspace-floating-progress-bar');
-  const percent = total > 0 ? Math.round((current / total) * 100) : 0;
-  if (text) text.textContent = `上传中 ${current}/${total}`;
-  if (bar) bar.style.width = percent + '%';
-  return panel;
-}
-
-/**
- * 上传文件到当前目录（并发 3，显示进度，按钮禁用防重复点击）
+ * 上传文件到当前目录（流式上传，并发 3，增强进度面板，支持取消）
+ * 使用 XMLHttpRequest 直接发送 File 对象，避免 base64 膨胀和内存占用
  */
 async function uploadFiles(fileList) {
   const files = Array.from(fileList);
@@ -987,78 +1096,165 @@ async function uploadFiles(fileList) {
     return;
   }
 
+  // 一次性获取目录文件列表，本地判断是否已存在（替代 N 次 read 请求）
+  let existingNames = new Set();
+  try {
+    const listResult = await listDirectory(currentPath);
+    if (listResult.success && Array.isArray(listResult.entries)) {
+      existingNames = new Set(listResult.entries.map(e => e.name));
+    }
+  } catch {}
+
   let successCount = 0;
   let skippedCount = 0;
   let failCount = 0;
   const CONCURRENCY = 3;
-  const total = files.length;
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  const uploadedBytes = new Array(files.length).fill(0);
+  const activeXhrs = new Set();
+  let cancelled = false;
+  let lastFileName = '';
+
+  // 速度计算（滑动窗口，最近 8 个采样点）
+  const speedSamples = [];
+  const calcSpeed = () => {
+    if (speedSamples.length < 2) return 0;
+    const first = speedSamples[0];
+    const last = speedSamples[speedSamples.length - 1];
+    const dt = (last.time - first.time) / 1000;
+    if (dt <= 0) return 0;
+    return (last.loaded - first.loaded) / dt;
+  };
+
+  // 增强进度面板（含取消按钮）
+  const progressPanel = showUploadProgressPanel(() => {
+    cancelled = true;
+    for (const xhr of activeXhrs) {
+      try { xhr.abort(); } catch {}
+    }
+    activeXhrs.clear();
+  });
+
+  const updateProgress = (fileName) => {
+    if (fileName) lastFileName = fileName;
+    const sum = uploadedBytes.reduce((s, b) => s + b, 0);
+    const percent = totalBytes > 0 ? Math.round((sum / totalBytes) * 100) : 0;
+    const now = Date.now();
+    speedSamples.push({ time: now, loaded: sum });
+    if (speedSamples.length > 8) speedSamples.shift();
+    updateUploadProgressPanel(progressPanel, {
+      percent,
+      completed: successCount + skippedCount + failCount,
+      total: files.length,
+      fileName: lastFileName,
+      loaded: sum,
+      totalBytes,
+      speed: calcSpeed()
+    });
+  };
+  updateProgress();
 
   for (let i = 0; i < files.length; i += CONCURRENCY) {
+    if (cancelled) break;
     const batch = files.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(batch.map(async (file) => {
+    const results = await Promise.allSettled(batch.map(async (file, batchIdx) => {
+      const fileIdx = i + batchIdx;
       const targetPath = normalizePath(`${currentPath}/${file.name}`);
-      
-      // 检查文件是否已存在
-      const existsCheck = await fetch(`${config.url}/api/fs/read`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.token}`
-        },
-        body: JSON.stringify({ path: targetPath })
-      });
-      const existsData = await existsCheck.json();
-      if (existsData.success) {
-        throw new Error(`文件 "${file.name}" 已存在，跳过上传`);
+
+      // 本地判断文件是否已存在（避免 N 次网络请求）
+      if (existingNames.has(file.name)) {
+        uploadedBytes[fileIdx] = file.size;
+        updateProgress(file.name);
+        throw new Error('__SKIPPED__');
       }
+      if (cancelled) throw new Error('__CANCELLED__');
 
-      const reader = new FileReader();
-      const content = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
+      // 流式上传：body 直接传 File 对象，浏览器自动分块发送，零内存占用
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        activeXhrs.add(xhr);
+        const url = `${config.url}/api/fs/upload-stream?path=${encodeURIComponent(targetPath)}`;
+        xhr.open('POST', url);
+        xhr.setRequestHeader('Authorization', `Bearer ${config.token}`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            uploadedBytes[fileIdx] = e.loaded;
+            updateProgress(file.name);
+          }
+        };
+        xhr.onload = () => {
+          activeXhrs.delete(xhr);
+          if (cancelled) { reject(new Error('__CANCELLED__')); return; }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data.success) {
+                uploadedBytes[fileIdx] = file.size;
+                updateProgress(file.name);
+                resolve();
+              } else {
+                reject(new Error(data.error || '上传失败'));
+              }
+            } catch {
+              reject(new Error('解析响应失败'));
+            }
+          } else {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              reject(new Error(data.error || `上传失败 (${xhr.status})`));
+            } catch {
+              reject(new Error(`上传失败 (${xhr.status})`));
+            }
+          }
+        };
+        xhr.onerror = () => {
+          activeXhrs.delete(xhr);
+          reject(new Error(cancelled ? '__CANCELLED__' : '网络错误'));
+        };
+        xhr.onabort = () => {
+          activeXhrs.delete(xhr);
+          reject(new Error('__CANCELLED__'));
+        };
+        xhr.send(file);
       });
-
-      const resp = await fetch(`${config.url}/api/fs/write`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.token}`
-        },
-        body: JSON.stringify({ path: targetPath, content, encoding: 'base64' })
-      });
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error || '上传失败');
     }));
 
     for (const r of results) {
       if (r.status === 'fulfilled') {
         successCount++;
       } else {
-        if (r.reason.message.includes('已存在')) {
+        const msg = r.reason && r.reason.message ? r.reason.message : '';
+        if (msg.includes('__SKIPPED__') || msg.includes('已存在')) {
           skippedCount++;
+        } else if (msg.includes('__CANCELLED__')) {
+          // 取消的不计入失败
         } else {
           failCount++;
         }
       }
     }
-
-    // 更新进度
-    const completed = Math.min(i + CONCURRENCY, total);
-    showUploadProgress(total, completed);
   }
 
-  // 清理进度
-  const progressPanel = document.querySelector('.workspace-floating-progress');
-  if (progressPanel) {
-    removeFloatingProgress(progressPanel);
+  // 完成过渡提示
+  let completeMsg;
+  let isError = false;
+  if (cancelled) {
+    completeMsg = '已取消上传';
+    isError = true;
+  } else {
+    const parts = [];
+    if (successCount > 0) parts.push(`成功 ${successCount}`);
+    if (skippedCount > 0) parts.push(`跳过 ${skippedCount}`);
+    if (failCount > 0) parts.push(`失败 ${failCount}`);
+    completeMsg = parts.length > 0 ? `上传完成 · ${parts.join(' / ')}` : '上传完成';
+    isError = failCount > 0;
   }
+  completeUploadProgressPanel(progressPanel, completeMsg, isError);
 
-  let successMsg = '';
-  if (successCount > 0) successMsg += `成功上传 ${successCount} 个文件`;
-  if (successMsg) showToast(successMsg, 'success');
+  if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
   if (skippedCount > 0) showToast(`${skippedCount} 个文件已存在，跳过上传`, 'info');
   if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
+  if (cancelled) showToast('上传已取消', 'info');
 
   uploadInProgress = false;
   setUploadButtonDisabled(false);
