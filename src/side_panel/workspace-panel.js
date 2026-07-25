@@ -16,7 +16,7 @@ import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
+
 import DOMPurify from 'dompurify';
 
 // 配置 PDF.js Worker
@@ -147,6 +147,7 @@ export function initWorkspacePanel() {
           <span class="workspace-preview-linecount" id="workspacePreviewLineCount"></span>
           <button class="workspace-preview-copy-btn" id="workspacePreviewCopyBtn" title="复制全部内容">复制</button>
           <button class="workspace-preview-download-btn" id="workspacePreviewDownloadBtn" title="下载文件">下载</button>
+          <button class="workspace-preview-download-btn" id="workspacePreviewOpenBrowserBtn" title="在浏览器中打开" style="display:none">在浏览器中打开</button>
           <button class="workspace-preview-close" id="workspacePreviewClose" title="关闭预览">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
@@ -276,6 +277,9 @@ function bindEvents() {
   // content 需要 tabindex 才能获得键盘焦点
   document.getElementById('workspacePanelContent').tabIndex = 0;
 
+  // 拖拽文件/目录到聊天输入框（事件委托）
+  document.getElementById('workspacePanelContent').addEventListener('dragstart', handleFileListDragStart);
+
   // 虚拟滚动：scroll 事件触发重新渲染（requestAnimationFrame 节流）
   let scrollRafId = null;
   document.getElementById('workspacePanelContent').addEventListener('scroll', () => {
@@ -291,6 +295,7 @@ function bindEvents() {
   document.getElementById('workspacePreviewClose').addEventListener('click', closePreview);
   document.getElementById('workspacePreviewCopyBtn').addEventListener('click', copyPreviewContent);
   document.getElementById('workspacePreviewDownloadBtn').addEventListener('click', downloadPreviewFile);
+  document.getElementById('workspacePreviewOpenBrowserBtn').addEventListener('click', openPreviewInBrowser);
   
   // 预览标题快捷键：Ctrl/Cmd + 单击复制文件名，Ctrl/Cmd + Shift + 单击复制完整路径
   document.getElementById('workspacePreviewFilename').addEventListener('click', async (e) => {
@@ -524,14 +529,12 @@ function renderFileItemHtml(entry) {
   const canPreview = entry.type === 'file' && supportsPreview(entry.name);
   const fullPath = isSearchMode ? entry.fullPath : normalizePath(`${currentPath}/${entry.name}`);
   const isSelected = selectedPaths.has(fullPath);
-  const relativePath = isSearchMode && entry.matchPath !== currentPath ?
-    entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' : '';
+  // 搜索结果仅用于 tooltip 显示完整路径，不在名称前拼接层级
+  const searchTooltip = isSearchMode && entry.matchPath !== currentPath ?
+    entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' + entry.name : '';
   const nameHtml = isSearchMode
     ? highlightSearchMatch(entry.name, searchQuery)
     : escapeHtml(entry.name);
-  const relativePathHtml = isSearchMode && relativePath
-    ? `<span class="workspace-file-relativepath">${highlightSearchMatch(relativePath, searchQuery)}</span>`
-    : '';
 
   return `
     <div class="workspace-file-item ${entry.type} ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(fullPath)}" data-type="${entry.type}" data-name="${escapeHtml(entry.name)}" draggable="true">
@@ -539,7 +542,7 @@ function renderFileItemHtml(entry) {
         <span class="workspace-checkbox ${isSelected ? 'checked' : ''}"></span>
       </span>
       <span class="workspace-file-icon">${icon}</span>
-      <span class="workspace-file-name" title="${escapeHtml(relativePath + entry.name)}">${relativePathHtml}${nameHtml}</span>
+      <span class="workspace-file-name" title="${escapeHtml(searchTooltip || entry.name)}">${nameHtml}</span>
       <span class="workspace-file-size">${size}</span>
       <span class="workspace-file-time">${time}</span>
       <span class="workspace-file-actions">
@@ -749,6 +752,25 @@ function getFocusedItem() {
     name: el.dataset.name,
     type: el.dataset.type
   };
+}
+
+/**
+ * 拖拽开始：将工作目录文件/目录路径写入自定义 drag data，
+ * 拖到聊天输入框时由 index.js 的 drop handler 识别并调用 attachFilesForQuestion
+ */
+function handleFileListDragStart(e) {
+  const item = e.target.closest('.workspace-file-item');
+  if (!item) return;
+  const path = item.dataset.path;
+  const type = item.dataset.type;
+  if (!path) return;
+
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('application/x-workspace-file', JSON.stringify({
+    path,
+    name: item.dataset.name,
+    type
+  }));
 }
 
 /**
@@ -1026,6 +1048,7 @@ async function previewFile(filePath, fileName) {
   const lineCountEl = document.getElementById('workspacePreviewLineCount');
   const copyBtn = document.getElementById('workspacePreviewCopyBtn');
   const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
+  const openBrowserBtn = document.getElementById('workspacePreviewOpenBrowserBtn');
 
   previewFilename.textContent = fileName;
   lineCountEl.textContent = '';
@@ -1033,6 +1056,7 @@ async function previewFile(filePath, fileName) {
   previewArea.style.display = 'flex';
   copyBtn.style.display = '';
   downloadBtn.style.display = '';
+  openBrowserBtn.style.display = 'none';
 
   // 存储当前预览文件路径供下载/复制使用
   previewArea.dataset.previewPath = filePath;
@@ -1063,6 +1087,8 @@ async function previewFile(filePath, fileName) {
   // 非文本文件走二进制下载路径
   // 隐藏复制按钮（二进制文件不支持文本复制）
   copyBtn.style.display = 'none';
+  // 仅 PDF 和图片支持在浏览器中打开
+  openBrowserBtn.style.display = (previewType === 'pdf' || previewType === 'image') ? '' : 'none';
 
   try {
     const maxSize = {
@@ -1133,81 +1159,210 @@ async function previewTextFile(filePath, fileName, lineCountEl, previewContent) 
 }
 
 // ============================================================
-// PDF 预览（pdfjs-dist 渲染为 canvas）
+// PDF 预览（视口缩放 + 拖拽 + 翻页）
 // ============================================================
 
 let currentPdfDoc = null;
 let currentPdfPage = 1;
-let currentPdfScale = 1.0;
+let pdfScale = 1;
+let pdfFitScale = 1;
+let pdfPanX = 0, pdfPanY = 0;
+let pdfIsDragging = false;
+let pdfDragStartX = 0, pdfDragStartY = 0;
+let pdfDragPanStartX = 0, pdfDragPanStartY = 0;
 
 async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   currentPdfDoc = pdf;
   currentPdfPage = 1;
-  currentPdfScale = 1.0;
+  pdfScale = 1;
+  pdfFitScale = 1;
+  pdfPanX = 0;
+  pdfPanY = 0;
   previewArea.dataset.previewType = 'pdf';
 
   const totalPages = pdf.numPages;
   document.getElementById('workspacePreviewLineCount').textContent = `${totalPages} 页`;
 
   previewContent.innerHTML = `
-    <div class="workspace-preview-toolbar" id="pdfToolbar">
-      <button class="pdf-toolbar-btn" id="pdfPrevPage" title="上一页" disabled>◀</button>
-      <span class="pdf-page-info"><input type="number" class="pdf-page-input" id="pdfPageInput" value="1" min="1" max="${totalPages}"> / ${totalPages}</span>
-      <button class="pdf-toolbar-btn" id="pdfNextPage" title="下一页">▶</button>
-      <span class="pdf-toolbar-sep"></span>
-      <button class="pdf-toolbar-btn" id="pdfZoomOut" title="缩小">−</button>
-      <span class="pdf-zoom-info" id="pdfZoomInfo">100%</span>
-      <button class="pdf-toolbar-btn" id="pdfZoomIn" title="放大">+</button>
-    </div>
-    <div class="workspace-preview-pdf-container" id="pdfContainer">
-      <canvas id="pdfCanvas"></canvas>
+    <div class="pdf-wrap">
+      <div class="pdf-toolbar">
+        <button class="pdf-toolbar-btn" id="pdfPrevPage" title="上一页" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="pdf-page-info"><input type="number" class="pdf-page-input" id="pdfPageInput" value="1" min="1" max="${totalPages}"> / ${totalPages}</span>
+        <button class="pdf-toolbar-btn" id="pdfNextPage" title="下一页">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <span class="pdf-toolbar-sep"></span>
+        <button class="pdf-toolbar-btn" id="pdfZoomOut" title="缩小">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="pdf-zoom-info" id="pdfZoomInfo">100%</span>
+        <button class="pdf-toolbar-btn" id="pdfZoomIn" title="放大">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="pdf-toolbar-sep"></span>
+        <button class="pdf-toolbar-btn" id="pdfZoomFit" title="适应页面">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+      </div>
+      <div class="pdf-viewport" id="pdfViewport">
+        <div class="pdf-pan" id="pdfPan">
+          <canvas id="pdfCanvas"></canvas>
+        </div>
+      </div>
     </div>
   `;
 
-  // 绑定事件
-  document.getElementById('pdfPrevPage').addEventListener('click', () => changePdfPage(-1));
-  document.getElementById('pdfNextPage').addEventListener('click', () => changePdfPage(1));
+  const viewport = document.getElementById('pdfViewport');
+  const pan = document.getElementById('pdfPan');
+  const canvas = document.getElementById('pdfCanvas');
+  const zoomInfo = document.getElementById('pdfZoomInfo');
+
+  function applyPdfTransform() {
+    pan.style.transform = `translate(${pdfPanX}px, ${pdfPanY}px) scale(${pdfScale})`;
+    zoomInfo.textContent = Math.round(pdfScale * 100) + '%';
+    if (!pdfIsDragging) {
+      viewport.style.cursor = pdfScale > pdfFitScale ? 'grab' : 'default';
+    }
+  }
+
+  function clampPdfPan() {
+    if (pdfScale <= pdfFitScale) {
+      pdfPanX = 0;
+      pdfPanY = 0;
+    }
+  }
+
+  function setPdfZoom(newScale, originX, originY) {
+    const oldScale = pdfScale;
+    pdfScale = Math.max(0.05, Math.min(5, newScale));
+
+    if (originX !== undefined && originY !== undefined) {
+      const rect = viewport.getBoundingClientRect();
+      const ox = originX - rect.left - rect.width / 2;
+      const oy = originY - rect.top - rect.height / 2;
+      const ratio = pdfScale / oldScale;
+      pdfPanX = ox - ratio * (ox - pdfPanX);
+      pdfPanY = oy - ratio * (oy - pdfPanY);
+    }
+
+    clampPdfPan();
+    applyPdfTransform();
+  }
+
+  async function renderPdfPageInternal() {
+    if (!currentPdfDoc) return;
+    const page = await currentPdfDoc.getPage(currentPdfPage);
+    const vp = page.getViewport({ scale: 1 });  // always render at 1x, CSS scale handles zoom
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+    // 计算 fit 比例
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    if (vw > 0 && vh > 0 && vp.width > 0 && vp.height > 0) {
+      pdfFitScale = Math.min((vw - 24) / vp.width, (vh - 24) / vp.height);
+    } else {
+      pdfFitScale = 1;
+    }
+    pdfScale = pdfFitScale;
+    pdfPanX = 0;
+    pdfPanY = 0;
+    applyPdfTransform();
+
+    // 更新控件状态
+    const prevBtn = document.getElementById('pdfPrevPage');
+    const nextBtn = document.getElementById('pdfNextPage');
+    const pageInput = document.getElementById('pdfPageInput');
+    if (prevBtn) prevBtn.disabled = currentPdfPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPdfPage >= currentPdfDoc.numPages;
+    if (pageInput) pageInput.value = currentPdfPage;
+  }
+
+  // 初始渲染
+  await renderPdfPageInternal();
+
+  // 滚轮缩放
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.005;
+    setPdfZoom(pdfScale + delta * pdfScale, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // 拖拽平移
+  viewport.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    pdfIsDragging = true;
+    pdfDragStartX = e.clientX;
+    pdfDragStartY = e.clientY;
+    pdfDragPanStartX = pdfPanX;
+    pdfDragPanStartY = pdfPanY;
+    viewport.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!pdfIsDragging) return;
+    pdfPanX = pdfDragPanStartX + (e.clientX - pdfDragStartX);
+    pdfPanY = pdfDragPanStartY + (e.clientY - pdfDragStartY);
+    clampPdfPan();
+    applyPdfTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (pdfIsDragging) {
+      pdfIsDragging = false;
+      viewport.style.cursor = pdfScale > pdfFitScale ? 'grab' : 'default';
+    }
+  });
+
+  // 工具栏按钮
+  document.getElementById('pdfPrevPage').addEventListener('click', () => { if (currentPdfPage > 1) { currentPdfPage--; renderPdfPageInternal(); } });
+  document.getElementById('pdfNextPage').addEventListener('click', () => { if (currentPdfPage < totalPages) { currentPdfPage++; renderPdfPageInternal(); } });
   document.getElementById('pdfPageInput').addEventListener('change', (e) => {
     const p = parseInt(e.target.value, 10);
-    if (p >= 1 && p <= totalPages) { currentPdfPage = p; renderPdfPage(); }
+    if (p >= 1 && p <= totalPages) { currentPdfPage = p; renderPdfPageInternal(); }
   });
-  document.getElementById('pdfZoomIn').addEventListener('click', () => { currentPdfScale = Math.min(currentPdfScale + 0.25, 3.0); renderPdfPage(); });
-  document.getElementById('pdfZoomOut').addEventListener('click', () => { currentPdfScale = Math.max(currentPdfScale - 0.25, 0.5); renderPdfPage(); });
+  document.getElementById('pdfZoomIn').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setPdfZoom(pdfScale * 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('pdfZoomOut').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setPdfZoom(pdfScale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('pdfZoomFit').addEventListener('click', () => {
+    pdfScale = pdfFitScale;
+    pdfPanX = 0;
+    pdfPanY = 0;
+    applyPdfTransform();
+  });
 
-  await renderPdfPage();
-}
+  // 双击 → fit
+  viewport.addEventListener('dblclick', () => {
+    pdfScale = pdfFitScale;
+    pdfPanX = 0;
+    pdfPanY = 0;
+    applyPdfTransform();
+  });
 
-async function renderPdfPage() {
-  if (!currentPdfDoc) return;
-  const page = await currentPdfDoc.getPage(currentPdfPage);
-  const canvas = document.getElementById('pdfCanvas');
-  if (!canvas) return;
-
-  const viewport = page.getViewport({ scale: currentPdfScale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  const ctx = canvas.getContext('2d');
-
-  await page.render({ canvasContext: ctx, viewport }).promise;
-
-  // 更新控件
-  const prevBtn = document.getElementById('pdfPrevPage');
-  const nextBtn = document.getElementById('pdfNextPage');
-  const pageInput = document.getElementById('pdfPageInput');
-  const zoomInfo = document.getElementById('pdfZoomInfo');
-  if (prevBtn) prevBtn.disabled = currentPdfPage <= 1;
-  if (nextBtn) nextBtn.disabled = currentPdfPage >= currentPdfDoc.numPages;
-  if (pageInput) pageInput.value = currentPdfPage;
-  if (zoomInfo) zoomInfo.textContent = Math.round(currentPdfScale * 100) + '%';
-}
-
-function changePdfPage(delta) {
-  if (!currentPdfDoc) return;
-  const newPage = currentPdfPage + delta;
-  if (newPage < 1 || newPage > currentPdfDoc.numPages) return;
-  currentPdfPage = newPage;
-  renderPdfPage();
+  // resize 重新计算 fit
+  window.addEventListener('resize', () => {
+    if (!currentPdfDoc) return;
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    const cw = canvas.width;
+    const ch = canvas.height;
+    if (vw > 0 && vh > 0 && cw > 0 && ch > 0) {
+      pdfFitScale = Math.min((vw - 24) / cw, (vh - 24) / ch);
+    }
+    clampPdfPan();
+    applyPdfTransform();
+  });
 }
 
 // ============================================================
@@ -1240,71 +1395,138 @@ async function previewDocx(arrayBuffer, previewContent) {
 }
 
 // ============================================================
-// Excel 预览（SheetJS sheet_to_html + 多 sheet 切换）
+// Excel 预览（Web Worker 后台解析 + 按需加载 sheet，前 500 行）
 // ============================================================
 
+let xlsxWorker = null;
+let xlsxSheetMetas = [];   // Worker 返回的 sheet 元数据
+let xlsxCurrentSheet = 0;  // 当前选中的 sheet
+
+function getXlsxWorker() {
+  if (!xlsxWorker) {
+    xlsxWorker = new Worker(new URL('./xlsx-worker.js', import.meta.url), { type: 'module' });
+  }
+  return xlsxWorker;
+}
+
+/**
+ * 向 worker 发消息并等待指定类型的响应
+ */
+function waitWorkerMsg(type, timeoutMs = 15000) {
+  const worker = getXlsxWorker();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('解析超时')), timeoutMs);
+    const handler = (e) => {
+      if (e.data.type === type) {
+        clearTimeout(timer);
+        worker.removeEventListener('message', handler);
+        resolve(e.data);
+      }
+    };
+    worker.addEventListener('message', handler);
+    worker.onerror = (err) => {
+      clearTimeout(timer);
+      worker.removeEventListener('message', handler);
+      reject(new Error(err.message || 'Worker 错误'));
+    };
+  });
+}
+
 async function previewXlsx(arrayBuffer, fileName, previewContent, previewArea) {
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-  const sheetNames = workbook.SheetNames;
-  if (sheetNames.length === 0) {
+  previewContent.innerHTML = '<div class="workspace-panel-empty">正在解析 Excel 文件...</div>';
+
+  const worker = getXlsxWorker();
+
+  // 阶段一：解析文件，只返回 sheet 元数据（名称、行列数）
+  worker.postMessage({ type: 'parse', arrayBuffer }, [arrayBuffer]);
+  let metaResult;
+  try {
+    metaResult = await waitWorkerMsg('meta');
+  } catch (err) {
+    previewContent.innerHTML = `<div class="workspace-panel-error">Excel 解析失败: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  if (metaResult.error) {
+    previewContent.innerHTML = `<div class="workspace-panel-error">Excel 解析失败: ${escapeHtml(metaResult.error)}</div>`;
+    return;
+  }
+
+  const { sheetNames, sheetMetas } = metaResult;
+  if (!sheetNames || sheetNames.length === 0) {
     previewContent.innerHTML = '<div class="workspace-panel-error">工作簿中没有工作表</div>';
     return;
   }
 
-  const sheetsJson = JSON.stringify(sheetNames);
-  previewArea.dataset.previewType = 'xlsx';
-  previewArea.dataset.previewSheets = sheetsJson;
+  xlsxSheetMetas = sheetMetas;
+  xlsxCurrentSheet = 0;
 
-  // Sheet 切换 tabs
+  previewArea.dataset.previewType = 'xlsx';
+  previewArea.dataset.previewSheets = JSON.stringify(sheetNames);
+
+  // 渲染 tabs + 占位内容
   let tabsHtml = '<div class="xlsx-sheet-tabs" id="xlsxSheetTabs">';
   sheetNames.forEach((name, i) => {
     tabsHtml += `<button class="xlsx-sheet-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escapeHtml(name)}</button>`;
   });
   tabsHtml += '</div>';
+  previewContent.innerHTML = tabsHtml + '<div class="xlsx-sheet-content" id="xlsxSheetContent"><div class="workspace-panel-empty">正在加载数据...</div></div>';
 
-  previewContent.innerHTML = tabsHtml + '<div class="xlsx-sheet-content" id="xlsxSheetContent"></div>';
-
-  // 渲染第一个 sheet
-  renderXlsxSheet(workbook, 0);
-
-  // Tab 点击事件
+  // Tab 切换事件
   document.getElementById('xlsxSheetTabs').addEventListener('click', (e) => {
     const tab = e.target.closest('.xlsx-sheet-tab');
     if (!tab) return;
     const idx = parseInt(tab.dataset.sheet, 10);
+    if (idx === xlsxCurrentSheet) return;
     document.querySelectorAll('.xlsx-sheet-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
-    renderXlsxSheet(workbook, idx);
+    loadAndRenderSheet(idx);
   });
+
+  // 阶段二：按需加载第一个 sheet 的数据
+  await loadAndRenderSheet(0);
 }
 
-function renderXlsxSheet(workbook, sheetIndex) {
-  const sheetName = workbook.SheetNames[sheetIndex];
-  const sheet = workbook.Sheets[sheetName];
+async function loadAndRenderSheet(sheetIndex) {
+  const content = document.getElementById('xlsxSheetContent');
+  if (!content) return;
+  content.innerHTML = '<div class="workspace-panel-empty">正在加载数据...</div>';
 
-  // 使用 sheet_to_json(header:1) 获取数组格式数据，比 sheet_to_html 生成
-  // 完整 HTML table 快得多，也避免了大量 DOM 节点导致浏览器卡死
-  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  const totalRows = data.length;
-  const displayRows = data.slice(0, PREVIEW_XLSX_MAX_ROWS);
+  xlsxCurrentSheet = sheetIndex;
+  const worker = getXlsxWorker();
+  worker.postMessage({ type: 'getSheet', sheetIndex });
 
-  if (displayRows.length === 0) {
-    document.getElementById('xlsxSheetContent').innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';
+  let data;
+  try {
+    data = await waitWorkerMsg('sheetData');
+  } catch (err) {
+    content.innerHTML = `<div class="workspace-panel-error">加载失败: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
-  // 用第一行作为表头
-  const headerRow = displayRows[0];
+  if (data.error) {
+    content.innerHTML = `<div class="workspace-panel-error">加载失败: ${escapeHtml(data.error)}</div>`;
+    return;
+  }
+
+  const { colCount, rows, totalRows } = data;
+
+  if (!rows || rows.length === 0) {
+    content.innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';
+    return;
+  }
+
+  const headerRow = rows[0];
   let html = '<div class="xlsx-table-scroll"><table class="xlsx-preview-table"><thead><tr>';
   for (const cell of headerRow) {
     html += `<th>${escapeHtml(String(cell ?? ''))}</th>`;
   }
   html += '</tr></thead><tbody>';
 
-  for (let i = 1; i < displayRows.length; i++) {
+  for (let i = 1; i < rows.length; i++) {
     html += '<tr>';
-    for (const cell of displayRows[i]) {
-      html += `<td>${escapeHtml(String(cell ?? ''))}</td>`;
+    for (let c = 0; c < colCount; c++) {
+      html += `<td>${escapeHtml(String(rows[i][c] ?? ''))}</td>`;
     }
     html += '</tr>';
   }
@@ -1314,11 +1536,11 @@ function renderXlsxSheet(workbook, sheetIndex) {
     html += `<div class="xlsx-truncated-msg">仅显示前 ${PREVIEW_XLSX_MAX_ROWS} 行，共 ${totalRows} 行，请下载查看完整内容</div>`;
   }
 
-  document.getElementById('xlsxSheetContent').innerHTML = html;
+  content.innerHTML = html;
 }
 
 // ============================================================
-// 图片预览
+// 图片预览（滚轮缩放 + 拖拽平移）
 // ============================================================
 
 async function previewImage(arrayBuffer, fileName, previewContent) {
@@ -1331,21 +1553,159 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
   const blob = new Blob([arrayBuffer], { type: mimeType });
   const url = URL.createObjectURL(blob);
 
+  // 缩放控制工具栏 + 画布容器
   previewContent.innerHTML = `
-    <div class="workspace-preview-image-wrap">
-      <img src="${url}" alt="${escapeHtml(fileName)}" class="workspace-preview-image-img">
+    <div class="image-preview-wrap">
+      <div class="image-preview-toolbar">
+        <button class="image-preview-btn" id="imgZoomOut" title="缩小">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="image-preview-zoom-level" id="imgZoomLevel">100%</span>
+        <button class="image-preview-btn" id="imgZoomIn" title="放大">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="image-preview-toolbar-sep"></span>
+        <button class="image-preview-btn" id="imgZoomReset" title="原始大小">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+      </div>
+      <div class="image-preview-viewport" id="imgViewport">
+        <div class="image-preview-pan" id="imgPan">
+          <img src="${url}" alt="${escapeHtml(fileName)}" id="imgPreviewImage">
+        </div>
+      </div>
     </div>
   `;
 
-  // 图片加载完后释放 URL（img 已解码到内存所以安全）
-  const img = previewContent.querySelector('.workspace-preview-image-img');
+  const img = document.getElementById('imgPreviewImage');
+  const viewport = document.getElementById('imgViewport');
+  const pan = document.getElementById('imgPan');
+  const zoomLevel = document.getElementById('imgZoomLevel');
+
+  let fitScale = 1;   // 图片完整适配视口的缩放比例
+  let scale = 1;
+  let panX = 0, panY = 0;
+  let isDragging = false;
+  let dragStartX = 0, dragStartY = 0;
+  let dragPanStartX = 0, dragPanStartY = 0;
+
+  function calcFitScale() {
+    if (!img.naturalWidth || !img.naturalHeight) return 1;
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    if (vw <= 0 || vh <= 0) return 1;
+    const padding = 20;
+    return Math.min((vw - padding) / img.naturalWidth, (vh - padding) / img.naturalHeight);
+  }
+
+  function applyTransform() {
+    pan.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    zoomLevel.textContent = Math.round(scale * 100) + '%';
+    if (!isDragging) {
+      viewport.style.cursor = scale > fitScale ? 'grab' : 'default';
+    }
+  }
+
+  function clampPan() {
+    // fit 及以下自动居中，放大后无边界限制自由拖拽
+    if (scale <= fitScale) {
+      panX = 0;
+      panY = 0;
+    }
+  }
+
+  function setZoom(newScale, originX, originY) {
+    const oldScale = scale;
+    scale = Math.max(0.01, Math.min(20, newScale));  // 无下限，最大 2000%
+
+    // 以鼠标/视口中心为原点缩放（pan 层定位在 left:50%; top:50%，原点在视口中心）
+    if (originX !== undefined && originY !== undefined) {
+      const rect = viewport.getBoundingClientRect();
+      const ox = originX - rect.left - rect.width / 2;
+      const oy = originY - rect.top - rect.height / 2;
+      const ratio = scale / oldScale;
+      panX = ox - ratio * (ox - panX);
+      panY = oy - ratio * (oy - panY);
+    }
+
+    clampPan();
+    applyTransform();
+  }
+
+  function resetToFit() {
+    scale = fitScale;
+    panX = 0;
+    panY = 0;
+    applyTransform();
+  }
+
+  // 鼠标滚轮缩放
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.005;
+    setZoom(scale + delta * scale, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // 拖拽平移
+  viewport.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragPanStartX = panX;
+    dragPanStartY = panY;
+    viewport.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    panX = dragPanStartX + (e.clientX - dragStartX);
+    panY = dragPanStartY + (e.clientY - dragStartY);
+    clampPan();
+    applyTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDragging) {
+      isDragging = false;
+      viewport.style.cursor = scale > fitScale ? 'grab' : 'default';
+    }
+  });
+
+  // 工具栏按钮
+  document.getElementById('imgZoomIn').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setZoom(scale * 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('imgZoomOut').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setZoom(scale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('imgZoomReset').addEventListener('click', resetToFit);
+
+  // 双击 → fit
+  viewport.addEventListener('dblclick', resetToFit);
+
+  // 图片加载后计算适配比例并居中
   img.addEventListener('load', () => {
-    // 延迟释放，确保渲染完成
+    fitScale = calcFitScale();
+    scale = fitScale;
+    panX = 0;
+    panY = 0;
+    applyTransform();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   img.addEventListener('error', () => {
     URL.revokeObjectURL(url);
     previewContent.innerHTML = '<div class="workspace-panel-error">图片加载失败</div>';
+  });
+
+  // 窗口 resize 时重新计算 fit
+  window.addEventListener('resize', () => {
+    fitScale = calcFitScale();
+    clampPan();
+    applyTransform();
   });
 }
 
@@ -1390,6 +1750,30 @@ async function downloadPreviewFile() {
 }
 
 /**
+ * 在浏览器中打开预览文件（用于 PDF 等大文件，利用浏览器原生渲染能力）
+ */
+async function openPreviewInBrowser() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const filePath = previewArea.dataset.previewPath;
+  if (!filePath) return;
+
+  try {
+    const result = await downloadFileStream(filePath);
+    if (!result.success) {
+      showToast(`获取文件失败: ${result.error}`, 'error');
+      return;
+    }
+    const url = URL.createObjectURL(result.blob);
+    window.open(url, '_blank');
+    // 延迟释放，给浏览器足够时间读取
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showToast('已在浏览器中打开', 'success');
+  } catch (err) {
+    showToast(`打开失败: ${err.message}`, 'error');
+  }
+}
+
+/**
  * 关闭预览
  */
 function closePreview() {
@@ -1400,7 +1784,7 @@ function closePreview() {
     currentPdfDoc = null;
   }
   currentPdfPage = 1;
-  currentPdfScale = 1.0;
+  pdfScale = 1;
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
 }
@@ -2214,15 +2598,10 @@ function updateBreadcrumb() {
   const parts = normalizePath(currentPath).split('/').filter(Boolean);
   let html = '';
   let accumulatedPath = '';
-  // 检测 Windows 盘符（如 D:）
-  const isWindowsDrive = parts.length > 0 && /^[A-Za-z]:$/.test(parts[0]);
   for (let i = 0; i < parts.length; i++) {
-    if (i === 0 && isWindowsDrive) {
-      accumulatedPath = parts[i] + '/';
-    } else {
-      accumulatedPath += (accumulatedPath.endsWith('/') ? '' : '/') + parts[i];
-    }
+    accumulatedPath += '/' + parts[i];
     const isLast = i === parts.length - 1;
+    // workspaceRoot 之上的路径段不可点击（无权限）
     const isClickable = !workspaceRoot || accumulatedPath === workspaceRoot || accumulatedPath.startsWith(workspaceRoot + '/');
     if (i > 0) html += '<span class="workspace-breadcrumb-sep">/</span>';
     if (isLast) {
@@ -2361,6 +2740,7 @@ export async function resetAndRefreshWorkspace() {
   }
 }
 
+export { attachFilesForQuestion };
 export function updateWorkspacePanelVisibility(connected) {
   const container = document.getElementById('workspacePanelContainer');
   if (!container) return;

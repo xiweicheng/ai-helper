@@ -229,6 +229,10 @@ export async function downloadFiles(paths) {
   return agentRequest('/api/fs/download-multi', { paths });
 }
 
+function normalizePath(p) {
+  return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
 /**
  * 搜索文件（后端递归搜索，单次请求，避免前端多次串行请求）
  */
@@ -241,13 +245,15 @@ export async function searchFilesRemote(dirPath, query, maxResults = 200) {
   });
   if (!result.success) return [];
   return (result.results || []).map(r => {
-    const dir = r.path.substring(0, r.path.lastIndexOf('/'));
+    // 后端返回的 r.path 可能是相对路径（fd）或绝对路径（Node.js 原生搜索）
+    const fullPath = normalizePath(r.path.startsWith('/') ? r.path : `${dirPath}/${r.path}`);
+    const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
     return {
       name: r.name,
       type: r.type || 'file',
       size: r.size,
       mtime: r.mtime,
-      fullPath: r.path,
+      fullPath: fullPath,
       matchPath: dir
     };
   });

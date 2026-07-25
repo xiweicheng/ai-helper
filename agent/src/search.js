@@ -112,11 +112,12 @@ function searchWithFd(rootPath, filePattern, recursive, maxResults) {
       const output = Buffer.concat(stdout).toString('utf-8').trim();
       const lines = output ? output.split('\n').filter(Boolean) : [];
       const results = lines.map(p => {
+        const absPath = join(rootPath, p);
         try {
-          const s = statSync(p);
-          return { path: p, name: basename(p), type: s.isDirectory() ? 'directory' : 'file', size: s.size, mtime: s.mtimeMs };
+          const s = statSync(absPath);
+          return { path: absPath, name: basename(p), type: s.isDirectory() ? 'directory' : 'file', size: s.size, mtime: s.mtimeMs };
         } catch {
-          return { path: p, name: basename(p), type: 'file', size: 0, mtime: 0 };
+          return { path: absPath, name: basename(p), type: 'file', size: 0, mtime: 0 };
         }
       });
       resolve(results);

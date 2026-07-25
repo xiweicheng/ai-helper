@@ -10007,28 +10007,36 @@ body {
 }
 
 /* ============================================================
-   PDF 预览样式
+  PDF 预览样式（视口缩放 + 拖拽）
    ============================================================ */
 
-.workspace-preview-toolbar {
+.pdf-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pdf-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
   background: #f5f7fa;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid #e0e0e0;
   flex-shrink: 0;
   font-size: 12px;
+  user-select: none;
 }
 
 .pdf-toolbar-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d0d0d0;
+  border-radius: 5px;
   background: white;
   color: #555;
-  font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -10039,13 +10047,22 @@ body {
 
 .pdf-toolbar-btn:hover:not(:disabled) {
   background: #f0f5ff;
-  border-color: #4a90d9;
-  color: #4a90d9;
+  border-color: #a0c4ff;
+  color: #1a73e8;
+}
+
+.pdf-toolbar-btn:active:not(:disabled) {
+  background: #d6e4ff;
+  transform: scale(0.95);
 }
 
 .pdf-toolbar-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
+}
+
+.pdf-toolbar-btn svg {
+  pointer-events: none;
 }
 
 .pdf-page-info {
@@ -10073,27 +10090,38 @@ body {
 .pdf-toolbar-sep {
   width: 1px;
   height: 18px;
-  background: #ddd;
+  background: #d9d9d9;
   margin: 0 4px;
+  align-self: center;
 }
 
 .pdf-zoom-info {
-  color: #888;
-  font-size: 11px;
-  min-width: 36px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 42px;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.workspace-preview-pdf-container {
+.pdf-viewport {
   flex: 1;
-  overflow: auto;
-  display: flex;
-  justify-content: center;
-  padding: 12px;
+  overflow: hidden;
+  position: relative;
   background: #525659;
+  cursor: default;
 }
 
-.workspace-preview-pdf-container canvas {
+.pdf-pan {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+}
+
+.pdf-pan canvas {
+  display: block;
+  transform: translate(-50%, -50%);
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
   background: white;
 }
@@ -10243,24 +10271,100 @@ body {
 }
 
 /* ============================================================
-   图片预览样式
+   图片预览样式（滚轮缩放 + 拖拽）
    ============================================================ */
 
-.workspace-preview-image-wrap {
+.image-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.image-preview-toolbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100%;
-  padding: 12px;
-  background: repeating-conic-gradient(#f0f0f0 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+  gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #fafafa, #f0f0f0);
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  user-select: none;
 }
 
-.workspace-preview-image-img {
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 24px);
-  object-fit: contain;
+.image-preview-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.image-preview-btn:hover {
+  background: #f0f5ff;
+  border-color: #a0c4ff;
+  color: #1a73e8;
+  box-shadow: 0 1px 3px rgba(26,115,232,0.15);
+}
+
+.image-preview-btn:active {
+  background: #d6e4ff;
+  border-color: #1a73e8;
+  transform: scale(0.95);
+}
+
+.image-preview-btn svg {
+  pointer-events: none;
+}
+
+.image-preview-zoom-level {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: #777;
+  font-variant-numeric: tabular-nums;
+}
+
+.image-preview-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: #d9d9d9;
+  margin: 0 4px;
+  align-self: center;
+}
+
+.image-preview-viewport {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: repeating-conic-gradient(#f0f0f0 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+  cursor: default;
+}
+
+.image-preview-pan {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+}
+
+.image-preview-pan img {
+  display: block;
+  max-width: none;
+  transform: translate(-50%, -50%);
   box-shadow: 0 2px 12px rgba(0,0,0,0.15);
   border-radius: 4px;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* 滚动条 */

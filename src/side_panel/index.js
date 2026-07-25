@@ -8,7 +8,7 @@ import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
-import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace } from './workspace-panel.js';
+import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import logger from '../shared/logger.js';
@@ -2597,6 +2597,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
       dragCounter = 0;
       inputWrapper.classList.remove('drag-over');
+
+      // 检查是否从工作目录面板拖过来的文件/目录
+      const workspaceData = e.dataTransfer.getData('application/x-workspace-file');
+      if (workspaceData) {
+        try {
+          const { path } = JSON.parse(workspaceData);
+          if (path) {
+            attachFilesForQuestion([path]);
+            return;
+          }
+        } catch (err) {
+          logger.warn('[SidePanel] 解析 workspace 拖拽数据失败:', err);
+        }
+      }
+
+      // 系统文件拖拽
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
         attachFiles(files);
