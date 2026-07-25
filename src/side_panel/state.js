@@ -120,6 +120,9 @@ export let attachedImages = [];  // [{ originalUrl: 'data:image/jpeg;base64,...'
 export let enableFileInput = true;   // 文件上传开关
 export let attachedFiles = [];        // [{ name, size, type, dataUrl, text, status: 'pending'|'extracting'|'done'|'error' }]
 
+// 代理版本号缓存 (agentId -> version string)
+export let agentVersions = new Map();
+
 // 标志位
 export let isScrolling = false;
 export let isComposing = false;
@@ -289,6 +292,8 @@ export default {
   set enableFileInput(v) { enableFileInput = v; },
   get attachedFiles() { return attachedFiles; },
   set attachedFiles(v) { attachedFiles = v; },
+  get agentVersions() { return agentVersions; },
+  set agentVersions(v) { agentVersions = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
   get isComposing() { return isComposing; },

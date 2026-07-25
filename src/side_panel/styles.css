@@ -366,6 +366,19 @@ body {
   white-space: nowrap;
 }
 
+.agent-dd-item-version {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  color: #888;
+  background: #f0f0f0;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 16px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 .agent-dd-item-info {
   flex: 1;
   min-width: 0;

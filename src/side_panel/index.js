@@ -272,6 +272,10 @@ async function verifyActiveAgentConnectivity() {
               workdir: data.workdir || '',
               connected: true
             };
+            // 缓存活跃代理的版本号
+            if (data.version) {
+              state.agentVersions.set(activeId, data.version);
+            }
           } else {
             state.agentPlatform = { connected: false };
           }
@@ -808,6 +812,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
   list.innerHTML = allAgents.map(a => {
     const isActive = a.id === activeAgent?.id;
     const isDisabled = !!a.disabled;
+    const version = state.agentVersions.get(a.id);
     let dotClass, statusLabel;
     if (isDisabled) {
       dotClass = 'disabled';
@@ -825,7 +830,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
       <div class="agent-dd-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
         <span class="agent-dd-item-dot ${dotClass}"></span>
         <div class="agent-dd-item-info">
-          <span class="agent-dd-item-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+          <span class="agent-dd-item-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}${version ? `<span class="agent-dd-item-version">v${escapeHtml(version)}</span>` : ''}</span>
           <span class="agent-dd-item-url" title="${escapeHtml(a.url || '')}">${escapeHtml(a.url || '')}</span>
         </div>
         <span class="agent-dd-item-status">${statusLabel}</span>
@@ -857,16 +862,18 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
 }
 
 /**
- * Ping 单个代理，返回是否在线
+ * Ping 单个代理，返回是否在线及版本号
  */
 async function pingAgentUrl(url) {
   try {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 2000);
     const res = await fetch(`${url}/api/status`, { signal: controller.signal });
-    return res.ok;
+    if (!res.ok) return { online: false, version: null };
+    const data = await res.json();
+    return { online: true, version: data.version || null };
   } catch {
-    return false;
+    return { online: false, version: null };
   }
 }
 
@@ -905,7 +912,12 @@ async function pingAllAgents() {
     const activeId = storage.activeAgentId;
     // 并行 ping 所有非停用代理
     await Promise.all(agents.filter(a => !a.disabled).map(async (a) => {
-      const online = await pingAgentUrl(a.url);
+      const result = await pingAgentUrl(a.url);
+      const online = result.online;
+      // 缓存版本号
+      if (result.version) {
+        state.agentVersions.set(a.id, result.version);
+      }
       updateAgentItemOnlineStatus(a.id, online);
       // 活跃代理在线状态变化时，同步更新 Header 指示器
       if (a.id === activeId) {
@@ -944,10 +956,14 @@ function startRecoveryPolling(agentId, maxAttempts = 20) {
         _recoveryPollingTimer = null;
         return;
       }
-      const online = await pingAgentUrl(agent.url);
-      if (online) {
+      const result = await pingAgentUrl(agent.url);
+      if (result.online) {
         clearInterval(_recoveryPollingTimer);
         _recoveryPollingTimer = null;
+        // 缓存版本号
+        if (result.version) {
+          state.agentVersions.set(agentId, result.version);
+        }
         state.agentPlatform = { ...state.agentPlatform, connected: true };
         updateAgentIndicator(state.agentPlatform, true);
         updateAgentItemOnlineStatus(agentId, true);
@@ -1321,6 +1337,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                       workdir: data.workdir || '',
                       connected: true
                     };
+                    // 缓存活跃代理的版本号
+                    if (data.version) {
+                      state.agentVersions.set(storage.activeAgentId, data.version);
+                    }
                   } else {
                     state.agentPlatform = { connected: false };
                   }
@@ -1345,6 +1365,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     workdir: statusData.workdir || '',
                     connected: true
                   };
+                  // 缓存活跃代理的版本号
+                  if (statusData.version) {
+                    state.agentVersions.set(storage.activeAgentId, statusData.version);
+                  }
                 } else {
                   state.agentPlatform = { connected: false };
                 }
