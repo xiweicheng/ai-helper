@@ -179,8 +179,10 @@ if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
     log_info "推送 tag v${NEW_VERSION}..."
-    git push origin "$(git branch --show-current)" && git push origin "v${NEW_VERSION}"
-    log_ok "Git tag v${NEW_VERSION} 已推送"
+    for remote in origin gitee; do
+        git push "$remote" "$(git branch --show-current)" && git push "$remote" "v${NEW_VERSION}"
+    done
+    log_ok "Git tag v${NEW_VERSION} 已推送到 origin 和 gitee"
 else
     log_info "跳过 git 提交，版本号变更仅保留在本地 package.json 中"
 fi
