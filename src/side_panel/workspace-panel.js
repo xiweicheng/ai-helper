@@ -992,10 +992,10 @@ function updateSortIndicators() {
 const PREVIEW_MAX_TEXT  = 1024 * 1024;       // 文本: 1MB（DOM 渲染密集，需保守）
 const PREVIEW_MAX_PDF   = 50 * 1024 * 1024;  // PDF: 50MB
 const PREVIEW_MAX_DOCX  = 20 * 1024 * 1024;  // Word: 20MB
-const PREVIEW_MAX_XLSX  = 30 * 1024 * 1024;  // Excel: 30MB
+const PREVIEW_MAX_XLSX  = 50 * 1024 * 1024;  // Excel: 50MB（服务端解析，无性能瓶颈）
 const PREVIEW_MAX_IMAGE = 50 * 1024 * 1024;  // 图片: 50MB
 const PREVIEW_MAX_LINES = 10000;              // 文本预览最大渲染行数
-const PREVIEW_XLSX_MAX_ROWS = 500;            // Excel 预览最大渲染行数（防止 DOM 爆炸卡死）
+const PREVIEW_XLSX_MAX_ROWS = 2000;            // Excel 预览最大渲染行数（防止 DOM 爆炸卡死）
 
 /**
  * 从 Agent 后端获取文件二进制内容（ArrayBuffer）
@@ -1103,6 +1103,12 @@ async function previewFile(filePath, fileName) {
       return;
     }
 
+    // XLSX 走服务端解析，不需要前端下载二进制
+    if (previewType === 'xlsx') {
+      await previewXlsx(fileName, previewContent, previewArea);
+      return;
+    }
+
     const arrayBuffer = await fetchFileArrayBuffer(filePath);
 
     switch (previewType) {
@@ -1111,9 +1117,6 @@ async function previewFile(filePath, fileName) {
         break;
       case 'docx':
         await previewDocx(arrayBuffer, previewContent);
-        break;
-      case 'xlsx':
-        await previewXlsx(arrayBuffer, fileName, previewContent, previewArea);
         break;
       case 'image':
         await previewImage(arrayBuffer, fileName, previewContent);
@@ -1397,79 +1400,55 @@ async function previewDocx(arrayBuffer, previewContent) {
 }
 
 // ============================================================
-// Excel 预览（Web Worker 后台解析 + 按需加载 sheet，前 500 行）
+// Excel 预览（服务端通过 /api/fs/preview-xlsx 解析，前 500 行）
 // ============================================================
 
-let xlsxWorker = null;
-let xlsxSheetMetas = [];   // Worker 返回的 sheet 元数据
+let xlsxSheetsData = [];   // 所有 sheet 的 rows 数据
 let xlsxCurrentSheet = 0;  // 当前选中的 sheet
 
-function getXlsxWorker() {
-  if (!xlsxWorker) {
-    xlsxWorker = new Worker(new URL('./xlsx-worker.js', import.meta.url), { type: 'module' });
-  }
-  return xlsxWorker;
-}
-
-/**
- * 向 worker 发消息并等待指定类型的响应
- */
-function waitWorkerMsg(type, timeoutMs = 15000) {
-  const worker = getXlsxWorker();
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('解析超时')), timeoutMs);
-    const handler = (e) => {
-      if (e.data.type === type) {
-        clearTimeout(timer);
-        worker.removeEventListener('message', handler);
-        resolve(e.data);
-      }
-    };
-    worker.addEventListener('message', handler);
-    worker.onerror = (err) => {
-      clearTimeout(timer);
-      worker.removeEventListener('message', handler);
-      reject(new Error(err.message || 'Worker 错误'));
-    };
-  });
-}
-
-async function previewXlsx(arrayBuffer, fileName, previewContent, previewArea) {
+async function previewXlsx(fileName, previewContent, previewArea) {
   previewContent.innerHTML = '<div class="workspace-panel-empty">正在解析 Excel 文件...</div>';
 
-  const worker = getXlsxWorker();
-
-  // 阶段一：解析文件，只返回 sheet 元数据（名称、行列数）
-  worker.postMessage({ type: 'parse', arrayBuffer }, [arrayBuffer]);
-  let metaResult;
+  const filePath = previewArea.dataset.previewPath;
+  let result;
   try {
-    metaResult = await waitWorkerMsg('meta');
+    const config = await getAgentConfig();
+    if (!config) throw new Error('Agent 未配对');
+    const resp = await fetch(`${config.url}/api/fs/preview-xlsx`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({ path: filePath, maxRows: 500 })
+    });
+    result = await resp.json();
   } catch (err) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">Excel 解析失败: ${escapeHtml(err.message)}</div>`;
+    previewContent.innerHTML = `<div class="workspace-panel-error">请求失败: ${escapeHtml(err.message)}</div>`;
     return;
   }
 
-  if (metaResult.error) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">Excel 解析失败: ${escapeHtml(metaResult.error)}</div>`;
+  if (!result.success) {
+    previewContent.innerHTML = `<div class="workspace-panel-error">解析失败: ${escapeHtml(result.error || '未知错误')}</div>`;
     return;
   }
 
-  const { sheetNames, sheetMetas } = metaResult;
-  if (!sheetNames || sheetNames.length === 0) {
+  const { sheets } = result.data;
+  if (!sheets || sheets.length === 0) {
     previewContent.innerHTML = '<div class="workspace-panel-error">工作簿中没有工作表</div>';
     return;
   }
 
-  xlsxSheetMetas = sheetMetas;
+  xlsxSheetsData = sheets;
   xlsxCurrentSheet = 0;
 
   previewArea.dataset.previewType = 'xlsx';
-  previewArea.dataset.previewSheets = JSON.stringify(sheetNames);
+  previewArea.dataset.previewSheets = JSON.stringify(sheets.map(s => s.name));
 
-  // 渲染 tabs + 占位内容
+  // 渲染 tabs
   let tabsHtml = '<div class="xlsx-sheet-tabs" id="xlsxSheetTabs">';
-  sheetNames.forEach((name, i) => {
-    tabsHtml += `<button class="xlsx-sheet-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escapeHtml(name)}</button>`;
+  sheets.forEach((s, i) => {
+    tabsHtml += `<button class="xlsx-sheet-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escapeHtml(s.name)}</button>`;
   });
   tabsHtml += '</div>';
   previewContent.innerHTML = tabsHtml + '<div class="xlsx-sheet-content" id="xlsxSheetContent"><div class="workspace-panel-empty">正在加载数据...</div></div>';
@@ -1492,26 +1471,18 @@ async function previewXlsx(arrayBuffer, fileName, previewContent, previewArea) {
 async function loadAndRenderSheet(sheetIndex) {
   const content = document.getElementById('xlsxSheetContent');
   if (!content) return;
-  content.innerHTML = '<div class="workspace-panel-empty">正在加载数据...</div>';
 
   xlsxCurrentSheet = sheetIndex;
-  const worker = getXlsxWorker();
-  worker.postMessage({ type: 'getSheet', sheetIndex });
-
-  let data;
-  try {
-    data = await waitWorkerMsg('sheetData');
-  } catch (err) {
-    content.innerHTML = `<div class="workspace-panel-error">加载失败: ${escapeHtml(err.message)}</div>`;
+  const sheet = xlsxSheetsData[sheetIndex];
+  if (!sheet) {
+    content.innerHTML = '<div class="workspace-panel-error">未找到工作表数据</div>';
     return;
   }
 
-  if (data.error) {
-    content.innerHTML = `<div class="workspace-panel-error">加载失败: ${escapeHtml(data.error)}</div>`;
-    return;
-  }
+  renderXlsxSheet(sheet.rows, sheet.colCount, sheet.totalRows, content);
+}
 
-  const { colCount, rows, totalRows } = data;
+function renderXlsxSheet(rows, colCount, totalRows, content) {
 
   if (!rows || rows.length === 0) {
     content.innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';

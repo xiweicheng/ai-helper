@@ -6,6 +6,7 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
+import { logger } from '../shared/logger.js';
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws, resolve }）
 // 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
@@ -40,7 +41,7 @@ export async function loadMcpTools() {
     // 检查全局 MCP 开关
     const { mcpEnabled } = await chrome.storage.local.get(['mcpEnabled']);
     if (mcpEnabled !== true) {
-      console.log('[Background] MCP 全局开关已关闭，跳过工具加载');
+      logger.debug('[Background] MCP 全局开关已关闭，跳过工具加载');
       return 0;
     }
 
@@ -54,7 +55,7 @@ export async function loadMcpTools() {
     ]);
 
     if (!toolsResult.success || !toolsResult.tools || toolsResult.tools.length === 0) {
-      console.log('[Background] 无可用的 MCP 工具');
+      logger.debug('[Background] 无可用的 MCP 工具');
       return 0;
     }
 
@@ -71,7 +72,7 @@ export async function loadMcpTools() {
     let registered = 0;
     for (const tool of toolsResult.tools) {
       if (disabledServerIds.has(tool.serverId)) {
-        console.log(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
+        logger.debug(`[Background] 跳过已禁用 MCP 服务器 "${tool.serverName}" 的工具: ${tool.name}`);
         continue;
       }
 
@@ -120,10 +121,10 @@ export async function loadMcpTools() {
       }));
     await chrome.storage.local.set({ mcpTools: mcpToolsForUI });
 
-    console.log(`[Background] 已加载 ${registered} 个 MCP 工具`);
+    logger.debug(`[Background] 已加载 ${registered} 个 MCP 工具`);
     return registered;
   } catch (err) {
-    console.log('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
+    logger.warn('[Background] 加载 MCP 工具失败（Agent 可能不支持 MCP）:', err.message);
     return 0;
   } finally {
     releaseLock();
@@ -349,14 +350,14 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.mcpEnabled) {
     const enabled = changes.mcpEnabled.newValue === true;
-    console.log('[Background] MCP 全局开关变更:', enabled);
+    logger.debug('[Background] MCP 全局开关变更:', enabled);
     if (enabled) {
       loadMcpTools().then(count => {
-        console.log('[Background] MCP 工具已重新加载:', count, '个');
+        logger.debug('[Background] MCP 工具已重新加载:', count, '个');
       });
     } else {
       unloadMcpTools().then(() => {
-        console.log('[Background] MCP 工具已全部卸载');
+        logger.debug('[Background] MCP 工具已全部卸载');
       });
     }
   }

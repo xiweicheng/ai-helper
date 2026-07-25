@@ -32,10 +32,8 @@ export async function initializeMcpRegistry() {
 
   if (config.servers.length > 0) {
     if (failed > 0) {
-      console.log(`[MCP] ${connected}/${config.servers.length} 已连接`);
-      for (const fs of failedServers) {
-        console.error(`[MCP] ${fs.id} 连接失败: ${fs.error}`);
-      }
+      const failedList = failedServers.map(fs => `${fs.id}(${fs.error})`).join(', ');
+      console.warn(`[MCP] ${connected}/${config.servers.length} 已连接，${failed} 个失败: ${failedList}`);
     } else if (connected > 0) {
       console.log(`[MCP] ${connected} 个 Server 已连接`);
     }

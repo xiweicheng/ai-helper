@@ -99,7 +99,6 @@ export class McpClient {
       this.connected = true;
       return { success: true, toolCount: this.tools.length };
     } catch (err) {
-      console.error(`[MCP:${this.serverId}] 连接失败:`, err.message);
       this.disconnect();
       return { success: false, error: err.message };
     }

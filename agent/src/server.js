@@ -44,6 +44,7 @@ import {
   getSkillsDir
 } from './skill/registry.js';
 import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './skill/loader.js';
+import XLSX from 'xlsx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
@@ -1168,6 +1169,63 @@ export function startServer() {
         } catch (err) {
           logError('fs', 'download_stream_error', { path: targetPath, paths, error: err.message });
           return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
+        }
+      }
+
+      // XLSX 预览（服务端解析前 500 行，返回 JSON，避免前端引入 SheetJS）
+      if (pathname === '/api/fs/preview-xlsx') {
+        const filePath = body.path;
+        if (!filePath || typeof filePath !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        }
+        const check = await checkPath(filePath);
+        if (!check.allowed) {
+          logSecurity('fs_preview_xlsx_blocked', { path: filePath, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        try {
+          const buffer = await readFile(check.resolved);
+          const workbook = XLSX.read(buffer, { type: 'buffer', sheetRows: 2001 });
+          const sheets = workbook.SheetNames.map((name, idx) => {
+            const sheet = workbook.Sheets[name];
+            const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+            const maxRow = Math.min(range.e.r, 2000);
+            const rows = [];
+            for (let r = range.s.r; r <= maxRow && r <= range.e.r; r++) {
+              const row = [];
+              for (let c = range.s.c; c <= range.e.c; c++) {
+                const addr = XLSX.utils.encode_cell({ r, c });
+                const cell = sheet[addr];
+                row.push(cell ? String(cell.w ?? cell.v ?? '') : '');
+              }
+              rows.push(row);
+            }
+
+            // 裁剪：去掉尾部全空行和尾部全空列（避免仅设置了边框的空单元格撑爆 DOM）
+            let lastDataRow = -1;
+            let lastDataCol = -1;
+            for (let ri = 0; ri < rows.length; ri++) {
+              for (let ci = 0; ci < rows[ri].length; ci++) {
+                if (rows[ri][ci] !== '') {
+                  lastDataRow = Math.max(lastDataRow, ri);
+                  lastDataCol = Math.max(lastDataCol, ci);
+                }
+              }
+            }
+
+            const trimmedRows = lastDataRow >= 0
+              ? rows.slice(0, lastDataRow + 1).map(r => r.slice(0, lastDataCol + 1))
+              : [];
+            const colCount = lastDataCol >= 0 ? lastDataCol + 1 : 0;
+            const totalRows = range.e.r - range.s.r + 1;
+
+            return { name, index: idx, colCount, totalRows, rows: trimmedRows };
+          });
+          logFs('preview_xlsx', { path: check.resolved, sheets: sheets.length });
+          return jsonResponse(res, 200, { success: true, data: { sheets } });
+        } catch (err) {
+          logError('fs', 'preview_xlsx_error', { path: filePath, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `解析失败: ${err.message}` });
         }
       }
 
