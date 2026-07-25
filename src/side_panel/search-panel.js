@@ -3,7 +3,7 @@
 import state from './state.js';
 import { switchToSession } from './session-manager.js';
 import { escapeHtml, showToast } from './utils.js';
-import { getAllSessions, getSession } from '../storage/db.js';
+import { getAllSessions, getSession, deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 
 // 搜索状态
@@ -603,7 +603,7 @@ async function navigateToSearchResult(sessionId, messageId) {
   }
 
   // 定位到消息（等待 DOM 重建完成）
-  setTimeout(() => {
+  setTimeout(async () => {
     const chatContainer = document.getElementById('chatContainer');
     if (!chatContainer) return;
     const messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
@@ -616,6 +616,28 @@ async function navigateToSearchResult(sessionId, messageId) {
       }, 2000);
     } else {
       showToast('消息已被删除', 'warning');
+      // 消息在 DOM 中找不到，说明是 IndexedDB 中的脏数据（之前删除未成功清理）
+      // 自动从 IndexedDB 中移除，下次搜索不会再命中
+      try {
+        const cleaned = await deleteMessageFromSession(sessionId, messageId);
+        if (cleaned) {
+          // 也从当前搜索结果中移除，避免重复点击
+          searchResults = searchResults.filter(r => !(r.sessionId === sessionId && r.messageId === messageId));
+          // 刷新搜索结果面板
+          const content = document.getElementById('searchPanelContent');
+          const count = document.getElementById('searchPanelCount');
+          if (content && searchResults.length > 0) {
+            renderSearchResults(searchResults, lastSearchQuery, content);
+            count.textContent = `${searchResults.length} 条`;
+          } else if (content && searchResults.length === 0) {
+            content.innerHTML = '<div class="search-panel-empty">未找到匹配消息</div>';
+            if (count) count.textContent = '无结果';
+          }
+          logger.debug('[SearchPanel] 已清理 IndexedDB 脏数据:', sessionId, messageId);
+        }
+      } catch (e) {
+        logger.warn('[SearchPanel] 清理脏数据失败:', e);
+      }
     }
   }, 500);
 }
