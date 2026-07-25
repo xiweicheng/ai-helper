@@ -705,7 +705,7 @@ export async function sendMessage() {
     
     // 检查是否已切换到其他会话（成功路径）
     if (state.activeSessionId !== mySessionId) {
-      const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised };
+      const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: streamingMsgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)) };
       if (wasStreamed && streamingHtml) {
         msgEntry.htmlContent = streamingHtml;
       }

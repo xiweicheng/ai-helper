@@ -422,6 +422,10 @@ function searchInMessages(messages, query, sessionId) {
     // 只搜索 assistant 和 user 消息
     if (msg.role !== 'assistant' && msg.role !== 'user') continue;
     
+    // 跳过没有 messageId 的消息（无法定位到 DOM，展示无意义）
+    const messageId = msg.messageId || msg.id;
+    if (!messageId) continue;
+    
     // 提取纯文本内容
     const textContent = extractTextContent(msg.content);
     if (!textContent) continue;
@@ -460,7 +464,7 @@ function searchInMessages(messages, query, sessionId) {
     if (end < textContent.length) preview = preview + '...';
 
     results.push({
-      messageId: msg.messageId || msg.id,
+      messageId,
       content: textContent.substring(0, 200),
       role: msg.role,
       sessionId,
@@ -605,8 +609,28 @@ async function navigateToSearchResult(sessionId, messageId) {
   // 定位到消息（等待 DOM 重建完成）
   setTimeout(async () => {
     const chatContainer = document.getElementById('chatContainer');
-    if (!chatContainer) return;
-    const messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
+    if (!chatContainer) {
+      logger.warn('[SearchPanel] chatContainer 不存在');
+      return;
+    }
+    let messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
+    // 兜底：去掉 .message 类名限制再试一次（某些渲染路径可能缺失 message 类）
+    if (!messageEl) {
+      messageEl = chatContainer.querySelector(`[data-message-id="${messageId}"]`);
+    }
+    // 调试日志：输出所有 data-message-id，方便排查匹配失败原因
+    if (!messageEl) {
+      const allMsgIds = Array.from(chatContainer.querySelectorAll('[data-message-id]'), el => el.dataset.messageId);
+      logger.warn('[SearchPanel] 定位消息失败', {
+        targetSessionId: sessionId,
+        activeSessionId: state.activeSessionId,
+        targetMessageId: messageId,
+        typeOfMessageId: typeof messageId,
+        messageIdLength: messageId.length,
+        domMessageIds: allMsgIds,
+        chatContainerHtmlLen: chatContainer.innerHTML.length,
+      });
+    }
     if (messageEl) {
       messageEl.scrollIntoView({ behavior: 'instant', block: 'nearest' });
       // 高亮效果（与收藏定位一致）
