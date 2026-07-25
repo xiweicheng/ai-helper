@@ -1099,7 +1099,11 @@ async function previewFile(filePath, fileName) {
     }[previewType] || PREVIEW_MAX_TEXT;
 
     if (fileSize > maxSize) {
-      previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+      const canOpenBrowser = previewType === 'pdf' || previewType === 'image';
+      const msg = canOpenBrowser
+        ? `文件过大 (${formatFileSize(fileSize)})，无法内置预览，请点击上方「在浏览器中打开」按钮查看`
+        : `文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载`;
+      previewContent.innerHTML = `<div class="workspace-panel-error">${msg}</div>`;
       return;
     }
 
@@ -1813,7 +1817,15 @@ async function doDownloadSingle(filePath, fileName) {
       return;
     }
     triggerBrowserDownload(result.blob, result.name || fileName);
-    completeUploadProgressPanel(progressPanel, '下载完成', false);
+    updateUploadProgressPanel(progressPanel, {
+      percent: 100, fileName, loaded: result.blob.size, totalBytes: result.blob.size,
+      speed: 0, statusText: '正在由浏览器保存至本地...'
+    });
+    // Chrome download via <a> click cannot be monitored from JS,
+    // show "已保存" after a reasonable delay for the save dialog to appear
+    setTimeout(() => {
+      completeUploadProgressPanel(progressPanel, '已保存至本地', false);
+    }, 1500);
     showToast(`已下载: ${result.name || fileName}`, 'success');
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -2056,17 +2068,19 @@ function showUploadProgressPanel(onCancel) {
  */
 function updateUploadProgressPanel(panel, opts) {
   if (!panel) return;
-  const { percent, completed, total, fileName, loaded, totalBytes, speed } = opts;
+  const { percent, completed, total, fileName, loaded, totalBytes, speed, statusText } = opts;
   const title = panel.querySelector('.workspace-upload-progress-title');
   const fileEl = panel.querySelector('.workspace-upload-progress-file');
   const bar = panel.querySelector('.workspace-upload-progress-bar');
   const bytesEl = panel.querySelector('.workspace-upload-progress-bytes');
   const speedEl = panel.querySelector('.workspace-upload-progress-speed');
 
-  // 根据 download-mode class 决定标题前缀
+  // 优先使用 statusText 覆盖标题
   const prefix = panel.classList.contains('download-mode') ? '下载中' : '上传中';
   if (title) {
-    if (completed != null && total != null) {
+    if (statusText) {
+      title.textContent = statusText;
+    } else if (completed != null && total != null) {
       title.textContent = `${prefix} ${completed}/${total} · ${percent}%`;
     } else {
       title.textContent = `${prefix} ${percent}%`;
