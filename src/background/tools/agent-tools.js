@@ -243,15 +243,15 @@ export const AGENT_TOOLS = [
     }
   },
   {
-    id: 'agent_list',
-    category: 'local_agent',
+    id: 'ai_agent_list',
+    category: 'ai_collaboration',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_list',
-      description: '查询所有已配对的本地代理及其在线状态、启用状态、当前活跃代理',
+      name: 'ai_agent_list',
+      description: '查询所有已配对的AI代理及其在线状态、启用状态、当前活跃代理',
       parameters: {
         type: 'object',
         properties: {},
@@ -260,20 +260,20 @@ export const AGENT_TOOLS = [
     }
   },
   {
-    id: 'agent_switch',
-    category: 'local_agent',
+    id: 'ai_agent_switch',
+    category: 'ai_collaboration',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_switch',
-      description: '切换到指定的本地代理，返回切换结果或失败原因（代理不存在/已停用/离线）',
+      name: 'ai_agent_switch',
+      description: '切换到指定的AI代理，返回切换结果或失败原因（代理不存在/已停用/离线）',
       parameters: {
         type: 'object',
         properties: {
-          agentId: { type: 'string', description: '代理ID（从 agent_list 返回结果中获取）' },
-          agentName: { type: 'string', description: '代理名称（模糊匹配，从 agent_list 返回结果中获取）' }
+          agentId: { type: 'string', description: '代理ID（从 ai_agent_list 返回结果中获取）' },
+          agentName: { type: 'string', description: '代理名称（模糊匹配，从 ai_agent_list 返回结果中获取）' }
         },
         required: []
       }

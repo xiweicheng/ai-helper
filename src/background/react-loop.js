@@ -4,11 +4,12 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
+import { summarizeRound } from './context-summarizer.js';
 // 反思机制相关函数已拆分到 react-reflection.js
 import {
   MAX_REFLECTION_ROUNDS,
@@ -329,6 +330,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   let lastToolCallFingerprint = null;     // 上一轮工具调用的指纹
   let repeatedCallCount = 0;              // 连续相同调用的计数
   
+  // 增量对话摘要：累积已摘要的轮次文本，token 超标时注入上下文替代原始消息
+  let summarizedAccumulator = null;       // 累积摘要文本，null 表示尚未摘要过
+  
   // ReAct 循环 Token 预算：根据模型上下文窗口动态计算
   // 为工具定义、系统提示词、输出预留空间后的消息预算
   let reactTokenBudget = null;
@@ -365,12 +369,17 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
   /**
    * 基于 Token 总量的消息裁剪，替代原来的条数限制
-   * 保留 system message，从后往前保留消息，确保 tool_calls/tool 配对
-   * 反思消息优先裁剪（权重更高），保护核心对话
+   * 保留 system message，确保 tool_calls/tool 配对
+   *
+   * 策略（分层递进）：
+   *   1. 摘要模式：Token 超标时，将最旧的完整轮次通过 LLM 压缩为一句话摘要，
+   *      注入回上下文（role: 'user'），保留历史信息而非直接丢弃。
+   *   2. 兜底裁剪：摘要失败或仍超标时，使用权重裁剪（反思 > 工具结果 > 普通消息）直接删除。
    */
-  const trimMessages = () => {
+  const trimMessages = async () => {
     const budget = getReactTokenBudget(model || 'default');
-    const totalTokens = estimateMessagesTokens(currentMessages);
+    // 使用校准后的 token 估算：经过至少 3 次 API 调用的实际 prompt_tokens 对比修正
+    let totalTokens = getCalibratedTokens(estimateMessagesTokens(currentMessages));
     if (totalTokens <= budget) return;
 
     const oldLen = currentMessages.length;
@@ -378,59 +387,136 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     const systemMsg = currentMessages[0]?.role === 'system' ? [currentMessages[0]] : [];
     const rest = systemMsg.length ? [...currentMessages.slice(1)] : [...currentMessages];
 
-    // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
-    const getWeight = (msg) => {
-      if (msg._reflection) return 3;
-      if (msg.role === 'tool') return 2;
-      return 1;
-    };
+    // 内部辅助：校准版消息 token 估算
+    const est = (msgs) => getCalibratedTokens(estimateMessagesTokens(msgs));
 
-    // 从前往后逐条移除高权重消息，直到 token 量在预算内
-    while (rest.length > 0) {
-      const currentTokens = estimateMessagesTokens([...systemMsg, ...rest]);
-      if (currentTokens <= budget) break;
+    // ============================================================
+    // 阶段一：增量摘要 —— 将旧轮次压缩为一句话，保留信息
+    // ============================================================
+    const SUMMARY_MAX_ROUNDS_PER_CALL = 3; // 单次 trimMessages 最多摘要 3 轮，避免摘要 API 耗时过长
 
-      // 从开头找到第一条可裁剪的消息（优先高权重）
-      let removeIdx = -1;
-      let bestWeight = 0;
+    for (let summaryRoundCount = 0; summaryRoundCount < SUMMARY_MAX_ROUNDS_PER_CALL; summaryRoundCount++) {
+      totalTokens = est([...systemMsg, ...rest]);
+      if (totalTokens <= budget) break;
+
+      // 找到最旧的一轮完整对话（assistant(tool_calls) + 后续 tool 消息）
+      let roundStart = -1;
+      let roundEnd = -1;
       for (let i = 0; i < rest.length; i++) {
-        const w = getWeight(rest[i]);
-        if (w > bestWeight) {
-          bestWeight = w;
-          removeIdx = i;
+        if (rest[i].role === 'assistant' && Array.isArray(rest[i].tool_calls) && rest[i].tool_calls.length > 0) {
+          roundStart = i;
+          roundEnd = i + 1;
+          while (roundEnd < rest.length && rest[roundEnd].role === 'tool') {
+            roundEnd++;
+          }
+          break;
         }
-        // 最高权重，不再继续查找
-        if (bestWeight >= 3) break;
       }
-      // 如果没找到高权重消息（都是权重 0），移除最早的一条
-      if (removeIdx < 0 || bestWeight === 0) removeIdx = 0;
+      if (roundStart === -1) break; // 没有可摘要的轮次
 
-      const removed = rest.splice(removeIdx, 1)[0];
+      const roundMessages = rest.slice(roundStart, roundEnd);
+      logger.debug(`[Background] 尝试摘要第 ${summaryRoundCount + 1} 轮 (消息 ${roundStart}-${roundEnd - 1})`);
 
-      // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
-      if (removed?.role === 'assistant' && removed.tool_calls) {
-        while (rest.length > 0 && rest[removeIdx]?.role === 'tool') {
-          rest.splice(removeIdx, 1);
+      const summary = await summarizeRound(roundMessages, config, model, {
+        signal: abortSignal,
+        timeout: 15000
+      });
+
+      if (!summary) {
+        logger.debug('[Background] 摘要失败，降级到权重裁剪');
+        break; // 摘要失败，退出摘要循环，进入兜底裁剪
+      }
+
+      // 注入累积摘要（在用户问题之后）
+      const roundNum = (summarizedAccumulator?.match(/第\d+轮/g)?.length || 0) + 1;
+      summarizedAccumulator = (summarizedAccumulator || '') + `第${roundNum}轮：${summary}\n`;
+
+      // 查找用户问题位置，摘要插入其后
+      const userMsgIdx = rest.findIndex(m => m.role === 'user');
+      const summaryMsg = {
+        role: 'user',
+        content: `[历史摘要] 以下为之前步骤的摘要：\n${summarizedAccumulator.trim()}`,
+        _isSummary: true
+      };
+
+      // 移除旧摘要消息（如果存在）
+      const oldSummaryIdx = rest.findIndex(m => m._isSummary);
+      if (oldSummaryIdx >= 0) {
+        rest.splice(oldSummaryIdx, 1);
+        // 摘要被删除了，重算摘要插入位置
+        const adjustedUserIdx = rest.findIndex(m => m.role === 'user');
+        rest.splice(adjustedUserIdx + 1, 0, summaryMsg);
+      } else {
+        rest.splice(userMsgIdx + 1, 0, summaryMsg);
+      }
+
+      // 删除原始轮次消息（因为上面插入了摘要，索引需要重新定位）
+      const newRoundStart = rest.findIndex(m => m === roundMessages[0]);
+      if (newRoundStart >= 0) {
+        rest.splice(newRoundStart, roundMessages.length);
+      }
+
+      const newTokensAfterSummary = est([...systemMsg, ...rest]);
+      logger.debug(`[Background] 摘要完成: ${oldTokens} → ${newTokensAfterSummary} tokens (${roundMessages.length}条 → 1条摘要)`);
+    }
+
+    // ============================================================
+    // 阶段二：兜底权重裁剪 —— 摘要后仍超标时，直接删除
+    // ============================================================
+    totalTokens = est([...systemMsg, ...rest]);
+    if (totalTokens > budget) {
+      logger.debug(`[Background] 摘要后仍超标 (${totalTokens} > ${budget})，启用兜底裁剪`);
+
+      // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
+      const getWeight = (msg) => {
+        if (msg._reflection) return 3;
+        if (msg.role === 'tool') return 2;
+        return 1;
+      };
+
+      // 从前往后逐条移除高权重消息，直到 token 量在预算内
+      while (rest.length > 0) {
+        const currentTokens = est([...systemMsg, ...rest]);
+        if (currentTokens <= budget) break;
+
+        // 从开头找到第一条可裁剪的消息（优先高权重）
+        let removeIdx = -1;
+        let bestWeight = 0;
+        for (let i = 0; i < rest.length; i++) {
+          const w = getWeight(rest[i]);
+          if (w > bestWeight) {
+            bestWeight = w;
+            removeIdx = i;
+          }
+          if (bestWeight >= 3) break;
         }
-      } else if (removed?.role === 'tool') {
-        // 如果移除了 tool 消息，检查前面的 assistant 是否因此孤立
-        for (let j = removeIdx - 1; j >= 0; j--) {
-          if (rest[j]?.role === 'assistant' && rest[j]?.tool_calls) {
-            // 检查是否还有其他 tool 消息配对
-            const nextMsg = rest[j + 1];
-            if (!nextMsg || nextMsg.role !== 'tool') {
-              // 孤立的 assistant(tool_calls)，清除 tool_calls
-              delete rest[j].tool_calls;
+        if (removeIdx < 0 || bestWeight === 0) removeIdx = 0;
+
+        const removed = rest.splice(removeIdx, 1)[0];
+
+        // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
+        if (removed?.role === 'assistant' && removed.tool_calls) {
+          while (rest.length > 0 && rest[removeIdx]?.role === 'tool') {
+            rest.splice(removeIdx, 1);
+          }
+        } else if (removed?.role === 'tool') {
+          // 如果移除了 tool 消息，检查前面的 assistant 是否因此孤立
+          for (let j = removeIdx - 1; j >= 0; j--) {
+            if (rest[j]?.role === 'assistant' && rest[j]?.tool_calls) {
+              const nextMsg = rest[j + 1];
+              if (!nextMsg || nextMsg.role !== 'tool') {
+                delete rest[j].tool_calls;
+              }
+            } else {
+              break;
             }
-          } else {
-            break;
           }
         }
       }
     }
 
     currentMessages = [...systemMsg, ...rest];
-    const newTokens = estimateMessagesTokens(currentMessages);
+    const newTokens = est(currentMessages);
     logger.debug(`[Background] ReAct Token 裁剪: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} 条)`);
   };
 
@@ -674,14 +760,19 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
 
       // 上下文压力评估与主动裁剪：在每次 API 调用前检查并防止超限
-      const filteredTokens = estimateMessagesTokens(filteredMessages);
+      // 使用校准后的 token 估算，避免因 JSON/代码内容的估算偏差导致 API 超限
+      const rawFilteredTokens = estimateMessagesTokens(filteredMessages);
+      const filteredTokens = getCalibratedTokens(rawFilteredTokens);
       const contextWindow = getContextWindow(model || config.modelName, 0, chatConfig.customModelMap);
       
       // 计算实际工具定义 token 数（而非估算值）
-      const actualToolTokens = estimateTokens(
+      const rawToolTokens = estimateTokens(
         JSON.stringify(apiTools.map(t => { const { id, ...clean } = t; return clean; }))
       );
+      const actualToolTokens = getCalibratedTokens(rawToolTokens);
       const totalEstimate = filteredTokens + actualToolTokens + 4096; // +输出预留
+      // 保存不含输出预留的原始估算值，用于后续与 API 实际 prompt_tokens 对比校准
+      const preCallPromptEstimate = rawFilteredTokens + rawToolTokens;
       const pressure = assessContextPressure(totalEstimate, contextWindow);
       
       if (pressure.level !== 'safe') {
@@ -906,6 +997,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           usage: response.usage,
           callType: 'react_loop'
         }).catch(() => {});
+
+        // 实时校准 token 估算器：用 API 实际 prompt_tokens 修正我们的字符估算
+        if (preCallPromptEstimate > 0 && response.usage.prompt_tokens > 0) {
+          updateCalibration(preCallPromptEstimate, response.usage.prompt_tokens);
+          const calInfo = getCalibrationInfo();
+          if (calInfo.active) {
+            logger.debug(`[Background] Token校准已激活: factor=${calInfo.factor.toFixed(3)}, samples=${calInfo.samples}`);
+          }
+        }
       }
 
       // 推送 API 调用成功状态更新
@@ -955,7 +1055,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }
         
         currentMessages.push(assistantMessage);
-        trimMessages();
+        await trimMessages();
         
         const pendingReflections = [];
         const reflectionConfig = reactConfig.reflection;
@@ -1034,7 +1134,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   content: '用户拒绝了此操作',
                   tool_call_id: toolCallId
                 });
-                trimMessages();
+                await trimMessages();
                 return {
                   toolCall,
                   result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
@@ -1231,7 +1331,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 content: planTaskContent,
                 tool_call_id: toolCallId
               });
-              trimMessages();
+              await trimMessages();
               
               // 更新工具执行日志
               const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
@@ -1280,7 +1380,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 role: 'system',
                 content: `以下是拆解后子任务的执行结果，请进行总结：\n\n${subtaskSummary}`
               });
-              trimMessages();
+              await trimMessages();
               
               // 缓存结果（plan_task 也是可缓存的只读操作）
               if (PARALLELIZABLE_TOOLS.has(toolName)) {
@@ -1303,7 +1403,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
-            trimMessages();
+            await trimMessages();
             
             logger.debug('[Background] 工具执行结果长度:', toolResultStr.length, '内容预览:', toolResultStr.substring(0, 200));
             
@@ -1366,7 +1466,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
-            trimMessages();
+            await trimMessages();
             
             // 更新工具执行日志为失败
             const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);

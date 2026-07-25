@@ -12,6 +12,66 @@ const CHARS_PER_TOKEN_EN = 4;
 // 每条消息的 role + 结构开销（约 4 tokens）
 const MESSAGE_OVERHEAD = 4;
 
+// ============================================================
+// 实时校准：基于 API 实际返回的 prompt_tokens 修正估算偏差
+// 使用指数加权移动平均（EWMA）平滑，避免单次异常波动
+// ============================================================
+let calibrationFactor = 1.0;
+let calibrationSamples = 0;
+const CALIBRATION_MIN_SAMPLES = 3;    // 至少 3 次采样后才启用校准
+const CALIBRATION_RATIO_MIN = 0.3;    // 异常比例下限
+const CALIBRATION_RATIO_MAX = 3.0;    // 异常比例上限
+
+/**
+ * 更新 token 估算校准因子
+ * 在每次 API 调用完成后，用 API 返回的实际 prompt_tokens 与我们的估算值对比
+ * @param {number} estimated - 我们的估算值（不含输出预留）
+ * @param {number} actual - API 返回的 prompt_tokens
+ */
+export function updateCalibration(estimated, actual) {
+  if (!actual || actual <= 0 || !estimated || estimated <= 0) return;
+
+  const ratio = actual / estimated;
+  // 过滤异常比例（如估算或实际值明显错误）
+  if (ratio < CALIBRATION_RATIO_MIN || ratio > CALIBRATION_RATIO_MAX) {
+    logger.warn(`[TokenCounter] 校准比例异常，忽略: estimated=${estimated}, actual=${actual}, ratio=${ratio.toFixed(3)}`);
+    return;
+  }
+
+  calibrationSamples++;
+  // EWMA：样本少时权重高（快速收敛），样本多时权重低（稳定）
+  const alpha = Math.min(0.3, 1 / calibrationSamples);
+  const oldFactor = calibrationFactor;
+  calibrationFactor = calibrationFactor * (1 - alpha) + ratio * alpha;
+
+  logger.debug(`[TokenCounter] Token校准更新: ratio=${ratio.toFixed(3)}, alpha=${alpha.toFixed(3)}, 旧=${oldFactor.toFixed(3)} → 新=${calibrationFactor.toFixed(3)}, samples=${calibrationSamples}`);
+}
+
+/**
+ * 获取校准后的 token 估算
+ * 样本不足时不校准（返回原始估算值）
+ * @param {number} rawEstimate - 原始估算值
+ * @returns {number}
+ */
+export function getCalibratedTokens(rawEstimate) {
+  if (calibrationSamples < CALIBRATION_MIN_SAMPLES || calibrationFactor <= 0) {
+    return rawEstimate;
+  }
+  return Math.ceil(rawEstimate * calibrationFactor);
+}
+
+/**
+ * 获取当前校准状态信息（用于诊断/日志）
+ * @returns {{ factor: number, samples: number, active: boolean }}
+ */
+export function getCalibrationInfo() {
+  return {
+    factor: calibrationFactor,
+    samples: calibrationSamples,
+    active: calibrationSamples >= CALIBRATION_MIN_SAMPLES
+  };
+}
+
 /**
  * 估算单段文本的 token 数量
  * @param {string} text

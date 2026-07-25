@@ -201,13 +201,21 @@ async function getActiveAgent() {
  */
 async function switchActiveAgent(agentId) {
   const agents = await getPairedAgents();
-  if (!agents.some(a => a.id === agentId)) {
+  const target = agents.find(a => a.id === agentId);
+  if (!target) {
     logger.warn('[AgentClient] 切换失败，代理不存在:', agentId);
     return false;
   }
   await chrome.storage.local.set({ activeAgentId: agentId });
 
   _agentReachability.delete(agentId);
+
+  // 通知 side panel 代理已切换
+  chrome.runtime.sendMessage({
+    type: 'AGENT_CONNECTION_CHANGED',
+    connected: true,
+    agentId: agentId
+  }).catch(() => {});
 
   logger.debug('[AgentClient] 已切换到代理:', agentId);
   return true;

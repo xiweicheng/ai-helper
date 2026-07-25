@@ -311,7 +311,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
           // 配对代理不足 2 个时，隐藏代理管理工具
-          if ((tool.id === 'agent_list' || tool.id === 'agent_switch') && pairedCount < 2) return false;
+          if ((tool.id === 'ai_agent_list' || tool.id === 'ai_agent_switch') && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
           if ((tool.id === 'agent_workflow_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
@@ -953,8 +953,8 @@ const TOOL_HANDLERS = {
   agent_memory_store: executeAgentMemoryStore,
   agent_memory_recall: executeAgentMemoryRecall,
   agent_memory_manage: executeAgentMemoryManage,
-  agent_list: executeAgentList,
-  agent_switch: executeAgentSwitch,
+  ai_agent_list: executeAgentList,
+  ai_agent_switch: executeAgentSwitch,
   // ── 合并后的工具 ──
   get_page_content: executeGetPageContent,
   extract_data: executeExtractData,
@@ -4186,15 +4186,6 @@ async function executeAgentSwitch(args, toolCallId) {
       };
     }
     
-    const reachable = AgentClient.isAgentReachable(targetAgent.id);
-    if (reachable === false) {
-      return {
-        success: false,
-        error: `代理 "${targetAgent.name}" 当前离线，无法切换`,
-        tool_call_id: toolCallId
-      };
-    }
-    
     const switched = await AgentClient.switchActiveAgent(targetAgent.id);
     if (!switched) {
       return {
@@ -4204,11 +4195,15 @@ async function executeAgentSwitch(args, toolCallId) {
       };
     }
     
+    const reachable = AgentClient.isAgentReachable(targetAgent.id);
+    const warning = reachable === false ? `（注意：该代理当前离线）` : '';
+    
     return {
       success: true,
-      content: `已成功切换到代理 "${targetAgent.name}" (${targetAgent.id})`,
+      content: `已成功切换到代理 "${targetAgent.name}" (${targetAgent.id})${warning}`,
       agentId: targetAgent.id,
       agentName: targetAgent.name,
+      offline: reachable === false,
       tool_call_id: toolCallId
     };
   } catch (err) {
