@@ -9672,6 +9672,15 @@ body {
   word-break: break-all;
 }
 
+/* 文件详情弹窗：响应式宽度，窄视口自动缩小 */
+.file-info-modal {
+  position: relative;
+  max-width: 480px;
+  min-width: 0;
+  width: calc(100% - 32px);
+  box-sizing: border-box;
+}
+
 /* 文件详情弹窗右上角关闭按钮 */
 .file-info-close:hover {
   color: #333;

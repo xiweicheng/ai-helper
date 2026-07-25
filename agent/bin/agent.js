@@ -467,12 +467,15 @@ if (command === 'start') {
     removePidFile();
     ensureAgentDir();
 
-    // 以 --background 模式启动新进程（此时老进程已退出，isRunning 通过、端口可用）
+    // 直接以前台模式启动服务进程（不经过 --background 中间层）
+    // 原因：--background 会多 spawn 一层中间进程，中间进程退出后其 PID 会被
+    //   本 helper 覆盖写入 PID 文件，导致 stop/restart 读到已死的中间进程 PID。
+    //   前台模式下 child.pid 就是服务进程 PID，与服务进程自身写入的 PID 一致。
+    //   前台 start 不会 isRunning 检查，但本 helper 已确保老进程退出 + 端口释放。
     const child = spawn(process.execPath, [
       ...process.execArgv,
       agentScript,
       'start',
-      '--background',
       '--port', String(port),
       '--host', host,
       '--workdir', workdir
@@ -493,7 +496,17 @@ if (command === 'start') {
 
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // 健康检查：确认服务进程已成功监听端口，避免写入已崩溃进程的 PID
+    // （若端口意外未释放导致 EADDRINUSE，服务进程会崩溃，此时不应写错误 PID）
+    let healthy = false;
     if (!spawnFailed && child.pid) {
+      try {
+        const resp = await fetch(`http://${host}:${port}/api/status`);
+        healthy = resp.ok;
+      } catch {}
+    }
+
+    if (healthy && child.pid) {
       try {
         writeFileSync(PID_FILE, String(child.pid));
       } catch (err) {
@@ -501,6 +514,8 @@ if (command === 'start') {
       }
       child.unref();
       log(`新进程已启动 (PID: ${child.pid})`);
+    } else if (!spawnFailed && child.pid) {
+      log(`警告：新进程健康检查失败，未更新 PID 文件（可能端口仍被占用或进程已崩溃）`);
     }
 
     process.exit(spawnFailed ? 1 : 0);

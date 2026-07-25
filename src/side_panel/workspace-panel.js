@@ -2176,7 +2176,7 @@ async function showFileInfo(filePath, fileName, type) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay show';
   overlay.innerHTML = `
-    <div class="modal-container file-info-modal" style="min-width:380px;max-width:480px;position:relative;">
+    <div class="modal-container file-info-modal">
       <button class="file-info-close" title="关闭" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
       <div class="modal-title">${escapeHtml(fileName)} - 文件详情</div>
       <div class="file-info-loading">加载中...</div>
