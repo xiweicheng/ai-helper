@@ -900,6 +900,18 @@ async function updateAgent() {
   }
 }
 
+/**
+ * 停止代理服务
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+async function stopAgent() {
+  try {
+    return await agentRequest('/api/shutdown', {}, 'POST', 10000);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 export {
   migrateFromLegacyFormat,
   generateAgentId,
@@ -959,5 +971,6 @@ export {
   importSkillFromUrl,
   // Agent 管理
   restartAgent,
-  updateAgent
+  updateAgent,
+  stopAgent
 };

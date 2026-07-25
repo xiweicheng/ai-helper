@@ -501,6 +501,11 @@ body {
   border-color: rgba(56, 161, 105, 0.3);
 }
 
+.agent-dd-action-btn.stop:hover {
+  color: #e53e3e;
+  border-color: rgba(229, 62, 62, 0.3);
+}
+
 .agent-dd-action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -9612,6 +9617,91 @@ body {
   color: #4a90d9;
 }
 
+/* 搜索结果高亮 */
+.workspace-file-name .search-highlight {
+  background: #fff3a0;
+  color: #333;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 搜索结果中的相对路径前缀 */
+.workspace-file-name .workspace-file-relativepath {
+  color: #999;
+  font-size: 11px;
+}
+
+/* 键盘导航焦点 */
+.workspace-file-item.keyboard-focused {
+  background: #e3f2fd;
+  outline: 2px solid #4a90d9;
+  outline-offset: -2px;
+}
+
+/* content 获得焦点时不显示默认 outline（用 keyboard-focused 代替） */
+#workspacePanelContent:focus {
+  outline: none;
+}
+
+/* 文件详情面板 */
+.file-info-modal .file-info-body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.file-info-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+.file-info-key {
+  color: #888;
+  white-space: nowrap;
+  width: 80px;
+}
+
+.file-info-val {
+  color: #333;
+  word-break: break-all;
+}
+
+/* 文件详情弹窗右上角关闭按钮 */
+.file-info-close:hover {
+  color: #333;
+}
+
+/* 可复制的值（名称、路径） */
+.file-info-copyable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-radius: 4px;
+  position: relative;
+}
+
+.file-info-copyable:hover {
+  background: rgba(74, 144, 217, 0.08);
+}
+
+.file-info-copy-icon {
+  margin-left: 4px;
+  color: #bbb;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  vertical-align: middle;
+}
+
+.file-info-copyable:hover .file-info-copy-icon {
+  opacity: 1;
+  color: #4a90d9;
+}
+
 /* 文件选择 checkbox */
 .workspace-file-select {
   flex-shrink: 0;
@@ -9741,6 +9831,11 @@ body {
 }
 
 .workspace-file-btn.preview:hover {
+  background: rgba(74, 144, 217, 0.12);
+  color: #4a90d9;
+}
+
+.workspace-file-btn.info:hover {
   background: rgba(74, 144, 217, 0.12);
   color: #4a90d9;
 }

@@ -6,7 +6,7 @@ import {
   downloadFileStream, downloadFilesStream,
   downloadFileStreamWithProgress, downloadFilesStreamWithProgress,
   searchFilesRemote,
-  renameFs, createDir, moveFs, deleteFs,
+  renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getMimeType
 } from './workspace-manager.js';
@@ -21,6 +21,8 @@ let currentPath = null;
 let workspaceRoot = null;
 // 路径历史（用于返回上级）
 let pathHistory = [];
+// 路径历史最大长度，超出时丢弃最早的（防止无限增长）
+const PATH_HISTORY_MAX = 50;
 // 是否已初始化
 let initialized = false;
 // 当前排序：{ field: 'name'|'size'|'time', asc: boolean }
@@ -30,6 +32,8 @@ let selectedPaths = new Set();
 // 下载进行中标记
 let downloadInProgress = false;
 let uploadInProgress = false;
+// 键盘导航：当前聚焦的文件项索引（-1 表示无聚焦）
+let focusedIndex = -1;
 
 /**
  * 初始化工作目录面板
@@ -259,6 +263,21 @@ function bindEvents() {
 
   // 文件列表点击（事件委托）
   document.getElementById('workspacePanelContent').addEventListener('click', handleFileListClick);
+  // 键盘导航（↑↓浏览、Enter打开、Delete删除、F2重命名、Space选择）
+  document.getElementById('workspacePanelContent').addEventListener('keydown', handleFileListKeydown);
+  // content 需要 tabindex 才能获得键盘焦点
+  document.getElementById('workspacePanelContent').tabIndex = 0;
+
+  // 虚拟滚动：scroll 事件触发重新渲染（requestAnimationFrame 节流）
+  let scrollRafId = null;
+  document.getElementById('workspacePanelContent').addEventListener('scroll', () => {
+    if (!virtualScrollState) return;
+    if (scrollRafId) cancelAnimationFrame(scrollRafId);
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      renderVirtualScroll();
+    });
+  });
 
   // 预览关闭
   document.getElementById('workspacePreviewClose').addEventListener('click', closePreview);
@@ -310,6 +329,45 @@ function bindEvents() {
 
 // 缓存的当前目录条目列表
 let cachedEntries = [];
+
+/**
+ * 压入路径历史（限制最大长度，超出时丢弃最早的）
+ */
+function pushPathHistory(path) {
+  pathHistory.push(path);
+  if (pathHistory.length > PATH_HISTORY_MAX) {
+    pathHistory.shift();
+  }
+}
+
+/**
+ * 清洗文件名：过滤 Windows/Unix 非法字符，去首尾空格和点
+ * 非法字符替换为下划线，避免上传后文件名异常或导致后端错误
+ */
+function sanitizeFileName(name) {
+  if (!name || typeof name !== 'string') return 'unnamed';
+  // Windows 非法字符：< > : " | ? * 以及控制字符
+  // 路径分隔符 / \ 也过滤掉，防止路径注入
+  let cleaned = name.replace(/[<>:"|?*\\/\x00-\x1f]/g, '_');
+  // 保留扩展名前的点，去掉文件名主体中多余的点（仅末尾连续点在 Windows 上非法）
+  cleaned = cleaned.replace(/\.+$/, '');
+  // 去首尾空格
+  cleaned = cleaned.trim();
+  // 空名兜底
+  if (!cleaned) cleaned = 'unnamed';
+  return cleaned;
+}
+
+/**
+ * 高亮搜索关键词：先转义 HTML，再用 <mark> 包裹匹配部分（大小写不敏感）
+ */
+function highlightSearchMatch(text, query) {
+  const escaped = escapeHtml(text);
+  if (!query) return escaped;
+  // 转义正则特殊字符
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp(`(${escapedQuery})`, 'gi'), '<mark class="search-highlight">$1</mark>');
+}
 
 /**
  * 展开面板
@@ -366,9 +424,37 @@ async function navigateToPath(path) {
 }
 
 // 目录列表 LRU 缓存（key: path, value: { entries, timestamp }）
+// Map 保持插入顺序，访问时 delete+re-set 移到末尾（最近使用），淘汰时删头部（最久未用）
 const dirCache = new Map();
 const DIR_CACHE_TTL = 30000; // 30秒
 const DIR_CACHE_MAX = 20;
+
+/**
+ * LRU 读取：命中时把 key 移到 Map 末尾（最近使用），未命中返回 null
+ */
+function getDirCache(path) {
+  const cached = dirCache.get(path);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp >= DIR_CACHE_TTL) {
+    dirCache.delete(path);
+    return null;
+  }
+  // 移到末尾：先删再 set
+  dirCache.delete(path);
+  dirCache.set(path, cached);
+  return cached;
+}
+
+/**
+ * LRU 写入：超出上限时淘汰 Map 头部（最久未访问的）
+ */
+function setDirCache(path, value) {
+  if (dirCache.has(path)) dirCache.delete(path);
+  dirCache.set(path, value);
+  if (dirCache.size > DIR_CACHE_MAX) {
+    dirCache.delete(dirCache.keys().next().value);
+  }
+}
 
 /**
  * 加载目录内容（带 LRU 缓存）
@@ -377,9 +463,9 @@ async function loadDirectory(dirPath) {
   const content = document.getElementById('workspacePanelContent');
   content.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
 
-  // 查缓存
-  const cached = dirCache.get(dirPath);
-  if (cached && Date.now() - cached.timestamp < DIR_CACHE_TTL) {
+  // 查缓存（LRU：命中时自动移到末尾）
+  const cached = getDirCache(dirPath);
+  if (cached) {
     cachedEntries = cached.entries;
     renderCurrentEntries();
     return;
@@ -395,11 +481,7 @@ async function loadDirectory(dirPath) {
     ...e,
     path: normalizePath(`${dirPath}/${e.name}`)
   }));
-  // 写缓存 + 简单 LRU 淘汰
-  dirCache.set(dirPath, { entries: cachedEntries, timestamp: Date.now() });
-  if (dirCache.size > DIR_CACHE_MAX) {
-    dirCache.delete(dirCache.keys().next().value);
-  }
+  setDirCache(dirPath, { entries: cachedEntries, timestamp: Date.now() });
   renderCurrentEntries();
 }
 
@@ -415,8 +497,105 @@ function invalidateDirCache(path) {
   dirCache.delete(path);
 }
 
+// 虚拟滚动：文件项超过阈值时只渲染可视区域，用 padding 撑起总高度
+const VIRTUAL_SCROLL_THRESHOLD = 200;
+const VIRTUAL_ITEM_HEIGHT = 32;  // 初始估算行高（padding 7+7 + 内容 ~13 + border 2），首次渲染后动态测量
+const VIRTUAL_BUFFER = 5;        // 可视区域上下各多渲染的缓冲行数
+// 虚拟滚动状态：{ sorted, itemHeight } —— 非 null 时表示当前处于虚拟滚动模式
+let virtualScrollState = null;
+// 当前排序后的完整列表（虚拟滚动滚动时复用，避免重复排序）
+let sortedEntriesCache = [];
+
 /**
- * 按当前排序渲染条目
+ * 生成单个文件项的 HTML
+ */
+function renderFileItemHtml(entry) {
+  const icon = getFileIcon(entry.name, entry.type);
+  const size = entry.type === 'directory' ? '—' : formatFileSize(entry.size);
+  const time = formatTime(entry.mtime);
+  const canPreview = entry.type === 'file' && supportsPreview(entry.name);
+  const fullPath = isSearchMode ? entry.fullPath : normalizePath(`${currentPath}/${entry.name}`);
+  const isSelected = selectedPaths.has(fullPath);
+  const relativePath = isSearchMode && entry.matchPath !== currentPath ?
+    entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' : '';
+  const nameHtml = isSearchMode
+    ? highlightSearchMatch(entry.name, searchQuery)
+    : escapeHtml(entry.name);
+  const relativePathHtml = isSearchMode && relativePath
+    ? `<span class="workspace-file-relativepath">${highlightSearchMatch(relativePath, searchQuery)}</span>`
+    : '';
+
+  return `
+    <div class="workspace-file-item ${entry.type} ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(fullPath)}" data-type="${entry.type}" data-name="${escapeHtml(entry.name)}" draggable="true">
+      <span class="workspace-file-select" data-action="select">
+        <span class="workspace-checkbox ${isSelected ? 'checked' : ''}"></span>
+      </span>
+      <span class="workspace-file-icon">${icon}</span>
+      <span class="workspace-file-name" title="${escapeHtml(relativePath + entry.name)}">${relativePathHtml}${nameHtml}</span>
+      <span class="workspace-file-size">${size}</span>
+      <span class="workspace-file-time">${time}</span>
+      <span class="workspace-file-actions">
+        ${canPreview ? '<button class="workspace-file-btn preview" title="预览" data-action="preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' : ''}
+        <button class="workspace-file-btn info" title="详情" data-action="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+        <button class="workspace-file-btn download" title="下载" data-action="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+        <button class="workspace-file-btn rename" title="重命名" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+        <button class="workspace-file-btn ask" title="基于文件问答" data-action="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+        <button class="workspace-file-btn delete" title="删除" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+      </span>
+    </div>`;
+}
+
+/**
+ * 虚拟滚动：只渲染可视区域 + 缓冲区的文件项
+ */
+function renderVirtualScroll() {
+  if (!virtualScrollState) return;
+  const { sorted } = virtualScrollState;
+  const content = document.getElementById('workspacePanelContent');
+  const containerHeight = content.clientHeight;
+  const scrollTop = content.scrollTop;
+  const itemHeight = virtualScrollState.itemHeight;
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - VIRTUAL_BUFFER);
+  const endIndex = Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / itemHeight) + VIRTUAL_BUFFER);
+  const topPad = startIndex * itemHeight;
+  const bottomPad = (sorted.length - endIndex) * itemHeight;
+
+  let html = `<div class="workspace-file-list" style="padding-top:${topPad}px;padding-bottom:${bottomPad}px;">`;
+  for (let i = startIndex; i < endIndex; i++) {
+    html += renderFileItemHtml(sorted[i]);
+  }
+  html += '</div>';
+  content.innerHTML = html;
+
+  // 首次渲染后动态测量实际行高，修正估算值
+  const firstItem = content.querySelector('.workspace-file-item');
+  if (firstItem) {
+    const actualHeight = firstItem.offsetHeight;
+    if (actualHeight && Math.abs(actualHeight - itemHeight) > 2) {
+      virtualScrollState.itemHeight = actualHeight;
+      // 用正确行高重新渲染一次
+      const newStart = Math.max(0, Math.floor(scrollTop / actualHeight) - VIRTUAL_BUFFER);
+      const newEnd = Math.min(sorted.length, Math.ceil((scrollTop + containerHeight) / actualHeight) + VIRTUAL_BUFFER);
+      const newTop = newStart * actualHeight;
+      const newBottom = (sorted.length - newEnd) * actualHeight;
+      let rehtml = `<div class="workspace-file-list" style="padding-top:${newTop}px;padding-bottom:${newBottom}px;">`;
+      for (let i = newStart; i < newEnd; i++) {
+        rehtml += renderFileItemHtml(sorted[i]);
+      }
+      rehtml += '</div>';
+      content.innerHTML = rehtml;
+    }
+  }
+
+  // 更新键盘焦点
+  updateFocusVisual();
+  // 恢复行内进度条（虚拟滚动重渲染后 DOM 被重建，需要恢复活跃的进度条）
+  restoreInlineProgress();
+}
+
+/**
+ * 按当前排序渲染条目（大目录自动启用虚拟滚动）
  */
 function renderCurrentEntries() {
   const content = document.getElementById('workspacePanelContent');
@@ -429,6 +608,8 @@ function renderCurrentEntries() {
   }
 
   if (entries.length === 0) {
+    virtualScrollState = null;
+    sortedEntriesCache = [];
     content.innerHTML = isSearchMode ? '<div class="workspace-panel-empty">未找到匹配的文件</div>' : '<div class="workspace-panel-empty">此目录为空</div>';
     return;
   }
@@ -460,37 +641,165 @@ function renderCurrentEntries() {
     sorted = [...sortedDirs, ...sortedFiles];
   }
 
+  sortedEntriesCache = sorted;
+  focusedIndex = -1;
+
+  // 大目录：虚拟滚动
+  if (sorted.length > VIRTUAL_SCROLL_THRESHOLD) {
+    virtualScrollState = { sorted, itemHeight: VIRTUAL_ITEM_HEIGHT };
+    content.scrollTop = 0;
+    renderVirtualScroll();
+    return;
+  }
+
+  // 小目录：全量渲染
+  virtualScrollState = null;
   let html = '<div class="workspace-file-list">';
   for (const entry of sorted) {
-    const icon = getFileIcon(entry.name, entry.type);
-    const size = entry.type === 'directory' ? '—' : formatFileSize(entry.size);
-    const time = formatTime(entry.mtime);
-    const canPreview = entry.type === 'file' && supportsPreview(entry.name);
-    const fullPath = isSearchMode ? entry.fullPath : normalizePath(`${currentPath}/${entry.name}`);
-    const isSelected = selectedPaths.has(fullPath);
-    const relativePath = isSearchMode && entry.matchPath !== currentPath ? 
-      entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' : '';
-
-    html += `
-      <div class="workspace-file-item ${entry.type} ${isSelected ? 'selected' : ''}" data-path="${escapeHtml(fullPath)}" data-type="${entry.type}" data-name="${escapeHtml(entry.name)}" draggable="true">
-        <span class="workspace-file-select" data-action="select">
-          <span class="workspace-checkbox ${isSelected ? 'checked' : ''}"></span>
-        </span>
-        <span class="workspace-file-icon">${icon}</span>
-        <span class="workspace-file-name" title="${escapeHtml(relativePath + entry.name)}">${escapeHtml(entry.name)}</span>
-        <span class="workspace-file-size">${size}</span>
-        <span class="workspace-file-time">${time}</span>
-        <span class="workspace-file-actions">
-          ${canPreview ? '<button class="workspace-file-btn preview" title="预览" data-action="preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' : ''}
-          <button class="workspace-file-btn download" title="下载" data-action="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
-          <button class="workspace-file-btn rename" title="重命名" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
-          <button class="workspace-file-btn ask" title="基于文件问答" data-action="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
-          <button class="workspace-file-btn delete" title="删除" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
-        </span>
-      </div>`;
+    html += renderFileItemHtml(entry);
   }
   html += '</div>';
   content.innerHTML = html;
+}
+
+/**
+ * 获取当前所有文件项 DOM 元素
+ */
+function getFileItems() {
+  const content = document.getElementById('workspacePanelContent');
+  return content ? Array.from(content.querySelectorAll('.workspace-file-item')) : [];
+}
+
+/**
+ * 更新键盘导航的视觉焦点
+ */
+function updateFocusVisual() {
+  const content = document.getElementById('workspacePanelContent');
+
+  // 虚拟滚动模式下：如果聚焦项不在当前渲染范围内，先滚动到该位置再渲染
+  if (virtualScrollState && focusedIndex >= 0) {
+    const { sorted, itemHeight } = virtualScrollState;
+    if (focusedIndex >= sorted.length) return;
+    const scrollTop = content.scrollTop;
+    const containerHeight = content.clientHeight;
+    const itemTop = focusedIndex * itemHeight;
+    const itemBottom = itemTop + itemHeight;
+    // 如果聚焦项不在可视区域，调整 scrollTop 并重新渲染
+    if (itemTop < scrollTop || itemBottom > scrollTop + containerHeight) {
+      content.scrollTop = Math.max(0, itemTop - (containerHeight - itemHeight) / 2);
+      renderVirtualScroll();
+      return;
+    }
+  }
+
+  // 清除所有焦点标记，再给目标项加上
+  const items = getFileItems();
+  items.forEach(el => el.classList.remove('keyboard-focused'));
+
+  if (focusedIndex < 0) return;
+
+  // 虚拟滚动模式：用 data-path 匹配（因为 DOM 中的 idx 和 focusedIndex 不对应）
+  if (virtualScrollState) {
+    const focusedEntry = virtualScrollState.sorted[focusedIndex];
+    if (!focusedEntry) return;
+    const focusedPath = isSearchMode ? focusedEntry.fullPath : normalizePath(`${currentPath}/${focusedEntry.name}`);
+    const el = items.find(el => el.dataset.path === focusedPath);
+    if (el) el.classList.add('keyboard-focused');
+  } else {
+    // 非虚拟滚动模式：idx 直接对应 focusedIndex
+    if (focusedIndex < items.length) {
+      items[focusedIndex].classList.add('keyboard-focused');
+      items[focusedIndex].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+}
+
+/**
+ * 键盘导航：移动焦点
+ */
+function moveFocus(delta) {
+  const items = getFileItems();
+  if (items.length === 0) return;
+  if (focusedIndex === -1) {
+    focusedIndex = delta > 0 ? 0 : items.length - 1;
+  } else {
+    focusedIndex = Math.max(0, Math.min(items.length - 1, focusedIndex + delta));
+  }
+  updateFocusVisual();
+}
+
+/**
+ * 键盘导航：获取当前聚焦的文件项数据
+ */
+function getFocusedItem() {
+  const items = getFileItems();
+  if (focusedIndex < 0 || focusedIndex >= items.length) return null;
+  const el = items[focusedIndex];
+  return {
+    el,
+    path: el.dataset.path,
+    name: el.dataset.name,
+    type: el.dataset.type
+  };
+}
+
+/**
+ * 键盘事件处理（绑定到 content 容器）
+ */
+async function handleFileListKeydown(e) {
+  // 输入框中不处理（搜索框、输入对话框等）
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      moveFocus(1);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      moveFocus(-1);
+      break;
+    case 'Enter': {
+      e.preventDefault();
+      const item = getFocusedItem();
+      if (!item) return;
+      if (item.type === 'directory') {
+        pushPathHistory(currentPath);
+        await navigateToPath(item.path);
+      } else {
+        await previewFile(item.path, item.name);
+      }
+      break;
+    }
+    case 'Delete': {
+      e.preventDefault();
+      const item = getFocusedItem();
+      if (!item) return;
+      await handleDeleteFile(item.path, item.name, item.type);
+      break;
+    }
+    case 'F2': {
+      e.preventDefault();
+      const item = getFocusedItem();
+      if (!item) return;
+      await handleRenameFile(item.path, item.name, item.type);
+      break;
+    }
+    case ' ': {
+      e.preventDefault();
+      const item = getFocusedItem();
+      if (!item) return;
+      toggleSelection(item.path);
+      // 空格选择后自动下移一项，方便连续多选
+      moveFocus(1);
+      break;
+    }
+    case 'Escape':
+      focusedIndex = -1;
+      updateFocusVisual();
+      break;
+  }
 }
 
 /**
@@ -517,6 +826,8 @@ async function handleFileListClick(e) {
     e.stopPropagation();
     if (action === 'preview') {
       await previewFile(path, item.dataset.name);
+    } else if (action === 'info') {
+      await showFileInfo(path, item.dataset.name, type);
     } else if (action === 'download') {
       await doDownloadSingle(path, item.dataset.name);
     } else if (action === 'ask') {
@@ -554,7 +865,7 @@ async function handleFileListClick(e) {
   // 点击目录：进入
   if (type === 'directory') {
     e.stopPropagation();
-    pathHistory.push(currentPath);
+    pushPathHistory(currentPath);
     await navigateToPath(path);
     return;
   }
@@ -935,29 +1246,65 @@ function setDownloadButtonsDisabled(disabled) {
   if (previewDlBtn) previewDlBtn.disabled = disabled;
 }
 
+// 活跃的行内进度条：filePath → percent（虚拟滚动重渲染后用于恢复进度条）
+const activeInlineProgress = new Map();
+
 /**
  * 在文件行底部显示进度条（用路径匹配，避免同名文件冲突）
+ * 返回 filePath 作为句柄，虚拟滚动重渲染后可通过 restoreInlineProgress 恢复
  */
 function showFileProgress(filePath) {
+  activeInlineProgress.set(filePath, 0);
+  restoreInlineProgress();
+  return filePath;
+}
+
+function updateFileProgress(handle, percent) {
+  if (!handle) return;
+  const filePath = handle;
+  activeInlineProgress.set(filePath, percent);
   const fileItem = Array.from(document.querySelectorAll('.workspace-file-item'))
     .find(el => el.dataset.path === filePath);
-  if (!fileItem) return null;
-
-  const bar = document.createElement('div');
-  bar.className = 'workspace-file-progress';
-  bar.innerHTML = `<div class="workspace-file-progress-bar"></div>`;
-  fileItem.appendChild(bar);
-  return bar;
+  if (fileItem) {
+    let bar = fileItem.querySelector('.workspace-file-progress');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'workspace-file-progress';
+      bar.innerHTML = `<div class="workspace-file-progress-bar"></div>`;
+      fileItem.appendChild(bar);
+    }
+    const inner = bar.querySelector('.workspace-file-progress-bar');
+    if (inner) inner.style.width = percent + '%';
+  }
 }
 
-function updateFileProgress(progressEl, percent) {
-  if (!progressEl) return;
-  const bar = progressEl.querySelector('.workspace-file-progress-bar');
-  if (bar) bar.style.width = percent + '%';
+function removeFileProgress(handle) {
+  if (!handle) return;
+  const filePath = handle;
+  activeInlineProgress.delete(filePath);
+  const fileItem = Array.from(document.querySelectorAll('.workspace-file-item'))
+    .find(el => el.dataset.path === filePath);
+  if (fileItem) {
+    const bar = fileItem.querySelector('.workspace-file-progress');
+    if (bar) bar.remove();
+  }
 }
 
-function removeFileProgress(progressEl) {
-  if (progressEl) progressEl.remove();
+/**
+ * 恢复行内进度条（虚拟滚动重渲染后调用）
+ * 遍历 activeInlineProgress，为可见的文件项重新创建进度条
+ */
+function restoreInlineProgress() {
+  for (const [filePath, percent] of activeInlineProgress) {
+    const fileItem = Array.from(document.querySelectorAll('.workspace-file-item'))
+      .find(el => el.dataset.path === filePath);
+    if (fileItem && !fileItem.querySelector('.workspace-file-progress')) {
+      const bar = document.createElement('div');
+      bar.className = 'workspace-file-progress';
+      bar.innerHTML = `<div class="workspace-file-progress-bar" style="width:${percent}%"></div>`;
+      fileItem.appendChild(bar);
+    }
+  }
 }
 
 // ==================== 上传/下载通用进度面板 ====================
@@ -1159,12 +1506,14 @@ async function uploadFiles(fileList) {
     const batch = files.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(batch.map(async (file, batchIdx) => {
       const fileIdx = i + batchIdx;
-      const targetPath = normalizePath(`${currentPath}/${file.name}`);
+      // 清洗文件名：过滤 Windows 非法字符，防止上传失败或文件名异常
+      const safeName = sanitizeFileName(file.name);
+      const targetPath = normalizePath(`${currentPath}/${safeName}`);
 
-      // 本地判断文件是否已存在（避免 N 次网络请求）
-      if (existingNames.has(file.name)) {
+      // 本地判断文件是否已存在（用清洗后的名字匹配）
+      if (existingNames.has(safeName)) {
         uploadedBytes[fileIdx] = file.size;
-        updateProgress(file.name);
+        updateProgress(safeName);
         throw new Error('__SKIPPED__');
       }
       if (cancelled) throw new Error('__CANCELLED__');
@@ -1368,7 +1717,7 @@ function setupDragDrop() {
       const destDir = dirItem.dataset.path;
       const destDirName = destDir.split('/').pop();
       // 保存当前路径到历史，然后导航到目标目录
-      pathHistory.push(currentPath);
+      pushPathHistory(currentPath);
       currentPath = destDir;
       await uploadFiles(e.dataTransfer.files);
       updateBreadcrumb();
@@ -1800,6 +2149,112 @@ async function handleDeleteFile(path, name, type) {
 }
 
 /**
+ * 格式化权限 mode（rwx 字符串表示）
+ */
+function formatPermission(mode, isDir) {
+  const perms = [
+    { bit: 0o400, ch: 'r' }, { bit: 0o200, ch: 'w' }, { bit: 0o100, ch: 'x' },
+    { bit: 0o040, ch: 'r' }, { bit: 0o020, ch: 'w' }, { bit: 0o010, ch: 'x' },
+    { bit: 0o004, ch: 'r' }, { bit: 0o002, ch: 'w' }, { bit: 0o001, ch: 'x' }
+  ];
+  let str = isDir ? 'd' : '-';
+  for (const p of perms) {
+    str += (mode & p.bit) ? p.ch : '-';
+    // setuid/setgid/sticky 位
+    if (p.ch === 'x' && (mode & (p.bit << 9))) str = str.slice(0, -1) + (p.ch === 'x' ? 's' : 'S');
+  }
+  // 八进制表示（如 755）
+  const octal = (mode & 0o777).toString(8).padStart(3, '0');
+  return `${str} (${octal})`;
+}
+
+/**
+ * 显示文件详情面板（模态弹窗）
+ */
+async function showFileInfo(filePath, fileName, type) {
+  // 先显示加载中
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay show';
+  overlay.innerHTML = `
+    <div class="modal-container file-info-modal" style="min-width:380px;max-width:480px;position:relative;">
+      <button class="file-info-close" title="关闭" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
+      <div class="modal-title">${escapeHtml(fileName)} - 文件详情</div>
+      <div class="file-info-loading">加载中...</div>
+      <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+        <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('.modal-btn-cancel').addEventListener('click', close);
+  overlay.querySelector('.file-info-close').addEventListener('click', close);
+
+  try {
+    const result = await getFileInfo(filePath);
+    const body = overlay.querySelector('.file-info-loading');
+    if (!result.success || !result.info) {
+      body.className = '';
+      body.innerHTML = `<div class="workspace-panel-error">获取详情失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+      return;
+    }
+    const info = result.info;
+    const formatDate = (ts) => {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      return d.toLocaleString('zh-CN');
+    };
+
+    const typeText = info.isDirectory ? '目录' : info.isSymbolicLink ? '符号链接' : '文件';
+    const sizeText = info.isDirectory ? null : formatFileSize(info.size) + ` (${info.size.toLocaleString()} 字节)`;
+    const mimeText = info.mimeType || null;
+    const permText = formatPermission(info.mode, info.isDirectory);
+
+    const rows = [
+      ['名称', escapeHtml(info.name), info.name],
+      ['类型', typeText, typeText],
+      ['路径', `<span style="word-break:break-all;">${escapeHtml(info.path)}</span>`, info.path],
+      ['大小', sizeText || '—', sizeText],
+      ['MIME 类型', mimeText ? escapeHtml(mimeText) : '—', mimeText],
+      ['修改时间', formatDate(info.mtime), formatDate(info.mtime)],
+      ['创建时间', formatDate(info.ctime), formatDate(info.ctime)],
+      ['访问时间', formatDate(info.atime), formatDate(info.atime)],
+      ['权限', escapeHtml(permText), permText]
+    ];
+    if (info.uid !== undefined) rows.push(['UID', String(info.uid), String(info.uid)]);
+    if (info.gid !== undefined) rows.push(['GID', String(info.gid), String(info.gid)]);
+
+    body.className = 'file-info-body';
+    body.innerHTML = `<table class="file-info-table">${
+      rows.map(([k, v, copyVal]) => {
+        if (copyVal != null) {
+          return `<tr><td class="file-info-key">${k}</td><td class="file-info-val file-info-copyable" data-copy="${escapeHtml(copyVal)}" title="点击复制">${v}<svg class="file-info-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></td></tr>`;
+        }
+        return `<tr><td class="file-info-key">${k}</td><td class="file-info-val">${v}</td></tr>`;
+      }).join('')
+    }</table>`;
+
+    // 点击复制
+    body.querySelectorAll('.file-info-copyable').forEach(el => {
+      el.addEventListener('click', async () => {
+        const text = el.dataset.copy;
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('已复制到剪贴板', 'success');
+        } catch {
+          showToast('复制失败', 'error');
+        }
+      });
+    });
+  } catch (err) {
+    const body = overlay.querySelector('.file-info-loading');
+    body.className = '';
+    body.innerHTML = `<div class="workspace-panel-error">获取详情失败: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+/**
  * 显示输入对话框（自定义 UI，返回 Promise<string|null>）
  */
 function showInputDialog(title, defaultValue = '', placeholder = '') {
@@ -1946,7 +2401,26 @@ function scrollToNewFile(fileName, retryCount = 0) {
   const content = document.getElementById('workspacePanelContent');
   if (!content) return;
 
-  // 用 dataset 精确匹配，避免 querySelector 选择器转义问题
+  // 虚拟滚动模式：文件可能未渲染，先计算索引并滚动到对应位置
+  if (virtualScrollState) {
+    const idx = virtualScrollState.sorted.findIndex(e => e.name === fileName);
+    if (idx >= 0) {
+      const itemHeight = virtualScrollState.itemHeight;
+      // 滚动到目标项位置（居中）
+      content.scrollTop = Math.max(0, idx * itemHeight - content.clientHeight / 2 + itemHeight / 2);
+      // 重新渲染后查找 DOM 元素并高亮
+      renderVirtualScroll();
+      const item = Array.from(content.querySelectorAll('.workspace-file-item'))
+        .find(el => el.dataset.name === fileName);
+      if (item) {
+        item.classList.add('highlight-new');
+        setTimeout(() => item.classList.remove('highlight-new'), 2000);
+      }
+      return;
+    }
+  }
+
+  // 非虚拟滚动模式：直接查找 DOM
   const item = Array.from(content.querySelectorAll('.workspace-file-item'))
     .find(el => el.dataset.name === fileName);
 

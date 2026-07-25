@@ -430,3 +430,10 @@ export async function createDir(dirPath) {
 export async function moveFs(srcPath, destDir) {
   return agentRequest('/api/fs/move', { path: srcPath, destDir });
 }
+
+/**
+ * 获取文件详细信息（权限、创建/访问/修改时间、MIME 类型等）
+ */
+export async function getFileInfo(filePath) {
+  return agentRequest('/api/fs/stat', { path: filePath });
+}

@@ -1340,6 +1340,28 @@ function initAgentConfig() {
     return (ms / 60000).toFixed(1) + ' min';
   }
 
+  // 格式化运行时长（用于进程已运行时间，始终显示具体值，不出现"无限制"）
+  function formatRunDuration(ms) {
+    if (ms == null || ms < 0) return '-';
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    if (ms < 3600000) return (ms / 60000).toFixed(1) + 'min';
+    return (ms / 3600000).toFixed(2) + 'h';
+  }
+
+  // 格式化运行中进程列表：空 → 空闲；非空 → 数量 + 每条命令摘要（截断 + pid + 时长）
+  function formatRunningProcesses(procs) {
+    if (!Array.isArray(procs) || procs.length === 0) return '空闲';
+    return procs.map(p => {
+      const cmd = (p.command || '').replace(/\s+/g, ' ').trim();
+      const short = cmd.length > 48 ? cmd.slice(0, 48) + '…' : (cmd || '(未知命令)');
+      const pid = p.pid ? `pid=${escHtml(String(p.pid))}` : '';
+      const dur = formatRunDuration(p.duration);
+      const parts = [`<code>${escHtml(short)}</code>`, pid, escHtml(dur)].filter(Boolean);
+      return parts.join(' · ');
+    }).join('<br>');
+  }
+
   function renderAgentDetail(data) {
     lastDetailData = data;
     if (!agentDetailPanel) return;
@@ -1369,7 +1391,9 @@ function initAgentConfig() {
       rows.push(`<div class="detail-row"><span class="detail-label">Node.js</span><span class="detail-value">${escHtml(data.nodeVersion)}</span></div>`);
     }
     if (data.runningProcesses != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">运行中进程</span><span class="detail-value">${data.runningProcesses}</span></div>`);
+      const count = Array.isArray(data.runningProcesses) ? data.runningProcesses.length : 0;
+      const label = count > 0 ? `运行中进程 (${count})` : '运行中进程';
+      rows.push(`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${formatRunningProcesses(data.runningProcesses)}</span></div>`);
     }
     if (data.commandTimeout != null) {
       rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);

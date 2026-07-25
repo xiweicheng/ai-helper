@@ -357,6 +357,10 @@ export function startServer() {
 
   // 防止 shutdown 并发执行
   let shuttingDown = false;
+  // restart/update/shutdown 防重入 + 频率限制
+  let agentOperationInProgress = false;
+  let lastOperationTime = 0;
+  const OPERATION_COOLDOWN_MS = 10000; // 10s 冷却，防 DoS
 
   // ==================== HTTP Server ====================
   const server = http.createServer((req, res) => {
@@ -432,14 +436,17 @@ export function startServer() {
       return jsonResponse(res, 403, { success: false, error: '认证 token 无效' });
     }
 
-    // Agent 关闭（需认证 + 仅限本地来源，防止远程无认证关闭 Agent 造成 DoS）
+    // Agent 关闭（需认证）
     if (req.method === 'POST' && pathname === '/api/shutdown') {
-      const remoteAddr = req.socket.remoteAddress || '';
-      const isLocal = remoteAddr === '127.0.0.1' || remoteAddr === '::1' || remoteAddr === '::ffff:127.0.0.1';
-      if (!isLocal) {
-        logSecurity('shutdown_remote_blocked', { remoteAddr, extId });
-        return jsonResponse(res, 403, { success: false, error: '关闭 Agent 仅允许本地请求' });
+      if (agentOperationInProgress) {
+        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
       }
+      if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
+        const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
+        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+      }
+      agentOperationInProgress = true;
+      lastOperationTime = Date.now();
       logSystem('shutdown', { reason: 'api_request', extId });
       jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
       shutdown();
@@ -448,6 +455,15 @@ export function startServer() {
 
     // 重启 Agent（需认证）
     if (req.method === 'POST' && pathname === '/api/agent/restart') {
+      if (agentOperationInProgress) {
+        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
+      }
+      if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
+        const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
+        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+      }
+      agentOperationInProgress = true;
+      lastOperationTime = Date.now();
       logSystem('restart', { reason: 'api_request', extId });
       jsonResponse(res, 200, { success: true, message: 'Agent 正在重启...' });
 
@@ -489,6 +505,15 @@ export function startServer() {
 
     // 更新并重启 Agent（需认证）
     if (req.method === 'POST' && pathname === '/api/agent/update') {
+      if (agentOperationInProgress) {
+        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
+      }
+      if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
+        const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
+        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+      }
+      agentOperationInProgress = true;
+      lastOperationTime = Date.now();
       logSystem('update', { reason: 'api_request', extId });
 
       const agentScript = resolve(process.argv[1]);
@@ -537,11 +562,11 @@ export function startServer() {
 
         if (!npmSuccess) {
           // 更新失败：不重启，保持老进程运行，提示用户手动执行
+          agentOperationInProgress = false; // 重置防重入标志，允许后续重试
           logError('update_npm_failed', npmError + ' | output: ' + npmOutput.join('\n').slice(-500));
           jsonResponse(res, 200, {
             success: false,
-            error: '更新失败，请手动执行：npm install -g ai-helper-agent@latest',
-            details: npmError
+            error: '更新失败，请手动执行：npm install -g ai-helper-agent@latest'
           });
           return;
         }
@@ -837,6 +862,38 @@ export function startServer() {
         }));
         logFs('list', { path: check.resolved, entryCount: entries.length });
         return jsonResponse(res, 200, { success: true, entries, path: check.resolved });
+      }
+
+      // 获取文件详细信息（权限、创建/访问/修改时间、MIME 类型等）
+      if (pathname === '/api/fs/stat') {
+        const check = await checkPath(body.path);
+        if (!check.allowed) {
+          logSecurity('fs_stat_blocked', { path: body.path, reason: check.reason });
+          return jsonResponse(res, 403, { success: false, error: check.reason });
+        }
+        if (!await exists(check.resolved)) {
+          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+        }
+        const s = await stat(check.resolved);
+        const info = {
+          name: basename(check.resolved),
+          path: check.resolved,
+          type: s.isDirectory() ? 'directory' : 'file',
+          size: s.size,
+          mtime: s.mtimeMs,
+          ctime: s.birthtimeMs || s.ctimeMs,
+          atime: s.atimeMs,
+          mode: s.mode,
+          isDirectory: s.isDirectory(),
+          isFile: s.isFile(),
+          isSymbolicLink: s.isSymbolicLink()
+        };
+        // Windows 没有 uid/gid
+        if (s.uid !== undefined) info.uid = s.uid;
+        if (s.gid !== undefined) info.gid = s.gid;
+        if (info.isFile) info.mimeType = getMimeType(check.resolved);
+        logFs('stat', { path: check.resolved, type: info.type, size: info.size });
+        return jsonResponse(res, 200, { success: true, info });
       }
 
       // 删除文件/目录

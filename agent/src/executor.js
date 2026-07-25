@@ -133,7 +133,8 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
 
   // 存储到 entry 中供 clearTimers 读取
   // stdoutBuf/stderrBuf 始终收集，用于回放给延迟连接的 WS 客户端
-  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '' };
+  // command/startTime 用于状态详情面板展示运行中进程
+  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '', command, startTime: Date.now() };
   runningProcesses.set(execId, entry);
 
   // 超时控制
@@ -382,11 +383,19 @@ function killProcess(execId) {
 
 /**
  * 获取运行中的进程列表
+ * 返回每个进程的 execId、pid、command、startTime、duration（已运行毫秒数）
  */
 function getRunningProcesses() {
+  const now = Date.now();
   const list = [];
-  for (const [execId] of runningProcesses) {
-    list.push({ execId });
+  for (const [execId, entry] of runningProcesses) {
+    list.push({
+      execId,
+      pid: entry.process && entry.process.pid ? entry.process.pid : null,
+      command: entry.command || '',
+      startTime: entry.startTime || null,
+      duration: entry.startTime ? now - entry.startTime : 0
+    });
   }
   return list;
 }

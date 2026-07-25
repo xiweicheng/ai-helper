@@ -731,7 +731,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 /**
  * 更新 Side Panel 头部的 Agent 连接指示器
  */
-async function updateAgentIndicator(platformInfo) {
+async function updateAgentIndicator(platformInfo, skipPing = false) {
   const dot = document.getElementById('headerAgentDot');
   const nameEl = document.getElementById('headerAgentName');
   const trigger = document.getElementById('headerAgentTrigger');
@@ -764,10 +764,12 @@ async function updateAgentIndicator(platformInfo) {
   // 更新下拉列表
   updateAgentDropdown(activeAgent, allAgents, connected);
 
-  // 如果下拉已打开，Ping 各代理更新在线状态
-  const dropdown = document.getElementById('headerAgentDropdown');
-  if (dropdown && dropdown.style.display !== 'none') {
-    pingAllAgents();
+  // 如果下拉已打开且未跳过，Ping 各代理更新在线状态
+  if (!skipPing) {
+    const dropdown = document.getElementById('headerAgentDropdown');
+    if (dropdown && dropdown.style.display !== 'none') {
+      pingAllAgents();
+    }
   }
 
   // 同步更新工作目录面板入口可见性
@@ -796,8 +798,10 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
     // 禁用底部操作按钮
     const restartBtn = document.getElementById('agentDdRestartBtn');
     const updateBtn = document.getElementById('agentDdUpdateBtn');
+    const stopBtn = document.getElementById('agentDdStopBtn');
     if (restartBtn) restartBtn.disabled = true;
     if (updateBtn) updateBtn.disabled = true;
+    if (stopBtn) stopBtn.disabled = true;
     return;
   }
 
@@ -845,9 +849,11 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
   // 根据活跃代理连接状态启禁底部操作按钮
   const restartBtn = document.getElementById('agentDdRestartBtn');
   const updateBtn = document.getElementById('agentDdUpdateBtn');
+  const stopBtn = document.getElementById('agentDdStopBtn');
   const btnEnabled = !!(activeAgent && connected);
   if (restartBtn) restartBtn.disabled = !btnEnabled;
   if (updateBtn) updateBtn.disabled = !btnEnabled;
+  if (stopBtn) stopBtn.disabled = !btnEnabled;
 }
 
 /**
@@ -872,12 +878,20 @@ function updateAgentItemOnlineStatus(agentId, online) {
   if (!item) return;
   const dot = item.querySelector('.agent-dd-item-dot');
   const statusEl = item.querySelector('.agent-dd-item-status');
+  const isActive = item.classList.contains('active');
   if (dot) {
-    dot.classList.remove('checking', 'connected', 'disconnected');
-    dot.classList.add(online ? 'online' : 'offline');
+    dot.classList.remove('checking', 'connected', 'disconnected', 'online', 'offline');
+    // 活跃代理用 connected/disconnected（离线时红色更醒目），非活跃代理用 online/offline
+    dot.classList.add(isActive ? (online ? 'connected' : 'disconnected') : (online ? 'online' : 'offline'));
   }
-  if (statusEl && statusEl.textContent === '检测中...') {
-    statusEl.textContent = online ? '在线' : '离线';
+  if (statusEl) {
+    if (isActive) {
+      // 活跃代理：直接更新为"已连接"/"未连接"
+      statusEl.textContent = online ? '已连接' : '未连接';
+    } else if (statusEl.textContent === '检测中...') {
+      // 非活跃代理：仅从"检测中..."更新
+      statusEl.textContent = online ? '在线' : '离线';
+    }
   }
 }
 
@@ -886,14 +900,60 @@ function updateAgentItemOnlineStatus(agentId, online) {
  */
 async function pingAllAgents() {
   try {
-    const storage = await chrome.storage.local.get(['pairedAgents']);
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
+    const activeId = storage.activeAgentId;
     // 并行 ping 所有非停用代理
     await Promise.all(agents.filter(a => !a.disabled).map(async (a) => {
       const online = await pingAgentUrl(a.url);
       updateAgentItemOnlineStatus(a.id, online);
+      // 活跃代理在线状态变化时，同步更新 Header 指示器
+      if (a.id === activeId) {
+        const currentConnected = state.agentPlatform?.connected === true;
+        if (online !== currentConnected) {
+          state.agentPlatform = { ...state.agentPlatform, connected: online };
+          updateAgentIndicator(state.agentPlatform, true); // skipPing 避免递归
+        }
+      }
     }));
   } catch { /* ignore */ }
+}
+
+/**
+ * 重启/更新后启动恢复检测轮询
+ * 每 3s 检测一次活跃代理是否恢复在线，检测到后更新 UI 并停止
+ * @param {string} agentId - 活跃代理 ID
+ * @param {number} maxAttempts - 最大尝试次数（默认 20 次 = 60s）
+ */
+let _recoveryPollingTimer = null;
+function startRecoveryPolling(agentId, maxAttempts = 20) {
+  if (_recoveryPollingTimer) clearInterval(_recoveryPollingTimer);
+  let attempts = 0;
+  _recoveryPollingTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts || !agentId) {
+      clearInterval(_recoveryPollingTimer);
+      _recoveryPollingTimer = null;
+      return;
+    }
+    try {
+      const storage = await chrome.storage.local.get(['pairedAgents']);
+      const agent = (storage.pairedAgents || []).find(a => a.id === agentId);
+      if (!agent) {
+        clearInterval(_recoveryPollingTimer);
+        _recoveryPollingTimer = null;
+        return;
+      }
+      const online = await pingAgentUrl(agent.url);
+      if (online) {
+        clearInterval(_recoveryPollingTimer);
+        _recoveryPollingTimer = null;
+        state.agentPlatform = { ...state.agentPlatform, connected: true };
+        updateAgentIndicator(state.agentPlatform, true);
+        updateAgentItemOnlineStatus(agentId, true);
+      }
+    } catch { /* ignore */ }
+  }, 3000);
 }
 
 /**
@@ -906,6 +966,8 @@ async function initAgentDropdown() {
   const addBtn = document.getElementById('agentDdAddBtn');
   const restartBtn = document.getElementById('agentDdRestartBtn');
   const updateBtn = document.getElementById('agentDdUpdateBtn');
+  const stopBtn = document.getElementById('agentDdStopBtn');
+  const refreshBtn = document.getElementById('agentDdRefreshBtn');
 
   if (!trigger || !dropdown) return;
 
@@ -976,9 +1038,15 @@ async function initAgentDropdown() {
     if (!confirmed) return;
     try {
       // 通过 background 调用
-      chrome.runtime.sendMessage({ type: 'AGENT_RESTART' }, (response) => {
+      chrome.runtime.sendMessage({ type: 'AGENT_RESTART' }, async (response) => {
         if (response?.success) {
           showToast('代理服务正在重启...', 'success');
+          // 重启期间立即更新 UI 为未连接状态（skipPing 避免在代理未真正 shutdown 前 ping 到它）
+          state.agentPlatform = { ...state.agentPlatform, connected: false };
+          await updateAgentIndicator(state.agentPlatform, true);
+          if (active?.id) updateAgentItemOnlineStatus(active.id, false);
+          // 启动恢复检测轮询（每 3s 检测一次，最多 60s）
+          startRecoveryPolling(active?.id);
         } else {
           showToast('重启失败: ' + (response?.error || '未知错误'), 'error');
         }
@@ -1003,9 +1071,15 @@ async function initAgentDropdown() {
     if (!confirmed) return;
     showToast('正在更新代理（可能需要几分钟）...', 'info');
     try {
-      chrome.runtime.sendMessage({ type: 'AGENT_UPDATE' }, (response) => {
+      chrome.runtime.sendMessage({ type: 'AGENT_UPDATE' }, async (response) => {
         if (response?.success) {
           showToast('代理正在更新并重启...', 'success');
+          // 更新期间立即更新 UI 为未连接状态（skipPing 避免在代理未真正 shutdown 前 ping 到它）
+          state.agentPlatform = { ...state.agentPlatform, connected: false };
+          await updateAgentIndicator(state.agentPlatform, true);
+          if (active?.id) updateAgentItemOnlineStatus(active.id, false);
+          // 启动恢复检测轮询（每 3s 检测一次，最多 60s）
+          startRecoveryPolling(active?.id);
         } else {
           showToast('更新失败: ' + (response?.error || '未知错误'), 'error');
         }
@@ -1014,6 +1088,52 @@ async function initAgentDropdown() {
       showToast('更新请求失败: ' + err.message, 'error');
     }
   });
+
+  // 停止代理
+  stopBtn.addEventListener('click', async () => {
+    dropdown.style.display = 'none';
+    const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = storage.pairedAgents || [];
+    const active = agents.find(a => a.id === storage.activeAgentId);
+    const name = active?.name || '未知';
+    const url = active?.url || '未知';
+    const confirmed = await window.showCustomConfirm(
+      `代理名称：${name}\n代理地址：${url}\n\n确定要停止代理服务吗？停止后将无法连接，需要手动重新启动。`,
+      '停止代理'
+    );
+    if (!confirmed) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'AGENT_STOP' }, async (response) => {
+        if (response?.success) {
+          showToast('代理服务已停止，代理已离线', 'success');
+          // 立即更新 UI 为未连接状态，不等 30s 健康检查（skipPing 避免误恢复）
+          state.agentPlatform = { ...state.agentPlatform, connected: false };
+          await updateAgentIndicator(state.agentPlatform, true);
+          if (active?.id) updateAgentItemOnlineStatus(active.id, false);
+        } else {
+          showToast('停止失败: ' + (response?.error || '未知错误'), 'error');
+        }
+      });
+    } catch (err) {
+      showToast('停止请求失败: ' + err.message, 'error');
+    }
+  });
+
+  // 刷新代理在线状态
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      // 将所有代理项设为"检测中..."
+      document.querySelectorAll('.agent-dd-item-dot').forEach(dot => {
+        dot.classList.remove('online', 'offline');
+        dot.classList.add('checking');
+      });
+      document.querySelectorAll('.agent-dd-item-status').forEach(s => {
+        s.textContent = '检测中...';
+      });
+      await pingAllAgents();
+      showToast('代理状态已刷新', 'success');
+    });
+  }
 
   // 代理列表操作（事件委托）
   document.getElementById('agentDdList').addEventListener('click', async (e) => {

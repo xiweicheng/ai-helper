@@ -933,6 +933,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  // 停止代理
+  if (message.type === 'AGENT_STOP') {
+    (async () => {
+      const result = await AgentClient.stopAgent();
+      sendResponse(result);
+    })();
+    return true;
+  }
   // 在本地浏览器打开原型文件
   if (message.type === 'OPEN_LOCAL_PROTOTYPE') {
     (async () => {
