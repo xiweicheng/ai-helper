@@ -934,6 +934,8 @@ const TOOL_HANDLERS = {
   agent_write_file: executeAgentWriteFile,
   agent_list_dir: executeAgentListDir,
   agent_delete_file: executeAgentDeleteFile,
+  agent_list_trash: executeAgentListTrash,
+  agent_restore_trash: executeAgentRestoreTrash,
   agent_download_file: executeAgentDownloadFile,
   agent_exec_command: executeAgentExecCommand,
   agent_search_files: executeAgentSearchFiles,
@@ -2688,6 +2690,48 @@ async function executeAgentDeleteFile(args, toolCallId) {
   if (result.success) {
     appendAuditLog('file_delete', `删除文件: ${result.path}`, { path: result.path });
     return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 回收站列表
+ */
+async function executeAgentListTrash(args, toolCallId) {
+  const result = await AgentClient.getTrashList();
+  if (result.success) {
+    let entries = result.entries || [];
+    // 按可选的 hours 参数过滤时间范围
+    if (args.hours && typeof args.hours === 'number' && args.hours > 0) {
+      const cutoff = Date.now() - args.hours * 3600 * 1000;
+      entries = entries.filter(e => e.deletedAt >= cutoff);
+    }
+    if (entries.length === 0) {
+      return { success: true, content: '回收站为空，没有可恢复的文件。', entries: [], tool_call_id: toolCallId };
+    }
+    const now = Date.now();
+    const text = `回收站中共有 ${entries.length} 个文件（7天后自动清理）:\n\n` +
+      entries.map((e, i) => {
+        const age = Math.round((now - e.deletedAt) / (1000 * 60 * 60));
+        const ageStr = age < 1 ? '刚刚' : age < 24 ? `${age}小时前` : `${Math.round(age / 24)}天前`;
+        return `  ${i + 1}. trashId: ${e.id}\n     文件名: ${e.name}\n     原路径: ${e.originalPath}\n     大小: ${e.size} 字节 · ${ageStr}`;
+      }).join('\n\n');
+    return { success: true, content: text, entries, tool_call_id: toolCallId };
+  }
+  return { success: false, error: result.error, tool_call_id: toolCallId };
+}
+
+/**
+ * Agent 回收站恢复
+ */
+async function executeAgentRestoreTrash(args, toolCallId) {
+  const { trashId } = args;
+  if (!trashId) return { success: false, error: '缺少 trashId 参数，请先从 agent_list_trash 获取要恢复条目的 id', tool_call_id: toolCallId };
+
+  const result = await AgentClient.restoreTrash(trashId);
+  if (result.success) {
+    appendAuditLog('file_restore', `恢复文件: ${result.restoredPath}`, { trashId, restoredPath: result.restoredPath });
+    return { success: true, message: `已恢复: ${result.restoredPath}`, restoredPath: result.restoredPath, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }

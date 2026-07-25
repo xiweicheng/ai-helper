@@ -79,6 +79,44 @@ export const AGENT_TOOLS = [
     }
   },
   {
+    id: 'agent_list_trash',
+    category: 'local_agent',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'agent_list_trash',
+      description: '列出回收站中的文件',
+      parameters: {
+        type: 'object',
+        properties: {
+          hours: { type: 'number', description: '仅返回最近N小时内删除的文件，不传则返回全部' }
+        },
+        required: []
+      }
+    }
+  },
+  {
+    id: 'agent_restore_trash',
+    category: 'local_agent',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'agent_restore_trash',
+      description: '从回收站恢复文件',
+      parameters: {
+        type: 'object',
+        properties: {
+          trashId: { type: 'string', description: '回收站条目ID（来自 agent_list_trash）' }
+        },
+        required: ['trashId']
+      }
+    }
+  },
+  {
     id: 'agent_download_file',
     category: 'local_agent',
     execution: 'background',
