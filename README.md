@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **50+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出等高级能力。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **50+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站等高级能力。
 
 ## 为什么选择 AI Helper
 
@@ -48,7 +48,8 @@ AI Helper 是一个**深度集成浏览器能力**的智能助手，相比于普
 │  多助手管理 | Token 统计面板 | Agent 选择器 | @ Agent/网页切换  │
 │  图片识别输入 | 图片标注编辑 | 文件上传提取 | 会话导出/导入    │
 │  技能选择器 (Skill Tab) | MCP 服务选择器 (MCP Tab)            │
-│  聊天导出 (Word/PDF) | 断点续接 | 消息复制                     │
+│  聊天导出 (Word/PDF) | 断点续接 | 消息复制                    │
+│  工作目录管理 | 文件预览 | 消息搜索 | 消息收藏                │
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
                ▼                               ▼
@@ -129,6 +130,8 @@ AI Helper 是一个**深度集成浏览器能力**的智能助手，相比于普
 ai-helper/
 ├── agent/                               # 代理服务（Node.js 独立进程）
 │   ├── bin/agent.js                     # CLI 启动脚本
+│   ├── publish.sh                        # NPM 发布脚本
+│   ├── PUBLISH.md                        # 发布文档
 │   ├── src/
 │   │   ├── server.js                    # HTTP + WebSocket 服务端
 │   │   ├── executor.js                  # 命令执行引擎（流式/阻塞）
@@ -137,6 +140,7 @@ ai-helper/
 │   │   ├── auth.js                      # 配对认证（4 位动态码）
 │   │   ├── search.js                    # 文件/内容搜索（fd/rg 加速）
 │   │   ├── logger.js                    # 结构化日志
+│   │   ├── trash.js                     # 文件回收站（软删除 + 7 天自动清理）
 │   │   ├── skill/                       # Skill 系统
 │   │   │   ├── loader.js               # Skill 加载器（JSON/YAML/SKILL.md）
 │   │   │   ├── registry.js             # Skill 注册表
@@ -157,12 +161,15 @@ ai-helper/
 │   ├── mermaid.min.js                   # Mermaid 图表渲染引擎
 │   ├── qrcode.min.js                    # 二维码生成库
 │   ├── pdf.worker.min.js               # PDF.js Worker (PDF 提取)
+│   ├── html2canvas.min.js              # HTML Canvas 截图库（PDF 导出）
+│   ├── jspdf.min.js                     # jsPDF PDF 生成库
 │   └── github-markdown-light.min.css    # GitHub 风格 Markdown 样式
 ├── scripts/                             # 构建工具脚本
 │   ├── fix-build.js                     # 修复 @crxjs/vite-plugin 打包产物
 │   ├── silent-build.js                  # 静默构建（CI 友好，仅失败输出）
 │   ├── generate-icons.js                # 图标生成脚本
-│   └── deploy-pages.sh                  # Pages 部署脚本
+│   ├── deploy-pages.sh                  # Pages 部署脚本
+│   └── split-tools.cjs                  # 工具定义拆分脚本
 ├── styles/
 │   └── styles.css                       # Content Script 浮框样式
 ├── src/                                 # 扩展源码
@@ -170,8 +177,10 @@ ai-helper/
 │   │   ├── index.js                     # 入口：消息路由、会话管理、Agent 健康监测
 │   │   ├── react-loop.js               # ReAct 推理循环（核心引擎，含三级反思系统）
 │   │   ├── react-reflection.js         # 三级反思系统（后置反思、工具级反思、子任务反思）
+│   │   ├── context-summarizer.js       # 上下文增量摘要（长对话关键信息提取）
 │   │   ├── tool-executor.js            # 工具定义注册、执行调度、MCP 动态注入
 │   │   ├── tool-preselector.js         # 工具预筛选（轻量 API 提前过滤）
+│   │   ├── tool-helpers.js             # 工具辅助函数（下载、截图等共享逻辑）
 │   │   ├── local-agent-client.js       # 本地 Agent HTTP/WebSocket 通信
 │   │   ├── agent-dispatcher.js         # Agent 子任务分发器
 │   │   ├── stream-controller.js        # 流式响应控制器（SSE 解析 + DeepSeek thinking）
@@ -194,11 +203,14 @@ ai-helper/
 │   ├── content/                         # 页面注入脚本
 │   │   ├── index.js                     # 入口：消息路由分发
 │   │   ├── page-tools.js               # 页面内容工具（提取、搜索、无障碍树等）
+│   │   ├── page-extract.js             # 页面内容提取工具集（8 个导出函数）
 │   │   ├── page-interaction.js         # 可交互元素查询（query_interactive_elements）
+│   │   ├── page-utils.js               # 页面工具函数
 │   │   ├── interaction-tools.js        # 交互工具（点击、填表、语音合成等）
 │   │   ├── advanced-tools.js           # 高级工具（视频、性能审计、Shadow DOM 等）
 │   │   ├── shadow-dom-utils.js         # Shadow DOM 递归穿透 + 同源 iframe
-│   │   └── selection-toolbar.js        # 划词浮动工具栏（类比豆包设计）
+│   │   ├── selection-toolbar.js        # 划词浮动工具栏（类比豆包设计）
+│   │   └── selection-toolbar-styles.js # 划词浮动工具栏样式
 │   ├── offscreen/                       # Offscreen 文档（剪贴板操作）
 │   │   ├── offscreen.html              # Offscreen 页面
 │   │   └── offscreen.js                # Clipboard API 桥接
@@ -231,6 +243,11 @@ ai-helper/
 │   │   ├── skill-selector.js           # 技能/MCP 服务快捷选择器
 │   │   ├── export-import.js            # 会话导出/导入（批量选择、格式校验）
 │   │   ├── execution-log-render.js     # 执行日志渲染（任务组、实时模式）
+│   │   ├── workspace-manager.js        # 工作目录数据管理（缓存、图标、格式化）
+│   │   ├── workspace-panel.js          # 工作目录 UI 面板（目录树、预览、上传）
+│   │   ├── bookmark-manager.js         # 消息收藏数据管理（IndexedDB 持久化）
+│   │   ├── bookmark-panel.js           # 消息收藏 UI 面板（搜索、分组展示）
+│   │   ├── search-panel.js             # 消息搜索 UI 面板（全文搜索、双模式）
 │   │   ├── icons.js                     # 共享 SVG 图标常量
 │   │   ├── state.js                     # 全局状态管理（Proxy 双导出模式）
 │   │   ├── utils.js                     # 工具函数（Toast、系统提示词构建等）
@@ -255,6 +272,7 @@ ai-helper/
 │       ├── tools.js                     # 工具分类、温度预设
 │       ├── utils.js                     # 通用工具函数（makeResult 标准化等）
 │       ├── token-counter.js            # Token 计数、预算管理、上下文压缩、消息摘要
+│       ├── logger.js                    # 统一日志模块
 │       └── agent-defaults.js           # 内置 Agent 定义和模板
 ├── manifest.json                        # Chrome 扩展配置
 ├── side_panel.html                      # 侧边栏 HTML
@@ -524,6 +542,82 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 - **可见性检测**：严格可见性判断（display/visibility/opacity/尺寸）
 - **React 组件支持**：`keyboard_input` 绕过 React 合成事件系统，`fill_form` 支持 contenteditable/prosemirror 等富文本编辑器
 
+### 23. 工作目录管理
+
+连接代理服务后，可在侧边栏中直接浏览和管理本地文件系统：
+
+- **目录树浏览**：面包屑导航、返回上级、点击展开目录，支持按名称/大小/修改时间排序
+- **多选操作**：Checkbox 批量选择，支持全选/取消全选，批量下载打包 ZIP、批量删除
+- **拖拽移动**：面板内拖拽文件/目录到目标路径，支持拖到面包屑导航快速移动
+- **键盘导航**：↑↓ 导航、Enter 打开、Space 选择、Delete 删除、F2 重命名、Esc 取消
+- **目录缓存**：LRU 缓存最近 20 个目录（30s TTL），避免重复请求
+- **Agent 切换感知**：Agent 连接状态变化时自动重置缓存并刷新
+- **基于文件问答**：选中文件后可一键将文件路径作为上下文附加到聊天输入
+- **上传**：支持按钮选择和拖拽上传，流式 HTTP 上传（最多并发 3 个），含进度面板和取消功能
+- **下载**：流式下载带进度条，支持取消，目录自动打包 ZIP
+- **虚拟滚动**：文件项超过 200 时自动启用，仅渲染可视区域，优化大目录性能
+
+### 24. 文件预览
+
+在工作目录中点击文件即可即时预览，不离开侧边栏：
+
+- **文本/代码**：带行号的语法高亮预览（上限 1MB / 10000 行）
+- **PDF**：基于 PDF.js 的内置预览，支持缩放、翻页、适应页面
+- **Word (.docx)**：基于 mammoth.js 转 HTML 预览（上限 20MB）
+- **Excel (.xlsx)**：通过后端解析为表格渲染，支持前 2000 行
+- **图片**：内置预览，滚轮缩放 + 拖拽平移（上限 50MB）
+- **文件详情**：点击信息按钮展示权限（rwx + 八进制）、UID/GID、MIME 类型、各时间戳
+
+### 25. 消息搜索
+
+侧边栏内置全文消息搜索，快速定位历史对话：
+
+- **双模式搜索**：全局搜索（从 IndexedDB 加载所有会话）和当前会话搜索（从内存快速查询）
+- **增量式加载**：先搜索当前会话立即展示，再逐个搜索其他会话，边搜边更新 UI
+- **高级语法**：支持 `&` (AND) 和 `|` (OR) 组合搜索，`&` 优先级高于 `|`
+- **导航定位**：点击结果自动切换到目标会话、滚动定位到消息，2 秒高亮动画
+- **搜索历史**：上下键导航历史记录（最多 20 条）
+- **搜索词高亮**：匹配词在预览中高亮显示，展示前后各 30 字上下文
+
+### 26. 消息收藏
+
+重要的 AI 回答可以一键收藏，方便日后快速回顾：
+
+- **一键收藏**：消息底部操作栏点击书签图标即可收藏/取消收藏
+- **置顶支持**：重要收藏可置顶在收藏面板顶部
+- **搜索筛选**：支持 AND/OR 高级搜索语法筛选收藏内容
+- **分组展示**：按当前会话和其他会话分组，匹配词高亮
+- **快速定位**：点击收藏条目自动跳转到对应会话的消息位置
+- **自动清理**：消息或会话不存在时自动移除孤立的收藏记录
+
+### 27. 文件回收站
+
+代理端的文件删除操作默认为软删除，放入回收站而非物理删除：
+
+- **软删除保护**：删除文件自动移至 `~/.ai-helper-agent/.trash/` 目录，记录原路径和时间
+- **7 天保留期**：过期文件自动清理（每次操作前投机式清理 + 每 6 小时定期清理）
+- **一键恢复**：通过 `agent_restore_trash` 工具可将文件恢复到原路径
+- **回收站列表**：通过 `agent_list_trash` 查看所有回收站条目
+- **API 集成**：`/api/fs/delete` 默认走回收站，`/api/trash/restore` 和 `/api/trash/list` 提供恢复和列表接口
+
+### 28. Agent 重启与自动更新
+
+代理服务支持在线重启和一键更新，无需手动操作终端：
+
+- **在线重启**：`/api/agent/restart` 两阶段重启（spawn helper → 等待旧进程退出 → 启动新进程）
+- **自动更新**：`/api/agent/update` 执行 `npm install -g ai-helper-agent@latest` 并自动重启（90s 超时保护）
+- **更新冷却**：10 秒内不允许重复重启/更新，防止意外并发
+- **失败回退**：更新失败不回滚旧进程，返回手动安装指引
+
+### 29. 上下文增量摘要
+
+当对话上下文 Token 超出预算时，自动对旧的工具调用轮次生成摘要：
+
+- **轮次提取**：自动识别完整工具调用轮次（assistant tool_calls + 所有 tool 结果）
+- **LLM 摘要生成**：调用轻量 API 将工具调用情况概括为中文一句话摘要
+- **降级策略**：摘要请求失败时回退到直接删除旧消息
+- **批量处理**：支持在一个 Token 超标周期内批量处理多轮次
+
 ---
 
 ## 内建工具（50+ 项可配置 + MCP 动态扩展）
@@ -600,7 +694,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `get_browser_info` | 获取浏览器环境信息 |
 
-### AI 协作（6 个）
+### AI 协作（8 个）
 | 工具 | 说明 |
 |------|------|
 | `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒） |
@@ -609,19 +703,24 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `search_conversation_memory` | 搜索对话记忆（当前会话 / 所有历史会话） |
 | `dispatch_sub_agent` | 子任务分派给子 Agent 执行（支持并行分派） |
 | `highlight_text` | 高亮页面文本 |
+| `ai_agent_list` | 查询所有已配对代理的状态信息 |
+| `ai_agent_switch` | 切换到指定的本地代理 |
 
-### Agent（9 个）—— 需安装代理服务
+### Agent（12 个）—— 需安装代理服务
 | 工具 | 说明 |
 |------|------|
 | `agent_read_file` | 读取本地文件（路径沙箱，大小限制） |
 | `agent_write_file` | 写入本地文件（脚本自动去执行权限） |
 | `agent_list_dir` | 列出目录内容 |
-| `agent_delete_file` | 删除本地文件/目录（需确认） |
+| `agent_delete_file` | 删除本地文件/目录（软删除至回收站） |
+| `agent_list_trash` | 列出回收站文件（支持恢复） |
+| `agent_restore_trash` | 从回收站恢复文件到原路径 |
+| `agent_download_file` | 下载远程文件到本地 Agent（限 Agent 配对后） |
 | `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
 | `agent_search_files` | 按文件名搜索（fd 加速） |
 | `agent_search_content` | 在文件中搜索文本（ripgrep 加速） |
 | `agent_skill_load` | 按需加载 Agent Skill 的完整说明文档 |
-| `agent_skill_run` | 执行预定义的 Workflow Skill 工作流 |
+| `agent_workflow_run` | 执行预定义的 Workflow Skill 工作流 |
 
 ### 长期记忆（3 个）—— 需安装代理服务
 | 工具 | 说明 |
@@ -694,15 +793,24 @@ Agent 命令执行三级安全：
 ┌─────────────────────────────────┐
 │   ai-helper-agent (Node.js)      │
 │   ├── HTTP API                   │
-│   │   ├── /api/fs/* (文件 CRUD)   │
-│   │   ├── /api/files/upload (上传)│
-│   │   ├── /api/exec (命令执行)    │
-│   │   ├── /api/status (健康检查)  │
-│   │   ├── /api/pair (配对认证)    │
-│   │   ├── /api/logs (日志查询)    │
-│   │   ├── /api/shutdown (优雅关闭)│
-│   │   ├── /api/skill/* (技能管理) │
-│   │   └── /api/mcp/* (MCP 管理)   │
+│   │   ├── /api/fs/* (文件 CRUD)    │
+│   │   ├── /api/fs/stat (文件详情)   │
+│   │   ├── /api/fs/upload-stream    │
+│   │   ├── /api/fs/download-stream  │
+│   │   ├── /api/fs/preview-xlsx     │
+│   │   ├── /api/files/upload (上传)  │
+│   │   ├── /api/exec (命令执行)      │
+│   │   ├── /api/status (健康检查)    │
+│   │   ├── /api/status/detail       │
+│   │   ├── /api/pair (配对认证)      │
+│   │   ├── /api/logs (日志查询)      │
+│   │   ├── /api/shutdown (优雅关闭)  │
+│   │   ├── /api/agent/restart       │
+│   │   ├── /api/agent/update        │
+│   │   ├── /api/trash/* (回收站)     │
+│   │   ├── /api/browser/open        │
+│   │   ├── /api/skill/* (技能管理)   │
+│   │   └── /api/mcp/* (MCP 管理)     │
 │   ├── WebSocket (命令输出流)      │
 │   ├── Skill 系统                  │
 │   │   ├── Workflow Skill 执行器   │
@@ -724,8 +832,9 @@ Agent 命令执行三级安全：
 - **命令安全**：环境变量白名单（约 40 个），`TERM=dumb` 禁用互动
 - **脚本保护**：写入 `.sh`/`.py`/`.js` 等自动去除执行权限
 - **大小限制**：请求体 10MB，单文件 50MB
-- **并发安全**：磁盘写入互斥锁，优雅关闭防双重关闭
-- **配置缓存**：mtime 检测，避免重复读盘
+- **文件回收站**：删除文件默认软删除至 `~/.ai-helper-agent/.trash/`，7 天自动清理，支持恢复
+- **在线更新**：支持通过 API 在线重启和自动更新 Agent（`/api/agent/restart`、`/api/agent/update`）
+- **多格式预览**：服务端支持 xlsx 解析预览，浏览器端支持 PDF/Word/图片预览
 
 ### Skill 系统（Agent 端）
 
@@ -746,13 +855,18 @@ Agent 命令执行三级安全：
 ### 启动 Agent
 
 ```bash
+# 方式一：全局安装（推荐）
+npm install -g ai-helper-agent
+ai-helper-agent start
+
+# 方式二：本地开发
 cd agent
 npm install
 npm start
 # 默认监听 127.0.0.1:18910
 ```
 
-在扩展选项页的「Agent」标签页中填入配对码完成连接。
+在扩展选项页的「Agent」标签页中填入终端显示的配对码完成连接。
 
 ---
 
@@ -902,7 +1016,7 @@ import { messageHistory } from './state.js'; // 直接解构
 
 ### IndexedDB 数据库设计
 
-`ai-helper-db` (v4)，六个对象存储：
+`ai-helper-db` (v4)，七个对象存储：
 
 | Store | 用途 |
 |-------|------|
@@ -912,6 +1026,7 @@ import { messageHistory } from './state.js'; // 直接解构
 | `uiPrototypes` | UI 原型（索引：createdAt, sessionId） |
 | `tokenStats` | Token 使用统计（索引：timestamp, sessionId） |
 | `reactCheckpoints` | ReAct Checkpoint 断点（7 天 TTL 自动过期） |
+| `bookmarks` | 消息收藏（索引：sessionId, pinned, createdAt） |
 
 支持自动从事务失败恢复及旧版 `chrome.storage.local` 自动迁移。
 
@@ -939,9 +1054,12 @@ Chrome 版本需 >= 114，低版本不支持 Side Panel API。
 
 **Q: 如何连接本地 Agent？**
 ```bash
+# 全局安装（推荐）
+npm install -g ai-helper-agent && ai-helper-agent start
+# 或本地启动
 cd agent && npm install && npm start
 ```
-然后在扩展选项页「Agent」标签页中输入终端显示的 6 位配对码。
+然后在扩展选项页「Agent」标签页中输入终端显示的配对码。
 
 **Q: 如何添加 MCP 工具？**
 选项页 →「工具箱」Tab → 添加 MCP 服务器 → 填写命令和参数 → 连接。工具会自动注册到系统中。
