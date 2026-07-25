@@ -263,7 +263,7 @@ async function checkAgentConnectivity() {
 export async function getTools(agentToolIds = null, agentId = null, agentSkillIds = null) {
   return new Promise((resolve) => {
     const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
-    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput'], async (result) => {
+    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents'], async (result) => {
       // 优先读取 agent-specific key，降级到旧的全局 enabledTools
       let enabledTools = result[agentToolsKey] || result.enabledTools;
       
@@ -296,6 +296,9 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
       
+      // 配对代理数量：小于 2 个时，隐藏代理管理工具（无需切换/查询）
+      const pairedCount = (result.pairedAgents || []).length;
+      
       console.log(`[Background] 工具配置: ${finalToolIds.length} 个启用, Agent=${agentConnected}, 图片识别=${visionEnabled}`);
       
       // 读取 MCP 全局开关和 Agent 连接状态
@@ -306,6 +309,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         .filter(tool => {
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
+          // 配对代理不足 2 个时，隐藏代理管理工具
+          if ((tool.id === 'agent_list' || tool.id === 'agent_switch') && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
           if ((tool.id === 'agent_workflow_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
@@ -947,6 +952,8 @@ const TOOL_HANDLERS = {
   agent_memory_store: executeAgentMemoryStore,
   agent_memory_recall: executeAgentMemoryRecall,
   agent_memory_manage: executeAgentMemoryManage,
+  agent_list: executeAgentList,
+  agent_switch: executeAgentSwitch,
   // ── 合并后的工具 ──
   get_page_content: executeGetPageContent,
   extract_data: executeExtractData,
@@ -4092,4 +4099,118 @@ export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
   setTimeout(() => {
     cancelledSessions.delete(sessionId);
   }, 3000);
+}
+
+// ========== 本地代理管理工具 ==========
+
+/**
+ * agent_list - 查询所有已配对的本地代理及其状态
+ */
+async function executeAgentList(args, toolCallId) {
+  try {
+    const agents = await AgentClient.getPairedAgents();
+    const activeAgent = await AgentClient.getActiveAgent();
+    
+    const list = [];
+    for (const agent of agents) {
+      const reachable = AgentClient.isAgentReachable(agent.id);
+      list.push({
+        id: agent.id,
+        name: agent.name,
+        url: agent.url,
+        reachable: reachable,           // null=未知, true=在线, false=离线
+        disabled: agent.disabled || false,
+        isActive: activeAgent?.id === agent.id
+      });
+    }
+    
+    const summary = list.map(a => {
+      const status = a.disabled ? '已停用' : (a.reachable === true ? '在线' : a.reachable === false ? '离线' : '状态未知');
+      const activeMark = a.isActive ? ' ★当前活跃' : '';
+      return `- ${a.name} (${a.id}): ${status}${activeMark}`;
+    }).join('\n');
+    
+    return {
+      success: true,
+      content: `已配对代理列表：\n${summary}\n\n完整数据：${JSON.stringify(list, null, 2)}`,
+      agents: list,
+      activeAgentId: activeAgent?.id || null,
+      tool_call_id: toolCallId
+    };
+  } catch (err) {
+    return { success: false, error: `查询代理列表失败: ${err.message}`, tool_call_id: toolCallId };
+  }
+}
+
+/**
+ * agent_switch - 切换到指定的本地代理
+ */
+async function executeAgentSwitch(args, toolCallId) {
+  const { agentId, agentName } = args;
+  
+  if (!agentId && !agentName) {
+    return { success: false, error: '请提供 agentId 或 agentName 参数', tool_call_id: toolCallId };
+  }
+  
+  try {
+    const agents = await AgentClient.getPairedAgents();
+    
+    let targetAgent;
+    if (agentId) {
+      targetAgent = agents.find(a => a.id === agentId);
+    }
+    if (!targetAgent && agentName) {
+      // 精确匹配
+      targetAgent = agents.find(a => a.name === agentName);
+      // 模糊匹配
+      if (!targetAgent) {
+        targetAgent = agents.find(a => a.name && a.name.toLowerCase().includes(agentName.toLowerCase()));
+      }
+    }
+    
+    if (!targetAgent) {
+      const availableList = agents.map(a => `- ${a.name} (${a.id})`).join('\n');
+      return {
+        success: false,
+        error: `未找到代理 "${agentId || agentName}"。当前可用的代理：\n${availableList}`,
+        tool_call_id: toolCallId
+      };
+    }
+    
+    if (targetAgent.disabled) {
+      return {
+        success: false,
+        error: `代理 "${targetAgent.name}" 已停用，请先启用后再切换`,
+        tool_call_id: toolCallId
+      };
+    }
+    
+    const reachable = AgentClient.isAgentReachable(targetAgent.id);
+    if (reachable === false) {
+      return {
+        success: false,
+        error: `代理 "${targetAgent.name}" 当前离线，无法切换`,
+        tool_call_id: toolCallId
+      };
+    }
+    
+    const switched = await AgentClient.switchActiveAgent(targetAgent.id);
+    if (!switched) {
+      return {
+        success: false,
+        error: `切换到代理 "${targetAgent.name}" 失败`,
+        tool_call_id: toolCallId
+      };
+    }
+    
+    return {
+      success: true,
+      content: `已成功切换到代理 "${targetAgent.name}" (${targetAgent.id})`,
+      agentId: targetAgent.id,
+      agentName: targetAgent.name,
+      tool_call_id: toolCallId
+    };
+  } catch (err) {
+    return { success: false, error: `切换代理失败: ${err.message}`, tool_call_id: toolCallId };
+  }
 }
