@@ -1386,9 +1386,11 @@ async function previewDocx(arrayBuffer, previewContent) {
     ALLOWED_ATTR: ['href','src','alt','title','style'],
   });
 
-  if (result.messages && result.messages.length > 0) {
-    const warnings = result.messages.map(m => `<div class="docx-warning">⚠ ${escapeHtml(m.message)}</div>`).join('');
-    previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}<div class="docx-warnings">${warnings}</div></div>`;
+  // 仅展示 error 级别消息，过滤掉 mammoth 的样式警告（如 Unrecognised paragraph style）
+  const errors = result.messages ? result.messages.filter(m => m.type === 'error') : [];
+  if (errors.length > 0) {
+    const errorDivs = errors.map(m => `<div class="docx-warning">⚠ ${escapeHtml(m.message)}</div>`).join('');
+    previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}<div class="docx-warnings">${errorDivs}</div></div>`;
   } else {
     previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}</div>`;
   }
