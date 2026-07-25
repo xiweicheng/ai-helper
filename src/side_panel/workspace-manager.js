@@ -66,14 +66,35 @@ export function formatTime(mtime) {
  */
 export function supportsPreview(name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
-  const textExts = new Set([
+  const previewExts = new Set([
+    // 文本/代码
     'txt', 'md', 'json', 'js', 'mjs', 'ts', 'jsx', 'tsx',
     'html', 'htm', 'css', 'scss', 'less', 'xml', 'yaml', 'yml',
     'py', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'rb', 'php',
     'sql', 'sh', 'bash', 'zsh', 'cfg', 'ini', 'toml', 'conf',
     'log', 'csv', 'tsv', 'env', 'vue', 'svelte', 'astro', 'rtf', 'svg',
+    // 文档
+    'pdf', 'docx',
+    // 表格
+    'xlsx', 'xls',
+    // 图片
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
   ]);
-  return textExts.has(ext);
+  return previewExts.has(ext);
+}
+
+/**
+ * 获取文件预览类型分类
+ * @returns {'text'|'pdf'|'docx'|'xlsx'|'image'|'unknown'}
+ */
+export function getPreviewType(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (ext === 'pdf') return 'pdf';
+  if (ext === 'docx') return 'docx';
+  if (ext === 'xlsx' || ext === 'xls') return 'xlsx';
+  if (new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico']).has(ext)) return 'image';
+  // 剩下的文本/代码/svg 都按 text 处理
+  return 'text';
 }
 
 /**

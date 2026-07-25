@@ -21,6 +21,7 @@ import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpSe
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { clearPageSelection } from './page-selector.js';
+import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 
 // 从拆分子模块导入复制与导出相关函数
@@ -2264,6 +2265,18 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
   }
 
   await saveChatHistoryAsync();
+
+  // 防止 saveChatHistoryAsync 静默失败导致 IndexedDB 中残留已删除消息
+  // 直接通过 IndexedDB 单独清理，确保搜索时不会出现已删除的消息
+  if (messageId && state.activeSessionId) {
+    deleteMessageFromSession(state.activeSessionId, messageId).then((ok) => {
+      if (!ok) {
+        logger.warn('[SidePanel] IndexedDB 消息清理失败, messageId:', messageId);
+      }
+    }).catch(err => {
+      logger.error('[SidePanel] IndexedDB 消息清理异常:', err);
+    });
+  }
 
   logger.debug(`[SidePanel] 已删除消息: ${role}, messageId: ${messageId}`);
 }

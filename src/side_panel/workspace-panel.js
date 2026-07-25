@@ -8,12 +8,20 @@ import {
   searchFilesRemote,
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
-  supportsPreview, getMimeType
+  supportsPreview, getPreviewType, getMimeType
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
 import { showToast } from './utils.js';
 import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
+import DOMPurify from 'dompurify';
+
+// 配置 PDF.js Worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+
 
 // 当前浏览路径
 let currentPath = null;
@@ -958,12 +966,59 @@ function updateSortIndicators() {
   });
 }
 
-/**
- * 预览文件
- */
-const PREVIEW_MAX_SIZE = 1024 * 1024;   // 预览文件大小上限 1MB
-const PREVIEW_MAX_LINES = 10000;         // 预览最大渲染行数
+// 各类文件预览大小上限
+const PREVIEW_MAX_TEXT  = 1024 * 1024;       // 文本: 1MB（DOM 渲染密集，需保守）
+const PREVIEW_MAX_PDF   = 50 * 1024 * 1024;  // PDF: 50MB
+const PREVIEW_MAX_DOCX  = 20 * 1024 * 1024;  // Word: 20MB
+const PREVIEW_MAX_XLSX  = 30 * 1024 * 1024;  // Excel: 30MB
+const PREVIEW_MAX_IMAGE = 50 * 1024 * 1024;  // 图片: 50MB
+const PREVIEW_MAX_LINES = 10000;              // 文本预览最大渲染行数
+const PREVIEW_XLSX_MAX_ROWS = 500;            // Excel 预览最大渲染行数（防止 DOM 爆炸卡死）
 
+/**
+ * 从 Agent 后端获取文件二进制内容（ArrayBuffer）
+ * 手动读取 response body stream，绕过 blob/arrayBuffer 等中间 API，
+ * 避免 Content-Disposition: attachment 响应头导致的潜在数据截断
+ */
+async function fetchFileArrayBuffer(filePath) {
+  const config = await getAgentConfig();
+  if (!config) throw new Error('Agent 未配对');
+  const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.token}`
+    },
+    body: JSON.stringify({ path: filePath })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(typeof errText === 'string' ? errText : `HTTP ${resp.status}`);
+  }
+
+  // 手动从 ReadableStream 逐块读取，避免 resp.blob()/arrayBuffer() 在
+  // Content-Disposition: attachment 响应下可能的截断问题
+  const reader = resp.body.getReader();
+  const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    result.set(c, offset);
+    offset += c.length;
+  }
+  return result.buffer;
+}
+
+/**
+ * 预览文件（按类型分支）
+ */
 async function previewFile(filePath, fileName) {
   const previewArea = document.getElementById('workspacePreviewArea');
   const previewContent = document.getElementById('workspacePreviewContent');
@@ -982,40 +1037,316 @@ async function previewFile(filePath, fileName) {
   // 存储当前预览文件路径供下载/复制使用
   previewArea.dataset.previewPath = filePath;
   previewArea.dataset.previewName = fileName;
+  // 清除旧的自定义数据
+  delete previewArea.dataset.previewType;
+  delete previewArea.dataset.previewSheets;
 
-  // 大文件保护：从缓存中获取文件大小，超限则拒绝预览
+  // 根据文件类型选择不同策略
+  const previewType = getPreviewType(fileName);
+
+  // 获取文件大小
   const entry = cachedEntries.find(e => e.path === filePath)
     || searchResults.find(e => e.fullPath === filePath);
   const fileSize = entry ? entry.size : 0;
-  if (fileSize > PREVIEW_MAX_SIZE) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+
+  // 文本文件走原有 UTF-8 读取路径
+  if (previewType === 'text') {
+    copyBtn.style.display = '';
+    if (fileSize > PREVIEW_MAX_TEXT) {
+      previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+      return;
+    }
+    await previewTextFile(filePath, fileName, lineCountEl, previewContent);
     return;
   }
 
-  // 文本文件预览
-  const result = await readFileContent(filePath);
-  if (result.success) {
-    const lang = getLanguageClass(fileName);
-    const text = result.content || '';
-    const lines = text.split('\n');
-    lineCountEl.textContent = `${lines.length} 行`;
+  // 非文本文件走二进制下载路径
+  // 隐藏复制按钮（二进制文件不支持文本复制）
+  copyBtn.style.display = 'none';
 
-    // 超大行数截断保护，避免创建过多 DOM 节点
-    const truncated = lines.length > PREVIEW_MAX_LINES;
-    const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
+  try {
+    const maxSize = {
+      pdf: PREVIEW_MAX_PDF,
+      docx: PREVIEW_MAX_DOCX,
+      xlsx: PREVIEW_MAX_XLSX,
+      image: PREVIEW_MAX_IMAGE,
+    }[previewType] || PREVIEW_MAX_TEXT;
 
-    let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
-    for (let i = 0; i < displayLines.length; i++) {
-      numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
+    if (fileSize > maxSize) {
+      previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+      return;
     }
-    if (truncated) {
-      numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
+
+    const arrayBuffer = await fetchFileArrayBuffer(filePath);
+
+    switch (previewType) {
+      case 'pdf':
+        await previewPdf(arrayBuffer, fileName, previewContent, previewArea);
+        break;
+      case 'docx':
+        await previewDocx(arrayBuffer, previewContent);
+        break;
+      case 'xlsx':
+        await previewXlsx(arrayBuffer, fileName, previewContent, previewArea);
+        break;
+      case 'image':
+        await previewImage(arrayBuffer, fileName, previewContent);
+        break;
+      default:
+        previewContent.innerHTML = '<div class="workspace-panel-error">不支持的文件类型</div>';
     }
-    numberedHtml += '</tbody></table>';
-    previewContent.innerHTML = numberedHtml;
-  } else {
-    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+  } catch (err) {
+    logger.error('[WorkspacePanel] 预览失败:', filePath, err);
+    const msg = err instanceof Error ? err.message : (typeof err === 'string' ? err : String(err));
+    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(msg || '未知错误')}</div>`;
   }
+}
+
+// ============================================================
+// 文本/代码预览
+// ============================================================
+
+async function previewTextFile(filePath, fileName, lineCountEl, previewContent) {
+  const result = await readFileContent(filePath);
+  if (!result.success) {
+    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+    return;
+  }
+
+  const lang = getLanguageClass(fileName);
+  const text = result.content || '';
+  const lines = text.split('\n');
+  lineCountEl.textContent = `${lines.length} 行`;
+
+  const truncated = lines.length > PREVIEW_MAX_LINES;
+  const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
+
+  let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+  for (let i = 0; i < displayLines.length; i++) {
+    numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
+  }
+  if (truncated) {
+    numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
+  }
+  numberedHtml += '</tbody></table>';
+  previewContent.innerHTML = numberedHtml;
+}
+
+// ============================================================
+// PDF 预览（pdfjs-dist 渲染为 canvas）
+// ============================================================
+
+let currentPdfDoc = null;
+let currentPdfPage = 1;
+let currentPdfScale = 1.0;
+
+async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  currentPdfDoc = pdf;
+  currentPdfPage = 1;
+  currentPdfScale = 1.0;
+  previewArea.dataset.previewType = 'pdf';
+
+  const totalPages = pdf.numPages;
+  document.getElementById('workspacePreviewLineCount').textContent = `${totalPages} 页`;
+
+  previewContent.innerHTML = `
+    <div class="workspace-preview-toolbar" id="pdfToolbar">
+      <button class="pdf-toolbar-btn" id="pdfPrevPage" title="上一页" disabled>◀</button>
+      <span class="pdf-page-info"><input type="number" class="pdf-page-input" id="pdfPageInput" value="1" min="1" max="${totalPages}"> / ${totalPages}</span>
+      <button class="pdf-toolbar-btn" id="pdfNextPage" title="下一页">▶</button>
+      <span class="pdf-toolbar-sep"></span>
+      <button class="pdf-toolbar-btn" id="pdfZoomOut" title="缩小">−</button>
+      <span class="pdf-zoom-info" id="pdfZoomInfo">100%</span>
+      <button class="pdf-toolbar-btn" id="pdfZoomIn" title="放大">+</button>
+    </div>
+    <div class="workspace-preview-pdf-container" id="pdfContainer">
+      <canvas id="pdfCanvas"></canvas>
+    </div>
+  `;
+
+  // 绑定事件
+  document.getElementById('pdfPrevPage').addEventListener('click', () => changePdfPage(-1));
+  document.getElementById('pdfNextPage').addEventListener('click', () => changePdfPage(1));
+  document.getElementById('pdfPageInput').addEventListener('change', (e) => {
+    const p = parseInt(e.target.value, 10);
+    if (p >= 1 && p <= totalPages) { currentPdfPage = p; renderPdfPage(); }
+  });
+  document.getElementById('pdfZoomIn').addEventListener('click', () => { currentPdfScale = Math.min(currentPdfScale + 0.25, 3.0); renderPdfPage(); });
+  document.getElementById('pdfZoomOut').addEventListener('click', () => { currentPdfScale = Math.max(currentPdfScale - 0.25, 0.5); renderPdfPage(); });
+
+  await renderPdfPage();
+}
+
+async function renderPdfPage() {
+  if (!currentPdfDoc) return;
+  const page = await currentPdfDoc.getPage(currentPdfPage);
+  const canvas = document.getElementById('pdfCanvas');
+  if (!canvas) return;
+
+  const viewport = page.getViewport({ scale: currentPdfScale });
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  // 更新控件
+  const prevBtn = document.getElementById('pdfPrevPage');
+  const nextBtn = document.getElementById('pdfNextPage');
+  const pageInput = document.getElementById('pdfPageInput');
+  const zoomInfo = document.getElementById('pdfZoomInfo');
+  if (prevBtn) prevBtn.disabled = currentPdfPage <= 1;
+  if (nextBtn) nextBtn.disabled = currentPdfPage >= currentPdfDoc.numPages;
+  if (pageInput) pageInput.value = currentPdfPage;
+  if (zoomInfo) zoomInfo.textContent = Math.round(currentPdfScale * 100) + '%';
+}
+
+function changePdfPage(delta) {
+  if (!currentPdfDoc) return;
+  const newPage = currentPdfPage + delta;
+  if (newPage < 1 || newPage > currentPdfDoc.numPages) return;
+  currentPdfPage = newPage;
+  renderPdfPage();
+}
+
+// ============================================================
+// Word .docx 预览（mammoth → HTML → DOMPurify）
+// ============================================================
+
+async function previewDocx(arrayBuffer, previewContent) {
+  const result = await mammoth.convertToHtml({ arrayBuffer }, {
+    // 样式映射：将 Word 样式转为内联 style
+    styleMap: [
+      "p[style-name='Heading 1'] => h1:fresh",
+      "p[style-name='Heading 2'] => h2:fresh",
+      "p[style-name='Heading 3'] => h3:fresh",
+      "r[style-name='Strong'] => strong",
+      "r[style-name='Emphasis'] => em",
+    ]
+  });
+  const html = result.value || '<p>（文档为空）</p>';
+  const sanitized = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','s','a','img','table','thead','tbody','tr','td','th','ul','ol','li','blockquote','pre','code','hr','sup','sub'],
+    ALLOWED_ATTR: ['href','src','alt','title','style'],
+  });
+
+  if (result.messages && result.messages.length > 0) {
+    const warnings = result.messages.map(m => `<div class="docx-warning">⚠ ${escapeHtml(m.message)}</div>`).join('');
+    previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}<div class="docx-warnings">${warnings}</div></div>`;
+  } else {
+    previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}</div>`;
+  }
+}
+
+// ============================================================
+// Excel 预览（SheetJS sheet_to_html + 多 sheet 切换）
+// ============================================================
+
+async function previewXlsx(arrayBuffer, fileName, previewContent, previewArea) {
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheetNames = workbook.SheetNames;
+  if (sheetNames.length === 0) {
+    previewContent.innerHTML = '<div class="workspace-panel-error">工作簿中没有工作表</div>';
+    return;
+  }
+
+  const sheetsJson = JSON.stringify(sheetNames);
+  previewArea.dataset.previewType = 'xlsx';
+  previewArea.dataset.previewSheets = sheetsJson;
+
+  // Sheet 切换 tabs
+  let tabsHtml = '<div class="xlsx-sheet-tabs" id="xlsxSheetTabs">';
+  sheetNames.forEach((name, i) => {
+    tabsHtml += `<button class="xlsx-sheet-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escapeHtml(name)}</button>`;
+  });
+  tabsHtml += '</div>';
+
+  previewContent.innerHTML = tabsHtml + '<div class="xlsx-sheet-content" id="xlsxSheetContent"></div>';
+
+  // 渲染第一个 sheet
+  renderXlsxSheet(workbook, 0);
+
+  // Tab 点击事件
+  document.getElementById('xlsxSheetTabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.xlsx-sheet-tab');
+    if (!tab) return;
+    const idx = parseInt(tab.dataset.sheet, 10);
+    document.querySelectorAll('.xlsx-sheet-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    renderXlsxSheet(workbook, idx);
+  });
+}
+
+function renderXlsxSheet(workbook, sheetIndex) {
+  const sheetName = workbook.SheetNames[sheetIndex];
+  const sheet = workbook.Sheets[sheetName];
+
+  // 使用 sheet_to_json(header:1) 获取数组格式数据，比 sheet_to_html 生成
+  // 完整 HTML table 快得多，也避免了大量 DOM 节点导致浏览器卡死
+  const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const totalRows = data.length;
+  const displayRows = data.slice(0, PREVIEW_XLSX_MAX_ROWS);
+
+  if (displayRows.length === 0) {
+    document.getElementById('xlsxSheetContent').innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';
+    return;
+  }
+
+  // 用第一行作为表头
+  const headerRow = displayRows[0];
+  let html = '<div class="xlsx-table-scroll"><table class="xlsx-preview-table"><thead><tr>';
+  for (const cell of headerRow) {
+    html += `<th>${escapeHtml(String(cell ?? ''))}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let i = 1; i < displayRows.length; i++) {
+    html += '<tr>';
+    for (const cell of displayRows[i]) {
+      html += `<td>${escapeHtml(String(cell ?? ''))}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+
+  if (totalRows > PREVIEW_XLSX_MAX_ROWS) {
+    html += `<div class="xlsx-truncated-msg">仅显示前 ${PREVIEW_XLSX_MAX_ROWS} 行，共 ${totalRows} 行，请下载查看完整内容</div>`;
+  }
+
+  document.getElementById('xlsxSheetContent').innerHTML = html;
+}
+
+// ============================================================
+// 图片预览
+// ============================================================
+
+async function previewImage(arrayBuffer, fileName, previewContent) {
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  const mimeMap = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', ico: 'image/x-icon'
+  };
+  const mimeType = mimeMap[ext] || 'image/png';
+  const blob = new Blob([arrayBuffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+
+  previewContent.innerHTML = `
+    <div class="workspace-preview-image-wrap">
+      <img src="${url}" alt="${escapeHtml(fileName)}" class="workspace-preview-image-img">
+    </div>
+  `;
+
+  // 图片加载完后释放 URL（img 已解码到内存所以安全）
+  const img = previewContent.querySelector('.workspace-preview-image-img');
+  img.addEventListener('load', () => {
+    // 延迟释放，确保渲染完成
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  img.addEventListener('error', () => {
+    URL.revokeObjectURL(url);
+    previewContent.innerHTML = '<div class="workspace-panel-error">图片加载失败</div>';
+  });
 }
 
 /**
@@ -1025,6 +1356,14 @@ async function copyPreviewContent() {
   const previewArea = document.getElementById('workspacePreviewArea');
   const filePath = previewArea.dataset.previewPath;
   if (!filePath) return;
+
+  // 二进制文件不支持文本复制
+  const previewType = previewArea.dataset.previewType
+    || getPreviewType(previewArea.dataset.previewName || '');
+  if (previewType !== 'text') {
+    showToast('此文件类型不支持复制文本内容', 'info');
+    return;
+  }
 
   const result = await readFileContent(filePath);
   if (result.success) {
@@ -1055,6 +1394,13 @@ async function downloadPreviewFile() {
  */
 function closePreview() {
   const previewArea = document.getElementById('workspacePreviewArea');
+  // 清理 PDF 资源
+  if (currentPdfDoc) {
+    currentPdfDoc.destroy();
+    currentPdfDoc = null;
+  }
+  currentPdfPage = 1;
+  currentPdfScale = 1.0;
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
 }

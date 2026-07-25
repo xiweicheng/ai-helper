@@ -106,7 +106,10 @@ export async function saveCurrentSession() {
   if (!state.activeSessionId) return false;
 
   const currentSession = await idb.getSession(state.activeSessionId);
-  if (!currentSession) return false;
+  if (!currentSession) {
+    logger.warn('[SessionStore] saveCurrentSession 找不到当前会话:', state.activeSessionId);
+    return false;
+  }
 
   // 更新当前会话数据
   currentSession.model = state.currentModel;
@@ -137,7 +140,11 @@ export async function saveCurrentSession() {
     currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
   }
 
-  await idb.putSession(currentSession);
+  const saved = await idb.putSession(currentSession);
+  if (!saved) {
+    logger.error('[SessionStore] putSession 失败, sessionId:', state.activeSessionId);
+    return false;
+  }
   return true;
 }
 

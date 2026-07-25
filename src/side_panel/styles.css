@@ -10006,6 +10006,263 @@ body {
   min-height: 100%;
 }
 
+/* ============================================================
+   PDF 预览样式
+   ============================================================ */
+
+.workspace-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.pdf-toolbar-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.pdf-toolbar-btn:hover:not(:disabled) {
+  background: #f0f5ff;
+  border-color: #4a90d9;
+  color: #4a90d9;
+}
+
+.pdf-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pdf-page-info {
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-page-input {
+  width: 40px;
+  height: 22px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  text-align: center;
+  font-size: 12px;
+  color: #555;
+  -moz-appearance: textfield;
+}
+
+.pdf-page-input::-webkit-outer-spin-button,
+.pdf-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pdf-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #ddd;
+  margin: 0 4px;
+}
+
+.pdf-zoom-info {
+  color: #888;
+  font-size: 11px;
+  min-width: 36px;
+  text-align: center;
+}
+
+.workspace-preview-pdf-container {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: #525659;
+}
+
+.workspace-preview-pdf-container canvas {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  background: white;
+}
+
+/* ============================================================
+   Word 预览样式
+   ============================================================ */
+
+.workspace-preview-docx {
+  padding: 24px 32px;
+  max-width: 820px;
+  margin: 0 auto;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #333;
+}
+
+.workspace-preview-docx h1 { font-size: 22px; font-weight: 700; margin: 16px 0 8px; color: #1a1a1a; }
+.workspace-preview-docx h2 { font-size: 18px; font-weight: 600; margin: 14px 0 6px; color: #1a1a1a; }
+.workspace-preview-docx h3 { font-size: 15px; font-weight: 600; margin: 12px 0 4px; color: #333; }
+.workspace-preview-docx p  { margin: 6px 0; }
+.workspace-preview-docx table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 13px;
+}
+.workspace-preview-docx td, .workspace-preview-docx th {
+  border: 1px solid #ddd;
+  padding: 6px 10px;
+  text-align: left;
+}
+.workspace-preview-docx th { background: #f5f7fa; font-weight: 600; }
+.workspace-preview-docx ul, .workspace-preview-docx ol { padding-left: 24px; margin: 6px 0; }
+.workspace-preview-docx blockquote {
+  border-left: 3px solid #4a90d9;
+  padding-left: 12px;
+  color: #666;
+  margin: 8px 0;
+}
+.workspace-preview-docx img { max-width: 100%; height: auto; }
+
+.docx-warnings {
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: #fff8e1;
+  border-radius: 6px;
+  border: 1px solid #ffe082;
+}
+
+.docx-warning {
+  font-size: 12px;
+  color: #f57f17;
+  line-height: 1.6;
+}
+
+/* ============================================================
+   Excel 预览样式
+   ============================================================ */
+
+.xlsx-sheet-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 8px;
+  background: #f0f2f5;
+  border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.xlsx-sheet-tab {
+  padding: 6px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.xlsx-sheet-tab:hover {
+  color: #555;
+  background: rgba(74,144,217,0.05);
+}
+
+.xlsx-sheet-tab.active {
+  color: #4a90d9;
+  border-bottom-color: #4a90d9;
+  font-weight: 500;
+  background: white;
+}
+
+.xlsx-sheet-content {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.xlsx-table-scroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.xlsx-preview-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+  width: max-content;
+  min-width: 100%;
+}
+
+.xlsx-preview-table td, .xlsx-preview-table th {
+  border: 1px solid #ddd;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.xlsx-preview-table th {
+  background: #f5f7fa;
+  font-weight: 600;
+  color: #555;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.xlsx-preview-table tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+.xlsx-preview-table tr:hover td {
+  background: #f0f5ff;
+}
+
+.xlsx-truncated-msg {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #999;
+  background: #fafafa;
+  border-top: 1px solid #eee;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   图片预览样式
+   ============================================================ */
+
+.workspace-preview-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 12px;
+  background: repeating-conic-gradient(#f0f0f0 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+}
+
+.workspace-preview-image-img {
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  object-fit: contain;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  border-radius: 4px;
+}
+
 /* 滚动条 */
 .workspace-panel-content::-webkit-scrollbar,
 .workspace-preview-content::-webkit-scrollbar {

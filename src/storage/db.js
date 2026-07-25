@@ -254,6 +254,31 @@ export function getSession(id) {
 }
 
 /**
+ * 从会话的 messageHistory 中直接删除指定消息（不依赖 saveCurrentSession 的完整保存流程）
+ * @param {string} sessionId
+ * @param {string} messageId
+ * @returns {Promise<boolean>}
+ */
+export async function deleteMessageFromSession(sessionId, messageId) {
+  if (!sessionId || !messageId) return false;
+  try {
+    const session = await getSession(sessionId);
+    if (!session || !session.messageHistory) return false;
+
+    const idx = session.messageHistory.findIndex(
+      msg => (msg.messageId || msg.id) === messageId
+    );
+    if (idx === -1) return false;
+
+    session.messageHistory.splice(idx, 1);
+    return await putSession(session);
+  } catch (e) {
+    logger.error('[DB] deleteMessageFromSession 失败:', e);
+    return false;
+  }
+}
+
+/**
  * 保存/更新会话（put = insert or update）
  */
 export function putSession(session) {
