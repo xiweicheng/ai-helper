@@ -8001,7 +8001,7 @@ body {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 1000;
+  z-index: 995;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   /* 扩大容器区域，覆盖图标和面板之间的间隙 */
   width: 280px;
@@ -8936,7 +8936,7 @@ body {
   right: 0;
   top: calc(50% + 80px);
   transform: translateY(-50%);
-  z-index: 997;
+  z-index: 1000;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   width: 280px;
   background: transparent;

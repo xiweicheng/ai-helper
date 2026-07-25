@@ -136,6 +136,7 @@ function bindSearchPanelEvents() {
         closePanel();
       }
     } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
       e.stopPropagation();
       const history = state.searchInputHistory;
       if (history.length === 0) return;
@@ -146,12 +147,17 @@ function bindSearchPanelEvents() {
       }
       searchInput.value = history[state.searchInputHistoryIndex] || '';
       searchClear.style.display = searchInput.value ? '' : 'none';
+      // 光标移到末尾
+      searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
     } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
       e.stopPropagation();
       const history = state.searchInputHistory;
       if (state.searchInputHistoryIndex >= 0 && state.searchInputHistoryIndex < history.length - 1) {
         state.searchInputHistoryIndex++;
         searchInput.value = history[state.searchInputHistoryIndex] || '';
+        // 光标移到末尾
+        searchInput.selectionStart = searchInput.selectionEnd = searchInput.value.length;
       } else {
         state.searchInputHistoryIndex = -1;
         searchInput.value = '';
