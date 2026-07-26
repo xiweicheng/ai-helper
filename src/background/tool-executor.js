@@ -1009,8 +1009,12 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
           }
 
           const url = tab.url || '';
-          if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
-            resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+          if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:') || url.startsWith('chrome-error://')) {
+            if (url.startsWith('chrome-error://')) {
+              resolve({ success: false, error: '该标签页显示错误页面，页面未能成功加载。请检查 URL 是否正确、网络是否可达', tool_call_id: toolCallId });
+            } else {
+              resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+            }
             return;
           }
 
@@ -1034,8 +1038,12 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
               retrySendAfterInjection(tabId, message, 0);
             })
             .catch(err => {
-              console.error('[Background] 注入 content script 失败:', err);
-              resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+              console.warn('[Background] 注入 content script 失败:', err.message);
+              if (err.message && err.message.includes('error page')) {
+                resolve({ success: false, error: '该标签页显示错误页面，页面未能成功加载。请检查 URL 是否正确、网络是否可达', tool_call_id: toolCallId });
+              } else {
+                resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+              }
             });
           
           // 注入后重试发送，最多 3 次，指数退避
