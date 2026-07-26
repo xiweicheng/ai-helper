@@ -22,6 +22,12 @@ export function tryParseToolArgs(argsStr) {
     logger.warn('[Background] 工具参数直接解析失败，尝试修复...');
   }
 
+  // 安全检查：输入过长（>100KB）跳过正则修复，避免 ReDoS
+  if (trimmed.length > 102400) {
+    logger.warn('[Background] 工具参数过长（' + trimmed.length + ' 字符），跳过正则修复');
+    return null;
+  }
+
   // 阶段 2: 修复常见问题后重试
   let fixed = trimmed;
 
@@ -43,10 +49,13 @@ export function tryParseToolArgs(argsStr) {
   });
 
   // 2c. 递归修复嵌套对象中的未加引号字符串值
-  // 使用深度优先策略：从内层向外层修复
+  // 使用深度优先策略：从内层向外层修复，最多迭代 10 次防 ReDoS
+  const MAX_FIX_ITERATIONS = 10;
   let prevFixed;
+  let fixIterations = 0;
   do {
     prevFixed = fixed;
+    fixIterations++;
     fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
       const trimmedValue = value.trim();
       if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
@@ -56,7 +65,12 @@ export function tryParseToolArgs(argsStr) {
       const escapedValue = trimmedValue.replace(/"/g, '\\"');
       return `"${key}": "${escapedValue}"${delimiter}`;
     });
-  } while (fixed !== prevFixed);
+  } while (fixed !== prevFixed && fixIterations < MAX_FIX_ITERATIONS);
+
+  if (fixIterations >= MAX_FIX_ITERATIONS && fixed !== prevFixed) {
+    logger.warn('[Background] 工具参数修复迭代达到上限（' + MAX_FIX_ITERATIONS + '次），停止修复');
+    return null;
+  }
 
   // 2d. 修复已加引号但内部双引号未转义的情况
   // 匹配模式: "key": "value" 其中 value 内部包含未转义的双引号

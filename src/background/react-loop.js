@@ -2,7 +2,7 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
-import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP } from './constants.js';
+import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -2268,16 +2268,20 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
     return executeTool(toolCall, tabId, sessionId);
   }
   
-  // 其他工具使用正常超时 + 用户终止等待
-  logger.debug(`[Background] 工具 ${toolName} 使用超时: ${timeoutMs}ms`);
+  // 其他工具：支持按工具自定义超时，同时受全局超时上限约束
+  const toolSpecificTimeout = TOOL_TIMEOUT_MS[toolName];
+  // 取 min(工具自定义超时, 全局超时)，确保工具超时不超过全局上限
+  // 未配置自定义超时的工具沿用全局 toolTimeout
+  const effectiveTimeout = toolSpecificTimeout ? Math.min(toolSpecificTimeout, timeoutMs) : timeoutMs;
+  logger.debug(`[Background] 工具 ${toolName} 使用超时: ${effectiveTimeout}ms${toolSpecificTimeout ? ` (自定义: ${toolSpecificTimeout}ms, 全局上限: ${timeoutMs}ms)` : ''}`);
   
   // 创建工具级 AbortController，支持用户手动终止等待
   const toolAbortController = getOrCreateToolAbortController(sessionId);
   
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      reject(new Error(`工具执行超时 (${timeoutMs}ms): ${toolName}`));
-    }, timeoutMs);
+      reject(new Error(`工具执行超时 (${effectiveTimeout}ms): ${toolName}`));
+    }, effectiveTimeout);
 
     // 用户手动终止等待
     const onAbort = () => {
