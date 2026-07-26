@@ -2783,6 +2783,19 @@ body {
   white-space: nowrap;
   color: #7c3aed;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.subtask-current-spinner {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(139, 92, 246, 0.25);
+  border-top-color: #7c3aed;
+  border-radius: 50%;
+  animation: subtask-spin 0.7s linear infinite;
 }
 .subtask-node-stats {
   display: flex;

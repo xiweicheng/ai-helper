@@ -1362,7 +1362,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
-                reactConfig.reflection, config, lastSentLogSnapshot
+                reactConfig.reflection, config, lastSentLogSnapshot, callId
               );
               
               // 子任务执行完毕后检查是否已被取消
@@ -1737,7 +1737,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map()) {
+export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -1770,6 +1770,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       status,
       executionLog: deltaLog,
       ...(sessionId ? { sessionId } : {}),
+      ...(callId ? { callId } : {}),
       ...extraFields
     };
     
@@ -2166,7 +2167,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
   } else {
     // 未知策略，降级为顺序执行
     logger.warn(`[Background] 未知执行策略: ${strategy}，降级为顺序执行`);
-    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration);
+    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration, reflectionConfig, config, lastSentLogSnapshot, callId);
   }
   
   return results;

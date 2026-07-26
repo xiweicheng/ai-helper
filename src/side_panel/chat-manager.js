@@ -2566,7 +2566,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                   : '○';
                 const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : '准备中...';
                 progressLineHtml = `<div class="subtask-progress-line">
-                  <span class="subtask-current-node">${nodeTypeIcon} ${currentNodeName}</span>
+                  <span class="subtask-current-node"><span class="subtask-current-spinner"></span>${nodeTypeIcon} ${currentNodeName}</span>
                   <span class="subtask-node-stats">
                     <span class="subtask-stat-total">${totalNodes}</span>
                     <span class="subtask-stat-done">✓${succeedNodes}</span>
@@ -2576,7 +2576,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               } else if (!isRunning) {
                 if (message.status === 'success') {
                   progressLineHtml = `<div class="subtask-progress-line done">
-                    <span>✓ 全部完成 · ${totalNodes} 个节点</span>
+                    <span>✓ 全部完成 · ✓${succeedNodes} 成功 ✗${failedNodes} 失败</span>
                   </div>`;
                 } else if (message.status === 'failed') {
                   progressLineHtml = `<div class="subtask-progress-line failed">
