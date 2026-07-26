@@ -38,7 +38,7 @@ export const AGENT_TEMPLATES = [
 - 始终指出问题的严重程度（严重/中等/建议）
 - 给出具体的代码修改建议，不要空泛评价
 - 关注可维护性，而不仅仅是功能正确性`,
-    toolIds: ['get_page_content', 'search_bookmarks', 'search_history', 'agent_read_file', 'agent_search_content', 'agent_search_files', 'agent_list_dir', 'search_conversation_memory'],
+    toolIds: ['get_page_content', 'search_browser_data', 'agent_read_file', 'agent_search_content', 'agent_search_files', 'agent_list_dir', 'search_chat_history'],
     allowSubDispatch: false,
   },
   {
@@ -89,7 +89,7 @@ export const AGENT_TEMPLATES = [
 - 示例优先：关键概念必须配代码或配置示例
 - 面向读者：根据目标读者调整技术深度
 - 保持简洁：避免冗余，每段话都要有信息量`,
-    toolIds: ['get_page_content', 'clipboard', 'search_bookmarks', 'search_history', 'search_conversation_memory'],
+    toolIds: ['get_page_content', 'clipboard', 'search_browser_data', 'search_chat_history'],
     allowSubDispatch: false,
   },
 ];

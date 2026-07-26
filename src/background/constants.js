@@ -111,6 +111,12 @@ export const TOOL_CATEGORY_MAP = Object.fromEntries(RAW_TOOLS.map(t => [t.id, t.
 export const TOOL_EXECUTION_MAP = Object.fromEntries(RAW_TOOLS.map(t => [t.id, t.execution]));
 export const PARALLELIZABLE_TOOLS = new Set(RAW_TOOLS.filter(t => t.parallelizable).map(t => t.id));
 export const CONFIRMATION_REQUIRED_TOOLS = new Set(RAW_TOOLS.filter(t => t.requiresConfirmation).map(t => t.id));
+// 合并工具的 action 级别确认映射（如 manage_tab 的 close action 需要确认）
+// 派生结果示例：{ manage_tab: ['close'] }
+export const CONFIRMATION_ACTION_MAP = Object.fromEntries(
+  RAW_TOOLS.filter(t => Array.isArray(t.confirmationActions) && t.confirmationActions.length > 0)
+    .map(t => [t.id, t.confirmationActions])
+);
 export const BUILTIN_TOOLS_UI = RAW_TOOLS.map(t => ({
   id: t.id, name: t.function.name, description: t.function.description,
   category: t.category, execution: t.execution,

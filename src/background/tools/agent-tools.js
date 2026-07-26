@@ -78,41 +78,25 @@ export const AGENT_TOOLS = [
       }
     }
   },
+  // ── 合并后的回收站管理工具 ──
   {
-    id: 'agent_list_trash',
+    id: 'agent_trash',
     category: 'local_agent',
     execution: 'background',
-    parallelizable: true,
+    parallelizable: false,  // restore 非并行，保守取 false
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_list_trash',
-      description: '列出回收站中的文件',
+      name: 'agent_trash',
+      description: '回收站管理：列出/恢复已删除文件',
       parameters: {
         type: 'object',
         properties: {
-          hours: { type: 'number', description: '仅返回最近N小时内删除的文件，不传则返回全部' }
+          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型：list=列出回收站文件，restore=恢复文件' },
+          trashId: { type: 'string', description: '回收站条目ID（action=restore时需要，来自list结果）' },
+          hours: { type: 'number', description: '仅返回最近N小时内删除的文件（action=list时可选），不传则返回全部' }
         },
-        required: []
-      }
-    }
-  },
-  {
-    id: 'agent_restore_trash',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_restore_trash',
-      description: '从回收站恢复文件',
-      parameters: {
-        type: 'object',
-        properties: {
-          trashId: { type: 'string', description: '回收站条目ID（来自 agent_list_trash）' }
-        },
-        required: ['trashId']
+        required: ['action']
       }
     }
   },
@@ -242,40 +226,25 @@ export const AGENT_TOOLS = [
       }
     }
   },
+  // ── 合并后的 AI 代理管理工具 ──
   {
-    id: 'ai_agent_list',
+    id: 'manage_agent',
     category: 'ai_collaboration',
     execution: 'background',
-    parallelizable: true,
+    parallelizable: false,  // switch 非并行，保守取 false
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'ai_agent_list',
-      description: '查询所有已配对的AI代理及其在线状态、启用状态、当前活跃代理',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: []
-      }
-    }
-  },
-  {
-    id: 'ai_agent_switch',
-    category: 'ai_collaboration',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'ai_agent_switch',
-      description: '切换到指定的AI代理，返回切换结果或失败原因（代理不存在/已停用/离线）',
+      name: 'manage_agent',
+      description: 'AI代理管理：查询已配对代理列表或切换活跃代理',
       parameters: {
         type: 'object',
         properties: {
-          agentId: { type: 'string', description: '代理ID（从 ai_agent_list 返回结果中获取）' },
-          agentName: { type: 'string', description: '代理名称（模糊匹配，从 ai_agent_list 返回结果中获取）' }
+          action: { type: 'string', enum: ['list', 'switch'], description: '操作类型：list=查询代理列表及状态，switch=切换活跃代理' },
+          agentId: { type: 'string', description: '代理ID（action=switch时需要，从list结果获取）' },
+          agentName: { type: 'string', description: '代理名称（action=switch时模糊匹配）' }
         },
-        required: []
+        required: ['action']
       }
     }
   },

@@ -2,7 +2,7 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
-import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
+import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -30,7 +30,8 @@ const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
   clear_page_data: '清除页面数据',
   download_file: '下载文件',
-  close_tab: '关闭标签页',
+  manage_tab: '标签页管理',
+  agent_delete_file: '删除文件',
 };
 
 /**
@@ -43,9 +44,9 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   
   logger.debug(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
 
-  // 为 close_tab 获取标签页标题和 URL，帮助用户判断
+  // 为 manage_tab(close) 获取标签页标题和 URL，帮助用户判断
   let extraMessage = '';
-  if (toolName === 'close_tab' && toolArgs.tabId !== undefined) {
+  if (toolName === 'manage_tab' && toolArgs.action === 'close' && toolArgs.tabId !== undefined) {
     try {
       const tab = await chrome.tabs.get(parseInt(toolArgs.tabId, 10));
       extraMessage = `\n\n标签页标题: ${tab.title || '无标题'}\n标签页 URL: ${tab.url || '未知'}`;
@@ -1085,7 +1086,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
           
           // 检查是否需要用户确认（敏感操作 + 开关开启）
-          const needsConfirmation = CONFIRMATION_REQUIRED_TOOLS.has(toolName) && reactConfig.toolConfirmationEnabled;
+          // 1. 工具级确认（requiresConfirmation: true）
+          // 2. action 级确认（合并工具的特定 action，如 manage_tab 的 close）
+          const toolLevelConfirm = CONFIRMATION_REQUIRED_TOOLS.has(toolName);
+          const actionLevelConfirm = CONFIRMATION_ACTION_MAP[toolName]?.includes(toolArgs.action);
+          const needsConfirmation = (toolLevelConfirm || actionLevelConfirm) && reactConfig.toolConfirmationEnabled;
           if (needsConfirmation) {
             // 如果该会话已获得"当前任务放行"，跳过确认
             if (sessionId && loopApprovedSessions.has(sessionId)) {

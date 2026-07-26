@@ -250,18 +250,18 @@ export async function getSystemPrompt(agent = null) {
 - ${execEnv.commandHint}`;
   }
   
-  // dispatch_sub_agent 工具说明——有可用子 Agent 且当前 Agent 有此工具时注入
+  // dispatch_task 工具说明——有可用子 Agent 且当前 Agent 有此工具时注入
   let dispatchToolRule = '';
   const allAgents = await getAllAgents();
   const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent?.id || ''));
-  if (subAgents.length > 0 && agentHasTool('dispatch_sub_agent', agent?.toolIds)) {
+  if (subAgents.length > 0 && agentHasTool('dispatch_task', agent?.toolIds)) {
     const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
     dispatchToolRule = `
   
 ## Sub-Agent 调度
-你可以使用 dispatch_sub_agent 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
+你可以使用 dispatch_task 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
 使用场景：复杂任务需要不同领域的专业能力时（如代码审查 + 文档撰写）。
-调用方式：在一次响应中可并行调用多个 dispatch_sub_agent。
+调用方式：在一次响应中可并行调用多个 dispatch_task。
 参数：subAgentId（子Agent的ID）、task（任务描述）
 
 当前可用的子 Agent：

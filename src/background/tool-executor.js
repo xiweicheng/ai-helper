@@ -274,6 +274,27 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         console.log('[Background] 未找到工具配置，使用默认值（全部启用）');
       }
 
+      // 旧工具名迁移：合并前的工具名映射到合并后的新工具名
+      const TOOL_NAME_MIGRATION = {
+        open_tab: 'manage_tab', switch_tab: 'manage_tab', close_tab: 'manage_tab',
+        reload_tab: 'manage_tab', navigate_back_forward: 'manage_tab',
+        search_bookmarks: 'search_browser_data', search_history: 'search_browser_data',
+        agent_list_trash: 'agent_trash', agent_restore_trash: 'agent_trash',
+        ai_agent_list: 'manage_agent', ai_agent_switch: 'manage_agent',
+        manage_ai_agent: 'manage_agent',
+        dispatch_sub_agent: 'dispatch_task',
+        search_conversation_memory: 'search_chat_history',
+        preview_ui_prototype: 'ui_prototype',
+      };
+      let migrated = false;
+      enabledTools = enabledTools.map(id => {
+        if (TOOL_NAME_MIGRATION[id]) { migrated = true; return TOOL_NAME_MIGRATION[id]; }
+        return id;
+      });
+      // 去重（多个旧工具映射到同一新工具）
+      enabledTools = [...new Set(enabledTools)];
+      if (migrated) console.log('[Background] 检测到旧工具名，已迁移到合并后的新工具名');
+
       // 如果 Agent 指定了工具列表，与全局启用列表取交集
       const finalToolIds = agentToolIds ? enabledTools.filter(id => agentToolIds.includes(id)) : enabledTools;
       if (agentToolIds) {
@@ -311,7 +332,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
           // 配对代理不足 2 个时，隐藏代理管理工具
-          if ((tool.id === 'ai_agent_list' || tool.id === 'ai_agent_switch') && pairedCount < 2) return false;
+          if (tool.id === 'manage_agent' && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
           if ((tool.id === 'agent_workflow_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
@@ -912,53 +933,87 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
   });
 }
 
+// ==================== 合并工具执行器（按 action 分发到原执行函数） ====================
+
+async function executeManageTab(args, toolCallId) {
+  const { action } = args;
+  switch (action) {
+    case 'open': return executeOpenTab(args, toolCallId);
+    case 'switch': return executeSwitchTab(args, toolCallId);
+    case 'close': return executeCloseTab(args, toolCallId);
+    case 'reload': return executeReloadTab(args, toolCallId);
+    case 'navigate': return executeNavigateBackForward(args, toolCallId);
+    default: return makeResult(false, `未知的 manage_tab action: ${action}`, { tool_call_id: toolCallId });
+  }
+}
+
+async function executeSearchBrowserData(args, toolCallId) {
+  const { action } = args;
+  switch (action) {
+    case 'bookmark': return executeSearchBookmarks(args, toolCallId);
+    case 'history': return executeSearchHistory(args, toolCallId);
+    default: return makeResult(false, `未知的 search_browser_data action: ${action}`, { tool_call_id: toolCallId });
+  }
+}
+
+async function executeAgentTrash(args, toolCallId) {
+  const { action } = args;
+  switch (action) {
+    case 'list': return executeAgentListTrash(args, toolCallId);
+    case 'restore': return executeAgentRestoreTrash(args, toolCallId);
+    default: return makeResult(false, `未知的 agent_trash action: ${action}`, { tool_call_id: toolCallId });
+  }
+}
+
+async function executeManageAiAgent(args, toolCallId) {
+  const { action } = args;
+  switch (action) {
+    case 'list': return executeAgentList(args, toolCallId);
+    case 'switch': return executeAgentSwitch(args, toolCallId);
+    default: return makeResult(false, `未知的 manage_agent action: ${action}`, { tool_call_id: toolCallId });
+  }
+}
+
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
 // Background 工具处理器注册表（单一数据源）
 // 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
 const TOOL_HANDLERS = {
-  search_bookmarks: executeSearchBookmarks,
-  search_history: executeSearchHistory,
   capture_page: executeCapturePage,
   clarify_question: executeClarifyQuestion,
   show_notification: executeShowNotification,
   fetch_url: executeFetchUrl,
-  open_tab: executeOpenTab,
-  switch_tab: executeSwitchTab,
-  close_tab: executeCloseTab,
   get_tabs: executeGetTabs,
   get_browser_info: executeGetBrowserInfo,
   download_file: executeDownloadFile,
   manage_cookies: executeManageCookies,
   plan_task: executePlanTask,
   clear_page_data: executeClearPageData,
-  navigate_back_forward: executeNavigateBackForward,
-  reload_tab: executeReloadTab,
-  search_conversation_memory: executeSearchConversationMemory,
-  preview_ui_prototype: executePreviewUiPrototype,
+  search_chat_history: executeSearchConversationMemory,
+  ui_prototype: executePreviewUiPrototype,
   agent_read_file: executeAgentReadFile,
   agent_write_file: executeAgentWriteFile,
   agent_list_dir: executeAgentListDir,
   agent_delete_file: executeAgentDeleteFile,
-  agent_list_trash: executeAgentListTrash,
-  agent_restore_trash: executeAgentRestoreTrash,
   agent_download_file: executeAgentDownloadFile,
   agent_exec_command: executeAgentExecCommand,
   agent_search_files: executeAgentSearchFiles,
   agent_search_content: executeAgentSearchContent,
   wait_for_navigation: executeWaitForNavigation,
-  dispatch_sub_agent: executeDispatchSubAgent,
+  dispatch_task: executeDispatchSubAgent,
   agent_workflow_run: executeSkillRun,
   agent_skill_load: executeSkillLoad,
   agent_memory_store: executeAgentMemoryStore,
   agent_memory_recall: executeAgentMemoryRecall,
   agent_memory_manage: executeAgentMemoryManage,
-  ai_agent_list: executeAgentList,
-  ai_agent_switch: executeAgentSwitch,
   // ── 合并后的工具 ──
   get_page_content: executeGetPageContent,
   extract_data: executeExtractData,
   clipboard: executeClipboard,
+  manage_tab: executeManageTab,
+  search_browser_data: executeSearchBrowserData,
+  agent_trash: executeAgentTrash,
+  manage_agent: executeManageAiAgent,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
@@ -1052,7 +1107,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
         'get_page_content', 'extract_data',
         'click_element', 'scroll_to', 'hover_element', 'search_in_page',
         'input_text', 'select_option', 'submit_form', 'wait_for_navigation',
-        'reload_tab', 'close_tab'
+        'manage_tab'
       ];
       
       if (toolsNeedingTabId.includes(toolName) && !args.tabId && tabId) {
@@ -2734,7 +2789,7 @@ async function executeAgentListTrash(args, toolCallId) {
  */
 async function executeAgentRestoreTrash(args, toolCallId) {
   const { trashId } = args;
-  if (!trashId) return { success: false, error: '缺少 trashId 参数，请先从 agent_list_trash 获取要恢复条目的 id', tool_call_id: toolCallId };
+  if (!trashId) return { success: false, error: '缺少 trashId 参数，请先调用 agent_trash(action=list) 获取要恢复条目的 id', tool_call_id: toolCallId };
 
   const result = await AgentClient.restoreTrash(trashId);
   if (result.success) {

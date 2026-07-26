@@ -81,14 +81,14 @@ export const AI_TOOLS = [
     }
   },
 {
-    id: 'search_conversation_memory',
+    id: 'search_chat_history',
     category: 'ai_collaboration',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'search_conversation_memory',
+      name: 'search_chat_history',
       description: '搜索历史对话记录',
       parameters: {
         type: 'object',
@@ -102,14 +102,14 @@ export const AI_TOOLS = [
     }
   },
   {
-    id: 'preview_ui_prototype',
+    id: 'ui_prototype',
     category: 'ai_collaboration',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'preview_ui_prototype',
+      name: 'ui_prototype',
       description: 'UI原型预览（创建/获取HTML原型）',
       parameters: {
         type: 'object',
@@ -125,14 +125,14 @@ export const AI_TOOLS = [
     }
   },
   {
-    id: 'dispatch_sub_agent',
+    id: 'dispatch_task',
     category: 'ai_collaboration',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'dispatch_sub_agent',
+      name: 'dispatch_task',
       description: '将子任务分派给子Agent执行',
       parameters: {
         type: 'object',

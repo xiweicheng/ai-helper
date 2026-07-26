@@ -14,7 +14,7 @@ import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 
-// Agent 名称缓存（用于 dispatch_sub_agent 工具卡片显示名称而非 ID）
+// Agent 名称缓存（用于 dispatch_task 工具卡片显示名称而非 ID）
 let agentNameCache = new Map(); // agentId -> agentName
 
 /**
@@ -419,8 +419,10 @@ export function appendToolCallItems(element, toolCalls) {
     click_element:         { metaType: 'web', action: '点击' },
     fill_form:             { metaType: 'web', action: '填写' },
     open_tab:              { metaType: 'web', action: '打开' },
+    manage_tab:            { metaType: 'web', action: '操作' },
     search_bookmarks:      { metaType: 'search' },
     search_history:        { metaType: 'search' },
+    search_browser_data:   { metaType: 'search' },
     search_in_page:        { metaType: 'search' },
     dispatch_sub_agent:    { metaType: 'subagent', action: '分派' },
   };
@@ -1314,7 +1316,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   }
   
   // 原型预览按钮
-  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && (e.action?.name === 'ui_prototype' || e.action?.name === 'preview_ui_prototype') && e.status === 'success');
   if (prototypeCall) {
     let localOpened = false;
     if (prototypeCall.observation) {

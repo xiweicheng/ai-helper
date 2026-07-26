@@ -306,7 +306,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
       // 兜底：如果用户消息中包含 proto_（原型ID），确保 UI 原型工具被包含
       if (userQuestion.includes('proto_')) {
-        const protoTools = ['get_ui_prototype', 'preview_ui_prototype'];
+        const protoTools = ['get_ui_prototype', 'ui_prototype'];
         for (const toolName of protoTools) {
           if (!selectedTools.some(t => t.function.name === toolName)) {
             const tool = tools.find(t => t.function.name === toolName);

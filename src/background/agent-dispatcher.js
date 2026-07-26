@@ -62,7 +62,7 @@ ${task}
 }
 
 /**
- * 执行 dispatch_sub_agent 工具
+ * 执行 dispatch_task 工具
  * 
  * 关键设计：子 Agent 使用派生 sessionId（`主sessionId + '_sub_agentId'`），
  * 确保子 Agent 的流式消息（STREAM_*）和执行日志（EXECUTION_STATUS_UPDATE）

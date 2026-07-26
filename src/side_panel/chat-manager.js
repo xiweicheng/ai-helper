@@ -1112,7 +1112,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       rightActionsContainer.appendChild(warnBadge);
     }
     
-    const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+    const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && e.action?.name === 'ui_prototype' || e.action?.name === 'preview_ui_prototype' && e.status === 'success');
     if (prototypeCall) {
       // 判断是否已在本地浏览器打开
       let localOpened = false;
@@ -1809,7 +1809,7 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
           return raw ? JSON.parse(raw) : [];
         } catch { return []; }
       })();
-      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'ui_prototype' || e.action?.name === 'preview_ui_prototype' && e.status === 'success');
       if (prototypeCall) {
         prototypeBtn.addEventListener('click', () => {
           let prototypeId = prototypeCall.prototypeId;
@@ -1992,7 +1992,7 @@ export function rebindAllMessages(container) {
           return raw ? JSON.parse(raw) : [];
         } catch { return []; }
       })();
-      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'preview_ui_prototype' && e.status === 'success');
+      const prototypeCall = logs.find(e => e.nodeType === 'tool_exec' && e.action?.name === 'ui_prototype' || e.action?.name === 'preview_ui_prototype' && e.status === 'success');
       if (prototypeCall) {
         prototypeBtn.addEventListener('click', () => {
           let prototypeId = prototypeCall.prototypeId;
