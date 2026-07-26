@@ -525,6 +525,9 @@ async function handleDropdownCloseSession(sessionId) {
   const session = allSessions.find(s => s.id === sessionId);
   if (!session) return;
 
+  // 先关闭下拉面板，避免遮挡确认弹窗
+  closeDropdown();
+
   const confirmed = await showCustomConfirm(
     `确定要删除会话"${session.title}"吗？此操作不可撤销。`,
     '删除会话'

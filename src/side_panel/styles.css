@@ -2050,6 +2050,7 @@ body {
   color: #333;
   transition: background 0.1s ease;
   gap: 8px;
+  position: relative;
 }
 
 .session-dropdown-item:hover {
@@ -2071,6 +2072,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  transition: padding-right 0.15s ease;
 }
 
 /* 下拉列表项的"任务已完成"标记 */
@@ -2121,17 +2123,26 @@ body {
   visibility: visible;
 }
 
+/* 悬停时给标题留出按钮空间 */
+.session-dropdown-item:hover .session-dropdown-item-title,
+.session-dropdown-item.highlighted .session-dropdown-item-title {
+  padding-right: 42px;
+}
+
 .session-dropdown-item-close:hover {
   color: #e53e3e;
   background: rgba(229, 62, 62, 0.1);
 }
 
-/* 下拉列表项操作按钮容器（复制 + 关闭） */
+/* 下拉列表项操作按钮容器（复制 + 关闭）——绝对定位，不占流式空间 */
 .session-dropdown-item-actions {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
 }
 
 /* 下拉列表项复制按钮 */
@@ -3840,7 +3851,7 @@ body {
   display: none;
   justify-content: center;
   align-items: center;
-  z-index: 3000;
+  z-index: 10002;
 }
 
 .modal-overlay.show {
