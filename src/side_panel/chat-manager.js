@@ -692,7 +692,15 @@ export async function sendMessage() {
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
 
-      content = '❌ 请求失败：' + (errorResult.message || '未知错误');
+      // 网络错误给用户更友好的提示
+      const errMsg = errorResult.message || '未知错误';
+      if (errMsg.includes('network') || errMsg.includes('Network')) {
+        content = '❌ 网络连接失败，LLM 服务不可达。请检查：\n1. API 地址和端口是否正确\n2. 网络代理/VPN 是否正常\n3. 服务端是否在运行';
+      } else if (errMsg.includes('timeout') || errMsg.includes('超时')) {
+        content = '❌ 请求超时：' + errMsg;
+      } else {
+        content = '❌ 请求失败：' + errMsg;
+      }
       executionLog = errorResult.executionLog || [];
 
       // 普通错误也可能存在 checkpoint（reactLoop catch 块会保存）
@@ -700,7 +708,7 @@ export async function sendMessage() {
 
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
 
-      throw errorResult;
+      return;
     }
     
     // 检查是否已切换到其他会话（成功路径）
