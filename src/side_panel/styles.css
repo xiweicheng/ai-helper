@@ -2766,6 +2766,52 @@ body {
   font-size: 12px;
   color: #ef4444;
 }
+/* 子任务进度行：显示当前执行节点 + 节点统计 */
+.subtask-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 14px 6px 14px;
+  font-size: 11px;
+  color: #888;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+}
+.subtask-current-node {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #7c3aed;
+  font-weight: 500;
+}
+.subtask-node-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+.subtask-stat-total {
+  color: #999;
+}
+.subtask-stat-total::before {
+  content: '节点 ';
+}
+.subtask-stat-done {
+  color: #22c55e;
+}
+.subtask-stat-fail {
+  color: #ef4444;
+}
+/* 完成/失败时的进度行 */
+.subtask-progress-line.done {
+  color: #22c55e;
+  border-bottom: none;
+  padding-bottom: 2px;
+}
+.subtask-progress-line.failed {
+  color: #ef4444;
+}
 /* 执行中：脉冲动画 */
 .subtask-progress-active {
   animation: pulse-text 1.8s infinite;

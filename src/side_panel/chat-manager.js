@@ -2535,6 +2535,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               const badge = `<span class="subtask-badge">${idx}/${total}</span>`;
               const chevron = `<svg class="subtask-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`;
               
+              const isRunning = message.status !== 'success' && message.status !== 'failed';
+              
               let statusHtml = '';
               if (message.status === 'success') {
                 statusHtml = `<span class="subtask-status-done">完成</span>`;
@@ -2549,11 +2551,46 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 progressEl.classList.add('subtask-progress-active');
               }
               
-              // 渲染折叠头部
+              // 计算节点统计 & 当前执行节点
+              const allSubtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+              const totalNodes = allSubtaskNodes.length;
+              const succeedNodes = allSubtaskNodes.filter(n => n.status === 'success').length;
+              const failedNodes = allSubtaskNodes.filter(n => n.status === 'failed').length;
+              const currentNode = allSubtaskNodes.find(n => n.status === 'processing');
+              
+              // 进度行：运行时显示当前执行节点 + 统计，完成后显示摘要
+              let progressLineHtml = '';
+              if (isRunning && totalNodes > 0) {
+                const nodeTypeIcon = currentNode
+                  ? (currentNode.nodeType === 'tool_exec' ? '🔧' : currentNode.nodeType === 'api_call' ? '📡' : currentNode.nodeType === 'reflection' ? '🎯' : currentNode.nodeType === 'preselect' ? '🔍' : '○')
+                  : '○';
+                const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : '准备中...';
+                progressLineHtml = `<div class="subtask-progress-line">
+                  <span class="subtask-current-node">${nodeTypeIcon} ${currentNodeName}</span>
+                  <span class="subtask-node-stats">
+                    <span class="subtask-stat-total">${totalNodes}</span>
+                    <span class="subtask-stat-done">✓${succeedNodes}</span>
+                    ${failedNodes > 0 ? `<span class="subtask-stat-fail">✗${failedNodes}</span>` : ''}
+                  </span>
+                </div>`;
+              } else if (!isRunning) {
+                if (message.status === 'success') {
+                  progressLineHtml = `<div class="subtask-progress-line done">
+                    <span>✓ 全部完成 · ${totalNodes} 个节点</span>
+                  </div>`;
+                } else if (message.status === 'failed') {
+                  progressLineHtml = `<div class="subtask-progress-line failed">
+                    <span>✗ ${succeedNodes}/${totalNodes} 完成，${failedNodes} 个节点失败</span>
+                  </div>`;
+                }
+              }
+              
+              // 渲染折叠头部 + 进度行
               progressEl.innerHTML = `
                 <div class="subtask-header">
                   ${chevron}${taskIcon}${badge}<span class="subtask-name">${name}</span>${statusHtml}
                 </div>
+                ${progressLineHtml}
                 <div class="subtask-detail-body"></div>
               `;
               

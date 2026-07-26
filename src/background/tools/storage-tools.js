@@ -85,7 +85,7 @@ export const STORAGE_TOOLS = [
           method: { type: 'string', enum: ['GET', 'POST'], description: 'HTTP方法', default: 'GET' },
           headers: { type: 'object', description: '请求头' },
           body: { type: 'string', description: 'POST请求体（JSON字符串）' },
-          timeout: { type: 'integer', description: '超时（ms），默认30000', default: 30000 }
+          timeout: { type: 'integer', description: '超时（ms），默认15000，超时后最多重试1次', default: 15000 }
         },
         required: ['url']
       }

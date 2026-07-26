@@ -1871,7 +1871,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
 }
 
 export async function executeFetchUrl(args, toolCallId) {
-  const { url, method = 'GET', headers = {}, body, timeout = 30000 } = args;
+  const { url, method = 'GET', headers = {}, body, timeout = 15000 } = args;
   
   console.log('[Background] 执行 HTTP 请求:', 'method=', method, 'url=', url, 'timeout=', timeout);
   
@@ -1918,7 +1918,7 @@ export async function executeFetchUrl(args, toolCallId) {
   console.log('[Background] fetch 选项:', JSON.stringify(fetchOptions));
   
   try {
-    const response = await fetchWithRetry(url, fetchOptions, timeout);
+    const response = await fetchWithRetry(url, fetchOptions, timeout, 1);
     console.log('[Background] HTTP 响应状态:', response.status, response.statusText);
     
     try {
