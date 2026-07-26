@@ -1029,22 +1029,37 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             files: injectFiles
           })
             .then(() => {
-              console.log('[Background] Content script 注入成功, 重试发送消息');
-              setTimeout(() => {
-                chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
-                  if (chrome.runtime.lastError) {
-                    console.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
-                    resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
-                  } else {
-                    resolve({ ...retryResponse, tool_call_id: toolCallId });
-                  }
-                });
-              }, 500);
+              console.log('[Background] Content script 注入成功, 开始重试发送消息');
+              // 注入后多次重试，应对页面加载慢导致 content script 初始化延迟的情况
+              retrySendAfterInjection(tabId, message, 0);
             })
             .catch(err => {
               console.error('[Background] 注入 content script 失败:', err);
               resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
             });
+          
+          // 注入后重试发送，最多 3 次，指数退避
+          function retrySendAfterInjection(retryTabId, retryMessage, attempt) {
+            const delays = [300, 600, 1200];
+            const maxAttempts = delays.length;
+            
+            setTimeout(() => {
+              chrome.tabs.sendMessage(retryTabId, retryMessage, (retryResponse) => {
+                if (chrome.runtime.lastError) {
+                  if (attempt < maxAttempts - 1) {
+                    console.warn(`[Background] 重试 ${attempt + 2}/${maxAttempts + 1} 失败, ${delays[attempt + 1]}ms 后重试:`, chrome.runtime.lastError.message);
+                    retrySendAfterInjection(retryTabId, retryMessage, attempt + 1);
+                  } else {
+                    console.warn('[Background] 所有重试均失败:', chrome.runtime.lastError.message);
+                    resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+                  }
+                } else {
+                  console.log('[Background] 重试成功 (第' + (attempt + 2) + '次)');
+                  resolve({ ...retryResponse, tool_call_id: toolCallId });
+                }
+              });
+            }, delays[attempt]);
+          }
         });
       } else {
         resolve({ ...response, tool_call_id: toolCallId });
@@ -2035,26 +2050,69 @@ export function executeDownloadFile(args, toolCallId) {
 
 /**
  * 打开新标签页
+ * 支持 waitForLoad 参数：等待页面加载完成再返回，避免后续工具因页面未就绪而失败
  */
 export function executeOpenTab(args, toolCallId) {
-  const { url, active: rawActive = true } = args;
+  const { url, active: rawActive = true, waitForLoad = false, loadTimeout = 15000 } = args;
   const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
   
-  console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active);
+  console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active, 'waitForLoad=', waitForLoad, 'loadTimeout=', loadTimeout);
   
   return new Promise((resolve) => {
     chrome.tabs.create({ url: url, active: active }, (tab) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 打开标签页失败:', chrome.runtime.lastError.message);
-        resolve({ success: false, error: chrome.runtime.lastError.message });
-      } else {
+        resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+        return;
+      }
+      
+      if (!waitForLoad) {
         resolve({ 
           success: true, 
           message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如get_page_content、click_element、extract_data等）`,
           tabId: tab.id,
-          url: tab.url 
+          url: tab.url,
+          tool_call_id: toolCallId
         });
+        return;
       }
+
+      // 等待页面加载完成（或超时）
+      let resolved = false;
+      const safeTimeout = Math.max(1000, Math.floor(Number(loadTimeout) || 15000));
+      
+      const timeoutId = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        chrome.tabs.onUpdated.removeListener(listener);
+        console.warn('[Background] 页面加载超时:', url, `(${safeTimeout}ms)`);
+        resolve({
+          success: true,
+          message: `标签页已打开但加载超时（${safeTimeout}ms），页面可能较慢或无法访问。后续工具调用可能失败`,
+          tabId: tab.id,
+          url: tab.url,
+          loadTimedOut: true,
+          tool_call_id: toolCallId
+        });
+      }, safeTimeout);
+      
+      const listener = (updatedTabId, changeInfo, updatedTab) => {
+        if (updatedTabId === tab.id && changeInfo.status === 'complete') {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          console.log('[Background] 页面加载完成:', updatedTab.url);
+          resolve({
+            success: true,
+            message: `已打开并加载完成: ${updatedTab.url}`,
+            tabId: tab.id,
+            url: updatedTab.url,
+            tool_call_id: toolCallId
+          });
+        }
+      };
+      chrome.tabs.onUpdated.addListener(listener);
     });
   });
 }

@@ -20,6 +20,8 @@ export const TAB_TOOLS = [
           url: { type: 'string', description: '要打开的URL（action=open时需要）' },
           tabId: { type: 'integer', description: '目标标签页ID（action≠open时需要，可通过 get_tabs 获取）' },
           active: { type: 'boolean', description: '是否激活新标签页（action=open），默认true', default: true },
+          waitForLoad: { type: 'boolean', description: '等待页面加载完成再返回（action=open），默认false', default: false },
+          loadTimeout: { type: 'integer', description: '加载超时毫秒数（waitForLoad=true时），默认15000', default: 15000 },
           bypassCache: { type: 'boolean', description: '跳过缓存强制刷新（action=reload），默认false', default: false },
           direction: { type: 'string', enum: ['back', 'forward'], description: '导航方向（action=navigate），默认back', default: 'back' }
         },
