@@ -24,7 +24,95 @@ const cancelledSessions = new Set();
 const mcpToolIds = new Set();
 
 // 互斥锁：防止 loadMcpTools / unloadMcpTools 并发执行
-let mcpLoadLock = Promise.resolve();
+let mcpLoadLock = null;
+
+// MCP schema 压缩配置
+const MCP_DESC_MAX_LEN = 150;        // description 最大长度
+const MCP_SCHEMA_MAX_DEPTH = 3;      // properties 嵌套最大深度
+const MCP_SCHEMA_MAX_PARAMS = 20;    // 单个工具最大参数数量
+
+/**
+ * 压缩 description 文本（截断到最大长度）
+ */
+function compressDescription(desc, maxLen = MCP_DESC_MAX_LEN) {
+  if (!desc || typeof desc !== 'string') return desc;
+  if (desc.length <= maxLen) return desc;
+  return desc.slice(0, maxLen - 3) + '...';
+}
+
+/**
+ * 递归压缩 properties（限制嵌套深度，截断 description）
+ */
+function compressProperties(properties, depth = 0) {
+  if (!properties || typeof properties !== 'object' || depth >= MCP_SCHEMA_MAX_DEPTH) {
+    return properties;
+  }
+  const result = {};
+  for (const [key, val] of Object.entries(properties)) {
+    if (!val || typeof val !== 'object') {
+      result[key] = val;
+      continue;
+    }
+    const compressed = { ...val };
+    // 移除冗余字段
+    delete compressed.$schema;
+    delete compressed.$ref;
+    delete compressed.definitions;
+    delete compressed.additionalProperties;
+    // 截断 description
+    if (compressed.description) {
+      compressed.description = compressDescription(compressed.description);
+    }
+    // 递归处理嵌套 properties
+    if (compressed.properties) {
+      compressed.properties = compressProperties(compressed.properties, depth + 1);
+    }
+    // 处理 items（数组类型）
+    if (compressed.items && typeof compressed.items === 'object') {
+      if (compressed.items.properties) {
+        compressed.items.properties = compressProperties(compressed.items.properties, depth + 1);
+      }
+      if (compressed.items.description) {
+        compressed.items.description = compressDescription(compressed.items.description);
+      }
+    }
+    result[key] = compressed;
+  }
+  return result;
+}
+
+/**
+ * 压缩 MCP 工具的 inputSchema，防止撑爆上下文
+ * - 移除 $schema/$ref/definitions/additionalProperties 等冗余字段
+ * - 截断过长的 description
+ * - 限制嵌套深度
+ * - 限制参数数量（超出部分截断）
+ */
+function compressMcpSchema(schema) {
+  if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+  const { $schema, $ref, definitions, additionalProperties, ...rest } = schema;
+  if (!rest.type) rest.type = 'object';
+  if (rest.description) rest.description = compressDescription(rest.description);
+  if (rest.properties) {
+    rest.properties = compressProperties(rest.properties, 0);
+    const propKeys = Object.keys(rest.properties);
+    if (propKeys.length > MCP_SCHEMA_MAX_PARAMS) {
+      // 超出参数上限，截断并合并为 additionalParams
+      const kept = propKeys.slice(0, MCP_SCHEMA_MAX_PARAMS);
+      const truncated = propKeys.slice(MCP_SCHEMA_MAX_PARAMS);
+      const newProps = {};
+      kept.forEach(k => { newProps[k] = rest.properties[k]; });
+      newProps.additionalParams = {
+        type: 'object',
+        description: `其他 ${truncated.length} 个参数已省略: ${truncated.join(', ').slice(0, 100)}`
+      };
+      rest.properties = newProps;
+    }
+  }
+  return rest;
+}
+
+Promise.resolve();
 
 /**
  * 从 Agent 拉取 MCP 工具列表并动态注入到 RAW_TOOLS 和 TOOL_HANDLERS
@@ -88,8 +176,8 @@ export async function loadMcpTools() {
         type: 'function',
         function: {
           name: toolId,
-          description: `[MCP:${tool.serverName}] ${tool.description || tool.name}`,
-          parameters: tool.inputSchema || { type: 'object', properties: {} }
+          description: compressDescription(`[MCP:${tool.serverName}] ${tool.description || tool.name}`, 200),
+          parameters: compressMcpSchema(tool.inputSchema)
         }
       };
       RAW_TOOLS.push(rawToolDef);
@@ -264,7 +352,7 @@ async function checkAgentConnectivity() {
 export async function getTools(agentToolIds = null, agentId = null, agentSkillIds = null) {
   return new Promise((resolve) => {
     const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
-    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents'], async (result) => {
+    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect'], async (result) => {
       // 优先读取 agent-specific key，降级到旧的全局 enabledTools
       let enabledTools = result[agentToolsKey] || result.enabledTools;
       
@@ -314,6 +402,10 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
 
       // 读取图片识别开关状态
       const visionEnabled = result.enableImageInput === true;
+
+      // 读取子任务工具筛选（复用 enableToolPreselect 开关）
+      const enableToolPreselect = result.enableToolPreselect === true;
+      console.log('[Background] getTools - enableToolPreselect:', enableToolPreselect);
       
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
@@ -355,6 +447,33 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
               actionProp.description = '操作模式：download=下载截图';
               actionProp.default = 'download';
               cloned.function.description = '页面截图并下载到本地';
+            }
+          }
+
+          // plan_task 工具：工具预筛选开关开启 且 工具数超过阈值时，动态添加 requiredTools 参数
+          if (tool.id === 'plan_task') {
+            const preselectMinToolCount = result.preselectMinToolCount || 10;
+            const shouldAddRequiredTools = enableToolPreselect && finalToolIds.length > preselectMinToolCount;
+            console.log('[Background] getTools - 处理 plan_task, enableToolPreselect:', enableToolPreselect, 'toolCount:', finalToolIds.length, 'threshold:', preselectMinToolCount, 'shouldAdd:', shouldAddRequiredTools);
+            if (shouldAddRequiredTools) {
+              // 1. 修改 plan_task 描述，强引导大模型填写 requiredTools
+              cloned.function.description = '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。';
+
+              // 2. 添加 requiredTools 参数，并在描述中列出可用工具ID帮助选择
+              const subtaskItemProps = cloned.function.parameters.properties.subtasks.items.properties;
+              subtaskItemProps.requiredTools = {
+                type: 'array',
+                items: { type: 'string' },
+                description: `该子任务所需的工具ID列表（必填）。可用工具: ${finalToolIds.join(', ')}。根据子任务描述选择所需工具，填 [] 表示继承全部工具。`
+              };
+
+              // 3. 将 requiredTools 加入 required 数组，强制大模型必须填写
+              const requiredArr = cloned.function.parameters.properties.subtasks.items.required;
+              if (!requiredArr.includes('requiredTools')) {
+                requiredArr.push('requiredTools');
+              }
+
+              console.log('[Background] getTools - 已添加 requiredTools 到 plan_task (required)');
             }
           }
 

@@ -898,7 +898,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     toolConfirmationEnabledEl.addEventListener('change', function() {
       toolConfirmationEnabledLabel.textContent = this.checked ? '已启用' : '已停用';
     });
-    // 初始化同步（覆盖 HTML 默认值，防止 loadConfig 异步更新前的闪现）
     toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? '已启用' : '已停用';
   }
 

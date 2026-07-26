@@ -2210,19 +2210,45 @@ export function sortSubtasksByDependencies(subtasks) {
 
 /**
  * 为每个子任务准备工具集
- * 子任务继承父任务的全部工具范围，不再根据 requiredTools 额外限制
+ * 根据 enableToolPreselect 开关决定是否按 requiredTools 筛选
+ * - 开关关闭（默认）：子任务全量继承父任务工具，质量更稳定
+ * - 开关开启：子任务仅继承标注的 requiredTools + 元工具（clarify_question/plan_task）
  * @param {Array} subtasks - 子任务列表
  * @param {Array} parentTools - 父任务的工具列表
  */
 export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
   const allTools = parentTools || await getTools();
+  const reactConfig = await getStoredConfig().then(c => c.reactConfig || {});
+  const toolFilterEnabled = reactConfig.enableToolPreselect === true;
+  const preselectMinToolCount = reactConfig.preselectMinToolCount || 10;
   const toolSets = {};
-  
+
+  // 工具数未达阈值，不做筛选，全量继承
+  if (allTools.length <= preselectMinToolCount) {
+    logger.debug(`[Background] 子任务工具筛选：工具数 ${allTools.length} <= ${preselectMinToolCount}，全量继承`);
+    subtasks.forEach(subtask => {
+      toolSets[subtask.id] = [...allTools];
+    });
+    return toolSets;
+  }
+
+  // 元工具：始终保留（无论是否筛选），确保子任务能澄清和规划
+  const META_TOOL_IDS = ['clarify_question', 'plan_task'];
+
   subtasks.forEach(subtask => {
-    toolSets[subtask.id] = [...allTools];
-    logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务全部 ${allTools.length} 个工具`);
+    if (toolFilterEnabled && Array.isArray(subtask.requiredTools) && subtask.requiredTools.length > 0) {
+      // 筛选模式：仅保留标注的工具 + 元工具
+      const filtered = allTools.filter(t => subtask.requiredTools.includes(t.id));
+      const metaTools = allTools.filter(t => META_TOOL_IDS.includes(t.id));
+      toolSets[subtask.id] = [...filtered, ...metaTools];
+      logger.debug(`[Background] 子任务 ${subtask.name} 筛选工具: ${filtered.length}/${allTools.length} 个（预筛选模式）`);
+    } else {
+      // 全量继承（默认，或开关开启但未标注 requiredTools）
+      toolSets[subtask.id] = [...allTools];
+      logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务全部 ${allTools.length} 个工具`);
+    }
   });
-  
+
   return toolSets;
 }
 

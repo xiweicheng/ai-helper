@@ -1030,7 +1030,7 @@ export function loadConfig() {
     }
     
     // 加载敏感操作确认开关
-    document.getElementById('toolConfirmationEnabled').checked = 
+    document.getElementById('toolConfirmationEnabled').checked =
       result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled;
     document.getElementById('toolConfirmationEnabled').dispatchEvent(new Event('change'));
 
@@ -1126,7 +1126,6 @@ export function saveConfig() {
   const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
   // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
-  
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
 
   // 获取流式输出配置
