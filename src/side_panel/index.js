@@ -2310,10 +2310,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Tab 键切换标签（仅在非合并模式下）
       if (!isMerged && e.key === 'Tab') {
         e.preventDefault();
-        if (activeAtTab === 'agents') {
-          switchAtTab('pages');
-        } else {
+        if (activeAtTab === 'pages') {
           switchAtTab('agents');
+        } else if (activeAtTab === 'agents') {
+          switchAtTab('proxies');
+        } else {
+          switchAtTab('pages');
         }
         return;
       }
@@ -2327,6 +2329,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (activeAtTab === 'pages') {
         listContainer = document.getElementById('agentPageList');
         selectedIndex = state.selectedPageIndex;
+      } else if (activeAtTab === 'proxies') {
+        listContainer = document.getElementById('agentProxyList');
+        selectedIndex = state.selectedProxyAtIndex;
       } else {
         listContainer = document.getElementById('agentAtList');
         selectedIndex = state.selectedAgentAtIndex;
@@ -2340,7 +2345,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleCount;
-        if (isMerged) {
+        if (activeAtTab === 'proxies') {
+          state.selectedProxyAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (isMerged) {
           state.selectedAgentAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {
@@ -2354,7 +2362,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? visibleCount - 1 : (selectedIndex === 0 ? visibleCount - 1 : selectedIndex - 1);
-        if (isMerged) {
+        if (activeAtTab === 'proxies') {
+          state.selectedProxyAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (isMerged) {
           state.selectedAgentAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {

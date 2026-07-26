@@ -10,9 +10,9 @@
   <script type="module" crossorigin src="/assets/logger-BEz2S157.js"></script>
   <script type="module" crossorigin src="/assets/agent-defaults-CPnCVXYA.js"></script>
   <script type="module" crossorigin src="/assets/agent-store-nuKB9rUf.js"></script>
-  <script type="module" crossorigin src="/assets/state-DdDcq7fM.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-BX8OtVL9.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-T8r2iuUN.js"></script>
+  <script type="module" crossorigin src="/assets/state-Cl7p6-6Y.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-HbRrUpRs.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-DDv5aBBJ.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -468,12 +468,14 @@
     <div class="prompt-selector" id="agentAtSelector" style="display: none;">
       <div class="prompt-dropdown" id="agentAtDropdown">
         <div class="prompt-dropdown-tabs" id="agentAtTabs">
-          <button class="prompt-tab active" data-tab="agents">助手</button>
-          <button class="prompt-tab" data-tab="pages">网页</button>
+          <button class="prompt-tab active" data-tab="pages">网页</button>
+          <button class="prompt-tab" data-tab="agents">助手</button>
+          <button class="prompt-tab" data-tab="proxies">代理</button>
         </div>
-        <div class="prompt-dropdown-header">方向键切换 · Enter选择 · Esc取消<span class="agent-add-btn" id="agentAddBtn" title="新增/编辑助手">✚</span></div>
+        <div class="prompt-dropdown-header">方向键切换 · Enter选择 · Esc取消<span class="agent-add-btn" id="agentAddBtn" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" title="新增/编辑代理" style="display:none;">✚</span></div>
         <div id="agentAtList"></div>
         <div id="agentPageList" style="display: none;"></div>
+        <div id="agentProxyList" style="display: none;"></div>
       </div>
     </div>
     <div class="input-wrapper">

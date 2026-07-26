@@ -28,6 +28,7 @@ export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
 export let lastActiveDropdownTab = 'prompts'; // 上次激活的 Tab（用于记忆）
 export let showMergedList = false;   // 是否显示合并列表（搜索模式）
 export let selectedAgentAtIndex = -1; // @ Agent 选择器当前选中索引
+export let selectedProxyAtIndex = -1; // @ 代理选择器当前选中索引
 export let draggedItemIndex = null;
 export let systemPrompt = '';
 export let inputHistory = [];
@@ -197,6 +198,8 @@ export default {
   set showMergedList(v) { showMergedList = v; },
   get selectedAgentAtIndex() { return selectedAgentAtIndex; },
   set selectedAgentAtIndex(v) { selectedAgentAtIndex = v; },
+  get selectedProxyAtIndex() { return selectedProxyAtIndex; },
+  set selectedProxyAtIndex(v) { selectedProxyAtIndex = v; },
   get draggedItemIndex() { return draggedItemIndex; },
   set draggedItemIndex(v) { draggedItemIndex = v; },
   get systemPrompt() { return systemPrompt; },

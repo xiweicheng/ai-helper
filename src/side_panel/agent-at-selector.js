@@ -1,4 +1,4 @@
-// side_panel/agent-at-selector.js - @ 选择器（输入 @ 快速切换 Agent / 选择网页）
+// side_panel/agent-at-selector.js - @ 选择器（输入 @ 快速切换 Agent / 选择网页 / 选择代理）
 import state from './state.js';
 import { getAllAgents } from './agent-store.js';
 import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-manager.js';
@@ -7,8 +7,22 @@ import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
 import logger from '../shared/logger.js';
 
-// 当前 @ 弹出框激活的 Tab：'agents' | 'pages'
-export let activeAtTab = 'agents';
+// 当前 @ 弹出框激活的 Tab：'pages' | 'agents' | 'proxies'
+export let activeAtTab = 'pages';
+
+async function getPairedAgents() {
+  try {
+    const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = result.pairedAgents || [];
+    return agents.map(a => ({
+      ...a,
+      isActive: a.id === result.activeAgentId,
+      isDisabled: !!a.disabled
+    }));
+  } catch {
+    return [];
+  }
+}
 
 // 当前是否处于搜索合并模式
 let isMergedMode = false;
@@ -38,11 +52,16 @@ export async function showAgentAtSelector(filterText = '') {
  */
 async function updateAtTabCounts() {
   try {
-    const [allAgents, allTabs] = await Promise.all([getAllAgents(), getOpenTabs()]);
+    const [allAgents, allTabs, allProxies] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents()]);
     const agentsTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="agents"]');
     const pagesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="pages"]');
+    const proxiesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="proxies"]');
     if (agentsTab) agentsTab.textContent = `助手 (${allAgents.length})`;
     if (pagesTab) pagesTab.textContent = `网页 (${allTabs.length})`;
+    if (proxiesTab) {
+      proxiesTab.textContent = `代理 (${allProxies.length})`;
+      proxiesTab.style.display = allProxies.length > 0 ? '' : 'none';
+    }
   } catch {
     // 获取失败则保持默认标题
   }
@@ -59,6 +78,7 @@ export function hideAgentAtSelector() {
   agentAtDropdown.classList.remove('show');
   state.selectedAgentAtIndex = -1;
   state.selectedPageIndex = -1;
+  state.selectedProxyAtIndex = -1;
 }
 
 /**
@@ -86,6 +106,14 @@ function initAtEvents() {
       e.stopPropagation();
       hideAgentAtSelector();
       openAgentEditor(null);
+      return;
+    }
+
+    const proxyAddBtn = e.target.closest('#proxyAddBtn');
+    if (proxyAddBtn) {
+      e.stopPropagation();
+      hideAgentAtSelector();
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'agent' });
       return;
     }
 
@@ -128,8 +156,10 @@ export async function switchAtTab(tab) {
 
   const agentAtList = document.getElementById('agentAtList');
   const agentPageList = document.getElementById('agentPageList');
+  const agentProxyList = document.getElementById('agentProxyList');
   if (agentAtList) agentAtList.style.display = tab === 'agents' ? '' : 'none';
   if (agentPageList) agentPageList.style.display = tab === 'pages' ? '' : 'none';
+  if (agentProxyList) agentProxyList.style.display = tab === 'proxies' ? '' : 'none';
 
   // 通过 CSS 类控制 ✚ 按钮显示（仅在助手 Tab 显示）
   const dropdown = document.getElementById('agentAtDropdown');
@@ -150,12 +180,14 @@ async function renderActiveAtList(filterText = '') {
   const tabsContainer = document.getElementById('agentAtTabs');
   const agentPageList = document.getElementById('agentPageList');
   const agentAtList = document.getElementById('agentAtList');
+  const agentProxyList = document.getElementById('agentProxyList');
 
   if (filterText) {
     // 搜索模式：隐藏 Tab，合并展示
     isMergedMode = true;
     if (tabsContainer) tabsContainer.style.display = 'none';
     if (agentPageList) agentPageList.style.display = 'none';
+    if (agentProxyList) agentProxyList.style.display = 'none';
     if (agentAtList) agentAtList.style.display = '';
     await renderMergedAtList(filterText);
     // ✚ 按钮在搜索模式下也隐藏
@@ -173,12 +205,15 @@ async function renderActiveAtList(filterText = '') {
     }
     if (agentPageList) agentPageList.style.display = activeAtTab === 'pages' ? '' : 'none';
     if (agentAtList) agentAtList.style.display = activeAtTab === 'agents' ? '' : 'none';
+    if (agentProxyList) agentProxyList.style.display = activeAtTab === 'proxies' ? '' : 'none';
 
     const dropdown = document.getElementById('agentAtDropdown');
     if (dropdown) dropdown.setAttribute('data-active-tab', activeAtTab);
 
     if (activeAtTab === 'pages') {
       await renderPageList('');
+    } else if (activeAtTab === 'proxies') {
+      await renderProxyAtList('');
     } else {
       await renderAgentAtList('');
     }
@@ -248,7 +283,110 @@ async function renderAgentAtList(filterText = '') {
 }
 
 /**
- * 渲染合并列表（助手 + 网页，搜索模式下使用）
+ * Ping 代理检查在线状态
+ */
+async function pingAgent(proxy) {
+  if (!proxy?.url) return { online: false };
+  try {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${proxy.url}/api/status`, { signal: controller.signal });
+    if (!res.ok) return { online: false };
+    const data = await res.json();
+    return {
+      online: true,
+      version: data.version || null,
+      platformName: data.platformName || data.platform || null,
+      arch: data.arch || null
+    };
+  } catch {
+    return { online: false };
+  }
+}
+
+/**
+ * 渲染代理列表（单独 Tab）
+ */
+async function renderProxyAtList(filterText = '') {
+  const agentProxyList = document.getElementById('agentProxyList');
+  if (!agentProxyList) return;
+
+  const allProxies = await getPairedAgents();
+  const filterLower = (filterText || '').toLowerCase();
+
+  const filteredProxies = allProxies.filter(proxy => {
+    if (!filterText) return true;
+    return proxy.name.toLowerCase().includes(filterLower) ||
+           (proxy.url && proxy.url.toLowerCase().includes(filterLower));
+  });
+
+  if (filteredProxies.length === 0) {
+    agentProxyList.innerHTML = '<div class="prompt-empty">暂无匹配的代理</div>';
+    state.selectedProxyAtIndex = -1;
+    return;
+  }
+
+  state.selectedProxyAtIndex = 0;
+
+  const proxiesWithStatus = await Promise.all(
+    filteredProxies.map(async (proxy) => {
+      const pingResult = await pingAgent(proxy);
+      const version = pingResult.version || state.agentVersions.get(proxy.id);
+      const sysInfo = pingResult.platformName || state.agentSystemInfos.get(proxy.id);
+      return { ...proxy, online: pingResult.online, version, sysInfo };
+    })
+  );
+
+  agentProxyList.innerHTML = proxiesWithStatus.map((proxy, index) => {
+    const isActive = proxy.isActive;
+    const isDisabled = proxy.isDisabled;
+    const isOnline = proxy.online;
+
+    let dotClass;
+    if (isDisabled) {
+      dotClass = 'disabled';
+    } else if (isActive) {
+      dotClass = isOnline ? 'connected' : 'disconnected';
+    } else {
+      dotClass = isOnline ? 'online' : 'offline';
+    }
+
+    const displayName = proxy.name || '未命名代理';
+
+    return `
+      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isActive ? 'agent-at-active' : ''} ${isDisabled ? 'agent-disabled' : ''} prompt-item-proxy"
+           data-index="${index}" data-proxy-id="${escapeHtml(proxy.id)}">
+        <span class="prompt-item-index">${index + 1}</span>
+        <span class="agent-at-dot agent-at-dot-${dotClass}"></span>
+        <span class="prompt-item-content">${escapeHtml(displayName)}</span>
+        <span class="prompt-item-code" title="${escapeHtml(proxy.url || '')}">${escapeHtml(proxy.url || '')}</span>
+        <span class="agent-item-actions">
+          ${isActive ? '<span class="agent-active-mark">✓</span>' : ''}
+        </span>
+        ${isDisabled
+          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="启用">▶</span>`
+          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="停用">⏸</span>`
+        }
+        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="删除">✕</span>
+      </div>
+    `;
+  }).join('');
+
+  agentProxyList.querySelectorAll('.prompt-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      const toolbarBtn = e.target.closest('.proxy-disable-btn, .proxy-delete-btn, .proxy-enable-btn');
+      if (toolbarBtn) {
+        e.stopPropagation();
+        await handleProxyToolbarAction(toolbarBtn.dataset.action, toolbarBtn.dataset.id);
+        return;
+      }
+      await selectProxyByAt(item.dataset.proxyId);
+    });
+  });
+}
+
+/**
+ * 渲染合并列表（助手 + 网页 + 代理，搜索模式下使用）
  */
 async function renderMergedAtList(filterText = '') {
   const agentAtList = document.getElementById('agentAtList');
@@ -256,7 +394,7 @@ async function renderMergedAtList(filterText = '') {
 
   const filterLower = filterText.toLowerCase();
 
-  const [allAgents, allTabs] = await Promise.all([getAllAgents(), getOpenTabs()]);
+  const [allAgents, allTabs, allProxies] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents()]);
 
   const filteredAgents = allAgents.filter(agent => {
     return agent.name.toLowerCase().includes(filterLower) ||
@@ -270,10 +408,15 @@ async function renderMergedAtList(filterText = '') {
     return titleMatch || urlMatch;
   });
 
-  const totalCount = filteredAgents.length + filteredTabs.length;
+  const filteredProxies = allProxies.filter(proxy => {
+    return proxy.name.toLowerCase().includes(filterLower) ||
+           (proxy.url && proxy.url.toLowerCase().includes(filterLower));
+  });
+
+  const totalCount = filteredAgents.length + filteredTabs.length + filteredProxies.length;
 
   if (totalCount === 0) {
-    agentAtList.innerHTML = '<div class="prompt-empty">暂无匹配的助手或网页</div>';
+    agentAtList.innerHTML = '<div class="prompt-empty">暂无匹配的助手、网页或代理</div>';
     state.selectedAgentAtIndex = -1;
     return;
   }
@@ -325,10 +468,56 @@ async function renderMergedAtList(filterText = '') {
     globalIndex++;
   });
 
+  const proxiesWithStatus = await Promise.all(
+    filteredProxies.map(async (proxy) => {
+      const pingResult = await pingAgent(proxy);
+      return { ...proxy, online: pingResult.online };
+    })
+  );
+
+  proxiesWithStatus.forEach((proxy) => {
+    const isActive = proxy.isActive;
+    const isDisabled = proxy.isDisabled;
+    const isOnline = proxy.online;
+
+    let dotClass;
+    if (isDisabled) {
+      dotClass = 'disabled';
+    } else if (isActive) {
+      dotClass = isOnline ? 'connected' : 'disconnected';
+    } else {
+      dotClass = isOnline ? 'online' : 'offline';
+    }
+
+    const displayName = proxy.name || '未命名代理';
+
+    html += `
+      <div class="prompt-item${globalIndex === 0 && filteredAgents.length === 0 && filteredTabs.length === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
+           data-index="${globalIndex}" data-type="proxy" data-proxy-id="${escapeHtml(proxy.id)}">
+        <span class="prompt-item-index">${globalIndex + 1}</span>
+        <span class="agent-at-dot agent-at-dot-${dotClass}"></span>
+        <span class="prompt-item-content">${escapeHtml(displayName)}</span>
+        <span class="prompt-item-code" title="${escapeHtml(proxy.url || '')}">${escapeHtml(proxy.url || '')}</span>
+        ${isActive ? '<span class="agent-item-actions"><span class="agent-active-mark">✓</span></span>' : ''}
+        ${isDisabled
+          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="启用">▶</span>`
+          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="停用">⏸</span>`
+        }
+        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="删除">✕</span>
+      </div>`;
+    globalIndex++;
+  });
+
   agentAtList.innerHTML = html;
 
   agentAtList.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', async (e) => {
+      const toolbarBtn = e.target.closest('.proxy-disable-btn, .proxy-delete-btn, .proxy-enable-btn');
+      if (toolbarBtn) {
+        e.stopPropagation();
+        await handleProxyToolbarAction(toolbarBtn.dataset.action, toolbarBtn.dataset.id);
+        return;
+      }
       if (e.target.closest('.agent-edit-btn')) return;
       if (e.target.closest('.agent-delete-btn')) return;
       const type = item.dataset.type;
@@ -336,6 +525,8 @@ async function renderMergedAtList(filterText = '') {
         await selectAgentByAt(item.dataset.agentId);
       } else if (type === 'page') {
         selectPageByAt(parseInt(item.dataset.tabId));
+      } else if (type === 'proxy') {
+        await selectProxyByAt(item.dataset.proxyId);
       }
     });
   });
@@ -345,8 +536,14 @@ async function renderMergedAtList(filterText = '') {
  * 更新 @列表选中状态
  */
 export function updateAgentAtSelection(items) {
+  let selectedIndex;
+  if (activeAtTab === 'proxies') {
+    selectedIndex = state.selectedProxyAtIndex;
+  } else {
+    selectedIndex = state.selectedAgentAtIndex;
+  }
   items.forEach((item, index) => {
-    if (index === state.selectedAgentAtIndex) {
+    if (index === selectedIndex) {
       item.classList.add('selected');
       item.scrollIntoView({ block: 'nearest' });
     } else {
@@ -403,4 +600,88 @@ function selectPageByAt(tabId) {
       adjustInputHeight();
     }
   });
+}
+
+/**
+ * 通过 @ 选择代理
+ */
+async function selectProxyByAt(proxyId) {
+  const userInput = document.getElementById('userInput');
+  const value = userInput.value;
+  const lastAtIndex = value.lastIndexOf('@');
+
+  if (lastAtIndex !== -1) {
+    const newValue = value.substring(0, lastAtIndex);
+    userInput.value = newValue;
+    userInput.focus();
+    userInput.selectionStart = userInput.selectionEnd = newValue.length;
+  }
+
+  hideAgentAtSelector();
+
+  try {
+    await chrome.storage.local.set({ activeAgentId: proxyId });
+    chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: proxyId });
+    logger.debug('[AgentAtSelector] 已切换到代理:', proxyId);
+  } catch (err) {
+    logger.error('[AgentAtSelector] 切换代理失败:', err);
+  }
+
+  adjustInputHeight();
+}
+
+/**
+ * 处理代理工具栏操作（停用/启用/删除）
+ */
+async function handleProxyToolbarAction(action, agentId) {
+  const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  let agents = storage.pairedAgents || [];
+
+  switch (action) {
+    case 'enable': {
+      agents = agents.map(a => a.id === agentId ? { ...a, disabled: false } : a);
+      await chrome.storage.local.set({ pairedAgents: agents });
+      break;
+    }
+    case 'disable': {
+      agents = agents.map(a => a.id === agentId ? { ...a, disabled: true } : a);
+      let newActiveId = storage.activeAgentId;
+      if (storage.activeAgentId === agentId) {
+        const nextActive = agents.find(a => a.id !== agentId && !a.disabled);
+        newActiveId = nextActive?.id || null;
+      }
+      await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: newActiveId || '' });
+      if (newActiveId) {
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: newActiveId });
+      } else {
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
+      }
+      break;
+    }
+    case 'delete': {
+      const agent = agents.find(a => a.id === agentId);
+      const urlInfo = agent?.url ? `\n地址：${agent.url}` : '';
+      const confirmed = await window.showCustomConfirm(
+        '删除代理',
+        `确定要删除代理"${agent?.name || agentId}"吗？${urlInfo}\n此操作不可恢复。`
+      );
+      if (!confirmed) return;
+      agents = agents.filter(a => a.id !== agentId);
+      const newActive = storage.activeAgentId === agentId
+        ? (agents.find(a => !a.disabled)?.id || null)
+        : storage.activeAgentId;
+      await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: newActive || '' });
+      if (newActive) {
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: newActive });
+      } else {
+        chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: false });
+      }
+      break;
+    }
+  }
+
+  // 刷新列表并重置选中索引
+  const userInput = document.getElementById('userInput');
+  const filterText = userInput ? getAtFilterText(userInput.value) : '';
+  await renderActiveAtList(filterText);
 }

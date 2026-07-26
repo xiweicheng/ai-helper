@@ -5025,6 +5025,113 @@ body {
   color: #667eea;
 }
 
+/* 代理禁用状态样式 */
+.prompt-item.agent-disabled {
+  opacity: 0.6;
+}
+.prompt-item.agent-disabled .prompt-item-content,
+.prompt-item.agent-disabled .prompt-item-code {
+  color: #999;
+}
+
+/* @ 选择器代理状态点样式 */
+.prompt-item .agent-at-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-connected {
+  background: #48bb78;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-disconnected {
+  background: #fc8181;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-disabled {
+  background: #a0aec0;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-online {
+  background: #48bb78;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-offline {
+  background: #cbd5e0;
+}
+
+.prompt-item .agent-at-dot.agent-at-dot-checking {
+  background: #ecc94b;
+  animation: pulse 1.5s infinite;
+}
+
+/* 代理URL显示样式 */
+.prompt-item.prompt-item-proxy .prompt-item-code {
+  color: #999;
+  font-size: 12px;
+  max-width: 260px;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 代理项浮动工具栏（hover 时显示，参考 agent-dd-item-toolbar） */
+.prompt-item-proxy {
+  position: relative;
+}
+
+/* 代理项操作按钮（参考助手Item的 agent-edit-btn / agent-delete-btn 模式） */
+.prompt-item .proxy-disable-btn {
+  display: none;
+  cursor: pointer;
+  color: #999;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.prompt-item .proxy-disable-btn:hover {
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.12);
+}
+.prompt-item .proxy-delete-btn {
+  display: none;
+  cursor: pointer;
+  color: #999;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.prompt-item .proxy-delete-btn:hover {
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.12);
+}
+.prompt-item .proxy-enable-btn {
+  display: none;
+  cursor: pointer;
+  color: #999;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.prompt-item .proxy-enable-btn:hover {
+  color: #48bb78;
+  background: rgba(72, 187, 120, 0.12);
+}
+
+/* hover 时：隐藏 ✓，显示操作按钮 */
+.prompt-item-proxy:hover .agent-item-actions {
+  display: none;
+}
+.prompt-item-proxy:hover .proxy-disable-btn,
+.prompt-item-proxy:hover .proxy-delete-btn,
+.prompt-item-proxy:hover .proxy-enable-btn {
+  display: inline;
+}
+
 /* @ 选择器列表项右侧操作区按钮继承样式（定位由前面的 .agent-item-actions 规则控制） */
 .prompt-item .agent-item-actions {
   font-size: 14px;
@@ -5183,9 +5290,21 @@ body {
   background: rgba(102, 126, 234, 0.25);
 }
 
-/* 网页 Tab / 搜索模式 下隐藏 ✚ 按钮 */
+/* 网页 Tab / 搜索模式下隐藏助手 ✚ 按钮 */
 #agentAtDropdown[data-active-tab="pages"] #agentAddBtn,
 #agentAtDropdown[data-active-tab="merged"] #agentAddBtn {
+  display: none !important;
+}
+
+/* 代理 Tab 下显示代理 ✚ 按钮，隐藏助手 ✚ 按钮 */
+#agentAtDropdown[data-active-tab="proxies"] #agentAddBtn {
+  display: none !important;
+}
+#agentAtDropdown[data-active-tab="proxies"] #proxyAddBtn {
+  display: inline-flex !important;
+}
+/* 非代理 Tab 下隐藏代理 ✚ 按钮 */
+#agentAtDropdown:not([data-active-tab="proxies"]) #proxyAddBtn {
   display: none !important;
 }
 
