@@ -1,5 +1,5 @@
 // agent/src/trash.js - 文件回收站模块
-// 删除文件时先移动到回收站，7天后自动清理
+// 删除文件/目录时先移动到回收站，7天后自动清理
 import { mkdir, rename, readFile, writeFile, readdir, stat, unlink, rmdir } from 'fs/promises';
 import { join, basename } from 'path';
 import { homedir } from 'os';
@@ -28,7 +28,7 @@ async function ensureTrashDir() {
 
 /**
  * 读取回收站元数据
- * @returns {Promise<Array>} [{ id, originalPath, name, size, deletedAt }]
+ * @returns {Promise<Array>} [{ id, originalPath, name, size, deletedAt, isDir }]
  */
 async function loadMetadata() {
   try {
@@ -48,8 +48,31 @@ async function saveMetadata(entries) {
 }
 
 /**
+ * 递归计算目录实际大小
+ * @param {string} dirPath - 目录路径
+ * @returns {Promise<number>} 总大小（字节）
+ */
+async function getDirSize(dirPath) {
+  let total = 0;
+  try {
+    const items = await readdir(dirPath, { withFileTypes: true });
+    for (const item of items) {
+      const fullPath = join(dirPath, item.name);
+      if (item.isDirectory()) {
+        total += await getDirSize(fullPath);
+      } else if (item.isFile() || item.isSymbolicLink()) {
+        try {
+          const s = await stat(fullPath);
+          total += s.size;
+        } catch {}
+      }
+    }
+  } catch {}
+  return total;
+}
+
+/**
  * 清理过期回收站条目（超过7天）
- * 同时在文件系统上删除对应文件/目录
  */
 async function cleanExpiredTrash() {
   await ensureTrashDir();
@@ -61,6 +84,7 @@ async function cleanExpiredTrash() {
   for (const entry of expired) {
     const trashPath = join(TRASH_DIR, entry.id);
     try {
+      // 目录用 rename 存入，需递归删除；文件用 unlink
       const s = await stat(trashPath);
       if (s.isDirectory()) {
         await rmdir(trashPath, { recursive: true });
@@ -77,31 +101,27 @@ async function cleanExpiredTrash() {
 }
 
 /**
- * 将文件/目录移动到回收站
+ * 将文件/目录移动到回收站（使用 rename，同文件系统瞬时完成）
  * @param {string} sourcePath - 源文件/目录的绝对路径
- * @returns {Promise<{success: boolean, trashId?: string, error?: string}>}
+ * @returns {Promise<{success: boolean, trashId?: string, isDir?: boolean, error?: string}>}
  */
 export async function moveToTrash(sourcePath) {
   await ensureTrashDir();
-
-  // 每次删除前先清理过期条目（投机式清理，无需定时器）
   await cleanExpiredTrash();
 
   try {
+    const s = await stat(sourcePath);
+    const isDir = s.isDirectory();
     const ts = Date.now();
     const randomSuffix = Math.random().toString(36).slice(2, 8);
     const id = `${ts}_${randomSuffix}`;
     const name = basename(sourcePath);
     const trashPath = join(TRASH_DIR, id);
 
-    // 获取文件信息
-    let size = 0;
-    try {
-      const s = await stat(sourcePath);
-      size = s.size;
-    } catch {}
+    // 获取实际大小（目录需要递归计算）
+    const size = isDir ? await getDirSize(sourcePath) : s.size;
 
-    // 移动到回收站
+    // 移动到回收站（rename 是文件系统元数据操作，瞬时完成）
     await rename(sourcePath, trashPath);
 
     // 记录元数据
@@ -111,21 +131,22 @@ export async function moveToTrash(sourcePath) {
       originalPath: sourcePath,
       name,
       size,
-      deletedAt: ts
+      deletedAt: ts,
+      isDir
     });
     await saveMetadata(entries);
 
-    console.log(`[Trash] 已移至回收站: ${sourcePath} -> ${trashPath}`);
-    return { success: true, trashId: id };
+    console.log(`[Trash] 已移至回收站: ${sourcePath} -> ${trashPath} (${size} 字节, ${isDir ? '目录' : '文件'})`);
+    return { success: true, trashId: id, isDir };
   } catch (err) {
     return { success: false, error: `移至回收站失败: ${err.message}` };
   }
 }
 
 /**
- * 从回收站恢复文件
+ * 从回收站恢复文件/目录
  * @param {string} trashId - 回收站条目 ID
- * @returns {Promise<{success: boolean, error?: string}>}
+ * @returns {Promise<{success: boolean, restoredPath?: string, error?: string}>}
  */
 export async function restoreFromTrash(trashId) {
   const entries = await loadMetadata();
@@ -138,14 +159,12 @@ export async function restoreFromTrash(trashId) {
   const trashPath = join(TRASH_DIR, entry.id);
 
   if (!existsSync(trashPath)) {
-    // 文件已不在回收站，清理元数据
     entries.splice(idx, 1);
     await saveMetadata(entries);
     return { success: false, error: '回收站文件已不存在' };
   }
 
   try {
-    // 检查原路径是否已被占用
     if (existsSync(entry.originalPath)) {
       return { success: false, error: `原位置已有文件: ${entry.originalPath}` };
     }
@@ -162,19 +181,18 @@ export async function restoreFromTrash(trashId) {
 }
 
 /**
- * 获取回收站条目列表（不包含清理逻辑，用于前端展示）
+ * 获取回收站条目列表
  * @returns {Promise<{success: boolean, entries: Array}>}
  */
 export async function listTrash() {
   await ensureTrashDir();
-  // 前先清理一次过期条目，保持视图清爽
   await cleanExpiredTrash();
   const entries = await loadMetadata();
   return { success: true, entries };
 }
 
 /**
- * 获取回收站目录路径（用于配置 etc）
+ * 获取回收站目录路径
  */
 export function getTrashDir() {
   return TRASH_DIR;
@@ -182,10 +200,9 @@ export function getTrashDir() {
 
 /**
  * 启动定期清理定时器（每6小时执行一次过期清理）
- * 配合 moveToTrash/listTrash 中的投机式清理，确保即使长期不操作也能清理过期文件
  */
 export function startPeriodicCleanup() {
-  if (periodicCleanTimer) return; // 防止重复启动
+  if (periodicCleanTimer) return;
   periodicCleanTimer = setInterval(async () => {
     try {
       await cleanExpiredTrash();
@@ -193,7 +210,6 @@ export function startPeriodicCleanup() {
       console.error('[Trash] 定期清理出错:', err.message);
     }
   }, PERIODIC_CLEAN_INTERVAL_MS);
-  // 允许进程退出（不阻止事件循环），Node 会在退出时自动清理
   if (periodicCleanTimer.unref) periodicCleanTimer.unref();
   console.log('[Trash] 定期清理已启动（间隔6小时）');
 }

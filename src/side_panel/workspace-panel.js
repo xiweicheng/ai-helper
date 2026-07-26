@@ -2821,8 +2821,8 @@ async function handleDeleteFile(path, name, type) {
   const isDir = type === 'directory';
   
   const message = isDir 
-    ? `确定要删除目录 "${name}" 及其所有内容吗？\n\n路径: ${path}\n类型: 目录\n\n此操作不可恢复！`
-    : `确定要删除文件 "${name}" 吗？\n\n路径: ${path}\n类型: 文件\n\n此操作不可恢复！`;
+    ? `确定要删除目录 "${name}" 及其所有内容吗？\n\n路径: ${path}\n类型: 目录\n\n删除后可在回收站中恢复（7天后自动清理）`
+    : `确定要删除文件 "${name}" 吗？\n\n路径: ${path}\n类型: 文件\n\n删除后可在回收站中恢复（7天后自动清理）`;
   
   if (typeof window.showCustomConfirm !== 'function') {
     const confirmed = confirm(message);

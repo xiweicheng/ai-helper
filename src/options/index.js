@@ -885,6 +885,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (streamEnabledLabel) {
         streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
       }
+      chrome.storage.local.set({ streamEnabled: streamEnabledEl.checked });
     });
     if (streamEnabledLabel) {
       streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
@@ -897,6 +898,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (toolConfirmationEnabledEl && toolConfirmationEnabledLabel) {
     toolConfirmationEnabledEl.addEventListener('change', function() {
       toolConfirmationEnabledLabel.textContent = this.checked ? '已启用' : '已停用';
+      chrome.storage.local.set({ toolConfirmationEnabled: this.checked });
     });
     toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? '已启用' : '已停用';
   }
@@ -907,6 +909,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (enableExecutionLogEl && enableExecutionLogLabel) {
     enableExecutionLogEl.addEventListener('change', function() {
       enableExecutionLogLabel.textContent = this.checked ? '已启用' : '已停用';
+      chrome.storage.local.set({ enableExecutionLog: this.checked });
     });
     enableExecutionLogLabel.textContent = enableExecutionLogEl.checked ? '已启用' : '已停用';
   }

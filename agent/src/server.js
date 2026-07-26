@@ -924,7 +924,7 @@ export function startServer() {
           return jsonResponse(res, 500, { success: false, error: trashResult.error });
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size, trashId: trashResult.trashId });
-        return jsonResponse(res, 200, { success: true, path: check.resolved, trashId: trashResult.trashId, message: '已移至回收站（7天后自动清理）' });
+        return jsonResponse(res, 200, { success: true, path: check.resolved, isDir: trashResult.isDir, trashId: trashResult.trashId, message: '已移至回收站（7天后自动清理）' });
       }
 
       // 下载文件/目录（返回 base64 内容，目录自动打包为 zip）

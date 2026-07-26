@@ -138,10 +138,11 @@ export function openPrototypeInNewTab() {
   }
   
   const wrappedHtml = wrapPrototypeHtml(currentPrototype.html);
-  const blob = new Blob([wrappedHtml], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
+  // 使用 base64 data URI 在新标签页打开，避免 blob URL 继承扩展 CSP 导致 JS 被阻止
+  const base64 = btoa(unescape(encodeURIComponent(wrappedHtml)));
+  const dataUri = 'data:text/html;base64,' + base64;
   
-  chrome.tabs.create({ url: url, active: true });
+  chrome.tabs.create({ url: dataUri, active: true });
   
   logger.debug('[SidePanel] 原型已在新标签页打开');
 }
@@ -159,6 +160,26 @@ export async function loadAndShowPrototype(prototypeId) {
     
   } catch (err) {
     logger.error('[SidePanel] 加载原型失败:', err);
+  }
+}
+
+/**
+ * 加载原型并在浏览器标签页中自动打开（用于远端代理场景）
+ */
+export async function loadAndAutoOpenPrototype(prototypeId) {
+  try {
+    const prototype = await getUiPrototype(prototypeId);
+    
+    if (!prototype) {
+      logger.error('[SidePanel] 未找到原型（自动打开）:', prototypeId);
+      return;
+    }
+    
+    currentPrototype = prototype;
+    openPrototypeInNewTab();
+    logger.debug('[SidePanel] 原型已在浏览器标签页自动打开:', prototype.title);
+  } catch (err) {
+    logger.error('[SidePanel] 自动打开原型失败:', err);
   }
 }
 
@@ -620,11 +641,16 @@ export function initPrototypeEvents() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_UI_PROTOTYPE') {
       logger.debug('[SidePanel] 收到显示原型请求:', message);
-      // 如果已在本地浏览器打开，不自动弹窗（用户可通过圆形按钮手动打开）
-      if (!message.data.localOpened) {
-        loadAndShowPrototype(message.data.prototypeId);
+      if (message.data.localOpened) {
+        // 已在代理端浏览器打开，不弹窗
+        logger.debug('[SidePanel] 原型已在代理端浏览器打开，跳过弹窗');
+      } else if (message.data.isRemoteAgent) {
+        // 远端代理：自动在浏览器标签页打开
+        logger.debug('[SidePanel] 远端代理，将在浏览器标签页自动打开原型');
+        loadAndAutoOpenPrototype(message.data.prototypeId);
       } else {
-        logger.debug('[SidePanel] 原型已在本地浏览器打开，跳过弹窗');
+        // 默认：在侧边栏弹窗预览
+        loadAndShowPrototype(message.data.prototypeId);
       }
       sendResponse({ success: true });
     }

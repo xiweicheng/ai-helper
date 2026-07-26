@@ -2631,9 +2631,10 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     
     console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
 
-    // ── 尝试通过 Agent 写入本地文件并使用本地浏览器打开 ──
+    // ── 尝试通过 Agent 写入文件并打开 ──
     let localOpened = false;
     let localPath = null;
+    let isRemoteAgent = false;
 
     try {
       const config = await AgentClient.getAgentConfig();
@@ -2643,26 +2644,34 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
 
         if (writeResult.success) {
           localPath = writeResult.path; // agent 返回的绝对路径
-          console.log('[Background] 原型已写入本地:', localPath);
+          console.log('[Background] 原型已写入 Agent:', localPath);
 
-          // 更新 IndexedDB 记录，保存 localPath（包含完整数据，避免覆盖）
+          // 更新 IndexedDB 记录，保存 localPath
           await saveUiPrototype({ ...prototypeData, localPath });
 
-          // 尝试在本地浏览器打开
-          const openResult = await AgentClient.openBrowser(localPath);
-          if (openResult.success) {
-            localOpened = true;
-            console.log('[Background] 原型已在本地浏览器打开:', localPath);
+          // 判断代理是否在本地
+          const isLocal = await AgentClient.isLocalAgent();
+          
+          if (isLocal) {
+            // 本地代理：直接在代理端浏览器打开
+            const openResult = await AgentClient.openBrowser(localPath);
+            if (openResult.success) {
+              localOpened = true;
+              console.log('[Background] 原型已在代理端浏览器打开:', localPath);
+            } else {
+              console.warn('[Background] 代理端浏览器打开失败:', openResult.error);
+            }
           } else {
-            console.warn('[Background] 本地浏览器打开失败:', openResult.error);
+            // 远端代理：不在远端浏览器打开，标记由浏览器端打开
+            isRemoteAgent = true;
+            console.log('[Background] 代理为远端，将在浏览器端标签页打开原型');
           }
         } else {
-          console.warn('[Background] Agent 本地文件写入失败:', writeResult.error);
+          console.warn('[Background] Agent 文件写入失败:', writeResult.error);
         }
       }
     } catch (err) {
-      // 写入或打开失败，不影响主流程，走兜底
-      console.warn('[Background] Agent 本地原型写入/打开失败，回退到 Side Panel:', err.message);
+      console.warn('[Background] Agent 原型写入/打开失败，回退到 Side Panel:', err.message);
     }
 
     chrome.runtime.sendMessage({
@@ -2671,16 +2680,18 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
         prototypeId: newPrototypeId,
         title: prototypeData.title,
         description: prototypeData.description,
-        localOpened,   // 是否已在本地浏览器打开
-        localPath,     // 本地文件路径
+        localOpened,       // 是否已在代理端浏览器打开
+        localPath,         // 代理端文件路径
+        isRemoteAgent,     // 是否为远端代理（需浏览器端打开）
       }
     }).catch(() => {});
     
     return { 
       success: true, 
-      message: localOpened ? `UI 原型 "${title}" 已创建并在本地浏览器打开` : `UI 原型 "${title}" 已创建并预览`,
+      message: localOpened ? `UI 原型 "${title}" 已创建并在代理端浏览器打开` : `UI 原型 "${title}" 已创建`,
       prototypeId: newPrototypeId,
       localOpened,
+      isRemoteAgent,
       localPath,
       tool_call_id: toolCallId 
     };
@@ -2903,8 +2914,9 @@ async function executeAgentDeleteFile(args, toolCallId) {
   
   const result = await AgentClient.deleteFile(path);
   if (result.success) {
-    appendAuditLog('file_delete', `删除文件: ${result.path}`, { path: result.path });
-    return { success: true, message: `已删除: ${result.path}`, path: result.path, tool_call_id: toolCallId };
+    const typeLabel = result.isDir ? '目录' : '文件';
+    appendAuditLog('file_delete', `删除${typeLabel}: ${result.path}`, { path: result.path, isDir: result.isDir });
+    return { success: true, message: `已删除${typeLabel}: ${result.path}，可在回收站中恢复（7天后自动清理）`, path: result.path, isDir: result.isDir, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }
@@ -2916,20 +2928,28 @@ async function executeAgentListTrash(args, toolCallId) {
   const result = await AgentClient.getTrashList();
   if (result.success) {
     let entries = result.entries || [];
+    // 按可选的 type 参数过滤文件/目录
+    if (args.type === 'file') {
+      entries = entries.filter(e => !e.isDir);
+    } else if (args.type === 'directory') {
+      entries = entries.filter(e => e.isDir);
+    }
     // 按可选的 hours 参数过滤时间范围
     if (args.hours && typeof args.hours === 'number' && args.hours > 0) {
       const cutoff = Date.now() - args.hours * 3600 * 1000;
       entries = entries.filter(e => e.deletedAt >= cutoff);
     }
     if (entries.length === 0) {
-      return { success: true, content: '回收站为空，没有可恢复的文件。', entries: [], tool_call_id: toolCallId };
+      const typeHint = args.type === 'file' ? '文件' : args.type === 'directory' ? '目录' : '项目';
+      return { success: true, content: `回收站为空，没有可恢复的${typeHint}。`, entries: [], tool_call_id: toolCallId };
     }
     const now = Date.now();
-    const text = `回收站中共有 ${entries.length} 个文件（7天后自动清理）:\n\n` +
+    const text = `回收站中共有 ${entries.length} 个项目（7天后自动清理）:\n\n` +
       entries.map((e, i) => {
         const age = Math.round((now - e.deletedAt) / (1000 * 60 * 60));
         const ageStr = age < 1 ? '刚刚' : age < 24 ? `${age}小时前` : `${Math.round(age / 24)}天前`;
-        return `  ${i + 1}. trashId: ${e.id}\n     文件名: ${e.name}\n     原路径: ${e.originalPath}\n     大小: ${e.size} 字节 · ${ageStr}`;
+        const typeLabel = e.isDir ? '📁 目录' : '📄 文件';
+        return `  ${i + 1}. trashId: ${e.id}\n     ${typeLabel}: ${e.name}\n     原路径: ${e.originalPath}\n     大小: ${e.size} 字节 · ${ageStr}`;
       }).join('\n\n');
     return { success: true, content: text, entries, tool_call_id: toolCallId };
   }

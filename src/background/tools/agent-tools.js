@@ -88,13 +88,14 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_trash',
-      description: '回收站管理：列出/恢复已删除文件',
+      description: '回收站管理：列出/恢复已删除的文件和目录',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型：list=列出回收站文件，restore=恢复文件' },
+          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型：list=列出回收站内容，restore=恢复项目' },
           trashId: { type: 'string', description: '回收站条目ID（action=restore时需要，来自list结果）' },
-          hours: { type: 'number', description: '仅返回最近N小时内删除的文件（action=list时可选），不传则返回全部' }
+          hours: { type: 'number', description: '仅返回最近N小时内删除的项目（action=list时可选），不传则返回全部' },
+          type: { type: 'string', enum: ['file', 'directory'], description: '按类型筛选（action=list时可选）：file=仅文件，directory=仅目录，不传则返回全部' }
         },
         required: ['action']
       }

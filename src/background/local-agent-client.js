@@ -949,6 +949,22 @@ async function restoreTrash(trashId) {
   return agentRequest('/api/trash/restore', { trashId });
 }
 
+/**
+ * 判断代理是否运行在本地（同一台机器）
+ * 通过代理 URL 是否是 localhost 或 127.0.0.1 来判断
+ * @returns {Promise<boolean>}
+ */
+async function isLocalAgent() {
+  const config = await getAgentConfig();
+  if (!config.url) return false;
+  try {
+    const hostname = new URL(config.url).hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
 export {
   migrateFromLegacyFormat,
   generateAgentId,
@@ -964,6 +980,7 @@ export {
   unpairAgent,
   updateAgentName,
   toggleAgentDisabled,
+  isLocalAgent,
   agentRequest,
   readFile,
   writeFile,
