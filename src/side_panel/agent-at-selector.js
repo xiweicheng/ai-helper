@@ -1,7 +1,7 @@
 // side_panel/agent-at-selector.js - @ 选择器（输入 @ 快速切换 Agent / 选择网页）
 import state from './state.js';
 import { getAllAgents } from './agent-store.js';
-import { switchAgent, openAgentEditor } from './agent-manager.js';
+import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-manager.js';
 import { escapeHtml } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
@@ -79,8 +79,8 @@ function initAtEvents() {
     });
   }
 
-  // ✚ 按钮和编辑按钮：通过事件委托绑定在 dropdown 上
-  dropdown.addEventListener('click', (e) => {
+  // ✚ 按钮、编辑按钮和删除按钮：通过事件委托绑定在 dropdown 上
+  dropdown.addEventListener('click', async (e) => {
     const addBtn = e.target.closest('#agentAddBtn');
     if (addBtn) {
       e.stopPropagation();
@@ -95,6 +95,20 @@ function initAtEvents() {
       const agentId = editBtn.dataset.agentId;
       hideAgentAtSelector();
       openAgentEditor(agentId);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('.agent-delete-btn');
+    if (deleteBtn) {
+      e.stopPropagation();
+      const agentId = deleteBtn.dataset.agentId;
+      const deleted = await deleteAgentWithConfirm(agentId);
+      if (deleted) {
+        // 删除成功后刷新当前 @ 列表
+        const userInput = document.getElementById('userInput');
+        const filterText = userInput ? getAtFilterText(userInput.value) : '';
+        await renderActiveAtList(filterText);
+      }
     }
   });
 }
@@ -218,6 +232,7 @@ async function renderAgentAtList(filterText = '') {
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
           <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="编辑助手">✎</span>
+          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="删除助手">✕</span>` : ''}
         </span>
       </div>
     `;
@@ -226,6 +241,7 @@ async function renderAgentAtList(filterText = '') {
   agentAtList.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', async (e) => {
       if (e.target.closest('.agent-edit-btn')) return;
+      if (e.target.closest('.agent-delete-btn')) return;
       await selectAgentByAt(item.dataset.agentId);
     });
   });
@@ -281,6 +297,7 @@ async function renderMergedAtList(filterText = '') {
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
           <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="编辑助手">✎</span>
+          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="删除助手">✕</span>` : ''}
         </span>
       </div>`;
     globalIndex++;
@@ -313,6 +330,7 @@ async function renderMergedAtList(filterText = '') {
   agentAtList.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', async (e) => {
       if (e.target.closest('.agent-edit-btn')) return;
+      if (e.target.closest('.agent-delete-btn')) return;
       const type = item.dataset.type;
       if (type === 'agent') {
         await selectAgentByAt(item.dataset.agentId);

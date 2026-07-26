@@ -970,6 +970,28 @@ function initAgentConfig() {
 
   // ========== 多代理列表渲染 ==========
 
+  /** 把 #agentDetailArea 移回原位（已配对代理列表之后） */
+  function restoreDetailArea() {
+    const detailArea = document.getElementById('agentDetailArea');
+    if (!detailArea) return;
+    if (pairedAgentsSection.nextSibling !== detailArea) {
+      pairedAgentsSection.parentNode.insertBefore(detailArea, pairedAgentsSection.nextSibling);
+    }
+  }
+
+  /** 把 #agentDetailArea 移到活跃代理项内部，使其与当前连接的代理在同一区域 */
+  function placeDetailAreaInActiveItem() {
+    const detailArea = document.getElementById('agentDetailArea');
+    if (!detailArea) return;
+    const activeItem = pairedAgentsList.querySelector('.paired-agent-item.active');
+    if (activeItem && activeItem !== detailArea.parentNode) {
+      activeItem.appendChild(detailArea);
+    } else if (!activeItem) {
+      // 没有活跃代理时，保持在原位
+      restoreDetailArea();
+    }
+  }
+
   /** ping 代理检查在线状态 */
   async function pingAgent(url) {
     try {
@@ -983,6 +1005,9 @@ function initAgentConfig() {
 
   /** 渲染已配对代理列表 */
   async function renderPairedAgents() {
+    // 先把详情区域移回原位，避免被 innerHTML 清空
+    restoreDetailArea();
+
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
     const activeId = storage.activeAgentId;
@@ -1038,6 +1063,9 @@ function initAgentConfig() {
     }).join('');
 
     bindPairedAgentEvents(agents);
+
+    // 把详情区域移到活跃代理项内部，使其与当前连接的代理在同一区域
+    placeDetailAreaInActiveItem();
 
     // 异步 ping 所有非停用代理，逐个回填状态
     agents.forEach((a) => {

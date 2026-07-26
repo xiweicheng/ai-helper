@@ -123,6 +123,15 @@ export let attachedFiles = [];        // [{ name, size, type, dataUrl, text, sta
 // 代理版本号缓存 (agentId -> version string)
 export let agentVersions = new Map();
 
+// 代理工作目录缓存 (agentId -> workdir string)
+export let agentWorkdirs = new Map();
+
+// 代理用户主目录缓存 (agentId -> homeDir string)，用于将工作目录前缀替换为 ~
+export let agentHomeDirs = new Map();
+
+// 代理系统信息缓存 (agentId -> "macOS (x64)" 格式字符串)
+export let agentSystemInfos = new Map();
+
 // 标志位
 export let isScrolling = false;
 export let isComposing = false;
@@ -294,6 +303,12 @@ export default {
   set attachedFiles(v) { attachedFiles = v; },
   get agentVersions() { return agentVersions; },
   set agentVersions(v) { agentVersions = v; },
+  get agentWorkdirs() { return agentWorkdirs; },
+  set agentWorkdirs(v) { agentWorkdirs = v; },
+  get agentHomeDirs() { return agentHomeDirs; },
+  set agentHomeDirs(v) { agentHomeDirs = v; },
+  get agentSystemInfos() { return agentSystemInfos; },
+  set agentSystemInfos(v) { agentSystemInfos = v; },
   get isScrolling() { return isScrolling; },
   set isScrolling(v) { isScrolling = v; },
   get isComposing() { return isComposing; },

@@ -2044,6 +2044,39 @@ textarea {
   border-color: #667eea;
   background: #f0f4ff;
 }
+/* 活跃代理项内的详情区域：状态/工作目录/详细信息 与代理项在同一框内 */
+.paired-agent-item.active {
+  flex-wrap: wrap;
+}
+.paired-agent-item.active > #agentDetailArea {
+  flex-basis: 100%;
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed #cbd5e0;
+}
+.paired-agent-item.active > #agentDetailArea .agent-status-row {
+  margin-bottom: 8px;
+}
+.paired-agent-item.active > #agentDetailArea .agent-status {
+  margin-bottom: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.paired-agent-item.active > #agentDetailArea .agent-info {
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.paired-agent-item.active > #agentDetailArea .agent-detail-toggle {
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.paired-agent-item.active > #agentDetailArea .agent-detail-panel {
+  margin-bottom: 0;
+  font-size: 12px;
+}
 .paired-agent-dot {
   width: 12px;
   height: 12px;

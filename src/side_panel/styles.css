@@ -359,16 +359,27 @@ body {
 
 .agent-dd-item-name {
   flex: 1;
+  width: 100%;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   font-size: 12px;
   color: #333;
   overflow: hidden;
+}
+.agent-dd-item-name-text {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .agent-dd-item-version {
   display: inline-block;
-  margin-left: 6px;
+  margin-left: 2px;
   font-size: 10px;
   color: #888;
   background: #f0f0f0;
@@ -377,6 +388,24 @@ body {
   line-height: 16px;
   vertical-align: middle;
   flex-shrink: 0;
+  white-space: nowrap;
+}
+.agent-dd-item-sysinfo {
+  display: inline-block;
+  margin-left: 2px;
+  font-size: 10px;
+  color: #5a9;
+  background: #e8f5ee;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 16px;
+  vertical-align: middle;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-dd-item-info {
@@ -384,6 +413,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 2px;
 }
 
@@ -406,6 +436,15 @@ body {
   font-size: 14px;
   font-weight: bold;
   flex-shrink: 0;
+}
+
+/* 代理项工作目录行 */
+.agent-dd-item-workdir {
+  font-size: 10px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 浮动工具栏（hover 显示） */
@@ -619,7 +658,22 @@ body {
 .agent-list-scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px;
+}
+/* 助手列表自定义窄滚动条 */
+.agent-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.agent-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.agent-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+.agent-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 .agent-dropdown-footer {
   flex-shrink: 0;
@@ -654,10 +708,9 @@ body {
   color: #667eea;
 }
 .agent-item-actions {
-  width: 26px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
   flex-shrink: 0;
 }
 .agent-item-check {
@@ -710,7 +763,24 @@ body {
 }
 .agent-item-edit:hover {
   color: #667eea;
-  background: rgba(102, 126, 234, 0.08);
+  background: rgba(102, 126, 234, 0.12);
+}
+.agent-item-delete {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 4px;
+  display: none;
+}
+.agent-item.is-editable:hover .agent-item-delete {
+  display: inline-block;
+}
+.agent-item-delete:hover {
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.12);
 }
 .agent-item-add {
   color: #667eea;
@@ -4772,8 +4842,23 @@ body {
   display: none;
   max-height: 300px;
   overflow-y: auto;
+  overflow-x: hidden;
   scroll-padding-top: 65px;
   animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* @ 选择器自定义窄滚动条 */
+.prompt-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.prompt-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.prompt-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+.prompt-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 .prompt-dropdown.show {
   display: block;
@@ -4798,7 +4883,6 @@ body {
   transition: background 0.2s;
   border-bottom: 1px solid #f0f0f0;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
@@ -4849,6 +4933,7 @@ body {
 }
 .prompt-item-content {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4870,11 +4955,8 @@ body {
   color: #667eea;
 }
 
-/* 助手列表项右侧操作区 */
-.agent-item-actions {
-  width: 20px;
-  flex-shrink: 0;
-  text-align: center;
+/* @ 选择器列表项右侧操作区按钮继承样式（定位由前面的 .agent-item-actions 规则控制） */
+.prompt-item .agent-item-actions {
   font-size: 14px;
   color: #667eea;
 }
@@ -4885,16 +4967,34 @@ body {
   display: none;
   cursor: pointer;
   color: #999;
-  transition: color 0.2s;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
 }
 .agent-edit-btn:hover {
   color: #667eea;
+  background: rgba(102, 126, 234, 0.12);
 }
-/* hover 时：隐藏 ✓，显示 ✎ */
+.agent-delete-btn {
+  display: none;
+  cursor: pointer;
+  color: #999;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.agent-delete-btn:hover {
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.12);
+}
+/* hover 时：隐藏 ✓，显示 ✎ ✕ */
 .prompt-item:hover .agent-active-mark {
   display: none;
 }
 .prompt-item:hover .agent-edit-btn {
+  display: inline;
+}
+.prompt-item:hover .agent-delete-btn {
   display: inline;
 }
 

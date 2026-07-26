@@ -65,6 +65,7 @@ export async function renderAgentSelector() {
         </div>
         <div class="agent-item-actions">
           ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="编辑">✎</button>` : ''}
+          ${!agent.isBuiltin ? `<button class="agent-item-delete" data-action="delete" data-agent-id="${escapeAttr(agent.id)}" title="删除">✕</button>` : ''}
           ${isActive ? '<span class="agent-item-check">✓</span>' : ''}
         </div>
       </div>`;
@@ -182,6 +183,11 @@ function initAgentSelectorEvents() {
       e.stopPropagation();
       const agentId = action.dataset.agentId;
       openAgentEditor(agentId);
+      return;
+    }
+    if (action && action.dataset.action === 'delete') {
+      e.stopPropagation();
+      await deleteAgentWithConfirm(action.dataset.agentId);
       return;
     }
 
@@ -878,8 +884,10 @@ async function deleteCurrentAgent() {
   const agentId = modal.querySelector('#agentEditId')?.value;
   if (!agentId) return;
 
+  const agent = await getAgent(agentId);
+  const agentName = agent ? agent.name : '';
   const confirmed = await showCustomConfirm(
-    `确定要删除这个助手吗？正在使用该助手的会话将恢复为默认助手。`,
+    `确定要删除助手 "${agentName}" 吗？\n正在使用该助手的会话将恢复为默认助手。`,
     '删除助手'
   );
   if (!confirmed) return;
@@ -893,6 +901,36 @@ async function deleteCurrentAgent() {
   } catch (err) {
     logger.error('[AgentMgr] 删除 Agent 失败:', err);
     showToast('删除失败：' + err.message, 'error');
+  }
+}
+
+/**
+ * 从列表直接删除指定 Agent（带确认弹窗，标明助手名称）
+ * 供下拉列表和 @ 选择器共用
+ * @returns {Promise<boolean>} 是否删除成功
+ */
+export async function deleteAgentWithConfirm(agentId) {
+  if (!agentId) return false;
+  const agent = await getAgent(agentId);
+  if (!agent || agent.isBuiltin) {
+    showToast('默认助手不支持删除', 'warning');
+    return false;
+  }
+  const confirmed = await showCustomConfirm(
+    `确定要删除助手 "${agent.name}" 吗？\n正在使用该助手的会话将恢复为默认助手。`,
+    '删除助手'
+  );
+  if (!confirmed) return false;
+  try {
+    await deleteAgent(agentId);
+    showToast('助手已删除', 'success');
+    await loadAgentState();
+    await renderAgentSelector();
+    return true;
+  } catch (err) {
+    logger.error('[AgentMgr] 删除 Agent 失败:', err);
+    showToast('删除失败：' + err.message, 'error');
+    return false;
   }
 }
 

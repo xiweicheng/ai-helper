@@ -439,20 +439,22 @@
         <div class="paired-agents-list" id="pairedAgentsList"></div>
       </div>
 
-      <!-- 当前活跃代理的状态 + 详情 -->
-      <div class="agent-status-row">
-        <div class="agent-status" id="agentStatus">
-          <span class="agent-status-dot" id="agentStatusDot"></span>
-          <span id="agentStatusText">未连接</span>
+      <!-- 当前活跃代理的状态 + 详情（连接后自动嵌入活跃代理项内部） -->
+      <div id="agentDetailArea">
+        <div class="agent-status-row">
+          <div class="agent-status" id="agentStatus">
+            <span class="agent-status-dot" id="agentStatusDot"></span>
+            <span id="agentStatusText">未连接</span>
+          </div>
         </div>
-      </div>
 
-      <div class="agent-info" id="agentInfo" style="display:none;">
-        <span id="agentWorkdir"></span>
-      </div>
+        <div class="agent-info" id="agentInfo" style="display:none;">
+          <span id="agentWorkdir"></span>
+        </div>
 
-      <button class="agent-detail-toggle" id="agentDetailToggle" style="display:none;">▶ 详细信息</button>
-      <div class="agent-detail-panel" id="agentDetailPanel"></div>
+        <button class="agent-detail-toggle" id="agentDetailToggle" style="display:none;">▶ 详细信息</button>
+        <div class="agent-detail-panel" id="agentDetailPanel"></div>
+      </div>
 
       <!-- 添加新代理 -->
       <div class="add-agent-section">

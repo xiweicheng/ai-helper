@@ -272,9 +272,19 @@ async function verifyActiveAgentConnectivity() {
               workdir: data.workdir || '',
               connected: true
             };
-            // 缓存活跃代理的版本号
+            // 缓存活跃代理的版本号、工作目录、用户主目录和系统信息
             if (data.version) {
               state.agentVersions.set(activeId, data.version);
+            }
+            if (data.workdir) {
+              state.agentWorkdirs.set(activeId, data.workdir);
+            }
+            if (data.homeDir) {
+              state.agentHomeDirs.set(activeId, data.homeDir);
+            }
+            const sysInfo1 = formatSystemInfo(data.platformName || data.platform, data.arch);
+            if (sysInfo1) {
+              state.agentSystemInfos.set(activeId, sysInfo1);
             }
           } else {
             state.agentPlatform = { connected: false };
@@ -826,12 +836,18 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
       statusLabel = '检测中...';
     }
 
+    const workdir = state.agentWorkdirs.get(a.id);
+    const homeDir = state.agentHomeDirs.get(a.id);
+    const displayWorkdir = formatWorkdir(workdir, homeDir);
+    const sysInfo = state.agentSystemInfos.get(a.id);
+
     return `
       <div class="agent-dd-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
         <span class="agent-dd-item-dot ${dotClass}"></span>
         <div class="agent-dd-item-info">
-          <span class="agent-dd-item-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}${version ? `<span class="agent-dd-item-version">v${escapeHtml(version)}</span>` : ''}</span>
+          <div class="agent-dd-item-name"><span class="agent-dd-item-name-text" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>${version ? `<span class="agent-dd-item-version" title="v${escapeHtml(version)}">v${escapeHtml(version)}</span>` : ''}${sysInfo ? `<span class="agent-dd-item-sysinfo" title="${escapeHtml(sysInfo)}">${escapeHtml(sysInfo)}</span>` : ''}</div>
           <span class="agent-dd-item-url" title="${escapeHtml(a.url || '')}">${escapeHtml(a.url || '')}</span>
+          ${displayWorkdir ? `<span class="agent-dd-item-workdir" title="工作目录: ${escapeHtml(workdir)}">${escapeHtml(displayWorkdir)}</span>` : ''}
         </div>
         <span class="agent-dd-item-status">${statusLabel}</span>
         ${isActive ? '<span class="agent-dd-item-check">&#10003;</span>' : ''}
@@ -862,19 +878,64 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
 }
 
 /**
- * Ping 单个代理，返回是否在线及版本号
+ * Ping 单个代理，返回是否在线、版本号、工作目录及用户主目录
+ * 优先调用认证接口 /api/status/detail 以获取 workdir/homeDir，失败回退 /api/status
  */
-async function pingAgentUrl(url) {
+async function pingAgentUrl(url, token) {
+  // 优先尝试 detail 接口（带 token），可同时获取 version + workdir + homeDir
+  if (token) {
+    try {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 2000);
+      const detailRes = await fetch(`${url}/api/status/detail`, {
+        signal: controller.signal,
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (detailRes.ok) {
+        const data = await detailRes.json();
+        if (data.success) {
+          return {
+            online: true,
+            version: data.version || null,
+            workdir: data.workdir || null,
+            homeDir: data.homeDir || null,
+            platformName: data.platformName || data.platform || null,
+            arch: data.arch || null
+          };
+        }
+      }
+    } catch { /* 回退到 status 接口 */ }
+  }
+  // 回退到无认证 status 接口
   try {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 2000);
     const res = await fetch(`${url}/api/status`, { signal: controller.signal });
-    if (!res.ok) return { online: false, version: null };
+    if (!res.ok) return { online: false, version: null, workdir: null, homeDir: null, platformName: null, arch: null };
     const data = await res.json();
-    return { online: true, version: data.version || null };
+    return { online: true, version: data.version || null, workdir: null, homeDir: null, platformName: data.platformName || data.platform || null, arch: data.arch || null };
   } catch {
-    return { online: false, version: null };
+    return { online: false, version: null, workdir: null, homeDir: null, platformName: null, arch: null };
   }
+}
+
+/**
+ * 格式化工作目录：将用户主目录前缀替换为 ~
+ */
+function formatWorkdir(workdir, homeDir) {
+  if (!workdir) return '';
+  if (homeDir && workdir.startsWith(homeDir)) {
+    return '~' + workdir.substring(homeDir.length);
+  }
+  return workdir;
+}
+
+/**
+ * 格式化系统信息：仅显示平台名称
+ */
+function formatSystemInfo(platformName, arch) {
+  if (!platformName) return '';
+  return platformName;
 }
 
 /**
@@ -903,6 +964,30 @@ function updateAgentItemOnlineStatus(agentId, online) {
 }
 
 /**
+ * 更新下拉列表中单个代理项的工作目录显示（前缀 ~ 简化，悬停显示"工作目录: 完整路径"）
+ */
+function updateAgentItemWorkdir(agentId, workdir) {
+  if (!workdir) return;
+  const item = document.querySelector(`.agent-dd-item[data-agent-id="${agentId}"]`);
+  if (!item) return;
+  const info = item.querySelector('.agent-dd-item-info');
+  if (!info) return;
+  const homeDir = state.agentHomeDirs.get(agentId);
+  const display = formatWorkdir(workdir, homeDir);
+  let workdirEl = info.querySelector('.agent-dd-item-workdir');
+  if (workdirEl) {
+    workdirEl.textContent = display;
+    workdirEl.title = `工作目录: ${workdir}`;
+  } else {
+    workdirEl = document.createElement('span');
+    workdirEl.className = 'agent-dd-item-workdir';
+    workdirEl.title = `工作目录: ${workdir}`;
+    workdirEl.textContent = display;
+    info.appendChild(workdirEl);
+  }
+}
+
+/**
  * Ping 所有非停用代理并更新列表状态
  */
 async function pingAllAgents() {
@@ -912,11 +997,24 @@ async function pingAllAgents() {
     const activeId = storage.activeAgentId;
     // 并行 ping 所有非停用代理
     await Promise.all(agents.filter(a => !a.disabled).map(async (a) => {
-      const result = await pingAgentUrl(a.url);
+      const result = await pingAgentUrl(a.url, a.token);
       const online = result.online;
-      // 缓存版本号
+      // 缓存版本号、工作目录、用户主目录和系统信息
       if (result.version) {
         state.agentVersions.set(a.id, result.version);
+      }
+      if (result.workdir) {
+        state.agentWorkdirs.set(a.id, result.workdir);
+      }
+      if (result.homeDir) {
+        state.agentHomeDirs.set(a.id, result.homeDir);
+      }
+      const sysInfo = formatSystemInfo(result.platformName, result.arch);
+      if (sysInfo) {
+        state.agentSystemInfos.set(a.id, sysInfo);
+      }
+      if (result.workdir) {
+        updateAgentItemWorkdir(a.id, result.workdir);
       }
       updateAgentItemOnlineStatus(a.id, online);
       // 活跃代理在线状态变化时，同步更新 Header 指示器
@@ -956,13 +1054,26 @@ function startRecoveryPolling(agentId, maxAttempts = 20) {
         _recoveryPollingTimer = null;
         return;
       }
-      const result = await pingAgentUrl(agent.url);
+      const result = await pingAgentUrl(agent.url, agent.token);
       if (result.online) {
         clearInterval(_recoveryPollingTimer);
         _recoveryPollingTimer = null;
-        // 缓存版本号
+        // 缓存版本号、工作目录、用户主目录和系统信息
         if (result.version) {
           state.agentVersions.set(agentId, result.version);
+        }
+        if (result.workdir) {
+          state.agentWorkdirs.set(agentId, result.workdir);
+        }
+        if (result.homeDir) {
+          state.agentHomeDirs.set(agentId, result.homeDir);
+        }
+        const sysInfo = formatSystemInfo(result.platformName, result.arch);
+        if (sysInfo) {
+          state.agentSystemInfos.set(agentId, sysInfo);
+        }
+        if (result.workdir) {
+          updateAgentItemWorkdir(agentId, result.workdir);
         }
         state.agentPlatform = { ...state.agentPlatform, connected: true };
         updateAgentIndicator(state.agentPlatform, true);
@@ -1337,9 +1448,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                       workdir: data.workdir || '',
                       connected: true
                     };
-                    // 缓存活跃代理的版本号
+                    // 缓存活跃代理的版本号、工作目录、用户主目录和系统信息
                     if (data.version) {
                       state.agentVersions.set(storage.activeAgentId, data.version);
+                    }
+                    if (data.workdir) {
+                      state.agentWorkdirs.set(storage.activeAgentId, data.workdir);
+                    }
+                    if (data.homeDir) {
+                      state.agentHomeDirs.set(storage.activeAgentId, data.homeDir);
+                    }
+                    const sysInfo2 = formatSystemInfo(data.platformName || data.platform, data.arch);
+                    if (sysInfo2) {
+                      state.agentSystemInfos.set(storage.activeAgentId, sysInfo2);
                     }
                   } else {
                     state.agentPlatform = { connected: false };
@@ -1365,9 +1486,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     workdir: statusData.workdir || '',
                     connected: true
                   };
-                  // 缓存活跃代理的版本号
+                  // 缓存活跃代理的版本号和系统信息
                   if (statusData.version) {
                     state.agentVersions.set(storage.activeAgentId, statusData.version);
+                  }
+                  const sysInfo3 = formatSystemInfo(statusData.platformName || statusData.platform, statusData.arch);
+                  if (sysInfo3) {
+                    state.agentSystemInfos.set(storage.activeAgentId, sysInfo3);
                   }
                 } else {
                   state.agentPlatform = { connected: false };
