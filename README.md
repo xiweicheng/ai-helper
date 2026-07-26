@@ -327,7 +327,7 @@ ai-helper/
 - **自定义 Agent**：创建专属助手，设置图标、名称、系统提示词、模型、温度和工具权限
 - **Agent 选择器**：侧边栏顶部快速切换，支持 `@Agent名称` 快速切换
 - **工具过滤**：每个助手可配置独立的工具集，避免上下文膨胀
-- **子任务分派**：`dispatch_sub_agent` 支持并行分派，子 Agent 独立执行并返回结果
+- **子任务分派**：`dispatch_task` 支持并行分派，子 Agent 独立执行并返回结果
 - **Agent 持久化**：基于 `chrome.storage.local`，跨重启保持
 
 ### 3. ReAct 推理循环
@@ -343,7 +343,7 @@ ai-helper/
 7. **工具结果缓存**：并行工具结果自动缓存（上限 30 条）
 8. **并行工具执行**：同一轮中标记为可并行的工具通过 `Promise.all` 并发执行
 9. **任务拆解**：`plan_task` 支持顺序、并行、条件三种执行策略，子任务失败支持重试/回滚/继续
-10. **子任务分发**：`dispatch_sub_agent` 支持将子任务委派给其他 Agent 并行执行
+10. **子任务分发**：`dispatch_task` 支持将子任务委派给其他 Agent 并行执行
 11. **流式响应**：支持 OpenAI 流式响应，可配置字符间延迟（模拟打字效果）
 12. **澄清机制**：信息不完整时弹出澄清对话框，循环计时自动暂停，支持推荐选项
 13. **多级超时控制**：API 超时 5min、工具超时 10min、整体循环超时 30min
@@ -596,8 +596,8 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 - **软删除保护**：删除文件自动移至 `~/.ai-helper-agent/.trash/` 目录，记录原路径和时间
 - **7 天保留期**：过期文件自动清理（每次操作前投机式清理 + 每 6 小时定期清理）
-- **一键恢复**：通过 `agent_restore_trash` 工具可将文件恢复到原路径
-- **回收站列表**：通过 `agent_list_trash` 查看所有回收站条目
+- **一键恢复**：通过 `agent_trash` 工具可将文件恢复到原路径
+- **回收站列表**：通过 `agent_trash` 查看所有回收站条目
 - **API 集成**：`/api/fs/delete` 默认走回收站，`/api/trash/restore` 和 `/api/trash/list` 提供恢复和列表接口
 
 ### 28. Agent 重启与自动更新
@@ -651,21 +651,16 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `file_upload` | 文件上传（DataTransfer 注入） |
 | `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件） |
 
-### 标签页管理（6 个）
+### 标签页管理（2 个）
 | 工具 | 说明 |
 |------|------|
-| `open_tab` | 打开新标签页 |
-| `switch_tab` | 切换标签页 |
-| `close_tab` | 关闭标签页（需确认） |
+| `manage_tab` | 标签页管理（支持打开/切换/关闭/前进后退/刷新操作） |
 | `get_tabs` | 获取所有标签页列表 |
-| `navigate_back_forward` | 前进/后退导航 |
-| `reload_tab` | 刷新标签页 |
 
-### 书签与历史（2 个）
+### 书签与历史（1 个）
 | 工具 | 说明 |
 |------|------|
-| `search_bookmarks` | 搜索浏览器书签 |
-| `search_history` | 搜索浏览器历史记录 |
+| `search_browser_data` | 搜索浏览器书签和历史记录 |
 
 ### 存储管理（3 个）
 | 工具 | 说明 |
@@ -694,27 +689,25 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `get_browser_info` | 获取浏览器环境信息 |
 
-### AI 协作（8 个）
+### AI 协作（7 个）
 | 工具 | 说明 |
 |------|------|
 | `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒） |
 | `plan_task` | 复杂任务拆解规划（支持并行/顺序/条件执行） |
-| `preview_ui_prototype` | UI 原型预览与管理（支持 preview/get 两种 action） |
-| `search_conversation_memory` | 搜索对话记忆（当前会话 / 所有历史会话） |
-| `dispatch_sub_agent` | 子任务分派给子 Agent 执行（支持并行分派） |
+| `ui_prototype` | UI 原型预览与管理（支持 preview/get 两种 action） |
+| `search_chat_history` | 搜索对话记忆（当前会话 / 所有历史会话） |
+| `dispatch_task` | 子任务分派给子 Agent 执行（支持并行分派） |
 | `highlight_text` | 高亮页面文本 |
-| `ai_agent_list` | 查询所有已配对代理的状态信息 |
-| `ai_agent_switch` | 切换到指定的本地代理 |
+| `manage_agent` | 管理已配对代理（查询状态、切换代理） |
 
-### Agent（12 个）—— 需安装代理服务
+### Agent（11 个）—— 需安装代理服务
 | 工具 | 说明 |
 |------|------|
 | `agent_read_file` | 读取本地文件（路径沙箱，大小限制） |
 | `agent_write_file` | 写入本地文件（脚本自动去执行权限） |
 | `agent_list_dir` | 列出目录内容 |
 | `agent_delete_file` | 删除本地文件/目录（软删除至回收站） |
-| `agent_list_trash` | 列出回收站文件（支持恢复） |
-| `agent_restore_trash` | 从回收站恢复文件到原路径 |
+| `agent_trash` | 回收站管理（列出/恢复已删除文件） |
 | `agent_download_file` | 下载远程文件到本地 Agent（限 Agent 配对后） |
 | `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
 | `agent_search_files` | 按文件名搜索（fd 加速） |
