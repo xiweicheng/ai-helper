@@ -17,7 +17,11 @@
     --text-muted: #71717a;
     --accent: #667eea;
     --accent2: #764ba2;
+    --accent3: #f093fb;
     --accent-glow: rgba(102, 126, 234, 0.15);
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -29,7 +33,9 @@
     line-height: 1.6;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
   }
+  html { scroll-behavior: smooth; }
 
   /* ─── 背景光晕 ─── */
   .bg-glow {
@@ -40,14 +46,37 @@
   .glow-1 {
     top: -20%; left: -10%;
     width: 60vw; height: 60vw;
-    background: radial-gradient(circle, rgba(102,126,234,0.06) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(102,126,234,0.08) 0%, transparent 70%);
     filter: blur(80px);
+    animation: float1 20s ease-in-out infinite;
   }
   .glow-2 {
     bottom: -20%; right: -10%;
     width: 50vw; height: 50vw;
-    background: radial-gradient(circle, rgba(118,75,162,0.05) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(240,147,251,0.06) 0%, transparent 70%);
     filter: blur(80px);
+    animation: float2 25s ease-in-out infinite;
+  }
+  .glow-3 {
+    top: 30%; left: 50%;
+    width: 40vw; height: 40vw;
+    background: radial-gradient(circle, rgba(118,75,162,0.04) 0%, transparent 70%);
+    filter: blur(60px);
+    animation: float3 18s ease-in-out infinite;
+  }
+  @keyframes float1 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(30px, -30px) scale(1.05); }
+    66% { transform: translate(-20px, 20px) scale(0.95); }
+  }
+  @keyframes float2 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(-30px, 20px) scale(1.08); }
+    66% { transform: translate(20px, -20px) scale(0.92); }
+  }
+  @keyframes float3 {
+    0%, 100% { transform: translate(-50%, 0) scale(1); }
+    50% { transform: translate(-50%, 30px) scale(1.1); }
   }
 
   /* ─── 导航 ─── */
@@ -85,41 +114,77 @@
   /* ─── Hero ─── */
   .hero {
     position: relative; z-index: 1;
-    padding: 160px 24px 100px;
-    text-align: center; max-width: 900px; margin: 0 auto;
+    padding: 160px 24px 80px;
+    text-align: center; max-width: 960px; margin: 0 auto;
   }
   .hero-badge {
-    display: inline-block;
-    background: var(--bg-card); border: 1px solid var(--border);
-    color: var(--accent); font-size: 13px; padding: 6px 16px;
-    border-radius: 20px; margin-bottom: 32px;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
+    border: 1px solid rgba(102,126,234,0.3);
+    color: var(--accent); font-size: 13px; padding: 8px 20px;
+    border-radius: 20px; margin-bottom: 28px;
+    font-weight: 500;
+    animation: fadeInUp 0.8s ease-out;
+  }
+  .hero-badge .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 10px var(--success);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
   .hero h1 {
     font-size: clamp(40px, 7vw, 72px); font-weight: 800;
     line-height: 1.1; letter-spacing: -2px; margin-bottom: 24px;
+    animation: fadeInUp 0.8s ease-out 0.1s both;
   }
   .hero h1 span {
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+    background-size: 200% 200%;
     background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    animation: gradientShift 4s ease-in-out infinite;
+  }
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  .hero .hero-subhead {
+    font-size: 20px; color: var(--text);
+    font-weight: 500; margin-bottom: 12px;
+    animation: fadeInUp 0.8s ease-out 0.2s both;
   }
   .hero p {
-    font-size: 18px; color: var(--text-muted);
-    max-width: 600px; margin: 0 auto 40px;
+    font-size: 17px; color: var(--text-muted);
+    max-width: 640px; margin: 0 auto 40px;
+    line-height: 1.8;
+    animation: fadeInUp 0.8s ease-out 0.3s both;
   }
   .hero-actions {
     display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    animation: fadeInUp 0.8s ease-out 0.4s both;
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 14px 28px; border-radius: 10px;
     font-size: 15px; font-weight: 600; text-decoration: none;
-    transition: all .2s; cursor: pointer; border: none;
+    transition: all .25s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; border: none;
   }
   .btn-primary {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff;
+    box-shadow: 0 4px 20px var(--accent-glow);
   }
-  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px var(--accent-glow); }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px var(--accent-glow);
+  }
   .btn-outline {
     background: transparent; color: var(--text);
     border: 1px solid var(--border);
@@ -312,9 +377,26 @@
   .card {
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 16px; padding: 32px 28px;
-    transition: all .3s;
+    transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
   }
-  .card:hover { border-color: var(--accent); background: var(--bg-card-hover); transform: translateY(-2px); }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transform: scaleX(0);
+    transition: transform .3s;
+  }
+  .card:hover { 
+    border-color: var(--accent); 
+    background: var(--bg-card-hover); 
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px var(--accent-glow);
+  }
+  .card:hover::before { transform: scaleX(1); }
   .card-icon { font-size: 36px; margin-bottom: 16px; }
   .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
   .card p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
@@ -406,6 +488,16 @@
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 16px; padding: 28px;
     position: relative;
+    transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .step:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px var(--accent-glow);
+  }
+  .step:hover .step-num {
+    transform: scale(1.1);
+    box-shadow: 0 4px 15px var(--accent-glow);
   }
   .step-num {
     position: absolute; top: -16px; left: 24px;
@@ -413,26 +505,33 @@
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff; display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 700;
+    transition: all .3s;
   }
   .step h3 { font-size: 16px; font-weight: 600; margin: 12px 0 8px; }
-  .step p { font-size: 13px; color: var(--text-muted); }
+  .step p { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
   .step code {
     display: block; margin-top: 12px; padding: 8px 12px;
     background: var(--bg); border-radius: 6px;
     font-size: 12px; color: var(--accent); overflow-x: auto;
+    border: 1px solid var(--border);
   }
 
   /* ─── CTA ─── */
   .cta-section {
     position: relative; z-index: 1;
     text-align: center; padding: 80px 24px;
-    background: linear-gradient(180deg, transparent, var(--accent-glow));
+    background: 
+      radial-gradient(ellipse at center top, rgba(102, 126, 234, 0.1) 0%, transparent 60%),
+      radial-gradient(ellipse at center bottom, rgba(118, 75, 162, 0.08) 0%, transparent 60%);
   }
   .cta-section h2 {
-    font-size: 28px; font-weight: 700; margin-bottom: 16px;
+    font-size: 32px; font-weight: 700; margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--text), var(--accent));
+    background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .cta-section p {
     color: var(--text-muted); margin-bottom: 32px;
+    font-size: 17px;
   }
 
   /* ─── Footer ─── */
@@ -445,6 +544,122 @@
   .footer a:hover { text-decoration: underline; }
 
   /* ─── 响应式 ─── */
+  /* ─── 差异化对比 ─── */
+  .compare-section {
+    position: relative; z-index: 1;
+    padding: 60px 24px 80px; max-width: 1100px; margin: 0 auto;
+  }
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 40px;
+  }
+  .compare-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 32px;
+    position: relative;
+    transition: all .3s;
+  }
+  .compare-card.before {
+    opacity: 0.6;
+  }
+  .compare-card.after {
+    border-color: rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, rgba(102,126,234,0.05), rgba(118,75,162,0.05));
+  }
+  .compare-card .compare-label {
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin-bottom: 16px;
+    padding: 4px 12px; border-radius: 20px;
+    display: inline-block;
+  }
+  .compare-card.before .compare-label {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+  }
+  .compare-card.after .compare-label {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+  }
+  .compare-card h3 {
+    font-size: 22px; font-weight: 700; margin-bottom: 20px;
+  }
+  .compare-list {
+    list-style: none; padding: 0;
+  }
+  .compare-list li {
+    padding: 10px 0;
+    font-size: 14px;
+    color: var(--text-muted);
+    display: flex; align-items: flex-start; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-list li:last-child { border-bottom: none; }
+  .compare-list li .icon {
+    flex-shrink: 0;
+    font-size: 16px;
+    margin-top: 1px;
+  }
+  .compare-card.before .compare-list li .icon { color: var(--danger); }
+  .compare-card.after .compare-list li .icon { color: var(--success); }
+
+  /* ─── 使用场景 ─── */
+  .scenarios-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .scenario-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    transition: all .3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .scenario-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transform: scaleX(0);
+    transition: transform .3s;
+  }
+  .scenario-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px var(--accent-glow);
+  }
+  .scenario-card:hover::before {
+    transform: scaleX(1);
+  }
+  .scenario-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+  }
+  .scenario-card h3 {
+    font-size: 18px; font-weight: 600; margin-bottom: 10px;
+  }
+  .scenario-card p {
+    font-size: 14px; color: var(--text-muted); line-height: 1.7;
+  }
+  .scenario-tag {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(102,126,234,0.1);
+    color: var(--accent);
+    border-radius: 6px;
+    font-weight: 500;
+  }
+
   @media (max-width: 768px) {
     .hero { padding: 120px 20px 60px; }
     .hero h1 { font-size: 36px; }
@@ -457,6 +672,7 @@
     .arch-box { width: 100%; max-width: 300px; flex: none; }
     .arch-arrow { transform: rotate(90deg); }
     .nav-links a:not(.nav-cta) { display: none; }
+    .compare-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -464,6 +680,7 @@
 
 <div class="bg-glow glow-1"></div>
 <div class="bg-glow glow-2"></div>
+<div class="bg-glow glow-3"></div>
 
 <!-- 导航 -->
 <nav class="nav">
@@ -484,19 +701,20 @@
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge">🎯 开源 · Chrome Extension</div>
-  <h1>让你的浏览器<br><span>会思考</span></h1>
-  <p>基于大语言模型的 Chrome 智能助手。40+ 个内置工具，支持工作目录管理、长期记忆系统、多模态文件问答、图片标注编辑、多智能体协作、任务断点续接恢复、Skill 系统、MCP 协议扩展、消息搜索收藏、文件回收站，用自然语言操控浏览器和本地开发全流程。</p>
+  <div class="hero-badge"><span class="dot"></span>v1.0 正式发布 · 开源免费 · MIT 协议</div>
+  <h1>让你的浏览器<br><span>会思考、能行动</span></h1>
+  <div class="hero-subhead">不止是对话，更是能真正动手做事的 AI 助手</div>
+  <p>基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
-      GitHub
+      立即体验
     </a>
     <a class="btn btn-primary" href="https://gitee.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/></svg>
       Gitee
     </a>
-    <a class="btn btn-outline" href="#start">快速开始 →</a>
+    <a class="btn btn-outline" href="#features">了解更多 →</a>
   </div>
 </section>
 
@@ -519,6 +737,38 @@
     <div class="stat-label">开源免费</div>
   </div>
 </div>
+
+<!-- 差异化对比 -->
+<section class="compare-section">
+  <div class="section-title">
+    <h2>为什么选择 AI Helper？</h2>
+    <p>从被动问答到主动行动，重新定义浏览器 AI 体验</p>
+  </div>
+  <div class="compare-grid">
+    <div class="compare-card before">
+      <span class="compare-label">传统 AI 助手</span>
+      <h3>只能聊，不能做</h3>
+      <ul class="compare-list">
+        <li><span class="icon">✗</span>只能生成文本答案，无法实际操作</li>
+        <li><span class="icon">✗</span>对话上下文有限，容易遗忘历史</li>
+        <li><span class="icon">✗</span>工具能力单一，缺少复杂任务能力</li>
+        <li><span class="icon">✗</span>无法访问本地文件和系统</li>
+        <li><span class="icon">✗</span>任务中断后无法恢复</li>
+      </ul>
+    </div>
+    <div class="compare-card after">
+      <span class="compare-label">AI Helper</span>
+      <h3>会思考，更能行动</h3>
+      <ul class="compare-list">
+        <li><span class="icon">✓</span>40+ 个工具调用，真正完成浏览器操作</li>
+        <li><span class="icon">✓</span>长期记忆系统，对话持久化存储</li>
+        <li><span class="icon">✓</span>多智能体协作，复杂任务自动拆分</li>
+        <li><span class="icon">✓</span>本地代理访问，直接操作文件系统</li>
+        <li><span class="icon">✓</span>断点续接，任务随时中断随时恢复</li>
+      </ul>
+    </div>
+  </div>
+</section>
 
 <!-- 特性 -->
 <section class="section" id="features">
@@ -665,6 +915,52 @@
   </div>
 </section>
 
+<!-- 使用场景 -->
+<section class="section" style="padding-bottom: 40px;">
+  <div class="section-title">
+    <h2>典型使用场景</h2>
+    <p>一个助手，覆盖你日常工作的方方面面</p>
+  </div>
+  <div class="scenarios-grid">
+    <div class="scenario-card">
+      <div class="scenario-icon">👨‍💻</div>
+      <h3>全栈开发助手</h3>
+      <p>直接在浏览器中编写、调试、重构代码。访问本地文件、执行命令、预览效果，从需求到上线一气呵成。</p>
+      <span class="scenario-tag">开发提效</span>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">📊</div>
+      <h3>数据采集分析</h3>
+      <p>自动登录网站、抓取数据、生成报表。支持多页面导航、表单填写、数据清洗，告别手动复制粘贴。</p>
+      <span class="scenario-tag">数据工作</span>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">🎨</div>
+      <h3>内容创作生产</h3>
+      <p>写作、翻译、排版、配图一站式完成。多模态文件问答支持 PDF、图片、代码理解，创作效率翻倍。</p>
+      <span class="scenario-tag">内容创作</span>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">🧪</div>
+      <h3>自动化测试</h3>
+      <p>自然语言描述测试用例，自动生成并执行浏览器测试。截图验证、断言检查、缺陷定位一键完成。</p>
+      <span class="scenario-tag">质量保障</span>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">🔍</div>
+      <h3>深度研究调研</h3>
+      <p>多搜索引擎并行检索，自动汇总整理结果。支持网页摘要、内容提取、知识图谱构建研究报告。</p>
+      <span class="scenario-tag">研究分析</span>
+    </div>
+    <div class="scenario-card">
+      <div class="scenario-icon">⚙️</div>
+      <h3>工作流自动化</h3>
+      <p>将重复性操作交给 AI。邮件处理、日程管理、表单提交、文件整理，释放你的时间做更有价值的事。</p>
+      <span class="scenario-tag">效率工具</span>
+    </div>
+  </div>
+</section>
+
 <!-- 工具能力 -->
 <section class="section" id="tools">
   <div class="section-title">
@@ -725,7 +1021,12 @@
     <div class="tool-cat">
       <div class="cat-icon">🖥️</div>
       <div class="cat-name">Agent 代理</div>
-      <div class="cat-count">6</div>
+      <div class="cat-count">5</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">🧠</div>
+      <div class="cat-name">长期记忆</div>
+      <div class="cat-count">3</div>
     </div>
   </div>
 </section>
