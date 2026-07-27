@@ -35,7 +35,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: '剪贴板操作',
+      description: '剪贴板',
       parameters: {
         type: 'object',
         properties: {
@@ -81,11 +81,10 @@ export const MEDIA_TOOLS = [
         type: 'object',
         properties: {
           content: { type: 'string' },
-          size: { type: 'integer', description: '像素尺寸' },
+          size: { type: 'integer' },
           errorCorrection: { type: 'string', enum: ['L', 'M', 'Q', 'H'] },
           showImage: { type: 'boolean' }
-        },
-        required: []
+        }
       }
     }
   },
@@ -105,11 +104,10 @@ export const MEDIA_TOOLS = [
           action: { type: 'string', enum: ['download', 'analyze', 'both'] },
           tabId: { type: 'integer', description: 'analyze/both时需要' },
           format: { type: 'string', enum: ['jpeg', 'png'] },
-          quality: { type: 'integer', description: 'JPEG质量0-100' },
-          visionMaxDim: { type: 'integer', description: '视觉API最大长边像素', minimum: 512, maximum: 2048 },
-          visionQuality: { type: 'integer', description: '视觉API图片质量', minimum: 30, maximum: 95 }
-        },
-        required: []
+          quality: { type: 'integer' },
+          visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048 },
+          visionQuality: { type: 'integer', minimum: 30, maximum: 95 }
+        }
       }
     }
   },
@@ -122,11 +120,10 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'get_browser_info',
-      description: '获取浏览器信息',
+      description: '浏览器信息',
       parameters: {
         type: 'object',
-        properties: {},
-        required: []
+        properties: {}
       }
     }
   },

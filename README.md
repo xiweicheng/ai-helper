@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **40+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站等高级能力。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **40+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站、审计日志、后台守护进程、在线自动更新等高级能力。
 
 ## 为什么选择 AI Helper
 
@@ -189,14 +189,13 @@ ai-helper/
 │   │   └── constants.js                # 默认配置、40+ 个内建工具定义、分类映射
 │   │   ├── state.js                    # 多会话取消控制、API 计数器
 │   │   └── tools/                       # 工具定义分目录
-│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (17)
-│   │       ├── tab-tools.js            # 标签页管理 + 书签历史 (8)
+│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (16)
+│   │       ├── tab-tools.js            # 标签页管理 + 书签历史 (3)
 │   │       ├── storage-tools.js        # 存储管理 + 网络请求 (4)
 │   │       ├── media-tools.js          # 媒体输出 + 调试开发 (7)
 │   │       ├── ai-tools.js             # AI 协作 (6)
-│   │       ├── agent-tools.js          # 本地代理 (9)
+│   │       ├── agent-tools.js          # 本地代理 (6)
 │   │       ├── memory-tools.js         # 长期记忆 (3)
-│   │       ├── tool-clipboard.js       # 剪贴板 + 页面内容合并定义
 │   │       ├── tool-memory.js          # 长期记忆工具 handler
 │   │       ├── tool-network.js         # fetchWithTimeout + fetchWithRetry
 │   │       └── tool-screenshot.js      # 截图工具 handler
@@ -335,7 +334,7 @@ ai-helper/
 项目采用 ReAct（Reasoning + Acting）模式作为核心推理引擎：
 
 1. **MCP 工具动态注入**：每次推理前自动从 Agent 拉取最新的 MCP 工具列表，注入到 RAW_TOOLS 中
-2. **工具预筛选**：正式调用主力模型前，用一次轻量 API 调用判断需要哪些工具，将 50+ 个工具缩减为 5-10 个相关工具，大幅减少 Token 消耗。简单问题可直接回答跳过推理循环
+2. **工具预筛选**：正式调用主力模型前，用一次轻量 API 调用判断需要哪些工具，将 40+ 个内建工具缩减为 5-10 个相关工具，大幅减少 Token 消耗。简单问题可直接回答跳过推理循环
 3. **推理循环**：LLM 思考 → 决定调用工具 → 执行工具 → 结果反馈 → 继续推理
 4. **Token 预算管理**：按模型上下文窗口动态计算可用 Token 预算（80%），按 Token 数截断，保留 tool_calls/tool 消息配对完整性
 5. **上下文压力监测**：三级监测（safe / warning / critical），自动触发摘要压缩
@@ -706,8 +705,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `agent_trash` | 回收站管理（列出/恢复已删除文件） |
 | `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
 | `agent_search` | 搜索文件（按文件名或内容，fd/ripgrep 加速） |
-| `agent_skill_load` | 按需加载 Agent Skill 的完整说明文档 |
-| `agent_workflow_run` | 执行预定义的 Workflow Skill 工作流 |
+| `agent_skill` | Skill 加载与执行（load/run 两种 action） |
 
 ### 长期记忆（3 个）—— 需安装代理服务
 | 工具 | 说明 |
@@ -723,7 +721,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 以下工具操作前会弹出确认对话框（30 秒超时自动拒绝，可全局关闭）：
 
-- `close_tab`、`download_file`、`manage_cookies`、`clear_page_data`
+- `manage_tab`（close action）、`download_file`、`manage_cookies`、`clear_page_data`
 - `agent_file`（delete action）、`agent_exec_command`
 
 Agent 命令执行三级安全：
@@ -814,6 +812,9 @@ Agent 命令执行三级安全：
 
 ### Agent 核心特性
 
+- **CLI 命令丰富**：支持 `start`/`stop`/`restart`/`status`/`paircode`/`config` 等命令，`aha` 快捷别名
+- **后台守护进程**：`start --background` / `-b` 后台启动模式，终端立即返回，不阻塞会话
+- **进程管理**：PID 文件管理，优雅关闭机制，防止重复启动
 - **配对认证**：4 位动态码 + extensionId 配对，生成 Bearer Token
 - **路径沙箱**：`realpathSync` 解析符号链接，前缀匹配白名单路径
 - **命令安全**：环境变量白名单（约 40 个），`TERM=dumb` 禁用互动
@@ -822,6 +823,9 @@ Agent 命令执行三级安全：
 - **文件回收站**：删除文件默认软删除至 `~/.ai-helper-agent/.trash/`，7 天自动清理，支持恢复
 - **在线更新**：支持通过 API 在线重启和自动更新 Agent（`/api/agent/restart`、`/api/agent/update`）
 - **多格式预览**：服务端支持 xlsx 解析预览，浏览器端支持 PDF/Word/图片预览
+- **审计日志**：双通道输出（终端格式化 + 文件 JSON Lines），按日命名，自动清理 30 天
+- **多级健壮性保护**：请求级异常捕获、URL 解析保护、全局兜底、文件 I/O 保护、进程管理保护
+- **快速搜索**：fd（文件名）+ ripgrep（内容）原生加速，不可用时自动回退 Node.js 实现
 
 ### Skill 系统（Agent 端）
 
@@ -844,7 +848,9 @@ Agent 命令执行三级安全：
 ```bash
 # 方式一：全局安装（推荐）
 npm install -g ai-helper-agent
-ai-helper-agent start
+ai-helper-agent start              # 前台启动，实时日志
+ai-helper-agent start -b           # 后台守护进程模式
+aha start -b                        # 快捷别名 aha
 
 # 方式二：本地开发
 cd agent
@@ -852,6 +858,17 @@ npm install
 npm start
 # 默认监听 127.0.0.1:18910
 ```
+
+**常用命令：**
+
+| 命令 | 说明 |
+|------|------|
+| `ai-helper-agent start` / `start -b` | 前台 / 后台启动 |
+| `ai-helper-agent stop` | 停止运行中的 Agent |
+| `ai-helper-agent restart` / `restart -b` | 重启服务 |
+| `ai-helper-agent status` | 查看运行状态 |
+| `ai-helper-agent paircode` | 查看配对码 |
+| `ai-helper-agent config` | 查看当前配置 |
 
 在扩展选项页的「Agent」标签页中填入终端显示的配对码完成连接。
 
@@ -930,8 +947,8 @@ npm run build:silent
 | 澄清超时 | 3min | 澄清对话框等待超时 (1-10min) |
 | API 重试次数 | 3 | 失败重试次数 (0-10)，指数退避 |
 | 重试延迟 | 1s | 基础延迟 (0.5-30s) |
-| 工具预筛选 | 开启 | 自动筛选相关工具 |
-| 预筛选阈值 | 3 | 工具数超过此值才启动预筛选 |
+| 工具预筛选 | 关闭 | 自动筛选相关工具，减少 Token 消耗 |
+| 预筛选阈值 | 10 | 工具数超过此值才启动预筛选 |
 | 工具安全确认 | 开启 | 敏感操作弹出确认框 |
 
 ### 反思配置
@@ -1056,6 +1073,12 @@ cd agent && npm install && npm start
 
 **Q: Agent 命令执行失败？**
 确认代理服务正在运行（`npm start`），检查 `~/.ai-helper-agent/config.json` 中的 `allowedPaths` 是否包含目标路径。
+
+**Q: 如何让 Agent 在后台运行？**
+使用 `ai-helper-agent start -b` 或 `aha start -b` 后台启动模式。可用 `ai-helper-agent stop` 停止，`ai-helper-agent status` 查看状态。
+
+**Q: Agent 操作有日志记录吗？**
+有的。所有文件读写、命令执行、安全事件都会记录审计日志，位于 `~/.ai-helper-agent/logs/`，JSON Lines 格式，保留 30 天。可通过 `/api/logs` 查询。
 
 ---
 

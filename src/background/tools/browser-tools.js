@@ -17,8 +17,8 @@ export const BROWSER_TOOLS = [
           action: { type: 'string', enum: ['click', 'hover'] },
           tabId: { type: 'integer' },
           selector: { type: 'string' },
-          waitTime: { type: 'integer', description: '点击后等待ms' },
-          timeout: { type: 'integer', description: '元素查找超时ms' }
+          waitTime: { type: 'integer' },
+          timeout: { type: 'integer' }
         },
         required: ['action', 'tabId', 'selector']
       }
@@ -65,7 +65,7 @@ export const BROWSER_TOOLS = [
           tabId: { type: 'integer' },
           selector: { type: 'string' },
           state: { type: 'string', enum: ['appeared', 'disappeared', 'visible', 'hidden'] },
-          timeout: { type: 'integer', description: '超时ms' }
+          timeout: { type: 'integer' }
         },
         required: ['tabId', 'selector']
       }
@@ -106,7 +106,7 @@ export const BROWSER_TOOLS = [
         type: 'object',
         properties: {
           tabId: { type: 'integer' },
-          timeout: { type: 'integer', description: '超时ms' },
+          timeout: { type: 'integer' },
           waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }
         },
         required: ['tabId']
@@ -139,7 +139,7 @@ export const BROWSER_TOOLS = [
               required: ['selector', 'value']
             }
           },
-          waitTime: { type: 'integer', description: '填充后等待ms' }
+          waitTime: { type: 'integer' }
         },
         required: ['tabId', 'fields']
       }
@@ -159,7 +159,7 @@ export const BROWSER_TOOLS = [
         type: 'object',
         properties: {
           tabId: { type: 'integer' },
-          key: { type: 'string', description: '按键名' },
+          key: { type: 'string' },
           text: { type: 'string' },
           ctrlKey: { type: 'boolean' },
           shiftKey: { type: 'boolean' },
@@ -185,7 +185,7 @@ export const BROWSER_TOOLS = [
           tabId: { type: 'integer' },
           selector: { type: 'string' },
           fileName: { type: 'string' },
-          fileContent: { type: 'string', description: 'base64或文本' },
+          fileContent: { type: 'string' },
           fileType: { type: 'string' }
         },
         required: ['tabId', 'selector', 'fileName', 'fileContent']
@@ -209,7 +209,7 @@ export const BROWSER_TOOLS = [
           triggerSelector: { type: 'string' },
           optionText: { type: 'string' },
           optionSelector: { type: 'string' },
-          timeout: { type: 'integer', description: '等待超时ms' }
+          timeout: { type: 'integer' }
         },
         required: ['tabId', 'triggerSelector', 'optionText']
       }
@@ -224,14 +224,14 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'get_page_content',
-      description: '获取内容',
+      description: '获取页面内容',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer' },
           format: { type: 'string', enum: ['text', 'html'] },
           selector: { type: 'string' },
-          maxLength: { type: 'integer', description: '最大字符数' }
+          maxLength: { type: 'integer' }
         },
         required: ['tabId']
       }
@@ -246,19 +246,19 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'extract_data',
-      description: '提取数据',
+      description: '提取结构化数据',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer' },
           dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'] },
           selector: { type: 'string' },
-          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: '仅links有效' },
-          includeHeaders: { type: 'boolean', description: '仅table时' },
-          format: { type: 'string', enum: ['json', 'markdown'], description: '仅table时' },
-          includeImages: { type: 'boolean', description: '仅links时' },
-          minWidth: { type: 'integer', description: '仅images时' },
-          minHeight: { type: 'integer', description: '仅images时' },
+          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: '仅links' },
+          includeHeaders: { type: 'boolean', description: '仅table' },
+          format: { type: 'string', enum: ['json', 'markdown'], description: '仅table' },
+          includeImages: { type: 'boolean', description: '仅links' },
+          minWidth: { type: 'integer', description: '仅images' },
+          minHeight: { type: 'integer', description: '仅images' },
           maxResults: { type: 'integer' }
         },
         required: ['tabId', 'dataType']
@@ -285,7 +285,7 @@ export const BROWSER_TOOLS = [
             items: { type: 'string', enum: ['button', 'input', 'select', 'textarea', 'a', 'checkbox', 'radio', 'menuitem'] }
           },
           maxResults: { type: 'integer' },
-          countOnly: { type: 'boolean', description: '仅返回数量' }
+          countOnly: { type: 'boolean' }
         },
         required: ['tabId']
       }
@@ -308,7 +308,7 @@ export const BROWSER_TOOLS = [
           query: { type: 'string' },
           mode: { type: 'string', enum: ['plain', 'regex'] },
           caseSensitive: { type: 'boolean' },
-          contextLength: { type: 'integer', description: '上下文字符数' },
+          contextLength: { type: 'integer' },
           maxResults: { type: 'integer' },
           highlight: { type: 'boolean' }
         },
@@ -353,7 +353,7 @@ export const BROWSER_TOOLS = [
           tabId: { type: 'integer' },
           selector: { type: 'string' },
           includeNested: { type: 'boolean' },
-          maxLength: { type: 'integer', description: '每个iframe最大文本长度' }
+          maxLength: { type: 'integer' }
         },
         required: ['tabId']
       }

@@ -17,11 +17,11 @@ export const TAB_TOOLS = [
         properties: {
           action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'] },
           url: { type: 'string', description: 'open时需要' },
-          tabId: { type: 'integer', description: 'open外的操作需要' },
-          active: { type: 'boolean', description: '新标签页是否激活' },
+          tabId: { type: 'integer', description: '非open时需要' },
+          active: { type: 'boolean' },
           waitForLoad: { type: 'boolean' },
-          loadTimeout: { type: 'integer', description: '加载超时ms' },
-          bypassCache: { type: 'boolean', description: '跳过缓存' },
+          loadTimeout: { type: 'integer' },
+          bypassCache: { type: 'boolean' },
           direction: { type: 'string', enum: ['back', 'forward'] }
         },
         required: ['action']
@@ -44,8 +44,7 @@ export const TAB_TOOLS = [
           mode: { type: 'string', enum: ['all', 'active'] },
           includeUrl: { type: 'boolean' },
           includeTitle: { type: 'boolean' }
-        },
-        required: []
+        }
       }
     }
   },
@@ -65,8 +64,8 @@ export const TAB_TOOLS = [
           action: { type: 'string', enum: ['bookmark', 'history'] },
           query: { type: 'string' },
           maxResults: { type: 'integer' },
-          startTime: { type: 'integer', description: 'Unix毫秒时间戳，仅history' },
-          endTime: { type: 'integer', description: 'Unix毫秒时间戳，仅history' }
+          startTime: { type: 'integer', description: '仅history' },
+          endTime: { type: 'integer', description: '仅history' }
         },
         required: ['action', 'query']
       }

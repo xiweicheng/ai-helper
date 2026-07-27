@@ -15,8 +15,8 @@ export const AI_TOOLS = [
         type: 'object',
         properties: {
           question: { type: 'string' },
-          options: { type: 'array', items: { type: 'string' }, description: '3-5个选项' },
-          recommendedOption: { type: 'integer', description: '推荐选项索引' },
+          options: { type: 'array', items: { type: 'string' } },
+          recommendedOption: { type: 'integer' },
           allowCustomInput: { type: 'boolean' },
           allowAdditionalInfo: { type: 'boolean' }
         },
@@ -115,7 +115,7 @@ export const AI_TOOLS = [
         properties: {
           action: { type: 'string', enum: ['preview', 'get'] },
           html: { type: 'string', description: 'preview时需要' },
-          title: { type: 'string', description: 'preview时需要' },
+          title: { type: 'string' },
           description: { type: 'string' },
           prototypeId: { type: 'string', description: 'get时需要' }
         },

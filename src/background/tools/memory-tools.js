@@ -22,7 +22,7 @@ export const MEMORY_TOOLS = [
           content: { type: 'string' },
           title: { type: 'string', description: '仅summary' },
           tags: { type: 'array', items: { type: 'string' } },
-          importance: { type: 'integer', description: '1-10' },
+          importance: { type: 'integer' },
           memoryId: { type: 'string', description: 'update/delete时需要' },
           sourceSessionId: { type: 'string' }
         },
@@ -47,8 +47,7 @@ export const MEMORY_TOOLS = [
           tags: { type: 'array', items: { type: 'string' } },
           memoryType: { type: 'string', enum: ['fact', 'summary', 'all'] },
           limit: { type: 'integer' }
-        },
-        required: []
+        }
       }
     }
   },

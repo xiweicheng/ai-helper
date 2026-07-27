@@ -32,7 +32,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_trash',
-      description: '回收站管理',
+      description: '回收站',
       parameters: {
         type: 'object',
         properties: {
@@ -61,7 +61,7 @@ export const AGENT_TOOLS = [
           command: { type: 'string' },
           cwd: { type: 'string' },
           force: { type: 'boolean', description: '强制执行已确认命令' },
-          timeout: { type: 'integer', description: '超时ms' }
+          timeout: { type: 'integer' }
         },
         required: ['command']
       }
@@ -76,13 +76,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_search',
-      description: '搜索',
+      description: '搜索文件/内容',
       parameters: {
         type: 'object',
         properties: {
           searchType: { type: 'string', enum: ['file', 'content'] },
           path: { type: 'string' },
-          pattern: { type: 'string', description: 'glob或关键词' },
+          pattern: { type: 'string' },
           recursive: { type: 'boolean' },
           filePattern: { type: 'string' },
           caseSensitive: { type: 'boolean' },
@@ -94,41 +94,23 @@ export const AGENT_TOOLS = [
     }
   },
   {
-    id: 'agent_skill_load',
+    id: 'agent_skill',
     category: 'local_agent',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_skill_load',
-      description: '加载Skill',
+      name: 'agent_skill',
+      description: 'Skill加载/执行',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string' }
-        },
-        required: ['name']
-      }
-    }
-  },
-  {
-    id: 'agent_workflow_run',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_workflow_run',
-      description: '执行Workflow',
-      parameters: {
-        type: 'object',
-        properties: {
+          action: { type: 'string', enum: ['load', 'run'] },
           name: { type: 'string' },
-          params: { type: 'object' }
+          params: { type: 'object', description: 'run时需要' }
         },
-        required: ['name']
+        required: ['action', 'name']
       }
     }
   },
@@ -147,7 +129,7 @@ export const AGENT_TOOLS = [
         properties: {
           action: { type: 'string', enum: ['list', 'switch'] },
           agentId: { type: 'string', description: 'switch时需要' },
-          agentName: { type: 'string', description: 'switch时模糊匹配' }
+          agentName: { type: 'string' }
         },
         required: ['action']
       }

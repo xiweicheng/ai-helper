@@ -369,8 +369,7 @@ async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
   const hasSkillIds = agentSkillIds != null && Array.isArray(agentSkillIds) && agentSkillIds.length > 0;
   if (!hasSkillIds) {
     if (agentToolIds != null && Array.isArray(agentToolIds)
-        && !agentToolIds.includes('agent_skill_load')
-        && !agentToolIds.includes('agent_workflow_run')) {
+        && !agentToolIds.includes('agent_skill')) {
       return '';
     }
   }

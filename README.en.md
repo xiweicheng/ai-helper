@@ -1,6 +1,6 @@
 # AI Helper — Web Intelligent Assistant
 
-> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **40+ built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, long-term memory system, and session import/export capabilities.
+> An LLM-powered Chrome browser smart assistant extension. Built on a **ReAct (Reasoning + Acting)** inference loop architecture, it supports natural language conversations, browser automation, and web content processing with **40+ built-in tools + MCP dynamic extensions**. Works with an optional local agent service for file system operations, terminal commands, a Skill system, and MCP protocol extensions, plus multimodal file Q&A, image recognition & annotation, long-term memory system, task checkpoint resume, Shadow DOM deep penetration, session import/export, workspace management, message search & bookmarks, file trash bin, audit logging, background daemon mode, and online auto-update capabilities.
 
 ## Why AI Helper
 
@@ -21,10 +21,18 @@ AI Helper is a **deeply browser-integrated** smart assistant. Compared to generi
 | API Protocol | OpenAI Chat Completions Compatible (with Vision support) |
 | Build Tooling | Vite + @crxjs/vite-plugin |
 | Local Agent | Node.js 18+ standalone process providing file/command/MCP/Skill capabilities |
-| Multimodal Input | Image recognition (Vision API) + File extraction (PDF/Word/Excel) |
+| Multimodal Input | Image recognition (Vision API) + File extraction (PDF/Word/Excel, 50+ plain text formats) |
 | Skill System | Workflow + Agent skill types, supports creating skills from conversations |
 | MCP Protocol | Model Context Protocol, dynamic tool registration & multi-server management |
-| Multi-Agent | Custom agents, 4 built-in role templates, sub-task dispatch support |
+| Multi-Agent | Custom agents, 5 built-in role templates, sub-task dispatch support |
+| Checkpoint Resume | ReAct Checkpoint system, 7-day TTL auto-expiry |
+| Context Management | Smart token budget + three-tier pressure monitoring + message truncation + quote compression |
+| Workspace Management | Directory tree, multi-select, drag & drop, file preview, virtual scrolling |
+| Message Search | Full-text search with AND/OR syntax, dual mode, incremental loading |
+| Message Bookmarks | One-click bookmark, pinning, search, group display, quick navigation |
+| File Trash Bin | Soft delete with 7-day retention, one-click restore |
+| Agent Daemon Mode | Background startup with PID management, stop/restart/status commands |
+| Audit Logging | Dual-channel (terminal + JSON file), 30-day retention, query API |
 
 ## Feature Preview
 
@@ -47,6 +55,9 @@ The project uses a **five-layer architecture**, communicating via Chrome Extensi
 │  Multi-Agent Manager | Token Stats | Agent Selector           │
 │  Image Recognition Input | Image Annotation | File Upload     │
 │  Session Export/Import | Skill Selector | MCP Service Selector│
+│  Chat Export (Word/PDF) | Checkpoint Resume | Message Copy    │
+│  Workspace Management | File Preview | Message Search         │
+│  Message Bookmarks | @ Web Page Selector                      │
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
                ▼                               ▼
@@ -171,15 +182,15 @@ ai-helper/
 │   │   ├── stream-controller.js        # Stream response controller
 │   │   ├── token-recorder.js           # Token usage stats recorder
 │   │   ├── config.js                    # Config R/W
-│   │   ├── constants.js                # Defaults, 50+ built-in tools, category mapping
+│   │   ├── constants.js                # Defaults, 40+ built-in tools, category mapping
 │   │   ├── state.js                    # Multi-session cancel control, API counter
 │   │   └── tools/                       # Tool definitions by category
-│   │       ├── browser-tools.js        │ Page interaction + Form + Content (17)
-│   │       ├── tab-tools.js            │ Tab mgmt + Bookmarks/History (8)
+│   │       ├── browser-tools.js        │ Page interaction + Form + Content (16)
+│   │       ├── tab-tools.js            │ Tab mgmt + Bookmarks/History (3)
 │   │       ├── storage-tools.js        │ Storage mgmt + Network (4)
 │   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
 │   │       ├── ai-tools.js             │ AI Collaboration (6)
-│   │       ├── agent-tools.js          │ Local Agent (9)
+│   │       ├── agent-tools.js          │ Local Agent (6)
 │   │       └── memory-tools.js         │ Long-term Memory (3)
 │   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
@@ -297,7 +308,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
 1. **MCP Tool Dynamic Injection**: Before each inference cycle, automatically pulls the latest MCP tool list from Agent and injects it into RAW_TOOLS
-2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 50+ tools to 5-10 relevant ones, significantly cutting token usage
+2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 40+ built-in tools to 5-10 relevant ones, significantly cutting token usage
 3. **Inference Loop**: LLM thinks → decides to call tools → executes tools → results fed back → continues reasoning
 4. **Token Budget Management**: Dynamically calculates available token budget per model context window (80%), truncates by token count, retains tool_calls/tool message pairing integrity
 5. **Context Pressure Monitoring**: Three-level monitoring (safe/warning/critical), auto-triggers summary compression
@@ -472,26 +483,131 @@ AI Helper has long-term memory capabilities, storing and retrieving user informa
 - **Importance Scoring**: 1-10 scale for priority sorting
 - **Auto-Archival**: Facts capped at 50, summaries at 20, exceeding triggers auto-compaction
 
+### 20. ReAct Checkpoint Resume
+
+Automatically saves checkpoints during task execution, supporting one-click recovery after interruption:
+
+- **Auto-save**: Checkpoint automatically saved to IndexedDB after each ReAct inference cycle
+- **SW Restart Recovery**: Service Worker silent restart recovery via `chrome.storage.session`
+- **Manual Resume**: Interrupted task message cards show a "Continue" button, with optional description to resume
+- **Streaming Output Preservation**: Streaming output after recovery is fully saved to message history, persists across page refreshes
+- **TTL Auto-expiry**: Checkpoints auto-clean after 7 days to prevent data accumulation
+- **Multi-connection Management**: IndexedDB supports safe close & rebuild for SW + Side Panel dual connections
+
+### 21. @ Web Page Tab Selector
+
+Input `@` to open a selector with a "Web Pages" tab for quickly selecting current browser tabs as conversation context:
+
+- **Tab List**: Lists all open tabs in the current window, showing favicon, title, and URL
+- **Current Page Marker**: Highlights the currently active tab
+- **Keyword Filter**: Quick filter by title/URL
+- **Context Injection**: Automatically injects page content as conversation context after selection
+- **Dynamic Count Display**: Tab titles show option count in real-time (e.g., "Assistants (5)" "Pages (12)")
+
+### 22. Shadow DOM Deep Penetration
+
+Supports recursive penetration of Shadow DOM and same-origin iframes for element lookup and manipulation:
+
+- **Recursive Penetration**: `deepQuerySelector` / `deepQuerySelectorAll` can penetrate multiple Shadow DOM layers (max depth 5)
+- **iframe Support**: Automatically enters same-origin iframes for lookup
+- **Visibility Detection**: Strict visibility judgment (display/visibility/opacity/dimensions)
+- **React Component Support**: `keyboard_input` bypasses React synthetic event system, `fill_form` supports contenteditable/prosemirror rich text editors
+
+### 23. Workspace Management
+
+After connecting to the agent service, you can directly browse and manage the local file system in the sidebar:
+
+- **Directory Tree Navigation**: Breadcrumb navigation, go up, click to expand directories, sort by name/size/modified time
+- **Multi-select Operations**: Checkbox batch selection, select all/deselect all, batch download ZIP, batch delete
+- **Drag & Drop Move**: Drag files/directories to target paths within the panel, drag to breadcrumb for quick move
+- **Keyboard Navigation**: ↑↓ navigate, Enter open, Space select, Delete delete, F2 rename, Esc cancel
+- **Directory Cache**: LRU cache for last 20 directories (30s TTL), avoids duplicate requests
+- **Agent Switch Aware**: Auto-resets cache and refreshes when Agent connection state changes
+- **File-based Q&A**: After selecting files, one-click to attach file paths as context to chat input
+- **Upload**: Button select and drag & drop upload, streaming HTTP upload (up to 3 concurrent), with progress panel and cancel
+- **Download**: Streaming download with progress bar, cancel support, directories auto-pack to ZIP
+- **Virtual Scrolling**: Auto-enabled when file items exceed 200, only renders visible area, optimizes large directory performance
+
+### 24. File Preview
+
+Click files in the workspace to preview instantly without leaving the sidebar:
+
+- **Text/Code**: Syntax-highlighted preview with line numbers (up to 1MB / 10000 lines)
+- **PDF**: Built-in preview based on PDF.js, supports zoom, page flipping, fit page
+- **Word (.docx)**: HTML preview based on mammoth.js conversion (up to 20MB)
+- **Excel (.xlsx)**: Rendered as table via backend parsing, supports first 2000 rows
+- **Images**: Built-in preview, wheel zoom + drag pan (up to 50MB)
+- **File Details**: Click info button to show permissions (rwx + octal), UID/GID, MIME type, timestamps
+
+### 25. Message Search
+
+Built-in full-text message search in the sidebar for quickly locating historical conversations:
+
+- **Dual-mode Search**: Global search (loads all sessions from IndexedDB) and current session search (fast query from memory)
+- **Incremental Loading**: Searches current session first and displays immediately, then searches other sessions one by one, updating UI while searching
+- **Advanced Syntax**: Supports `&` (AND) and `|` (OR) combination search, `&` has higher priority than `|`
+- **Navigation & Positioning**: Click results to auto-switch to target session, scroll to message, 2-second highlight animation
+- **Search History**: Up/down keys navigate history (up to 20 entries)
+- **Search Term Highlighting**: Matching terms highlighted in preview, showing 30 characters of context before and after
+
+### 26. Message Bookmarks
+
+Important AI answers can be bookmarked with one click for quick review:
+
+- **One-click Bookmark**: Click bookmark icon in message bottom action bar to bookmark/unbookmark
+- **Pin Support**: Important bookmarks can be pinned to top of bookmark panel
+- **Search Filter**: Supports AND/OR advanced search syntax for filtering bookmarked content
+- **Grouped Display**: Grouped by current session and other sessions, matching terms highlighted
+- **Quick Navigation**: Click bookmark entry to auto-jump to corresponding session message position
+- **Auto-cleanup**: Orphaned bookmark records auto-removed when messages or sessions don't exist
+
+### 27. File Trash Bin
+
+Agent-side file deletion defaults to soft delete, moving to trash rather than physical deletion:
+
+- **Soft Delete Protection**: Deleted files auto-moved to `~/.ai-helper-agent/.trash/` directory, original path and time recorded
+- **7-day Retention**: Expired files auto-cleaned (opportunistic cleanup before each operation + periodic cleanup every 6 hours)
+- **One-click Restore**: `agent_trash` tool can restore files to original path
+- **Trash List**: View all trash entries via `agent_trash`
+- **API Integration**: `/api/fs/delete` defaults to trash, `/api/trash/restore` and `/api/trash/list` provide restore and list endpoints
+
+### 28. Agent Restart & Auto-update
+
+Agent service supports online restart and one-click update without manual terminal operation:
+
+- **Online Restart**: `/api/agent/restart` two-phase restart (spawn helper → wait for old process exit → start new process)
+- **Auto-update**: `/api/agent/update` executes `npm install -g ai-helper-agent@latest` and auto-restarts (90s timeout protection)
+- **Update Cooldown**: Disallows repeated restarts/updates within 10 seconds to prevent accidental concurrency
+- **Failure Fallback**: Update failures don't rollback old process, returns manual installation guide
+
+### 29. Context Incremental Summary
+
+When conversation context tokens exceed budget, auto-generates summaries for old tool call rounds:
+
+- **Round Extraction**: Auto-identifies complete tool call rounds (assistant tool_calls + all tool results)
+- **LLM Summary Generation**: Calls lightweight API to summarize tool calls into a one-sentence Chinese summary
+- **Fallback Strategy**: Falls back to deleting old messages directly if summary request fails
+- **Batch Processing**: Supports processing multiple rounds within one token excess period
+
 ---
 
-## Built-in Tools (50+ Configurable + MCP Dynamic Extensions)
+## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
 ### Content Extraction (7)
 | Tool | Description |
 |------|-------------|
-| `get_page_content` | Get page content in multiple formats (text/html/markdown/json) |
-| `extract_data` | Extract structured data (table/links/forms/images/metadata) |
-| `query_interactive_elements` | Extract interactive elements (recommended for token savings, supports countOnly) |
+| `get_page_content` | Get page content in multiple formats (text/html/markdown/json, supports cross-tab extraction) |
+| `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
+| `query_interactive_elements` | Extract interactive elements (recommended for token savings, supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
 | `find_similar_elements` | Find similar structure elements |
 | `get_iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_and_collect` | Scroll and collect long content (dedup aggregation) |
 
-### Page Interaction (6)
+### Page Interaction (5)
 | Tool | Description |
 |------|-------------|
-| `click_element` | Click element (CSS selector, auto-clean quotes) |
-| `hover_element` | Mouse hover |
+| `interact_element` | Page element interaction (click/hover, CSS selector) |
 | `drag_and_drop` | Drag-and-drop operation |
 | `scroll_to` | Scroll to position/element (with alignment options) |
 | `wait_for_element` | Wait for element appear/disappear (strict visibility check) |
@@ -505,21 +621,16 @@ AI Helper has long-term memory capabilities, storing and retrieving user informa
 | `file_upload` | File upload (DataTransfer injection) |
 | `select_dropdown` | Dropdown selection (native select + custom components) |
 
-### Tab Management (6)
+### Tab Management (2)
 | Tool | Description |
 |------|-------------|
-| `open_tab` | Open new tab |
-| `switch_tab` | Switch to specified tab |
-| `close_tab` | Close tab (requires confirmation) |
-| `get_tabs` | List all tabs |
-| `navigate_back_forward` | Navigate back/forward |
-| `reload_tab` | Reload tab |
+| `manage_tab` | Tab management (open/switch/close/back/forward/reload operations) |
+| `get_tabs` | Get all tab list |
 
-### Bookmarks & History (2)
+### Bookmarks & History (1)
 | Tool | Description |
 |------|-------------|
-| `search_bookmarks` | Search browser bookmarks |
-| `search_history` | Search browser history |
+| `search_browser_data` | Search browser bookmarks and history |
 
 ### Storage Management (3)
 | Tool | Description |
@@ -531,12 +642,12 @@ AI Helper has long-term memory capabilities, storing and retrieving user informa
 ### Network Request (1)
 | Tool | Description |
 |------|-------------|
-| `fetch_url` | HTTP requests (timeout, retry, exponential backoff) |
+| `fetch_url` | HTTP requests (timeout, retry, exponential backoff, AbortSignal cancellation) |
 
 ### Media & Output (5)
 | Tool | Description |
 |------|-------------|
-| `capture_page` | Page screenshot (viewport/fullpage/download/analyze four modes) |
+| `capture_page` | Page screenshot (viewport/fullpage/download/visual analysis four modes) |
 | `clipboard` | Clipboard operations (copy/paste/get page selection) |
 | `generate_qrcode` | Generate QR code (QRCode library + Canvas fallback) |
 | `download_file` | Download files (requires confirmation) |
@@ -548,28 +659,25 @@ AI Helper has long-term memory capabilities, storing and retrieving user informa
 | `inject_css` | Inject CSS styles (global/scoped/inline) |
 | `get_browser_info` | Get browser environment info |
 
-### AI Collaboration (6)
+### AI Collaboration (7)
 | Tool | Description |
 |------|-------------|
 | `clarify_question` | Show clarification dialog (suggestions, countdown, audio alert) |
 | `plan_task` | Complex task decomposition planner (parallel/sequential/conditional) |
-| `preview_ui_prototype` | UI prototype preview & management (preview/get actions) |
-| `search_conversation_memory` | Search conversation memory (current session / all history) |
-| `dispatch_sub_agent` | Dispatch subtask to sub-agent (supports parallel dispatch) |
+| `ui_prototype` | UI prototype preview & management (preview/get actions) |
+| `search_chat_history` | Search chat memory (current session / all history sessions) |
+| `dispatch_task` | Dispatch subtasks to sub-agents (supports parallel dispatch) |
 | `highlight_text` | Highlight text on page |
+| `manage_agent` | Manage paired agents (query status, switch agent) |
 
-### Agent (9) — Requires Agent Service
+### Agent (5) — Requires Agent Service
 | Tool | Description |
 |------|-------------|
-| `agent_read_file` | Read local file (path sandbox, size limit) |
-| `agent_write_file` | Write local file (auto-strip execute permissions) |
-| `agent_list_dir` | List directory contents |
-| `agent_delete_file` | Delete local file/directory (requires confirmation) |
-| `agent_exec_command` | Execute terminal command (black/gray/white-list three-tier security, force/timeout) |
-| `agent_search_files` | Search by file name (fd-accelerated) |
-| `agent_search_content` | Search text in files (ripgrep-accelerated) |
-| `agent_skill_load` | On-demand load Agent Skill full documentation |
-| `agent_skill_run` | Execute predefined Workflow Skill workflow |
+| `agent_file` | File operations (read/write/list/delete/download, path sandbox) |
+| `agent_trash` | Trash management (list/restore deleted files) |
+| `agent_exec_command` | Execute terminal commands (black/gray/white-list three-tier security, force/timeout) |
+| `agent_search` | Search files (by filename or content, fd/ripgrep accelerated) |
+| `agent_skill` | Skill loading and execution (load/run actions) |
 
 ### Long-term Memory (3) — Requires Agent Service
 | Tool | Description |
@@ -585,8 +693,8 @@ When connected to third-party MCP servers, tools are automatically registered. Q
 
 The following tool operations show a confirmation dialog before execution (30-second timeout auto-reject, can be globally disabled):
 
-- `close_tab`, `download_file`, `manage_cookies`, `clear_page_data`
-- `agent_delete_file`, `agent_exec_command`
+- `manage_tab` (close action), `download_file`, `manage_cookies`, `clear_page_data`
+- `agent_file` (delete action), `agent_exec_command`
 
 Agent command execution three-tier security:
 1. **Blacklist** (always blocked): `rm -rf /`, `mkfs.*`, fork bombs, curl-to-shell pipes, etc.
@@ -667,11 +775,20 @@ The extension can optionally pair with a Node.js agent service, providing file s
 
 ### Agent Core Features
 
+- **Rich CLI Commands**: Supports `start`/`stop`/`restart`/`status`/`paircode`/`config` commands, with `aha` quick alias
+- **Background Daemon Mode**: `start --background` / `-b` background startup mode, terminal returns immediately, non-blocking
+- **Process Management**: PID file management, graceful shutdown mechanism, prevents duplicate startup
 - **Pairing Auth**: 4-digit dynamic code + extensionId pairing, generates Bearer Token
 - **Path Sandbox**: `realpathSync` resolves symlinks, prefix-matches whitelisted paths
 - **Command Security**: Environment variable whitelist (~40 vars), `TERM=dumb` disables interactivity
 - **Script Protection**: Written `.sh`/`.py`/`.js` etc. auto-strip execute permissions
 - **Size Limits**: 10MB request body, 50MB per file
+- **File Trash Bin**: Deleted files default to soft delete to `~/.ai-helper-agent/.trash/`, 7-day auto-cleanup, supports restore
+- **Online Update**: Supports online restart and auto-update Agent via API (`/api/agent/restart`, `/api/agent/update`)
+- **Multi-format Preview**: Server-side supports xlsx parsing preview, browser-side supports PDF/Word/image preview
+- **Audit Logging**: Dual-channel output (terminal formatted + file JSON Lines), named by date, auto-cleanup 30 days
+- **Multi-level Robustness Protection**: Request-level exception capture, URL parsing protection, global fallback, file I/O protection, process management protection
+- **Fast Search**: fd (filename) + ripgrep (content) native acceleration, auto-falls back to Node.js implementation when unavailable
 - **Concurrency Safety**: Disk write mutex, graceful shutdown prevents double-close
 - **Config Caching**: mtime detection, avoids redundant disk reads
 
@@ -694,11 +811,29 @@ Import methods: JSON upload / Online Markdown writing / Zip packages (with resou
 ### Starting the Agent
 
 ```bash
+# Option 1: Global install (recommended)
+npm install -g ai-helper-agent
+ai-helper-agent start              # foreground start, real-time logs
+ai-helper-agent start -b           # background daemon mode
+aha start -b                        # quick alias: aha
+
+# Option 2: Local development
 cd agent
 npm install
 npm start
 # Default listening on 127.0.0.1:18910
 ```
+
+**Common Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `ai-helper-agent start` / `start -b` | Foreground / background start |
+| `ai-helper-agent stop` | Stop running Agent |
+| `ai-helper-agent restart` / `restart -b` | Restart service |
+| `ai-helper-agent status` | Check running status |
+| `ai-helper-agent paircode` | View pairing code |
+| `ai-helper-agent config` | View current config |
 
 Enter the pairing code shown in the terminal on the extension options page's "Agent" tab to complete connection.
 
@@ -777,8 +912,8 @@ Build output in `dist/`. `scripts/fix-build.js` auto-fixes path issues and renam
 | Clarify Timeout | 3min | Clarification dialog wait timeout (1-10min) |
 | API Retry Count | 3 | Retry on failure (0-10), exponential backoff |
 | Retry Delay | 1s | Base delay (0.5-30s) |
-| Tool Preselection | On | Auto-filter relevant tools |
-| Preselection Threshold | 3 | Trigger preselection when tools exceed this count |
+| Tool Preselection | Off | Auto-filter relevant tools, reduces token consumption |
+| Preselection Threshold | 10 | Trigger preselection when tools exceed this count |
 | Tool Safety Confirm | On | Confirmation dialog for sensitive ops |
 
 ### Reflection Settings
@@ -850,7 +985,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 
 ### IndexedDB Database Design
 
-`ai-helper-db` (v3), five object stores:
+`ai-helper-db` (v4), seven object stores:
 
 | Store | Purpose |
 |-------|---------|
@@ -859,6 +994,8 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 | `archivedSessions` | Archived sessions (index: createdAt) |
 | `uiPrototypes` | UI prototypes (index: createdAt, sessionId) |
 | `tokenStats` | Token usage stats (index: timestamp, sessionId) |
+| `reactCheckpoints` | ReAct Checkpoints (7-day TTL auto-expiry) |
+| `bookmarks` | Message bookmarks (index: sessionId, pinned, createdAt) |
 
 Supports automatic transaction failure recovery and legacy `chrome.storage.local` auto-migration.
 
@@ -898,6 +1035,12 @@ Click the "Export" button below the sidebar input box to select multiple session
 
 **Q: Agent command execution fails?**
 Ensure the agent service is running (`npm start`), and check that `~/.ai-helper-agent/config.json` `allowedPaths` includes the target path.
+
+**Q: How to run Agent in the background?**
+Use `ai-helper-agent start -b` or `aha start -b` background startup mode. Use `ai-helper-agent stop` to stop, `ai-helper-agent status` to check status.
+
+**Q: Are Agent operations logged?**
+Yes. All file reads/writes, command executions, and security events are recorded in audit logs located at `~/.ai-helper-agent/logs/`, in JSON Lines format, retained for 30 days. Queryable via `/api/logs`.
 
 ---
 

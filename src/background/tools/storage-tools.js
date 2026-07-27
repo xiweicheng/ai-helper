@@ -10,7 +10,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_storage',
-      description: '管理存储',
+      description: '存储读写',
       parameters: {
         type: 'object',
         properties: {
@@ -32,7 +32,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_cookies',
-      description: '管理Cookies',
+      description: 'Cookie管理',
       parameters: {
         type: 'object',
         properties: {
@@ -43,7 +43,7 @@ export const STORAGE_TOOLS = [
           path: { type: 'string' },
           secure: { type: 'boolean' },
           httpOnly: { type: 'boolean' },
-          expirationDate: { type: 'number', description: 'Unix时间戳秒' }
+          expirationDate: { type: 'number' }
         },
         required: ['action']
       }
@@ -62,9 +62,8 @@ export const STORAGE_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          site: { type: 'string', description: '指定站点URL模式' }
-        },
-        required: []
+          site: { type: 'string' }
+        }
       }
     }
   },
@@ -84,8 +83,8 @@ export const STORAGE_TOOLS = [
           url: { type: 'string' },
           method: { type: 'string', enum: ['GET', 'POST'] },
           headers: { type: 'object' },
-          body: { type: 'string', description: 'JSON字符串' },
-          timeout: { type: 'integer', description: '超时ms' }
+          body: { type: 'string' },
+          timeout: { type: 'integer' }
         },
         required: ['url']
       }

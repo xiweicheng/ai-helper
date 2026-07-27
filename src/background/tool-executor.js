@@ -376,6 +376,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         preview_ui_prototype: 'ui_prototype',
         agent_read_file: 'agent_file', agent_write_file: 'agent_file', agent_list_dir: 'agent_file', agent_delete_file: 'agent_file', agent_download_file: 'agent_file',
         agent_search_files: 'agent_search', agent_search_content: 'agent_search',
+        agent_skill_load: 'agent_skill', agent_workflow_run: 'agent_skill',
         click_element: 'interact_element', hover_element: 'interact_element',
       };
       let migrated = false;
@@ -393,14 +394,12 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         console.log(`[Background] 工具过滤: ${enabledTools.length} 全局 → ${finalToolIds.length} 最终`);
       }
 
-      // 如果 Agent 绑定了技能，自动加入技能调度工具（agent_skill_load/agent_workflow_run）
+      // 如果 Agent 绑定了技能，自动加入技能工具（agent_skill）
       const hasSkillIds = agentSkillIds != null && Array.isArray(agentSkillIds) && agentSkillIds.length > 0;
       if (hasSkillIds) {
-        for (const skillToolId of ['agent_skill_load', 'agent_workflow_run']) {
-          if (!finalToolIds.includes(skillToolId)) {
-            finalToolIds.push(skillToolId);
-            console.log(`[Background] 自动加入技能工具: ${skillToolId}`);
-          }
+        if (!finalToolIds.includes('agent_skill')) {
+          finalToolIds.push('agent_skill');
+          console.log('[Background] 自动加入技能工具: agent_skill');
         }
       }
 
@@ -429,8 +428,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
           // 配对代理不足 2 个时，隐藏代理管理工具
           if (tool.id === 'manage_agent' && pairedCount < 2) return false;
-          // Skill 全局开关关闭时，过滤掉 Skill 执行/加载工具
-          if ((tool.id === 'agent_workflow_run' || tool.id === 'agent_skill_load') && skillsEnabled === false) return false;
+          // Skill 全局开关关闭时，过滤掉 Skill 工具
+          if (tool.id === 'agent_skill' && skillsEnabled === false) return false;
           // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
           if (tool.id.startsWith('mcp_')) {
             if (mcpEnabled !== true || !agentConnected) return false;
@@ -1163,8 +1162,7 @@ const TOOL_HANDLERS = {
   agent_search: executeAgentSearch,
   wait_for_navigation: executeWaitForNavigation,
   dispatch_task: executeDispatchSubAgent,
-  agent_workflow_run: executeSkillRun,
-  agent_skill_load: executeSkillLoad,
+  agent_skill: executeAgentSkill,
   agent_memory_store: async (args, toolCallId) => executeAgentMemoryStore(args, toolCallId),
   agent_memory_recall: async (args, toolCallId, sessionId) => executeAgentMemoryRecall(args, toolCallId, sessionId),
   agent_memory_manage: async (args, toolCallId) => executeAgentMemoryManage(args, toolCallId),
@@ -2789,32 +2787,9 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
 // ========== 本地 Agent 工具处理函数 ==========
 
 /**
- * Skill 执行
- */
-async function executeSkillRun(args, toolCallId) {
-  const { name, params = {} } = args;
-  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
-
-  try {
-    const result = await AgentClient.runSkill(name, params);
-    if (result.success) {
-      return {
-        success: true,
-        content: result.message || `Skill "${name}" 执行完成`,
-        execId: result.execId,
-        partial: result.partial || false,
-        results: result.results,
-        tool_call_id: toolCallId
-      };
-    }
-    return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
-  } catch (err) {
-    return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
-  }
-}
-
-/**
- * Agent Skill 按需加载
+ * Skill 加载/执行（合并后）
+ * action=load: 加载 Skill 说明文档（带缓存）
+ * action=run:  执行 Workflow Skill
  */
 // 单次会话中已加载的 Skill 缓存（避免重复网络请求）
 const skillLoadCache = new Map(); // name → { timestamp, prompt, skill }
@@ -2826,10 +2801,31 @@ export function clearSkillLoadCache() {
   skillLoadCache.clear();
 }
 
-async function executeSkillLoad(args, toolCallId) {
-  const { name } = args;
+async function executeAgentSkill(args, toolCallId) {
+  const { action, name, params = {} } = args;
   if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
 
+  // action=run: 执行 Workflow Skill
+  if (action === 'run') {
+    try {
+      const result = await AgentClient.runSkill(name, params);
+      if (result.success) {
+        return {
+          success: true,
+          content: result.message || `Skill "${name}" 执行完成`,
+          execId: result.execId,
+          partial: result.partial || false,
+          results: result.results,
+          tool_call_id: toolCallId
+        };
+      }
+      return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
+    } catch (err) {
+      return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
+    }
+  }
+
+  // action=load（默认）: 加载 Skill 说明文档
   // 检查缓存（60 秒内有效）
   const cached = skillLoadCache.get(name);
   if (cached && (Date.now() - cached.timestamp < 60000)) {

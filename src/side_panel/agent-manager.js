@@ -623,7 +623,7 @@ async function renderAgentToolSelector(selectedToolIds) {
   }
   // Skill 全局开关关闭时，隐藏 Skill 相关工具
   if (skillsEnabled === false) {
-    allTools = allTools.filter(t => t.id !== 'agent_workflow_run' && t.id !== 'agent_skill_load');
+    allTools = allTools.filter(t => t.id !== 'agent_skill');
   }
 
   const selectedSet = new Set(selectedToolIds || []);
