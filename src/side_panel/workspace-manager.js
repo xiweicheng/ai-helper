@@ -233,6 +233,13 @@ function normalizePath(p) {
   return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
+function isAbsolutePath(p) {
+  if (!p) return false;
+  if (p.startsWith('/')) return true;
+  if (/^[a-zA-Z]:[\/]/.test(p)) return true;
+  return false;
+}
+
 /**
  * 搜索文件（后端递归搜索，单次请求，避免前端多次串行请求）
  */
@@ -246,7 +253,7 @@ export async function searchFilesRemote(dirPath, query, maxResults = 200) {
   if (!result.success) return [];
   return (result.results || []).map(r => {
     // 后端返回的 r.path 可能是相对路径（fd）或绝对路径（Node.js 原生搜索）
-    const fullPath = normalizePath(r.path.startsWith('/') ? r.path : `${dirPath}/${r.path}`);
+    const fullPath = normalizePath(isAbsolutePath(r.path) ? r.path : `${dirPath}/${r.path}`);
     const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
     return {
       name: r.name,
