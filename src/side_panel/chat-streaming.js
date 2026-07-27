@@ -412,12 +412,11 @@ export function appendToolCallItems(element, toolCalls) {
     execute_command:       { metaType: 'exec' },
     agent_exec_command:     { metaType: 'exec' },
     execute_agent_exec_command: { metaType: 'exec' },
-    agent_read_file:       { metaType: 'file', action: '读取' },
-    agent_write_file:      { metaType: 'file', action: '写入' },
+    agent_file:            { metaType: 'file', action: '操作' },
     file_upload:           { metaType: 'file', action: '上传' },
     download_file:         { metaType: 'file', action: '下载' },
     fetch_url:             { metaType: 'web', action: '请求' },
-    click_element:         { metaType: 'web', action: '点击' },
+    interact_element:      { metaType: 'web', action: '交互' },
     fill_form:             { metaType: 'web', action: '填写' },
     open_tab:              { metaType: 'web', action: '打开' },
     manage_tab:            { metaType: 'web', action: '操作' },
@@ -624,7 +623,7 @@ export function appendToolResult(result, streamingElement) {
   // 标记为已有结果，停止执行中动画
   card.classList.add('has-result');
 
-  // 对于极快完成的工具（如 agent_write_file 仅 7ms），STREAM_TOOL_CALL 和
+  // 对于极快完成的工具（如 agent_file 仅 7ms），STREAM_TOOL_CALL 和
   // STREAM_TOOL_RESULT 几乎同时到达，浏览器来不及渲染"执行中..."状态。
   // 因此设置最小显示延迟 400ms，确保用户能看到执行中的过渡状态。
   const createdTs = parseInt(card.getAttribute('data-created-at'), 10);

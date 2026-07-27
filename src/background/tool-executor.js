@@ -374,6 +374,9 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         dispatch_sub_agent: 'dispatch_task',
         search_conversation_memory: 'search_chat_history',
         preview_ui_prototype: 'ui_prototype',
+        agent_read_file: 'agent_file', agent_write_file: 'agent_file', agent_list_dir: 'agent_file', agent_delete_file: 'agent_file', agent_download_file: 'agent_file',
+        agent_search_files: 'agent_search', agent_search_content: 'agent_search',
+        click_element: 'interact_element', hover_element: 'interact_element',
       };
       let migrated = false;
       enabledTools = enabledTools.map(id => {
@@ -1117,6 +1120,27 @@ async function executeManageAiAgent(args, toolCallId) {
   }
 }
 
+async function executeAgentFile(args, toolCallId) {
+  const { action } = args;
+  switch (action) {
+    case 'read': return executeAgentReadFile(args, toolCallId);
+    case 'write': return executeAgentWriteFile(args, toolCallId);
+    case 'list': return executeAgentListDir(args, toolCallId);
+    case 'delete': return executeAgentDeleteFile(args, toolCallId);
+    case 'download': return executeAgentDownloadFile(args, toolCallId);
+    default: return makeResult(false, `未知的 agent_file action: ${action}`, { tool_call_id: toolCallId });
+  }
+}
+
+async function executeAgentSearch(args, toolCallId) {
+  const { searchType } = args;
+  switch (searchType) {
+    case 'file': return executeAgentSearchFiles(args, toolCallId);
+    case 'content': return executeAgentSearchContent(args, toolCallId);
+    default: return makeResult(false, `未知的 agent_search searchType: ${searchType}`, { tool_call_id: toolCallId });
+  }
+}
+
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
 // Background 工具处理器注册表（单一数据源）
@@ -1134,14 +1158,9 @@ const TOOL_HANDLERS = {
   clear_page_data: executeClearPageData,
   search_chat_history: executeSearchConversationMemory,
   ui_prototype: executePreviewUiPrototype,
-  agent_read_file: executeAgentReadFile,
-  agent_write_file: executeAgentWriteFile,
-  agent_list_dir: executeAgentListDir,
-  agent_delete_file: executeAgentDeleteFile,
-  agent_download_file: executeAgentDownloadFile,
+  agent_file: executeAgentFile,
   agent_exec_command: executeAgentExecCommand,
-  agent_search_files: executeAgentSearchFiles,
-  agent_search_content: executeAgentSearchContent,
+  agent_search: executeAgentSearch,
   wait_for_navigation: executeWaitForNavigation,
   dispatch_task: executeDispatchSubAgent,
   agent_workflow_run: executeSkillRun,
@@ -1248,7 +1267,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       
       const toolsNeedingTabId = [
         'get_page_content', 'extract_data',
-        'click_element', 'scroll_to', 'hover_element', 'search_in_page',
+        'interact_element', 'scroll_to', 'search_in_page',
         'input_text', 'select_option', 'submit_form', 'wait_for_navigation',
         'manage_tab'
       ];

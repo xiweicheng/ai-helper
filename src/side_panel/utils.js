@@ -259,42 +259,25 @@ export async function getSystemPrompt(agent = null) {
     dispatchToolRule = `
   
 ## Sub-Agent 调度
-你可以使用 dispatch_task 工具将子任务分派给其他专业 Agent 执行。每个子 Agent 拥有独立的角色定义和工具集。
-使用场景：复杂任务需要不同领域的专业能力时（如代码审查 + 文档撰写）。
-调用方式：在一次响应中可并行调用多个 dispatch_task。
-参数：subAgentId（子Agent的ID）、task（任务描述）
+使用 dispatch_task(subAgentId, task) 分派子任务，支持并行调用。
 
-当前可用的子 Agent：
+可用子 Agent：
 ${subAgentList}`;
   }
 
   // 任务拆解相关规则——仅在启用工具且当前 Agent 拥有 plan_task 时注入
   const taskPlanningRules = (state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? `
 
-## 任务拆解规则
-- 复杂任务（多个步骤、有依赖关系）应拆解为2-5个独立子任务，每个子任务有明确目标和输出
-- 简单/中等任务直接执行，不要过度拆解
-- 使用 plan_task 工具提交拆解方案，必须提供 taskDescription 参数` : '';
+## 任务拆解
+复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。` : '';
 
   // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
   const memoryTools = ['agent_memory_store', 'agent_memory_recall', 'agent_memory_manage'];
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
-## 长期记忆系统
-你可以将重要信息持久化存储，在未来的对话中召回使用。
-
-**使用时机**：
-- 用户明确要求记住某信息时，调用 agent_memory_store 存储
-- 对话中出现值得长期保留的信息（偏好、决策、规范等），主动存储
-- 涉及历史信息时，自主调用 agent_memory_recall 检索
-- 记忆接近上限时，调用 agent_memory_manage 整理
-
-**记忆类型**：
-- fact：用户偏好、技术栈、项目决策等结构化事实
-- summary：重要对话的摘要
-
-**原则**：只存储有长期价值的信息，为每条记忆添加标签（tags）和重要性（importance）评分` : '';
+## 记忆系统
+agent_memory_store 存储重要信息（偏好、决策等），agent_memory_recall 检索历史，agent_memory_manage 整理。类型：fact（事实）、summary（摘要）。仅存储长期价值信息，添加标签和重要性评分。` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词
   // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）
@@ -309,8 +292,6 @@ ${subAgentList}`;
         permanentNotesSection = `
 
 ## 永久注意事项
-以下是你必须遵守的永久注意事项，这些规则在所有对话中都始终生效：
-
 ${notesText}
 `;
       }
@@ -348,25 +329,16 @@ ${notesText}
   }
   
   // 返回默认系统提示词
-  let defaultPrompt = `你是AI智能助手(AI Helper)，专为IT从业者打造的AI技术助手。${permanentNotesSection}
+  let defaultPrompt = `AI Helper：IT技术助手。${permanentNotesSection}
 
-## 能力范围
-- 编程开发与调试（Java/Python/JavaScript/Go/C++等主流语言及框架）
-- 架构设计、算法优化、性能调优与Bug排查
-- 代码审查与最佳实践建议
-- 技术文档编写（API文档、README、测试用例等）
-- 浏览器工具调用（获取网页内容、操作页面元素等）${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '\n- 复杂任务拆解与规划执行' : ''}
+## 能力
+编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '、任务规划' : ''}
 
-## 回答要求
-1. 使用准确的技术术语，直击要点
-2. 涉及代码时给出可运行的代码示例
-3. 用Markdown格式组织内容（标题、列表、代码块、表格）
-4. 提供可落地的解决方案，避免空泛理论
-5. 不生成违反安全规范的代码${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '\n6. 复杂任务先规划后执行' : ''}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+## 要求
+精准技术术语，代码示例可运行，Markdown格式，方案可落地，不生成安全违规代码${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
-## 当前环境
-- 当前时间：${currentTime}
-- 浏览器：Chrome 扩展 (Side Panel) / ${browserOS}${agentInfo}${commandEnvSection}
+## 环境
+${currentTime} | Chrome Side Panel / ${browserOS}${agentInfo}${commandEnvSection}
 `;
 
   // 注入 Agent Skill Prompts

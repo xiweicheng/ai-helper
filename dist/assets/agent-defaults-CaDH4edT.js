@@ -11,7 +11,7 @@ import{t as e}from"./logger-BEz2S157.js";var t=/[\u4e00-\u9fff\u3400-\u4dbf\uf90
 回答原则：
 - 始终指出问题的严重程度（严重/中等/建议）
 - 给出具体的代码修改建议，不要空泛评价
-- 关注可维护性，而不仅仅是功能正确性`,toolIds:[`get_page_content`,`search_browser_data`,`agent_read_file`,`agent_search_content`,`agent_search_files`,`agent_list_dir`,`search_chat_history`,`fetch_url`,`plan_task`],allowSubDispatch:!1},{name:`网页自动化助手`,icon:`🌐`,description:`专注于网页交互和自动化操作`,systemPrompt:`你是一个网页自动化操作专家。你擅长：
+- 关注可维护性，而不仅仅是功能正确性`,toolIds:[`get_page_content`,`search_browser_data`,`agent_file`,`agent_search`,`search_chat_history`,`fetch_url`,`plan_task`],allowSubDispatch:!1},{name:`网页自动化助手`,icon:`🌐`,description:`专注于网页交互和自动化操作`,systemPrompt:`你是一个网页自动化操作专家。你擅长：
 1. 根据用户需求自动操作网页（点击、填表、滚动等）
 2. 提取和分析网页内容
 3. 处理多步骤的网页交互流程
@@ -20,7 +20,7 @@ import{t as e}from"./logger-BEz2S157.js";var t=/[\u4e00-\u9fff\u3400-\u4dbf\uf90
 - 先理解页面结构再操作，优先使用 query_interactive_elements
 - 操作后验证结果，确保操作生效
 - 遇到错误要分析原因并尝试替代方案
-- 不要假设元素存在，不确定时先获取页面信息`,toolIds:[`get_page_content`,`query_interactive_elements`,`click_element`,`fill_form`,`scroll_to`,`wait_for_element`,`keyboard_input`,`select_dropdown`,`capture_page`,`extract_data`,`search_in_page`,`hover_element`,`wait_for_navigation`,`scroll_and_collect`,`drag_and_drop`,`file_upload`,`get_iframe_content`,`find_similar_elements`,`manage_tab`],allowSubDispatch:!1},{name:`数据分析师`,icon:`📊`,description:`专注于数据提取、分析和可视化`,systemPrompt:`你是一个数据分析师。你擅长：
+- 不要假设元素存在，不确定时先获取页面信息`,toolIds:[`get_page_content`,`query_interactive_elements`,`interact_element`,`fill_form`,`scroll_to`,`wait_for_element`,`keyboard_input`,`select_dropdown`,`capture_page`,`extract_data`,`search_in_page`,`wait_for_navigation`,`scroll_and_collect`,`drag_and_drop`,`file_upload`,`get_iframe_content`,`find_similar_elements`,`manage_tab`],allowSubDispatch:!1},{name:`数据分析师`,icon:`📊`,description:`专注于数据提取、分析和可视化`,systemPrompt:`你是一个数据分析师。你擅长：
 1. 从网页中提取结构化数据（表格、列表、JSON）
 2. 分析和总结数据模式
 3. 以清晰的格式呈现分析结果
@@ -38,5 +38,5 @@ import{t as e}from"./logger-BEz2S157.js";var t=/[\u4e00-\u9fff\u3400-\u4dbf\uf90
 - 结构清晰：使用标题、列表、表格等组织内容
 - 示例优先：关键概念必须配代码或配置示例
 - 面向读者：根据目标读者调整技术深度
-- 保持简洁：避免冗余，每段话都要有信息量`,toolIds:[`get_page_content`,`clipboard`,`search_browser_data`,`search_chat_history`,`fetch_url`,`agent_read_file`,`agent_search_content`,`agent_search_files`,`agent_list_dir`,`extract_data`,`capture_page`,`search_in_page`],allowSubDispatch:!1}];function Ce(){return`agent_`+Date.now().toString(36)+`_`+Math.random().toString(36).substring(2,6)}export{se as A,f as B,ie as C,J as D,H as E,m as F,T as G,C as H,p as I,u as J,h as K,O as L,ge as M,w as N,de as O,ne as P,E as R,B as S,he as T,y as U,b as V,k as W,me as _,ye as a,ce as b,pe as c,X as d,U as f,q as g,G as h,be as i,K as j,Y as k,Q as l,ue as m,xe as n,ve as o,oe as p,g as q,Ce as r,_e as s,Se as t,V as u,Z as v,ae as w,fe as x,z as y,d as z};
-//# sourceMappingURL=agent-defaults-Bn3MFUhG.js.map
+- 保持简洁：避免冗余，每段话都要有信息量`,toolIds:[`get_page_content`,`clipboard`,`search_browser_data`,`search_chat_history`,`fetch_url`,`agent_file`,`agent_search`,`extract_data`,`capture_page`,`search_in_page`],allowSubDispatch:!1}];function Ce(){return`agent_`+Date.now().toString(36)+`_`+Math.random().toString(36).substring(2,6)}export{se as A,f as B,ie as C,J as D,H as E,m as F,T as G,C as H,p as I,u as J,h as K,O as L,ge as M,w as N,de as O,ne as P,E as R,B as S,he as T,y as U,b as V,k as W,me as _,ye as a,ce as b,pe as c,X as d,U as f,q as g,G as h,be as i,K as j,Y as k,Q as l,ue as m,xe as n,ve as o,oe as p,g as q,Ce as r,_e as s,Se as t,V as u,Z as v,ae as w,fe as x,z as y,d as z};
+//# sourceMappingURL=agent-defaults-CaDH4edT.js.map

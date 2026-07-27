@@ -31,7 +31,7 @@ const TOOL_DISPLAY_NAMES = {
   clear_page_data: '清除页面数据',
   download_file: '下载文件',
   manage_tab: '标签页管理',
-  agent_delete_file: '删除文件',
+  agent_file: '文件操作',
 };
 
 /**

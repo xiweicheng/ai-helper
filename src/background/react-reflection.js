@@ -50,7 +50,7 @@ export function getToolReflectionPriority(toolName, toolResultStr, consecutiveFa
     priority += consecutiveFailCount * 5;
   }
   // 重要工具（表单填充、数据修改）获得更高优先级
-  const importantTools = ['fill_form', 'click_element', 'download_file', 'manage_cookies', 'clear_page_data'];
+  const importantTools = ['fill_form', 'interact_element', 'download_file', 'manage_cookies', 'clear_page_data'];
   if (importantTools.includes(toolName)) {
     priority += 3;
   }

@@ -10,14 +10,14 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_storage',
-      description: '读写localStorage/sessionStorage',
+      description: '管理存储',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'], description: '操作类型', default: 'get' },
-          storage: { type: 'string', enum: ['local', 'session'], description: '存储类型', default: 'local' },
-          key: { type: 'string', description: '键名' },
-          value: { type: 'string', description: '值（set操作时必需）' }
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'] },
+          storage: { type: 'string', enum: ['local', 'session'] },
+          key: { type: 'string' },
+          value: { type: 'string', description: 'set时需要' }
         },
         required: ['action', 'storage']
       }
@@ -32,18 +32,18 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_cookies',
-      description: '读取/设置/删除浏览器Cookie',
+      description: '管理Cookies',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'], description: '操作类型' },
-          name: { type: 'string', description: 'Cookie名称' },
-          value: { type: 'string', description: 'Cookie值（set时必需）' },
-          domain: { type: 'string', description: '域名，默认当前域名' },
-          path: { type: 'string', description: '路径，默认"/"' },
-          secure: { type: 'boolean', description: '仅HTTPS', default: false },
-          httpOnly: { type: 'boolean', description: 'HttpOnly', default: false },
-          expirationDate: { type: 'number', description: '过期时间（Unix时间戳秒）' }
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'] },
+          name: { type: 'string' },
+          value: { type: 'string', description: 'set时需要' },
+          domain: { type: 'string' },
+          path: { type: 'string' },
+          secure: { type: 'boolean' },
+          httpOnly: { type: 'boolean' },
+          expirationDate: { type: 'number', description: 'Unix时间戳秒' }
         },
         required: ['action']
       }
@@ -58,11 +58,11 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'clear_page_data',
-      description: '清除当前站点的 cookies、localStorage 和 sessionStorage',
+      description: '清除站点数据',
       parameters: {
         type: 'object',
         properties: {
-          site: { type: 'string', description: '指定站点URL模式，不指定则清除当前站点' }
+          site: { type: 'string', description: '指定站点URL模式' }
         },
         required: []
       }
@@ -77,15 +77,15 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'fetch_url',
-      description: '发起HTTP请求',
+      description: 'HTTP请求',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: '请求URL' },
-          method: { type: 'string', enum: ['GET', 'POST'], description: 'HTTP方法', default: 'GET' },
-          headers: { type: 'object', description: '请求头' },
-          body: { type: 'string', description: 'POST请求体（JSON字符串）' },
-          timeout: { type: 'integer', description: '超时（ms），默认15000，超时后最多重试1次', default: 15000 }
+          url: { type: 'string' },
+          method: { type: 'string', enum: ['GET', 'POST'] },
+          headers: { type: 'object' },
+          body: { type: 'string', description: 'JSON字符串' },
+          timeout: { type: 'integer', description: '超时ms' }
         },
         required: ['url']
       }

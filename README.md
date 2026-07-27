@@ -1,6 +1,6 @@
 # AI Helper - 网页智能助手
 
-> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **50+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站等高级能力。
+> 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **40+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站等高级能力。
 
 ## 为什么选择 AI Helper
 
@@ -9,7 +9,7 @@ AI Helper 是一个**深度集成浏览器能力**的智能助手，相比于普
 - **真正的浏览器操控能力**：不仅读取网页内容，还能**点击、填表、拖拽、滚动、等待元素、上传文件**——LLM 可以像人类一样操作网页。
 - **三级质量保障体系**：创新的**预筛选 → 工具级反思 → 子任务反思 → 后置反思**多级机制，确保输出质量而非简单返回 LLM 原始结果。
 - **Agent 多助手协作**：支持将复杂任务拆解为子任务，**分派给不同专业 Agent 并行处理**，实现真正的多 Agent 协作。
-- **工具预筛选**：50+ 个工具定义会消耗大量 Token，AI Helper 在每次调用主力模型前用一次**轻量 API 预判**，将工具缩减为 5-10 个相关项，大幅节省成本。
+- **工具预筛选**：40+ 个工具定义会消耗大量 Token，AI Helper 在每次调用主力模型前用一次**轻量 API 预判**，将工具缩减为 5-10 个相关项，大幅节省成本。
 - **Token 预算管理**：按模型上下文窗口动态计算可用 Token 预算，按 Token 数而非消息数进行智能截断，确保 tool_calls/tool 消息配对完整性。
 - **上下文压缩**：长引用内容自动摘要压缩，避免无关信息永久占据上下文空间，保证对话质量不下滑。
 
@@ -186,7 +186,7 @@ ai-helper/
 │   │   ├── stream-controller.js        # 流式响应控制器（SSE 解析 + DeepSeek thinking）
 │   │   ├── token-recorder.js           # Token 使用统计记录器
 │   │   ├── config.js                    # 配置读写
-│   │   ├── constants.js                # 默认配置、50+ 个内建工具定义、分类映射
+│   │   └── constants.js                # 默认配置、40+ 个内建工具定义、分类映射
 │   │   ├── state.js                    # 多会话取消控制、API 计数器
 │   │   └── tools/                       # 工具定义分目录
 │   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (17)
@@ -620,7 +620,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 ---
 
-## 内建工具（50+ 项可配置 + MCP 动态扩展）
+## 内建工具（40+ 项可配置 + MCP 动态扩展）
 
 ### 内容提取（7 个）
 | 工具 | 说明 |
@@ -633,11 +633,10 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `get_iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_and_collect` | 滚动收集长内容（去重聚合） |
 
-### 页面交互（6 个）
+### 页面交互（5 个）
 | 工具 | 说明 |
 |------|------|
-| `click_element` | 点击元素（CSS 选择器，自动清洗引号） |
-| `hover_element` | 鼠标悬停 |
+| `interact_element` | 页面元素交互（click/hover，CSS 选择器） |
 | `drag_and_drop` | 拖拽操作 |
 | `scroll_to` | 滚动到指定位置/元素（支持对齐方式） |
 | `wait_for_element` | 等待元素出现/消失（严格可见性检测） |
@@ -700,18 +699,13 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `highlight_text` | 高亮页面文本 |
 | `manage_agent` | 管理已配对代理（查询状态、切换代理） |
 
-### Agent（11 个）—— 需安装代理服务
+### Agent（5 个）—— 需安装代理服务
 | 工具 | 说明 |
 |------|------|
-| `agent_read_file` | 读取本地文件（路径沙箱，大小限制） |
-| `agent_write_file` | 写入本地文件（脚本自动去执行权限） |
-| `agent_list_dir` | 列出目录内容 |
-| `agent_delete_file` | 删除本地文件/目录（软删除至回收站） |
+| `agent_file` | 文件操作（read/write/list/delete/download，路径沙箱） |
 | `agent_trash` | 回收站管理（列出/恢复已删除文件） |
-| `agent_download_file` | 下载远程文件到本地 Agent（限 Agent 配对后） |
 | `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
-| `agent_search_files` | 按文件名搜索（fd 加速） |
-| `agent_search_content` | 在文件中搜索文本（ripgrep 加速） |
+| `agent_search` | 搜索文件（按文件名或内容，fd/ripgrep 加速） |
 | `agent_skill_load` | 按需加载 Agent Skill 的完整说明文档 |
 | `agent_workflow_run` | 执行预定义的 Workflow Skill 工作流 |
 
@@ -730,7 +724,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 以下工具操作前会弹出确认对话框（30 秒超时自动拒绝，可全局关闭）：
 
 - `close_tab`、`download_file`、`manage_cookies`、`clear_page_data`
-- `agent_delete_file`、`agent_exec_command`
+- `agent_file`（delete action）、`agent_exec_command`
 
 Agent 命令执行三级安全：
 1. **黑名单**（始终禁止）：`rm -rf /`、`mkfs.*`、fork 炸弹、curl-to-shell 管道等

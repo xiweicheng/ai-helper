@@ -10,23 +10,22 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'show_notification',
-      description: '显示桌面通知或播放提示音',
+      description: '显示通知',
       parameters: {
         type: 'object',
         properties: {
-          title: { type: 'string', description: '通知标题' },
-          message: { type: 'string', description: '通知内容' },
-          icon: { type: 'string', description: '通知图标URL' },
-          silent: { type: 'boolean', description: '静音', default: false },
-          requireInteraction: { type: 'boolean', description: '需用户手动关闭', default: false },
-          playSound: { type: 'boolean', description: '播放提示音', default: false },
-          soundType: { type: 'string', enum: ['default', 'success', 'warning', 'error'], description: '提示音类型', default: 'default' }
+          title: { type: 'string' },
+          message: { type: 'string' },
+          icon: { type: 'string' },
+          silent: { type: 'boolean' },
+          requireInteraction: { type: 'boolean' },
+          playSound: { type: 'boolean' },
+          soundType: { type: 'string', enum: ['default', 'success', 'warning', 'error'] }
         },
         required: ['title', 'message']
       }
     }
   },
-  // ── 合并后的剪贴板工具 ──
   {
     id: 'clipboard',
     category: 'media_output',
@@ -36,13 +35,13 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: '剪贴板操作（复制/粘贴/获取页面选中文本）',
+      description: '剪贴板操作',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['copy', 'paste', 'get_selected'], description: '操作：copy=复制文本，paste=读取剪贴板，get_selected=获取页面选中文本' },
-          text: { type: 'string', description: '要复制的文本（仅action=copy时需要）' },
-          format: { type: 'string', enum: ['text', 'html'], description: '选中文本格式（仅action=get_selected时），默认text', default: 'text' }
+          action: { type: 'string', enum: ['copy', 'paste', 'get_selected'] },
+          text: { type: 'string', description: 'copy时需要' },
+          format: { type: 'string', enum: ['text', 'html'], description: 'get_selected时' }
         },
         required: ['action']
       }
@@ -57,12 +56,12 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'download_file',
-      description: '下载文件到本地',
+      description: '下载文件',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: '文件URL' },
-          filename: { type: 'string', description: '保存文件名（可选）' }
+          url: { type: 'string' },
+          filename: { type: 'string' }
         },
         required: ['url']
       }
@@ -77,20 +76,19 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'generate_qrcode',
-      description: '生成二维码图片',
+      description: '生成二维码',
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string', description: '二维码内容' },
-          size: { type: 'integer', description: '尺寸（像素），默认200', default: 200 },
-          errorCorrection: { type: 'string', enum: ['L', 'M', 'Q', 'H'], description: '容错级别', default: 'M' },
-          showImage: { type: 'boolean', description: '页面内显示', default: true }
+          content: { type: 'string' },
+          size: { type: 'integer', description: '像素尺寸' },
+          errorCorrection: { type: 'string', enum: ['L', 'M', 'Q', 'H'] },
+          showImage: { type: 'boolean' }
         },
         required: []
       }
     }
   },
-  // ── 合并后的截图工具（全页+可视区）──
   {
     id: 'capture_page',
     category: 'media_output',
@@ -100,16 +98,16 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'capture_page',
-      description: '页面截图（支持下载/视觉分析）',
+      description: '页面截图',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['download', 'analyze', 'both'], description: '操作模式：download=下载，analyze=视觉分析，both=下载+分析', default: 'both' },
-          tabId: { type: 'integer', description: '目标标签页ID（analyze/both模式）' },
-          format: { type: 'string', enum: ['jpeg', 'png'], description: '截图格式', default: 'jpeg' },
-          quality: { type: 'integer', description: 'JPEG质量0-100，默认60', default: 60 },
-          visionMaxDim: { type: 'integer', description: '视觉API最大长边像素，默认1024', default: 1024, minimum: 512, maximum: 2048 },
-          visionQuality: { type: 'integer', description: '视觉API图片质量，默认65', default: 65, minimum: 30, maximum: 95 }
+          action: { type: 'string', enum: ['download', 'analyze', 'both'] },
+          tabId: { type: 'integer', description: 'analyze/both时需要' },
+          format: { type: 'string', enum: ['jpeg', 'png'] },
+          quality: { type: 'integer', description: 'JPEG质量0-100' },
+          visionMaxDim: { type: 'integer', description: '视觉API最大长边像素', minimum: 512, maximum: 2048 },
+          visionQuality: { type: 'integer', description: '视觉API图片质量', minimum: 30, maximum: 95 }
         },
         required: []
       }
@@ -124,7 +122,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'get_browser_info',
-      description: '获取浏览器和系统环境信息',
+      description: '获取浏览器信息',
       parameters: {
         type: 'object',
         properties: {},
@@ -141,13 +139,13 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'inject_css',
-      description: '向页面注入CSS样式',
+      description: '注入CSS',
       parameters: {
         type: 'object',
         properties: {
-          css: { type: 'string', description: 'CSS样式代码' },
-          targetSelector: { type: 'string', description: '限定应用范围的元素选择器' },
-          injectMode: { type: 'string', enum: ['style', 'inline'], description: '注入模式', default: 'style' }
+          css: { type: 'string' },
+          targetSelector: { type: 'string' },
+          injectMode: { type: 'string', enum: ['style', 'inline'] }
         },
         required: ['css']
       }

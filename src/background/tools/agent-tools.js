@@ -2,121 +2,46 @@
 
 export const AGENT_TOOLS = [
   {
-    id: 'agent_read_file',
+    id: 'agent_file',
     category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
+    confirmationActions: ['delete'],
     type: 'function',
     function: {
-      name: 'agent_read_file',
-      description: '通过本地Agent读取文件内容',
+      name: 'agent_file',
+      description: '文件操作',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '文件路径' }
-        },
-        required: ['path']
-      }
-    }
-  },
-  {
-    id: 'agent_write_file',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_write_file',
-      description: '通过本地Agent写入文件',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '文件路径' },
-          content: { type: 'string', description: '要写入的文件内容' }
-        },
-        required: ['path', 'content']
-      }
-    }
-  },
-  {
-    id: 'agent_list_dir',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_list_dir',
-      description: '通过本地Agent列出目录内容',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '目录路径，默认当前工作目录', default: '.' }
-        },
-        required: []
-      }
-    }
-  },
-  {
-    id: 'agent_delete_file',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: false,
-    requiresConfirmation: true,
-    type: 'function',
-    function: {
-      name: 'agent_delete_file',
-      description: '通过本地Agent删除文件或目录',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '要删除的文件或目录路径' }
-        },
-        required: ['path']
-      }
-    }
-  },
-  // ── 合并后的回收站管理工具 ──
-  {
-    id: 'agent_trash',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: false,  // restore 非并行，保守取 false
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_trash',
-      description: '回收站管理：列出/恢复已删除的文件和目录',
-      parameters: {
-        type: 'object',
-        properties: {
-          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型：list=列出回收站内容，restore=恢复项目' },
-          trashId: { type: 'string', description: '回收站条目ID（action=restore时需要，来自list结果）' },
-          hours: { type: 'number', description: '仅返回最近N小时内删除的项目（action=list时可选），不传则返回全部' },
-          type: { type: 'string', enum: ['file', 'directory'], description: '按类型筛选（action=list时可选）：file=仅文件，directory=仅目录，不传则返回全部' }
+          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'] },
+          path: { type: 'string', description: 'list时可选' },
+          content: { type: 'string', description: 'write时需要' }
         },
         required: ['action']
       }
     }
   },
   {
-    id: 'agent_download_file',
+    id: 'agent_trash',
     category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_download_file',
-      description: '通过本地Agent下载工作目录下的文件或目录',
+      name: 'agent_trash',
+      description: '回收站管理',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '要下载的文件或目录路径' }
+          action: { type: 'string', enum: ['list', 'restore'] },
+          trashId: { type: 'string', description: 'restore时需要' },
+          hours: { type: 'integer' },
+          type: { type: 'string', enum: ['file', 'directory'] }
         },
-        required: ['path']
+        required: ['action']
       }
     }
   },
@@ -129,62 +54,42 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec_command',
-      description: '执行系统命令（危险命令拦截，敏感命令需确认）',
+      description: '执行命令',
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: '要执行的系统命令' },
-          cwd: { type: 'string', description: '工作目录（可选）' },
-          force: { type: 'boolean', description: '设为true强制执行已确认的命令' },
-          timeout: { type: 'integer', description: '超时（ms），默认600000（10分钟）' }
+          command: { type: 'string' },
+          cwd: { type: 'string' },
+          force: { type: 'boolean', description: '强制执行已确认命令' },
+          timeout: { type: 'integer', description: '超时ms' }
         },
         required: ['command']
       }
     }
   },
   {
-    id: 'agent_search_files',
+    id: 'agent_search',
     category: 'local_agent',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_search_files',
-      description: '按文件名模式搜索文件（glob）',
+      name: 'agent_search',
+      description: '搜索',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: '搜索根目录' },
-          pattern: { type: 'string', description: '文件名glob模式，如"*.js"' },
-          recursive: { type: 'boolean', description: '递归搜索子目录', default: true },
-          maxResults: { type: 'integer', description: '最大结果数，默认200' }
+          searchType: { type: 'string', enum: ['file', 'content'] },
+          path: { type: 'string' },
+          pattern: { type: 'string', description: 'glob或关键词' },
+          recursive: { type: 'boolean' },
+          filePattern: { type: 'string' },
+          caseSensitive: { type: 'boolean' },
+          maxResults: { type: 'integer' },
+          contextLines: { type: 'integer' }
         },
-        required: ['path']
-      }
-    }
-  },
-  {
-    id: 'agent_search_content',
-    category: 'local_agent',
-    execution: 'background',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'agent_search_content',
-      description: '在文件中搜索文本内容（ripgrep）',
-      parameters: {
-        type: 'object',
-        properties: {
-          path: { type: 'string', description: '搜索根目录' },
-          pattern: { type: 'string', description: '要搜索的文本（纯文本匹配）' },
-          filePattern: { type: 'string', description: '限定文件类型，如"*.js"' },
-          caseSensitive: { type: 'boolean', description: '大小写敏感', default: false },
-          maxResults: { type: 'integer', description: '最大结果数，默认100' },
-          contextLines: { type: 'integer', description: '上下文行数，默认2' }
-        },
-        required: ['path', 'pattern']
+        required: ['searchType', 'path']
       }
     }
   },
@@ -197,11 +102,11 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill_load',
-      description: '加载 Agent Skill（SKILL.md 类型）的完整说明文档',
+      description: '加载Skill',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Skill名称' }
+          name: { type: 'string' }
         },
         required: ['name']
       }
@@ -216,34 +121,33 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_workflow_run',
-      description: '执行 Workflow Skill（JSON/YAML 格式）的确定性自动化流程',
+      description: '执行Workflow',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Skill名称' },
-          params: { type: 'object', description: 'Skill所需参数' }
+          name: { type: 'string' },
+          params: { type: 'object' }
         },
         required: ['name']
       }
     }
   },
-  // ── 合并后的 AI 代理管理工具 ──
   {
     id: 'manage_agent',
     category: 'ai_collaboration',
     execution: 'background',
-    parallelizable: false,  // switch 非并行，保守取 false
+    parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'manage_agent',
-      description: 'AI代理管理：查询已配对代理列表或切换活跃代理',
+      description: '代理管理',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'switch'], description: '操作类型：list=查询代理列表及状态，switch=切换活跃代理' },
-          agentId: { type: 'string', description: '代理ID（action=switch时需要，从list结果获取）' },
-          agentName: { type: 'string', description: '代理名称（action=switch时模糊匹配）' }
+          action: { type: 'string', enum: ['list', 'switch'] },
+          agentId: { type: 'string', description: 'switch时需要' },
+          agentName: { type: 'string', description: 'switch时模糊匹配' }
         },
         required: ['action']
       }

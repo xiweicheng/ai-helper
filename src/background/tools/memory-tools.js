@@ -1,6 +1,6 @@
 // memory-tools - 长期记忆工具定义
 // 记忆文件路径：~/.ai-helper-agent/memory/global-memory.json（Agent 系统配置目录）
-// 实际存储于 Agent 本地文件系统，通过 agent_read_file / agent_write_file 读写
+// 实际存储于 Agent 本地文件系统，通过 agent_file 读写
 
 export const MEMORY_TOOLS = [
   {
@@ -12,19 +12,19 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_store',
-      description: '存储/更新/删除长期记忆',
+      description: '存储记忆',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['add', 'update', 'delete'], description: '操作类型' },
-          type: { type: 'string', enum: ['fact', 'summary'], description: '记忆类型：fact=事实/偏好/知识，summary=对话摘要' },
-          category: { type: 'string', enum: ['preference', 'knowledge', 'decision', 'custom'], description: '分类（仅fact类型需要）' },
-          content: { type: 'string', description: '记忆内容（必填）' },
-          title: { type: 'string', description: '摘要标题（仅summary类型需要）' },
-          tags: { type: 'array', items: { type: 'string' }, description: '标签列表，用于检索和分类' },
-          importance: { type: 'integer', description: '重要性 1-10，默认5' },
-          memoryId: { type: 'string', description: '记忆ID，update/delete时必须提供' },
-          sourceSessionId: { type: 'string', description: '来源会话ID（可选）' }
+          action: { type: 'string', enum: ['add', 'update', 'delete'] },
+          type: { type: 'string', enum: ['fact', 'summary'] },
+          category: { type: 'string', enum: ['preference', 'knowledge', 'decision', 'custom'] },
+          content: { type: 'string' },
+          title: { type: 'string', description: '仅summary' },
+          tags: { type: 'array', items: { type: 'string' } },
+          importance: { type: 'integer', description: '1-10' },
+          memoryId: { type: 'string', description: 'update/delete时需要' },
+          sourceSessionId: { type: 'string' }
         },
         required: ['action', 'type', 'content']
       }
@@ -39,14 +39,14 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_recall',
-      description: '从长期记忆中检索信息（支持关键词/标签搜索）',
+      description: '检索记忆',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: '搜索关键词，匹配记忆内容和标签' },
-          tags: { type: 'array', items: { type: 'string' }, description: '按标签筛选' },
-          memoryType: { type: 'string', enum: ['fact', 'summary', 'all'], description: '记忆类型筛选', default: 'all' },
-          limit: { type: 'integer', description: '最大返回条数，默认10', default: 10 }
+          query: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } },
+          memoryType: { type: 'string', enum: ['fact', 'summary', 'all'] },
+          limit: { type: 'integer' }
         },
         required: []
       }
@@ -61,11 +61,11 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory_manage',
-      description: '审查记忆质量、合并重复、淘汰低价值记忆',
+      description: '管理记忆',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['review', 'compact'], description: 'review=审查返回淘汰建议，compact=执行压缩清理' }
+          action: { type: 'string', enum: ['review', 'compact'] }
         },
         required: ['action']
       }
