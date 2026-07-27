@@ -15,7 +15,9 @@
     "notifications",
     "tabs",
     "cookies",
-    "offscreen"
+    "offscreen",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>",
