@@ -336,7 +336,7 @@ export function initImagePreviewOverlay() {
  * @param {number} height - 原始高度
  * @returns {Object} 包含 targetWidth, targetHeight, quality 的压缩参数
  */
-function calculateCompressionParams(width, height) {
+export function calculateCompressionParams(width, height) {
   const maxDimension = Math.max(width, height);
   
   let targetMaxDim, quality;

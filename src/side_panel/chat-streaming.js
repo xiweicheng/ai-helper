@@ -160,6 +160,7 @@ export function addStreamingMessage(targetSessionId) {
   wrapper.className = 'message-wrapper assistant streaming';
   const messageId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
   wrapper.dataset.messageId = messageId;
+  wrapper.dataset.sessionId = targetSessionId || '';
   wrapper.innerHTML = `
     <div class="message-content">
       <div class="stream-content"></div>
@@ -183,7 +184,6 @@ export function addStreamingMessage(targetSessionId) {
     </div>
   `;
 
-  // 仅当目标会话与当前活跃会话匹配时才挂载到 DOM，防止串台
   const shouldMount = !targetSessionId || targetSessionId === state.activeSessionId;
   if (shouldMount && chatContainer) {
     chatContainer.appendChild(wrapper);
@@ -192,7 +192,6 @@ export function addStreamingMessage(targetSessionId) {
     });
   }
 
-  // 绑定流式消息内的停止按钮
   const streamingStopBtn = wrapper.querySelector('.streaming-stop-btn');
   if (streamingStopBtn) {
     streamingStopBtn.addEventListener('click', (e) => {
@@ -211,11 +210,13 @@ export function addStreamingMessage(targetSessionId) {
 export function reconnectStreamingElement(sessionId) {
   const oldEl = _streamingElements.get(sessionId);
   if (!oldEl) {
-    // 没有旧元素（极端情况），不处理
     return;
   }
 
-  // 将旧元素重新插入 DOM，它保留了工具调用卡片、思考标记等完整状态
+  if (oldEl.dataset.sessionId && oldEl.dataset.sessionId !== sessionId) {
+    return;
+  }
+
   const chatContainer = document.getElementById('chatContainer');
   if (!chatContainer) return;
 

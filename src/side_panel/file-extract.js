@@ -300,23 +300,38 @@ export function renderFilePreviews() {
     wrapper.className = 'file-preview-item';
     wrapper.title = `${file.name} (${formatFileSize(file.size)})`;
 
-    const icon = document.createElement('span');
-    icon.className = 'file-preview-icon';
-    icon.textContent = getFileIcon(file.name);
+    if (file.isImage && file.dataUrl) {
+      const img = document.createElement('img');
+      img.className = 'file-preview-thumb';
+      img.src = file.dataUrl;
+      img.alt = file.name;
+      wrapper.appendChild(img);
+      
+      const label = document.createElement('span');
+      label.className = 'file-preview-thumb-label';
+      label.textContent = file.name;
+      wrapper.appendChild(label);
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'file-preview-icon';
+      icon.textContent = getFileIcon(file.name);
 
-    const info = document.createElement('div');
-    info.className = 'file-preview-info';
+      const info = document.createElement('div');
+      info.className = 'file-preview-info';
 
-    const nameEl = document.createElement('span');
-    nameEl.className = 'file-preview-name';
-    nameEl.textContent = file.name;
+      const nameEl = document.createElement('span');
+      nameEl.className = 'file-preview-name';
+      nameEl.textContent = file.name;
 
-    const meta = document.createElement('span');
-    meta.className = 'file-preview-meta';
-    meta.textContent = formatFileSize(file.size);
+      const meta = document.createElement('span');
+      meta.className = 'file-preview-meta';
+      meta.textContent = formatFileSize(file.size);
 
-    info.appendChild(nameEl);
-    info.appendChild(meta);
+      info.appendChild(nameEl);
+      info.appendChild(meta);
+      wrapper.appendChild(icon);
+      wrapper.appendChild(info);
+    }
 
     // 状态标签
     if (file.status === 'extracting') {
@@ -346,8 +361,6 @@ export function renderFilePreviews() {
       removeFile(index);
     });
 
-    wrapper.appendChild(icon);
-    wrapper.appendChild(info);
     wrapper.appendChild(removeBtn);
     previewBar.appendChild(wrapper);
   });

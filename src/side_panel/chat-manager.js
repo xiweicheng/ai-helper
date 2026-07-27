@@ -2780,19 +2780,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
 
       if (message.type === 'STREAM_TOOL_CALL') {
         if (!_se()) {
-          // 如果流式元素还没有创建，立即创建
           _se(addStreamingMessage(mySessionId));
           setProcessStartTime(Date.now());
         }
         if (_se() && message.toolCalls?.length > 0) {
-          // 添加工具调用详情卡片（含图标、名称、命令/文件/参数、可折叠详情）
           appendToolCallItems(_se(), message.toolCalls);
         }
         return false;
       }
       
       if (message.type === 'STREAM_TOOL_RESULT') {
-        // 工具执行完成，在对应卡片后追加结果
         if (_se() && message.result) {
           appendToolResult(message.result, _se());
         }
@@ -2800,26 +2797,21 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       }
       
       if (message.type === 'AGENT_STREAM') {
-        // Agent 命令实时输出 - 嵌入到对应的工具调用卡片内
         if (_se() && message.execId) {
           let agentEntry = _agentStreams[message.execId];
           if (!agentEntry) {
-            // 创建新的 Agent 输出区域
             const outputDiv = document.createElement('div');
             outputDiv.className = 'agent-stream-output';
             outputDiv.innerHTML = `
               <div class="tool-result-title">执行结果</div>
               ${createCodeBlockHtml('', 'agent-stream-content')}
             `;
-            // 通过 toolCallId 找到对应的工具卡片，将输出嵌入卡片内部（与非命令工具的 .tool-call-result 展示形式一致）
             if (message.toolCallId) {
               const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);
               if (card) {
-                // 插入到卡片内部末尾，与非命令工具的 .tool-call-result 位置一致
                 card.appendChild(outputDiv);
               }
             }
-            // 降级：如果没有找到对应卡片，追加到 stream-content（兼容旧版）
             if (!outputDiv.isConnected) {
               const sc = _se().querySelector('.stream-content');
               if (sc) {
@@ -2828,7 +2820,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             }
             agentEntry = { element: outputDiv, stdout: '', stderr: '' };
             _agentStreams[message.execId] = agentEntry;
-            // 绑定代码块复制按钮
             addCodeCopyButtons();
           }
           
@@ -2840,7 +2831,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               agentEntry.stdout += message.data;
             }
             codeEl.textContent = agentEntry.stdout + (agentEntry.stderr ? '\n' + agentEntry.stderr : '');
-            // 自动滚动到底部
             codeEl.parentElement.scrollTop = codeEl.parentElement.scrollHeight;
           }
         }
@@ -2863,24 +2853,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
             if (reflectionConfig?.enabled) {
-              // 反思功能启用时，显示质量评估状态，让用户知道这段时间在做什么
               statusDiv.textContent = '质量评估中...';
             } else {
-              // 无反思时不需要显示冗余状态文字
               statusDiv.textContent = '';
             }
           }
-          // 不在此处移除 streaming 类，由 API_COMPLETE 统一处理
         }
         return false;
       }
       
       if (message.type === 'API_COMPLETE') {
-        // 流式消息：在 resolve 前添加底部工具栏
         if (_se() && message.content) {
           finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent, message.wasRevised);
         }
-        // 在 cleanupCallApi 之前捕获状态（cleanup 会清空 _streamingElements）
         const streamingEl = _se();
         const wasStreamed = !!streamingEl;
         const streamingHtml = streamingEl ? (streamingEl.dataset.htmlContent || streamingEl.outerHTML) : null;

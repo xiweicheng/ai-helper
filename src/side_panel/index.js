@@ -2152,9 +2152,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     promptTriggerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       promptTriggerBtn.blur();
-      // 关闭 @ 弹框（互斥）
-      hideAgentAtSelector();
-      togglePromptSelector();
+      if (e.ctrlKey || e.metaKey) {
+        const input = document.getElementById('userInput');
+        if (input) input.focus();
+        hidePromptSelector();
+        showAgentAtSelector('');
+      } else {
+        hideAgentAtSelector();
+        togglePromptSelector();
+      }
     });
   }
 

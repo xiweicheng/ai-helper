@@ -91,12 +91,12 @@ export function renderImagePreviews() {
     wrapper.className = 'image-preview-item';
 
     const thumb = document.createElement('img');
-    thumb.src = img.dataUrl;
+    thumb.src = img.dataUrl || img.compressedUrl || img.originalUrl;
     thumb.className = 'image-preview-thumb';
     thumb.title = '点击查看大图';
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
-      openImagePreview(img.dataUrl, thumb);
+      openImagePreview(img.originalUrl || img.dataUrl || img.compressedUrl, thumb);
     });
 
     const removeBtn = document.createElement('button');

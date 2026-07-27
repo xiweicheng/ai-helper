@@ -11,9 +11,11 @@ import {
   supportsPreview, getPreviewType, getMimeType
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
-import { showToast } from './utils.js';
+import { showToast, copyToClipboard } from './utils.js';
 import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
+import { renderImagePreviews } from './image-helpers.js';
+import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents } from './markdown-render.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 
@@ -94,16 +96,21 @@ export function initWorkspacePanel() {
             <line x1="9" y1="14" x2="15" y2="14"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceAskBtn" title="基于选中的文件进行问答" disabled>
+        <button class="workspace-toolbar-btn" id="workspaceAskBtn" title="基于选中的文件进行问答" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <circle cx="12" cy="12" r="10"/>
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceDownloadDirBtn" title="下载选中的文件/目录（多选打包为ZIP）" disabled>
+        <button class="workspace-toolbar-btn" id="workspaceDownloadDirBtn" title="下载选中的文件/目录（多选打包为ZIP）" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+        </button>
+        <button class="workspace-toolbar-btn" id="workspaceBatchDeleteBtn" title="删除选中的文件" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
           </svg>
         </button>
         <span class="workspace-toolbar-selected" id="workspaceSelectedCount" style="display:none;"></span>
@@ -146,8 +153,16 @@ export function initWorkspacePanel() {
           <span class="workspace-preview-filename" id="workspacePreviewFilename"></span>
           <span class="workspace-preview-linecount" id="workspacePreviewLineCount"></span>
           <button class="workspace-preview-copy-btn" id="workspacePreviewCopyBtn" title="复制全部内容">复制</button>
+          <button class="workspace-preview-md-toggle-btn" id="workspacePreviewMdToggleBtn" title="切换渲染预览" style="display:none;">
+            <span class="workspace-preview-md-toggle-label">预览</span>
+          </button>
           <button class="workspace-preview-download-btn" id="workspacePreviewDownloadBtn" title="下载文件">下载</button>
           <button class="workspace-preview-download-btn" id="workspacePreviewOpenBrowserBtn" title="在浏览器中打开" style="display:none">在浏览器中打开</button>
+          <button class="workspace-preview-fullscreen-btn" id="workspacePreviewFullscreenBtn" title="全屏预览" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+          </button>
           <button class="workspace-preview-close" id="workspacePreviewClose" title="关闭预览">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
@@ -211,10 +226,48 @@ function bindEvents() {
     e.stopPropagation();
     downloadSelected();
   });
+  document.getElementById('workspaceBatchDeleteBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleBatchDelete();
+  });
 
   // 搜索框
   const searchInput = document.getElementById('workspaceSearchInput');
-  searchInput.addEventListener('input', handleSearchInput);
+  const toolbar = document.getElementById('workspaceToolbar');
+  const searchBox = toolbar.querySelector('.workspace-search-box');
+
+  function shouldCollapseToolbar() {
+    const toolbarWidth = toolbar.clientWidth;
+    const minWidthWithButtons = 120 + 28 * 2 + 4 * 3;
+    return toolbarWidth < minWidthWithButtons;
+  }
+
+  function updateSearchExpanded() {
+    if (searchInput.value.trim()) {
+      searchBox.classList.add('search-box-expanded');
+      if (shouldCollapseToolbar()) {
+        toolbar.classList.add('search-focused');
+      }
+    } else {
+      searchBox.classList.remove('search-box-expanded');
+      toolbar.classList.remove('search-focused');
+    }
+  }
+
+  searchInput.addEventListener('input', (e) => {
+    handleSearchInput(e);
+    updateSearchExpanded();
+  });
+  searchInput.addEventListener('focus', () => {
+    if (shouldCollapseToolbar()) {
+      toolbar.classList.add('search-focused');
+    }
+  });
+  searchInput.addEventListener('blur', () => {
+    if (!searchInput.value.trim()) {
+      toolbar.classList.remove('search-focused');
+    }
+  });
   searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.stopPropagation();
@@ -237,7 +290,6 @@ function bindEvents() {
       e.preventDefault();
       if (searchHistoryIndex === -1 || searchHistoryIndex >= searchHistory.length - 1) {
         searchHistoryIndex = -1;
-        // 恢复为搜索历史激活前的原始值
         searchInput.value = '';
         searchQuery = '';
         document.getElementById('workspaceSearchClear').style.display = 'none';
@@ -249,7 +301,10 @@ function bindEvents() {
       }
     }
   });
-  document.getElementById('workspaceSearchBtn').addEventListener('click', performSearch);
+  document.getElementById('workspaceSearchBtn').addEventListener('click', () => {
+    searchInput.focus();
+    performSearch();
+  });
   document.getElementById('workspaceSearchClear').addEventListener('click', clearSearch);
 
   // 排序标题点击
@@ -296,6 +351,8 @@ function bindEvents() {
   document.getElementById('workspacePreviewCopyBtn').addEventListener('click', copyPreviewContent);
   document.getElementById('workspacePreviewDownloadBtn').addEventListener('click', downloadPreviewFile);
   document.getElementById('workspacePreviewOpenBrowserBtn').addEventListener('click', openPreviewInBrowser);
+  document.getElementById('workspacePreviewFullscreenBtn').addEventListener('click', togglePreviewFullscreen);
+  document.getElementById('workspacePreviewMdToggleBtn').addEventListener('click', toggleMarkdownPreview);
   
   // 预览标题快捷键：Ctrl/Cmd + 单击复制文件名，Ctrl/Cmd + Shift + 单击复制完整路径
   document.getElementById('workspacePreviewFilename').addEventListener('click', async (e) => {
@@ -843,6 +900,14 @@ async function handleFileListClick(e) {
   const type = item.dataset.type;
   const actionBtn = e.target.closest('[data-action]');
 
+  // 更新键盘焦点到点击的文件项
+  const items = getFileItems();
+  const clickedIdx = items.indexOf(item);
+  if (clickedIdx >= 0) {
+    focusedIndex = clickedIdx;
+    updateFocusVisual();
+  }
+
   // 处理 checkbox 选择
   const selectEl = e.target.closest('.workspace-file-select');
   if (selectEl) {
@@ -1049,14 +1114,25 @@ async function previewFile(filePath, fileName) {
   const copyBtn = document.getElementById('workspacePreviewCopyBtn');
   const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
   const openBrowserBtn = document.getElementById('workspacePreviewOpenBrowserBtn');
+  const fullscreenBtn = document.getElementById('workspacePreviewFullscreenBtn');
+  const mdToggleBtn = document.getElementById('workspacePreviewMdToggleBtn');
 
   previewFilename.textContent = fileName;
   lineCountEl.textContent = '';
+  previewContent.classList.remove('xlsx-mode');
+  previewContent.classList.remove('markdown-rendered');
   previewContent.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
   previewArea.style.display = 'flex';
   copyBtn.style.display = '';
   downloadBtn.style.display = '';
   openBrowserBtn.style.display = 'none';
+  fullscreenBtn.style.display = 'none';
+  mdToggleBtn.style.display = 'none';
+  mdToggleBtn.classList.remove('active');
+  const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
+  if (mdLabel) mdLabel.textContent = '预览';
+  previewArea.classList.remove('fullscreen');
+  document.getElementById('workspacePanel').classList.remove('preview-fullscreen');
 
   // 存储当前预览文件路径供下载/复制使用
   previewArea.dataset.previewPath = filePath;
@@ -1079,6 +1155,15 @@ async function previewFile(filePath, fileName) {
     if (fileSize > PREVIEW_MAX_TEXT) {
       previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
       return;
+    }
+    fullscreenBtn.style.display = '';
+    const ext = (fileName.split('.').pop() || '').toLowerCase();
+    if (ext === 'md' || ext === 'markdown') {
+      mdToggleBtn.style.display = '';
+      const result = await readFileContent(filePath);
+      if (result.success) {
+        previewArea.dataset.markdownText = result.content || '';
+      }
     }
     await previewTextFile(filePath, fileName, lineCountEl, previewContent);
     return;
@@ -1109,6 +1194,7 @@ async function previewFile(filePath, fileName) {
 
     // XLSX 走服务端解析，不需要前端下载二进制
     if (previewType === 'xlsx') {
+      fullscreenBtn.style.display = '';
       await previewXlsx(fileName, previewContent, previewArea);
       return;
     }
@@ -1117,12 +1203,15 @@ async function previewFile(filePath, fileName) {
 
     switch (previewType) {
       case 'pdf':
+        fullscreenBtn.style.display = '';
         await previewPdf(arrayBuffer, fileName, previewContent, previewArea);
         break;
       case 'docx':
+        fullscreenBtn.style.display = '';
         await previewDocx(arrayBuffer, previewContent);
         break;
       case 'image':
+        fullscreenBtn.style.display = '';
         await previewImage(arrayBuffer, fileName, previewContent);
         break;
       default:
@@ -1448,6 +1537,7 @@ async function previewXlsx(fileName, previewContent, previewArea) {
 
   previewArea.dataset.previewType = 'xlsx';
   previewArea.dataset.previewSheets = JSON.stringify(sheets.map(s => s.name));
+  previewContent.classList.add('xlsx-mode');
 
   // 渲染 tabs
   let tabsHtml = '<div class="xlsx-sheet-tabs" id="xlsxSheetTabs">';
@@ -1488,13 +1578,16 @@ async function loadAndRenderSheet(sheetIndex) {
 
 function renderXlsxSheet(rows, colCount, totalRows, content) {
 
+  const oldMirror = content.querySelector('.xlsx-table-scrollbar-mirror');
+  if (oldMirror) oldMirror.remove();
+
   if (!rows || rows.length === 0) {
     content.innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';
     return;
   }
 
   const headerRow = rows[0];
-  let html = '<div class="xlsx-table-scroll"><table class="xlsx-preview-table"><thead><tr>';
+  let html = '<div class="xlsx-table-scroll" id="xlsxTableScroll"><table class="xlsx-preview-table"><thead><tr>';
   for (const cell of headerRow) {
     html += `<th>${escapeHtml(String(cell ?? ''))}</th>`;
   }
@@ -1514,6 +1607,28 @@ function renderXlsxSheet(rows, colCount, totalRows, content) {
   }
 
   content.innerHTML = html;
+
+  const scroll = content.querySelector('#xlsxTableScroll');
+  if (scroll) {
+    const mirror = document.createElement('div');
+    mirror.className = 'xlsx-table-scrollbar-mirror';
+    const innerWidth = scroll.scrollWidth;
+    mirror.innerHTML = `<div class="xlsx-table-scrollbar-mirror-inner" style="width:${innerWidth}px;"></div>`;
+    
+    let syncing = false;
+    scroll.addEventListener('scroll', () => {
+      if (syncing) { syncing = false; return; }
+      syncing = true;
+      mirror.scrollLeft = scroll.scrollLeft;
+    });
+    mirror.addEventListener('scroll', () => {
+      if (syncing) { syncing = false; return; }
+      syncing = true;
+      scroll.scrollLeft = mirror.scrollLeft;
+    });
+    
+    content.appendChild(mirror);
+  }
 }
 
 // ============================================================
@@ -1753,8 +1868,163 @@ async function openPreviewInBrowser() {
 /**
  * 关闭预览
  */
+function togglePreviewFullscreen() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const panel = document.getElementById('workspacePanel');
+  const btn = document.getElementById('workspacePreviewFullscreenBtn');
+  const isFullscreen = previewArea.classList.toggle('fullscreen');
+  if (isFullscreen) {
+    panel.classList.add('preview-fullscreen');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
+    btn.title = '退出全屏';
+  } else {
+    panel.classList.remove('preview-fullscreen');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+    btn.title = '全屏预览';
+  }
+}
+
+function toggleMarkdownPreview() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const btn = document.getElementById('workspacePreviewMdToggleBtn');
+  const mdLabel = btn.querySelector('.workspace-preview-md-toggle-label');
+  const lineCountEl = document.getElementById('workspacePreviewLineCount');
+  const copyBtn = document.getElementById('workspacePreviewCopyBtn');
+
+  const isRendered = previewContent.classList.toggle('markdown-rendered');
+  const markdownText = previewArea.dataset.markdownText || '';
+
+  if (isRendered) {
+    btn.classList.add('active');
+    btn.title = '切换为源码预览';
+    if (mdLabel) mdLabel.textContent = '预览';
+    copyBtn.style.display = 'none';
+    previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
+    renderMermaidChartsInContainer(previewContent);
+    bindCodeCopyButtonsInContainer(previewContent);
+    addTableToolbarEvents();
+    lineCountEl.textContent = 'Markdown 渲染';
+  } else {
+    btn.classList.remove('active');
+    btn.title = '切换为渲染预览';
+    if (mdLabel) mdLabel.textContent = '预览';
+    copyBtn.style.display = '';
+    const fileName = previewArea.dataset.previewName || '';
+    const lang = getLanguageClass(fileName);
+    const lines = (markdownText || '').split('\n');
+    lineCountEl.textContent = `${lines.length} 行`;
+    let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+    for (let i = 0; i < lines.length; i++) {
+      numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
+    }
+    numberedHtml += '</tbody></table>';
+    previewContent.innerHTML = numberedHtml;
+  }
+}
+
+async function renderMermaidChartsInContainer(container) {
+  if (typeof mermaid === 'undefined') return;
+  const mermaidElements = container.querySelectorAll('.mermaid');
+  for (const el of mermaidElements) {
+    if (el.querySelector('svg')) continue;
+    const rawCode = el.getAttribute('data-raw-code');
+    const originalContent = rawCode ? decodeURIComponent(rawCode) : (el.textContent || '');
+    try {
+      await mermaid.run({ nodes: [el] });
+      if (typeof addMermaidControls === 'function') {
+        addMermaidControls(el);
+      }
+    } catch (err) {
+      el.textContent = originalContent;
+    }
+  }
+}
+
+function bindCodeCopyButtonsInContainer(container) {
+  const copyButtons = container.querySelectorAll('.code-copy-btn');
+  copyButtons.forEach((btn) => {
+    if (btn.dataset.bound) return;
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const codeContainer = btn.closest('.code-block-container');
+      if (codeContainer) {
+        const codeElement = codeContainer.querySelector('pre code');
+        if (codeElement) {
+          copyToClipboard(codeElement.textContent || '', btn);
+        }
+      }
+    });
+  });
+
+  if (!container.dataset.ctrlClickBound) {
+    container.dataset.ctrlClickBound = 'true';
+    container.addEventListener('click', (e) => {
+      if ((!e.ctrlKey && !e.metaKey) || e.button !== 0) return;
+
+      let codeEl = e.target.closest('code');
+      if (!codeEl) {
+        const preEl = e.target.closest('pre');
+        if (preEl) {
+          codeEl = preEl.querySelector('code');
+        }
+        if (!codeEl) {
+          const codeContainer = e.target.closest('.code-block-container');
+          if (codeContainer) {
+            codeEl = codeContainer.querySelector('code');
+          }
+        }
+      }
+      if (!codeEl) return;
+
+      const copyBtn = e.target.closest('.code-copy-btn');
+      if (copyBtn) return;
+
+      e.preventDefault();
+      const codeText = codeEl.textContent;
+      if (!codeText) return;
+
+      navigator.clipboard.writeText(codeText).then(() => {
+        showToast('代码已复制到剪贴板', 'success');
+      }).catch(() => {
+        const textArea = document.createElement('textarea');
+        textArea.value = codeText;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showToast('代码已复制到剪贴板', 'success');
+      });
+    });
+  }
+}
+
 function closePreview() {
   const previewArea = document.getElementById('workspacePreviewArea');
+  const panel = document.getElementById('workspacePanel');
+  const previewContent = document.getElementById('workspacePreviewContent');
+  previewContent.classList.remove('xlsx-mode');
+  previewContent.classList.remove('markdown-rendered');
+  delete previewArea.dataset.markdownText;
+  const mdToggleBtn = document.getElementById('workspacePreviewMdToggleBtn');
+  if (mdToggleBtn) {
+    mdToggleBtn.classList.remove('active');
+    mdToggleBtn.style.display = 'none';
+    const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
+    if (mdLabel) mdLabel.textContent = '预览';
+  }
+  if (previewArea.classList.contains('fullscreen')) {
+    previewArea.classList.remove('fullscreen');
+    panel.classList.remove('preview-fullscreen');
+    const btn = document.getElementById('workspacePreviewFullscreenBtn');
+    if (btn) {
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+      btn.title = '全屏预览';
+    }
+  }
   // 清理 PDF 资源
   if (currentPdfDoc) {
     currentPdfDoc.destroy();
@@ -2548,7 +2818,7 @@ async function navigateBack() {
 /**
  * 刷新当前目录
  */
-async function refreshCurrent() {
+async function refreshCurrent(preservedScrollTop) {
   if (!currentPath) {
     const root = workspaceRoot || await getWorkspaceRoot();
     if (!root) {
@@ -2570,6 +2840,14 @@ async function refreshCurrent() {
   }
   closePreview();
   updateSelectAllState();
+  if (preservedScrollTop !== undefined) {
+    const content = document.getElementById('workspacePanelContent');
+    if (content) {
+      requestAnimationFrame(() => {
+        content.scrollTop = preservedScrollTop;
+      });
+    }
+  }
 }
 
 /**
@@ -2808,13 +3086,20 @@ async function performSearch() {
 
 async function clearSearch() {
   const searchInput = document.getElementById('workspaceSearchInput');
+  const toolbar = document.getElementById('workspaceToolbar');
+  const searchBox = toolbar.querySelector('.workspace-search-box');
   searchInput.value = '';
   searchQuery = '';
   isSearchMode = false;
   searchResults = [];
+  selectedPaths.clear();
   document.getElementById('workspaceSearchClear').style.display = 'none';
+  toolbar.classList.remove('search-focused');
+  searchBox.classList.remove('search-box-expanded');
+  searchInput.blur();
   await loadDirectory(currentPath);
   updateSelectAllState();
+  updateDownloadBtn();
 }
 
 async function handleDeleteFile(path, name, type) {
@@ -2831,6 +3116,9 @@ async function handleDeleteFile(path, name, type) {
     const confirmed = await window.showCustomConfirm(message, '确认删除');
     if (!confirmed) return;
   }
+
+  const content = document.getElementById('workspacePanelContent');
+  const preservedScrollTop = content ? content.scrollTop : 0;
 
   try {
     const config = await getAgentConfig();
@@ -2852,9 +3140,75 @@ async function handleDeleteFile(path, name, type) {
       showToast(`${isDir ? '目录' : '文件'} 已删除`, 'success');
       selectedPaths.delete(path);
       updateDownloadBtn();
-      refreshCurrent();
+      await refreshCurrent(preservedScrollTop);
     } else {
       showToast(`删除失败: ${data.error || '未知错误'}`, 'error');
+    }
+  } catch (err) {
+    showToast(`删除失败: ${err.message}`, 'error');
+  }
+}
+
+async function handleBatchDelete() {
+  if (selectedPaths.size === 0) return;
+  
+  const paths = Array.from(selectedPaths);
+  const names = paths.map(p => {
+    const entry = cachedEntries.find(e => e.path === p) 
+      || searchResults.find(e => e.fullPath === p);
+    return entry ? entry.name : p.split('/').pop();
+  });
+  
+  const message = `确定要删除选中的 ${paths.length} 个文件/目录吗？\n\n${names.slice(0, 5).map(n => `• ${n}`).join('\n')}${names.length > 5 ? `\n• ... 等共 ${names.length} 项` : ''}\n\n删除后可在回收站中恢复（7天后自动清理）`;
+  
+  if (typeof window.showCustomConfirm !== 'function') {
+    const confirmed = confirm(message);
+    if (!confirmed) return;
+  } else {
+    const confirmed = await window.showCustomConfirm(message, '确认批量删除');
+    if (!confirmed) return;
+  }
+
+  const content = document.getElementById('workspacePanelContent');
+  const preservedScrollTop = content ? content.scrollTop : 0;
+
+  try {
+    const config = await getAgentConfig();
+    if (!config) {
+      showToast('Agent 未连接', 'error');
+      return;
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    for (const path of paths) {
+      try {
+        const resp = await fetch(`${config.url}/api/fs/delete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.token}`
+          },
+          body: JSON.stringify({ path })
+        });
+        const data = await resp.json();
+        if (data.success) {
+          selectedPaths.delete(path);
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+    
+    if (successCount > 0) {
+      showToast(`已删除 ${successCount} 项${failCount > 0 ? `，${failCount} 项失败` : ''}`, failCount > 0 ? 'warning' : 'success');
+      updateDownloadBtn();
+      await refreshCurrent(preservedScrollTop);
+    } else {
+      showToast('删除失败', 'error');
     }
   } catch (err) {
     showToast(`删除失败: ${err.message}`, 'error');
@@ -3071,8 +3425,78 @@ async function handleNewFolder() {
   }
 }
 
+async function compressBlobImage(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const originalUrl = reader.result;
+        const width = img.width;
+        const height = img.height;
+        const maxDim = Math.max(width, height);
+
+        let targetMaxDim, quality;
+        if (maxDim <= 768) {
+          targetMaxDim = maxDim;
+          quality = 0.75;
+        } else if (maxDim <= 1280) {
+          targetMaxDim = 768;
+          quality = 0.70;
+        } else if (maxDim <= 2560) {
+          targetMaxDim = 1024;
+          quality = 0.65;
+        } else if (maxDim <= 3840) {
+          targetMaxDim = 1280;
+          quality = 0.60;
+        } else {
+          targetMaxDim = 1280;
+          quality = 0.55;
+        }
+
+        let targetWidth = width;
+        let targetHeight = height;
+        if (maxDim > targetMaxDim) {
+          if (width > height) {
+            targetHeight = Math.round(height * (targetMaxDim / width));
+            targetWidth = targetMaxDim;
+          } else {
+            targetWidth = Math.round(width * (targetMaxDim / height));
+            targetHeight = targetMaxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        const compressedUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve({ originalUrl, compressedUrl });
+      };
+      reader.readAsDataURL(blob);
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片加载失败'));
+    };
+
+    img.src = url;
+  });
+}
+
 async function attachFilesForQuestion(paths) {
-  const files = [];
+  const regularFiles = [];
+  const imageFiles = [];
+
   for (const path of paths) {
     const name = path.split('/').pop();
     let entry = cachedEntries.find(e => e.path === path);
@@ -3080,20 +3504,49 @@ async function attachFilesForQuestion(paths) {
       entry = searchResults.find(e => e.fullPath === path);
     }
     const size = entry ? entry.size : 0;
+    const mime = getMimeType(name);
+    const isImage = mime.startsWith('image/');
 
-    files.push({
-      name,
-      size,
-      type: getMimeType(name),
-      text: '',
-      status: 'done',
-      agentPath: path
-    });
+    if (isImage) {
+      imageFiles.push({ name, size, type: mime, path });
+    } else {
+      const fileEntry = {
+        name,
+        size,
+        type: mime,
+        text: '',
+        status: 'done',
+        agentPath: path
+      };
+      regularFiles.push(fileEntry);
+    }
   }
 
-  if (files.length === 0) return;
+  for (const img of imageFiles) {
+    try {
+      const config = await getAgentConfig();
+      if (config) {
+        const resp = await fetch(`${config.url}/api/fs/download-stream`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.token}`
+          },
+          body: JSON.stringify({ path: img.path })
+        });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          const { originalUrl, compressedUrl } = await compressBlobImage(blob);
+          const exists = state.attachedImages.some(ai => ai.compressedUrl === compressedUrl);
+          if (!exists) {
+            state.attachedImages.push({ originalUrl, compressedUrl });
+          }
+        }
+      }
+    } catch {}
+  }
 
-  for (const f of files) {
+  for (const f of regularFiles) {
     const exists = state.attachedFiles.some(af => af.name === f.name && af.agentPath === f.agentPath);
     if (!exists) {
       state.attachedFiles.push(f);
@@ -3101,7 +3554,12 @@ async function attachFilesForQuestion(paths) {
   }
 
   renderFilePreviews();
-  showToast(`已添加 ${files.length} 个文件到问答`, 'success');
+  renderImagePreviews();
+
+  const total = regularFiles.length + imageFiles.length;
+  if (total > 0) {
+    showToast(`已添加 ${total} 个文件到问答`, 'success');
+  }
 }
 
 async function askSelectedFiles() {
@@ -3148,18 +3606,26 @@ function scrollToNewFile(fileName, retryCount = 0) {
 
 function updateAskBtn() {
   const btn = document.getElementById('workspaceAskBtn');
-  btn.disabled = selectedPaths.size === 0;
+  if (selectedPaths.size === 0) {
+    btn.style.display = 'none';
+  } else {
+    btn.style.display = '';
+  }
 }
 
 function updateDownloadBtn() {
   const btn = document.getElementById('workspaceDownloadDirBtn');
+  const batchDeleteBtn = document.getElementById('workspaceBatchDeleteBtn');
   const countEl = document.getElementById('workspaceSelectedCount');
-  btn.disabled = selectedPaths.size === 0;
-  if (selectedPaths.size > 0) {
+  if (selectedPaths.size === 0) {
+    btn.style.display = 'none';
+    batchDeleteBtn.style.display = 'none';
+    countEl.style.display = 'none';
+  } else {
+    btn.style.display = '';
+    batchDeleteBtn.style.display = '';
     countEl.style.display = '';
     countEl.textContent = `已选 ${selectedPaths.size}`;
-  } else {
-    countEl.style.display = 'none';
   }
   updateAskBtn();
 }
