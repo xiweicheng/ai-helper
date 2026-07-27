@@ -42,7 +42,7 @@
     },
     {
       "id": "count-lines",
-      "tool": "agent_exec_command",
+      "tool": "agent_exec",
       "args": {
         "command": "find {{targetDir}} -name '*.js' -not -path '*/node_modules/*' -not -path '*/dist/*' | xargs wc -l 2>/dev/null | tail -1"
       },

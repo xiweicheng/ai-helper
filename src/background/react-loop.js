@@ -28,7 +28,7 @@ const loopApprovedSessions = new Set();
 // 敏感操作中文显示名映射
 const TOOL_DISPLAY_NAMES = {
   manage_cookies: '管理 Cookie',
-  clear_page_data: '清除页面数据',
+  clear_data: '清除页面数据',
   download_file: '下载文件',
   manage_tab: '标签页管理',
   agent_file: '文件操作',
@@ -364,7 +364,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
   /**
    * 工具结果截断：单条工具结果最大 token 数
-   * 避免 get_page_content / fetch_url 等大结果撑爆上下文
+   * 避免 page_content / fetch_url 等大结果撑爆上下文
    */
   const MAX_TOOL_RESULT_TOKENS = 6000;
 

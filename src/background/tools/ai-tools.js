@@ -80,14 +80,14 @@ export const AI_TOOLS = [
     }
   },
 {
-    id: 'search_chat_history',
+    id: 'search_chats',
     category: 'ai_collaboration',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'search_chat_history',
+      name: 'search_chats',
       description: '搜索对话记录',
       parameters: {
         type: 'object',
@@ -101,14 +101,14 @@ export const AI_TOOLS = [
     }
   },
   {
-    id: 'ui_prototype',
+    id: 'preview_ui',
     category: 'ai_collaboration',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'ui_prototype',
+      name: 'preview_ui',
       description: 'UI原型',
       parameters: {
         type: 'object',

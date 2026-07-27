@@ -15,7 +15,7 @@ version: 1.0
 ## 执行步骤
 1. 使用 `agent_list_dir` 列出目标目录的顶层结构
 2. 使用 `agent_search_files` 搜索所有 `.js` 和 `.json` 文件（可并行执行）
-3. 使用 `agent_exec_command` 统计 JS 文件总行数（排除 node_modules 和 dist）
+3. 使用 `agent_exec` 统计 JS 文件总行数（排除 node_modules 和 dist）
 4. 汇总结果并以表格形式向用户呈现
 
 ## 输出格式

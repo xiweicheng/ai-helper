@@ -46,14 +46,14 @@ export const AGENT_TOOLS = [
     }
   },
   {
-    id: 'agent_exec_command',
+    id: 'agent_exec',
     category: 'local_agent',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'agent_exec_command',
+      name: 'agent_exec',
       description: '执行命令',
       parameters: {
         type: 'object',

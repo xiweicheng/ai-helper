@@ -372,12 +372,22 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         ai_agent_list: 'manage_agent', ai_agent_switch: 'manage_agent',
         manage_ai_agent: 'manage_agent',
         dispatch_sub_agent: 'dispatch_task',
-        search_conversation_memory: 'search_chat_history',
-        preview_ui_prototype: 'ui_prototype',
+        search_conversation_memory: 'search_chats',
+        preview_ui_prototype: 'preview_ui',
         agent_read_file: 'agent_file', agent_write_file: 'agent_file', agent_list_dir: 'agent_file', agent_delete_file: 'agent_file', agent_download_file: 'agent_file',
         agent_search_files: 'agent_search', agent_search_content: 'agent_search',
         agent_skill_load: 'agent_skill', agent_workflow_run: 'agent_skill',
         click_element: 'interact_element', hover_element: 'interact_element',
+        // 方案C工具名简化迁移
+        agent_exec_command: 'agent_exec',
+        get_page_content: 'page_content', get_iframe_content: 'iframe_content',
+        get_browser_info: 'browser_info', get_tabs: 'list_tabs',
+        wait_for_element: 'wait_element', wait_for_navigation: 'wait_navigation',
+        query_interactive_elements: 'query_elements', find_similar_elements: 'find_similar',
+        scroll_and_collect: 'scroll_collect', drag_and_drop: 'drag_drop',
+        show_notification: 'notify', generate_qrcode: 'qrcode',
+        clear_page_data: 'clear_data', search_chat_history: 'search_chats',
+        ui_prototype: 'preview_ui',
       };
       let migrated = false;
       enabledTools = enabledTools.map(id => {
@@ -1147,27 +1157,28 @@ async function executeAgentSearch(args, toolCallId) {
 const TOOL_HANDLERS = {
   capture_page: executeCapturePage,
   clarify_question: executeClarifyQuestion,
-  show_notification: executeShowNotification,
+  notify: executeShowNotification,
   fetch_url: executeFetchUrl,
-  get_tabs: executeGetTabs,
-  get_browser_info: executeGetBrowserInfo,
+  list_tabs: executeGetTabs,
+  browser_info: executeGetBrowserInfo,
   download_file: executeDownloadFile,
   manage_cookies: executeManageCookies,
   plan_task: executePlanTask,
-  clear_page_data: executeClearPageData,
-  search_chat_history: executeSearchConversationMemory,
-  ui_prototype: executePreviewUiPrototype,
+  clear_data: executeClearPageData,
+  search_chats: executeSearchConversationMemory,
+  preview_ui: executePreviewUiPrototype,
   agent_file: executeAgentFile,
-  agent_exec_command: executeAgentExecCommand,
+  agent_exec: executeAgentExecCommand,
   agent_search: executeAgentSearch,
-  wait_for_navigation: executeWaitForNavigation,
+  agent_skill: executeAgentSkill,
+  wait_navigation: executeWaitForNavigation,
   dispatch_task: executeDispatchSubAgent,
   agent_skill: executeAgentSkill,
   agent_memory_store: async (args, toolCallId) => executeAgentMemoryStore(args, toolCallId),
   agent_memory_recall: async (args, toolCallId, sessionId) => executeAgentMemoryRecall(args, toolCallId, sessionId),
   agent_memory_manage: async (args, toolCallId) => executeAgentMemoryManage(args, toolCallId),
   // ── 合并后的工具 ──
-  get_page_content: executeGetPageContent,
+  page_content: executeGetPageContent,
   extract_data: executeExtractData,
   clipboard: executeClipboard,
   manage_tab: executeManageTab,
@@ -1264,9 +1275,9 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
       
       const toolsNeedingTabId = [
-        'get_page_content', 'extract_data',
+        'page_content', 'extract_data',
         'interact_element', 'scroll_to', 'search_in_page',
-        'input_text', 'select_option', 'submit_form', 'wait_for_navigation',
+        'input_text', 'select_option', 'submit_form', 'wait_navigation',
         'manage_tab'
       ];
       
@@ -2094,7 +2105,7 @@ export function executeOpenTab(args, toolCallId) {
       if (!waitForLoad) {
         resolve({ 
           success: true, 
-          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如get_page_content、click_element、extract_data等）`,
+          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、click_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url,
           tool_call_id: toolCallId
@@ -2159,7 +2170,7 @@ export function executeSwitchTab(args, toolCallId) {
       } else {
         resolve({ 
           success: true, 
-          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如get_page_content、click_element、extract_data等）`,
+          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、click_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url 
         });
@@ -3645,7 +3656,7 @@ async function ensureOffscreenDocument() {
 // ── 合并后的工具处理函数 ──
 
 /**
- * get_page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
+ * page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
  * 根据 format 参数路由到对应的 content script 消息类型
  */
 async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId) {

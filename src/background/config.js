@@ -23,7 +23,7 @@ export function getStoredConfig() {
         modelName: result.modelName || DEFAULT_MODEL,
         temperature: result.temperature !== undefined ? result.temperature : undefined,
         topP: result.topP !== undefined ? result.topP : undefined,
-        enabledTools: result.enabledTools || ['get_page_content', 'query_interactive_elements', 'clipboard'],
+        enabledTools: result.enabledTools || ['page_content', 'query_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {
           maxIterations: result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations,

@@ -29,14 +29,14 @@ export const TAB_TOOLS = [
     }
   },
   {
-    id: 'get_tabs',
+    id: 'list_tabs',
     category: 'tab_management',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'get_tabs',
+      name: 'list_tabs',
       description: '获取标签页列表',
       parameters: {
         type: 'object',

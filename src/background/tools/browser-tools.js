@@ -50,14 +50,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'wait_for_element',
+    id: 'wait_element',
     category: 'page_interaction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'wait_for_element',
+      name: 'wait_element',
       description: '等待元素',
       parameters: {
         type: 'object',
@@ -72,14 +72,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'drag_and_drop',
+    id: 'drag_drop',
     category: 'page_interaction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'drag_and_drop',
+      name: 'drag_drop',
       description: '拖拽元素',
       parameters: {
         type: 'object',
@@ -93,14 +93,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'wait_for_navigation',
+    id: 'wait_navigation',
     category: 'page_interaction',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'wait_for_navigation',
+      name: 'wait_navigation',
       description: '等待导航',
       parameters: {
         type: 'object',
@@ -216,14 +216,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'get_page_content',
+    id: 'page_content',
     category: 'content_extraction',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'get_page_content',
+      name: 'page_content',
       description: '获取页面内容',
       parameters: {
         type: 'object',
@@ -266,14 +266,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'query_interactive_elements',
+    id: 'query_elements',
     category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'query_interactive_elements',
+      name: 'query_elements',
       description: '查询交互元素',
       parameters: {
         type: 'object',
@@ -317,14 +317,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'find_similar_elements',
+    id: 'find_similar',
     category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'find_similar_elements',
+      name: 'find_similar',
       description: '查找相似元素',
       parameters: {
         type: 'object',
@@ -338,14 +338,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'get_iframe_content',
+    id: 'iframe_content',
     category: 'content_extraction',
     execution: 'content_script',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'get_iframe_content',
+      name: 'iframe_content',
       description: '获取iframe内容',
       parameters: {
         type: 'object',
@@ -360,14 +360,14 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'scroll_and_collect',
+    id: 'scroll_collect',
     category: 'content_extraction',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'scroll_and_collect',
+      name: 'scroll_collect',
       description: '滚动收集',
       parameters: {
         type: 'object',

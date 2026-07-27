@@ -148,14 +148,14 @@ function getCommandExecutionEnv(agentToolIds = null) {
     return null;
   }
 
-  // 全局 enabledTools 中是否包含 agent_exec_command
-  const globalHasExec = state.enabledTools && state.enabledTools.includes('agent_exec_command');
+  // 全局 enabledTools 中是否包含 agent_exec
+  const globalHasExec = state.enabledTools && state.enabledTools.includes('agent_exec');
   if (!globalHasExec) {
     return null;
   }
 
-  // 如果 Agent 限制了工具列表，且不包含 agent_exec_command，则不注入命令环境提示
-  if (agentToolIds != null && Array.isArray(agentToolIds) && !agentToolIds.includes('agent_exec_command')) {
+  // 如果 Agent 限制了工具列表，且不包含 agent_exec，则不注入命令环境提示
+  if (agentToolIds != null && Array.isArray(agentToolIds) && !agentToolIds.includes('agent_exec')) {
     return null;
   }
 

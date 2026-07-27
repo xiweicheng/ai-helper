@@ -2,14 +2,14 @@
 
 export const MEDIA_TOOLS = [
   {
-    id: 'show_notification',
+    id: 'notify',
     category: 'media_output',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'show_notification',
+      name: 'notify',
       description: '显示通知',
       parameters: {
         type: 'object',
@@ -68,14 +68,14 @@ export const MEDIA_TOOLS = [
     }
   },
   {
-    id: 'generate_qrcode',
+    id: 'qrcode',
     category: 'media_output',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'generate_qrcode',
+      name: 'qrcode',
       description: '生成二维码',
       parameters: {
         type: 'object',
@@ -112,14 +112,14 @@ export const MEDIA_TOOLS = [
     }
   },
   {
-    id: 'get_browser_info',
+    id: 'browser_info',
     category: 'debug_dev',
     execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'get_browser_info',
+      name: 'browser_info',
       description: '浏览器信息',
       parameters: {
         type: 'object',

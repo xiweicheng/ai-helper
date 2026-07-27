@@ -128,7 +128,7 @@ export const BUILTIN_TOOLS_UI = RAW_TOOLS.map(t => ({
 // 各工具的超时时间（ms），未配置的工具默认使用 toolTimeout（600000ms = 10分钟）
 // 格式：{ 工具id: 超时毫秒数 }
 // 示例：将快速工具设为较短超时以减少卡死等待时间：
-//   get_tabs: 15000,           // 获取标签页列表，15s
+//   list_tabs: 15000,           // 获取标签页列表，15s
 //   switch_tab: 10000,         // 切换标签页，10s
 //   download_file: 600000,     // 下载文件，10分钟（覆盖默认值）
 // 注意：当前所有工具沿用全局 toolTimeout，此配置仅提供扩展能力

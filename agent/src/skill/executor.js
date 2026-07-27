@@ -72,7 +72,7 @@ async function executeToolCall(toolName, args) {
         return { success: true, entries, path: check.resolved };
       }
 
-      case 'agent_exec_command': {
+      case 'agent_exec': {
         const cmdCheck = checkCommand(args.command, false);
         if (cmdCheck.level === 'deny') {
           return { success: false, error: cmdCheck.reason };

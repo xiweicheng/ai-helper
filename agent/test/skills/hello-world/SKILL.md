@@ -11,8 +11,8 @@ version: 1.0
 - 用户说"测试一下 skill" 或 "hello world"
 
 ## 执行步骤
-1. 使用 `agent_exec_command` 执行 `echo` 命令问候用户
-2. 使用 `agent_exec_command` 获取当前系统时间
+1. 使用 `agent_exec` 执行 `echo` 命令问候用户
+2. 使用 `agent_exec` 获取当前系统时间
 3. 向用户展示问候信息和当前时间
 
 ## 参数

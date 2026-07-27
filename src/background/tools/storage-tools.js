@@ -50,14 +50,14 @@ export const STORAGE_TOOLS = [
     }
   },
 {
-    id: 'clear_page_data',
+    id: 'clear_data',
     category: 'storage_management',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: true,
     type: 'function',
     function: {
-      name: 'clear_page_data',
+      name: 'clear_data',
       description: '清除站点数据',
       parameters: {
         type: 'object',

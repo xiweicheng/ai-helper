@@ -15,14 +15,14 @@
   "steps": [
     {
       "id": "step1",
-      "tool": "agent_exec_command",
+      "tool": "agent_exec",
       "args": {
         "command": "echo 'Hello, {{name}}! This is a skill test.'"
       }
     },
     {
       "id": "step2",
-      "tool": "agent_exec_command",
+      "tool": "agent_exec",
       "args": {
         "command": "date '+📅 当前时间: %Y-%m-%d %H:%M:%S'"
       },

@@ -100,7 +100,7 @@ enabled: true
    - 注意事项（容易踩的坑）
 
 4. **创建技能目录**：
-   - 使用 \`agent_exec_command\` 创建技能子目录。
+   - 使用 \`agent_exec\` 创建技能子目录。
    - **macOS/Linux**：\`mkdir -p ~/.ai-helper-agent/skills/<skill-name>\`
    - **Windows (cmd)**：\`mkdir %USERPROFILE%\\.ai-helper-agent\\skills\\<skill-name>\`
    - **Windows (PowerShell)**：\`New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.ai-helper-agent\\skills\\<skill-name>"\`
@@ -110,7 +110,7 @@ enabled: true
 
    > ⚠️ **关键限制**：\`agent_write_file\` 不接受 \`~\` 或相对路径，**必须传入绝对路径**。
 
-   **推荐做法**：先用 \`agent_exec_command\` 获取用户主目录的绝对路径，再拼接完整路径。
+   **推荐做法**：先用 \`agent_exec\` 获取用户主目录的绝对路径，再拼接完整路径。
 
 6. **告知用户**：创建完成后，告知用户技能已就绪，说明触发关键词。建议用户在工具箱页面点击「重新加载」使技能生效。
 

@@ -159,7 +159,7 @@ export function findSimilarElements(selector, maxResults = 50) {
 
 /**
  * 快速统计元素数量
- * 比 query_interactive_elements 轻量得多，仅返回计数和存在性
+ * 比 query_elements 轻量得多，仅返回计数和存在性
  */
 export function getElementCount(selector, includeHidden = false) {
   try {

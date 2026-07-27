@@ -410,7 +410,7 @@ export function appendToolCallItems(element, toolCalls) {
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
     execute_command:       { metaType: 'exec' },
-    agent_exec_command:     { metaType: 'exec' },
+    agent_exec:     { metaType: 'exec' },
     execute_agent_exec_command: { metaType: 'exec' },
     agent_file:            { metaType: 'file', action: '操作' },
     file_upload:           { metaType: 'file', action: '上传' },
@@ -507,7 +507,7 @@ export function appendToolCallItems(element, toolCalls) {
     item.setAttribute('data-meta-type', meta.metaType);
     item.setAttribute('data-created-at', Date.now());
     // 命令执行类工具：添加终止按钮
-    const isExecCommand = toolName === 'agent_exec_command' || toolName === 'execute_agent_exec_command';
+    const isExecCommand = toolName === 'agent_exec' || toolName === 'execute_agent_exec_command';
     const terminateBtnHtml = isExecCommand ? `
         <button class="tool-call-terminate-btn" title="终止命令">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
@@ -1316,7 +1316,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   }
   
   // 原型预览按钮
-  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && (e.action?.name === 'ui_prototype' || e.action?.name === 'preview_ui_prototype') && e.status === 'success');
+  const prototypeCall = executionLog?.slice().reverse().find(e => e.nodeType === 'tool_exec' && (e.action?.name === 'preview_ui' || e.action?.name === 'preview_ui_prototype') && e.status === 'success');
   if (prototypeCall) {
     let localOpened = false;
     if (prototypeCall.observation) {
