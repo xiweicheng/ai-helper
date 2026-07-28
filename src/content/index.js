@@ -1,13 +1,19 @@
 // content/index.js - Content Script 入口文件（Map 路由，统一同步/异步处理）
 
 import {
-  getPageText, getFullHtml, queryInteractiveElements,
-  getSelectedContent, extractTable, copyToClipboard,
-  pasteFromClipboard, hoverElement, extractMetadata,
-  highlightText, extractLinks, extractForms,
-  extractImages, searchInPage, findSimilarElements,
-  getIframeContent
+  getPageText, getFullHtml, getSelectedContent, extractTable,
+  copyToClipboard, pasteFromClipboard, hoverElement,
+  highlightText
 } from './page-tools.js';
+
+import {
+  queryInteractiveElements, findSimilarElements, scrollAndCollect
+} from './page-interaction.js';
+
+import {
+  extractMetadata, extractLinks, extractForms,
+  extractImages, searchInPage, getIframeContent
+} from './page-extract.js';
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement,
@@ -50,16 +56,16 @@ document.addEventListener('keydown', (e) => {
 // HANDLERS Map: message.type → handler 的键值映射
 //
 // 分类汇总：
-//   页面读取(4):   GET_PAGE_TEXT, GET_FULL_HTML, QUERY_INTERACTIVE_ELEMENTS, GET_SELECTED_CONTENT
-//   页面交互(4):   CLICK_ELEMENT, FILL_FORM, SCROLL_TO, HOVER_ELEMENT
+//   页面读取(4):   GET_PAGE_TEXT, GET_FULL_HTML, QUERY_ELEMENTS, GET_SELECTED_CONTENT
+//   页面交互(3):   INTERACT_ELEMENT, FILL_FORM, SCROLL_TO
 //   表单/输入(2):   KEYBOARD_INPUT, FILE_UPLOAD
 //   信息提取(5):   EXTRACT_TABLE, EXTRACT_METADATA, EXTRACT_LINKS, EXTRACT_FORMS, EXTRACT_IMAGES,
-//                  SEARCH_IN_PAGE, FIND_SIMILAR_ELEMENTS, GET_IFRAME_CONTENT
+//                  SEARCH_IN_PAGE, FIND_SIMILAR, IFRAME_CONTENT, SCROLL_COLLECT
 //   高亮/选区(1):   HIGHLIGHT_TEXT
 //   媒体/输出(2):   MANAGE_STORAGE, INJECT_CSS
-//   异步工具(7):   COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_FOR_ELEMENT, DRAG_AND_DROP,
-//                  SELECT_DROPDOWN, GENERATE_QRCODE, START_REGION_SELECTION
-//   特殊(1):       CLEAR_PAGE_DATA（内联逻辑）
+//   异步工具(7):   COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_ELEMENT, DRAG_DROP,
+//                  SELECT_DROPDOWN, QRCODE, START_REGION_SELECTION
+//   特殊(1):       CLEAR_DATA（内联逻辑）
 //
 // 异步处理：ASYNC_HANDLERS Set 标记需 return true 保持消息通道开放的工具
 //
@@ -67,14 +73,16 @@ const HANDLERS = {
   // ── 页面读取 ──
   GET_PAGE_TEXT:             (msg) => getPageText(msg),
   GET_FULL_HTML:             (msg) => getFullHtml(msg),
-  QUERY_INTERACTIVE_ELEMENTS:(msg) => queryInteractiveElements(msg),
+  QUERY_ELEMENTS:            (msg) => queryInteractiveElements(msg),
   GET_SELECTED_CONTENT:      (msg) => getSelectedContent(msg.format),
 
   // ── 页面交互 ──
-  CLICK_ELEMENT:             (msg) => clickElement(msg.selector, msg.waitTime, msg.timeout),
+  INTERACT_ELEMENT:           (msg) => {
+    if (msg.action === 'hover') return hoverElement(msg.selector);
+    return clickElement(msg.selector, msg.waitTime, msg.timeout);
+  },
   FILL_FORM:                 (msg) => fillForm(msg.fields, msg.waitTime),
   SCROLL_TO:                 (msg) => scrollToPosition(msg),
-  HOVER_ELEMENT:             (msg) => hoverElement(msg.selector),
 
   // ── 表单/输入工具 ──
   KEYBOARD_INPUT:            (msg) => keyboardInput(msg),
@@ -87,8 +95,9 @@ const HANDLERS = {
   EXTRACT_FORMS:             (msg) => extractForms(msg.formSelector),
   EXTRACT_IMAGES:            (msg) => extractImages(msg),
   SEARCH_IN_PAGE:            (msg) => searchInPage(msg),
-  FIND_SIMILAR_ELEMENTS:     (msg) => findSimilarElements(msg.selector, msg.maxResults),
-  GET_IFRAME_CONTENT:        (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
+  FIND_SIMILAR:              (msg) => findSimilarElements(msg.selector, msg.maxResults),
+  IFRAME_CONTENT:            (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
+  SCROLL_COLLECT:            (msg) => scrollAndCollect(msg),
 
   // ── 高亮/选区 ──
   HIGHLIGHT_TEXT:            (msg) => highlightText(msg.text, msg.color),
@@ -100,13 +109,13 @@ const HANDLERS = {
   // ── 异步工具（返回 Promise，需保持通道开放）──
   COPY_TO_CLIPBOARD:         (msg) => copyToClipboard(msg.text),
   PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
-  WAIT_FOR_ELEMENT:          (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
-  DRAG_AND_DROP:             (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
+  WAIT_ELEMENT:              (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
+  DRAG_DROP:                 (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
   SELECT_DROPDOWN:           (msg) => selectDropdown(msg.triggerSelector, msg.optionText, msg.optionSelector, msg.timeout),
-  GENERATE_QRCODE:           (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
+  QRCODE:                    (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
 
   // ── 特殊：清除站点数据（内联逻辑）──
-  CLEAR_PAGE_DATA: (msg) => {
+  CLEAR_DATA: (msg) => {
     try {
       const cleared = [];
       if (msg.site) {
@@ -139,8 +148,8 @@ const HANDLERS = {
 /** 异步工具的 message type 集合，用于判断是否需要 return true */
 const ASYNC_HANDLERS = new Set([
   'COPY_TO_CLIPBOARD', 'PASTE_FROM_CLIPBOARD',
-  'WAIT_FOR_ELEMENT', 'DRAG_AND_DROP',
-  'SELECT_DROPDOWN', 'GENERATE_QRCODE',
+  'WAIT_ELEMENT', 'DRAG_DROP',
+  'SELECT_DROPDOWN', 'QRCODE',
   'START_REGION_SELECTION',
 ]);
 
@@ -150,8 +159,8 @@ const TOP_FRAME_ONLY_TYPES = new Set([
   'GET_FULL_HTML',
   'EXTRACT_METADATA',
   'EXTRACT_TABLE',
-  'GET_IFRAME_CONTENT',
-  'QUERY_INTERACTIVE_ELEMENTS',
+  'IFRAME_CONTENT',
+  'QUERY_ELEMENTS',
 ]);
 
 if (isExtensionValid()) {

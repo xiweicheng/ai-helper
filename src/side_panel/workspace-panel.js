@@ -1162,7 +1162,19 @@ async function previewFile(filePath, fileName) {
       mdToggleBtn.style.display = '';
       const result = await readFileContent(filePath);
       if (result.success) {
-        previewArea.dataset.markdownText = result.content || '';
+        const markdownText = result.content || '';
+        previewArea.dataset.markdownText = markdownText;
+        previewContent.classList.add('markdown-rendered');
+        mdToggleBtn.classList.add('active');
+        mdToggleBtn.title = '切换为源码预览';
+        if (mdLabel) mdLabel.textContent = '预览';
+        copyBtn.style.display = 'none';
+        previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
+        renderMermaidChartsInContainer(previewContent);
+        bindCodeCopyButtonsInContainer(previewContent);
+        addTableToolbarEvents();
+        lineCountEl.textContent = 'Markdown 渲染';
+        return;
       }
     }
     await previewTextFile(filePath, fileName, lineCountEl, previewContent);
@@ -3626,6 +3638,7 @@ function updateDownloadBtn() {
     batchDeleteBtn.style.display = '';
     countEl.style.display = '';
     countEl.textContent = `已选 ${selectedPaths.size}`;
+    btn.disabled = downloadInProgress;
   }
   updateAskBtn();
 }

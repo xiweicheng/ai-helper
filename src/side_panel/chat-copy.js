@@ -6,6 +6,71 @@ import { showToast } from './utils.js';
 import { formatMarkdown, cleanTableForClipboard } from './markdown-render.js';
 import logger from '../shared/logger.js';
 
+function replaceMermaidWithPng(tempContainer) {
+  const mermaidElements = tempContainer.querySelectorAll('.mermaid');
+  let firstPngBlob = null;
+
+  for (const container of mermaidElements) {
+    try {
+      const svgElement = container.querySelector('svg');
+
+      if (svgElement && container._pngDataUrl) {
+        const img = document.createElement('img');
+        img.src = container._pngDataUrl;
+        img.alt = 'Mermaid diagram';
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        img.style.display = 'block';
+        container.parentNode.replaceChild(img, container);
+
+        if (!firstPngBlob) {
+          const base64 = container._pngDataUrl.split(',')[1] || '';
+          const binary = atob(base64);
+          const len = binary.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          firstPngBlob = new Blob([bytes], { type: 'image/png' });
+        }
+      } else if (svgElement) {
+        const svgData = new XMLSerializer().serializeToString(svgElement);
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url = URL.createObjectURL(svgBlob);
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Mermaid diagram';
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        img.style.display = 'block';
+        img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+        container.parentNode.replaceChild(img, container);
+      } else {
+        const rawCode = (container.textContent || '').trim();
+        if (rawCode) {
+          const pre = document.createElement('pre');
+          pre.style.background = '#f4f4f4';
+          pre.style.padding = '12px';
+          pre.style.borderRadius = '6px';
+          pre.style.overflowX = 'auto';
+          const code = document.createElement('code');
+          code.className = 'language-mermaid';
+          code.textContent = rawCode;
+          pre.appendChild(code);
+          container.parentNode.replaceChild(pre, container);
+        } else {
+          container.remove();
+        }
+      }
+    } catch (err) {
+      logger.warn('[SidePanel] Mermaid 图表处理失败，移除:', err.message);
+      container.remove();
+    }
+  }
+
+  return { html: tempContainer.innerHTML, firstPngBlob };
+}
+
 /**
  * 复制用户消息纯文本
  */
@@ -96,16 +161,19 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
     if (isCtrlPressed && htmlToCopy) {
       const tempContainer = document.createElement('div');
       tempContainer.innerHTML = htmlToCopy;
+
       tempContainer.querySelectorAll('table').forEach(table => {
         const cleanTable = cleanTableForClipboard(table);
         table.parentNode.replaceChild(cleanTable, table);
       });
-      const cleanedHtml = tempContainer.innerHTML;
-      copyRichText(textToCopy, cleanedHtml, copyBtn);
+
+      const { html: cleanedHtml, firstPngBlob } = replaceMermaidWithPng(tempContainer);
+
+      copyRichText(textToCopy, cleanedHtml, copyBtn, firstPngBlob);
     } else {
       navigator.clipboard.writeText(textToCopy).then(() => {
         showCopySuccess(copyBtn);
-      }).catch(err => {
+      }).catch(() => {
         fallbackCopyText(textToCopy, copyBtn);
       });
     }
@@ -147,18 +215,25 @@ export function fallbackCopyText(text, copyBtn) {
   document.body.removeChild(textArea);
 }
 
-export function copyRichText(text, html, copyBtn) {
+export function copyRichText(text, html, copyBtn, pngBlob = null) {
   const styledHtml = wrapHtmlWithStyles(html);
 
   if (typeof ClipboardItem !== 'undefined') {
-    const clipboardData = new ClipboardItem({
+    const clipboardItems = {
       'text/plain': new Blob([text], { type: 'text/plain' }),
       'text/html': new Blob([styledHtml], { type: 'text/html' })
-    });
+    };
+
+    if (pngBlob) {
+      clipboardItems['image/png'] = pngBlob;
+    }
+
+    const clipboardData = new ClipboardItem(clipboardItems);
 
     navigator.clipboard.write([clipboardData]).then(() => {
       showCopySuccess(copyBtn, true);
     }).catch(err => {
+      logger.warn('[SidePanel] Clipboard API 写入失败，使用兜底方案:', err.message);
       fallbackCopyRichText(text, styledHtml, copyBtn);
     });
   } else {
@@ -213,7 +288,7 @@ export function fallbackCopyRichText(text, html, copyBtn) {
 
   try {
     document.execCommand('copy');
-    showCopySuccess(copyBtn);
+    showCopySuccess(copyBtn, true);
   } catch (e) {
     fallbackCopyText(text, copyBtn);
   } finally {

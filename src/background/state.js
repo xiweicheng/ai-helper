@@ -91,7 +91,7 @@ export function resetReactCancel(sessionIdOrTabId) {
     return;
   }
 
-  if (sessionIdOrTabId !== undefined) {
+  if (sessionIdOrTabId !== undefined && sessionIdOrTabId !== null) {
     cancelledSessions.delete(sessionIdOrTabId);
     sessionAbortControllers.delete(sessionIdOrTabId);
     logger.debug('[Background] 会话取消状态已重置，sessionId:', sessionIdOrTabId);
@@ -123,7 +123,7 @@ export function getOrCreateAbortController(sessionId, abortOld = true) {
  * @returns {boolean}
  */
 export function isCancelled(sessionIdOrTabId) {
-  if (sessionIdOrTabId === undefined) return false;
+  if (sessionIdOrTabId === undefined || sessionIdOrTabId === null) return false;
 
   // 旧版兼容：tabId 是数字
   if (typeof sessionIdOrTabId === 'number') {

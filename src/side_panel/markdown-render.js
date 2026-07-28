@@ -4,6 +4,74 @@ import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
 
+const MAX_SVG_DIM = 2000;
+
+export function svgToPngDataUrl(svgElement) {
+  return new Promise((resolve, reject) => {
+    try {
+      let svgWidth = svgElement.width.baseVal?.value ||
+        parseInt(svgElement.getAttribute('width')) || 800;
+      let svgHeight = svgElement.height.baseVal?.value ||
+        parseInt(svgElement.getAttribute('height')) || 600;
+
+      const viewBox = svgElement.getAttribute('viewBox');
+      if (viewBox) {
+        const parts = viewBox.split(' ').map(parseFloat);
+        svgWidth = parts[2];
+        svgHeight = parts[3];
+      }
+
+      let scaleFactor = 2;
+      if (svgWidth > MAX_SVG_DIM || svgHeight > MAX_SVG_DIM) {
+        const ratio = Math.min(MAX_SVG_DIM / svgWidth, MAX_SVG_DIM / svgHeight);
+        svgWidth = svgWidth * ratio;
+        svgHeight = svgHeight * ratio;
+        scaleFactor = 1.5;
+      }
+
+      const svgData = new XMLSerializer().serializeToString(svgElement);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = function () {
+        const padding = 10;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil((svgWidth + padding * 2) * scaleFactor);
+        canvas.height = Math.ceil((svgHeight + padding * 2) * scaleFactor);
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.drawImage(
+          img,
+          padding * scaleFactor,
+          padding * scaleFactor,
+          svgWidth * scaleFactor,
+          svgHeight * scaleFactor
+        );
+
+        URL.revokeObjectURL(url);
+        try {
+          resolve(canvas.toDataURL('image/png'));
+        } catch (e) {
+          reject(e);
+        }
+      };
+
+      img.onerror = function (err) {
+        URL.revokeObjectURL(url);
+        reject(err);
+      };
+
+      img.src = url;
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 /**
  * 格式化 Markdown 文本
  */
@@ -417,7 +485,16 @@ export function addMermaidControls(container) {
   container.appendChild(controls);
   logger.debug('[SidePanel] 工具栏 HTML 已添加');
   logger.debug('[SidePanel] container 子元素:', Array.from(container.children).map(c => c.className).join(', '));
-  
+
+  if (!container._pngDataUrl) {
+    svgToPngDataUrl(svgElement).then(dataUrl => {
+      container._pngDataUrl = dataUrl;
+      container._pngBlob = null;
+    }).catch(err => {
+      logger.warn('[SidePanel] Mermaid PNG 预转换失败:', err.message);
+    });
+  }
+
   // 缩放状态 - 支持无限缩放
   let scale = 1;
   const MIN_SCALE = 0.01;
@@ -546,84 +623,58 @@ export function addMermaidControls(container) {
  */
 export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
   try {
-    logger.debug('[SidePanel] 开始复制到剪贴板');
-    
-    // 获取 SVG 的原始尺寸
-    let svgWidth = svgElement.width.baseVal?.value || svgElement.getAttribute('width')?.replace('px', '') || 800;
-    let svgHeight = svgElement.height.baseVal?.value || svgElement.getAttribute('height')?.replace('px', '') || 600;
-    
-    // 如果有 viewBox，优先使用 viewBox 的尺寸
-    const viewBox = svgElement.getAttribute('viewBox');
-    if (viewBox) {
-      const parts = viewBox.split(' ').map(parseFloat);
-      svgWidth = parts[2];
-      svgHeight = parts[3];
+    const container = svgElement.closest('.mermaid');
+    const cachedPng = container && container._pngDataUrl;
+
+    if (cachedPng) {
+      const base64 = cachedPng.split(',')[1] || '';
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'image/png' });
+
+      if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+        navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]).then(() => {
+          showToast('Mermaid 图表已复制到剪贴板！', 'success');
+        }).catch(err => {
+          showToast('复制失败，请尝试使用下载按钮保存图表。', 'error');
+        });
+        return;
+      }
     }
-    
-    logger.debug('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
-    
-    // 将 SVG 转换为 base64 编码的 data URL
-    const svgData = new XMLSerializer().serializeToString(svgElement);
-    const svgBase64 = btoa(unescape(encodeURIComponent(svgData)));
-    const dataUrl = `data:image/svg+xml;base64,${svgBase64}`;
-    
-    const img = new Image();
-    
-    img.onload = function() {
-      const padding = 20;
-      const scaleFactor = 2; // 2x 分辨率
-      const canvasWidth = svgWidth + padding * 2;
-      const canvasHeight = svgHeight + padding * 2;
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasWidth * scaleFactor;
-      canvas.height = canvasHeight * scaleFactor;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      
-      // 设置白色背景
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // 绘制图片（带内边距）
-      ctx.drawImage(img, padding * scaleFactor, padding * scaleFactor, svgWidth * scaleFactor, svgHeight * scaleFactor);
-      
-      // 使用 toBlob 导出 PNG
-      canvas.toBlob(function(blob) {
-        if (blob) {
-          // 尝试使用 Clipboard API 写入图片
-          if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
-            navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob })
-            ]).then(() => {
-              logger.debug('[SidePanel] 图片复制到剪贴板成功');
-              showToast('Mermaid 图表已复制到剪贴板！', 'success');
-            }).catch(err => {
-              logger.error('[SidePanel] 复制到剪贴板失败:', err);
-              // 降级：提示用户手动复制或使用下载功能
-              showToast('复制失败，您的浏览器可能不支持此功能。请尝试使用下载按钮保存图表。', 'error');
-            });
-          } else {
-            // 降级方案：提示用户
-            logger.warn('[SidePanel] Clipboard API 不可用，降级为下载');
-            showToast('当前浏览器不支持图片复制功能，已自动转为下载。', 'warning');
-            // 自动触发下载
-            const downloadLink = document.createElement('a');
-            downloadLink.href = URL.createObjectURL(blob);
-            downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
-          }
-        }
-      }, 'image/png');
-    };
-    
-    img.onerror = function(error) {
-      logger.error('[SidePanel] 图片转换失败:', error);
-      showToast('图片转换失败，请重试', 'error');
-    };
-    
-    img.src = dataUrl;
+
+    const dataUrl = await svgToPngDataUrl(svgElement);
+    const base64 = dataUrl.split(',')[1] || '';
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: 'image/png' });
+
+    if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+      navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': blob })
+      ]).then(() => {
+        showToast('Mermaid 图表已复制到剪贴板！', 'success');
+      }).catch(err => {
+        showToast('复制失败，请尝试使用下载按钮保存图表。', 'error');
+      });
+    } else {
+      showToast('当前浏览器不支持图片复制功能，已自动转为下载。', 'warning');
+      const downloadLink = document.createElement('a');
+      downloadLink.href = dataUrl;
+      downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    }
   } catch (error) {
     logger.error('[SidePanel] 复制到剪贴板失败:', error);
     showToast('复制失败: ' + error.message, 'error');
@@ -633,72 +684,28 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
 /**
  * 下载 Mermaid 图表为 PNG
  */
-export function downloadMermaidPNG(svgElement, scale) {
+export async function downloadMermaidPNG(svgElement, scale) {
   try {
-    logger.debug('[SidePanel] 开始下载 PNG');
-    
-    // 获取 SVG 的原始尺寸
-    let svgWidth = svgElement.width.baseVal?.value || svgElement.getAttribute('width')?.replace('px', '') || 800;
-    let svgHeight = svgElement.height.baseVal?.value || svgElement.getAttribute('height')?.replace('px', '') || 600;
-    
-    // 如果有 viewBox，优先使用 viewBox 的尺寸
-    const viewBox = svgElement.getAttribute('viewBox');
-    if (viewBox) {
-      const parts = viewBox.split(' ').map(parseFloat);
-      svgWidth = parts[2];
-      svgHeight = parts[3];
+    const container = svgElement.closest('.mermaid');
+    const cachedPng = container && container._pngDataUrl;
+
+    if (cachedPng) {
+      const downloadLink = document.createElement('a');
+      downloadLink.href = cachedPng;
+      downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+      return;
     }
-    
-    logger.debug('[SidePanel] SVG 原始尺寸:', svgWidth, 'x', svgHeight);
-    
-    // 将 SVG 转换为 base64 编码的 data URL，避免跨域问题
-    const svgData = new XMLSerializer().serializeToString(svgElement);
-    const svgBase64 = btoa(unescape(encodeURIComponent(svgData)));
-    const dataUrl = `data:image/svg+xml;base64,${svgBase64}`;
-    
-    const img = new Image();
-    
-    img.onload = function() {
-      logger.debug('[SidePanel] SVG 图片加载成功');
-      
-      const padding = 20;
-      const scaleFactor = 2; // 2x 分辨率
-      const canvasWidth = svgWidth + padding * 2;
-      const canvasHeight = svgHeight + padding * 2;
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasWidth * scaleFactor;
-      canvas.height = canvasHeight * scaleFactor;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      
-      // 设置白色背景
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // 绘制图片（带内边距）
-      ctx.drawImage(img, padding * scaleFactor, padding * scaleFactor, svgWidth * scaleFactor, svgHeight * scaleFactor);
-      
-      // 使用 toBlob 导出
-      canvas.toBlob(function(blob) {
-        const pngUrl = URL.createObjectURL(blob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = pngUrl;
-        downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(pngUrl);
-        
-        logger.debug('[SidePanel] PNG 下载成功');
-      }, 'image/png');
-    };
-    
-    img.onerror = function(error) {
-      logger.error('[SidePanel] PNG 转换失败:', error);
-      showToast('PNG 转换失败，请重试', 'error');
-    };
-    
-    img.src = dataUrl;
+
+    const dataUrl = await svgToPngDataUrl(svgElement);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = dataUrl;
+    downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
   } catch (error) {
     logger.error('[SidePanel] 下载 PNG 失败:', error);
     showToast('下载失败: ' + error.message, 'error');
