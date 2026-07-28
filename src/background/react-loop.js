@@ -849,6 +849,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           abortController?.abort();
         }, outerTimeoutMs);
 
+        // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态
+        if (streamConfig.streamEnabled !== false) {
+          chrome.runtime.sendMessage({
+            type: 'STREAM_START',
+            sessionId: sessionId,
+            callId: callId
+          }).catch(() => {});
+          logger.debug('[Background] STREAM_START 已发送（API 调用前）');
+        }
+
         const fetchResponse = await fetchWithRetry(apiUrl, {
           method: 'POST',
           headers: {
@@ -871,7 +881,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 流式模式：读取 SSE 流
         if (streamConfig.streamEnabled !== false && fetchResponse.body) {
           logger.debug('[Background] 进入流式模式，streamEnabled:', streamConfig.streamEnabled);
-          const streamController = new StreamController(sessionId, streamConfig, { callId });
+          const streamController = new StreamController(sessionId, streamConfig, { callId, preStarted: true });
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
           logger.debug('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
           
@@ -2354,6 +2364,16 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       requestBody.top_p = apiParams.top_p;
     }
 
+    // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态
+    if (useStream && sessionId) {
+      chrome.runtime.sendMessage({
+        type: 'STREAM_START',
+        sessionId: sessionId,
+        callId: callId
+      }).catch(() => {});
+      logger.debug('[Background] STREAM_START 已发送（API 调用前）');
+    }
+
     return fetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {
@@ -2372,7 +2392,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
       // 流式模式：读取 SSE 流
       if (useStream && response.body) {
-        const streamController = new StreamController(sessionId, config.streamConfig, { ...streamOptions, callId });
+        const streamController = new StreamController(sessionId, config.streamConfig, { ...streamOptions, callId, preStarted: true });
         const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
         logger.debug('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
         return { content: result.content, usage: result.usage, reasoningContent: result.reasoningContent };

@@ -6,61 +6,40 @@ import { showToast } from './utils.js';
 import { formatMarkdown, cleanTableForClipboard } from './markdown-render.js';
 import logger from '../shared/logger.js';
 
-function replaceMermaidWithPng(tempContainer) {
+function replaceMermaidWithCodeBlock(tempContainer) {
   const mermaidElements = tempContainer.querySelectorAll('.mermaid');
   let firstPngBlob = null;
 
   for (const container of mermaidElements) {
     try {
-      const svgElement = container.querySelector('svg');
-
-      if (svgElement && container._pngDataUrl) {
-        const img = document.createElement('img');
-        img.src = container._pngDataUrl;
-        img.alt = 'Mermaid diagram';
-        img.style.maxWidth = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
-        container.parentNode.replaceChild(img, container);
-
-        if (!firstPngBlob) {
-          const base64 = container._pngDataUrl.split(',')[1] || '';
-          const binary = atob(base64);
-          const len = binary.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          firstPngBlob = new Blob([bytes], { type: 'image/png' });
+      if (!firstPngBlob && container._pngDataUrl) {
+        const base64 = container._pngDataUrl.split(',')[1] || '';
+        const binary = atob(base64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binary.charCodeAt(i);
         }
-      } else if (svgElement) {
-        const svgData = new XMLSerializer().serializeToString(svgElement);
-        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = 'Mermaid diagram';
-        img.style.maxWidth = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
-        img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
-        container.parentNode.replaceChild(img, container);
+        firstPngBlob = new Blob([bytes], { type: 'image/png' });
+      }
+
+      const rawCodeAttr = container.getAttribute('data-raw-code');
+      const mermaidSource = rawCodeAttr
+        ? decodeURIComponent(rawCodeAttr)
+        : (container.dataset.rawMermaidCode || (container.textContent || '').trim());
+
+      if (mermaidSource) {
+        const lines = mermaidSource.split('\n');
+        const pre = document.createElement('pre');
+        pre.appendChild(document.createTextNode(lines[0] || ''));
+        for (let i = 1; i < lines.length; i++) {
+          pre.appendChild(document.createElement('br'));
+          pre.appendChild(document.createTextNode(lines[i]));
+        }
+
+        container.parentNode.replaceChild(pre, container);
       } else {
-        const rawCode = (container.textContent || '').trim();
-        if (rawCode) {
-          const pre = document.createElement('pre');
-          pre.style.background = '#f4f4f4';
-          pre.style.padding = '12px';
-          pre.style.borderRadius = '6px';
-          pre.style.overflowX = 'auto';
-          const code = document.createElement('code');
-          code.className = 'language-mermaid';
-          code.textContent = rawCode;
-          pre.appendChild(code);
-          container.parentNode.replaceChild(pre, container);
-        } else {
-          container.remove();
-        }
+        container.remove();
       }
     } catch (err) {
       logger.warn('[SidePanel] Mermaid 图表处理失败，移除:', err.message);
@@ -167,7 +146,7 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
         table.parentNode.replaceChild(cleanTable, table);
       });
 
-      const { html: cleanedHtml, firstPngBlob } = replaceMermaidWithPng(tempContainer);
+      const { html: cleanedHtml, firstPngBlob } = replaceMermaidWithCodeBlock(tempContainer);
 
       copyRichText(textToCopy, cleanedHtml, copyBtn, firstPngBlob);
     } else {
@@ -253,8 +232,26 @@ export function wrapHtmlWithStyles(html) {
       li { margin: 4px 0; }
       blockquote { border-left: 4px solid #ddd; padding-left: 12px; margin: 8px 0; color: #666; }
       code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
-      pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; }
-      pre code { background: none; padding: 0; }
+      pre {
+        background: #f6f8fa;
+        border: 1px solid #e1e4e8;
+        border-radius: 6px;
+        padding: 14px 16px;
+        margin: 12px 0;
+        overflow-x: auto;
+        font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #24292f;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+      }
       table { border-collapse: collapse; width: 100%; margin: 8px 0; }
       th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
       th { background: #f9f9f9; font-weight: bold; }

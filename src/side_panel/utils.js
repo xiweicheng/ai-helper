@@ -249,20 +249,48 @@ export async function getSystemPrompt(agent = null) {
 - **工作目录**: ${execEnv.workdir || '未设置'}
 - ${execEnv.commandHint}`;
   }
-  
-  // dispatch_task 工具说明——有可用子 Agent 且当前 Agent 有此工具时注入
-  let dispatchToolRule = '';
+
+  // 术语定义——助手术语和代理术语独立判断
   const allAgents = await getAllAgents();
   const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent?.id || ''));
-  if (subAgents.length > 0 && agentHasTool('dispatch_task', agent?.toolIds)) {
+  const hasSubDispatch = subAgents.length > 0 && agentHasTool('dispatch_task', agent?.toolIds);
+  
+  // 判断是否有配对的代理
+  let hasPairedAgents = false;
+  try {
+    const result = await chrome.storage.local.get(['pairedAgents']);
+    hasPairedAgents = (result.pairedAgents || []).length > 0;
+  } catch { /* 获取失败不影响主流程 */ }
+  
+  let assistantTerminology = '';
+  let agentTerminology = '';
+  let dispatchToolRule = '';
+
+  if (hasSubDispatch) {
+    assistantTerminology = `- **助手**：用户创建的 AI 智能体，每个助手有独立的系统提示词和工具权限，可独立工作或被其他助手调度执行子任务`;
+
     const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
     dispatchToolRule = `
-  
-## Sub-Agent 调度
-使用 dispatch_task(subAgentId, task) 分派子任务，支持并行调用。
 
-可用子 Agent：
+## 子助手调度
+使用 dispatch_task(subAgentId, task) 分派子任务给其他助手执行，支持并行调用。
+
+可用子助手：
 ${subAgentList}`;
+  }
+
+  if (hasPairedAgents) {
+    agentTerminology = `- **代理**：远端执行服务，提供文件操作、命令执行等能力。可通过 manage_agent 工具查询或切换代理`;
+  }
+
+  // 拼接术语定义——两个术语独立注入
+  let terminologySection = '';
+  if (assistantTerminology || agentTerminology) {
+    const terms = [assistantTerminology, agentTerminology].filter(Boolean).join('\n');
+    terminologySection = `
+
+## 术语定义
+${terms}`;
   }
 
   // 任务拆解相关规则——仅在启用工具且当前 Agent 拥有 plan_task 时注入
@@ -310,7 +338,7 @@ ${notesText}
 
   // 如果 Agent 有自定义 prompt，用它拼接环境信息
   if (promptContent) {
-    let finalPrompt = `${promptContent}${permanentNotesSection}
+    let finalPrompt = `${promptContent}${terminologySection}${permanentNotesSection}
 
 ## 当前环境
 - 当前时间：${currentTime}
@@ -329,7 +357,7 @@ ${notesText}
   }
   
   // 返回默认系统提示词
-  let defaultPrompt = `AI Helper：IT技术助手。${permanentNotesSection}
+  let defaultPrompt = `AI Helper：IT技术助手。${terminologySection}${permanentNotesSection}
 
 ## 能力
 编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '、任务规划' : ''}

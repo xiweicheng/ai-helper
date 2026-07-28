@@ -22,7 +22,7 @@ export class StreamController {
     this.isStreaming = false;
     this.lastSendTime = 0;
     this._pendingChunk = '';
-    this._streamStarted = false;
+    this._streamStarted = !!options.preStarted;
     // 支持自定义消息发送函数和消息类型前缀（用于向 content script 发送流式消息）
     this._sendFn = options.sendFn || ((msg) => chrome.runtime.sendMessage(msg).catch(() => {}));
     this._typePrefix = options.typePrefix || '';
