@@ -2,7 +2,7 @@
 
 import {
   getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig,
-  listDirectory, readFileContent,
+  listDirectory, readFileContent, writeFileContent,
   downloadFileStream, downloadFilesStream,
   downloadFileStreamWithProgress, downloadFilesStreamWithProgress,
   searchFilesRemote,
@@ -163,6 +163,9 @@ export function initWorkspacePanel() {
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
             </svg>
           </button>
+          <button class="workspace-preview-edit-btn" id="workspacePreviewEditBtn" title="进入编辑模式" style="display:none;">编辑</button>
+          <button class="workspace-preview-save-btn" id="workspacePreviewSaveBtn" title="保存修改 (Ctrl+S)" style="display:none;">保存</button>
+          <button class="workspace-preview-cancel-btn" id="workspacePreviewCancelBtn" title="取消修改 (Esc)" style="display:none;">取消</button>
           <button class="workspace-preview-close" id="workspacePreviewClose" title="关闭预览">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
@@ -353,6 +356,12 @@ function bindEvents() {
   document.getElementById('workspacePreviewOpenBrowserBtn').addEventListener('click', openPreviewInBrowser);
   document.getElementById('workspacePreviewFullscreenBtn').addEventListener('click', togglePreviewFullscreen);
   document.getElementById('workspacePreviewMdToggleBtn').addEventListener('click', toggleMarkdownPreview);
+  document.getElementById('workspacePreviewEditBtn').addEventListener('click', enterEditMode);
+  document.getElementById('workspacePreviewSaveBtn').addEventListener('click', saveEditedFile);
+  document.getElementById('workspacePreviewCancelBtn').addEventListener('click', cancelEditMode);
+  
+  // 编辑模式快捷键
+  document.addEventListener('keydown', handlePreviewKeydown);
   
   // 预览标题快捷键：Ctrl/Cmd + 单击复制文件名，Ctrl/Cmd + Shift + 单击复制完整路径
   document.getElementById('workspacePreviewFilename').addEventListener('click', async (e) => {
@@ -1131,6 +1140,17 @@ async function previewFile(filePath, fileName) {
   mdToggleBtn.classList.remove('active');
   const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
   if (mdLabel) mdLabel.textContent = '预览';
+  // 重置编辑相关按钮
+  const editBtn = document.getElementById('workspacePreviewEditBtn');
+  const saveBtn = document.getElementById('workspacePreviewSaveBtn');
+  const cancelBtn = document.getElementById('workspacePreviewCancelBtn');
+  editBtn.style.display = 'none';
+  saveBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
+  delete previewArea.dataset.editMode;
+  delete previewArea.dataset.origContent;
+  previewArea.classList.remove('has-unsaved');
+  previewFilename.classList.remove('modified');
   previewArea.classList.remove('fullscreen');
   document.getElementById('workspacePanel').classList.remove('preview-fullscreen');
 
@@ -1156,28 +1176,49 @@ async function previewFile(filePath, fileName) {
       previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
       return;
     }
+    // 文本文件显示编辑按钮
+    editBtn.style.display = '';
     fullscreenBtn.style.display = '';
     const ext = (fileName.split('.').pop() || '').toLowerCase();
+    const result = await readFileContent(filePath);
+    if (!result.success) {
+      previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+      return;
+    }
+    const text = result.content || '';
+    // 存储原文用于编辑模式
+    previewArea.dataset.origContent = text;
+
     if (ext === 'md' || ext === 'markdown') {
       mdToggleBtn.style.display = '';
-      const result = await readFileContent(filePath);
-      if (result.success) {
-        const markdownText = result.content || '';
-        previewArea.dataset.markdownText = markdownText;
-        previewContent.classList.add('markdown-rendered');
-        mdToggleBtn.classList.add('active');
-        mdToggleBtn.title = '切换为源码预览';
-        if (mdLabel) mdLabel.textContent = '预览';
-        copyBtn.style.display = 'none';
-        previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
-        renderMermaidChartsInContainer(previewContent);
-        bindCodeCopyButtonsInContainer(previewContent);
-        addTableToolbarEvents();
-        lineCountEl.textContent = 'Markdown 渲染';
-        return;
-      }
+      previewArea.dataset.markdownText = text;
+      previewContent.classList.add('markdown-rendered');
+      mdToggleBtn.classList.add('active');
+      mdToggleBtn.title = '切换为源码预览';
+      if (mdLabel) mdLabel.textContent = '预览';
+      copyBtn.style.display = 'none';
+      previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(text)}</div>`;
+      renderMermaidChartsInContainer(previewContent);
+      bindCodeCopyButtonsInContainer(previewContent);
+      addTableToolbarEvents();
+      lineCountEl.textContent = 'Markdown 渲染';
+      return;
     }
-    await previewTextFile(filePath, fileName, lineCountEl, previewContent);
+    // 普通文本/代码
+    const lang = getLanguageClass(fileName);
+    const lines = text.split('\n');
+    lineCountEl.textContent = `${lines.length} 行`;
+    const truncated = lines.length > PREVIEW_MAX_LINES;
+    const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
+    let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+    for (let i = 0; i < displayLines.length; i++) {
+      numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
+    }
+    if (truncated) {
+      numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
+    }
+    numberedHtml += '</tbody></table>';
+    previewContent.innerHTML = numberedHtml;
     return;
   }
 
@@ -2014,8 +2055,13 @@ function bindCodeCopyButtonsInContainer(container) {
   }
 }
 
-function closePreview() {
+async function closePreview() {
   const previewArea = document.getElementById('workspacePreviewArea');
+  // 编辑模式下检查未保存修改
+  if (previewArea.dataset.editMode === 'true') {
+    const confirmed = await confirmDiscardChanges('关闭预览');
+    if (!confirmed) return;
+  }
   const panel = document.getElementById('workspacePanel');
   const previewContent = document.getElementById('workspacePreviewContent');
   previewContent.classList.remove('xlsx-mode');
@@ -2046,6 +2092,166 @@ function closePreview() {
   pdfScale = 1;
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
+}
+
+// ============================================================
+// 文本文件在线编辑
+// ============================================================
+
+function enterEditMode() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const editBtn = document.getElementById('workspacePreviewEditBtn');
+  const saveBtn = document.getElementById('workspacePreviewSaveBtn');
+  const cancelBtn = document.getElementById('workspacePreviewCancelBtn');
+  const copyBtn = document.getElementById('workspacePreviewCopyBtn');
+  const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
+  const mdToggleBtn = document.getElementById('workspacePreviewMdToggleBtn');
+  const fullscreenBtn = document.getElementById('workspacePreviewFullscreenBtn');
+  const lineCountEl = document.getElementById('workspacePreviewLineCount');
+  const filenameEl = document.getElementById('workspacePreviewFilename');
+
+  const origContent = previewArea.dataset.origContent || '';
+  previewArea.dataset.editMode = 'true';
+
+  // 重置保存按钮状态
+  saveBtn.textContent = '保存';
+  saveBtn.disabled = false;
+
+  // 隐藏预览模式按钮
+  copyBtn.style.display = 'none';
+  downloadBtn.style.display = 'none';
+  mdToggleBtn.style.display = 'none';
+  fullscreenBtn.style.display = 'none';
+  editBtn.style.display = 'none';
+
+  // 显示编辑模式按钮
+  saveBtn.style.display = '';
+  cancelBtn.style.display = '';
+
+  // 替换为 textarea
+  previewContent.innerHTML = `<textarea class="workspace-preview-editor" id="workspacePreviewEditor" spellcheck="false"></textarea>`;
+  const editor = previewContent.querySelector('#workspacePreviewEditor');
+
+  // 先设置初始值，再绑定事件，避免初始化触发误判
+  editor.value = origContent;
+  editor.focus();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+
+  // 更新状态提示
+  lineCountEl.textContent = `${origContent.split('\n').length} 行`;
+  filenameEl.classList.add('modified');
+  filenameEl.textContent = (previewArea.dataset.previewName || '') + ' *';
+
+  // 监听修改事件（初始值已设置完毕，不会误触发）
+  editor.addEventListener('input', () => {
+    const changed = editor.value !== origContent;
+    if (changed) {
+      previewArea.classList.add('has-unsaved');
+      lineCountEl.textContent = `${editor.value.split('\n').length} 行 · 已修改`;
+    } else {
+      previewArea.classList.remove('has-unsaved');
+      lineCountEl.textContent = `${editor.value.split('\n').length} 行`;
+    }
+  });
+}
+
+async function saveEditedFile() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const editor = document.getElementById('workspacePreviewEditor');
+  if (!editor) return;
+
+  const filePath = previewArea.dataset.previewPath;
+  const newContent = editor.value;
+  const origContent = previewArea.dataset.origContent || '';
+
+  if (newContent === origContent) {
+    cancelEditMode();
+    return;
+  }
+
+  const saveBtn = document.getElementById('workspacePreviewSaveBtn');
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = '保存中...';
+  saveBtn.disabled = true;
+
+  try {
+    const result = await writeFileContent(filePath, newContent);
+    if (result.success) {
+      logger.info('[WorkspacePanel] 文件保存成功:', filePath);
+      showToast('保存成功');
+      // 更新原始内容
+      previewArea.dataset.origContent = newContent;
+      // 退出编辑模式并重新预览
+      exitEditMode(false);
+      // 重新预览文件
+      const fileName = previewArea.dataset.previewName;
+      await previewFile(filePath, fileName);
+    } else {
+      logger.error('[WorkspacePanel] 文件保存失败:', filePath, result.error);
+      showToast('保存失败: ' + (result.error || '未知错误'));
+      saveBtn.textContent = originalText;
+      saveBtn.disabled = false;
+    }
+  } catch (err) {
+    logger.error('[WorkspacePanel] 文件保存异常:', filePath, err);
+    showToast('保存失败: ' + (err.message || err));
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+async function cancelEditMode() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  if (previewArea.classList.contains('has-unsaved')) {
+    const confirmed = await confirmDiscardChanges('取消编辑');
+    if (!confirmed) return;
+  }
+  exitEditMode(true);
+  // 重新预览文件恢复原始视图
+  const filePath = previewArea.dataset.previewPath;
+  const fileName = previewArea.dataset.previewName;
+  if (filePath && fileName) {
+    await previewFile(filePath, fileName);
+  }
+}
+
+function exitEditMode(refreshButtons) {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const filenameEl = document.getElementById('workspacePreviewFilename');
+  const saveBtn = document.getElementById('workspacePreviewSaveBtn');
+  const cancelBtn = document.getElementById('workspacePreviewCancelBtn');
+
+  delete previewArea.dataset.editMode;
+  previewArea.classList.remove('has-unsaved');
+  filenameEl.classList.remove('modified');
+
+  saveBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
+}
+
+async function confirmDiscardChanges(action) {
+  if (typeof window.showCustomConfirm === 'function') {
+    return await window.showCustomConfirm(`有未保存的修改，确定要${action}吗？`, '未保存的修改');
+  }
+  return window.confirm(`有未保存的修改，确定要${action}吗？`);
+}
+
+function handlePreviewKeydown(e) {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  if (previewArea.style.display === 'none') return;
+  if (previewArea.dataset.editMode !== 'true') return;
+
+  // Ctrl/Cmd + S 保存
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveEditedFile();
+  }
+  // Esc 取消
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelEditMode();
+  }
 }
 
 /**

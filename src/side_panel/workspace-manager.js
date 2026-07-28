@@ -216,6 +216,13 @@ export async function readFileContent(filePath) {
 }
 
 /**
+ * 写入文件内容（用于编辑保存）
+ */
+export async function writeFileContent(filePath, content) {
+  return agentRequest('/api/fs/write', { path: filePath, content });
+}
+
+/**
  * 下载文件或目录
  */
 export async function downloadFile(filePath) {
