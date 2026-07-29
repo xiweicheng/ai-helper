@@ -12,7 +12,7 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory',
-      description: '长期记忆管理。action=store增删改、recall关键词检索、manage审查清理。query用关键词，删前先recall查id。',
+      description: '长期记忆管理',
       parameters: {
         type: 'object',
         properties: {
