@@ -8,7 +8,7 @@ export const SKILL_CREATOR_SEED_MD = `---
 name: skill-creator
 description: "创建新技能的元技能。当用户要求创建技能、沉淀技能、新增技能、或任何创建/添加技能的意图时，必须立即调用此技能。"
 enabled: true
-version: 1.2.0
+version: 1.2.1
 ---
 
 # Skill Creator
@@ -106,11 +106,11 @@ enabled: true
    - **macOS/Linux**：\`mkdir -p ~/.ai-helper-agent/skills/<skill-name>\`
    - **Windows (cmd)**：\`mkdir %USERPROFILE%\\.ai-helper-agent\\skills\\<skill-name>\`
    - **Windows (PowerShell)**：\`New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.ai-helper-agent\\skills\\<skill-name>"\`
-   - 如果 \`mkdir\` 报错，尝试不带参数或使用 \`agent_write_file\` 工具在目标路径写入一个临时文件，让系统自动创建父目录。
+   - 如果 \`mkdir\` 报错，尝试不带参数或使用 \`agent_file\`（action: write）在目标路径写入一个临时文件，让系统自动创建父目录。
 
-5. **写入 SKILL.md**：使用 \`agent_write_file\` 工具将内容写入目标文件。
+5. **写入 SKILL.md**：使用 \`agent_file\`（action: write）工具将内容写入目标文件。
 
-   > ⚠️ **关键限制**：\`agent_write_file\` 不接受 \`~\` 或相对路径，**必须传入绝对路径**。
+   > ⚠️ **关键限制**：\`agent_file\` 不接受 \`~\` 或相对路径，**必须传入绝对路径**。
 
    **推荐做法**：先用 \`agent_exec\` 获取用户主目录的绝对路径，再拼接完整路径。
 
@@ -121,10 +121,10 @@ enabled: true
 当用户要求更新/完善已有技能时：
 
 1. **确认技能名称**：与用户确认要更新的技能名称
-2. **读取现有内容**：使用 \`agent_read_file\` 读取目标 SKILL.md（路径规则同创建流程，需使用绝对路径，如 \`/Users/<你的用户名>/.ai-helper-agent/skills/<skill-name>/SKILL.md\`）
+2. **读取现有内容**：使用 \`agent_file\`（action: read）读取目标 SKILL.md（路径规则同创建流程，需使用绝对路径，如 \`/Users/<你的用户名>/.ai-helper-agent/skills/<skill-name>/SKILL.md\`）
 3. **分析更新需求**：结合当前对话上下文，识别需要更新的部分
 4. **合并内容**：保留原技能的核心结构，将新内容融入适当位置
-5. **覆盖写入**：使用 \`agent_write_file\` 覆盖写入 SKILL.md（路径规则同上，必须使用绝对路径）
+5. **覆盖写入**：使用 \`agent_file\`（action: write）覆盖写入 SKILL.md（路径规则同上，必须使用绝对路径）
 6. **告知用户**：告知更新内容，建议重新加载
 
 ## 更新注意事项

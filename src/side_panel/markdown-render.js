@@ -8,16 +8,53 @@ const MAX_SVG_DIM = 2000;
 
 /**
  * 清理 SVG 中可能导致 canvas 污染（tainted canvas）的元素
- * - 移除 <foreignObject>（内嵌 HTML，容易引用外部资源）
+ * - 将 <foreignObject> 转换为 SVG <text> 元素（保留文字内容）
  * - 移除引用外部 http(s) 地址的 <image> 元素
  * - 移除引用外部 http(s) 地址的 <use> 元素
+ * 注意：此函数会在临时 DOM 容器中处理克隆，不影响原始 SVG
  */
 function sanitizeSvgForExport(svgElement) {
   const clone = svgElement.cloneNode(true);
 
-  // 移除 <foreignObject> 节点
+  // 将克隆临时放入 DOM，以便 getComputedStyle 能正常工作
+  const tempContainer = document.createElement('div');
+  tempContainer.style.cssText = 'position:absolute;visibility:hidden;width:0;height:0;overflow:hidden;';
+  tempContainer.appendChild(clone);
+  document.body.appendChild(tempContainer);
+
+  // 将 <foreignObject> 转换为 SVG <text> 元素
   const foreignObjects = clone.querySelectorAll('foreignObject');
-  foreignObjects.forEach(el => el.remove());
+  foreignObjects.forEach(fo => {
+    const div = fo.querySelector('div');
+    if (!div) {
+      fo.remove();
+      return;
+    }
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    const foX = parseFloat(fo.getAttribute('x')) || 0;
+    const foY = parseFloat(fo.getAttribute('y')) || 0;
+    const foW = parseFloat(fo.getAttribute('width')) || 100;
+    const foH = parseFloat(fo.getAttribute('height')) || 30;
+
+    const span = div.querySelector('span');
+    const targetEl = span || div;
+    const elStyle = window.getComputedStyle(targetEl);
+
+    text.textContent = targetEl.textContent.trim();
+    text.setAttribute('x', String(foX + foW / 2));
+    text.setAttribute('y', String(foY + foH / 2));
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    text.setAttribute('fill', elStyle.color || '#333');
+    text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
+    text.setAttribute('font-size', elStyle.fontSize || '14px');
+    if (elStyle.fontWeight === 'bold' || parseInt(elStyle.fontWeight) >= 600) {
+      text.setAttribute('font-weight', 'bold');
+    }
+
+    fo.parentNode.replaceChild(text, fo);
+  });
 
   // 移除引用外部 http(s) 地址的 <image> 元素
   const images = clone.querySelectorAll('image');
@@ -37,6 +74,8 @@ function sanitizeSvgForExport(svgElement) {
     }
   });
 
+  // 从临时容器取出克隆并清理临时 DOM
+  document.body.removeChild(tempContainer);
   return clone;
 }
 
@@ -77,10 +116,37 @@ function getSvgRenderSize(svgElement) {
   return { width: 800, height: 600 };
 }
 
+/**
+ * 将 canvas 安全转换为 data URL（带降级策略）
+ */
+function safeCanvasToDataUrl(canvas) {
+  try {
+    const pngData = canvas.toDataURL('image/png');
+    if (pngData && pngData.length > 100) {
+      return pngData;
+    }
+  } catch (e) {
+    logger.debug('[SidePanel] PNG toDataURL 失败，降级为 JPEG:', e.message);
+  }
+
+  try {
+    const jpgData = canvas.toDataURL('image/jpeg', 0.92);
+    if (jpgData && jpgData.length > 100) {
+      return jpgData;
+    }
+  } catch (e2) {
+    logger.debug('[SidePanel] JPEG toDataURL 也失败:', e2.message);
+  }
+
+  throw new Error('Canvas toDataURL 失败，无法导出图片');
+}
+
 export function svgToPngDataUrl(svgElement) {
   return new Promise((resolve, reject) => {
     try {
-      let { svgWidth, svgHeight } = getSvgRenderSize(svgElement);
+      let { width: svgWidth, height: svgHeight } = getSvgRenderSize(svgElement);
+
+      logger.debug('[SidePanel] svgToPngDataUrl 尺寸:', svgWidth, 'x', svgHeight);
 
       let scaleFactor = 2;
       if (svgWidth > MAX_SVG_DIM || svgHeight > MAX_SVG_DIM) {
@@ -97,32 +163,36 @@ export function svgToPngDataUrl(svgElement) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = function () {
-        const padding = 10;
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.ceil((svgWidth + padding * 2) * scaleFactor);
-        canvas.height = Math.ceil((svgHeight + padding * 2) * scaleFactor);
-        const ctx = canvas.getContext('2d');
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        ctx.drawImage(
-          img,
-          padding * scaleFactor,
-          padding * scaleFactor,
-          svgWidth * scaleFactor,
-          svgHeight * scaleFactor
-        );
-
         try {
-          resolve(canvas.toDataURL('image/png'));
+          const padding = 10;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.ceil((svgWidth + padding * 2) * scaleFactor);
+          canvas.height = Math.ceil((svgHeight + padding * 2) * scaleFactor);
+
+          logger.debug('[SidePanel] Canvas 尺寸:', canvas.width, 'x', canvas.height);
+
+          const ctx = canvas.getContext('2d');
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.drawImage(
+            img,
+            padding * scaleFactor,
+            padding * scaleFactor,
+            svgWidth * scaleFactor,
+            svgHeight * scaleFactor
+          );
+
+          const result = safeCanvasToDataUrl(canvas);
+          resolve(result);
         } catch (e) {
           reject(e);
         }
       };
 
       img.onerror = function (err) {
-        reject(err);
+        reject(new Error('SVG 图片加载失败: ' + (err?.message || err)));
       };
 
       img.src = dataUrl;
@@ -679,62 +749,89 @@ export function addMermaidControls(container) {
 }
 
 /**
+ * 从 data URL 提取 MIME 类型
+ */
+function getDataUrlMimeType(dataUrl) {
+  const match = dataUrl.match(/^data:([^;]+)/);
+  return match ? match[1] : 'image/png';
+}
+
+/**
+ * 从 data URL 获取文件扩展名
+ */
+function getDataUrlExtension(dataUrl) {
+  const mime = getDataUrlMimeType(dataUrl);
+  const ext = mime.split('/')[1];
+  return ext === 'jpeg' ? 'jpg' : (ext || 'png');
+}
+
+/**
+ * 将 data URL 转为 Blob（自动检测格式）
+ */
+function dataUrlToBlob(dataUrl) {
+  const mime = getDataUrlMimeType(dataUrl);
+  const base64 = dataUrl.split(',')[1] || '';
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+/**
+ * 下载 data URL 为文件（自动检测格式）
+ */
+function downloadDataUrl(dataUrl, filename) {
+  // 根据 data URL 的实际格式修正文件扩展名
+  const ext = getDataUrlExtension(dataUrl);
+  const baseName = filename.replace(/\.(png|jpg|jpeg)$/i, '');
+  const finalName = baseName + '.' + ext;
+
+  const downloadLink = document.createElement('a');
+  downloadLink.href = dataUrl;
+  downloadLink.download = finalName;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+
+/**
  * 将 Mermaid 图表复制到剪贴板（作为图片）
+ * 如果剪贴板写入失败，自动降级为下载
  */
 export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
   try {
     const container = svgElement.closest('.mermaid');
     const cachedPng = container && container._pngDataUrl;
 
-    if (cachedPng) {
-      const base64 = cachedPng.split(',')[1] || '';
-      const binary = atob(base64);
-      const len = binary.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'image/png' });
-
-      if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
-        navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob })
-        ]).then(() => {
-          showToast('Mermaid 图表已复制到剪贴板！', 'success');
-        }).catch(err => {
-          showToast('复制失败，请尝试使用下载按钮保存图表。', 'error');
-        });
-        return;
-      }
+    // 优先使用缓存的 PNG
+    let dataUrl = cachedPng;
+    if (!dataUrl) {
+      dataUrl = await svgToPngDataUrl(svgElement);
     }
 
-    const dataUrl = await svgToPngDataUrl(svgElement);
-    const base64 = dataUrl.split(',')[1] || '';
-    const binary = atob(base64);
-    const len = binary.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: 'image/png' });
+    const blob = dataUrlToBlob(dataUrl);
+    const blobMime = getDataUrlMimeType(dataUrl);
+    const downloadFilename = 'mermaid-diagram-' + Date.now() + '.png';
 
+    // 尝试使用 Clipboard API 写入
     if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
-      navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': blob })
-      ]).then(() => {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blobMime]: blob })
+        ]);
         showToast('Mermaid 图表已复制到剪贴板！', 'success');
-      }).catch(err => {
-        showToast('复制失败，请尝试使用下载按钮保存图表。', 'error');
-      });
-    } else {
-      showToast('当前浏览器不支持图片复制功能，已自动转为下载。', 'warning');
-      const downloadLink = document.createElement('a');
-      downloadLink.href = dataUrl;
-      downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
+        return;
+      } catch (clipboardErr) {
+        logger.warn('[SidePanel] Clipboard API 写入失败，降级为下载:', clipboardErr.message);
+      }
     }
+
+    // 降级方案：自动下载
+    showToast('已自动转为下载方式保存图表', 'warning');
+    downloadDataUrl(dataUrl, downloadFilename);
   } catch (error) {
     logger.error('[SidePanel] 复制到剪贴板失败:', error);
     showToast('复制失败: ' + error.message, 'error');
@@ -748,24 +845,15 @@ export async function downloadMermaidPNG(svgElement, scale) {
   try {
     const container = svgElement.closest('.mermaid');
     const cachedPng = container && container._pngDataUrl;
+    const filename = 'mermaid-diagram-' + Date.now() + '.png';
 
     if (cachedPng) {
-      const downloadLink = document.createElement('a');
-      downloadLink.href = cachedPng;
-      downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      document.body.removeChild(downloadLink);
+      downloadDataUrl(cachedPng, filename);
       return;
     }
 
     const dataUrl = await svgToPngDataUrl(svgElement);
-    const downloadLink = document.createElement('a');
-    downloadLink.href = dataUrl;
-    downloadLink.download = 'mermaid-diagram-' + Date.now() + '.png';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    downloadDataUrl(dataUrl, filename);
   } catch (error) {
     logger.error('[SidePanel] 下载 PNG 失败:', error);
     showToast('下载失败: ' + error.message, 'error');
@@ -1103,20 +1191,37 @@ export function addTableToolbarEvents() {
           try {
             const cleanTable = cleanTableForClipboard(tableEl);
             const richHTML = cleanTable.outerHTML;
+
+            // 确保文档有焦点
+            btn.focus();
+
             const blob = new Blob([richHTML], { type: 'text/html' });
             const item = new ClipboardItem({ 'text/html': blob });
             navigator.clipboard.write([item]).then(() => {
               showToast('已复制富文本表格');
             }).catch(() => {
-              // Fallback: 使用 execCommand
-              const listener = (ev) => {
-                ev.clipboardData.setData('text/html', richHTML);
-                ev.preventDefault();
-              };
-              document.addEventListener('copy', listener, { once: true });
-              document.execCommand('copy');
-              document.removeEventListener('copy', listener);
-              showToast('已复制富文本表格');
+              // Fallback: 通过临时 DOM 选中 + execCommand
+              const tempDiv = document.createElement('div');
+              tempDiv.style.cssText = 'position:fixed;left:-999999px;top:-999999px;';
+              tempDiv.innerHTML = richHTML;
+              document.body.appendChild(tempDiv);
+
+              const range = document.createRange();
+              range.selectNodeContents(tempDiv);
+              const sel = window.getSelection();
+              sel.removeAllRanges();
+              sel.addRange(range);
+
+              try {
+                btn.focus();
+                document.execCommand('copy');
+                showToast('已复制富文本表格');
+              } catch (e2) {
+                showToast('复制富文本表格失败', 'error');
+              } finally {
+                sel.removeAllRanges();
+                document.body.removeChild(tempDiv);
+              }
             });
           } catch (err) {
             showToast('复制失败', 'error');

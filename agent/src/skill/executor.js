@@ -1,9 +1,9 @@
 // skill/executor.js - Skill 执行引擎
 // 解析 Skill 定义的步骤 DAG，按拓扑排序执行，支持并行
 import { render } from './template.js';
-import { readFile, writeFile, readdir, stat } from 'fs/promises';
+import { readFile, writeFile, readdir, stat, unlink } from 'fs/promises';
 import { checkPath, checkCommand } from '../security.js';
-import { join } from 'path';
+import { join, basename } from 'path';
 
 // 执行上下文（当前活跃的执行任务）
 const activeExecutions = new Map(); // execId → { skill, status, steps, results }
@@ -47,29 +47,50 @@ async function executeToolCall(toolName, args) {
   // 映射 Skill 步骤中的 tool 到实际 Agent API
   try {
     switch (toolName) {
-      case 'agent_read_file': {
+      case 'agent_file':
+      case 'agent_read_file':
+      case 'agent_write_file':
+      case 'agent_list_dir':
+      case 'agent_delete_file':
+      case 'agent_download_file': {
+        const action = args.action || (
+          toolName === 'agent_read_file' ? 'read' :
+          toolName === 'agent_write_file' ? 'write' :
+          toolName === 'agent_list_dir' ? 'list' :
+          toolName === 'agent_delete_file' ? 'delete' :
+          toolName === 'agent_download_file' ? 'download' :
+          (args.content ? 'write' : 'read')
+        );
         const check = await checkPath(args.path);
         if (!check.allowed) return { success: false, error: check.reason };
-        const content = await readFile(check.resolved, 'utf-8');
-        return { success: true, content, size: content.length, path: check.resolved };
-      }
-
-      case 'agent_write_file': {
-        const check = await checkPath(args.path);
-        if (!check.allowed) return { success: false, error: check.reason };
-        await writeFile(check.resolved, String(args.content || ''), 'utf-8');
-        return { success: true, message: `文件已写入: ${check.resolved}` };
-      }
-
-      case 'agent_list_dir': {
-        const check = await checkPath(args.path || '.');
-        if (!check.allowed) return { success: false, error: check.reason };
-        const names = await readdir(check.resolved);
-        const entries = await Promise.all(names.map(async (name) => {
-          const s = await stat(join(check.resolved, name));
-          return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size };
-        }));
-        return { success: true, entries, path: check.resolved };
+        switch (action) {
+          case 'read': {
+            const content = await readFile(check.resolved, 'utf-8');
+            return { success: true, content, size: content.length, path: check.resolved };
+          }
+          case 'write': {
+            await writeFile(check.resolved, String(args.content || ''), 'utf-8');
+            return { success: true, message: `文件已写入: ${check.resolved}` };
+          }
+          case 'list': {
+            const names = await readdir(check.resolved);
+            const entries = await Promise.all(names.map(async (name) => {
+              const s = await stat(join(check.resolved, name));
+              return { name, type: s.isDirectory() ? 'directory' : 'file', size: s.size };
+            }));
+            return { success: true, entries, path: check.resolved };
+          }
+          case 'delete': {
+            await unlink(check.resolved);
+            return { success: true, message: `已删除: ${check.resolved}` };
+          }
+          case 'download': {
+            const content = await readFile(check.resolved);
+            return { success: true, content, path: check.resolved, filename: basename(check.resolved) };
+          }
+          default:
+            return { success: false, error: `未知 action: ${action}` };
+        }
       }
 
       case 'agent_exec': {
@@ -99,25 +120,28 @@ async function executeToolCall(toolName, args) {
         });
       }
 
-      case 'agent_search_files': {
-        const { searchFiles } = await import('../search.js');
+      case 'agent_search':
+      case 'agent_search_files':
+      case 'agent_search_content': {
+        const searchType = args.searchType || (
+          toolName === 'agent_search_content' ? 'content' : 'file'
+        );
+        const { searchFiles, searchContent } = await import('../search.js');
+        if (searchType === 'content') {
+          return await searchContent(
+            args.path || '.',
+            args.pattern,
+            args.filePattern || null,
+            args.caseSensitive || false,
+            Math.min(args.maxResults || 100, 5000),
+            args.contextLines || 2
+          );
+        }
         return await searchFiles(
           args.path || '.',
           args.pattern || '*',
           args.recursive !== false,
           Math.min(args.maxResults || 200, 5000)
-        );
-      }
-
-      case 'agent_search_content': {
-        const { searchContent } = await import('../search.js');
-        return await searchContent(
-          args.path || '.',
-          args.pattern,
-          args.filePattern || null,
-          args.caseSensitive || false,
-          Math.min(args.maxResults || 100, 5000),
-          args.contextLines || 2
         );
       }
 

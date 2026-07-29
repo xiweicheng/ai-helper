@@ -1313,19 +1313,24 @@ async function previewTextFile(filePath, fileName, lineCountEl, previewContent) 
 
 let currentPdfDoc = null;
 let currentPdfPage = 1;
-let pdfScale = 1;
-let pdfFitScale = 1;
+let pdfVisualScale = 1;  // 用户的视觉缩放（相对于PDF原始尺寸）
+let pdfScale = 1;        // CSS transform 使用的缩放值
+let pdfFitScale = 1;     // 适应容器的缩放比例（相对于PDF原始尺寸）
 let pdfPanX = 0, pdfPanY = 0;
 let pdfIsDragging = false;
 let pdfDragStartX = 0, pdfDragStartY = 0;
 let pdfDragPanStartX = 0, pdfDragPanStartY = 0;
+let pdfZoomRenderTimer = null;
+let pdfRenderZoom = 1;   // canvas 渲染时的缩放因子
 
 async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   currentPdfDoc = pdf;
   currentPdfPage = 1;
+  pdfVisualScale = 1;
   pdfScale = 1;
   pdfFitScale = 1;
+  pdfRenderZoom = 1;
   pdfPanX = 0;
   pdfPanY = 0;
   previewArea.dataset.previewType = 'pdf';
@@ -1371,56 +1376,93 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
 
   function applyPdfTransform() {
     pan.style.transform = `translate(${pdfPanX}px, ${pdfPanY}px) scale(${pdfScale})`;
-    zoomInfo.textContent = Math.round(pdfScale * 100) + '%';
+    zoomInfo.textContent = Math.round(pdfVisualScale * 100) + '%';
     if (!pdfIsDragging) {
-      viewport.style.cursor = pdfScale > pdfFitScale ? 'grab' : 'default';
+      viewport.style.cursor = pdfVisualScale > pdfFitScale ? 'grab' : 'default';
     }
   }
 
   function clampPdfPan() {
-    if (pdfScale <= pdfFitScale) {
+    if (pdfVisualScale <= pdfFitScale) {
       pdfPanX = 0;
       pdfPanY = 0;
     }
   }
 
   function setPdfZoom(newScale, originX, originY) {
-    const oldScale = pdfScale;
-    pdfScale = Math.max(0.05, Math.min(5, newScale));
+    const oldVisualScale = pdfVisualScale;
+    pdfVisualScale = Math.max(0.05, Math.min(5, newScale));
+    // CSS scale = visualScale / renderZoom (canvas已按renderZoom倍渲染)
+    pdfScale = pdfVisualScale / pdfRenderZoom;
 
     if (originX !== undefined && originY !== undefined) {
       const rect = viewport.getBoundingClientRect();
       const ox = originX - rect.left - rect.width / 2;
       const oy = originY - rect.top - rect.height / 2;
-      const ratio = pdfScale / oldScale;
+      const ratio = pdfVisualScale / oldVisualScale;
       pdfPanX = ox - ratio * (ox - pdfPanX);
       pdfPanY = oy - ratio * (oy - pdfPanY);
     }
 
     clampPdfPan();
     applyPdfTransform();
+
+    // 缩放后防抖重新渲染canvas以保持高分辨率清晰度
+    schedulePdfZoomRerender();
+  }
+
+  function schedulePdfZoomRerender() {
+    if (pdfZoomRenderTimer) {
+      clearTimeout(pdfZoomRenderTimer);
+    }
+    pdfZoomRenderTimer = setTimeout(() => {
+      renderPdfPageInternal();
+    }, 180);
   }
 
   async function renderPdfPageInternal() {
     if (!currentPdfDoc) return;
     const page = await currentPdfDoc.getPage(currentPdfPage);
-    const vp = page.getViewport({ scale: 1 });  // always render at 1x, CSS scale handles zoom
-    canvas.width = vp.width;
-    canvas.height = vp.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // 渲染缩放：当用户放大时用更高分辨率渲染canvas
+    const renderZoom = Math.max(pdfVisualScale, 1);
+    pdfRenderZoom = renderZoom;
+    const vp = page.getViewport({ scale: renderZoom });
+
+    // canvas实际像素尺寸（高DPR渲染）
+    canvas.width = Math.floor(vp.width * dpr);
+    canvas.height = Math.floor(vp.height * dpr);
+    // canvas CSS显示尺寸
+    canvas.style.width = vp.width + 'px';
+    canvas.style.height = vp.height + 'px';
+
     const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     await page.render({ canvasContext: ctx, viewport: vp }).promise;
 
-    // 计算 fit 比例
+    // 计算 fit 比例（基于PDF原始1x尺寸）
+    const baseVp = page.getViewport({ scale: 1 });
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
-    if (vw > 0 && vh > 0 && vp.width > 0 && vp.height > 0) {
-      pdfFitScale = Math.min((vw - 24) / vp.width, (vh - 24) / vp.height);
+    if (vw > 0 && vh > 0 && baseVp.width > 0 && baseVp.height > 0) {
+      pdfFitScale = Math.min((vw - 24) / baseVp.width, (vh - 24) / baseVp.height);
     } else {
       pdfFitScale = 1;
     }
-    pdfScale = pdfFitScale;
-    pdfPanX = 0;
-    pdfPanY = 0;
+
+    // CSS scale = visualScale / renderZoom
+    pdfScale = pdfVisualScale / renderZoom;
+
+    // 如果当前视觉缩放接近fit，自动对齐
+    if (pdfVisualScale < pdfFitScale * 1.05 && pdfVisualScale > pdfFitScale * 0.95) {
+      pdfVisualScale = pdfFitScale;
+      pdfScale = pdfFitScale / renderZoom;
+      pdfPanX = 0;
+      pdfPanY = 0;
+    }
+
+    clampPdfPan();
     applyPdfTransform();
 
     // 更新控件状态
@@ -1435,11 +1477,11 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   // 初始渲染
   await renderPdfPageInternal();
 
-  // 滚轮缩放
+  // 滚轮缩放（基于视觉缩放）
   viewport.addEventListener('wheel', (e) => {
     e.preventDefault();
     const delta = -e.deltaY * 0.005;
-    setPdfZoom(pdfScale + delta * pdfScale, e.clientX, e.clientY);
+    setPdfZoom(pdfVisualScale + delta * pdfVisualScale, e.clientX, e.clientY);
   }, { passive: false });
 
   // 拖拽平移
@@ -1465,7 +1507,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   window.addEventListener('mouseup', () => {
     if (pdfIsDragging) {
       pdfIsDragging = false;
-      viewport.style.cursor = pdfScale > pdfFitScale ? 'grab' : 'default';
+      viewport.style.cursor = pdfVisualScale > pdfFitScale ? 'grab' : 'default';
     }
   });
 
@@ -1478,39 +1520,31 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   });
   document.getElementById('pdfZoomIn').addEventListener('click', () => {
     const rect = viewport.getBoundingClientRect();
-    setPdfZoom(pdfScale * 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    setPdfZoom(pdfVisualScale * 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
   });
   document.getElementById('pdfZoomOut').addEventListener('click', () => {
     const rect = viewport.getBoundingClientRect();
-    setPdfZoom(pdfScale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    setPdfZoom(pdfVisualScale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
   });
   document.getElementById('pdfZoomFit').addEventListener('click', () => {
-    pdfScale = pdfFitScale;
+    pdfVisualScale = pdfFitScale;
     pdfPanX = 0;
     pdfPanY = 0;
-    applyPdfTransform();
+    renderPdfPageInternal();
   });
 
   // 双击 → fit
   viewport.addEventListener('dblclick', () => {
-    pdfScale = pdfFitScale;
+    pdfVisualScale = pdfFitScale;
     pdfPanX = 0;
     pdfPanY = 0;
-    applyPdfTransform();
+    renderPdfPageInternal();
   });
 
-  // resize 重新计算 fit
+  // resize 重新计算 fit 并重新渲染
   window.addEventListener('resize', () => {
     if (!currentPdfDoc) return;
-    const vw = viewport.clientWidth;
-    const vh = viewport.clientHeight;
-    const cw = canvas.width;
-    const ch = canvas.height;
-    if (vw > 0 && vh > 0 && cw > 0 && ch > 0) {
-      pdfFitScale = Math.min((vw - 24) / cw, (vh - 24) / ch);
-    }
-    clampPdfPan();
-    applyPdfTransform();
+    renderPdfPageInternal();
   });
 }
 

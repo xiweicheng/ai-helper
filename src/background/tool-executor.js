@@ -1184,18 +1184,10 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 
   // 根据 scope 过滤目标轮次
   let targetRounds;
-  switch (scope) {
-    case 'last_round':
-      targetRounds = roundsWithLog.slice(-1);
-      break;
-    case 'last_n_rounds':
-      targetRounds = roundsWithLog.slice(-Math.min(rounds, roundsWithLog.length));
-      break;
-    case 'full_session':
-      targetRounds = roundsWithLog;
-      break;
-    default:
-      targetRounds = roundsWithLog.slice(-Math.min(rounds, roundsWithLog.length));
+  if (scope === 'full_session') {
+    targetRounds = roundsWithLog;
+  } else {
+    targetRounds = roundsWithLog.slice(-Math.min(rounds, roundsWithLog.length));
   }
 
   // 从目标轮次中提炼信息
@@ -2284,7 +2276,7 @@ export function executeOpenTab(args, toolCallId) {
       if (!waitForLoad) {
         resolve({ 
           success: true, 
-          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、click_element、extract_data等）`,
+          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、interact_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url,
           tool_call_id: toolCallId
@@ -2349,7 +2341,7 @@ export function executeSwitchTab(args, toolCallId) {
       } else {
         resolve({ 
           success: true, 
-          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、click_element、extract_data等）`,
+          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、interact_element、extract_data等）`,
           tabId: tab.id,
           url: tab.url 
         });

@@ -197,6 +197,11 @@ export function fallbackCopyText(text, copyBtn) {
 export function copyRichText(text, html, copyBtn, pngBlob = null) {
   const styledHtml = wrapHtmlWithStyles(html);
 
+  // 确保文档有焦点（Chrome 扩展 side panel 中点击按钮后可能失去焦点）
+  if (copyBtn && !document.hasFocus()) {
+    copyBtn.focus();
+  }
+
   if (typeof ClipboardItem !== 'undefined') {
     const clipboardItems = {
       'text/plain': new Blob([text], { type: 'text/plain' }),
@@ -269,6 +274,11 @@ export function wrapHtmlWithStyles(html) {
  * 富文本复制兜底方案：通过临时 DOM + execCommand('copy')
  */
 export function fallbackCopyRichText(text, html, copyBtn) {
+  // 确保文档有焦点
+  if (copyBtn && !document.hasFocus()) {
+    copyBtn.focus();
+  }
+
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '-999999px';
@@ -287,6 +297,7 @@ export function fallbackCopyRichText(text, html, copyBtn) {
     document.execCommand('copy');
     showCopySuccess(copyBtn, true);
   } catch (e) {
+    // 最终降级：复制纯文本
     fallbackCopyText(text, copyBtn);
   } finally {
     selection.removeAllRanges();

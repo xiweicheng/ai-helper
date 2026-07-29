@@ -15,15 +15,17 @@
   "steps": [
     {
       "id": "list-dir",
-      "tool": "agent_list_dir",
+      "tool": "agent_file",
       "args": {
+        "action": "list",
         "path": "{{targetDir}}"
       }
     },
     {
       "id": "search-js",
-      "tool": "agent_search_files",
+      "tool": "agent_search",
       "args": {
+        "searchType": "file",
         "path": "{{targetDir}}",
         "pattern": "*.js",
         "recursive": true
@@ -32,8 +34,9 @@
     },
     {
       "id": "search-json",
-      "tool": "agent_search_files",
+      "tool": "agent_search",
       "args": {
+        "searchType": "file",
         "path": "{{targetDir}}",
         "pattern": "*.json",
         "recursive": true

@@ -148,7 +148,7 @@ export const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          scope: { type: 'string', enum: ['last_round', 'last_n_rounds', 'full_session'], description: '范围' },
+          scope: { type: 'string', enum: ['last_n_rounds', 'full_session'], description: '范围' },
           rounds: { type: 'integer', description: '轮数(默认3)' },
           sessionId: { type: 'string', description: '会话ID' }
         },

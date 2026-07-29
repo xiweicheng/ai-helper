@@ -410,21 +410,19 @@ export function appendToolCallItems(element, toolCalls) {
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
     execute_command:       { metaType: 'exec' },
-    agent_exec:     { metaType: 'exec' },
-    execute_agent_exec_command: { metaType: 'exec' },
+    agent_exec:            { metaType: 'exec' },
     agent_file:            { metaType: 'file', action: '操作' },
     file_upload:           { metaType: 'file', action: '上传' },
     download_file:         { metaType: 'file', action: '下载' },
     fetch_url:             { metaType: 'web', action: '请求' },
     interact_element:      { metaType: 'web', action: '交互' },
     fill_form:             { metaType: 'web', action: '填写' },
-    open_tab:              { metaType: 'web', action: '打开' },
     manage_tab:            { metaType: 'web', action: '操作' },
-    search_bookmarks:      { metaType: 'search' },
-    search_history:        { metaType: 'search' },
     search_browser_data:   { metaType: 'search' },
     search_in_page:        { metaType: 'search' },
-    dispatch_sub_agent:    { metaType: 'subagent', action: '分派' },
+    dispatch_task:         { metaType: 'subagent', action: '分派' },
+    exec_log:              { metaType: 'search' },
+    preview_ui:            { metaType: 'web', action: '预览' },
   };
   
   toolCalls.forEach(tc => {
@@ -507,7 +505,7 @@ export function appendToolCallItems(element, toolCalls) {
     item.setAttribute('data-meta-type', meta.metaType);
     item.setAttribute('data-created-at', Date.now());
     // 命令执行类工具：添加终止按钮
-    const isExecCommand = toolName === 'agent_exec' || toolName === 'execute_agent_exec_command';
+    const isExecCommand = toolName === 'agent_exec';
     const terminateBtnHtml = isExecCommand ? `
         <button class="tool-call-terminate-btn" title="终止命令">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">

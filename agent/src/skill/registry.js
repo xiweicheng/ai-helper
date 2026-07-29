@@ -194,7 +194,7 @@ export async function runSkill(name, params = {}, onStepUpdate) {
 /**
  * 获取所有启用的 Agent Skill 的轻量列表
  * 仅包含名称和描述，用于注入到 AI System Prompt 中。
- * AI 需要使用 agent_skill_load 工具按需加载完整内容。
+ * AI 需要使用 agent_skill 工具按需加载完整内容。
  * @returns {string} - 格式化的技能列表文本
  */
 export function getAgentSkillPrompts() {
@@ -210,7 +210,7 @@ export function getAgentSkillPrompts() {
   const parts = [];
   parts.push('## 可用技能 (Skills)');
   parts.push('');
-  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求与某个技能高度匹配时，使用 `agent_skill_load` 工具加载该技能的完整说明，然后根据说明自主完成任务。');
+  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求与某个技能高度匹配时，使用 `agent_skill` 工具（action: load）加载该技能的完整说明，然后根据说明自主完成任务。');
   parts.push('');
   parts.push('**使用策略**：');
   parts.push('- 仅在用户需求明确匹配技能描述时才加载，不要为一般性的编程/技术问题加载技能');
