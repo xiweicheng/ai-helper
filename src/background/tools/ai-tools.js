@@ -88,15 +88,14 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'search_chats',
-      description: '搜索对话记录',
+      description: '搜索对话记录。query为空时返回当前会话全部消息',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string' },
+          query: { type: 'string', description: '搜索关键词，为空返回全部' },
           maxResults: { type: 'integer' },
           searchScope: { type: 'string', enum: ['current_session', 'all_sessions'] }
-        },
-        required: ['query']
+        }
       }
     }
   },

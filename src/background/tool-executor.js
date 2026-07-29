@@ -1664,7 +1664,8 @@ export function executeSearchHistory(args, toolCallId) {
  */
 async function executeSearchConversationMemory(args, toolCallId, sessionId = null) {
   const query = (args.query || '').toLowerCase();
-  const maxResults = parseInt(args.maxResults, 10) || 5;
+  // query 为空时默认返回更多消息（用于总结整个会话场景）
+  const maxResults = parseInt(args.maxResults, 10) || (query ? 5 : 100);
   const searchScope = args.searchScope || 'current_session';
 
   console.log('[Background] 执行对话记忆搜索:', 'query=', JSON.stringify(query), 'maxResults=', maxResults, 'scope=', searchScope, 'sessionId=', sessionId);
@@ -1704,6 +1705,21 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
 
     if (allMessages.length === 0) {
       return makeResult(true, '未找到任何对话记录。');
+    }
+
+    // query 为空时，直接返回全部消息（按原顺序），不评分过滤
+    if (!query) {
+      const allResult = allMessages.slice(0, maxResults);
+      const resultText =
+        `共 ${allMessages.length} 条消息，返回 ${allResult.length} 条：\n\n` +
+        allResult
+          .map((m, i) => {
+            const text = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join('') : '');
+            const contentPreview = text.length > 500 ? text.substring(0, 500) + '...' : text;
+            return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息\n${contentPreview}`;
+          })
+          .join('\n\n---\n\n');
+      return makeResult(true, resultText);
     }
 
     // 关键词匹配搜索（分词 + 包含匹配）
