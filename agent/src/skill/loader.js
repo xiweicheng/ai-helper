@@ -256,19 +256,23 @@ export function deleteSkillFile(name, type) {
 /**
  * 种子 skill-creator 内置技能到文件系统
  * 首次运行时将 skill-creator 的 SKILL.md 写入 ~/.ai-helper-agent/skills/skill-creator/
- * 之后用户可在工具箱中编辑、优化此技能（如调整为 Windows cmd 兼容）
+ * 当种子版本号高于已安装版本时自动更新
  * @returns {boolean} 是否执行了种子写入
  */
 export function seedSkillCreator() {
   const skillDir = join(SKILLS_DIR, SKILL_CREATOR_DIR);
   const skillMdPath = join(skillDir, 'SKILL.md');
 
+  // 从种子内容中提取目标版本号
+  const seedVersionMatch = SKILL_CREATOR_SEED_MD.match(/^version:\s*([\d.]+)/m);
+  const seedVersion = seedVersionMatch ? seedVersionMatch[1] : '0.0.0';
+
   if (existsSync(skillMdPath)) {
     try {
       const content = readFileSync(skillMdPath, 'utf-8');
       const versionMatch = content.match(/^version:\s*([\d.]+)/m);
-      const currentVersion = versionMatch ? versionMatch[1] : '0.0.0';
-      if (currentVersion === '1.1.0') {
+      const installedVersion = versionMatch ? versionMatch[1] : '0.0.0';
+      if (installedVersion === seedVersion) {
         return false;
       }
     } catch { /* 读取失败则覆盖 */ }

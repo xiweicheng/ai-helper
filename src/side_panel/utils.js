@@ -301,11 +301,11 @@ ${terms}`;
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
-## 记忆系统
-- **agent_memory_recall**：query传简短关键词（如"考试"、"Python配置"），不要传完整句子。可通过tags筛选。
-- **agent_memory_store**：add（需type+content）、update（需memoryId+type）、delete（需memoryId+type）。**删除前必须先用recall确认目标记忆的id和type**。
-- **agent_memory_manage**：action=review审查记忆价值，action=compact自动清理低价值记忆。
-- 只存长期价值信息（偏好、决策、关键知识），添加tags和importance（1-10）便于检索。` : '';
+## 记忆
+- recall: query用关键词，如"考试"，不要完整句子
+- store: add需type+content，update/delete需memoryId+type。**删除前必须先recall获取id和type**
+- manage: review审查价值，compact清理低价值
+- 存长期价值信息，加tags和importance(1-10)便于检索` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词
   // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）

@@ -1,7 +1,7 @@
 // background/tool-executor.js - 工具定义与执行
 import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
 import { getStoredConfig } from './config.js';
-import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype } from '../storage/db.js';
+import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype, getSession } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
@@ -1154,6 +1154,180 @@ async function executeAgentSearch(args, toolCallId) {
   }
 }
 
+/**
+ * 执行日志提炼工具：从会话的 messageHistory 中提取 executionLog，
+ * 分析成功路径、失败教训和反思建议，返回结构化结果供模型分析。
+ */
+async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
+  const { scope = 'last_n_rounds', rounds = 3, sessionId } = args;
+
+  const sid = sessionId || currentSessionId || await getActiveSessionId();
+  if (!sid) {
+    return makeResult(false, '无法获取会话ID，请指定 sessionId 参数', { tool_call_id: toolCallId });
+  }
+
+  const session = await getSession(sid);
+  if (!session) {
+    return makeResult(false, `会话不存在: ${sid}`, { tool_call_id: toolCallId });
+  }
+
+  const messageHistory = session.messageHistory || [];
+
+  // 收集所有带 executionLog 的 assistant 消息（每条代表一轮 ReAct 循环）
+  const roundsWithLog = messageHistory
+    .map((msg, idx) => ({ msg, idx }))
+    .filter(({ msg }) => msg.role === 'assistant' && Array.isArray(msg.executionLog) && msg.executionLog.length > 0);
+
+  if (roundsWithLog.length === 0) {
+    return makeResult(true, '当前会话没有执行日志。', { tool_call_id: toolCallId });
+  }
+
+  // 根据 scope 过滤目标轮次
+  let targetRounds;
+  switch (scope) {
+    case 'last_round':
+      targetRounds = roundsWithLog.slice(-1);
+      break;
+    case 'last_n_rounds':
+      targetRounds = roundsWithLog.slice(-Math.min(rounds, roundsWithLog.length));
+      break;
+    case 'full_session':
+      targetRounds = roundsWithLog;
+      break;
+    default:
+      targetRounds = roundsWithLog.slice(-Math.min(rounds, roundsWithLog.length));
+  }
+
+  // 从目标轮次中提炼信息
+  const successPaths = [];
+  const failures = [];
+  const reflections = [];
+  const timeline = [];
+
+  for (const { msg, idx } of targetRounds) {
+    const roundNum = idx + 1;
+    const log = msg.executionLog || [];
+
+    for (const entry of log) {
+      const nodeType = entry.nodeType;
+
+      // 记录时间线条目
+      timeline.push({
+        round: roundNum,
+        nodeType,
+        nodeName: entry.nodeName || entry.action?.name || '未知',
+        status: entry.status || 'unknown',
+        timestamp: entry.timestamp || null,
+        toolName: entry.action?.name || null
+      });
+
+      // 工具执行结果
+      if (nodeType === 'tool_exec') {
+        const toolName = entry.action?.name || entry.nodeName || '未知工具';
+        const toolArgs = entry.action?.arguments || entry.action?.args || {};
+        const status = entry.status;
+
+        if (status === 'success') {
+          successPaths.push({
+            round: roundNum,
+            tool: toolName,
+            args: toolArgs,
+            result: entry.observation || entry.result || '成功',
+            description: entry.nodeName || ''
+          });
+        } else if (status === 'failed' || status === 'cancelled') {
+          failures.push({
+            round: roundNum,
+            tool: toolName,
+            args: toolArgs,
+            status,
+            error: entry.error || entry.observation || entry.result || '未知错误',
+            description: entry.nodeName || ''
+          });
+        }
+      }
+
+      // 反思节点
+      if (nodeType === 'reflection') {
+        reflections.push({
+          round: roundNum,
+          tool: entry.action?.name || entry.nodeName || '未知',
+          effective: entry.effective !== undefined ? entry.effective : null,
+          reasoning: entry.reasoning || entry.analysis || '',
+          suggestion: entry.suggestion || entry.advice || '',
+          reflectionType: entry.reflectionType || ''
+        });
+      }
+    }
+  }
+
+  // 统计数据
+  const totalRounds = targetRounds.length;
+  const totalSteps = timeline.length;
+  const successCount = timeline.filter(t => t.status === 'success').length;
+  const failCount = timeline.filter(t => t.status === 'failed' || t.status === 'cancelled').length;
+
+  // 构建结构化结果
+  const result = {
+    sessionId: sid,
+    scope,
+    roundsAnalyzed: totalRounds,
+    stats: {
+      totalSteps,
+      successCount,
+      failCount,
+      successRate: totalSteps > 0 ? ((successCount / totalSteps) * 100).toFixed(1) + '%' : '0%'
+    },
+    successPaths,
+    failures,
+    reflections,
+    timeline
+  };
+
+  // 构建可读的 Markdown 摘要
+  const mdLines = [];
+  mdLines.push(`## 执行日志提炼报告`);
+  mdLines.push('');
+  mdLines.push(`**会话**: ${session.title || sid.slice(0, 8)}`);
+  mdLines.push(`**分析范围**: ${scope}（${totalRounds} 轮）`);
+  mdLines.push(`**统计**: 共 ${totalSteps} 步，成功 ${successCount}，失败 ${failCount}，成功率 ${result.stats.successRate}`);
+  mdLines.push('');
+
+  if (successPaths.length > 0) {
+    mdLines.push('### ✅ 成功路径');
+    mdLines.push('');
+    for (const s of successPaths) {
+      mdLines.push(`- **[轮次${s.round}]** 工具 \`${s.tool}\` → ${typeof s.result === 'string' ? s.result.substring(0, 100) : '执行成功'}`);
+    }
+    mdLines.push('');
+  }
+
+  if (failures.length > 0) {
+    mdLines.push('### ❌ 失败教训');
+    mdLines.push('');
+    for (const f of failures) {
+      mdLines.push(`- **[轮次${f.round}]** 工具 \`${f.tool}\` ${f.status}: ${typeof f.error === 'string' ? f.error.substring(0, 150) : '未知错误'}`);
+    }
+    mdLines.push('');
+  }
+
+  if (reflections.length > 0) {
+    mdLines.push('### 🎯 反思建议');
+    mdLines.push('');
+    for (const r of reflections) {
+      mdLines.push(`- **[轮次${r.round}]** 工具 \`${r.tool}\``);
+      if (r.reasoning) mdLines.push(`  - 推理: ${r.reasoning.substring(0, 200)}`);
+      if (r.suggestion) mdLines.push(`  - 建议: ${r.suggestion.substring(0, 200)}`);
+    }
+    mdLines.push('');
+  }
+
+  return makeResult(true, mdLines.join('\n'), {
+    tool_call_id: toolCallId,
+    extractedData: result
+  });
+}
+
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
 // Background 工具处理器注册表（单一数据源）
@@ -1189,6 +1363,7 @@ const TOOL_HANDLERS = {
   search_browser_data: executeSearchBrowserData,
   agent_trash: executeAgentTrash,
   manage_agent: executeManageAiAgent,
+  exec_log: executeExtractExecutionLog,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）

@@ -135,4 +135,25 @@ export const AGENT_TOOLS = [
       }
     }
   },
+  {
+    id: 'exec_log',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: true,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'exec_log',
+      description: '提取历史执行日志，分析成功路径与失败教训。',
+      parameters: {
+        type: 'object',
+        properties: {
+          scope: { type: 'string', enum: ['last_round', 'last_n_rounds', 'full_session'], description: '范围' },
+          rounds: { type: 'integer', description: '轮数(默认3)' },
+          sessionId: { type: 'string', description: '会话ID' }
+        },
+        required: ['scope']
+      }
+    }
+  },
 ];
