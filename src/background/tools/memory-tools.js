@@ -12,15 +12,15 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory',
-      description: '长期记忆管理。action=store时增删改(subAction:add/update/delete+type+content,update/delete需memoryId)，action=recall时关键词检索(需query+memoryType+limit)，action=manage时审查清理(subAction:review/compact)。query用关键词不用完整句子，删前先recall查id。',
+      description: '长期记忆管理。action=store增删改、recall关键词检索、manage审查清理。query用关键词，删前先recall查id。',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['store', 'recall', 'manage'], description: '操作类型' },
           subAction: { type: 'string', description: '子操作: store时=add/update/delete, manage时=review/compact' },
-          type: { type: 'string', enum: ['fact', 'summary'], description: 'store时必填: 记忆类型' },
+          type: { type: 'string', enum: ['fact', 'summary'], description: '记忆类型' },
           category: { type: 'string', enum: ['preference', 'knowledge', 'decision', 'custom'], description: 'store时可选: 记忆分类' },
-          content: { type: 'string', description: 'store时必填(delete除外): 记忆内容' },
+          content: { type: 'string', description: 'store时必填: 记忆内容' },
           title: { type: 'string', description: 'store时可选: summary类型标题' },
           tags: { type: 'array', items: { type: 'string' }, description: 'store/recall时可选: 标签筛选' },
           importance: { type: 'integer', description: 'store时可选: 重要性1-10' },

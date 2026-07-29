@@ -303,7 +303,7 @@ ${terms}`;
 
 ## 记忆
 - 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)
-- store: subAction=add需type+content，update/delete需memoryId+type。**删除前先recall查id**
+- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**
 - recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit
 - manage: subAction=review审查价值，compact清理低价值
 - 存长期价值信息，加tags和importance(1-10)便于检索` : '';

@@ -134,7 +134,8 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   const { action, type, category, content, title, tags, importance, memoryId, sourceSessionId } = args;
 
   if (!action) return makeResult(false, '缺少 action 参数', toolCallId);
-  if (!type) return makeResult(false, '缺少 type 参数', toolCallId);
+  // delete 不需要 type（memoryId 全局唯一），add/update 需要
+  if (!type && action !== 'delete') return makeResult(false, '缺少 type 参数', toolCallId);
   if (!content && action !== 'delete') return makeResult(false, '缺少 content 参数', toolCallId);
 
   return withMemoryLock(async () => {
@@ -238,13 +239,13 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
     if (action === 'delete') {
       if (!memoryId) return makeResult(false, 'delete 操作需要 memoryId 参数', toolCallId);
-  
-      const idx = targetArray.findIndex(m => m.id === memoryId);
-      if (idx === -1) {
-        const otherArray = type === 'fact' ? memoryData.summaries : memoryData.facts;
-        const otherIdx = otherArray.findIndex(m => m.id === memoryId);
-        if (otherIdx !== -1) {
-          const removed = otherArray.splice(otherIdx, 1)[0];
+
+      // 在 facts 和 summaries 两个数组中查找（不依赖 type 参数）
+      const arrays = [memoryData.facts, memoryData.summaries];
+      for (const arr of arrays) {
+        const idx = arr.findIndex(m => m.id === memoryId);
+        if (idx !== -1) {
+          const removed = arr.splice(idx, 1)[0];
           removeFromRecalledCache(memoryId);
           const writeResult = await writeMemoryFile(memoryData);
           if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
@@ -254,19 +255,9 @@ export async function executeAgentMemoryStore(args, toolCallId) {
             stats: memoryData.stats
           };
         }
-        return makeResult(false, `未找到记忆: ${memoryId}`, toolCallId);
       }
-  
-      const removed = targetArray.splice(idx, 1)[0];
-      removeFromRecalledCache(memoryId);
-      const writeResult = await writeMemoryFile(memoryData);
-      if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
-  
-      return {
-        ...makeResult(true, `已删除记忆: ${memoryId}`, toolCallId),
-        removed,
-        stats: memoryData.stats
-      };
+
+      return makeResult(false, `未找到记忆: ${memoryId}`, toolCallId);
     }
   
     return makeResult(false, `不支持的操作: ${action}`, toolCallId);
