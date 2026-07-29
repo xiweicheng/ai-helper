@@ -7,7 +7,7 @@ import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
-import { readMemoryFile, executeAgentMemoryStore, executeAgentMemoryRecall, executeAgentMemoryManage } from './tool-memory.js';
+import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
 import { logger } from '../shared/logger.js';
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws, resolve }）
@@ -1347,9 +1347,7 @@ const TOOL_HANDLERS = {
   wait_navigation: executeWaitForNavigation,
   dispatch_task: executeDispatchSubAgent,
   agent_skill: executeAgentSkill,
-  agent_memory_store: async (args, toolCallId) => executeAgentMemoryStore(args, toolCallId),
-  agent_memory_recall: async (args, toolCallId, sessionId) => executeAgentMemoryRecall(args, toolCallId, sessionId),
-  agent_memory_manage: async (args, toolCallId) => executeAgentMemoryManage(args, toolCallId),
+  agent_memory: async (args, toolCallId, sessionId) => executeAgentMemory(args, toolCallId, sessionId),
   // ── 合并后的工具 ──
   page_content: executeGetPageContent,
   extract_data: executeExtractData,

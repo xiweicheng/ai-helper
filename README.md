@@ -195,7 +195,7 @@ ai-helper/
 │   │       ├── media-tools.js          # 媒体输出 + 调试开发 (7)
 │   │       ├── ai-tools.js             # AI 协作 (6)
 │   │       ├── agent-tools.js          # 本地代理 (6)
-│   │       ├── memory-tools.js         # 长期记忆 (3)
+│   │       ├── memory-tools.js         # 长期记忆 (1)
 │   │       ├── tool-memory.js          # 长期记忆工具 handler
 │   │       ├── tool-network.js         # fetchWithTimeout + fetchWithRetry
 │   │       └── tool-screenshot.js      # 截图工具 handler
@@ -503,9 +503,9 @@ ai-helper/
 
 AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息：
 
-- **记忆存储**：AI 自动识别对话中的重要信息（偏好、知识、决策），主动调用 `agent_memory_store` 存储
+- **记忆存储**：AI 自动识别对话中的重要信息（偏好、知识、决策），主动调用 `agent_memory` 存储
 - **记忆类型**：支持事实记忆（fact）和对话摘要（summary）两种类型
-- **智能检索**：通过 `agent_memory_recall` 按关键词、标签、类型搜索历史记忆
+- **智能检索**：通过 `agent_memory` 按关键词、标签、类型搜索历史记忆
 - **记忆管理**：自动审查记忆质量（review），合并重复记忆，淘汰低价值记忆（compact）
 - **标签分类**：偏好、知识、决策、自定义四类标签体系
 - **重要性评分**：1-10 分，帮助记忆系统做优先级排序
@@ -707,12 +707,10 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `agent_search` | 搜索文件（按文件名或内容，fd/ripgrep 加速） |
 | `agent_skill` | Skill 加载与执行（load/run 两种 action） |
 
-### 长期记忆（3 个）—— 需安装代理服务
+### 长期记忆（1 个）—— 需安装代理服务
 | 工具 | 说明 |
 |------|------|
-| `agent_memory_store` | 存储/更新/删除长期记忆（偏好、知识、决策、摘要） |
-| `agent_memory_recall` | 按关键词或标签检索已存储的记忆 |
-| `agent_memory_manage` | 审查记忆质量、合并重复、淘汰低价值记忆 |
+| `agent_memory` | 统一记忆管理。store 增删改、recall 关键词检索、manage 审查清理，通过 action 参数区分 |
 
 ### MCP 工具（动态扩展）
 通过 MCP 协议连接第三方工具服务器后，工具会自动注册到系统中。数量取决于连接的 MCP Server。

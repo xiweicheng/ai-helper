@@ -297,14 +297,15 @@ ${terms}`;
 复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。` : '';
 
   // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
-  const memoryTools = ['agent_memory_store', 'agent_memory_recall', 'agent_memory_manage'];
+  const memoryTools = ['agent_memory'];
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
 ## 记忆
-- recall: query用关键词，如"考试"，不要完整句子
-- store: add需type+content，update/delete需memoryId+type。**删除前必须先recall获取id和type**
-- manage: review审查价值，compact清理低价值
+- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)
+- store: subAction=add需type+content，update/delete需memoryId+type。**删除前先recall查id**
+- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit
+- manage: subAction=review审查价值，compact清理低价值
 - 存长期价值信息，加tags和importance(1-10)便于检索` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词

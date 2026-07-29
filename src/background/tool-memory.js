@@ -1,5 +1,5 @@
 // background/tool-memory.js - 长期记忆工具
-// 从 tool-executor.js 拆分，包含 agent_memory_store / agent_memory_recall / agent_memory_manage 工具实现
+// 统一入口 executeAgentMemory，按 action 分发到 store/recall/manage 子逻辑
 
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
@@ -192,7 +192,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       const summaryRatio = memoryData.summaries.length / maxSummaries;
       let warning = '';
       if (factRatio >= 0.8 || summaryRatio >= 0.8) {
-        warning = `\n⚠️ 记忆数量接近上限（事实: ${memoryData.facts.length}/${maxFacts}, 摘要: ${memoryData.summaries.length}/${maxSummaries}），建议调用 agent_memory_manage 进行审查整理。`;
+        warning = `\n⚠️ 记忆数量接近上限（事实: ${memoryData.facts.length}/${maxFacts}, 摘要: ${memoryData.summaries.length}/${maxSummaries}），建议调用 agent_memory action=manage 进行审查整理。`;
       }
   
       return {
@@ -593,8 +593,8 @@ export async function executeAgentMemoryStore(args, toolCallId) {
             ).join('\n')
         ) +
         `\n**建议操作**:\n` +
-        `- 对于确实过时/不再适用的记忆，使用 agent_memory_store action=delete 删除\n` +
-        `- 对于内容相似的记忆，使用 agent_memory_store action=update 合并\n` +
+        `- 对于确实过时/不再适用的记忆，使用 agent_memory action=store subAction=delete 删除\n` +
+        `- 对于内容相似的记忆，使用 agent_memory action=store subAction=update 合并\n` +
         `- 对于仍有用但价值低的记忆，可保留不做处理`;
   
       return {
@@ -648,4 +648,32 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
   
   // 导出记忆工具函数供 tool-executor.js 路由表使用
-  
+
+/**
+ * agent_memory - 统一记忆管理入口，按 action 分发
+ */
+export async function executeAgentMemory(args, toolCallId, sessionId) {
+  const { action, subAction } = args;
+
+  if (!action) return makeResult(false, '缺少 action 参数', toolCallId);
+
+  if (action === 'recall') {
+    return executeAgentMemoryRecall(args, toolCallId, sessionId);
+  }
+
+  if (action === 'store') {
+    // 将 subAction 映射为原 store 函数期望的 action 参数
+    if (!subAction) return makeResult(false, 'store 操作缺少 subAction (add/update/delete)', toolCallId);
+    const storeArgs = { ...args, action: subAction };
+    return executeAgentMemoryStore(storeArgs, toolCallId);
+  }
+
+  if (action === 'manage') {
+    // 将 subAction 映射为原 manage 函数期望的 action 参数
+    if (!subAction) return makeResult(false, 'manage 操作缺少 subAction (review/compact)', toolCallId);
+    const manageArgs = { ...args, action: subAction };
+    return executeAgentMemoryManage(manageArgs, toolCallId);
+  }
+
+  return makeResult(false, `不支持的 action: ${action}`, toolCallId);
+}

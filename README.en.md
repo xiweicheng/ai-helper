@@ -191,7 +191,7 @@ ai-helper/
 │   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
 │   │       ├── ai-tools.js             │ AI Collaboration (6)
 │   │       ├── agent-tools.js          │ Local Agent (6)
-│   │       └── memory-tools.js         │ Long-term Memory (3)
+│   │       └── memory-tools.js         │ Long-term Memory (1)
 │   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
 │   │   ├── page-tools.js               # Page content tools (extraction, search, a11y tree)
@@ -475,9 +475,9 @@ Hover over assistant messages to auto-generate floating navigation:
 
 AI Helper has long-term memory capabilities, storing and retrieving user information across sessions:
 
-- **Memory Storage**: AI automatically identifies important information (preferences, knowledge, decisions) and calls `agent_memory_store` to store it
+- **Memory Storage**: AI automatically identifies important information (preferences, knowledge, decisions) and calls `agent_memory` to store it
 - **Memory Types**: Supports fact memory and conversation summary memory
-- **Smart Retrieval**: Use `agent_memory_recall` to search historical memories by keywords, tags, and type
+- **Smart Retrieval**: Use `agent_memory` to search historical memories by keywords, tags, and type
 - **Memory Management**: Auto-review memory quality, merge duplicates, evict low-value memories
 - **Tag Classification**: Preference, knowledge, decision, and custom tag categories
 - **Importance Scoring**: 1-10 scale for priority sorting
@@ -679,12 +679,10 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 | `agent_search` | Search files (by filename or content, fd/ripgrep accelerated) |
 | `agent_skill` | Skill loading and execution (load/run actions) |
 
-### Long-term Memory (3) — Requires Agent Service
+### Long-term Memory (1) — Requires Agent Service
 | Tool | Description |
 |------|-------------|
-| `agent_memory_store` | Store/update/delete long-term memory (preferences, knowledge, decisions, summaries) |
-| `agent_memory_recall` | Search stored memories by keywords or tags |
-| `agent_memory_manage` | Review memory quality, merge duplicates, evict low-value memories |
+| `agent_memory` | Unified memory management. store=CRUD, recall=keyword search, manage=review & compact, distinguished by action parameter |
 
 ### MCP Tools (Dynamic Extension)
 When connected to third-party MCP servers, tools are automatically registered. Quantity depends on connected MCP Servers.
