@@ -68,6 +68,96 @@ export function autoCompleteJson(str) {
 }
 
 /**
+ * 清除数组中混入的对象键值对
+ * LLM 有时会把 "key": value 风格的对象字段错误放进数组中，例如：
+ *   ["a", "recommendedOption": 1, "b"] → ["a", "b"]
+ * 通过字符扫描追踪括号上下文，仅在数组内检测并移除这些非法条目
+ */
+export function fixArrayObjectMismatch(str) {
+  if (!str || typeof str !== 'string') return str;
+
+  const result = [];
+  let inString = false;
+  let escapeNext = false;
+  const bracketStack = [];
+
+  let i = 0;
+  while (i < str.length) {
+    const ch = str[i];
+
+    if (escapeNext) {
+      result.push(ch);
+      escapeNext = false;
+      i++;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      result.push(ch);
+      escapeNext = true;
+      i++;
+      continue;
+    }
+
+    // 在数组上下文中优先检测 "key": value 模式（必须在引号切换之前）
+    if (ch === '"' && bracketStack.length > 0 && bracketStack[bracketStack.length - 1] === '[') {
+      const remaining = str.substring(i);
+      const kvMatch = remaining.match(/^"[^"]+"\s*:\s*(true|false|null|-?\d+(?:\.\d+)?|"[^"]*")/);
+
+      if (kvMatch) {
+        // 跳过输入中的 key-value 对及其前后逗号
+        // （逗号清理放到最后统一处理，避免误删相邻有效条目间的逗号）
+        i += kvMatch[0].length;
+        // 跳过尾部空白和逗号
+        while (i < str.length && ' \t\n\r'.includes(str[i])) i++;
+        if (i < str.length && str[i] === ',') i++;
+        while (i < str.length && ' \t\n\r'.includes(str[i])) i++;
+        continue;
+      }
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      result.push(ch);
+      i++;
+      continue;
+    }
+
+    if (inString) {
+      result.push(ch);
+      i++;
+      continue;
+    }
+
+    if (ch === '{' || ch === '[') {
+      bracketStack.push(ch);
+      result.push(ch);
+      i++;
+      continue;
+    }
+
+    if (ch === '}' || ch === ']') {
+      if (bracketStack.length > 0) bracketStack.pop();
+      result.push(ch);
+      i++;
+      continue;
+    }
+
+    result.push(ch);
+    i++;
+  }
+
+  let fixed = result.join('');
+  // 统一清理：处理移除 KV 对后残留的逗号问题
+  fixed = fixed.replace(/,\s*,/g, ',');       // 双逗号 → 单逗号
+  fixed = fixed.replace(/,\s*([}\]])/g, '$1'); // 逗号在括号前
+  fixed = fixed.replace(/\[\s*,/g, '[');       // 数组开场逗号
+  fixed = fixed.replace(/,\s*\]/g, ']');       // 数组结尾逗号
+
+  return fixed;
+}
+
+/**
  * 两阶段解析工具参数：
  * 1. 先尝试标准 JSON.parse
  * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
@@ -144,6 +234,9 @@ export function tryParseToolArgs(argsStr) {
 
   // 2e. 自动补全缺失的闭合引号和括号（处理 LLM 截断输出）
   fixed = autoCompleteJson(fixed);
+
+  // 2f. 清除数组中混入的对象键值对（LLM 有时把 "key": value 错误放进数组）
+  fixed = fixArrayObjectMismatch(fixed);
 
   // 阶段 2 最终尝试
   try {

@@ -6,7 +6,7 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
-import { autoCompleteJson } from './tool-helpers.js';
+import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemoryStore, executeAgentMemoryRecall, executeAgentMemoryManage } from './tool-memory.js';
 import { logger } from '../shared/logger.js';
 
@@ -907,6 +907,9 @@ function tryParseToolArgs(argsStr) {
   
   // 2e. 自动补全缺失的闭合引号和括号（处理 LLM 截断输出）
   fixed = autoCompleteJson(fixed);
+  
+  // 2f. 清除数组中混入的对象键值对（LLM 有时把 "key": value 错误放进数组）
+  fixed = fixArrayObjectMismatch(fixed);
   
   // 阶段 2 最终尝试
   try {
