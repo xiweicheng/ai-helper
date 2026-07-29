@@ -6,6 +6,7 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
+import { autoCompleteJson } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemoryStore, executeAgentMemoryRecall, executeAgentMemoryManage } from './tool-memory.js';
 import { logger } from '../shared/logger.js';
 
@@ -903,6 +904,9 @@ function tryParseToolArgs(argsStr) {
   fixed = fixed.replace(/"([^"]+)":\s*"([^"]*)(")([^"]*)"/g, (match, key, part1, unescapedQuote, part2) => {
     return `"${key}": "${part1}\\"${part2}"`;
   });
+  
+  // 2e. 自动补全缺失的闭合引号和括号（处理 LLM 截断输出）
+  fixed = autoCompleteJson(fixed);
   
   // 阶段 2 最终尝试
   try {
@@ -3148,15 +3152,16 @@ async function executeWithCancel(sessionId, toolCallId, taskPromise) {
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
  */
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
-  const { command, cwd, force, timeout } = args;
+  const { command, cwd, force, timeoutMs } = args;
   if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
 
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
   const useAgentStream = config.streamConfig?.streamEnabled !== false;
   
-  const effectiveTimeout = typeof timeout === 'number' && timeout > 0 
-    ? timeout 
+  const MIN_TIMEOUT_MS = 5000;
+  const effectiveTimeout = typeof timeoutMs === 'number' && timeoutMs > 0 
+    ? Math.max(MIN_TIMEOUT_MS, timeoutMs)
     : config.reactConfig.toolTimeout;
   const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 

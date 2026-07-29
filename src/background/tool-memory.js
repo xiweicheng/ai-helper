@@ -245,6 +245,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
         const otherIdx = otherArray.findIndex(m => m.id === memoryId);
         if (otherIdx !== -1) {
           const removed = otherArray.splice(otherIdx, 1)[0];
+          removeFromRecalledCache(memoryId);
           const writeResult = await writeMemoryFile(memoryData);
           if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
           return {
@@ -257,6 +258,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       }
   
       const removed = targetArray.splice(idx, 1)[0];
+      removeFromRecalledCache(memoryId);
       const writeResult = await writeMemoryFile(memoryData);
       if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
   
@@ -273,6 +275,20 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
   // 每 session 已召回的记忆 ID 集合，防止同一对话重复返回相同记忆
   const sessionRecalledMemoryIds = new Map();
+  
+  /**
+   * 从所有 session 的召回缓存中移除指定 memoryId
+   */
+  function removeFromRecalledCache(memoryId) {
+    for (const [sessionId, recalledSet] of sessionRecalledMemoryIds.entries()) {
+      if (recalledSet.has(memoryId)) {
+        recalledSet.delete(memoryId);
+        if (recalledSet.size === 0) {
+          sessionRecalledMemoryIds.delete(sessionId);
+        }
+      }
+    }
+  }
   
   /**
    * agent_memory_recall - 从长期记忆中检索相关信息
@@ -331,7 +347,8 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
       /**
        * 中英文混合关键词提取
-       * - CJK 文本（无空格）：使用二元组（bigram）提取，如"长期记忆"→["长期","期记","记忆"]
+       * - CJK 短文本（≤4字）：整段作为关键词保留，如"考试"→["考试"]
+       * - CJK 长文本（>4字）：bigram 提取 + 整段作为 fallback 关键词
        * - 英文/数字：保持完整单词
        */
       function extractKeywords(text) {
@@ -342,13 +359,24 @@ export async function executeAgentMemoryStore(args, toolCallId) {
         const segments = snippet.split(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+|[a-z]+|\d+|[^a-z\d\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)/i);
   
         const tokens = [];
+        // 先将整段作为 fallback 关键词加入
+        if (snippet.length >= 2) {
+          tokens.push(snippet);
+        }
+        
         for (const seg of segments) {
           if (!seg || seg.trim().length === 0) continue;
   
           if (/^[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(seg)) {
-            // CJK 字符块：滑动窗口取二元组
-            for (let i = 0; i <= seg.length - 2; i++) {
-              tokens.push(seg.substring(i, i + 2));
+            // CJK 字符块
+            if (seg.length <= 4) {
+              // 短文本：整段作为关键词
+              tokens.push(seg);
+            } else {
+              // 长文本：滑动窗口取二元组
+              for (let i = 0; i <= seg.length - 2; i++) {
+                tokens.push(seg.substring(i, i + 2));
+              }
             }
           } else if (/^[a-z\d]+$/.test(seg)) {
             // 英文/数字：保持完整单词
@@ -359,11 +387,12 @@ export async function executeAgentMemoryStore(args, toolCallId) {
         }
         // 去重、过滤停用词、限制最多 30 个关键词（避免膨胀）
         return [...new Set(tokens)]
-          .filter(k => k.length >= 2 && !STOP_WORDS.has(k))
+          .filter(k => k.length >= 1 && !STOP_WORDS.has(k))
           .slice(0, 30);
       }
   
       const keywords = extractKeywords(query);
+      const originalQuery = query.toLowerCase().trim();
   
       if (keywords.length > 0) {
         const scored = candidates.map(m => {
@@ -377,6 +406,12 @@ export async function executeAgentMemoryStore(args, toolCallId) {
             if (title.includes(kw)) score += 2;
             if (memTags.some(t => t.includes(kw))) score += 2;
           }
+          
+          // 全文精确匹配加分
+          if (originalQuery.length >= 2) {
+            if (content.includes(originalQuery)) score += 5;
+            if (title.includes(originalQuery)) score += 3;
+          }
   
           return { memory: m, score };
         });
@@ -386,6 +421,23 @@ export async function executeAgentMemoryStore(args, toolCallId) {
           .filter(s => s.score > 0)
           .sort((a, b) => b.score - a.score)
           .map(s => s.memory);
+          
+        // 全文 Fallback：关键词匹配无结果时，用原始 query 做 includes 搜索
+        if (candidates.length === 0 && originalQuery.length >= 2) {
+          const fallbackResults = candidates
+            .filter(m => {
+              const content = (m.content || '').toLowerCase();
+              const title = (m.title || '').toLowerCase();
+              return content.includes(originalQuery) || title.includes(originalQuery);
+            })
+            .map(m => ({ memory: m, score: 5 })) // 给 fallback 结果一个基础分
+            .sort((a, b) => b.score - a.score)
+            .map(s => s.memory);
+            
+          if (fallbackResults.length > 0) {
+            candidates = fallbackResults;
+          }
+        }
       }
     }
   
@@ -397,32 +449,31 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       return true;
     }).slice(0, limit);
   
-    // Session 级去重：排除本对话已召回过的记忆
-    let alreadyRecalled = [];
+    // Session 级去重：优先返回本对话未召回过的记忆
+    let recallNote = '';
     if (sessionId) {
       const recalledSet = sessionRecalledMemoryIds.get(sessionId);
       if (recalledSet && recalledSet.size > 0) {
         const newResults = [];
+        const oldResults = [];
         for (const m of results) {
           if (recalledSet.has(m.id)) {
-            alreadyRecalled.push(m);
+            oldResults.push(m);
           } else {
             newResults.push(m);
           }
         }
-        // 如果全部已召回过，告知 LLM 无需重复
-        if (newResults.length === 0 && results.length > 0) {
-          return {
-            success: true,
-            message: '当前对话中已检索过所有相关记忆，无需重复。如有新的检索需求，请提供不同的关键词。',
-            results: [],
-            total: 0,
-            alreadyRecalledCount: alreadyRecalled.length,
-            query,
-            tool_call_id: toolCallId
-          };
+        
+        // 优先返回新记忆；如果没有新记忆，但有旧记忆，则返回旧记忆并提示
+        if (newResults.length === 0 && oldResults.length > 0) {
+          recallNote = '（注：以上记忆在本对话中已检索过，此处为重复返回）';
+          results = oldResults;
+        } else if (newResults.length > 0) {
+          if (oldResults.length > 0) {
+            recallNote = `（注：${oldResults.length} 条记忆在本对话中已检索过，仅返回新的 ${newResults.length} 条）`;
+          }
+          results = newResults;
         }
-        results = newResults;
       }
     }
   
@@ -460,7 +511,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
     // 格式化输出
     const resultText = results.length === 0
       ? '未找到匹配的记忆。'
-      : `找到 ${results.length} 条相关记忆:\n\n` + results.map((m, i) => {
+      : `找到 ${results.length} 条相关记忆:${recallNote}\n\n` + results.map((m, i) => {
           let text = `**${i + 1}. [${m.type === 'fact' ? '事实' : '摘要'}] ${m.id}**\n`;
           text += `   内容: ${m.content}\n`;
           if (m.title) text += `   标题: ${m.title}\n`;

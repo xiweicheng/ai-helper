@@ -236,16 +236,13 @@ export async function getSystemPrompt(agent = null) {
   const browserOS = getBrowserOS();
   const execEnv = getCommandExecutionEnv(agent?.toolIds);
 
-  let agentInfo = '';
   let commandEnvSection = '';
   
   if (execEnv) {
-    agentInfo = `\n- 本地终端：${execEnv.shellType} / ${execEnv.platformName} (${execEnv.arch})`;
-    
     commandEnvSection = `
 
 ## 命令执行环境
-- **操作系统/Shell**: ${execEnv.osType} / ${execEnv.shellType}
+- **操作系统/Shell**: ${execEnv.osType} (${execEnv.arch}) / ${execEnv.shellType}
 - **工作目录**: ${execEnv.workdir || '未设置'}
 - ${execEnv.commandHint}`;
   }
@@ -305,7 +302,10 @@ ${terms}`;
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
 ## 记忆系统
-agent_memory_store 存储重要信息（偏好、决策等），agent_memory_recall 检索历史，agent_memory_manage 整理。类型：fact（事实）、summary（摘要）。仅存储长期价值信息，添加标签和重要性评分。` : '';
+- **agent_memory_recall**：query传简短关键词（如"考试"、"Python配置"），不要传完整句子。可通过tags筛选。
+- **agent_memory_store**：add（需type+content）、update（需memoryId+type）、delete（需memoryId+type）。**删除前必须先用recall确认目标记忆的id和type**。
+- **agent_memory_manage**：action=review审查记忆价值，action=compact自动清理低价值记忆。
+- 只存长期价值信息（偏好、决策、关键知识），添加tags和importance（1-10）便于检索。` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词
   // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）
@@ -342,7 +342,7 @@ ${notesText}
 
 ## 当前环境
 - 当前时间：${currentTime}
-- 浏览器：Chrome 扩展 (Side Panel) / ${browserOS}${agentInfo}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+- 浏览器：Chrome 扩展 (Side Panel) / ${browserOS}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 `;
 
     // 注入 Agent Skill Prompts
@@ -366,7 +366,7 @@ ${notesText}
 精准技术术语，代码示例可运行，Markdown格式，方案可落地，不生成安全违规代码${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
 ## 环境
-${currentTime} | Chrome Side Panel / ${browserOS}${agentInfo}${commandEnvSection}
+${currentTime} | Chrome Side Panel / ${browserOS}${commandEnvSection}
 `;
 
   // 注入 Agent Skill Prompts

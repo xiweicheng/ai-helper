@@ -420,6 +420,7 @@ export function startServer() {
         version: AGENT_VERSION,
         running: true,
         platform: PLATFORM_INFO.platform,
+        platformName: PLATFORM_INFO.platformName,
         arch: PLATFORM_INFO.arch,
         nodeVersion: PLATFORM_INFO.nodeVersion,
         searchTools: getSearchToolsAvailable()
@@ -537,7 +538,8 @@ export function startServer() {
           const result = await new Promise((resolvePromise) => {
             const npm = spawn('npm', ['install', '-g', 'ai-helper-agent@latest', '--no-audit', '--no-fund'], {
               shell: true,
-              env: { ...process.env }
+              env: { ...process.env },
+              windowsHide: true
             });
             npm.stdout.on('data', d => npmOutput.push(d.toString().trim()));
             npm.stderr.on('data', d => npmOutput.push(d.toString().trim()));

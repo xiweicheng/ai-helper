@@ -360,7 +360,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     writeFileSync(tmpZip, zipBuffer);
 
     // 解压到临时目录（execFile 数组参数，不经 shell，杜绝命令注入）
-    await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000 });
+    await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000, windowsHide: true });
 
     // 查找 SKILL.md
     const entries = readdirSync(tmpDir);
@@ -414,7 +414,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     }
 
     // 复制（execFile 数组参数，不经 shell）
-    await execFileAsync('cp', ['-r', skillDir + '/.', destDir], { timeout: 30000 });
+    await execFileAsync('cp', ['-r', skillDir + '/.', destDir], { timeout: 30000, windowsHide: true });
 
     // 重新加载
     const skill = loadMarkdownSkill(destDir);

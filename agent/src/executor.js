@@ -370,10 +370,8 @@ function killProcess(execId) {
 
   if (isWin) {
     // Windows: /T 递归终止整个进程树
-    exec(`taskkill /T /PID ${pid}`, (err) => {
-      if (err) {
-        exec(`taskkill /F /T /PID ${pid}`, () => {});
-      }
+    spawn('taskkill', ['/T', '/PID', String(pid)], { windowsHide: true }).on('error', () => {
+      spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
     });
   } else {
     // Unix: 负 PID 表示杀整个进程组（detached + 未调用 setsid 时有效）
@@ -399,7 +397,7 @@ function killProcess(execId) {
     try {
       if (entry.process.exitCode === null) {
         if (isWin) {
-          exec(`taskkill /F /T /PID ${pid}`, () => {});
+          spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
         } else {
           try { process.kill(-pid, 'SIGKILL'); }
           catch { try { entry.process.kill('SIGKILL'); } catch {} }

@@ -9,7 +9,8 @@ const projectRoot = path.join(__dirname, '..');
 try {
   execFileSync('npm', ['run', 'build'], {
     cwd: projectRoot,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true
   });
   console.log('BUILD_SUCCESS');
 } catch (error) {

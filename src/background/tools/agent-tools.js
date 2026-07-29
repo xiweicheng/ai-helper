@@ -61,7 +61,7 @@ export const AGENT_TOOLS = [
           command: { type: 'string' },
           cwd: { type: 'string' },
           force: { type: 'boolean', description: '强制执行已确认命令' },
-          timeout: { type: 'integer' }
+          timeoutMs: { type: 'integer' }
         },
         required: ['command']
       }

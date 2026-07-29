@@ -87,7 +87,8 @@ async function executeToolCall(toolName, args) {
             cwd: args.cwd || process.cwd(),
             encoding: 'utf-8',
             timeout: 30000,
-            maxBuffer: 10 * 1024 * 1024
+            maxBuffer: 10 * 1024 * 1024,
+            windowsHide: true
           }, (error, stdout, stderr) => {
             if (error) {
               resolve({ success: false, error: error.message, stdout, stderr });

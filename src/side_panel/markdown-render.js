@@ -6,20 +6,81 @@ import logger from '../shared/logger.js';
 
 const MAX_SVG_DIM = 2000;
 
+/**
+ * 清理 SVG 中可能导致 canvas 污染（tainted canvas）的元素
+ * - 移除 <foreignObject>（内嵌 HTML，容易引用外部资源）
+ * - 移除引用外部 http(s) 地址的 <image> 元素
+ * - 移除引用外部 http(s) 地址的 <use> 元素
+ */
+function sanitizeSvgForExport(svgElement) {
+  const clone = svgElement.cloneNode(true);
+
+  // 移除 <foreignObject> 节点
+  const foreignObjects = clone.querySelectorAll('foreignObject');
+  foreignObjects.forEach(el => el.remove());
+
+  // 移除引用外部 http(s) 地址的 <image> 元素
+  const images = clone.querySelectorAll('image');
+  images.forEach(el => {
+    const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+    if (/^https?:/i.test(href)) {
+      el.remove();
+    }
+  });
+
+  // 移除引用外部 http(s) 地址的 <use> 元素
+  const uses = clone.querySelectorAll('use');
+  uses.forEach(el => {
+    const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+    if (/^https?:/i.test(href)) {
+      el.remove();
+    }
+  });
+
+  return clone;
+}
+
+/**
+ * 安全获取 SVG 渲染尺寸
+ * 按优先级依次尝试：
+ * 1. viewBox 属性（最可靠，始终是绝对像素尺寸）
+ * 2. width/height 属性（用 parseFloat 解析，避免 baseVal.value 抛异常）
+ * 3. getBoundingClientRect（对已渲染的 DOM 元素获取实际尺寸）
+ * 4. 默认回退值 800×600
+ */
+function getSvgRenderSize(svgElement) {
+  // 1. 优先从 viewBox 解析绝对像素尺寸
+  const viewBox = svgElement.getAttribute('viewBox');
+  if (viewBox) {
+    const parts = viewBox.split(/[\s,]+/).map(parseFloat);
+    if (parts.length === 4 && !isNaN(parts[2]) && !isNaN(parts[3]) && parts[2] > 0 && parts[3] > 0) {
+      return { width: parts[2], height: parts[3] };
+    }
+  }
+
+  // 2. 尝试用 parseFloat 解析 width/height 属性（纯字符串解析，不会抛异常）
+  const attrWidth = parseFloat(svgElement.getAttribute('width'));
+  const attrHeight = parseFloat(svgElement.getAttribute('height'));
+  if (!isNaN(attrWidth) && !isNaN(attrHeight) && attrWidth > 0 && attrHeight > 0) {
+    return { width: attrWidth, height: attrHeight };
+  }
+
+  // 3. 对已渲染的 DOM 元素，尝试获取实际渲染尺寸
+  try {
+    const rect = svgElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return { width: rect.width, height: rect.height };
+    }
+  } catch (e) { /* 忽略，继续回退 */ }
+
+  // 4. 默认回退值
+  return { width: 800, height: 600 };
+}
+
 export function svgToPngDataUrl(svgElement) {
   return new Promise((resolve, reject) => {
     try {
-      let svgWidth = svgElement.width.baseVal?.value ||
-        parseInt(svgElement.getAttribute('width')) || 800;
-      let svgHeight = svgElement.height.baseVal?.value ||
-        parseInt(svgElement.getAttribute('height')) || 600;
-
-      const viewBox = svgElement.getAttribute('viewBox');
-      if (viewBox) {
-        const parts = viewBox.split(' ').map(parseFloat);
-        svgWidth = parts[2];
-        svgHeight = parts[3];
-      }
+      let { svgWidth, svgHeight } = getSvgRenderSize(svgElement);
 
       let scaleFactor = 2;
       if (svgWidth > MAX_SVG_DIM || svgHeight > MAX_SVG_DIM) {
@@ -29,11 +90,12 @@ export function svgToPngDataUrl(svgElement) {
         scaleFactor = 1.5;
       }
 
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
+      const sanitizedSvg = sanitizeSvgForExport(svgElement);
+      const svgData = new XMLSerializer().serializeToString(sanitizedSvg);
+      const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
 
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = function () {
         const padding = 10;
         const canvas = document.createElement('canvas');
@@ -52,7 +114,6 @@ export function svgToPngDataUrl(svgElement) {
           svgHeight * scaleFactor
         );
 
-        URL.revokeObjectURL(url);
         try {
           resolve(canvas.toDataURL('image/png'));
         } catch (e) {
@@ -61,11 +122,10 @@ export function svgToPngDataUrl(svgElement) {
       };
 
       img.onerror = function (err) {
-        URL.revokeObjectURL(url);
         reject(err);
       };
 
-      img.src = url;
+      img.src = dataUrl;
     } catch (err) {
       reject(err);
     }

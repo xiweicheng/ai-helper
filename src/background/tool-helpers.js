@@ -4,6 +4,70 @@
 import logger from '../shared/logger.js';
 
 /**
+ * 自动补全截断的 JSON 字符串
+ * - 追踪引号状态（处理转义 \"）和括号栈（{ [ (）
+ * - 字符串结束时引号未闭合 → 补上 "
+ * - 移除末尾残留的尾随逗号
+ * - 根据栈中剩余的未闭合括号，按相反顺序补全 } ] )
+ */
+export function autoCompleteJson(str) {
+  if (!str || typeof str !== 'string') return str;
+
+  let inString = false;
+  let escapeNext = false;
+  const bracketStack = []; // 存储 '{' '[' '('
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (ch === '"' && !escapeNext) {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (ch === '{' || ch === '[' || ch === '(') {
+        bracketStack.push(ch);
+      } else if (ch === '}' || ch === ']' || ch === ')') {
+        const expected = ch === '}' ? '{' : ch === ']' ? '[' : '(';
+        if (bracketStack.length > 0 && bracketStack[bracketStack.length - 1] === expected) {
+          bracketStack.pop();
+        }
+      }
+    }
+  }
+
+  let result = str;
+
+  // 补全未闭合的引号
+  if (inString) {
+    result += '"';
+  }
+
+  // 移除末尾残留的尾随逗号（在补引号之后，因为逗号可能在引号内）
+  result = result.replace(/,\s*$/, '');
+
+  // 按相反顺序补全缺失的闭合括号
+  const closingMap = { '{': '}', '[': ']', '(': ')' };
+  while (bracketStack.length > 0) {
+    const open = bracketStack.pop();
+    result += closingMap[open];
+  }
+
+  return result;
+}
+
+/**
  * 两阶段解析工具参数：
  * 1. 先尝试标准 JSON.parse
  * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
@@ -77,6 +141,9 @@ export function tryParseToolArgs(argsStr) {
   fixed = fixed.replace(/"([^"]+)":\s*"([^"]*)(")([^"]*)"/g, (match, key, part1, unescapedQuote, part2) => {
     return `"${key}": "${part1}\\"${part2}"`;
   });
+
+  // 2e. 自动补全缺失的闭合引号和括号（处理 LLM 截断输出）
+  fixed = autoCompleteJson(fixed);
 
   // 阶段 2 最终尝试
   try {

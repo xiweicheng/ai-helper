@@ -1023,10 +1023,102 @@ async function pingAllAgents() {
         if (online !== currentConnected) {
           state.agentPlatform = { ...state.agentPlatform, connected: online };
           updateAgentIndicator(state.agentPlatform, true); // skipPing 避免递归
+          // 从离线恢复为在线时，刷新完整平台信息
+          if (online) {
+            refreshAgentPlatformInfo(a);
+          }
         }
       }
     }));
   } catch { /* ignore */ }
+}
+
+/**
+ * 刷新活跃代理的完整平台信息（从离线恢复为在线时调用）
+ * 优先调用 /api/status/detail（需认证）获取完整信息，回退到 /api/status（无认证），最终回退到仅标记 connected
+ * @param {Object} [agent] - 代理对象 { url, token }，不传则从 storage 读取活跃代理
+ */
+async function refreshAgentPlatformInfo(agent) {
+  try {
+    let agentData = agent;
+    if (!agentData) {
+      const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+      const agents = storage.pairedAgents || [];
+      const activeId = storage.activeAgentId;
+      agentData = agents.find(a => a.id === activeId && !a.disabled);
+    }
+    if (!agentData || !agentData.url) {
+      state.agentPlatform = { ...state.agentPlatform, connected: true };
+      updateAgentIndicator(state.agentPlatform);
+      updateFileInputVisibility();
+      return;
+    }
+
+    // 优先：调用认证接口 /api/status/detail 获取完整信息
+    if (agentData.token) {
+      try {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 3000);
+        const detailRes = await fetch(`${agentData.url}/api/status/detail`, {
+          signal: controller.signal,
+          headers: { 'Authorization': `Bearer ${agentData.token}` }
+        });
+        if (detailRes.ok) {
+          const data = await detailRes.json();
+          if (data.success) {
+            state.agentPlatform = {
+              platformName: data.platformName || 'Unknown',
+              platform: data.platform || 'unknown',
+              arch: data.arch || 'unknown',
+              shell: data.shell || '/bin/sh',
+              homeDir: data.homeDir || '',
+              workdir: data.workdir || '',
+              connected: true
+            };
+            if (data.version) state.agentVersions.set(agentData.id, data.version);
+            if (data.workdir) {
+              state.agentWorkdirs.set(agentData.id, data.workdir);
+              updateAgentItemWorkdir(agentData.id, data.workdir);
+            }
+            if (data.homeDir) state.agentHomeDirs.set(agentData.id, data.homeDir);
+            const sysInfo = formatSystemInfo(data.platformName || data.platform, data.arch);
+            if (sysInfo) state.agentSystemInfos.set(agentData.id, sysInfo);
+            updateAgentIndicator(state.agentPlatform);
+            updateFileInputVisibility();
+            return;
+          }
+        }
+      } catch { /* 回退到无认证接口 */ }
+    }
+
+    // 回退：无认证 /api/status（已包含 platformName）
+    try {
+      const controller = new abortController();
+      setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`${agentData.url}/api/status`, { signal: controller.signal });
+      if (res.ok) {
+        const data = await res.json();
+        state.agentPlatform = {
+          platformName: data.platformName || data.platform || 'Unknown',
+          platform: data.platform || 'unknown',
+          arch: data.arch || 'unknown',
+          connected: true
+        };
+        updateAgentIndicator(state.agentPlatform);
+        updateFileInputVisibility();
+        return;
+      }
+    } catch { /* 最终回退 */ }
+
+    // 最终回退：仅标记 connected
+    state.agentPlatform = { ...state.agentPlatform, connected: true };
+    updateAgentIndicator(state.agentPlatform);
+    updateFileInputVisibility();
+  } catch {
+    state.agentPlatform = { ...state.agentPlatform, connected: true };
+    updateAgentIndicator(state.agentPlatform);
+    updateFileInputVisibility();
+  }
 }
 
 /**
@@ -1075,8 +1167,8 @@ function startRecoveryPolling(agentId, maxAttempts = 20) {
         if (result.workdir) {
           updateAgentItemWorkdir(agentId, result.workdir);
         }
-        state.agentPlatform = { ...state.agentPlatform, connected: true };
-        updateAgentIndicator(state.agentPlatform, true);
+        // 刷新完整平台信息（优先 detail 接口，回退 status 接口）
+        await refreshAgentPlatformInfo(agent);
         updateAgentItemOnlineStatus(agentId, true);
       }
     } catch { /* ignore */ }
@@ -1399,6 +1491,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateFileInputVisibility();
       // Agent 连接状态变化后，刷新工具弹窗（agent_/mcp_ 工具的可见性会变）
       refreshToolPopupIfOpen();
+      // 从断开变为连接时，刷新完整平台信息
+      if (message.connected) {
+        refreshAgentPlatformInfo();
+      }
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 选项页配对/断开/切换时更新
