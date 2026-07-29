@@ -105,8 +105,8 @@ export const MEDIA_TOOLS = [
           tabId: { type: 'integer', description: 'analyze/both时需要' },
           format: { type: 'string', enum: ['jpeg', 'png'] },
           quality: { type: 'integer' },
-          visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048 },
-          visionQuality: { type: 'integer', minimum: 30, maximum: 95 }
+          visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048, description: '视觉分析图片最大边长(px)' },
+          visionQuality: { type: 'integer', minimum: 30, maximum: 95, description: '视觉分析图片JPEG质量' }
         }
       }
     }

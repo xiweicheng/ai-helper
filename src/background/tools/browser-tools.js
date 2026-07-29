@@ -185,8 +185,8 @@ export const BROWSER_TOOLS = [
           tabId: { type: 'integer' },
           selector: { type: 'string' },
           fileName: { type: 'string' },
-          fileContent: { type: 'string' },
-          fileType: { type: 'string' }
+          fileContent: { type: 'string', description: '文件内容(base64)' },
+          fileType: { type: 'string', description: 'MIME类型，如image/png' }
         },
         required: ['tabId', 'selector', 'fileName', 'fileContent']
       }
@@ -368,7 +368,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_collect',
-      description: '滚动收集',
+      description: '滚动页面并收集内容，适用于无限滚动/懒加载页面',
       parameters: {
         type: 'object',
         properties: {
