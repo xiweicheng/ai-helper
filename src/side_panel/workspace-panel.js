@@ -4035,7 +4035,13 @@ async function showSwitchWorkdirDialog() {
         return;
       }
       // 超出 allowedPaths 的路径给一次确认（自定义弹窗，非原生 confirm）
-      const isAllowed = allowedPaths.some(p => targetPath === p || targetPath.startsWith(p + '/'));
+      // 跨平台路径比较：统一分隔符为 / + 大小写不敏感（Windows 盘符大小写不敏感、支持 / 和 \ 混用）
+      const normPath = s => s.replace(/\\/g, '/').toLowerCase();
+      const isAllowed = allowedPaths.some(p => {
+        const tp = normPath(targetPath);
+        const lp = normPath(p);
+        return tp === lp || tp.startsWith(lp + '/');
+      });
       if (!isAllowed) {
         const ok = await window.showCustomConfirm(
           `该路径不在允许列表内，切换后将自动创建目录并加入允许列表:\n${targetPath}`,
