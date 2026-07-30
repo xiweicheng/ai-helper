@@ -1770,18 +1770,29 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
     setPptxZoom(pptxVisualScale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
   });
   document.getElementById('pptxZoomFit').addEventListener('click', () => {
-    pptxVisualScale = pptxFitScale;
-    pptxPanX = 0;
-    pptxPanY = 0;
-    applyPptxTransform();
+    // 用 rAF 确保 resize 后的 DOM 布局已完成
+    requestAnimationFrame(() => {
+      recalcPptxFit();
+      pptxVisualScale = pptxFitScale;
+      pptxPanX = 0;
+      pptxPanY = 0;
+      pan.style.transform = `translate(0px, 0px) scale(${pptxFitScale})`;
+      zoomInfo.textContent = Math.round(pptxFitScale * 100) + '%';
+      viewport.style.cursor = 'default';
+    });
   });
 
   // 双击 → fit
   viewport.addEventListener('dblclick', () => {
-    pptxVisualScale = pptxFitScale;
-    pptxPanX = 0;
-    pptxPanY = 0;
-    applyPptxTransform();
+    requestAnimationFrame(() => {
+      recalcPptxFit();
+      pptxVisualScale = pptxFitScale;
+      pptxPanX = 0;
+      pptxPanY = 0;
+      pan.style.transform = `translate(0px, 0px) scale(${pptxFitScale})`;
+      zoomInfo.textContent = Math.round(pptxFitScale * 100) + '%';
+      viewport.style.cursor = 'default';
+    });
   });
 
   // resize 重新计算 fit 并应用
