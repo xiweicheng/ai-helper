@@ -90,6 +90,28 @@ async function checkPath(pathStr) {
       return { allowed: true, resolved: normalized };
     }
 
+    // 0.6. 工作目录永远放行（不受 allowedPaths 配置控制）
+    //      workdir 是用户当前选定的操作目录，必须始终可访问，即使未在 allowedPaths 中也不应被拦截
+    if (normalizedWorkdir) {
+      const workdirResolved = resolve(normalizedWorkdir);
+      const workdirPrefix = workdirResolved.endsWith(sep) ? workdirResolved : workdirResolved + sep;
+      if (normalized.startsWith(workdirPrefix) || normalized === workdirResolved) {
+        // realpath 硬阻止检查：防止通过 workdir 内的符号链接绕过到代理系统文件
+        try {
+          const realPath = await realpath(resolved);
+          if (isHardBlocked(realPath)) {
+            return { allowed: false, reason: '禁止访问代理系统文件' };
+          }
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            return { allowed: false, reason: `无法解析路径: ${err.message}` };
+          }
+          // ENOENT：路径尚不存在（如待创建的文件），无法通过符号链接绕过，放行
+        }
+        return { allowed: true, resolved: normalized };
+      }
+    }
+
     const allowedPaths = config.allowedPaths.length > 0 ? config.allowedPaths.map(p => normalizePathFormat(p)) : [normalizedWorkdir];
 
     // 先做前缀检查（快速路径，兼容 Windows/Unix）

@@ -3941,8 +3941,10 @@ async function attachFilesForQuestion(paths) {
     const size = entry ? entry.size : 0;
     const mime = getMimeType(name);
     const isImage = mime.startsWith('image/');
+    // 仅当启用图片识别时才按图片处理，否则一律作为文件附件
+    const shouldTreatAsImage = isImage && state.enableImageInput;
 
-    if (isImage) {
+    if (shouldTreatAsImage) {
       imageFiles.push({ name, size, type: mime, path });
     } else {
       const fileEntry = {
@@ -3993,7 +3995,12 @@ async function attachFilesForQuestion(paths) {
 
   const total = regularFiles.length + imageFiles.length;
   if (total > 0) {
-    showToast(`已添加 ${total} 个文件到问答`, 'success');
+    // 未启用图片识别时，提示图片已作为文件处理
+    if (!state.enableImageInput && regularFiles.some(f => f.type?.startsWith('image/'))) {
+      showToast(`已添加 ${total} 个文件到问答（图片识别未启用，图片作为文件附件）`, 'success');
+    } else {
+      showToast(`已添加 ${total} 个文件到问答`, 'success');
+    }
   }
 }
 

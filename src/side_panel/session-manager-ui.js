@@ -152,22 +152,25 @@ function bindMoreButton() {
 
 // ==================== 新建按钮 ====================
 
+/** 新建会话（高层：保存当前 → 创建 → 切换 → 刷新 Tab） */
+export async function newSession() {
+  const previousSessionId = state.activeSessionId;
+  await saveCurrentSession();
+  const newSession = await createSession();
+  state.activeSessionId = newSession.id;
+  state.messageHistory = [];
+  document.dispatchEvent(new CustomEvent('session-switched', {
+    detail: { sessionId: newSession.id, previousSessionId }
+  }));
+  renderSessionTabs();
+}
+
 function bindAddButton() {
   const addBtn = document.getElementById('sessionTabsAdd');
   if (!addBtn) return;
   const newAddBtn = addBtn.cloneNode(true);
   addBtn.parentNode.replaceChild(newAddBtn, addBtn);
-  newAddBtn.addEventListener('click', async () => {
-    const previousSessionId = state.activeSessionId;
-    await saveCurrentSession();
-    const newSession = await createSession();
-    state.activeSessionId = newSession.id;
-    state.messageHistory = [];
-    document.dispatchEvent(new CustomEvent('session-switched', {
-      detail: { sessionId: newSession.id, previousSessionId }
-    }));
-    renderSessionTabs();
-  });
+  newAddBtn.addEventListener('click', () => newSession());
 }
 
 // ==================== 溢出检测 ====================
@@ -781,18 +784,18 @@ async function handleSessionSwitch(sessionId) {
  * 复制指定会话并切换到新会话
  * 用于两个入口：右键菜单、下拉列表项的复制按钮
  * @param {string} sourceSessionId - 源会话 ID
+ * @param {string|null} [upToMessageId=null] - 消息级分叉点（含该消息），不传则完整复制
  */
-async function handleDuplicateSession(sourceSessionId) {
+export async function handleDuplicateSession(sourceSessionId, upToMessageId = null) {
   if (!sourceSessionId) return;
   try {
-    showToast('正在复制会话...', 'info', 1500);
-    const newSession = await duplicateSession(sourceSessionId);
+    const newSession = await duplicateSession(sourceSessionId, upToMessageId);
     // 复制完成后切换到新会话（handleSessionSwitch 会处理 state 更新、事件派发、UI 重新渲染）
     await handleSessionSwitch(newSession.id);
-    showToast(`已复制会话「${newSession.title}」`, 'success');
+    showToast(upToMessageId ? `已从此处分叉「${newSession.title}」` : `已复制会话「${newSession.title}」`, 'success');
   } catch (err) {
-    logger.error('[SessionUI] 复制会话失败:', err);
-    showToast(`复制会话失败: ${err.message}`, 'error');
+    logger.error('[SessionUI] 复制/分叉会话失败:', err);
+    showToast(`操作失败: ${err.message}`, 'error');
   }
 }
 
@@ -927,6 +930,8 @@ function showDeleteModal(session, onDeleted) {
   closeBtn.addEventListener('click', onCancel);
 
   modal.classList.add('show');
+  // 自动聚焦确认按钮，支持 Enter 键直接确认
+  requestAnimationFrame(() => confirmBtn.focus());
 }
 
 /**
@@ -1015,6 +1020,21 @@ async function reloadAfterDelete() {
   }));
   renderSessionTabs();
   await renderAgentSelector();
+}
+
+/**
+ * 关闭当前会话（高层：删除 → 重新加载，无活跃会话则自动新建）
+ * 供快捷键调用，无需手动刷新 UI。
+ */
+export async function closeCurrentSession() {
+  const sid = state.activeSessionId;
+  if (!sid) return;
+  const session = state.sessions?.find(s => s.id === sid);
+  if (!session) return;
+  // 与 Tab 关闭按钮一致：弹出确认弹窗，确认后删除
+  showDeleteModal(session, async () => {
+    await reloadAfterDelete();
+  });
 }
 
 // ==================== 初始化 ====================

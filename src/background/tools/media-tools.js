@@ -97,7 +97,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'capture_page',
-      description: '页面截图',
+      description: '截取当前页面截图。用户消息已含图片时直接分析，勿调用本工具。',
       parameters: {
         type: 'object',
         properties: {

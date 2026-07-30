@@ -13,9 +13,104 @@ import { loadAndShowPrototype } from './ui-prototype.js';
 import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
+import { handleDuplicateSession } from './session-manager-ui.js';
 
 // Agent 名称缓存（用于 dispatch_task 工具卡片显示名称而非 ID）
 let agentNameCache = new Map(); // agentId -> agentName
+
+// ============================================================
+// 流式滚动控制：区分程序自动滚动与用户手动滚动
+// 用于「AI 回答完成后回顶」功能：若用户在流式过程中主动上滚查看，
+// 则回答完成后不强制滚回顶部，尊重用户当前阅读位置。
+// ============================================================
+let _isProgramScroll = false;      // 程序自动滚动标志（避免误判为用户滚动）
+let _userScrolledUp = false;       // 用户是否在流式过程中主动上滚
+let _scrollListenerBound = false;  // scroll 监听是否已绑定（防止重复绑定）
+
+/** 确保 chatContainer 的 scroll 监听已绑定（仅绑一次） */
+function ensureScrollListener() {
+  if (_scrollListenerBound) return;
+  const cc = document.getElementById('chatContainer');
+  if (!cc) return;
+  _scrollListenerBound = true;
+  cc.addEventListener('scroll', () => {
+    if (_isProgramScroll) return;
+    // 距底部超过 80px 视为用户主动上滚查看
+    const atBottom = cc.scrollHeight - cc.scrollTop - cc.clientHeight < 80;
+    _userScrolledUp = !atBottom;
+  });
+}
+
+/** 程序自动滚动到底部（设置标志，避免触发用户滚动判定） */
+function autoScrollToBottom(chatContainer) {
+  if (!chatContainer) return;
+  ensureScrollListener();
+  _isProgramScroll = true;
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+  // 下一帧复位标志（scroll 事件通常在同步或下一帧触发）
+  requestAnimationFrame(() => { _isProgramScroll = false; });
+}
+
+/**
+ * 按节点状态筛选思考过程内的工具卡片
+ * @param {HTMLElement} processHistory - .thinking-process 元素
+ * @param {string} filter - 'all' | 'success' | 'failed'
+ */
+function applyNodeFilter(processHistory, filter) {
+  const processContent = processHistory.querySelector('.thinking-process-content');
+  if (!processContent) return;
+  processHistory.dataset.activeFilter = filter;
+  // 更新统计项高亮
+  processHistory.querySelectorAll('.thinking-process-stat[data-filter]').forEach(s => {
+    s.classList.toggle('active', s.dataset.filter === filter);
+  });
+  // 筛选 tool-call-item（preselect-card 始终保留，非工具节点不参与筛选）
+  processContent.querySelectorAll('.tool-call-item').forEach(item => {
+    if (item.classList.contains('preselect-card')) return;
+    if (filter === 'all') {
+      item.style.display = '';
+    } else {
+      item.style.display = (item.dataset.status === filter) ? '' : 'none';
+    }
+  });
+}
+
+/**
+ * 绑定思考过程折叠头点击：点击统计数字按状态筛选，点击其他区域折叠/展开
+ * 供 finalizeStreamingMessage 与 rebindAllMessages 共用
+ * @param {HTMLElement} header - .thinking-process-header 元素
+ */
+export function bindProcessHeaderClick(header) {
+  if (!header || header._filterBound) return;
+  header._filterBound = true;
+  // 给三个统计项标记 data-filter（顺序：总节点=all / 成功=success / 失败=failed）
+  const filters = ['all', 'success', 'failed'];
+  header.querySelectorAll('.thinking-process-stat').forEach((s, i) => {
+    if (filters[i]) {
+      s.dataset.filter = filters[i];
+      s.classList.add('filterable');
+    }
+  });
+  header.addEventListener('click', (e) => {
+    // Ctrl/Meta + Click 用于复制，不触发筛选或折叠
+    if (e.ctrlKey || e.metaKey) return;
+    const stat = e.target.closest('.thinking-process-stat[data-filter]');
+    const processHistory = header.closest('.thinking-process');
+    if (!processHistory) return;
+    if (stat) {
+      // 点击统计数字：按状态筛选（不折叠）
+      applyNodeFilter(processHistory, stat.dataset.filter);
+    } else {
+      // 点击其他区域：折叠/展开
+      processHistory.classList.toggle('collapsed');
+    }
+  });
+  // 恢复筛选态（rebind 后从 dataset 恢复）
+  const processHistory = header.closest('.thinking-process');
+  if (processHistory && processHistory.dataset.activeFilter) {
+    applyNodeFilter(processHistory, processHistory.dataset.activeFilter);
+  }
+}
 
 /**
  * 刷新 Agent 名称缓存
@@ -187,8 +282,9 @@ export function addStreamingMessage(targetSessionId) {
   const shouldMount = !targetSessionId || targetSessionId === state.activeSessionId;
   if (shouldMount && chatContainer) {
     chatContainer.appendChild(wrapper);
+    _userScrolledUp = false; // 新流式消息开始，重置用户滚动标记
     requestAnimationFrame(() => {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+      autoScrollToBottom(chatContainer);
     });
   }
 
@@ -344,7 +440,7 @@ export function updateStreamingMessage(element, fullContent) {
   if (element.isConnected) {
     requestAnimationFrame(() => {
       const chatContainer = document.getElementById('chatContainer');
-      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+      if (chatContainer) autoScrollToBottom(chatContainer);
     });
   }
 }
@@ -500,7 +596,8 @@ export function appendToolCallItems(element, toolCalls) {
          </svg>`;
     
     const item = document.createElement('div');
-    item.className = 'tool-call-item expanded';
+    // 默认折叠工具卡片（仅显示标题与状态），用户可在配置页开启「流式工具卡片默认展开」
+    item.className = 'tool-call-item' + (state.chatConfig?.streamExpandTools ? ' expanded' : '');
     item.setAttribute('data-tool-call-id', tc.id || '');
     item.setAttribute('data-meta-type', meta.metaType);
     item.setAttribute('data-created-at', Date.now());
@@ -581,7 +678,7 @@ export function appendToolCallItems(element, toolCalls) {
   if (element.isConnected) {
     requestAnimationFrame(() => {
       const chatContainer = document.getElementById('chatContainer');
-      if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+      if (chatContainer) autoScrollToBottom(chatContainer);
     });
   }
 }
@@ -618,8 +715,9 @@ export function appendToolResult(result, streamingElement) {
   const card = element.querySelector(`.tool-call-item[data-tool-call-id="${result.toolCallId}"]`);
   if (!card) return;
   
-  // 标记为已有结果，停止执行中动画
+  // 标记为已有结果，停止执行中动画；记录状态供思考过程筛选
   card.classList.add('has-result');
+  card.dataset.status = result.success ? 'success' : 'failed';
 
   // 对于极快完成的工具（如 agent_file 仅 7ms），STREAM_TOOL_CALL 和
   // STREAM_TOOL_RESULT 几乎同时到达，浏览器来不及渲染"执行中..."状态。
@@ -668,7 +766,13 @@ export function appendToolResult(result, streamingElement) {
       ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
       ${truncateNote}
     `;
-    header.insertAdjacentHTML('beforeend', statusHtml);
+    // 状态信息插入到 chevron 前面，使 chevron 始终在最末尾（与思考过程 header 一致）
+    const chevron = header.querySelector('.tool-call-chevron');
+    if (chevron) {
+      chevron.insertAdjacentHTML('beforebegin', statusHtml);
+    } else {
+      header.insertAdjacentHTML('beforeend', statusHtml);
+    }
     
     // 命令执行类工具：已有流式输出，不再创建下方结果区（状态已移到标题栏）
     // 但如果执行失败且没有流式输出（如被安全规则拦截），需要展示错误信息
@@ -701,7 +805,9 @@ export function appendToolResult(result, streamingElement) {
         });
       }
       
-      card.appendChild(resultDiv);
+      // 将结果放入 body 内，使折叠时输入输出一并隐藏
+      const body = card.querySelector('.tool-call-body');
+      if (body) body.appendChild(resultDiv); else card.appendChild(resultDiv);
     }
     
     // 绑定代码块复制按钮
@@ -712,7 +818,7 @@ export function appendToolResult(result, streamingElement) {
     if (streamingElement.isConnected) {
       requestAnimationFrame(() => {
         const chatContainer = document.getElementById('chatContainer');
-        if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+        if (chatContainer) autoScrollToBottom(chatContainer);
       });
     }
   };
@@ -981,10 +1087,8 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       messageContent.appendChild(processHistory);
       messageContent.appendChild(finalAnswer);
       
-      // 点击头部切换折叠
-      processHeader.addEventListener('click', () => {
-        processHistory.classList.toggle('collapsed');
-      });
+      // 点击头部：统计数字可按状态筛选，其他区域折叠/展开
+      bindProcessHeaderClick(processHeader);
     } else {
       // 思考过程区域为空：直接渲染最终答案，不显示思考过程区域
       const origThinking = messageContent.querySelector('.thinking-indicator');
@@ -1106,10 +1210,8 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
           messageContent.appendChild(processHistory);
           messageContent.appendChild(finalAnswer);
           
-          // 点击头部切换折叠
-          processHeader.addEventListener('click', () => {
-            processHistory.classList.toggle('collapsed');
-          });
+          // 点击头部：统计数字可按状态筛选，其他区域折叠/展开
+          bindProcessHeaderClick(processHeader);
         } else {
           // 思考过程区域为空：直接渲染最终答案，不显示思考过程区域
           const origThinking = messageContent.querySelector('.thinking-indicator');
@@ -1382,6 +1484,24 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   });
   rightActionsContainer.appendChild(bookmarkBtn);
 
+  // 分叉按钮：基于此条 AI 回复创建消息级分叉（仅复制到此消息为止）
+  const forkBtn = document.createElement('button');
+  forkBtn.className = 'fork-btn';
+  forkBtn.title = '从此处分叉会话（仅复制到此条消息）';
+  forkBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/>
+      <path d="M6 8.5v7"/><path d="M6 12h8a4 4 0 0 0 4-4V6"/>
+    </svg>
+  `;
+  forkBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const mid = element.dataset.messageId;
+    if (!mid) return;
+    await handleDuplicateSession(state.activeSessionId, mid);
+  });
+  rightActionsContainer.appendChild(forkBtn);
+
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'delete-btn';
   deleteBtn.title = '删除消息';
@@ -1414,6 +1534,20 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   
   // 先保存当前 HTML 到 dataset（Mermaid 渲染完成后会更新）
   element.dataset.htmlContent = element.outerHTML;
+
+  // AI 回答完成后：若用户未在流式过程中主动上滚，将该消息顶部滚入视图，方便从顶部阅读
+  requestAnimationFrame(() => {
+    ensureScrollListener();
+    if (!_userScrolledUp) {
+      const cc = document.getElementById('chatContainer');
+      // 仅当该消息较高（超出视口 60%）时才回顶，避免短回答突兀跳动
+      if (cc && element.offsetHeight > cc.clientHeight * 0.6) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+    // 重置标记，供下一次对话使用
+    _userScrolledUp = false;
+  });
 }
 
 /**

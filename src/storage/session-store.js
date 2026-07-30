@@ -135,9 +135,12 @@ export async function saveCurrentSession() {
   currentSession.updatedAt = new Date().toISOString();
 
   // 更新标题（取第一条用户消息的前 50 个字符）
-  const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
-  if (firstUserMsg) {
-    currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
+  // 分叉/复制的会话保留其自定义标题（含"- 分叉"/"- 副本"后缀），不自动覆盖
+  if (!currentSession.forkMetadata) {
+    const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
+    if (firstUserMsg) {
+      currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
+    }
   }
 
   const saved = await idb.putSession(currentSession);
@@ -523,12 +526,14 @@ export async function restoreArchivedSession(archivedId) {
 }
 
 /**
- * 复制会话（完整快照，作为对话分支使用）
+ * 复制会话（完整快照或消息级截断，作为对话分支使用）
  * 完整继承源会话的消息历史与配置（模型/工具/Agent/温度等）
  * @param {string} sourceSessionId - 源会话 ID
+ * @param {string|null} [upToMessageId=null] - 消息级分叉：截断到此 messageId（含）为止
+ *   传入时仅复制到该消息（含），不传则完整复制全部历史
  * @returns {Promise<Object>} 新创建的会话
  */
-export async function duplicateSession(sourceSessionId) {
+export async function duplicateSession(sourceSessionId, upToMessageId = null) {
   await init();
 
   const source = await idb.getSession(sourceSessionId);
@@ -537,8 +542,19 @@ export async function duplicateSession(sourceSessionId) {
   const newSessionId = generateSessionId();
   const now = new Date().toISOString();
 
+  // 消息级分叉：截断到指定 messageId（含）；找不到则回退完整复制
+  let srcMessages = source.messageHistory || [];
+  let isMessageFork = false;
+  if (upToMessageId) {
+    const idx = srcMessages.findIndex(m => m.messageId === upToMessageId);
+    if (idx >= 0) {
+      srcMessages = srcMessages.slice(0, idx + 1); // 含该消息
+      isMessageFork = true;
+    }
+  }
+
   // 完整复制消息历史，深拷贝避免引用共享；重新生成 messageId 避免冲突
-  const clonedMessages = (source.messageHistory || []).map((msg) => ({
+  const clonedMessages = srcMessages.map((msg) => ({
     ...msg,
     executionLog: Array.isArray(msg.executionLog) ? [...msg.executionLog] : [],
     contextBubbles: Array.isArray(msg.contextBubbles) ? [...msg.contextBubbles] : undefined,
@@ -549,7 +565,7 @@ export async function duplicateSession(sourceSessionId) {
   const newSession = {
     ...source,
     id: newSessionId,
-    title: `${source.title || '新会话'} - 副本`,
+    title: isMessageFork ? `${source.title || '新会话'} - 分叉` : `${source.title || '新会话'} - 副本`,
     messageHistory: clonedMessages,
     // 重置运行时状态
     isGenerating: false,
@@ -558,10 +574,11 @@ export async function duplicateSession(sourceSessionId) {
     createdAt: now,
     updatedAt: now,
     order: Date.now(),
-    // 分支元数据：仅记录来源，暂不做复杂分支功能
+    // 分支元数据：记录来源与分叉点
     forkMetadata: {
       sourceSessionId,
       forkedAt: now,
+      ...(isMessageFork ? { upToMessageId } : {}),
     },
   };
 

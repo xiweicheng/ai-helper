@@ -102,11 +102,11 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill',
-      description: 'Skill加载/执行',
+      description: 'Skill 加载与执行（Workflow 用 run，Agent 用 load）',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['load', 'run'] },
+          action: { type: 'string', enum: ['load', 'run'], description: 'run 仅用于 Workflow Skill；load 用于加载 Agent Skill 说明' },
           name: { type: 'string' },
           params: { type: 'object', description: 'run时需要' }
         },

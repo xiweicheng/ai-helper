@@ -880,16 +880,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ==================== 流式输出配置 ====================
   const streamEnabledEl = document.getElementById('streamEnabled');
   const streamEnabledLabel = document.getElementById('streamEnabledLabel');
+  // 联动：streamExpandToolsWrap 仅在 streamEnabled 开启时显示
+  function updateStreamExpandToolsVisibility() {
+    const wrap = document.getElementById('streamExpandToolsWrap');
+    if (wrap) {
+      wrap.style.display = streamEnabledEl && streamEnabledEl.checked ? 'block' : 'none';
+    }
+  }
   if (streamEnabledEl && streamEnabledLabel) {
     streamEnabledEl.addEventListener('change', function() {
       if (streamEnabledLabel) {
         streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
       }
       chrome.storage.local.set({ streamEnabled: streamEnabledEl.checked });
+      updateStreamExpandToolsVisibility();
     });
     if (streamEnabledLabel) {
       streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
     }
+    updateStreamExpandToolsVisibility();
+  }
+
+  // 流式工具卡片默认展开开关
+  const streamExpandToolsEl = document.getElementById('streamExpandTools');
+  const streamExpandToolsLabel = document.getElementById('streamExpandToolsLabel');
+  if (streamExpandToolsEl && streamExpandToolsLabel) {
+    streamExpandToolsEl.addEventListener('change', function() {
+      streamExpandToolsLabel.textContent = this.checked ? '已启用' : '已停用';
+      chrome.storage.local.set({ streamExpandTools: this.checked });
+    });
+    streamExpandToolsLabel.textContent = streamExpandToolsEl.checked ? '已启用' : '已停用';
   }
 
   // 敏感操作确认开关状态标签

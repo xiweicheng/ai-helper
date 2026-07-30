@@ -11,6 +11,7 @@ import { initSearchPanel } from './search-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
+import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
 
 window.showCustomConfirm = function(message, title = '确认操作') {
@@ -31,11 +32,16 @@ window.showCustomConfirm = function(message, title = '确认操作') {
       okBtn.removeEventListener('click', onOk);
       cancelBtn.removeEventListener('click', onCancel);
       overlay.removeEventListener('click', onOverlayClick);
+      document.removeEventListener('keydown', onKeyDown);
     };
 
     const onOk = () => { cleanup(); resolve(true); };
     const onCancel = () => { cleanup(); resolve(false); };
     const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
+    const onKeyDown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); onOk(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); }
+    };
 
     titleEl.textContent = title;
     const escapedMsg = message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -45,6 +51,9 @@ window.showCustomConfirm = function(message, title = '确认操作') {
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onOverlayClick);
+    document.addEventListener('keydown', onKeyDown);
+    // 自动聚焦确认按钮，支持 Enter 确认 / Esc 取消
+    requestAnimationFrame(() => okBtn.focus());
   });
 };
 
@@ -71,7 +80,7 @@ import {
   callApi, clearSelectedContext, triggerSelectionSearch, fillSidePanelInput, directSend,
   restorePendingSessionsFromStorage, restoreMessageFromHtml,
   bindExecutionLogDelegate, bindReflectionBadgeDelegate,
-  rebindAllMessages,
+  rebindAllMessages, editAndResendMessage,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement,
   _checkForAbandonedCheckpoint
@@ -2335,6 +2344,33 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    // Alt+N ：新建会话
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyN') {
+      e.preventDefault();
+      newSession();
+      return;
+    }
+
+    // Alt+W ：关闭当前会话
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyW') {
+      e.preventDefault();
+      closeCurrentSession();
+      return;
+    }
+
+    // Alt+E ：编辑最近一条用户消息
+    if (e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyE') {
+      e.preventDefault();
+      const userMsgs = document.querySelectorAll('#chatContainer .message.user');
+      const lastUserMsg = userMsgs[userMsgs.length - 1];
+      if (lastUserMsg) {
+        editAndResendMessage(lastUserMsg);
+        const input = document.getElementById('userInput');
+        if (input) input.focus();
+      }
+      return;
+    }
+
     // Alt+ArrowUp/ArrowDown 系列快捷键：在对话消息之间快速跳转
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       const chatContainer = document.getElementById('chatContainer');
@@ -2842,7 +2878,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.preventDefault();
       e.stopPropagation();
     });
-    inputWrapper.addEventListener('drop', (e) => {
+    inputWrapper.addEventListener('drop', async (e) => {
       e.preventDefault();
       e.stopPropagation();
       dragCounter = 0;
@@ -2862,10 +2898,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      // 系统文件拖拽
+      // 系统文件拖拽：图片按截图问答模式处理（缩略图），其他文件走文件问答
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
-        attachFiles(files);
+        const images = files.filter(f => f.type.startsWith('image/'));
+        const others = files.filter(f => !f.type.startsWith('image/'));
+        if (images.length > 0) {
+          if (state.enableImageInput) {
+            // 与剪贴板粘图一致：压缩并附加为图片消息（缩略图），做图片识别问答
+            for (const img of images) {
+              await compressAndAttachImage(img);
+            }
+          } else {
+            // 未启用图片识别：回退为文件附件，避免静默丢弃
+            showToast('未启用图片识别，图片已作为文件附件处理');
+            attachFiles(images);
+          }
+        }
+        if (others.length > 0) {
+          attachFiles(others);
+        }
       }
     });
   }

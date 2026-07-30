@@ -3012,14 +3012,15 @@ body {
   font-weight: 400;
 }
 .tool-call-chevron {
-  margin-left: auto;
   width: 14px;
   height: 14px;
   color: #999;
   transition: transform 0.2s;
+  transform: rotate(-90deg); /* 折叠态：指向右，与思考过程 chevron 一致 */
+  flex-shrink: 0;
 }
 .tool-call-item.expanded .tool-call-chevron {
-  transform: rotate(180deg);
+  transform: rotate(0deg); /* 展开态：指向下 */
 }
 /* 工具执行中状态标识 */
 .tool-call-executing {
@@ -3124,6 +3125,11 @@ body {
 }
 .tool-call-item.expanded .tool-call-body {
   display: block;
+}
+/* 工具执行结果/流式输出移入 body 后去除自身 padding，避免与 body 双重缩进 */
+.tool-call-body .tool-call-result,
+.tool-call-body .agent-stream-output {
+  padding: 0;
 }
 .tool-call-body pre {
   background: #f6f8fa;
@@ -3264,6 +3270,20 @@ body {
 }
 .thinking-process-stat.failed .stat-value {
   color: #f87171;
+}
+/* 节点数点击筛选：可点击态与选中高亮 */
+.thinking-process-stat.filterable {
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.thinking-process-stat.filterable:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+.thinking-process-stat.filterable.active {
+  background: rgba(99, 102, 241, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.35);
 }
 
 @media (max-width: 420px) {
@@ -8864,6 +8884,30 @@ body {
 }
 
 .message.assistant .bookmark-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ========== 分叉按钮 ========== */
+.message.assistant .fork-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #999;
+  transition: all 0.2s;
+}
+
+.message.assistant .fork-btn:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
+
+.message.assistant .fork-btn svg {
   width: 14px;
   height: 14px;
 }

@@ -166,11 +166,12 @@ export async function appendMessageToSession(sessionId, message) {
 }
 
 /**
- * 复制会话（完整快照，作为对话分支）
+ * 复制会话（完整快照或消息级截断，作为对话分支）
  * 完整继承源会话的消息历史与配置，自动激活新会话
  * @param {string} sourceSessionId - 源会话 ID
+ * @param {string|null} [upToMessageId=null] - 消息级分叉点（含该消息）
  * @returns {Promise<Object>} 新创建的会话
  */
-export async function duplicateSession(sourceSessionId) {
-  return store.duplicateSession(sourceSessionId);
+export async function duplicateSession(sourceSessionId, upToMessageId = null) {
+  return store.duplicateSession(sourceSessionId, upToMessageId);
 }

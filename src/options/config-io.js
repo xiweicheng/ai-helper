@@ -16,6 +16,7 @@ const EXPORT_KEYS = [
   'toolbarTools', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',
   'streamEnabled',
+  'streamExpandTools',
   // 新增：助手、工具、LLM参数、UI开关等配置
   'customAgents', 'activeAgentId', 'activeAssistantId',
   'temperature', 'topP', 'selectedTempIndex',

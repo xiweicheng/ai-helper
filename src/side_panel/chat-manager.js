@@ -7,7 +7,7 @@ import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.j
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted } from './session-manager.js';
-import { renderSessionTabs } from './session-manager-ui.js';
+import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
@@ -64,6 +64,7 @@ import {
   setThinkingStartTime,
   setProcessStartTime,
   setReasoningContent,
+  bindProcessHeaderClick,
 } from './chat-streaming.js';
 // 重导出保持对外接口不变（其他模块可能通过 chat-manager 导入）
 export { reconnectStreamingElement, cancelStreamingTask };
@@ -1194,7 +1195,25 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       }
     });
     rightActionsContainer.appendChild(bookmarkBtn);
-    
+
+    // 分叉按钮：基于此条 AI 回复创建消息级分叉（仅复制到此条消息为止）
+    const forkBtn = document.createElement('button');
+    forkBtn.className = 'fork-btn';
+    forkBtn.title = '从此处分叉会话（仅复制到此条消息）';
+    forkBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/>
+        <path d="M6 8.5v7"/><path d="M6 12h8a4 4 0 0 0 4-4V6"/>
+      </svg>
+    `;
+    forkBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const mid = messageDiv.dataset.messageId;
+      if (!mid) return;
+      await handleDuplicateSession(state.activeSessionId, mid);
+    });
+    rightActionsContainer.appendChild(forkBtn);
+
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
     deleteBtn.title = '删除消息';
@@ -1679,15 +1698,10 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
   // 移除 streaming 类（持久化后不再是流式状态）
   messageEl.classList.remove('streaming');
   
-  // 重新绑定事件：折叠/展开思考过程
+  // 重新绑定事件：折叠/展开思考过程 + 节点数点击筛选（共用绑定逻辑）
   const processHeader = messageEl.querySelector('.thinking-process-header');
   if (processHeader) {
-    const processHistory = processHeader.closest('.thinking-process');
-    processHeader.addEventListener('click', (e) => {
-      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
-      if (e.ctrlKey || e.metaKey) return;
-      processHistory.classList.toggle('collapsed');
-    });
+    bindProcessHeaderClick(processHeader);
   }
   
   // 重新绑定工具卡片展开/折叠
@@ -1873,6 +1887,17 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       });
     }
 
+    // 重新绑定分叉按钮事件（消息级分叉：仅复制到此条消息为止）
+    const forkBtn = footer.querySelector('.fork-btn');
+    if (forkBtn) {
+      forkBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const mid = messageEl.dataset.messageId;
+        if (!mid) return;
+        await handleDuplicateSession(state.activeSessionId, mid);
+      });
+    }
+
     // 重新绑定"继续执行"按钮事件（HTML 中已存在的情况）
     const existingResumeBtn = footer.querySelector('.resume-task-btn');
     if (existingResumeBtn) {
@@ -1925,14 +1950,9 @@ export function rebindAllMessages(container) {
     wrapper.appendChild(preEl);
   });
 
-  // 思考过程折叠/展开
+  // 思考过程折叠/展开 + 节点数点击筛选（共用绑定逻辑）
   container.querySelectorAll('.thinking-process-header').forEach(header => {
-    header.addEventListener('click', (e) => {
-      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
-      if (e.ctrlKey || e.metaKey) return;
-      const processEl = header.closest('.thinking-process');
-      if (processEl) processEl.classList.toggle('collapsed');
-    });
+    bindProcessHeaderClick(header);
   });
 
   // 工具卡片展开/折叠
@@ -2050,6 +2070,17 @@ export function rebindAllMessages(container) {
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         deleteMessage(messageEl);
+      });
+    }
+
+    // 重新绑定分叉按钮事件（消息级分叉：仅复制到此条消息为止）
+    const forkBtn = footer.querySelector('.fork-btn');
+    if (forkBtn) {
+      forkBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const mid = messageEl.dataset.messageId;
+        if (!mid) return;
+        await handleDuplicateSession(state.activeSessionId, mid);
       });
     }
 
@@ -2811,7 +2842,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             if (message.toolCallId) {
               const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);
               if (card) {
-                card.appendChild(outputDiv);
+                // 放入 body 内，使折叠时输出一并隐藏
+                const body = card.querySelector('.tool-call-body');
+                if (body) body.appendChild(outputDiv); else card.appendChild(outputDiv);
               }
             }
             if (!outputDiv.isConnected) {
@@ -2943,7 +2976,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
 
 // copyMessage 已拆分到 chat-copy.js
 
-function editAndResendMessage(messageDiv) {
+export function editAndResendMessage(messageDiv) {
   try {
     const rawContent = messageDiv.dataset.rawContent || '';
     const textContent_ = messageDiv.dataset.textContent_ || '';

@@ -962,7 +962,8 @@ export function loadConfig() {
     'preselectMinToolCount', 'toolConfirmationEnabled',
     'enableExecutionLog',
     'reflectionConfig',
-    'streamEnabled'
+    'streamEnabled',
+    'streamExpandTools'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1049,8 +1050,22 @@ export function loadConfig() {
     document.getElementById('toolReflectionEnabled').checked = reflection.toolReflection?.enabled !== false;
     document.getElementById('subtaskReflectionEnabled').checked = reflection.subtaskReflection?.enabled === true;
     
-    document.getElementById('streamEnabled').checked = 
+    document.getElementById('streamEnabled').checked =
       result.streamEnabled !== undefined ? result.streamEnabled : true;
+
+    // 流式工具卡片默认展开（联动 streamEnabled，默认 false=折叠）
+    const streamExpandToolsEl = document.getElementById('streamExpandTools');
+    const streamExpandToolsLabel = document.getElementById('streamExpandToolsLabel');
+    const streamExpandToolsWrap = document.getElementById('streamExpandToolsWrap');
+    if (streamExpandToolsEl) {
+      streamExpandToolsEl.checked = result.streamExpandTools === true;
+    }
+    if (streamExpandToolsLabel) {
+      streamExpandToolsLabel.textContent = streamExpandToolsEl?.checked ? '已启用' : '已停用';
+    }
+    if (streamExpandToolsWrap) {
+      streamExpandToolsWrap.style.display = (result.streamEnabled !== undefined ? result.streamEnabled : true) ? 'block' : 'none';
+    }
     
     // 更新反思配置区域可见性
     function updateReflectionVisibility() {
@@ -1130,6 +1145,7 @@ export function saveConfig() {
 
   // 获取流式输出配置
   const streamEnabled = document.getElementById('streamEnabled')?.checked !== false;
+  const streamExpandTools = document.getElementById('streamExpandTools')?.checked === true;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
@@ -1205,7 +1221,8 @@ export function saveConfig() {
     // 反思配置
     reflectionConfig: reflectionConfig,
     // 流式输出配置
-    streamEnabled: streamEnabled
+    streamEnabled: streamEnabled,
+    streamExpandTools: streamExpandTools
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
