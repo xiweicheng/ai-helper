@@ -598,6 +598,29 @@ export function stripImagesFromContent(content) {
   return content;
 }
 
+/**
+ * 从消息 content 中提取纯文本字符串
+ * 用于日志、摘要、预筛选、反思等"把 content 当文本用"的场景，
+ * 避免把含 Base64 图片的数组 content 直接 JSON.stringify 导致图片数据污染文本
+ * - 字符串：原样返回
+ * - 数组（多模态）：拼接所有 text part，忽略 image_url 等非文本部分
+ * - null/undefined：返回空字符串
+ * - 其他对象：JSON.stringify 兜底
+ * @param {string|Array|*} content
+ * @returns {string}
+ */
+export function extractTextFromContent(content) {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter(part => part && part.type === 'text' && part.text)
+      .map(part => part.text)
+      .join('\n');
+  }
+  return JSON.stringify(content);
+}
+
 // ============================================================
 // 引用内容压缩
 // ============================================================

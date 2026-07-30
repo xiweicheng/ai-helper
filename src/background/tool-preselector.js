@@ -2,13 +2,14 @@
 
 import { getStoredConfig } from './config.js';
 import { fetchWithRetry } from './tool-executor.js';
+import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
 
 /**
- * 截断过长内容
+ * 截断过长内容（仅保留文本部分，避免 Base64 图片污染）
  */
 function truncateContent(content, maxLen = 2000) {
-  const str = typeof content === 'string' ? content : JSON.stringify(content);
+  const str = extractTextFromContent(content);
   return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
 }
 

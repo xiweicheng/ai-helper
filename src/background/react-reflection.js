@@ -2,6 +2,7 @@
 // 从 react-loop.js 拆分，包含所有反思相关的判断、Prompt 构建、API 调用与结果解析
 import { fetchWithRetry } from './tool-executor.js';
 import { recordTokenUsage } from './token-recorder.js';
+import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
 
 // 反思总轮数上限（模块级常量）
@@ -96,12 +97,10 @@ export function shouldTriggerToolReflection(toolResultStr, failCountInIteration,
  * 构建后置反思 Prompt（增强版：包含完整执行详情）
  */
 export function buildReflectionPrompt(messages, answer, executionLog, round = 1) {
-  // 提取用户问题
+  // 提取用户问题（仅取文本部分，避免 Base64 图片污染反思 prompt）
   const userMessages = messages.filter(m => m.role === 'user');
   const userQuestion = userMessages.length > 0
-    ? (typeof userMessages[userMessages.length - 1].content === 'string'
-        ? userMessages[userMessages.length - 1].content
-        : JSON.stringify(userMessages[userMessages.length - 1].content))
+    ? extractTextFromContent(userMessages[userMessages.length - 1].content)
     : '未知';
 
   // 构建详细执行摘要
