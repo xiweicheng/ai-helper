@@ -9709,8 +9709,38 @@ body {
   color: #333;
 }
 
+/* 切换工作目录按钮（面包屑行最前，紧邻当前路径） */
+.workspace-panel-switch-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #888;
+  border-radius: 4px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.workspace-panel-switch-btn:hover {
+  background: #eee;
+  color: #4a90d9;
+}
+
+/* 面包屑行：切换按钮 + 路径 */
+.workspace-panel-breadcrumb-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* 面包屑 */
 .workspace-panel-breadcrumb {
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
   color: #888;
   display: flex;

@@ -180,6 +180,44 @@ export function resetWorkspaceRoot() {
 }
 
 /**
+ * 获取 Agent 状态详情（含 workdir、allowedPaths 等）
+ * 切换工作目录弹窗用
+ * @returns {Promise<Object|null>}
+ */
+export async function getAgentStatusDetail() {
+  const config = await getAgentConfig();
+  if (!config) return null;
+  try {
+    const resp = await fetch(`${config.url}/api/status/detail`, {
+      headers: { 'Authorization': `Bearer ${config.token}` }
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.success) return data;
+    }
+  } catch (err) {
+    logger.warn('[WorkspaceManager] 获取状态详情失败:', err.message);
+  }
+  return null;
+}
+
+/**
+ * 切换 Agent 工作目录
+ * 调用 /api/config/workdir，后端自动 mkdir 并把新 workdir 加入 allowedPaths
+ * 切换成功后清掉本地 workspaceRoot 缓存，下次 getWorkspaceRoot 重新拉取新值
+ * @param {string} newWorkdir - 新工作目录绝对路径
+ * @returns {Promise<{success: boolean, workdir?: string, allowedPaths?: string[], error?: string}>}
+ */
+export async function switchWorkspace(newWorkdir) {
+  const result = await agentRequest('/api/config/workdir', { workdir: newWorkdir });
+  if (result.success) {
+    // 清缓存：让 getWorkspaceRoot 下次重新拉取新 workdir
+    resetWorkspaceRoot();
+  }
+  return result;
+}
+
+/**
  * 直接向 Agent 发送请求
  */
 async function agentRequest(path, body = {}) {

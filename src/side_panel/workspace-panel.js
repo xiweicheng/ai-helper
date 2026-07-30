@@ -1,14 +1,15 @@
 // workspace-panel.js - 工作目录文件管理器 UI
 
 import {
-  getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig,
+  getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig, getAgentStatusDetail,
   listDirectory, readFileContent, writeFileContent,
   downloadFileStream, downloadFilesStream,
   downloadFileStreamWithProgress, downloadFilesStreamWithProgress,
   searchFilesRemote,
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
-  supportsPreview, getPreviewType, getMimeType
+  supportsPreview, getPreviewType, getMimeType,
+  switchWorkspace
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
 import { showToast, copyToClipboard } from './utils.js';
@@ -71,7 +72,16 @@ export function initWorkspacePanel() {
           <span class="workspace-agent-name" id="workspaceAgentName"></span>
           <button class="workspace-panel-close" id="workspacePanelClose" title="关闭面板">×</button>
         </div>
-        <div class="workspace-panel-breadcrumb" id="workspaceBreadcrumb"></div>
+        <div class="workspace-panel-breadcrumb-row">
+          <button class="workspace-panel-switch-btn" id="workspaceSwitchBtn" title="切换工作目录">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <line x1="12" y1="11" x2="12" y2="17"/>
+              <polyline points="9 14 12 17 15 14"/>
+            </svg>
+          </button>
+          <div class="workspace-panel-breadcrumb" id="workspaceBreadcrumb"></div>
+        </div>
       </div>
       <div class="workspace-panel-toolbar" id="workspaceToolbar">
         <button class="workspace-toolbar-btn" id="workspaceBackBtn" title="返回上级目录" disabled>
@@ -203,6 +213,15 @@ function bindEvents() {
     e.stopPropagation();
     closePanel();
   });
+
+  // 切换工作目录按钮
+  const switchBtn = document.getElementById('workspaceSwitchBtn');
+  if (switchBtn) {
+    switchBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await showSwitchWorkdirDialog();
+    });
+  }
 
   // 工具栏按钮
   document.getElementById('workspaceBackBtn').addEventListener('click', (e) => {
@@ -3614,6 +3633,157 @@ function showInputDialog(title, defaultValue = '', placeholder = '') {
     // 自动聚焦
     setTimeout(() => input.select(), 50);
   });
+}
+
+/**
+ * 切换工作目录弹窗：列出 allowedPaths 供选择，支持手动输入绝对路径
+ * 仅通过按钮关闭（取消/切换/列表项点击），禁止点击遮罩关闭
+ */
+async function showSwitchWorkdirDialog() {
+  let detail = null;
+  try {
+    detail = await getAgentStatusDetail();
+  } catch (err) {
+    showToast('获取工作目录信息失败', 'error');
+    return;
+  }
+  if (!detail) {
+    showToast('无法连接 Agent，请确认代理已启动', 'error');
+    return;
+  }
+
+  const currentWorkdir = detail.workdir || '';
+  const allowedPaths = Array.isArray(detail.allowedPaths) ? detail.allowedPaths : [];
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay show';
+    overlay.innerHTML = `
+      <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;">
+        <div class="modal-title">切换工作目录</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">当前: <span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || '未设置'}</span></div>
+        <div style="font-size:12px;color:#999;margin:6px 0;">从允许的目录中选择</div>
+        <div class="switch-workdir-list" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px;">
+          ${allowedPaths.length ? allowedPaths.map(p => `
+            <div class="switch-workdir-item${p === currentWorkdir ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${p === currentWorkdir ? 'default' : 'pointer'};font-size:13px;color:${p === currentWorkdir ? '#888' : '#333'};word-break:break-all;border-bottom:1px solid #f5f5f5;${p === currentWorkdir ? 'background:#f6f8fa;' : ''}">
+              <span style="flex-shrink:0;">📁</span>
+              <span style="flex:1;">${escapeHtml(p)}</span>
+              ${p === currentWorkdir ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">当前</span>' : ''}
+            </div>
+          `).join('') : '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">暂无允许的目录</div>'}
+        </div>
+        <div style="font-size:12px;color:#999;margin:6px 0;">或输入绝对路径</div>
+        <input type="text" class="switch-workdir-manual" placeholder="/Users/you/path 或 ~/path" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">取消</button>
+          <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">切换</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const manualInput = overlay.querySelector('.switch-workdir-manual');
+    const cancelBtn = overlay.querySelector('.switch-workdir-cancel');
+    const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
+    const items = overlay.querySelectorAll('.switch-workdir-item:not(.current)');
+
+    let closed = false;
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      overlay.remove();
+    };
+
+    async function doSwitch(targetPath) {
+      if (!targetPath) {
+        showToast('请选择或输入目标路径', 'error');
+        return;
+      }
+      targetPath = targetPath.trim();
+      if (targetPath === currentWorkdir) {
+        showToast('该目录已是当前工作目录', 'info');
+        cleanup();
+        resolve(false);
+        return;
+      }
+      // 超出 allowedPaths 的路径给一次确认（自定义弹窗，非原生 confirm）
+      const isAllowed = allowedPaths.some(p => targetPath === p || targetPath.startsWith(p + '/'));
+      if (!isAllowed) {
+        const ok = await window.showCustomConfirm(
+          `该路径不在允许列表内，切换后将自动创建目录并加入允许列表:\n${targetPath}`,
+          '确认切换到新目录'
+        );
+        if (!ok) return;
+      }
+      cleanup();
+      const result = await performSwitchWorkdir(targetPath);
+      resolve(result);
+    }
+
+    items.forEach(item => {
+      item.addEventListener('click', () => doSwitch(item.dataset.path));
+    });
+    confirmBtn.addEventListener('click', () => doSwitch(manualInput.value));
+    cancelBtn.addEventListener('click', () => { cleanup(); resolve(false); });
+    manualInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doSwitch(manualInput.value); }
+      if (e.key === 'Escape') { cleanup(); resolve(false); }
+    });
+    // 禁止点击遮罩关闭（符合 no-native-dialogs 规则）
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) e.stopPropagation();
+    });
+    setTimeout(() => manualInput.focus(), 50);
+  });
+}
+
+/**
+ * 执行切换：调后端接口 + 同步所有前端缓存 + 重新导航
+ */
+async function performSwitchWorkdir(newWorkdir) {
+  const result = await switchWorkspace(newWorkdir);
+  if (!result.success) {
+    showToast(`切换失败: ${result.error || '未知错误'}`, 'error');
+    return false;
+  }
+
+  // 1) resetWorkspaceRoot 已在 switchWorkspace 内调用
+  // 2) 清面板本地状态（同 handleStorageChange 代理切换逻辑）
+  workspaceRoot = null;
+  currentPath = null;
+  pathHistory = [];
+  selectedPaths.clear();
+  searchQuery = '';
+  searchResults = [];
+  isSearchMode = false;
+  dirCache.clear();
+
+  // 3) 同步 state.agentPlatform.workdir（system prompt 下次构建自动用新值）
+  if (state.agentPlatform) {
+    state.agentPlatform = { ...state.agentPlatform, workdir: result.workdir };
+  }
+
+  // 4) 同步 state.agentWorkdirs（代理下拉列表显示）
+  try {
+    const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
+    if (activeAgentId) {
+      state.agentWorkdirs.set(activeAgentId, result.workdir);
+      // 5) 更新下拉列表该项显示（index.js 暴露的全局函数）
+      if (typeof window.updateAgentItemWorkdir === 'function') {
+        window.updateAgentItemWorkdir(activeAgentId, result.workdir);
+      }
+    }
+  } catch (e) {
+    logger.debug('[WorkspacePanel] 同步下拉列表 workdir 失败:', e);
+  }
+
+  // 6) 重新导航到新 root
+  const panel = document.getElementById('workspacePanel');
+  if (panel && panel.classList.contains('expanded')) {
+    await navigateToRoot();
+  }
+
+  showToast(`已切换到: ${result.workdir}`, 'success');
+  return true;
 }
 
 /**

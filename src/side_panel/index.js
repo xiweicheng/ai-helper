@@ -987,6 +987,9 @@ function updateAgentItemWorkdir(agentId, workdir) {
   }
 }
 
+// 供 workspace-panel 切换工作目录后同步下拉列表显示
+window.updateAgentItemWorkdir = updateAgentItemWorkdir;
+
 /**
  * Ping 所有非停用代理并更新列表状态
  */

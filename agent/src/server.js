@@ -10,7 +10,7 @@ import { homedir, tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import os from 'os';
-import { loadConfig } from './config.js';
+import { loadConfig, saveConfig } from './config.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
 import { checkPath, checkCommand } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup } from './trash.js';
@@ -397,6 +397,10 @@ export function startServer() {
     }
     const pathname = url.pathname;
 
+    // 每次请求重新加载配置（切换 workdir 后立即生效，避免启动快照过期）
+    // 遮蔽 startServer 外层的启动快照 config；loadConfig 有 mtime 缓存，无变化时仅一次 statSync
+    const config = loadConfig();
+
     // ---------- 无需认证的接口 ----------
 
     // 配对
@@ -753,6 +757,63 @@ export function startServer() {
       let body;
       try { body = await parseBody(req); }
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
+
+      // === 工作目录切换（需认证） ===
+      if (pathname === '/api/config/workdir' && req.method === 'POST') {
+        const newWorkdir = body.workdir;
+        if (!newWorkdir || typeof newWorkdir !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 workdir 参数' });
+        }
+
+        // 展开 ~ 到用户主目录
+        let resolvedWorkdir = newWorkdir.trim();
+        if (resolvedWorkdir === '~') {
+          resolvedWorkdir = homedir();
+        } else if (resolvedWorkdir.startsWith('~/')) {
+          resolvedWorkdir = join(homedir(), resolvedWorkdir.slice(2));
+        }
+
+        // 必须是绝对路径（Unix / 或 Windows 盘符）
+        if (!resolvedWorkdir.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(resolvedWorkdir)) {
+          return jsonResponse(res, 400, { success: false, error: 'workdir 必须是绝对路径' });
+        }
+        resolvedWorkdir = resolve(resolvedWorkdir);
+
+        // 禁止设为 Agent 系统目录本身（防敏感文件暴露）
+        const AGENT_DIR_PATH = join(homedir(), '.ai-helper-agent');
+        if (resolvedWorkdir === AGENT_DIR_PATH) {
+          logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: '禁止设为 Agent 系统目录' });
+          return jsonResponse(res, 403, { success: false, error: '不能将 Agent 系统目录设为工作目录' });
+        }
+
+        try {
+          // 目录不存在则自动创建（mkdir -p）
+          await mkdir(resolvedWorkdir, { recursive: true });
+
+          // 重新加载最新配置（防并发修改），更新 workdir + allowedPaths（只增不减）
+          const freshConfig = loadConfig();
+          const updatedConfig = { ...freshConfig };
+          updatedConfig.workdir = resolvedWorkdir;
+          if (!Array.isArray(updatedConfig.allowedPaths)) {
+            updatedConfig.allowedPaths = [resolvedWorkdir];
+          } else if (!updatedConfig.allowedPaths.includes(resolvedWorkdir)) {
+            updatedConfig.allowedPaths = [...updatedConfig.allowedPaths, resolvedWorkdir];
+          }
+
+          await saveConfig(updatedConfig);
+
+          logSystem('workdir_switched', { old: freshConfig.workdir, new: resolvedWorkdir, extId });
+          return jsonResponse(res, 200, {
+            success: true,
+            workdir: resolvedWorkdir,
+            allowedPaths: updatedConfig.allowedPaths,
+            message: '工作目录已切换'
+          });
+        } catch (err) {
+          logError('config', 'workdir_switch_error', { path: resolvedWorkdir, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `切换工作目录失败: ${err.message}` });
+        }
+      }
 
       // === 文件操作 ===
 
