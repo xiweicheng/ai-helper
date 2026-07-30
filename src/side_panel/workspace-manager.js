@@ -75,6 +75,8 @@ export function supportsPreview(name) {
     'log', 'csv', 'tsv', 'env', 'vue', 'svelte', 'astro', 'rtf', 'svg',
     // 文档
     'pdf', 'docx',
+    // 演示文稿
+    'pptx',
     // 表格
     'xlsx', 'xls',
     // 图片
@@ -85,13 +87,14 @@ export function supportsPreview(name) {
 
 /**
  * 获取文件预览类型分类
- * @returns {'text'|'pdf'|'docx'|'xlsx'|'image'|'unknown'}
+ * @returns {'text'|'pdf'|'docx'|'xlsx'|'pptx'|'image'|'unknown'}
  */
 export function getPreviewType(name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
   if (ext === 'pdf') return 'pdf';
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx' || ext === 'xls') return 'xlsx';
+  if (ext === 'pptx') return 'pptx';
   if (new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico']).has(ext)) return 'image';
   // 剩下的文本/代码/svg 都按 text 处理
   return 'text';
@@ -119,6 +122,7 @@ export function getMimeType(name) {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
     gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
     pdf: 'application/pdf',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   };
   return mimeMap[ext] || 'text/plain';
 }

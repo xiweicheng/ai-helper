@@ -681,7 +681,9 @@ export async function sendPromptByCode(code) {
       let keptTokens = estimateMessagesTokens([currentMsg]);
       for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
         const msg = historyWithoutCurrent[i];
-        const msgTokens = estimateMessagesTokens([msg]);
+        // 剥离图片后估算，避免图片 token 导致过度裁剪
+        const strippedMsg = { ...msg, content: stripImagesFromContent(msg.content) };
+        const msgTokens = estimateMessagesTokens([strippedMsg]);
         if (keptTokens + msgTokens <= historyBudget) {
           keptHistory.unshift(msg);
           keptTokens += msgTokens;

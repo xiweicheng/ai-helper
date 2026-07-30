@@ -20,6 +20,7 @@
     "vite-plugin-static-copy": "^4.1.1"
   },
   "dependencies": {
+    "@jvmr/pptx-to-html": "^1.1.1",
     "docx": "^9.7.1",
     "dompurify": "^3.4.12",
     "mammoth": "^1.6.0",

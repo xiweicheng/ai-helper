@@ -10,7 +10,7 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
-import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus } from './execution-log-render.js';
@@ -575,7 +575,9 @@ export async function sendMessage() {
       let keptTokens = estimateMessagesTokens([currentMsg]);
       for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
         const msg = historyWithoutCurrent[i];
-        const msgTokens = estimateMessagesTokens([msg]);
+        // 剥离图片后估算，避免图片 token 导致过度裁剪
+        const strippedMsg = { ...msg, content: stripImagesFromContent(msg.content) };
+        const msgTokens = estimateMessagesTokens([strippedMsg]);
         if (keptTokens + msgTokens <= historyBudget) {
           keptHistory.unshift(msg);
           keptTokens += msgTokens;
@@ -627,8 +629,11 @@ export async function sendMessage() {
     
     if (pressure.level === 'critical') {
       logger.warn('[SidePanel] 上下文压力过高，主动裁剪...');
-      const budget = getMessageBudget(model, state.enabledTools.length, configuredWindow, state.customModelMap);
-      const trimResult = trimMessagesByBudget(messages, budget, { generateSummary: false });
+      // 使用实际系统提示词 + 工具定义 token，而非固定估算值
+      const actualSysTokens = estimateTokens(messages[0]?.content || '');
+      const actualToolTokens = state.enabledTools.length * 200;
+      const budget = contextWindow - actualSysTokens - actualToolTokens - 4096 - 2000;
+      const trimResult = trimMessagesByBudget(messages, Math.max(budget, 2000), { generateSummary: false });
       messages = trimResult.messages;
       logger.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);
     }

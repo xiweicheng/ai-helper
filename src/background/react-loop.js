@@ -388,8 +388,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     const systemMsg = currentMessages[0]?.role === 'system' ? [currentMessages[0]] : [];
     const rest = systemMsg.length ? [...currentMessages.slice(1)] : [...currentMessages];
 
-    // 内部辅助：校准版消息 token 估算
-    const est = (msgs) => getCalibratedTokens(estimateMessagesTokens(msgs));
+    // 内部辅助：校准版消息 token 估算（剥离图片后，避免图片 token 导致过度裁剪）
+    const est = (msgs) => {
+      const stripped = msgs.map(m => ({ ...m, content: stripImagesFromContent(m.content) }));
+      return getCalibratedTokens(estimateMessagesTokens(stripped));
+    };
 
     // ============================================================
     // 阶段一：增量摘要 —— 将旧轮次压缩为一句话，保留信息

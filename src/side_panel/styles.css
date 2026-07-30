@@ -10800,6 +10800,108 @@ body {
 }
 
 /* ============================================================
+   PPTX 预览样式
+   ============================================================ */
+
+.pptx-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.pptx-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  font-size: 12px;
+  user-select: none;
+}
+
+.pptx-toolbar-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d0d0d0;
+  border-radius: 5px;
+  background: white;
+  color: #555;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.pptx-toolbar-btn:hover:not(:disabled) {
+  background: #f0f5ff;
+  border-color: #a0c4ff;
+  color: #1a73e8;
+}
+
+.pptx-toolbar-btn:active:not(:disabled) {
+  background: #d6e4ff;
+  transform: scale(0.95);
+}
+
+.pptx-toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pptx-toolbar-btn svg {
+  pointer-events: none;
+}
+
+.pptx-page-info {
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
+
+.pptx-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: #d9d9d9;
+  margin: 0 4px;
+  align-self: center;
+}
+
+.pptx-zoom-info {
+  color: #777;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.pptx-viewport {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background: #525659;
+  cursor: default;
+}
+
+.pptx-pan {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+}
+
+.pptx-slide-container {
+  background: white;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+}
+
+/* ============================================================
    Excel 预览样式
    ============================================================ */
 

@@ -19,6 +19,7 @@ import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents } from './markdown-render.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
+import { pptxToHtml } from '@jvmr/pptx-to-html';
 
 import DOMPurify from 'dompurify';
 
@@ -1085,6 +1086,7 @@ function updateSortIndicators() {
 const PREVIEW_MAX_TEXT  = 1024 * 1024;       // 文本: 1MB（DOM 渲染密集，需保守）
 const PREVIEW_MAX_PDF   = 50 * 1024 * 1024;  // PDF: 50MB
 const PREVIEW_MAX_DOCX  = 20 * 1024 * 1024;  // Word: 20MB
+const PREVIEW_MAX_PPTX  = 50 * 1024 * 1024;  // PPTX: 50MB
 const PREVIEW_MAX_XLSX  = 50 * 1024 * 1024;  // Excel: 50MB（服务端解析，无性能瓶颈）
 const PREVIEW_MAX_IMAGE = 50 * 1024 * 1024;  // 图片: 50MB
 const PREVIEW_MAX_LINES = 10000;              // 文本预览最大渲染行数
@@ -1251,6 +1253,7 @@ async function previewFile(filePath, fileName) {
     const maxSize = {
       pdf: PREVIEW_MAX_PDF,
       docx: PREVIEW_MAX_DOCX,
+      pptx: PREVIEW_MAX_PPTX,
       xlsx: PREVIEW_MAX_XLSX,
       image: PREVIEW_MAX_IMAGE,
     }[previewType] || PREVIEW_MAX_TEXT;
@@ -1281,6 +1284,10 @@ async function previewFile(filePath, fileName) {
       case 'docx':
         fullscreenBtn.style.display = '';
         await previewDocx(arrayBuffer, previewContent);
+        break;
+      case 'pptx':
+        fullscreenBtn.style.display = '';
+        await previewPptx(arrayBuffer, fileName, previewContent, previewArea);
         break;
       case 'image':
         fullscreenBtn.style.display = '';
@@ -1596,6 +1603,304 @@ async function previewDocx(arrayBuffer, previewContent) {
   } else {
     previewContent.innerHTML = `<div class="workspace-preview-docx">${sanitized}</div>`;
   }
+}
+
+// ============================================================
+// PPTX 预览（pptx-to-html 转换，视口缩放 + 拖拽 + 翻页）
+// ============================================================
+
+let pptxSlidesHtml = [];
+let pptxCurrentSlide = 0;
+let pptxVisualScale = 1;   // 用户的视觉缩放（相对于幻灯片自然尺寸）
+let pptxFitScale = 1;      // 适应容器的缩放比例
+let pptxPanX = 0, pptxPanY = 0;
+let pptxIsDragging = false;
+let pptxDragStartX = 0, pptxDragStartY = 0;
+let pptxDragPanStartX = 0, pptxDragPanStartY = 0;
+
+async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
+  previewArea.dataset.previewType = 'pptx';
+
+  pptxSlidesHtml = await pptxToHtml(arrayBuffer, {
+    width: 960,
+    height: 540,
+    scaleToFit: true,
+    letterbox: true,
+  });
+  pptxCurrentSlide = 0;
+  pptxVisualScale = 1;
+  pptxFitScale = 1;
+  pptxPanX = 0;
+  pptxPanY = 0;
+
+  if (!pptxSlidesHtml || pptxSlidesHtml.length === 0) {
+    previewContent.innerHTML = '<div class="workspace-panel-error">PPTX 文件为空或解析失败</div>';
+    return;
+  }
+
+  const totalSlides = pptxSlidesHtml.length;
+  document.getElementById('workspacePreviewLineCount').textContent = `${totalSlides} 页`;
+
+  previewContent.innerHTML = `
+    <div class="pptx-wrap">
+      <div class="pptx-toolbar">
+        <button class="pptx-toolbar-btn" id="pptxPrevSlide" title="上一页" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="pptx-page-info"><span id="pptxSlideNum">1</span> / ${totalSlides}</span>
+        <button class="pptx-toolbar-btn" id="pptxNextSlide" title="下一页">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <span class="pptx-toolbar-sep"></span>
+        <button class="pptx-toolbar-btn" id="pptxZoomOut" title="缩小">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="pptx-zoom-info" id="pptxZoomInfo">100%</span>
+        <button class="pptx-toolbar-btn" id="pptxZoomIn" title="放大">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        <span class="pptx-toolbar-sep"></span>
+        <button class="pptx-toolbar-btn" id="pptxZoomFit" title="适应页面">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+      </div>
+      <div class="pptx-viewport" id="pptxViewport">
+        <div class="pptx-pan" id="pptxPan">
+          <div class="pptx-slide-container" id="pptxSlideContainer"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 初始渲染
+  renderPptxSlide();
+
+  const viewport = document.getElementById('pptxViewport');
+  const pan = document.getElementById('pptxPan');
+  const zoomInfo = document.getElementById('pptxZoomInfo');
+
+  function applyPptxTransform() {
+    pan.style.transform = `translate(${pptxPanX}px, ${pptxPanY}px) scale(${pptxVisualScale})`;
+    zoomInfo.textContent = Math.round(pptxVisualScale * 100) + '%';
+    if (!pptxIsDragging) {
+      viewport.style.cursor = pptxVisualScale > pptxFitScale ? 'grab' : 'default';
+    }
+  }
+
+  function clampPptxPan() {
+    if (pptxVisualScale <= pptxFitScale) {
+      pptxPanX = 0;
+      pptxPanY = 0;
+    }
+  }
+
+  function setPptxZoom(newScale, originX, originY) {
+    const oldVisualScale = pptxVisualScale;
+    pptxVisualScale = Math.max(0.05, Math.min(5, newScale));
+
+    if (originX !== undefined && originY !== undefined) {
+      const rect = viewport.getBoundingClientRect();
+      const ox = originX - rect.left - rect.width / 2;
+      const oy = originY - rect.top - rect.height / 2;
+      const ratio = pptxVisualScale / oldVisualScale;
+      pptxPanX = ox - ratio * (ox - pptxPanX);
+      pptxPanY = oy - ratio * (oy - pptxPanY);
+    }
+
+    // 如果当前视觉缩放接近fit，自动对齐
+    if (pptxVisualScale < pptxFitScale * 1.05 && pptxVisualScale > pptxFitScale * 0.95) {
+      pptxVisualScale = pptxFitScale;
+      pptxPanX = 0;
+      pptxPanY = 0;
+    }
+
+    clampPptxPan();
+    applyPptxTransform();
+  }
+
+  // 滚轮缩放
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.005;
+    setPptxZoom(pptxVisualScale + delta * pptxVisualScale, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // 拖拽平移
+  viewport.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    pptxIsDragging = true;
+    pptxDragStartX = e.clientX;
+    pptxDragStartY = e.clientY;
+    pptxDragPanStartX = pptxPanX;
+    pptxDragPanStartY = pptxPanY;
+    viewport.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!pptxIsDragging) return;
+    pptxPanX = pptxDragPanStartX + (e.clientX - pptxDragStartX);
+    pptxPanY = pptxDragPanStartY + (e.clientY - pptxDragStartY);
+    clampPptxPan();
+    applyPptxTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (pptxIsDragging) {
+      pptxIsDragging = false;
+      viewport.style.cursor = pptxVisualScale > pptxFitScale ? 'grab' : 'default';
+    }
+  });
+
+  // 工具栏：翻页
+  document.getElementById('pptxPrevSlide').addEventListener('click', () => {
+    if (pptxCurrentSlide > 0) { pptxCurrentSlide--; renderPptxSlide(); }
+  });
+  document.getElementById('pptxNextSlide').addEventListener('click', () => {
+    if (pptxCurrentSlide < totalSlides - 1) { pptxCurrentSlide++; renderPptxSlide(); }
+  });
+
+  // 工具栏：缩放
+  document.getElementById('pptxZoomIn').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setPptxZoom(pptxVisualScale * 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('pptxZoomOut').addEventListener('click', () => {
+    const rect = viewport.getBoundingClientRect();
+    setPptxZoom(pptxVisualScale / 1.25, rect.left + rect.width / 2, rect.top + rect.height / 2);
+  });
+  document.getElementById('pptxZoomFit').addEventListener('click', () => {
+    pptxVisualScale = pptxFitScale;
+    pptxPanX = 0;
+    pptxPanY = 0;
+    applyPptxTransform();
+  });
+
+  // 双击 → fit
+  viewport.addEventListener('dblclick', () => {
+    pptxVisualScale = pptxFitScale;
+    pptxPanX = 0;
+    pptxPanY = 0;
+    applyPptxTransform();
+  });
+
+  // resize 重新计算 fit 并应用
+  window.addEventListener('resize', () => {
+    if (!pptxSlidesHtml || pptxSlidesHtml.length === 0) return;
+    // 用 rAF 确保全屏切换后 DOM 布局已完成
+    requestAnimationFrame(() => {
+      recalcAndApplyPptxFit();
+    });
+  });
+}
+
+function recalcPptxFit() {
+  const viewport = document.getElementById('pptxViewport');
+  const container = document.getElementById('pptxSlideContainer');
+  if (!viewport || !container) return;
+
+  // 使用 slide-container 的显式宽高（renderPptxSlide 中设置）
+  const naturalW = parseFloat(container.style.width) || 960;
+  const naturalH = parseFloat(container.style.height) || 540;
+  const vw = viewport.clientWidth;
+  const vh = viewport.clientHeight;
+
+  if (vw > 0 && vh > 0 && naturalW > 0 && naturalH > 0) {
+    // 留 8px 边距给 box-shadow 呼吸空间
+    pptxFitScale = Math.min((vw - 8) / naturalW, (vh - 8) / naturalH);
+  } else {
+    pptxFitScale = 1;
+  }
+}
+
+/**
+ * 重新计算 fit 比例，如果当前缩放接近 fit 则自动对齐
+ * 用于 resize / 全屏切换时重新适配
+ */
+function recalcAndApplyPptxFit() {
+  const viewport = document.getElementById('pptxViewport');
+  const pan = document.getElementById('pptxPan');
+  const zoomInfo = document.getElementById('pptxZoomInfo');
+  if (!viewport || !pan) return;
+
+  const oldFit = pptxFitScale;
+  recalcPptxFit();
+
+  // 如果当前缩放接近旧的 fit（说明用户正处于适应页面状态），自动对齐到新的 fit
+  if (pptxVisualScale <= oldFit * 1.05) {
+    pptxVisualScale = pptxFitScale;
+    pptxPanX = 0;
+    pptxPanY = 0;
+  }
+
+  pan.style.transform = `translate(${pptxPanX}px, ${pptxPanY}px) scale(${pptxVisualScale})`;
+  if (zoomInfo) zoomInfo.textContent = Math.round(pptxVisualScale * 100) + '%';
+
+  if (!pptxIsDragging) {
+    viewport.style.cursor = pptxVisualScale > pptxFitScale ? 'grab' : 'default';
+  }
+}
+
+function renderPptxSlide() {
+  const container = document.getElementById('pptxSlideContainer');
+  const pan = document.getElementById('pptxPan');
+  if (!container || !pan || pptxCurrentSlide < 0 || pptxCurrentSlide >= pptxSlidesHtml.length) return;
+
+  // 先重置 pan 为 scale(1)，防止上一页残留的 transform 影响尺寸测量
+  pan.style.transform = 'scale(1)';
+
+  const rawHtml = pptxSlidesHtml[pptxCurrentSlide];
+  const cleaned = DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: ['div', 'span', 'p', 'a', 'img', 'svg', 'path', 'circle', 'rect',
+      'line', 'polyline', 'polygon', 'ellipse', 'g', 'defs', 'linearGradient', 'radialGradient',
+      'stop', 'text', 'tspan', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'u'],
+    ALLOWED_ATTR: ['class', 'style', 'id', 'src', 'alt', 'width', 'height', 'href', 'target',
+      'd', 'fill', 'stroke', 'stroke-width', 'transform', 'viewBox', 'x', 'y', 'cx', 'cy',
+      'r', 'rx', 'ry', 'x1', 'y1', 'x2', 'y2', 'points', 'opacity', 'font-size', 'font-family',
+      'text-anchor', 'dominant-baseline', 'clip-path', 'preserveAspectRatio', 'xmlns'],
+  });
+
+  // 清除旧宽高，让内容自然撑开
+  container.style.width = '';
+  container.style.height = '';
+  container.innerHTML = cleaned;
+
+  // 用 offsetWidth/Height（不受 CSS transform 影响）测量 slide 自然尺寸
+  const slideEl = container.firstElementChild;
+  if (slideEl) {
+    container.style.width = (slideEl.offsetWidth || 960) + 'px';
+    container.style.height = (slideEl.offsetHeight || 540) + 'px';
+  } else {
+    container.style.width = '960px';
+    container.style.height = '540px';
+  }
+
+  // 计算 fit 比例（基于显式宽高）
+  recalcPptxFit();
+
+  // 初始缩放使用 fit
+  pptxVisualScale = pptxFitScale;
+  pptxPanX = 0;
+  pptxPanY = 0;
+  pan.style.transform = `translate(0px, 0px) scale(${pptxFitScale})`;
+
+  // 更新缩放显示和光标
+  const zoomInfo = document.getElementById('pptxZoomInfo');
+  if (zoomInfo) zoomInfo.textContent = Math.round(pptxVisualScale * 100) + '%';
+
+  const viewport = document.getElementById('pptxViewport');
+  if (viewport && !pptxIsDragging) {
+    viewport.style.cursor = 'default';
+  }
+
+  // 更新导航按钮状态
+  const prevBtn = document.getElementById('pptxPrevSlide');
+  const nextBtn = document.getElementById('pptxNextSlide');
+  const slideNum = document.getElementById('pptxSlideNum');
+  if (prevBtn) prevBtn.disabled = pptxCurrentSlide <= 0;
+  if (nextBtn) nextBtn.disabled = pptxCurrentSlide >= pptxSlidesHtml.length - 1;
+  if (slideNum) slideNum.textContent = pptxCurrentSlide + 1;
 }
 
 // ============================================================

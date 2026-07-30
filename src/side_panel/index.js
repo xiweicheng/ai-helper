@@ -3,7 +3,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
-import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels } from '../shared/token-counter.js';
+import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
@@ -697,6 +697,10 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       
       historyToSend = [...keptHistory, currentMsg];
       messages = [...messages, ...historyToSend];
+      // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
+      for (let i = 0; i < messages.length - 1; i++) {
+        messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };
+      }
     } else {
       messages.push({ role: 'user', content: userMessage });
     }
