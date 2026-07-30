@@ -42,30 +42,35 @@ function getCurrentPairCode() {
 }
 
 /**
- * 启动配对码定时刷新
- * - 如果有配对记录且最近有活跃认证（5分钟内），跳过刷新
- * - 否则启动定时刷新，允许新扩展配对
+ * 启动配对码定时刷新（运行中持续重新评估）
+ * - 每个 tick 检查：有配对记录且最近有活跃认证（5分钟内）→ 停止刷新配对码
+ * - 否则（无配对 / 插件离线超时）→ 刷新配对码，允许新扩展配对
+ * - 这样：插件在线时不刷新配对码；插件断开超时后自动恢复刷新
  */
 function startPairCodeRotation() {
   const config = loadConfig();
-  const pairings = loadPairings();
-  const hasPairings = Object.keys(pairings).length > 0;
-  const isRecentlyActive = (Date.now() - lastAuthTime) < ACTIVE_WINDOW_MS;
-
-  // 有配对且最近有活跃连接，无需刷新配对码
-  if (hasPairings && isRecentlyActive) {
-    currentPairCode = generatePairCode();
-    console.log(`\n[Agent] 配对码: ${currentPairCode}\n`);
-    return;
-  }
-
   const ttl = (config.pairCodeTTL || 30) * 1000;
 
+  // 启动时立即生成一个配对码（供首次配对；启动时 lastAuthTime=0，必然需要刷新）
   currentPairCode = generatePairCode();
   console.log(`\n[Agent] 配对码: ${currentPairCode}\n`);
 
   if (pairCodeTimer) clearInterval(pairCodeTimer);
   pairCodeTimer = setInterval(() => {
+    const pairings = loadPairings();
+    const hasPairings = Object.keys(pairings).length > 0;
+    const isRecentlyActive = (Date.now() - lastAuthTime) < ACTIVE_WINDOW_MS;
+
+    // 有配对且最近有活跃连接：停止刷新配对码（插件在线，无需新配对）
+    if (hasPairings && isRecentlyActive) {
+      if (currentPairCode !== null) {
+        currentPairCode = null;
+        console.log('[Agent] 检测到活跃连接，停止刷新配对码');
+      }
+      return;
+    }
+
+    // 无配对或插件离线超时：刷新配对码，允许新扩展配对
     currentPairCode = generatePairCode();
     console.log(`[Agent] 配对码已更新: ${currentPairCode}`);
   }, ttl);

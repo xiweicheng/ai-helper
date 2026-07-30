@@ -444,6 +444,11 @@ export function startServer() {
       return jsonResponse(res, 403, { success: false, error: '认证 token 无效' });
     }
 
+    // 心跳接口（需认证）：仅刷新 lastAuthTime 维持"插件在线"状态，不返回敏感信息
+    if (req.method === 'GET' && pathname === '/api/heartbeat') {
+      return jsonResponse(res, 200, { success: true, time: Date.now() });
+    }
+
     // Agent 关闭（需认证）
     if (req.method === 'POST' && pathname === '/api/shutdown') {
       if (agentOperationInProgress) {

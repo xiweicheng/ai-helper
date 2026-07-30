@@ -1005,6 +1005,7 @@ async function handleSelectionSearch(prompt, selectedText, tabId) {
 // ==================== Agent 健康检查 ====================
 
 let agentHealthCheckInterval = null;
+let agentHeartbeatInterval = null;   // 活跃代理心跳定时器（带 token，维持 lastAuthTime）
 let _optionsPageOpen = false;        // 配置页面是否打开（影响非活跃代理心跳）
 const _agentLastStatus = new Map();  // agentId -> boolean（上次检查的状态）
 const _autoReconnectTimers = new Map(); // agentId -> { timer, retries } — 自动重连
@@ -1235,6 +1236,9 @@ function startAgentHealthCheck() {
   performAgentHealthCheck();
   
   agentHealthCheckInterval = setInterval(performAgentHealthCheck, 30000);
+
+  // 启动活跃代理心跳（带 token，60s 间隔，只对当前活跃代理发）
+  startAgentHeartbeat();
 }
 
 /**
@@ -1245,6 +1249,46 @@ function stopAgentHealthCheck() {
     clearInterval(agentHealthCheckInterval);
     agentHealthCheckInterval = null;
     _agentLastStatus.clear();
+  }
+  stopAgentHeartbeat();
+}
+
+/**
+ * 活跃代理心跳：只对当前活跃代理发轻量心跳（GET /api/heartbeat，带 token）
+ * - 作用：刷新代理端 lastAuthTime，使其感知"插件在线"，从而停止刷新配对码
+ * - 只发当前活跃代理，配对但未激活的代理不发
+ */
+async function performAgentHeartbeat() {
+  try {
+    const activeAgent = await AgentClient.getActiveAgent();
+    if (!activeAgent || activeAgent.disabled) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch(`${activeAgent.url}/api/heartbeat`, {
+        headers: { 'Authorization': `Bearer ${activeAgent.token}` },
+        signal: controller.signal,
+        cache: 'no-cache'
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    // 心跳失败静默（连接状态由 performAgentHealthCheck 负责）
+  }
+}
+
+function startAgentHeartbeat() {
+  stopAgentHeartbeat();
+  // 立即发一次，让代理端尽快感知插件在线
+  performAgentHeartbeat();
+  agentHeartbeatInterval = setInterval(performAgentHeartbeat, 60 * 1000);
+}
+
+function stopAgentHeartbeat() {
+  if (agentHeartbeatInterval) {
+    clearInterval(agentHeartbeatInterval);
+    agentHeartbeatInterval = null;
   }
 }
 

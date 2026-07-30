@@ -3757,6 +3757,19 @@ async function performSwitchWorkdir(newWorkdir) {
   isSearchMode = false;
   dirCache.clear();
 
+  // 2.1) 清搜索框 DOM 残留（输入框 value / 清除按钮 / 展开态）
+  //      仅清 JS 变量不够：输入框旧关键词会带到新目录，点搜索时 searchQuery 已空 → performSearch 直接 return → "点不动"
+  const _searchInput = document.getElementById('workspaceSearchInput');
+  if (_searchInput) _searchInput.value = '';
+  const _clearBtn = document.getElementById('workspaceSearchClear');
+  if (_clearBtn) _clearBtn.style.display = 'none';
+  const _toolbar = document.getElementById('workspaceToolbar');
+  if (_toolbar) {
+    _toolbar.classList.remove('search-focused');
+    const _box = _toolbar.querySelector('.workspace-search-box');
+    if (_box) _box.classList.remove('search-box-expanded');
+  }
+
   // 3) 同步 state.agentPlatform.workdir（system prompt 下次构建自动用新值）
   if (state.agentPlatform) {
     state.agentPlatform = { ...state.agentPlatform, workdir: result.workdir };
