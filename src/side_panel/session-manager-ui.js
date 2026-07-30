@@ -415,6 +415,13 @@ function renderDropdownList() {
 
   listEl.innerHTML = '';
 
+  // 更新"关闭全部"按钮的会话数量
+  const closeAllBtn = document.getElementById('sessionDropdownCloseAll');
+  if (closeAllBtn) {
+    const total = (state.sessions || []).length;
+    closeAllBtn.textContent = `关闭全部（${total}）`;
+  }
+
   if (dropdownState.filteredSessions.length === 0) {
     const emptyEl = document.createElement('div');
     emptyEl.className = 'session-dropdown-empty';
@@ -453,15 +460,28 @@ function renderDropdownList() {
     titleSpan.title = session.title || '新会话';
     item.appendChild(titleSpan);
 
-    // 操作按钮容器（复制 + 关闭）
+    // 操作按钮容器（重命名 + 分叉 + 关闭）
     const actionsWrapper = document.createElement('span');
     actionsWrapper.className = 'session-dropdown-item-actions';
 
-    // 复制会话按钮
+    // 重命名按钮
+    const renameBtn = document.createElement('span');
+    renameBtn.className = 'session-dropdown-item-rename';
+    renameBtn.title = '重命名';
+    renameBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeDropdown();
+      showRenameModal(session);
+    });
+    actionsWrapper.appendChild(renameBtn);
+
+    // 会话分叉按钮
     const duplicateBtn = document.createElement('span');
     duplicateBtn.className = 'session-dropdown-item-duplicate';
-    duplicateBtn.title = '复制会话';
-    duplicateBtn.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"></rect><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"></path></svg>`;
+    duplicateBtn.title = '会话分叉';
+    duplicateBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-6 3.5-6 3.5"/></svg>`;
     duplicateBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -792,7 +812,7 @@ export async function handleDuplicateSession(sourceSessionId, upToMessageId = nu
     const newSession = await duplicateSession(sourceSessionId, upToMessageId);
     // 复制完成后切换到新会话（handleSessionSwitch 会处理 state 更新、事件派发、UI 重新渲染）
     await handleSessionSwitch(newSession.id);
-    showToast(upToMessageId ? `已从此处分叉「${newSession.title}」` : `已复制会话「${newSession.title}」`, 'success');
+    showToast(upToMessageId ? `已从此处分叉「${newSession.title}」` : `已分叉会话「${newSession.title}」`, 'success');
   } catch (err) {
     logger.error('[SessionUI] 复制/分叉会话失败:', err);
     showToast(`操作失败: ${err.message}`, 'error');
@@ -947,21 +967,21 @@ function showTabContextMenu(event, session) {
   menu.style.top = event.clientY + 'px';
 
   // 重命名
-  const renameItem = createMenuItem('重命名', () => {
+  const renameItem = createMenuItem('重命名', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>', () => {
     menu.remove();
     showRenameModal(session);
   });
   menu.appendChild(renameItem);
 
-  // 复制会话（对话分支）
-  const duplicateItem = createMenuItem('复制会话', () => {
+  // 会话分叉（完整复制为分支）
+  const duplicateItem = createMenuItem('会话分叉', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-6 3.5-6 3.5"/></svg>', () => {
     menu.remove();
     handleDuplicateSession(session.id);
   });
   menu.appendChild(duplicateItem);
 
   // 删除
-  const deleteItem = createMenuItem('删除', () => {
+  const deleteItem = createMenuItem('删除', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', () => {
     menu.remove();
     showDeleteModal(session, async () => {
       await reloadAfterDelete();
@@ -980,10 +1000,14 @@ function showTabContextMenu(event, session) {
   setTimeout(() => document.addEventListener('click', closeMenu), 0);
 }
 
-function createMenuItem(label, onClick, className = '') {
+function createMenuItem(label, iconSvg = '', onClick, className = '') {
   const item = document.createElement('div');
   item.className = 'session-context-menu-item ' + className;
-  item.textContent = label;
+  if (iconSvg) {
+    item.innerHTML = `${iconSvg}<span>${label}</span>`;
+  } else {
+    item.textContent = label;
+  }
   item.addEventListener('click', onClick);
   return item;
 }

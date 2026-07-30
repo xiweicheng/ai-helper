@@ -3,8 +3,8 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync, createWriteStream, createReadStream, statSync, existsSync } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
-import { join, dirname, basename, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { join, dirname, basename, resolve, isAbsolute, relative } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { ZipArchive } from 'archiver';
 import { homedir, tmpdir } from 'os';
 import { spawn } from 'child_process';
@@ -49,6 +49,30 @@ import XLSX from 'xlsx';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_VERSION = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
 const AGENT_START_TIME = Date.now();
+
+/**
+ * 计算多个路径的共同父目录（跨平台，正确处理 Windows 盘符）
+ * 用 path.dirname + path.relative 替代手工 split('/')，避免破坏盘符（如 /C:/Users）
+ * @param {string[]} paths - 绝对路径数组
+ * @returns {string} 共同父目录（始终为目录路径）
+ */
+function computeCommonParent(paths) {
+  if (!paths || paths.length === 0) return '';
+  let common = dirname(resolve(paths[0]));
+  for (let i = 1; i < paths.length; i++) {
+    const p = resolve(paths[i]);
+    // 逐层上移 common，直到 p 落在 common 之下或 common 已到根
+    while (true) {
+      const parent = dirname(common);
+      if (parent === common) break; // 已到根目录（如 / 或 C:\）
+      const rel = relative(common, p);
+      // rel 为空表示同路径；不以 '..' 开头且非绝对路径表示 p 在 common 之下
+      if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) break;
+      common = parent;
+    }
+  }
+  return common;
+}
 
 /**
  * 跨平台 ZIP 打包（使用 archiver，替换 spawn zip）
@@ -778,8 +802,8 @@ export function startServer() {
           resolvedWorkdir = join(homedir(), resolvedWorkdir.slice(2));
         }
 
-        // 必须是绝对路径（Unix / 或 Windows 盘符）
-        if (!resolvedWorkdir.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(resolvedWorkdir)) {
+        // 必须是绝对路径（跨平台：path.isAbsolute 覆盖 Unix /、Windows 盘符、UNC 路径）
+        if (!isAbsolute(resolvedWorkdir)) {
           return jsonResponse(res, 400, { success: false, error: 'workdir 必须是绝对路径' });
         }
         resolvedWorkdir = resolve(resolvedWorkdir);
@@ -1078,19 +1102,7 @@ export function startServer() {
           const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
           try {
             const zipArgs = resolvedPaths.map(p => basename(p));
-            const commonParent = resolvedPaths.reduce((a, b) => {
-              const sep = '/';
-              const partsA = a.replace(/\\/g, '/').split('/').filter(Boolean);
-              const partsB = b.replace(/\\/g, '/').split('/').filter(Boolean);
-              const common = [];
-              for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-                if (partsA[i] === partsB[i]) common.push(partsA[i]);
-                else break;
-              }
-              const result = sep + common.join(sep);
-              // Windows 盘符处理：C:/Users -> 而不是 /C:/Users
-              return result;
-            });
+            const commonParent = computeCommonParent(resolvedPaths);
 
             const zipBuffer = await createZipBuffer(zipArgs, commonParent, tmpFile);
             logFs('download_multi', { paths: resolvedPaths, zipSize: zipBuffer.length });
@@ -1171,16 +1183,7 @@ export function startServer() {
             const tmpFile = join(tmpdir(), `ws-dl-${randomBytes(6).toString('hex')}.zip`);
             try {
               const zipArgs = resolvedPaths.map(p => basename(p));
-              const commonParent = resolvedPaths.reduce((a, b) => {
-                const partsA = a.split('/').filter(Boolean);
-                const partsB = b.split('/').filter(Boolean);
-                const common = [];
-                for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-                  if (partsA[i] === partsB[i]) common.push(partsA[i]);
-                  else break;
-                }
-                return '/' + common.join('/');
-              });
+              const commonParent = computeCommonParent(resolvedPaths);
               const zipBuffer = await createZipBuffer(zipArgs, commonParent, tmpFile);
               logFs('download_multi_stream', { paths: resolvedPaths, zipSize: zipBuffer.length });
               const zipName = `workspace_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.zip`;
@@ -1415,7 +1418,7 @@ export function startServer() {
           return jsonResponse(res, 404, { success: false, error: '文件不存在' });
         }
 
-        const fileUrl = `file://${check.resolved}`;
+        const fileUrl = pathToFileURL(check.resolved).href;
         const platform = os.platform();
         let cmd, args, spawnOpts;
         if (platform === 'darwin') {

@@ -229,12 +229,6 @@ export async function handlePageScreenshotResult(dataUrl, mode, rect) {
     const blob = await res.blob();
     compressAndAttachImage(blob);
     showToast('截图成功');
-    // 页面快捷键触发时焦点在网页上，side panel 窗口本身未激活，
-    // 此时 compressAndAttachImage 内部的 userInput.focus() 无法生效。
-    // 需先把焦点切回 side panel 窗口，再聚焦输入框，方便用户截图后直接输入。
-    window.focus();
-    const userInput = document.getElementById('userInput');
-    if (userInput) userInput.focus();
   } catch (err) {
     logger.error('[SidePanel] 页面快捷键截图处理失败:', err);
     showToast('截图处理失败，请重试');

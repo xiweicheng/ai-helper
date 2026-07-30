@@ -1,6 +1,6 @@
 // skill/markdown-loader.js - Markdown Skill 加载器
 // 扫描子目录中的 SKILL.md，解析 YAML frontmatter 和正文内容
-import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, rmSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import { join, basename, extname, normalize, sep } from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -359,8 +359,18 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     mkdirSync(tmpDir, { recursive: true });
     writeFileSync(tmpZip, zipBuffer);
 
-    // 解压到临时目录（execFile 数组参数，不经 shell，杜绝命令注入）
-    await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000, windowsHide: true });
+    // 解压到临时目录（跨平台：Windows 用 PowerShell Expand-Archive，Unix 用 unzip）
+    if (process.platform === 'win32') {
+      // PowerShell 单引号转义：路径中的单引号用两个单引号表示（tmpZip/tmpDir 由程序生成，正常不含单引号）
+      const esc = (s) => s.replace(/'/g, "''");
+      await execFileAsync('powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command',
+         `Expand-Archive -LiteralPath '${esc(tmpZip)}' -DestinationPath '${esc(tmpDir)}' -Force`],
+        { timeout: 30000, windowsHide: true });
+    } else {
+      // execFile 数组参数，不经 shell，杜绝命令注入
+      await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000, windowsHide: true });
+    }
 
     // 查找 SKILL.md
     const entries = readdirSync(tmpDir);
@@ -413,8 +423,8 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
       rmSync(destDir, { recursive: true, force: true });
     }
 
-    // 复制（execFile 数组参数，不经 shell）
-    await execFileAsync('cp', ['-r', skillDir + '/.', destDir], { timeout: 30000, windowsHide: true });
+    // 复制（跨平台：fs.cpSync 替代 cp -r，Windows 无 cp 命令；destDir 已被 rmSync 清空）
+    cpSync(skillDir, destDir, { recursive: true });
 
     // 重新加载
     const skill = loadMarkdownSkill(destDir);

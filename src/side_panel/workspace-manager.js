@@ -281,7 +281,9 @@ function normalizePath(p) {
 function isAbsolutePath(p) {
   if (!p) return false;
   if (p.startsWith('/')) return true;
-  if (/^[a-zA-Z]:[\/]/.test(p)) return true;
+  if (/^[a-zA-Z]:[\\/]/.test(p)) return true;
+  // UNC 路径：\\server\share 或（经 normalizePath 后）//server/share
+  if (/^(\\\\|\/\/)[^\\/]+[\\/]/.test(p)) return true;
   return false;
 }
 
@@ -340,7 +342,7 @@ export async function downloadFileStream(filePath) {
       return { success: false, error: err.error || '下载失败' };
     }
     const blob = await resp.blob();
-    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split('/').pop());
+    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split(/[\\/]/).pop());
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
     return { success: false, error: `请求失败: ${err.message}` };
@@ -391,7 +393,7 @@ export async function downloadFileStreamWithProgress(filePath, onProgress, signa
     }
 
     const blob = new Blob(chunks);
-    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split('/').pop());
+    const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split(/[\\/]/).pop());
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
     if (err.name === 'AbortError') return { success: false, error: '已取消', aborted: true };

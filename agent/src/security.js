@@ -8,14 +8,12 @@ const isWin32 = platform() === 'win32';
 
 function normalizePathFormat(pathStr) {
   if (!pathStr || typeof pathStr !== 'string') return pathStr;
-
-  if (isWin32) {
-    pathStr = pathStr.replace(/\/([a-zA-Z])\//g, '$1:/');
-    pathStr = pathStr.replace(/\/([a-zA-Z]):/g, '$1:/');
-    pathStr = pathStr.replace(/\//g, '\\');
-  }
-
-  return pathStr;
+  // 防御性修复：把异常的 "/C:/" 形式（带前导斜杠的盘符）规整为 "C:/"
+  // 仅匹配 /<字母>:/ ，不会误伤 /home/ 等普通路径段
+  pathStr = pathStr.replace(/\/([a-zA-Z]):(\/|$)/g, '$1:$2');
+  // 统一为正斜杠（path.resolve/normalize 在所有平台都能正确处理正斜杠并归一化到平台分隔符）
+  // 不再做盘符相关的激进转换，避免把 /home/user 误转为 home:\user
+  return pathStr.replace(/\\/g, '/');
 }
 
 // ==================== 硬阻止目录（任何情况下都不可访问） ====================
@@ -210,6 +208,11 @@ const BLACKLIST_PATTERNS = [
   // Shell 命令替换注入 — 允许 echo/printf 等纯输出命令中使用
   /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*`[^`]*`/,
   /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*\$\s*\([^)]*\)/,
+  // Windows 高危破坏性命令（大小写不敏感）
+  /^\s*format\s+[a-zA-Z]:/i,                                                          // 格式化磁盘
+  /^\s*diskpart\b/i,                                                                  // 磁盘分区操作
+  /^\s*>\s*[a-zA-Z]:[\\\/][^\n]*[\\\/]Windows[\\\/]System32[\\\/]config[\\\/](SAM|SYSTEM|SECURITY|DEFAULT|NTUSER)/i, // 覆盖注册表蜂巢
+  /^\s*>\s*[a-zA-Z]:[\\\/][^\n]*[\\\/]drivers[\\\/]etc[\\\/]hosts/i,                  // 覆盖 hosts
 ];
 const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
 const SCRIPT_INTERPRETERS = '(bash|sh|zsh|python3?|node|ruby|perl|php|lua)';
@@ -230,7 +233,17 @@ const GRAYLIST_PATTERNS = [
   // 直接执行脚本
   { pattern: new RegExp(`^\\s*\\.?\\/\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '直接执行脚本文件' },
   // chmod +x 授予执行权限
-  { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-7][0-7])\s/, reason: '修改文件执行权限' },
+  { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-9][0-9])\s/, reason: '修改文件执行权限' },
+
+  // Windows 命令（大小写不敏感）
+  { pattern: /^\s*rmdir?\s+\/s\b/i, reason: '递归删除目录 (rd/rmdir /s)' },
+  { pattern: /^\s*(del|erase)\s+\/[a-zA-Z]*f/i, reason: '强制删除文件 (del /f)' },
+  { pattern: /^\s*icacls\b/i, reason: '修改文件权限 (icacls)' },
+  { pattern: /^\s*takeown\b/i, reason: '夺取文件所有权 (takeown)' },
+  { pattern: /^\s*reg\s+(add|delete|import|load|restore)\b/i, reason: '修改注册表 (reg)' },
+  { pattern: /^\s*net\s+(user|localgroup)\b/i, reason: '用户/用户组管理 (net)' },
+  { pattern: /^\s*sc\s+(stop|delete|config)\b/i, reason: '服务管理 (sc)' },
+  { pattern: /^\s*taskkill\s+\/[a-zA-Z]*f/i, reason: '强制结束进程 (taskkill /f)' },
 ];
 
 /**
@@ -257,8 +270,11 @@ function checkCommand(command, force = false) {
   }
 
   // 1.5 禁止访问核心敏感文件（通过命令也一样拦截）
+  // Windows 文件系统不区分大小写，归一化比较防止 .AI-HELPER-AGENT 等大小写变换绕过
+  const cmpTrimmed = isWin32 ? trimmed.toLowerCase() : trimmed;
   for (const blocked of HARD_BLOCKED_PATHS) {
-    if (trimmed.includes(blocked)) {
+    const cmpBlocked = isWin32 ? blocked.toLowerCase() : blocked;
+    if (cmpTrimmed.includes(cmpBlocked)) {
       return {
         safe: false,
         level: 'deny',

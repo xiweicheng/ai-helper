@@ -1,5 +1,6 @@
 // agent/src/executor.js - 命令执行器（child_process + 流式输出）
 import { spawn, exec } from 'child_process';
+import { existsSync } from 'fs';
 import crypto from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
@@ -23,7 +24,7 @@ function getShellForExec() {
       ];
       for (const path of gitBashPaths) {
         try {
-          if (require('fs').existsSync(path)) {
+          if (existsSync(path)) {
             return { shell: path, args: ['-c'] };
           }
         } catch {}

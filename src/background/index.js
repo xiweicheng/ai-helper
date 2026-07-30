@@ -98,6 +98,33 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   }
 });
 
+// ==================== 全局快捷键：切换 Side Panel ====================
+//
+// Chrome sidePanel API 只提供 open() 没有 close()/toggle()，这里通过
+// chrome.extension.getViews({ type: 'side_panel' }) 同步判断当前是否打开：
+//   - 已打开：发 CLOSE_SIDEPANEL 消息让 Side Panel 页面调用 window.close()
+//   - 未打开：直接调 chrome.sidePanel.open()
+// onCommand 事件本身是用户手势，满足 sidePanel.open() 的调用前提
+chrome.commands?.onCommand?.addListener((command) => {
+  if (command !== '_toggle_sidepanel') return;
+  try {
+    const views = chrome.extension.getViews({ type: 'side_panel' });
+    if (views.length > 0) {
+      // 已打开 → 通知 Side Panel 关闭自身
+      chrome.runtime.sendMessage({ type: 'CLOSE_SIDEPANEL' }).catch((e) => {
+        logger.warn('[Background] 发送 CLOSE_SIDEPANEL 失败:', e?.message);
+      });
+    } else {
+      // 未打开 → 打开（onCommand 事件即用户手势）
+      chrome.sidePanel?.open?.().catch((e) => {
+        logger.warn('[Background] 打开 sidePanel 失败:', e?.message);
+      });
+    }
+  } catch (e) {
+    logger.warn('[Background] toggle sidePanel 异常:', e?.message);
+  }
+});
+
 // ==================== 消息路由表 ====================
 //
 // 所有消息类型通过 if-chain 分发（非 switch），按频率排序：
@@ -953,7 +980,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'DELETE_LOCAL_PROTOTYPE') {
     (async () => {
       try {
-        const dirPath = message.path.replace(/\/[^/]+\.html$/, '');
+        const dirPath = message.path.replace(/[\\/][^\\/]+\.html$/, '');
         const result = await AgentClient.deleteFile(dirPath);
         if (result.success) {
           logger.debug('[Background] 本地原型文件已删除:', dirPath);

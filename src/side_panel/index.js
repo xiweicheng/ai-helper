@@ -1471,6 +1471,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'CLOSE_SIDEPANEL') {
+      // 来自全局快捷键 _toggle_sidepanel：关闭 Side Panel 自身
+      logger.debug('[SidePanel] 收到 CLOSE_SIDEPANEL，关闭侧边栏');
+      try { window.close(); } catch (e) { /* 忽略 */ }
+      return;
+    }
     if (message.type === 'SELECTION_AI_SEARCH' && message.prompt) {
       logger.debug('[SidePanel] 收到选中文本 AI 搜索:', message.selectedText?.substring(0, 50));
       if (message.selectedText) {

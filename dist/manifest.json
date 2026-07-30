@@ -17,7 +17,8 @@
     "cookies",
     "offscreen",
     "clipboardRead",
-    "clipboardWrite"
+    "clipboardWrite",
+    "commands"
   ],
   "host_permissions": [
     "<all_urls>",
@@ -54,6 +55,15 @@
   "options_page": "options.html",
   "side_panel": {
     "default_path": "side_panel.html"
+  },
+  "commands": {
+    "_toggle_sidepanel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "打开/关闭侧边栏"
+    }
   },
   "action": {
     "default_title": "AI Helper",

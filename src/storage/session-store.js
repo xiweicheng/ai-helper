@@ -565,7 +565,7 @@ export async function duplicateSession(sourceSessionId, upToMessageId = null) {
   const newSession = {
     ...source,
     id: newSessionId,
-    title: isMessageFork ? `${source.title || '新会话'} - 分叉` : `${source.title || '新会话'} - 副本`,
+    title: `${source.title || '新会话'} - 分叉`,
     messageHistory: clonedMessages,
     // 重置运行时状态
     isGenerating: false,

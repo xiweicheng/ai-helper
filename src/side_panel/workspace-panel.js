@@ -616,7 +616,7 @@ function renderFileItemHtml(entry) {
   const isSelected = selectedPaths.has(fullPath);
   // 搜索结果仅用于 tooltip 显示完整路径，不在名称前拼接层级
   const searchTooltip = isSearchMode && entry.matchPath !== currentPath ?
-    entry.matchPath.replace(workspaceRoot, '').replace(/^\//, '') + '/' + entry.name : '';
+    normalizePath(entry.matchPath).replace(normalizePath(workspaceRoot), '').replace(/^\//, '') + '/' + entry.name : '';
   const nameHtml = isSearchMode
     ? highlightSearchMatch(entry.name, searchQuery)
     : escapeHtml(entry.name);
@@ -2391,7 +2391,7 @@ async function downloadSelected() {
 
   const paths = Array.from(selectedPaths);
   if (paths.length === 1) {
-    const name = paths[0].split('/').pop();
+    const name = paths[0].split(/[\\/]/).pop();
     await doDownloadSingle(paths[0], name);
     return;
   }
@@ -2946,8 +2946,11 @@ function setupDragDrop() {
         const destDir = dirItem.dataset.path;
         const srcName = moveData.name;
 
-        if (srcPath === destDir) return; // 不能拖到自己上
-        if (srcPath.startsWith(destDir + '/')) {
+        // 归一化后比较，兼容 Windows 反斜杠路径
+        const normSrc = normalizePath(srcPath);
+        const normDest = normalizePath(destDir);
+        if (normSrc === normDest) return; // 不能拖到自己上
+        if (normSrc.startsWith(normDest + '/')) {
           showToast('不能将目录移动到其子目录中', 'error');
           return;
         }
@@ -2958,7 +2961,7 @@ function setupDragDrop() {
           showToast(`"${srcName}" 已移动到目标目录`, 'success');
           invalidateDirCache(currentPath);
           invalidateDirCache(destDir);
-          const destDirName = destDir.split('/').pop();
+          const destDirName = destDir.split(/[\\/]/).pop();
           await refreshCurrent();
           scrollToNewFile(destDirName);
         } else {
@@ -2973,7 +2976,7 @@ function setupDragDrop() {
     // 外部文件拖到目录项上：上传到该目录，并进入该目录查看
     if (dirItem && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const destDir = dirItem.dataset.path;
-      const destDirName = destDir.split('/').pop();
+      const destDirName = destDir.split(/[\\/]/).pop();
       // 保存当前路径到历史，然后导航到目标目录
       pushPathHistory(currentPath);
       currentPath = destDir;
@@ -3132,13 +3135,20 @@ function updateBreadcrumb() {
   }
 
   const parts = normalizePath(currentPath).split('/').filter(Boolean);
+  // workspaceRoot 归一化，兼容 Windows 反斜杠；去掉末尾斜杠以便前缀比较
+  const normRoot = workspaceRoot ? normalizePath(workspaceRoot).replace(/\/$/, '') : null;
   let html = '';
   let accumulatedPath = '';
   for (let i = 0; i < parts.length; i++) {
-    accumulatedPath += '/' + parts[i];
+    // 构造累积路径：Windows 盘符段(如 "C:")不加前导 /，避免拼出非法的 /C:/...
+    if (i === 0) {
+      accumulatedPath = /^[a-zA-Z]:$/.test(parts[i]) ? parts[i] + '/' : '/' + parts[i];
+    } else {
+      accumulatedPath = (accumulatedPath.endsWith('/') ? accumulatedPath : accumulatedPath + '/') + parts[i];
+    }
     const isLast = i === parts.length - 1;
     // workspaceRoot 之上的路径段不可点击（无权限）
-    const isClickable = !workspaceRoot || accumulatedPath === workspaceRoot || accumulatedPath.startsWith(workspaceRoot + '/');
+    const isClickable = !normRoot || accumulatedPath === normRoot || accumulatedPath.startsWith(normRoot + '/');
     if (i > 0) html += '<span class="workspace-breadcrumb-sep">/</span>';
     if (isLast) {
       html += `<span class="workspace-breadcrumb-current">${escapeHtml(parts[i])}</span>`;
@@ -3192,8 +3202,11 @@ function updateBreadcrumb() {
         const destDir = link.dataset.path;
         const srcName = moveData.name;
         
-        if (srcPath === destDir) return;
-        if (destDir.startsWith(srcPath + '/')) {
+        // 归一化后比较，兼容 Windows 反斜杠路径
+        const normSrc = normalizePath(srcPath);
+        const normDest = normalizePath(destDir);
+        if (normSrc === normDest) return;
+        if (normDest.startsWith(normSrc + '/')) {
           showToast('不能将目录移动到其子目录中', 'error');
           return;
         }
@@ -3201,7 +3214,7 @@ function updateBreadcrumb() {
         showToast('移动中...', 'info');
         const result = await moveFs(srcPath, destDir);
         if (result.success) {
-          showToast(`"${srcName}" 已移动到 "${destDir.split('/').pop()}"`, 'success');
+          showToast(`"${srcName}" 已移动到 "${destDir.split(/[\\/]/).pop()}"`, 'success');
           invalidateDirCache(currentPath);
           invalidateDirCache(destDir);
           await refreshCurrent();
@@ -3427,7 +3440,7 @@ async function handleBatchDelete() {
   const names = paths.map(p => {
     const entry = cachedEntries.find(e => e.path === p) 
       || searchResults.find(e => e.fullPath === p);
-    return entry ? entry.name : p.split('/').pop();
+    return entry ? entry.name : p.split(/[\\/]/).pop();
   });
   
   const message = `确定要删除选中的 ${paths.length} 个文件/目录吗？\n\n${names.slice(0, 5).map(n => `• ${n}`).join('\n')}${names.length > 5 ? `\n• ... 等共 ${names.length} 项` : ''}\n\n删除后可在回收站中恢复（7天后自动清理）`;
@@ -3933,7 +3946,7 @@ async function attachFilesForQuestion(paths) {
   const imageFiles = [];
 
   for (const path of paths) {
-    const name = path.split('/').pop();
+    const name = path.split(/[\\/]/).pop();
     let entry = cachedEntries.find(e => e.path === path);
     if (!entry) {
       entry = searchResults.find(e => e.fullPath === path);

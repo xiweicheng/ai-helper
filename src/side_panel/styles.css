@@ -2175,6 +2175,31 @@ body {
   background: rgba(102, 126, 234, 0.1);
 }
 
+.session-dropdown-item-rename {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #bbb;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.session-dropdown-item:hover .session-dropdown-item-rename,
+.session-dropdown-item.highlighted .session-dropdown-item-rename {
+  opacity: 1;
+  visibility: visible;
+}
+
+.session-dropdown-item-rename:hover {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
 .session-dropdown-footer {
   position: sticky;
   bottom: 0;
@@ -2230,6 +2255,14 @@ body {
   color: #333;
   cursor: pointer;
   transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-context-menu-item svg {
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
 .session-context-menu-item:hover {
