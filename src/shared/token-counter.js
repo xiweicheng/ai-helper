@@ -13,6 +13,41 @@ const CHARS_PER_TOKEN_EN = 4;
 const MESSAGE_OVERHEAD = 4;
 
 // ============================================================
+// 图片 Token 估算（参考 OpenAI Vision 高分辨率模式）
+// 多数多模态模型（OpenAI/Claude/DeepSeek VL 等）的图片 token 与分辨率相关，
+// 而非 Base64 字符串长度。按 Base64 字符串估算会严重高估（约 20 倍）。
+// 公式：tiles = ceil(w/512) * ceil(h/512)，tokens = 85 + 170 * tiles
+// ============================================================
+const IMAGE_BASE_TOKENS = 85;
+const IMAGE_TOKENS_PER_TILE = 170;
+const IMAGE_TILE_SIZE = 512;
+
+/**
+ * 估算单张图片的 token 数量
+ * 优先用压缩后尺寸（width/height）按 tile 公式计算；
+ * 缺失尺寸时按 Base64 字节大小兜底估算（经验值：JPEG 约 65 bytes/token）
+ * @param {{ url?: string, width?: number, height?: number }} imageUrlObj
+ * @returns {number}
+ */
+function estimateImageTokens(imageUrlObj) {
+  if (!imageUrlObj) return IMAGE_BASE_TOKENS;
+
+  const w = Number(imageUrlObj.width);
+  const h = Number(imageUrlObj.height);
+  if (w > 0 && h > 0) {
+    const tiles = Math.ceil(w / IMAGE_TILE_SIZE) * Math.ceil(h / IMAGE_TILE_SIZE);
+    return IMAGE_BASE_TOKENS + IMAGE_TOKENS_PER_TILE * tiles;
+  }
+
+  // 兜底：按 Base64 字节估算（无尺寸信息，如旧数据）
+  // 50KB JPEG ≈ 765 tokens（OpenAI），故 1 token ≈ 65 bytes
+  const url = imageUrlObj.url || '';
+  const base64Data = url.split(',')[1] || url;
+  const bytes = (base64Data.length * 3) / 4;  // Base64 每 4 字符 ≈ 3 字节
+  return Math.max(IMAGE_BASE_TOKENS, Math.ceil(bytes / 65));
+}
+
+// ============================================================
 // 实时校准：基于 API 实际返回的 prompt_tokens 修正估算偏差
 // 使用指数加权移动平均（EWMA）平滑，避免单次异常波动
 // ============================================================
@@ -87,28 +122,41 @@ export function estimateTokens(text) {
 
 /**
  * 估算消息数组的总 token 数
- * @param {Array<{role: string, content: string, tool_calls?: Array, tool_call_id?: string, reasoning_content?: string}>} messages
+ * 支持 multipart content（文本 + 图片）：图片按分辨率估算，避免 Base64 字符串高估
+ * @param {Array<{role: string, content: string|Array, tool_calls?: Array, tool_call_id?: string, reasoning_content?: string}>} messages
  * @returns {number}
  */
 export function estimateMessagesTokens(messages) {
   if (!messages || messages.length === 0) return 0;
   return messages.reduce((sum, m) => {
-    let content = '';
+    let tokens = 0;
     if (typeof m.content === 'string') {
-      content = m.content;
+      tokens = estimateTokens(m.content);
+    } else if (Array.isArray(m.content)) {
+      // 多模态 content：分别按 part 类型估算
+      for (const part of m.content) {
+        if (!part) continue;
+        if (part.type === 'text') {
+          tokens += estimateTokens(part.text || '');
+        } else if (part.type === 'image_url' && part.image_url) {
+          // 图片按分辨率估算，不把 Base64 字符串计入
+          tokens += estimateImageTokens(part.image_url);
+        } else {
+          tokens += estimateTokens(JSON.stringify(part));
+        }
+      }
     } else if (m.content) {
-      content = JSON.stringify(m.content);
+      tokens = estimateTokens(JSON.stringify(m.content));
     }
-    if (m.tool_calls) {
-      content += JSON.stringify(m.tool_calls);
-    }
-    if (m.tool_call_id) {
-      content += m.tool_call_id;
-    }
-    if (m.reasoning_content) {
-      content += m.reasoning_content;
-    }
-    return sum + estimateTokens(content) + MESSAGE_OVERHEAD;
+
+    // 附加字段 token
+    let extra = '';
+    if (m.tool_calls) extra += JSON.stringify(m.tool_calls);
+    if (m.tool_call_id) extra += m.tool_call_id;
+    if (m.reasoning_content) extra += m.reasoning_content;
+    if (extra) tokens += estimateTokens(extra);
+
+    return sum + tokens + MESSAGE_OVERHEAD;
   }, 0);
 }
 
@@ -455,6 +503,21 @@ export function filterApiMessages(messages) {
       if (key in msg) {
         result[key] = msg[key];
       }
+    }
+
+    // 清理 multipart content 中 image_url 的内部字段
+    // original_url 是原图 Base64（仅供 UI 预览/编辑），不可传给 API
+    // width/height 为轻量字段，保留供 Token 估算，API 会忽略
+    if (Array.isArray(result.content)) {
+      result.content = result.content.map(part => {
+        if (part && part.type === 'image_url' && part.image_url) {
+          const clean = { url: part.image_url.url };
+          if (part.image_url.width != null) clean.width = part.image_url.width;
+          if (part.image_url.height != null) clean.height = part.image_url.height;
+          return { ...part, image_url: clean };
+        }
+        return part;
+      });
     }
 
     if (result.role === 'tool') {

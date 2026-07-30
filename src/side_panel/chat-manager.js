@@ -1305,11 +1305,13 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const imageParts = content.filter(c => c.type === 'image_url');
       imageParts.forEach((imgPart, idx) => {
         const imgEl = document.createElement('img');
-        imgEl.src = imgPart.image_url.url;
+        // 优先展示原图（original_url），缺失时回退到压缩图（兼容旧数据）
+        const displayUrl = imgPart.image_url.original_url || imgPart.image_url.url;
+        imgEl.src = displayUrl;
         imgEl.className = 'user-message-image';
         imgEl.title = '点击查看大图';
         imgEl.addEventListener('click', () => {
-          openImagePreview(imgPart.image_url.url, imgEl);
+          openImagePreview(displayUrl, imgEl);
         });
         imagesContainer.appendChild(imgEl);
       });
@@ -2959,9 +2961,13 @@ function editAndResendMessage(messageDiv) {
         if (Array.isArray(parsed)) {
           const imageParts = parsed.filter(c => c.type === 'image_url');
           for (const imgPart of imageParts) {
-            state.attachedImages.push({ 
-              originalUrl: imgPart.image_url.url, 
-              compressedUrl: imgPart.image_url.url 
+            // 优先用原图（original_url）恢复，缺失时回退到压缩图（兼容旧数据）
+            const original = imgPart.image_url.original_url || imgPart.image_url.url;
+            state.attachedImages.push({
+              originalUrl: original,
+              compressedUrl: imgPart.image_url.url,
+              width: imgPart.image_url.width,
+              height: imgPart.image_url.height
             });
           }
         }

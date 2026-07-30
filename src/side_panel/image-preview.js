@@ -402,7 +402,8 @@ export function compressAndAttachImage(blob) {
 
       const compressedUrl = canvas.toDataURL('image/jpeg', quality);
 
-      state.attachedImages.push({ originalUrl, compressedUrl });
+      // 同时保存压缩后尺寸，供 Token 精准估算使用
+      state.attachedImages.push({ originalUrl, compressedUrl, width: targetWidth, height: targetHeight });
 
       const previewBar = document.getElementById('imagePreviewBar');
       const userInput = document.getElementById('userInput');
@@ -481,7 +482,15 @@ export function buildUserContent(text) {
   for (const img of state.attachedImages) {
     parts.push({
       type: 'image_url',
-      image_url: { url: img.compressedUrl || img.dataUrl }
+      image_url: {
+        // 发送给大模型的是压缩图（省 Token）
+        url: img.compressedUrl || img.dataUrl,
+        // 原图引用：供历史消息预览、二次编辑使用，发送 API 前由 filterApiMessages 剥离
+        original_url: img.originalUrl || img.compressedUrl || img.dataUrl,
+        // 压缩后尺寸：供 Token 精准估算，发送 API 前由 filterApiMessages 剥离
+        width: img.width,
+        height: img.height
+      }
     });
   }
 
@@ -1006,20 +1015,26 @@ function confirmAnnotation() {
 
 function updateAnnotatedImage(annotatedUrl) {
   const currentUrl = document.getElementById('imagePreviewLarge').src;
-  
+  const previewImg = document.getElementById('imagePreviewLarge');
+
   const imgIndex = state.attachedImages.findIndex(
     img => img.originalUrl === currentUrl || img.compressedUrl === currentUrl
   );
-  
+
   if (imgIndex !== -1) {
+    // 标注后的合成图尺寸 = 原图自然尺寸（compositeCanvas 用 naturalWidth/naturalHeight）
+    const w = previewImg?.naturalWidth || state.attachedImages[imgIndex].width;
+    const h = previewImg?.naturalHeight || state.attachedImages[imgIndex].height;
     state.attachedImages[imgIndex] = {
       originalUrl: annotatedUrl,
-      compressedUrl: annotatedUrl
+      compressedUrl: annotatedUrl,
+      width: w,
+      height: h
     };
-    
+
     renderImagePreviewsFromChat();
   }
-  
+
   const img = document.getElementById('imagePreviewLarge');
   if (img) img.src = annotatedUrl;
 }
