@@ -35,7 +35,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: '剪贴板',
+      description: '剪贴板读写',
       parameters: {
         type: 'object',
         properties: {
@@ -142,7 +142,7 @@ export const MEDIA_TOOLS = [
         properties: {
           css: { type: 'string' },
           targetSelector: { type: 'string' },
-          injectMode: { type: 'string', enum: ['style', 'inline'] }
+          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style=插入样式表, inline=内联样式' }
         },
         required: ['css']
       }

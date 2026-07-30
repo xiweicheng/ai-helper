@@ -15,7 +15,7 @@ export const AGENT_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'] },
+          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'], description: '操作类型' },
           path: { type: 'string', description: 'list时可选' },
           content: { type: 'string', description: 'write时需要' }
         },
@@ -32,11 +32,11 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_trash',
-      description: '回收站',
+      description: '回收站管理',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'restore'] },
+          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型' },
           trashId: { type: 'string', description: 'restore时需要' },
           hours: { type: 'integer' },
           type: { type: 'string', enum: ['file', 'directory'] }

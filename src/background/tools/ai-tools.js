@@ -26,7 +26,7 @@ export const AI_TOOLS = [
   },
   {
     id: 'highlight_text',
-    category: 'ai_collaboration',
+    category: 'debug_dev',
     execution: 'content_script',
     parallelizable: false,
     requiresConfirmation: false,
@@ -108,7 +108,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'preview_ui',
-      description: 'UI原型',
+      description: 'UI原型预览/获取',
       parameters: {
         type: 'object',
         properties: {
@@ -131,7 +131,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'dispatch_task',
-      description: '分派子任务',
+      description: '分派任务给子代理',
       parameters: {
         type: 'object',
         properties: {

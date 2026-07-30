@@ -14,7 +14,7 @@ export const STORAGE_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'] },
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'], description: '操作类型' },
           storage: { type: 'string', enum: ['local', 'session'] },
           key: { type: 'string' },
           value: { type: 'string', description: 'set时需要' }
@@ -36,7 +36,7 @@ export const STORAGE_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'] },
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'], description: '操作类型' },
           name: { type: 'string' },
           value: { type: 'string', description: 'set时需要' },
           domain: { type: 'string' },

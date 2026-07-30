@@ -15,7 +15,7 @@ export const TAB_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'] },
+          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: '操作类型' },
           url: { type: 'string', description: 'open时需要' },
           tabId: { type: 'integer', description: '非open时需要' },
           active: { type: 'boolean' },
@@ -57,7 +57,7 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'search_browser_data',
-      description: '搜索书签/历史',
+      description: '搜索浏览器书签/历史',
       parameters: {
         type: 'object',
         properties: {

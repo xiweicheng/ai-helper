@@ -10,7 +10,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'interact_element',
-      description: '元素交互',
+      description: '点击或悬停元素',
       parameters: {
         type: 'object',
         properties: {
@@ -201,7 +201,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'select_dropdown',
-      description: '选择下拉',
+      description: '下拉选择',
       parameters: {
         type: 'object',
         properties: {
@@ -300,7 +300,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'search_in_page',
-      description: '页面搜索',
+      description: '当前页面文本搜索',
       parameters: {
         type: 'object',
         properties: {
