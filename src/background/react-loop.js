@@ -1524,7 +1524,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             totalReflectionRounds++;
             const toolReflection = await reflectOnToolResult(
               ref.toolName, ref.toolResultStr, ref.toolCallParams,
-              config, model, reflectionConfig, executionLog, iteration
+              config, model, reflectionConfig, executionLog, iteration, sessionId
             );
             
             if (toolReflection) {

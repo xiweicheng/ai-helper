@@ -110,16 +110,10 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
         <span>Completion: ${formatNumber(s.totalCompletionTokens)} (${pctCompletion}%)</span>
       </div>
       <div style="margin-top:8px;">
-        <div style="font-size:11px;color:#888;margin-bottom:3px;">上下文使用率</div>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="flex:1;height:6px;background:#e8e8e8;border-radius:3px;overflow:hidden;">
-            <div style="height:100%;background:linear-gradient(90deg,#667eea,#764ba2);border-radius:3px;width:${Math.min(s.maxContextUsageRate * 100, 100)}%;"></div>
-          </div>
-          <span style="font-size:12px;color:#667eea;font-weight:600;white-space:nowrap;">${(s.maxContextUsageRate * 100).toFixed(1)}%</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-top:2px;">
-          <span>最大</span><span>平均 ${(s.avgContextUsageRate * 100).toFixed(1)}%</span><span>最小 ${(s.minContextUsageRate * 100).toFixed(1)}%</span>
-        </div>
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">上下文使用率</div>
+        ${renderUsageBar('最大', s.maxContextUsageRate)}
+        ${renderUsageBar('平均', s.avgContextUsageRate)}
+        ${renderUsageBar('最小', s.minContextUsageRate)}
       </div>`;
   }
 
@@ -156,6 +150,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     const callTypeLabels = {
       'react_loop': 'ReAct',
       'non_stream': '普通',
+      'stream': '流式',
       'reflection': '反思',
       'tool_reflection': '工具反思',
       'subtask_reflection': '子任务反思'
@@ -169,7 +164,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
         <span style="color:#666;">${time}</span>
         <span style="background:#f0f0f5;padding:1px 6px;border-radius:3px;font-size:10px;color:#666;">${escapeHtml(typeLabel)}</span>
         <span style="font-weight:500;color:#333;">${formatNumber(r.totalTokens)}</span>
-        <span style="color:#aaa;font-size:10px;">${(r.contextUsageRate * 100).toFixed(1)}%</span>
+        <span style="color:${getPressureColor(r.contextUsageRate)};font-size:10px;font-weight:500;">${(r.contextUsageRate * 100).toFixed(1)}%</span>
       </div>`;
     }).join('');
   }
@@ -178,5 +173,28 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
     return String(n);
+  }
+
+  // 上下文使用率压力分级配色：< 50% 安全(绿)，50-80% 警告(橙)，>= 80% 危险(红)
+  function getPressureColor(rate) {
+    if (rate >= 0.8) return '#ef4444';
+    if (rate >= 0.5) return '#f59e0b';
+    return '#10b981';
+  }
+
+  // 渲染单根使用率进度条：标签 + 进度条(宽度=该值) + 数值
+  // 一根条只对应一个值，避免标签与数值在空间上错位
+  function renderUsageBar(label, rate) {
+    const pct = (rate * 100).toFixed(1);
+    const width = Math.min(rate * 100, 100);
+    const color = getPressureColor(rate);
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+        <span style="font-size:11px;color:#999;width:32px;flex-shrink:0;">${label}</span>
+        <div style="flex:1;height:6px;background:#e8e8e8;border-radius:3px;overflow:hidden;">
+          <div style="height:100%;background:${color};border-radius:3px;width:${width}%;transition:width 0.3s ease;"></div>
+        </div>
+        <span style="font-size:11px;color:${color};font-weight:600;min-width:42px;text-align:right;">${pct}%</span>
+      </div>`;
   }
 }

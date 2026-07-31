@@ -7,6 +7,9 @@ const STORE_NAME = 'tokenStats';
 // 全局汇总存储 key
 const OVERALL_KEY = 'overall';
 
+// 系统级会话 ID：不计入"总会话数"，但其 Token 消耗仍计入总量
+const SYSTEM_SESSION_IDS = new Set(['selection_toolbar']);
+
 /**
  * 记录单次 API 调用的 token 使用
  * @param {Object} record
@@ -109,7 +112,9 @@ export function getOverallTokenSummary() {
         return;
       }
 
-      const sessionIds = new Set(records.map(r => r.sessionId).filter(Boolean));
+      const sessionIds = new Set(
+        records.map(r => r.sessionId).filter(id => id && !SYSTEM_SESSION_IDS.has(id))
+      );
       resolve({
         totalPromptTokens: records.reduce((s, r) => s + (r.promptTokens || 0), 0),
         totalCompletionTokens: records.reduce((s, r) => s + (r.completionTokens || 0), 0),

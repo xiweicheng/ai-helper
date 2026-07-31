@@ -6,14 +6,22 @@ import { loadConfig, MEMORY_DIR } from './config.js';
 
 const isWin32 = platform() === 'win32';
 
-function normalizePathFormat(pathStr) {
+/**
+ * 路径格式规整（跨平台）
+ * @param {string} pathStr - 待规整的路径
+ * @param {string} [platformOverride] - 平台覆盖（'win32' | 'darwin' | 'linux'），用于单元测试 mock；
+ *   不传则使用当前运行平台 os.platform()
+ * @returns {string} 规整后的路径
+ */
+function normalizePathFormat(pathStr, platformOverride) {
   if (!pathStr || typeof pathStr !== 'string') return pathStr;
+  const isWin = platformOverride !== undefined ? platformOverride === 'win32' : isWin32;
   // 1. 把异常的 "/C:/" 形式（带前导斜杠的盘符）规整为 "C:/"
   //    仅匹配 /<字母>:/ ，不会误伤 /home/ 等普通路径段
   pathStr = pathStr.replace(/\/([a-zA-Z]):(\/|$)/g, '$1:$2');
   // 2. MSYS/Git Bash 风格路径：/d/Users/... → D:/Users/...
   //    前导 / + 单字母盘符 + / ，无冒号，是 MSYS 特有的挂载点表示法
-  if (isWin32) {
+  if (isWin) {
     pathStr = pathStr.replace(/^\/([a-zA-Z])\//, '$1:/');
   }
   // 3. 统一为正斜杠（path.resolve/normalize 在所有平台都能正确处理正斜杠并归一化到平台分隔符）
@@ -21,7 +29,7 @@ function normalizePathFormat(pathStr) {
   // 4. Windows 盘符统一为大写：d:/ → D:/
   //    path.resolve 保留盘符原始大小写，而白名单前缀比较是大小写敏感的字符串比较，
   //    小写盘符路径与大写盘符白名单前缀比较会失败（d:\Users\.startsWith(D:\Users\) → false）
-  if (isWin32) {
+  if (isWin) {
     pathStr = pathStr.replace(/^([a-zA-Z]):/, m => m.toUpperCase());
   }
   return pathStr;
@@ -44,17 +52,22 @@ const HARD_BLOCKED_PATHS = [
 
 /**
  * 检查路径是否命中核心敏感文件
+ * 注意：Windows 文件系统不区分大小写，必须做大小写不敏感比较，
+ *       否则 .AI-HELPER-AGENT/config.JSON 等大小写变换可绕过硬阻止
  */
-function isHardBlocked(normalizedPath) {
+function isHardBlocked(normalizedPath, platformOverride) {
+  const isWin = platformOverride !== undefined ? platformOverride === 'win32' : isWin32;
+  const cmpPath = isWin ? normalizedPath.toLowerCase() : normalizedPath;
   for (const blocked of HARD_BLOCKED_PATHS) {
+    const cmpBlocked = isWin ? blocked.toLowerCase() : blocked;
     if (blocked.endsWith(sep)) {
       // 目录：检查是否在该目录下
-      if (normalizedPath.startsWith(blocked) || normalizedPath === blocked.slice(0, -1)) {
+      if (cmpPath.startsWith(cmpBlocked) || cmpPath === cmpBlocked.slice(0, -1)) {
         return true;
       }
     } else {
       // 文件：精确匹配
-      if (normalizedPath === blocked) {
+      if (cmpPath === cmpBlocked) {
         return true;
       }
     }
@@ -314,4 +327,4 @@ function checkCommand(command, force = false) {
   return { safe: true, level: 'allow' };
 }
 
-export { checkPath, checkCommand };
+export { checkPath, checkCommand, normalizePathFormat, isHardBlocked };

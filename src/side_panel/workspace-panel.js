@@ -370,7 +370,7 @@ function bindEvents() {
   });
 
   // 预览关闭
-  document.getElementById('workspacePreviewClose').addEventListener('click', closePreview);
+  document.getElementById('workspacePreviewClose').addEventListener('click', () => closePreview());
   document.getElementById('workspacePreviewCopyBtn').addEventListener('click', copyPreviewContent);
   document.getElementById('workspacePreviewDownloadBtn').addEventListener('click', downloadPreviewFile);
   document.getElementById('workspacePreviewOpenBrowserBtn').addEventListener('click', openPreviewInBrowser);
@@ -2483,13 +2483,15 @@ function bindCodeCopyButtonsInContainer(container) {
   }
 }
 
-async function closePreview() {
+async function closePreview(force = false) {
   const previewArea = document.getElementById('workspacePreviewArea');
-  // 编辑模式下检查未保存修改
-  if (previewArea.dataset.editMode === 'true') {
+  // 编辑模式下检查未保存修改（force=true 时跳过确认，直接丢弃）
+  if (!force && previewArea.dataset.editMode === 'true' && previewArea.classList.contains('has-unsaved')) {
     const confirmed = await confirmDiscardChanges('关闭预览');
-    if (!confirmed) return;
+    if (!confirmed) return false;
   }
+  // 无论是否处于编辑模式，都清除编辑状态，避免关闭后残留导致下次再次弹出确认框
+  exitEditMode(false);
   const panel = document.getElementById('workspacePanel');
   const previewContent = document.getElementById('workspacePreviewContent');
   previewContent.classList.remove('xlsx-mode');
@@ -2525,6 +2527,7 @@ async function closePreview() {
   }
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
+  return true;
 }
 
 // ============================================================
@@ -3697,11 +3700,14 @@ export function updateWorkspacePanelVisibility(connected) {
     container.style.display = '';
   } else {
     container.style.display = 'none';
-    closePanelInternal();
+    closePanelInternal(true);
   }
 }
 
-function closePanelInternal() {
+async function closePanelInternal(force = false) {
+  // 先尝试关闭预览；若用户取消（编辑中有未保存修改且非强制关闭），则保持面板打开
+  const closed = await closePreview(force);
+  if (closed === false) return;
   const panel = document.getElementById('workspacePanel');
   const container = document.getElementById('workspacePanelContainer');
   if (panel) panel.classList.remove('expanded');
@@ -3709,7 +3715,6 @@ function closePanelInternal() {
     container.classList.remove('hover-expanded');
     container.classList.remove('click-opened');
   }
-  closePreview();
 }
 
 let searchQuery = '';

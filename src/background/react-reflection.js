@@ -424,7 +424,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
 /**
  * 工具级反思：对单个工具执行结果进行快速评估
  */
-export async function reflectOnToolResult(toolName, toolResultStr, toolCallParams, config, model, reflectionConfig, executionLog, iteration) {
+export async function reflectOnToolResult(toolName, toolResultStr, toolCallParams, config, model, reflectionConfig, executionLog, iteration, sessionId) {
   if (!reflectionConfig?.enabled) return null;
   const tc = reflectionConfig.toolReflection;
   if (!tc?.enabled) return null;
@@ -474,6 +474,17 @@ ${toolResultStr.substring(0, 2000)}
     if (!response.ok) return null;
 
     const data = await response.json();
+
+    // 记录工具反思 token 使用统计
+    if (data.usage) {
+      recordTokenUsage({
+        sessionId: sessionId || 'unknown',
+        model: model || config.modelName,
+        usage: data.usage,
+        callType: 'tool_reflection'
+      }).catch(() => {});
+    }
+
     const rawContent = data.choices?.[0]?.message?.content || '';
 
     try {

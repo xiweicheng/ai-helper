@@ -12,7 +12,7 @@ import { randomBytes } from 'crypto';
 import os from 'os';
 import { loadConfig, saveConfig } from './config.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
-import { checkPath, checkCommand } from './security.js';
+import { checkPath, checkCommand, normalizePathFormat } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup } from './trash.js';
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses } from './executor.js';
 import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
@@ -801,6 +801,9 @@ export function startServer() {
         } else if (resolvedWorkdir.startsWith('~/')) {
           resolvedWorkdir = join(homedir(), resolvedWorkdir.slice(2));
         }
+        // 规整路径格式（MSYS /d/Users/... → D:/Users/...、盘符大写统一），
+        // 必须在 isAbsolute/resolve 之前，否则 Windows 上 /d/Users 会被当作 Unix 绝对路径错误解析
+        resolvedWorkdir = normalizePathFormat(resolvedWorkdir);
 
         // 必须是绝对路径（跨平台：path.isAbsolute 覆盖 Unix /、Windows 盘符、UNC 路径）
         if (!isAbsolute(resolvedWorkdir)) {
@@ -857,6 +860,8 @@ export function startServer() {
         } else if (resolvedPath.startsWith('~/')) {
           resolvedPath = join(homedir(), resolvedPath.slice(2));
         }
+        // 规整 MSYS 路径格式，与 workdir 切换端点保持一致
+        resolvedPath = normalizePathFormat(resolvedPath);
         if (!isAbsolute(resolvedPath)) {
           return jsonResponse(res, 400, { success: false, error: 'path 必须是绝对路径' });
         }
@@ -1385,6 +1390,10 @@ export function startServer() {
         if (newName.includes('/') || newName.includes('\\')) {
           return jsonResponse(res, 400, { success: false, error: '新名称不能包含路径分隔符' });
         }
+        // Windows 文件名非法字符（仅 Windows 拦截；Unix 允许这些字符）
+        if (os.platform() === 'win32' && /[:*?"<>|]/.test(newName)) {
+          return jsonResponse(res, 400, { success: false, error: '新名称包含 Windows 非法字符 (: * ? " < > |)' });
+        }
         const check = await checkPath(oldPath);
         if (!check.allowed) {
           logSecurity('fs_rename_blocked', { path: oldPath, reason: check.reason });
@@ -1399,6 +1408,12 @@ export function startServer() {
         if (!newCheck.allowed) {
           logSecurity('fs_rename_blocked', { path: newFullPath, reason: newCheck.reason });
           return jsonResponse(res, 403, { success: false, error: `目标路径不允许: ${newCheck.reason}` });
+        }
+        // 防止覆盖：目标已存在时统一返回 409。
+        // macOS/Linux 的 fs.rename 会静默覆盖目标文件（仅 Windows 报 EEXIST），
+        // 主动检查避免跨平台数据丢失风险
+        if (await exists(newFullPath)) {
+          return jsonResponse(res, 409, { success: false, error: '目标名称已存在' });
         }
         try {
           await rename(check.resolved, newFullPath);
@@ -1442,6 +1457,10 @@ export function startServer() {
         if (!destCheck2.allowed) {
           logSecurity('fs_move_blocked', { path: destPath, reason: destCheck2.reason });
           return jsonResponse(res, 403, { success: false, error: `移动目标路径不允许: ${destCheck2.reason}` });
+        }
+        // 防止覆盖：目标已存在时统一返回 409（与 rename 端点一致，避免 macOS/Linux 静默覆盖）
+        if (await exists(destPath)) {
+          return jsonResponse(res, 409, { success: false, error: '目标位置已存在同名文件/目录' });
         }
         try {
           await rename(srcCheck.resolved, destPath);
