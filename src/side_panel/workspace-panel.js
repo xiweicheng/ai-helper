@@ -2262,22 +2262,13 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
         </video>
         <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
       </div>`;
-    // 扩展 Side Panel 不支持原生 Fullscreen API，视频自带的全屏按钮点击无效
-    // 拦截视频元素的全屏请求，重定向到自定义全屏
+    // 扩展 Side Panel 不支持原生 Fullscreen API
+    // <video controls> 的全屏按钮由浏览器 C++ 层实现，无法通过 JS 拦截，点击无反应
+    // 替代方案：双击视频画面切换自定义全屏，或使用工具栏全屏预览按钮
     const videoEl = previewContent.querySelector('video');
     if (videoEl) {
-      // 覆盖 requestFullscreen / webkitRequestFullscreen / webkitEnterFullscreen
-      // 视频原生全屏按钮内部会调用这些方法，重定向到自定义全屏即可生效
-      const redirectFullscreen = () => togglePreviewFullscreen();
-      videoEl.requestFullscreen = redirectFullscreen;
-      if ('webkitRequestFullscreen' in videoEl) {
-        videoEl.webkitRequestFullscreen = redirectFullscreen;
-      }
-      if ('webkitEnterFullscreen' in videoEl) {
-        videoEl.webkitEnterFullscreen = redirectFullscreen;
-      }
-      // 双击视频也切换全屏（与原生播放器习惯一致）
-      videoEl.addEventListener('dblclick', redirectFullscreen);
+      // 双击视频切换全屏（与原生播放器习惯一致）
+      videoEl.addEventListener('dblclick', () => togglePreviewFullscreen());
     }
   } else {
     previewContent.innerHTML = `
