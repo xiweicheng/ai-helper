@@ -328,8 +328,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 死循环检测：入参和返参完全相同才算死循环
   // 仅比较入参会误判（如轮询场景：相同入参但返回值不同属于正常行为），
   // 同时比较入参+返参可精准识别真正的死循环
-  const REPEATED_CALL_WARN_THRESHOLD = 3; // 连续相同调用（入参+返参）达到此次数时注入警告
-  const REPEATED_CALL_HARD_LIMIT = 5;     // 连续相同调用（入参+返参）达到此次数时强制终止
+  const REPEATED_CALL_WARN_THRESHOLD = 5; // 连续相同调用（入参+返参）达到此次数时注入警告
+  const REPEATED_CALL_HARD_LIMIT = 8;     // 连续相同调用（入参+返参）达到此次数时强制终止
   let lastCombinedFingerprint = null;     // 上一轮工具调用的组合指纹（入参+返参）
   let repeatedCallCount = 0;              // 连续相同调用的计数
   

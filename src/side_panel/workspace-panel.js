@@ -1299,6 +1299,7 @@ async function previewFile(filePath, fileName) {
         break;
       case 'video':
       case 'audio':
+        fullscreenBtn.style.display = '';
         await previewMedia(arrayBuffer, fileName, previewType, previewContent, previewArea);
         break;
       default:
@@ -2261,6 +2262,23 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
         </video>
         <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
       </div>`;
+    // 扩展 Side Panel 不支持原生 Fullscreen API，视频自带的全屏按钮点击无效
+    // 拦截视频元素的全屏请求，重定向到自定义全屏
+    const videoEl = previewContent.querySelector('video');
+    if (videoEl) {
+      // 覆盖 requestFullscreen / webkitRequestFullscreen / webkitEnterFullscreen
+      // 视频原生全屏按钮内部会调用这些方法，重定向到自定义全屏即可生效
+      const redirectFullscreen = () => togglePreviewFullscreen();
+      videoEl.requestFullscreen = redirectFullscreen;
+      if ('webkitRequestFullscreen' in videoEl) {
+        videoEl.webkitRequestFullscreen = redirectFullscreen;
+      }
+      if ('webkitEnterFullscreen' in videoEl) {
+        videoEl.webkitEnterFullscreen = redirectFullscreen;
+      }
+      // 双击视频也切换全屏（与原生播放器习惯一致）
+      videoEl.addEventListener('dblclick', redirectFullscreen);
+    }
   } else {
     previewContent.innerHTML = `
       <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;gap:16px;">
