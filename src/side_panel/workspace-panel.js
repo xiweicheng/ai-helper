@@ -9,7 +9,7 @@ import {
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getPreviewType, getMimeType,
-  switchWorkspace
+  switchWorkspace, removeAllowedPath
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
 import { showToast, copyToClipboard } from './utils.js';
@@ -1089,6 +1089,8 @@ const PREVIEW_MAX_DOCX  = 20 * 1024 * 1024;  // Word: 20MB
 const PREVIEW_MAX_PPTX  = 50 * 1024 * 1024;  // PPTX: 50MB
 const PREVIEW_MAX_XLSX  = 50 * 1024 * 1024;  // Excel: 50MB（服务端解析，无性能瓶颈）
 const PREVIEW_MAX_IMAGE = 50 * 1024 * 1024;  // 图片: 50MB
+const PREVIEW_MAX_VIDEO = 200 * 1024 * 1024; // 视频: 200MB（流式播放，可放宽）
+const PREVIEW_MAX_AUDIO = 100 * 1024 * 1024; // 音频: 100MB
 const PREVIEW_MAX_LINES = 10000;              // 文本预览最大渲染行数
 const PREVIEW_XLSX_MAX_ROWS = 2000;            // Excel 预览最大渲染行数（防止 DOM 爆炸卡死）
 
@@ -1256,6 +1258,8 @@ async function previewFile(filePath, fileName) {
       pptx: PREVIEW_MAX_PPTX,
       xlsx: PREVIEW_MAX_XLSX,
       image: PREVIEW_MAX_IMAGE,
+      video: PREVIEW_MAX_VIDEO,
+      audio: PREVIEW_MAX_AUDIO,
     }[previewType] || PREVIEW_MAX_TEXT;
 
     if (fileSize > maxSize) {
@@ -1292,6 +1296,10 @@ async function previewFile(filePath, fileName) {
       case 'image':
         fullscreenBtn.style.display = '';
         await previewImage(arrayBuffer, fileName, previewContent);
+        break;
+      case 'video':
+      case 'audio':
+        await previewMedia(arrayBuffer, fileName, previewType, previewContent, previewArea);
         break;
       default:
         previewContent.innerHTML = '<div class="workspace-panel-error">不支持的文件类型</div>';
@@ -2224,6 +2232,48 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
 }
 
 /**
+ * 视频/音频预览（浏览器原生播放器）
+ */
+let currentMediaUrl = null;
+
+async function previewMedia(arrayBuffer, fileName, previewType, previewContent, previewArea) {
+  // 释放上一次的 object URL，避免内存泄漏
+  if (currentMediaUrl) {
+    URL.revokeObjectURL(currentMediaUrl);
+    currentMediaUrl = null;
+  }
+
+  const mimeType = getMimeType(fileName);
+  const blob = new Blob([arrayBuffer], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  currentMediaUrl = url;
+  previewArea.dataset.previewType = previewType;
+
+  const isVideo = previewType === 'video';
+  // 浏览器无法解码时给出提示
+  const unsupportedHint = `<div class="workspace-panel-error" style="margin-top:10px;">⚠ 浏览器不支持播放此格式（${escapeHtml((fileName.split('.').pop() || '').toUpperCase())}），请下载后使用本地播放器查看。</div>`;
+
+  if (isVideo) {
+    previewContent.innerHTML = `
+      <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;">
+        <video controls autoplay style="max-width:100%;max-height:calc(100% - 24px);border-radius:8px;background:#000;" onerror="this.style.display='none';document.getElementById('mediaUnsupportedHint').style.display='block';">
+          <source src="${url}" type="${escapeHtml(mimeType)}">
+        </video>
+        <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
+      </div>`;
+  } else {
+    previewContent.innerHTML = `
+      <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;gap:16px;">
+        <div style="font-size:14px;color:#555;">🎵 ${escapeHtml(fileName)}</div>
+        <audio controls autoplay style="width:100%;max-width:560px;" onerror="this.style.display='none';document.getElementById('mediaUnsupportedHint').style.display='block';">
+          <source src="${url}" type="${escapeHtml(mimeType)}">
+        </audio>
+        <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
+      </div>`;
+  }
+}
+
+/**
  * 复制预览内容
  */
 async function copyPreviewContent() {
@@ -2459,6 +2509,11 @@ async function closePreview() {
   }
   currentPdfPage = 1;
   pdfScale = 1;
+  // 清理视频/音频 object URL，避免内存泄漏
+  if (currentMediaUrl) {
+    URL.revokeObjectURL(currentMediaUrl);
+    currentMediaUrl = null;
+  }
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
 }
@@ -2609,17 +2664,36 @@ async function confirmDiscardChanges(action) {
 function handlePreviewKeydown(e) {
   const previewArea = document.getElementById('workspacePreviewArea');
   if (previewArea.style.display === 'none') return;
-  if (previewArea.dataset.editMode !== 'true') return;
 
-  // Ctrl/Cmd + S 保存
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    saveEditedFile();
+  // 编辑模式：Ctrl/Cmd+S 保存、Esc 取消
+  if (previewArea.dataset.editMode === 'true') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      saveEditedFile();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditMode();
+    }
+    return;
   }
-  // Esc 取消
-  if (e.key === 'Escape') {
+
+  // 翻页快捷键：左右方向键翻页（PDF/PPT）
+  // 当焦点在输入框/文本域时不触发，避免干扰输入
+  const tag = (e.target?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+
+  const previewType = previewArea.dataset.previewType;
+  if (previewType !== 'pdf' && previewType !== 'pptx') return;
+
+  if (e.key === 'ArrowLeft') {
     e.preventDefault();
-    cancelEditMode();
+    const prevBtn = document.getElementById(previewType === 'pdf' ? 'pdfPrevPage' : 'pptxPrevSlide');
+    if (prevBtn && !prevBtn.disabled) prevBtn.click();
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    const nextBtn = document.getElementById(previewType === 'pdf' ? 'pdfNextPage' : 'pptxNextSlide');
+    if (nextBtn && !nextBtn.disabled) nextBtn.click();
   }
 }
 
@@ -3982,7 +4056,7 @@ async function showSwitchWorkdirDialog() {
   }
 
   const currentWorkdir = detail.workdir || '';
-  const allowedPaths = Array.isArray(detail.allowedPaths) ? detail.allowedPaths : [];
+  let allowedPaths = Array.isArray(detail.allowedPaths) ? [...detail.allowedPaths] : [];
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -3991,16 +4065,8 @@ async function showSwitchWorkdirDialog() {
       <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;">
         <div class="modal-title">切换工作目录</div>
         <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">当前: <span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || '未设置'}</span></div>
-        <div style="font-size:12px;color:#999;margin:6px 0;">从允许的目录中选择</div>
-        <div class="switch-workdir-list" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px;">
-          ${allowedPaths.length ? allowedPaths.map(p => `
-            <div class="switch-workdir-item${p === currentWorkdir ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${p === currentWorkdir ? 'default' : 'pointer'};font-size:13px;color:${p === currentWorkdir ? '#888' : '#333'};word-break:break-all;border-bottom:1px solid #f5f5f5;${p === currentWorkdir ? 'background:#f6f8fa;' : ''}">
-              <span style="flex-shrink:0;">📁</span>
-              <span style="flex:1;">${escapeHtml(p)}</span>
-              ${p === currentWorkdir ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">当前</span>' : ''}
-            </div>
-          `).join('') : '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">暂无允许的目录</div>'}
-        </div>
+        <div style="font-size:12px;color:#999;margin:6px 0;">从允许的目录中选择（非当前目录可移除）</div>
+        <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px;"></div>
         <div style="font-size:12px;color:#999;margin:6px 0;">或输入绝对路径</div>
         <input type="text" class="switch-workdir-manual" placeholder="/Users/you/path 或 ~/path" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
@@ -4010,10 +4076,10 @@ async function showSwitchWorkdirDialog() {
       </div>`;
     document.body.appendChild(overlay);
 
+    const listEl = overlay.querySelector('#switchWorkdirList');
     const manualInput = overlay.querySelector('.switch-workdir-manual');
     const cancelBtn = overlay.querySelector('.switch-workdir-cancel');
     const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
-    const items = overlay.querySelectorAll('.switch-workdir-item:not(.current)');
 
     let closed = false;
     const cleanup = () => {
@@ -4021,6 +4087,58 @@ async function showSwitchWorkdirDialog() {
       closed = true;
       overlay.remove();
     };
+
+    // 渲染允许目录列表（删除后复用）
+    function renderList() {
+      if (!allowedPaths.length) {
+        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">暂无允许的目录</div>';
+        return;
+      }
+      listEl.innerHTML = allowedPaths.map(p => {
+        const isCurrent = p === currentWorkdir;
+        return `
+            <div class="switch-workdir-item${isCurrent ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${isCurrent ? 'default' : 'pointer'};font-size:13px;color:${isCurrent ? '#888' : '#333'};word-break:break-all;border-bottom:1px solid #f5f5f5;${isCurrent ? 'background:#f6f8fa;' : ''}">
+              <span style="flex-shrink:0;">📁</span>
+              <span style="flex:1;">${escapeHtml(p)}</span>
+              ${isCurrent
+                ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">当前</span>'
+                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="从允许列表移除" style="flex-shrink:0;background:none;border:none;color:#e53e3e;cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
+              }
+            </div>`;
+      }).join('');
+    }
+    renderList();
+
+    // 移除允许目录
+    async function doRemove(targetPath) {
+      const ok = await window.showCustomConfirm(
+        `确定要从允许访问的目录列表中移除以下目录吗？\n${targetPath}\n\n移除后 AI 将无法访问该目录，可重新切换工作目录再加回。`,
+        '确认移除允许目录'
+      );
+      if (!ok) return;
+      const result = await removeAllowedPath(targetPath);
+      if (result.success) {
+        allowedPaths = Array.isArray(result.allowedPaths) ? result.allowedPaths : allowedPaths.filter(p => p !== targetPath);
+        renderList();
+        showToast('已从允许列表移除', 'success');
+      } else {
+        showToast(`移除失败: ${result.error || '未知错误'}`, 'error');
+      }
+    }
+
+    // 列表事件委托：点击项切换、点击删除按钮移除
+    listEl.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.switch-workdir-remove');
+      if (removeBtn) {
+        e.stopPropagation();
+        doRemove(removeBtn.dataset.removePath);
+        return;
+      }
+      const item = e.target.closest('.switch-workdir-item:not(.current)');
+      if (item) {
+        doSwitch(item.dataset.path);
+      }
+    });
 
     async function doSwitch(targetPath) {
       if (!targetPath) {
@@ -4054,9 +4172,6 @@ async function showSwitchWorkdirDialog() {
       resolve(result);
     }
 
-    items.forEach(item => {
-      item.addEventListener('click', () => doSwitch(item.dataset.path));
-    });
     confirmBtn.addEventListener('click', () => doSwitch(manualInput.value));
     cancelBtn.addEventListener('click', () => { cleanup(); resolve(false); });
     manualInput.addEventListener('keydown', (e) => {

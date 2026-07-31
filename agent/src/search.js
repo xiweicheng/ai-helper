@@ -231,7 +231,7 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
 /**
  * 使用 rg 搜索文件内容（快速）
  */
-function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines) {
+function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines) {
   return new Promise((resolve) => {
     const args = [
       '--no-heading', '--line-number',
@@ -241,6 +241,10 @@ function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, maxR
     // 大小写不敏感时添加 -i（与 searchContentNative 的 caseSensitive 语义对齐）
     if (!caseSensitive) {
       args.push('-i');
+    }
+    // 非递归搜索：仅搜索直接子文件，不进入子目录（与 fd --max-depth 1 语义一致）
+    if (!recursive) {
+      args.push('--max-depth', '1');
     }
     if (filePattern) {
       args.push('--glob', filePattern);
@@ -304,7 +308,7 @@ function parseRgOutput(output, contextLines) {
 /**
  * Node.js 原生搜索文件内容（回退方案，异步 + 分片防止阻塞事件循环）
  */
-async function searchContentNative(rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines) {
+async function searchContentNative(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines) {
   const results = [];
   const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
@@ -325,6 +329,8 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
+        // 非递归搜索：跳过子目录，仅搜索当前目录下的文件
+        if (!recursive) continue;
         await walk(fullPath);
       } else if (entry.isFile()) {
         if (filePattern && !matchGlob(entry.name, filePattern)) continue;
@@ -372,11 +378,12 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
  * @param {string} pattern - 搜索文本
  * @param {string} [filePattern] - 可选文件类型过滤，如 "*.js"
  * @param {boolean} caseSensitive - 是否大小写敏感
+ * @param {boolean} recursive - 是否递归搜索子目录
  * @param {number} maxResults - 最大结果数
  * @param {number} contextLines - 上下文行数
  * @returns {{ success: boolean, results: Array, total: number, engine: string }}
  */
-export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, maxResults = 100, contextLines = 2) {
+export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2) {
   const pathCheck = await checkPath(rootPath);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
@@ -395,9 +402,9 @@ export async function searchContent(rootPath, pattern, filePattern = null, caseS
 
   let results;
   if (rgAvailable) {
-    results = await searchContentWithRg(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
+    results = await searchContentWithRg(resolved, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines);
   } else {
-    results = await searchContentNative(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
+    results = await searchContentNative(resolved, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines);
   }
 
   return {

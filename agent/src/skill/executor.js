@@ -133,6 +133,7 @@ async function executeToolCall(toolName, args) {
             args.pattern,
             args.filePattern || null,
             args.caseSensitive || false,
+            args.recursive !== false,
             Math.min(args.maxResults || 100, 5000),
             args.contextLines || 2
           );

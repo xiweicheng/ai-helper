@@ -430,6 +430,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'GET_AGENT_SKILL_PROMPT') {
+    // 获取单个 Agent Skill 的完整 Prompt 内容（供 side_panel 选择技能后直接注入用户消息）
+    const name = message.name;
+    if (!name) {
+      sendResponse({ success: false, error: '缺少技能名称' });
+      return true;
+    }
+    AgentClient.getAgentSkillPrompt(name).then(result => {
+      sendResponse(result);
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
   if (message.type === 'GET_SKILL_LIST') {
     // 获取技能列表（供 side_panel 技能选择器使用）
     AgentClient.getSkillList().then(result => {

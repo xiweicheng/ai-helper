@@ -325,10 +325,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
 
-  // 重复工具调用检测：防止模型陷入重复调用同一工具的循环
-  const REPEATED_CALL_WARN_THRESHOLD = 3; // 连续相同调用达到此次数时注入警告
-  const REPEATED_CALL_HARD_LIMIT = 6;     // 连续相同调用达到此次数时强制终止
-  let lastToolCallFingerprint = null;     // 上一轮工具调用的指纹
+  // 死循环检测：入参和返参完全相同才算死循环
+  // 仅比较入参会误判（如轮询场景：相同入参但返回值不同属于正常行为），
+  // 同时比较入参+返参可精准识别真正的死循环
+  const REPEATED_CALL_WARN_THRESHOLD = 3; // 连续相同调用（入参+返参）达到此次数时注入警告
+  const REPEATED_CALL_HARD_LIMIT = 5;     // 连续相同调用（入参+返参）达到此次数时强制终止
+  let lastCombinedFingerprint = null;     // 上一轮工具调用的组合指纹（入参+返参）
   let repeatedCallCount = 0;              // 连续相同调用的计数
   
   // 增量对话摘要：累积已摘要的轮次文本，token 超标时注入上下文替代原始消息
@@ -1029,44 +1031,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
         logger.debug('[Background] 收到工具调用:', assistantMessage.tool_calls);
         
-        // 重复工具调用检测：计算本轮工具调用的指纹并与上一轮比较
-        const currentFingerprint = JSON.stringify(
+        // 计算本轮工具调用的入参指纹（仅用于日志，死循环判定在工具执行完毕后结合返参进行）
+        const currentInputFingerprint = JSON.stringify(
           assistantMessage.tool_calls.map(tc => ({
             name: tc.function?.name || tc.name,
-            args: typeof tc.function?.arguments === 'string' 
+            args: typeof tc.function?.arguments === 'string'
               ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return tc.function.arguments; } })()
               : tc.function?.arguments || {}
           }))
         );
-        
-        if (currentFingerprint === lastToolCallFingerprint) {
-          repeatedCallCount++;
-          logger.warn(`[Background] 检测到重复工具调用 (第${repeatedCallCount}次连续重复):`, 
-          assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', '));
-          
-          if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
-            logger.warn(`[Background] 连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`);
-            // throw createErrorWithLog(
-            //   `连续${repeatedCallCount}次执行相同的工具调用，疑似陷入循环，已自动终止。请更换策略或缩小任务范围后重试。`,
-            //   executionLog
-            // );
-          }
-          
-          if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
-            logger.warn(`[Background] 【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`);
-            // 注入警告消息，提示模型更换策略
-            // 使用 role: 'user' 而非 'system'，避免插入中间的 system 消息破坏 filterApiMessages 的 assistant/tool 配对检测
-            // const warnMsg = {
-            //   role: 'user',
-            //   content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具和参数，但未取得有效进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
-            // };
-            // currentMessages.push(warnMsg);
-            // logger.debug('[Background] 注入重复调用警告消息');
-          }
-        } else {
-          lastToolCallFingerprint = currentFingerprint;
-          repeatedCallCount = 1;
-        }
+        logger.debug('[Background] 本轮工具调用入参指纹:', currentInputFingerprint.substring(0, 200));
         
         currentMessages.push(assistantMessage);
         await trimMessages();
@@ -1645,12 +1619,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           }
         } else {
           // 顺序执行路径
+          let planTaskHandled = false;
           for (const toolCall of assistantMessage.tool_calls) {
             const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
 
             if (result.planTaskHandled) {
               // plan_task 处理了子任务，跳出当前 for 循环，由外层 while 重新迭代
               // 使用 break 而非 continue，避免在子任务执行后继续执行其他已过时的工具调用
+              planTaskHandled = true;
               await processPendingReflections();
               break;
             }
@@ -1658,6 +1634,62 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
           // 所有工具执行完毕后，处理反思优先级队列
           await processPendingReflections();
+
+          if (planTaskHandled) {
+            await saveCheckpointNow('plan_task_completed');
+            continue;
+          }
+        }
+
+        // 死循环检测：入参+返参完全相同才算死循环
+        // 从 currentMessages 中提取本轮工具调用的返参（最近的 assistant(tool_calls) 之后的 tool 消息），
+        // 与入参组合后构建指纹，与上一轮组合指纹比较。
+        // 仅比较入参会误判（如轮询场景：相同入参但返回值变化属于正常行为），
+        // 入参和返参完全相同才说明工具调用毫无进展，判定为死循环。
+        const _toolResults = [];
+        for (let j = currentMessages.length - 1; j >= 0; j--) {
+          const msg = currentMessages[j];
+          if (msg.role === 'tool') {
+            _toolResults.unshift(msg.content); // 按原始顺序插入到头部
+          } else if (msg.role === 'assistant' && msg.tool_calls) {
+            break; // 到达本轮的 assistant 消息，停止扫描
+          }
+        }
+        const currentCombinedFingerprint = JSON.stringify(
+          assistantMessage.tool_calls.map((tc, idx) => ({
+            name: tc.function?.name || tc.name,
+            args: typeof tc.function?.arguments === 'string'
+              ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return tc.function.arguments; } })()
+              : tc.function?.arguments || {},
+            result: _toolResults[idx] || ''
+          }))
+        );
+
+        if (currentCombinedFingerprint === lastCombinedFingerprint) {
+          repeatedCallCount++;
+          const _toolNames = assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', ');
+          logger.warn(`[Background] 检测到死循环：入参和返参完全相同 (第${repeatedCallCount}次连续重复): ${_toolNames}`);
+
+          if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
+            throw createErrorWithLog(
+              `连续${repeatedCallCount}次执行完全相同的工具调用（入参和返参均相同），疑似陷入死循环，已自动终止。请更换策略或缩小任务范围后重试。`,
+              executionLog
+            );
+          }
+
+          if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
+            // 注入警告消息，提示模型更换策略
+            // 使用 role: 'user' 而非 'system'，避免插入中间的 system 消息破坏 filterApiMessages 的 assistant/tool 配对检测
+            const warnMsg = {
+              role: 'user',
+              content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具、参数，并且得到了完全相同的结果，这表明当前策略无法取得进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
+            };
+            currentMessages.push(warnMsg);
+            logger.debug('[Background] 注入死循环警告消息');
+          }
+        } else {
+          lastCombinedFingerprint = currentCombinedFingerprint;
+          repeatedCallCount = 1;
         }
 
         // 工具执行完毕，保存 checkpoint（覆盖 plan_task 子任务执行后的状态）

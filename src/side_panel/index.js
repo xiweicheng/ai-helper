@@ -2,7 +2,7 @@
 
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration } from './utils.js';
 import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
@@ -3737,9 +3737,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (successRate < 60) rateColor = '#e53e3e';
       else if (successRate < 85) rateColor = '#d69e2e';
 
-      const avgTimeStr = avgDuration < 1000
-        ? `${Math.round(avgDuration)}ms`
-        : `${(avgDuration / 1000).toFixed(1)}s`;
+      const avgTimeStr = formatDuration(avgDuration);
 
       return `<tr>
         <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code title="${escapeHtml(tooltip)}">${name}</code></td>

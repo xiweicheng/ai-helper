@@ -517,8 +517,8 @@ async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults
 /**
  * 搜索文件内容
  */
-async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, maxResults = 100, contextLines = 2) {
-  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines });
+async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2) {
+  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines });
 }
 
 /**

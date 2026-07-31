@@ -6,7 +6,7 @@
 // 通过访问器函数提供给 chat-manager.js 的 callApi 使用。
 
 import state from './state.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, formatDuration } from './utils.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid } from './markdown-render.js';
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
@@ -470,7 +470,7 @@ export function appendToolCallItems(element, toolCalls) {
   // 查找所有可见的思考指示器（可能在 message-content 或 stream-content 中）
   const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
   if (visibleThinking) {
-    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
     badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
@@ -763,7 +763,7 @@ export function appendToolResult(result, streamingElement) {
           ? '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>' 
           : '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>'}
       </span>
-      ${result.duration ? `<span class="tool-result-duration">${result.duration}ms</span>` : ''}
+      ${result.duration ? `<span class="tool-result-duration">${formatDuration(result.duration)}</span>` : ''}
       ${truncateNote}
     `;
     // 状态信息插入到 chevron 前面，使 chevron 始终在最末尾（与思考过程 header 一致）
@@ -860,7 +860,7 @@ export function createPreSelectCard(entry) {
     summaryHtml = `<span class="preselect-summary">模型直接回答：${escapeHtml(entry.thought).substring(0, 200)}</span>`;
   }
   
-  const duration = entry.duration ? `${entry.duration}ms` : '';
+  const duration = entry.duration ? formatDuration(entry.duration) : '';
   
   card.innerHTML = `
     <div class="tool-call-header">
@@ -903,7 +903,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   // 最后一轮思考结束：隐藏思考指示器，添加思考结果badge（在思考内容上面）
   const visibleThinking = element.querySelector('.thinking-indicator:not(.hidden)');
   if (visibleThinking && streamContent) {
-    const duration = _thinkingStartTime > 0 ? ((Date.now() - _thinkingStartTime) / 1000).toFixed(1) + 's' : '';
+    const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
     badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
@@ -958,7 +958,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     // ============================================
     
     // 计算整体思考耗时
-    const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
+    const totalDuration = _processStartTime > 0 ? formatDuration(Date.now() - _processStartTime) : '';
     
     // 统计 ReAct 过程节点数量、成功数和失败数
     const reactNodes = (executionLog || []).filter(e => e.nodeType === 'api_call' || e.nodeType === 'tool_exec');
@@ -1112,7 +1112,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       
       if (hasThinkingContent) {
         // 有思考内容：包装到 thinking-process 区域，创建独立的 final-answer 显示最终答案
-        const totalDuration = _processStartTime > 0 ? ((Date.now() - _processStartTime) / 1000).toFixed(1) + 's' : '';
+        const totalDuration = _processStartTime > 0 ? formatDuration(Date.now() - _processStartTime) : '';
         
         // 统计 ReAct 过程节点数量、成功数和失败数（非 ReAct 模式只有 api_call）
         const reactNodes = (executionLog || []).filter(e => e.nodeType === 'api_call' || e.nodeType === 'tool_exec');

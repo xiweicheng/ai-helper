@@ -71,6 +71,16 @@ export async function renderSessionTabs() {
     closeBtn.title = '关闭会话';
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+      const msgCount = session.id === state.activeSessionId
+        ? (state.messageHistory?.length || 0)
+        : (session.messageHistory?.length || 0);
+      // 空会话直接关闭，无需弹框确认
+      if (msgCount === 0) {
+        await deleteSession(session.id);
+        await reloadAfterDelete();
+        return;
+      }
       showDeleteModal(session, async () => {
         await reloadAfterDelete();
       });
@@ -551,11 +561,18 @@ async function handleDropdownCloseSession(sessionId) {
   // 先关闭下拉面板，避免遮挡确认弹窗
   closeDropdown();
 
-  const confirmed = await showCustomConfirm(
-    `确定要删除会话"${session.title}"吗？此操作不可撤销。`,
-    '删除会话'
-  );
-  if (!confirmed) return;
+  // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+  const msgCount = sessionId === state.activeSessionId
+    ? (state.messageHistory?.length || 0)
+    : (session.messageHistory?.length || 0);
+  // 空会话直接关闭，无需弹框确认
+  if (msgCount > 0) {
+    const confirmed = await showCustomConfirm(
+      `确定要关闭会话"${session.title}"吗？此操作不可撤销。`,
+      '关闭会话'
+    );
+    if (!confirmed) return;
+  }
 
   await deleteSession(sessionId);
   await reloadAfterDelete();
@@ -926,7 +943,7 @@ function showDeleteModal(session, onDeleted) {
 
   if (!modal || !messageEl) return;
 
-  messageEl.textContent = `确定要删除会话"${session.title}"吗？此操作不可撤销。`;
+  messageEl.textContent = `确定要关闭会话"${session.title}"吗？此操作不可撤销。`;
 
   const cleanup = () => {
     modal.classList.remove('show');
@@ -980,9 +997,19 @@ function showTabContextMenu(event, session) {
   });
   menu.appendChild(duplicateItem);
 
-  // 删除
-  const deleteItem = createMenuItem('删除', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', () => {
+  // 关闭会话（原"删除"，统一命名为"关闭会话"；空会话无需确认）
+  const deleteItem = createMenuItem('关闭会话', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', async () => {
     menu.remove();
+    // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+    const msgCount = session.id === state.activeSessionId
+      ? (state.messageHistory?.length || 0)
+      : (session.messageHistory?.length || 0);
+    // 空会话直接关闭，无需弹框确认
+    if (msgCount === 0) {
+      await deleteSession(session.id);
+      await reloadAfterDelete();
+      return;
+    }
     showDeleteModal(session, async () => {
       await reloadAfterDelete();
     });
@@ -1055,7 +1082,13 @@ export async function closeCurrentSession() {
   if (!sid) return;
   const session = state.sessions?.find(s => s.id === sid);
   if (!session) return;
-  // 与 Tab 关闭按钮一致：弹出确认弹窗，确认后删除
+  // 与 Tab 关闭按钮一致：空会话直接关闭，非空会话弹确认
+  const msgCount = state.messageHistory?.length || 0;
+  if (msgCount === 0) {
+    await deleteSession(sid);
+    await reloadAfterDelete();
+    return;
+  }
   showDeleteModal(session, async () => {
     await reloadAfterDelete();
   });

@@ -11,6 +11,7 @@
 | [03-practical-scenarios.md](03-practical-scenarios.md) | 装上这个插件，你的浏览器就变成了 AI 工作站 | 少数派、小红书、即刻 | 场景化、轻松易读 |
 | [04-comparison-review.md](04-comparison-review.md) | AI 浏览器助手横向对比：AI Helper vs Copilot vs Monica | 知乎、NGA、V2EX | 对比评测，引发讨论 |
 | [05-social-media-threads.md](05-social-media-threads.md) | 社交媒体推文合集 | Twitter/X、微博、LinkedIn | 短文/线程，适合社交传播 |
+| [06-zhihu-answer.md](06-zhihu-answer.md) | 知乎回答：有什么好用的 AI 软件？ | 知乎 | 精炼问答，痛点切入+分点卖点 |
 
 ## 推广平台推荐优先级
 

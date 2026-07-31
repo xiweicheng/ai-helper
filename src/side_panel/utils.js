@@ -75,15 +75,25 @@ export function escapeAttr(str) {
 }
 
 /**
- * 格式化时长
+ * 格式化时长：按就近原则选择单一单位（ms/s/min/h）
+ * - 最多保留 1 位小数，无小数时不显示小数点
+ * - 例：980ms → "980ms"，1500ms → "1.5s"，2000ms → "2s"，90000ms → "1.5min"，120000ms → "2min"
  */
 export function formatDuration(ms) {
   if (!ms || ms < 0) return '0ms';
+  // 按就近原则选取单位：相邻单位阈值附近，值越小用更小单位更直观
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const mins = Math.floor(ms / 60000);
-  const secs = ((ms % 60000) / 1000).toFixed(1);
-  return `${mins}分${secs}秒`;
+  if (ms < 60000) return `${_oneDecimal(ms / 1000)}s`;
+  if (ms < 3600000) return `${_oneDecimal(ms / 60000)}min`;
+  return `${_oneDecimal(ms / 3600000)}h`;
+}
+
+/**
+ * 格式化为最多一位小数；整数时不显示小数点
+ */
+function _oneDecimal(n) {
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
 }
 
 /**

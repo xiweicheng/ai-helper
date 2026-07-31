@@ -327,9 +327,12 @@ export function initSkillTabEvents() {
 
 /**
  * 获取当前选中技能的系统提示文本（用于注入到用户消息中）
- * @returns {string}
+ * Agent Skill：直接加载完整 SKILL.md 内容拼接到用户消息，避免模型再走一次工具加载。
+ * 这样解决了截图问答等场景下图片消息在工具调用期间被清除导致无法处理的问题。
+ * Workflow Skill：仍通过 agent_skill (action=run) 执行（需要按步骤编排，无法直接注入）。
+ * @returns {Promise<string>}
  */
-export function getSkillContextText() {
+export async function getSkillContextText() {
   if (!state.selectedSkill) return '';
 
   const skill = state.selectedSkill;
@@ -342,8 +345,27 @@ export function getSkillContextText() {
   text += `]\n`;
 
   if (isAgent) {
-    // Agent Skill：提示 AI 使用 agent_skill (action=load) 加载说明
-    text += `请使用 \`agent_skill\`（action=load）加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n`;
+    // Agent Skill：直接加载完整说明并拼接到用户消息，避免模型再走一次工具加载
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPT', name: skill.name }, (resp) => {
+          if (chrome.runtime.lastError || !resp?.success) {
+            resolve(null);
+            return;
+          }
+          resolve(resp);
+        });
+      });
+      if (response && response.prompt) {
+        text += `${response.prompt}\n\n请根据上述技能说明，使用相关工具处理以下问题：\n`;
+      } else {
+        // 降级：加载失败时仍提示使用工具加载
+        text += `请使用 \`agent_skill\`（action=load）加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n`;
+      }
+    } catch {
+      // 降级：加载失败时仍提示使用工具加载
+      text += `请使用 \`agent_skill\`（action=load）加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n`;
+    }
   } else {
     // Workflow Skill：提示 AI 使用 agent_skill (action=run) 执行，并附上参数定义
     text += `请使用 \`agent_skill\`（action=run）执行「${skill.name}」技能来处理以下问题`;

@@ -434,7 +434,7 @@ export async function sendMessage() {
   }
 
   // 注入技能上下文（如果已选中技能）
-  const skillContext = getSkillContextText();
+  const skillContext = await getSkillContextText();
   if (skillContext) {
     finalText = skillContext + finalText;
     // 添加技能上下文气泡（用户可见）

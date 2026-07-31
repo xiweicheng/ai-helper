@@ -81,13 +81,17 @@ export function supportsPreview(name) {
     'xlsx', 'xls',
     // 图片
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
+    // 视频（浏览器原生可播放）
+    'mp4', 'webm', 'ogg', 'm4v', 'mov',
+    // 音频（浏览器原生可播放）
+    'mp3', 'wav', 'm4a', 'aac', 'flac', 'opus',
   ]);
   return previewExts.has(ext);
 }
 
 /**
  * 获取文件预览类型分类
- * @returns {'text'|'pdf'|'docx'|'xlsx'|'pptx'|'image'|'unknown'}
+ * @returns {'text'|'pdf'|'docx'|'xlsx'|'pptx'|'image'|'video'|'audio'|'unknown'}
  */
 export function getPreviewType(name) {
   const ext = (name.split('.').pop() || '').toLowerCase();
@@ -96,6 +100,8 @@ export function getPreviewType(name) {
   if (ext === 'xlsx' || ext === 'xls') return 'xlsx';
   if (ext === 'pptx') return 'pptx';
   if (new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico']).has(ext)) return 'image';
+  if (new Set(['mp4', 'webm', 'ogg', 'm4v', 'mov']).has(ext)) return 'video';
+  if (new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'opus']).has(ext)) return 'audio';
   // 剩下的文本/代码/svg 都按 text 处理
   return 'text';
 }
@@ -123,6 +129,12 @@ export function getMimeType(name) {
     gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp',
     pdf: 'application/pdf',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // 视频
+    mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg',
+    m4v: 'video/x-m4v', mov: 'video/quicktime',
+    // 音频
+    mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4',
+    aac: 'audio/aac', flac: 'audio/flac', opus: 'audio/ogg',
   };
   return mimeMap[ext] || 'text/plain';
 }
@@ -219,6 +231,15 @@ export async function switchWorkspace(newWorkdir) {
     resetWorkspaceRoot();
   }
   return result;
+}
+
+/**
+ * 从允许访问目录列表中移除指定路径（不可移除当前工作目录）
+ * @param {string} path - 要移除的目录绝对路径
+ * @returns {Promise<{success: boolean, allowedPaths?: string[], error?: string}>}
+ */
+export async function removeAllowedPath(path) {
+  return agentRequest('/api/config/allowed-paths/remove', { path });
 }
 
 /**

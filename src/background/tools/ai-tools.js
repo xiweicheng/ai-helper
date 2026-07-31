@@ -113,8 +113,8 @@ export const AI_TOOLS = [
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['preview', 'get'] },
-          html: { type: 'string', description: 'preview时需要' },
-          title: { type: 'string' },
+          html: { type: 'string', description: 'preview时必填' },
+          title: { type: 'string', description: 'preview时必填' },
           description: { type: 'string' },
           prototypeId: { type: 'string', description: 'get时需要' }
         },

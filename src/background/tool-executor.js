@@ -3786,13 +3786,13 @@ async function executeAgentSearchFiles(args, toolCallId) {
  * Agent 文件内容搜索
  */
 async function executeAgentSearchContent(args, toolCallId) {
-  const { path, pattern, filePattern, caseSensitive, maxResults, contextLines } = args;
+  const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines } = args;
   if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
   if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
-  
+
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
-    caseSensitive || false, maxResults || 100,
+    caseSensitive || false, recursive !== false, maxResults || 100,
     contextLines !== undefined ? contextLines : 2
   );
   if (result.success) {

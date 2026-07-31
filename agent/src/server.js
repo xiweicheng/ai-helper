@@ -844,6 +844,57 @@ export function startServer() {
         }
       }
 
+      // === 移除允许访问的目录（需认证，不可移除当前工作目录） ===
+      if (pathname === '/api/config/allowed-paths/remove' && req.method === 'POST') {
+        const targetPath = body.path;
+        if (!targetPath || typeof targetPath !== 'string') {
+          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        }
+
+        let resolvedPath = targetPath.trim();
+        if (resolvedPath === '~') {
+          resolvedPath = homedir();
+        } else if (resolvedPath.startsWith('~/')) {
+          resolvedPath = join(homedir(), resolvedPath.slice(2));
+        }
+        if (!isAbsolute(resolvedPath)) {
+          return jsonResponse(res, 400, { success: false, error: 'path 必须是绝对路径' });
+        }
+        resolvedPath = resolve(resolvedPath);
+
+        try {
+          const freshConfig = loadConfig();
+          const currentWorkdir = resolve(freshConfig.workdir || '');
+          // 禁止移除当前工作目录
+          if (resolvedPath === currentWorkdir) {
+            return jsonResponse(res, 400, { success: false, error: '不能移除当前工作目录，请先切换到其它目录' });
+          }
+
+          const allowedPaths = Array.isArray(freshConfig.allowedPaths) ? freshConfig.allowedPaths : [];
+          // 跨平台路径比较：统一分隔符 + 大小写不敏感
+          const norm = s => s.replace(/\\/g, '/').toLowerCase();
+          const filtered = allowedPaths.filter(p => norm(p) !== norm(resolvedPath));
+
+          // 没有变化说明该路径不在列表中
+          if (filtered.length === allowedPaths.length) {
+            return jsonResponse(res, 200, { success: true, allowedPaths: filtered, message: '该目录不在允许列表中' });
+          }
+
+          const updatedConfig = { ...freshConfig, allowedPaths: filtered };
+          await saveConfig(updatedConfig);
+
+          logSystem('allowed_path_removed', { path: resolvedPath, extId });
+          return jsonResponse(res, 200, {
+            success: true,
+            allowedPaths: updatedConfig.allowedPaths,
+            message: '已从允许列表中移除'
+          });
+        } catch (err) {
+          logError('config', 'allowed_path_remove_error', { path: resolvedPath, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: `移除允许目录失败: ${err.message}` });
+        }
+      }
+
       // === 文件操作 ===
 
       // 搜索文件（按文件名模式）
@@ -877,6 +928,7 @@ export function startServer() {
             body.pattern,
             body.filePattern || null,
             body.caseSensitive || false,
+            body.recursive !== false,
             maxResults,
             body.contextLines !== undefined ? body.contextLines : 2
           );

@@ -3927,6 +3927,11 @@ body {
   z-index: 10002;
 }
 
+/* 自定义确认弹窗层级高于普通模态框，避免被动态创建的切换/输入弹窗遮挡 */
+#customConfirmOverlay {
+  z-index: 10010;
+}
+
 .modal-overlay.show {
   display: flex;
 }
