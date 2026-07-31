@@ -231,13 +231,17 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
 /**
  * 使用 rg 搜索文件内容（快速）
  */
-function searchContentWithRg(rootPath, pattern, filePattern, maxResults, contextLines) {
+function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, maxResults, contextLines) {
   return new Promise((resolve) => {
     const args = [
       '--no-heading', '--line-number',
       '--max-count', String(maxResults),
       '-C', String(contextLines)
     ];
+    // 大小写不敏感时添加 -i（与 searchContentNative 的 caseSensitive 语义对齐）
+    if (!caseSensitive) {
+      args.push('-i');
+    }
     if (filePattern) {
       args.push('--glob', filePattern);
     }
@@ -255,10 +259,12 @@ function searchContentWithRg(rootPath, pattern, filePattern, maxResults, context
 
     proc.stdout.on('data', (chunk) => stdout.push(chunk));
 
-    proc.on('close', (code) => {
+    proc.on('close', () => {
       clearTimeout(timeout);
       if (timedOut) return;
-      if (code !== 0 && code !== 1) { resolve([]); return; } // 1 = no matches
+      // 不再按退出码过滤：Windows 下 rg 可能返回退出码 2（错误）但仍带有效匹配结果，
+      // 原逻辑 `code !== 0 && code !== 1` 会把这种情况的输出一并丢弃，导致有匹配却返回 0 条。
+      // 只要 stdout 有内容就解析；stdout 为空时 parseRgOutput 自然返回 []。
       const output = Buffer.concat(stdout).toString('utf-8').trim();
       resolve(parseRgOutput(output, contextLines));
     });
@@ -389,7 +395,7 @@ export async function searchContent(rootPath, pattern, filePattern = null, caseS
 
   let results;
   if (rgAvailable) {
-    results = await searchContentWithRg(resolved, pattern, filePattern, maxResults, contextLines);
+    results = await searchContentWithRg(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
   } else {
     results = await searchContentNative(resolved, pattern, filePattern, caseSensitive, maxResults, contextLines);
   }

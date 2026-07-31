@@ -8,12 +8,23 @@ const isWin32 = platform() === 'win32';
 
 function normalizePathFormat(pathStr) {
   if (!pathStr || typeof pathStr !== 'string') return pathStr;
-  // 防御性修复：把异常的 "/C:/" 形式（带前导斜杠的盘符）规整为 "C:/"
-  // 仅匹配 /<字母>:/ ，不会误伤 /home/ 等普通路径段
+  // 1. 把异常的 "/C:/" 形式（带前导斜杠的盘符）规整为 "C:/"
+  //    仅匹配 /<字母>:/ ，不会误伤 /home/ 等普通路径段
   pathStr = pathStr.replace(/\/([a-zA-Z]):(\/|$)/g, '$1:$2');
-  // 统一为正斜杠（path.resolve/normalize 在所有平台都能正确处理正斜杠并归一化到平台分隔符）
-  // 不再做盘符相关的激进转换，避免把 /home/user 误转为 home:\user
-  return pathStr.replace(/\\/g, '/');
+  // 2. MSYS/Git Bash 风格路径：/d/Users/... → D:/Users/...
+  //    前导 / + 单字母盘符 + / ，无冒号，是 MSYS 特有的挂载点表示法
+  if (isWin32) {
+    pathStr = pathStr.replace(/^\/([a-zA-Z])\//, '$1:/');
+  }
+  // 3. 统一为正斜杠（path.resolve/normalize 在所有平台都能正确处理正斜杠并归一化到平台分隔符）
+  pathStr = pathStr.replace(/\\/g, '/');
+  // 4. Windows 盘符统一为大写：d:/ → D:/
+  //    path.resolve 保留盘符原始大小写，而白名单前缀比较是大小写敏感的字符串比较，
+  //    小写盘符路径与大写盘符白名单前缀比较会失败（d:\Users\.startsWith(D:\Users\) → false）
+  if (isWin32) {
+    pathStr = pathStr.replace(/^([a-zA-Z]):/, m => m.toUpperCase());
+  }
+  return pathStr;
 }
 
 // ==================== 硬阻止目录（任何情况下都不可访问） ====================
