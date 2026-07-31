@@ -1970,6 +1970,53 @@ export function rebindAllMessages(container) {
     });
   });
 
+  // 重新绑定 tool-call-result 点击展开完整输出（流式折叠内容）
+  container.querySelectorAll('.tool-call-result').forEach(resultDiv => {
+    const codeBlock = resultDiv.querySelector('code');
+    if (!codeBlock) return;
+    // 从 data-full-content 属性获取完整内容（流式输出时存入）
+    const fullContent = codeBlock.dataset.fullContent;
+    if (!fullContent || fullContent.length <= 500) return;
+    const currentText = codeBlock.textContent || '';
+    let isExpanded = false;
+    resultDiv.style.cursor = 'pointer';
+    resultDiv.addEventListener('click', (e) => {
+      // Ctrl/Meta + Click 用于复制，不触发展开/折叠
+      if (e.ctrlKey || e.metaKey) return;
+      e.stopPropagation();
+      isExpanded = !isExpanded;
+      codeBlock.textContent = isExpanded ? fullContent : currentText;
+    });
+  });
+
+  // 重新绑定子任务进度折叠/展开（事件委托）
+  container.querySelectorAll('.subtask-progress').forEach(progressEl => {
+    progressEl.addEventListener('click', (e) => {
+      const header = e.target.closest('.subtask-header');
+      if (header) {
+        progressEl.classList.toggle('subtask-expanded');
+      }
+    });
+  });
+
+  // 重新绑定命令终止按钮（事件委托）
+  container.querySelectorAll('.tool-call-terminate-btn, .agent-stream-terminate-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showCommandTerminateDialog(state.activeSessionId);
+    });
+  });
+
+  // 重新绑定终止等待按钮（事件委托）
+  container.querySelectorAll('.tool-call-abort-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
+      btn.disabled = true;
+      btn.title = '正在终止...';
+    });
+  });
+
   // 底部工具栏按钮事件
   container.querySelectorAll('.message-footer').forEach(footer => {
     const messageEl = footer.closest('.message');
