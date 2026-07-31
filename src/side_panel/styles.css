@@ -4987,6 +4987,8 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   scroll-padding-top: 65px;
+  /* 始终为滚动条预留空间，避免 Windows 经典滚动条出现/消失时内容横向偏移 */
+  scrollbar-gutter: stable;
   animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 /* @ 选择器自定义窄滚动条 */
@@ -5031,6 +5033,9 @@ body {
   gap: 8px;
   white-space: nowrap;
   overflow: hidden;
+  /* 固定行高，吸收 hover 时操作按钮（padding: 2px 5px）出现/消失带来的 1~4px 高度抖动 */
+  box-sizing: border-box;
+  min-height: 36px;
 }
 .prompt-item:last-child {
   border-bottom: none;
