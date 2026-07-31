@@ -3,6 +3,7 @@
 // 共享工具函数已拆分到 page-utils.js
 
 import { deepQuerySelector, deepQuerySelectorAll, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
+import { removeHighlights } from './page-utils.js';
 
 // 重导出共享工具函数
 export { generateUniqueSelector, getElementText, getElementValue, getElementSelector } from './page-utils.js';
