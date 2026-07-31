@@ -38,13 +38,20 @@ export function showToast(message, type = 'info', duration = 3000) {
 }
 
 /**
- * 自动调整输入框高度
+ * 自动调整输入框高度（滚动时不调整）
+ * 单行内容时移除 inline height，让 CSS min-height 统一处理，避免中英文 scrollHeight 差异导致抖动
  */
 export function adjustInputHeight() {
   const userInput = document.getElementById('userInput');
-  if (!userInput) return;
+  if (!userInput || state.isScrolling) return;
   userInput.style.height = 'auto';
-  userInput.style.height = Math.min(userInput.scrollHeight, 100) + 'px';
+  const scrollH = userInput.scrollHeight;
+  // 单行内容时移除 inline height，让 CSS min-height 统一处理，避免中英文 scrollHeight 差异导致抖动
+  if (scrollH <= 50) {
+    userInput.style.height = '';
+  } else {
+    userInput.style.height = Math.min(scrollH, 100) + 'px';
+  }
 }
 
 /**
