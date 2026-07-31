@@ -2971,6 +2971,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         });
         return false;
       } else if (message.type === 'API_ERROR') {
+        // 大模型调用报错（上下文过大/网关错误等）：移除流式输出元素（思考中卡片），
+        // 避免与下方错误卡片同时显示。须在 cleanupCallApi 之前取引用——
+        // cleanupCallApi 会通过 deleteStreamingState 清除 Map 引用，之后 _se() 返回 null。
+        // 工具调用记录不会丢失：它们保存在 executionLog 中，错误卡片会据此渲染。
+        // 行为与刷新后一致（streaming element 不持久化，刷新后只剩错误卡片）。
+        const se = _se();
+        if (se && se.isConnected) {
+          se.remove();
+        }
         cleanupCallApi();
         reject({
           message: message.error,
