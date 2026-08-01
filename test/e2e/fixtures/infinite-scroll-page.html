@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Infinite Scroll Test Page</title>
+  <style>body { margin: 0; padding: 20px; } p { height: 60px; }</style>
+</head>
+<body>
+  <h1>Infinite Scroll</h1>
+  <div id="container"></div>
+  <script>
+    const container = document.getElementById('container');
+    let count = 0;
+    function addItem() {
+      const p = document.createElement('p');
+      p.textContent = 'Item ' + (++count);
+      container.appendChild(p);
+    }
+    // 初始 20 条撑出可滚动高度
+    for (let i = 0; i < 20; i++) addItem();
+    // 滚动到底部时加载更多（模拟懒加载）
+    window.addEventListener('scroll', () => {
+      if (window.scrollY + window.innerHeight > document.body.scrollHeight - 100) {
+        for (let i = 0; i < 5; i++) addItem();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Form Test Page</title>
+</head>
+<body>
+  <h1>Form Test</h1>
+  <form id="form1">
+    <label>Username: <input id="username" type="text" placeholder="username"></label><br>
+    <label>Color:
+      <select id="color">
+        <option value="red">Red</option>
+        <option value="blue">Blue</option>
+        <option value="green">Green</option>
+      </select>
+    </label><br>
+    <label><input id="agree" type="checkbox"> Agree</label><br>
+    <label><input type="radio" name="plan" value="free" id="plan-free"> Free</label>
+    <label><input type="radio" name="plan" value="pro" id="plan-pro"> Pro</label><br>
+    <div id="editor" contenteditable="true"></div><br>
+    <button id="submit-btn" type="button" onclick="document.getElementById('status').textContent='submitted'">Submit</button>
+    <button id="cancel-btn">Cancel</button>
+    <div id="status"></div>
+  </form>
+  <a href="http://example.com/help">Help Link</a>
+  <table id="data-table">
+    <tr><th>Name</th><th>Age</th></tr>
+    <tr><td>Alice</td><td>30</td></tr>
+    <tr><td>Bob</td><td>25</td></tr>
+  </table>
+</body>
+</html>

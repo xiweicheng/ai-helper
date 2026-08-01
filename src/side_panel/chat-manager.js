@@ -1923,6 +1923,41 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
     }
   }
 
+  // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）
+  const userToolbar = messageEl.querySelector('.message-toolbar');
+  if (userToolbar) {
+    const editBtn = userToolbar.querySelector('.edit-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editAndResendMessage(messageEl);
+      });
+    }
+
+    const copyBtn = userToolbar.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyMessage(messageEl, copyBtn);
+      });
+    }
+
+    const deleteBtn = userToolbar.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMessage(messageEl);
+      });
+    }
+  }
+
+  // 用户消息图片点击预览事件
+  messageEl.querySelectorAll('.user-message-image').forEach(imgEl => {
+    imgEl.addEventListener('click', () => {
+      openImagePreview(imgEl.src, imgEl);
+    });
+  });
+
   // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
   messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn, .export-table-img-btn').forEach(btn => {
     delete btn.dataset.bound;
@@ -2154,6 +2189,43 @@ export function rebindAllMessages(container) {
         });
       });
     }
+  });
+
+  // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）
+  container.querySelectorAll('.message-toolbar').forEach(toolbar => {
+    const messageEl = toolbar.closest('.message');
+    if (!messageEl) return;
+
+    const editBtn = toolbar.querySelector('.edit-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        editAndResendMessage(messageEl);
+      });
+    }
+
+    const copyBtn = toolbar.querySelector('.copy-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        copyMessage(messageEl, copyBtn);
+      });
+    }
+
+    const deleteBtn = toolbar.querySelector('.delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteMessage(messageEl);
+      });
+    }
+  });
+
+  // 用户消息图片点击预览事件
+  container.querySelectorAll('.user-message-image').forEach(imgEl => {
+    imgEl.addEventListener('click', () => {
+      openImagePreview(imgEl.src, imgEl);
+    });
   });
 
   // 移除旧的 mermaid 工具栏（缓存恢复后需重建以绑定事件）

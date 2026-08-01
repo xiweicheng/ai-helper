@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shadow DOM Test Page</title>
+</head>
+<body>
+  <h1>Shadow DOM Test</h1>
+  <button id="outer-btn">Outer Button</button>
+  <div id="host"></div>
+  <script>
+    const host = document.getElementById('host');
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `
+      <button id="inner-btn">Inner Button</button>
+      <ul>
+        <li>Shadow Option A</li>
+        <li>Shadow Option B</li>
+      </ul>
+    `;
+    shadow.getElementById('inner-btn').addEventListener('click', () => {
+      host.dataset.clicked = '1';
+    });
+  </script>
+</body>
+</html>
