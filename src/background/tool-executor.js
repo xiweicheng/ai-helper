@@ -3079,13 +3079,13 @@ async function executeAgentReadFile(args, toolCallId) {
  * 等待页面导航完成
  * 监听 tab 更新事件，等待页面加载到指定状态
  */
-async function executeWaitForNavigation(args, toolCallId) {
-  const { timeout = 30000, waitUntil = 'load' } = args;
+async function executeWaitForNavigation(args, toolCallId, sessionId) {
+  const { timeout = 30000, waitUntil = 'load', tabId: argsTabId } = args;
 
   try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs.length) return { success: false, error: '无法获取当前标签页', tool_call_id: toolCallId };
-    const tabId = tabs[0].id;
+    const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
+    const tabId = argsTabId || lastOperatedTab || await getActiveTabId();
+    if (!tabId) return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
 
     console.log('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
 

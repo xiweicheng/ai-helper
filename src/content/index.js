@@ -8,7 +8,7 @@ import {
 
 import {
   queryInteractiveElements, findSimilarElements, scrollAndCollect,
-  interactByRef, scrollToText
+  interactByRef, scrollToText, getSelectorByRef
 } from './page-interaction.js';
 
 import {
@@ -84,7 +84,7 @@ const HANDLERS = {
       return interactByRef(msg.ref, msg.action, { waitTime: msg.waitTime, timeout: msg.timeout });
     }
     if (msg.text) {
-      return clickByText(msg.text, { tag: msg.tag, waitTime: msg.waitTime, timeout: msg.timeout });
+      return clickByText(msg.text, { tag: msg.tag, action: msg.action, waitTime: msg.waitTime, timeout: msg.timeout });
     }
     if (msg.action === 'hover') return hoverElement(msg.selector);
     return clickElement(msg.selector, msg.waitTime, msg.timeout);
@@ -125,7 +125,16 @@ const HANDLERS = {
   PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
   WAIT_ELEMENT:              (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
   DRAG_DROP:                 (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
-  SELECT_DROPDOWN:           (msg) => selectDropdown(msg.triggerSelector, msg.optionText, msg.optionSelector, msg.timeout),
+  SELECT_DROPDOWN:           (msg) => {
+    let triggerSelector = msg.triggerSelector;
+    if (msg.ref != null && !triggerSelector) {
+      triggerSelector = getSelectorByRef(msg.ref);
+      if (!triggerSelector) {
+        return { success: false, error: `无效的元素编号 ref=${msg.ref}，请先调用 query_elements` };
+      }
+    }
+    return selectDropdown(triggerSelector, msg.optionText, msg.optionSelector, msg.timeout);
+  },
   QRCODE:                    (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
 
   // ── 特殊：清除站点数据（内联逻辑）──
@@ -167,7 +176,8 @@ const ASYNC_HANDLERS = new Set([
   'START_REGION_SELECTION',
   // INTERACT_ELEMENT: ref/text/click 分支含 auto-wait，均为 async
   // SCROLL_TO: target=text 分支为 async（循环滚动查找）
-  'INTERACT_ELEMENT', 'SCROLL_TO',
+  // KEYBOARD_INPUT: 含 auto-wait，为 async
+  'INTERACT_ELEMENT', 'SCROLL_TO', 'KEYBOARD_INPUT',
 ]);
 
 // 这些工具类型只在顶层 frame 处理，避免 all_frames 响应冲突

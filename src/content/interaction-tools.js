@@ -156,7 +156,7 @@ export function fillForm(fields, waitTime = 500) {
           element.checked = value === 'true' || value === true;
           element.dispatchEvent(new Event('change', { bubbles: true }));
         } else if (fieldType === 'radio') {
-          const radio = document.querySelector(`${selector}[value="${value}"]`);
+          const radio = deepQuerySelector(`${selector}[value="${value}"]`);
           if (radio) {
             radio.checked = true;
             radio.dispatchEvent(new Event('change', { bubbles: true }));
@@ -290,15 +290,52 @@ export function waitForElement(selector, state = 'appeared', timeout = 10000) {
 }
 
 /**
+ * 常见按键的 code/keyCode 映射（字母/数字由规则计算，功能键查表）
+ */
+const KEY_CODE_MAP = {
+  enter: { code: 'Enter', keyCode: 13 },
+  escape: { code: 'Escape', keyCode: 27 }, esc: { code: 'Escape', keyCode: 27 },
+  tab: { code: 'Tab', keyCode: 9 },
+  backspace: { code: 'Backspace', keyCode: 8 },
+  delete: { code: 'Delete', keyCode: 46 },
+  arrowup: { code: 'ArrowUp', keyCode: 38 },
+  arrowdown: { code: 'ArrowDown', keyCode: 40 },
+  arrowleft: { code: 'ArrowLeft', keyCode: 37 },
+  arrowright: { code: 'ArrowRight', keyCode: 39 },
+  home: { code: 'Home', keyCode: 36 }, end: { code: 'End', keyCode: 35 },
+  pageup: { code: 'PageUp', keyCode: 33 }, pagedown: { code: 'PageDown', keyCode: 34 },
+  space: { code: 'Space', keyCode: 32 },
+};
+
+function getKeyCodeInfo(key) {
+  const lower = key.toLowerCase();
+  if (KEY_CODE_MAP[lower]) return KEY_CODE_MAP[lower];
+  if (key.length === 1 && /[a-zA-Z]/.test(key)) {
+    return { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0) };
+  }
+  if (key.length === 1 && /[0-9]/.test(key)) {
+    return { code: `Digit${key}`, keyCode: key.charCodeAt(0) };
+  }
+  const fMatch = key.match(/^F([1-9]|1[0-2])$/i);
+  if (fMatch) {
+    const n = parseInt(fMatch[1], 10);
+    return { code: `F${n}`, keyCode: 111 + n };
+  }
+  return { code: key, keyCode: key.toUpperCase().charCodeAt(0) };
+}
+
+/**
  * 模拟键盘输入
  */
-export function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, altKey = false }) {
+export async function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, altKey = false }) {
   try {
     const activeElement = document.activeElement;
 
     if (!activeElement) {
       return { success: false, error: '没有聚焦的元素' };
     }
+
+    const sigBefore = getDomSignature();
 
     // 直接输入文本
     if (text) {
@@ -340,11 +377,12 @@ export function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, al
     
     // 模拟按键
     if (key) {
+      const keyInfo = getKeyCodeInfo(key);
       const eventInit = {
         key: key,
-        code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
-        keyCode: key.toUpperCase().charCodeAt(0),
-        which: key.toUpperCase().charCodeAt(0),
+        code: keyInfo.code,
+        keyCode: keyInfo.keyCode,
+        which: keyInfo.keyCode,
         bubbles: true,
         cancelable: true,
         ctrlKey: ctrlKey,
@@ -357,7 +395,12 @@ export function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, al
       document.activeElement.dispatchEvent(new KeyboardEvent('keyup', eventInit));
     }
     
-    return { success: true, message: '键盘输入成功' };
+    // auto-wait：按键/输入后检测页面变化（如 Enter 提交触发导航、输入触发搜索建议）
+    const wait = await autoWaitAfterAction(sigBefore, 300, 2000);
+    const changeHint = wait.changed
+      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      : '';
+    return { success: true, message: `键盘输入成功${changeHint}`, ...wait };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -497,7 +540,7 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
  * @param {number} options.timeout - 点击后最大等待 ms
  */
 export async function clickByText(text, options = {}) {
-  const { tag, waitTime = 300, timeout = 2000 } = options;
+  const { tag, action = 'click', waitTime = 300, timeout = 2000 } = options;
 
   if (!text) {
     return { success: false, error: 'text 不能为空' };
@@ -544,6 +587,21 @@ export async function clickByText(text, options = {}) {
 
         const selector = generateUniqueSelector(el);
         const sigBefore = getDomSignature();
+        if (action === 'hover') {
+          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+          const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+          const changeHint = wait.changed
+            ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+            : '';
+          return {
+            success: true,
+            message: `已悬停文本"${text}"对应的${el.tagName.toLowerCase()}元素${changeHint}`,
+            selector,
+            matchedText: elText.substring(0, 100),
+            ...wait,
+          };
+        }
         el.click();
         const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
 

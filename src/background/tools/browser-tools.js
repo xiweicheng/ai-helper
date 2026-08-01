@@ -36,12 +36,12 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_to',
-      description: '滚动页面',
+      description: '滚动页面（定位到元素/坐标/文本）；无限滚动收集用 scroll_collect',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: '省略则用当前活动页' },
-          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'] },
+          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'], description: 'selector需selector，coordinates需x/y，text需text' },
           selector: { type: 'string' },
           text: { type: 'string', description: 'target=text 时，滚动到包含此文本的元素' },
           x: { type: 'integer' },
@@ -160,7 +160,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'keyboard_input',
-      description: '键盘输入（绕过 React 受控组件）',
+      description: '键盘输入（text=输入文本到聚焦元素，key=派发按键如Enter/Escape；绕过 React 受控组件）',
       parameters: {
         type: 'object',
         properties: {
@@ -207,17 +207,18 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'select_dropdown',
-      description: '下拉选择（自定义组件也支持）',
+      description: '下拉选择（自定义组件也支持；触发器可用 ref 代替 triggerSelector）',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: '省略则用当前活动页' },
+          ref: { type: 'integer', description: 'query_elements 返回的编号（优先于 triggerSelector）' },
           triggerSelector: { type: 'string' },
           optionText: { type: 'string' },
           optionSelector: { type: 'string' },
           timeout: { type: 'integer' }
         },
-        required: ['triggerSelector', 'optionText']
+        required: ['optionText']
       }
     }
   },

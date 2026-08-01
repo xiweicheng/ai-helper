@@ -12,6 +12,15 @@ import { generateUniqueSelector, getElementText, getElementValue, getDomSignatur
 const elementRegistry = new Map();
 
 /**
+ * 按 ref 获取元素的 selector（供 select_dropdown 等工具复用 ref 定位）
+ */
+export function getSelectorByRef(ref) {
+  const refNum = parseInt(ref, 10);
+  if (!refNum || !elementRegistry.has(refNum)) return null;
+  return elementRegistry.get(refNum).selector;
+}
+
+/**
  * 查询可交互元素（推荐优先使用）
  */
 export function queryInteractiveElements(options = {}) {
@@ -140,7 +149,7 @@ export function findSimilarElements(selector, maxResults = 50) {
     const targetSig = getSignature(target);
 
     const similar = [];
-    const allElements = document.querySelectorAll(target.tagName.toLowerCase());
+    const allElements = deepQuerySelectorAll(target.tagName.toLowerCase());
 
     for (const el of allElements) {
       if (el === target) continue;
@@ -455,9 +464,14 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   }
 
   if (action === 'hover') {
-    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-    return { success: true, message: `已悬停元素 ref=${ref}（${entry.tag}）` };
+    const sigBefore = getDomSignature();
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+    const changeHint = wait.changed
+      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      : '';
+    return { success: true, message: `已悬停元素 ref=${ref}（${entry.tag}）${changeHint}`, selector: entry.selector, ...wait };
   }
 
   // 默认 click
@@ -496,7 +510,7 @@ export async function scrollToText(text, options = {}) {
   // 在文档中查找包含指定文本的可滚动目标元素
   const findTarget = () => {
     // 优先在语义化元素中查找
-    const candidates = document.querySelectorAll(
+    const candidates = deepQuerySelectorAll(
       'h1, h2, h3, h4, h5, h6, p, span, a, button, li, td, th, label, div'
     );
     for (const el of candidates) {

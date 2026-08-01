@@ -3,7 +3,7 @@
 // 共享工具函数已拆分到 page-utils.js
 
 import { deepQuerySelector, deepQuerySelectorAll, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
-import { removeHighlights } from './page-utils.js';
+import { removeHighlights, getDomSignature, autoWaitAfterAction } from './page-utils.js';
 
 // 重导出共享工具函数
 export { generateUniqueSelector, getElementText, getElementValue, getElementSelector } from './page-utils.js';
@@ -191,30 +191,22 @@ export async function pasteFromClipboard() {
 /**
  * 鼠标悬停在元素上
  */
-export function hoverElement(selector) {
+export async function hoverElement(selector) {
   try {
     const element = deepQuerySelector(selector);
     if (!element) {
       return { success: false, error: `未找到元素: ${selector}` };
     }
 
-    // 创建并触发 mouseenter 事件
-    const mouseEnterEvent = new MouseEvent('mouseenter', {
-      bubbles: true,
-      cancelable: true,
-      view: window
-    });
-    element.dispatchEvent(mouseEnterEvent);
+    const sigBefore = getDomSignature();
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
+    const wait = await autoWaitAfterAction(sigBefore, 300, 2000);
 
-    // 创建并触发 mouseover 事件
-    const mouseOverEvent = new MouseEvent('mouseover', {
-      bubbles: true,
-      cancelable: true,
-      view: window
-    });
-    element.dispatchEvent(mouseOverEvent);
-
-    return { success: true, message: `已在元素上触发悬停效果: ${selector}` };
+    const changeHint = wait.changed
+      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      : '';
+    return { success: true, message: `已在元素上触发悬停效果: ${selector}${changeHint}`, ...wait };
   } catch (error) {
     return { success: false, error: error.message };
   }
