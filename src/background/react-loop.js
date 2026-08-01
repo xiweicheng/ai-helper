@@ -611,10 +611,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 子任务的执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示
   // 同时兼容 plan_task 子任务（taskContext.subtaskId）和 dispatch_task 子 Agent（taskContext.type === 'subagent'）
   const isSubtask = taskContext && (taskContext.subtaskId || taskContext.type === 'subagent');
-  const streamConfig = isSubtask 
+  const streamConfig = isSubtask
     ? { ...config.streamConfig, streamEnabled: false }
     : config.streamConfig;
-  
+
   logger.debug('[Background] reactLoop 配置:', reactConfig);
   logger.debug('[Background] reactLoop 收到工具列表:', tools.map(t => t.function.name), '数量:', tools.length);
   logger.debug('[Background] reactLoop 任务上下文:', taskContext ? `子任务 ${taskContext.subtaskId || '无'} (${taskContext.subtaskName || '主任务'})` : '无');
@@ -1350,10 +1350,43 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 发送任务规划完成状态更新（让实时日志显示plan_task节点）
               sendExecutionStatusUpdate('任务规划完成', 'success');
-              
-              // 注意：plan_task 的 STREAM_TOOL_RESULT 已在上方统一发送处（STREAM_TOOL_RESULT 分支）
-              // 完成，此处无需重复发送。plan_task 工具卡片在工具执行成功后即标记为"完成"。
-              
+
+              // ⚡ 关键修复：在 executeSubtasks 之前，为同轮中剩余未执行的工具补发 STREAM_TOOL_RESULT
+              // 模型可能在一轮中同时调用 plan_task + 其他工具（如 browser_info、agent_file）
+              // STREAM_TOOL_CALL 已为所有工具发送，前端已创建卡片。但 plan_task 执行后 break，
+              // 其他工具不执行。如果不在此处补发，卡片会卡在"执行中"直到 executeSubtasks 完成（可能数分钟）
+              const currentToolIdx = assistantMessage.tool_calls.findIndex(tc => tc.id === toolCallId);
+              if (currentToolIdx !== -1 && currentToolIdx < assistantMessage.tool_calls.length - 1) {
+                for (let j = currentToolIdx + 1; j < assistantMessage.tool_calls.length; j++) {
+                  const skippedCall = assistantMessage.tool_calls[j];
+                  const skippedName = skippedCall.function?.name || skippedCall.name || 'unknown';
+                  const skippedId = skippedCall.id || `tc_fallback_${crypto.randomUUID()}`;
+                  logger.debug('[Background] 补发跳过工具的 STREAM_TOOL_RESULT:', skippedName, 'id:', skippedId);
+                  // 为被跳过的工具添加 tool 消息，满足 API 的 tool_calls 配对要求
+                  currentMessages.push({
+                    role: 'tool',
+                    content: JSON.stringify({ success: false, message: '已跳过：plan_task 已拆分子任务，本轮其他工具调用不再执行' }),
+                    tool_call_id: skippedId
+                  });
+                  // 补发 STREAM_TOOL_RESULT 让前端卡片从"执行中"变为"已跳过"
+                  if (!isSubtask) {
+                    chrome.runtime.sendMessage({
+                      type: 'STREAM_TOOL_RESULT',
+                      sessionId,
+                      result: {
+                        toolCallId: skippedId,
+                        toolName: skippedName,
+                        success: false,
+                        content: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
+                        truncated: false,
+                        duration: 0
+                      }
+                    }).catch(() => {});
+                  }
+                }
+                await trimMessages();
+              }
+
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
@@ -1631,12 +1664,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         } else {
           // 顺序执行路径
           let planTaskHandled = false;
-          for (const toolCall of assistantMessage.tool_calls) {
+          for (let toolIdx = 0; toolIdx < assistantMessage.tool_calls.length; toolIdx++) {
+            const toolCall = assistantMessage.tool_calls[toolIdx];
             const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
 
             if (result.planTaskHandled) {
               // plan_task 处理了子任务，跳出当前 for 循环，由外层 while 重新迭代
-              // 使用 break 而非 continue，避免在子任务执行后继续执行其他已过时的工具调用
+              // 注意：同轮中剩余工具的 STREAM_TOOL_RESULT 补发已在 executeSingleToolCall 内部
+              // （executeSubtasks 调用之前）完成，此处无需重复处理
               planTaskHandled = true;
               await processPendingReflections();
               break;

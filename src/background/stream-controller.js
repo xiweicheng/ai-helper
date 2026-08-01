@@ -316,13 +316,17 @@ export async function readSSEStream(reader, controller, abortSignal) {
           // 先发送累积的 content chunk，确保思考内容在工具卡片之前显示
           controller._flushChunk();
           
-          controller._sendFn({
-            type: controller._typePrefix + 'STREAM_TOOL_CALL',
-            sessionId: controller.sessionId,
-            callId: controller.callId,
-            toolCalls: normalizedToolCalls,
-            thinkingContent: controller.fullContent
-          }).catch(() => {});
+          // 双重保险：检查 streamEnabled 配置，子任务禁用流式输出时不发送 STREAM_TOOL_CALL
+          // 即使 reactLoop 中的条件检查被绕过，此处也能防止消息泄漏
+          if (!controller.config || controller.config.streamEnabled !== false) {
+            controller._sendFn({
+              type: controller._typePrefix + 'STREAM_TOOL_CALL',
+              sessionId: controller.sessionId,
+              callId: controller.callId,
+              toolCalls: normalizedToolCalls,
+              thinkingContent: controller.fullContent
+            }).catch(() => {});
+          }
           
           return { status: 'tool_calls', ...controller.getResult() };
         } else if (result.type === 'done') {
