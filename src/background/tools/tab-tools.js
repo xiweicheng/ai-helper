@@ -15,14 +15,14 @@ export const TAB_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: '操作类型' },
-          url: { type: 'string', description: 'open时需要' },
+          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: 'navigate=历史前进/后退(配合direction)；打开URL用open' },
+          url: { type: 'string', description: '仅open' },
           tabId: { type: 'integer', description: '非open时需要' },
           active: { type: 'boolean' },
           waitForLoad: { type: 'boolean' },
           loadTimeout: { type: 'integer' },
           bypassCache: { type: 'boolean' },
-          direction: { type: 'string', enum: ['back', 'forward'] }
+          direction: { type: 'string', enum: ['back', 'forward'], description: '仅navigate' }
         },
         required: ['action']
       }

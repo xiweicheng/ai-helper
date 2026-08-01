@@ -577,7 +577,7 @@ export async function clickByText(text, options = {}) {
 export function selectDropdown(triggerSelector, optionText, optionSelector = null, timeout = 5000) {
   return new Promise(async (resolve) => {
     try {
-      const trigger = document.querySelector(triggerSelector);
+      const trigger = deepQuerySelector(triggerSelector);
       if (!trigger) {
         resolve({ success: false, error: `未找到触发器: ${triggerSelector}` });
         return;
@@ -608,12 +608,17 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
 
       // 等待选项出现
       const startTime = Date.now();
-      const optionContainer = optionSelector ? document.querySelector(optionSelector) : document;
+      const optionContainer = optionSelector ? deepQuerySelector(optionSelector) : document;
+      if (!optionContainer) {
+        resolve({ success: false, error: `未找到选项容器: ${optionSelector}` });
+        return;
+      }
 
       let matchedOption = null;
       while (Date.now() - startTime < timeout) {
-        const candidates = optionContainer.querySelectorAll(
-          'li, [role="option"], [role="menuitem"], .option, .dropdown-item, .select-item, [data-value], div'
+        const candidates = deepQuerySelectorAll(
+          'li, [role="option"], [role="menuitem"], .option, .dropdown-item, .select-item, [data-value], div',
+          optionContainer
         );
         for (const el of candidates) {
           const text = (el.textContent || '').trim();
