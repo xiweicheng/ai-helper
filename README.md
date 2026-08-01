@@ -624,22 +624,22 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 ### 内容提取（7 个）
 | 工具 | 说明 |
 |------|------|
-| `get_page_content` | 获取页面内容（text/html/markdown/json 多格式，支持跨标签页提取） |
+| `page_content` | 获取页面内容（text/html 格式，支持跨标签页提取） |
 | `extract_data` | 提取结构化数据（table/links/forms/images/metadata，支持跨标签页） |
-| `query_interactive_elements` | 提取可交互元素（推荐优先使用，省 Token，支持 countOnly 模式） |
+| `query_elements` | 提取可交互元素（推荐优先使用，省 Token，支持 countOnly 模式） |
 | `search_in_page` | 正则搜索页面文本（支持高亮） |
-| `find_similar_elements` | 查找相似结构元素 |
-| `get_iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
-| `scroll_and_collect` | 滚动收集长内容（去重聚合） |
+| `find_similar` | 查找相似结构元素 |
+| `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
+| `scroll_collect` | 滚动收集长内容（去重聚合） |
 
 ### 页面交互（5 个）
 | 工具 | 说明 |
 |------|------|
 | `interact_element` | 页面元素交互（click/hover，CSS 选择器） |
-| `drag_and_drop` | 拖拽操作 |
+| `drag_drop` | 拖拽操作 |
 | `scroll_to` | 滚动到指定位置/元素（支持对齐方式） |
-| `wait_for_element` | 等待元素出现/消失（严格可见性检测） |
-| `wait_for_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
+| `wait_element` | 等待元素出现/消失（严格可见性检测） |
+| `wait_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
 
 ### 表单与输入（4 个）
 | 工具 | 说明 |
@@ -653,7 +653,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | 工具 | 说明 |
 |------|------|
 | `manage_tab` | 标签页管理（支持打开/切换/关闭/前进后退/刷新操作） |
-| `get_tabs` | 获取所有标签页列表 |
+| `list_tabs` | 获取所有标签页列表 |
 
 ### 书签与历史（1 个）
 | 工具 | 说明 |
@@ -665,7 +665,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `manage_cookies` | Cookie 管理（CRUD，需确认） |
 | `manage_storage` | localStorage/sessionStorage 管理 |
-| `clear_page_data` | 一键清除站点数据（需确认） |
+| `clear_data` | 一键清除站点数据（需确认） |
 
 ### 网络请求（1 个）
 | 工具 | 说明 |
@@ -677,23 +677,23 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `capture_page` | 页面截图（支持可视区/全页/下载/视觉分析四种模式） |
 | `clipboard` | 剪贴板操作（复制/粘贴/获取页面选中文本） |
-| `generate_qrcode` | 生成二维码（QRCode 库 + Canvas 降级） |
+| `qrcode` | 生成二维码（QRCode 库 + Canvas 降级） |
 | `download_file` | 下载文件（需确认） |
-| `show_notification` | 桌面通知 |
+| `notify` | 桌面通知 |
 
 ### 调试与开发（2 个）
 | 工具 | 说明 |
 |------|------|
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
-| `get_browser_info` | 获取浏览器环境信息 |
+| `browser_info` | 获取浏览器环境信息 |
 
 ### AI 协作（7 个）
 | 工具 | 说明 |
 |------|------|
 | `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒） |
 | `plan_task` | 复杂任务拆解规划（支持并行/顺序/条件执行） |
-| `ui_prototype` | UI 原型预览与管理（支持 preview/get 两种 action） |
-| `search_chat_history` | 搜索对话记忆（当前会话 / 所有历史会话） |
+| `preview_ui` | UI 原型预览与管理（支持 preview/get 两种 action） |
+| `search_chats` | 搜索对话记忆（当前会话 / 所有历史会话） |
 | `dispatch_task` | 子任务分派给子 Agent 执行（支持并行分派） |
 | `highlight_text` | 高亮页面文本 |
 | `manage_agent` | 管理已配对代理（查询状态、切换代理） |
@@ -703,7 +703,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `agent_file` | 文件操作（read/write/list/delete/download，路径沙箱） |
 | `agent_trash` | 回收站管理（列出/恢复已删除文件） |
-| `agent_exec_command` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
+| `agent_exec` | 执行终端命令（黑/灰/白名单三级安全，支持 force/timeout） |
 | `agent_search` | 搜索文件（按文件名或内容，fd/ripgrep 加速） |
 | `agent_skill` | Skill 加载与执行（load/run 两种 action） |
 

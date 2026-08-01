@@ -58,7 +58,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'wait_element',
-      description: '等待元素',
+      description: '等待元素状态变化；页面跳转等待用 wait_navigation',
       parameters: {
         type: 'object',
         properties: {
@@ -80,7 +80,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'drag_drop',
-      description: '拖拽元素',
+      description: '拖拽元素（⚠️实验性，多数网页可能不生效，必要时改用点击）',
       parameters: {
         type: 'object',
         properties: {
@@ -122,7 +122,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'fill_form',
-      description: '填充表单',
+      description: '批量填充表单；React 受控组件单字段建议用 keyboard_input',
       parameters: {
         type: 'object',
         properties: {
@@ -154,7 +154,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'keyboard_input',
-      description: '键盘输入',
+      description: '键盘输入（绕过 React 受控组件）',
       parameters: {
         type: 'object',
         properties: {
@@ -201,7 +201,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'select_dropdown',
-      description: '下拉选择',
+      description: '下拉选择（自定义组件也支持）',
       parameters: {
         type: 'object',
         properties: {
@@ -224,7 +224,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'page_content',
-      description: '获取页面内容',
+      description: '获取页面内容；元素定位用 query_elements，结构化抽取用 extract_data',
       parameters: {
         type: 'object',
         properties: {
@@ -274,7 +274,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'query_elements',
-      description: '查询交互元素',
+      description: '查询可交互元素，推荐优先用于元素定位，返回的 selector 可直接用于 interact_element/fill_form',
       parameters: {
         type: 'object',
         properties: {

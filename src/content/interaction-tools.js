@@ -45,6 +45,23 @@ function isContentEditableElement(el) {
 }
 
 /**
+ * 使用原型链 native setter 设置 input/textarea 的 value
+ * 绕过 React 的 inputValueTracking 托管，确保受控组件能感知到值变化
+ * 对非 React 的原生表单同样有效，无回归风险
+ */
+function setNativeValue(element, value) {
+  const proto = element.tagName === 'TEXTAREA'
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
+  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (nativeSetter && nativeSetter.set) {
+    nativeSetter.set.call(element, value);
+  } else {
+    element.value = value;
+  }
+}
+
+/**
  * 填充 contenteditable / 富文本编辑器
  */
 function fillContentEditable(element, value) {
@@ -101,8 +118,8 @@ export function fillForm(fields, waitTime = 500) {
             return;
           }
 
-          // 标准表单控件（input / textarea）
-          element.value = value;
+          // 标准表单控件（input / textarea）—— 统一用 native setter 绕过 React 受控组件
+          setNativeValue(element, value);
           element.dispatchEvent(new Event('input', { bubbles: true }));
           element.dispatchEvent(new Event('change', { bubbles: true }));
         } else if (fieldType === 'contenteditable') {
@@ -285,18 +302,8 @@ export function keyboardInput({ key, text, ctrlKey = false, shiftKey = false, al
             activeElement.textContent += text;
           }
         } else {
-          // 标准 input/textarea：使用 native setter 绕过 React 的值托管
-          const nativeSetter = Object.getOwnPropertyDescriptor(
-            HTMLInputElement.prototype, 'value'
-          ) || Object.getOwnPropertyDescriptor(
-            HTMLTextAreaElement.prototype, 'value'
-          );
-
-          if (nativeSetter && nativeSetter.set) {
-            nativeSetter.set.call(activeElement, activeElement.value + text);
-          } else {
-            activeElement.value += text;
-          }
+          // 标准 input/textarea：复用 setNativeValue 绕过 React 受控组件
+          setNativeValue(activeElement, activeElement.value + text);
         }
 
         // 分发事件（React 依赖 inputType、bubbles）
@@ -409,7 +416,7 @@ export function dragAndDrop(sourceSelector, targetSelector) {
       resolve({
         success: true,
         experimental: true,
-        message: `[实验性] 已尝试拖拽 ${sourceSelector} → ${targetSelector}（拖拽模拟在浏览器中为部分支持，可能未生效）`
+        message: `⚠️拖拽为实验性，可能未生效（${sourceSelector} → ${targetSelector}）。受浏览器 dataTransfer 限制，依赖拖拽数据的网页多数无法触发，建议验证结果或改用点击坐标实现`
       });
     } catch (error) {
       resolve({ success: false, error: error.message });

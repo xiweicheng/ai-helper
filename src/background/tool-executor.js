@@ -1346,7 +1346,6 @@ const TOOL_HANDLERS = {
   agent_skill: executeAgentSkill,
   wait_navigation: executeWaitForNavigation,
   dispatch_task: executeDispatchSubAgent,
-  agent_skill: executeAgentSkill,
   agent_memory: async (args, toolCallId, sessionId) => executeAgentMemory(args, toolCallId, sessionId),
   // ── 合并后的工具 ──
   page_content: executeGetPageContent,

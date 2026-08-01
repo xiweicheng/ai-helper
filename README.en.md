@@ -596,22 +596,22 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 ### Content Extraction (7)
 | Tool | Description |
 |------|-------------|
-| `get_page_content` | Get page content in multiple formats (text/html/markdown/json, supports cross-tab extraction) |
+| `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
 | `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
-| `query_interactive_elements` | Extract interactive elements (recommended for token savings, supports countOnly mode) |
+| `query_elements` | Extract interactive elements (recommended for token savings, supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
-| `find_similar_elements` | Find similar structure elements |
-| `get_iframe_content` | Get iframe content (same-origin, nested support) |
-| `scroll_and_collect` | Scroll and collect long content (dedup aggregation) |
+| `find_similar` | Find similar structure elements |
+| `iframe_content` | Get iframe content (same-origin, nested support) |
+| `scroll_collect` | Scroll and collect long content (dedup aggregation) |
 
 ### Page Interaction (5)
 | Tool | Description |
 |------|-------------|
 | `interact_element` | Page element interaction (click/hover, CSS selector) |
-| `drag_and_drop` | Drag-and-drop operation |
+| `drag_drop` | Drag-and-drop operation |
 | `scroll_to` | Scroll to position/element (with alignment options) |
-| `wait_for_element` | Wait for element appear/disappear (strict visibility check) |
-| `wait_for_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
+| `wait_element` | Wait for element appear/disappear (strict visibility check) |
+| `wait_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
 
 ### Form & Input (4)
 | Tool | Description |
@@ -625,7 +625,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 | Tool | Description |
 |------|-------------|
 | `manage_tab` | Tab management (open/switch/close/back/forward/reload operations) |
-| `get_tabs` | Get all tab list |
+| `list_tabs` | Get all tab list |
 
 ### Bookmarks & History (1)
 | Tool | Description |
@@ -637,7 +637,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 |------|-------------|
 | `manage_cookies` | Cookie management (CRUD, requires confirmation) |
 | `manage_storage` | localStorage/sessionStorage management |
-| `clear_page_data` | One-click clear site data (requires confirmation) |
+| `clear_data` | One-click clear site data (requires confirmation) |
 
 ### Network Request (1)
 | Tool | Description |
@@ -649,23 +649,23 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 |------|-------------|
 | `capture_page` | Page screenshot (viewport/fullpage/download/visual analysis four modes) |
 | `clipboard` | Clipboard operations (copy/paste/get page selection) |
-| `generate_qrcode` | Generate QR code (QRCode library + Canvas fallback) |
+| `qrcode` | Generate QR code (QRCode library + Canvas fallback) |
 | `download_file` | Download files (requires confirmation) |
-| `show_notification` | Desktop notifications |
+| `notify` | Desktop notifications |
 
 ### Debug & Dev (2)
 | Tool | Description |
 |------|-------------|
 | `inject_css` | Inject CSS styles (global/scoped/inline) |
-| `get_browser_info` | Get browser environment info |
+| `browser_info` | Get browser environment info |
 
 ### AI Collaboration (7)
 | Tool | Description |
 |------|-------------|
 | `clarify_question` | Show clarification dialog (suggestions, countdown, audio alert) |
 | `plan_task` | Complex task decomposition planner (parallel/sequential/conditional) |
-| `ui_prototype` | UI prototype preview & management (preview/get actions) |
-| `search_chat_history` | Search chat memory (current session / all history sessions) |
+| `preview_ui` | UI prototype preview & management (preview/get actions) |
+| `search_chats` | Search chat memory (current session / all history sessions) |
 | `dispatch_task` | Dispatch subtasks to sub-agents (supports parallel dispatch) |
 | `highlight_text` | Highlight text on page |
 | `manage_agent` | Manage paired agents (query status, switch agent) |
@@ -675,7 +675,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 |------|-------------|
 | `agent_file` | File operations (read/write/list/delete/download, path sandbox) |
 | `agent_trash` | Trash management (list/restore deleted files) |
-| `agent_exec_command` | Execute terminal commands (black/gray/white-list three-tier security, force/timeout) |
+| `agent_exec` | Execute terminal commands (black/gray/white-list three-tier security, force/timeout) |
 | `agent_search` | Search files (by filename or content, fd/ripgrep accelerated) |
 | `agent_skill` | Skill loading and execution (load/run actions) |
 

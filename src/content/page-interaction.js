@@ -226,6 +226,7 @@ export function scrollAndCollect(args = {}) {
       let allText = '';
       let lastText = '';
       const startScrollY = window.scrollY;
+      let actualScrolls = 0;
 
       for (let i = 0; i < maxScrolls; i++) {
         // 获取当前可视文本
@@ -238,6 +239,7 @@ export function scrollAndCollect(args = {}) {
 
         // 滚动
         scrollElement.scrollBy({ top: scrollPixels, behavior: 'auto' });
+        actualScrolls++;
 
         // 暂停等待内容加载
         await new Promise(r => setTimeout(r, pauseMs));
@@ -269,7 +271,7 @@ export function scrollAndCollect(args = {}) {
         success: true,
         content: deduped.join('\n'),
         contentLength: deduped.join('\n').length,
-        scrolls: maxScrolls,
+        scrolls: actualScrolls,
         startScrollY,
         endScrollY: window.scrollY
       });
