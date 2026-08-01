@@ -173,6 +173,30 @@ export function getCurrentReactTabId() {
   return getActiveReactTabId();
 }
 
+// ========== 最近操作标签页（模型主导 tabId 的 fallback 保障） ==========
+//
+// 目的：模型 open_tab/switch_tab 后，若下一步忘记传 tabId，用"模型最近主动
+// 操作的 tab"作为 fallback，比浏览器全局活动 tab（getActiveTabId）更贴近模型意图。
+//
+// 关键：这是 fallback（args.tabId 优先），不是 override。模型传了 tabId 就用
+// 模型的；只有没传时才用此值。只记录模型主动操作（open_tab/switch_tab），
+// 不监听浏览器全局 onActivated，避免剥夺模型控制权。
+const lastOperatedTabBySession = new Map(); // sessionId → tabId
+
+export function setLastOperatedTab(sessionId, tabId) {
+  if (sessionId && tabId != null) {
+    lastOperatedTabBySession.set(sessionId, tabId);
+  }
+}
+
+export function getLastOperatedTab(sessionId) {
+  return sessionId ? lastOperatedTabBySession.get(sessionId) : null;
+}
+
+export function clearLastOperatedTab(sessionId) {
+  if (sessionId) lastOperatedTabBySession.delete(sessionId);
+}
+
 // ========== 工具级终止等待（不取消 ReAct 循环） ==========
 
 /**

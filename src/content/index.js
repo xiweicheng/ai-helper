@@ -7,7 +7,8 @@ import {
 } from './page-tools.js';
 
 import {
-  queryInteractiveElements, findSimilarElements, scrollAndCollect
+  queryInteractiveElements, findSimilarElements, scrollAndCollect,
+  interactByRef, scrollToText
 } from './page-interaction.js';
 
 import {
@@ -18,7 +19,7 @@ import {
 import {
   clickElement, fillForm, scrollToPosition, waitForElement,
   keyboardInput, dragAndDrop, fileUpload,
-  manageStorage, selectDropdown
+  manageStorage, selectDropdown, clickByText
 } from './interaction-tools.js';
 
 import {
@@ -77,12 +78,25 @@ const HANDLERS = {
   GET_SELECTED_CONTENT:      (msg) => getSelectedContent(msg.format),
 
   // ── 页面交互 ──
+  // interact_element 支持 3 种定位：ref（优先）> text > selector
   INTERACT_ELEMENT:           (msg) => {
+    if (msg.ref != null) {
+      return interactByRef(msg.ref, msg.action, { waitTime: msg.waitTime, timeout: msg.timeout });
+    }
+    if (msg.text) {
+      return clickByText(msg.text, { tag: msg.tag, waitTime: msg.waitTime, timeout: msg.timeout });
+    }
     if (msg.action === 'hover') return hoverElement(msg.selector);
     return clickElement(msg.selector, msg.waitTime, msg.timeout);
   },
   FILL_FORM:                 (msg) => fillForm(msg.fields, msg.waitTime),
-  SCROLL_TO:                 (msg) => scrollToPosition(msg),
+  // scroll_to 支持 target=text（滚动到文本），其余走 scrollToPosition
+  SCROLL_TO:                 (msg) => {
+    if (msg.target === 'text' && msg.text) {
+      return scrollToText(msg.text, { maxScrolls: msg.maxScrolls, pauseMs: msg.pauseMs });
+    }
+    return scrollToPosition(msg);
+  },
 
   // ── 表单/输入工具 ──
   KEYBOARD_INPUT:            (msg) => keyboardInput(msg),
@@ -151,6 +165,9 @@ const ASYNC_HANDLERS = new Set([
   'WAIT_ELEMENT', 'DRAG_DROP',
   'SELECT_DROPDOWN', 'QRCODE',
   'START_REGION_SELECTION',
+  // INTERACT_ELEMENT: ref/text/click 分支含 auto-wait，均为 async
+  // SCROLL_TO: target=text 分支为 async（循环滚动查找）
+  'INTERACT_ELEMENT', 'SCROLL_TO',
 ]);
 
 // 这些工具类型只在顶层 frame 处理，避免 all_frames 响应冲突
@@ -161,6 +178,8 @@ const TOP_FRAME_ONLY_TYPES = new Set([
   'EXTRACT_TABLE',
   'IFRAME_CONTENT',
   'QUERY_ELEMENTS',
+  // ref 模式依赖 elementRegistry（顶层 frame 维护）；text 模式为页面级查找
+  'INTERACT_ELEMENT', 'SCROLL_TO',
 ]);
 
 if (isExtensionValid()) {

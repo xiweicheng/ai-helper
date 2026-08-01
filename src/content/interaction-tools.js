@@ -1,16 +1,20 @@
 // content/interaction-tools.js - 页面交互与操作工具
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
+import { generateUniqueSelector, getDomSignature, autoWaitAfterAction } from './page-utils.js';
 
 /**
  * 点击指定元素
+ * 点击后自动等待：检测 URL/DOM 变化，若有变化则等待稳定（auto-wait）
+ * - waitTime: 最小等待 ms（给页面响应时间，默认 300）
+ * - timeout: 最大等待 ms（检测到变化时的等待上限，默认 2000）
  */
-export function clickElement(selector, waitTime = 500, timeout = 3000) {
+export async function clickElement(selector, waitTime = 300, timeout = 2000) {
   try {
     if (!selector) {
       return { success: false, error: '选择器不能为空' };
     }
-    
+
     // Only strip wrapping quote pairs, preserve quotes inside CSS attribute selectors like a[href="/foo"]
     let cleanedSelector = selector.trim();
     // Matching wrapping quote pairs: "x", 'x', `x`, "x", 'x', 「x」
@@ -25,13 +29,25 @@ export function clickElement(selector, waitTime = 500, timeout = 3000) {
     for (const [pattern, replacement] of wrapPatterns) {
       cleanedSelector = cleanedSelector.replace(pattern, replacement);
     }
-    
+
     const element = deepQuerySelector(cleanedSelector);
     if (!element) {
       return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
     }
+
+    // 记录点击前状态，点击后自动等待页面稳定
+    const sigBefore = getDomSignature();
     element.click();
-    return { success: true, message: `已成功点击元素: ${selector}` };
+    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+
+    const changeHint = wait.changed
+      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      : '';
+    return {
+      success: true,
+      message: `已点击元素: ${selector}${changeHint}`,
+      ...wait,
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -468,6 +484,87 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
   } catch (error) {
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * 按文本点击元素（原子操作：查找 + 点击 + 自动等待）
+ * 遍历可交互元素，匹配文本后点击，省去 query_elements → interact_element 两步
+ *
+ * @param {string} text - 要匹配的文本（精确匹配优先，其次包含匹配）
+ * @param {object} options
+ * @param {string} options.tag - 限定标签（如 'button'/'a'），不传则遍历所有可交互元素
+ * @param {number} options.waitTime - 点击后最小等待 ms
+ * @param {number} options.timeout - 点击后最大等待 ms
+ */
+export async function clickByText(text, options = {}) {
+  const { tag, waitTime = 300, timeout = 2000 } = options;
+
+  if (!text) {
+    return { success: false, error: 'text 不能为空' };
+  }
+
+  // 可交互元素选择器（穿透 Shadow DOM）
+  const selectors = tag
+    ? [tag]
+    : [
+        'button',
+        '[role="button"]',
+        'input[type="submit"]',
+        'input[type="button"]',
+        'a[href]',
+        '[role="menuitem"]',
+        '[role="menuitemradio"]',
+        '[role="menuitemcheckbox"]',
+        '[onclick]',
+        'summary',
+      ];
+
+  const textLower = text.toLowerCase();
+
+  for (const sel of selectors) {
+    let elements = [];
+    try {
+      elements = deepQuerySelectorAll(sel);
+    } catch {
+      continue;
+    }
+    for (const el of elements) {
+      // 获取元素文本（含 value 用于 input[submit/button]）
+      const elText = (el.textContent || el.value || '').trim();
+      if (!elText) continue;
+      const elLower = elText.toLowerCase();
+
+      // 精确匹配优先，其次包含匹配
+      if (elText === text || elLower === textLower || elLower.includes(textLower)) {
+        // 检查可见性（不可见元素跳过，避免点到隐藏的同类元素）
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) <= 0) {
+          continue;
+        }
+
+        const selector = generateUniqueSelector(el);
+        const sigBefore = getDomSignature();
+        el.click();
+        const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+
+        const changeHint = wait.changed
+          ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+          : '';
+        return {
+          success: true,
+          message: `已点击文本"${text}"对应的${el.tagName.toLowerCase()}元素${changeHint}`,
+          selector,
+          matchedText: elText.substring(0, 100),
+          ...wait,
+        };
+      }
+    }
+  }
+
+  return {
+    success: false,
+    error: `未找到文本包含"${text}"的可点击元素${tag ? `（限定标签: ${tag}）` : ''}`,
+  };
 }
 
 // ========== P0/P1 新增工具 (2026-06-28) ==========

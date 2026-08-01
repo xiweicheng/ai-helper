@@ -8,6 +8,7 @@ import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
+import { setLastOperatedTab, getLastOperatedTab } from './state.js';
 import { logger } from '../shared/logger.js';
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws, resolve }）
@@ -1097,11 +1098,11 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
 
 // ==================== 合并工具执行器（按 action 分发到原执行函数） ====================
 
-async function executeManageTab(args, toolCallId) {
+async function executeManageTab(args, toolCallId, sessionId) {
   const { action } = args;
   switch (action) {
-    case 'open': return executeOpenTab(args, toolCallId);
-    case 'switch': return executeSwitchTab(args, toolCallId);
+    case 'open': return executeOpenTab(args, toolCallId, sessionId);
+    case 'switch': return executeSwitchTab(args, toolCallId, sessionId);
     case 'close': return executeCloseTab(args, toolCallId);
     case 'reload': return executeReloadTab(args, toolCallId);
     case 'navigate': return executeNavigateBackForward(args, toolCallId);
@@ -1444,19 +1445,8 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     const handler = BG_HANDLERS[toolName];
     if (handler) {
       console.log(`[Background] ${toolName} 直接执行，不通过 content script`);
-      
-      const toolsNeedingTabId = [
-        'page_content', 'extract_data',
-        'interact_element', 'scroll_to', 'search_in_page',
-        'input_text', 'select_option', 'submit_form', 'wait_navigation',
-        'manage_tab'
-      ];
-      
-      if (toolsNeedingTabId.includes(toolName) && !args.tabId && tabId) {
-        args = { ...args, tabId };
-        console.log(`[Background] ${toolName} 使用会话绑定的 tabId: ${tabId}`);
-      }
-      
+      // tabId 由模型主导：模型传了就用模型指定的，没传则各 handler 内部用当前活动 tab 兜底。
+      // 不再用会话绑定的 tabId 注入，避免自动化中新打开 tab 后仍指向任务初始页。
       result = await handler(args, toolCallId, sessionId, tabId);
     } else {
       result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
@@ -1466,7 +1456,11 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
     if (buildPayload) {
       const messageType = toolName.toUpperCase();
       const messagePayload = buildPayload(args);
-      const targetTabId = tabId || await getActiveTabId();
+      // 模型主导 tabId：传了就用模型指定的（可操作任意 tab，含后台 tab）；
+      // 没传则用"最近操作 tab"（模型自己 open_tab/switch_tab 的结果）作 fallback，
+      // 比 getActiveTabId() 更贴近模型意图；都没有则取当前活动 tab。
+      const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
+      const targetTabId = args.tabId || lastOperatedTab || await getActiveTabId();
       if (targetTabId) {
         result = await sendToContentScriptWithRetry(targetTabId, { type: messageType, ...messagePayload }, toolCallId);
       } else {
@@ -2275,12 +2269,12 @@ export function executeDownloadFile(args, toolCallId) {
  * 打开新标签页
  * 支持 waitForLoad 参数：等待页面加载完成再返回，避免后续工具因页面未就绪而失败
  */
-export function executeOpenTab(args, toolCallId) {
+export function executeOpenTab(args, toolCallId, sessionId) {
   const { url, active: rawActive = true, waitForLoad = false, loadTimeout = 15000 } = args;
   const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
-  
+
   console.log('[Background] 打开新标签页:', 'url=', url, 'active=', active, 'waitForLoad=', waitForLoad, 'loadTimeout=', loadTimeout);
-  
+
   return new Promise((resolve) => {
     chrome.tabs.create({ url: url, active: active }, (tab) => {
       if (chrome.runtime.lastError) {
@@ -2288,11 +2282,19 @@ export function executeOpenTab(args, toolCallId) {
         resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
         return;
       }
-      
+
+      // 记录"最近操作 tab"：模型若下一步忘记传 tabId，fallback 用此值而非全局活动 tab
+      if (sessionId) {
+        setLastOperatedTab(sessionId, tab.id);
+      }
+
+      // 返回值突出 tabId，提示模型后续操作此页必须传递，避免操作错误页面
+      const hint = `后续操作此页的工具请传 tabId=${tab.id}（不传则默认用此页）`;
+
       if (!waitForLoad) {
-        resolve({ 
-          success: true, 
-          message: `已打开标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、interact_element、extract_data等）`,
+        resolve({
+          success: true,
+          message: `已打开标签页 tabId=${tab.id}。${hint}`,
           tabId: tab.id,
           url: tab.url,
           tool_call_id: toolCallId
@@ -2303,7 +2305,7 @@ export function executeOpenTab(args, toolCallId) {
       // 等待页面加载完成（或超时）
       let resolved = false;
       const safeTimeout = Math.max(1000, Math.floor(Number(loadTimeout) || 15000));
-      
+
       const timeoutId = setTimeout(() => {
         if (resolved) return;
         resolved = true;
@@ -2311,14 +2313,14 @@ export function executeOpenTab(args, toolCallId) {
         console.warn('[Background] 页面加载超时:', url, `(${safeTimeout}ms)`);
         resolve({
           success: true,
-          message: `标签页已打开但加载超时（${safeTimeout}ms），页面可能较慢或无法访问。后续工具调用可能失败`,
+          message: `标签页已打开但加载超时（${safeTimeout}ms），页面可能较慢或无法访问。${hint}`,
           tabId: tab.id,
           url: tab.url,
           loadTimedOut: true,
           tool_call_id: toolCallId
         });
       }, safeTimeout);
-      
+
       const listener = (updatedTabId, changeInfo, updatedTab) => {
         if (updatedTabId === tab.id && changeInfo.status === 'complete') {
           if (resolved) return;
@@ -2328,7 +2330,7 @@ export function executeOpenTab(args, toolCallId) {
           console.log('[Background] 页面加载完成:', updatedTab.url);
           resolve({
             success: true,
-            message: `已打开并加载完成: ${updatedTab.url}`,
+            message: `已打开并加载完成: ${updatedTab.url}。${hint}`,
             tabId: tab.id,
             url: updatedTab.url,
             tool_call_id: toolCallId
@@ -2343,23 +2345,27 @@ export function executeOpenTab(args, toolCallId) {
 /**
  * 切换到指定标签页
  */
-export function executeSwitchTab(args, toolCallId) {
+export function executeSwitchTab(args, toolCallId, sessionId) {
   const { tabId: rawTabId } = args;
   const tabId = parseInt(rawTabId, 10);
-  
+
   console.log('[Background] 切换标签页:', 'tabId=', tabId);
-  
+
   return new Promise((resolve) => {
     chrome.tabs.update(tabId, { active: true }, (tab) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 切换标签页失败:', chrome.runtime.lastError.message);
         resolve({ success: false, error: chrome.runtime.lastError.message });
       } else {
-        resolve({ 
-          success: true, 
-          message: `已切换标签页，tabId: ${tab.id}。该tabId可直接用于后续网页操作工具（如page_content、interact_element、extract_data等）`,
+        // 切换后更新"最近操作 tab"，后续工具不传 tabId 时 fallback 用此值
+        if (sessionId) {
+          setLastOperatedTab(sessionId, tab.id);
+        }
+        resolve({
+          success: true,
+          message: `已切换到标签页 tabId=${tab.id}。后续操作此页的工具请传 tabId=${tab.id}（不传则默认用此页）`,
           tabId: tab.id,
-          url: tab.url 
+          url: tab.url
         });
       }
     });
@@ -3847,7 +3853,7 @@ async function ensureOffscreenDocument() {
  * page_content：合并 get_page_text/get_full_html/page_to_markdown/page_to_json
  * 根据 format 参数路由到对应的 content script 消息类型
  */
-async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId) {
+async function executeGetPageContent(args, toolCallId, sessionId, _sessionTabId) {
   const { format = 'text', selector, maxLength = 15000, tabId: argsTabId } = args;
 
   const messageTypeMap = {
@@ -3861,7 +3867,9 @@ async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId)
   }
 
   try {
-    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
+    // 模型主导 tabId，没传则用最近操作 tab，再没有则取当前活动 tab
+    const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
+    const targetTabId = argsTabId || lastOperatedTab || await getActiveTabId();
     if (!targetTabId) {
       return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
     }
@@ -3876,7 +3884,7 @@ async function executeGetPageContent(args, toolCallId, _sessionId, sessionTabId)
  * extract_data：合并 extract_table/extract_metadata/extract_links/extract_forms/extract_images
  * 根据 dataType 参数路由到对应的 content script 消息类型
  */
-async function executeExtractData(args, toolCallId, _sessionId, sessionTabId) {
+async function executeExtractData(args, toolCallId, sessionId, _sessionTabId) {
   const {
     dataType,
     selector,
@@ -3908,7 +3916,9 @@ async function executeExtractData(args, toolCallId, _sessionId, sessionTabId) {
   }
 
   try {
-    const targetTabId = argsTabId || sessionTabId || await getActiveTabId();
+    // 模型主导 tabId，没传则用最近操作 tab，再没有则取当前活动 tab
+    const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
+    const targetTabId = argsTabId || lastOperatedTab || await getActiveTabId();
     if (!targetTabId) {
       return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
     }

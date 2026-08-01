@@ -10,17 +10,20 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'interact_element',
-      description: '点击或悬停元素',
+      description: '点击或悬停元素（支持 ref/text/selector 三种定位，优先 ref，ref 来自 query_elements）',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['click', 'hover'] },
-          tabId: { type: 'integer' },
-          selector: { type: 'string' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          ref: { type: 'integer', description: 'query_elements 返回的元素编号（推荐优先）' },
+          text: { type: 'string', description: '按文本匹配元素（如"登录"），找到即点击' },
+          tag: { type: 'string', description: '配合 text 限定标签如 button/a' },
+          selector: { type: 'string', description: 'CSS 选择器（ref/text 均未提供时使用）' },
           waitTime: { type: 'integer' },
           timeout: { type: 'integer' }
         },
-        required: ['action', 'tabId', 'selector']
+        required: ['action']
       }
     }
   },
@@ -37,15 +40,18 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
-          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates'] },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'] },
           selector: { type: 'string' },
+          text: { type: 'string', description: 'target=text 时，滚动到包含此文本的元素' },
           x: { type: 'integer' },
           y: { type: 'integer' },
           align: { type: 'string', enum: ['start', 'center', 'end', 'nearest'] },
-          behavior: { type: 'string', enum: ['smooth', 'auto'] }
+          behavior: { type: 'string', enum: ['smooth', 'auto'] },
+          maxScrolls: { type: 'integer', description: 'target=text 时最大滚动次数（默认20）' },
+          pauseMs: { type: 'integer', description: 'target=text 时每次滚动后等待ms（默认500）' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -62,12 +68,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           selector: { type: 'string' },
           state: { type: 'string', enum: ['appeared', 'disappeared', 'visible', 'hidden'] },
           timeout: { type: 'integer' }
         },
-        required: ['tabId', 'selector']
+        required: ['selector']
       }
     }
   },
@@ -84,11 +90,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           sourceSelector: { type: 'string' },
           targetSelector: { type: 'string' }
         },
-        required: ['tabId', 'sourceSelector', 'targetSelector']
+        required: ['sourceSelector', 'targetSelector']
       }
     }
   },
@@ -105,11 +111,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           timeout: { type: 'integer' },
           waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -126,7 +132,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           fields: {
             type: 'array',
             items: {
@@ -141,7 +147,7 @@ export const BROWSER_TOOLS = [
           },
           waitTime: { type: 'integer' }
         },
-        required: ['tabId', 'fields']
+        required: ['fields']
       }
     }
   },
@@ -158,14 +164,14 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           key: { type: 'string' },
           text: { type: 'string' },
           ctrlKey: { type: 'boolean' },
           shiftKey: { type: 'boolean' },
           altKey: { type: 'boolean' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -182,13 +188,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           selector: { type: 'string' },
           fileName: { type: 'string' },
           fileContent: { type: 'string', description: '文件内容(base64)' },
           fileType: { type: 'string', description: 'MIME类型，如image/png' }
         },
-        required: ['tabId', 'selector', 'fileName', 'fileContent']
+        required: ['selector', 'fileName', 'fileContent']
       }
     }
   },
@@ -205,13 +211,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           triggerSelector: { type: 'string' },
           optionText: { type: 'string' },
           optionSelector: { type: 'string' },
           timeout: { type: 'integer' }
         },
-        required: ['tabId', 'triggerSelector', 'optionText']
+        required: ['triggerSelector', 'optionText']
       }
     }
   },
@@ -228,12 +234,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           format: { type: 'string', enum: ['text', 'html'] },
           selector: { type: 'string' },
           maxLength: { type: 'integer' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -250,7 +256,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'] },
           selector: { type: 'string' },
           filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: '仅links' },
@@ -261,7 +267,7 @@ export const BROWSER_TOOLS = [
           minHeight: { type: 'integer', description: '仅images' },
           maxResults: { type: 'integer' }
         },
-        required: ['tabId', 'dataType']
+        required: ['dataType']
       }
     }
   },
@@ -278,7 +284,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           filterByText: { type: 'string' },
           elementTypes: {
             type: 'array',
@@ -287,7 +293,7 @@ export const BROWSER_TOOLS = [
           maxResults: { type: 'integer' },
           countOnly: { type: 'boolean' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -304,7 +310,7 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           query: { type: 'string' },
           mode: { type: 'string', enum: ['plain', 'regex'] },
           caseSensitive: { type: 'boolean' },
@@ -312,7 +318,7 @@ export const BROWSER_TOOLS = [
           maxResults: { type: 'integer' },
           highlight: { type: 'boolean' }
         },
-        required: ['tabId', 'query']
+        required: ['query']
       }
     }
   },
@@ -329,11 +335,11 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           selector: { type: 'string' },
           maxResults: { type: 'integer' }
         },
-        required: ['tabId', 'selector']
+        required: ['selector']
       }
     }
   },
@@ -350,12 +356,12 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           selector: { type: 'string' },
           includeNested: { type: 'boolean' },
           maxLength: { type: 'integer' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },
@@ -372,13 +378,13 @@ export const BROWSER_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer' },
+          tabId: { type: 'integer', description: '省略则用当前活动页' },
           scrollPixels: { type: 'integer' },
           maxScrolls: { type: 'integer' },
           pauseMs: { type: 'integer' },
           selector: { type: 'string' }
         },
-        required: ['tabId']
+        required: []
       }
     }
   },

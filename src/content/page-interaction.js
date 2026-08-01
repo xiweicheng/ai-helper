@@ -2,7 +2,14 @@
 // 从 page-tools.js 拆分，包含交互元素查询、相似元素查找、元素计数、滚动收集、无障碍树读取等
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
-import { generateUniqueSelector, getElementText, getElementValue } from './page-utils.js';
+import { generateUniqueSelector, getElementText, getElementValue, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+
+// ==================== 元素注册表（ref → element 映射） ====================
+//
+// query_elements 返回结果时给每个元素分配一个 ref 编号，模型可用 ref 直接操作元素
+// （interact_by_ref），免去编写脆弱的 CSS selector。注册表只保留最近一次查询结果，
+// 页面变化导致 element 失效时会用 selector 兜底重新查找；selector 也失效则提示重新查询。
+const elementRegistry = new Map();
 
 /**
  * 查询可交互元素（推荐优先使用）
@@ -12,6 +19,8 @@ export function queryInteractiveElements(options = {}) {
 
   const elements = [];
   const seenSelectors = new Set();
+  // 清空注册表，只保留本次查询结果
+  elementRegistry.clear();
 
   // 定义可交互元素的选择器
   const selectors = {
@@ -75,6 +84,11 @@ export function queryInteractiveElements(options = {}) {
         if (el.className && typeof el.className === 'string') {
           elementInfo.className = el.className.split(' ').filter(c => c).slice(0, 3).join(' ');
         }
+
+        // 分配 ref 编号，存入注册表供 interact_by_ref 使用
+        const ref = elements.length + 1;
+        elementInfo.ref = ref;
+        elementRegistry.set(ref, { element: el, selector: uniqueSelector, tag: tagName });
 
         elements.push(elementInfo);
       });
@@ -387,4 +401,159 @@ export function readAccessibilityTree(maxResults = 100) {
   } catch (error) {
     return { success: false, error: error.message };
   }
+}
+
+// ==================== P0/P1: 索引引用 & 文本滚动 ====================
+
+/**
+ * 按 ref 编号操作元素（配合 query_elements 返回的 ref 使用）
+ *
+ * 优势：模型无需编写 CSS selector，直接用编号引用元素，避免 selector 写错/失效问题
+ * 容错：element 失效时用 selector 兜底重新查找；selector 也失效则提示重新 query_elements
+ *
+ * @param {number} ref - query_elements 返回的元素编号
+ * @param {string} action - 'click' | 'hover'（暂只支持点击和悬停）
+ * @param {object} options
+ * @param {number} options.waitTime - 点击后最小等待 ms
+ * @param {number} options.timeout - 点击后最大等待 ms
+ */
+export async function interactByRef(ref, action = 'click', options = {}) {
+  const { waitTime = 300, timeout = 2000 } = options;
+
+  const refNum = parseInt(ref, 10);
+  if (!refNum || !elementRegistry.has(refNum)) {
+    return {
+      success: false,
+      error: `无效的元素编号 ref=${ref}，请先调用 query_elements 获取有效编号`,
+    };
+  }
+
+  const entry = elementRegistry.get(refNum);
+  let element = entry.element;
+
+  // 检查缓存的 element 是否仍在 DOM 中
+  if (!element.isConnected) {
+    // 兜底：用 selector 重新查找
+    element = deepQuerySelector(entry.selector);
+    if (!element) {
+      // selector 也失效，提示模型重新查询
+      return {
+        success: false,
+        error: `元素 ref=${ref} 已失效（页面可能已变化），请重新调用 query_elements 获取最新元素`,
+      };
+    }
+  }
+
+  // 可见性检查（点击不可见元素通常无意义）
+  const style = window.getComputedStyle(element);
+  if (style.display === 'none' || style.visibility === 'hidden') {
+    return {
+      success: false,
+      error: `元素 ref=${ref}（${entry.tag}）当前不可见，可能被隐藏或折叠`,
+    };
+  }
+
+  if (action === 'hover') {
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    return { success: true, message: `已悬停元素 ref=${ref}（${entry.tag}）` };
+  }
+
+  // 默认 click
+  const sigBefore = getDomSignature();
+  element.click();
+  const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+
+  const changeHint = wait.changed
+    ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+    : '';
+  return {
+    success: true,
+    message: `已点击元素 ref=${ref}（${entry.tag}）${changeHint}`,
+    selector: entry.selector,
+    ...wait,
+  };
+}
+
+/**
+ * 滚动直到找到包含指定文本的元素，并滚动到该元素
+ * 原子操作，省去反复 scroll_to + search_in_page 的多轮调用
+ *
+ * @param {string} text - 要查找的文本
+ * @param {object} options
+ * @param {number} options.maxScrolls - 最大滚动次数（默认 20）
+ * @param {number} options.pauseMs - 每次滚动后等待 ms（默认 500）
+ */
+export async function scrollToText(text, options = {}) {
+  const { maxScrolls = 20, pauseMs = 500 } = options;
+
+  if (!text) {
+    return { success: false, error: 'text 不能为空' };
+  }
+
+  const textLower = text.toLowerCase();
+  // 在文档中查找包含指定文本的可滚动目标元素
+  const findTarget = () => {
+    // 优先在语义化元素中查找
+    const candidates = document.querySelectorAll(
+      'h1, h2, h3, h4, h5, h6, p, span, a, button, li, td, th, label, div'
+    );
+    for (const el of candidates) {
+      // 只取直接文本（避免父容器匹配到子元素的内容导致定位不准）
+      const directText = Array.from(el.childNodes)
+        .filter(n => n.nodeType === Node.TEXT_NODE)
+        .map(n => n.textContent)
+        .join('')
+        .trim();
+      if (!directText) continue;
+      if (directText.toLowerCase().includes(textLower)) {
+        return el;
+      }
+    }
+    return null;
+  };
+
+  // 先检查当前视口
+  let target = findTarget();
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 300));
+    return {
+      success: true,
+      message: `已滚动到包含"${text}"的元素`,
+      selector: generateUniqueSelector(target),
+      scrolls: 0,
+    };
+  }
+
+  // 循环滚动查找
+  for (let i = 0; i < maxScrolls; i++) {
+    const prevY = window.scrollY;
+    window.scrollBy({ top: Math.floor(window.innerHeight * 0.8), behavior: 'auto' });
+    await new Promise(r => setTimeout(r, pauseMs));
+
+    target = findTarget();
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await new Promise(r => setTimeout(r, 300));
+      return {
+        success: true,
+        message: `已滚动到包含"${text}"的元素`,
+        selector: generateUniqueSelector(target),
+        scrolls: i + 1,
+      };
+    }
+
+    // 到底了
+    if (Math.abs(window.scrollY - prevY) < 5) {
+      await new Promise(r => setTimeout(r, pauseMs));
+      if (Math.abs(window.scrollY - prevY) < 5) break;
+    }
+  }
+
+  return {
+    success: false,
+    error: `滚动 ${maxScrolls} 次未找到包含"${text}"的文本`,
+    scrolls: maxScrolls,
+  };
 }

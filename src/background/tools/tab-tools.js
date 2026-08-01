@@ -37,7 +37,7 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'list_tabs',
-      description: '获取标签页列表',
+      description: '获取标签页列表；mode=active 返回当前活动页 tabId（不确定操作哪个 tab 时用此查询）',
       parameters: {
         type: 'object',
         properties: {
