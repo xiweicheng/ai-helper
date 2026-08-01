@@ -101,7 +101,8 @@ export function queryInteractiveElements(options = {}) {
     success: true,
     count: Math.min(elements.length, maxResults),
     total: elements.length,
-    elements: elements.slice(0, maxResults)
+    elements: elements.slice(0, maxResults),
+    hint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements'
   };
 }
 
@@ -424,7 +425,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   if (!refNum || !elementRegistry.has(refNum)) {
     return {
       success: false,
-      error: `无效的元素编号 ref=${ref}，请先调用 query_elements 获取有效编号`,
+      error: `无效的元素编号 ref=${ref}。ref 仅当前页面有效，页面导航/刷新或切换 tab 后需重新 query_elements`,
     };
   }
 

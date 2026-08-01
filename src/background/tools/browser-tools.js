@@ -16,10 +16,10 @@ export const BROWSER_TOOLS = [
         properties: {
           action: { type: 'string', enum: ['click', 'hover'] },
           tabId: { type: 'integer', description: '省略则用当前活动页' },
-          ref: { type: 'integer', description: 'query_elements 返回的元素编号（推荐优先）' },
+          ref: { type: 'integer', description: 'query_elements 返回的编号（推荐）；仅当前页面有效，导航后需重新 query' },
           text: { type: 'string', description: '按文本匹配元素（如"登录"），找到即点击' },
           tag: { type: 'string', description: '配合 text 限定标签如 button/a' },
-          selector: { type: 'string', description: 'CSS 选择器（ref/text 均未提供时使用）' },
+          selector: { type: 'string', description: 'CSS 选择器（ref/text 均未提供时使用）；避免纯 nth-child 长链，优先用 query_elements 返回的 selector' },
           waitTime: { type: 'integer' },
           timeout: { type: 'integer' }
         },
