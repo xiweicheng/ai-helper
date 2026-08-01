@@ -4076,7 +4076,8 @@ async function showSwitchWorkdirDialog() {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay show';
     overlay.innerHTML = `
-      <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;">
+      <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;position:relative;">
+        <button class="switch-workdir-close" title="关闭" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:#999;border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
         <div class="modal-title">切换工作目录</div>
         <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">当前: <span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || '未设置'}</span></div>
         <div style="font-size:12px;color:#999;margin:6px 0;">从允许的目录中选择（非当前目录可移除）</div>
@@ -4094,6 +4095,7 @@ async function showSwitchWorkdirDialog() {
     const manualInput = overlay.querySelector('.switch-workdir-manual');
     const cancelBtn = overlay.querySelector('.switch-workdir-cancel');
     const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
+    const closeBtn = overlay.querySelector('.switch-workdir-close');
 
     let closed = false;
     const cleanup = () => {
@@ -4188,6 +4190,9 @@ async function showSwitchWorkdirDialog() {
 
     confirmBtn.addEventListener('click', () => doSwitch(manualInput.value));
     cancelBtn.addEventListener('click', () => { cleanup(); resolve(false); });
+    closeBtn.addEventListener('click', () => { cleanup(); resolve(false); });
+    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = '#333'; closeBtn.style.background = '#e8e8e8'; });
+    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = '#999'; closeBtn.style.background = 'transparent'; });
     manualInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); doSwitch(manualInput.value); }
       if (e.key === 'Escape') { cleanup(); resolve(false); }
