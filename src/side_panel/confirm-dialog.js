@@ -48,9 +48,9 @@ export function showConfirmDialog(data) {
           const rawValue = typeof v === 'string' ? v : JSON.stringify(v);
           const displayValue = rawValue.length > 80 ? rawValue.substring(0, 80) + '...' : rawValue;
           const titleAttr = rawValue.length > 80 ? ` title="${rawValue.replace(/"/g, '&quot;')}"` : '';
-          return `<span class="confirm-arg"${titleAttr}><strong>${k}:</strong> ${displayValue}</span>`;
+          return `<span class="confirm-arg" style="margin-right: 8px;"${titleAttr}><strong>${k}:</strong> ${displayValue}</span>`;
         })
-        .join('');
+        .join('、 ');
       argsSummary.style.display = 'block';
     } else {
       argsSummary.style.display = 'none';

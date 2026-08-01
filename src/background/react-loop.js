@@ -609,7 +609,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   
   // 子任务禁用流式输出（子任务的流式消息会干扰主任务的流式 UI 状态）
   // 子任务的执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示
-  const isSubtask = taskContext && taskContext.subtaskId;
+  // 同时兼容 plan_task 子任务（taskContext.subtaskId）和 dispatch_task 子 Agent（taskContext.type === 'subagent'）
+  const isSubtask = taskContext && (taskContext.subtaskId || taskContext.type === 'subagent');
   const streamConfig = isSubtask 
     ? { ...config.streamConfig, streamEnabled: false }
     : config.streamConfig;
@@ -1264,18 +1265,22 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             }
 
             // 发送工具结果到 Side Panel 展示（使用截断后的内容）
-            chrome.runtime.sendMessage({
-              type: 'STREAM_TOOL_RESULT',
-              sessionId,
-              result: {
-                toolCallId: toolCallId,
-                toolName,
-                success: isToolSuccess,
-                content: isToolSuccess ? toolResultForDisplay : (toolResult?.error || toolResultForDisplay),
-                truncated: toolResultTruncated,
-                duration: Date.now() - toolStartTime
-              }
-            }).catch(() => {});
+            // 子任务禁用流式输出，不发送 STREAM_TOOL_RESULT（子任务通过 EXECUTION_STATUS_UPDATE 汇报状态）
+            // 与下方失败分支保持一致，避免子任务工具结果泄漏到主 UI
+            if (!isSubtask) {
+              chrome.runtime.sendMessage({
+                type: 'STREAM_TOOL_RESULT',
+                sessionId,
+                result: {
+                  toolCallId: toolCallId,
+                  toolName,
+                  success: isToolSuccess,
+                  content: isToolSuccess ? toolResultForDisplay : (toolResult?.error || toolResultForDisplay),
+                  truncated: toolResultTruncated,
+                  duration: Date.now() - toolStartTime
+                }
+              }).catch(() => {});
+            }
 
             // 计算真正"连续"的失败数（从最近一次成功往后数）
             const allToolEntries = executionLog
@@ -1345,6 +1350,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 发送任务规划完成状态更新（让实时日志显示plan_task节点）
               sendExecutionStatusUpdate('任务规划完成', 'success');
+              
+              // 注意：plan_task 的 STREAM_TOOL_RESULT 已在上方统一发送处（STREAM_TOOL_RESULT 分支）
+              // 完成，此处无需重复发送。plan_task 工具卡片在工具执行成功后即标记为"完成"。
               
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
@@ -1482,18 +1490,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             sendExecutionStatusUpdate(`工具执行:${toolName}`, 'failed');
 
             // 发送工具错误结果到 Side Panel 展示（更新 UI 中的工具卡片状态）
-            chrome.runtime.sendMessage({
-              type: 'STREAM_TOOL_RESULT',
-              sessionId,
-              result: {
-                toolCallId: toolCallId,
-                toolName,
-                success: false,
-                content: `错误: ${toolError.message}`,
-                truncated: false,
-                duration: Date.now() - toolStartTime
-              }
-            }).catch(() => {});
+            // 子任务禁用流式输出，不发送 STREAM_TOOL_RESULT（子任务通过 EXECUTION_STATUS_UPDATE 汇报状态）
+            if (!isSubtask) {
+              chrome.runtime.sendMessage({
+                type: 'STREAM_TOOL_RESULT',
+                sessionId,
+                result: {
+                  toolCallId: toolCallId,
+                  toolName,
+                  success: false,
+                  content: `错误: ${toolError.message}`,
+                  truncated: false,
+                  duration: Date.now() - toolStartTime
+                }
+              }).catch(() => {});
+            }
 
             return {
               error: toolError.message,
@@ -2258,7 +2269,8 @@ export function sortSubtasksByDependencies(subtasks) {
  * 为每个子任务准备工具集
  * 根据 enableToolPreselect 开关决定是否按 requiredTools 筛选
  * - 开关关闭（默认）：子任务全量继承父任务工具，质量更稳定
- * - 开关开启：子任务仅继承标注的 requiredTools + 元工具（clarify_question/plan_task）
+ * - 开关开启：子任务仅继承标注的 requiredTools + 元工具（clarify_question）
+ * - 注意：plan_task 已从子任务工具集中移除，禁止子任务继续嵌套拆分子任务
  * @param {Array} subtasks - 子任务列表
  * @param {Array} parentTools - 父任务的工具列表
  */
@@ -2269,29 +2281,34 @@ export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
   const preselectMinToolCount = reactConfig.preselectMinToolCount || 10;
   const toolSets = {};
 
-  // 工具数未达阈值，不做筛选，全量继承
-  if (allTools.length <= preselectMinToolCount) {
-    logger.debug(`[Background] 子任务工具筛选：工具数 ${allTools.length} <= ${preselectMinToolCount}，全量继承`);
+  // 从子任务工具集中移除 plan_task，禁止嵌套拆分子任务
+  // 子任务应专注于执行具体任务，而非进一步规划拆分
+  const planTaskIds = ['plan_task'];
+  const filteredTools = allTools.filter(t => !planTaskIds.includes(t.id));
+
+  // 工具数未达阈值，不做筛选，全量继承（已移除 plan_task）
+  if (filteredTools.length <= preselectMinToolCount) {
+    logger.debug(`[Background] 子任务工具筛选：工具数 ${filteredTools.length} <= ${preselectMinToolCount}，全量继承（已排除 plan_task）`);
     subtasks.forEach(subtask => {
-      toolSets[subtask.id] = [...allTools];
+      toolSets[subtask.id] = [...filteredTools];
     });
     return toolSets;
   }
 
-  // 元工具：始终保留（无论是否筛选），确保子任务能澄清和规划
-  const META_TOOL_IDS = ['clarify_question', 'plan_task'];
+  // 元工具：始终保留（无论是否筛选），确保子任务能澄清（不允许再规划）
+  const META_TOOL_IDS = ['clarify_question'];
 
   subtasks.forEach(subtask => {
     if (toolFilterEnabled && Array.isArray(subtask.requiredTools) && subtask.requiredTools.length > 0) {
       // 筛选模式：仅保留标注的工具 + 元工具
-      const filtered = allTools.filter(t => subtask.requiredTools.includes(t.id));
-      const metaTools = allTools.filter(t => META_TOOL_IDS.includes(t.id));
+      const filtered = filteredTools.filter(t => subtask.requiredTools.includes(t.id));
+      const metaTools = filteredTools.filter(t => META_TOOL_IDS.includes(t.id));
       toolSets[subtask.id] = [...filtered, ...metaTools];
-      logger.debug(`[Background] 子任务 ${subtask.name} 筛选工具: ${filtered.length}/${allTools.length} 个（预筛选模式）`);
+      logger.debug(`[Background] 子任务 ${subtask.name} 筛选工具: ${filtered.length}/${filteredTools.length} 个（预筛选模式）`);
     } else {
       // 全量继承（默认，或开关开启但未标注 requiredTools）
-      toolSets[subtask.id] = [...allTools];
-      logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务全部 ${allTools.length} 个工具`);
+      toolSets[subtask.id] = [...filteredTools];
+      logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务 ${filteredTools.length} 个工具（已排除 plan_task）`);
     }
   });
 
