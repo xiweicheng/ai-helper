@@ -558,8 +558,11 @@ export async function clickByText(text, options = {}) {
         '[role="menuitem"]',
         '[role="menuitemradio"]',
         '[role="menuitemcheckbox"]',
+        '[role="option"]',
+        '[role="tab"]',
         '[onclick]',
         'summary',
+        'li',
       ];
 
   const textLower = text.toLowerCase();
@@ -619,9 +622,45 @@ export async function clickByText(text, options = {}) {
     }
   }
 
+  // 增强错误诊断：深度搜索文本是否存在，帮助模型定位问题根因
+  let textFound = false;
+  let textHidden = false;
+  let textNotClickable = false;
+  try {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    while (walker.nextNode()) {
+      if ((walker.currentNode.textContent || '').toLowerCase().includes(textLower)) {
+        textFound = true;
+        const parent = walker.currentNode.parentElement;
+        if (parent) {
+          const style = window.getComputedStyle(parent);
+          if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) <= 0) {
+            textHidden = true;
+          }
+          const interactive = parent.closest('button, [role="button"], [role="option"], [role="tab"], li, a[href], [onclick], summary, [tabindex]');
+          if (!interactive) {
+            textNotClickable = true;
+          }
+        }
+        break;
+      }
+    }
+  } catch {}
+
+  let error;
+  if (!textFound) {
+    error = `页面中不存在文本"${text}"，可能需要先操作（如打开下拉面板）或文本有误`;
+  } else if (textHidden) {
+    error = `找到文本"${text}"但元素不可见，可能需要先打开下拉面板/滚动到可见区域`;
+  } else if (textNotClickable) {
+    error = `找到文本"${text}"但不在可点击元素中，请用 query_elements 查看实际结构或用 selector 定位`;
+  } else {
+    error = `找到文本"${text}"在可点击元素中但未匹配，可能文本被分割或大小写不一致`;
+  }
+
   return {
     success: false,
-    error: `未找到文本包含"${text}"的可点击元素${tag ? `（限定标签: ${tag}）` : ''}`,
+    error: error + (tag ? `（限定标签: ${tag}）` : ''),
   };
 }
 

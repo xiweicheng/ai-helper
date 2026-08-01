@@ -385,7 +385,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         get_page_content: 'page_content', get_iframe_content: 'iframe_content',
         get_browser_info: 'browser_info', get_tabs: 'list_tabs',
         wait_for_element: 'wait_element', wait_for_navigation: 'wait_navigation',
-        query_interactive_elements: 'query_elements', find_similar_elements: 'find_similar',
+        query_interactive_elements: 'query_elements',
         scroll_and_collect: 'scroll_collect', drag_and_drop: 'drag_drop',
         show_notification: 'notify', generate_qrcode: 'qrcode',
         clear_page_data: 'clear_data', search_chat_history: 'search_chats',

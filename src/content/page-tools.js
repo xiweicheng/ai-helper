@@ -14,7 +14,7 @@ export {
 } from './page-extract.js';
 // 重导出交互查询类工具
 export {
-  queryInteractiveElements, findSimilarElements, readAccessibilityTree
+  queryInteractiveElements, readAccessibilityTree
 } from './page-interaction.js';
 
 /**

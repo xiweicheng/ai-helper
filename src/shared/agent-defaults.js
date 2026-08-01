@@ -55,7 +55,7 @@ export const AGENT_TEMPLATES = [
 - 操作后验证结果，确保操作生效
 - 遇到错误要分析原因并尝试替代方案
 - 不要假设元素存在，不确定时先获取页面信息`,
-    toolIds: ['page_content', 'query_elements', 'interact_element', 'fill_form', 'scroll_to', 'wait_element', 'keyboard_input', 'select_dropdown', 'capture_page', 'extract_data', 'search_in_page', 'wait_navigation', 'scroll_collect', 'drag_drop', 'file_upload', 'iframe_content', 'find_similar', 'manage_tab'],
+    toolIds: ['page_content', 'query_elements', 'interact_element', 'fill_form', 'scroll_to', 'wait_element', 'keyboard_input', 'select_dropdown', 'capture_page', 'extract_data', 'search_in_page', 'wait_navigation', 'scroll_collect', 'drag_drop', 'file_upload', 'iframe_content', 'manage_tab'],
     allowSubDispatch: false,
   },
   {
@@ -72,7 +72,7 @@ export const AGENT_TEMPLATES = [
 - 优先使用最合适的提取方式（表格用 extract_data dataType=table，结构化数据用 page_content format=json）
 - 分析结果要有数据支撑，不要主观臆断
 - 用表格或图表方式呈现分析结论`,
-    toolIds: ['page_content', 'extract_data', 'find_similar', 'query_elements', 'search_in_page', 'scroll_collect', 'fetch_url', 'iframe_content', 'clipboard'],
+    toolIds: ['page_content', 'extract_data', 'query_elements', 'search_in_page', 'scroll_collect', 'fetch_url', 'iframe_content', 'clipboard'],
     allowSubDispatch: false,
   },
   {

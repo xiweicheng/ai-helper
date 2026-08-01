@@ -324,27 +324,6 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'find_similar',
-    category: 'content_extraction',
-    execution: 'content_script',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'find_similar',
-      description: '查找相似元素',
-      parameters: {
-        type: 'object',
-        properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
-          selector: { type: 'string' },
-          maxResults: { type: 'integer' }
-        },
-        required: ['selector']
-      }
-    }
-  },
-  {
     id: 'iframe_content',
     category: 'content_extraction',
     execution: 'content_script',

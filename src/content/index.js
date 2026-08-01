@@ -7,7 +7,7 @@ import {
 } from './page-tools.js';
 
 import {
-  queryInteractiveElements, findSimilarElements, scrollAndCollect,
+  queryInteractiveElements, scrollAndCollect,
   interactByRef, scrollToText, getSelectorByRef
 } from './page-interaction.js';
 
@@ -61,7 +61,7 @@ document.addEventListener('keydown', (e) => {
 //   页面交互(3):   INTERACT_ELEMENT, FILL_FORM, SCROLL_TO
 //   表单/输入(2):   KEYBOARD_INPUT, FILE_UPLOAD
 //   信息提取(5):   EXTRACT_TABLE, EXTRACT_METADATA, EXTRACT_LINKS, EXTRACT_FORMS, EXTRACT_IMAGES,
-//                  SEARCH_IN_PAGE, FIND_SIMILAR, IFRAME_CONTENT, SCROLL_COLLECT
+//                  SEARCH_IN_PAGE, IFRAME_CONTENT, SCROLL_COLLECT
 //   高亮/选区(1):   HIGHLIGHT_TEXT
 //   媒体/输出(2):   MANAGE_STORAGE, INJECT_CSS
 //   异步工具(7):   COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_ELEMENT, DRAG_DROP,
@@ -109,7 +109,6 @@ const HANDLERS = {
   EXTRACT_FORMS:             (msg) => extractForms(msg.formSelector),
   EXTRACT_IMAGES:            (msg) => extractImages(msg),
   SEARCH_IN_PAGE:            (msg) => searchInPage(msg),
-  FIND_SIMILAR:              (msg) => findSimilarElements(msg.selector, msg.maxResults),
   IFRAME_CONTENT:            (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
   SCROLL_COLLECT:            (msg) => scrollAndCollect(msg),
 
