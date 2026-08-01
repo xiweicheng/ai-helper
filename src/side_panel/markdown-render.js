@@ -336,11 +336,11 @@ export function createTableHTML(tableData) {
   }
   
   // 解析表头
-  const headers = header.split('|').filter(cell => cell.trim()).map(cell => parseInlineMarkdown(cell.trim()));
+  const headers = header.split('|').slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
   
   // 解析表格行数据
   const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-    return row.split('|').filter(cell => cell.trim()).map(cell => parseInlineMarkdown(cell.trim()));
+    return row.split('|').slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
   });
   
   // 构建表格 HTML
@@ -404,11 +404,11 @@ export function downloadTableAsExcel(tableBlock) {
     const { header, body } = tableBlock;
     
     // 解析表头
-    const headers = header.split('|').filter(cell => cell.trim()).map(cell => cell.trim());
+    const headers = header.split('|').slice(1, -1).map(cell => cell.trim());
     
     // 解析表格行数据
     const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-      return row.split('|').filter(cell => cell.trim()).map(cell => cell.trim());
+      return row.split('|').slice(1, -1).map(cell => cell.trim());
     });
     
     // 转换为 CSV 格式
