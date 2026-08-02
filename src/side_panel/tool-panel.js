@@ -3,7 +3,30 @@ import { BUILTIN_TOOLS, CATEGORY_ORDER } from './constants.js';
 import { showToast, escapeHtml, escapeAttr } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  toolPanel: {
+    agentRestrictedBanner: '当前 Agent 限制了可用工具，部分工具已禁用',
+    noMatch: '没有匹配的工具',
+    enabledCount: '已启用 {count} 个工具',
+    toolsEnabled: '工具已启用',
+    allToolsDisabled: '所有工具已禁用',
+    toggleBtnEnabled: '禁用所有工具',
+    toggleBtnDisabled: '启用所有工具',
+  },
+});
+registerTranslations('en', {
+  toolPanel: {
+    agentRestrictedBanner: 'Current agent has restricted available tools, some tools are disabled',
+    noMatch: 'No matching tools',
+    enabledCount: '{count} tools enabled',
+    toolsEnabled: 'Tools enabled',
+    allToolsDisabled: 'All tools disabled',
+    toggleBtnEnabled: 'Disable all tools',
+    toggleBtnDisabled: 'Enable all tools',
+  },
+});
 
 // MCP 工具缓存（从 chrome.storage.local 读取）
 let mcpToolsCache = [];

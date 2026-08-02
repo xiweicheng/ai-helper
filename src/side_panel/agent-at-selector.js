@@ -6,7 +6,42 @@ import { escapeHtml } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  promptSelector: {
+    noMatchAgent: '没有匹配的 Agent',
+    inheritGlobal: '继承全局设置',
+    editAgentTitle: '编辑此 Agent',
+    deleteAgentTitle: '删除此 Agent',
+    noMatchProxy: '没有匹配的代理',
+    unnamedProxy: '未命名代理',
+    enableTitle: '启用此代理',
+    disableTitle: '禁用此代理',
+    noMatchAll: '没有匹配的 Agent、网页或代理',
+    noTitle: '无标题',
+    proxyAddress: '代理地址',
+    deleteProxyTitle: '删除此代理',
+    confirmDeleteProxy: '确定要删除此代理吗？',
+  },
+});
+registerTranslations('en', {
+  promptSelector: {
+    noMatchAgent: 'No matching agent',
+    inheritGlobal: 'Inherit global settings',
+    editAgentTitle: 'Edit this agent',
+    deleteAgentTitle: 'Delete this agent',
+    noMatchProxy: 'No matching proxy',
+    unnamedProxy: 'Unnamed proxy',
+    enableTitle: 'Enable this proxy',
+    disableTitle: 'Disable this proxy',
+    noMatchAll: 'No matching agent, page or proxy',
+    noTitle: 'Untitled',
+    proxyAddress: 'Proxy address',
+    deleteProxyTitle: 'Delete this proxy',
+    confirmDeleteProxy: 'Are you sure you want to delete this proxy?',
+  },
+});
 
 // 当前 @ 弹出框激活的 Tab：'pages' | 'agents' | 'proxies'
 export let activeAtTab = 'pages';

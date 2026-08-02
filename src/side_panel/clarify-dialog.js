@@ -3,7 +3,30 @@
 import state from './state.js';
 import { showToast } from './utils.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  clarify: {
+    remainingTimeDynamic: '剩余时间: {time}',
+    timeoutSoon: '时间即将耗尽',
+    sessionNameTitle: '当前会话名称',
+    sessionNameId: '会话 ID: {id}',
+    recommended: '推荐',
+    otherOption: '其他选项',
+    timedOut: '已超时',
+  },
+});
+registerTranslations('en', {
+  clarify: {
+    remainingTimeDynamic: 'Remaining time: {time}',
+    timeoutSoon: 'Time is almost up',
+    sessionNameTitle: 'Current session name',
+    sessionNameId: 'Session ID: {id}',
+    recommended: 'Recommended',
+    otherOption: 'Other options',
+    timedOut: 'Timed out',
+  },
+});
 
 export function formatTimeDisplay(seconds) {
   const mins = Math.floor(seconds / 60);
