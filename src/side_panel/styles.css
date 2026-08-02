@@ -9685,9 +9685,10 @@ body {
 
 /* 入口按钮 */
 .workspace-panel-toggle {
-  position: absolute;
+  position: fixed;
   right: 0;
-  top: 0;
+  top: 150px;
+  z-index: 10001;
   background: linear-gradient(135deg, rgba(74, 144, 217, 0.85) 0%, rgba(52, 122, 189, 0.85) 100%);
   color: white;
   border: none;
@@ -10373,6 +10374,9 @@ body {
 
 .workspace-preview-copy-btn,
 .workspace-preview-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 3px 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -10394,6 +10398,13 @@ body {
   background: #f0fef0;
   border-color: #27ae60;
   color: #27ae60;
+}
+
+/* 图标按钮（无文字，仅 SVG 图标） */
+.workspace-preview-icon-btn {
+  padding: 3px 5px !important;
+  align-items: center;
+  justify-content: center;
 }
 
 .workspace-preview-close {
@@ -10439,6 +10450,9 @@ body {
 }
 
 .workspace-preview-md-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 3px 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -10475,6 +10489,9 @@ body {
 .workspace-preview-edit-btn,
 .workspace-preview-save-btn,
 .workspace-preview-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 3px 10px;
   border: 1px solid #ddd;
   border-radius: 4px;

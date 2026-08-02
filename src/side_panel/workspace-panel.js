@@ -592,20 +592,60 @@ export function initWorkspacePanel() {
           </svg>
           <span class="workspace-preview-filename" id="workspacePreviewFilename"></span>
           <span class="workspace-preview-linecount" id="workspacePreviewLineCount"></span>
-          <button class="workspace-preview-copy-btn" id="workspacePreviewCopyBtn" title="${t('workspace.copyAllTitle')}">${t('workspace.copyAll')}</button>
-          <button class="workspace-preview-md-toggle-btn" id="workspacePreviewMdToggleBtn" title="${t('workspace.toggleRenderPreview')}" style="display:none;">
-            <span class="workspace-preview-md-toggle-label">${t('workspace.preview')}</span>
+          <button class="workspace-preview-copy-btn workspace-preview-icon-btn" id="workspacePreviewCopyBtn" title="${t('workspace.copyAllTitle')}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
           </button>
-          <button class="workspace-preview-download-btn" id="workspacePreviewDownloadBtn" title="${t('workspace.downloadFile')}">${t('workspace.download')}</button>
-          <button class="workspace-preview-download-btn" id="workspacePreviewOpenBrowserBtn" title="${t('workspace.openInBrowser')}" style="display:none">${t('workspace.openInBrowserBtn')}</button>
+          <button class="workspace-preview-md-toggle-btn workspace-preview-icon-btn" id="workspacePreviewMdToggleBtn" title="${t('workspace.toggleRenderPreview')}" style="display:none;">
+            <svg class="workspace-preview-md-icon-preview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="workspace-preview-md-icon-source" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" style="display:none;">
+              <polyline points="16 18 22 12 16 6"/>
+              <polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </button>
+          <button class="workspace-preview-download-btn workspace-preview-icon-btn" id="workspacePreviewDownloadBtn" title="${t('workspace.downloadFile')}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+          <button class="workspace-preview-download-btn workspace-preview-icon-btn" id="workspacePreviewOpenBrowserBtn" title="${t('workspace.openInBrowser')}" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </button>
           <button class="workspace-preview-fullscreen-btn" id="workspacePreviewFullscreenBtn" title="${t('workspace.fullscreenPreview')}" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
             </svg>
           </button>
-          <button class="workspace-preview-edit-btn" id="workspacePreviewEditBtn" title="${t('workspace.enterEditMode')}" style="display:none;">${t('workspace.edit')}</button>
-          <button class="workspace-preview-save-btn" id="workspacePreviewSaveBtn" title="${t('workspace.saveChanges')}" style="display:none;">${t('workspace.save')}</button>
-          <button class="workspace-preview-cancel-btn" id="workspacePreviewCancelBtn" title="${t('workspace.cancelChanges')}" style="display:none;">${t('workspace.cancel')}</button>
+          <button class="workspace-preview-edit-btn workspace-preview-icon-btn" id="workspacePreviewEditBtn" title="${t('workspace.enterEditMode')}" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+          <button class="workspace-preview-save-btn workspace-preview-icon-btn" id="workspacePreviewSaveBtn" title="${t('workspace.saveChanges')}" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+          </button>
+          <button class="workspace-preview-cancel-btn workspace-preview-icon-btn" id="workspacePreviewCancelBtn" title="${t('workspace.cancelChanges')}" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
           <button class="workspace-preview-close" id="workspacePreviewClose" title="${t('workspace.closePreview')}">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
@@ -779,6 +819,8 @@ function bindEvents() {
 
   // 文件列表点击（事件委托）
   document.getElementById('workspacePanelContent').addEventListener('click', handleFileListClick);
+  // 文件列表双击（事件委托）：支持预览的文件双击直接进入预览
+  document.getElementById('workspacePanelContent').addEventListener('dblclick', handleFileListDblClick);
   // 键盘导航（↑↓浏览、Enter打开、Delete删除、F2重命名、Space选择）
   document.getElementById('workspacePanelContent').addEventListener('keydown', handleFileListKeydown);
   // content 需要 tabindex 才能获得键盘焦点
@@ -1427,6 +1469,37 @@ async function handleFileListClick(e) {
 }
 
 /**
+ * 文件列表双击处理：支持预览的文件双击直接进入预览
+ */
+async function handleFileListDblClick(e) {
+  const item = e.target.closest('.workspace-file-item');
+  if (!item) return;
+
+  const path = item.dataset.path;
+  const type = item.dataset.type;
+  const name = item.dataset.name;
+
+  // 在 action 按钮上双击不触发预览，避免与单击行为冲突
+  if (e.target.closest('[data-action]')) return;
+  // 在 checkbox 上双击不触发预览
+  if (e.target.closest('.workspace-file-select')) return;
+
+  // 双击目录：进入目录
+  if (type === 'directory') {
+    e.stopPropagation();
+    pushPathHistory(currentPath);
+    await navigateToPath(path);
+    return;
+  }
+
+  // 双击文件：如果支持预览则打开预览
+  if (type === 'file' && supportsPreview(name)) {
+    e.stopPropagation();
+    await previewFile(path, name);
+  }
+}
+
+/**
  * 切换选择状态（增量更新 DOM，避免全量重建）
  */
 function toggleSelection(path) {
@@ -1590,8 +1663,7 @@ async function previewFile(filePath, fileName) {
   fullscreenBtn.style.display = 'none';
   mdToggleBtn.style.display = 'none';
   mdToggleBtn.classList.remove('active');
-  const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
-  if (mdLabel) mdLabel.textContent = t('workspace.preview');
+  updateMdToggleIcon(mdToggleBtn, false);
   // 重置编辑相关按钮
   const editBtn = document.getElementById('workspacePreviewEditBtn');
   const saveBtn = document.getElementById('workspacePreviewSaveBtn');
@@ -1647,13 +1719,13 @@ async function previewFile(filePath, fileName) {
       previewContent.classList.add('markdown-rendered');
       mdToggleBtn.classList.add('active');
       mdToggleBtn.title = t('workspace.switchToSourcePreview');
-      if (mdLabel) mdLabel.textContent = t('workspace.preview');
+      updateMdToggleIcon(mdToggleBtn, true);
       copyBtn.style.display = 'none';
       previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(text)}</div>`;
       renderMermaidChartsInContainer(previewContent);
       bindCodeCopyButtonsInContainer(previewContent);
       addTableToolbarEvents();
-      lineCountEl.textContent = t('workspace.markdownRendered');
+      lineCountEl.textContent = '';
       return;
     }
     // 普通文本/代码
@@ -2778,6 +2850,18 @@ async function openPreviewInBrowser() {
 /**
  * 关闭预览
  */
+/**
+ * 更新 Markdown 切换按钮图标：激活态显示源码图标，非激活态显示预览图标
+ * @param {HTMLElement} btn - 按钮元素
+ * @param {boolean} isActive - 是否为激活态（渲染模式）
+ */
+function updateMdToggleIcon(btn, isActive) {
+  const previewIcon = btn.querySelector('.workspace-preview-md-icon-preview');
+  const sourceIcon = btn.querySelector('.workspace-preview-md-icon-source');
+  if (previewIcon) previewIcon.style.display = isActive ? 'none' : '';
+  if (sourceIcon) sourceIcon.style.display = isActive ? '' : 'none';
+}
+
 function togglePreviewFullscreen() {
   const previewArea = document.getElementById('workspacePreviewArea');
   const panel = document.getElementById('workspacePanel');
@@ -2798,7 +2882,6 @@ function toggleMarkdownPreview() {
   const previewArea = document.getElementById('workspacePreviewArea');
   const previewContent = document.getElementById('workspacePreviewContent');
   const btn = document.getElementById('workspacePreviewMdToggleBtn');
-  const mdLabel = btn.querySelector('.workspace-preview-md-toggle-label');
   const lineCountEl = document.getElementById('workspacePreviewLineCount');
   const copyBtn = document.getElementById('workspacePreviewCopyBtn');
 
@@ -2808,17 +2891,17 @@ function toggleMarkdownPreview() {
   if (isRendered) {
     btn.classList.add('active');
     btn.title = t('workspace.switchToSourcePreview');
-    if (mdLabel) mdLabel.textContent = t('workspace.preview');
+    updateMdToggleIcon(btn, true);
     copyBtn.style.display = 'none';
     previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
     renderMermaidChartsInContainer(previewContent);
     bindCodeCopyButtonsInContainer(previewContent);
     addTableToolbarEvents();
-    lineCountEl.textContent = t('workspace.markdownRendered');
+    lineCountEl.textContent = '';
   } else {
     btn.classList.remove('active');
     btn.title = t('workspace.switchToRenderPreview');
-    if (mdLabel) mdLabel.textContent = t('workspace.preview');
+    updateMdToggleIcon(btn, false);
     copyBtn.style.display = '';
     const fileName = previewArea.dataset.previewName || '';
     const lang = getLanguageClass(fileName);
@@ -2930,8 +3013,7 @@ async function closePreview(force = false) {
   if (mdToggleBtn) {
     mdToggleBtn.classList.remove('active');
     mdToggleBtn.style.display = 'none';
-    const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
-    if (mdLabel) mdLabel.textContent = t('workspace.preview');
+    updateMdToggleIcon(mdToggleBtn, false);
   }
   if (previewArea.classList.contains('fullscreen')) {
     previewArea.classList.remove('fullscreen');
@@ -2980,14 +3062,13 @@ function enterEditMode() {
   previewArea.dataset.editMode = 'true';
 
   // 重置保存按钮状态
-  saveBtn.textContent = t('workspace.save');
+  saveBtn.title = t('workspace.saveChanges');
   saveBtn.disabled = false;
 
-  // 隐藏预览模式按钮
+  // 隐藏预览模式按钮（保留全屏按钮）
   copyBtn.style.display = 'none';
   downloadBtn.style.display = 'none';
   mdToggleBtn.style.display = 'none';
-  fullscreenBtn.style.display = 'none';
   editBtn.style.display = 'none';
 
   // 显示编辑模式按钮
@@ -3036,8 +3117,8 @@ async function saveEditedFile() {
   }
 
   const saveBtn = document.getElementById('workspacePreviewSaveBtn');
-  const originalText = saveBtn.textContent;
-  saveBtn.textContent = t('workspace.saving');
+  const originalTitle = saveBtn.title;
+  saveBtn.title = t('workspace.saving');
   saveBtn.disabled = true;
 
   try {
@@ -3055,13 +3136,13 @@ async function saveEditedFile() {
     } else {
       logger.error('[WorkspacePanel] 文件保存失败:', filePath, result.error);
       showToast(t('workspace.saveFailedWithError', { error: result.error || t('workspace.unknownError') }));
-      saveBtn.textContent = originalText;
+      saveBtn.title = originalTitle;
       saveBtn.disabled = false;
     }
   } catch (err) {
     logger.error('[WorkspacePanel] 文件保存异常:', filePath, err);
     showToast(t('workspace.saveFailedWithError', { error: err.message || err }));
-    saveBtn.textContent = originalText;
+    saveBtn.title = originalTitle;
     saveBtn.disabled = false;
   }
 }
