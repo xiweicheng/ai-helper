@@ -86,6 +86,12 @@ const SAFE_ENV_KEYS = [
   'GIT_EDITOR', 'GIT_PAGER', 'GIT_SSH_COMMAND',
   // 平台相关
   'TMPDIR', 'TEMPDIR', 'TEMP', 'TMP',
+  // Windows 必要环境变量（cmd/powershell 及其子进程依赖）
+  // 缺失 COMSPEC/PATHEXT/SystemRoot 会导致 cmd 命令解析异常、npm 等工具找不到；
+  // 缺失 PSModulePath 会导致 PowerShell 找不到模块
+  'COMSPEC', 'PATHEXT', 'SystemRoot', 'WINDIR',
+  'APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'PROGRAMDATA',
+  'PSModulePath', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
   // 常用工具
   'NVM_DIR', 'NVM_BIN', 'JAVA_HOME', 'GOPATH', 'GOROOT', 'CARGO_HOME',
   'RUSTUP_HOME', 'PYTHONPATH', 'VIRTUAL_ENV', 'CONDA_PREFIX',
@@ -134,11 +140,23 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   const timeout = config.commandTimeout || 300000;
 
   const { shell, args } = getShellForExec();
+  // detached 的取舍（按平台 + shell 类型）：
+  // - Unix（macOS/Linux）：任何 shell（zsh/bash/fish 等）都不弹窗（无控制台窗口概念），
+  //   且 detached 才能让 killProcess 的 process.kill(-pid) 杀掉整个进程组 → 始终启用。
+  // - Windows：分两类 shell——
+  //   1) MSYS/Cygwin 系（Git Bash/MSYS2/Cygwin 的 bash/zsh/fish 等）：通过 pty 模拟层，
+  //      不依赖 Windows 控制台，detached 不会 AllocConsole → 不弹窗，可安全 detach。
+  //   2) Windows 原生控制台程序（cmd/powershell/pwsh 等）：detached 脱离父控制台后会
+  //      AllocConsole 创建可见窗口（黑窗），windowsHide 管不住 → 必须禁用 detached。
+  //      进程树终止改靠 taskkill /T /PID（killProcess Windows 分支），不依赖 detached。
+  //   用黑名单精确识别会弹窗的原生控制台程序，其余（含 MSMS/Cygwin 系）默认 detach。
+  const isWin = os.platform() === 'win32';
+  const isWinConsoleShell = isWin && /\b(cmd|powershell|pwsh)\b/i.test(shell);
   const proc = spawn(shell, [...args, command], {
     cwd: workdir,
     env: buildSafeEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,       // 独立进程组，防止 kill 父进程后子进程成为孤儿
+    detached: !isWinConsoleShell,
     windowsHide: true
   });
 
