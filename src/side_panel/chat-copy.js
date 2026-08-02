@@ -5,7 +5,22 @@ import state from './state.js';
 import { showToast } from './utils.js';
 import { formatMarkdown, cleanTableForClipboard } from './markdown-render.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  chatCopy: {
+    copiedMarkdown: '已复制 Markdown',
+    copiedRich: '已复制富文本',
+    copyFailedManual: '复制失败，请手动复制',
+  },
+});
+registerTranslations('en', {
+  chatCopy: {
+    copiedMarkdown: 'Markdown copied',
+    copiedRich: 'Rich text copied',
+    copyFailedManual: 'Copy failed, please copy manually',
+  },
+});
 
 function replaceMermaidWithCodeBlock(tempContainer) {
   const mermaidElements = tempContainer.querySelectorAll('.mermaid');
