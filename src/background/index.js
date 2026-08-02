@@ -11,7 +11,11 @@ import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
 import logger from '../shared/logger.js';
-import { initI18n } from '../shared/i18n.js';
+import { initI18n, t, registerTranslations } from '../shared/i18n.js';
+
+// 背景脚本自注册翻译
+registerTranslations('zh', { bg: { missingSessionId: '缺少 sessionId' } });
+registerTranslations('en', { bg: { missingSessionId: 'Missing sessionId' } });
 
 // 初始化国际化（读取语言偏好，供 local-agent-client 设置 Accept-Language 头）
 initI18n();
@@ -254,7 +258,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'RESUME_REACT') {
     const { sessionId, callId: resumeCallId, userGuidance = '' } = message;
     if (!sessionId) {
-      sendResponse({ error: '缺少 sessionId' });
+      sendResponse({ error: t('bg.missingSessionId') });
       return false;
     }
 

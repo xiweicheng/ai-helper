@@ -4,7 +4,30 @@
 import { showToast } from './utils.js';
 import { formatMarkdown } from './markdown-render.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  chatExport: {
+    exportFailed: '导出失败：{message}',
+    pdfLibNotLoaded: 'PDF 库未加载，无法导出',
+    noContent: '没有可导出的内容',
+    imageLibNotLoaded: '图片库未加载，无法导出为图片',
+    imagePlaceholder: '[图片: {name}]',
+    canvasFailed: 'Canvas 转 DataURL 失败：{message}',
+    svgLoadFailed: 'SVG 图片加载失败',
+  },
+});
+registerTranslations('en', {
+  chatExport: {
+    exportFailed: 'Export failed: {message}',
+    pdfLibNotLoaded: 'PDF library not loaded, cannot export',
+    noContent: 'No content to export',
+    imageLibNotLoaded: 'Image library not loaded, cannot export as image',
+    imagePlaceholder: '[Image: {name}]',
+    canvasFailed: 'Canvas to DataURL failed: {message}',
+    svgLoadFailed: 'SVG image loading failed',
+  },
+});
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   Table, TableRow, TableCell, AlignmentType, WidthType,
@@ -104,11 +127,11 @@ function parseInlineMarkdown(text) {
           }
         } catch (e) {
           logger.warn('[ChatExport] ImageRun 创建失败:', e.message);
-          result.push(new TextRun({ text: `[图片: ${match[9] || 'image'}]`, italics: true, color: '999999' }));
+          result.push(new TextRun({ text: t('chatExport.imagePlaceholder', { name: match[9] || 'image' }), italics: true, color: '999999' }));
         }
       } else {
         // 外部 URL 图片，用文字替代
-        result.push(new TextRun({ text: `[图片: ${match[9] || imgUrl}]`, italics: true, color: '999999' }));
+        result.push(new TextRun({ text: t('chatExport.imagePlaceholder', { name: match[9] || imgUrl }), italics: true, color: '999999' }));
       }
     }
 
@@ -431,7 +454,7 @@ function safeCanvasToDataUrl(canvas) {
       const jpgLowData = canvas.toDataURL('image/jpeg', 0.5);
       return { dataUrl: jpgLowData, format: 'JPEG' };
     } catch (e2) {
-      throw new Error('Canvas toDataURL 失败: ' + e2.message);
+      throw new Error(t('chatExport.canvasFailed', { message: e2.message }));
     }
   }
 }
@@ -524,7 +547,7 @@ export async function convertSvgsToImages(container) {
       const img = await new Promise((resolve, reject) => {
         const image = new Image();
         image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error('SVG 图片加载失败'));
+        image.onerror = () => reject(new Error(t('chatExport.svgLoadFailed')));
         image.src = url;
       });
 

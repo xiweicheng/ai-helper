@@ -3,6 +3,20 @@
 
 import state from './state.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  imagePreview: {
+    clickToEnlarge: '点击查看大图',
+    removeImage: '移除图片',
+  },
+});
+registerTranslations('en', {
+  imagePreview: {
+    clickToEnlarge: 'Click to enlarge',
+    removeImage: 'Remove image',
+  },
+});
 
 // ============================================================
 // 图片预览缩放/拖拽状态
@@ -446,7 +460,7 @@ export function renderImagePreviewsFromChat() {
     const thumb = document.createElement('img');
     thumb.src = img.originalUrl || img.dataUrl;
     thumb.className = 'image-preview-thumb';
-    thumb.title = '点击查看大图';
+    thumb.title = t('imagePreview.clickToEnlarge');
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
       openImagePreview(img.originalUrl || img.dataUrl, thumb);
@@ -455,7 +469,7 @@ export function renderImagePreviewsFromChat() {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'image-preview-remove';
     removeBtn.innerHTML = '×';
-    removeBtn.title = '移除图片';
+    removeBtn.title = t('imagePreview.removeImage');
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       state.attachedImages.splice(index, 1);

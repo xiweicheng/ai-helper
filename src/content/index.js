@@ -30,6 +30,25 @@ import { deepGetSelection } from './shadow-dom-utils.js';
 
 import { initSelectionToolbar, isExtensionValid } from './selection-toolbar.js';
 
+import { t, registerTranslations, initI18n } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  contentIndex: {
+    invalidRef: '无效的元素编号 ref={ref}，请先调用 query_elements',
+    regionSelectHint: '拖拽选择截图区域，按 Esc 取消',
+  },
+});
+
+registerTranslations('en', {
+  contentIndex: {
+    invalidRef: 'Invalid element ref={ref}; please call query_elements first',
+    regionSelectHint: 'Drag to select the screenshot area; press Esc to cancel',
+  },
+});
+
+// 初始化 i18n：从 chrome.storage.local 读取语言偏好，跨环境同步
+initI18n();
+
 console.log('[ContentScript] 内容脚本已加载 URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
 
 // ==================== 快捷键支持 ====================
@@ -269,7 +288,7 @@ function startRegionSelection() {
       background: rgba(0, 0, 0, 0.75); color: #fff;
       font-size: 14px; font-family: sans-serif;
     `;
-    hint.textContent = '拖拽选择截图区域，按 Esc 取消';
+    hint.textContent = t('contentIndex.regionSelectHint');
 
     let startX = 0, startY = 0;
     let isDragging = false;

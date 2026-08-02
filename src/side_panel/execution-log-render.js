@@ -4,16 +4,145 @@
 import state from './state.js';
 import { escapeHtml, formatDuration } from './utils.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
 
 // ============================================================
 // 执行日志渲染
 // ============================================================
 
+registerTranslations('zh', {
+  execLog: {
+    statusSuccess: '成功',
+    statusFailed: '失败',
+    statusProcessing: '处理中',
+    unknownNode: '未知节点',
+    sequentialExecution: '顺序执行',
+    parallelExecution: '并行执行',
+    subtaskCountStrategy: '{count}个子任务, {strategy}',
+    messageCountTitle: '本次模型API调用携带的消息数',
+    toolCountTitle: '本次模型API调用携带的工具定义数',
+    messageCount: '{count}条',
+    toolCount: '{count}个',
+    durationTitle: '耗时',
+    sectionThought: '💡 思考',
+    sectionToolCall: '⚡ 工具调用',
+    labelTool: '工具:',
+    labelParams: '参数:',
+    sectionFilterResult: '🔍 筛选结果',
+    labelSelectedTools: '选中工具:',
+    labelCount: '数量:',
+    unitItems: '个',
+    sectionObservation: '📝 观察结果',
+    sectionApiRequest: '📡 API 请求',
+    labelModel: '模型:',
+    labelTemperature: '温度:',
+    labelTopP: 'top_p:',
+    labelMessageCount: '消息数:',
+    labelToolCount: '工具数:',
+    sectionApiResponse: '📤 API 响应',
+    labelFinishReason: '完成原因:',
+    labelFilteredToolCount: '筛选后工具数:',
+    labelTokenUsage: 'Token 使用:',
+    sectionError: '❌ 错误信息',
+    sectionSubtaskResult: '✅ 子任务结果',
+    sectionReflectionPrompt: '📊 评估提示词',
+    sectionReflectionRaw: '📤 评估结果（原始响应）',
+    sectionTokenUsage: '📊 Token 使用',
+    overallScore: '⭐ 综合评分: {score}/10',
+    sectionIssues: '📋 发现的问题',
+    sectionSuggestions: '💡 改进建议',
+    labelDecision: '🎯 决策: {decision}',
+    decisionPassed: '✅ 通过',
+    decisionRevised: '🔧 已修订',
+    decisionNeedsImprovement: '⚠️ 需改进',
+    resultUseful: '✅ 结果有用',
+    resultInvalid: '⚠️ 结果无效',
+    labelSuggestion: '建议: {suggestion}',
+    mainTask: '主任务',
+    stepCount: '({count} 步骤)',
+    processingDots: '处理中...',
+    waitingExecution: '等待执行中...',
+    realtimeLogTitle: '实时执行日志',
+    executingLabel: '执行中:',
+    preparing: '准备中...',
+    totalNodes: '总节点',
+    labelSuccess: '成功',
+    labelFailed: '失败',
+    labelSubtask: '子任务',
+    expandAll: '展开全部节点',
+    collapseAll: '收起全部节点',
+  },
+});
+
+registerTranslations('en', {
+  execLog: {
+    statusSuccess: 'Success',
+    statusFailed: 'Failed',
+    statusProcessing: 'Processing',
+    unknownNode: 'Unknown node',
+    sequentialExecution: 'sequential',
+    parallelExecution: 'parallel',
+    subtaskCountStrategy: '{count} subtasks, {strategy}',
+    messageCountTitle: 'Number of messages carried in this model API call',
+    toolCountTitle: 'Number of tool definitions carried in this model API call',
+    messageCount: '{count} msgs',
+    toolCount: '{count} tools',
+    durationTitle: 'Duration',
+    sectionThought: '💡 Thought',
+    sectionToolCall: '⚡ Tool Call',
+    labelTool: 'Tool:',
+    labelParams: 'Params:',
+    sectionFilterResult: '🔍 Filter Result',
+    labelSelectedTools: 'Selected tools:',
+    labelCount: 'Count:',
+    unitItems: '',
+    sectionObservation: '📝 Observation',
+    sectionApiRequest: '📡 API Request',
+    labelModel: 'Model:',
+    labelTemperature: 'Temperature:',
+    labelTopP: 'top_p:',
+    labelMessageCount: 'Messages:',
+    labelToolCount: 'Tools:',
+    sectionApiResponse: '📤 API Response',
+    labelFinishReason: 'Finish reason:',
+    labelFilteredToolCount: 'Filtered tool count:',
+    labelTokenUsage: 'Token Usage:',
+    sectionError: '❌ Error',
+    sectionSubtaskResult: '✅ Subtask Result',
+    sectionReflectionPrompt: '📊 Reflection Prompt',
+    sectionReflectionRaw: '📤 Reflection Result (raw)',
+    sectionTokenUsage: '📊 Token Usage',
+    overallScore: '⭐ Overall Score: {score}/10',
+    sectionIssues: '📋 Issues Found',
+    sectionSuggestions: '💡 Suggestions',
+    labelDecision: '🎯 Decision: {decision}',
+    decisionPassed: '✅ Passed',
+    decisionRevised: '🔧 Revised',
+    decisionNeedsImprovement: '⚠️ Needs Improvement',
+    resultUseful: '✅ Useful',
+    resultInvalid: '⚠️ Invalid',
+    labelSuggestion: 'Suggestion: {suggestion}',
+    mainTask: 'Main Task',
+    stepCount: '({count} steps)',
+    processingDots: 'Processing...',
+    waitingExecution: 'Waiting for execution...',
+    realtimeLogTitle: 'Real-time Execution Log',
+    executingLabel: 'Executing:',
+    preparing: 'Preparing...',
+    totalNodes: 'Total nodes',
+    labelSuccess: 'Success',
+    labelFailed: 'Failed',
+    labelSubtask: 'Subtask',
+    expandAll: 'Expand all nodes',
+    collapseAll: 'Collapse all nodes',
+  },
+});
+
 function getStatusText(status) {
   const statusMap = {
-    'success': '成功',
-    'failed': '失败',
-    'processing': '处理中'
+    'success': t('execLog.statusSuccess'),
+    'failed': t('execLog.statusFailed'),
+    'processing': t('execLog.statusProcessing')
   };
   return statusMap[status] || status;
 }
@@ -73,23 +202,23 @@ export function renderExecutionTimeline(executionLog) {
       statusClass = `reflection ${statusClass}`;
     }
     
-    let nodeName = escapeHtml(entry.nodeName || '未知节点');
+    let nodeName = escapeHtml(entry.nodeName || t('execLog.unknownNode'));
     
     if (entry.subtaskIndex !== null && entry.subtaskIndex >= 0) {
       nodeName = `<span class="subtask-badge">${entry.subtaskIndex + 1}</span> ${nodeName}`;
     }
     
     if (entry.subtaskCount) {
-      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
+      nodeName += ` <span class="plan-badge">(${t('execLog.subtaskCountStrategy', { count: entry.subtaskCount, strategy: entry.strategy === 'sequential' ? t('execLog.sequentialExecution') : t('execLog.parallelExecution') })})</span>`;
     }
     
     if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
-        info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
+        info.push(`💬<span title="${t('execLog.messageCountTitle')}">${t('execLog.messageCount', { count: entry.apiRequest.messageCount })}</span>`);
       }
       if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
-        info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
+        info.push(`🔧<span title="${t('execLog.toolCountTitle')}">${t('execLog.toolCount', { count: entry.apiRequest.toolCount })}</span>`);
       }
       if (info.length > 0) {
         nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
@@ -107,66 +236,66 @@ export function renderExecutionTimeline(executionLog) {
             <span class="expand-icon">▼</span>
             <span class="node-icon">${nodeIcon}</span>
             <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
-            <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
-            <span class="duration-badge" title="耗时">${formatDuration(entry.duration || 0)}</span>
+            <span class="node-name" title="${escapeHtml(entry.nodeName || t('execLog.unknownNode'))}">${nodeName}</span>
+            <span class="duration-badge" title="${t('execLog.durationTitle')}">${formatDuration(entry.duration || 0)}</span>
           </div>
           
           <div class="timeline-details">
             ${entry.thought && entry.thought.trim() ? `
             <div class="timeline-section">
-              <div class="section-title">💡 思考</div>
+              <div class="section-title">${t('execLog.sectionThought')}</div>
               <div class="section-content">${escapeHtml(entry.thought)}</div>
             </div>
             ` : ''}
             
             ${!isPreselect && entry.action ? `
             <div class="timeline-section">
-              <div class="section-title">⚡ 工具调用</div>
+              <div class="section-title">${t('execLog.sectionToolCall')}</div>
               <div class="section-content">
-                <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
-                <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+                <strong>${t('execLog.labelTool')}</strong> ${escapeHtml(entry.action.name)}<br>
+                <strong>${t('execLog.labelParams')}</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
               </div>
             </div>
             ` : ''}
             
             ${isPreselect && entry.action?.params?.selected ? `
             <div class="timeline-section">
-              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-title">${t('execLog.sectionFilterResult')}</div>
               <div class="section-content">
-                <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
-                <strong>数量:</strong> ${entry.action.params.selected.length} 个
+                <strong>${t('execLog.labelSelectedTools')}</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+                <strong>${t('execLog.labelCount')}</strong> ${entry.action.params.selected.length} ${t('execLog.unitItems')}
               </div>
             </div>
             ` : ''}
             
             ${entry.observation ? `
             <div class="timeline-section">
-              <div class="section-title">📝 观察结果</div>
+              <div class="section-title">${t('execLog.sectionObservation')}</div>
               <div class="section-content">${escapeHtml(entry.observation)}</div>
             </div>
             ` : ''}
             
             ${entry.apiRequest ? `
             <div class="timeline-section">
-              <div class="section-title">📡 API 请求</div>
+              <div class="section-title">${t('execLog.sectionApiRequest')}</div>
               <div class="section-content">
-                ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
-                ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+                ${entry.apiRequest.model ? `<strong>${t('execLog.labelModel')}</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+                ${entry.apiRequest.temperature !== undefined ? `<strong>${t('execLog.labelTemperature')}</strong> ${entry.apiRequest.temperature}<br>` : ''}
                 ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
-                ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
-                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+                ${entry.apiRequest.messageCount !== undefined ? `<strong>${t('execLog.labelMessageCount')}</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>${t('execLog.labelToolCount')}</strong> ${entry.apiRequest.toolCount}<br>` : ''}
               </div>
             </div>
             ` : ''}
             
             ${entry.apiResponse ? `
             <div class="timeline-section">
-              <div class="section-title">📤 API 响应</div>
+              <div class="section-title">${t('execLog.sectionApiResponse')}</div>
               <div class="section-content">
-                ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
-                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+                ${entry.apiResponse.finishReason ? `<strong>${t('execLog.labelFinishReason')}</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>${t('execLog.labelFilteredToolCount')}</strong> ${entry.apiResponse.toolCountAfter} ${t('execLog.unitItems')}<br>` : ''}
                 ${entry.apiResponse.tokenUsage ? `
-                  <strong>Token 使用:</strong><br>
+                  <strong>${t('execLog.labelTokenUsage')}</strong><br>
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
                   - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
@@ -177,14 +306,14 @@ export function renderExecutionTimeline(executionLog) {
             
             ${entry.error ? `
             <div class="timeline-section error">
-              <div class="section-title">❌ 错误信息</div>
+              <div class="section-title">${t('execLog.sectionError')}</div>
               <div class="section-content">${escapeHtml(entry.error)}</div>
             </div>
             ` : ''}
             
             ${entry.result ? `
             <div class="timeline-section">
-              <div class="section-title">✅ 子任务结果</div>
+              <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>
               <div class="section-content">${escapeHtml(entry.result)}</div>
             </div>
             ` : ''}
@@ -193,19 +322,19 @@ export function renderExecutionTimeline(executionLog) {
             <div class="timeline-section reflection-details">
               ${entry.prompt ? `
               <div class="timeline-section">
-                <div class="section-title">📊 评估提示词</div>
+                <div class="section-title">${t('execLog.sectionReflectionPrompt')}</div>
                 <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
               </div>
               ` : ''}
               ${entry.rawContent ? `
               <div class="timeline-section">
-                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-title">${t('execLog.sectionReflectionRaw')}</div>
                 <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
               </div>
               ` : ''}
               ${entry.apiResponse?.tokenUsage ? `
               <div class="timeline-section">
-                <div class="section-title">📊 Token 使用</div>
+                <div class="section-title">${t('execLog.sectionTokenUsage')}</div>
                 <div class="section-content">
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
@@ -214,7 +343,7 @@ export function renderExecutionTimeline(executionLog) {
               </div>
               ` : ''}
               ${entry.overallScore !== undefined && entry.overallScore !== null ? `
-              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              <div class="section-title">${t('execLog.overallScore', { score: entry.overallScore })}</div>
               ` : ''}
               ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
               <div class="reflection-dimensions">
@@ -228,20 +357,20 @@ export function renderExecutionTimeline(executionLog) {
               </div>
               ` : ''}
               ${entry.issues && entry.issues.length > 0 ? `
-              <div class="section-title">📋 发现的问题</div>
+              <div class="section-title">${t('execLog.sectionIssues')}</div>
               <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
               ` : ''}
               ${entry.suggestions && entry.suggestions.length > 0 ? `
-              <div class="section-title">💡 改进建议</div>
+              <div class="section-title">${t('execLog.sectionSuggestions')}</div>
               <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
               ` : ''}
               ${entry.action?.decision ? `
-              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              <div class="section-title">${t('execLog.labelDecision', { decision: escapeHtml(entry.action.decision === 'passed' ? t('execLog.decisionPassed') : entry.action.decision === 'revised' ? t('execLog.decisionRevised') : entry.action.decision === 'needs_improvement' ? t('execLog.decisionNeedsImprovement') : entry.action.decision) })}</div>
               ` : ''}
               ${entry.useful !== undefined ? `
-              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              <div class="section-title">${entry.useful ? t('execLog.resultUseful') : t('execLog.resultInvalid')}</div>
               ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
-              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">${t('execLog.labelSuggestion', { suggestion: escapeHtml(entry.suggestion) })}</div>` : ''}
               ` : ''}
             </div>
             ` : ''}
@@ -312,7 +441,7 @@ export function renderExecutionLogForPanel(executionLog) {
               <span class="task-group-icon">📁</span>
               <span class="task-group-index">${group.groupIndex}</span>
               <span class="task-group-name">${escapeHtml(group.groupName)}</span>
-              <span class="task-group-count">(${group.entries.length} 步骤)</span>
+              <span class="task-group-count">${t('execLog.stepCount', { count: group.entries.length })}</span>
             </div>
           </div>
         </div>
@@ -344,8 +473,8 @@ function renderMainTasks(mainTasks, totalCount) {
         <div class="main-tasks-content">
           <div class="main-tasks-title">
             <span class="main-tasks-icon">🏠</span>
-            <span class="main-tasks-name">主任务</span>
-            <span class="main-tasks-count">(${mainTasks.length} 步骤)</span>
+            <span class="main-tasks-name">${t('execLog.mainTask')}</span>
+            <span class="main-tasks-count">${t('execLog.stepCount', { count: mainTasks.length })}</span>
           </div>
         </div>
       </div>
@@ -423,19 +552,19 @@ function renderSingleEntry(entry, index, totalCount) {
     statusClass = `reflection ${statusClass}`;
   }
   
-  let nodeName = escapeHtml(entry.nodeName || '未知节点');
+  let nodeName = escapeHtml(entry.nodeName || t('execLog.unknownNode'));
   
   if (entry.subtaskCount) {
-    nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
+    nodeName += ` <span class="plan-badge">(${t('execLog.subtaskCountStrategy', { count: entry.subtaskCount, strategy: entry.strategy === 'sequential' ? t('execLog.sequentialExecution') : t('execLog.parallelExecution') })})</span>`;
   }
   
   if ((isApiCall || isPreselect) && entry.apiRequest) {
     const info = [];
     if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
-      info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
+      info.push(`💬<span title="${t('execLog.messageCountTitle')}">${t('execLog.messageCount', { count: entry.apiRequest.messageCount })}</span>`);
     }
     if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
-      info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
+      info.push(`🔧<span title="${t('execLog.toolCountTitle')}">${t('execLog.toolCount', { count: entry.apiRequest.toolCount })}</span>`);
     }
     if (info.length > 0) {
       nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
@@ -453,66 +582,66 @@ function renderSingleEntry(entry, index, totalCount) {
           <span class="expand-icon">▼</span>
           <span class="node-icon">${nodeIcon}</span>
           <span class="iteration-badge">[${index + 1}/${totalCount}]</span>
-          <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
-          <span class="duration-badge" title="耗时">${formatDuration(entry.duration)}</span>
+          <span class="node-name" title="${escapeHtml(entry.nodeName || t('execLog.unknownNode'))}">${nodeName}</span>
+          <span class="duration-badge" title="${t('execLog.durationTitle')}">${formatDuration(entry.duration)}</span>
         </div>
         
         <div class="timeline-details">
           ${entry.thought && entry.thought.trim() ? `
           <div class="timeline-section">
-            <div class="section-title">💡 思考</div>
+            <div class="section-title">${t('execLog.sectionThought')}</div>
             <div class="section-content">${escapeHtml(entry.thought)}</div>
           </div>
           ` : ''}
           
           ${!isPreselect && entry.action ? `
           <div class="timeline-section">
-            <div class="section-title">⚡ 工具调用</div>
+            <div class="section-title">${t('execLog.sectionToolCall')}</div>
             <div class="section-content">
-              <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
-              <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+              <strong>${t('execLog.labelTool')}</strong> ${escapeHtml(entry.action.name)}<br>
+              <strong>${t('execLog.labelParams')}</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
             </div>
           </div>
           ` : ''}
           
           ${isPreselect && entry.action?.params?.selected ? `
           <div class="timeline-section">
-            <div class="section-title">🔍 筛选结果</div>
+            <div class="section-title">${t('execLog.sectionFilterResult')}</div>
             <div class="section-content">
-              <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
-              <strong>数量:</strong> ${entry.action.params.selected.length} 个
+              <strong>${t('execLog.labelSelectedTools')}</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+              <strong>${t('execLog.labelCount')}</strong> ${entry.action.params.selected.length} ${t('execLog.unitItems')}
             </div>
           </div>
           ` : ''}
           
           ${entry.observation && entry.observation !== entry.error ? `
           <div class="timeline-section">
-            <div class="section-title">📝 观察结果</div>
+            <div class="section-title">${t('execLog.sectionObservation')}</div>
             <div class="section-content">${escapeHtml(entry.observation)}</div>
           </div>
           ` : ''}
           
           ${entry.apiRequest ? `
           <div class="timeline-section">
-            <div class="section-title">📡 API 请求</div>
+            <div class="section-title">${t('execLog.sectionApiRequest')}</div>
             <div class="section-content">
-              ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
-              ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+              ${entry.apiRequest.model ? `<strong>${t('execLog.labelModel')}</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+              ${entry.apiRequest.temperature !== undefined ? `<strong>${t('execLog.labelTemperature')}</strong> ${entry.apiRequest.temperature}<br>` : ''}
               ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
-              ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
-              ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+              ${entry.apiRequest.messageCount !== undefined ? `<strong>${t('execLog.labelMessageCount')}</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+              ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>${t('execLog.labelToolCount')}</strong> ${entry.apiRequest.toolCount}<br>` : ''}
             </div>
           </div>
           ` : ''}
           
           ${entry.apiResponse ? `
           <div class="timeline-section">
-            <div class="section-title">📤 API 响应</div>
+            <div class="section-title">${t('execLog.sectionApiResponse')}</div>
             <div class="section-content">
-              ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
-              ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+              ${entry.apiResponse.finishReason ? `<strong>${t('execLog.labelFinishReason')}</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+              ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>${t('execLog.labelFilteredToolCount')}</strong> ${entry.apiResponse.toolCountAfter} ${t('execLog.unitItems')}<br>` : ''}
               ${entry.apiResponse.tokenUsage ? `
-                <strong>Token 使用:</strong><br>
+                <strong>${t('execLog.labelTokenUsage')}</strong><br>
                 - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                 - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
                 - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
@@ -523,14 +652,14 @@ function renderSingleEntry(entry, index, totalCount) {
           
           ${entry.error ? `
           <div class="timeline-section error">
-            <div class="section-title">❌ 错误信息</div>
+            <div class="section-title">${t('execLog.sectionError')}</div>
             <div class="section-content">${escapeHtml(entry.error)}</div>
           </div>
           ` : ''}
           
           ${entry.result ? `
           <div class="timeline-section">
-            <div class="section-title">✅ 子任务结果</div>
+            <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>
             <div class="section-content">${escapeHtml(entry.result)}</div>
           </div>
           ` : ''}
@@ -538,7 +667,7 @@ function renderSingleEntry(entry, index, totalCount) {
           ${isReflection ? `
           <div class="timeline-section reflection-details">
             ${entry.overallScore !== undefined && entry.overallScore !== null ? `
-            <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+            <div class="section-title">${t('execLog.overallScore', { score: entry.overallScore })}</div>
             ` : ''}
             ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
             <div class="reflection-dimensions">
@@ -552,20 +681,20 @@ function renderSingleEntry(entry, index, totalCount) {
             </div>
             ` : ''}
             ${entry.issues && entry.issues.length > 0 ? `
-            <div class="section-title">📋 发现的问题</div>
+            <div class="section-title">${t('execLog.sectionIssues')}</div>
             <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
             ` : ''}
             ${entry.suggestions && entry.suggestions.length > 0 ? `
-            <div class="section-title">💡 改进建议</div>
+            <div class="section-title">${t('execLog.sectionSuggestions')}</div>
             <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
             ` : ''}
             ${entry.action?.decision ? `
-            <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+            <div class="section-title">${t('execLog.labelDecision', { decision: escapeHtml(entry.action.decision === 'passed' ? t('execLog.decisionPassed') : entry.action.decision === 'revised' ? t('execLog.decisionRevised') : entry.action.decision === 'needs_improvement' ? t('execLog.decisionNeedsImprovement') : entry.action.decision) })}</div>
             ` : ''}
             ${entry.useful !== undefined ? `
-            <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+            <div class="section-title">${entry.useful ? t('execLog.resultUseful') : t('execLog.resultInvalid')}</div>
             ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
-            ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+            ${entry.suggestion ? `<div class="section-content">${t('execLog.labelSuggestion', { suggestion: escapeHtml(entry.suggestion) })}</div>` : ''}
             ` : ''}
           </div>
           ` : ''}
@@ -627,23 +756,23 @@ function renderExecutionLogOriginal(sortedLog) {
       statusIcon = '✗';
     }
     
-    let nodeName = escapeHtml(entry.nodeName || '未知节点');
+    let nodeName = escapeHtml(entry.nodeName || t('execLog.unknownNode'));
     
     if (entry.subtaskId) {
       nodeName = `<span class="subtask-badge">${currentSubtaskIndex !== null ? currentSubtaskIndex + 1 : ''}</span> ${nodeName}`;
     }
     
     if (entry.subtaskCount) {
-      nodeName += ` <span class="plan-badge">(${entry.subtaskCount}个子任务, ${entry.strategy === 'sequential' ? '顺序执行' : '并行执行'})</span>`;
+      nodeName += ` <span class="plan-badge">(${t('execLog.subtaskCountStrategy', { count: entry.subtaskCount, strategy: entry.strategy === 'sequential' ? t('execLog.sequentialExecution') : t('execLog.parallelExecution') })})</span>`;
     }
     
     if ((isApiCall || isPreselect || isReflection) && entry.apiRequest) {
       const info = [];
       if (entry.apiRequest.messageCount !== undefined && entry.apiRequest.messageCount !== null) {
-        info.push(`💬<span title="本次模型API调用携带的消息数">${entry.apiRequest.messageCount}条</span>`);
+        info.push(`💬<span title="${t('execLog.messageCountTitle')}">${t('execLog.messageCount', { count: entry.apiRequest.messageCount })}</span>`);
       }
       if (!isPreselect && entry.apiRequest.toolCount !== undefined && entry.apiRequest.toolCount !== null) {
-        info.push(`🔧<span title="本次模型API调用携带的工具定义数">${entry.apiRequest.toolCount}个</span>`);
+        info.push(`🔧<span title="${t('execLog.toolCountTitle')}">${t('execLog.toolCount', { count: entry.apiRequest.toolCount })}</span>`);
       }
       if (info.length > 0) {
         nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
@@ -661,66 +790,66 @@ function renderExecutionLogOriginal(sortedLog) {
             <span class="expand-icon">▼</span>
             <span class="node-icon">${nodeIcon}</span>
             <span class="iteration-badge">[${index + 1}/${sortedLog.length}]</span>
-            <span class="node-name" title="${escapeHtml(entry.nodeName || '未知节点')}">${nodeName}</span>
-            <span class="duration-badge" title="耗时">${formatDuration(entry.duration)}</span>
+            <span class="node-name" title="${escapeHtml(entry.nodeName || t('execLog.unknownNode'))}">${nodeName}</span>
+            <span class="duration-badge" title="${t('execLog.durationTitle')}">${formatDuration(entry.duration)}</span>
           </div>
           
           <div class="timeline-details">
             ${entry.thought && entry.thought.trim() ? `
             <div class="timeline-section">
-              <div class="section-title">💡 思考</div>
+              <div class="section-title">${t('execLog.sectionThought')}</div>
               <div class="section-content">${escapeHtml(entry.thought)}</div>
             </div>
             ` : ''}
             
             ${!isPreselect && entry.action ? `
             <div class="timeline-section">
-              <div class="section-title">⚡ 工具调用</div>
+              <div class="section-title">${t('execLog.sectionToolCall')}</div>
               <div class="section-content">
-                <strong>工具:</strong> ${escapeHtml(entry.action.name)}<br>
-                <strong>参数:</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
+                <strong>${t('execLog.labelTool')}</strong> ${escapeHtml(entry.action.name)}<br>
+                <strong>${t('execLog.labelParams')}</strong> <code>${escapeHtml(JSON.stringify(entry.action.params, null, 2))}</code>
               </div>
             </div>
             ` : ''}
             
             ${isPreselect && entry.action?.params?.selected ? `
             <div class="timeline-section">
-              <div class="section-title">🔍 筛选结果</div>
+              <div class="section-title">${t('execLog.sectionFilterResult')}</div>
               <div class="section-content">
-                <strong>选中工具:</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
-                <strong>数量:</strong> ${entry.action.params.selected.length} 个
+                <strong>${t('execLog.labelSelectedTools')}</strong> ${entry.action.params.selected.map(t => escapeHtml(t)).join(', ')}<br>
+                <strong>${t('execLog.labelCount')}</strong> ${entry.action.params.selected.length} ${t('execLog.unitItems')}
               </div>
             </div>
             ` : ''}
             
             ${entry.observation ? `
             <div class="timeline-section">
-              <div class="section-title">📝 观察结果</div>
+              <div class="section-title">${t('execLog.sectionObservation')}</div>
               <div class="section-content">${escapeHtml(entry.observation)}</div>
             </div>
             ` : ''}
             
             ${entry.apiRequest ? `
             <div class="timeline-section">
-              <div class="section-title">📡 API 请求</div>
+              <div class="section-title">${t('execLog.sectionApiRequest')}</div>
               <div class="section-content">
-                ${entry.apiRequest.model ? `<strong>模型:</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
-                ${entry.apiRequest.temperature !== undefined ? `<strong>温度:</strong> ${entry.apiRequest.temperature}<br>` : ''}
+                ${entry.apiRequest.model ? `<strong>${t('execLog.labelModel')}</strong> ${escapeHtml(entry.apiRequest.model)}<br>` : ''}
+                ${entry.apiRequest.temperature !== undefined ? `<strong>${t('execLog.labelTemperature')}</strong> ${entry.apiRequest.temperature}<br>` : ''}
                 ${entry.apiRequest.top_p !== undefined ? `<strong>top_p:</strong> ${entry.apiRequest.top_p}<br>` : ''}
-                ${entry.apiRequest.messageCount !== undefined ? `<strong>消息数:</strong> ${entry.apiRequest.messageCount}<br>` : ''}
-                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>工具数:</strong> ${entry.apiRequest.toolCount}<br>` : ''}
+                ${entry.apiRequest.messageCount !== undefined ? `<strong>${t('execLog.labelMessageCount')}</strong> ${entry.apiRequest.messageCount}<br>` : ''}
+                ${!isPreselect && entry.apiRequest.toolCount !== undefined ? `<strong>${t('execLog.labelToolCount')}</strong> ${entry.apiRequest.toolCount}<br>` : ''}
               </div>
             </div>
             ` : ''}
             
             ${entry.apiResponse ? `
             <div class="timeline-section">
-              <div class="section-title">📤 API 响应</div>
+              <div class="section-title">${t('execLog.sectionApiResponse')}</div>
               <div class="section-content">
-                ${entry.apiResponse.finishReason ? `<strong>完成原因:</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
-                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>筛选后工具数:</strong> ${entry.apiResponse.toolCountAfter} 个<br>` : ''}
+                ${entry.apiResponse.finishReason ? `<strong>${t('execLog.labelFinishReason')}</strong> ${escapeHtml(entry.apiResponse.finishReason)}<br>` : ''}
+                ${entry.apiResponse.toolCountAfter !== undefined ? `<strong>${t('execLog.labelFilteredToolCount')}</strong> ${entry.apiResponse.toolCountAfter} ${t('execLog.unitItems')}<br>` : ''}
                 ${entry.apiResponse.tokenUsage ? `
-                  <strong>Token 使用:</strong><br>
+                  <strong>${t('execLog.labelTokenUsage')}</strong><br>
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
                   - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
@@ -731,14 +860,14 @@ function renderExecutionLogOriginal(sortedLog) {
             
             ${entry.error ? `
             <div class="timeline-section error">
-              <div class="section-title">❌ 错误信息</div>
+              <div class="section-title">${t('execLog.sectionError')}</div>
               <div class="section-content">${escapeHtml(entry.error)}</div>
             </div>
             ` : ''}
             
             ${entry.result ? `
             <div class="timeline-section">
-              <div class="section-title">✅ 子任务结果</div>
+              <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>
               <div class="section-content">${escapeHtml(entry.result)}</div>
             </div>
             ` : ''}
@@ -747,19 +876,19 @@ function renderExecutionLogOriginal(sortedLog) {
             <div class="timeline-section reflection-details">
               ${entry.prompt ? `
               <div class="timeline-section">
-                <div class="section-title">📊 评估提示词</div>
+                <div class="section-title">${t('execLog.sectionReflectionPrompt')}</div>
                 <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;">${escapeHtml(entry.prompt)}</pre></div>
               </div>
               ` : ''}
               ${entry.rawContent ? `
               <div class="timeline-section">
-                <div class="section-title">📤 评估结果（原始响应）</div>
+                <div class="section-title">${t('execLog.sectionReflectionRaw')}</div>
                 <div class="section-content"><pre style="white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;">${escapeHtml(entry.rawContent)}</pre></div>
               </div>
               ` : ''}
               ${entry.apiResponse?.tokenUsage ? `
               <div class="timeline-section">
-                <div class="section-title">📊 Token 使用</div>
+                <div class="section-title">${t('execLog.sectionTokenUsage')}</div>
                 <div class="section-content">
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
@@ -768,7 +897,7 @@ function renderExecutionLogOriginal(sortedLog) {
               </div>
               ` : ''}
               ${entry.overallScore !== undefined && entry.overallScore !== null ? `
-              <div class="section-title">⭐ 综合评分: ${entry.overallScore}/10</div>
+              <div class="section-title">${t('execLog.overallScore', { score: entry.overallScore })}</div>
               ` : ''}
               ${entry.dimensions && Object.keys(entry.dimensions).length > 0 ? `
               <div class="reflection-dimensions">
@@ -782,20 +911,20 @@ function renderExecutionLogOriginal(sortedLog) {
               </div>
               ` : ''}
               ${entry.issues && entry.issues.length > 0 ? `
-              <div class="section-title">📋 发现的问题</div>
+              <div class="section-title">${t('execLog.sectionIssues')}</div>
               <div class="section-content"><ul>${entry.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul></div>
               ` : ''}
               ${entry.suggestions && entry.suggestions.length > 0 ? `
-              <div class="section-title">💡 改进建议</div>
+              <div class="section-title">${t('execLog.sectionSuggestions')}</div>
               <div class="section-content"><ul>${entry.suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
               ` : ''}
               ${entry.action?.decision ? `
-              <div class="section-title">🎯 决策: ${escapeHtml(entry.action.decision === 'passed' ? '✅ 通过' : entry.action.decision === 'revised' ? '🔧 已修订' : entry.action.decision === 'needs_improvement' ? '⚠️ 需改进' : entry.action.decision)}</div>
+              <div class="section-title">${t('execLog.labelDecision', { decision: escapeHtml(entry.action.decision === 'passed' ? t('execLog.decisionPassed') : entry.action.decision === 'revised' ? t('execLog.decisionRevised') : entry.action.decision === 'needs_improvement' ? t('execLog.decisionNeedsImprovement') : entry.action.decision) })}</div>
               ` : ''}
               ${entry.useful !== undefined ? `
-              <div class="section-title">${entry.useful ? '✅ 结果有用' : '⚠️ 结果无效'}</div>
+              <div class="section-title">${entry.useful ? t('execLog.resultUseful') : t('execLog.resultInvalid')}</div>
               ${entry.reasoning ? `<div class="section-content">${escapeHtml(entry.reasoning)}</div>` : ''}
-              ${entry.suggestion ? `<div class="section-content">建议: ${escapeHtml(entry.suggestion)}</div>` : ''}
+              ${entry.suggestion ? `<div class="section-content">${t('execLog.labelSuggestion', { suggestion: escapeHtml(entry.suggestion) })}</div>` : ''}
               ` : ''}
             </div>
             ` : ''}
@@ -815,7 +944,7 @@ export function updateRealtimeExecutionLogPanel(status) {
   // 更新"执行中"节点名称
   const executingNode = panel.querySelector('.realtime-executing-node');
   if (executingNode) {
-    executingNode.textContent = status.nodeName || '处理中...';
+    executingNode.textContent = status.nodeName || t('execLog.processingDots');
   }
   
   const executionLog = status.executionLog || [];
@@ -847,7 +976,7 @@ export function updateRealtimeExecutionLogPanel(status) {
   const timeline = panel.querySelector('.timeline');
   timeline.innerHTML = executionLog.length > 0
     ? renderExecutionTimeline(executionLog)
-    : '<div class="realtime-waiting-message">等待执行中...</div>';
+    : `<div class="realtime-waiting-message">${t('execLog.waitingExecution')}</div>`;
   
   // 自动滚动到底部
   timeline.scrollTop = timeline.scrollHeight;
@@ -870,7 +999,7 @@ export function showRealtimeExecutionLogPanel(loadingId) {
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <h3>实时执行日志</h3>
+          <h3>${t('execLog.realtimeLogTitle')}</h3>
         </div>
         <div class="log-close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -883,35 +1012,35 @@ export function showRealtimeExecutionLogPanel(loadingId) {
       <div class="log-summary">
         <div class="realtime-executing-indicator">
           <span class="realtime-pulse-dot"></span>
-          <span class="realtime-executing-label">执行中:</span>
-          <span class="realtime-executing-node">准备中...</span>
+          <span class="realtime-executing-label">${t('execLog.executingLabel')}</span>
+          <span class="realtime-executing-node">${t('execLog.preparing')}</span>
         </div>
         <div class="summary-combo">
           <div class="combo-main">
             <span class="combo-icon">◉</span>
-            <span class="combo-label">总节点</span>
+            <span class="combo-label">${t('execLog.totalNodes')}</span>
             <span class="combo-value">0</span>
           </div>
           <div class="combo-stats">
             <div class="combo-stat success" data-status="success">
               <span class="stat-icon">✓</span>
-              <span class="stat-label">成功</span>
+              <span class="stat-label">${t('execLog.labelSuccess')}</span>
               <span class="stat-value">0</span>
             </div>
             <div class="combo-stat failed" data-status="failed">
               <span class="stat-icon">✗</span>
-              <span class="stat-label">失败</span>
+              <span class="stat-label">${t('execLog.labelFailed')}</span>
               <span class="stat-value">0</span>
             </div>
             <div class="combo-stat subtask" data-status="subtask" style="display:none">
               <span class="stat-icon">🔀</span>
-              <span class="stat-label">子任务</span>
+              <span class="stat-label">${t('execLog.labelSubtask')}</span>
               <span class="stat-value">0/0</span>
             </div>
           </div>
         </div>
         <div class="summary-actions">
-          <button class="toggle-expand-btn" title="展开全部节点">
+          <button class="toggle-expand-btn" title="${t('execLog.expandAll')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="7 13 12 18 17 13"></polyline>
               <polyline points="7 6 12 11 17 6"></polyline>
@@ -921,7 +1050,7 @@ export function showRealtimeExecutionLogPanel(loadingId) {
       </div>
       
       <div class="timeline">
-        <div class="realtime-waiting-message">等待执行中...</div>
+        <div class="realtime-waiting-message">${t('execLog.waitingExecution')}</div>
       </div>
     </div>
   `;
@@ -958,10 +1087,10 @@ export function showRealtimeExecutionLogPanel(loadingId) {
     const svg = toggleExpandBtn.querySelector('svg');
     if (isExpanded) {
       svg.innerHTML = '<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>';
-      toggleExpandBtn.setAttribute('title', '收起全部节点');
+      toggleExpandBtn.setAttribute('title', t('execLog.collapseAll'));
     } else {
       svg.innerHTML = '<polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline>';
-      toggleExpandBtn.setAttribute('title', '展开全部节点');
+      toggleExpandBtn.setAttribute('title', t('execLog.expandAll'));
     }
   });
   
@@ -1040,7 +1169,7 @@ export function updateExecutionStatus(loadingId, nodeName, status, executionLog)
   
   const nodeNameSpan = loadingDiv.querySelector('.current-node-name');
   if (nodeNameSpan) {
-    nodeNameSpan.textContent = nodeName || '处理中...';
+    nodeNameSpan.textContent = nodeName || t('execLog.processingDots');
     nodeNameSpan.title = nodeName || '';
   }
   

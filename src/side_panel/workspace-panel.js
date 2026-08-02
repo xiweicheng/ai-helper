@@ -22,9 +22,438 @@ import mammoth from 'mammoth';
 import { pptxToHtml } from '@jvmr/pptx-to-html';
 
 import DOMPurify from 'dompurify';
+import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
 // 配置 PDF.js Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+
+registerTranslations('zh', {
+  workspace: {
+    // 面板标题与按钮
+    workDir: '工作目录',
+    closePanel: '关闭面板',
+    switchWorkdir: '切换工作目录',
+    backToParent: '返回上级目录',
+    uploadToCurrent: '上传文件到当前目录',
+    newFolder: '新建文件夹',
+    askSelectedFiles: '基于选中的文件进行问答',
+    downloadSelected: '下载选中的文件/目录（多选打包为ZIP）',
+    deleteSelected: '删除选中的文件',
+    clearSearch: '清除',
+    search: '搜索',
+    searchPlaceholder: '搜索...',
+    selectAllToggle: '全选/取消全选',
+    // 表头
+    colName: '文件名',
+    colSize: '大小',
+    colTime: '修改时间',
+    // 空状态
+    noMatch: '未找到匹配的文件',
+    dirEmpty: '此目录为空',
+    // 错误提示
+    noWorkspace: '无法获取工作目录，请确认 Agent 已连接',
+    loadDirFailed: '加载目录失败',
+    refreshFailed: '无法刷新，请确认 Agent 已连接',
+    agentNotConnected: 'Agent 未连接',
+    agentNotConnectedUpload: 'Agent 未连接，无法上传',
+    unsupportedFileType: '不支持的文件类型',
+    unknownError: '未知错误',
+    // 复制提示
+    copiedFileName: '已复制文件名: {name}',
+    copiedPath: '已复制路径: {path}',
+    copyFailed: '复制失败',
+    copiedToClipboard: '已复制到剪贴板',
+    copyFailedManual: '复制失败，请手动选择复制',
+    getContentFailed: '获取内容失败',
+    codeCopiedToClipboard: '代码已复制到剪贴板',
+    copyUnsupportedType: '此文件类型不支持复制文本内容',
+    copiedToClipboardShort: '已复制到剪贴板',
+    clickToCopy: '点击复制',
+    // 预览相关
+    preview: '预览',
+    previewBtn: '预览',
+    details: '详情',
+    download: '下载',
+    downloadFile: '下载文件',
+    rename: '重命名',
+    askFile: '基于文件问答',
+    delete: '删除',
+    copyAll: '复制',
+    copyAllTitle: '复制全部内容',
+    toggleRenderPreview: '切换渲染预览',
+    openInBrowser: '在浏览器中打开',
+    openInBrowserBtn: '在浏览器中打开',
+    fullscreenPreview: '全屏预览',
+    exitFullscreen: '退出全屏',
+    enterEditMode: '进入编辑模式',
+    edit: '编辑',
+    save: '保存',
+    saveChanges: '保存修改 (Ctrl+S)',
+    cancelChanges: '取消修改 (Esc)',
+    closePreview: '关闭预览',
+    close: '关闭',
+    confirm: '确定',
+    cancel: '取消',
+    switchToSourcePreview: '切换为源码预览',
+    switchToRenderPreview: '切换为渲染预览',
+    markdownRendered: 'Markdown 渲染',
+    lineCount: '{count} 行',
+    linesModified: '{count} 行 · 已修改',
+    truncatedHint: '（仅显示前 {shown} 行，共 {total} 行，请下载查看完整内容）',
+    fileTooLargeNoPreview: '文件过大 ({size})，不支持预览，请直接下载',
+    fileTooLargeOpenInBrowser: '文件过大 ({size})，无法内置预览，请点击上方「在浏览器中打开」按钮查看',
+    previewFailed: '预览失败: {error}',
+    openFailed: '打开失败: {error}',
+    documentEmpty: '（文档为空）',
+    pptxEmptyOrFailed: 'PPTX 文件为空或解析失败',
+    pageCount: '{count} 页',
+    prevPage: '上一页',
+    nextPage: '下一页',
+    zoomOut: '缩小',
+    zoomIn: '放大',
+    fitPage: '适应页面',
+    originalSize: '原始大小',
+    imageLoadFailed: '图片加载失败',
+    // Excel 预览
+    parsingExcel: '正在解析 Excel 文件...',
+    loadingData: '正在加载数据...',
+    requestFailed: '请求失败: {error}',
+    parseFailed: '解析失败: {error}',
+    noSheetsInWorkbook: '工作簿中没有工作表',
+    sheetNotFound: '未找到工作表数据',
+    emptySheet: '（空工作表）',
+    xlsxTruncatedHint: '仅显示前 {shown} 行，共 {total} 行，请下载查看完整内容',
+    // 媒体预览
+    unsupportedMediaHint: '⚠ 浏览器不支持播放此格式（{ext}），请下载后使用本地播放器查看。',
+    // 下载/上传进度
+    uploading: '上传中...',
+    downloadInProgress: '下载中',
+    uploadInProgress: '上传中',
+    cancelUpload: '取消上传',
+    downloadCanceled: '下载已取消',
+    downloadFailed: '下载失败',
+    downloadFailedWithError: '下载失败: {error}',
+    savingToLocal: '正在由浏览器保存至本地...',
+    savedToLocal: '已保存至本地',
+    downloaded: '已下载: {name}',
+    downloadedCount: '已下载 {count} 个文件',
+    downloadedZip: '已下载 {count} 个文件（ZIP 压缩包）',
+    fileCount: '{count} 个文件',
+    // 上传结果
+    uploadCanceled: '已取消上传',
+    uploadSuccessCount: '成功 {count}',
+    uploadSkippedCount: '跳过 {count}',
+    uploadFailedCount: '失败 {count}',
+    uploadComplete: '上传完成',
+    uploadCompleteWithStats: '上传完成 · {stats}',
+    uploadedFiles: '成功上传 {count} 个文件',
+    filesSkipped: '{count} 个文件已存在，跳过上传',
+    filesUploadFailed: '{count} 个文件上传失败',
+    uploadFailed: '上传失败',
+    uploadFailedWithStatus: '上传失败 ({status})',
+    parseResponseFailed: '解析响应失败',
+    networkError: '网络错误',
+    // 文件操作
+    cannotMoveToSubdir: '不能将目录移动到其子目录中',
+    moving: '移动中...',
+    movedToDir: '"{name}" 已移动到目标目录',
+    movedToTarget: '"{name}" 已移动到 "{target}"',
+    moveFailed: '移动失败: {error}',
+    searching: '搜索中...',
+    // 删除确认
+    confirmDeleteDir: '确定要删除目录 "{name}" 及其所有内容吗？\n\n路径: {path}\n类型: 目录\n\n删除后可在回收站中恢复（7天后自动清理）',
+    confirmDeleteFile: '确定要删除文件 "{name}" 吗？\n\n路径: {path}\n类型: 文件\n\n删除后可在回收站中恢复（7天后自动清理）',
+    confirmDeleteTitle: '确认删除',
+    dirDeleted: '目录 已删除',
+    fileDeleted: '文件 已删除',
+    deleteFailedWithError: '删除失败: {error}',
+    deleteFailed: '删除失败',
+    confirmBatchDelete: '确定要删除选中的 {count} 个文件/目录吗？\n\n{names}\n\n删除后可在回收站中恢复（7天后自动清理）',
+    batchNamesMore: '\n• ... 等共 {count} 项',
+    confirmBatchDeleteTitle: '确认批量删除',
+    deletedCount: '已删除 {success} 项{failed}',
+    deletedCountFailed: '，{count} 项失败',
+    // 文件详情
+    fileDetailsTitle: '{name} - 文件详情',
+    getTypeDir: '目录',
+    getTypeSymlink: '符号链接',
+    getTypeFile: '文件',
+    bytes: '字节',
+    infoName: '名称',
+    infoType: '类型',
+    infoPath: '路径',
+    infoSize: '大小',
+    infoMime: 'MIME 类型',
+    infoMtime: '修改时间',
+    infoCtime: '创建时间',
+    infoAtime: '访问时间',
+    infoPermission: '权限',
+    getDetailsFailed: '获取详情失败: {error}',
+    // 切换工作目录
+    getWorkdirInfoFailed: '获取工作目录信息失败',
+    cannotConnectAgent: '无法连接 Agent，请确认代理已启动',
+    switchWorkdirTitle: '切换工作目录',
+    currentLabel: '当前: ',
+    notSet: '未设置',
+    selectFromAllowed: '从允许的目录中选择（非当前目录可移除）',
+    orInputPath: '或输入绝对路径',
+    manualPathPlaceholder: '/Users/you/path 或 ~/path',
+    switchBtn: '切换',
+    noAllowedPaths: '暂无允许的目录',
+    currentTag: '当前',
+    removeFromAllowed: '从允许列表移除',
+    confirmRemovePath: '确定要从允许访问的目录列表中移除以下目录吗？\n{path}\n\n移除后 AI 将无法访问该目录，可重新切换工作目录再加回。',
+    confirmRemovePathTitle: '确认移除允许目录',
+    removedFromAllowed: '已从允许列表移除',
+    removeFailedWithError: '移除失败: {error}',
+    selectOrInputPath: '请选择或输入目标路径',
+    alreadyCurrentWorkdir: '该目录已是当前工作目录',
+    confirmSwitchToNew: '该路径不在允许列表内，切换后将自动创建目录并加入允许列表:\n{path}',
+    confirmSwitchToNewTitle: '确认切换到新目录',
+    switchFailedWithError: '切换失败: {error}',
+    switchedTo: '已切换到: {path}',
+    // 重命名/新建
+    renameDir: '重命名目录',
+    renameFile: '重命名文件',
+    inputNewName: '输入新名称',
+    renamedTo: '已重命名为 "{name}"',
+    renameFailedWithError: '重命名失败: {error}',
+    newFolderTitle: '新建文件夹',
+    inputFolderName: '输入文件夹名称',
+    folderCreated: '已创建文件夹 "{name}"',
+    createFailedWithError: '创建失败: {error}',
+    // 问答附件
+    addedFilesToQuestion: '已添加 {count} 个文件到问答',
+    addedFilesToQuestionNoImage: '已添加 {count} 个文件到问答（图片识别未启用，图片作为文件附件）',
+    selectedCount: '已选 {count}',
+    // 未保存修改
+    unsavedChanges: '未保存的修改',
+    discardChangesPrompt: '有未保存的修改，确定要{action}吗？',
+    actionClosePreview: '关闭预览',
+    actionCancelEdit: '取消编辑',
+    saving: '保存中...',
+    saveSuccess: '保存成功',
+    saveFailedWithError: '保存失败: {error}',
+    agentNamePrefix: ' · {name}',
+    agentNotPaired: 'Agent 未配对',
+    fileDetailsLabel: '文件详情',
+    loadingLabel: '加载中...',
+  },
+});
+
+registerTranslations('en', {
+  workspace: {
+    // Panel title and buttons
+    workDir: 'Working Directory',
+    closePanel: 'Close Panel',
+    switchWorkdir: 'Switch Working Directory',
+    backToParent: 'Back to Parent Directory',
+    uploadToCurrent: 'Upload files to current directory',
+    newFolder: 'New Folder',
+    askSelectedFiles: 'Ask based on selected files',
+    downloadSelected: 'Download selected files/directories (multi-select as ZIP)',
+    deleteSelected: 'Delete selected files',
+    clearSearch: 'Clear',
+    search: 'Search',
+    searchPlaceholder: 'Search...',
+    selectAllToggle: 'Select All / Deselect All',
+    // Column headers
+    colName: 'Name',
+    colSize: 'Size',
+    colTime: 'Modified',
+    // Empty states
+    noMatch: 'No matching files found',
+    dirEmpty: 'This directory is empty',
+    // Error messages
+    noWorkspace: 'Unable to access working directory. Please confirm the Agent is connected.',
+    loadDirFailed: 'Failed to load directory',
+    refreshFailed: 'Unable to refresh. Please confirm the Agent is connected.',
+    agentNotConnected: 'Agent not connected',
+    agentNotConnectedUpload: 'Agent not connected, unable to upload',
+    unsupportedFileType: 'Unsupported file type',
+    unknownError: 'Unknown error',
+    // Copy messages
+    copiedFileName: 'Copied file name: {name}',
+    copiedPath: 'Copied path: {path}',
+    copyFailed: 'Copy failed',
+    copiedToClipboard: 'Copied to clipboard',
+    copyFailedManual: 'Copy failed, please select and copy manually',
+    getContentFailed: 'Failed to get content',
+    codeCopiedToClipboard: 'Code copied to clipboard',
+    copyUnsupportedType: 'Copying text content is not supported for this file type',
+    copiedToClipboardShort: 'Copied to clipboard',
+    clickToCopy: 'Click to copy',
+    // Preview actions
+    preview: 'Preview',
+    previewBtn: 'Preview',
+    details: 'Details',
+    download: 'Download',
+    downloadFile: 'Download file',
+    rename: 'Rename',
+    askFile: 'Ask about file',
+    delete: 'Delete',
+    copyAll: 'Copy',
+    copyAllTitle: 'Copy all content',
+    toggleRenderPreview: 'Toggle rendered preview',
+    openInBrowser: 'Open in browser',
+    openInBrowserBtn: 'Open in browser',
+    fullscreenPreview: 'Fullscreen preview',
+    exitFullscreen: 'Exit fullscreen',
+    enterEditMode: 'Enter edit mode',
+    edit: 'Edit',
+    save: 'Save',
+    saveChanges: 'Save changes (Ctrl+S)',
+    cancelChanges: 'Cancel changes (Esc)',
+    closePreview: 'Close preview',
+    close: 'Close',
+    confirm: 'OK',
+    cancel: 'Cancel',
+    switchToSourcePreview: 'Switch to source preview',
+    switchToRenderPreview: 'Switch to rendered preview',
+    markdownRendered: 'Markdown rendered',
+    lineCount: '{count} lines',
+    linesModified: '{count} lines · Modified',
+    truncatedHint: '(Showing first {shown} of {total} lines. Download to view full content.)',
+    fileTooLargeNoPreview: 'File too large ({size}). Preview not supported. Please download directly.',
+    fileTooLargeOpenInBrowser: 'File too large ({size}) for built-in preview. Please click "Open in browser" above to view.',
+    previewFailed: 'Preview failed: {error}',
+    openFailed: 'Open failed: {error}',
+    documentEmpty: '(Empty document)',
+    pptxEmptyOrFailed: 'PPTX file is empty or failed to parse',
+    pageCount: '{count} pages',
+    prevPage: 'Previous page',
+    nextPage: 'Next page',
+    zoomOut: 'Zoom out',
+    zoomIn: 'Zoom in',
+    fitPage: 'Fit page',
+    originalSize: 'Original size',
+    imageLoadFailed: 'Image load failed',
+    // Excel preview
+    parsingExcel: 'Parsing Excel file...',
+    loadingData: 'Loading data...',
+    requestFailed: 'Request failed: {error}',
+    parseFailed: 'Parse failed: {error}',
+    noSheetsInWorkbook: 'No worksheets in the workbook',
+    sheetNotFound: 'Worksheet data not found',
+    emptySheet: '(Empty sheet)',
+    xlsxTruncatedHint: 'Showing first {shown} of {total} rows. Download to view full content.',
+    // Media preview
+    unsupportedMediaHint: '⚠ The browser cannot play this format ({ext}). Please download and use a local player.',
+    // Upload/Download progress
+    uploading: 'Uploading...',
+    downloadInProgress: 'Downloading',
+    uploadInProgress: 'Uploading',
+    cancelUpload: 'Cancel upload',
+    downloadCanceled: 'Download canceled',
+    downloadFailed: 'Download failed',
+    downloadFailedWithError: 'Download failed: {error}',
+    savingToLocal: 'Saving to local via browser...',
+    savedToLocal: 'Saved to local',
+    downloaded: 'Downloaded: {name}',
+    downloadedCount: 'Downloaded {count} files',
+    downloadedZip: 'Downloaded {count} files (ZIP archive)',
+    fileCount: '{count} files',
+    // Upload results
+    uploadCanceled: 'Upload canceled',
+    uploadSuccessCount: 'Success {count}',
+    uploadSkippedCount: 'Skipped {count}',
+    uploadFailedCount: 'Failed {count}',
+    uploadComplete: 'Upload complete',
+    uploadCompleteWithStats: 'Upload complete · {stats}',
+    uploadedFiles: 'Successfully uploaded {count} files',
+    filesSkipped: '{count} file(s) already exist, skipped',
+    filesUploadFailed: '{count} file(s) failed to upload',
+    uploadFailed: 'Upload failed',
+    uploadFailedWithStatus: 'Upload failed ({status})',
+    parseResponseFailed: 'Failed to parse response',
+    networkError: 'Network error',
+    // File operations
+    cannotMoveToSubdir: 'Cannot move a directory into its own subdirectory',
+    moving: 'Moving...',
+    movedToDir: '"{name}" moved to target directory',
+    movedToTarget: '"{name}" moved to "{target}"',
+    moveFailed: 'Move failed: {error}',
+    searching: 'Searching...',
+    // Delete confirmation
+    confirmDeleteDir: 'Are you sure you want to delete directory "{name}" and all its contents?\n\nPath: {path}\nType: Directory\n\nDeleted items can be restored from the trash (auto-cleaned after 7 days).',
+    confirmDeleteFile: 'Are you sure you want to delete file "{name}"?\n\nPath: {path}\nType: File\n\nDeleted items can be restored from the trash (auto-cleaned after 7 days).',
+    confirmDeleteTitle: 'Confirm Delete',
+    dirDeleted: 'Directory deleted',
+    fileDeleted: 'File deleted',
+    deleteFailedWithError: 'Delete failed: {error}',
+    deleteFailed: 'Delete failed',
+    confirmBatchDelete: 'Are you sure you want to delete the selected {count} file(s)/directory(s)?\n\n{names}\n\nDeleted items can be restored from the trash (auto-cleaned after 7 days).',
+    batchNamesMore: '\n• ... and {count} more',
+    confirmBatchDeleteTitle: 'Confirm Batch Delete',
+    deletedCount: 'Deleted {success} item(s){failed}',
+    deletedCountFailed: ', {count} failed',
+    // File details
+    fileDetailsTitle: '{name} - File Details',
+    getTypeDir: 'Directory',
+    getTypeSymlink: 'Symbolic link',
+    getTypeFile: 'File',
+    bytes: 'bytes',
+    infoName: 'Name',
+    infoType: 'Type',
+    infoPath: 'Path',
+    infoSize: 'Size',
+    infoMime: 'MIME Type',
+    infoMtime: 'Modified',
+    infoCtime: 'Created',
+    infoAtime: 'Accessed',
+    infoPermission: 'Permission',
+    getDetailsFailed: 'Failed to get details: {error}',
+    // Switch working directory
+    getWorkdirInfoFailed: 'Failed to get working directory info',
+    cannotConnectAgent: 'Cannot connect to Agent. Please confirm the agent is running.',
+    switchWorkdirTitle: 'Switch Working Directory',
+    currentLabel: 'Current: ',
+    notSet: 'Not set',
+    selectFromAllowed: 'Select from allowed directories (non-current can be removed)',
+    orInputPath: 'Or enter an absolute path',
+    manualPathPlaceholder: '/Users/you/path or ~/path',
+    switchBtn: 'Switch',
+    noAllowedPaths: 'No allowed directories',
+    currentTag: 'Current',
+    removeFromAllowed: 'Remove from allowed list',
+    confirmRemovePath: 'Are you sure you want to remove the following directory from the allowed list?\n{path}\n\nAfter removal, the AI will no longer be able to access this directory. You can switch the working directory again to add it back.',
+    confirmRemovePathTitle: 'Confirm Remove Allowed Directory',
+    removedFromAllowed: 'Removed from allowed list',
+    removeFailedWithError: 'Remove failed: {error}',
+    selectOrInputPath: 'Please select or enter a target path',
+    alreadyCurrentWorkdir: 'This directory is already the current working directory',
+    confirmSwitchToNew: 'This path is not in the allowed list. Switching will automatically create the directory and add it to the allowed list:\n{path}',
+    confirmSwitchToNewTitle: 'Confirm Switch to New Directory',
+    switchFailedWithError: 'Switch failed: {error}',
+    switchedTo: 'Switched to: {path}',
+    // Rename/New folder
+    renameDir: 'Rename Directory',
+    renameFile: 'Rename File',
+    inputNewName: 'Enter new name',
+    renamedTo: 'Renamed to "{name}"',
+    renameFailedWithError: 'Rename failed: {error}',
+    newFolderTitle: 'New Folder',
+    inputFolderName: 'Enter folder name',
+    folderCreated: 'Folder "{name}" created',
+    createFailedWithError: 'Create failed: {error}',
+    // Question attachments
+    addedFilesToQuestion: 'Added {count} file(s) to question',
+    addedFilesToQuestionNoImage: 'Added {count} file(s) to question (image recognition disabled; images attached as files)',
+    selectedCount: '{count} selected',
+    // Unsaved changes
+    unsavedChanges: 'Unsaved Changes',
+    discardChangesPrompt: 'You have unsaved changes. Are you sure you want to {action}?',
+    actionClosePreview: 'close the preview',
+    actionCancelEdit: 'cancel editing',
+    saving: 'Saving...',
+    saveSuccess: 'Saved successfully',
+    saveFailedWithError: 'Save failed: {error}',
+    agentNamePrefix: ' · {name}',
+    agentNotPaired: 'Agent not paired',
+    fileDetailsLabel: 'File Details',
+    loadingLabel: 'Loading...',
+  },
+});
 
 
 // 当前浏览路径
@@ -58,7 +487,7 @@ export function initWorkspacePanel() {
   container.className = 'workspace-panel-container';
   container.id = 'workspacePanelContainer';
   container.innerHTML = `
-    <button class="workspace-panel-toggle" id="workspacePanelToggle" title="工作目录">
+    <button class="workspace-panel-toggle" id="workspacePanelToggle" title="${t('workspace.workDir')}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
       </svg>
@@ -69,12 +498,12 @@ export function initWorkspacePanel() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#4a90d9;">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
-          <span>工作目录</span>
+          <span>${t('workspace.workDir')}</span>
           <span class="workspace-agent-name" id="workspaceAgentName"></span>
-          <button class="workspace-panel-close" id="workspacePanelClose" title="关闭面板">×</button>
+          <button class="workspace-panel-close" id="workspacePanelClose" title="${t('workspace.closePanel')}">×</button>
         </div>
         <div class="workspace-panel-breadcrumb-row">
-          <button class="workspace-panel-switch-btn" id="workspaceSwitchBtn" title="切换工作目录">
+          <button class="workspace-panel-switch-btn" id="workspaceSwitchBtn" title="${t('workspace.switchWorkdir')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
               <line x1="12" y1="11" x2="12" y2="17"/>
@@ -85,50 +514,50 @@ export function initWorkspacePanel() {
         </div>
       </div>
       <div class="workspace-panel-toolbar" id="workspaceToolbar">
-        <button class="workspace-toolbar-btn" id="workspaceBackBtn" title="返回上级目录" disabled>
+        <button class="workspace-toolbar-btn" id="workspaceBackBtn" title="${t('workspace.backToParent')}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceRefreshBtn" title="刷新">
+        <button class="workspace-toolbar-btn" id="workspaceRefreshBtn" title="${t('common.refresh')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceUploadBtn" title="上传文件到当前目录">
+        <button class="workspace-toolbar-btn" id="workspaceUploadBtn" title="${t('workspace.uploadToCurrent')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceNewFolderBtn" title="新建文件夹">
+        <button class="workspace-toolbar-btn" id="workspaceNewFolderBtn" title="${t('workspace.newFolder')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             <line x1="12" y1="11" x2="12" y2="17"/>
             <line x1="9" y1="14" x2="15" y2="14"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceAskBtn" title="基于选中的文件进行问答" style="display:none;">
+        <button class="workspace-toolbar-btn" id="workspaceAskBtn" title="${t('workspace.askSelectedFiles')}" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <circle cx="12" cy="12" r="10"/>
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceDownloadDirBtn" title="下载选中的文件/目录（多选打包为ZIP）" style="display:none;">
+        <button class="workspace-toolbar-btn" id="workspaceDownloadDirBtn" title="${t('workspace.downloadSelected')}" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
           </svg>
         </button>
-        <button class="workspace-toolbar-btn" id="workspaceBatchDeleteBtn" title="删除选中的文件" style="display:none;">
+        <button class="workspace-toolbar-btn" id="workspaceBatchDeleteBtn" title="${t('workspace.deleteSelected')}" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
           </svg>
         </button>
         <span class="workspace-toolbar-selected" id="workspaceSelectedCount" style="display:none;"></span>
         <div class="workspace-search-box">
-          <input type="text" id="workspaceSearchInput" placeholder="搜索..." />
-          <button id="workspaceSearchClear" title="清除" style="display:none;">×</button>
-          <button id="workspaceSearchBtn" title="搜索">
+          <input type="text" id="workspaceSearchInput" placeholder="${t('workspace.searchPlaceholder')}" />
+          <button id="workspaceSearchClear" title="${t('workspace.clearSearch')}" style="display:none;">×</button>
+          <button id="workspaceSearchBtn" title="${t('workspace.search')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
               <circle cx="11" cy="11" r="8"/>
               <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -138,21 +567,21 @@ export function initWorkspacePanel() {
       </div>
       <!-- 排序标题行 -->
       <div class="workspace-file-header">
-        <div class="workspace-file-select" id="workspaceSelectAll" title="全选/取消全选">
+        <div class="workspace-file-select" id="workspaceSelectAll" title="${t('workspace.selectAllToggle')}">
           <span class="workspace-checkbox"></span>
         </div>
         <div class="workspace-file-header-name sortable" data-sort="name">
-          文件名 <span class="sort-indicator" id="sortNameIndicator"></span>
+          ${t('workspace.colName')} <span class="sort-indicator" id="sortNameIndicator"></span>
         </div>
         <div class="workspace-file-header-size sortable" data-sort="size">
-          大小 <span class="sort-indicator" id="sortSizeIndicator"></span>
+          ${t('workspace.colSize')} <span class="sort-indicator" id="sortSizeIndicator"></span>
         </div>
         <div class="workspace-file-header-time sortable" data-sort="time">
-          修改时间 <span class="sort-indicator" id="sortTimeIndicator"></span>
+          ${t('workspace.colTime')} <span class="sort-indicator" id="sortTimeIndicator"></span>
         </div>
       </div>
       <div class="workspace-panel-content" id="workspacePanelContent">
-        <div class="workspace-panel-loading">加载中...</div>
+        <div class="workspace-panel-loading">${t('common.loading')}</div>
       </div>
       <!-- 预览遮罩层 -->
       <div class="workspace-preview-overlay" id="workspacePreviewArea" style="display:none;">
@@ -163,21 +592,21 @@ export function initWorkspacePanel() {
           </svg>
           <span class="workspace-preview-filename" id="workspacePreviewFilename"></span>
           <span class="workspace-preview-linecount" id="workspacePreviewLineCount"></span>
-          <button class="workspace-preview-copy-btn" id="workspacePreviewCopyBtn" title="复制全部内容">复制</button>
-          <button class="workspace-preview-md-toggle-btn" id="workspacePreviewMdToggleBtn" title="切换渲染预览" style="display:none;">
-            <span class="workspace-preview-md-toggle-label">预览</span>
+          <button class="workspace-preview-copy-btn" id="workspacePreviewCopyBtn" title="${t('workspace.copyAllTitle')}">${t('workspace.copyAll')}</button>
+          <button class="workspace-preview-md-toggle-btn" id="workspacePreviewMdToggleBtn" title="${t('workspace.toggleRenderPreview')}" style="display:none;">
+            <span class="workspace-preview-md-toggle-label">${t('workspace.preview')}</span>
           </button>
-          <button class="workspace-preview-download-btn" id="workspacePreviewDownloadBtn" title="下载文件">下载</button>
-          <button class="workspace-preview-download-btn" id="workspacePreviewOpenBrowserBtn" title="在浏览器中打开" style="display:none">在浏览器中打开</button>
-          <button class="workspace-preview-fullscreen-btn" id="workspacePreviewFullscreenBtn" title="全屏预览" style="display:none;">
+          <button class="workspace-preview-download-btn" id="workspacePreviewDownloadBtn" title="${t('workspace.downloadFile')}">${t('workspace.download')}</button>
+          <button class="workspace-preview-download-btn" id="workspacePreviewOpenBrowserBtn" title="${t('workspace.openInBrowser')}" style="display:none">${t('workspace.openInBrowserBtn')}</button>
+          <button class="workspace-preview-fullscreen-btn" id="workspacePreviewFullscreenBtn" title="${t('workspace.fullscreenPreview')}" style="display:none;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
             </svg>
           </button>
-          <button class="workspace-preview-edit-btn" id="workspacePreviewEditBtn" title="进入编辑模式" style="display:none;">编辑</button>
-          <button class="workspace-preview-save-btn" id="workspacePreviewSaveBtn" title="保存修改 (Ctrl+S)" style="display:none;">保存</button>
-          <button class="workspace-preview-cancel-btn" id="workspacePreviewCancelBtn" title="取消修改 (Esc)" style="display:none;">取消</button>
-          <button class="workspace-preview-close" id="workspacePreviewClose" title="关闭预览">×</button>
+          <button class="workspace-preview-edit-btn" id="workspacePreviewEditBtn" title="${t('workspace.enterEditMode')}" style="display:none;">${t('workspace.edit')}</button>
+          <button class="workspace-preview-save-btn" id="workspacePreviewSaveBtn" title="${t('workspace.saveChanges')}" style="display:none;">${t('workspace.save')}</button>
+          <button class="workspace-preview-cancel-btn" id="workspacePreviewCancelBtn" title="${t('workspace.cancelChanges')}" style="display:none;">${t('workspace.cancel')}</button>
+          <button class="workspace-preview-close" id="workspacePreviewClose" title="${t('workspace.closePreview')}">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
       </div>
@@ -394,18 +823,18 @@ function bindEvents() {
       e.preventDefault();
       try {
         await navigator.clipboard.writeText(fileName);
-        showToast(`已复制文件名: ${fileName}`);
+        showToast(t('workspace.copiedFileName', { name: fileName }));
       } catch {
-        showToast('复制失败', 'error');
+        showToast(t('workspace.copyFailed'), 'error');
       }
     } else if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
       e.preventDefault();
       if (!filePath) return;
       try {
         await navigator.clipboard.writeText(filePath);
-        showToast(`已复制路径: ${filePath}`);
+        showToast(t('workspace.copiedPath', { path: filePath }));
       } catch {
-        showToast('复制失败', 'error');
+        showToast(t('workspace.copyFailed'), 'error');
       }
     }
   });
@@ -494,7 +923,7 @@ function closePanel() {
 async function navigateToRoot() {
   const root = await getWorkspaceRoot();
   if (!root) {
-    showError('无法获取工作目录，请确认 Agent 已连接');
+    showError(t('workspace.noWorkspace'));
     return;
   }
   workspaceRoot = root;
@@ -560,7 +989,7 @@ function setDirCache(path, value) {
  */
 async function loadDirectory(dirPath) {
   const content = document.getElementById('workspacePanelContent');
-  content.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
+  content.innerHTML = `<div class="workspace-panel-loading">${t('common.loading')}</div>`;
 
   // 查缓存（LRU：命中时自动移到末尾）
   const cached = getDirCache(dirPath);
@@ -572,7 +1001,7 @@ async function loadDirectory(dirPath) {
 
   const result = await listDirectory(dirPath);
   if (!result.success) {
-    showError(result.error || '加载目录失败');
+    showError(result.error || t('workspace.loadDirFailed'));
     return;
   }
 
@@ -632,12 +1061,12 @@ function renderFileItemHtml(entry) {
       <span class="workspace-file-size">${size}</span>
       <span class="workspace-file-time">${time}</span>
       <span class="workspace-file-actions">
-        ${canPreview ? '<button class="workspace-file-btn preview" title="预览" data-action="preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>' : ''}
-        <button class="workspace-file-btn info" title="详情" data-action="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
-        <button class="workspace-file-btn download" title="下载" data-action="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
-        <button class="workspace-file-btn rename" title="重命名" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
-        <button class="workspace-file-btn ask" title="基于文件问答" data-action="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
-        <button class="workspace-file-btn delete" title="删除" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+        ${canPreview ? `<button class="workspace-file-btn preview" title="${t('workspace.previewBtn')}" data-action="preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>` : ''}
+        <button class="workspace-file-btn info" title="${t('workspace.details')}" data-action="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+        <button class="workspace-file-btn download" title="${t('workspace.download')}" data-action="download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+        <button class="workspace-file-btn rename" title="${t('workspace.rename')}" data-action="rename"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></button>
+        <button class="workspace-file-btn ask" title="${t('workspace.askFile')}" data-action="ask"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></button>
+        <button class="workspace-file-btn delete" title="${t('workspace.delete')}" data-action="delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
       </span>
     </div>`;
 }
@@ -707,7 +1136,7 @@ function renderCurrentEntries() {
   if (entries.length === 0) {
     virtualScrollState = null;
     sortedEntriesCache = [];
-    content.innerHTML = isSearchMode ? '<div class="workspace-panel-empty">未找到匹配的文件</div>' : '<div class="workspace-panel-empty">此目录为空</div>';
+    content.innerHTML = isSearchMode ? `<div class="workspace-panel-empty">${t('workspace.noMatch')}</div>` : `<div class="workspace-panel-empty">${t('workspace.dirEmpty')}</div>`;
     return;
   }
 
@@ -968,9 +1397,9 @@ async function handleFileListClick(e) {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
     e.stopPropagation();
     navigator.clipboard.writeText(item.dataset.name).then(() => {
-      showToast(`已复制文件名: ${item.dataset.name}`);
+      showToast(t('workspace.copiedFileName', { name: item.dataset.name }));
     }).catch(() => {
-      showToast('复制失败', 'error');
+      showToast(t('workspace.copyFailed'), 'error');
     });
     return;
   }
@@ -979,9 +1408,9 @@ async function handleFileListClick(e) {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
     e.stopPropagation();
     navigator.clipboard.writeText(path).then(() => {
-      showToast(`已复制路径: ${path}`);
+      showToast(t('workspace.copiedPath', { path }));
     }).catch(() => {
-      showToast('复制失败', 'error');
+      showToast(t('workspace.copyFailed'), 'error');
     });
     return;
   }
@@ -1101,7 +1530,7 @@ const PREVIEW_XLSX_MAX_ROWS = 2000;            // Excel 预览最大渲染行数
  */
 async function fetchFileArrayBuffer(filePath) {
   const config = await getAgentConfig();
-  if (!config) throw new Error('Agent 未配对');
+  if (!config) throw new Error(t('workspace.agentNotPaired'));
   const resp = await fetch(`${config.url}/api/fs/download-stream`, {
     method: 'POST',
     headers: {
@@ -1153,7 +1582,7 @@ async function previewFile(filePath, fileName) {
   lineCountEl.textContent = '';
   previewContent.classList.remove('xlsx-mode');
   previewContent.classList.remove('markdown-rendered');
-  previewContent.innerHTML = '<div class="workspace-panel-loading">加载中...</div>';
+  previewContent.innerHTML = `<div class="workspace-panel-loading">${t('common.loading')}</div>`;
   previewArea.style.display = 'flex';
   copyBtn.style.display = '';
   downloadBtn.style.display = '';
@@ -1162,7 +1591,7 @@ async function previewFile(filePath, fileName) {
   mdToggleBtn.style.display = 'none';
   mdToggleBtn.classList.remove('active');
   const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
-  if (mdLabel) mdLabel.textContent = '预览';
+  if (mdLabel) mdLabel.textContent = t('workspace.preview');
   // 重置编辑相关按钮
   const editBtn = document.getElementById('workspacePreviewEditBtn');
   const saveBtn = document.getElementById('workspacePreviewSaveBtn');
@@ -1196,7 +1625,7 @@ async function previewFile(filePath, fileName) {
   if (previewType === 'text') {
     copyBtn.style.display = '';
     if (fileSize > PREVIEW_MAX_TEXT) {
-      previewContent.innerHTML = `<div class="workspace-panel-error">文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载</div>`;
+      previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.fileTooLargeNoPreview', { size: formatFileSize(fileSize) })}</div>`;
       return;
     }
     // 文本文件显示编辑按钮
@@ -1205,7 +1634,7 @@ async function previewFile(filePath, fileName) {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     const result = await readFileContent(filePath);
     if (!result.success) {
-      previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+      previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.previewFailed', { error: escapeHtml(result.error || t('workspace.unknownError')) })}</div>`;
       return;
     }
     const text = result.content || '';
@@ -1217,20 +1646,20 @@ async function previewFile(filePath, fileName) {
       previewArea.dataset.markdownText = text;
       previewContent.classList.add('markdown-rendered');
       mdToggleBtn.classList.add('active');
-      mdToggleBtn.title = '切换为源码预览';
-      if (mdLabel) mdLabel.textContent = '预览';
+      mdToggleBtn.title = t('workspace.switchToSourcePreview');
+      if (mdLabel) mdLabel.textContent = t('workspace.preview');
       copyBtn.style.display = 'none';
       previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(text)}</div>`;
       renderMermaidChartsInContainer(previewContent);
       bindCodeCopyButtonsInContainer(previewContent);
       addTableToolbarEvents();
-      lineCountEl.textContent = 'Markdown 渲染';
+      lineCountEl.textContent = t('workspace.markdownRendered');
       return;
     }
     // 普通文本/代码
     const lang = getLanguageClass(fileName);
     const lines = text.split('\n');
-    lineCountEl.textContent = `${lines.length} 行`;
+    lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
     const truncated = lines.length > PREVIEW_MAX_LINES;
     const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
     let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
@@ -1238,7 +1667,7 @@ async function previewFile(filePath, fileName) {
       numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
     }
     if (truncated) {
-      numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
+      numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>${t('workspace.truncatedHint', { shown: PREVIEW_MAX_LINES, total: lines.length })}</code></td></tr>`;
     }
     numberedHtml += '</tbody></table>';
     previewContent.innerHTML = numberedHtml;
@@ -1265,8 +1694,8 @@ async function previewFile(filePath, fileName) {
     if (fileSize > maxSize) {
       const canOpenBrowser = previewType === 'pdf' || previewType === 'image';
       const msg = canOpenBrowser
-        ? `文件过大 (${formatFileSize(fileSize)})，无法内置预览，请点击上方「在浏览器中打开」按钮查看`
-        : `文件过大 (${formatFileSize(fileSize)})，不支持预览，请直接下载`;
+        ? t('workspace.fileTooLargeOpenInBrowser', { size: formatFileSize(fileSize) })
+        : t('workspace.fileTooLargeNoPreview', { size: formatFileSize(fileSize) });
       previewContent.innerHTML = `<div class="workspace-panel-error">${msg}</div>`;
       return;
     }
@@ -1303,12 +1732,12 @@ async function previewFile(filePath, fileName) {
         await previewMedia(arrayBuffer, fileName, previewType, previewContent, previewArea);
         break;
       default:
-        previewContent.innerHTML = '<div class="workspace-panel-error">不支持的文件类型</div>';
+        previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.unsupportedFileType')}</div>`;
     }
   } catch (err) {
     logger.error('[WorkspacePanel] 预览失败:', filePath, err);
     const msg = err instanceof Error ? err.message : (typeof err === 'string' ? err : String(err));
-    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(msg || '未知错误')}</div>`;
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.previewFailed', { error: escapeHtml(msg || t('workspace.unknownError')) })}</div>`;
   }
 }
 
@@ -1319,14 +1748,14 @@ async function previewFile(filePath, fileName) {
 async function previewTextFile(filePath, fileName, lineCountEl, previewContent) {
   const result = await readFileContent(filePath);
   if (!result.success) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">预览失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.previewFailed', { error: escapeHtml(result.error || t('workspace.unknownError')) })}</div>`;
     return;
   }
 
   const lang = getLanguageClass(fileName);
   const text = result.content || '';
   const lines = text.split('\n');
-  lineCountEl.textContent = `${lines.length} 行`;
+  lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
 
   const truncated = lines.length > PREVIEW_MAX_LINES;
   const displayLines = truncated ? lines.slice(0, PREVIEW_MAX_LINES) : lines;
@@ -1336,7 +1765,7 @@ async function previewTextFile(filePath, fileName, lineCountEl, previewContent) 
     numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(displayLines[i])}</code></td></tr>`;
   }
   if (truncated) {
-    numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>（仅显示前 ${PREVIEW_MAX_LINES} 行，共 ${lines.length} 行，请下载查看完整内容）</code></td></tr>`;
+    numberedHtml += `<tr><td class="line-num">…</td><td class="line-content"><code>${t('workspace.truncatedHint', { shown: PREVIEW_MAX_LINES, total: lines.length })}</code></td></tr>`;
   }
   numberedHtml += '</tbody></table>';
   previewContent.innerHTML = numberedHtml;
@@ -1371,28 +1800,28 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   previewArea.dataset.previewType = 'pdf';
 
   const totalPages = pdf.numPages;
-  document.getElementById('workspacePreviewLineCount').textContent = `${totalPages} 页`;
+  document.getElementById('workspacePreviewLineCount').textContent = t('workspace.pageCount', { count: totalPages });
 
   previewContent.innerHTML = `
     <div class="pdf-wrap">
       <div class="pdf-toolbar">
-        <button class="pdf-toolbar-btn" id="pdfPrevPage" title="上一页" disabled>
+        <button class="pdf-toolbar-btn" id="pdfPrevPage" title="${t('workspace.prevPage')}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <span class="pdf-page-info"><input type="number" class="pdf-page-input" id="pdfPageInput" value="1" min="1" max="${totalPages}"> / ${totalPages}</span>
-        <button class="pdf-toolbar-btn" id="pdfNextPage" title="下一页">
+        <button class="pdf-toolbar-btn" id="pdfNextPage" title="${t('workspace.nextPage')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <span class="pdf-toolbar-sep"></span>
-        <button class="pdf-toolbar-btn" id="pdfZoomOut" title="缩小">
+        <button class="pdf-toolbar-btn" id="pdfZoomOut" title="${t('workspace.zoomOut')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="pdf-zoom-info" id="pdfZoomInfo">100%</span>
-        <button class="pdf-toolbar-btn" id="pdfZoomIn" title="放大">
+        <button class="pdf-toolbar-btn" id="pdfZoomIn" title="${t('workspace.zoomIn')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="pdf-toolbar-sep"></span>
-        <button class="pdf-toolbar-btn" id="pdfZoomFit" title="适应页面">
+        <button class="pdf-toolbar-btn" id="pdfZoomFit" title="${t('workspace.fitPage')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
       </div>
@@ -1598,7 +2027,7 @@ async function previewDocx(arrayBuffer, previewContent) {
       "r[style-name='Emphasis'] => em",
     ]
   });
-  const html = result.value || '<p>（文档为空）</p>';
+  const html = result.value || `<p>${t('workspace.documentEmpty')}</p>`;
   const sanitized = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','s','a','img','table','thead','tbody','tr','td','th','ul','ol','li','blockquote','pre','code','hr','sup','sub'],
     ALLOWED_ATTR: ['href','src','alt','title','style'],
@@ -1643,33 +2072,33 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
   pptxPanY = 0;
 
   if (!pptxSlidesHtml || pptxSlidesHtml.length === 0) {
-    previewContent.innerHTML = '<div class="workspace-panel-error">PPTX 文件为空或解析失败</div>';
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.pptxEmptyOrFailed')}</div>`;
     return;
   }
 
   const totalSlides = pptxSlidesHtml.length;
-  document.getElementById('workspacePreviewLineCount').textContent = `${totalSlides} 页`;
+  document.getElementById('workspacePreviewLineCount').textContent = t('workspace.pageCount', { count: totalSlides });
 
   previewContent.innerHTML = `
     <div class="pptx-wrap">
       <div class="pptx-toolbar">
-        <button class="pptx-toolbar-btn" id="pptxPrevSlide" title="上一页" disabled>
+        <button class="pptx-toolbar-btn" id="pptxPrevSlide" title="${t('workspace.prevPage')}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <span class="pptx-page-info"><span id="pptxSlideNum">1</span> / ${totalSlides}</span>
-        <button class="pptx-toolbar-btn" id="pptxNextSlide" title="下一页">
+        <button class="pptx-toolbar-btn" id="pptxNextSlide" title="${t('workspace.nextPage')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <span class="pptx-toolbar-sep"></span>
-        <button class="pptx-toolbar-btn" id="pptxZoomOut" title="缩小">
+        <button class="pptx-toolbar-btn" id="pptxZoomOut" title="${t('workspace.zoomOut')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="pptx-zoom-info" id="pptxZoomInfo">100%</span>
-        <button class="pptx-toolbar-btn" id="pptxZoomIn" title="放大">
+        <button class="pptx-toolbar-btn" id="pptxZoomIn" title="${t('workspace.zoomIn')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="pptx-toolbar-sep"></span>
-        <button class="pptx-toolbar-btn" id="pptxZoomFit" title="适应页面">
+        <button class="pptx-toolbar-btn" id="pptxZoomFit" title="${t('workspace.fitPage')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
       </div>
@@ -1931,13 +2360,13 @@ let xlsxSheetsData = [];   // 所有 sheet 的 rows 数据
 let xlsxCurrentSheet = 0;  // 当前选中的 sheet
 
 async function previewXlsx(fileName, previewContent, previewArea) {
-  previewContent.innerHTML = '<div class="workspace-panel-empty">正在解析 Excel 文件...</div>';
+  previewContent.innerHTML = `<div class="workspace-panel-empty">${t('workspace.parsingExcel')}</div>`;
 
   const filePath = previewArea.dataset.previewPath;
   let result;
   try {
     const config = await getAgentConfig();
-    if (!config) throw new Error('Agent 未配对');
+    if (!config) throw new Error(t('workspace.agentNotPaired'));
     const resp = await fetch(`${config.url}/api/fs/preview-xlsx`, {
       method: 'POST',
       headers: {
@@ -1948,18 +2377,18 @@ async function previewXlsx(fileName, previewContent, previewArea) {
     });
     result = await resp.json();
   } catch (err) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">请求失败: ${escapeHtml(err.message)}</div>`;
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.requestFailed', { error: escapeHtml(err.message) })}</div>`;
     return;
   }
 
   if (!result.success) {
-    previewContent.innerHTML = `<div class="workspace-panel-error">解析失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.parseFailed', { error: escapeHtml(result.error || t('workspace.unknownError')) })}</div>`;
     return;
   }
 
   const { sheets } = result.data;
   if (!sheets || sheets.length === 0) {
-    previewContent.innerHTML = '<div class="workspace-panel-error">工作簿中没有工作表</div>';
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.noSheetsInWorkbook')}</div>`;
     return;
   }
 
@@ -1976,7 +2405,7 @@ async function previewXlsx(fileName, previewContent, previewArea) {
     tabsHtml += `<button class="xlsx-sheet-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escapeHtml(s.name)}</button>`;
   });
   tabsHtml += '</div>';
-  previewContent.innerHTML = tabsHtml + '<div class="xlsx-sheet-content" id="xlsxSheetContent"><div class="workspace-panel-empty">正在加载数据...</div></div>';
+  previewContent.innerHTML = tabsHtml + `<div class="xlsx-sheet-content" id="xlsxSheetContent"><div class="workspace-panel-empty">${t('workspace.loadingData')}</div></div>`;
 
   // Tab 切换事件
   document.getElementById('xlsxSheetTabs').addEventListener('click', (e) => {
@@ -2000,7 +2429,7 @@ async function loadAndRenderSheet(sheetIndex) {
   xlsxCurrentSheet = sheetIndex;
   const sheet = xlsxSheetsData[sheetIndex];
   if (!sheet) {
-    content.innerHTML = '<div class="workspace-panel-error">未找到工作表数据</div>';
+    content.innerHTML = `<div class="workspace-panel-error">${t('workspace.sheetNotFound')}</div>`;
     return;
   }
 
@@ -2013,7 +2442,7 @@ function renderXlsxSheet(rows, colCount, totalRows, content) {
   if (oldMirror) oldMirror.remove();
 
   if (!rows || rows.length === 0) {
-    content.innerHTML = '<div class="workspace-panel-empty">（空工作表）</div>';
+    content.innerHTML = `<div class="workspace-panel-empty">${t('workspace.emptySheet')}</div>`;
     return;
   }
 
@@ -2034,7 +2463,7 @@ function renderXlsxSheet(rows, colCount, totalRows, content) {
   html += '</tbody></table></div>';
 
   if (totalRows > PREVIEW_XLSX_MAX_ROWS) {
-    html += `<div class="xlsx-truncated-msg">仅显示前 ${PREVIEW_XLSX_MAX_ROWS} 行，共 ${totalRows} 行，请下载查看完整内容</div>`;
+    html += `<div class="xlsx-truncated-msg">${t('workspace.xlsxTruncatedHint', { shown: PREVIEW_XLSX_MAX_ROWS, total: totalRows })}</div>`;
   }
 
   content.innerHTML = html;
@@ -2080,15 +2509,15 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
   previewContent.innerHTML = `
     <div class="image-preview-wrap">
       <div class="image-preview-toolbar">
-        <button class="image-preview-btn" id="imgZoomOut" title="缩小">
+        <button class="image-preview-btn" id="imgZoomOut" title="${t('workspace.zoomOut')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="image-preview-zoom-level" id="imgZoomLevel">100%</span>
-        <button class="image-preview-btn" id="imgZoomIn" title="放大">
+        <button class="image-preview-btn" id="imgZoomIn" title="${t('workspace.zoomIn')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
         <span class="image-preview-toolbar-sep"></span>
-        <button class="image-preview-btn" id="imgZoomReset" title="原始大小">
+        <button class="image-preview-btn" id="imgZoomReset" title="${t('workspace.originalSize')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
       </div>
@@ -2221,7 +2650,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
   });
   img.addEventListener('error', () => {
     URL.revokeObjectURL(url);
-    previewContent.innerHTML = '<div class="workspace-panel-error">图片加载失败</div>';
+    previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.imageLoadFailed')}</div>`;
   });
 
   // 窗口 resize 时重新计算 fit
@@ -2252,7 +2681,7 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
 
   const isVideo = previewType === 'video';
   // 浏览器无法解码时给出提示
-  const unsupportedHint = `<div class="workspace-panel-error" style="margin-top:10px;">⚠ 浏览器不支持播放此格式（${escapeHtml((fileName.split('.').pop() || '').toUpperCase())}），请下载后使用本地播放器查看。</div>`;
+  const unsupportedHint = `<div class="workspace-panel-error" style="margin-top:10px;">${t('workspace.unsupportedMediaHint', { ext: escapeHtml((fileName.split('.').pop() || '').toUpperCase()) })}</div>`;
 
   if (isVideo) {
     previewContent.innerHTML = `
@@ -2294,7 +2723,7 @@ async function copyPreviewContent() {
   const previewType = previewArea.dataset.previewType
     || getPreviewType(previewArea.dataset.previewName || '');
   if (previewType !== 'text') {
-    showToast('此文件类型不支持复制文本内容', 'info');
+    showToast(t('workspace.copyUnsupportedType'), 'info');
     return;
   }
 
@@ -2302,12 +2731,12 @@ async function copyPreviewContent() {
   if (result.success) {
     try {
       await navigator.clipboard.writeText(result.content || '');
-      showToast('已复制到剪贴板', 'success');
+      showToast(t('workspace.copiedToClipboard'), 'success');
     } catch {
-      showToast('复制失败，请手动选择复制', 'error');
+      showToast(t('workspace.copyFailedManual'), 'error');
     }
   } else {
-    showToast('获取内容失败', 'error');
+    showToast(t('workspace.getContentFailed'), 'error');
   }
 }
 
@@ -2333,16 +2762,16 @@ async function openPreviewInBrowser() {
   try {
     const result = await downloadFileStream(filePath);
     if (!result.success) {
-      showToast(`获取文件失败: ${result.error}`, 'error');
+      showToast(t('workspace.requestFailed', { error: result.error }), 'error');
       return;
     }
     const url = URL.createObjectURL(result.blob);
     window.open(url, '_blank');
     // 延迟释放，给浏览器足够时间读取
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-    showToast('已在浏览器中打开', 'success');
+    showToast(t('workspace.openInBrowser'), 'success');
   } catch (err) {
-    showToast(`打开失败: ${err.message}`, 'error');
+    showToast(t('workspace.openFailed', { error: err.message }), 'error');
   }
 }
 
@@ -2357,11 +2786,11 @@ function togglePreviewFullscreen() {
   if (isFullscreen) {
     panel.classList.add('preview-fullscreen');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
-    btn.title = '退出全屏';
+    btn.title = t('workspace.exitFullscreen');
   } else {
     panel.classList.remove('preview-fullscreen');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
-    btn.title = '全屏预览';
+    btn.title = t('workspace.fullscreenPreview');
   }
 }
 
@@ -2378,23 +2807,23 @@ function toggleMarkdownPreview() {
 
   if (isRendered) {
     btn.classList.add('active');
-    btn.title = '切换为源码预览';
-    if (mdLabel) mdLabel.textContent = '预览';
+    btn.title = t('workspace.switchToSourcePreview');
+    if (mdLabel) mdLabel.textContent = t('workspace.preview');
     copyBtn.style.display = 'none';
     previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
     renderMermaidChartsInContainer(previewContent);
     bindCodeCopyButtonsInContainer(previewContent);
     addTableToolbarEvents();
-    lineCountEl.textContent = 'Markdown 渲染';
+    lineCountEl.textContent = t('workspace.markdownRendered');
   } else {
     btn.classList.remove('active');
-    btn.title = '切换为渲染预览';
-    if (mdLabel) mdLabel.textContent = '预览';
+    btn.title = t('workspace.switchToRenderPreview');
+    if (mdLabel) mdLabel.textContent = t('workspace.preview');
     copyBtn.style.display = '';
     const fileName = previewArea.dataset.previewName || '';
     const lang = getLanguageClass(fileName);
     const lines = (markdownText || '').split('\n');
-    lineCountEl.textContent = `${lines.length} 行`;
+    lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
     let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
     for (let i = 0; i < lines.length; i++) {
       numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
@@ -2467,7 +2896,7 @@ function bindCodeCopyButtonsInContainer(container) {
       if (!codeText) return;
 
       navigator.clipboard.writeText(codeText).then(() => {
-        showToast('代码已复制到剪贴板', 'success');
+        showToast(t('workspace.codeCopiedToClipboard'), 'success');
       }).catch(() => {
         const textArea = document.createElement('textarea');
         textArea.value = codeText;
@@ -2477,7 +2906,7 @@ function bindCodeCopyButtonsInContainer(container) {
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
-        showToast('代码已复制到剪贴板', 'success');
+        showToast(t('workspace.codeCopiedToClipboard'), 'success');
       });
     });
   }
@@ -2487,7 +2916,7 @@ async function closePreview(force = false) {
   const previewArea = document.getElementById('workspacePreviewArea');
   // 编辑模式下检查未保存修改（force=true 时跳过确认，直接丢弃）
   if (!force && previewArea.dataset.editMode === 'true' && previewArea.classList.contains('has-unsaved')) {
-    const confirmed = await confirmDiscardChanges('关闭预览');
+    const confirmed = await confirmDiscardChanges(t('workspace.actionClosePreview'));
     if (!confirmed) return false;
   }
   // 无论是否处于编辑模式，都清除编辑状态，避免关闭后残留导致下次再次弹出确认框
@@ -2502,7 +2931,7 @@ async function closePreview(force = false) {
     mdToggleBtn.classList.remove('active');
     mdToggleBtn.style.display = 'none';
     const mdLabel = mdToggleBtn.querySelector('.workspace-preview-md-toggle-label');
-    if (mdLabel) mdLabel.textContent = '预览';
+    if (mdLabel) mdLabel.textContent = t('workspace.preview');
   }
   if (previewArea.classList.contains('fullscreen')) {
     previewArea.classList.remove('fullscreen');
@@ -2510,7 +2939,7 @@ async function closePreview(force = false) {
     const btn = document.getElementById('workspacePreviewFullscreenBtn');
     if (btn) {
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
-      btn.title = '全屏预览';
+      btn.title = t('workspace.fullscreenPreview');
     }
   }
   // 清理 PDF 资源
@@ -2551,7 +2980,7 @@ function enterEditMode() {
   previewArea.dataset.editMode = 'true';
 
   // 重置保存按钮状态
-  saveBtn.textContent = '保存';
+  saveBtn.textContent = t('workspace.save');
   saveBtn.disabled = false;
 
   // 隐藏预览模式按钮
@@ -2575,7 +3004,7 @@ function enterEditMode() {
   editor.setSelectionRange(editor.value.length, editor.value.length);
 
   // 更新状态提示
-  lineCountEl.textContent = `${origContent.split('\n').length} 行`;
+  lineCountEl.textContent = t('workspace.lineCount', { count: origContent.split('\n').length });
   filenameEl.classList.add('modified');
   filenameEl.textContent = (previewArea.dataset.previewName || '') + ' *';
 
@@ -2584,10 +3013,10 @@ function enterEditMode() {
     const changed = editor.value !== origContent;
     if (changed) {
       previewArea.classList.add('has-unsaved');
-      lineCountEl.textContent = `${editor.value.split('\n').length} 行 · 已修改`;
+      lineCountEl.textContent = t('workspace.linesModified', { count: editor.value.split('\n').length });
     } else {
       previewArea.classList.remove('has-unsaved');
-      lineCountEl.textContent = `${editor.value.split('\n').length} 行`;
+      lineCountEl.textContent = t('workspace.lineCount', { count: editor.value.split('\n').length });
     }
   });
 }
@@ -2608,14 +3037,14 @@ async function saveEditedFile() {
 
   const saveBtn = document.getElementById('workspacePreviewSaveBtn');
   const originalText = saveBtn.textContent;
-  saveBtn.textContent = '保存中...';
+  saveBtn.textContent = t('workspace.saving');
   saveBtn.disabled = true;
 
   try {
     const result = await writeFileContent(filePath, newContent);
     if (result.success) {
       logger.info('[WorkspacePanel] 文件保存成功:', filePath);
-      showToast('保存成功');
+      showToast(t('workspace.saveSuccess'));
       // 更新原始内容
       previewArea.dataset.origContent = newContent;
       // 退出编辑模式并重新预览
@@ -2625,13 +3054,13 @@ async function saveEditedFile() {
       await previewFile(filePath, fileName);
     } else {
       logger.error('[WorkspacePanel] 文件保存失败:', filePath, result.error);
-      showToast('保存失败: ' + (result.error || '未知错误'));
+      showToast(t('workspace.saveFailedWithError', { error: result.error || t('workspace.unknownError') }));
       saveBtn.textContent = originalText;
       saveBtn.disabled = false;
     }
   } catch (err) {
     logger.error('[WorkspacePanel] 文件保存异常:', filePath, err);
-    showToast('保存失败: ' + (err.message || err));
+    showToast(t('workspace.saveFailedWithError', { error: err.message || err }));
     saveBtn.textContent = originalText;
     saveBtn.disabled = false;
   }
@@ -2640,7 +3069,7 @@ async function saveEditedFile() {
 async function cancelEditMode() {
   const previewArea = document.getElementById('workspacePreviewArea');
   if (previewArea.classList.contains('has-unsaved')) {
-    const confirmed = await confirmDiscardChanges('取消编辑');
+    const confirmed = await confirmDiscardChanges(t('workspace.actionCancelEdit'));
     if (!confirmed) return;
   }
   exitEditMode(true);
@@ -2668,9 +3097,9 @@ function exitEditMode(refreshButtons) {
 
 async function confirmDiscardChanges(action) {
   if (typeof window.showCustomConfirm === 'function') {
-    return await window.showCustomConfirm(`有未保存的修改，确定要${action}吗？`, '未保存的修改');
+    return await window.showCustomConfirm(t('workspace.discardChangesPrompt', { action }), t('workspace.unsavedChanges'));
   }
-  return window.confirm(`有未保存的修改，确定要${action}吗？`);
+  return window.confirm(t('workspace.discardChangesPrompt', { action }));
 }
 
 function handlePreviewKeydown(e) {
@@ -2750,33 +3179,33 @@ async function doDownloadSingle(filePath, fileName) {
     }, controller.signal);
 
     if (result.aborted) {
-      completeUploadProgressPanel(progressPanel, '下载已取消', true);
-      showToast('下载已取消', 'info');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadCanceled'), true);
+      showToast(t('workspace.downloadCanceled'), 'info');
       return;
     }
     if (!result.success) {
-      completeUploadProgressPanel(progressPanel, '下载失败', true);
-      showToast(`下载失败: ${result.error}`, 'error');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadFailed'), true);
+      showToast(t('workspace.downloadFailedWithError', { error: result.error }), 'error');
       return;
     }
     triggerBrowserDownload(result.blob, result.name || fileName);
     updateUploadProgressPanel(progressPanel, {
       percent: 100, fileName, loaded: result.blob.size, totalBytes: result.blob.size,
-      speed: 0, statusText: '正在由浏览器保存至本地...'
+      speed: 0, statusText: t('workspace.savingToLocal')
     });
     // Chrome download via <a> click cannot be monitored from JS,
     // show "已保存" after a reasonable delay for the save dialog to appear
     setTimeout(() => {
-      completeUploadProgressPanel(progressPanel, '已保存至本地', false);
+      completeUploadProgressPanel(progressPanel, t('workspace.savedToLocal'), false);
     }, 1500);
-    showToast(`已下载: ${result.name || fileName}`, 'success');
+    showToast(t('workspace.downloaded', { name: result.name || fileName }), 'success');
   } catch (err) {
     if (err.name === 'AbortError') {
-      completeUploadProgressPanel(progressPanel, '下载已取消', true);
-      showToast('下载已取消', 'info');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadCanceled'), true);
+      showToast(t('workspace.downloadCanceled'), 'info');
     } else {
-      completeUploadProgressPanel(progressPanel, '下载失败', true);
-      showToast(`下载失败: ${err.message}`, 'error');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadFailed'), true);
+      showToast(t('workspace.downloadFailedWithError', { error: err.message }), 'error');
     }
   } finally {
     setTimeout(() => removeFileProgress(inlineBar), 600);
@@ -2812,7 +3241,7 @@ async function downloadSelected() {
     return (last.loaded - first.loaded) / dt;
   };
 
-  const label = `${paths.length} 个文件`;
+  const label = t('workspace.fileCount', { count: paths.length });
   const progressPanel = showUploadProgressPanel(() => controller.abort());
   progressPanel.classList.add('download-mode');
   // 初始：后端打包阶段还没开始发送数据，提示"准备中"
@@ -2829,25 +3258,25 @@ async function downloadSelected() {
     }, controller.signal);
 
     if (result.aborted) {
-      completeUploadProgressPanel(progressPanel, '下载已取消', true);
-      showToast('下载已取消', 'info');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadCanceled'), true);
+      showToast(t('workspace.downloadCanceled'), 'info');
       return;
     }
     if (result.success && result.blob) {
       triggerBrowserDownload(result.blob, result.name || 'workspace.zip');
-      completeUploadProgressPanel(progressPanel, `已下载 ${paths.length} 个文件`, false);
-      showToast(`已下载 ${paths.length} 个文件（ZIP 压缩包）`, 'success');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadedCount', { count: paths.length }), false);
+      showToast(t('workspace.downloadedZip', { count: paths.length }), 'success');
     } else {
-      completeUploadProgressPanel(progressPanel, '下载失败', true);
-      showToast(`下载失败: ${result.error || '未知错误'}`, 'error');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadFailed'), true);
+      showToast(t('workspace.downloadFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
     }
   } catch (err) {
     if (err.name === 'AbortError') {
-      completeUploadProgressPanel(progressPanel, '下载已取消', true);
-      showToast('下载已取消', 'info');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadCanceled'), true);
+      showToast(t('workspace.downloadCanceled'), 'info');
     } else {
-      completeUploadProgressPanel(progressPanel, '下载失败', true);
-      showToast(`下载失败: ${err.message}`, 'error');
+      completeUploadProgressPanel(progressPanel, t('workspace.downloadFailed'), true);
+      showToast(t('workspace.downloadFailedWithError', { error: err.message }), 'error');
     }
   } finally {
     downloadInProgress = false;
@@ -2977,8 +3406,8 @@ function showUploadProgressPanel(onCancel) {
   panel.className = 'workspace-upload-progress';
   panel.innerHTML = `
     <div class="workspace-upload-progress-header">
-      <span class="workspace-upload-progress-title">上传中...</span>
-      <button class="workspace-upload-progress-cancel" title="取消上传">
+      <span class="workspace-upload-progress-title">${t('workspace.uploading')}</span>
+      <button class="workspace-upload-progress-cancel" title="${t('workspace.cancelUpload')}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" width="14" height="14">
           <path d="M18 6L6 18M6 6l12 12"/>
         </svg>
@@ -3019,7 +3448,7 @@ function updateUploadProgressPanel(panel, opts) {
   const speedEl = panel.querySelector('.workspace-upload-progress-speed');
 
   // 优先使用 statusText 覆盖标题
-  const prefix = panel.classList.contains('download-mode') ? '下载中' : '上传中';
+  const prefix = panel.classList.contains('download-mode') ? t('workspace.downloadInProgress') : t('workspace.uploadInProgress');
   if (title) {
     if (statusText) {
       title.textContent = statusText;
@@ -3097,7 +3526,7 @@ async function uploadFiles(fileList) {
 
   const config = await getAgentConfig();
   if (!config) {
-    showToast('Agent 未连接，无法上传', 'error');
+    showToast(t('workspace.agentNotConnectedUpload'), 'error');
     uploadInProgress = false;
     setUploadButtonDisabled(false);
     return;
@@ -3202,23 +3631,23 @@ async function uploadFiles(fileList) {
                 updateProgress(file.name);
                 resolve();
               } else {
-                reject(new Error(data.error || '上传失败'));
+                reject(new Error(data.error || t('workspace.uploadFailed')));
               }
             } catch {
-              reject(new Error('解析响应失败'));
+              reject(new Error(t('workspace.parseResponseFailed')));
             }
           } else {
             try {
               const data = JSON.parse(xhr.responseText);
-              reject(new Error(data.error || `上传失败 (${xhr.status})`));
+              reject(new Error(data.error || t('workspace.uploadFailedWithStatus', { status: xhr.status })));
             } catch {
-              reject(new Error(`上传失败 (${xhr.status})`));
+              reject(new Error(t('workspace.uploadFailedWithStatus', { status: xhr.status })));
             }
           }
         };
         xhr.onerror = () => {
           activeXhrs.delete(xhr);
-          reject(new Error(cancelled ? '__CANCELLED__' : '网络错误'));
+          reject(new Error(cancelled ? '__CANCELLED__' : t('workspace.networkError')));
         };
         xhr.onabort = () => {
           activeXhrs.delete(xhr);
@@ -3248,22 +3677,22 @@ async function uploadFiles(fileList) {
   let completeMsg;
   let isError = false;
   if (cancelled) {
-    completeMsg = '已取消上传';
+    completeMsg = t('workspace.uploadCanceled');
     isError = true;
   } else {
     const parts = [];
-    if (successCount > 0) parts.push(`成功 ${successCount}`);
-    if (skippedCount > 0) parts.push(`跳过 ${skippedCount}`);
-    if (failCount > 0) parts.push(`失败 ${failCount}`);
-    completeMsg = parts.length > 0 ? `上传完成 · ${parts.join(' / ')}` : '上传完成';
+    if (successCount > 0) parts.push(t('workspace.uploadSuccessCount', { count: successCount }));
+    if (skippedCount > 0) parts.push(t('workspace.uploadSkippedCount', { count: skippedCount }));
+    if (failCount > 0) parts.push(t('workspace.uploadFailedCount', { count: failCount }));
+    completeMsg = parts.length > 0 ? t('workspace.uploadCompleteWithStats', { stats: parts.join(' / ') }) : t('workspace.uploadComplete');
     isError = failCount > 0;
   }
   completeUploadProgressPanel(progressPanel, completeMsg, isError);
 
-  if (successCount > 0) showToast(`成功上传 ${successCount} 个文件`, 'success');
-  if (skippedCount > 0) showToast(`${skippedCount} 个文件已存在，跳过上传`, 'info');
-  if (failCount > 0) showToast(`${failCount} 个文件上传失败`, 'error');
-  if (cancelled) showToast('上传已取消', 'info');
+  if (successCount > 0) showToast(t('workspace.uploadedFiles', { count: successCount }), 'success');
+  if (skippedCount > 0) showToast(t('workspace.filesSkipped', { count: skippedCount }), 'info');
+  if (failCount > 0) showToast(t('workspace.filesUploadFailed', { count: failCount }), 'error');
+  if (cancelled) showToast(t('workspace.uploadCanceled'), 'info');
 
   uploadInProgress = false;
   setUploadButtonDisabled(false);
@@ -3353,24 +3782,24 @@ function setupDragDrop() {
         const normDest = normalizePath(destDir);
         if (normSrc === normDest) return; // 不能拖到自己上
         if (normSrc.startsWith(normDest + '/')) {
-          showToast('不能将目录移动到其子目录中', 'error');
+          showToast(t('workspace.cannotMoveToSubdir'), 'error');
           return;
         }
 
-        showToast('移动中...', 'info');
+        showToast(t('workspace.moving'), 'info');
         const result = await moveFs(srcPath, destDir);
         if (result.success) {
-          showToast(`"${srcName}" 已移动到目标目录`, 'success');
+          showToast(t('workspace.movedToDir', { name: srcName }), 'success');
           invalidateDirCache(currentPath);
           invalidateDirCache(destDir);
           const destDirName = destDir.split(/[\\/]/).pop();
           await refreshCurrent();
           scrollToNewFile(destDirName);
         } else {
-          showToast(`移动失败: ${result.error}`, 'error');
+          showToast(t('workspace.moveFailed', { error: result.error }), 'error');
         }
       } catch (err) {
-        showToast(`移动失败: ${err.message}`, 'error');
+        showToast(t('workspace.moveFailed', { error: err.message }), 'error');
       }
       return;
     }
@@ -3498,7 +3927,7 @@ async function refreshCurrent(preservedScrollTop) {
   if (!currentPath) {
     const root = workspaceRoot || await getWorkspaceRoot();
     if (!root) {
-      showToast('无法刷新，请确认 Agent 已连接', 'error');
+      showToast(t('workspace.refreshFailed'), 'error');
       return;
     }
     workspaceRoot = root;
@@ -3609,22 +4038,22 @@ function updateBreadcrumb() {
         const normDest = normalizePath(destDir);
         if (normSrc === normDest) return;
         if (normDest.startsWith(normSrc + '/')) {
-          showToast('不能将目录移动到其子目录中', 'error');
+          showToast(t('workspace.cannotMoveToSubdir'), 'error');
           return;
         }
-        
-        showToast('移动中...', 'info');
+
+        showToast(t('workspace.moving'), 'info');
         const result = await moveFs(srcPath, destDir);
         if (result.success) {
-          showToast(`"${srcName}" 已移动到 "${destDir.split(/[\\/]/).pop()}"`, 'success');
+          showToast(t('workspace.movedToTarget', { name: srcName, target: destDir.split(/[\\/]/).pop() }), 'success');
           invalidateDirCache(currentPath);
           invalidateDirCache(destDir);
           await refreshCurrent();
         } else {
-          showToast(`移动失败: ${result.error}`, 'error');
+          showToast(t('workspace.moveFailed', { error: result.error }), 'error');
         }
       } catch (err) {
-        showToast(`移动失败: ${err.message}`, 'error');
+        showToast(t('workspace.moveFailed', { error: err.message }), 'error');
       }
     });
   });
@@ -3764,7 +4193,7 @@ async function performSearch() {
   addSearchHistory(searchQuery);
   searchHistoryIndex = -1;
 
-  showToast('搜索中...', 'info');
+  showToast(t('workspace.searching'), 'info');
   const results = await searchFilesRemote(currentPath, searchQuery);
   searchResults = results;
   isSearchMode = true;
@@ -3793,15 +4222,15 @@ async function clearSearch() {
 async function handleDeleteFile(path, name, type) {
   const isDir = type === 'directory';
   
-  const message = isDir 
-    ? `确定要删除目录 "${name}" 及其所有内容吗？\n\n路径: ${path}\n类型: 目录\n\n删除后可在回收站中恢复（7天后自动清理）`
-    : `确定要删除文件 "${name}" 吗？\n\n路径: ${path}\n类型: 文件\n\n删除后可在回收站中恢复（7天后自动清理）`;
-  
+  const message = isDir
+    ? t('workspace.confirmDeleteDir', { name, path })
+    : t('workspace.confirmDeleteFile', { name, path });
+
   if (typeof window.showCustomConfirm !== 'function') {
     const confirmed = confirm(message);
     if (!confirmed) return;
   } else {
-    const confirmed = await window.showCustomConfirm(message, '确认删除');
+    const confirmed = await window.showCustomConfirm(message, t('workspace.confirmDeleteTitle'));
     if (!confirmed) return;
   }
 
@@ -3811,7 +4240,7 @@ async function handleDeleteFile(path, name, type) {
   try {
     const config = await getAgentConfig();
     if (!config) {
-      showToast('Agent 未连接', 'error');
+      showToast(t('workspace.agentNotConnected'), 'error');
       return;
     }
 
@@ -3825,15 +4254,15 @@ async function handleDeleteFile(path, name, type) {
     });
     const data = await resp.json();
     if (data.success) {
-      showToast(`${isDir ? '目录' : '文件'} 已删除`, 'success');
+      showToast(isDir ? t('workspace.dirDeleted') : t('workspace.fileDeleted'), 'success');
       selectedPaths.delete(path);
       updateDownloadBtn();
       await refreshCurrent(preservedScrollTop);
     } else {
-      showToast(`删除失败: ${data.error || '未知错误'}`, 'error');
+      showToast(t('workspace.deleteFailedWithError', { error: data.error || t('workspace.unknownError') }), 'error');
     }
   } catch (err) {
-    showToast(`删除失败: ${err.message}`, 'error');
+    showToast(t('workspace.deleteFailedWithError', { error: err.message }), 'error');
   }
 }
 
@@ -3847,13 +4276,14 @@ async function handleBatchDelete() {
     return entry ? entry.name : p.split(/[\\/]/).pop();
   });
   
-  const message = `确定要删除选中的 ${paths.length} 个文件/目录吗？\n\n${names.slice(0, 5).map(n => `• ${n}`).join('\n')}${names.length > 5 ? `\n• ... 等共 ${names.length} 项` : ''}\n\n删除后可在回收站中恢复（7天后自动清理）`;
-  
+  const namesStr = names.slice(0, 5).map(n => `• ${n}`).join('\n') + (names.length > 5 ? t('workspace.batchNamesMore', { count: names.length }) : '');
+  const message = t('workspace.confirmBatchDelete', { count: paths.length, names: namesStr });
+
   if (typeof window.showCustomConfirm !== 'function') {
     const confirmed = confirm(message);
     if (!confirmed) return;
   } else {
-    const confirmed = await window.showCustomConfirm(message, '确认批量删除');
+    const confirmed = await window.showCustomConfirm(message, t('workspace.confirmBatchDeleteTitle'));
     if (!confirmed) return;
   }
 
@@ -3863,7 +4293,7 @@ async function handleBatchDelete() {
   try {
     const config = await getAgentConfig();
     if (!config) {
-      showToast('Agent 未连接', 'error');
+      showToast(t('workspace.agentNotConnected'), 'error');
       return;
     }
 
@@ -3892,14 +4322,14 @@ async function handleBatchDelete() {
     }
     
     if (successCount > 0) {
-      showToast(`已删除 ${successCount} 项${failCount > 0 ? `，${failCount} 项失败` : ''}`, failCount > 0 ? 'warning' : 'success');
+      showToast(t('workspace.deletedCount', { success: successCount, failed: failCount > 0 ? t('workspace.deletedCountFailed', { count: failCount }) : '' }), failCount > 0 ? 'warning' : 'success');
       updateDownloadBtn();
       await refreshCurrent(preservedScrollTop);
     } else {
-      showToast('删除失败', 'error');
+      showToast(t('workspace.deleteFailed'), 'error');
     }
   } catch (err) {
-    showToast(`删除失败: ${err.message}`, 'error');
+    showToast(t('workspace.deleteFailedWithError', { error: err.message }), 'error');
   }
 }
 
@@ -3932,11 +4362,11 @@ async function showFileInfo(filePath, fileName, type) {
   overlay.className = 'modal-overlay show';
   overlay.innerHTML = `
     <div class="modal-container file-info-modal">
-      <button class="file-info-close" title="关闭" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
-      <div class="modal-title">${escapeHtml(fileName)} - 文件详情</div>
-      <div class="file-info-loading">加载中...</div>
+      <button class="file-info-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
+      <div class="modal-title">${escapeHtml(fileName)} - ${t('workspace.fileDetailsLabel')}</div>
+      <div class="file-info-loading">${t('workspace.loadingLabel')}</div>
       <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-        <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">关闭</button>
+        <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.close')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -3950,31 +4380,31 @@ async function showFileInfo(filePath, fileName, type) {
     const body = overlay.querySelector('.file-info-loading');
     if (!result.success || !result.info) {
       body.className = '';
-      body.innerHTML = `<div class="workspace-panel-error">获取详情失败: ${escapeHtml(result.error || '未知错误')}</div>`;
+      body.innerHTML = `<div class="workspace-panel-error">${t('workspace.getDetailsFailed', { error: result.error || t('workspace.unknownError') })}</div>`;
       return;
     }
     const info = result.info;
     const formatDate = (ts) => {
       if (!ts) return '—';
       const d = new Date(ts);
-      return d.toLocaleString('zh-CN');
+      return d.toLocaleString(getLanguage() === 'en' ? 'en-US' : 'zh-CN');
     };
 
-    const typeText = info.isDirectory ? '目录' : info.isSymbolicLink ? '符号链接' : '文件';
-    const sizeText = info.isDirectory ? null : formatFileSize(info.size) + ` (${info.size.toLocaleString()} 字节)`;
+    const typeText = info.isDirectory ? t('workspace.getTypeDir') : info.isSymbolicLink ? t('workspace.getTypeSymlink') : t('workspace.getTypeFile');
+    const sizeText = info.isDirectory ? null : formatFileSize(info.size) + ` (${info.size.toLocaleString()} ${t('workspace.bytes')})`;
     const mimeText = info.mimeType || null;
     const permText = formatPermission(info.mode, info.isDirectory);
 
     const rows = [
-      ['名称', escapeHtml(info.name), info.name],
-      ['类型', typeText, typeText],
-      ['路径', `<span style="word-break:break-all;">${escapeHtml(info.path)}</span>`, info.path],
-      ['大小', sizeText || '—', sizeText],
-      ['MIME 类型', mimeText ? escapeHtml(mimeText) : '—', mimeText],
-      ['修改时间', formatDate(info.mtime), formatDate(info.mtime)],
-      ['创建时间', formatDate(info.ctime), formatDate(info.ctime)],
-      ['访问时间', formatDate(info.atime), formatDate(info.atime)],
-      ['权限', escapeHtml(permText), permText]
+      [t('workspace.infoName'), escapeHtml(info.name), info.name],
+      [t('workspace.infoType'), typeText, typeText],
+      [t('workspace.infoPath'), `<span style="word-break:break-all;">${escapeHtml(info.path)}</span>`, info.path],
+      [t('workspace.infoSize'), sizeText || '—', sizeText],
+      [t('workspace.infoMime'), mimeText ? escapeHtml(mimeText) : '—', mimeText],
+      [t('workspace.infoMtime'), formatDate(info.mtime), formatDate(info.mtime)],
+      [t('workspace.infoCtime'), formatDate(info.ctime), formatDate(info.ctime)],
+      [t('workspace.infoAtime'), formatDate(info.atime), formatDate(info.atime)],
+      [t('workspace.infoPermission'), escapeHtml(permText), permText]
     ];
     if (info.uid !== undefined) rows.push(['UID', String(info.uid), String(info.uid)]);
     if (info.gid !== undefined) rows.push(['GID', String(info.gid), String(info.gid)]);
@@ -3983,7 +4413,7 @@ async function showFileInfo(filePath, fileName, type) {
     body.innerHTML = `<table class="file-info-table">${
       rows.map(([k, v, copyVal]) => {
         if (copyVal != null) {
-          return `<tr><td class="file-info-key">${k}</td><td class="file-info-val file-info-copyable" data-copy="${escapeHtml(copyVal)}" title="点击复制">${v}<svg class="file-info-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></td></tr>`;
+          return `<tr><td class="file-info-key">${k}</td><td class="file-info-val file-info-copyable" data-copy="${escapeHtml(copyVal)}" title="${t('workspace.clickToCopy')}">${v}<svg class="file-info-copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></td></tr>`;
         }
         return `<tr><td class="file-info-key">${k}</td><td class="file-info-val">${v}</td></tr>`;
       }).join('')
@@ -3996,16 +4426,16 @@ async function showFileInfo(filePath, fileName, type) {
         if (!text) return;
         try {
           await navigator.clipboard.writeText(text);
-          showToast('已复制到剪贴板', 'success');
+          showToast(t('workspace.copiedToClipboard'), 'success');
         } catch {
-          showToast('复制失败', 'error');
+          showToast(t('workspace.copyFailed'), 'error');
         }
       });
     });
   } catch (err) {
     const body = overlay.querySelector('.file-info-loading');
     body.className = '';
-    body.innerHTML = `<div class="workspace-panel-error">获取详情失败: ${escapeHtml(err.message)}</div>`;
+    body.innerHTML = `<div class="workspace-panel-error">${t('workspace.getDetailsFailed', { error: err.message })}</div>`;
   }
 }
 
@@ -4021,8 +4451,8 @@ function showInputDialog(title, defaultValue = '', placeholder = '') {
         <div class="modal-title">${escapeHtml(title)}</div>
         <input type="text" class="modal-input" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" autofocus style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin:8px 0;box-sizing:border-box;">
         <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-          <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">取消</button>
-          <button class="modal-btn-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">确定</button>
+          <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.cancel')}</button>
+          <button class="modal-btn-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">${t('workspace.confirm')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -4061,11 +4491,11 @@ async function showSwitchWorkdirDialog() {
   try {
     detail = await getAgentStatusDetail();
   } catch (err) {
-    showToast('获取工作目录信息失败', 'error');
+    showToast(t('workspace.getWorkdirInfoFailed'), 'error');
     return;
   }
   if (!detail) {
-    showToast('无法连接 Agent，请确认代理已启动', 'error');
+    showToast(t('workspace.cannotConnectAgent'), 'error');
     return;
   }
 
@@ -4077,16 +4507,16 @@ async function showSwitchWorkdirDialog() {
     overlay.className = 'modal-overlay show';
     overlay.innerHTML = `
       <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;position:relative;">
-        <button class="switch-workdir-close" title="关闭" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:#999;border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
-        <div class="modal-title">切换工作目录</div>
-        <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">当前: <span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || '未设置'}</span></div>
-        <div style="font-size:12px;color:#999;margin:6px 0;">从允许的目录中选择（非当前目录可移除）</div>
+        <button class="switch-workdir-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:#999;border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
+        <div class="modal-title">${t('workspace.switchWorkdirTitle')}</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">${t('workspace.currentLabel')}<span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span></div>
+        <div style="font-size:12px;color:#999;margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
         <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px;"></div>
-        <div style="font-size:12px;color:#999;margin:6px 0;">或输入绝对路径</div>
-        <input type="text" class="switch-workdir-manual" placeholder="/Users/you/path 或 ~/path" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
+        <div style="font-size:12px;color:#999;margin:6px 0;">${t('workspace.orInputPath')}</div>
+        <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">取消</button>
-          <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">切换</button>
+          <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.cancel')}</button>
+          <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">${t('workspace.switchBtn')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -4107,7 +4537,7 @@ async function showSwitchWorkdirDialog() {
     // 渲染允许目录列表（删除后复用）
     function renderList() {
       if (!allowedPaths.length) {
-        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">暂无允许的目录</div>';
+        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">' + t('workspace.noAllowedPaths') + '</div>';
         return;
       }
       listEl.innerHTML = allowedPaths.map(p => {
@@ -4117,8 +4547,8 @@ async function showSwitchWorkdirDialog() {
               <span style="flex-shrink:0;">📁</span>
               <span style="flex:1;">${escapeHtml(p)}</span>
               ${isCurrent
-                ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">当前</span>'
-                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="从允许列表移除" style="flex-shrink:0;background:none;border:none;color:#e53e3e;cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
+                ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">' + t('workspace.currentTag') + '</span>'
+                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="' + t('workspace.removeFromAllowed') + '" style="flex-shrink:0;background:none;border:none;color:#e53e3e;cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
               }
             </div>`;
       }).join('');
@@ -4128,17 +4558,17 @@ async function showSwitchWorkdirDialog() {
     // 移除允许目录
     async function doRemove(targetPath) {
       const ok = await window.showCustomConfirm(
-        `确定要从允许访问的目录列表中移除以下目录吗？\n${targetPath}\n\n移除后 AI 将无法访问该目录，可重新切换工作目录再加回。`,
-        '确认移除允许目录'
+        t('workspace.confirmRemovePath', { path: targetPath }),
+        t('workspace.confirmRemovePathTitle')
       );
       if (!ok) return;
       const result = await removeAllowedPath(targetPath);
       if (result.success) {
         allowedPaths = Array.isArray(result.allowedPaths) ? result.allowedPaths : allowedPaths.filter(p => p !== targetPath);
         renderList();
-        showToast('已从允许列表移除', 'success');
+        showToast(t('workspace.removedFromAllowed'), 'success');
       } else {
-        showToast(`移除失败: ${result.error || '未知错误'}`, 'error');
+        showToast(t('workspace.removeFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
       }
     }
 
@@ -4158,12 +4588,12 @@ async function showSwitchWorkdirDialog() {
 
     async function doSwitch(targetPath) {
       if (!targetPath) {
-        showToast('请选择或输入目标路径', 'error');
+        showToast(t('workspace.selectOrInputPath'), 'error');
         return;
       }
       targetPath = targetPath.trim();
       if (targetPath === currentWorkdir) {
-        showToast('该目录已是当前工作目录', 'info');
+        showToast(t('workspace.alreadyCurrentWorkdir'), 'info');
         cleanup();
         resolve(false);
         return;
@@ -4178,8 +4608,8 @@ async function showSwitchWorkdirDialog() {
       });
       if (!isAllowed) {
         const ok = await window.showCustomConfirm(
-          `该路径不在允许列表内，切换后将自动创建目录并加入允许列表:\n${targetPath}`,
-          '确认切换到新目录'
+          t('workspace.confirmSwitchToNew', { path: targetPath }),
+          t('workspace.confirmSwitchToNewTitle')
         );
         if (!ok) return;
       }
@@ -4211,7 +4641,7 @@ async function showSwitchWorkdirDialog() {
 async function performSwitchWorkdir(newWorkdir) {
   const result = await switchWorkspace(newWorkdir);
   if (!result.success) {
-    showToast(`切换失败: ${result.error || '未知错误'}`, 'error');
+    showToast(t('workspace.switchFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
     return false;
   }
 
@@ -4264,7 +4694,7 @@ async function performSwitchWorkdir(newWorkdir) {
     await navigateToRoot();
   }
 
-  showToast(`已切换到: ${result.workdir}`, 'success');
+  showToast(t('workspace.switchedTo', { path: result.workdir }), 'success');
   return true;
 }
 
@@ -4282,9 +4712,9 @@ async function handleRenameFile(path, name, type) {
   }
 
   const newBase = await showInputDialog(
-    `重命名${type === 'directory' ? '目录' : '文件'}`,
+    type === 'directory' ? t('workspace.renameDir') : t('workspace.renameFile'),
     baseName,
-    '输入新名称'
+    t('workspace.inputNewName')
   );
   if (!newBase || newBase === baseName) return;
 
@@ -4292,15 +4722,15 @@ async function handleRenameFile(path, name, type) {
   try {
     const result = await renameFs(path, newName);
     if (result.success) {
-      showToast(`已重命名为 "${newName}"`, 'success');
+      showToast(t('workspace.renamedTo', { name: newName }), 'success');
       invalidateDirCache(currentPath);
       await refreshCurrent();
       scrollToNewFile(newName);
     } else {
-      showToast(`重命名失败: ${result.error}`, 'error');
+      showToast(t('workspace.renameFailedWithError', { error: result.error }), 'error');
     }
   } catch (err) {
-    showToast(`重命名失败: ${err.message}`, 'error');
+    showToast(t('workspace.renameFailedWithError', { error: err.message }), 'error');
   }
 }
 
@@ -4310,22 +4740,22 @@ async function handleRenameFile(path, name, type) {
 async function handleNewFolder() {
   if (!currentPath) return;
 
-  const dirName = await showInputDialog('新建文件夹', '', '输入文件夹名称');
+  const dirName = await showInputDialog(t('workspace.newFolderTitle'), '', t('workspace.inputFolderName'));
   if (!dirName) return;
 
   const dirPath = normalizePath(`${currentPath}/${dirName}`);
   try {
     const result = await createDir(dirPath);
     if (result.success) {
-      showToast(`已创建文件夹 "${dirName}"`, 'success');
+      showToast(t('workspace.folderCreated', { name: dirName }), 'success');
       invalidateDirCache(currentPath);
       await refreshCurrent();
       scrollToNewFile(dirName);
     } else {
-      showToast(`创建失败: ${result.error}`, 'error');
+      showToast(t('workspace.createFailedWithError', { error: result.error }), 'error');
     }
   } catch (err) {
-    showToast(`创建失败: ${err.message}`, 'error');
+    showToast(t('workspace.createFailedWithError', { error: err.message }), 'error');
   }
 }
 
@@ -4390,7 +4820,7 @@ async function compressBlobImage(blob) {
 
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('图片加载失败'));
+      reject(new Error(t('workspace.imageLoadFailed')));
     };
 
     img.src = url;
@@ -4466,9 +4896,9 @@ async function attachFilesForQuestion(paths) {
   if (total > 0) {
     // 未启用图片识别时，提示图片已作为文件处理
     if (!state.enableImageInput && regularFiles.some(f => f.type?.startsWith('image/'))) {
-      showToast(`已添加 ${total} 个文件到问答（图片识别未启用，图片作为文件附件）`, 'success');
+      showToast(t('workspace.addedFilesToQuestionNoImage', { count: total }), 'success');
     } else {
-      showToast(`已添加 ${total} 个文件到问答`, 'success');
+      showToast(t('workspace.addedFilesToQuestion', { count: total }), 'success');
     }
   }
 }
@@ -4536,7 +4966,7 @@ function updateDownloadBtn() {
     btn.style.display = '';
     batchDeleteBtn.style.display = '';
     countEl.style.display = '';
-    countEl.textContent = `已选 ${selectedPaths.size}`;
+    countEl.textContent = t('workspace.selectedCount', { count: selectedPaths.size });
     btn.disabled = downloadInProgress;
   }
   updateAskBtn();

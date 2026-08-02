@@ -3,6 +3,22 @@ import state from './state.js';
 import { escapeHtml, adjustInputHeight } from './utils.js';
 import { hideAgentAtSelector } from './agent-at-selector.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  pageSelector: {
+    noOpenPages: '暂无打开的网页',
+    noTitle: '无标题',
+    currentTab: ' · 当前',
+  },
+});
+registerTranslations('en', {
+  pageSelector: {
+    noOpenPages: 'No open pages',
+    noTitle: 'Untitled',
+    currentTab: ' · Current',
+  },
+});
 
 /**
  * 获取当前窗口所有打开的标签页
@@ -37,7 +53,7 @@ export async function renderPageList(filterText = '') {
   });
 
   if (filteredTabs.length === 0) {
-    pageList.innerHTML = '<div class="prompt-empty">暂无打开的网页</div>';
+    pageList.innerHTML = `<div class="prompt-empty">${t('pageSelector.noOpenPages')}</div>`;
     state.selectedPageIndex = -1;
     return;
   }
@@ -46,12 +62,12 @@ export async function renderPageList(filterText = '') {
   const currentSelectedPageId = state.selectedPage ? state.selectedPage.id : null;
 
   pageList.innerHTML = filteredTabs.map((tab, index) => {
-    const title = tab.title || '无标题';
+    const title = tab.title || t('pageSelector.noTitle');
     const url = tab.url || '';
     const favIcon = tab.favIconUrl
       ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" onerror="this.style.display='none'">`
       : '<span style="font-size:14px;flex-shrink:0;">🌐</span>';
-    const isActive = tab.active ? ' · 当前' : '';
+    const isActive = tab.active ? t('pageSelector.currentTab') : '';
     const isPageSelected = tab.id === currentSelectedPageId;
 
     return `
@@ -96,7 +112,7 @@ export function updatePageSelection(items) {
 export function selectPage(tab) {
   state.selectedPage = {
     id: tab.id,
-    title: tab.title || '无标题',
+    title: tab.title || t('pageSelector.noTitle'),
     url: tab.url || '',
     favIconUrl: tab.favIconUrl || ''
   };
@@ -105,7 +121,7 @@ export function selectPage(tab) {
   const indicator = document.getElementById('pageIndicator');
   const indicatorName = document.getElementById('pageIndicatorName');
   if (indicator && indicatorName) {
-    const displayTitle = (state.selectedPage.title && state.selectedPage.title !== '无标题') ? state.selectedPage.title : '';
+    const displayTitle = (state.selectedPage.title && state.selectedPage.title !== t('pageSelector.noTitle')) ? state.selectedPage.title : '';
     const displayUrl = state.selectedPage.url || '';
     if (displayTitle && displayUrl) {
       indicatorName.textContent = `${displayTitle} · ${displayUrl}`;

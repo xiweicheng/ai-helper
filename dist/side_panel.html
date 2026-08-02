@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Helper - 模型问答</title>
+  <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/chunk-CMxvf4Kt.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-D99_DuDJ.js"></script>
-  <script type="module" crossorigin src="/assets/logger-BEz2S157.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-Cqwqmvdc.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-C3sPLSny.js"></script>
+  <script type="module" crossorigin src="/assets/constants-C8wFpWJV.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-CiIH5hei.js"></script>
+  <script type="module" crossorigin src="/assets/agent-defaults-DvfK1RPH.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-B1XglP7N.js"></script>
   <script type="module" crossorigin src="/assets/state-Cl7p6-6Y.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-B1l7tSFM.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-DmCa0DKg.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-CNcYjwi1.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-BzUnDdXQ.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -133,7 +133,7 @@
           </button>
         </div>
       </div>
-      <button class="settings-btn" id="settingsBtn" title="插件设置">
+      <button class="settings-btn" id="settingsBtn" data-i18n-title="header.settingsTitle" title="插件设置">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
@@ -146,7 +146,7 @@
   <div class="session-tabs" id="sessionTabs">
     <div class="session-tabs-scroll" id="sessionTabsScroll"></div>
     <div class="session-tabs-actions" id="sessionTabsActions">
-      <div class="session-tabs-more" id="sessionTabsMore" title="全部会话">
+      <div class="session-tabs-more" id="sessionTabsMore" data-i18n-title="session.allSessions" title="全部会话">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="5" r="2"/>
           <circle cx="12" cy="12" r="2"/>
@@ -163,11 +163,11 @@
       <svg class="session-dropdown-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
       </svg>
-      <input type="text" placeholder="搜索会话..." id="sessionDropdownSearch" />
+      <input type="text" data-i18n-placeholder="session.searchPlaceholder" placeholder="搜索会话..." id="sessionDropdownSearch" />
     </div>
     <div class="session-dropdown-list" id="sessionDropdownList"></div>
     <div class="session-dropdown-footer">
-      <button class="session-dropdown-close-all" id="sessionDropdownCloseAll">关闭全部</button>
+      <button class="session-dropdown-close-all" id="sessionDropdownCloseAll" data-i18n="session.closeAll">关闭全部</button>
     </div>
   </div>
   
@@ -176,12 +176,12 @@
       <div class="icon-wrapper">
         <div class="icon">💬</div>
       </div>
-      <h2>开始对话</h2>
-      <p>输入您的问题，AI 助手将为您解答</p>
+      <h2 data-i18n="chat.welcomeTitle">开始对话</h2>
+      <p data-i18n="chat.welcomeSubtitle">输入您的问题，AI 助手将为您解答</p>
     </div>
     <!-- 选中文本浮动菜单 -->
     <div class="selection-floating-menu" id="selectionFloatingMenu">
-      <div class="menu-header">基于选中内容提问</div>
+      <div class="menu-header" data-i18n="chat.askBasedOnSelection">基于选中内容提问</div>
       <div id="selectionMenuItems"></div>
     </div>
   </div>

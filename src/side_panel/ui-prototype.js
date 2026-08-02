@@ -3,6 +3,43 @@
 import { getUiPrototype, listUiPrototypes, deleteUiPrototype } from '../storage/db.js';
 import { ICON_EYE_24, ICON_EXTERNAL_LINK_24, ICON_EDIT_PEN_24, ICON_TRASH_24, ICON_DOWNLOAD_24 } from './icons.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  uiProto: {
+    defaultTitle: '原型',
+    optimizePrompt: '请帮我优化这个UI原型界面 {id}（{title}），',
+    loadFailed: '加载失败',
+    noDescription: '暂无描述',
+    previewInPanel: '面板内预览',
+    continueOptimizeTitle: '继续优化',
+    downloadPrototype: '下载原型',
+    confirmDeleteTitle: '确认删除',
+    confirmDeleteMessage: '确定删除原型 "{title}" 吗？此操作不可撤销。',
+    deleteFailed: '删除失败: {message}',
+    justNow: '刚刚',
+    minutesAgo: '{count} 分钟前',
+    hoursAgo: '{count} 小时前',
+  },
+});
+
+registerTranslations('en', {
+  uiProto: {
+    defaultTitle: 'Prototype',
+    optimizePrompt: 'Please help me optimize this UI prototype {id} ({title}), ',
+    loadFailed: 'Load failed',
+    noDescription: 'No description',
+    previewInPanel: 'Preview in panel',
+    continueOptimizeTitle: 'Continue optimizing',
+    downloadPrototype: 'Download prototype',
+    confirmDeleteTitle: 'Confirm delete',
+    confirmDeleteMessage: 'Are you sure you want to delete prototype "{title}"? This action cannot be undone.',
+    deleteFailed: 'Delete failed: {message}',
+    justNow: 'Just now',
+    minutesAgo: '{count} minutes ago',
+    hoursAgo: '{count} hours ago',
+  },
+});
 
 let currentPrototype = null;
 let currentZoom = 1.0;
@@ -45,7 +82,7 @@ export function showUiPrototypeDialog(prototypeData) {
   const localOpenBtn = document.getElementById('prototypeLocalOpenBtn');
   
   if (titleEl) {
-    titleEl.textContent = prototypeData.title || 'UI 原型预览';
+    titleEl.textContent = prototypeData.title || t('prototype.previewTitle');
   }
   
   if (descEl) {
@@ -95,13 +132,13 @@ export function continueOptimizePrototype() {
   if (!currentPrototype) return;
   
   const prototypeId = currentPrototype.id;
-  const title = currentPrototype.title || '原型';
-  
+  const title = currentPrototype.title || t('uiProto.defaultTitle');
+
   hideUiPrototypeDialog();
-  
+
   const userInput = document.getElementById('userInput');
   if (userInput) {
-    userInput.value = `请帮我优化这个UI原型界面 ${prototypeId}（${title}），`;
+    userInput.value = t('uiProto.optimizePrompt', { id: prototypeId, title });
     userInput.focus();
     userInput.style.height = 'auto';
     userInput.style.height = userInput.scrollHeight + 'px';
@@ -189,7 +226,7 @@ export async function showPrototypeLibrary() {
   
   if (!listEl || !modal) return;
   
-  listEl.innerHTML = '<div class="prototype-library-empty">加载中...</div>';
+  listEl.innerHTML = `<div class="prototype-library-empty">${t('common.loading')}</div>`;
   
   try {
     const prototypes = await listUiPrototypes();
@@ -201,7 +238,7 @@ export async function showPrototypeLibrary() {
     
   } catch (err) {
     logger.error('[SidePanel] 加载原型页面库失败:', err);
-    listEl.innerHTML = '<div class="prototype-library-empty">加载失败</div>';
+    listEl.innerHTML = `<div class="prototype-library-empty">${t('uiProto.loadFailed')}</div>`;
   }
   
   modal.classList.add('show');
@@ -213,7 +250,7 @@ function renderPrototypeLibraryList(prototypes) {
   if (!listEl) return;
 
   if (prototypes.length === 0) {
-    listEl.innerHTML = '<div class="prototype-library-empty">暂无原型</div>';
+    listEl.innerHTML = `<div class="prototype-library-empty">${t('prototype.empty')}</div>`;
   } else {
     listEl.innerHTML = prototypes.map(p => {
         const shortId = p.id.replace('proto_', '').slice(-6);
@@ -221,28 +258,28 @@ function renderPrototypeLibraryList(prototypes) {
         <div class="prototype-library-item" data-id="${p.id}">
           <div class="prototype-library-item-info">
             <div class="prototype-library-item-title" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</div>
-            ${p.description ? `<div class="prototype-library-item-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</div>` : '<div class="prototype-library-item-desc prototype-library-item-desc-empty">暂无描述</div>'}
+            ${p.description ? `<div class="prototype-library-item-desc" title="${escapeHtml(p.description)}">${escapeHtml(p.description)}</div>` : `<div class="prototype-library-item-desc prototype-library-item-desc-empty">${t('uiProto.noDescription')}</div>`}
             <div class="prototype-library-item-meta">
               <span class="prototype-library-item-id">ID: ${shortId}</span>
               <span class="prototype-library-item-time">${formatTime(p.createdAt)}</span>
             </div>
           </div>
           <div class="prototype-library-item-actions">
-            <button class="prototype-library-item-open" title="面板内预览">
+            <button class="prototype-library-item-open" title="${t('uiProto.previewInPanel')}">
               ${ICON_EYE_24}
             </button>
             ${p.localPath ? `
-            <button class="prototype-library-item-local-open" data-path="${escapeHtml(p.localPath)}" title="在本地浏览器打开">
+            <button class="prototype-library-item-local-open" data-path="${escapeHtml(p.localPath)}" title="${t('prototype.openLocal')}">
               ${ICON_EXTERNAL_LINK_24}
             </button>
             ` : ''}
-            <button class="prototype-library-item-optimize" data-id="${p.id}" title="继续优化">
+            <button class="prototype-library-item-optimize" data-id="${p.id}" title="${t('uiProto.continueOptimizeTitle')}">
               ${ICON_EDIT_PEN_24}
             </button>
-            <button class="prototype-library-item-delete" data-id="${p.id}" title="删除">
+            <button class="prototype-library-item-delete" data-id="${p.id}" title="${t('common.delete')}">
               ${ICON_TRASH_24}
             </button>
-            <button class="prototype-library-item-download" data-id="${p.id}" title="下载原型">
+            <button class="prototype-library-item-download" data-id="${p.id}" title="${t('uiProto.downloadPrototype')}">
               ${ICON_DOWNLOAD_24}
             </button>
           </div>
@@ -289,17 +326,17 @@ function renderPrototypeLibraryList(prototypes) {
           optimizeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = optimizeBtn.dataset.id;
-            const title = item.querySelector('.prototype-library-item-title')?.textContent || '原型';
+            const title = item.querySelector('.prototype-library-item-title')?.textContent || t('uiProto.defaultTitle');
             continueOptimizeFromLibrary(id, title);
             hidePrototypeLibrary();
           });
         }
-        
+
         if (deleteBtn) {
           deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = deleteBtn.dataset.id;
-            const title = item.querySelector('.prototype-library-item-title')?.textContent || '原型';
+            const title = item.querySelector('.prototype-library-item-title')?.textContent || t('uiProto.defaultTitle');
             deletePrototypeItem(id, title);
           });
         }
@@ -372,7 +409,7 @@ export function hidePrototypeLibrary() {
 function continueOptimizeFromLibrary(prototypeId, title) {
   const userInput = document.getElementById('userInput');
   if (userInput) {
-    userInput.value = `请帮我优化这个UI原型界面 ${prototypeId}（${title}），`;
+    userInput.value = t('uiProto.optimizePrompt', { id: prototypeId, title });
     userInput.focus();
     userInput.style.height = 'auto';
     userInput.style.height = userInput.scrollHeight + 'px';
@@ -409,9 +446,9 @@ async function downloadPrototypeFromLibrary(prototypeId) {
 
 async function deletePrototypeItem(prototypeId, title) {
   const confirmed = await showConfirm(
-    '确认删除',
-    `确定删除原型 "${title}" 吗？此操作不可撤销。`,
-    '删除'
+    t('uiProto.confirmDeleteTitle'),
+    t('uiProto.confirmDeleteMessage', { title }),
+    t('common.delete')
   );
   
   if (!confirmed) return;
@@ -440,7 +477,7 @@ async function deletePrototypeItem(prototypeId, title) {
     showPrototypeLibrary();
   } catch (err) {
     logger.error('[SidePanel] 删除原型失败:', err);
-    alert('删除失败: ' + err.message);
+    alert(t('uiProto.deleteFailed', { message: err.message }));
   }
 }
 
@@ -450,7 +487,7 @@ async function deletePrototypeItem(prototypeId, title) {
  * @param {string} message 提示消息
  * @param {string} okText 确认按钮文字，默认"确认"
  */
-function showConfirm(title, message, okText = '确认') {
+function showConfirm(title, message, okText = t('common.confirm')) {
   return new Promise((resolve) => {
     const modal = document.getElementById('genericConfirmModal');
     const titleEl = document.getElementById('genericConfirmTitle');
@@ -496,11 +533,11 @@ function formatTime(timestamp) {
   const diff = now - date;
   
   if (diff < 60000) {
-    return '刚刚';
+    return t('uiProto.justNow');
   } else if (diff < 3600000) {
-    return Math.floor(diff / 60000) + ' 分钟前';
+    return t('uiProto.minutesAgo', { count: Math.floor(diff / 60000) });
   } else if (diff < 86400000) {
-    return Math.floor(diff / 3600000) + ' 小时前';
+    return t('uiProto.hoursAgo', { count: Math.floor(diff / 3600000) });
   } else {
     return date.toLocaleDateString('zh-CN');
   }

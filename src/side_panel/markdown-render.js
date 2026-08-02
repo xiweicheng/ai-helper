@@ -3,6 +3,79 @@
 import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  markdown: {
+    copyCode: '复制代码',
+    copyMdTableTitle: '复制 Markdown 表格\n按住 Ctrl/⌘ 点击复制富文本表格',
+    downloadExcel: '下载 Excel',
+    exportTableImage: '导出表格为图片',
+    downloadFailed: '下载失败: {message}',
+    unknownError: '未知错误',
+    chartRenderFailed: '图表渲染失败: {detail}',
+    zoomIn: '放大',
+    zoomOut: '缩小',
+    reset: '重置',
+    copyToClipboard: '复制到剪贴板',
+    downloadImage: '下载图片',
+    viewSource: '查看源代码',
+    mermaidCopied: 'Mermaid 图表已复制到剪贴板！',
+    autoDownloadChart: '已自动转为下载方式保存图表',
+    copyFailed: '复制失败: {message}',
+    copySourceTitle: '复制源代码',
+    backToChart: '返回图表',
+    codeBlockLabel: '代码块',
+    codeLabel: '代码',
+    copiedToClipboard: '{label}已复制到剪贴板',
+    codeCopied: '代码已复制到剪贴板',
+    copiedRichTable: '已复制富文本表格',
+    copyRichTableFailed: '复制富文本表格失败',
+    copyFailedShort: '复制失败',
+    copiedMdTable: '已复制 Markdown 表格',
+    imageExportLibMissing: '图片导出库未加载',
+    tableImageExported: '表格图片已导出',
+    exportImageFailed: '导出图片失败',
+    canvasExportFailed: 'Canvas toDataURL 失败，无法导出图片',
+    svgLoadFailed: 'SVG 图片加载失败: {message}',
+  },
+});
+
+registerTranslations('en', {
+  markdown: {
+    copyCode: 'Copy code',
+    copyMdTableTitle: 'Copy Markdown table\nCtrl/Cmd+click to copy rich-text table',
+    downloadExcel: 'Download Excel',
+    exportTableImage: 'Export table as image',
+    downloadFailed: 'Download failed: {message}',
+    unknownError: 'Unknown error',
+    chartRenderFailed: 'Chart rendering failed: {detail}',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    reset: 'Reset',
+    copyToClipboard: 'Copy to clipboard',
+    downloadImage: 'Download image',
+    viewSource: 'View source',
+    mermaidCopied: 'Mermaid chart copied to clipboard!',
+    autoDownloadChart: 'Automatically switched to download to save the chart',
+    copyFailed: 'Copy failed: {message}',
+    copySourceTitle: 'Copy source code',
+    backToChart: 'Back to chart',
+    codeBlockLabel: 'Code block',
+    codeLabel: 'Code',
+    copiedToClipboard: '{label} copied to clipboard',
+    codeCopied: 'Code copied to clipboard',
+    copiedRichTable: 'Rich-text table copied',
+    copyRichTableFailed: 'Failed to copy rich-text table',
+    copyFailedShort: 'Copy failed',
+    copiedMdTable: 'Markdown table copied',
+    imageExportLibMissing: 'Image export library not loaded',
+    tableImageExported: 'Table image exported',
+    exportImageFailed: 'Failed to export image',
+    canvasExportFailed: 'Canvas toDataURL failed, unable to export image',
+    svgLoadFailed: 'SVG image load failed: {message}',
+  },
+});
 
 const MAX_SVG_DIM = 2000;
 
@@ -138,7 +211,7 @@ function safeCanvasToDataUrl(canvas) {
     logger.debug('[SidePanel] JPEG toDataURL 也失败:', e2.message);
   }
 
-  throw new Error('Canvas toDataURL 失败，无法导出图片');
+  throw new Error(t('markdown.canvasExportFailed'));
 }
 
 export function svgToPngDataUrl(svgElement) {
@@ -192,7 +265,7 @@ export function svgToPngDataUrl(svgElement) {
       };
 
       img.onerror = function (err) {
-        reject(new Error('SVG 图片加载失败: ' + (err?.message || err)));
+        reject(new Error(t('markdown.svgLoadFailed', { message: String(err?.message || err) })));
       };
 
       img.src = dataUrl;
@@ -278,7 +351,7 @@ export function formatMarkdown(text) {
     html = html.replace(
       `%%CODE_BLOCK_${index}%%`,
       `<div class="code-block-container" style="position: relative;">
-        <button class="code-copy-btn" data-code="${index}" title="复制代码">
+        <button class="code-copy-btn" data-code="${index}" title="${t('markdown.copyCode')}">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
           </svg>
@@ -355,18 +428,18 @@ export function createTableHTML(tableData) {
       tableHTML += `<th class="table-header-cell-wrapper">
         ${headerCell}
         <div class="table-toolbar">
-          <button class="table-toolbar-btn copy-md-btn" title="复制 Markdown 表格&#10;按住 Ctrl/⌘ 点击复制富文本表格" data-table-full="${encodeURIComponent(full)}">
+          <button class="table-toolbar-btn copy-md-btn" title="${t('markdown.copyMdTableTitle')}" data-table-full="${encodeURIComponent(full)}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
             </svg>
           </button>
-          <button class="table-toolbar-btn download-excel-btn" title="下载 Excel" data-table-header="${encodeURIComponent(header)}" data-table-body="${encodeURIComponent(body)}">
+          <button class="table-toolbar-btn download-excel-btn" title="${t('markdown.downloadExcel')}" data-table-header="${encodeURIComponent(header)}" data-table-body="${encodeURIComponent(body)}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
               <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
             </svg>
           </button>
-          <button class="table-toolbar-btn export-table-img-btn" title="导出表格为图片">
+          <button class="table-toolbar-btn export-table-img-btn" title="${t('markdown.exportTableImage')}">
             <svg viewBox="0 0 16 16" fill="currentColor">
               <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
               <path d="M2.002 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2h-12zm12 1a1 1 0 0 1 1 1v6.5l-3.777-1.947a.5.5 0 0 0-.577.093l-3.71 3.71-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12V3a1 1 0 0 1 1-1h12z"/>
@@ -436,7 +509,7 @@ export function downloadTableAsExcel(tableBlock) {
     logger.debug('[SidePanel] Excel 下载成功');
   } catch (error) {
     logger.error('[SidePanel] 下载 Excel 失败:', error);
-    showToast('下载失败: ' + error.message, 'error');
+    showToast(t('markdown.downloadFailed', { message: error.message }), 'error');
   }
 }
 
@@ -447,7 +520,7 @@ export function downloadTableAsExcel(tableBlock) {
  * Extract meaningful error message from mermaid error object
  */
 function getMermaidErrorDetail(err) {
-  if (!err) return '未知错误';
+  if (!err) return t('markdown.unknownError');
   if (typeof err === 'string') return err;
   // mermaid 可能抛出非标准 Error 对象
   const msg = err.message || err.str || err.msg || err.text || '';
@@ -524,7 +597,7 @@ export async function renderMermaidCharts() {
     } else {
       logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
       if (!container.querySelector('svg') && !container.querySelector('.mermaid-controls')) {
-        container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">图表渲染失败: ${result.detail}</div>`;
+        container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">${t('markdown.chartRenderFailed', { detail: result.detail })}</div>`;
       }
     }
   }
@@ -600,16 +673,16 @@ export function addMermaidControls(container) {
   const controls = document.createElement('div');
   controls.className = 'mermaid-controls';
   controls.innerHTML = `
-    <button class="zoom-in" title="放大">+</button>
-    <button class="zoom-out" title="缩小">−</button>
-    <button class="reset-zoom" title="重置">↺</button>
-    <button class="copy-to-clipboard" title="复制到剪贴板">
+    <button class="zoom-in" title="${t('markdown.zoomIn')}">+</button>
+    <button class="zoom-out" title="${t('markdown.zoomOut')}">−</button>
+    <button class="reset-zoom" title="${t('markdown.reset')}">↺</button>
+    <button class="copy-to-clipboard" title="${t('markdown.copyToClipboard')}">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
         <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
       </svg>
     </button>
-    <button class="download-png" title="下载图片">↓</button>
-    <button class="view-source" title="查看源代码">&lt;/&gt;</button>
+    <button class="download-png" title="${t('markdown.downloadImage')}">↓</button>
+    <button class="view-source" title="${t('markdown.viewSource')}">&lt;/&gt;</button>
   `;
   
   container.appendChild(controls);
@@ -822,7 +895,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
         await navigator.clipboard.write([
           new ClipboardItem({ [blobMime]: blob })
         ]);
-        showToast('Mermaid 图表已复制到剪贴板！', 'success');
+        showToast(t('markdown.mermaidCopied'), 'success');
         return;
       } catch (clipboardErr) {
         logger.warn('[SidePanel] Clipboard API 写入失败，降级为下载:', clipboardErr.message);
@@ -830,11 +903,11 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
     }
 
     // 降级方案：自动下载
-    showToast('已自动转为下载方式保存图表', 'warning');
+    showToast(t('markdown.autoDownloadChart'), 'warning');
     downloadDataUrl(dataUrl, downloadFilename);
   } catch (error) {
     logger.error('[SidePanel] 复制到剪贴板失败:', error);
-    showToast('复制失败: ' + error.message, 'error');
+    showToast(t('markdown.copyFailed', { message: error.message }), 'error');
   }
 }
 
@@ -856,7 +929,7 @@ export async function downloadMermaidPNG(svgElement, scale) {
     downloadDataUrl(dataUrl, filename);
   } catch (error) {
     logger.error('[SidePanel] 下载 PNG 失败:', error);
-    showToast('下载失败: ' + error.message, 'error');
+    showToast(t('markdown.downloadFailed', { message: error.message }), 'error');
   }
 }
 
@@ -917,7 +990,7 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
     // 创建复制按钮
     const copyBtn = document.createElement('button');
     copyBtn.className = 'source-copy-btn';
-    copyBtn.title = '复制源代码';
+    copyBtn.title = t('markdown.copySourceTitle');
     copyBtn.innerHTML = `
       <svg viewBox="0 0 16 16" fill="currentColor">
         <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
@@ -934,7 +1007,7 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
     const backToChartBtn = document.createElement('button');
     backToChartBtn.className = 'source-copy-btn';
     backToChartBtn.style.right = '44px';
-    backToChartBtn.title = '返回图表';
+    backToChartBtn.title = t('markdown.backToChart');
     backToChartBtn.innerHTML = `
       <svg viewBox="0 0 16 16" fill="currentColor">
         <path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a1.25 1.25 0 0 0 0 1.32l1.965 2.36a.25.25 0 0 1-.192.41h-3.932a.25.25 0 0 1-.192-.41l-1.966-2.36a1.25 1.25 0 0 0 0-1.32l1.966-2.36a.25.25 0 0 1 .192-.41zm-6.068 0H1.534a.25.25 0 0 0-.192.41l1.966 2.36a1.25 1.25 0 0 1 0 1.32l-1.966 2.36A.25.25 0 0 0 1.534 14h3.932a.25.25 0 0 0 .192-.41l-1.966-2.36a1.25 1.25 0 0 1 0-1.32l1.966-2.36a.25.25 0 0 0-.192-.41z"/>
@@ -992,7 +1065,7 @@ export async function renderMessageMermaid(messageDiv) {
         addMermaidControls(currentContainer);
       } else if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
         logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
-        currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">图表渲染失败: ${result.detail}</div>`;
+        currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">${t('markdown.chartRenderFailed', { detail: result.detail })}</div>`;
       }
     }
     
@@ -1054,8 +1127,8 @@ function setupCodeCtrlClick() {
     navigator.clipboard.writeText(codeText).then(() => {
       // 判断是行内代码还是代码块
       const isCodeBlock = codeEl.closest('.code-block-container');
-      const label = isCodeBlock ? '代码块' : '代码';
-      showToast(`${label}已复制到剪贴板`, 'success');
+      const label = isCodeBlock ? t('markdown.codeBlockLabel') : t('markdown.codeLabel');
+      showToast(t('markdown.copiedToClipboard', { label }), 'success');
     }).catch((err) => {
       logger.error('[SidePanel] Ctrl+单击复制失败:', err);
       // 降级方案
@@ -1067,7 +1140,7 @@ function setupCodeCtrlClick() {
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      showToast('代码已复制到剪贴板', 'success');
+      showToast(t('markdown.codeCopied'), 'success');
     });
   });
 
@@ -1198,7 +1271,7 @@ export function addTableToolbarEvents() {
             const blob = new Blob([richHTML], { type: 'text/html' });
             const item = new ClipboardItem({ 'text/html': blob });
             navigator.clipboard.write([item]).then(() => {
-              showToast('已复制富文本表格');
+              showToast(t('markdown.copiedRichTable'));
             }).catch(() => {
               // Fallback: 通过临时 DOM 选中 + execCommand
               const tempDiv = document.createElement('div');
@@ -1215,16 +1288,16 @@ export function addTableToolbarEvents() {
               try {
                 btn.focus();
                 document.execCommand('copy');
-                showToast('已复制富文本表格');
+                showToast(t('markdown.copiedRichTable'));
               } catch (e2) {
-                showToast('复制富文本表格失败', 'error');
+                showToast(t('markdown.copyRichTableFailed'), 'error');
               } finally {
                 sel.removeAllRanges();
                 document.body.removeChild(tempDiv);
               }
             });
           } catch (err) {
-            showToast('复制失败', 'error');
+            showToast(t('markdown.copyFailedShort'), 'error');
           }
         }
         return;
@@ -1235,7 +1308,7 @@ export function addTableToolbarEvents() {
       const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
       if (full) {
         copyToClipboard(full, btn);
-        showToast('已复制 Markdown 表格');
+        showToast(t('markdown.copiedMdTable'));
         return;
       }
       // 2. 旧格式：从 window.__tableBlocks 读取
@@ -1243,14 +1316,14 @@ export function addTableToolbarEvents() {
       const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
       if (tableBlock) {
         copyToClipboard(tableBlock.full, btn);
-        showToast('已复制 Markdown 表格');
+        showToast(t('markdown.copiedMdTable'));
         return;
       }
       // 3. 最终 fallback：从 DOM 提取表格数据
       const domData = extractTableFromDOM(btn);
       if (domData) {
         copyToClipboard(domData.full, btn);
-        showToast('已复制 Markdown 表格');
+        showToast(t('markdown.copiedMdTable'));
       }
     });
   });
@@ -1297,7 +1370,7 @@ export function addTableToolbarEvents() {
       try {
         const html2canvasFunc = window.html2canvas || null;
         if (!html2canvasFunc) {
-          showToast('图片导出库未加载', 'error');
+          showToast(t('markdown.imageExportLibMissing'), 'error');
           return;
         }
 
@@ -1314,10 +1387,10 @@ export function addTableToolbarEvents() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        showToast('表格图片已导出');
+        showToast(t('markdown.tableImageExported'));
       } catch (err) {
         logger.error('[SidePanel] 导出表格图片失败:', err);
-        showToast('导出图片失败', 'error');
+        showToast(t('markdown.exportImageFailed'), 'error');
       }
     });
   });

@@ -3,6 +3,50 @@
 import { getSessionTokenSummary, getOverallTokenSummary, clearSessionTokenStats, clearAllTokenStats } from '../storage/token-store.js';
 import { escapeHtml } from './utils.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  tokenStats: {
+    clearConfirmMessage: '确定要清空所有 Token 使用统计吗？此操作不可撤销。',
+    loadFailed: '加载失败',
+    currentSessionNoData: '当前会话暂无数据',
+    totalTokenUsage: '总 Token 消耗',
+    apiCallCount: 'API 调用次数',
+    contextUsageRate: '上下文使用率',
+    max: '最大',
+    avg: '平均',
+    min: '最小',
+    totalTokens: '总 Token',
+    totalSessions: '总会话数',
+    totalApiCalls: '总 API 调用',
+    callTypeNonStream: '普通',
+    callTypeStream: '流式',
+    callTypeReflection: '反思',
+    callTypeToolReflection: '工具反思',
+    callTypeSubtaskReflection: '子任务反思',
+  },
+});
+registerTranslations('en', {
+  tokenStats: {
+    clearConfirmMessage: 'Are you sure you want to clear all Token usage statistics? This action cannot be undone.',
+    loadFailed: 'Load failed',
+    currentSessionNoData: 'No data for current session',
+    totalTokenUsage: 'Total Token Usage',
+    apiCallCount: 'API Call Count',
+    contextUsageRate: 'Context Usage Rate',
+    max: 'Max',
+    avg: 'Avg',
+    min: 'Min',
+    totalTokens: 'Total Tokens',
+    totalSessions: 'Total Sessions',
+    totalApiCalls: 'Total API Calls',
+    callTypeNonStream: 'Normal',
+    callTypeStream: 'Stream',
+    callTypeReflection: 'Reflection',
+    callTypeToolReflection: 'Tool Reflection',
+    callTypeSubtaskReflection: 'Subtask Reflection',
+  },
+});
 
 /**
  * 初始化 Token 统计面板
@@ -39,7 +83,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
   if (refreshBtn) refreshBtn.addEventListener('click', loadTokenStats);
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {
-      const confirmed = await showCustomConfirm('确定要清空所有 Token 使用统计吗？此操作不可撤销。', '清空统计');
+      const confirmed = await showCustomConfirm(t('tokenStats.clearConfirmMessage'), t('toolStats.clearTitle'));
       if (!confirmed) return;
       await clearAllTokenStats();
       loadTokenStats();
@@ -78,7 +122,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       logger.error('[TokenStats] 加载统计失败:', err);
       if (loading) loading.style.display = 'none';
       if (empty) {
-        empty.textContent = '加载失败';
+        empty.textContent = t('tokenStats.loadFailed');
         empty.style.display = '';
       }
     }
@@ -88,7 +132,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     const el = document.getElementById('tokenSessionStats');
     if (!el) return;
     if (!s || s.apiCallCount === 0) {
-      el.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">当前会话暂无数据</div>';
+      el.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">${t('tokenStats.currentSessionNoData')}</div>`;
       return;
     }
     const pctPrompt = s.totalTokens > 0 ? ((s.totalPromptTokens / s.totalTokens) * 100).toFixed(1) : 0;
@@ -97,11 +141,11 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     el.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div style="background:#f8f9ff;border-radius:8px;padding:12px;">
-          <div style="font-size:11px;color:#888;margin-bottom:4px;">总 Token 消耗</div>
+          <div style="font-size:11px;color:#888;margin-bottom:4px;">${t('tokenStats.totalTokenUsage')}</div>
           <div style="font-size:20px;font-weight:700;color:#333;">${formatNumber(s.totalTokens)}</div>
         </div>
         <div style="background:#f0fdf4;border-radius:8px;padding:12px;">
-          <div style="font-size:11px;color:#888;margin-bottom:4px;">API 调用次数</div>
+          <div style="font-size:11px;color:#888;margin-bottom:4px;">${t('tokenStats.apiCallCount')}</div>
           <div style="font-size:20px;font-weight:700;color:#333;">${s.apiCallCount}</div>
         </div>
       </div>
@@ -110,10 +154,10 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
         <span>Completion: ${formatNumber(s.totalCompletionTokens)} (${pctCompletion}%)</span>
       </div>
       <div style="margin-top:8px;">
-        <div style="font-size:11px;color:#888;margin-bottom:4px;">上下文使用率</div>
-        ${renderUsageBar('最大', s.maxContextUsageRate)}
-        ${renderUsageBar('平均', s.avgContextUsageRate)}
-        ${renderUsageBar('最小', s.minContextUsageRate)}
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">${t('tokenStats.contextUsageRate')}</div>
+        ${renderUsageBar(t('tokenStats.max'), s.maxContextUsageRate)}
+        ${renderUsageBar(t('tokenStats.avg'), s.avgContextUsageRate)}
+        ${renderUsageBar(t('tokenStats.min'), s.minContextUsageRate)}
       </div>`;
   }
 
@@ -125,15 +169,15 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     el.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
         <div style="background:#fff7ed;border-radius:8px;padding:10px;text-align:center;">
-          <div style="font-size:10px;color:#888;">总 Token</div>
+          <div style="font-size:10px;color:#888;">${t('tokenStats.totalTokens')}</div>
           <div style="font-size:16px;font-weight:700;color:#333;">${formatNumber(o.totalTokens)}</div>
         </div>
         <div style="background:#f0f9ff;border-radius:8px;padding:10px;text-align:center;">
-          <div style="font-size:10px;color:#888;">总会话数</div>
+          <div style="font-size:10px;color:#888;">${t('tokenStats.totalSessions')}</div>
           <div style="font-size:16px;font-weight:700;color:#333;">${o.totalSessions}</div>
         </div>
         <div style="background:#fdf2f8;border-radius:8px;padding:10px;text-align:center;">
-          <div style="font-size:10px;color:#888;">总 API 调用</div>
+          <div style="font-size:10px;color:#888;">${t('tokenStats.totalApiCalls')}</div>
           <div style="font-size:16px;font-weight:700;color:#333;">${o.totalApiCalls}</div>
         </div>
       </div>`;
@@ -149,11 +193,11 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
 
     const callTypeLabels = {
       'react_loop': 'ReAct',
-      'non_stream': '普通',
-      'stream': '流式',
-      'reflection': '反思',
-      'tool_reflection': '工具反思',
-      'subtask_reflection': '子任务反思'
+      'non_stream': t('tokenStats.callTypeNonStream'),
+      'stream': t('tokenStats.callTypeStream'),
+      'reflection': t('tokenStats.callTypeReflection'),
+      'tool_reflection': t('tokenStats.callTypeToolReflection'),
+      'subtask_reflection': t('tokenStats.callTypeSubtaskReflection')
     };
 
     el.innerHTML = records.slice(0, 10).map((r, i) => {

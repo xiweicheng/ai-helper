@@ -3,7 +3,7 @@
 import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, getLanguage } from '../shared/i18n.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -126,7 +126,7 @@ function showImportPreview(importData) {
   const config = importData.config || importData;
   const count = Object.keys(config).length;
   const exportedAt = importData.exportedAt
-    ? new Date(importData.exportedAt).toLocaleString('zh-CN')
+    ? new Date(importData.exportedAt).toLocaleString(getLanguage() === 'zh' ? 'zh-CN' : 'en-US')
     : t('configDialog.unknownTime');
 
   const summaryEl = document.getElementById('importSummary');

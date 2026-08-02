@@ -14,6 +14,139 @@ import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { handleDuplicateSession } from './session-manager-ui.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  chatStream: {
+    thinking: '思考中...',
+    outputting: '输出中...',
+    stopGenerating: '停止生成',
+    thinkingResult: '思考结果',
+    toolActionOperate: '操作',
+    toolActionUpload: '上传',
+    toolActionDownload: '下载',
+    toolActionRequest: '请求',
+    toolActionInteract: '交互',
+    toolActionFill: '填写',
+    toolActionDispatch: '分派',
+    toolActionPreview: '预览',
+    toolActionRead: '读取',
+    toolActionWrite: '写入',
+    terminateCommand: '终止命令',
+    abortWaiting: '终止等待（跳过当前工具执行等待，不终止实际进程）',
+    executing: '执行中...',
+    terminating: '正在终止...',
+    copyCode: '复制代码',
+    truncatedTitle: '原始结果过大，已截断显示',
+    truncatedNote: '(输出过长已截断)',
+    noOutput: '(无输出)',
+    execFailed: '执行失败',
+    clickToExpand: '\n... (点击展开查看完整输出)',
+    execResult: '执行结果',
+    statusFailed: '失败',
+    statusCompleted: '完成',
+    preselectFiltered: '从 {total} 个工具中筛选出 <strong>{count}</strong> 个：',
+    preselectSkippedAll: '跳过筛选（{reason}），使用全部工具',
+    preselectSkippedCount: '跳过筛选（{reason}），工具总数 {count}',
+    preselectDirectAnswer: '模型直接回答：',
+    toolPreselect: '工具预筛选',
+    toolsAfterFilter: '筛选后工具数：<strong>{count}</strong>',
+    listSeparator: '、',
+    totalNodes: '总节点',
+    successLabel: '成功',
+    failedLabel: '失败',
+    thinkingProcess: '思考过程',
+    copyMarkdown: '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)',
+    copy: '复制',
+    quoteTitle: '引用该内容问答',
+    quote: '引用',
+    export: '导出',
+    exportWord: '导出 Word',
+    exportPdf: '导出 PDF',
+    exportImage: '导出图片',
+    exportMarkdown: '导出 Markdown',
+    executionLog: '执行日志',
+    reflectionRoundsTag: ' ({count}轮)',
+    qualityAssessmentTitle: 'AI 质量评估: {score}/10{rounds}\n点击查看评估详情',
+    reflectionFailedTitle: '反思评估失败（点击查看执行日志）',
+    reflectionFailedBadge: '⚠️ 反思失败',
+    prototypeOpenedLocal: '已在本地浏览器打开，点击可在面板内查看',
+    viewUiPrototype: '查看 UI 原型',
+    bookmarkMessage: '收藏消息',
+    removeBookmark: '取消收藏',
+    forkSession: '从此处分叉会话（仅复制到此条消息）',
+    deleteMessage: '删除消息',
+    stopping: '停止中...',
+    taskStopped: '任务已被用户停止',
+    cancelled: '已取消',
+  },
+});
+
+registerTranslations('en', {
+  chatStream: {
+    thinking: 'Thinking...',
+    outputting: 'Outputting...',
+    stopGenerating: 'Stop generating',
+    thinkingResult: 'Thinking result',
+    toolActionOperate: 'Operate',
+    toolActionUpload: 'Upload',
+    toolActionDownload: 'Download',
+    toolActionRequest: 'Request',
+    toolActionInteract: 'Interact',
+    toolActionFill: 'Fill',
+    toolActionDispatch: 'Dispatch',
+    toolActionPreview: 'Preview',
+    toolActionRead: 'Read',
+    toolActionWrite: 'Write',
+    terminateCommand: 'Terminate command',
+    abortWaiting: 'Abort waiting (skip current tool wait, does not terminate the actual process)',
+    executing: 'Executing...',
+    terminating: 'Terminating...',
+    copyCode: 'Copy code',
+    truncatedTitle: 'Original result too large, truncated for display',
+    truncatedNote: '(output too long, truncated)',
+    noOutput: '(no output)',
+    execFailed: 'Execution failed',
+    clickToExpand: '\n... (click to expand and view full output)',
+    execResult: 'Execution result',
+    statusFailed: 'Failed',
+    statusCompleted: 'Completed',
+    preselectFiltered: 'Filtered <strong>{count}</strong> of {total} tools: ',
+    preselectSkippedAll: 'Skipped filtering ({reason}), using all tools',
+    preselectSkippedCount: 'Skipped filtering ({reason}), total tools: {count}',
+    preselectDirectAnswer: 'Model direct answer: ',
+    toolPreselect: 'Tool Pre-filter',
+    toolsAfterFilter: 'Tools after filtering: <strong>{count}</strong>',
+    listSeparator: ', ',
+    totalNodes: 'Total nodes',
+    successLabel: 'Success',
+    failedLabel: 'Failed',
+    thinkingProcess: 'Thinking process',
+    copyMarkdown: 'Copy Markdown content (Ctrl/Cmd + click to copy rich text)',
+    copy: 'Copy',
+    quoteTitle: 'Quote this content for Q&A',
+    quote: 'Quote',
+    export: 'Export',
+    exportWord: 'Export Word',
+    exportPdf: 'Export PDF',
+    exportImage: 'Export Image',
+    exportMarkdown: 'Export Markdown',
+    executionLog: 'Execution log',
+    reflectionRoundsTag: ' ({count} rounds)',
+    qualityAssessmentTitle: 'AI quality assessment: {score}/10{rounds}\nClick to view assessment details',
+    reflectionFailedTitle: 'Reflection assessment failed (click to view execution log)',
+    reflectionFailedBadge: '⚠️ Reflection failed',
+    prototypeOpenedLocal: 'Already opened in local browser, click to view in panel',
+    viewUiPrototype: 'View UI prototype',
+    bookmarkMessage: 'Bookmark message',
+    removeBookmark: 'Remove bookmark',
+    forkSession: 'Fork session from here (copy up to this message only)',
+    deleteMessage: 'Delete message',
+    stopping: 'Stopping...',
+    taskStopped: 'Task stopped by user',
+    cancelled: 'Cancelled',
+  },
+});
 
 // Agent 名称缓存（用于 dispatch_task 工具卡片显示名称而非 ID）
 let agentNameCache = new Map(); // agentId -> agentName
@@ -268,8 +401,8 @@ export function addStreamingMessage(targetSessionId) {
         <div class="thinking-dots">
           <span></span><span></span><span></span>
         </div>
-        <span class="thinking-label">思考中...</span>
-        <button class="streaming-stop-btn" title="停止生成">
+        <span class="thinking-label">${t('chatStream.thinking')}</span>
+        <button class="streaming-stop-btn" title="${t('chatStream.stopGenerating')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           </svg>
@@ -336,7 +469,7 @@ export function reconnectStreamingElement(sessionId) {
       const prevSibling = indicator.previousElementSibling;
       const badge = document.createElement('span');
       badge.className = 'thinking-badge';
-      badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果';
+      badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>' + t('chatStream.thinkingResult');
       if (prevSibling && prevSibling.classList.contains('thinking-content')) {
         parent.insertBefore(badge, prevSibling);
       } else {
@@ -369,8 +502,8 @@ export function updateStreamingMessage(element, fullContent) {
   if (visibleThinking) {
     // 当前正在思考中：检查是否是第一次收到内容，如果是，将"思考中"改为"输出中"
     const thinkingLabel = visibleThinking.querySelector('.thinking-label');
-    if (thinkingLabel && thinkingLabel.textContent === '思考中...') {
-      thinkingLabel.textContent = '输出中...';
+    if (thinkingLabel && thinkingLabel.textContent === t('chatStream.thinking')) {
+      thinkingLabel.textContent = t('chatStream.outputting');
     }
     
     // 当前正在思考中/输出中
@@ -473,8 +606,8 @@ export function appendToolCallItems(element, toolCalls) {
     const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
-    
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+
     if (contentDiv.contains(visibleThinking)) {
       // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
       const prevSibling = visibleThinking.previousElementSibling;
@@ -502,23 +635,23 @@ export function appendToolCallItems(element, toolCalls) {
       visibleThinking.remove();
     }
   }
-  
+
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
   const toolMeta = {
     execute_command:       { metaType: 'exec' },
     agent_exec:            { metaType: 'exec' },
-    agent_file:            { metaType: 'file', action: '操作' },
-    file_upload:           { metaType: 'file', action: '上传' },
-    download_file:         { metaType: 'file', action: '下载' },
-    fetch_url:             { metaType: 'web', action: '请求' },
-    interact_element:      { metaType: 'web', action: '交互' },
-    fill_form:             { metaType: 'web', action: '填写' },
-    manage_tab:            { metaType: 'web', action: '操作' },
+    agent_file:            { metaType: 'file', action: t('chatStream.toolActionOperate') },
+    file_upload:           { metaType: 'file', action: t('chatStream.toolActionUpload') },
+    download_file:         { metaType: 'file', action: t('chatStream.toolActionDownload') },
+    fetch_url:             { metaType: 'web', action: t('chatStream.toolActionRequest') },
+    interact_element:      { metaType: 'web', action: t('chatStream.toolActionInteract') },
+    fill_form:             { metaType: 'web', action: t('chatStream.toolActionFill') },
+    manage_tab:            { metaType: 'web', action: t('chatStream.toolActionOperate') },
     search_browser_data:   { metaType: 'search' },
     search_in_page:        { metaType: 'search' },
-    dispatch_task:         { metaType: 'subagent', action: '分派' },
+    dispatch_task:         { metaType: 'subagent', action: t('chatStream.toolActionDispatch') },
     exec_log:              { metaType: 'search' },
-    preview_ui:            { metaType: 'web', action: '预览' },
+    preview_ui:            { metaType: 'web', action: t('chatStream.toolActionPreview') },
   };
   
   toolCalls.forEach(tc => {
@@ -542,7 +675,7 @@ export function appendToolCallItems(element, toolCalls) {
       summaryHtml = `<code class="tool-call-cmd">$ ${escapeHtml(cmd)}</code>`;
     } else if (meta.metaType === 'file') {
       const path = args.file_path || args.filePath || args.path || args.filename || args.fileName || args.url || '';
-      const icon = meta.action === '读取' ? '📖' : meta.action === '写入' ? '📝' : meta.action === '上传' ? '📤' : '📥';
+      const icon = meta.action === t('chatStream.toolActionRead') ? '📖' : meta.action === t('chatStream.toolActionWrite') ? '📝' : meta.action === t('chatStream.toolActionUpload') ? '📤' : '📥';
       summaryTitle = path || toolName;
       summaryHtml = `<span class="tool-call-file">${icon} ${escapeHtml(path) || escapeHtml(toolName)}</span>`;
     } else if (meta.metaType === 'web') {
@@ -604,7 +737,7 @@ export function appendToolCallItems(element, toolCalls) {
     // 命令执行类工具：添加终止按钮
     const isExecCommand = toolName === 'agent_exec';
     const terminateBtnHtml = isExecCommand ? `
-        <button class="tool-call-terminate-btn" title="终止命令">
+        <button class="tool-call-terminate-btn" title="${t('chatStream.terminateCommand')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           </svg>
@@ -612,7 +745,7 @@ export function appendToolCallItems(element, toolCalls) {
     // 所有非命令执行工具：添加"终止等待"按钮（跳过当前工具等待，不杀进程）
     // 命令执行工具已有独立的终止按钮（弹框两种终止模式），不需要此按钮
     const abortToolBtnHtml = isExecCommand ? '' : `
-        <button class="tool-call-abort-btn" title="终止等待（跳过当前工具执行等待，不终止实际进程）">
+        <button class="tool-call-abort-btn" title="${t('chatStream.abortWaiting')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
@@ -622,7 +755,7 @@ export function appendToolCallItems(element, toolCalls) {
         ${iconSvg}
         <span class="tool-call-name">${escapeHtml(toolName)}</span>
         <div class="tool-call-summary">${summaryHtml}</div>
-        <span class="tool-call-executing">执行中...</span>
+        <span class="tool-call-executing">${t('chatStream.executing')}</span>
         ${terminateBtnHtml}
         ${abortToolBtnHtml}
         <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -661,7 +794,7 @@ export function appendToolCallItems(element, toolCalls) {
         chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
         // 按钮变为已点击状态
         abortBtn.disabled = true;
-        abortBtn.title = '正在终止...';
+        abortBtn.title = t('chatStream.terminating');
       });
     }
     
@@ -692,7 +825,7 @@ export function appendToolCallItems(element, toolCalls) {
 export function createCodeBlockHtml(codeContent, extraPreClass = '') {
   const preClass = extraPreClass ? ` class="${extraPreClass}"` : '';
   return `<div class="code-block-container" style="position: relative;">
-        <button class="code-copy-btn" title="复制代码">
+        <button class="code-copy-btn" title="${t('chatStream.copyCode')}">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
           </svg>
@@ -746,8 +879,8 @@ export function appendToolResult(result, streamingElement) {
     if (oldResult) oldResult.remove();
     
     // 截断提示
-    const truncateNote = result.truncated 
-      ? '<span class="tool-result-truncated" title="原始结果过大，已截断显示">(输出过长已截断)</span>' 
+    const truncateNote = result.truncated
+      ? `<span class="tool-result-truncated" title="${t('chatStream.truncatedTitle')}">${t('chatStream.truncatedNote')}</span>`
       : '';
     
     // 通过 data-meta-type 判断是否为命令执行工具
@@ -778,16 +911,16 @@ export function appendToolResult(result, streamingElement) {
     // 但如果执行失败且没有流式输出（如被安全规则拦截），需要展示错误信息
     if (!isExecCommand || !result.success) {
       // 非命令执行工具，或命令执行工具失败时：展示结果内容（不含状态行，状态已在标题栏）
-      const contentText = result.content || (result.success ? '(无输出)' : '执行失败');
-      const contentPreview = contentText.length > 500 
-        ? contentText.substring(0, 500) + '\n... (点击展开查看完整输出)' 
+      const contentText = result.content || (result.success ? t('chatStream.noOutput') : t('chatStream.execFailed'));
+      const contentPreview = contentText.length > 500
+        ? contentText.substring(0, 500) + t('chatStream.clickToExpand')
         : contentText;
       const fullContent = contentText;
       
       const resultDiv = document.createElement('div');
       resultDiv.className = 'tool-call-result';
       resultDiv.innerHTML = `
-        <div class="tool-result-title">执行结果</div>
+        <div class="tool-result-title">${t('chatStream.execResult')}</div>
         <div class="tool-result-content">
           ${createCodeBlockHtml(escapeHtml(contentPreview))}
         </div>
@@ -841,23 +974,23 @@ export function createPreSelectCard(entry) {
   card.className = 'tool-call-item expanded preselect-card';
   
   const isFailed = entry.status === 'failed';
-  const statusText = isFailed ? '失败' : '完成';
+  const statusText = isFailed ? t('chatStream.statusFailed') : t('chatStream.statusCompleted');
   const statusClass = isFailed ? 'fail' : 'success';
-  
+
   let summaryHtml = '';
   if (entry.action?.params?.selected) {
     // 成功筛选：显示筛选结果
     const selected = entry.action.params.selected;
     const toolCount = entry.apiRequest?.toolCount || '?';
-    summaryHtml = `<span class="preselect-summary">从 ${toolCount} 个工具中筛选出 <strong>${selected.length}</strong> 个：${selected.map(n => `<code>${escapeHtml(n)}</code>`).join('、')}</span>`;
+    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectFiltered', { total: toolCount, count: selected.length })}${selected.map(n => `<code>${escapeHtml(n)}</code>`).join(t('chatStream.listSeparator'))}</span>`;
   } else if (entry.action?.name === 'all_tools') {
-    summaryHtml = `<span class="preselect-summary">跳过筛选（${escapeHtml(entry.action.params.reason || '')}），使用全部工具</span>`;
+    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedAll', { reason: escapeHtml(entry.action.params.reason || '') })}</span>`;
   } else if (entry.action?.name === 'skip') {
-    summaryHtml = `<span class="preselect-summary">跳过筛选（${escapeHtml(entry.action.params.reason || '')}），工具总数 ${entry.action.params.toolCount || '?'}</span>`;
+    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedCount', { reason: escapeHtml(entry.action.params.reason || ''), count: entry.action.params.toolCount || '?' })}</span>`;
   } else if (entry.error) {
     summaryHtml = `<span class="preselect-summary" style="color:#dc2626;">${escapeHtml(entry.error)}</span>`;
   } else if (entry.thought) {
-    summaryHtml = `<span class="preselect-summary">模型直接回答：${escapeHtml(entry.thought).substring(0, 200)}</span>`;
+    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectDirectAnswer')}${escapeHtml(entry.thought).substring(0, 200)}</span>`;
   }
   
   const duration = entry.duration ? formatDuration(entry.duration) : '';
@@ -867,14 +1000,14 @@ export function createPreSelectCard(entry) {
       <svg class="tool-call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
-      <span class="tool-call-name">工具预筛选</span>
+      <span class="tool-call-name">${t('chatStream.toolPreselect')}</span>
       <span class="tool-call-status ${statusClass}">${statusText}</span>
       ${duration ? `<span class="tool-call-duration">${duration}</span>` : ''}
       <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="tool-call-body">
       ${summaryHtml}
-      ${entry.apiResponse?.toolCountAfter !== undefined ? `<div class="preselect-meta">筛选后工具数：<strong>${entry.apiResponse.toolCountAfter}</strong></div>` : ''}
+      ${entry.apiResponse?.toolCountAfter !== undefined ? `<div class="preselect-meta">${t('chatStream.toolsAfterFilter', { count: entry.apiResponse.toolCountAfter })}</div>` : ''}
     </div>
   `;
   
@@ -906,7 +1039,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>思考结果${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
     
     if (streamContent.contains(visibleThinking)) {
       // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
@@ -975,18 +1108,18 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const statsHtml = nodeCount > 0 ? `
       <span class="thinking-process-stat">
         <span class="stat-icon node-icon">◉</span>
-        <span class="stat-label">总节点</span>
+        <span class="stat-label">${t('chatStream.totalNodes')}</span>
         <span class="stat-value">${nodeCount}</span>
       </span>
       <span class="thinking-process-divider">|</span>
       <span class="thinking-process-stat success">
         <span class="stat-icon success-icon">✓</span>
-        <span class="stat-label">成功</span>
+        <span class="stat-label">${t('chatStream.successLabel')}</span>
         <span class="stat-value">${successCount}</span>
       </span>
       <span class="thinking-process-stat failed">
         <span class="stat-icon failed-icon">✗</span>
-        <span class="stat-label">失败</span>
+        <span class="stat-label">${t('chatStream.failedLabel')}</span>
         <span class="stat-value">${failCount}</span>
       </span>
     ` : '';
@@ -995,7 +1128,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
         <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
       </svg>
-      <span class="thinking-process-title">思考过程</span>
+      <span class="thinking-process-title">${t('chatStream.thinkingProcess')}</span>
       <div class="thinking-process-stats">${statsHtml}</div>
       <span class="thinking-process-duration">${totalDuration}</span>
       <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1128,18 +1261,18 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         const statsHtml = nodeCount > 0 ? `
           <span class="thinking-process-stat">
             <span class="stat-icon node-icon">◉</span>
-            <span class="stat-label">总节点</span>
+            <span class="stat-label">${t('chatStream.totalNodes')}</span>
             <span class="stat-value">${nodeCount}</span>
           </span>
           <span class="thinking-process-divider">|</span>
           <span class="thinking-process-stat success">
             <span class="stat-icon success-icon">✓</span>
-            <span class="stat-label">成功</span>
+            <span class="stat-label">${t('chatStream.successLabel')}</span>
             <span class="stat-value">${successCount}</span>
           </span>
           <span class="thinking-process-stat failed">
             <span class="stat-icon failed-icon">✗</span>
-            <span class="stat-label">失败</span>
+            <span class="stat-label">${t('chatStream.failedLabel')}</span>
             <span class="stat-value">${failCount}</span>
           </span>
         ` : '';
@@ -1148,7 +1281,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
             <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
             <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
           </svg>
-          <span class="thinking-process-title">思考过程</span>
+          <span class="thinking-process-title">${t('chatStream.thinkingProcess')}</span>
           <div class="thinking-process-stats">${statsHtml}</div>
           <span class="thinking-process-duration">${totalDuration}</span>
           <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1240,12 +1373,12 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   // 复制按钮
   const copyBtn = document.createElement('button');
   copyBtn.className = 'copy-btn';
-  copyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
+  copyBtn.title = t('chatStream.copyMarkdown');
   copyBtn.innerHTML = [
     '<svg viewBox="0 0 16 16" fill="currentColor">',
     '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
     '</svg>',
-    '<span>复制</span>'
+    '<span>' + t('chatStream.copy') + '</span>'
   ].join('');
   copyBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1256,10 +1389,10 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   // 引用按钮
   const quoteBtn = document.createElement('button');
   quoteBtn.className = 'quote-btn';
-  quoteBtn.title = '引用该内容问答';
+  quoteBtn.title = t('chatStream.quoteTitle');
   quoteBtn.innerHTML = [
     '<svg t="1781246498458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9645" width="14" height="14"><path d="M156.09136 606.57001a457.596822 457.596822 0 0 1 221.680239-392.516385 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z m406.752731 0a457.596822 457.596822 0 0 1 221.680239-392.007944 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z" fill="#8a8a8a" p-id="9646"></path></svg>',
-    '<span>引用</span>'
+    '<span>' + t('chatStream.quote') + '</span>'
   ].join('');
   quoteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1273,26 +1406,26 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   
   const exportTriggerBtn = document.createElement('button');
   exportTriggerBtn.className = 'export-trigger-btn';
-  exportTriggerBtn.innerHTML = '<svg t="1781245244396" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="14" height="14"><path d="M496.213333 739.84c2.133333 2.133333 4.693333 3.84 7.68 5.12 0.853333 0.426667 2.133333 0.426667 2.986667 0.853333 1.706667 0.426667 2.986667 0.853333 4.693333 0.853334 5.546667 0 11.093333-2.133333 14.933334-6.4l256-256c8.533333-8.533333 8.533333-21.76 0-30.293334s-21.76-8.533333-30.293334 0L533.333333 674.133333V128c0-11.946667-9.386667-21.333333-21.333333-21.333333s-21.333333 9.386667-21.333333 21.333333v545.706667l-219.306667-219.306667c-8.533333-8.533333-21.76-8.533333-30.293333 0s-8.533333 21.76 0 30.293333l255.146666 255.146667zM768 874.666667H256c-11.946667 0-21.333333 9.386667-21.333333 21.333333s9.386667 21.333333 21.333333 21.333333h512c11.946667 0 21.333333-9.386667 21.333333-21.333333s-9.386667-21.333333-21.333333-21.333333z" fill="#8a8a8a" p-id="5116"></path></svg><span>导出</span><svg class="dropdown-arrow" width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M0 0l4 6 4-6z"/></svg>';
+  exportTriggerBtn.innerHTML = '<svg t="1781245244396" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="14" height="14"><path d="M496.213333 739.84c2.133333 2.133333 4.693333 3.84 7.68 5.12 0.853333 0.426667 2.133333 0.426667 2.986667 0.853333 1.706667 0.426667 2.986667 0.853333 4.693333 0.853334 5.546667 0 11.093333-2.133333 14.933334-6.4l256-256c8.533333-8.533333 8.533333-21.76 0-30.293334s-21.76-8.533333-30.293334 0L533.333333 674.133333V128c0-11.946667-9.386667-21.333333-21.333333-21.333333s-21.333333 9.386667-21.333333 21.333333v545.706667l-219.306667-219.306667c-8.533333-8.533333-21.76-8.533333-30.293333 0s-8.533333 21.76 0 30.293333l255.146666 255.146667zM768 874.666667H256c-11.946667 0-21.333333 9.386667-21.333333 21.333333s9.386667 21.333333 21.333333 21.333333h512c11.946667 0 21.333333-9.386667 21.333333-21.333333s-9.386667-21.333333-21.333333-21.333333z" fill="#8a8a8a" p-id="5116"></path></svg><span>' + t('chatStream.export') + '</span><svg class="dropdown-arrow" width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M0 0l4 6 4-6z"/></svg>';
   
   const exportDropdown = document.createElement('div');
   exportDropdown.className = 'export-dropdown';
   exportDropdown.innerHTML = [
     '<button class="export-dropdown-item export-docx-item" type="button">',
     '<svg t="1781245550030" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6544" width="32" height="32"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#8a8a8a" p-id="6545"></path><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#8a8a8a" p-id="6546"></path><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#8a8a8a" p-id="6547"></path></svg>',
-    '<span>导出 Word</span>',
+    '<span>' + t('chatStream.exportWord') + '</span>',
     '</button>',
     '<button class="export-dropdown-item export-pdf-item" type="button">',
     '<svg t="1781245863206" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8152" width="32" height="32"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#8a8a8a" p-id="8153"></path><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#8a8a8a" p-id="8154"></path></svg>',
-    '<span>导出 PDF</span>',
+    '<span>' + t('chatStream.exportPdf') + '</span>',
     '</button>',
     '<button class="export-dropdown-item export-image-item" type="button">',
     '<svg t="1784207887308" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5993" width="32" height="32"><path d="M400.696 268.795c-17.249 0-31.233 13.986-31.233 31.233v30.471c0 17.249 13.986 31.233 31.233 31.233s31.233-13.986 31.233-31.233v-30.471c0-17.249-13.985-31.233-31.233-31.233z" fill="#8a8a8a" p-id="5994"></path><path d="M623.649 361.734c17.249 0 31.234-13.986 31.234-31.233v-30.471c0-17.249-13.986-31.233-31.234-31.233s-31.233 13.986-31.233 31.233v30.471c-0.001 17.248 13.985 31.233 31.233 31.233z" fill="#8a8a8a" p-id="5995"></path><path d="M438.295 388.804c-14.656 9.104-19.155 28.362-10.050 43.013 11.209 18.047 41.976 48.59 86.157 48.59 43.958 0 75.1-30.313 86.574-48.223 9.303-14.529 5.068-33.847-9.455-43.15-14.539-9.298-33.852-5.068-43.15 9.455-0.122 0.199-13.38 19.45-33.969 19.45-20.009 0-32.444-18.128-33.278-19.373-9.166-14.423-28.28-18.805-42.829-9.761z" fill="#8a8a8a" p-id="5996"></path><path d="M824.508503 116.690676 571.592236 116.690676c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c40.181141 0 72.878844 32.692586 72.878844 72.878844l0 396.966057-189.334159-165.29465c-12.20088-10.655687-30.517037-10.207479-42.173518 0.9967L468.578048 674.16231 309.521472 517.519714c-11.895935-11.70253-30.903847-12.002358-43.154869-0.645706L126.957507 646.163629l0-394.126382c0-40.186258 32.692586-72.878844 72.878844-72.878844l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352S470.000444 116.690676 452.751594 116.690676L199.836351 116.690676c-74.632791 0-135.346571 60.71378-135.346571 135.346571l0 520.56405c0 74.632791 60.71378 135.346571 135.346571 135.346571l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352s-13.985526-31.233352-31.233352-31.233352L199.836351 845.481164c-40.186258 0-72.878844-32.692586-72.878844-72.878844l0-41.23924 160.003134-148.385539 159.428036 157.007917c12.048407 11.865235 31.361265 11.981892 43.546795 0.274246l198.576661-190.68697 208.876238 182.346001 0 40.683585c0 40.186258-32.697703 72.878844-72.878844 72.878844L571.592236 845.481164c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c74.627674 0 135.346571-60.71378 135.346571-135.346571L959.855074 252.037247C959.855074 177.404456 899.136178 116.690676 824.508503 116.690676z" fill="#8a8a8a" p-id="5997"></path></svg>',
-    '<span>导出图片</span>',
+    '<span>' + t('chatStream.exportImage') + '</span>',
     '</button>',
     '<button class="export-dropdown-item export-md-item" type="button">',
     '<svg t="1784038824502" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1666" width="32" height="32"><path d="M601.216 85.333333a42.666667 42.666667 0 0 1 30.485333 12.821334l209.450667 213.973333a42.666667 42.666667 0 0 1 12.181333 29.866667V853.333333a85.333333 85.333333 0 0 1-85.333333 85.333334H256a85.333333 85.333333 0 0 1-85.333333-85.333334V170.666667a85.333333 85.333333 0 0 1 85.333333-85.333334h345.216z m-35.584 64H256a21.333333 21.333333 0 0 0-21.333333 21.333334v682.666666a21.333333 21.333333 0 0 0 21.333333 21.333334h512a21.333333 21.333333 0 0 0 21.333333-21.333334V395.413333h-191.68a32 32 0 0 1-32-32L565.632 149.333333z m64 38.186667v143.893333h140.821333L629.632 187.52z" fill="#8a8a8a" p-id="1667"></path><path d="M384.341333 800l-3.072-0.106667a32 32 0 0 1-29.162666-34.624l21.973333-256c2.752-32.256 46.165333-40.490667 60.544-11.477333l77.290667 156.010667 78.805333-156.224c14.08-27.925333 55.082667-20.906667 60.074667 8.789333l0.384 3.050667 20.714666 256a32 32 0 0 1-63.786666 5.162666l-11.541334-142.549333-56.341333 111.722667c-11.413333 22.613333-42.88 23.381333-55.744 2.517333l-1.493333-2.730667-54.912-110.826666-12.181334 142.016a32 32 0 0 1-31.552 29.269333z" fill="#8a8a8a" p-id="1668"></path></svg>',
-    '<span>导出 Markdown</span>',
+    '<span>' + t('chatStream.exportMarkdown') + '</span>',
     '</button>'
   ].join('');
   
@@ -1365,7 +1498,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const logBtn = document.createElement('button');
     logBtn.className = 'execution-log-btn';
     logBtn.type = 'button';
-    logBtn.title = '执行日志';
+    logBtn.title = t('chatStream.executionLog');
     logBtn.innerHTML = [
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
       '<circle cx="12" cy="12" r="10"></circle>',
@@ -1385,12 +1518,12 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   if (hasReflection && state.chatConfig?.enableExecutionLog) {
     const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
     const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
-    const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
-    
+    const roundsTag = reflectionRounds > 1 ? t('chatStream.reflectionRoundsTag', { count: reflectionRounds }) : '';
+
     const scoreBadge = document.createElement('button');
     scoreBadge.className = 'reflection-score-btn';
     scoreBadge.type = 'button';
-    scoreBadge.title = `AI 质量评估: ${reflectionScore}/10${roundsTag}\n点击查看评估详情`;
+    scoreBadge.title = t('chatStream.qualityAssessmentTitle', { score: reflectionScore, rounds: roundsTag });
     scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
     scoreBadge.dataset.reflectionData = JSON.stringify({
       overallScore: postReflection?.overallScore ?? reflectionScore,
@@ -1410,8 +1543,8 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const warnBadge = document.createElement('button');
     warnBadge.className = 'reflection-score-btn';
     warnBadge.type = 'button';
-    warnBadge.title = '反思评估失败（点击查看执行日志）';
-    warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
+    warnBadge.title = t('chatStream.reflectionFailedTitle');
+    warnBadge.innerHTML = `<span class="reflection-badge score-low">${t('chatStream.reflectionFailedBadge')}</span>`;
     rightActionsContainer.appendChild(warnBadge);
   }
   
@@ -1430,7 +1563,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const prototypeBtn = document.createElement('button');
     prototypeBtn.className = 'prototype-btn-small';
     prototypeBtn.type = 'button';
-    prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
+    prototypeBtn.title = localOpened ? t('chatStream.prototypeOpenedLocal') : t('chatStream.viewUiPrototype');
     prototypeBtn.innerHTML = ICON_IMAGE_24;
     prototypeBtn.addEventListener('click', () => {
       let prototypeId = prototypeCall.prototypeId;
@@ -1453,7 +1586,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   // 收藏按钮
   const bookmarkBtn = document.createElement('button');
   bookmarkBtn.className = 'bookmark-btn';
-  bookmarkBtn.title = '收藏消息';
+  bookmarkBtn.title = t('chatStream.bookmarkMessage');
   bookmarkBtn.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
@@ -1461,7 +1594,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   `;
   if (isBookmarked(state.activeSessionId, element.dataset.messageId)) {
     bookmarkBtn.classList.add('bookmarked');
-    bookmarkBtn.title = '取消收藏';
+    bookmarkBtn.title = t('chatStream.removeBookmark');
     bookmarkBtn.querySelector('svg').setAttribute('fill', 'currentColor');
   }
   bookmarkBtn.addEventListener('click', async (e) => {
@@ -1487,7 +1620,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   // 分叉按钮：基于此条 AI 回复创建消息级分叉（仅复制到此消息为止）
   const forkBtn = document.createElement('button');
   forkBtn.className = 'fork-btn';
-  forkBtn.title = '从此处分叉会话（仅复制到此条消息）';
+  forkBtn.title = t('chatStream.forkSession');
   forkBtn.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/>
@@ -1504,7 +1637,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'delete-btn';
-  deleteBtn.title = '删除消息';
+  deleteBtn.title = t('chatStream.deleteMessage');
   deleteBtn.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="3 6 5 6 21 6"></polyline>
@@ -1568,7 +1701,7 @@ export function cancelStreamingTask(stopBtn) {
     loadingStopBtn.style.opacity = '0.6';
     loadingStopBtn.style.cursor = 'not-allowed';
     const loadingText = document.querySelector('.loading-message .loading-text');
-    if (loadingText) loadingText.textContent = '停止中...';
+    if (loadingText) loadingText.textContent = t('chatStream.stopping');
   }
 
   // 发送取消消息到后台
@@ -1581,7 +1714,7 @@ export function cancelStreamingTask(stopBtn) {
   // 立即清理前端状态
   if (state.pendingCancelApi) {
     state.pendingCancelApi({
-      message: '任务已被用户停止',
+      message: t('chatStream.taskStopped'),
       executionLog: state.currentExecutionStatus?.executionLog || []
     });
   }
@@ -1604,7 +1737,7 @@ export function finalizeCancelledStream(element) {
 
   // 工具调用卡片：将"执行中..."替换为"已取消"
   element.querySelectorAll('.tool-call-executing').forEach(el => {
-    el.textContent = '已取消';
+    el.textContent = t('chatStream.cancelled');
     el.classList.add('tool-call-cancelled');
   });
 
@@ -1612,8 +1745,8 @@ export function finalizeCancelledStream(element) {
   element.querySelectorAll('.subtask-status-label').forEach(el => {
     const spinner = el.querySelector('.subtask-spinner');
     if (spinner) spinner.remove();
-    if (el.textContent.includes('执行中')) {
-      el.textContent = '已取消';
+    if (el.textContent.includes(t('chatStream.executing'))) {
+      el.textContent = t('chatStream.cancelled');
     }
   });
 

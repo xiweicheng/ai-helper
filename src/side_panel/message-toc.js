@@ -7,6 +7,22 @@
 
 import state from './state.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  messageToc: {
+    toggleTitle: '显示目录（H{count}个标题）',
+    title: '目录',
+    headingCount: '{count} 个',
+  },
+});
+registerTranslations('en', {
+  messageToc: {
+    toggleTitle: 'Show table of contents (H{count} headings)',
+    title: 'Contents',
+    headingCount: '{count}',
+  },
+});
 
 /**
  * 初始化消息目录功能
@@ -138,14 +154,14 @@ export function showMessageToc(messageDiv, headings) {
   }).join('');
   
   container.innerHTML = `
-    <button class="message-toc-toggle" title="显示目录（H${headings.length}个标题）">
+    <button class="message-toc-toggle" title="${t('messageToc.toggleTitle', { count: headings.length })}">
       ☰
     </button>
     <div class="message-toc-panel">
       <div class="message-toc-header">
         <span>☰</span>
-        <span>目录</span>
-        <span style="margin-left: auto; font-weight: normal; color: #999; font-size: 11px;">${headings.length} 个</span>
+        <span>${t('messageToc.title')}</span>
+        <span style="margin-left: auto; font-weight: normal; color: #999; font-size: 11px;">${t('messageToc.headingCount', { count: headings.length })}</span>
       </div>
       <div class="message-toc-content">
         <ul class="message-toc-list">

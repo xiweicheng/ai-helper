@@ -5,6 +5,69 @@ import { switchToSession } from './session-manager.js';
 import { escapeHtml, showToast } from './utils.js';
 import { getAllSessions, getSession, deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  searchPanel: {
+    toggleTitle: '消息搜索',
+    title: '消息搜索',
+    closeTitle: '关闭',
+    inputPlaceholder: '搜索消息（支持 & | 组合搜索）...',
+    clearTitle: '清除',
+    globalSearchTitle: '在所有会话中搜索',
+    globalSearch: '全局搜索',
+    currentSessionTitle: '仅在当前会话中搜索',
+    currentSession: '当前会话',
+    startSearchHint: '输入关键词开始搜索',
+    searching: '搜索中...',
+    searchingWithCount: '搜索中... {count} 条',
+    searchError: '搜索出错',
+    noActiveSession: '没有活跃会话',
+    noSessionData: '没有会话数据',
+    noMatch: '未找到匹配消息',
+    unknownSession: '未知会话',
+    countResult: '{count} 条',
+    noResult: '无结果',
+    searchingSuffix: ' (搜索中...)',
+    currentSessionResults: '当前会话{label} · {count} 条',
+    otherSessionsResults: '其他会话 · {count} 条',
+    roleUser: '你',
+    roleAssistant: '助手',
+    sessionNotExist: '会话已不存在',
+    messageDeleted: '消息已被删除',
+  },
+});
+
+registerTranslations('en', {
+  searchPanel: {
+    toggleTitle: 'Search messages',
+    title: 'Message search',
+    closeTitle: 'Close',
+    inputPlaceholder: 'Search messages (supports & | combined search)...',
+    clearTitle: 'Clear',
+    globalSearchTitle: 'Search in all sessions',
+    globalSearch: 'Global search',
+    currentSessionTitle: 'Search in current session only',
+    currentSession: 'Current session',
+    startSearchHint: 'Enter keywords to start searching',
+    searching: 'Searching...',
+    searchingWithCount: 'Searching... {count} found',
+    searchError: 'Search error',
+    noActiveSession: 'No active session',
+    noSessionData: 'No session data',
+    noMatch: 'No matching messages found',
+    unknownSession: 'Unknown session',
+    countResult: '{count} found',
+    noResult: 'No results',
+    searchingSuffix: ' (searching...)',
+    currentSessionResults: 'Current session{label} · {count} found',
+    otherSessionsResults: 'Other sessions · {count} found',
+    roleUser: 'You',
+    roleAssistant: 'Assistant',
+    sessionNotExist: 'Session no longer exists',
+    messageDeleted: 'Message has been deleted',
+  },
+});
 
 // 搜索状态
 let isSearching = false;
@@ -33,7 +96,7 @@ export function initSearchPanel() {
   container.className = 'search-panel-container';
   container.id = 'searchPanelContainer';
   container.innerHTML = `
-    <button class="search-panel-toggle" id="searchPanelToggle" title="消息搜索">
+    <button class="search-panel-toggle" id="searchPanelToggle" title="${t('searchPanel.toggleTitle')}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -45,26 +108,26 @@ export function initSearchPanel() {
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <span>消息搜索</span>
+        <span>${t('searchPanel.title')}</span>
         <span class="search-panel-count" id="searchPanelCount"></span>
-        <button class="search-panel-close-btn" id="searchPanelClose" title="关闭">
+        <button class="search-panel-close-btn" id="searchPanelClose" title="${t('searchPanel.closeTitle')}">
           <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
         </button>
       </div>
       <div class="search-panel-input-area">
         <div class="search-panel-input-wrapper">
-          <input type="text" class="search-panel-input" id="searchPanelInput" placeholder="搜索消息（支持 & | 组合搜索）..." />
-          <button class="search-panel-clear" id="searchPanelClear" title="清除" style="display:none;">
+          <input type="text" class="search-panel-input" id="searchPanelInput" placeholder="${t('searchPanel.inputPlaceholder')}" />
+          <button class="search-panel-clear" id="searchPanelClear" title="${t('searchPanel.clearTitle')}" style="display:none;">
             <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
           </button>
         </div>
         <div class="search-panel-mode-btns">
-          <button class="search-mode-btn active" id="searchModeGlobal" title="在所有会话中搜索">全局搜索</button>
-          <button class="search-mode-btn" id="searchModeCurrent" title="仅在当前会话中搜索">当前会话</button>
+          <button class="search-mode-btn active" id="searchModeGlobal" title="${t('searchPanel.globalSearchTitle')}">${t('searchPanel.globalSearch')}</button>
+          <button class="search-mode-btn" id="searchModeCurrent" title="${t('searchPanel.currentSessionTitle')}">${t('searchPanel.currentSession')}</button>
         </div>
       </div>
       <div class="search-panel-content" id="searchPanelContent">
-        <div class="search-panel-empty">输入关键词开始搜索</div>
+        <div class="search-panel-empty">${t('searchPanel.startSearchHint')}</div>
       </div>
     </div>
   `;
@@ -255,7 +318,7 @@ function resetSearch() {
   lastSearchQuery = '';
   const content = document.getElementById('searchPanelContent');
   const count = document.getElementById('searchPanelCount');
-  if (content) content.innerHTML = '<div class="search-panel-empty">输入关键词开始搜索</div>';
+  if (content) content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.startSearchHint')}</div>`;
   if (count) count.textContent = '';
 }
 
@@ -265,7 +328,7 @@ function resetSearch() {
 async function performSearch(query) {
   if (!query || !query.trim()) return;
   query = query.trim().toLowerCase();
-  
+
   // 如果已在搜索同一词，跳过
   if (isSearching && lastSearchQuery === query) return;
 
@@ -281,7 +344,7 @@ async function performSearch(query) {
 
   const content = document.getElementById('searchPanelContent');
   const count = document.getElementById('searchPanelCount');
-  content.innerHTML = '<div class="search-panel-loading">搜索中...</div>';
+  content.innerHTML = `<div class="search-panel-loading">${t('searchPanel.searching')}</div>`;
   count.textContent = '';
 
   const modeGlobal = document.getElementById('searchModeGlobal');
@@ -296,7 +359,7 @@ async function performSearch(query) {
   } catch (err) {
     logger.error('[SearchPanel] 搜索出错:', err);
     if (!cancelSearch) {
-      content.innerHTML = '<div class="search-panel-empty">搜索出错</div>';
+      content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.searchError')}</div>`;
     }
   }
 
@@ -311,20 +374,20 @@ async function performSearch(query) {
 async function searchCurrentSession(query, content, count) {
   const currentSessionId = state.activeSessionId;
   if (!currentSessionId) {
-    content.innerHTML = '<div class="search-panel-empty">没有活跃会话</div>';
+    content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noActiveSession')}</div>`;
     return;
   }
 
   const messages = state.messageHistory || [];
   const results = searchInMessages(messages, query, currentSessionId);
-  
+
   if (cancelSearch) return;
 
   searchResults = results;
-  count.textContent = results.length > 0 ? `${results.length} 条` : '无结果';
-  
+  count.textContent = results.length > 0 ? t('searchPanel.countResult', { count: results.length }) : t('searchPanel.noResult');
+
   if (results.length === 0) {
-    content.innerHTML = '<div class="search-panel-empty">未找到匹配消息</div>';
+    content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
     return;
   }
 
@@ -341,7 +404,7 @@ async function searchAllSessions(query, content, count) {
   if (cancelSearch) return;
 
   if (!allSessions || allSessions.length === 0) {
-    content.innerHTML = '<div class="search-panel-empty">没有会话数据</div>';
+    content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noSessionData')}</div>`;
     return;
   }
 
@@ -352,26 +415,26 @@ async function searchAllSessions(query, content, count) {
   if (currentSessionId) {
     const messages = state.messageHistory || [];
     const results = searchInMessages(messages, query, currentSessionId);
-    
+
     if (cancelSearch) return;
-    
+
     // 获取当前会话标题
     const currentSession = allSessions.find(s => s.id === currentSessionId);
-    const currentTitle = currentSession?.title || '当前会话';
-    
+    const currentTitle = currentSession?.title || t('searchPanel.currentSession');
+
     for (const r of results) {
       currentResults.push({ ...r, sessionTitle: currentTitle });
     }
-    
+
     // 立即渲染第一批结果
     searchResults = [...currentResults];
-    count.textContent = `搜索中... ${currentResults.length} 条`;
+    count.textContent = t('searchPanel.searchingWithCount', { count: currentResults.length });
     renderSearchResults(searchResults, query, content, true);
   }
 
   // 逐个搜索其他会话
   const otherSessions = allSessions.filter(s => s.id !== currentSessionId);
-  
+
   for (const session of otherSessions) {
     if (cancelSearch) return;
 
@@ -385,12 +448,12 @@ async function searchAllSessions(query, content, count) {
 
       if (results.length > 0) {
         for (const r of results) {
-          otherResults.push({ ...r, sessionTitle: session.title || '未知会话' });
+          otherResults.push({ ...r, sessionTitle: session.title || t('searchPanel.unknownSession') });
         }
-        
+
         searchResults = [...currentResults, ...otherResults];
         const totalCount = currentResults.length + otherResults.length;
-        count.textContent = totalCount > 0 ? `${totalCount} 条` : '无结果';
+        count.textContent = totalCount > 0 ? t('searchPanel.countResult', { count: totalCount }) : t('searchPanel.noResult');
         renderSearchResults(searchResults, query, content);
       }
     } catch (err) {
@@ -404,10 +467,10 @@ async function searchAllSessions(query, content, count) {
   if (cancelSearch) return;
 
   const totalCount = searchResults.length;
-  count.textContent = totalCount > 0 ? `${totalCount} 条` : '无结果';
-  
+  count.textContent = totalCount > 0 ? t('searchPanel.countResult', { count: totalCount }) : t('searchPanel.noResult');
+
   if (totalCount === 0) {
-    content.innerHTML = '<div class="search-panel-empty">未找到匹配消息</div>';
+    content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
     return;
   }
 
@@ -511,7 +574,7 @@ function renderSearchResults(results, query, contentEl, isIncremental) {
   if (!contentEl) return;
 
   if (results.length === 0) {
-    contentEl.innerHTML = '<div class="search-panel-empty">未找到匹配消息</div>';
+    contentEl.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
     return;
   }
 
@@ -520,12 +583,12 @@ function renderSearchResults(results, query, contentEl, isIncremental) {
   const otherResults = results.filter(r => r.sessionId !== currentSessionId);
 
   let html = '';
-  const searchLabel = isIncremental ? ' (搜索中...)' : '';
+  const searchLabel = isIncremental ? t('searchPanel.searchingSuffix') : '';
 
   // 当前会话结果
   if (currentResults.length > 0) {
     html += `<div class="search-section">
-      <div class="search-section-title">当前会话${searchLabel} · ${currentResults.length} 条</div>
+      <div class="search-section-title">${t('searchPanel.currentSessionResults', { label: searchLabel, count: currentResults.length })}</div>
       ${renderResultItems(currentResults, query)}
     </div>`;
   }
@@ -533,7 +596,7 @@ function renderSearchResults(results, query, contentEl, isIncremental) {
   // 其他会话结果
   if (otherResults.length > 0) {
     html += `<div class="search-section">
-      <div class="search-section-title">其他会话 · ${otherResults.length} 条</div>
+      <div class="search-section-title">${t('searchPanel.otherSessionsResults', { count: otherResults.length })}</div>
       ${renderResultItems(otherResults, query)}
     </div>`;
   }
@@ -547,7 +610,7 @@ function renderSearchResults(results, query, contentEl, isIncremental) {
 function renderResultItems(results, query) {
   return results.map((r, idx) => {
     const roleIcon = r.role === 'user' ? '👤' : '🤖';
-    const roleLabel = r.role === 'user' ? '你' : '助手';
+    const roleLabel = r.role === 'user' ? t('searchPanel.roleUser') : t('searchPanel.roleAssistant');
     const sessionTitle = r.sessionTitle || '';
     const isCurrentSession = r.sessionId === state.activeSessionId;
 
@@ -592,7 +655,7 @@ async function navigateToSearchResult(sessionId, messageId) {
       const switched = await switchToSession(sessionId);
       // 切换失败说明会话已不存在
       if (switched === false || state.activeSessionId !== sessionId) {
-        showToast('会话已不存在', 'warning');
+        showToast(t('searchPanel.sessionNotExist'), 'warning');
         return;
       }
       // 触发 DOM 更新（session-switched 事件会重建 chatContainer）
@@ -645,7 +708,7 @@ async function navigateToSearchResult(sessionId, messageId) {
         messageEl.classList.remove('bookmark-highlight');
       }, 2000);
     } else {
-      showToast('消息已被删除', 'warning');
+      showToast(t('searchPanel.messageDeleted'), 'warning');
       // 消息在 DOM 中找不到，说明是 IndexedDB 中的脏数据（之前删除未成功清理）
       // 自动从 IndexedDB 中移除，下次搜索不会再命中
       try {
@@ -658,10 +721,10 @@ async function navigateToSearchResult(sessionId, messageId) {
           const count = document.getElementById('searchPanelCount');
           if (content && searchResults.length > 0) {
             renderSearchResults(searchResults, lastSearchQuery, content);
-            count.textContent = `${searchResults.length} 条`;
+            count.textContent = t('searchPanel.countResult', { count: searchResults.length });
           } else if (content && searchResults.length === 0) {
-            content.innerHTML = '<div class="search-panel-empty">未找到匹配消息</div>';
-            if (count) count.textContent = '无结果';
+            content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
+            if (count) count.textContent = t('searchPanel.noResult');
           }
           logger.debug('[SearchPanel] 已清理 IndexedDB 脏数据:', sessionId, messageId);
         }

@@ -4,7 +4,83 @@ import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
 import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  util: {
+    cmdHintPowerShell: '（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）',
+    cmdHintCmd: '（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）',
+    cmdHintGitBash: '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）',
+    cmdHintPowerShellShort: '（请使用 PowerShell 语法）',
+    cmdHintUnix: '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）',
+    cmdExecEnvTitle: '## 命令执行环境',
+    cmdExecOsShell: '**操作系统/Shell**',
+    cmdExecWorkdir: '工作目录',
+    cmdExecWorkdirUnset: '未设置',
+    assistantTerm: '- **助手**：用户创建的 AI 智能体，每个助手有独立的系统提示词和工具权限，可独立工作或被其他助手调度执行子任务',
+    noDesc: '无描述',
+    subDispatchTitle: '## 子助手调度',
+    subDispatchDesc: '使用 dispatch_task(subAgentId, task) 分派子任务给其他助手执行，支持并行调用。',
+    subDispatchAvailable: '可用子助手：',
+    agentTerm: '- **代理**：远端执行服务，提供文件操作、命令执行等能力。可通过 manage_agent 工具查询或切换代理',
+    terminologyTitle: '## 术语定义',
+    taskPlanningTitle: '## 任务拆解',
+    taskPlanningDesc: '复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。',
+    memoryTitle: '## 记忆',
+    memoryRules: '- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)\n- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**\n- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit\n- manage: subAction=review审查价值，compact清理低价值\n- 存长期价值信息，加tags和importance(1-10)便于检索',
+    importanceLabel: '重要性',
+    tagsLabel: '标签',
+    permanentNotesTitle: '## 永久注意事项',
+    currentEnvTitle: '## 当前环境',
+    currentTimeLabel: '当前时间：',
+    browserLabel: '浏览器：Chrome 扩展 (Side Panel)',
+    defaultPromptIntro: 'AI Helper：IT技术助手。',
+    capabilityTitle: '## 能力',
+    capabilityDesc: '编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用',
+    taskPlanningJoin: '、任务规划',
+    requirementTitle: '## 要求',
+    requirementDesc: '精准技术术语，代码示例可运行，Markdown格式，方案可落地，不生成安全违规代码',
+    envTitle: '## 环境',
+  },
+});
+
+registerTranslations('en', {
+  util: {
+    cmdHintPowerShell: '(Use PowerShell syntax, e.g. `Get-ChildItem`, `Set-Content`, `Remove-Item`, etc.)',
+    cmdHintCmd: '(Use CMD syntax, e.g. `dir`, `echo`, `del`, etc.)',
+    cmdHintGitBash: '(Use Unix commands, e.g. `ls`, `cat`, `rm`, etc. Use forward slashes `/` for paths)',
+    cmdHintPowerShellShort: '(Use PowerShell syntax)',
+    cmdHintUnix: '(Use Unix commands, e.g. `ls`, `cat`, `rm`, etc.)',
+    cmdExecEnvTitle: '## Command Execution Environment',
+    cmdExecOsShell: '**OS/Shell**',
+    cmdExecWorkdir: 'Working directory',
+    cmdExecWorkdirUnset: 'not set',
+    assistantTerm: '- **Assistant**: An AI agent created by the user. Each assistant has its own system prompt and tool permissions, and can work independently or be dispatched by other assistants to perform subtasks',
+    noDesc: 'No description',
+    subDispatchTitle: '## Sub-assistant Dispatch',
+    subDispatchDesc: 'Use dispatch_task(subAgentId, task) to dispatch subtasks to other assistants. Parallel calls are supported.',
+    subDispatchAvailable: 'Available sub-assistants:',
+    agentTerm: '- **Agent**: A remote execution service that provides file operations, command execution, and other capabilities. Use the manage_agent tool to query or switch agents',
+    terminologyTitle: '## Terminology',
+    taskPlanningTitle: '## Task Decomposition',
+    taskPlanningDesc: 'Break down complex tasks (multi-step, with dependencies) into 2-5 subtasks; execute simple tasks directly. Use plan_task(taskDescription, subtasks) to submit the plan.',
+    memoryTitle: '## Memory',
+    memoryRules: '- Unified tool agent_memory, distinguished by action: store (add/update/delete) / recall (retrieve) / manage (review/cleanup)\n- store: subAction=add requires type+content, update requires memoryId+type, **delete only requires memoryId (no type)**. **Always recall first to find the id before deleting**\n- recall: use keywords for query (e.g. "exam"), not full sentences. Optional memoryType and limit\n- manage: subAction=review to assess value, compact to clean up low-value entries\n- Store long-term valuable information; add tags and importance (1-10) for easier retrieval',
+    importanceLabel: 'Importance',
+    tagsLabel: 'Tags',
+    permanentNotesTitle: '## Permanent Notes',
+    currentEnvTitle: '## Current Environment',
+    currentTimeLabel: 'Current time: ',
+    browserLabel: 'Browser: Chrome Extension (Side Panel)',
+    defaultPromptIntro: 'AI Helper: IT Technical Assistant.',
+    capabilityTitle: '## Capabilities',
+    capabilityDesc: 'Programming & debugging (Java/Python/JavaScript/Go/C++), architecture optimization, performance tuning, code review, documentation, browser tool calls',
+    taskPlanningJoin: ', task planning',
+    requirementTitle: '## Requirements',
+    requirementDesc: 'Precise technical terminology, runnable code examples, Markdown format, actionable solutions, no security-violating code',
+    envTitle: '## Environment',
+  },
+});
 
 /**
  * 显示 Toast 提示
@@ -187,16 +263,16 @@ function getCommandExecutionEnv(agentToolIds = null) {
       osType = 'Windows';
       if (shellType.toLowerCase().includes('powershell')) {
         shellType = 'PowerShell';
-        commandHint = '（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）';
+        commandHint = t('util.cmdHintPowerShell');
       } else if (shellType.toLowerCase().includes('cmd') || shellType.toLowerCase().includes('command')) {
         shellType = 'CMD';
-        commandHint = '（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）';
+        commandHint = t('util.cmdHintCmd');
       } else if (shellType.toLowerCase().includes('bash') || ap.platformName.toLowerCase().includes('git')) {
         shellType = 'Git Bash';
-        commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）';
+        commandHint = t('util.cmdHintGitBash');
       } else {
         shellType = 'PowerShell';
-        commandHint = '（请使用 PowerShell 语法）';
+        commandHint = t('util.cmdHintPowerShellShort');
       }
     } else if (ap.platformName.toLowerCase().includes('mac') || ap.platformName.toLowerCase().includes('darwin')) {
       osType = 'macOS';
@@ -207,7 +283,7 @@ function getCommandExecutionEnv(agentToolIds = null) {
       } else {
         shellType = 'zsh';
       }
-      commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）';
+      commandHint = t('util.cmdHintUnix');
     } else if (ap.platformName.toLowerCase().includes('linux')) {
       osType = 'Linux';
       if (shellType.toLowerCase().includes('bash')) {
@@ -219,7 +295,7 @@ function getCommandExecutionEnv(agentToolIds = null) {
       } else {
         shellType = 'bash';
       }
-      commandHint = '（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）';
+      commandHint = t('util.cmdHintUnix');
     }
   }
 
@@ -259,9 +335,9 @@ export async function getSystemPrompt(agent = null) {
   if (execEnv) {
     commandEnvSection = `
 
-## 命令执行环境
-- **操作系统/Shell**: ${execEnv.osType} (${execEnv.arch}) / ${execEnv.shellType}
-- **工作目录**: ${execEnv.workdir || '未设置'}
+${t('util.cmdExecEnvTitle')}
+- ${t('util.cmdExecOsShell')}: ${execEnv.osType} (${execEnv.arch}) / ${execEnv.shellType}
+- ${t('util.cmdExecWorkdir')}: ${execEnv.workdir || t('util.cmdExecWorkdirUnset')}
 - ${execEnv.commandHint}`;
   }
 
@@ -282,20 +358,20 @@ export async function getSystemPrompt(agent = null) {
   let dispatchToolRule = '';
 
   if (hasSubDispatch) {
-    assistantTerminology = `- **助手**：用户创建的 AI 智能体，每个助手有独立的系统提示词和工具权限，可独立工作或被其他助手调度执行子任务`;
+    assistantTerminology = t('util.assistantTerm');
 
-    const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || '无描述'}`).join('\n');
+    const subAgentList = subAgents.map(a => `- **${a.id}** (${a.icon} ${a.name}): ${a.description || t('util.noDesc')}`).join('\n');
     dispatchToolRule = `
 
-## 子助手调度
-使用 dispatch_task(subAgentId, task) 分派子任务给其他助手执行，支持并行调用。
+${t('util.subDispatchTitle')}
+${t('util.subDispatchDesc')}
 
-可用子助手：
+${t('util.subDispatchAvailable')}
 ${subAgentList}`;
   }
 
   if (hasPairedAgents) {
-    agentTerminology = `- **代理**：远端执行服务，提供文件操作、命令执行等能力。可通过 manage_agent 工具查询或切换代理`;
+    agentTerminology = t('util.agentTerm');
   }
 
   // 拼接术语定义——两个术语独立注入
@@ -304,27 +380,23 @@ ${subAgentList}`;
     const terms = [assistantTerminology, agentTerminology].filter(Boolean).join('\n');
     terminologySection = `
 
-## 术语定义
+${t('util.terminologyTitle')}
 ${terms}`;
   }
 
   // 任务拆解相关规则——仅在启用工具且当前 Agent 拥有 plan_task 时注入
   const taskPlanningRules = (state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? `
 
-## 任务拆解
-复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。` : '';
+${t('util.taskPlanningTitle')}
+${t('util.taskPlanningDesc')}` : '';
 
   // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
   const memoryTools = ['agent_memory'];
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
-## 记忆
-- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)
-- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**
-- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit
-- manage: subAction=review审查价值，compact清理低价值
-- 存长期价值信息，加tags和importance(1-10)便于检索` : '';
+${t('util.memoryTitle')}
+${t('util.memoryRules')}` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词
   // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）
@@ -334,11 +406,11 @@ ${terms}`;
       const notes = await fetchPermanentNotes();
       if (notes && notes.length > 0) {
         const notesText = notes
-          .map((n, i) => `${i + 1}. [重要性: ${n.importance || 5}] ${n.content}${n.tags && n.tags.length ? ` (标签: ${n.tags.join(', ')})` : ''}`)
+          .map((n, i) => `${i + 1}. [${t('util.importanceLabel')}: ${n.importance || 5}] ${n.content}${n.tags && n.tags.length ? ` (${t('util.tagsLabel')}: ${n.tags.join(', ')})` : ''}`)
           .join('\n');
         permanentNotesSection = `
 
-## 永久注意事项
+${t('util.permanentNotesTitle')}
 ${notesText}
 `;
       }
@@ -359,9 +431,9 @@ ${notesText}
   if (promptContent) {
     let finalPrompt = `${promptContent}${terminologySection}${permanentNotesSection}
 
-## 当前环境
-- 当前时间：${currentTime}
-- 浏览器：Chrome 扩展 (Side Panel) / ${browserOS}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+${t('util.currentEnvTitle')}
+- ${t('util.currentTimeLabel')}${currentTime}
+- ${t('util.browserLabel')} / ${browserOS}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 `;
 
     // 注入 Agent Skill Prompts
@@ -376,15 +448,15 @@ ${notesText}
   }
   
   // 返回默认系统提示词
-  let defaultPrompt = `AI Helper：IT技术助手。${terminologySection}${permanentNotesSection}
+  let defaultPrompt = `${t('util.defaultPromptIntro')}${terminologySection}${permanentNotesSection}
 
-## 能力
-编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? '、任务规划' : ''}
+${t('util.capabilityTitle')}
+${t('util.capabilityDesc')}${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? t('util.taskPlanningJoin') : ''}
 
-## 要求
-精准技术术语，代码示例可运行，Markdown格式，方案可落地，不生成安全违规代码${taskPlanningRules}${dispatchToolRule}${memoryRules}
+${t('util.requirementTitle')}
+${t('util.requirementDesc')}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
-## 环境
+${t('util.envTitle')}
 ${currentTime} | Chrome Side Panel / ${browserOS}${commandEnvSection}
 `;
 

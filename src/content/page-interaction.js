@@ -3,6 +3,39 @@
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getElementText, getElementValue, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  pageInteraction: {
+    refHint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements',
+    invalidRefError: '无效的元素编号 ref={ref}。ref 仅当前页面有效，页面导航/刷新或切换 tab 后需重新 query_elements',
+    elementStaleError: '元素 ref={ref} 已失效（页面可能已变化），请重新调用 query_elements 获取最新元素',
+    elementNotVisibleError: '元素 ref={ref}（{tag}）当前不可见，可能被隐藏或折叠',
+    navChangeHint: '（检测到导航变化，已等待 {ms}ms）',
+    domChangeHint: '（检测到DOM变化，已等待 {ms}ms）',
+    hoveredByRef: '已悬停元素 ref={ref}（{tag}）{hint}',
+    clickedByRef: '已点击元素 ref={ref}（{tag}）{hint}',
+    textRequired: 'text 不能为空',
+    scrolledToText: '已滚动到包含"{text}"的元素',
+    scrollTextNotFound: '滚动 {count} 次未找到包含"{text}"的文本',
+  },
+});
+
+registerTranslations('en', {
+  pageInteraction: {
+    refHint: 'ref numbers are only valid for the current query; re-run query_elements after page navigation/refresh or tab switch',
+    invalidRefError: 'Invalid element ref={ref}. ref is only valid for the current page; re-run query_elements after navigation/refresh or tab switch',
+    elementStaleError: 'Element ref={ref} is stale (page may have changed); please call query_elements again to get the latest elements',
+    elementNotVisibleError: 'Element ref={ref} ({tag}) is not visible; it may be hidden or collapsed',
+    navChangeHint: ' (navigation change detected, waited {ms}ms)',
+    domChangeHint: ' (DOM change detected, waited {ms}ms)',
+    hoveredByRef: 'Hovered element ref={ref} ({tag}){hint}',
+    clickedByRef: 'Clicked element ref={ref} ({tag}){hint}',
+    textRequired: 'text cannot be empty',
+    scrolledToText: 'Scrolled to element containing "{text}"',
+    scrollTextNotFound: 'Scrolled {count} times but did not find text containing "{text}"',
+  },
+});
 
 // ==================== 元素注册表（ref → element 映射） ====================
 //
@@ -111,7 +144,7 @@ export function queryInteractiveElements(options = {}) {
     count: Math.min(elements.length, maxResults),
     total: elements.length,
     elements: elements.slice(0, maxResults),
-    hint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements'
+    hint: t('pageInteraction.refHint')
   };
 }
 
@@ -368,7 +401,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   if (!refNum || !elementRegistry.has(refNum)) {
     return {
       success: false,
-      error: `无效的元素编号 ref=${ref}。ref 仅当前页面有效，页面导航/刷新或切换 tab 后需重新 query_elements`,
+      error: t('pageInteraction.invalidRefError', { ref }),
     };
   }
 
@@ -383,7 +416,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
       // selector 也失效，提示模型重新查询
       return {
         success: false,
-        error: `元素 ref=${ref} 已失效（页面可能已变化），请重新调用 query_elements 获取最新元素`,
+        error: t('pageInteraction.elementStaleError', { ref }),
       };
     }
   }
@@ -393,7 +426,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   if (style.display === 'none' || style.visibility === 'hidden') {
     return {
       success: false,
-      error: `元素 ref=${ref}（${entry.tag}）当前不可见，可能被隐藏或折叠`,
+      error: t('pageInteraction.elementNotVisibleError', { ref, tag: entry.tag }),
     };
   }
 
@@ -403,9 +436,9 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
     const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
     const changeHint = wait.changed
-      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
       : '';
-    return { success: true, message: `已悬停元素 ref=${ref}（${entry.tag}）${changeHint}`, selector: entry.selector, ...wait };
+    return { success: true, message: t('pageInteraction.hoveredByRef', { ref, tag: entry.tag, hint: changeHint }), selector: entry.selector, ...wait };
   }
 
   // 默认 click
@@ -414,11 +447,11 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
 
   const changeHint = wait.changed
-    ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+    ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
     : '';
   return {
     success: true,
-    message: `已点击元素 ref=${ref}（${entry.tag}）${changeHint}`,
+    message: t('pageInteraction.clickedByRef', { ref, tag: entry.tag, hint: changeHint }),
     selector: entry.selector,
     ...wait,
   };
@@ -437,7 +470,7 @@ export async function scrollToText(text, options = {}) {
   const { maxScrolls = 20, pauseMs = 500 } = options;
 
   if (!text) {
-    return { success: false, error: 'text 不能为空' };
+    return { success: false, error: t('pageInteraction.textRequired') };
   }
 
   const textLower = text.toLowerCase();
@@ -469,7 +502,7 @@ export async function scrollToText(text, options = {}) {
     await new Promise(r => setTimeout(r, 300));
     return {
       success: true,
-      message: `已滚动到包含"${text}"的元素`,
+      message: t('pageInteraction.scrolledToText', { text }),
       selector: generateUniqueSelector(target),
       scrolls: 0,
     };
@@ -487,7 +520,7 @@ export async function scrollToText(text, options = {}) {
       await new Promise(r => setTimeout(r, 300));
       return {
         success: true,
-        message: `已滚动到包含"${text}"的元素`,
+        message: t('pageInteraction.scrolledToText', { text }),
         selector: generateUniqueSelector(target),
         scrolls: i + 1,
       };
@@ -502,7 +535,7 @@ export async function scrollToText(text, options = {}) {
 
   return {
     success: false,
-    error: `滚动 ${maxScrolls} 次未找到包含"${text}"的文本`,
+    error: t('pageInteraction.scrollTextNotFound', { count: maxScrolls, text }),
     scrolls: maxScrolls,
   };
 }

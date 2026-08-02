@@ -13,9 +13,151 @@ import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
-import { initI18n, applyI18n, subscribe, t } from '../shared/i18n.js';
+import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 
-window.showCustomConfirm = function(message, title = '确认操作') {
+registerTranslations('zh', {
+  sidePanel: {
+    confirmAction: '确认操作',
+    memoryLimitAll: '(全)',
+    memoryLimitTitle: '点击设置记忆历史限制条数',
+    configUpdated: '✅ 配置已更新',
+    selectedPrefix: '📌 已选中',
+    askBasedOnSelection: '基于选中内容提问',
+    selectedContentLabel: '选中内容',
+    selectedContentSummary: '摘要',
+    userQuestionLabel: '用户问题',
+    requestFailed: '❌ 请求失败：',
+    unknownError: '未知错误',
+    notConnected: '未连接',
+    noPairedAgents: '暂无已配对代理',
+    agentDisabled: '已停用',
+    agentConnected: '已连接',
+    agentChecking: '检测中...',
+    agentOnline: '在线',
+    agentOffline: '离线',
+    enableAgent: '启用',
+    disableAgent: '停用',
+    disconnectAgent: '断开',
+    connectAgent: '连接',
+    deleteAgentBtn: '删除',
+    workingDirectory: '工作目录: {path}',
+    agentAddressCopied: '已复制代理地址',
+    unknownAgent: '未知',
+    restartAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要重启代理服务吗？重启期间服务将短暂不可用。',
+    restartAgentTitle: '重启代理',
+    agentRestarting: '代理服务正在重启...',
+    restartFailed: '重启失败: {error}',
+    restartRequestFailed: '重启请求失败: {error}',
+    updateAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要更新代理吗？将通过 npm 安装最新版本，然后重启服务。更新期间服务不可用。',
+    updateAgentTitle: '更新代理',
+    agentUpdating: '正在更新代理（可能需要几分钟）...',
+    agentUpdateRestarting: '代理正在更新并重启...',
+    updateFailed: '更新失败: {error}',
+    updateRequestFailed: '更新请求失败: {error}',
+    stopAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要停止代理服务吗？停止后将无法连接，需要手动重新启动。',
+    stopAgentTitle: '停止代理',
+    agentStopped: '代理服务已停止，代理已离线',
+    stopFailed: '停止失败: {error}',
+    stopRequestFailed: '停止请求失败: {error}',
+    agentStatusRefreshed: '代理状态已刷新',
+    deleteAgentTitle: '删除代理',
+    deleteAgentConfirm: '确定要删除代理"{name}"吗？此操作不可恢复。',
+    welcomeTitle: '开始对话',
+    welcomeSubtitle: '输入您的问题，AI 助手将为您解答',
+    sendBtnStop: '停止生成',
+    sendBtnSend: '发送',
+    imageNotEnabled: '未启用图片识别，图片已作为文件附件处理',
+    screenshotFailed: '截图失败，请重试',
+    auditCategoryAuth: '认证',
+    auditCategoryFs: '文件',
+    auditCategoryExec: '命令',
+    auditCategorySecurity: '安全',
+    auditCategorySystem: '系统',
+    auditDetailSeparator: '；',
+    auditQueryFailed: '查询失败: {error}',
+    auditLoadFailed: '加载失败: {error}',
+    auditNoMatch: '没有匹配的审计日志',
+    auditEmpty: '暂无审计日志',
+    clearStatsConfirm: '确定要清空所有工具使用统计吗？此操作不可撤销。',
+    clearStatsTitle: '清空统计',
+    toolStatsSummary: '已使用 {used} 个，未使用 {unused} 个',
+    toolStatsLoadFailed: '加载失败',
+    toolNameDescSeparator: '：',
+  },
+});
+
+registerTranslations('en', {
+  sidePanel: {
+    confirmAction: 'Confirm Action',
+    memoryLimitAll: '(All)',
+    memoryLimitTitle: 'Click to set memory history limit',
+    configUpdated: '✅ Configuration updated',
+    selectedPrefix: '📌 Selected',
+    askBasedOnSelection: 'Ask based on selection',
+    selectedContentLabel: 'Selected content',
+    selectedContentSummary: 'summary',
+    userQuestionLabel: 'User question',
+    requestFailed: '❌ Request failed: ',
+    unknownError: 'Unknown error',
+    notConnected: 'Not Connected',
+    noPairedAgents: 'No paired agents',
+    agentDisabled: 'Disabled',
+    agentConnected: 'Connected',
+    agentChecking: 'Checking...',
+    agentOnline: 'Online',
+    agentOffline: 'Offline',
+    enableAgent: 'Enable',
+    disableAgent: 'Disable',
+    disconnectAgent: 'Disconnect',
+    connectAgent: 'Connect',
+    deleteAgentBtn: 'Delete',
+    workingDirectory: 'Working directory: {path}',
+    agentAddressCopied: 'Agent address copied',
+    unknownAgent: 'Unknown',
+    restartAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to restart the agent service? The service will be briefly unavailable during restart.',
+    restartAgentTitle: 'Restart Agent',
+    agentRestarting: 'Agent service is restarting...',
+    restartFailed: 'Restart failed: {error}',
+    restartRequestFailed: 'Restart request failed: {error}',
+    updateAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to update the agent? It will install the latest version via npm, then restart the service. The service will be unavailable during update.',
+    updateAgentTitle: 'Update Agent',
+    agentUpdating: 'Updating agent (may take a few minutes)...',
+    agentUpdateRestarting: 'Agent is updating and restarting...',
+    updateFailed: 'Update failed: {error}',
+    updateRequestFailed: 'Update request failed: {error}',
+    stopAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to stop the agent service? You will not be able to connect and will need to manually restart it.',
+    stopAgentTitle: 'Stop Agent',
+    agentStopped: 'Agent service stopped, agent is offline',
+    stopFailed: 'Stop failed: {error}',
+    stopRequestFailed: 'Stop request failed: {error}',
+    agentStatusRefreshed: 'Agent status refreshed',
+    deleteAgentTitle: 'Delete Agent',
+    deleteAgentConfirm: 'Are you sure you want to delete agent "{name}"? This action cannot be undone.',
+    welcomeTitle: 'Start a Conversation',
+    welcomeSubtitle: 'Enter your question and the AI assistant will help you',
+    sendBtnStop: 'Stop generating',
+    sendBtnSend: 'Send',
+    imageNotEnabled: 'Image recognition not enabled, image attached as file',
+    screenshotFailed: 'Screenshot failed, please retry',
+    auditCategoryAuth: 'Auth',
+    auditCategoryFs: 'File',
+    auditCategoryExec: 'Command',
+    auditCategorySecurity: 'Security',
+    auditCategorySystem: 'System',
+    auditDetailSeparator: '; ',
+    auditQueryFailed: 'Query failed: {error}',
+    auditLoadFailed: 'Load failed: {error}',
+    auditNoMatch: 'No matching audit logs',
+    auditEmpty: 'No audit logs',
+    clearStatsConfirm: 'Are you sure you want to clear all tool usage stats? This action cannot be undone.',
+    clearStatsTitle: 'Clear Stats',
+    toolStatsSummary: 'Used {used} tools, unused {unused} tools',
+    toolStatsLoadFailed: 'Load failed',
+    toolNameDescSeparator: ': ',
+  },
+});
+
+window.showCustomConfirm = function(message, title = t('sidePanel.confirmAction')) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('customConfirmOverlay');
     const titleEl = document.getElementById('customConfirmTitle');
@@ -135,11 +277,11 @@ function updateMemoryLimitLabel() {
     if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
       label.textContent = `(${state.chatConfig.maxMemoryMessages})`;
     } else {
-      label.textContent = '(全)';
+      label.textContent = t('sidePanel.memoryLimitAll');
     }
     label.style.display = 'inline';
     label.style.cursor = 'pointer';
-    label.title = '点击设置记忆历史限制条数';
+    label.title = t('sidePanel.memoryLimitTitle');
   }
 }
 
@@ -199,7 +341,7 @@ function initMemoryLimitDropdown() {
       chrome.storage.local.set({ chatMaxMemoryMessages: maxMemoryMessages }, () => {
         state.chatConfig.maxMemoryMessages = maxMemoryMessages;
         updateMemoryLimitLabel();
-        showToast('✅ 配置已更新', 'success');
+        showToast(t('sidePanel.configUpdated'), 'success');
       });
     });
   });
@@ -217,7 +359,7 @@ function initMemoryLimitDropdown() {
       chrome.storage.local.set({ chatMaxMemoryMessages: maxMemoryMessages }, () => {
         state.chatConfig.maxMemoryMessages = maxMemoryMessages;
         updateMemoryLimitLabel();
-        showToast('✅ 配置已更新', 'success');
+        showToast(t('sidePanel.configUpdated'), 'success');
       });
     });
   }
@@ -471,7 +613,7 @@ function loadCustomModelsToDropdown(customModels, callback) {
 
 // ==================== 选中内容上下文 ====================
 
-function setSelectedContext(text, prefix = '📌 已选中') {
+function setSelectedContext(text, prefix = t('sidePanel.selectedPrefix')) {
   if (!state.enableSelectionQuery) {
     return;
   }
@@ -515,7 +657,7 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
     selectionFloatingMenu.className = 'selection-floating-menu';
     selectionFloatingMenu.id = 'selectionFloatingMenu';
     selectionFloatingMenu.innerHTML = `
-      <div class="menu-header">基于选中内容提问</div>
+      <div class="menu-header">${t('sidePanel.askBasedOnSelection')}</div>
       <div id="selectionMenuItems"></div>
     `;
     chatContainer.appendChild(selectionFloatingMenu);
@@ -621,7 +763,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   addContextBubble('selected', selectedText, false);
 
   const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
-  const userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
+  const userMessage = `[${t('sidePanel.selectedContentLabel')}${wasCompressed ? t('sidePanel.selectedContentSummary') : ''}]\n${compressedCtx}\n\n[${t('sidePanel.userQuestionLabel')}]\n${prompt.content}`;
 
   const { messageId } = addMessage('user', prompt.content, true, [], null, false, userMessage);
 
@@ -731,7 +873,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     } catch (errorResult) {
       removeLoadingMessage(loadingId);
 
-      content = '❌ 请求失败：' + (errorResult.message || '未知错误');
+      content = t('sidePanel.requestFailed') + (errorResult.message || t('sidePanel.unknownError'));
       executionLog = errorResult.executionLog || [];
 
       const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog);
@@ -778,7 +920,7 @@ async function updateAgentIndicator(platformInfo, skipPing = false) {
 
   if (!connected || !activeAgent) {
     dot.className = 'header-agent-dot disconnected';
-    nameEl.textContent = activeAgent ? (activeAgent.name.length > 12 ? activeAgent.name.substring(0, 12) + '...' : activeAgent.name) : '未连接';
+    nameEl.textContent = activeAgent ? (activeAgent.name.length > 12 ? activeAgent.name.substring(0, 12) + '...' : activeAgent.name) : t('sidePanel.notConnected');
     nameEl.classList.toggle('truncated', !!activeAgent);
     trigger.title = activeAgent ? activeAgent.name : '';
   } else {
@@ -822,7 +964,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
 
   // 代理列表
   if (allAgents.length === 0) {
-    list.innerHTML = '<div class="agent-dd-empty">暂无已配对代理</div>';
+    list.innerHTML = '<div class="agent-dd-empty">' + t('sidePanel.noPairedAgents') + '</div>';
     // 禁用底部操作按钮
     const restartBtn = document.getElementById('agentDdRestartBtn');
     const updateBtn = document.getElementById('agentDdUpdateBtn');
@@ -840,14 +982,14 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
     let dotClass, statusLabel;
     if (isDisabled) {
       dotClass = 'disabled';
-      statusLabel = '已停用';
+      statusLabel = t('sidePanel.agentDisabled');
     } else if (isActive) {
       dotClass = connected ? 'connected' : 'disconnected';
-      statusLabel = connected ? '已连接' : '未连接';
+      statusLabel = connected ? t('sidePanel.agentConnected') : t('sidePanel.notConnected');
     } else {
       // 非活跃代理：初始显示检测中，稍后 ping 更新
       dotClass = 'checking';
-      statusLabel = '检测中...';
+      statusLabel = t('sidePanel.agentChecking');
     }
 
     const workdir = state.agentWorkdirs.get(a.id);
@@ -861,21 +1003,21 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
         <div class="agent-dd-item-info">
           <div class="agent-dd-item-name"><span class="agent-dd-item-name-text" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>${version ? `<span class="agent-dd-item-version" title="v${escapeHtml(version)}">v${escapeHtml(version)}</span>` : ''}${sysInfo ? `<span class="agent-dd-item-sysinfo" title="${escapeHtml(sysInfo)}">${escapeHtml(sysInfo)}</span>` : ''}</div>
           <span class="agent-dd-item-url" title="${escapeHtml(a.url || '')}">${escapeHtml(a.url || '')}</span>
-          ${displayWorkdir ? `<span class="agent-dd-item-workdir" title="工作目录: ${escapeHtml(workdir)}">${escapeHtml(displayWorkdir)}</span>` : ''}
+          ${displayWorkdir ? `<span class="agent-dd-item-workdir" title="${t('sidePanel.workingDirectory', { path: escapeHtml(workdir) })}">${escapeHtml(displayWorkdir)}</span>` : ''}
         </div>
         <span class="agent-dd-item-status">${statusLabel}</span>
         ${isActive ? '<span class="agent-dd-item-check">&#10003;</span>' : ''}
         <div class="agent-dd-item-toolbar">
           ${isDisabled
-            ? `<button class="agent-dd-tool-btn enable" data-action="enable" data-id="${a.id}" title="启用">▶</button>`
+            ? `<button class="agent-dd-tool-btn enable" data-action="enable" data-id="${a.id}" title="${t('sidePanel.enableAgent')}">▶</button>`
             : (isActive
-              ? `<button class="agent-dd-tool-btn disconnect" data-action="disconnect" data-id="${a.id}" title="断开">✕</button>
-                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
-              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="连接">⇄</button>
-                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="停用">⏸</button>`
+              ? `<button class="agent-dd-tool-btn disconnect" data-action="disconnect" data-id="${a.id}" title="${t('sidePanel.disconnectAgent')}">✕</button>
+                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="${t('sidePanel.disableAgent')}">⏸</button>`
+              : `<button class="agent-dd-tool-btn switch" data-action="switch" data-id="${a.id}" title="${t('sidePanel.connectAgent')}">⇄</button>
+                 <button class="agent-dd-tool-btn stop" data-action="disable" data-id="${a.id}" title="${t('sidePanel.disableAgent')}">⏸</button>`
             )
           }
-          <button class="agent-dd-tool-btn delete" data-action="delete" data-id="${a.id}" title="删除">🗑</button>
+          <button class="agent-dd-tool-btn delete" data-action="delete" data-id="${a.id}" title="${t('sidePanel.deleteAgentBtn')}">🗑</button>
         </div>
       </div>
     `;
@@ -969,10 +1111,10 @@ function updateAgentItemOnlineStatus(agentId, online) {
   if (statusEl) {
     if (isActive) {
       // 活跃代理：直接更新为"已连接"/"未连接"
-      statusEl.textContent = online ? '已连接' : '未连接';
-    } else if (statusEl.textContent === '检测中...') {
+      statusEl.textContent = online ? t('sidePanel.agentConnected') : t('sidePanel.notConnected');
+    } else if (statusEl.textContent === t('sidePanel.agentChecking')) {
       // 非活跃代理：仅从"检测中..."更新
-      statusEl.textContent = online ? '在线' : '离线';
+      statusEl.textContent = online ? t('sidePanel.agentOnline') : t('sidePanel.agentOffline');
     }
   }
 }
@@ -991,11 +1133,11 @@ function updateAgentItemWorkdir(agentId, workdir) {
   let workdirEl = info.querySelector('.agent-dd-item-workdir');
   if (workdirEl) {
     workdirEl.textContent = display;
-    workdirEl.title = `工作目录: ${workdir}`;
+    workdirEl.title = t('sidePanel.workingDirectory', { path: workdir });
   } else {
     workdirEl = document.createElement('span');
     workdirEl.className = 'agent-dd-item-workdir';
-    workdirEl.title = `工作目录: ${workdir}`;
+    workdirEl.title = t('sidePanel.workingDirectory', { path: workdir });
     workdirEl.textContent = display;
     info.appendChild(workdirEl);
   }
@@ -1235,7 +1377,7 @@ async function initAgentDropdown() {
     const active = agents.find(a => a.id === storage.activeAgentId);
     if (active?.url) {
       await navigator.clipboard.writeText(active.url);
-      showToast('已复制代理地址', 'success');
+      showToast(t('sidePanel.agentAddressCopied'), 'success');
     }
   });
 
@@ -1265,18 +1407,18 @@ async function initAgentDropdown() {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
     const active = agents.find(a => a.id === storage.activeAgentId);
-    const name = active?.name || '未知';
-    const url = active?.url || '未知';
+    const name = active?.name || t('sidePanel.unknownAgent');
+    const url = active?.url || t('sidePanel.unknownAgent');
     const confirmed = await window.showCustomConfirm(
-      `代理名称：${name}\n代理地址：${url}\n\n确定要重启代理服务吗？重启期间服务将短暂不可用。`,
-      '重启代理'
+      t('sidePanel.restartAgentConfirm', { name, url }),
+      t('sidePanel.restartAgentTitle')
     );
     if (!confirmed) return;
     try {
       // 通过 background 调用
       chrome.runtime.sendMessage({ type: 'AGENT_RESTART' }, async (response) => {
         if (response?.success) {
-          showToast('代理服务正在重启...', 'success');
+          showToast(t('sidePanel.agentRestarting'), 'success');
           // 重启期间立即更新 UI 为未连接状态（skipPing 避免在代理未真正 shutdown 前 ping 到它）
           state.agentPlatform = { ...state.agentPlatform, connected: false };
           await updateAgentIndicator(state.agentPlatform, true);
@@ -1284,11 +1426,11 @@ async function initAgentDropdown() {
           // 启动恢复检测轮询（每 3s 检测一次，最多 60s）
           startRecoveryPolling(active?.id);
         } else {
-          showToast('重启失败: ' + (response?.error || '未知错误'), 'error');
+          showToast(t('sidePanel.restartFailed', { error: response?.error || t('sidePanel.unknownError') }), 'error');
         }
       });
     } catch (err) {
-      showToast('重启请求失败: ' + err.message, 'error');
+      showToast(t('sidePanel.restartRequestFailed', { error: err.message }), 'error');
     }
   });
 
@@ -1298,18 +1440,18 @@ async function initAgentDropdown() {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
     const active = agents.find(a => a.id === storage.activeAgentId);
-    const name = active?.name || '未知';
-    const url = active?.url || '未知';
+    const name = active?.name || t('sidePanel.unknownAgent');
+    const url = active?.url || t('sidePanel.unknownAgent');
     const confirmed = await window.showCustomConfirm(
-      `代理名称：${name}\n代理地址：${url}\n\n确定要更新代理吗？将通过 npm 安装最新版本，然后重启服务。更新期间服务不可用。`,
-      '更新代理'
+      t('sidePanel.updateAgentConfirm', { name, url }),
+      t('sidePanel.updateAgentTitle')
     );
     if (!confirmed) return;
-    showToast('正在更新代理（可能需要几分钟）...', 'info');
+    showToast(t('sidePanel.agentUpdating'), 'info');
     try {
       chrome.runtime.sendMessage({ type: 'AGENT_UPDATE' }, async (response) => {
         if (response?.success) {
-          showToast('代理正在更新并重启...', 'success');
+          showToast(t('sidePanel.agentUpdateRestarting'), 'success');
           // 更新期间立即更新 UI 为未连接状态（skipPing 避免在代理未真正 shutdown 前 ping 到它）
           state.agentPlatform = { ...state.agentPlatform, connected: false };
           await updateAgentIndicator(state.agentPlatform, true);
@@ -1317,11 +1459,11 @@ async function initAgentDropdown() {
           // 启动恢复检测轮询（每 3s 检测一次，最多 60s）
           startRecoveryPolling(active?.id);
         } else {
-          showToast('更新失败: ' + (response?.error || '未知错误'), 'error');
+          showToast(t('sidePanel.updateFailed', { error: response?.error || t('sidePanel.unknownError') }), 'error');
         }
       });
     } catch (err) {
-      showToast('更新请求失败: ' + err.message, 'error');
+      showToast(t('sidePanel.updateRequestFailed', { error: err.message }), 'error');
     }
   });
 
@@ -1331,27 +1473,27 @@ async function initAgentDropdown() {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = storage.pairedAgents || [];
     const active = agents.find(a => a.id === storage.activeAgentId);
-    const name = active?.name || '未知';
-    const url = active?.url || '未知';
+    const name = active?.name || t('sidePanel.unknownAgent');
+    const url = active?.url || t('sidePanel.unknownAgent');
     const confirmed = await window.showCustomConfirm(
-      `代理名称：${name}\n代理地址：${url}\n\n确定要停止代理服务吗？停止后将无法连接，需要手动重新启动。`,
-      '停止代理'
+      t('sidePanel.stopAgentConfirm', { name, url }),
+      t('sidePanel.stopAgentTitle')
     );
     if (!confirmed) return;
     try {
       chrome.runtime.sendMessage({ type: 'AGENT_STOP' }, async (response) => {
         if (response?.success) {
-          showToast('代理服务已停止，代理已离线', 'success');
+          showToast(t('sidePanel.agentStopped'), 'success');
           // 立即更新 UI 为未连接状态，不等 30s 健康检查（skipPing 避免误恢复）
           state.agentPlatform = { ...state.agentPlatform, connected: false };
           await updateAgentIndicator(state.agentPlatform, true);
           if (active?.id) updateAgentItemOnlineStatus(active.id, false);
         } else {
-          showToast('停止失败: ' + (response?.error || '未知错误'), 'error');
+          showToast(t('sidePanel.stopFailed', { error: response?.error || t('sidePanel.unknownError') }), 'error');
         }
       });
     } catch (err) {
-      showToast('停止请求失败: ' + err.message, 'error');
+      showToast(t('sidePanel.stopRequestFailed', { error: err.message }), 'error');
     }
   });
 
@@ -1364,10 +1506,10 @@ async function initAgentDropdown() {
         dot.classList.add('checking');
       });
       document.querySelectorAll('.agent-dd-item-status').forEach(s => {
-        s.textContent = '检测中...';
+        s.textContent = t('sidePanel.agentChecking');
       });
       await pingAllAgents();
-      showToast('代理状态已刷新', 'success');
+      showToast(t('sidePanel.agentStatusRefreshed'), 'success');
     });
   }
 
@@ -1435,8 +1577,8 @@ async function initAgentDropdown() {
       case 'delete': {
         const agent = agents.find(a => a.id === agentId);
         const confirmed = await window.showCustomConfirm(
-          '删除代理',
-          `确定要删除代理"${agent?.name || agentId}"吗？此操作不可恢复。`
+          t('sidePanel.deleteAgentTitle'),
+          t('sidePanel.deleteAgentConfirm', { name: agent?.name || agentId })
         );
         if (!confirmed) return;
         agents = agents.filter(a => a.id !== agentId);
@@ -2125,8 +2267,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="icon-wrapper">
           <div class="icon">💬</div>
         </div>
-        <h2>开始对话</h2>
-        <p>输入您的问题，AI 助手将为您解答</p>
+        <h2>${t('sidePanel.welcomeTitle')}</h2>
+        <p>${t('sidePanel.welcomeSubtitle')}</p>
       `;
       chatContainerEl.appendChild(welcomeDiv);
     } else {
@@ -2243,13 +2385,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 切换为停止按钮
       sendBtn.classList.add('stop-mode');
       sendBtn.innerHTML = STOP_ICON;
-      sendBtn.title = '停止生成';
+      sendBtn.title = t('sidePanel.sendBtnStop');
       sendBtn.disabled = false;
     } else {
       // 恢复为发送按钮
       sendBtn.classList.remove('stop-mode');
       sendBtn.innerHTML = SEND_ICON;
-      sendBtn.title = '发送';
+      sendBtn.title = t('sidePanel.sendBtnSend');
       sendBtn.disabled = false;
       sendBtn.style.opacity = '';
       sendBtn.style.cursor = '';
@@ -2927,7 +3069,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
           } else {
             // 未启用图片识别：回退为文件附件，避免静默丢弃
-            showToast('未启用图片识别，图片已作为文件附件处理');
+            showToast(t('sidePanel.imageNotEnabled'));
             attachFiles(images);
           }
         }
@@ -2955,7 +3097,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } catch (err) {
         logger.error('[SidePanel] 截图失败:', err);
-        showToast('截图失败，请重试');
+        showToast(t('sidePanel.screenshotFailed'));
       }
     });
   }
@@ -3172,7 +3314,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let auditLogRawEntries = [];
 
   const CATEGORY_LABELS_MAP = {
-    auth: '认证', fs: '文件', exec: '命令', security: '安全', system: '系统'
+    auth: t('sidePanel.auditCategoryAuth'), fs: t('sidePanel.auditCategoryFs'), exec: t('sidePanel.auditCategoryExec'), security: t('sidePanel.auditCategorySecurity'), system: t('sidePanel.auditCategorySystem')
   };
   const LEVEL_LABELS_MAP = { info: 'INFO', warn: 'WARN', error: 'ERROR' };
   const LEVEL_CLASS_MAP = { info: 'audit-level-info', warn: 'audit-level-warn', error: 'audit-level-error' };
@@ -3194,7 +3336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const display = str.length > 60 ? str.slice(0, 60) + '...' : str;
       parts.push(`${key}: ${display}`);
     }
-    return parts.join('；');
+    return parts.join(t('sidePanel.auditDetailSeparator'));
   }
 
   async function loadAuditLogs() {
@@ -3218,7 +3360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (!result || !result.success) {
         auditLogEmpty.style.display = 'block';
-        auditLogEmpty.textContent = '查询失败: ' + (result?.error || '未知错误');
+        auditLogEmpty.textContent = t('sidePanel.auditQueryFailed', { error: result?.error || t('sidePanel.unknownError') });
         return;
       }
 
@@ -3227,7 +3369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       auditLogLoading.style.display = 'none';
       auditLogEmpty.style.display = 'block';
-      auditLogEmpty.textContent = '加载失败: ' + err.message;
+      auditLogEmpty.textContent = t('sidePanel.auditLoadFailed', { error: err.message });
     }
   }
 
@@ -3256,7 +3398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     auditLogLoading.style.display = 'none';
     if (entries.length === 0) {
       auditLogEmpty.style.display = 'block';
-      auditLogEmpty.textContent = keyword ? '没有匹配的审计日志' : '暂无审计日志';
+      auditLogEmpty.textContent = keyword ? t('sidePanel.auditNoMatch') : t('sidePanel.auditEmpty');
       auditLogList.style.display = 'none';
       return;
     }
@@ -3631,7 +3773,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toolStatsClearBtn = document.getElementById('toolStatsClearBtn');
   if (toolStatsClearBtn) {
     toolStatsClearBtn.addEventListener('click', async () => {
-      const confirmed = await showCustomConfirm('确定要清空所有工具使用统计吗？此操作不可撤销。', '清空统计');
+      const confirmed = await showCustomConfirm(t('sidePanel.clearStatsConfirm'), t('sidePanel.clearStatsTitle'));
       if (!confirmed) return;
       await chrome.storage.local.remove(['toolUsageStats']);
       loadToolStats();
@@ -3671,8 +3813,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // 构建工具 ID → 描述映射
       const toolDescMap = {};
-      BUILTIN_TOOLS.forEach(t => {
-        toolDescMap[t.id] = t.name ? `${t.name}：${t.description || ''}` : (t.description || t.id);
+      BUILTIN_TOOLS.forEach(tool => {
+        toolDescMap[tool.id] = tool.name ? `${tool.name}${t('sidePanel.toolNameDescSeparator')}${tool.description || ''}` : (tool.description || tool.id);
       });
 
       renderToolStatsTable(entries, toolDescMap);
@@ -3687,7 +3829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // 汇总信息
       if (summary) {
-        summary.textContent = `已使用 ${usedCount} 个，未使用 ${unusedCount} 个`;
+        summary.textContent = t('sidePanel.toolStatsSummary', { used: usedCount, unused: unusedCount });
       }
 
       // 未使用工具列表（按字母排序）
@@ -3704,7 +3846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       logger.error('[SidePanel] 加载统计失败:', err);
       loading.style.display = 'none';
-      empty.textContent = '加载失败';
+      empty.textContent = t('sidePanel.toolStatsLoadFailed');
       empty.style.display = '';
     }
   }

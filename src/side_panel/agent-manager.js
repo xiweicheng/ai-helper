@@ -9,7 +9,69 @@ import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  agentMgr: {
+    allTools: '全部',
+    defaultAgentName: '默认助手',
+    switchedTo: '已切换到：{name}',
+    editAgent: '编辑助手',
+    templateLoaded: '已加载模板：{name}',
+    noSkillsHint: '暂无启用技能（请先确认 Agent 已连接且技能开关已开启）',
+    nameRequired: '请输入助手名称',
+    agentUpdated: '助手已更新',
+    agentCreated: '助手 "{name}" 已创建',
+    saveFailed: '保存失败：{message}',
+    confirmDeleteAgentMessage: '确定要删除助手 "{name}" 吗？\n正在使用该助手的会话将恢复为默认助手。',
+    deleteAgentTitle: '删除助手',
+    agentDeleted: '助手已删除',
+    deleteFailed: '删除失败：{message}',
+    cannotDeleteDefault: '默认助手不支持删除',
+    emojiCatFaceExpressions: '人物表情',
+    emojiCatHandGestures: '手势动作',
+    emojiCatProfessionalRoles: '职业角色',
+    emojiCatAiTech: 'AI & 科技',
+    emojiCatToolObjects: '工具物品',
+    emojiCatDocData: '文档数据',
+    emojiCatStatusMarks: '状态标记',
+    emojiCatTransportTravel: '交通出行',
+    emojiCatNatureWeather: '自然天气',
+    emojiCatSymbolSigns: '符号标志',
+    confirm: '确认',
+  },
+});
+
+registerTranslations('en', {
+  agentMgr: {
+    allTools: 'All',
+    defaultAgentName: 'Default assistant',
+    switchedTo: 'Switched to: {name}',
+    editAgent: 'Edit assistant',
+    templateLoaded: 'Template loaded: {name}',
+    noSkillsHint: 'No enabled skills (please confirm Agent is connected and skill switch is on)',
+    nameRequired: 'Please enter assistant name',
+    agentUpdated: 'Assistant updated',
+    agentCreated: 'Assistant "{name}" created',
+    saveFailed: 'Save failed: {message}',
+    confirmDeleteAgentMessage: 'Are you sure you want to delete assistant "{name}"?\nSessions using this assistant will revert to the default assistant.',
+    deleteAgentTitle: 'Delete assistant',
+    agentDeleted: 'Assistant deleted',
+    deleteFailed: 'Delete failed: {message}',
+    cannotDeleteDefault: 'Default assistant cannot be deleted',
+    emojiCatFaceExpressions: 'Face expressions',
+    emojiCatHandGestures: 'Hand gestures',
+    emojiCatProfessionalRoles: 'Professional roles',
+    emojiCatAiTech: 'AI & Tech',
+    emojiCatToolObjects: 'Tool objects',
+    emojiCatDocData: 'Document & data',
+    emojiCatStatusMarks: 'Status marks',
+    emojiCatTransportTravel: 'Transport & travel',
+    emojiCatNatureWeather: 'Nature & weather',
+    emojiCatSymbolSigns: 'Symbols & signs',
+    confirm: 'Confirm',
+  },
+});
 
 /**
  * 初始化 Agent 管理
@@ -56,7 +118,7 @@ export async function renderAgentSelector() {
   let html = '';
   for (const agent of allAgents) {
     const isActive = agent.id === activeId || (!activeId && agent.id === 'default');
-    const toolCount = agent.toolIds ? agent.toolIds.length : '全部';
+    const toolCount = agent.toolIds ? agent.toolIds.length : t('agentMgr.allTools');
     html += `
       <div class="agent-item ${isActive ? 'active' : ''} ${!agent.isBuiltin ? 'is-editable' : ''}" data-agent-id="${escapeAttr(agent.id)}">
         <span class="agent-item-icon">${escapeHtml(agent.icon)}</span>
@@ -79,7 +141,7 @@ export async function renderAgentSelector() {
     footerContainer.innerHTML = `
       <div class="agent-item" id="agentAddBtn" style="color:#667eea;">
         <span class="agent-item-icon" style="color:#667eea;">＋</span>
-        <span class="agent-item-name">创建新助手</span>
+        <span class="agent-item-name">${t('agentEditor.createNew')}</span>
       </div>`;
   }
 
@@ -102,7 +164,7 @@ function updateAgentSelectorButton(allAgents, activeId) {
     text.textContent = `${activeAgent.icon} ${activeAgent.name}`;
     if (emoji) emoji.textContent = activeAgent.icon;
   } else {
-    text.textContent = '🤖 默认助手';
+    text.textContent = t('header.defaultAssistant');
     if (emoji) emoji.textContent = '🤖';
   }
 }
@@ -278,8 +340,8 @@ export async function switchAgent(agentId) {
   // 始终更新工具栏按钮（工具数量可能变化）
   updateToolsToggleState();
   
-  const agentName = agent ? agent.name : '默认助手';
-  showToast(`已切换到：${agentName}`, 'info', 2000);
+  const agentName = agent ? agent.name : t('agentMgr.defaultAgentName');
+  showToast(t('agentMgr.switchedTo', { name: agentName }), 'info', 2000);
   
   logger.debug('[AgentMgr] 已切换 Agent:', agentId, agentName);
 }
@@ -352,16 +414,16 @@ function initAgentModalEvents() {
 
 // 常用 Emoji 分类
 const EMOJI_CATEGORIES = [
-  { label: '人物表情', emojis: ['😀','😃','😎','🤩','🥳','😇','🤔','🧐','😤','😭','🥺','🤗','😏','🫡','🤫','🤯','🥱','😴','🤤','💀'] },
-  { label: '手势动作', emojis: ['👋','🤝','👍','👎','👏','🙌','💪','✍️','🙏','🤞','✌️','🤘','👆','👇','👉','👈','🖐️','🤙','🤌','🫶'] },
-  { label: '职业角色', emojis: ['🤖','🧑‍💻','👨‍🔬','👩‍🎨','🧑‍🏫','👨‍💼','🧑‍🔧','👩‍⚕️','🧑‍🚀','👨‍🍳','🧑‍🎓','👩‍🚒','👮','🕵️','👷','🧙','🦸','🧛','🧜','👼'] },
-  { label: 'AI & 科技', emojis: ['🧠','💡','🔍','🔬','🧪','🧬','🛰️','📡','🔗','🌐','💻','🖥️','⌨️','🖱️','🖨️','📱','🔌','💾','🎛️','⚙️'] },
-  { label: '工具物品', emojis: ['🔧','🔨','🪛','🔐','🔑','🛡️','🔒','🔓','✂️','📐','📏','🧲','💣','🧨','🔔','🔕','💎','💿','📀','🎥'] },
-  { label: '文档数据', emojis: ['📝','📋','📄','📊','📈','📉','🗂️','📁','📂','📚','📖','📌','📎','🖇️','✏️','🖊️','📏','📐','🗑️','📇'] },
-  { label: '状态标记', emojis: ['✅','❌','⚠️','⛔','🚫','➕','➖','⭐','🔥','💯','🎯','🏆','🥇','📌','📍','💬','🗨️','💭','🗯️','💢'] },
-  { label: '交通出行', emojis: ['🚀','✈️','🚗','🚲','🛵','🏎️','🚢','🚁','🛸','🏃','🚶','🧗','🏄','🚴','🏊','⛵','🚂','🚌','🚕','🛴'] },
-  { label: '自然天气', emojis: ['☀️','🌙','⭐','🌈','☁️','⛈️','❄️','🔥','💧','🌊','🌸','🌺','🌻','🌲','🍀','🌍','🏔️','🌋','🏝️','🌌'] },
-  { label: '符号标志', emojis: ['©️','®️','™️','♻️','⚡','💲','🔴','🟠','🟡','🟢','🔵','🟣','⬛','⬜','🟤','❤️','💙','💚','💛','💜'] },
+  { label: t('agentMgr.emojiCatFaceExpressions'), emojis: ['😀','😃','😎','🤩','🥳','😇','🤔','🧐','😤','😭','🥺','🤗','😏','🫡','🤫','🤯','🥱','😴','🤤','💀'] },
+  { label: t('agentMgr.emojiCatHandGestures'), emojis: ['👋','🤝','👍','👎','👏','🙌','💪','✍️','🙏','🤞','✌️','🤘','👆','👇','👉','👈','🖐️','🤙','🤌','🫶'] },
+  { label: t('agentMgr.emojiCatProfessionalRoles'), emojis: ['🤖','🧑‍💻','👨‍🔬','👩‍🎨','🧑‍🏫','👨‍💼','🧑‍🔧','👩‍⚕️','🧑‍🚀','👨‍🍳','🧑‍🎓','👩‍🚒','👮','🕵️','👷','🧙','🦸','🧛','🧜','👼'] },
+  { label: t('agentMgr.emojiCatAiTech'), emojis: ['🧠','💡','🔍','🔬','🧪','🧬','🛰️','📡','🔗','🌐','💻','🖥️','⌨️','🖱️','🖨️','📱','🔌','💾','🎛️','⚙️'] },
+  { label: t('agentMgr.emojiCatToolObjects'), emojis: ['🔧','🔨','🪛','🔐','🔑','🛡️','🔒','🔓','✂️','📐','📏','🧲','💣','🧨','🔔','🔕','💎','💿','📀','🎥'] },
+  { label: t('agentMgr.emojiCatDocData'), emojis: ['📝','📋','📄','📊','📈','📉','🗂️','📁','📂','📚','📖','📌','📎','🖇️','✏️','🖊️','📏','📐','🗑️','📇'] },
+  { label: t('agentMgr.emojiCatStatusMarks'), emojis: ['✅','❌','⚠️','⛔','🚫','➕','➖','⭐','🔥','💯','🎯','🏆','🥇','📌','📍','💬','🗨️','💭','🗯️','💢'] },
+  { label: t('agentMgr.emojiCatTransportTravel'), emojis: ['🚀','✈️','🚗','🚲','🛵','🏎️','🚢','🚁','🛸','🏃','🚶','🧗','🏄','🚴','🏊','⛵','🚂','🚌','🚕','🛴'] },
+  { label: t('agentMgr.emojiCatNatureWeather'), emojis: ['☀️','🌙','⭐','🌈','☁️','⛈️','❄️','🔥','💧','🌊','🌸','🌺','🌻','🌲','🍀','🌍','🏔️','🌋','🏝️','🌌'] },
+  { label: t('agentMgr.emojiCatSymbolSigns'), emojis: ['©️','®️','™️','♻️','⚡','💲','🔴','🟠','🟡','🟢','🔵','🟣','⬛','⬜','🟤','❤️','💙','💚','💛','💜'] },
 ];
 
 function initEmojiPicker() {
@@ -479,7 +541,7 @@ export async function openAgentEditor(agentId) {
     const agent = await getAgent(agentId);
     if (!agent || agent.isBuiltin) return;  // 内置不可编辑
 
-    titleEl.textContent = '编辑助手';
+    titleEl.textContent = t('agentMgr.editAgent');
     modal.querySelector('#agentEditId').value = agent.id;
     modal.querySelector('#agentEditName').value = agent.name;
     modal.querySelector('#agentEditIcon').value = agent.icon || '🤖';
@@ -500,7 +562,7 @@ export async function openAgentEditor(agentId) {
     renderAgentSkillSelector(agent.skillIds);
   } else {
     // 新建模式
-    titleEl.textContent = '创建新助手';
+    titleEl.textContent = t('agentEditor.createNew');
     deleteBtn.style.display = 'none';
     
     // 渲染空工具选择
@@ -555,7 +617,7 @@ function renderTemplateOptions() {
   const select = document.getElementById('agentTemplateSelect');
   if (!select) return;
 
-  let html = '<option value="">-- 选择模板（可选） --</option>';
+  let html = `<option value="">${t('agentEditor.selectTemplate')}</option>`;
   for (let i = 0; i < AGENT_TEMPLATES.length; i++) {
     const t = AGENT_TEMPLATES[i];
     html += `<option value="${i}">${t.icon} ${t.name}</option>`;
@@ -591,7 +653,7 @@ function onTemplateSelect(e) {
   // 渲染技能选择
   renderAgentSkillSelector(template.skillIds || null);
 
-  showToast(`已加载模板：${template.name}`, 'info', 2000);
+  showToast(t('agentMgr.templateLoaded', { name: template.name }), 'info', 2000);
 }
 
 /**
@@ -697,7 +759,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
   const totalCount = skills.length;
 
   if (skills.length === 0) {
-    container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;text-align:center;">暂无启用技能（请先确认 Agent 已连接且技能开关已开启）</div>';
+    container.innerHTML = `<div style="color:#999;font-size:12px;padding:8px;text-align:center;">${t('agentMgr.noSkillsHint')}</div>`;
     const countEl = document.getElementById('agentSkillCount');
     if (countEl) countEl.textContent = '(0)';
     return;
@@ -838,7 +900,7 @@ async function saveAgent() {
   const { temperature, topP } = getSelectedTempPreset();
 
   if (!name) {
-    showToast('请输入助手名称', 'warning');
+    showToast(t('agentMgr.nameRequired'), 'warning');
     return;
   }
 
@@ -847,10 +909,10 @@ async function saveAgent() {
   try {
     if (agentId) {
       await updateAgent(agentId, data);
-      showToast('助手已更新', 'success');
+      showToast(t('agentMgr.agentUpdated'), 'success');
     } else {
       const newAgent = await createAgent(data);
-      showToast(`助手 "${newAgent.name}" 已创建`, 'success');
+      showToast(t('agentMgr.agentCreated', { name: newAgent.name }), 'success');
     }
 
     // 刷新状态
@@ -859,7 +921,7 @@ async function saveAgent() {
     closeAgentEditor();
   } catch (err) {
     logger.error('[AgentMgr] 保存 Agent 失败:', err);
-    showToast('保存失败：' + err.message, 'error');
+    showToast(t('agentMgr.saveFailed', { message: err.message }), 'error');
   }
 }
 
@@ -876,20 +938,20 @@ async function deleteCurrentAgent() {
   const agent = await getAgent(agentId);
   const agentName = agent ? agent.name : '';
   const confirmed = await showCustomConfirm(
-    `确定要删除助手 "${agentName}" 吗？\n正在使用该助手的会话将恢复为默认助手。`,
-    '删除助手'
+    t('agentMgr.confirmDeleteAgentMessage', { name: agentName }),
+    t('agentMgr.deleteAgentTitle')
   );
   if (!confirmed) return;
 
   try {
     await deleteAgent(agentId);
-    showToast('助手已删除', 'success');
+    showToast(t('agentMgr.agentDeleted'), 'success');
     await loadAgentState();
     await renderAgentSelector();
     closeAgentEditor();
   } catch (err) {
     logger.error('[AgentMgr] 删除 Agent 失败:', err);
-    showToast('删除失败：' + err.message, 'error');
+    showToast(t('agentMgr.deleteFailed', { message: err.message }), 'error');
   }
 }
 
@@ -902,23 +964,23 @@ export async function deleteAgentWithConfirm(agentId) {
   if (!agentId) return false;
   const agent = await getAgent(agentId);
   if (!agent || agent.isBuiltin) {
-    showToast('默认助手不支持删除', 'warning');
+    showToast(t('agentMgr.cannotDeleteDefault'), 'warning');
     return false;
   }
   const confirmed = await showCustomConfirm(
-    `确定要删除助手 "${agent.name}" 吗？\n正在使用该助手的会话将恢复为默认助手。`,
-    '删除助手'
+    t('agentMgr.confirmDeleteAgentMessage', { name: agent.name }),
+    t('agentMgr.deleteAgentTitle')
   );
   if (!confirmed) return false;
   try {
     await deleteAgent(agentId);
-    showToast('助手已删除', 'success');
+    showToast(t('agentMgr.agentDeleted'), 'success');
     await loadAgentState();
     await renderAgentSelector();
     return true;
   } catch (err) {
     logger.error('[AgentMgr] 删除 Agent 失败:', err);
-    showToast('删除失败：' + err.message, 'error');
+    showToast(t('agentMgr.deleteFailed', { message: err.message }), 'error');
     return false;
   }
 }
@@ -973,7 +1035,7 @@ async function showCustomConfirm(message, title) {
     }
     
     modal.querySelector('#agentConfirmMessage').textContent = message;
-    modal.querySelector('#agentConfirmTitle').textContent = title || '确认';
+    modal.querySelector('#agentConfirmTitle').textContent = title || t('agentMgr.confirm');
     modal.style.display = 'flex';
 
     const cleanup = () => {

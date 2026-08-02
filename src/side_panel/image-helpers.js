@@ -5,6 +5,40 @@ import { showToast, getCurrentActiveTabId } from './utils.js';
 import { clearFiles } from './file-extract.js';
 import { openImagePreview, compressAndAttachImage } from './chat-manager.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  imageHelper: {
+    uploadToAgentTitle: '上传文件到Agent工作目录，大模型通过工具直接操作',
+    uploadAndExtractTitle: '上传文件并提取文本内容（支持PDF/Word/Excel/文本等）',
+    clickToEnlarge: '点击查看大图',
+    removeImage: '移除图片',
+    enableImageInputFirst: '请先开启图片输入功能',
+    screenshotSuccess: '截图成功',
+    screenshotFailed: '截图失败，请重试',
+    noActiveTab: '无法获取当前标签页',
+    cropFailed: '裁剪失败，请重试',
+    regionScreenshotFailed: '区域截图失败，请确保页面已加载且未被浏览器限制',
+    imageLoadFailed: '图片加载失败',
+    screenshotProcessFailed: '截图处理失败，请重试',
+  },
+});
+registerTranslations('en', {
+  imageHelper: {
+    uploadToAgentTitle: 'Upload files to Agent workspace; the model operates on them directly via tools',
+    uploadAndExtractTitle: 'Upload files and extract text content (supports PDF/Word/Excel/text, etc.)',
+    clickToEnlarge: 'Click to enlarge',
+    removeImage: 'Remove image',
+    enableImageInputFirst: 'Please enable image input first',
+    screenshotSuccess: 'Screenshot captured',
+    screenshotFailed: 'Screenshot failed, please retry',
+    noActiveTab: 'Unable to get the current tab',
+    cropFailed: 'Cropping failed, please retry',
+    regionScreenshotFailed: 'Region screenshot failed. Make sure the page is loaded and not restricted by the browser.',
+    imageLoadFailed: 'Image load failed',
+    screenshotProcessFailed: 'Screenshot processing failed, please retry',
+  },
+});
 
 /**
  * 更新图片预览区可见性
@@ -58,10 +92,10 @@ export function updateFileInputVisibility() {
   if (fileInput) {
     if (state.agentPlatform?.connected) {
       fileInput.accept = '*';
-      fileAttachBtn && (fileAttachBtn.title = '上传文件到Agent工作目录，大模型通过工具直接操作');
+      fileAttachBtn && (fileAttachBtn.title = t('imageHelper.uploadToAgentTitle'));
     } else {
       fileInput.accept = '.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf';
-      fileAttachBtn && (fileAttachBtn.title = '上传文件并提取文本内容（支持PDF/Word/Excel/文本等）');
+      fileAttachBtn && (fileAttachBtn.title = t('imageHelper.uploadAndExtractTitle'));
     }
   }
   updateTextareaPadding();
@@ -93,7 +127,7 @@ export function renderImagePreviews() {
     const thumb = document.createElement('img');
     thumb.src = img.dataUrl || img.compressedUrl || img.originalUrl;
     thumb.className = 'image-preview-thumb';
-    thumb.title = '点击查看大图';
+    thumb.title = t('imageHelper.clickToEnlarge');
     thumb.style.cursor = 'zoom-in';
     thumb.addEventListener('click', () => {
       openImagePreview(img.originalUrl || img.dataUrl || img.compressedUrl, thumb);
@@ -102,7 +136,7 @@ export function renderImagePreviews() {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'image-preview-remove';
     removeBtn.innerHTML = '×';
-    removeBtn.title = '移除图片';
+    removeBtn.title = t('imageHelper.removeImage');
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       state.attachedImages.splice(index, 1);
@@ -120,7 +154,7 @@ export function renderImagePreviews() {
  */
 export async function captureFullPageScreenshot() {
   if (!state.enableImageInput) {
-    showToast('请先开启图片输入功能');
+    showToast(t('imageHelper.enableImageInputFirst'));
     return;
   }
   try {
@@ -129,11 +163,11 @@ export async function captureFullPageScreenshot() {
       const res = await fetch(response.dataUrl);
       const blob = await res.blob();
       compressAndAttachImage(blob);
-      showToast('截图成功');
+      showToast(t('imageHelper.screenshotSuccess'));
     }
   } catch (err) {
     logger.error('[SidePanel] 全页面截图失败:', err);
-    showToast('截图失败，请重试');
+    showToast(t('imageHelper.screenshotFailed'));
   }
 }
 
@@ -143,7 +177,7 @@ export async function captureFullPageScreenshot() {
 export async function captureRegionScreenshot() {
   const tabId = await getCurrentActiveTabId();
   if (!tabId) {
-    showToast('无法获取当前标签页');
+    showToast(t('imageHelper.noActiveTab'));
     return;
   }
 
@@ -161,14 +195,14 @@ export async function captureRegionScreenshot() {
     // 先截取整个可见区域
     const capResponse = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
     if (!capResponse?.dataUrl) {
-      showToast('截图失败，请重试');
+      showToast(t('imageHelper.screenshotFailed'));
       return;
     }
 
     // 裁剪图片
     const croppedDataUrl = await cropImage(capResponse.dataUrl, rect);
     if (!croppedDataUrl) {
-      showToast('裁剪失败，请重试');
+      showToast(t('imageHelper.cropFailed'));
       return;
     }
 
@@ -178,7 +212,7 @@ export async function captureRegionScreenshot() {
     compressAndAttachImage(blob);
   } catch (err) {
     logger.error('[SidePanel] 区域截图失败:', err);
-    showToast('区域截图失败，请确保页面已加载且未被浏览器限制');
+    showToast(t('imageHelper.regionScreenshotFailed'));
   }
 }
 
@@ -207,7 +241,7 @@ export function cropImage(dataUrl, rect) {
       ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
       resolve(canvas.toDataURL('image/jpeg', 0.85));
     };
-    img.onerror = () => reject(new Error('图片加载失败'));
+    img.onerror = () => reject(new Error(t('imageHelper.imageLoadFailed')));
     img.src = dataUrl;
   });
 }
@@ -217,7 +251,7 @@ export function cropImage(dataUrl, rect) {
  */
 export async function handlePageScreenshotResult(dataUrl, mode, rect) {
   if (!state.enableImageInput) {
-    showToast('请先开启图片输入功能');
+    showToast(t('imageHelper.enableImageInputFirst'));
     return;
   }
   try {
@@ -228,9 +262,9 @@ export async function handlePageScreenshotResult(dataUrl, mode, rect) {
     const res = await fetch(finalDataUrl);
     const blob = await res.blob();
     compressAndAttachImage(blob);
-    showToast('截图成功');
+    showToast(t('imageHelper.screenshotSuccess'));
   } catch (err) {
     logger.error('[SidePanel] 页面快捷键截图处理失败:', err);
-    showToast('截图处理失败，请重试');
+    showToast(t('imageHelper.screenshotProcessFailed'));
   }
 }

@@ -1,6 +1,26 @@
 // workspace-manager.js - 工作目录数据管理
 
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  workspaceMgr: {
+    agentNotPairedDetail: 'Agent 未配对，请先在设置中完成配对',
+    agentNotPaired: 'Agent 未配对',
+    requestFailed: '请求失败: {message}',
+    downloadFailed: '下载失败',
+    cancelled: '已取消',
+  },
+});
+registerTranslations('en', {
+  workspaceMgr: {
+    agentNotPairedDetail: 'Agent not paired. Please complete pairing in Settings first.',
+    agentNotPaired: 'Agent not paired',
+    requestFailed: 'Request failed: {message}',
+    downloadFailed: 'Download failed',
+    cancelled: 'Cancelled',
+  },
+});
 
 /**
  * 文件扩展名对应的图标
@@ -247,7 +267,7 @@ export async function removeAllowedPath(path) {
  */
 async function agentRequest(path, body = {}) {
   const config = await getAgentConfig();
-  if (!config) return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPairedDetail') };
   try {
     const resp = await fetch(`${config.url}${path}`, {
       method: 'POST',
@@ -259,7 +279,7 @@ async function agentRequest(path, body = {}) {
     });
     return await resp.json();
   } catch (err) {
-    return { success: false, error: `请求失败: ${err.message}` };
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   }
 }
 
@@ -352,7 +372,7 @@ function extractFilename(cd, fallback) {
  */
 export async function downloadFileStream(filePath) {
   const config = await getAgentConfig();
-  if (!config) return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPairedDetail') };
   try {
     const resp = await fetch(`${config.url}/api/fs/download-stream`, {
       method: 'POST',
@@ -364,13 +384,13 @@ export async function downloadFileStream(filePath) {
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      return { success: false, error: err.error || '下载失败' };
+      return { success: false, error: err.error || t('workspaceMgr.downloadFailed') };
     }
     const blob = await resp.blob();
     const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split(/[\\/]/).pop());
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
-    return { success: false, error: `请求失败: ${err.message}` };
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   }
 }
 
@@ -382,7 +402,7 @@ export async function downloadFileStream(filePath) {
  */
 export async function downloadFileStreamWithProgress(filePath, onProgress, signal) {
   const config = await getAgentConfig();
-  if (!config) return { success: false, error: 'Agent 未配对' };
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPaired') };
   try {
     const resp = await fetch(`${config.url}/api/fs/download-stream`, {
       method: 'POST',
@@ -395,7 +415,7 @@ export async function downloadFileStreamWithProgress(filePath, onProgress, signa
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      return { success: false, error: err.error || '下载失败' };
+      return { success: false, error: err.error || t('workspaceMgr.downloadFailed') };
     }
 
     const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
@@ -421,8 +441,8 @@ export async function downloadFileStreamWithProgress(filePath, onProgress, signa
     const name = extractFilename(resp.headers.get('Content-Disposition'), filePath.split(/[\\/]/).pop());
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
-    if (err.name === 'AbortError') return { success: false, error: '已取消', aborted: true };
-    return { success: false, error: `请求失败: ${err.message}` };
+    if (err.name === 'AbortError') return { success: false, error: t('workspaceMgr.cancelled'), aborted: true };
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   }
 }
 
@@ -431,7 +451,7 @@ export async function downloadFileStreamWithProgress(filePath, onProgress, signa
  */
 export async function downloadFilesStream(paths) {
   const config = await getAgentConfig();
-  if (!config) return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPairedDetail') };
   try {
     const resp = await fetch(`${config.url}/api/fs/download-stream`, {
       method: 'POST',
@@ -443,13 +463,13 @@ export async function downloadFilesStream(paths) {
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      return { success: false, error: err.error || '下载失败' };
+      return { success: false, error: err.error || t('workspaceMgr.downloadFailed') };
     }
     const blob = await resp.blob();
     const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
-    return { success: false, error: `请求失败: ${err.message}` };
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   }
 }
 
@@ -461,7 +481,7 @@ export async function downloadFilesStream(paths) {
  */
 export async function downloadFilesStreamWithProgress(paths, onProgress, signal) {
   const config = await getAgentConfig();
-  if (!config) return { success: false, error: 'Agent 未配对' };
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPaired') };
   try {
     const resp = await fetch(`${config.url}/api/fs/download-stream`, {
       method: 'POST',
@@ -474,7 +494,7 @@ export async function downloadFilesStreamWithProgress(paths, onProgress, signal)
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      return { success: false, error: err.error || '下载失败' };
+      return { success: false, error: err.error || t('workspaceMgr.downloadFailed') };
     }
 
     const contentLength = parseInt(resp.headers.get('Content-Length') || '0', 10);
@@ -499,8 +519,8 @@ export async function downloadFilesStreamWithProgress(paths, onProgress, signal)
     const name = extractFilename(resp.headers.get('Content-Disposition'), 'workspace.zip');
     return { success: true, blob, name, mimeType: resp.headers.get('Content-Type') };
   } catch (err) {
-    if (err.name === 'AbortError') return { success: false, error: '已取消', aborted: true };
-    return { success: false, error: `请求失败: ${err.message}` };
+    if (err.name === 'AbortError') return { success: false, error: t('workspaceMgr.cancelled'), aborted: true };
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   }
 }
 

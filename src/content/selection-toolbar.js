@@ -3,6 +3,67 @@
 import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
 import { injectStyles } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  selToolbar: {
+    settings: '设置',
+    settingsTitle: '打开配置页面',
+    disableTemporarily: '本次临时禁用',
+    disableTemporarilyTitle: '暂时隐藏直到页面刷新',
+    disableOnSite: '在此网站禁用',
+    disableOnSiteTitle: '在此网站禁用工具栏',
+    dragToMove: '拖拽移动',
+    moreTools: '更多工具',
+    copySelectedTitle: '复制选中内容',
+    askPlaceholder: '问问...',
+    sendTitle: '发送',
+    aiAnswer: 'AI 回答',
+    lockWindow: '锁定窗口',
+    unlockWindow: '解除锁定',
+    close: '关闭',
+    copyAll: '复制',
+    regenerate: '重新生成',
+    suggestedFollowups: '💡 推荐追问',
+    followupPlaceholder: '继续提问...',
+    sendToSidebar: '发送到侧边栏',
+    aiThinking: 'AI 正在思考...',
+    requestFailed: '请求失败: {msg}',
+    copyFailed: '复制失败，请手动复制',
+    copied: '已复制',
+    noResponse: '无响应',
+  },
+});
+
+registerTranslations('en', {
+  selToolbar: {
+    settings: 'Settings',
+    settingsTitle: 'Open settings page',
+    disableTemporarily: 'Disable temporarily',
+    disableTemporarilyTitle: 'Temporarily hide until page refresh',
+    disableOnSite: 'Disable on this site',
+    disableOnSiteTitle: 'Disable toolbar on this website',
+    dragToMove: 'Drag to move',
+    moreTools: 'More tools',
+    copySelectedTitle: 'Copy selected content',
+    askPlaceholder: 'Ask...',
+    sendTitle: 'Send',
+    aiAnswer: 'AI Answer',
+    lockWindow: 'Lock panel',
+    unlockWindow: 'Unlock panel',
+    close: 'Close',
+    copyAll: 'Copy',
+    regenerate: 'Regenerate',
+    suggestedFollowups: '💡 Suggested follow-ups',
+    followupPlaceholder: 'Ask a follow-up...',
+    sendToSidebar: 'Send to sidebar',
+    aiThinking: 'AI is thinking...',
+    requestFailed: 'Request failed: {msg}',
+    copyFailed: 'Copy failed, please copy manually',
+    copied: 'Copied',
+    noResponse: 'No response',
+  },
+});
 
 // ==================== SVG 图标 ====================
 const ICONS = {
@@ -241,14 +302,14 @@ function renderOverflowDropdown(overflowTools) {
   }).join('');
   
   itemsHtml += `<div class="aih-dropdown-divider"></div>`;
-  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-settings" role="button" tabindex="0" title="打开配置页面">
-    <span class="aih-tb-icon">${ICONS.gear}</span>设置
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-settings" role="button" tabindex="0" title="${t('selToolbar.settingsTitle')}">
+    <span class="aih-tb-icon">${ICONS.gear}</span>${t('selToolbar.settings')}
   </div>`;
-  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-hide" role="button" tabindex="0" title="暂时隐藏直到页面刷新">
-    <span class="aih-tb-icon">${ICONS.eyeOff}</span>本次临时禁用
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-hide" role="button" tabindex="0" title="${t('selToolbar.disableTemporarilyTitle')}">
+    <span class="aih-tb-icon">${ICONS.eyeOff}</span>${t('selToolbar.disableTemporarily')}
   </div>`;
-  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-block" role="button" tabindex="0" title="在此网站禁用工具栏">
-    <span class="aih-tb-icon">${ICONS.block}</span>在此网站禁用
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-block" role="button" tabindex="0" title="${t('selToolbar.disableOnSiteTitle')}">
+    <span class="aih-tb-icon">${ICONS.block}</span>${t('selToolbar.disableOnSite')}
   </div>`;
   
   overflowDropdownEl.innerHTML = itemsHtml;
@@ -345,15 +406,15 @@ async function createToolbar() {
   renderOverflowDropdown(overflowTools);
   
   // 复制按钮固定在最后
-  buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="复制选中内容">
+  buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="${t('selToolbar.copySelectedTitle')}">
     <span class="aih-tb-icon">${ICONS.copy}</span>${iconMode ? '' : '复制'}
   </div>`;
   buttonsHtml += `</span>`; // close .aih-tb-buttons
-  
+
   // 问问AI 输入框（紧凑内联形态）
   buttonsHtml += `<span class="aih-tb-ask-wrap">
-    <input type="text" class="aih-tb-ask-input" placeholder="问问..." />
-    <div class="aih-tb-btn aih-tb-ask-send" role="button" tabindex="0" title="发送">
+    <input type="text" class="aih-tb-ask-input" placeholder="${t('selToolbar.askPlaceholder')}" />
+    <div class="aih-tb-btn aih-tb-ask-send" role="button" tabindex="0" title="${t('selToolbar.sendTitle')}">
       <span class="aih-tb-icon">${ICONS.send}</span>
     </div>
   </span>`;
@@ -509,31 +570,31 @@ function createResultPanel() {
   resultPanelEl.id = 'aih-selection-result';
   resultPanelEl.innerHTML = `
     <div class="aih-result-header">
-      <span>${ICONS.sparkle} AI 回答</span>
+      <span>${ICONS.sparkle} ${t('selToolbar.aiAnswer')}</span>
       <div class="aih-result-header-actions">
-        <div class="aih-result-lock" role="button" tabindex="0" title="锁定窗口">${ICONS.unlock}</div>
-        <div class="aih-result-close" role="button" tabindex="0" title="关闭">${ICONS.close}</div>
+        <div class="aih-result-lock" role="button" tabindex="0" title="${t('selToolbar.lockWindow')}">${ICONS.unlock}</div>
+        <div class="aih-result-close" role="button" tabindex="0" title="${t('selToolbar.close')}">${ICONS.close}</div>
       </div>
     </div>
     <div class="aih-result-scroll">
       <div class="aih-result-body"></div>
       <div class="aih-result-footer">
-        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="copy-result" title="复制全部内容">
-          <span class="aih-tb-icon">${ICONS.copyLarge}</span>复制
+        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="copy-result" title="${t('selToolbar.copyAll')}">
+          <span class="aih-tb-icon">${ICONS.copyLarge}</span>${t('selToolbar.copyAll')}
         </div>
-        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="regenerate-result" title="重新生成答案">
-          <span class="aih-tb-icon">${ICONS.refresh}</span>重新生成
+        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="regenerate-result" title="${t('selToolbar.regenerate')}">
+          <span class="aih-tb-icon">${ICONS.refresh}</span>${t('selToolbar.regenerate')}
         </div>
       </div>
       <div class="aih-result-suggestions" style="display:none;">
-        <div class="aih-suggestions-label">💡 推荐追问</div>
+        <div class="aih-suggestions-label">${t('selToolbar.suggestedFollowups')}</div>
         <div class="aih-suggestions-list"></div>
       </div>
     </div>
     <div class="aih-result-followup">
       <span class="aih-followup-wrap">
-        <input type="text" class="aih-followup-input" placeholder="继续提问..." />
-        <div class="aih-followup-send" role="button" tabindex="0" title="发送到侧边栏">${ICONS.send}</div>
+        <input type="text" class="aih-followup-input" placeholder="${t('selToolbar.followupPlaceholder')}" />
+        <div class="aih-followup-send" role="button" tabindex="0" title="${t('selToolbar.sendToSidebar')}">${ICONS.send}</div>
       </span>
     </div>
   `;
@@ -688,7 +749,7 @@ function showResultLoading(x, y) {
   resultPanelEl.style.display = 'flex';
   
   const body = resultPanelEl.querySelector('.aih-result-body');
-  body.innerHTML = `<div class="aih-result-loading"><div class="aih-spinner"></div>AI 正在思考...</div>`;
+  body.innerHTML = `<div class="aih-result-loading"><div class="aih-spinner"></div>${t('selToolbar.aiThinking')}</div>`;
   
   positionPanel(resultPanelEl, x, y);
   isResultVisible = true;
@@ -767,11 +828,11 @@ function updateLockButton() {
   if (isResultLocked) {
     lockBtn.innerHTML = ICONS.lock;
     lockBtn.classList.add('locked');
-    lockBtn.title = '解除锁定';
+    lockBtn.title = t('selToolbar.unlockWindow');
   } else {
     lockBtn.innerHTML = ICONS.unlock;
     lockBtn.classList.remove('locked');
-    lockBtn.title = '锁定窗口';
+    lockBtn.title = t('selToolbar.lockWindow');
   }
 }
 
@@ -1328,11 +1389,11 @@ function sendToAI(action, text, customSystemPrompt) {
   let panelTitle = actionTitles[action];
   if (!panelTitle && toolbarTools) {
     const tool = toolbarTools.find(t => t.id === action);
-    panelTitle = tool ? tool.name : 'AI 回答';
+    panelTitle = tool ? tool.name : t('selToolbar.aiAnswer');
   }
   const titleSpan = resultPanelEl.querySelector('.aih-result-header span');
   if (titleSpan) {
-    titleSpan.innerHTML = `${ICONS.sparkle} ${panelTitle || 'AI 回答'}`;
+    titleSpan.innerHTML = `${ICONS.sparkle} ${panelTitle || t('selToolbar.aiAnswer')}`;
   }
   
   const pos = isResultVisible && resultPanelEl
@@ -1458,7 +1519,7 @@ if (isExtensionValid()) {
       streamContent = message.finalContent;
     }
     
-    const rawContent = streamContent || '无响应';
+    const rawContent = streamContent || t('selToolbar.noResponse');
     resultRawContent = streamContent;
     
     // 解析 ---SUGGESTIONS--- 分隔符
@@ -1492,7 +1553,7 @@ if (isExtensionValid()) {
       resultRawContent = '';
       showResultError(lastPanelPos.x, lastPanelPos.y, message.error);
     } else {
-      const rawContent = message.content || '无响应';
+      const rawContent = message.content || t('selToolbar.noResponse');
       
       // 解析 ---SUGGESTIONS--- 分隔符，分离回答和追问
       let answerContent = rawContent;

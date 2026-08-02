@@ -1,5 +1,17 @@
 // side_panel/agent-store.js - Agent 数据持久化
 import { BUILTIN_AGENTS, generateAgentId } from '../shared/agent-defaults.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  agentStore: {
+    unnamedAgent: '未命名Agent',
+  },
+});
+registerTranslations('en', {
+  agentStore: {
+    unnamedAgent: 'Unnamed Agent',
+  },
+});
 
 const STORAGE_KEY = 'customAgents';
 const ACTIVE_KEY = 'activeAssistantId';
@@ -60,7 +72,7 @@ export async function createAgent(agentData) {
   const agents = await getCustomAgents();
   const newAgent = {
     id: generateAgentId(),
-    name: agentData.name || '未命名Agent',
+    name: agentData.name || t('agentStore.unnamedAgent'),
     description: agentData.description || '',
     icon: agentData.icon || '🤖',
     systemPrompt: agentData.systemPrompt || '',

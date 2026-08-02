@@ -5,6 +5,49 @@ import { getSortedBookmarks, removeBookmarkById, removeBookmark, toggleBookmarkP
 import { switchToSession } from './session-manager.js';
 import { escapeHtml, showToast } from './utils.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  bookmark: {
+    toggleTitle: '收藏列表',
+    title: '消息收藏',
+    searchPlaceholder: '搜索收藏内容（支持 & | 组合搜索）...',
+    clearSearchTitle: '清除搜索',
+    empty: '暂无收藏',
+    searchCount: '搜索 {filtered}/{total}',
+    countResult: '{count} 条',
+    noMatch: '无匹配结果',
+    otherSessions: '其他会话',
+    noTextContent: '(无文本内容)',
+    unpinTitle: '取消置顶',
+    pinTitle: '置顶',
+    removeBookmarkTitle: '取消收藏',
+    addBookmarkTitle: '收藏消息',
+    sessionNotExistToast: '会话已不存在，收藏已自动移除',
+    messageNotExistToast: '消息已不存在，收藏已自动移除',
+  },
+});
+
+registerTranslations('en', {
+  bookmark: {
+    toggleTitle: 'Bookmarks',
+    title: 'Message bookmarks',
+    searchPlaceholder: 'Search bookmarks (supports & | combined search)...',
+    clearSearchTitle: 'Clear search',
+    empty: 'No bookmarks',
+    searchCount: 'Search {filtered}/{total}',
+    countResult: '{count} items',
+    noMatch: 'No matching results',
+    otherSessions: 'Other sessions',
+    noTextContent: '(No text content)',
+    unpinTitle: 'Unpin',
+    pinTitle: 'Pin',
+    removeBookmarkTitle: 'Remove bookmark',
+    addBookmarkTitle: 'Bookmark message',
+    sessionNotExistToast: 'Session no longer exists, bookmark automatically removed',
+    messageNotExistToast: 'Message no longer exists, bookmark automatically removed',
+  },
+});
 
 /**
  * 初始化收藏面板：创建固定入口按钮和面板 DOM
@@ -34,33 +77,33 @@ export function initBookmarkPanel() {
   container.className = 'bookmark-panel-container';
   container.id = 'bookmarkPanelContainer';
   container.innerHTML = `
-    <button class="bookmark-panel-toggle" id="bookmarkPanelToggle" title="收藏列表">
+    <button class="bookmark-panel-toggle" id="bookmarkPanelToggle" title="${t('bookmark.toggleTitle')}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
       </svg>
-  
+
     </button>
     <div class="bookmark-panel" id="bookmarkPanel">
       <div class="bookmark-panel-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#f0a500;">
           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
         </svg>
-        <span>消息收藏</span>
+        <span>${t('bookmark.title')}</span>
         <span class="bookmark-panel-count" id="bookmarkPanelCount"></span>
-        <button class="bookmark-panel-close-btn" id="bookmarkPanelClose" title="关闭">
+        <button class="bookmark-panel-close-btn" id="bookmarkPanelClose" title="${t('common.close')}">
           <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
         </button>
       </div>
       <div class="bookmark-search">
         <div class="bookmark-search-input-wrapper">
-          <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="搜索收藏内容（支持 & | 组合搜索）..." />
-          <button class="bookmark-search-clear" id="bookmarkSearchClear" title="清除搜索" style="display:none;">
+          <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="${t('bookmark.searchPlaceholder')}" />
+          <button class="bookmark-search-clear" id="bookmarkSearchClear" title="${t('bookmark.clearSearchTitle')}" style="display:none;">
             <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>
           </button>
         </div>
       </div>
       <div class="bookmark-panel-content" id="bookmarkPanelContent">
-        <div class="bookmark-panel-empty">暂无收藏</div>
+        <div class="bookmark-panel-empty">${t('bookmark.empty')}</div>
       </div>
     </div>
   `;
@@ -254,19 +297,19 @@ export function refreshBookmarkPanel(searchQuery) {
   const total = state.bookmarks.length;
   const filteredTotal = currentBookmarks.length + otherBookmarks.length;
   if (query) {
-    count.textContent = `搜索 ${filteredTotal}/${total}`;
+    count.textContent = t('bookmark.searchCount', { filtered: filteredTotal, total });
   } else {
-    count.textContent = total > 0 ? `${total} 条` : '';
+    count.textContent = total > 0 ? t('bookmark.countResult', { count: total }) : '';
   }
 
   if (total === 0) {
-    content.innerHTML = '<div class="bookmark-panel-empty">暂无收藏</div>';
+    content.innerHTML = `<div class="bookmark-panel-empty">${t('bookmark.empty')}</div>`;
     updateBookmarkBadge();
     return;
   }
 
   if (query && filteredTotal === 0) {
-    content.innerHTML = '<div class="bookmark-panel-empty">无匹配结果</div>';
+    content.innerHTML = `<div class="bookmark-panel-empty">${t('bookmark.noMatch')}</div>`;
     updateBookmarkBadge();
     return;
   }
@@ -276,7 +319,7 @@ export function refreshBookmarkPanel(searchQuery) {
   // 当前会话收藏
   if (currentBookmarks.length > 0) {
     html += `<div class="bookmark-section">
-      <div class="bookmark-section-title">当前会话</div>
+      <div class="bookmark-section-title">${t('searchPanel.currentSession')}</div>
       ${renderBookmarkItems(currentBookmarks, query)}
     </div>`;
   }
@@ -284,7 +327,7 @@ export function refreshBookmarkPanel(searchQuery) {
   // 其他会话收藏
   if (otherBookmarks.length > 0) {
     html += `<div class="bookmark-section">
-      <div class="bookmark-section-title">其他会话</div>
+      <div class="bookmark-section-title">${t('bookmark.otherSessions')}</div>
       ${renderBookmarkItems(otherBookmarks, query)}
     </div>`;
   }
@@ -302,7 +345,7 @@ function renderBookmarkItems(bookmarks, searchQuery) {
   const query = (searchQuery || '').trim().toLowerCase();
   return bookmarks.map(bm => {
     const rawContent = bm.content || '';
-    const rawTitle = bm.sessionTitle || '未知会话';
+    const rawTitle = bm.sessionTitle || t('searchPanel.unknownSession');
     let displayContent = rawContent.length > 60 ? rawContent.substring(0, 60) + '...' : rawContent;
     let sessionTitle = rawTitle;
 
@@ -312,7 +355,7 @@ function renderBookmarkItems(bookmarks, searchQuery) {
       sessionTitle = highlightText(sessionTitle, query);
     }
 
-    if (!displayContent) displayContent = '(无文本内容)';
+    if (!displayContent) displayContent = t('bookmark.noTextContent');
     const pinnedClass = bm.pinned ? 'pinned' : '';
     const time = new Date(bm.createdAt).toLocaleString('zh-CN', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -326,13 +369,13 @@ function renderBookmarkItems(bookmarks, searchQuery) {
         </div>
         <div class="bookmark-item-content" title="${escapeHtml(rawContent)}">${displayContent}</div>
         <div class="bookmark-item-actions">
-          <button class="bookmark-item-pin" title="${bm.pinned ? '取消置顶' : '置顶'}">
+          <button class="bookmark-item-pin" title="${bm.pinned ? t('bookmark.unpinTitle') : t('bookmark.pinTitle')}">
             <svg viewBox="0 0 24 24" fill="${bm.pinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="17" x2="12" y2="22"/>
               <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
             </svg>
           </button>
-          <button class="bookmark-item-remove" title="取消收藏">
+          <button class="bookmark-item-remove" title="${t('bookmark.removeBookmarkTitle')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
@@ -373,7 +416,7 @@ async function navigateToBookmark(sessionId, messageId) {
       if (switched === false || state.activeSessionId !== sessionId) {
         await removeBookmark(sessionId, messageId);
         refreshBookmarkPanel();
-        showToast('会话已不存在，收藏已自动移除', 'warning');
+        showToast(t('bookmark.sessionNotExistToast'), 'warning');
         return;
       }
       // 触发 DOM 更新（session-switched 事件会重建 chatContainer）
@@ -409,7 +452,7 @@ async function navigateToBookmark(sessionId, messageId) {
       // 消息已不存在，移除孤儿收藏
       removeBookmark(sessionId, messageId).then(() => {
         refreshBookmarkPanel();
-        showToast('消息已不存在，收藏已自动移除', 'warning');
+        showToast(t('bookmark.messageNotExistToast'), 'warning');
       });
     }
   }, 500);
@@ -450,11 +493,11 @@ export function updateBookmarkBtnState(btn, sessionId, messageId) {
   const bm = isBookmarked(sessionId, messageId);
   if (bm) {
     btn.classList.add('bookmarked');
-    btn.title = '取消收藏';
+    btn.title = t('bookmark.removeBookmarkTitle');
     btn.querySelector('svg').setAttribute('fill', 'currentColor');
   } else {
     btn.classList.remove('bookmarked');
-    btn.title = '收藏消息';
+    btn.title = t('bookmark.addBookmarkTitle');
     btn.querySelector('svg').setAttribute('fill', 'none');
   }
 }

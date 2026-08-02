@@ -23,7 +23,7 @@ import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { clearPageSelection } from './page-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
 
 // 从拆分子模块导入复制与导出相关函数
 import { copyMessage, copyAssistantMessage, quoteAndAsk, setQuoteContextInjector } from './chat-copy.js';
@@ -78,6 +78,136 @@ setQuoteContextInjector(setQuoteContext);
 // 从提取的子模块重导出（保持对外接口不变）
 export { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile };
 export { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent };
+
+registerTranslations('zh', {
+  chatMsg: {
+    searchPrompt: '搜索一下',
+    exportWord: '导出 Word',
+    exportPdf: '导出 PDF',
+    exportImage: '导出图片',
+    exportMarkdown: '导出 Markdown',
+    executionLogTitle: '执行日志',
+    revisedTag: '已修订',
+    roundsTag: ' ({count}轮)',
+    revisedSuffix: '（已修订）',
+    scoreBadgeTitle: 'AI 质量评估: {score}/10{rounds}{revised}\n点击查看评估详情',
+    reflectionFailedTitle: '反思评估失败（点击查看执行日志）',
+    reflectionFailedBadge: '⚠️ 反思失败',
+    prototypeLocalOpened: '已在本地浏览器打开，点击可在面板内查看',
+    prototypeView: '查看 UI 原型',
+    bookmarkMessage: '收藏消息',
+    unbookmarkMessage: '取消收藏',
+    forkSession: '从此处分叉会话（仅复制到此条消息）',
+    deleteMessageTitle: '删除消息',
+    resumeTaskTitle: '从上次中断处继续执行任务',
+    resumeTaskBtn: '继续执行',
+    clickToEnlarge: '点击查看大图',
+    fileExtracting: ' 提取中...',
+    fileFailed: ' 失败',
+    fileExtractFailed: '提取失败',
+    copyMessageTitle: '复制消息内容',
+    editAndResend: '编辑后重新发送',
+    thinking: '思考中...',
+    stopTask: '停止任务',
+    viewExecutionLog: '查看执行日志',
+    preparing: '准备中...',
+    stopping: '停止中...',
+    copyCode: '复制代码',
+    aborting: '正在终止...',
+    terminateCommandTitle: '终止命令执行',
+    terminateCommandPrompt: '请选择终止方式：',
+    terminateWaitTitle: '终止等待',
+    terminateWaitDesc: '仅停止等待命令输出，后台进程继续运行。<br/>适用于挂起型服务（如 npm run dev）。',
+    terminateCommandBtnTitle: '终止命令',
+    terminateCommandBtnDesc: '直接终止后台命令进程，释放资源。',
+    confirmDeleteMessage: '确认删除消息',
+    deleteMessageWarning: '删除后消息将从对话历史中移除，且无法恢复。',
+    confirmDelete: '确认删除',
+    quotedContextLabel: '💬 已引用: {text}',
+    selectedContextLabel: '📌 已选中: {text}',
+    subtaskDone: '完成',
+    subtaskFailed: '失败',
+    subtaskExecuting: '执行中...',
+    subtaskAllDone: '✓ 全部完成 · ✓{success} 成功 ✗{fail} 失败',
+    subtaskPartialFail: '✗ {success}/{total} 完成，{fail} 个节点失败',
+    unknownNode: '未知',
+    stopGeneration: '停止生成',
+    toolResultTitle: '执行结果',
+    reflectionInProgress: '质量评估中...',
+    cannotGetMessageContent: '无法获取消息内容',
+    editFailed: '编辑失败: {message}',
+    errTaskStopped: '任务已被用户停止',
+    errTaskReplaced: '任务已被新请求替代',
+    errSwRestarted: '后台服务异常重启，API 调用已中断',
+    errTimeout: '请求超时（{seconds}秒）',
+    cancelBtn: '取消',
+  },
+});
+
+registerTranslations('en', {
+  chatMsg: {
+    searchPrompt: 'Search',
+    exportWord: 'Export Word',
+    exportPdf: 'Export PDF',
+    exportImage: 'Export Image',
+    exportMarkdown: 'Export Markdown',
+    executionLogTitle: 'Execution Log',
+    revisedTag: 'Revised',
+    roundsTag: ' ({count} rounds)',
+    revisedSuffix: ' (Revised)',
+    scoreBadgeTitle: 'AI Quality Assessment: {score}/10{rounds}{revised}\nClick to view assessment details',
+    reflectionFailedTitle: 'Reflection assessment failed (click to view execution log)',
+    reflectionFailedBadge: '⚠️ Reflection Failed',
+    prototypeLocalOpened: 'Opened in local browser, click to view in panel',
+    prototypeView: 'View UI Prototype',
+    bookmarkMessage: 'Bookmark message',
+    unbookmarkMessage: 'Remove bookmark',
+    forkSession: 'Fork session from here (copy up to this message only)',
+    deleteMessageTitle: 'Delete message',
+    resumeTaskTitle: 'Resume task from last interruption',
+    resumeTaskBtn: 'Resume',
+    clickToEnlarge: 'Click to view full size',
+    fileExtracting: ' extracting...',
+    fileFailed: ' failed',
+    fileExtractFailed: 'Extraction failed',
+    copyMessageTitle: 'Copy message content',
+    editAndResend: 'Edit and resend',
+    thinking: 'Thinking...',
+    stopTask: 'Stop task',
+    viewExecutionLog: 'View execution log',
+    preparing: 'Preparing...',
+    stopping: 'Stopping...',
+    copyCode: 'Copy code',
+    aborting: 'Aborting...',
+    terminateCommandTitle: 'Terminate Command Execution',
+    terminateCommandPrompt: 'Please select a termination method:',
+    terminateWaitTitle: 'Stop Waiting',
+    terminateWaitDesc: 'Only stop waiting for command output; the background process continues running.<br/>Suitable for hanging services (e.g. npm run dev).',
+    terminateCommandBtnTitle: 'Terminate Command',
+    terminateCommandBtnDesc: 'Directly terminate the background command process and release resources.',
+    confirmDeleteMessage: 'Confirm Delete Message',
+    deleteMessageWarning: 'After deletion, the message will be removed from the conversation history and cannot be recovered.',
+    confirmDelete: 'Confirm Delete',
+    quotedContextLabel: '💬 Quoted: {text}',
+    selectedContextLabel: '📌 Selected: {text}',
+    subtaskDone: 'Done',
+    subtaskFailed: 'Failed',
+    subtaskExecuting: 'Executing...',
+    subtaskAllDone: '✓ All done · ✓{success} succeeded ✗{fail} failed',
+    subtaskPartialFail: '✗ {success}/{total} done, {fail} nodes failed',
+    unknownNode: 'Unknown',
+    stopGeneration: 'Stop generation',
+    toolResultTitle: 'Execution Result',
+    reflectionInProgress: 'Assessing quality...',
+    cannotGetMessageContent: 'Cannot get message content',
+    editFailed: 'Edit failed: {message}',
+    errTaskStopped: 'Task stopped by user',
+    errTaskReplaced: 'Task replaced by new request',
+    errSwRestarted: 'Background service restarted unexpectedly, API call interrupted',
+    errTimeout: 'Request timeout ({seconds}s)',
+    cancelBtn: 'Cancel',
+  },
+});
 
 // ============================================================
 // pendingCallApiSessionIds 持久化帮助函数
@@ -660,8 +790,8 @@ export async function sendMessage() {
         // 保存结果到原会话的历史中，不修改当前 DOM
         // 中断的任务标记 resumable，供切回时显示"继续执行"按钮
         const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
-                          errorResult.message === '任务已被用户停止';
-        if (errorResult.message === '任务已被用户停止') {
+                          errorResult.message === t('chatMsg.errTaskStopped');
+        if (errorResult.message === t('chatMsg.errTaskStopped')) {
           appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable });
         } else if (errorResult.swRestarted) {
           appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], resumable });
@@ -676,7 +806,7 @@ export async function sendMessage() {
       }
 
       // 用户主动取消：显示取消记录，但不作为错误
-      if (errorResult.message === '任务已被用户停止') {
+      if (errorResult.message === t('chatMsg.errTaskStopped')) {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || [], null, false, null, null, [], true);
@@ -816,7 +946,7 @@ export function triggerSelectionSearch(prompt, selectedText) {
   state.quotedContextText = '';
   
   // 设置输入框内容为搜索提示词
-  const searchPrompt = '搜索一下';
+  const searchPrompt = t('chatMsg.searchPrompt');
   userInput.value = searchPrompt;
   userInput.dispatchEvent(new Event('input'));
   
@@ -981,19 +1111,19 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     exportDropdown.innerHTML = [
       '<button class="export-dropdown-item export-docx-item" type="button">',
       '<svg t="1781245550030" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="6544" width="32" height="32"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#8a8a8a" p-id="6545"></path><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#8a8a8a" p-id="6546"></path><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#8a8a8a" p-id="6547"></path></svg>',
-      '<span>导出 Word</span>',
+      `<span>${t('chatMsg.exportWord')}</span>`,
       '</button>',
       '<button class="export-dropdown-item export-pdf-item" type="button">',
       '<svg t="1781245863206" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="8152" width="32" height="32"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#8a8a8a" p-id="8153"></path><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#8a8a8a" p-id="8154"></path></svg>',
-      '<span>导出 PDF</span>',
+      `<span>${t('chatMsg.exportPdf')}</span>`,
       '</button>',
       '<button class="export-dropdown-item export-image-item" type="button">',
       '<svg t="1784207887308" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5993" width="32" height="32"><path d="M400.696 268.795c-17.249 0-31.233 13.986-31.233 31.233v30.471c0 17.249 13.986 31.233 31.233 31.233s31.233-13.986 31.233-31.233v-30.471c0-17.249-13.985-31.233-31.233-31.233z" fill="#8a8a8a" p-id="5994"></path><path d="M623.649 361.734c17.249 0 31.234-13.986 31.234-31.233v-30.471c0-17.249-13.986-31.233-31.234-31.233s-31.233 13.986-31.233 31.233v30.471c-0.001 17.248 13.985 31.233 31.233 31.233z" fill="#8a8a8a" p-id="5995"></path><path d="M438.295 388.804c-14.656 9.104-19.155 28.362-10.050 43.013 11.209 18.047 41.976 48.59 86.157 48.59 43.958 0 75.1-30.313 86.574-48.223 9.303-14.529 5.068-33.847-9.455-43.15-14.539-9.298-33.852-5.068-43.15 9.455-0.122 0.199-13.38 19.45-33.969 19.45-20.009 0-32.444-18.128-33.278-19.373-9.166-14.423-28.28-18.805-42.829-9.761z" fill="#8a8a8a" p-id="5996"></path><path d="M824.508503 116.690676 571.592236 116.690676c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c40.181141 0 72.878844 32.692586 72.878844 72.878844l0 396.966057-189.334159-165.29465c-12.20088-10.655687-30.517037-10.207479-42.173518 0.9967L468.578048 674.16231 309.521472 517.519714c-11.895935-11.70253-30.903847-12.002358-43.154869-0.645706L126.957507 646.163629l0-394.126382c0-40.186258 32.692586-72.878844 72.878844-72.878844l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352S470.000444 116.690676 452.751594 116.690676L199.836351 116.690676c-74.632791 0-135.346571 60.71378-135.346571 135.346571l0 520.56405c0 74.632791 60.71378 135.346571 135.346571 135.346571l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352s-13.985526-31.233352-31.233352-31.233352L199.836351 845.481164c-40.186258 0-72.878844-32.692586-72.878844-72.878844l0-41.23924 160.003134-148.385539 159.428036 157.007917c12.048407 11.865235 31.361265 11.981892 43.546795 0.274246l198.576661-190.68697 208.876238 182.346001 0 40.683585c0 40.186258-32.697703 72.878844-72.878844 72.878844L571.592236 845.481164c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c74.627674 0 135.346571-60.71378 135.346571-135.346571L959.855074 252.037247C959.855074 177.404456 899.136178 116.690676 824.508503 116.690676z" fill="#8a8a8a" p-id="5997"></path></svg>',
-      '<span>导出图片</span>',
+      `<span>${t('chatMsg.exportImage')}</span>`,
       '</button>',
       '<button class="export-dropdown-item export-md-item" type="button">',
       '<svg t="1784038824502" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1666" width="32" height="32"><path d="M601.216 85.333333a42.666667 42.666667 0 0 1 30.485333 12.821334l209.450667 213.973333a42.666667 42.666667 0 0 1 12.181333 29.866667V853.333333a85.333333 85.333333 0 0 1-85.333333 85.333334H256a85.333333 85.333333 0 0 1-85.333333-85.333334V170.666667a85.333333 85.333333 0 0 1 85.333333-85.333334h345.216z m-35.584 64H256a21.333333 21.333333 0 0 0-21.333333 21.333334v682.666666a21.333333 21.333333 0 0 0 21.333333 21.333334h512a21.333333 21.333333 0 0 0 21.333333-21.333334V395.413333h-191.68a32 32 0 0 1-32-32L565.632 149.333333z m64 38.186667v143.893333h140.821333L629.632 187.52z" fill="#8a8a8a" p-id="1667"></path><path d="M384.341333 800l-3.072-0.106667a32 32 0 0 1-29.162666-34.624l21.973333-256c2.752-32.256 46.165333-40.490667 60.544-11.477333l77.290667 156.010667 78.805333-156.224c14.08-27.925333 55.082667-20.906667 60.074667 8.789333l0.384 3.050667 20.714666 256a32 32 0 0 1-63.786666 5.162666l-11.541334-142.549333-56.341333 111.722667c-11.413333 22.613333-42.88 23.381333-55.744 2.517333l-1.493333-2.730667-54.912-110.826666-12.181334 142.016a32 32 0 0 1-31.552 29.269333z" fill="#8a8a8a" p-id="1668"></path></svg>',
-      '<span>导出 Markdown</span>',
+      `<span>${t('chatMsg.exportMarkdown')}</span>`,
       '</button>'
     ].join('');
     
@@ -1081,7 +1211,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const logBtn = document.createElement('button');
       logBtn.className = 'execution-log-btn';
       logBtn.type = 'button';
-      logBtn.title = '执行日志';
+      logBtn.title = t('chatMsg.executionLogTitle');
       logBtn.innerHTML = [
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">',
         '<circle cx="12" cy="12" r="10"></circle>',
@@ -1095,13 +1225,13 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     if (hasReflection && state.chatConfig.enableExecutionLog) {
       const scoreColor = reflectionScore >= 8 ? 'score-high' : (reflectionScore >= 5 ? 'score-mid' : 'score-low');
       const scoreEmoji = reflectionScore >= 8 ? '✅' : (reflectionScore >= 5 ? '🔍' : '⚠️');
-      const revisedTag = wasRevised ? ' <span class="reflection-revised-tag">已修订</span>' : '';
-      const roundsTag = reflectionRounds > 1 ? ` (${reflectionRounds}轮)` : '';
+      const revisedTag = wasRevised ? ` <span class="reflection-revised-tag">${t('chatMsg.revisedTag')}</span>` : '';
+      const roundsTag = reflectionRounds > 1 ? t('chatMsg.roundsTag', { count: reflectionRounds }) : '';
 
       const scoreBadge = document.createElement('button');
       scoreBadge.className = 'reflection-score-btn';
       scoreBadge.type = 'button';
-      scoreBadge.title = `AI 质量评估: ${reflectionScore}/10${roundsTag}${wasRevised ? '（已修订）' : ''}\n点击查看评估详情`;
+      scoreBadge.title = t('chatMsg.scoreBadgeTitle', { score: reflectionScore, rounds: roundsTag, revised: wasRevised ? t('chatMsg.revisedSuffix') : '' });
       scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`;
       scoreBadge.dataset.reflectionData = JSON.stringify({
         overallScore: postReflection?.overallScore ?? reflectionScore,
@@ -1122,8 +1252,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const warnBadge = document.createElement('button');
       warnBadge.className = 'reflection-score-btn';
       warnBadge.type = 'button';
-      warnBadge.title = '反思评估失败（点击查看执行日志）';
-      warnBadge.innerHTML = `<span class="reflection-badge score-low">⚠️ 反思失败</span>`;
+      warnBadge.title = t('chatMsg.reflectionFailedTitle');
+      warnBadge.innerHTML = `<span class="reflection-badge score-low">${t('chatMsg.reflectionFailedBadge')}</span>`;
       rightActionsContainer.appendChild(warnBadge);
     }
     
@@ -1142,7 +1272,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const prototypeBtn = document.createElement('button');
       prototypeBtn.className = 'prototype-btn-small';
       prototypeBtn.type = 'button';
-      prototypeBtn.title = localOpened ? '已在本地浏览器打开，点击可在面板内查看' : '查看 UI 原型';
+      prototypeBtn.title = localOpened ? t('chatMsg.prototypeLocalOpened') : t('chatMsg.prototypeView');
       prototypeBtn.innerHTML = ICON_IMAGE_24;
       prototypeBtn.addEventListener('click', () => {
         // 多种方式尝试获取 prototypeId
@@ -1169,7 +1299,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     // 收藏按钮
     const bookmarkBtn = document.createElement('button');
     bookmarkBtn.className = 'bookmark-btn';
-    bookmarkBtn.title = '收藏消息';
+    bookmarkBtn.title = t('chatMsg.bookmarkMessage');
     bookmarkBtn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
@@ -1178,7 +1308,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     // 检查是否已收藏，设置初始状态
     if (isBookmarked(state.activeSessionId, messageId)) {
       bookmarkBtn.classList.add('bookmarked');
-      bookmarkBtn.title = '取消收藏';
+      bookmarkBtn.title = t('chatMsg.unbookmarkMessage');
       bookmarkBtn.querySelector('svg').setAttribute('fill', 'currentColor');
     }
     bookmarkBtn.addEventListener('click', async (e) => {
@@ -1205,7 +1335,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     // 分叉按钮：基于此条 AI 回复创建消息级分叉（仅复制到此条消息为止）
     const forkBtn = document.createElement('button');
     forkBtn.className = 'fork-btn';
-    forkBtn.title = '从此处分叉会话（仅复制到此条消息）';
+    forkBtn.title = t('chatMsg.forkSession');
     forkBtn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/>
@@ -1222,7 +1352,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-btn';
-    deleteBtn.title = '删除消息';
+    deleteBtn.title = t('chatMsg.deleteMessageTitle');
     deleteBtn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="3 6 5 6 21 6"></polyline>
@@ -1243,12 +1373,12 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'resume-task-btn';
       resumeBtn.type = 'button';
-      resumeBtn.title = '从上次中断处继续执行任务';
+      resumeBtn.title = t('chatMsg.resumeTaskTitle');
       resumeBtn.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
-        <span>继续执行</span>
+        <span>${t('chatMsg.resumeTaskBtn')}</span>
       `;
       resumeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1334,7 +1464,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         const displayUrl = imgPart.image_url.original_url || imgPart.image_url.url;
         imgEl.src = displayUrl;
         imgEl.className = 'user-message-image';
-        imgEl.title = '点击查看大图';
+        imgEl.title = t('chatMsg.clickToEnlarge');
         imgEl.addEventListener('click', () => {
           openImagePreview(displayUrl, imgEl);
         });
@@ -1358,10 +1488,10 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         tag.className = `user-message-file-tag ${f.status}`;
         tag.textContent = `${getFileIcon(f.name)} ${f.name} (${formatFileSize(f.size)})`;
         if (f.status === 'extracting') {
-          tag.textContent += ' 提取中...';
+          tag.textContent += t('chatMsg.fileExtracting');
         } else if (f.status === 'error') {
-          tag.textContent += ' 失败';
-          tag.title = f.error || '提取失败';
+          tag.textContent += t('chatMsg.fileFailed');
+          tag.title = f.error || t('chatMsg.fileExtractFailed');
         }
         filesContainer.appendChild(tag);
       });
@@ -1373,7 +1503,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-toolbar-btn copy-btn';
-    copyBtn.title = '复制消息内容';
+    copyBtn.title = t('chatMsg.copyMessageTitle');
     copyBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
@@ -1386,7 +1516,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const editBtn = document.createElement('button');
     editBtn.className = 'message-toolbar-btn edit-btn';
-    editBtn.title = '编辑后重新发送';
+    editBtn.title = t('chatMsg.editAndResend');
     editBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M12.146.146a.5.5 0 0 1 .708 0l2.5 2.5a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12h.5a.5.5 0 0 1 .5.5v.5a.5.5 0 0 1-.5.5h-.5a.5.5 0 0 1-.468-.325z"/>',
@@ -1402,7 +1532,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'message-toolbar-btn delete-btn';
-    deleteBtn.title = '删除消息';
+    deleteBtn.title = t('chatMsg.deleteMessageTitle');
     deleteBtn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="3 6 5 6 21 6"></polyline>
@@ -1537,8 +1667,8 @@ export function addLoadingMessage() {
         <span></span>
         <span></span>
       </div>
-      <span class="loading-text">思考中...</span>
-      <button class="stop-task-btn" title="停止任务">
+      <span class="loading-text">${t('chatMsg.thinking')}</span>
+      <button class="stop-task-btn" title="${t('chatMsg.stopTask')}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="15" y1="9" x2="9" y2="15"></line>
@@ -1546,12 +1676,12 @@ export function addLoadingMessage() {
         </svg>
       </button>
       <div class="execution-status-container" style="display: none;">
-        <button class="execution-log-toggle-btn" title="查看执行日志">
+        <button class="execution-log-toggle-btn" title="${t('chatMsg.viewExecutionLog')}">
           <svg viewBox="0 0 1024 1024">
             <path d="M512 5.12C230.4 5.12 5.12 230.4 5.12 512s225.28 506.88 506.88 506.88 506.88-225.28 506.88-506.88S793.6 5.12 512 5.12z m0 92.16c107.52 0 215.04 46.08 291.84 122.88s122.88 184.32 122.88 291.84-46.08 215.04-122.88 291.84-184.32 122.88-291.84 122.88-215.04-46.08-291.84-122.88-122.88-184.32-122.88-291.84 46.08-215.04 122.88-291.84S404.48 97.28 512 97.28zM430.08 327.68h-5.12c-5.12 0-5.12 5.12-5.12 5.12v353.28l5.12 5.12h20.48l250.88-168.96s5.12 0 5.12-5.12V512v-5.12s0-5.12-5.12-5.12l-256-168.96c-5.12 0-5.12 0-10.24-5.12z" fill="#707070"></path>
           </svg>
         </button>
-        <span class="current-node-name">准备中...</span>
+        <span class="current-node-name">${t('chatMsg.preparing')}</span>
       </div>
     </div>
   `;
@@ -1570,14 +1700,14 @@ export function addLoadingMessage() {
       stopBtn.style.opacity = '0.6';
       stopBtn.style.cursor = 'not-allowed';
       if (loadingText) {
-        loadingText.textContent = '停止中...';
+        loadingText.textContent = t('chatMsg.stopping');
       }
       // 发送取消消息到后台
       chrome.runtime.sendMessage({ type: 'CANCEL_REACT', tabId: null, sessionId: state.activeSessionId });
       // 立即清理前端状态：调用 cancelApi 会 reject Promise 并清理 listener 和 timeout
       if (state.pendingCancelApi) {
         state.pendingCancelApi({
-          message: '任务已被用户停止',
+          message: t('chatMsg.errTaskStopped'),
           executionLog: state.currentExecutionStatus?.executionLog || []
         });
       }
@@ -1625,7 +1755,7 @@ export function removeLoadingMessage(loadingId) {
   if (loadingDiv) {
     const loadingText = loadingDiv.querySelector('.loading-text');
     if (loadingText) {
-      loadingText.textContent = '思考中...';
+      loadingText.textContent = t('chatMsg.thinking');
     }
     loadingDiv.remove();
   }
@@ -1674,12 +1804,12 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       const resumeBtn = document.createElement('button');
       resumeBtn.className = 'resume-task-btn';
       resumeBtn.type = 'button';
-      resumeBtn.title = '从上次中断处继续执行任务';
+      resumeBtn.title = t('chatMsg.resumeTaskTitle');
       resumeBtn.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="5 3 19 12 5 21 5 3"></polygon>
         </svg>
-        <span>继续执行</span>
+        <span>${t('chatMsg.resumeTaskBtn')}</span>
       `;
       resumeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1745,7 +1875,7 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
     const wrapper = document.createElement('div');
     wrapper.className = 'code-block-container';
     wrapper.style.position = 'relative';
-    wrapper.innerHTML = `<button class="code-copy-btn" title="复制代码">
+    wrapper.innerHTML = `<button class="code-copy-btn" title="${t('chatMsg.copyCode')}">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
       </svg>
@@ -1778,7 +1908,7 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       e.stopPropagation();
       chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
       btn.disabled = true;
-      btn.title = '正在终止...';
+      btn.title = t('chatMsg.aborting');
     });
   });
   
@@ -1982,7 +2112,7 @@ export function rebindAllMessages(container) {
     const wrapper = document.createElement('div');
     wrapper.className = 'code-block-container';
     wrapper.style.position = 'relative';
-    wrapper.innerHTML = `<button class="code-copy-btn" title="复制代码">
+    wrapper.innerHTML = `<button class="code-copy-btn" title="${t('chatMsg.copyCode')}">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
         <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
       </svg>
@@ -2049,7 +2179,7 @@ export function rebindAllMessages(container) {
       e.stopPropagation();
       chrome.runtime.sendMessage({ type: 'ABORT_CURRENT_TOOL', sessionId: state.activeSessionId });
       btn.disabled = true;
-      btn.title = '正在终止...';
+      btn.title = t('chatMsg.aborting');
     });
   });
 
@@ -2274,29 +2404,29 @@ function showCommandTerminateDialog(sessionId) {
       <div class="command-terminate-modal">
         <div class="command-terminate-header">
           <div class="command-terminate-icon">⏹</div>
-          <div class="command-terminate-title">终止命令执行</div>
+          <div class="command-terminate-title">${t('chatMsg.terminateCommandTitle')}</div>
         </div>
         <div class="command-terminate-body">
-          <p>请选择终止方式：</p>
+          <p>${t('chatMsg.terminateCommandPrompt')}</p>
           <div class="command-terminate-options">
             <button class="command-terminate-option wait-btn">
               <div class="option-icon">🔌</div>
               <div class="option-text">
-                <div class="option-title">终止等待</div>
-                <div class="option-desc">仅停止等待命令输出，后台进程继续运行。<br/>适用于挂起型服务（如 npm run dev）。</div>
+                <div class="option-title">${t('chatMsg.terminateWaitTitle')}</div>
+                <div class="option-desc">${t('chatMsg.terminateWaitDesc')}</div>
               </div>
             </button>
             <button class="command-terminate-option kill-btn">
               <div class="option-icon">💀</div>
               <div class="option-text">
-                <div class="option-title">终止命令</div>
-                <div class="option-desc">直接终止后台命令进程，释放资源。</div>
+                <div class="option-title">${t('chatMsg.terminateCommandBtnTitle')}</div>
+                <div class="option-desc">${t('chatMsg.terminateCommandBtnDesc')}</div>
               </div>
             </button>
           </div>
         </div>
         <div class="command-terminate-footer">
-          <button class="command-terminate-cancel">取消</button>
+          <button class="command-terminate-cancel">${t('common.cancel')}</button>
         </div>
       </div>
     `;
@@ -2344,15 +2474,15 @@ function showDeleteConfirm(messagePreview) {
       <div class="delete-confirm-modal">
         <div class="delete-confirm-header">
           <div class="delete-confirm-icon">🗑️</div>
-          <div class="delete-confirm-title">确认删除消息</div>
+          <div class="delete-confirm-title">${t('chatMsg.confirmDeleteMessage')}</div>
         </div>
         <div class="delete-confirm-body">
-          <p>删除后消息将从对话历史中移除，且无法恢复。</p>
+          <p>${t('chatMsg.deleteMessageWarning')}</p>
           <div class="delete-confirm-preview">${previewText}</div>
         </div>
         <div class="delete-confirm-footer">
-          <button class="delete-confirm-cancel">取消</button>
-          <button class="delete-confirm-confirm">确认删除</button>
+          <button class="delete-confirm-cancel">${t('common.cancel')}</button>
+          <button class="delete-confirm-confirm">${t('chatMsg.confirmDelete')}</button>
         </div>
       </div>
     `;
@@ -2424,8 +2554,8 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
         <div class="icon-wrapper">
           <div class="icon">💬</div>
         </div>
-        <h2>开始对话</h2>
-        <p>输入您的问题，AI 助手将为您解答</p>
+        <h2>${t('chat.welcomeTitle')}</h2>
+        <p>${t('chat.welcomeSubtitle')}</p>
       </div>
     `;
   }
@@ -2485,7 +2615,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     logger.debug('[SidePanel] callApi: 检测到会话已有进行中的 API 调用，先取消旧的');
     const oldCancel = state.pendingCancelApiMap.get(mySessionId);
     if (oldCancel) {
-      oldCancel({ message: '任务已被新请求替代', executionLog: [] });
+      oldCancel({ message: t('chatMsg.errTaskReplaced'), executionLog: [] });
     }
   }
   if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.has(mySessionId)) {
@@ -2514,7 +2644,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       if (_swRestartCtx.rejectFn && _swRestartCtx.cleanup) {
         _swRestartCtx.cleanup();
         _swRestartCtx.rejectFn({
-          message: '后台服务异常重启，API 调用已中断',
+          message: t('chatMsg.errSwRestarted'),
           executionLog: [],
           checkpoint: _swRestartCtx.checkpoint,
           swRestarted: true,
@@ -2547,7 +2677,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     if (_swRestartCtx.restarted) {
       cleanupCallApi();
       reject({
-        message: '后台服务异常重启，API 调用已中断',
+        message: t('chatMsg.errSwRestarted'),
         executionLog: [],
         checkpoint: _swRestartCtx.checkpoint,
         swRestarted: true,
@@ -2588,7 +2718,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     
     _timeoutCtx.timeoutId = setTimeout(() => {
       cancelApi({
-        message: `请求超时（${timeoutSeconds}秒）`,
+        message: t('chatMsg.errTimeout', { seconds: timeoutSeconds }),
         executionLog: executionLog
       });
       // 同时通知后台取消（超时场景）
@@ -2625,7 +2755,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         
         if (remainingTime <= 0) {
           cancelApi({
-            message: `请求超时（${timeoutSeconds}秒）`,
+            message: t('chatMsg.errTimeout', { seconds: timeoutSeconds }),
             executionLog: executionLog
           });
           return;
@@ -2633,7 +2763,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         
         _timeoutCtx.timeoutId = setTimeout(() => {
           cancelApi({
-            message: `请求超时（${timeoutSeconds}秒）`,
+            message: t('chatMsg.errTimeout', { seconds: timeoutSeconds }),
             executionLog: executionLog
           });
           chrome.runtime.sendMessage({
@@ -2705,15 +2835,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               
               let statusHtml = '';
               if (message.status === 'success') {
-                statusHtml = `<span class="subtask-status-done">完成</span>`;
+                statusHtml = `<span class="subtask-status-done">${t('chatMsg.subtaskDone')}</span>`;
                 progressEl.classList.add('subtask-progress-done');
                 progressEl.classList.remove('subtask-progress-active');
               } else if (message.status === 'failed') {
-                statusHtml = `<span class="subtask-status-failed">失败</span>`;
+                statusHtml = `<span class="subtask-status-failed">${t('chatMsg.subtaskFailed')}</span>`;
                 progressEl.classList.add('subtask-progress-failed');
                 progressEl.classList.remove('subtask-progress-active');
               } else {
-                statusHtml = `<span class="subtask-status-label"><span class="subtask-spinner"></span>执行中...</span>`;
+                statusHtml = `<span class="subtask-status-label"><span class="subtask-spinner"></span>${t('chatMsg.subtaskExecuting')}</span>`;
                 progressEl.classList.add('subtask-progress-active');
               }
               
@@ -2730,7 +2860,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 const nodeTypeIcon = currentNode
                   ? (currentNode.nodeType === 'tool_exec' ? '🔧' : currentNode.nodeType === 'api_call' ? '📡' : currentNode.nodeType === 'reflection' ? '🎯' : currentNode.nodeType === 'preselect' ? '🔍' : '○')
                   : '○';
-                const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : '准备中...';
+                const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : t('chatMsg.preparing');
                 progressLineHtml = `<div class="subtask-progress-line">
                   <span class="subtask-current-node"><span class="subtask-current-spinner"></span>${nodeTypeIcon} ${currentNodeName}</span>
                   <span class="subtask-node-stats">
@@ -2742,11 +2872,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               } else if (!isRunning) {
                 if (message.status === 'success') {
                   progressLineHtml = `<div class="subtask-progress-line done">
-                    <span>✓ 全部完成 · ✓${succeedNodes} 成功 ✗${failedNodes} 失败</span>
+                    <span>${t('chatMsg.subtaskAllDone', { success: succeedNodes, fail: failedNodes })}</span>
                   </div>`;
                 } else if (message.status === 'failed') {
                   progressLineHtml = `<div class="subtask-progress-line failed">
-                    <span>✗ ${succeedNodes}/${totalNodes} 完成，${failedNodes} 个节点失败</span>
+                    <span>${t('chatMsg.subtaskPartialFail', { success: succeedNodes, total: totalNodes, fail: failedNodes })}</span>
                   </div>`;
                 }
               }
@@ -2775,7 +2905,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗' : '○';
                     const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
                     const dur = node.duration ? formatDuration(node.duration) : '';
-                    const name = escapeHtml(node.nodeName || '未知');
+                    const name = escapeHtml(node.nodeName || t('chatMsg.unknownNode'));
                     return `<div class="subtask-node ${stClass}">
                       <span class="subtask-node-icon">${icon}</span>
                       <span class="subtask-node-status">${stIcon}</span>
@@ -2897,8 +3027,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                   <circle cx="16" cy="12" r="1.5"/>
                 </svg>
                 <div class="thinking-dots"><span></span><span></span><span></span></div>
-                <span class="thinking-label">思考中...</span>
-                <button class="streaming-stop-btn" title="停止生成">
+                <span class="thinking-label">${t('chatMsg.thinking')}</span>
+                <button class="streaming-stop-btn" title="${t('chatMsg.stopGeneration')}">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                   </svg>
@@ -2961,7 +3091,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             const outputDiv = document.createElement('div');
             outputDiv.className = 'agent-stream-output';
             outputDiv.innerHTML = `
-              <div class="tool-result-title">执行结果</div>
+              <div class="tool-result-title">${t('chatMsg.toolResultTitle')}</div>
               ${createCodeBlockHtml('', 'agent-stream-content')}
             `;
             if (message.toolCallId) {
@@ -3013,7 +3143,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           const statusDiv = _se().querySelector('.stream-status');
           if (statusDiv) {
             if (reflectionConfig?.enabled) {
-              statusDiv.textContent = '质量评估中...';
+              statusDiv.textContent = t('chatMsg.reflectionInProgress');
             } else {
               statusDiv.textContent = '';
             }
@@ -3116,7 +3246,7 @@ export function editAndResendMessage(messageDiv) {
     const textContent_ = messageDiv.dataset.textContent_ || '';
     
     if (!textContent_ && !rawContent) {
-      showToast('无法获取消息内容', 'error');
+      showToast(t('chatMsg.cannotGetMessageContent'), 'error');
       return;
     }
     
@@ -3270,10 +3400,10 @@ export function editAndResendMessage(messageDiv) {
         
         if (type === 'quoted') {
           state.quotedContextText = contextText;
-          selectionTextEl.textContent = `💬 已引用: ${displayText}`;
+          selectionTextEl.textContent = t('chatMsg.quotedContextLabel', { text: displayText });
         } else {
           state.selectedContextText = contextText;
-          selectionTextEl.textContent = `📌 已选中: ${displayText}`;
+          selectionTextEl.textContent = t('chatMsg.selectedContextLabel', { text: displayText });
         }
         indicator.classList.add('show');
       }
@@ -3304,7 +3434,7 @@ export function editAndResendMessage(messageDiv) {
     logger.debug('[SidePanel] 已加载消息内容到输入框，等待用户编辑后发送');
   } catch (error) {
     logger.error('[SidePanel] 编辑消息失败:', error);
-    showToast('编辑失败: ' + error.message, 'error');
+    showToast(t('chatMsg.editFailed', { message: error.message }), 'error');
   }
 }
 

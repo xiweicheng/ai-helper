@@ -82,7 +82,7 @@ export function showConfirmDialog(data) {
   
   if (countdownEl && countdownContainer) {
     countdownContainer.style.display = 'flex';
-    countdownEl.textContent = `剩余时间: ${formatCountdown(remainingSeconds)}`;
+    countdownEl.textContent = t('dialog.remainingTime', { time: formatCountdown(remainingSeconds) });
     
     countdownTimer = setInterval(() => {
       remainingSeconds--;

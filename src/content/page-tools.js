@@ -4,6 +4,37 @@
 
 import { deepQuerySelector, deepQuerySelectorAll, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
 import { removeHighlights, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  pageTools: {
+    noSelection: '当前没有选中的内容',
+    tableNotFound: '未找到匹配选择器的表格: {selector}',
+    copiedToClipboard: '已复制到剪贴板',
+    copiedToClipboardFallback: '已复制到剪贴板（降级方案）',
+    elementNotFound: '未找到元素: {selector}',
+    navChangeHint: '（检测到导航变化，已等待 {ms}ms）',
+    domChangeHint: '（检测到DOM变化，已等待 {ms}ms）',
+    hoverTriggered: '已在元素上触发悬停效果: {selector}{hint}',
+    noHighlightText: '未提供要高亮的文本',
+    highlightedCount: '已高亮 {count} 处文本',
+  },
+});
+
+registerTranslations('en', {
+  pageTools: {
+    noSelection: 'No content selected',
+    tableNotFound: 'No table found matching selector: {selector}',
+    copiedToClipboard: 'Copied to clipboard',
+    copiedToClipboardFallback: 'Copied to clipboard (fallback method)',
+    elementNotFound: 'Element not found: {selector}',
+    navChangeHint: ' (navigation change detected, waited {ms}ms)',
+    domChangeHint: ' (DOM change detected, waited {ms}ms)',
+    hoverTriggered: 'Hover triggered on element: {selector}{hint}',
+    noHighlightText: 'No text provided to highlight',
+    highlightedCount: 'Highlighted {count} occurrences',
+  },
+});
 
 // 重导出共享工具函数
 export { generateUniqueSelector, getElementText, getElementValue, getElementSelector } from './page-utils.js';
@@ -158,7 +189,7 @@ export function extractTable(selector = 'table', includeHeaders = true, format =
 export async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
-    return { success: true, message: '已复制到剪贴板' };
+    return { success: true, message: t('pageTools.copiedToClipboard') };
   } catch (error) {
     try {
       const textarea = document.createElement('textarea');
@@ -284,7 +315,7 @@ export function highlightText(text, color = 'yellow') {
 
     return {
       success: true,
-      message: `已高亮 ${highlights.length} 处文本`,
+      message: t('pageTools.highlightedCount', { count: highlights.length }),
       count: highlights.length
     };
   } catch (error) {

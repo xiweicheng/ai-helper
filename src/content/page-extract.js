@@ -3,6 +3,25 @@
 
 import { deepQuerySelector, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
 import { getElementSelector, generateUniqueSelector, removeHighlights } from './page-utils.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  pageExtract: {
+    startedDownloadingImages: '已开始下载 {count} 张图片',
+    targetElementNotFound: '未找到目标元素',
+    elementNotFound: '未找到匹配选择器的元素: {selector}',
+    searchKeywordRequired: '需要提供搜索关键词',
+  },
+});
+
+registerTranslations('en', {
+  pageExtract: {
+    startedDownloadingImages: 'Started downloading {count} images',
+    targetElementNotFound: 'Target element not found',
+    elementNotFound: 'No element found matching selector: {selector}',
+    searchKeywordRequired: 'Search keyword is required',
+  },
+});
 
 /**
  * 提取网页元数据
@@ -459,7 +478,7 @@ export function pageToJson(selector = null, maxItems = 100) {
       : [document.body];
 
     if (!roots.length) {
-      return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
+      return { success: false, error: t('pageExtract.elementNotFound', { selector }) };
     }
 
     const tables = [];

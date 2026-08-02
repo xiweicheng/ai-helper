@@ -7,7 +7,38 @@ import { formatDuration } from './utils.js';
 import { renderMessageMermaid } from './markdown-render.js';
 import { appendMessageToSession, markSessionCompleted } from './session-manager.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  chatResume: {
+    title: '继续执行任务',
+    desc: '任务执行被中断，你可以提供补充说明帮助模型继续。',
+    placeholder: '输入补充说明（可选）…',
+    continueBtn: '继续',
+    interruptedAgo: '（{duration}前）',
+    taskInterrupted: '任务执行被中断{elapsed}',
+    checkpointNotFound: '检查点已失效，无法继续执行。请重新发送任务。',
+    taskCancelled: '任务已被用户停止',
+    swRestarted: 'Service Worker 已重启，请重新发送任务',
+    resumeFailed: '恢复失败：{message}',
+    unknownError: '未知错误',
+  },
+});
+registerTranslations('en', {
+  chatResume: {
+    title: 'Continue Task',
+    desc: 'The task was interrupted. You can provide additional guidance to help the model continue.',
+    placeholder: 'Enter additional guidance (optional)…',
+    continueBtn: 'Continue',
+    interruptedAgo: ' ({duration} ago)',
+    taskInterrupted: 'Task execution was interrupted{elapsed}',
+    checkpointNotFound: 'The checkpoint has expired and the task cannot be resumed. Please resend the task.',
+    taskCancelled: 'Task was stopped by user',
+    swRestarted: 'Service Worker restarted. Please resend the task.',
+    resumeFailed: 'Resume failed: {message}',
+    unknownError: 'Unknown error',
+  },
+});
 
 // 从 chat-manager.js 导入核心函数（依赖注入方向：chat-manager → chat-resume）
 import {

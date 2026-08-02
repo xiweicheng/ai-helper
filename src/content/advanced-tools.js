@@ -1,5 +1,31 @@
 // content/advanced-tools.js - 高级工具
 
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  advancedTools: {
+    close: '关闭',
+    qrcodeLibNotLoaded: 'QRCode 库未加载，已使用 SVG 降级方案生成',
+    qrcodeLibAndFallbackUnavailable: '二维码库未加载且降级方案不可用',
+    targetElementNotFound: '未找到目标元素',
+    screenshotFailed: '截图失败',
+    cssParamRequired: 'css 参数必须是非空字符串',
+    unsupportedInjectMode: '不支持的 injectMode: {mode}，支持 \'style\' 或 \'inline\'',
+  },
+});
+
+registerTranslations('en', {
+  advancedTools: {
+    close: 'Close',
+    qrcodeLibNotLoaded: 'QRCode library not loaded, used SVG fallback',
+    qrcodeLibAndFallbackUnavailable: 'QRCode library not loaded and fallback unavailable',
+    targetElementNotFound: 'Target element not found',
+    screenshotFailed: 'Screenshot failed',
+    cssParamRequired: 'css parameter must be a non-empty string',
+    unsupportedInjectMode: 'Unsupported injectMode: {mode}; supported: \'style\' or \'inline\'',
+  },
+});
+
 /**
  * 纯 SVG 二维码生成（QRCode 库未加载时的降级方案）
  * 使用简单的模块化方式生成二维码 SVG
@@ -113,7 +139,7 @@ export function generateQRCode(content = '', size = 200, errorCorrection = 'M', 
       qrDiv.appendChild(p);
       
       const closeBtn = document.createElement('button');
-      closeBtn.textContent = '关闭';
+      closeBtn.textContent = t('advancedTools.close');
       closeBtn.style.cssText = `
         margin-top: 12px;
         padding: 6px 20px;
@@ -145,10 +171,10 @@ export function generateQRCode(content = '', size = 200, errorCorrection = 'M', 
             dataUrl: fallbackDataUrl,
             shown: showImage,
             fallback: true,
-            warning: 'QRCode 库未加载，已使用 SVG 降级方案生成'
+            warning: t('advancedTools.qrcodeLibNotLoaded')
           });
         } else {
-          resolve({ success: false, error: '二维码库未加载且降级方案不可用' });
+          resolve({ success: false, error: t('advancedTools.qrcodeLibAndFallbackUnavailable') });
         }
         return;
       }
@@ -298,7 +324,7 @@ export function screenshotElement(selector, quality = 0.9, format = 'png') {
     try {
       const element = document.querySelector(selector);
       if (!element) {
-        resolve({ success: false, error: '未找到目标元素' });
+        resolve({ success: false, error: t('advancedTools.targetElementNotFound') });
         return;
       }
 
@@ -316,7 +342,7 @@ export function screenshotElement(selector, quality = 0.9, format = 'png') {
             format: format
           });
         } else {
-          resolve({ success: false, error: response?.error || '截图失败' });
+          resolve({ success: false, error: response?.error || t('advancedTools.screenshotFailed') });
         }
       });
     } catch (e) {
@@ -330,11 +356,11 @@ export function screenshotElement(selector, quality = 0.9, format = 'png') {
 export function injectCss(css, targetSelector = null, injectMode = 'style') {
   try {
     if (!css || typeof css !== 'string') {
-      return { success: false, error: 'css 参数必须是非空字符串' };
+      return { success: false, error: t('advancedTools.cssParamRequired') };
     }
 
     if (injectMode !== 'style' && injectMode !== 'inline') {
-      return { success: false, error: `不支持的 injectMode: ${injectMode}，支持 'style' 或 'inline'` };
+      return { success: false, error: t('advancedTools.unsupportedInjectMode', { mode: injectMode }) };
     }
 
     if (injectMode === 'style') {

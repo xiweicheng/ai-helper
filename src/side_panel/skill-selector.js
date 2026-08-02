@@ -2,7 +2,56 @@
 import state from './state.js';
 import { escapeHtml, escapeAttr } from './utils.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  promptSelector: {
+    noMatchSkill: '暂无匹配的技能',
+    skillHint: '技能',
+    mcpHint: 'MCP 服务',
+    skillManageTitle: '管理技能',
+    noMatchMcp: '暂无匹配的 MCP 服务',
+    toolCount: '{count} 个工具',
+    mcpManageTitle: '管理 MCP 服务',
+  },
+});
+registerTranslations('en', {
+  promptSelector: {
+    noMatchSkill: 'No matching skills',
+    skillHint: 'Skills',
+    mcpHint: 'MCP Services',
+    skillManageTitle: 'Manage skills',
+    noMatchMcp: 'No matching MCP services',
+    toolCount: '{count} tools',
+    mcpManageTitle: 'Manage MCP services',
+  },
+});
+registerTranslations('zh', {
+  skillSelector: {
+    selectedSkillStart: '[已选技能: {name}',
+    useSkillToolsHint: '请根据上述技能说明，使用相关工具处理以下问题：\n',
+    loadSkillHint: '请使用 `agent_skill`（action=load）加载「{name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n',
+    runSkillHint: '请使用 `agent_skill`（action=run）执行「{name}」技能来处理以下问题',
+    requiredParam: '必填',
+    optionalParam: '可选',
+    callParamsPrefix: '，调用参数：',
+    sentenceEnd: '。\n',
+    selectedMcpContext: '[已选MCP服务: {name}]\n请使用「{name}」MCP服务来处理以下问题：\n',
+  },
+});
+registerTranslations('en', {
+  skillSelector: {
+    selectedSkillStart: '[Selected skill: {name}',
+    useSkillToolsHint: 'Please use the relevant tools to handle the following problem based on the skill description above:\n',
+    loadSkillHint: 'Please use `agent_skill` (action=load) to load the full description of "{name}", then autonomously call relevant tools to handle the following problem.\n',
+    runSkillHint: 'Please use `agent_skill` (action=run) to execute the "{name}" skill to handle the following problem',
+    requiredParam: 'required',
+    optionalParam: 'optional',
+    callParamsPrefix: ', parameters: ',
+    sentenceEnd: '.\n',
+    selectedMcpContext: '[Selected MCP service: {name}]\nPlease use the "{name}" MCP service to handle the following problem:\n',
+  },
+});
 
 // 技能列表缓存
 let skillListCache = [];

@@ -106,6 +106,8 @@ export default {
 
   // Header bar
   header: {
+    docTitle: 'AI Helper - Chat',
+    settingsTitle: 'Extension Settings',
     switchAgent: 'Switch Agent',
     defaultAssistant: '🤖 Default Assistant',
     notConnected: 'Not Connected',

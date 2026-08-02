@@ -6,6 +6,44 @@ import { showToast, escapeHtml } from './utils.js';
 import { loadSessions, importSessions } from './session-manager.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  exportImport: {
+    noSessionsToExport: '暂无会话可导出',
+    unnamedSession: '未命名会话',
+    currentBadge: '当前',
+    messageCount: '{count} 条消息',
+    loadFailed: '加载失败',
+    exportSelectedCount: '导出选中 ({count})',
+    selectAtLeastOne: '请至少选择一个会话',
+    exportSuccess: '已导出 {count} 个会话',
+    exportFailed: '导出失败: {message}',
+    importedConversation: '导入的对话',
+    unrecognizedFormat: '无法识别的文件格式',
+    noImportableData: '文件中没有可导入的会话数据',
+    importSuccess: '成功导入 {count} 个会话',
+    importFailed: '导入失败: {message}',
+  },
+});
+registerTranslations('en', {
+  exportImport: {
+    noSessionsToExport: 'No sessions to export',
+    unnamedSession: 'Unnamed session',
+    currentBadge: 'Current',
+    messageCount: '{count} messages',
+    loadFailed: 'Load failed',
+    exportSelectedCount: 'Export selected ({count})',
+    selectAtLeastOne: 'Please select at least one session',
+    exportSuccess: 'Exported {count} sessions',
+    exportFailed: 'Export failed: {message}',
+    importedConversation: 'Imported conversation',
+    unrecognizedFormat: 'Unrecognized file format',
+    noImportableData: 'No importable session data in the file',
+    importSuccess: 'Successfully imported {count} sessions',
+    importFailed: 'Import failed: {message}',
+  },
+});
 
 /**
  * 显示导出会话选择弹窗
@@ -15,13 +53,13 @@ export async function showExportDialog() {
   const listEl = document.getElementById('exportSessionsList');
   if (!modal || !listEl) return;
 
-  listEl.innerHTML = '<div class="export-sessions-empty">加载中...</div>';
+  listEl.innerHTML = `<div class="export-sessions-empty">${t('common.loading')}</div>`;
 
   try {
     const { list: sessions, activeSessionId } = await loadSessions();
-    
+
     if (sessions.length === 0) {
-      listEl.innerHTML = '<div class="export-sessions-empty">暂无会话可导出</div>';
+      listEl.innerHTML = `<div class="export-sessions-empty">${t('exportImport.noSessionsToExport')}</div>`;
     } else {
       const activeId = activeSessionId || state.activeSessionId;
       listEl.innerHTML = sessions.map((s, idx) => {
@@ -32,8 +70,8 @@ export async function showExportDialog() {
         <div class="export-session-item" data-id="${s.id}">
           <input type="checkbox" class="export-session-checkbox" data-session-id="${s.id}" ${isCurrent ? 'checked' : ''}>
           <div class="export-session-info">
-            <div class="export-session-title">${escapeHtml(s.title || '未命名会话')}${isCurrent ? '<span class="current-badge">当前</span>' : ''}</div>
-            <div class="export-session-meta">${msgCount} 条消息${createdAt ? ' · ' + createdAt : ''}</div>
+            <div class="export-session-title">${escapeHtml(s.title || t('exportImport.unnamedSession'))}${isCurrent ? `<span class="current-badge">${t('exportImport.currentBadge')}</span>` : ''}</div>
+            <div class="export-session-meta">${t('exportImport.messageCount', { count: msgCount })}${createdAt ? ' · ' + createdAt : ''}</div>
           </div>
         </div>`;
       }).join('');
@@ -79,7 +117,7 @@ export async function showExportDialog() {
     }
   } catch (err) {
     logger.error('[SidePanel] 加载会话列表失败:', err);
-    listEl.innerHTML = '<div class="export-sessions-empty">加载失败</div>';
+    listEl.innerHTML = `<div class="export-sessions-empty">${t('exportImport.loadFailed')}</div>`;
   }
 
   modal.classList.add('show');
@@ -90,11 +128,11 @@ function updateSelectedCount() {
   const checked = document.querySelectorAll('#exportSessionsList .export-session-checkbox:checked');
   const countEl = document.getElementById('exportSelectedCount');
   if (countEl) {
-    countEl.textContent = `已选 ${checked.length} 个`;
+    countEl.textContent = t('chatExport.selectedCount', { count: checked.length });
   }
   const okBtn = document.getElementById('exportSessionsOkBtn');
   if (okBtn) {
-    okBtn.textContent = `导出选中 (${checked.length})`;
+    okBtn.textContent = t('exportImport.exportSelectedCount', { count: checked.length });
     okBtn.disabled = checked.length === 0;
     okBtn.style.opacity = checked.length === 0 ? '0.5' : '1';
   }
@@ -116,7 +154,7 @@ export async function performExport() {
   const selectedIds = Array.from(checkedCbs).map(cb => cb.dataset.sessionId);
 
   if (selectedIds.length === 0) {
-    showToast('请至少选择一个会话', 'warning');
+    showToast(t('exportImport.selectAtLeastOne'), 'warning');
     return;
   }
 
@@ -128,7 +166,7 @@ export async function performExport() {
       version: 1,
       exportedAt: new Date().toISOString(),
       sessions: selectedSessions.map(s => ({
-        title: s.title || '未命名会话',
+        title: s.title || t('exportImport.unnamedSession'),
         model: s.model,
         useTools: s.useTools,
         enabledTools: s.enabledTools,
@@ -172,10 +210,10 @@ export async function performExport() {
 
     hideExportDialog();
     logger.debug('[SidePanel] 会话已导出:', fileName, '共', count, '个会话');
-    showToast(`已导出 ${count} 个会话`, 'success');
+    showToast(t('exportImport.exportSuccess', { count }), 'success');
   } catch (err) {
     logger.error('[SidePanel] 导出失败:', err);
-    showToast('导出失败: ' + err.message, 'error');
+    showToast(t('exportImport.exportFailed', { message: err.message }), 'error');
   }
 }
 
@@ -229,7 +267,7 @@ export async function handleImportFile(file) {
       if (data.length > 0 && data[0].role) {
         // 旧格式：直接是消息数组，包装为一个会话
         sessionsToImport = [{
-          title: '导入的对话',
+          title: t('exportImport.importedConversation'),
           messageHistory: data.map(msg => ({
             role: msg.role || 'user',
             content: msg.content || '',
@@ -242,11 +280,11 @@ export async function handleImportFile(file) {
         sessionsToImport = data;
       }
     } else {
-      throw new Error('无法识别的文件格式');
+      throw new Error(t('exportImport.unrecognizedFormat'));
     }
 
     if (sessionsToImport.length === 0) {
-      showToast('文件中没有可导入的会话数据', 'warning');
+      showToast(t('exportImport.noImportableData'), 'warning');
       return;
     }
 
@@ -256,9 +294,9 @@ export async function handleImportFile(file) {
     await renderSessionTabs();
     
     logger.debug('[SidePanel] 导入完成:', createdSessions.length, '个会话');
-    showToast(`成功导入 ${createdSessions.length} 个会话`, 'success');
+    showToast(t('exportImport.importSuccess', { count: createdSessions.length }), 'success');
   } catch (err) {
     logger.error('[SidePanel] 导入失败:', err);
-    showToast('导入失败: ' + err.message, 'error');
+    showToast(t('exportImport.importFailed', { message: err.message }), 'error');
   }
 }

@@ -19,7 +19,42 @@ import {
   clearSessionCompleted
 } from './session-manager.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  session: {
+    newSession: '新会话',
+    closeSession: '关闭会话',
+    taskCompleted: '任务已完成',
+    closeAllCount: '关闭全部({count})',
+    noMatch: '未找到匹配的会话',
+    rename: '重命名',
+    duplicate: '复制会话',
+    confirmCloseMessageWithTitle: '确定要关闭会话 "{title}" 吗？',
+    confirmCloseAllMessage: '确定要关闭所有 {count} 个会话吗？',
+    confirmCloseAllTitle: '关闭全部会话',
+    forkedFrom: '已从 "{title}" 分叉',
+    forkedSession: '已复制会话 "{title}"',
+    operationFailed: '操作失败：{message}',
+  },
+});
+registerTranslations('en', {
+  session: {
+    newSession: 'New Session',
+    closeSession: 'Close Session',
+    taskCompleted: 'Task completed',
+    closeAllCount: 'Close All ({count})',
+    noMatch: 'No matching sessions found',
+    rename: 'Rename',
+    duplicate: 'Duplicate',
+    confirmCloseMessageWithTitle: 'Are you sure you want to close session "{title}"?',
+    confirmCloseAllMessage: 'Are you sure you want to close all {count} sessions?',
+    confirmCloseAllTitle: 'Close All Sessions',
+    forkedFrom: 'Forked from "{title}"',
+    forkedSession: 'Duplicated session "{title}"',
+    operationFailed: 'Operation failed: {message}',
+  },
+});
 
 // ==================== 下拉面板状态 ====================
 let dropdownState = {

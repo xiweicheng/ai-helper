@@ -2,6 +2,105 @@
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  interactionTools: {
+    selectorRequired: '选择器不能为空',
+    elementNotFoundBySelector: '未找到匹配选择器的元素: {selector}',
+    navChangeHint: '（检测到导航变化，已等待 {ms}ms）',
+    domChangeHint: '（检测到DOM变化，已等待 {ms}ms）',
+    clickedElement: '已点击元素: {selector}{hint}',
+    elementNotFound: '未找到元素',
+    optionNotFound: '未找到匹配的选项',
+    radioButtonNotFound: '未找到匹配的单选按钮',
+    formFillComplete: '表单填充完成，成功 {success}/{total} 个字段',
+    elementNotFoundShort: '未找到元素: {selector}',
+    invalidScrollTarget: '无效的滚动目标或缺少选择器',
+    scrollComplete: '滚动完成',
+    elementAppeared: '元素 {selector} 已出现',
+    elementDisappeared: '元素 {selector} 已消失',
+    elementVisible: '元素 {selector} 已可见',
+    elementHidden: '元素 {selector} 已隐藏',
+    waitTimeout: '等待超时（{timeout}ms），元素 {selector} 未达到 {state} 状态',
+    noFocusedElement: '没有聚焦的元素',
+    keyboardInputSuccess: '键盘输入成功{hint}',
+    sourceElementNotFound: '未找到源元素: {selector}',
+    targetElementNotFound: '未找到目标元素: {selector}',
+    dragExperimental: '⚠️拖拽为实验性，可能未生效（{source} → {target}）。受浏览器 dataTransfer 限制，依赖拖拽数据的网页多数无法触发，建议验证结果或改用点击坐标实现',
+    fileUploadNotFound: '未找到文件上传控件: {selector}',
+    notFileUploadControl: '选择的元素不是文件上传控件',
+    fileUploaded: '已上传文件: {fileName}',
+    textRequired: 'text 不能为空',
+    hoveredByText: '已悬停文本"{text}"对应的{tag}元素{hint}',
+    clickedByText: '已点击文本"{text}"对应的{tag}元素{hint}',
+    textNotFound: '页面中不存在文本"{text}"，可能需要先操作（如打开下拉面板）或文本有误',
+    textFoundButHidden: '找到文本"{text}"但元素不可见，可能需要先打开下拉面板/滚动到可见区域',
+    textNotClickable: '找到文本"{text}"但不在可点击元素中，请用 query_elements 查看实际结构或用 selector 定位',
+    textFoundButNotMatched: '找到文本"{text}"在可点击元素中但未匹配，可能文本被分割或大小写不一致',
+    tagConstraint: '（限定标签: {tag}）',
+    triggerNotFound: '未找到触发器: {selector}',
+    selectedOption: '已选择: {label}',
+    selectOptionNotFound: '在 <select> 中未找到匹配的选项: "{option}"',
+    optionContainerNotFound: '未找到选项容器: {selector}',
+    optionMatchTimeout: '在 {timeout}ms 内未找到匹配选项: "{option}"',
+    setRequiresKeyValue: 'set操作需要提供key和value',
+    keySet: '已设置 {key}',
+    removeRequiresKey: 'remove操作需要提供key',
+    keyRemoved: '已删除 {key}',
+    storageCleared: '已清空存储',
+    unknownAction: '未知操作: {action}',
+  },
+});
+
+registerTranslations('en', {
+  interactionTools: {
+    selectorRequired: 'Selector cannot be empty',
+    elementNotFoundBySelector: 'No element found matching selector: {selector}',
+    navChangeHint: ' (navigation change detected, waited {ms}ms)',
+    domChangeHint: ' (DOM change detected, waited {ms}ms)',
+    clickedElement: 'Clicked element: {selector}{hint}',
+    elementNotFound: 'Element not found',
+    optionNotFound: 'No matching option found',
+    radioButtonNotFound: 'No matching radio button found',
+    formFillComplete: 'Form fill complete: {success}/{total} fields succeeded',
+    elementNotFoundShort: 'Element not found: {selector}',
+    invalidScrollTarget: 'Invalid scroll target or missing selector',
+    scrollComplete: 'Scroll complete',
+    elementAppeared: 'Element {selector} appeared',
+    elementDisappeared: 'Element {selector} disappeared',
+    elementVisible: 'Element {selector} is visible',
+    elementHidden: 'Element {selector} is hidden',
+    waitTimeout: 'Timed out ({timeout}ms); element {selector} did not reach {state} state',
+    noFocusedElement: 'No focused element',
+    keyboardInputSuccess: 'Keyboard input successful{hint}',
+    sourceElementNotFound: 'Source element not found: {selector}',
+    targetElementNotFound: 'Target element not found: {selector}',
+    dragExperimental: '⚠️ Drag is experimental and may not have worked ({source} → {target}). Due to browser dataTransfer limitations, most pages relying on drag data cannot be triggered; please verify the result or use click coordinates instead',
+    fileUploadNotFound: 'File upload control not found: {selector}',
+    notFileUploadControl: 'The selected element is not a file upload control',
+    fileUploaded: 'File uploaded: {fileName}',
+    textRequired: 'text cannot be empty',
+    hoveredByText: 'Hovered over the {tag} element matching "{text}"{hint}',
+    clickedByText: 'Clicked the {tag} element matching "{text}"{hint}',
+    textNotFound: 'Text "{text}" does not exist on the page; you may need to perform an action first (e.g. open a dropdown) or the text may be incorrect',
+    textFoundButHidden: 'Found text "{text}" but the element is not visible; you may need to open a dropdown panel or scroll to make it visible',
+    textNotClickable: 'Found text "{text}" but it is not in a clickable element; use query_elements to inspect the structure or use a selector to locate it',
+    textFoundButNotMatched: 'Found text "{text}" in a clickable element but it did not match; the text may be split or have different casing',
+    tagConstraint: ' (tag constraint: {tag})',
+    triggerNotFound: 'Trigger not found: {selector}',
+    selectedOption: 'Selected: {label}',
+    selectOptionNotFound: 'No matching option found in <select>: "{option}"',
+    optionContainerNotFound: 'Option container not found: {selector}',
+    optionMatchTimeout: 'No matching option found within {timeout}ms: "{option}"',
+    setRequiresKeyValue: 'Set operation requires both key and value',
+    keySet: 'Set {key}',
+    removeRequiresKey: 'Remove operation requires a key',
+    keyRemoved: 'Removed {key}',
+    storageCleared: 'Storage cleared',
+    unknownAction: 'Unknown action: {action}',
+  },
+});
 
 /**
  * 点击指定元素
@@ -12,7 +111,7 @@ import { generateUniqueSelector, getDomSignature, autoWaitAfterAction } from './
 export async function clickElement(selector, waitTime = 300, timeout = 2000) {
   try {
     if (!selector) {
-      return { success: false, error: '选择器不能为空' };
+      return { success: false, error: t('interactionTools.selectorRequired') };
     }
 
     // Only strip wrapping quote pairs, preserve quotes inside CSS attribute selectors like a[href="/foo"]
@@ -32,7 +131,7 @@ export async function clickElement(selector, waitTime = 300, timeout = 2000) {
 
     const element = deepQuerySelector(cleanedSelector);
     if (!element) {
-      return { success: false, error: `未找到匹配选择器的元素: ${selector}` };
+      return { success: false, error: t('interactionTools.elementNotFoundBySelector', { selector }) };
     }
 
     // 记录点击前状态，点击后自动等待页面稳定
@@ -41,11 +140,11 @@ export async function clickElement(selector, waitTime = 300, timeout = 2000) {
     const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
 
     const changeHint = wait.changed
-      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
       : '';
     return {
       success: true,
-      message: `已点击元素: ${selector}${changeHint}`,
+      message: t('interactionTools.clickedElement', { selector, hint: changeHint }),
       ...wait,
     };
   } catch (error) {
@@ -121,7 +220,7 @@ export function fillForm(fields, waitTime = 500) {
       const element = deepQuerySelector(selector);
       
       if (!element) {
-        results.push({ selector, success: false, error: '未找到元素' });
+        results.push({ selector, success: false, error: t('interactionTools.elementNotFound') });
         return;
       }
       
@@ -149,7 +248,7 @@ export function fillForm(fields, waitTime = 500) {
             element.value = option.value;
             element.dispatchEvent(new Event('change', { bubbles: true }));
           } else {
-            results.push({ selector, success: false, error: '未找到匹配的选项' });
+            results.push({ selector, success: false, error: t('interactionTools.optionNotFound') });
             return;
           }
         } else if (fieldType === 'checkbox') {
@@ -161,7 +260,7 @@ export function fillForm(fields, waitTime = 500) {
             radio.checked = true;
             radio.dispatchEvent(new Event('change', { bubbles: true }));
           } else {
-            results.push({ selector, success: false, error: '未找到匹配的单选按钮' });
+            results.push({ selector, success: false, error: t('interactionTools.radioButtonNotFound') });
             return;
           }
         }
@@ -174,7 +273,7 @@ export function fillForm(fields, waitTime = 500) {
     const successCount = results.filter(r => r.success).length;
     return { 
       success: true, 
-      message: `表单填充完成，成功 ${successCount}/${fields.length} 个字段`,
+      message: t('interactionTools.formFillComplete', { success: successCount, total: fields.length }),
       details: results 
     };
   } catch (error) {
@@ -198,14 +297,14 @@ export function scrollToPosition(options) {
     } else if (target === 'selector' && selector) {
       const element = deepQuerySelector(selector);
       if (!element) {
-        return { success: false, error: `未找到元素: ${selector}` };
+        return { success: false, error: t('interactionTools.elementNotFoundShort', { selector }) };
       }
       element.scrollIntoView({ behavior, block: align });
     } else {
-      return { success: false, error: '无效的滚动目标或缺少选择器' };
+      return { success: false, error: t('interactionTools.invalidScrollTarget') };
     }
     
-    return { success: true, message: '滚动完成' };
+    return { success: true, message: t('interactionTools.scrollComplete') };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -258,27 +357,27 @@ export function waitForElement(selector, state = 'appeared', timeout = 10000) {
       const el = deepQuerySelector(selector);
       
       if (state === 'appeared' && el) {
-        resolve({ success: true, message: `元素 ${selector} 已出现`, element: selector });
+        resolve({ success: true, message: t('interactionTools.elementAppeared', { selector }), element: selector });
         return;
       }
       
       if (state === 'disappeared' && !el) {
-        resolve({ success: true, message: `元素 ${selector} 已消失` });
+        resolve({ success: true, message: t('interactionTools.elementDisappeared', { selector }) });
         return;
       }
       
       if (state === 'visible' && el && isElementTrulyVisible(el)) {
-        resolve({ success: true, message: `元素 ${selector} 已可见`, element: selector });
+        resolve({ success: true, message: t('interactionTools.elementVisible', { selector }), element: selector });
         return;
       }
       
       if (state === 'hidden' && (!el || !isElementTrulyVisible(el))) {
-        resolve({ success: true, message: `元素 ${selector} 已隐藏` });
+        resolve({ success: true, message: t('interactionTools.elementHidden', { selector }) });
         return;
       }
       
       if (Date.now() - startTime > timeout) {
-        resolve({ success: false, error: `等待超时（${timeout}ms），元素 ${selector} 未达到 ${state} 状态` });
+        resolve({ success: false, error: t('interactionTools.waitTimeout', { timeout, selector, state }) });
         return;
       }
       
@@ -332,7 +431,7 @@ export async function keyboardInput({ key, text, ctrlKey = false, shiftKey = fal
     const activeElement = document.activeElement;
 
     if (!activeElement) {
-      return { success: false, error: '没有聚焦的元素' };
+      return { success: false, error: t('interactionTools.noFocusedElement') };
     }
 
     const sigBefore = getDomSignature();
@@ -398,9 +497,9 @@ export async function keyboardInput({ key, text, ctrlKey = false, shiftKey = fal
     // auto-wait：按键/输入后检测页面变化（如 Enter 提交触发导航、输入触发搜索建议）
     const wait = await autoWaitAfterAction(sigBefore, 300, 2000);
     const changeHint = wait.changed
-      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
       : '';
-    return { success: true, message: `键盘输入成功${changeHint}`, ...wait };
+    return { success: true, message: t('interactionTools.keyboardInputSuccess', { hint: changeHint }), ...wait };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -422,12 +521,12 @@ export function dragAndDrop(sourceSelector, targetSelector) {
       const target = deepQuerySelector(targetSelector);
       
       if (!source) {
-        resolve({ success: false, error: `未找到源元素: ${sourceSelector}` });
+        resolve({ success: false, error: t('interactionTools.sourceElementNotFound', { selector: sourceSelector }) });
         return;
       }
       
       if (!target) {
-        resolve({ success: false, error: `未找到目标元素: ${targetSelector}` });
+        resolve({ success: false, error: t('interactionTools.targetElementNotFound', { selector: targetSelector }) });
         return;
       }
       
@@ -475,7 +574,7 @@ export function dragAndDrop(sourceSelector, targetSelector) {
       resolve({
         success: true,
         experimental: true,
-        message: `⚠️拖拽为实验性，可能未生效（${sourceSelector} → ${targetSelector}）。受浏览器 dataTransfer 限制，依赖拖拽数据的网页多数无法触发，建议验证结果或改用点击坐标实现`
+        message: t('interactionTools.dragExperimental', { source: sourceSelector, target: targetSelector })
       });
     } catch (error) {
       resolve({ success: false, error: error.message });
@@ -491,11 +590,11 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
     const input = deepQuerySelector(selector);
     
     if (!input) {
-      return { success: false, error: `未找到文件上传控件: ${selector}` };
+      return { success: false, error: t('interactionTools.fileUploadNotFound', { selector }) };
     }
     
     if (input.type !== 'file') {
-      return { success: false, error: `选择的元素不是文件上传控件` };
+      return { success: false, error: t('interactionTools.notFileUploadControl') };
     }
     
     // 创建File对象
@@ -523,7 +622,7 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
     // 触发change事件
     input.dispatchEvent(new Event('change', { bubbles: true }));
     
-    return { success: true, message: `已上传文件: ${fileName}` };
+    return { success: true, message: t('interactionTools.fileUploaded', { fileName }) };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -543,7 +642,7 @@ export async function clickByText(text, options = {}) {
   const { tag, action = 'click', waitTime = 300, timeout = 2000 } = options;
 
   if (!text) {
-    return { success: false, error: 'text 不能为空' };
+    return { success: false, error: t('interactionTools.textRequired') };
   }
 
   // 可交互元素选择器（穿透 Shadow DOM）
@@ -595,11 +694,11 @@ export async function clickByText(text, options = {}) {
           el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
           const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
           const changeHint = wait.changed
-            ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+            ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
             : '';
           return {
             success: true,
-            message: `已悬停文本"${text}"对应的${el.tagName.toLowerCase()}元素${changeHint}`,
+            message: t('interactionTools.hoveredByText', { text, tag: el.tagName.toLowerCase(), hint: changeHint }),
             selector,
             matchedText: elText.substring(0, 100),
             ...wait,
@@ -609,11 +708,11 @@ export async function clickByText(text, options = {}) {
         const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
 
         const changeHint = wait.changed
-          ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+          ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
           : '';
         return {
           success: true,
-          message: `已点击文本"${text}"对应的${el.tagName.toLowerCase()}元素${changeHint}`,
+          message: t('interactionTools.clickedByText', { text, tag: el.tagName.toLowerCase(), hint: changeHint }),
           selector,
           matchedText: elText.substring(0, 100),
           ...wait,
@@ -649,18 +748,18 @@ export async function clickByText(text, options = {}) {
 
   let error;
   if (!textFound) {
-    error = `页面中不存在文本"${text}"，可能需要先操作（如打开下拉面板）或文本有误`;
+    error = t('interactionTools.textNotFound', { text });
   } else if (textHidden) {
-    error = `找到文本"${text}"但元素不可见，可能需要先打开下拉面板/滚动到可见区域`;
+    error = t('interactionTools.textFoundButHidden', { text });
   } else if (textNotClickable) {
-    error = `找到文本"${text}"但不在可点击元素中，请用 query_elements 查看实际结构或用 selector 定位`;
+    error = t('interactionTools.textNotClickable', { text });
   } else {
-    error = `找到文本"${text}"在可点击元素中但未匹配，可能文本被分割或大小写不一致`;
+    error = t('interactionTools.textFoundButNotMatched', { text });
   }
 
   return {
     success: false,
-    error: error + (tag ? `（限定标签: ${tag}）` : ''),
+    error: error + (tag ? t('interactionTools.tagConstraint', { tag }) : ''),
   };
 }
 
@@ -676,7 +775,7 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
     try {
       const trigger = deepQuerySelector(triggerSelector);
       if (!trigger) {
-        resolve({ success: false, error: `未找到触发器: ${triggerSelector}` });
+        resolve({ success: false, error: t('interactionTools.triggerNotFound', { selector: triggerSelector }) });
         return;
       }
 
@@ -691,11 +790,11 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
             trigger.value = opt.value;
             trigger.dispatchEvent(new Event('change', { bubbles: true }));
             trigger.dispatchEvent(new Event('input', { bubbles: true }));
-            resolve({ success: true, message: `已选择: ${optLabel}`, triggerTag: 'SELECT' });
+            resolve({ success: true, message: t('interactionTools.selectedOption', { label: optLabel }), triggerTag: 'SELECT' });
             return;
           }
         }
-        resolve({ success: false, error: `在 <select> 中未找到匹配的选项: "${optionText}"`, availableOptions: Array.from(options).map(o => o.textContent?.trim()).filter(Boolean) });
+        resolve({ success: false, error: t('interactionTools.selectOptionNotFound', { option: optionText }), availableOptions: Array.from(options).map(o => o.textContent?.trim()).filter(Boolean) });
         return;
       }
 
@@ -707,7 +806,7 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
       const startTime = Date.now();
       const optionContainer = optionSelector ? deepQuerySelector(optionSelector) : document;
       if (!optionContainer) {
-        resolve({ success: false, error: `未找到选项容器: ${optionSelector}` });
+        resolve({ success: false, error: t('interactionTools.optionContainerNotFound', { selector: optionSelector }) });
         return;
       }
 
@@ -722,7 +821,7 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
           // 忽略太短的文本
           if (text.length < 2) continue;
           // 匹配：精确、包含、或去空白后匹配
-          if (text === optionText || text.includes(optionText) || 
+          if (text === optionText || text.includes(optionText) ||
               text.replace(/\s+/g, '') === optionText.replace(/\s+/g, '')) {
             matchedOption = el;
             break;
@@ -733,13 +832,13 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
       }
 
       if (!matchedOption) {
-        resolve({ success: false, error: `在 ${timeout}ms 内未找到匹配选项: "${optionText}"` });
+        resolve({ success: false, error: t('interactionTools.optionMatchTimeout', { timeout, option: optionText }) });
         return;
       }
 
       // 点击匹配的选项
       matchedOption.click();
-      resolve({ success: true, message: `已选择: ${matchedOption.textContent?.trim()}`, triggerTag: trigger.tagName });
+      resolve({ success: true, message: t('interactionTools.selectedOption', { label: matchedOption.textContent?.trim() }), triggerTag: trigger.tagName });
     } catch (error) {
       resolve({ success: false, error: error.message });
     }
@@ -769,24 +868,24 @@ export function manageStorage({ action, storage, key, value }) {
         
       case 'set':
         if (!key || value === undefined) {
-          return { success: false, error: 'set操作需要提供key和value' };
+          return { success: false, error: t('interactionTools.setRequiresKeyValue') };
         }
         target.setItem(key, value);
-        return { success: true, message: `已设置 ${key}` };
-        
+        return { success: true, message: t('interactionTools.keySet', { key }) };
+
       case 'remove':
         if (!key) {
-          return { success: false, error: 'remove操作需要提供key' };
+          return { success: false, error: t('interactionTools.removeRequiresKey') };
         }
         target.removeItem(key);
-        return { success: true, message: `已删除 ${key}` };
-        
+        return { success: true, message: t('interactionTools.keyRemoved', { key }) };
+
       case 'clear':
         target.clear();
-        return { success: true, message: '已清空存储' };
-        
+        return { success: true, message: t('interactionTools.storageCleared') };
+
       default:
-        return { success: false, error: `未知操作: ${action}` };
+        return { success: false, error: t('interactionTools.unknownAction', { action }) };
     }
   } catch (error) {
     return { success: false, error: error.message };

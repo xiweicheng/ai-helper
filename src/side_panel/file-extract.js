@@ -6,6 +6,42 @@ import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  fileExtract: {
+    fileReadFailed: '文件读取失败',
+    oldDocNotSupported: '旧版 .doc 格式不支持，请用 Word 另存为 .docx 格式后再试',
+    agentNotPaired: 'Agent 未配对',
+    agentUploadFailed: 'Agent 上传失败 ({status}): {error}',
+    unsupportedFormat: '暂不支持 "{name}" 格式的浏览器端提取，请连接 Agent 后再试',
+    oldDocNotSupportedBrowser: '旧版 .doc 格式浏览器不支持，请用 Word 另存为 .docx 格式后再试',
+    extracting: '提取中...',
+    failed: '失败',
+    extractFailed: '提取失败',
+    removeFile: '移除文件',
+    workspaceFileMarker: '[工作目录文件: {path} (原名: {name})]',
+    truncated: '...(内容已截断)',
+    fileContentMarker: '[文件内容: {name}]',
+  },
+});
+registerTranslations('en', {
+  fileExtract: {
+    fileReadFailed: 'File read failed',
+    oldDocNotSupported: 'Legacy .doc format is not supported. Please save as .docx in Word and try again.',
+    agentNotPaired: 'Agent not paired',
+    agentUploadFailed: 'Agent upload failed ({status}): {error}',
+    unsupportedFormat: 'Browser-side extraction for "{name}" is not supported. Please connect an Agent and try again.',
+    oldDocNotSupportedBrowser: 'Legacy .doc format is not supported in the browser. Please save as .docx in Word and try again.',
+    extracting: 'Extracting...',
+    failed: 'Failed',
+    extractFailed: 'Extraction failed',
+    removeFile: 'Remove file',
+    workspaceFileMarker: '[Workspace file: {path} (original name: {name})]',
+    truncated: '...(content truncated)',
+    fileContentMarker: '[File content: {name}]',
+  },
+});
 
 // 配置 PDF.js Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
@@ -66,7 +102,7 @@ async function extractTextFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.onerror = () => reject(new Error(t('fileExtract.fileReadFailed')));
     reader.readAsText(file, 'UTF-8');
   });
 }
@@ -132,7 +168,7 @@ export async function extractFileContent(file) {
       return await extractDocxFile(file);
     case 'doc':
       // 旧版 .doc 格式不被 mammoth.js 支持，直接给出提示
-      throw new Error('旧版 .doc 格式不支持，请用 Word 另存为 .docx 格式后再试');
+      throw new Error(t('fileExtract.oldDocNotSupported'));
     case 'xlsx':
       return await extractExcelFile(file);
     case 'text':
@@ -156,7 +192,7 @@ export async function uploadFileToAgent(file) {
   const agentToken = active?.token;
 
   if (!agentUrl || !agentToken) {
-    throw new Error('Agent 未配对');
+    throw new Error(t('fileExtract.agentNotPaired'));
   }
 
   const formData = new FormData();
@@ -172,7 +208,7 @@ export async function uploadFileToAgent(file) {
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
-    throw new Error(`Agent 上传失败 (${response.status}): ${errorBody}`);
+    throw new Error(t('fileExtract.agentUploadFailed', { status: response.status, error: errorBody }));
   }
 
   const result = await response.json();
@@ -210,10 +246,10 @@ export async function processFile(file, index) {
 
     // 浏览器端提取（Agent 不可用时的降级方案，仅支持部分格式）
     if (category === 'unknown') {
-      throw new Error(`暂不支持 "${file.name}" 格式的浏览器端提取，请连接 Agent 后再试`);
+      throw new Error(t('fileExtract.unsupportedFormat', { name: file.name }));
     }
     if (category === 'doc') {
-      throw new Error('旧版 .doc 格式浏览器不支持，请用 Word 另存为 .docx 格式后再试');
+      throw new Error(t('fileExtract.oldDocNotSupportedBrowser'));
     }
 
     fileEntry.text = await extractFileContent(file);
@@ -337,13 +373,13 @@ export function renderFilePreviews() {
     if (file.status === 'extracting') {
       const status = document.createElement('span');
       status.className = 'file-preview-status extracting';
-      status.textContent = '提取中...';
+      status.textContent = t('fileExtract.extracting');
       wrapper.appendChild(status);
     } else if (file.status === 'error') {
       const status = document.createElement('span');
       status.className = 'file-preview-status error';
-      status.textContent = '失败';
-      status.title = file.error || '提取失败';
+      status.textContent = t('fileExtract.failed');
+      status.title = file.error || t('fileExtract.extractFailed');
       wrapper.appendChild(status);
     } else if (file.status === 'done') {
       const status = document.createElement('span');
@@ -355,7 +391,7 @@ export function renderFilePreviews() {
     const removeBtn = document.createElement('button');
     removeBtn.className = 'file-preview-remove';
     removeBtn.innerHTML = '×';
-    removeBtn.title = '移除文件';
+    removeBtn.title = t('fileExtract.removeFile');
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       removeFile(index);
@@ -380,13 +416,13 @@ export function buildFileContentText() {
 
   // Agent 上传的文件：提供文件路径供大模型工具操作
   for (const file of agentFiles) {
-    parts.push(`[工作目录文件: ${file.agentPath} (原名: ${file.name})]`);
+    parts.push(t('fileExtract.workspaceFileMarker', { path: file.agentPath, name: file.name }));
   }
 
   // 浏览器提取的文件：直接附带文本内容
   for (const file of browserFiles) {
-    const text = file.text.length > 50000 ? file.text.substring(0, 50000) + '\n...(内容已截断)' : file.text;
-    parts.push(`[文件内容: ${file.name}]\n${text}`);
+    const text = file.text.length > 50000 ? file.text.substring(0, 50000) + '\n' + t('fileExtract.truncated') : file.text;
+    parts.push(t('fileExtract.fileContentMarker', { name: file.name }) + '\n' + text);
   }
 
   return '\n\n' + parts.join('\n\n---\n\n');
