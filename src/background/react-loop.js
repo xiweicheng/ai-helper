@@ -9,7 +9,48 @@ import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
-import { t } from '../shared/i18n.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 reactLoop 命名空间翻译
+registerTranslations('zh', {
+  reactLoop: {
+    apiCallNode: 'API调用 (第{count}次{subtask})',
+    apiCallSubtask: ', 子任务第{iteration}次',
+    preparing: '准备开始执行...',
+    toolExec: '工具执行:{name}',
+    toolExecStart: '执行工具: {name}',
+    taskPlanDone: '任务规划完成',
+    executionDone: '执行完成',
+    userDenied: '用户拒绝了此操作',
+    subtaskRolledBack: '子任务 {name} (已回滚)',
+    subtaskRollbackFailed: '子任务 {name} (回滚失败)',
+    subtaskCount: '已拆解为 {count} 个子任务',
+    toolReflection: '工具反思: {name}',
+    subtaskNode: '子任务 {index}: {name}',
+    subtaskCompleted: '子任务 {index}: {name} (完成)',
+    subtaskFailed: '子任务 {index}: {name} (失败)',
+  },
+});
+
+registerTranslations('en', {
+  reactLoop: {
+    apiCallNode: 'API Call (#{count}{subtask})',
+    apiCallSubtask: ', Subtask #{iteration}',
+    preparing: 'Preparing to execute...',
+    toolExec: 'Tool Exec:{name}',
+    toolExecStart: 'Executing: {name}',
+    taskPlanDone: 'Task planning completed',
+    executionDone: 'Execution completed',
+    userDenied: 'User denied this operation',
+    subtaskRolledBack: 'Subtask {name} (rolled back)',
+    subtaskRollbackFailed: 'Subtask {name} (rollback failed)',
+    subtaskCount: 'Broken down into {count} subtasks',
+    toolReflection: 'Tool Reflection: {name}',
+    subtaskNode: 'Subtask {index}: {name}',
+    subtaskCompleted: 'Subtask {index}: {name} (completed)',
+    subtaskFailed: 'Subtask {index}: {name} (failed)',
+  },
+});
 import { summarizeRound } from './context-summarizer.js';
 // 反思机制相关函数已拆分到 react-reflection.js
 import {
@@ -679,7 +720,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   let isPaused = false;         // 是否处于暂停状态
   
   // 发送初始状态
-  sendExecutionStatusUpdate('准备开始执行...', 'processing');
+  sendExecutionStatusUpdate(t('reactLoop.preparing'), 'processing');
 
   // 初始 checkpoint：在主循环开始前保存一次，确保即使第一次 API 调用期间用户刷新页面，
   // 也有 checkpoint 可供恢复（否则要等到第一个工具执行完才有 checkpoint）
@@ -812,7 +853,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         timestamp: new Date().toISOString(),
         status: 'processing',
         nodeType: 'api_call',
-        nodeName: `API调用 (第${currentCount}次${taskContext ? `, 子任务第${iteration}次` : ''})`,
+        nodeName: t('reactLoop.apiCallNode', { count: currentCount, subtask: taskContext ? t('reactLoop.apiCallSubtask', { iteration }) : '' }),
         apiRequest: {
           messageCount: filteredMessages.length,
           toolCount: apiTools.length
@@ -820,7 +861,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       });
       
       // 发送 API 调用状态
-      sendExecutionStatusUpdate(`API调用 (第${currentCount}次${taskContext ? `, 子任务第${iteration}次` : ''})`, 'processing');
+      sendExecutionStatusUpdate(t('reactLoop.apiCallNode', { count: currentCount, subtask: taskContext ? t('reactLoop.apiCallSubtask', { iteration }) : '' }), 'processing');
       
       // 外层超时 watchdog，需在 try/catch 外层声明以便 catch 块中清理
       let outerWatchdog;
@@ -1028,7 +1069,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
 
       // 推送 API 调用成功状态更新
-      sendExecutionStatusUpdate(`API调用 (第${currentCount}次${taskContext ? `, 子任务第${iteration}次` : ''})`, 'success');
+      sendExecutionStatusUpdate(t('reactLoop.apiCallNode', { count: currentCount, subtask: taskContext ? t('reactLoop.apiCallSubtask', { iteration }) : '' }), 'success');
       
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
@@ -1118,11 +1159,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   timestamp: new Date().toISOString(),
                   status: 'cancelled',
                   nodeType: 'tool_exec',
-                  nodeName: `工具执行:${toolName}`,
+                  nodeName: t('reactLoop.toolExec', { name: toolName }),
                   action: { name: toolName, params: toolArgs },
-                  error: '用户拒绝了此操作'
+                  error: t('reactLoop.userDenied')
                 });
-                sendExecutionStatusUpdate(`工具执行:${toolName}`, 'cancelled');
+                sendExecutionStatusUpdate(t('reactLoop.toolExec', { name: toolName }), 'cancelled');
                 // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
                 currentMessages.push({
                   role: 'tool',
@@ -1140,9 +1181,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                     timestamp: new Date().toISOString(),
                     status: 'cancelled',
                     nodeType: 'tool_exec',
-                    nodeName: `工具执行:${toolName}`,
+                    nodeName: t('reactLoop.toolExec', { name: toolName }),
                     action: { name: toolName, params: toolArgs },
-                    error: '用户拒绝了此操作'
+                    error: t('reactLoop.userDenied')
                   }
                 };
               }
@@ -1182,11 +1223,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             timestamp: new Date().toISOString(),
             status: 'processing',
             nodeType: 'tool_exec',
-            nodeName: `执行工具: ${toolName}`
+            nodeName: t('reactLoop.toolExecStart', { name: toolName })
           });
           
           // 发送工具执行状态
-          sendExecutionStatusUpdate(`执行工具: ${toolName}`, 'processing');
+          sendExecutionStatusUpdate(t('reactLoop.toolExecStart', { name: toolName }), 'processing');
           
           // 如果是澄清工具，暂停整体循环超时计时
           if (toolName === 'clarify_question') {
@@ -1339,19 +1380,19 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   ...executionLog[toolLogIndex],
                   duration: Date.now() - toolStartTime,
                   status: 'success',
-                  nodeName: `任务规划完成`,
+                  nodeName: t('reactLoop.taskPlanDone'),
                   action: {
                     name: toolName,
                     params: toolArgs
                   },
-                  observation: `已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
+                  observation: t('reactLoop.subtaskCount', { count: subtaskPlan.subtasks.length }),
                   subtaskCount: subtaskPlan.subtasks.length,
                   strategy: subtaskPlan.strategy
                 };
               }
               
               // 发送任务规划完成状态更新（让实时日志显示plan_task节点）
-              sendExecutionStatusUpdate('任务规划完成', 'success');
+              sendExecutionStatusUpdate(t('reactLoop.taskPlanDone'), 'success');
 
               // ⚡ 关键修复：在 executeSubtasks 之前，为同轮中剩余未执行的工具补发 STREAM_TOOL_RESULT
               // 模型可能在一轮中同时调用 plan_task + 其他工具（如 browser_info、agent_file）
@@ -1449,7 +1490,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 ...executionLog[toolLogIndex],
                 duration: Date.now() - toolStartTime,
                 status: isToolSuccess ? 'success' : 'failed',
-                nodeName: `工具执行:${toolName}`,
+                nodeName: t('reactLoop.toolExec', { name: toolName }),
                 action: {
                   name: toolName,
                   params: toolArgs
@@ -1510,7 +1551,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 ...executionLog[toolLogIndex],
                 duration: Date.now() - toolStartTime,
                 status: 'failed',
-                nodeName: `工具执行:${toolName}`,
+                nodeName: t('reactLoop.toolExec', { name: toolName }),
                 action: {
                   name: toolName,
                   params: toolArgs
@@ -1522,7 +1563,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 工具执行失败时返回错误结果而非 throw，让 ReAct 循环继续下一轮
             // 模型可以根据错误信息调整策略（如重试、换工具、或直接给出结论）
             logger.warn(`[Background] 工具 ${toolName} 执行失败，ReAct 循环继续:`, toolError.message);
-            sendExecutionStatusUpdate(`工具执行:${toolName}`, 'failed');
+            sendExecutionStatusUpdate(t('reactLoop.toolExec', { name: toolName }), 'failed');
 
             // 发送工具错误结果到 Side Panel 展示（更新 UI 中的工具卡片状态）
             // 子任务禁用流式输出，不发送 STREAM_TOOL_RESULT（子任务通过 EXECUTION_STATUS_UPDATE 汇报状态）
@@ -1581,7 +1622,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 timestamp: new Date().toISOString(),
                 status: toolReflection.useful ? 'success' : 'failed',
                 nodeType: 'reflection',
-                nodeName: `工具反思: ${ref.toolName}`,
+                nodeName: t('reactLoop.toolReflection', { name: ref.toolName }),
                 reflectionType: 'tool',
                 useful: toolReflection.useful,
                 reasoning: toolReflection.reasoning,
@@ -1769,7 +1810,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           executionLog.push(...reflectionResult.reflectionLog);
         }
 
-        sendExecutionStatusUpdate('执行完成', 'success');
+        sendExecutionStatusUpdate(t('reactLoop.executionDone'), 'success');
         taskCompleted = true;
         return {
           content: reflectionResult.content,
@@ -1781,7 +1822,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
 
       // 发送完成状态
-      sendExecutionStatusUpdate('执行完成', 'success');
+      sendExecutionStatusUpdate(t('reactLoop.executionDone'), 'success');
 
       // 返回执行日志和内容
       taskCompleted = true;
@@ -1909,12 +1950,12 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
             timestamp: new Date().toISOString(),
             status: 'rolledback',
             nodeType: 'subtask',
-            nodeName: `子任务 ${subtask.name} (已回滚)`,
+            nodeName: t('reactLoop.subtaskRolledBack', { name: subtask.name }),
             subtaskId: subtask.id,
             subtaskName: subtask.name
           });
           
-          sendSubtaskStatusUpdate(`子任务 ${subtask.name} (已回滚)`, 'rolledback', parentExecutionLog);
+          sendSubtaskStatusUpdate(t('reactLoop.subtaskRolledBack', { name: subtask.name }), 'rolledback', parentExecutionLog);
           
         } catch (rollbackError) {
           logger.error('[Background] 回滚失败:', rollbackError.message);
@@ -1924,7 +1965,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
             timestamp: new Date().toISOString(),
             status: 'rollback_failed',
             nodeType: 'subtask',
-            nodeName: `子任务 ${subtask.name} (回滚失败)`,
+            nodeName: t('reactLoop.subtaskRollbackFailed', { name: subtask.name }),
             subtaskId: subtask.id,
             subtaskName: subtask.name,
             error: rollbackError.message
@@ -1952,7 +1993,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       timestamp: new Date().toISOString(),
       status: 'processing',
       nodeType: 'subtask',
-      nodeName: `子任务 ${subtaskIndex + 1}: ${subtask.name}`,
+      nodeName: t('reactLoop.subtaskNode', { index: subtaskIndex + 1, name: subtask.name }),
       subtaskId: subtask.id,
       subtaskName: subtask.name,
       subtaskIndex: subtaskIndex,
@@ -1963,7 +2004,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     });
     
     // 发送子任务开始状态
-    sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+    sendSubtaskStatusUpdate(t('reactLoop.subtaskNode', { index: subtaskIndex + 1, name: subtask.name }), 'processing', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
     
     // 重试循环
     for (let retry = 0; retry <= maxRetries; retry++) {
@@ -2013,7 +2054,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
               });
             });
             
-            sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name}`, 'processing', mergedLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+            sendSubtaskStatusUpdate(t('reactLoop.subtaskNode', { index: subtaskIndex + 1, name: subtask.name }), 'processing', mergedLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           },
           globalIteration
         );
@@ -2046,7 +2087,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         }
         
         // 发送子任务完成状态（增量发送，避免 64MiB 限制）
-        sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (完成)`, 'success', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+        sendSubtaskStatusUpdate(t('reactLoop.subtaskCompleted', { index: subtaskIndex + 1, name: subtask.name }), 'success', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
         
         // 记录已完成的子任务（用于回滚）
         completedSubtasks.push({ subtask, result: subtaskResult });
@@ -2151,7 +2192,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           }
           
           // 发送子任务失败状态
-          sendSubtaskStatusUpdate(`子任务 ${subtaskIndex + 1}: ${subtask.name} (失败)`, 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+          sendSubtaskStatusUpdate(t('reactLoop.subtaskFailed', { index: subtaskIndex + 1, name: subtask.name }), 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           
           return {
             success: false,
