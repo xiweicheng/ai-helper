@@ -10,6 +10,85 @@ import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
 import { setLastOperatedTab, getLastOperatedTab } from './state.js';
 import { logger } from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 toolExecutor 命名空间翻译
+registerTranslations('zh', {
+  toolExec: {
+    unknown: '未知',
+    unknownResultFormat: '未知结果格式',
+    tabAccessDenied: '无法访问该标签页: {error}',
+    tabErrorPage: '该标签页显示错误页面，页面未能成功加载。请检查 URL 是否正确、网络是否可达',
+    systemPageNotAllowed: '无法在系统页面使用工具: {url}',
+    contentScriptNotFound: '无法找到 content script 文件',
+    contentScriptInjectFailed: '注入 Content Script 失败: {error}',
+    unknownError: '未知错误',
+    argParseFailed: '工具参数解析失败',
+    unknownTool: '未知工具: {name}',
+    noTabAvailable: '没有可用的标签页',
+    noTitle: '(无标题)',
+    clarifyDialogFailed: '无法显示澄清对话框: {error}',
+    clarifyTimeout: '用户未在规定时间内完成澄清 ({seconds}秒)',
+    clarifyPanelClosed: 'Side Panel 已关闭，澄清操作中止',
+    missingUrlParam: '缺少 URL 参数',
+    invalidUrlFormat: '无效的 URL 格式: {url}',
+    readResponseFailed: '读取响应内容失败: {error}',
+    tabNotFound: '未找到当前标签页',
+    getRequiresName: 'get操作需要提供name参数',
+    setRequiresNameValue: 'set操作需要提供name和value参数',
+    removeRequiresName: 'remove操作需要提供name参数',
+    unknownAction: '未知操作: {action}',
+    missingTaskDesc: '缺少任务描述参数',
+    emptySubtasks: '子任务列表不能为空',
+    invalidSubtaskStructure: '子任务结构不完整，缺少id/name/description',
+    cannotGetCurrentTab: '无法获取当前标签页',
+    cannotParseTabUrl: '无法解析当前标签页 URL',
+    missingPrototypeId: '缺少 prototypeId 参数',
+    prototypeNotFound: '未找到原型: {id}',
+    fetchFailed: '获取失败: {error}',
+    missingHtmlParam: '缺少 HTML 参数',
+    missingTitleParam: '缺少 title 参数',
+    savePrototypeFailed: '保存原型失败',
+    executionFailed: '执行失败: {error}',
+    missingNameParam: '缺少 name 参数',
+    skillExecFailed: 'Skill 执行失败',
+    skillExecException: 'Skill 执行异常: {error}',
+    skillLoadFailed: 'Skill 加载失败',
+    skillLoadException: 'Skill 加载异常: {error}',
+    missingPathParam: '缺少 path 参数',
+  },
+});
+registerTranslations('en', {
+  toolExec: {
+    unknown: 'Unknown',
+    unknownResultFormat: 'Unknown result format',
+    tabAccessDenied: 'Cannot access this tab: {error}',
+    tabErrorPage: 'This tab shows an error page that failed to load. Please check if the URL is correct and network is reachable',
+    systemPageNotAllowed: 'Cannot use tools on system page: {url}',
+    contentScriptNotFound: 'Content script file not found',
+    contentScriptInjectFailed: 'Content script injection failed: {error}',
+    unknownError: 'Unknown error',
+    argParseFailed: 'Tool argument parsing failed',
+    unknownTool: 'Unknown tool: {name}',
+    noTabAvailable: 'No tab available',
+    noTitle: '(No title)',
+    clarifyDialogFailed: 'Cannot show clarify dialog: {error}',
+    clarifyTimeout: 'User did not complete clarification within the time limit ({seconds}s)',
+    clarifyPanelClosed: 'Side Panel closed, clarification aborted',
+    missingUrlParam: 'Missing URL parameter',
+    invalidUrlFormat: 'Invalid URL format: {url}',
+    readResponseFailed: 'Failed to read response content: {error}',
+    tabNotFound: 'Current tab not found',
+    getRequiresName: 'get operation requires name parameter',
+    setRequiresNameValue: 'set operation requires name and value parameters',
+    removeRequiresName: 'remove operation requires name parameter',
+    unknownAction: 'Unknown action: {action}',
+    missingTaskDesc: 'Missing task description parameter',
+    emptySubtasks: 'Subtask list cannot be empty',
+    invalidSubtaskStructure: 'Invalid subtask structure, missing id/name/description',
+    cannotGetCurrentTab: 'Cannot get current tab',
+  },
+});
 
 // 跟踪正在运行的 Agent 命令（sessionId → { execId, ws, resolve }）
 // 用于在用户取消任务时关闭 WebSocket 连接，防止旧命令输出污染新任务
@@ -558,7 +637,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
     } else {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tabs.length) {
-        return makeResult(false, '无法获取当前标签页', { tool_call_id: toolCallId });
+        return makeResult(false, t('toolExec.cannotGetCurrentTab'), { tool_call_id: toolCallId });
       }
       targetTabId = tabs[0].id;
       targetWindowId = tabs[0].windowId;
@@ -974,7 +1053,7 @@ function normalizeToolResult(result, toolCallId) {
     console.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
     return { success: true, content: result, tool_call_id: toolCallId };
   }
-  return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
+  return { success: false, error: t('toolExec.unknownResultFormat'), content: '', tool_call_id: toolCallId };
 }
 
 /**
@@ -1024,16 +1103,16 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
 
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) {
-            resolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolExec.tabAccessDenied', { error: errorMsg }), tool_call_id: toolCallId });
             return;
           }
 
           const url = tab.url || '';
           if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:') || url.startsWith('chrome-error://')) {
             if (url.startsWith('chrome-error://')) {
-              resolve({ success: false, error: '该标签页显示错误页面，页面未能成功加载。请检查 URL 是否正确、网络是否可达', tool_call_id: toolCallId });
+              resolve({ success: false, error: t('toolExec.tabErrorPage'), tool_call_id: toolCallId });
             } else {
-              resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+              resolve({ success: false, error: t('toolExec.systemPageNotAllowed', { url }), tool_call_id: toolCallId });
             }
             return;
           }
@@ -1045,7 +1124,7 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
            const contentFileIdx = contentJsFiles.findIndex(f => /content/i.test(f) && f.endsWith('.js'));
            const injectFiles = contentFileIdx !== -1 ? [contentJsFiles[contentFileIdx]] : contentJsFiles;
            if (contentFileIdx === -1 && injectFiles.length === 0) {
-             resolve({ success: false, error: '无法找到 content script 文件', tool_call_id: toolCallId });
+             resolve({ success: false, error: t('toolExec.contentScriptNotFound'), tool_call_id: toolCallId });
              return;
            }
           chrome.scripting.executeScript({
@@ -1060,9 +1139,9 @@ async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             .catch(err => {
               console.warn('[Background] 注入 content script 失败:', err.message);
               if (err.message && err.message.includes('error page')) {
-                resolve({ success: false, error: '该标签页显示错误页面，页面未能成功加载。请检查 URL 是否正确、网络是否可达', tool_call_id: toolCallId });
+                resolve({ success: false, error: t('toolExec.tabErrorPage'), tool_call_id: toolCallId });
               } else {
-                resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+                resolve({ success: false, error: t('toolExec.contentScriptInjectFailed', { error: err.message }), tool_call_id: toolCallId });
               }
             });
           
@@ -1211,7 +1290,7 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
       timeline.push({
         round: roundNum,
         nodeType,
-        nodeName: entry.nodeName || entry.action?.name || '未知',
+        nodeName: entry.nodeName || entry.action?.name || t('toolExec.unknown'),
         status: entry.status || 'unknown',
         timestamp: entry.timestamp || null,
         toolName: entry.action?.name || null
@@ -1219,7 +1298,7 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 
       // 工具执行结果
       if (nodeType === 'tool_exec') {
-        const toolName = entry.action?.name || entry.nodeName || '未知工具';
+        const toolName = entry.action?.name || entry.nodeName || t('toolExec.unknownTool', { name: 'unknown' });
         const toolArgs = entry.action?.arguments || entry.action?.args || {};
         const status = entry.status;
 
@@ -1237,7 +1316,7 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
             tool: toolName,
             args: toolArgs,
             status,
-            error: entry.error || entry.observation || entry.result || '未知错误',
+            error: entry.error || entry.observation || entry.result || t('toolExec.unknownError'),
             description: entry.nodeName || ''
           });
         }
@@ -1247,7 +1326,7 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
       if (nodeType === 'reflection') {
         reflections.push({
           round: roundNum,
-          tool: entry.action?.name || entry.nodeName || '未知',
+          tool: entry.action?.name || entry.nodeName || t('toolExec.unknown'),
           effective: entry.effective !== undefined ? entry.effective : null,
           reasoning: entry.reasoning || entry.analysis || '',
           suggestion: entry.suggestion || entry.advice || '',
@@ -1417,7 +1496,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', JSON.stringify(functionObj.arguments).substring(0, 300));
-      return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.argParseFailed'), tool_call_id: toolCallId };
     }
     const rawArgs = typeof functionObj.arguments === 'string' ? functionObj.arguments.trim() : JSON.stringify(functionObj.arguments);
     if (Object.keys(args).length === 0 && rawArgs.length > 0 && rawArgs !== '{}') {
@@ -1432,7 +1511,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       args = parsed || {};
     } catch (e) {
       console.error('[Background] 解析工具参数失败:', e, '原始值:', argsStr);
-      return { success: false, error: '工具参数解析失败', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.argParseFailed'), tool_call_id: toolCallId };
     }
   }
   
@@ -1449,7 +1528,7 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       // 不再用会话绑定的 tabId 注入，避免自动化中新打开 tab 后仍指向任务初始页。
       result = await handler(args, toolCallId, sessionId, tabId);
     } else {
-      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+      result = { success: false, error: t('toolExec.unknownTool', { name: toolName }), tool_call_id: toolCallId };
     }
   } else if (executionType === 'content_script') {
     const buildPayload = CONTENT_PAYLOADS[toolName];
@@ -1464,13 +1543,13 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       if (targetTabId) {
         result = await sendToContentScriptWithRetry(targetTabId, { type: messageType, ...messagePayload }, toolCallId);
       } else {
-        result = { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+        result = { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
       }
     } else {
-      result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+      result = { success: false, error: t('toolExec.unknownTool', { name: toolName }), tool_call_id: toolCallId };
     }
   } else {
-    result = { success: false, error: '未知工具: ' + toolName, tool_call_id: toolCallId };
+    result = { success: false, error: t('toolExec.unknownTool', { name: toolName }), tool_call_id: toolCallId };
   }
 
   // 统一结果格式
@@ -1538,7 +1617,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         
         // 格式化结果
         const formattedResults = limitedResults.map(bookmark => ({
-          title: bookmark.title || '(无标题)',
+          title: bookmark.title || t('toolExec.noTitle'),
           url: bookmark.url || '',
           dateAdded: bookmark.dateAdded ? new Date(bookmark.dateAdded).toLocaleString('zh-CN') : null
         }));
@@ -1866,7 +1945,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         cleanup(); // 确保清理
         resolve({ 
           success: false, 
-          error: '无法显示澄清对话框: ' + chrome.runtime.lastError.message,
+          error: t('toolExec.clarifyDialogFailed', { error: chrome.runtime.lastError.message }),
           tool_call_id: toolCallId 
         });
         return;
@@ -1888,7 +1967,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         
         resolve({ 
           success: false, 
-          error: `用户未在规定时间内完成澄清 (${Math.round(clarifyTimeout/1000)}秒)`,
+          error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
           tool_call_id: toolCallId 
         });
       }, clarifyTimeout);
@@ -1910,7 +1989,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
             }).catch(() => {});
             resolve({
               success: false,
-              error: 'Side Panel 已关闭，澄清操作中止',
+              error: t('toolExec.clarifyPanelClosed'),
               tool_call_id: toolCallId
             });
           }
@@ -2111,7 +2190,7 @@ export async function executeFetchUrl(args, toolCallId) {
   if (!url) {
     return { 
       success: false, 
-      error: '缺少 URL 参数',
+      error: t('toolExec.missingUrlParam'),
       tool_call_id: toolCallId 
     };
   }
@@ -2122,7 +2201,7 @@ export async function executeFetchUrl(args, toolCallId) {
   } catch (e) {
     return { 
       success: false, 
-      error: `无效的 URL 格式: ${url}`,
+      error: t('toolExec.invalidUrlFormat', { url }),
       tool_call_id: toolCallId 
     };
   }
@@ -2169,7 +2248,7 @@ export async function executeFetchUrl(args, toolCallId) {
       console.error('[Background] 读取响应内容失败:', textError);
       return {
         success: false,
-        error: `读取响应内容失败: ${textError.message}`,
+        error: t('toolExec.readResponseFailed', { error: textError.message }),
         status: response.status,
         tool_call_id: toolCallId
       };
@@ -2395,7 +2474,7 @@ export function executeCloseTab(args, toolCallId) {
             }
           });
         } else {
-          resolve({ success: false, error: '未找到当前标签页' });
+          resolve({ success: false, error: t('toolExec.tabNotFound') });
         }
       });
     } else {
@@ -2477,7 +2556,7 @@ export function executeManageCookies(args, toolCallId) {
       switch (action) {
         case 'get':
           if (!name) {
-            resolve({ success: false, error: 'get操作需要提供name参数', tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolExec.getRequiresName'), tool_call_id: toolCallId });
             return;
           }
           chrome.cookies.get({ url: `https://${cookieDomain}`, name }, (cookie) => {
@@ -2491,7 +2570,7 @@ export function executeManageCookies(args, toolCallId) {
           
         case 'set':
           if (!name || value === undefined) {
-            resolve({ success: false, error: 'set操作需要提供name和value参数', tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolExec.setRequiresNameValue'), tool_call_id: toolCallId });
             return;
           }
           const cookieData = {
@@ -2517,7 +2596,7 @@ export function executeManageCookies(args, toolCallId) {
           
         case 'remove':
           if (!name) {
-            resolve({ success: false, error: 'remove操作需要提供name参数', tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolExec.removeRequiresName'), tool_call_id: toolCallId });
             return;
           }
           chrome.cookies.remove({ url: `https://${cookieDomain}`, name }, (details) => {
@@ -2541,7 +2620,7 @@ export function executeManageCookies(args, toolCallId) {
           break;
           
         default:
-          resolve({ success: false, error: `未知操作: ${action}`, tool_call_id: toolCallId });
+          resolve({ success: false, error: t('toolExec.unknownAction', { action }), tool_call_id: toolCallId });
       }
     });
   });
@@ -2559,7 +2638,7 @@ export function executePlanTask(args, toolCallId) {
   if (!taskDescription) {
     return Promise.resolve({ 
       success: false, 
-      error: '缺少任务描述参数',
+      error: t('toolExec.missingTaskDesc'),
       tool_call_id: toolCallId 
     });
   }
@@ -2567,7 +2646,7 @@ export function executePlanTask(args, toolCallId) {
   if (!Array.isArray(subtasks) || subtasks.length === 0) {
     return Promise.resolve({ 
       success: false, 
-      error: '子任务列表不能为空',
+      error: t('toolExec.emptySubtasks'),
       tool_call_id: toolCallId 
     });
   }
@@ -2577,7 +2656,7 @@ export function executePlanTask(args, toolCallId) {
   if (invalidSubtasks.length > 0) {
     return Promise.resolve({ 
       success: false, 
-      error: `子任务结构不完整，缺少id/name/description`,
+      error: t('toolExec.invalidSubtaskStructure'),
       tool_call_id: toolCallId 
     });
   }
@@ -2643,7 +2722,7 @@ export function executeClearPageData(args, toolCallId) {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-        resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
+        resolve({ success: false, error: t('toolExec.cannotGetCurrentTab'), tool_call_id: toolCallId });
         return;
       }
 
@@ -2653,7 +2732,7 @@ export function executeClearPageData(args, toolCallId) {
         const url = new URL(tab.url);
         origin = url.origin;
       } catch (e) {
-        resolve({ success: false, error: '无法解析当前标签页 URL', tool_call_id: toolCallId });
+        resolve({ success: false, error: t('toolExec.cannotParseTabUrl'), tool_call_id: toolCallId });
         return;
       }
 
@@ -2767,7 +2846,7 @@ export function executeNavigateBackForward(args, toolCallId) {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-        resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
+        resolve({ success: false, error: t('toolExec.cannotGetCurrentTab'), tool_call_id: toolCallId });
         return;
       }
 
@@ -2838,7 +2917,7 @@ export function executeReloadTab(args, toolCallId) {
     } else {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-          resolve({ success: false, error: '无法获取当前标签页', tool_call_id: toolCallId });
+          resolve({ success: false, error: t('toolExec.cannotGetCurrentTab'), tool_call_id: toolCallId });
           return;
         }
         doReload(tabs[0].id);
@@ -2860,14 +2939,14 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     console.log('[Background] 执行获取 UI 原型:', 'prototypeId=', prototypeId);
     
     if (!prototypeId || !prototypeId.trim()) {
-      return { success: false, error: '缺少 prototypeId 参数', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.missingPrototypeId'), tool_call_id: toolCallId };
     }
     
     try {
       const prototype = await getUiPrototype(prototypeId.trim());
       
       if (!prototype) {
-        return { success: false, error: `未找到原型: ${prototypeId}`, tool_call_id: toolCallId };
+        return { success: false, error: t('toolExec.prototypeNotFound', { id: prototypeId }), tool_call_id: toolCallId };
       }
       
       console.log('[Background] 获取原型成功:', prototype.title, 'HTML长度:', prototype.html?.length);
@@ -2883,7 +2962,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
       };
     } catch (err) {
       console.error('[Background] 获取 UI 原型失败:', err);
-      return { success: false, error: '获取失败: ' + err.message, tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.fetchFailed', { error: err.message }), tool_call_id: toolCallId };
     }
   }
   
@@ -2891,11 +2970,11 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
   console.log('[Background] 执行 UI 原型预览:', 'title=', title, 'sessionId=', sessionId);
   
   if (!html || !html.trim()) {
-    return { success: false, error: '缺少 HTML 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingHtmlParam'), tool_call_id: toolCallId };
   }
   
   if (!title || !title.trim()) {
-    return { success: false, error: '缺少 title 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingTitleParam'), tool_call_id: toolCallId };
   }
   
   try {
@@ -2913,7 +2992,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     const saved = await saveUiPrototype(prototypeData);
     
     if (!saved) {
-      return { success: false, error: '保存原型失败', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.savePrototypeFailed'), tool_call_id: toolCallId };
     }
     
     console.log('[Background] UI 原型已保存，ID:', newPrototypeId);
@@ -2984,7 +3063,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     };
   } catch (err) {
     console.error('[Background] 执行 UI 原型预览失败:', err);
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.executionFailed', { error: err.message }), tool_call_id: toolCallId };
   }
 }
 
@@ -3007,7 +3086,7 @@ export function clearSkillLoadCache() {
 
 async function executeAgentSkill(args, toolCallId) {
   const { action, name, params = {} } = args;
-  if (!name) return { success: false, error: '缺少 name 参数', tool_call_id: toolCallId };
+  if (!name) return { success: false, error: t('toolExec.missingNameParam'), tool_call_id: toolCallId };
 
   // action=run: 执行 Workflow Skill
   if (action === 'run') {
@@ -3023,9 +3102,9 @@ async function executeAgentSkill(args, toolCallId) {
           tool_call_id: toolCallId
         };
       }
-      return { success: false, error: result.error || 'Skill 执行失败', tool_call_id: toolCallId };
+      return { success: false, error: result.error || t('toolExec.skillExecFailed'), tool_call_id: toolCallId };
     } catch (err) {
-      return { success: false, error: `Skill 执行异常: ${err.message}`, tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.skillExecException', { error: err.message }), tool_call_id: toolCallId };
     }
   }
 
@@ -3053,9 +3132,9 @@ async function executeAgentSkill(args, toolCallId) {
         tool_call_id: toolCallId
       };
     }
-    return { success: false, error: result.error || 'Skill 加载失败', tool_call_id: toolCallId };
+    return { success: false, error: result.error || t('toolExec.skillLoadFailed'), tool_call_id: toolCallId };
   } catch (err) {
-    return { success: false, error: `Skill 加载异常: ${err.message}`, tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.skillLoadException', { error: err.message }), tool_call_id: toolCallId };
   }
 }
 
@@ -3064,7 +3143,7 @@ async function executeAgentSkill(args, toolCallId) {
  */
 async function executeAgentReadFile(args, toolCallId) {
   const { path } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
   const result = await AgentClient.readFile(path);
   if (result.success) {
@@ -3149,7 +3228,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
       chrome.tabs.onUpdated.addListener(listener);
     });
   } catch (err) {
-    return { success: false, error: '执行失败: ' + err.message, tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.executionFailed', { error: err.message }), tool_call_id: toolCallId };
   }
 }
 
@@ -3160,7 +3239,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
  */
 async function executeAgentWriteFile(args, toolCallId) {
   const { path, content } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   if (content === undefined || content === null) return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
   
   const result = await AgentClient.writeFile(path, content);
@@ -3195,7 +3274,7 @@ async function executeAgentListDir(args, toolCallId) {
  */
 async function executeAgentDeleteFile(args, toolCallId) {
   const { path } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
   const result = await AgentClient.deleteFile(path);
   if (result.success) {
@@ -3262,7 +3341,7 @@ async function executeAgentRestoreTrash(args, toolCallId) {
  */
 async function executeAgentDownloadFile(args, toolCallId) {
   const { path } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
 
   const result = await AgentClient.downloadFile(path);
   if (!result.success) {
@@ -3770,7 +3849,7 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
  */
 async function executeAgentSearchFiles(args, toolCallId) {
   const { path, pattern, recursive, maxResults } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
   const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
   if (result.success) {
@@ -3792,7 +3871,7 @@ async function executeAgentSearchFiles(args, toolCallId) {
  */
 async function executeAgentSearchContent(args, toolCallId) {
   const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines } = args;
-  if (!path) return { success: false, error: '缺少 path 参数', tool_call_id: toolCallId };
+  if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
 
   const result = await AgentClient.searchContent(

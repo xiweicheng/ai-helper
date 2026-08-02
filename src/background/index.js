@@ -14,8 +14,35 @@ import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
 
 // 背景脚本自注册翻译
-registerTranslations('zh', { bg: { missingSessionId: '缺少 sessionId' } });
-registerTranslations('en', { bg: { missingSessionId: 'Missing sessionId' } });
+registerTranslations('zh', { 
+  bg: { 
+    missingSessionId: '缺少 sessionId',
+    resumingFromCheckpoint: '从 checkpoint 恢复中...',
+    checkpointNotFound: '未找到可恢复的任务 checkpoint，可能已过期或被清理。请检查 Service Worker 控制台中的诊断日志（搜索 "checkpoint" 关键字）。',
+    resumeFailed: '恢复失败',
+    missingSkillName: '缺少技能名称',
+    fetchFailed: '获取失败',
+    preparing: '准备中...',
+    toolPreselect: '工具预筛选',
+    requestCancelled: '请求已被用户取消',
+    reactCancelled: 'ReAct 循环已被用户取消',
+    apiCallFailed: 'API 调用失败',
+  } 
+});
+registerTranslations('en', { 
+  bg: { 
+    missingSessionId: 'Missing sessionId',
+    resumingFromCheckpoint: 'Resuming from checkpoint...',
+    checkpointNotFound: 'No checkpoint found for resumption. It may have expired or been cleaned. Check Service Worker console logs (search "checkpoint").',
+    resumeFailed: 'Resume failed',
+    missingSkillName: 'Missing skill name',
+    fetchFailed: 'Fetch failed',
+    preparing: 'Preparing...',
+    toolPreselect: 'Tool Pre-filter',
+    requestCancelled: 'Request was cancelled by user',
+    reactCancelled: 'ReAct loop was cancelled by user',
+  } 
+});
 
 // 初始化国际化（读取语言偏好，供 local-agent-client 设置 Accept-Language 头）
 initI18n();
@@ -275,7 +302,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // 立即发送初始状态
       const initialStatus = {
         type: 'EXECUTION_STATUS_UPDATE',
-        nodeName: '从 checkpoint 恢复中...',
+        nodeName: t('bg.resumingFromCheckpoint'),
         status: 'processing',
         executionLog: [],
         sessionId,
@@ -301,7 +328,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             type: 'API_ERROR',
             sessionId,
             callId: resumeCallId,
-            error: '未找到可恢复的任务 checkpoint，可能已过期或被清理。请检查 Service Worker 控制台中的诊断日志（搜索 "checkpoint" 关键字）。',
+            error: t('bg.checkpointNotFound'),
             executionLog: [],
             resumed: true,
           }).catch(() => {});
@@ -326,7 +353,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
+        const isAborted = error.name === 'AbortError' || error.message === t('bg.requestCancelled') || error.message === t('bg.reactCancelled');
         logger.debug('[Background] RESUME_REACT 失败:', isAborted ? '(用户取消)' : error.message);
         const errLog = error.executionLog || [];
         const truncatedErrLog = errLog.length > MAX_LOG_ENTRIES_FOR_MSG ? errLog.slice(-MAX_LOG_ENTRIES_FOR_MSG) : errLog;
@@ -334,7 +361,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: 'API_ERROR',
           sessionId,
           callId: resumeCallId,
-          error: error.message || '恢复失败',
+          error: error.message || t('bg.resumeFailed'),
           executionLog: truncatedErrLog,
           resumed: true,
         }).catch(() => {});
@@ -442,7 +469,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 获取单个 Agent Skill 的完整 Prompt 内容（供 side_panel 选择技能后直接注入用户消息）
     const name = message.name;
     if (!name) {
-      sendResponse({ success: false, error: '缺少技能名称' });
+      sendResponse({ success: false, error: t('bg.missingSkillName') });
       return true;
     }
     AgentClient.getAgentSkillPrompt(name).then(result => {
@@ -459,7 +486,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (result?.success) {
         sendResponse({ success: true, skills: result.skills || [] });
       } else {
-        sendResponse({ success: false, skills: [], error: result?.error || '获取失败' });
+        sendResponse({ success: false, skills: [], error: result?.error || t('bg.fetchFailed') });
       }
     }).catch(err => {
       sendResponse({ success: false, skills: [], error: err.message });
@@ -532,7 +559,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 立即发送初始状态更新，避免用户在工具预筛选等前置步骤期间看不到任何反馈
     const initialStatus = {
       type: 'EXECUTION_STATUS_UPDATE',
-      nodeName: '准备中...',
+      nodeName: t('bg.preparing'),
       status: 'processing',
       executionLog: []
     };
@@ -579,7 +606,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (preselection.executionLog.length > 0) {
             const statusUpdate = {
               type: 'EXECUTION_STATUS_UPDATE',
-              nodeName: '工具预筛选',
+              nodeName: t('bg.toolPreselect'),
               status: 'success',
               executionLog: preselection.executionLog
             };
@@ -668,7 +695,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch(error => {
-        const isAborted = error.name === 'AbortError' || error.message === '请求已被用户取消' || error.message === 'ReAct 循环已被用户取消';
+        const isAborted = error.name === 'AbortError' || error.message === t('bg.requestCancelled') || error.message === t('bg.reactCancelled');
         if (isAborted) {
           logger.debug('[Background] API 调用已被用户取消');
         } else {
@@ -683,7 +710,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           type: 'API_ERROR',
           sessionId: sessionId,
           callId: callId,
-          error: error.message || 'API 调用失败',
+          error: error.message || t('bg.apiCallFailed'),
           executionLog: truncatedErrLog
         }).catch(err => {
           logger.warn('[Background] 发送错误消息失败:', err);
@@ -836,7 +863,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (tabId) {
           chrome.tabs.sendMessage(tabId, {
             type: 'SELECTION_TOOLBAR_RESULT',
-            error: error.message || 'API 调用失败'
+            error: error.message || t('bg.apiCallFailed')
           }, { frameId }).catch(() => {});
         }
       }

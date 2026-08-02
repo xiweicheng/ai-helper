@@ -4134,9 +4134,11 @@ export function updateWorkspacePanelVisibility(connected) {
 }
 
 async function closePanelInternal(force = false) {
-  // 先尝试关闭预览；若用户取消（编辑中有未保存修改且非强制关闭），则保持面板打开
-  const closed = await closePreview(force);
-  if (closed === false) return;
+  // 强制关闭时才销毁预览（如 Agent 断开连接），普通切换面板时保留预览状态
+  if (force) {
+    const closed = await closePreview(true);
+    if (closed === false) return;
+  }
   const panel = document.getElementById('workspacePanel');
   const container = document.getElementById('workspacePanelContainer');
   if (panel) panel.classList.remove('expanded');

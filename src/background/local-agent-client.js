@@ -1,5 +1,29 @@
 import logger from '../shared/logger.js';
-import { getLanguage } from '../shared/i18n.js';
+import { getLanguage, t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 agentClient 命名空间翻译
+registerTranslations('zh', {
+  agentClient: {
+    pairingFailed: '配对失败',
+    cannotConnectAgent: '无法连接到 Agent: {error}',
+    agentNotPaired: 'Agent 未配对，请先在设置中完成配对',
+    proxyNotConnected: '代理服务未连接，请确认代理服务已启动',
+    requestTimeout: '请求超时 ({timeout}ms)',
+    agentRequestFailed: 'Agent 请求失败: {error}',
+    agentNotPairedShort: 'Agent 未配对',
+  },
+});
+registerTranslations('en', {
+  agentClient: {
+    pairingFailed: 'Pairing failed',
+    cannotConnectAgent: 'Cannot connect to Agent: {error}',
+    agentNotPaired: 'Agent not paired, please complete pairing in settings first',
+    proxyNotConnected: 'Proxy service not connected, please confirm the proxy service is running',
+    requestTimeout: 'Request timeout ({timeout}ms)',
+    agentRequestFailed: 'Agent request failed: {error}',
+    agentNotPairedShort: 'Agent not paired',
+  },
+});
 
 // background/local-agent-client.js - 代理通信客户端
 // 封装与代理服务的 HTTP 和 WebSocket 通信
@@ -287,9 +311,9 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
       logger.debug('[AgentClient] 配对成功:', name);
       return { success: true, token: data.token, agentId: id, name };
     }
-    return { success: false, error: data.error || '配对失败' };
+    return { success: false, error: data.error || t('agentClient.pairingFailed') };
   } catch (err) {
-    return { success: false, error: `无法连接到 Agent: ${err.message}` };
+    return { success: false, error: t('agentClient.cannotConnectAgent', { error: err.message }) };
   }
 }
 
@@ -363,12 +387,12 @@ async function toggleAgentDisabled(agentId, disabled) {
 async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000) {
   const config = await getAgentConfig();
   if (!config.connected) {
-    return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+    return { success: false, error: t('agentClient.agentNotPaired') };
   }
 
   // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
   if (config.agentId && _agentReachability.get(config.agentId) === false) {
-    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+    return { success: false, error: t('agentClient.proxyNotConnected') };
   }
 
   const controller = new AbortController();
@@ -396,9 +420,9 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      return { success: false, error: `请求超时 (${timeoutMs}ms)` };
+      return { success: false, error: t('agentClient.requestTimeout', { timeout: timeoutMs }) };
     }
-    return { success: false, error: `Agent 请求失败: ${err.message}` };
+    return { success: false, error: t('agentClient.agentRequestFailed', { error: err.message }) };
   }
 }
 
@@ -410,12 +434,12 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
 async function agentGet(path, timeoutMs = 30000) {
   const config = await getAgentConfig();
   if (!config.connected) {
-    return { success: false, error: 'Agent 未配对' };
+    return { success: false, error: t('agentClient.agentNotPairedShort') };
   }
 
   // 代理服务已知不可达时，直接返回错误，避免阻塞等待超时
   if (config.agentId && _agentReachability.get(config.agentId) === false) {
-    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+    return { success: false, error: t('agentClient.proxyNotConnected') };
   }
 
   const controller = new AbortController();
@@ -435,9 +459,9 @@ async function agentGet(path, timeoutMs = 30000) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      return { success: false, error: `请求超时 (${timeoutMs}ms)` };
+      return { success: false, error: t('agentClient.requestTimeout', { timeout: timeoutMs }) };
     }
-    return { success: false, error: `Agent 请求失败: ${err.message}` };
+    return { success: false, error: t('agentClient.agentRequestFailed', { error: err.message }) };
   }
 }
 
@@ -457,10 +481,10 @@ async function writeFile(filePath, content) {
 async function uploadFile(file) {
   const config = await getAgentConfig();
   if (!config.connected) {
-    return { success: false, error: 'Agent 未配对，请先在设置中完成配对' };
+    return { success: false, error: t('agentClient.agentNotPaired') };
   }
   if (config.agentId && _agentReachability.get(config.agentId) === false) {
-    return { success: false, error: '代理服务未连接，请确认代理服务已启动' };
+    return { success: false, error: t('agentClient.proxyNotConnected') };
   }
 
   const formData = new FormData();
@@ -561,13 +585,13 @@ async function stopCommand(execId) {
 async function getAgentStatus() {
   const config = await getAgentConfig();
   if (!config.connected) {
-    return { success: false, error: 'Agent 未配对' };
+    return { success: false, error: t('agentClient.agentNotPairedShort') };
   }
   try {
     const response = await fetch(`${config.url}/api/status`, { cache: 'no-cache', headers: { 'Accept-Language': getLanguage() } });
     return await response.json();
   } catch (err) {
-    return { success: false, error: `无法连接到 Agent: ${err.message}` };
+    return { success: false, error: t('agentClient.cannotConnectAgent', { error: err.message }) };
   }
 }
 

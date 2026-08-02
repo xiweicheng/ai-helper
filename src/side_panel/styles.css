@@ -8961,7 +8961,7 @@ body {
   right: 0;
   top: calc(50% - 80px);
   transform: translateY(-50%);
-  z-index: 999;
+  z-index: 10001;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   width: 280px;
   background: rgba(0, 0, 0, 0.001);
@@ -9352,7 +9352,7 @@ body {
   right: 0;
   top: calc(50% + 80px);
   transform: translateY(-50%);
-  z-index: 1000;
+  z-index: 10002;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   width: 280px;
   background: transparent;
@@ -9677,7 +9677,7 @@ body {
   position: fixed;
   right: 0;
   top: 150px;
-  z-index: 998;
+  z-index: 10000;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   width: 28px;
   background: transparent;

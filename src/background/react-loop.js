@@ -29,6 +29,7 @@ registerTranslations('zh', {
     subtaskNode: '子任务 {index}: {name}',
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
+    userCancelled: '用户取消',
   },
 });
 
@@ -769,7 +770,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   try {
     while (iteration < maxIterations) {
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+        throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
       }
       
       // 检查超时（使用动态调整后的超时时间）
@@ -1006,11 +1007,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               messageCount: filteredMessages.length,
               toolCount: apiTools.length
             },
-            error: isAborted ? '用户取消' : error.message
+            error: isAborted ? t('reactLoop.userCancelled') : error.message
           };
         }
         
-        throw createErrorWithLog(isAborted ? '请求已被用户取消' : error.message, executionLog);
+        throw createErrorWithLog(isAborted ? t('bg.requestCancelled') : error.message, executionLog);
       }
       
       // 更新成功的 API 调用日志
@@ -1100,7 +1101,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         async function executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages) {
           // 在每个工具执行前检查是否已取消
           if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-            throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+            throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
           }
           
           const toolName = toolCall.function?.name || toolCall.name;
@@ -1438,7 +1439,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 子任务执行完毕后检查是否已被取消
               if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-                throw createErrorWithLog('ReAct 循环已被用户取消', executionLog);
+                throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
               }
               
               // 将所有子任务结果添加到消息历史（作为系统消息，而非工具消息）
@@ -2011,7 +2012,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       // 每次重试前检查是否已取消（使用原始 sessionId 检查取消状态）
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
         logger.debug('[Background] 子任务重试已被用户取消');
-        throw createErrorWithLog('ReAct 循环已被用户取消', parentExecutionLog);
+        throw createErrorWithLog(t('bg.reactCancelled'), parentExecutionLog);
       }
       
       try {
