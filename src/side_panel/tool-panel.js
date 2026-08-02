@@ -10,13 +10,13 @@ let mcpToolsCache = [];
 
 /**
  * 获取工具的本地化描述
- * 内置工具走 i18n（t('tool.<id>.description')）；MCP 工具或缺失 key 时回退到原始 description
+ * 内置工具走 i18n（t('tool.<id>')）；MCP 工具或缺失 key 时回退到原始 description
  * @param {{id: string, description?: string}} tool
  * @returns {string}
  */
 export function getToolDesc(tool) {
   if (!tool) return '';
-  const key = `tool.${tool.id}.description`;
+  const key = `tool.${tool.id}`;
   const val = t(key);
   // t() 在找不到 key 时返回 key 本身，此时回退到原始 description（MCP 工具等）
   return val === key ? (tool.description || '') : val;
