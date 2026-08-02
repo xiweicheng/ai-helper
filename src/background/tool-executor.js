@@ -10,7 +10,7 @@ import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
 import { setLastOperatedTab, getLastOperatedTab } from './state.js';
 import { logger } from '../shared/logger.js';
-import { t, registerTranslations } from '../shared/i18n.js';
+import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -56,6 +56,61 @@ registerTranslations('zh', {
     skillLoadFailed: 'Skill 加载失败',
     skillLoadException: 'Skill 加载异常: {error}',
     missingPathParam: '缺少 path 参数',
+    tabNotExistOrAccessible: '标签页 {tabId} 不存在或无法访问',
+    screenshotDownloaded: '截图已下载到本地（{size} KB）',
+    screenshotSuccess: '截图成功！\n图片大小约 {size} MB\n格式: {format}\n质量: {quality}\n截图已自动下载到浏览器默认下载目录',
+    screenshotFailed: '截图失败: {error}',
+    unknownManageTabAction: '未知的 manage_tab action: {action}',
+    unknownSearchBrowserDataAction: '未知的 search_browser_data action: {action}',
+    unknownAgentTrashAction: '未知的 agent_trash action: {action}',
+    unknownManageAgentAction: '未知的 manage_agent action: {action}',
+    unknownAgentFileAction: '未知的 agent_file action: {action}',
+    unknownAgentSearchType: '未知的 agent_search searchType: {type}',
+    cannotGetSessionId: '无法获取会话ID，请指定 sessionId 参数',
+    sessionNotFound: '会话不存在: {id}',
+    noExecutionLog: '当前会话没有执行日志。',
+    bookmarkApiUnavailable: '浏览器不支持书签 API',
+    bookmarkFetchFailed: '获取书签失败: {error}',
+    noBookmarks: '浏览器中暂无书签',
+    bookmarkSearchFailed: '搜索书签失败: {error}',
+    bookmarkNoMatch: '未找到匹配的书签。提示：尝试使用具体关键词搜索',
+    historyApiUnavailable: '浏览器不支持历史 API',
+    historySearchFailed: '搜索历史失败: {error}',
+    historyNoMatch: '未找到匹配的访问记录。提示：尝试使用具体关键词搜索',
+    noChatRecords: '未找到任何对话记录。',
+    chatNoMatch: '未找到与 "{query}" 相关的对话记录。请尝试使用其他关键词搜索。',
+    chatSearchError: '搜索对话记录时出错: {error}',
+    notificationFailed: '通知创建失败: {error}',
+    notificationSent: '通知已发送',
+    tabClosed: '已关闭当前标签页',
+    tabClosedWithId: '已关闭标签页 {tabId}',
+    tabUnavailable: '标签页不可用',
+    pageLoaded: '页面已加载完成',
+    domReady: '页面 DOM 已就绪',
+    networkIdle: '网络空闲，页面加载完成',
+    missingContent: '缺少 content 参数',
+    missingTrashId: '缺少 trashId 参数，请先调用 agent_trash(action=list) 获取要恢复条目的 id',
+    missingCommand: '缺少 command 参数',
+    userCancelled: '用户取消',
+    commandCancelled: '命令已取消',
+    commandCancelledWithOutput: '命令已取消\n\n已收集的输出:\n',
+    missingPattern: '缺少 pattern 参数',
+    missingDataType: '缺少 dataType 参数',
+    missingAction: '缺少 action 参数',
+    missingText: '缺少 text 参数',
+    missingAgentId: '请提供 agentId 或 agentName 参数',
+    copiedToClipboard: '已复制到剪贴板',
+    copyFailed: '复制失败',
+    commandExecDenied: '命令执行被拒绝',
+    bookmarksCount: '浏览器中共有 {total} 个书签，显示前 {shown} 个：',
+    historyResultsCount: '找到 {count} 个匹配的访问记录：',
+    chatResultsCount: '找到 {count} 条相关对话记录：',
+    chatMessagesCount: '共 {total} 条消息，返回 {shown} 条：',
+    roleUser: '用户',
+    roleAssistant: '助手',
+    chatMessageLabel: '消息',
+    fileWritten: '文件已写入: {path} ({size} 字节)',
+    dirContent: '目录 "{path}" 包含 {count} 个项目:',
   },
 });
 registerTranslations('en', {
@@ -87,6 +142,75 @@ registerTranslations('en', {
     emptySubtasks: 'Subtask list cannot be empty',
     invalidSubtaskStructure: 'Invalid subtask structure, missing id/name/description',
     cannotGetCurrentTab: 'Cannot get current tab',
+    cannotParseTabUrl: 'Cannot parse current tab URL',
+    missingPrototypeId: 'Missing prototypeId parameter',
+    prototypeNotFound: 'Prototype not found: {id}',
+    fetchFailed: 'Fetch failed: {error}',
+    missingHtmlParam: 'Missing HTML parameter',
+    missingTitleParam: 'Missing title parameter',
+    savePrototypeFailed: 'Failed to save prototype',
+    executionFailed: 'Execution failed: {error}',
+    missingNameParam: 'Missing name parameter',
+    skillExecFailed: 'Skill execution failed',
+    skillExecException: 'Skill execution exception: {error}',
+    skillLoadFailed: 'Skill loading failed',
+    skillLoadException: 'Skill loading exception: {error}',
+    missingPathParam: 'Missing path parameter',
+    tabNotExistOrAccessible: 'Tab {tabId} does not exist or is not accessible',
+    screenshotDownloaded: 'Screenshot downloaded locally ({size} KB)',
+    screenshotSuccess: 'Screenshot successful!\nImage size approx {size} MB\nFormat: {format}\nQuality: {quality}\nScreenshot auto-downloaded to browser default download directory',
+    screenshotFailed: 'Screenshot failed: {error}',
+    unknownManageTabAction: 'Unknown manage_tab action: {action}',
+    unknownSearchBrowserDataAction: 'Unknown search_browser_data action: {action}',
+    unknownAgentTrashAction: 'Unknown agent_trash action: {action}',
+    unknownManageAgentAction: 'Unknown manage_agent action: {action}',
+    unknownAgentFileAction: 'Unknown agent_file action: {action}',
+    unknownAgentSearchType: 'Unknown agent_search searchType: {type}',
+    cannotGetSessionId: 'Cannot get session ID, please specify sessionId parameter',
+    sessionNotFound: 'Session not found: {id}',
+    noExecutionLog: 'No execution log for current session.',
+    bookmarkApiUnavailable: 'Browser does not support bookmarks API',
+    bookmarkFetchFailed: 'Failed to get bookmarks: {error}',
+    noBookmarks: 'No bookmarks in browser',
+    bookmarkSearchFailed: 'Bookmark search failed: {error}',
+    bookmarkNoMatch: 'No matching bookmarks found. Tip: try using specific keywords to search',
+    historyApiUnavailable: 'Browser does not support history API',
+    historySearchFailed: 'History search failed: {error}',
+    historyNoMatch: 'No matching visit records found. Tip: try using specific keywords to search',
+    noChatRecords: 'No chat records found.',
+    chatNoMatch: 'No chat records related to "{query}" found. Try using other keywords.',
+    chatSearchError: 'Error searching chat records: {error}',
+    notificationFailed: 'Notification creation failed: {error}',
+    notificationSent: 'Notification sent',
+    tabClosed: 'Current tab closed',
+    tabClosedWithId: 'Tab {tabId} closed',
+    tabUnavailable: 'Tab unavailable',
+    pageLoaded: 'Page loaded',
+    domReady: 'Page DOM ready',
+    networkIdle: 'Network idle, page loaded',
+    missingContent: 'Missing content parameter',
+    missingTrashId: 'Missing trashId parameter, please call agent_trash(action=list) first to get the item id to restore',
+    missingCommand: 'Missing command parameter',
+    userCancelled: 'User cancelled',
+    commandCancelled: 'Command cancelled',
+    commandCancelledWithOutput: 'Command cancelled\n\nCollected output:\n',
+    missingPattern: 'Missing pattern parameter',
+    missingDataType: 'Missing dataType parameter',
+    missingAction: 'Missing action parameter',
+    missingText: 'Missing text parameter',
+    missingAgentId: 'Please provide agentId or agentName parameter',
+    copiedToClipboard: 'Copied to clipboard',
+    copyFailed: 'Copy failed',
+    commandExecDenied: 'Command execution denied',
+    bookmarksCount: 'Total {total} bookmarks in browser, showing first {shown}:',
+    historyResultsCount: 'Found {count} matching visit records:',
+    chatResultsCount: 'Found {count} relevant chat records:',
+    chatMessagesCount: 'Total {total} messages, returning {shown}:',
+    roleUser: 'User',
+    roleAssistant: 'Assistant',
+    chatMessageLabel: 'Message',
+    fileWritten: 'File written: {path} ({size} bytes)',
+    dirContent: 'Directory "{path}" contains {count} items:',
   },
 });
 
@@ -632,7 +756,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
         await chrome.tabs.update(targetTabId, { active: true });
         await new Promise(r => setTimeout(r, 300));
       } catch {
-        return makeResult(false, `标签页 ${tabId} 不存在或无法访问`, { tool_call_id: toolCallId });
+        return makeResult(false, t('toolExec.tabNotExistOrAccessible', { tabId }), { tool_call_id: toolCallId });
       }
     } else {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -687,7 +811,7 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
 
       if (needDownload) {
         // both 模式：下载 + 分析
-        return makeResult(true, `截图已下载到本地（${sizeKB} KB）。\n\n${visionResult}`, { tool_call_id: toolCallId });
+        return makeResult(true, `${t('toolExec.screenshotDownloaded', { size: sizeKB })}。\n\n${visionResult}`, { tool_call_id: toolCallId });
       }
       return makeResult(true, visionResult, { tool_call_id: toolCallId });
     }
@@ -695,9 +819,9 @@ export async function executeCapturePage(args, toolCallId, sessionId = null) {
     // 纯 download 模式
     const imageSizeMB = (dataUrl.length / 1024 / 1024).toFixed(2);
     const fmt = format === 'png' ? 'png' : 'jpg';
-    return makeResult(true, `截图成功！\n图片大小约 ${imageSizeMB} MB\n格式: ${fmt}\n质量: ${quality}\n截图已自动下载到浏览器默认下载目录`, { tool_call_id: toolCallId });
+    return makeResult(true, t('toolExec.screenshotSuccess', { size: imageSizeMB, format: fmt, quality }), { tool_call_id: toolCallId });
   } catch (err) {
-    return makeResult(false, `截图失败: ${err.message}`, { tool_call_id: toolCallId });
+    return makeResult(false, t('toolExec.screenshotFailed', { error: err.message }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1185,7 +1309,7 @@ async function executeManageTab(args, toolCallId, sessionId) {
     case 'close': return executeCloseTab(args, toolCallId);
     case 'reload': return executeReloadTab(args, toolCallId);
     case 'navigate': return executeNavigateBackForward(args, toolCallId);
-    default: return makeResult(false, `未知的 manage_tab action: ${action}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownManageTabAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1194,7 +1318,7 @@ async function executeSearchBrowserData(args, toolCallId) {
   switch (action) {
     case 'bookmark': return executeSearchBookmarks(args, toolCallId);
     case 'history': return executeSearchHistory(args, toolCallId);
-    default: return makeResult(false, `未知的 search_browser_data action: ${action}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownSearchBrowserDataAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1203,7 +1327,7 @@ async function executeAgentTrash(args, toolCallId) {
   switch (action) {
     case 'list': return executeAgentListTrash(args, toolCallId);
     case 'restore': return executeAgentRestoreTrash(args, toolCallId);
-    default: return makeResult(false, `未知的 agent_trash action: ${action}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownAgentTrashAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1212,7 +1336,7 @@ async function executeManageAiAgent(args, toolCallId) {
   switch (action) {
     case 'list': return executeAgentList(args, toolCallId);
     case 'switch': return executeAgentSwitch(args, toolCallId);
-    default: return makeResult(false, `未知的 manage_agent action: ${action}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownManageAgentAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1224,7 +1348,7 @@ async function executeAgentFile(args, toolCallId) {
     case 'list': return executeAgentListDir(args, toolCallId);
     case 'delete': return executeAgentDeleteFile(args, toolCallId);
     case 'download': return executeAgentDownloadFile(args, toolCallId);
-    default: return makeResult(false, `未知的 agent_file action: ${action}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownAgentFileAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1233,7 +1357,7 @@ async function executeAgentSearch(args, toolCallId) {
   switch (searchType) {
     case 'file': return executeAgentSearchFiles(args, toolCallId);
     case 'content': return executeAgentSearchContent(args, toolCallId);
-    default: return makeResult(false, `未知的 agent_search searchType: ${searchType}`, { tool_call_id: toolCallId });
+    default: return makeResult(false, t('toolExec.unknownAgentSearchType', { type: searchType }), { tool_call_id: toolCallId });
   }
 }
 
@@ -1246,12 +1370,12 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 
   const sid = sessionId || currentSessionId || await getActiveSessionId();
   if (!sid) {
-    return makeResult(false, '无法获取会话ID，请指定 sessionId 参数', { tool_call_id: toolCallId });
+    return makeResult(false, t('toolExec.cannotGetSessionId'), { tool_call_id: toolCallId });
   }
 
   const session = await getSession(sid);
   if (!session) {
-    return makeResult(false, `会话不存在: ${sid}`, { tool_call_id: toolCallId });
+    return makeResult(false, t('toolExec.sessionNotFound', { id: sid }), { tool_call_id: toolCallId });
   }
 
   const messageHistory = session.messageHistory || [];
@@ -1262,7 +1386,7 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
     .filter(({ msg }) => msg.role === 'assistant' && Array.isArray(msg.executionLog) && msg.executionLog.length > 0);
 
   if (roundsWithLog.length === 0) {
-    return makeResult(true, '当前会话没有执行日志。', { tool_call_id: toolCallId });
+    return makeResult(true, t('toolExec.noExecutionLog'), { tool_call_id: toolCallId });
   }
 
   // 根据 scope 过滤目标轮次
@@ -1574,7 +1698,7 @@ export function executeSearchBookmarks(args, toolCallId) {
   return new Promise((resolve) => {
     if (!chrome.bookmarks) {
       console.error('[Background] chrome.bookmarks API 不可用');
-      resolve(makeResult(false, '浏览器不支持书签 API'));
+      resolve(makeResult(false, t('toolExec.bookmarkApiUnavailable')));
       return;
     }
     
@@ -1586,7 +1710,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         
         if (chrome.runtime.lastError) {
           console.error('[Background] chrome.bookmarks.getTree 错误:', chrome.runtime.lastError.message);
-          resolve(makeResult(false, '获取书签失败: ' + chrome.runtime.lastError.message));
+          resolve(makeResult(false, t('toolExec.bookmarkFetchFailed', { error: chrome.runtime.lastError.message })));
           return;
         }
         
@@ -1608,7 +1732,7 @@ export function executeSearchBookmarks(args, toolCallId) {
         console.log('[Background] 收集到的书签总数:', allBookmarks.length);
         
         if (allBookmarks.length === 0) {
-          resolve(makeResult(true, '浏览器中暂无书签'));
+          resolve(makeResult(true, t('toolExec.noBookmarks')));
           return;
         }
         
@@ -1619,10 +1743,10 @@ export function executeSearchBookmarks(args, toolCallId) {
         const formattedResults = limitedResults.map(bookmark => ({
           title: bookmark.title || t('toolExec.noTitle'),
           url: bookmark.url || '',
-          dateAdded: bookmark.dateAdded ? new Date(bookmark.dateAdded).toLocaleString('zh-CN') : null
+          dateAdded: bookmark.dateAdded ? new Date(bookmark.dateAdded).toLocaleString(getLanguage() === 'en' ? 'en-US' : 'zh-CN') : null
         }));
         
-        const resultText = `浏览器中共有 ${allBookmarks.length} 个书签，显示前 ${formattedResults.length} 个：\n` +
+        const resultText = `${t('toolExec.bookmarksCount', { total: allBookmarks.length, shown: formattedResults.length })}\n` +
           formattedResults.map((b, i) => `${i+1}. ${b.title}\n   URL: ${b.url}`).join('\n\n');
         
         console.log('[Background] 书签搜索成功，返回结果:', formattedResults.length);
@@ -1638,13 +1762,13 @@ export function executeSearchBookmarks(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.bookmarks.search 错误:', chrome.runtime.lastError.message);
-        resolve(makeResult(false, '搜索书签失败: ' + chrome.runtime.lastError.message));
+        resolve(makeResult(false, t('toolExec.bookmarkSearchFailed', { error: chrome.runtime.lastError.message })));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的书签');
-        resolve(makeResult(true, '未找到匹配的书签。提示：尝试使用具体关键词搜索'));
+        resolve(makeResult(true, t('toolExec.bookmarkNoMatch')));
         return;
       }
       
@@ -1681,7 +1805,7 @@ export function executeSearchHistory(args, toolCallId) {
   return new Promise((resolve) => {
     if (!chrome.history) {
       console.error('[Background] chrome.history API 不可用');
-      resolve(makeResult(false, '浏览器不支持历史 API'));
+      resolve(makeResult(false, t('toolExec.historyApiUnavailable')));
       return;
     }
     
@@ -1703,13 +1827,13 @@ export function executeSearchHistory(args, toolCallId) {
       
       if (chrome.runtime.lastError) {
         console.error('[Background] chrome.history.search 错误:', chrome.runtime.lastError.message);
-        resolve(makeResult(false, '搜索历史失败: ' + chrome.runtime.lastError.message));
+        resolve(makeResult(false, t('toolExec.historySearchFailed', { error: chrome.runtime.lastError.message })));
         return;
       }
       
       if (!results || results.length === 0) {
         console.log('[Background] 未找到匹配的访问记录');
-        resolve(makeResult(true, '未找到匹配的访问记录。提示：尝试使用具体关键词搜索'));
+        resolve(makeResult(true, t('toolExec.historyNoMatch')));
         return;
       }
       
@@ -1717,11 +1841,11 @@ export function executeSearchHistory(args, toolCallId) {
       const formattedResults = results.map(history => ({
         title: history.title || '(无标题)',
         url: history.url,
-        lastVisitTime: history.lastVisitTime ? new Date(history.lastVisitTime).toLocaleString('zh-CN') : null,
+        lastVisitTime: history.lastVisitTime ? new Date(history.lastVisitTime).toLocaleString(getLanguage() === 'en' ? 'en-US' : 'zh-CN') : null,
         visitCount: history.visitCount || 0
       }));
       
-      const resultText = `找到 ${results.length} 个匹配的访问记录：\n` +
+      const resultText = `${t('toolExec.historyResultsCount', { count: results.length })}\n` +
         formattedResults.map((h, i) => `${i+1}. ${h.title}\n   URL: ${h.url}\n   最后访问: ${h.lastVisitTime}\n   访问次数: ${h.visitCount}`).join('\n\n');
       
       console.log('[Background] 历史记录搜索成功，返回结果:', formattedResults.length);
@@ -1776,19 +1900,19 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
     }
 
     if (allMessages.length === 0) {
-      return makeResult(true, '未找到任何对话记录。');
+      return makeResult(true, t('toolExec.noChatRecords'));
     }
 
     // query 为空时，直接返回全部消息（按原顺序），不评分过滤
     if (!query) {
       const allResult = allMessages.slice(0, maxResults);
       const resultText =
-        `共 ${allMessages.length} 条消息，返回 ${allResult.length} 条：\n\n` +
+        `${t('toolExec.chatMessagesCount', { total: allMessages.length, shown: allResult.length })}\n\n` +
         allResult
           .map((m, i) => {
             const text = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join('') : '');
             const contentPreview = text.length > 500 ? text.substring(0, 500) + '...' : text;
-            return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息\n${contentPreview}`;
+            return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? t('toolExec.roleUser') : t('toolExec.roleAssistant')}${t('toolExec.chatMessageLabel')}\n${contentPreview}`;
           })
           .join('\n\n---\n\n');
       return makeResult(true, resultText);
@@ -1832,18 +1956,18 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
       .slice(0, maxResults);
 
     if (relevant.length === 0) {
-      return makeResult(true, `未找到与 "${args.query}" 相关的对话记录。请尝试使用其他关键词搜索。`);
+      return makeResult(true, t('toolExec.chatNoMatch', { query: args.query }));
     }
 
     // 格式化结果
     const resultText =
-      `找到 ${relevant.length} 条相关对话记录：\n\n` +
+      `${t('toolExec.chatResultsCount', { count: relevant.length })}\n\n` +
       relevant
         .map((m, i) => {
           const text = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join('') : '');
           const contentPreview =
             text.length > 500 ? text.substring(0, 500) + '...' : text;
-          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? '用户' : '助手'}消息 (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
+          return `### ${i + 1}. [${m.session}] ${m.role === 'user' ? t('toolExec.roleUser') : t('toolExec.roleAssistant')}${t('toolExec.chatMessageLabel')} (相关度: ${m.score.toFixed(1)})\n${contentPreview}`;
         })
         .join('\n\n---\n\n');
 
@@ -1851,7 +1975,7 @@ async function executeSearchConversationMemory(args, toolCallId, sessionId = nul
     return makeResult(true, resultText);
   } catch (err) {
     console.error('[Background] 对话记忆搜索失败:', err);
-    return makeResult(false, `搜索对话记录时出错: ${err.message}`);
+    return makeResult(false, t('toolExec.chatSearchError', { error: err.message }));
   }
 }
 
@@ -2039,7 +2163,7 @@ export function executeShowNotification(args, toolCallId) {
     chrome.notifications.create(notificationOptions, (notificationId) => {
       if (chrome.runtime.lastError) {
         console.error('[Background] 创建通知失败:', chrome.runtime.lastError.message);
-        resolve(makeResult(false, '通知创建失败: ' + chrome.runtime.lastError.message));
+        resolve(makeResult(false, t('toolExec.notificationFailed', { error: chrome.runtime.lastError.message })));
         return;
       }
       
@@ -2053,7 +2177,7 @@ export function executeShowNotification(args, toolCallId) {
         });
       }
       
-      resolve(makeResult(true, '通知已发送'));
+      resolve(makeResult(true, t('toolExec.notificationSent')));
     });
   });
 }
@@ -2470,7 +2594,7 @@ export function executeCloseTab(args, toolCallId) {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message });
             } else {
-              resolve({ success: true, message: '已关闭当前标签页' });
+              resolve({ success: true, message: t('toolExec.tabClosed') });
             }
           });
         } else {
@@ -2482,7 +2606,7 @@ export function executeCloseTab(args, toolCallId) {
         if (chrome.runtime.lastError) {
           resolve({ success: false, error: chrome.runtime.lastError.message });
         } else {
-          resolve({ success: true, message: `已关闭标签页 ${tabId}` });
+          resolve({ success: true, message: t('toolExec.tabClosedWithId', { tabId }) });
         }
       });
     }
@@ -3164,7 +3288,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
   try {
     const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
     const tabId = argsTabId || lastOperatedTab || await getActiveTabId();
-    if (!tabId) return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+    if (!tabId) return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
 
     console.log('[Background] 等待页面导航完成: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
 
@@ -3183,17 +3307,17 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
       chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError || !tab) {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: false, error: '标签页不可用', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve({ success: false, error: t('toolExec.tabUnavailable'), tool_call_id: toolCallId }); }
           return;
         }
         if (tab.status === 'complete' && waitUntil === 'load') {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面已加载完成', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: t('toolExec.pageLoaded'), tool_call_id: toolCallId }); }
           return;
         }
         if (tab.status === 'complete' && waitUntil === 'domcontentloaded') {
           clearTimeout(timeoutId);
-          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: '页面 DOM 已就绪', tool_call_id: toolCallId }); }
+          if (!resolved) { resolved = true; resolve({ success: true, status: 'complete', url: tab.url, message: t('toolExec.domReady'), tool_call_id: toolCallId }); }
           return;
         }
       });
@@ -3210,7 +3334,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
                 resolved = true;
                 clearTimeout(timeoutId);
                 chrome.tabs.onUpdated.removeListener(listener);
-                resolve({ success: true, status: 'complete', url: tab.url, message: '网络空闲，页面加载完成', tool_call_id: toolCallId });
+                resolve({ success: true, status: 'complete', url: tab.url, message: t('toolExec.networkIdle'), tool_call_id: toolCallId });
               }
             }, 500);
           }
@@ -3240,12 +3364,12 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
 async function executeAgentWriteFile(args, toolCallId) {
   const { path, content } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
-  if (content === undefined || content === null) return { success: false, error: '缺少 content 参数', tool_call_id: toolCallId };
+  if (content === undefined || content === null) return { success: false, error: t('toolExec.missingContent'), tool_call_id: toolCallId };
   
   const result = await AgentClient.writeFile(path, content);
   if (result.success) {
     appendAuditLog('file_write', `写入文件: ${result.path}`, { path: result.path, size: result.size });
-    return { success: true, message: `文件已写入: ${result.path} (${result.size} 字节)`, path: result.path, size: result.size, tool_call_id: toolCallId };
+    return { success: true, message: t('toolExec.fileWritten', { path: result.path, size: result.size }), path: result.path, size: result.size, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }
@@ -3260,7 +3384,7 @@ async function executeAgentListDir(args, toolCallId) {
   if (result.success) {
     const files = result.entries?.filter(e => e.type === 'file') || [];
     const dirs = result.entries?.filter(e => e.type === 'directory') || [];
-    const text = `目录 "${result.path}" 包含 ${result.entries?.length || 0} 个项目:\n` +
+    const text = `${t('toolExec.dirContent', { path: result.path, count: result.entries?.length || 0 })}\n` +
       `  📁 ${dirs.length} 个目录\n` +
       `  📄 ${files.length} 个文件\n\n` +
       (result.entries || []).map(e => `  ${e.type === 'directory' ? '📁' : '📄'} ${e.name}${e.type === 'file' ? ` (${e.size} 字节)` : ''}`).join('\n');
@@ -3325,7 +3449,7 @@ async function executeAgentListTrash(args, toolCallId) {
  */
 async function executeAgentRestoreTrash(args, toolCallId) {
   const { trashId } = args;
-  if (!trashId) return { success: false, error: '缺少 trashId 参数，请先调用 agent_trash(action=list) 获取要恢复条目的 id', tool_call_id: toolCallId };
+  if (!trashId) return { success: false, error: t('toolExec.missingTrashId'), tool_call_id: toolCallId };
 
   const result = await AgentClient.restoreTrash(trashId);
   if (result.success) {
@@ -3421,7 +3545,7 @@ async function executeWithCancel(sessionId, toolCallId, taskPromise) {
  */
 async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const { command, cwd, force, timeoutMs } = args;
-  if (!command) return { success: false, error: '缺少 command 参数', tool_call_id: toolCallId };
+  if (!command) return { success: false, error: t('toolExec.missingCommand'), tool_call_id: toolCallId };
 
   const config = await getStoredConfig();
   const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
@@ -3711,7 +3835,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       const isCancelled = cancelledSessions.has(sessionId);
       if (isCancelled) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        appendAuditLog('command_exec', `命令执行取消: ${command}`, { command, cwd, exitCode: -1, error: '用户取消' });
+        appendAuditLog('command_exec', `命令执行取消: ${command}`, { command, cwd, exitCode: -1, error: t('toolExec.userCancelled') });
         return {
           success: false,
           level: 'allow',
@@ -3720,9 +3844,9 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           stdout: stdoutCollected,
           stderr: stderrCollected,
           killed: true,
-          content: `命令已取消\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
-          message: `命令已取消\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
-          error: '用户取消'
+          content: `${t('toolExec.commandCancelledWithOutput')}${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
+          message: `${t('toolExec.commandCancelledWithOutput')}${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
+          error: t('toolExec.userCancelled')
         };
       }
       if (errorMessage.includes('超时') || errorMessage.includes('中断') || stopped) {
@@ -3746,7 +3870,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
         AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
       );
       if (result.cancelled) {
-        return { success: false, content: '命令已取消', error: '用户取消', tool_call_id: toolCallId };
+        return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
       }
       return formatAgentExecResult(result.value, command, cwd, toolCallId);
     }
@@ -3794,7 +3918,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
   );
   if (result.cancelled) {
-    return { success: false, content: '命令已取消', error: '用户取消', tool_call_id: toolCallId };
+    return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
   }
   return formatAgentExecResult(result.value, command, cwd, toolCallId);
 }
@@ -3805,7 +3929,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
 function formatAgentExecResult(result, command, cwd, toolCallId) {
   // 黑名单拦截
   if (result.level === 'deny') {
-    return { success: false, error: result.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+    return { success: false, error: result.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
   }
 
   // 网络/认证错误
@@ -3872,7 +3996,7 @@ async function executeAgentSearchFiles(args, toolCallId) {
 async function executeAgentSearchContent(args, toolCallId) {
   const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
-  if (!pattern) return { success: false, error: '缺少 pattern 参数', tool_call_id: toolCallId };
+  if (!pattern) return { success: false, error: t('toolExec.missingPattern'), tool_call_id: toolCallId };
 
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
@@ -3950,7 +4074,7 @@ async function executeGetPageContent(args, toolCallId, sessionId, _sessionTabId)
     const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
     const targetTabId = argsTabId || lastOperatedTab || await getActiveTabId();
     if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
     }
     const message = { type: messageType, selector, maxLength };
     return await sendToContentScriptWithRetry(targetTabId, message, toolCallId);
@@ -3978,7 +4102,7 @@ async function executeExtractData(args, toolCallId, sessionId, _sessionTabId) {
   } = args;
 
   if (!dataType) {
-    return { success: false, error: '缺少 dataType 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingDataType'), tool_call_id: toolCallId };
   }
 
   const messageTypeMap = {
@@ -3999,7 +4123,7 @@ async function executeExtractData(args, toolCallId, sessionId, _sessionTabId) {
     const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
     const targetTabId = argsTabId || lastOperatedTab || await getActiveTabId();
     if (!targetTabId) {
-      return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+      return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
     }
 
     const message = { type: messageType, selector, filterType, includeHeaders, format, includeImages, minWidth, minHeight, maxResults };
@@ -4017,7 +4141,7 @@ async function executeClipboard(args, toolCallId) {
   const { action, text, format = 'text' } = args;
 
   if (!action) {
-    return { success: false, error: '缺少 action 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingAction'), tool_call_id: toolCallId };
   }
 
   if (action === 'copy') {
@@ -4032,7 +4156,7 @@ async function executeClipboard(args, toolCallId) {
     try {
       const tabId = await getActiveTabId();
       if (!tabId) {
-        return { success: false, error: '没有可用的标签页', tool_call_id: toolCallId };
+        return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
       }
       return await sendToContentScriptWithRetry(tabId, { type: 'GET_SELECTED_CONTENT', format }, toolCallId);
     } catch (e) {
@@ -4046,7 +4170,7 @@ async function executeClipboard(args, toolCallId) {
 export async function executeCopyToClipboard(args, toolCallId) {
   const { text } = args;
   if (text === undefined || text === null) {
-    return { success: false, error: '缺少 text 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingText'), tool_call_id: toolCallId };
   }
 
   try {
@@ -4056,9 +4180,9 @@ export async function executeCopyToClipboard(args, toolCallId) {
       text: text
     });
     if (response?.success) {
-      return { success: true, message: response.message || '已复制到剪贴板', tool_call_id: toolCallId };
+      return { success: true, message: response.message || t('toolExec.copiedToClipboard'), tool_call_id: toolCallId };
     } else {
-      return { success: false, error: response?.error || '复制失败', tool_call_id: toolCallId };
+      return { success: false, error: response?.error || t('toolExec.copyFailed'), tool_call_id: toolCallId };
     }
   } catch (e) {
     return { success: false, error: e.message, tool_call_id: toolCallId };
@@ -4185,7 +4309,7 @@ async function executeAgentSwitch(args, toolCallId) {
   const { agentId, agentName } = args;
   
   if (!agentId && !agentName) {
-    return { success: false, error: '请提供 agentId 或 agentName 参数', tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.missingAgentId'), tool_call_id: toolCallId };
   }
   
   try {

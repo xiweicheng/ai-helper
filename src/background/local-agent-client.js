@@ -11,6 +11,9 @@ registerTranslations('zh', {
     requestTimeout: '请求超时 ({timeout}ms)',
     agentRequestFailed: 'Agent 请求失败: {error}',
     agentNotPairedShort: 'Agent 未配对',
+    uploadTimeout: '文件上传超时 (60s)',
+    uploadFailed: '文件上传失败: {error}',
+    skillPromptFailed: '获取技能提示词失败',
   },
 });
 registerTranslations('en', {
@@ -22,6 +25,9 @@ registerTranslations('en', {
     requestTimeout: 'Request timeout ({timeout}ms)',
     agentRequestFailed: 'Agent request failed: {error}',
     agentNotPairedShort: 'Agent not paired',
+    uploadTimeout: 'File upload timeout (60s)',
+    uploadFailed: 'File upload failed: {error}',
+    skillPromptFailed: 'Failed to get skill prompt',
   },
 });
 
@@ -508,9 +514,9 @@ async function uploadFile(file) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      return { success: false, error: '文件上传超时 (60s)' };
+      return { success: false, error: t('agentClient.uploadTimeout') };
     }
-    return { success: false, error: `文件上传失败: ${err.message}` };
+    return { success: false, error: t('agentClient.uploadFailed', { error: err.message }) };
   }
 }
 
@@ -616,12 +622,12 @@ async function getAgentDetail() {
 async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTimeoutMs) {
   const config = await getAgentConfig();
   if (!config.connected) {
-    if (onError) onError(new Error('Agent 未配对'));
+    if (onError) onError(new Error(t('agentClient.agentNotPairedShort')));
     return null;
   }
 
   if (config.agentId && _agentReachability.get(config.agentId) === false) {
-    if (onError) onError(new Error('代理服务未连接，请确认代理服务已启动'));
+    if (onError) onError(new Error(t('agentClient.proxyNotConnected')));
     return null;
   }
 
@@ -866,7 +872,7 @@ async function getAgentSkillPromptsFiltered(skillNames) {
       .join('\n\n');
     return { success: true, prompts };
   } catch {
-    return { success: false, prompts: '', error: '获取技能提示词失败' };
+    return { success: false, prompts: '', error: t('agentClient.skillPromptFailed') };
   }
 }
 

@@ -5,6 +5,28 @@
 import * as idb from './db.js';
 import state from '../side_panel/state.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  session: {
+    newSession: '新会话',
+    importedSession: '导入的会话',
+    unnamedSession: '未命名会话',
+    restoredSession: '恢复的会话',
+    forkSuffix: '分叉',
+    sourceNotFound: '源会话不存在',
+  },
+});
+registerTranslations('en', {
+  session: {
+    newSession: 'New session',
+    importedSession: 'Imported session',
+    unnamedSession: 'Unnamed session',
+    restoredSession: 'Restored session',
+    forkSuffix: 'Fork',
+    sourceNotFound: 'Source session not found',
+  },
+});
 
 // 会话删除时需要同步清理对应的 ReAct checkpoint
 async function cleanupCheckpointForSession(sessionId) {
@@ -160,7 +182,7 @@ export async function createSession() {
   const sessionId = generateSessionId();
   const newSession = {
     id: sessionId,
-    title: '新会话',
+    title: t('session.newSession'),
     model: state.currentModel,
     useTools: state.useTools,
     enabledTools: [...state.enabledTools],
@@ -194,7 +216,7 @@ export async function importSessions(sessionsData) {
     const sessionId = generateSessionId();
     const newSession = {
       id: sessionId,
-      title: sessionData.title || '导入的会话',
+      title: sessionData.title || t('session.importedSession'),
       model: sessionData.model || state.currentModel,
       useTools: sessionData.useTools !== undefined ? sessionData.useTools : true,
       enabledTools: sessionData.enabledTools || [...state.enabledTools],
@@ -448,7 +470,7 @@ export async function archiveCurrentSession() {
   const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
   const title = firstUserMsg
     ? getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ')
-    : currentSession.title || '未命名会话';
+    : currentSession.title || t('session.unnamedSession');
 
   const archivedId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 
@@ -498,7 +520,7 @@ export async function restoreArchivedSession(archivedId) {
   const sessionId = generateSessionId();
   const newSession = {
     id: sessionId,
-    title: archived.title || '恢复的会话',
+    title: archived.title || t('session.restoredSession'),
     model: state.currentModel,
     useTools: state.useTools,
     enabledTools: [...state.enabledTools],
@@ -537,7 +559,7 @@ export async function duplicateSession(sourceSessionId, upToMessageId = null) {
   await init();
 
   const source = await idb.getSession(sourceSessionId);
-  if (!source) throw new Error('源会话不存在');
+  if (!source) throw new Error(t('session.sourceNotFound'));
 
   const newSessionId = generateSessionId();
   const now = new Date().toISOString();
@@ -565,7 +587,7 @@ export async function duplicateSession(sourceSessionId, upToMessageId = null) {
   const newSession = {
     ...source,
     id: newSessionId,
-    title: `${source.title || '新会话'} - 分叉`,
+    title: `${source.title || t('session.newSession')} - ${t('session.forkSuffix')}`,
     messageHistory: clonedMessages,
     // 重置运行时状态
     isGenerating: false,
