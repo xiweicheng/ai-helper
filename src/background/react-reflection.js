@@ -101,66 +101,66 @@ export function buildReflectionPrompt(messages, answer, executionLog, round = 1)
   const userMessages = messages.filter(m => m.role === 'user');
   const userQuestion = userMessages.length > 0
     ? extractTextFromContent(userMessages[userMessages.length - 1].content)
-    : '未知';
+    : 'unknown';
 
   // 构建详细执行摘要
   const apiCalls = executionLog.filter(e => e.nodeType === 'api_call').length;
   const toolEntries = executionLog.filter(e => e.nodeType === 'tool_exec');
   const toolDetails = toolEntries.map(e => {
     const params = e.action?.params || {};
-    const paramsStr = Object.keys(params).length > 0 ? `参数: ${JSON.stringify(params)}` : '';
-    const obs = e.observation ? `结果摘要: ${String(e.observation).substring(0, 200)}` : '';
+    const paramsStr = Object.keys(params).length > 0 ? `params: ${JSON.stringify(params)}` : '';
+    const obs = e.observation ? `result summary: ${String(e.observation).substring(0, 200)}` : '';
     const status = e.status === 'success' ? '✅' : '❌';
     return `  ${status} ${e.action?.name || e.nodeName} ${paramsStr} ${obs}`.trim();
   }).join('\n');
 
   const toolSummary = toolEntries.length > 0
     ? toolEntries.map(e => `${e.action?.name || e.nodeName} (${e.status})`).join(', ')
-    : '无';
+    : 'none';
 
   const planTasks = executionLog.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'plan_task');
   const subtaskInfo = planTasks.length > 0
-    ? `，已拆解 ${planTasks[0].subtaskCount || 0} 个子任务`
+    ? `, ${planTasks[0].subtaskCount || 0} subtasks decomposed`
     : '';
 
   const toolReflectionEntries = executionLog.filter(e => e.nodeType === 'reflection' && e.reflectionType === 'tool');
   const toolReflectionSummary = toolReflectionEntries.length > 0
     ? toolReflectionEntries.map(e => {
-        const useful = e.useful ? '✅有用' : '⚠️无效';
-        return `  ${useful} - ${e.nodeName}: ${e.reasoning || ''} ${e.suggestion ? `(建议: ${e.suggestion})` : ''}`;
+        const useful = e.useful ? '✅useful' : '⚠️invalid';
+        return `  ${useful} - ${e.nodeName}: ${e.reasoning || ''} ${e.suggestion ? `(suggestion: ${e.suggestion})` : ''}`;
       }).join('\n')
-    : '无';
+    : 'none';
 
-  const summary = `API 调用 ${apiCalls} 次${subtaskInfo}。`;
+  const summary = `API calls: ${apiCalls}${subtaskInfo}.`;
 
   // 截断答案
   const truncatedAnswer = answer.length > 3000 ? answer.substring(0, 3000) + '...' : answer;
 
-  return `请严格评估以下 AI 助手对用户问题的回答质量${round > 1 ? `（这是第 ${round} 轮评估，上一轮的修订答案见下方"最终回答"）` : ''}。
+  return `Please strictly evaluate the quality of the following AI assistant's answer to the user's question${round > 1 ? ` (this is round ${round} of evaluation; the revised answer from the previous round is shown in "Final Answer" below)` : ''}.
 
-## 用户问题
+## User Question
 ${userQuestion}
 
-## 执行过程概览
+## Execution Overview
 ${summary}
 
-## 工具执行详情（包含参数和结果摘要）
-${toolDetails || '无工具调用'}
+## Tool Execution Details (including parameters and result summaries)
+${toolDetails || 'No tool calls'}
 
-## 工具反思记录（反思节点）
+## Tool Reflection Records (reflection nodes)
 ${toolReflectionSummary}
 
-## AI 助手的最终回答
+## AI Assistant's Final Answer
 ${truncatedAnswer}
 
-## 评估维度（每项 1-10 分）
-1. completeness（完整性）：是否完全回答了用户的问题，有无遗漏？
-2. accuracy（准确性）：信息是否准确可靠，有无幻觉或错误？
-3. relevance（相关性）：回答是否紧贴用户需求，有没有跑题？
-4. toolUsage（工具使用）：工具选择是否合适，参数是否合理？参考上述工具执行详情判断。
-5. efficiency（效率）：是否有不必要的步骤或重复操作？
+## Evaluation Dimensions (each scored 1-10)
+1. completeness: Does it fully answer the user's question without omissions?
+2. accuracy: Is the information accurate and reliable, without hallucinations or errors?
+3. relevance: Does the answer stay closely aligned with the user's needs without going off-topic?
+4. toolUsage: Are tool selections appropriate and parameters reasonable? Judge based on the tool execution details above.
+5. efficiency: Are there unnecessary steps or repetitive operations?
 
-请以严格的 JSON 格式输出（不要包含 markdown 代码块标记）：
+Please output in strict JSON format (do not include markdown code block markers):
 {
   "overallScore": 8,
   "dimensions": {
@@ -170,9 +170,9 @@ ${truncatedAnswer}
     "toolUsage": 8,
     "efficiency": 8
   },
-  "issues": ["具体问题1", "具体问题2"],
-  "suggestions": ["具体改进建议1", "具体改进建议2"],
-  "refinedAnswer": "如果回答有明显缺陷，输出修订后的完整回答（必须完整，不能只输出修改部分）；否则设为 null"
+  "issues": ["specific issue 1", "specific issue 2"],
+  "suggestions": ["specific improvement suggestion 1", "specific improvement suggestion 2"],
+  "refinedAnswer": "If the answer has obvious flaws, output the complete revised answer (must be complete, not just the modified parts); otherwise set to null"
 }`;
 }
 
@@ -275,7 +275,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
         body: JSON.stringify({
           model: reflectionModel,
           messages: [
-            { role: 'system', content: '你是严格的质量评估者。请以 JSON 格式输出评估结果，不要包含 markdown 代码块标记。' },
+            { role: 'system', content: 'You are a strict quality evaluator. Output the evaluation result in JSON format; do not include markdown code block markers.' },
             { role: 'user', content: prompt }
           ],
           stream: false,
@@ -435,21 +435,21 @@ export async function reflectOnToolResult(toolName, toolResultStr, toolCallParam
   ).length;
   if (reflectionCountInIteration >= tc.maxPerIteration) return null;
 
-  const prompt = `你正在执行一个浏览器自动化任务。刚才调用了工具 "${toolName}"，参数为 ${JSON.stringify(toolCallParams)}。
+  const prompt = `You are executing a browser automation task. The tool "${toolName}" was just called with parameters ${JSON.stringify(toolCallParams)}.
 
-工具返回结果（已截断）：
+Tool returned result (truncated):
 ${toolResultStr.substring(0, 2000)}
 
-请快速判断这个工具结果对完成任务是否有帮助。
+Please quickly assess whether this tool result is helpful for completing the task.
 
-以 JSON 格式输出（不要包含 markdown 代码块）：
+Output in JSON format (do not include markdown code blocks):
 {
   "useful": true,
-  "reasoning": "简要理由（20字以内）",
+  "reasoning": "brief reason (within 20 characters)",
   "suggestion": null
 }
 
-如果结果无帮助，设置 useful 为 false 并给出建议。`;
+If the result is not helpful, set useful to false and provide a suggestion.`;
 
   try {
     const apiUrl = `${config.apiBase}/chat/completions`;
@@ -462,7 +462,7 @@ ${toolResultStr.substring(0, 2000)}
       body: JSON.stringify({
         model: model || config.modelName,
         messages: [
-          { role: 'system', content: '你是一个工具执行结果评估者。只输出 JSON。' },
+          { role: 'system', content: 'You are a tool execution result evaluator. Output only JSON.' },
           { role: 'user', content: prompt }
         ],
         stream: false,
@@ -524,34 +524,34 @@ export async function reflectOnSubtask(messages, result, executionLog, model, co
   // 构建评估维度
   const dimensions = subtaskReflectConfig.dimensions || ['completeness', 'relevance'];
   const dimensionsDesc = {
-    completeness: '任务是否完整完成',
-    relevance: '结果是否与任务目标相关',
-    accuracy: '结果是否准确无误',
-    efficiency: '执行过程是否高效'
+    completeness: 'whether the task is fully completed',
+    relevance: 'whether the result is relevant to the task goal',
+    accuracy: 'whether the result is accurate without errors',
+    efficiency: 'whether the execution process is efficient'
   };
 
   const dimensionPrompts = dimensions.map(d => `- ${d}: ${dimensionsDesc[d] || d}`).join('\n');
 
-  const prompt = `你正在评估一个子任务的执行结果。
+  const prompt = `You are evaluating the execution result of a subtask.
 
-子任务名称：${subtaskName}
+Subtask name: ${subtaskName}
 
-执行结果：
-${result.substring(0, 2000)}${result.length > 2000 ? '...(已截断)' : ''}
+Execution result:
+${result.substring(0, 2000)}${result.length > 2000 ? '...(truncated)' : ''}
 
-请按以下维度评估（每项 1-10 分）：
+Please evaluate along the following dimensions (each scored 1-10):
 ${dimensionPrompts}
 
-以 JSON 格式输出评估结果（不要包含 markdown 代码块）：
+Output the evaluation result in JSON format (do not include markdown code blocks):
 {
   "overallScore": 8,
   "dimensions": {
     "completeness": 9,
     "relevance": 8
   },
-  "issues": ["发现的问题1", "发现的问题2"],
-  "suggestions": ["改进建议1"],
-  "refinedAnswer": null  // 如果需要修订，在此提供修订后的答案
+  "issues": ["discovered issue 1", "discovered issue 2"],
+  "suggestions": ["improvement suggestion 1"],
+  "refinedAnswer": null  // if revision is needed, provide the revised answer here
 }`;
 
   try {
@@ -567,7 +567,7 @@ ${dimensionPrompts}
       body: JSON.stringify({
         model: reflectionModel,
         messages: [
-          { role: 'system', content: '你是一个严格的质量评估者。请以 JSON 格式输出评估结果，不要包含 markdown 代码块标记。' },
+          { role: 'system', content: 'You are a strict quality evaluator. Output the evaluation result in JSON format; do not include markdown code block markers.' },
           { role: 'user', content: prompt }
         ],
         stream: false,

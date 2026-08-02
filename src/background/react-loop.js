@@ -9,6 +9,7 @@ import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 import { summarizeRound } from './context-summarizer.js';
 // 反思机制相关函数已拆分到 react-reflection.js
 import {
@@ -25,13 +26,13 @@ export const activeReactLoops = new Set();
 // 已获得"当前任务放行"的会话集合，后续敏感操作自动通过
 const loopApprovedSessions = new Set();
 
-// 敏感操作中文显示名映射
-const TOOL_DISPLAY_NAMES = {
-  manage_cookies: '管理 Cookie',
-  clear_data: '清除页面数据',
-  download_file: '下载文件',
-  manage_tab: '标签页管理',
-  agent_file: '文件操作',
+// 敏感操作显示名映射（i18n）
+const TOOL_DISPLAY_NAME_KEYS = {
+  manage_cookies: 'sensitiveTool.manage_cookies',
+  clear_data: 'sensitiveTool.clear_data',
+  download_file: 'sensitiveTool.download_file',
+  manage_tab: 'sensitiveTool.manage_tab',
+  agent_file: 'sensitiveTool.agent_file',
 };
 
 /**
@@ -39,7 +40,8 @@ const TOOL_DISPLAY_NAMES = {
  * 发送消息到 Side Panel 显示确认对话框，等待用户响应
  */
 async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
-  const toolLabel = TOOL_DISPLAY_NAMES[toolName] || toolName;
+  const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
+  const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
   const confirmTimeout = 300000; // 5分钟确认超时
   
   logger.debug(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
@@ -49,9 +51,9 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   if (toolName === 'manage_tab' && toolArgs.action === 'close' && toolArgs.tabId !== undefined) {
     try {
       const tab = await chrome.tabs.get(parseInt(toolArgs.tabId, 10));
-      extraMessage = `\n\n标签页标题: ${tab.title || '无标题'}\n标签页 URL: ${tab.url || '未知'}`;
+      extraMessage = t('sensitiveTool.tabInfo', { title: tab.title || t('sensitiveTool.untitled'), url: tab.url || t('sensitiveTool.unknownUrl') });
     } catch (e) {
-      extraMessage = `\n\n（无法获取标签页信息: ${e.message}）`;
+      extraMessage = t('sensitiveTool.tabInfoError', { error: e.message });
     }
   }
   
@@ -88,7 +90,7 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
         toolCallId: toolName,
         sessionId,
         timeout: confirmTimeout,
-        message: extraMessage ? `模型请求执行操作: ${toolLabel}${extraMessage}` : undefined
+        message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined
       }
     }).catch(err => {
       logger.debug('[Background] 发送确认对话框消息失败:', err.message);
@@ -273,7 +275,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
   if (userGuidance && userGuidance.trim()) {
     const guidanceMsg = {
       role: 'user',
-      content: `[任务恢复提示] 任务此前在执行过程中被中断，现在从断点继续。\n\n用户追加说明：${userGuidance.trim()}\n\n请基于之前已完成的工具调用结果，结合上述说明继续完成任务。不要重复已完成的步骤。`,
+      content: `[Task Resume Notice] The task was previously interrupted during execution and is now resuming from the checkpoint.\n\nAdditional user instructions: ${userGuidance.trim()}\n\nPlease continue completing the task based on the previous tool call results, taking the above instructions into account. Do not repeat already completed steps.`,
     };
     restoredMessages.push(guidanceMsg);
     logger.debug('[Background] 已注入用户追加描述，消息总数:', restoredMessages.length);
@@ -281,7 +283,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     // 即使没有用户描述，也注入一个系统级提示，告知模型任务是被恢复的
     const resumeHintMsg = {
       role: 'user',
-      content: `[任务恢复提示] 任务此前在执行过程中被中断，现在从断点继续。请基于之前已完成的工具调用结果继续完成任务，不要重复已完成的步骤。`,
+      content: `[Task Resume Notice] The task was previously interrupted during execution and is now resuming from the checkpoint. Please continue completing the task based on the previous tool call results. Do not repeat already completed steps.`,
     };
     restoredMessages.push(resumeHintMsg);
     logger.debug('[Background] 已注入默认恢复提示，消息总数:', restoredMessages.length);
@@ -434,14 +436,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
 
       // 注入累积摘要（在用户问题之后）
-      const roundNum = (summarizedAccumulator?.match(/第\d+轮/g)?.length || 0) + 1;
-      summarizedAccumulator = (summarizedAccumulator || '') + `第${roundNum}轮：${summary}\n`;
+      const roundNum = (summarizedAccumulator?.match(/Round \d+:/g)?.length || 0) + 1;
+      summarizedAccumulator = (summarizedAccumulator || '') + `Round ${roundNum}: ${summary}\n`;
 
       // 查找用户问题位置，摘要插入其后
       const userMsgIdx = rest.findIndex(m => m.role === 'user');
       const summaryMsg = {
         role: 'user',
-        content: `[历史摘要] 以下为之前步骤的摘要：\n${summarizedAccumulator.trim()}`,
+        content: `[History Summary] The following is a summary of previous steps:\n${summarizedAccumulator.trim()}`,
         _isSummary: true
       };
 
@@ -1124,14 +1126,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
                 currentMessages.push({
                   role: 'tool',
-                  content: '用户拒绝了此操作',
+                  content: 'The user declined this operation.',
                   tool_call_id: toolCallId
                 });
                 await trimMessages();
                 return {
                   toolCall,
-                  result: { success: false, content: '用户拒绝了此操作', error: 'user_denied' },
-                  toolResultStr: '用户拒绝了此操作',
+                  result: { success: false, content: 'The user declined this operation.', error: 'user_denied' },
+                  toolResultStr: 'The user declined this operation.',
                   toolLogEntry: {
                     id: toolLogId,
                     iteration,
@@ -1320,7 +1322,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 先添加 plan_task 工具的响应消息（必须先响应工具调用）
               const planTaskContent = JSON.stringify({
                 success: true,
-                message: `任务规划完成，已拆解为 ${subtaskPlan.subtasks.length} 个子任务`,
+                message: `Task planning complete. Decomposed into ${subtaskPlan.subtasks.length} subtasks.`,
                 data: subtaskPlan
               });
               currentMessages.push({
@@ -1365,7 +1367,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   // 为被跳过的工具添加 tool 消息，满足 API 的 tool_calls 配对要求
                   currentMessages.push({
                     role: 'tool',
-                    content: JSON.stringify({ success: false, message: '已跳过：plan_task 已拆分子任务，本轮其他工具调用不再执行' }),
+                    content: JSON.stringify({ success: false, message: 'Skipped: plan_task has decomposed subtasks; other tool calls in this round will not be executed.' }),
                     tool_call_id: skippedId
                   });
                   // 补发 STREAM_TOOL_RESULT 让前端卡片从"执行中"变为"已跳过"
@@ -1406,12 +1408,12 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 const truncated = estimateTokens(resultStr) > SUBTASK_RESULT_MAX_TOKENS
                   ? truncateByTokens(resultStr, SUBTASK_RESULT_MAX_TOKENS)
                   : resultStr;
-                return `子任务 ${idx + 1}: ${result.subtaskName}\n结果: ${truncated}`;
+                return `Subtask ${idx + 1}: ${result.subtaskName}\nResult: ${truncated}`;
               }).join('\n\n');
               
               currentMessages.push({
                 role: 'system',
-                content: `以下是拆解后子任务的执行结果，请进行总结：\n\n${subtaskSummary}`
+                content: `The following are the execution results of the decomposed subtasks. Please summarize them:\n\n${subtaskSummary}`
               });
               await trimMessages();
               
@@ -1490,7 +1492,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 避免后续 API 调用出现 400 "insufficient tool messages following tool_calls"
             const toolErrorContent = JSON.stringify({
               success: false,
-              error: toolError.message || '工具执行异常'
+              error: toolError.message || 'Tool execution error'
             });
             currentMessages.push({
               role: 'tool',
@@ -1590,7 +1592,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               
               // 将反思建议附加到工具结果消息中
               if (!toolReflection.useful && toolReflection.suggestion) {
-                const note = `\n\n【反思提醒】工具"${ref.toolName}"的返回结果被评估为无帮助（${toolReflection.reasoning}）。建议：${toolReflection.suggestion}。请在后续步骤中考虑调整策略。`;
+                const note = `\n\n[Reflection Notice] The result returned by tool "${ref.toolName}" was assessed as unhelpful (${toolReflection.reasoning}). Suggestion: ${toolReflection.suggestion}. Please consider adjusting your strategy in subsequent steps.`;
                 // 查找并更新对应的工具消息
                 for (let j = currentMessages.length - 1; j >= 0; j--) {
                   if (currentMessages[j].role === 'tool' && currentMessages[j].tool_call_id === ref.toolCallId) {
@@ -1728,7 +1730,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 使用 role: 'user' 而非 'system'，避免插入中间的 system 消息破坏 filterApiMessages 的 assistant/tool 配对检测
             const warnMsg = {
               role: 'user',
-              content: `【系统提示】你已经连续${repeatedCallCount}次调用了完全相同的工具、参数，并且得到了完全相同的结果，这表明当前策略无法取得进展。请立即更换其他策略或工具，不要继续重复此操作。如果当前工具无法获取所需数据，请尝试其他替代方案，或基于已有信息直接给出结论。`
+              content: `[System Notice] You have called the exact same tool with the same parameters ${repeatedCallCount} times in a row and received identical results, which indicates the current strategy is making no progress. Please switch to a different strategy or tool immediately and do not repeat this operation. If the current tool cannot obtain the required data, try alternative approaches, or directly provide a conclusion based on the information already available.`
             };
             currentMessages.push(warnMsg);
             logger.debug('[Background] 注入死循环警告消息');
@@ -1978,7 +1980,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         const subtaskMessages = [
           {
             role: 'system',
-            content: `你正在执行一个子任务。请专注完成此任务，不要询问用户。\n\n任务背景：${taskDescription}\n\n当前子任务：${subtask.description}\n\n你可以使用所有可用的工具来完成任务，根据实际情况自行选择合适的工具。`
+            content: `You are executing a subtask. Focus on completing this task and do not ask the user any questions.\n\nTask context: ${taskDescription}\n\nCurrent subtask: ${subtask.description}\n\nYou may use all available tools to complete the task. Choose the appropriate tools based on the actual situation.`
           },
           {
             role: 'user',

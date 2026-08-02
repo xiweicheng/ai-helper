@@ -112,17 +112,17 @@ export async function summarizeRound(roundMessages, config, model, options = {})
     );
     const resultStr = toolMsg
       ? (typeof toolMsg.content === 'string' ? toolMsg.content : JSON.stringify(toolMsg.content))
-      : '(无返回)';
+      : '(no return)';
     const resultSnippet = resultStr.substring(0, TOOL_RESULT_MAX_CHARS);
 
-    return `工具: ${name}${argsStr ? ` (${argsStr})` : ''}\n结果: ${resultSnippet}`;
+    return `Tool: ${name}${argsStr ? ` (${argsStr})` : ''}\nResult: ${resultSnippet}`;
   });
 
-  const summaryPrompt = `请用一句话概括以下工具调用的执行情况，提取关键发现：
+  const summaryPrompt = `Summarize the execution of the following tool calls in one sentence, extracting key findings:
 
 ${toolCallInfos.join('\n\n')}
 
-输出要求：用中文一句话概括本轮操作做了什么、发现了什么关键信息。不超过150字。`;
+Output requirements: Summarize in one sentence what this round of operations did and what key information was found. No more than 150 characters.`;
 
   try {
     const apiUrl = `${config.apiBase}/chat/completions`;

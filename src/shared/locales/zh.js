@@ -34,6 +34,20 @@ export default {
     approveLoop: '当前任务放行',
   },
 
+  // 敏感操作显示名
+  sensitiveTool: {
+    manage_cookies: '管理 Cookie',
+    clear_data: '清除页面数据',
+    download_file: '下载文件',
+    manage_tab: '标签页管理',
+    agent_file: '文件操作',
+    unknown: '未知操作',
+    tabInfo: '\n\n标签页标题: {title}\n标签页 URL: {url}',
+    tabInfoError: '\n\n（无法获取标签页信息: {error}）',
+    untitled: '无标题',
+    unknownUrl: '未知',
+  },
+
   // 设置页
   settings: {
     docTitle: 'AI Helper - 配置',

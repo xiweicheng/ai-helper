@@ -28,7 +28,7 @@ async function loadAgent(agentId) {
 async function buildSubAgentPrompt(agent, task) {
   let prompt = agent.systemPrompt || '';
   if (!prompt.trim()) {
-    prompt = `你是AI智能助手，请完成以下任务。`;
+    prompt = `You are an AI assistant. Please complete the following task.`;
   }
 
   // 注入 Skill Prompts（如果有绑定的技能）
@@ -51,14 +51,14 @@ async function buildSubAgentPrompt(agent, task) {
 
   return `${prompt}
 
-## 当前任务
+## Current Task
 ${task}
 
-## 注意事项
-- 你是一个子 Agent，只需完成分配给你的任务
-- 使用你可用的工具高效完成任务
-- 完成后直接返回结果，不需要额外的确认
-- 当前时间：${new Date().toLocaleString('zh-CN')}`;
+## Notes
+- You are a sub-agent; only complete the task assigned to you
+- Use your available tools to complete the task efficiently
+- Return the result directly after completion; no extra confirmation is needed
+- Current time: ${new Date().toLocaleString('zh-CN')}`;
 }
 
 /**
@@ -84,7 +84,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   if (!subAgentId || !task) {
     return {
       success: false,
-      error: '缺少参数：subAgentId/sub_agent_id 和 task 都是必填的',
+      error: 'Missing parameters: subAgentId/sub_agent_id and task are both required',
       tool_call_id: toolCallId,
     };
   }
@@ -96,7 +96,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   if (!agent) {
     return {
       success: false,
-      error: `未找到子 Agent: ${subAgentId}`,
+      error: `Sub-agent not found: ${subAgentId}`,
       tool_call_id: toolCallId,
     };
   }
@@ -153,21 +153,21 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
     // 限制返回结果长度
     const maxResultLen = 4000;
     const trimmedResult = typeof result === 'string' && result.length > maxResultLen
-      ? result.substring(0, maxResultLen) + '\n\n... (结果已截断)'
+      ? result.substring(0, maxResultLen) + '\n\n... (result truncated)'
       : result;
 
     logger.debug('[AgentDispatcher] 子 Agent 执行完成:', agent.name, '结果长度:', typeof trimmedResult === 'string' ? trimmedResult.length : 'N/A');
 
     return {
       success: true,
-      content: `## 子 Agent [${agent.name}] 执行结果\n\n${trimmedResult}`,
+      content: `## Sub-agent [${agent.name}] Execution Result\n\n${trimmedResult}`,
       tool_call_id: toolCallId,
     };
   } catch (error) {
     logger.error('[AgentDispatcher] 子 Agent 执行失败:', error);
     return {
       success: false,
-      error: `子 Agent [${agent.name}] 执行失败: ${error.message || error}`,
+      error: `Sub-agent [${agent.name}] execution failed: ${error.message || error}`,
       tool_call_id: toolCallId,
     };
   }

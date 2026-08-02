@@ -6,8 +6,8 @@
 export const BUILTIN_AGENTS = [
   {
     id: 'default',
-    name: '默认助手',
-    description: '全能 AI 助手，拥有所有工具能力',
+    name: 'Default Assistant',
+    description: 'All-purpose AI assistant with all tool capabilities',
     icon: '🤖',
     systemPrompt: null,  // null = 使用全局 systemPrompt
     toolIds: null,       // null = 使用全局 enabledTools
@@ -25,9 +25,9 @@ export const BUILTIN_AGENTS = [
  */
 export const AGENT_TEMPLATES = [
   {
-    name: '代码审查专家',
+    name: 'Code Review Expert',
     icon: '🔍',
-    description: '专注于代码审查与质量保证',
+    description: 'Focused on code review and quality assurance',
     systemPrompt: `You are a senior Code Review Expert. Your responsibilities:
 1. Review code for logical correctness, performance, and security
 2. Check code style, naming conventions, and best practices
@@ -42,9 +42,9 @@ Response principles:
     allowSubDispatch: false,
   },
   {
-    name: '网页自动化助手',
+    name: 'Web Automation Assistant',
     icon: '🌐',
-    description: '专注于网页交互和自动化操作',
+    description: 'Focused on web interaction and automation',
     systemPrompt: `You are a web automation expert. Your strengths:
 1. Automate web page interactions based on user needs (clicking, form filling, scrolling, etc.)
 2. Extract and analyze web page content
@@ -59,9 +59,9 @@ Operating principles:
     allowSubDispatch: false,
   },
   {
-    name: '数据分析师',
+    name: 'Data Analyst',
     icon: '📊',
-    description: '专注于数据提取、分析和可视化',
+    description: 'Focused on data extraction, analysis, and visualization',
     systemPrompt: `You are a data analyst. Your strengths:
 1. Extract structured data from web pages (tables, lists, JSON)
 2. Analyze and summarize data patterns
@@ -76,9 +76,9 @@ Analysis principles:
     allowSubDispatch: false,
   },
   {
-    name: '文档撰写助手',
+    name: 'Documentation Assistant',
     icon: '📝',
-    description: '专注于技术文档编写和内容组织',
+    description: 'Focused on technical documentation and content organization',
     systemPrompt: `You are a technical documentation expert. Your strengths:
 1. Write clear technical documentation (API docs, READMEs, user guides)
 2. Distill and summarize technical information

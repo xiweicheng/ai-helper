@@ -34,6 +34,20 @@ export default {
     approveLoop: 'Allow for This Task',
   },
 
+  // Sensitive tool display names
+  sensitiveTool: {
+    manage_cookies: 'Manage Cookies',
+    clear_data: 'Clear Page Data',
+    download_file: 'Download File',
+    manage_tab: 'Tab Management',
+    agent_file: 'File Operations',
+    unknown: 'Unknown Operation',
+    tabInfo: '\n\nTab title: {title}\nTab URL: {url}',
+    tabInfoError: '\n\n(Unable to get tab info: {error})',
+    untitled: 'Untitled',
+    unknownUrl: 'Unknown',
+  },
+
   // Settings page
   settings: {
     docTitle: 'AI Helper - Settings',

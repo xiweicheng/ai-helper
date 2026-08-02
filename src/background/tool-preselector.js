@@ -55,22 +55,22 @@ function buildPreselectPrompt(tools) {
   const toolList = tools.map(t => {
     const params = t.function.parameters?.properties;
     const paramNames = params ? Object.keys(params).slice(0, 3) : []; // 最多展示 3 个参数名
-    const paramInfo = paramNames.length > 0 ? ` (参数: ${paramNames.join(', ')})` : '';
+    const paramInfo = paramNames.length > 0 ? ` (params: ${paramNames.join(', ')})` : '';
     return `- ${t.function.name}${paramInfo}: ${t.function.description}`;
   }).join('\n');
 
-  return `你是智能助手。根据用户的问题，判断是否需要使用工具来完成。
+  return `You are an intelligent assistant. Based on the user's question, determine whether tools are needed to complete the task.
 
-规则：
-1. 如果问题非常简单，你可以直接回答（如问候、常识问答、简单计算等），请直接给出回答内容。
-2. 如果问题需要工具才能完成（如读取文件、搜索代码、执行命令、获取实时信息等），只输出一个 JSON 字符串数组，包含需要的工具名称。
+Rules:
+1. If the question is very simple and you can answer directly (e.g., greetings, general knowledge, simple calculations), provide the answer content directly.
+2. If the question requires tools to complete (e.g., reading files, searching code, executing commands, fetching real-time information), output only a JSON string array containing the required tool names.
 
-可用工具列表：
+Available tools:
 ${toolList}
 
-输出格式：
-- 直接回答时：直接输出回答内容
-- 需要工具时：["tool_name_1", "tool_name_2"]`;
+Output format:
+- For direct answers: output the answer content directly
+- When tools are needed: ["tool_name_1", "tool_name_2"]`;
 }
 
 /**
@@ -251,7 +251,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     const apiMessages = [
       { role: 'system', content: systemPrompt },
       ...historyContext,
-      { role: 'user', content: `用户问题：${userQuestion}` }
+      { role: 'user', content: `User question: ${userQuestion}` }
     ];
 
     const requestBody = {
