@@ -1,6 +1,6 @@
 // options/toolbar-config.js - 工具栏配置管理
 
-import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR } from './constants.js';
+import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR, getBuiltinToolName } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
 
@@ -16,11 +16,12 @@ export function loadToolbarTools() {
       const iconOnly = result.toolbarIconOnly !== undefined ? result.toolbarIconOnly : DEFAULT_TOOLBAR_ICON_ONLY;
       const enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? result.enableSelectionToolbar : DEFAULT_ENABLE_SELECTION_TOOLBAR;
       
-      // 内置工具始终使用默认的 systemPrompt 和 name（防止旧数据缺失，且名称随语言切换）
+      // 内置工具始终使用当前语言的名称和最新的 systemPrompt（防止旧数据缺失，且名称随语言切换）
       const defaultMap = new Map(DEFAULT_TOOLBAR_TOOLS.map(t => [t.id, t]));
       const tools = rawTools.map(t => {
         if (t.builtin && defaultMap.has(t.id)) {
-          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: defaultMap.get(t.id).name };
+          const i18nName = getBuiltinToolName(t.id);
+          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: i18nName || t.name };
         }
         return t;
       });
@@ -43,6 +44,8 @@ export function renderToolbarToolsList(tools) {
   
   listEl.innerHTML = sorted.map((tool, index) => {
     const isBuiltin = tool.builtin;
+    // 内置工具使用当前语言的名称，自定义工具使用存储的名称
+    const displayName = isBuiltin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
     const badge = isBuiltin
       ? `<span class="tool-badge builtin">${t('toolbar.builtinBadge')}</span>`
       : `<span class="tool-badge custom">${t('toolbar.customBadge')}</span>`;
@@ -67,7 +70,7 @@ export function renderToolbarToolsList(tools) {
           <button class="tool-order-btn" data-action="moveDown" data-index="${index}" ${isLast ? 'disabled' : ''} title="${t('toolbar.moveDown')}">▼</button>
         </div>
         <div class="tool-info">
-          <div class="tool-name">${escapeHtml(tool.name)}${badge}</div>
+          <div class="tool-name">${escapeHtml(displayName)}${badge}</div>
           ${promptPreview}
         </div>
         <div class="tool-actions">

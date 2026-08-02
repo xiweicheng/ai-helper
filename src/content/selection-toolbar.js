@@ -26,6 +26,21 @@ registerTranslations('en', {
   },
 });
 
+// 内置工具名称 i18n key 映射（用于运行时动态获取当前语言的名称）
+const BUILTIN_TOOL_NAME_KEYS = {
+  'ai-search': 'optionsConst.aiSearch',
+  'explain': 'optionsConst.explain',
+  'translate': 'optionsConst.translate',
+  'summary': 'optionsConst.summary',
+  'copy': 'optionsConst.copy',
+};
+
+/** 获取内置工具的当前语言名称 */
+function getBuiltinToolName(toolId) {
+  const key = BUILTIN_TOOL_NAME_KEYS[toolId];
+  return key ? t(key) : undefined;
+}
+
 registerTranslations('zh', {
   selToolbar: {
     settings: '设置',
@@ -244,10 +259,18 @@ const DEFAULT_TOOLS = [
   { id: 'copy',      name: t('optionsConst.copy'),      systemPrompt: '将选中内容复制到剪贴板。', builtin: true, order: 99 }
 ];
 
+/** 为 DEFAULT_TOOLS 应用当前语言的名称（用于 fallback 场景） */
+function applyI18nNames(tools) {
+  return tools.map(tool => {
+    const i18nName = getBuiltinToolName(tool.id);
+    return i18nName ? { ...tool, name: i18nName } : tool;
+  });
+}
+
 function loadToolbarTools() {
   return new Promise((resolve) => {
     if (!isExtensionValid()) {
-      toolbarTools = [...DEFAULT_TOOLS];
+      toolbarTools = applyI18nNames([...DEFAULT_TOOLS]);
       resolve(toolbarTools);
       return;
     }
@@ -261,17 +284,18 @@ function loadToolbarTools() {
           ? result.toolbarTools 
           : DEFAULT_TOOLS;
         const defaultMap = new Map(DEFAULT_TOOLS.map(t => [t.id, t]));
-        toolbarTools = rawTools.map(t => {
-          if (t.builtin && defaultMap.has(t.id)) {
-            return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: defaultMap.get(t.id).name };
+        toolbarTools = rawTools.map(tool => {
+          if (tool.builtin && defaultMap.has(tool.id)) {
+            const i18nName = getBuiltinToolName(tool.id);
+            return { ...tool, systemPrompt: defaultMap.get(tool.id).systemPrompt, name: i18nName || tool.name };
           }
-          return t;
+          return tool;
         });
         toolbarIconOnly = result.toolbarIconOnly || false;
         resolve(toolbarTools);
       });
     } catch {
-      toolbarTools = [...DEFAULT_TOOLS];
+      toolbarTools = applyI18nNames([...DEFAULT_TOOLS]);
       resolve(toolbarTools);
     }
   });
@@ -317,8 +341,9 @@ function renderOverflowDropdown(overflowTools) {
   
   let itemsHtml = overflowTools.map(tool => {
     const icon = getToolIcon(tool.id);
+    const displayName = tool.builtin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
     return `<div class="aih-dropdown-item" role="button" tabindex="0" data-action="${tool.id}">
-      <span class="aih-tb-icon">${icon}</span>${tool.name}
+      <span class="aih-tb-icon">${icon}</span>${displayName}
     </div>`;
   }).join('');
   
@@ -415,8 +440,9 @@ async function createToolbar() {
   
   visibleTools.forEach((tool) => {
     const icon = getToolIcon(tool.id);
-    buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="${tool.id}" title="${tool.name}">
-      <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : tool.name}
+    const displayName = tool.builtin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
+    buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="${tool.id}" title="${displayName}">
+      <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : displayName}
     </div>`;
   });
   
@@ -1410,7 +1436,11 @@ function sendToAI(action, text, customSystemPrompt) {
   let panelTitle = actionTitles[action];
   if (!panelTitle && toolbarTools) {
     const tool = toolbarTools.find(t => t.id === action);
-    panelTitle = tool ? tool.name : t('selToolbar.aiAnswer');
+    if (tool) {
+      panelTitle = tool.builtin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
+    } else {
+      panelTitle = t('selToolbar.aiAnswer');
+    }
   }
   const titleSpan = resultPanelEl.querySelector('.aih-result-header span');
   if (titleSpan) {

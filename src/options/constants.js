@@ -62,6 +62,25 @@ export const DEFAULT_TOOLBAR_TOOLS = [
   { id: 'copy',      name: t('optionsConst.copy'),      systemPrompt: 'Copy the selected content to the clipboard.', builtin: true, order: 99 }
 ];
 
+// 内置工具名称 i18n key 映射（用于运行时动态获取当前语言的名称）
+const BUILTIN_TOOL_NAME_KEYS = {
+  'ai-search': 'optionsConst.aiSearch',
+  'explain': 'optionsConst.explain',
+  'translate': 'optionsConst.translate',
+  'summary': 'optionsConst.summary',
+  'copy': 'optionsConst.copy',
+};
+
+/**
+ * 获取内置工具的当前语言名称（每次调用都从 i18n 字典实时查找）
+ * @param {string} toolId - 工具 ID
+ * @returns {string|undefined} 当前语言的工具名称
+ */
+export function getBuiltinToolName(toolId) {
+  const key = BUILTIN_TOOL_NAME_KEYS[toolId];
+  return key ? t(key) : undefined;
+}
+
 export const DEFAULT_TOOLBAR_MAX_VISIBLE = 5;
 export const DEFAULT_TOOLBAR_ICON_ONLY = false;
 export const DEFAULT_ENABLE_SELECTION_TOOLBAR = true;
