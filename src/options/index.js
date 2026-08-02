@@ -56,7 +56,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 初始化国际化（读取语言偏好 + 跨环境同步监听）
   await initI18n();
   applyI18n();
-  subscribe(() => applyI18n());
+  subscribe(() => {
+    applyI18n();
+    // 语言切换时重新加载并渲染工具栏列表（内置工具名称随语言变化）
+    loadToolbarTools().then((tools) => {
+      currentTools = tools;
+      renderToolbarToolsList(currentTools);
+    });
+  });
 
   // 初始化语言选择器（自定义下拉框，与其他下拉框风格一致）
   const langInput = document.getElementById('languageInput');

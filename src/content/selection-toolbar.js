@@ -3,7 +3,7 @@
 import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
 import { injectStyles } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
-import { t, registerTranslations } from '../shared/i18n.js';
+import { t, registerTranslations, subscribe } from '../shared/i18n.js';
 
 // 注册工具名称翻译（与 options/constants.js 共享 key，content script 上下文独立）
 registerTranslations('zh', {
@@ -263,7 +263,7 @@ function loadToolbarTools() {
         const defaultMap = new Map(DEFAULT_TOOLS.map(t => [t.id, t]));
         toolbarTools = rawTools.map(t => {
           if (t.builtin && defaultMap.has(t.id)) {
-            return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt };
+            return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: defaultMap.get(t.id).name };
           }
           return t;
         });
@@ -1661,6 +1661,17 @@ if (isExtensionValid()) {
     }
   });
 }
+
+// 语言切换时刷新工具栏缓存并重建 DOM（内置工具名称随语言变化）
+subscribe(() => {
+  refreshToolbarCache();
+  // 重建工具栏 DOM 以反映新语言的工具名称
+  if (toolbarEl) {
+    toolbarEl.remove();
+    toolbarEl = null;
+  }
+  createToolbar();
+});
 
 // ==================== 导出的启动/停止函数 ====================
 export function initSelectionToolbar() {

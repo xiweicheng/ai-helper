@@ -16,11 +16,11 @@ export function loadToolbarTools() {
       const iconOnly = result.toolbarIconOnly !== undefined ? result.toolbarIconOnly : DEFAULT_TOOLBAR_ICON_ONLY;
       const enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? result.enableSelectionToolbar : DEFAULT_ENABLE_SELECTION_TOOLBAR;
       
-      // 内置工具始终使用默认的 systemPrompt（防止旧数据缺失）
+      // 内置工具始终使用默认的 systemPrompt 和 name（防止旧数据缺失，且名称随语言切换）
       const defaultMap = new Map(DEFAULT_TOOLBAR_TOOLS.map(t => [t.id, t]));
       const tools = rawTools.map(t => {
         if (t.builtin && defaultMap.has(t.id)) {
-          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt };
+          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: defaultMap.get(t.id).name };
         }
         return t;
       });
