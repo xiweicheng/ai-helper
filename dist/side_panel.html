@@ -6,13 +6,13 @@
   <title>AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/chunk-CMxvf4Kt.js"></script>
-  <script type="module" crossorigin src="/assets/constants-D4R9fiWk.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-D99_DuDJ.js"></script>
   <script type="module" crossorigin src="/assets/logger-BEz2S157.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-ic_6iPgv.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-DVHsB5gV.js"></script>
+  <script type="module" crossorigin src="/assets/agent-defaults-Cqwqmvdc.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-C3sPLSny.js"></script>
   <script type="module" crossorigin src="/assets/state-Cl7p6-6Y.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-Df1Ajegg.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-BfTzffpG.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-B1l7tSFM.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-DmCa0DKg.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -24,8 +24,8 @@
     </h1>
     <div style="display: flex; align-items: center; gap: 4px;">
       <div class="agent-selector-wrapper" id="agentSelectorWrapper">
-        <button class="agent-selector-btn" id="agentSelectorBtn" title="切换 Agent">
-          <span class="agent-selector-label" id="agentSelectorText">🤖 默认助手</span>
+        <button class="agent-selector-btn" id="agentSelectorBtn" data-i18n-title="header.switchAgent" title="切换 Agent">
+          <span class="agent-selector-label" id="agentSelectorText" data-i18n="header.defaultAssistant">🤖 默认助手</span>
           <span class="agent-selector-emoji" id="agentSelectorEmoji">🤖</span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
@@ -37,44 +37,44 @@
       <div class="header-agent-wrapper" id="headerAgentWrapper">
         <button class="header-agent-trigger" id="headerAgentTrigger">
           <span class="header-agent-dot unknown" id="headerAgentDot"></span>
-          <span class="header-agent-name" id="headerAgentName">未连接</span>
+          <span class="header-agent-name" id="headerAgentName" data-i18n="header.notConnected">未连接</span>
           <svg class="header-agent-chevron" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         <div class="header-agent-dropdown" id="headerAgentDropdown" style="display:none;">
           <div class="agent-dd-copy-row" id="agentDdCopyRow">
-            <span class="agent-dd-copy-label">代理地址</span>
-            <button class="agent-dd-copy-btn" id="agentDdCopyBtn" title="复制代理地址">
+            <span class="agent-dd-copy-label" data-i18n="header.agentAddress">代理地址</span>
+            <button class="agent-dd-copy-btn" id="agentDdCopyBtn" data-i18n-title="header.copyAgentAddress" title="复制代理地址">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
-            <button class="agent-dd-copy-btn" id="agentDdRefreshBtn" title="刷新代理在线状态">
+            <button class="agent-dd-copy-btn" id="agentDdRefreshBtn" data-i18n-title="header.refreshAgentStatus" title="刷新代理在线状态">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
           </div>
           <div class="agent-dd-list" id="agentDdList"></div>
           <div class="agent-dd-footer">
             <div class="agent-dd-footer-actions">
-              <button class="agent-dd-action-btn restart" id="agentDdRestartBtn" title="重启代理服务">
+              <button class="agent-dd-action-btn restart" id="agentDdRestartBtn" data-i18n-title="header.restartAgent" title="重启代理服务">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-                重启
+                <span data-i18n="header.restart">重启</span>
               </button>
-              <button class="agent-dd-action-btn update" id="agentDdUpdateBtn" title="更新并重启代理">
+              <button class="agent-dd-action-btn update" id="agentDdUpdateBtn" data-i18n-title="header.updateAndRestart" title="更新并重启代理">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                更新
+                <span data-i18n="header.update">更新</span>
               </button>
-              <button class="agent-dd-action-btn stop" id="agentDdStopBtn" title="停止代理服务">
+              <button class="agent-dd-action-btn stop" id="agentDdStopBtn" data-i18n-title="header.stopAgent" title="停止代理服务">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                停止
+                <span data-i18n="header.stop">停止</span>
               </button>
             </div>
             <button class="agent-dd-add-btn" id="agentDdAddBtn">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              新增/编辑代理
+              <span data-i18n="header.addEditAgent">新增/编辑代理</span>
             </button>
           </div>
         </div>
       </div>
       <div class="header-more-wrapper" id="headerMoreWrapper">
-        <button class="clear-chat-btn" id="headerMoreBtn" title="更多操作">
+        <button class="clear-chat-btn" id="headerMoreBtn" data-i18n-title="header.moreActions" title="更多操作">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="5" r="1"/>
             <circle cx="12" cy="12" r="1"/>
@@ -86,19 +86,19 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
             </svg>
-            清除对话
+            <span data-i18n="header.clearChat">清除对话</span>
           </button>
           <button class="header-dropdown-item" id="exportChatBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
             </svg>
-            导出对话
+            <span data-i18n="header.exportChat">导出对话</span>
           </button>
           <button class="header-dropdown-item" id="importChatBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
             </svg>
-            导入对话
+            <span data-i18n="header.importChat">导入对话</span>
           </button>
           <button class="header-dropdown-item" id="prototypeLibraryBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -106,13 +106,13 @@
               <circle cx="8.5" cy="8.5" r="1.5"/>
               <polyline points="21 15 16 10 5 21"/>
             </svg>
-            原型页面库
+            <span data-i18n="header.prototypeLibrary">原型页面库</span>
           </button>
           <button class="header-dropdown-item" id="tokenStatsHeaderBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>
             </svg>
-            Token 统计
+            <span data-i18n="header.tokenStats">Token 统计</span>
           </button>
           <button class="header-dropdown-item" id="auditLogBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -122,14 +122,14 @@
               <line x1="16" y1="17" x2="8" y2="17"/>
               <polyline points="10 9 9 9 8 9"/>
             </svg>
-            命令执行审计
+            <span data-i18n="header.auditLog">命令执行审计</span>
           </button>
           <button class="header-dropdown-item" id="shortcutsBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="2" y="4" width="20" height="16" rx="2"/>
               <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>
             </svg>
-            查看快捷键
+            <span data-i18n="header.shortcuts">查看快捷键</span>
           </button>
         </div>
       </div>
@@ -192,86 +192,86 @@
   <!-- 工具配置弹窗 -->
   <div class="modal-overlay" id="toolsPopupOverlay">
     <div class="modal-container" style="max-width: 520px; width: 90%; height: 520px; display: flex; flex-direction: column;">
-      <button class="prompt-modal-close" id="toolsPopupClose" title="关闭">×</button>
-      <button id="toolStatsBtn" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
-      <div class="modal-title">工具配置</div>
+      <button class="prompt-modal-close" id="toolsPopupClose" data-i18n-title="common.close" title="关闭">×</button>
+      <button id="toolStatsBtn" data-i18n-title="toolStats.btnTitle" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
+      <div class="modal-title" data-i18n="toolPanel.title">工具配置</div>
       <div style="margin-bottom: 12px; position: relative;">
-        <input type="text" id="toolsSearchInput" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 36px 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
-        <button type="button" id="toolsSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 16px; cursor: pointer; display: none; padding: 4px 6px; line-height: 1; border-radius: 50%;" title="清除搜索">✕</button>
+        <input type="text" id="toolsSearchInput" data-i18n-placeholder="toolPanel.searchPlaceholder" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 36px 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
+        <button type="button" id="toolsSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 16px; cursor: pointer; display: none; padding: 4px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="toolPanel.clearSearch" title="清除搜索">✕</button>
       </div>
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
         <button type="button" class="category-btn category-all" data-category="all" style="padding: 6px 12px; border: none; border-radius: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-          全部
+          <span data-i18n="toolPanel.categoryAll">全部</span>
           <span class="category-badge" id="badge-all" style="margin-left: 4px; padding: 1px 5px; background: rgba(255,255,255,0.25); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center;">0</span>
         </button>
         <div id="toolsCategories" style="flex: 1; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: thin;">
           <div style="display: inline-flex; gap: 8px; padding: 4px 0; width: max-content;">
           <button type="button" class="category-btn" data-category="page_interaction" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🖱️ 页面交互
+            <span data-i18n="toolCategory.page_interaction">🖱️ 页面交互</span>
             <span class="category-badge" id="badge-page_interaction" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="form_operation" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            📝 表单操作
+            <span data-i18n="toolCategory.form_operation">📝 表单操作</span>
             <span class="category-badge" id="badge-form_operation" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="content_extraction" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            📄 内容提取
+            <span data-i18n="toolCategory.content_extraction">📄 内容提取</span>
             <span class="category-badge" id="badge-content_extraction" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="tab_management" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            📑 标签页管理
+            <span data-i18n="toolCategory.tab_management">📑 标签页管理</span>
             <span class="category-badge" id="badge-tab_management" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="bookmark_history" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🔖 书签历史
+            <span data-i18n="toolCategory.bookmark_history">🔖 书签历史</span>
             <span class="category-badge" id="badge-bookmark_history" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="storage_management" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            💾 存储管理
+            <span data-i18n="toolCategory.storage_management">💾 存储管理</span>
             <span class="category-badge" id="badge-storage_management" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="network_request" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🌐 网络请求
+            <span data-i18n="toolCategory.network_request">🌐 网络请求</span>
             <span class="category-badge" id="badge-network_request" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="media_output" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            📷 媒体与输出
+            <span data-i18n="toolCategory.media_output">📷 媒体与输出</span>
             <span class="category-badge" id="badge-media_output" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="debug_dev" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🔧 调试开发
+            <span data-i18n="toolCategory.debug_dev">🔧 调试开发</span>
             <span class="category-badge" id="badge-debug_dev" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="ai_collaboration" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🤖 AI协作
+            <span data-i18n="toolCategory.ai_collaboration">🤖 AI协作</span>
             <span class="category-badge" id="badge-ai_collaboration" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="local_agent" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🖥️ 代理
+            <span data-i18n="toolCategory.local_agent">🖥️ 代理</span>
             <span class="category-badge" id="badge-local_agent" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           <button type="button" class="category-btn" data-category="mcp" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
-            🔌 MCP
+            <span data-i18n="toolCategory.mcp">🔌 MCP</span>
             <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
           </div>
         </div>
       </div>
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-        <button type="button" id="toolsSelectAll" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;">全选</button>
-        <button type="button" id="toolsSelectNone" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;">取消全选</button>
+        <button type="button" id="toolsSelectAll" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.selectAll">全选</span></button>
+        <button type="button" id="toolsSelectNone" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.deselectAll">取消全选</span></button>
       </div>
       <div style="flex: 1; overflow-y: auto; margin-bottom: 16px;" id="toolsPopupList">
         <!-- 工具列表由 JS 动态生成 -->
       </div>
       <div class="modal-actions">
-        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token">
+        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" data-i18n-title="toolPanel.preselectHint" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token">
           <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
           <span class="toggle-switch"></span>
-          <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;">工具预筛选</span>
+          <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;" data-i18n="toolPanel.preselect">工具预筛选</span>
         </label>
-        <button class="modal-btn cancel" id="toolsPopupCancel">取消</button>
-        <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;">保存</button>
+        <button class="modal-btn cancel" id="toolsPopupCancel" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;" data-i18n="common.save">保存</button>
       </div>
     </div>
   </div>
@@ -279,35 +279,35 @@
   <!-- 工具使用统计子弹窗 -->
   <div class="modal-overlay" id="toolStatsOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 560px; width: 90%; height: 480px; display: flex; flex-direction: column;">
-      <button class="prompt-modal-close" id="toolStatsClose" title="关闭">×</button>
-      <button id="toolStatsRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
-      <div class="modal-title">📊 工具使用统计</div>
+      <button class="prompt-modal-close" id="toolStatsClose" data-i18n-title="common.close" title="关闭">×</button>
+      <button id="toolStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title" data-i18n="toolStats.title">📊 工具使用统计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 12px; color: #999;">各工具调用频率、成功率、平均耗时</span>
+        <span style="font-size: 12px; color: #999;" data-i18n="toolStats.subtitle">各工具调用频率、成功率、平均耗时</span>
         <div>
           <span id="toolStatsSummary" style="font-size: 12px; color: #888; margin-right: 12px;"></span>
-          <button id="toolStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+          <button id="toolStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
         </div>
       </div>
       <div style="flex: 1; overflow-y: auto;">
-        <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
+        <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
         <table id="toolStatsTable" style="display: none; width: 100%; border-collapse: collapse; font-size: 13px;">
           <thead>
             <tr style="position: sticky; top: 0; background: #f5f7fa; z-index: 1;">
-              <th id="sortByName" data-sort="name" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">已使用工具 <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortByCallCount" data-sort="callCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">调用 <span class="sort-indicator" style="font-size: 10px;">▼</span></th>
-              <th id="sortBySuccessCount" data-sort="successCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">成功 <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortBySuccessRate" data-sort="successRate" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">成功率 <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortByDuration" data-sort="duration" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;">平均耗时 <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByName" data-sort="name" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.usedTools">已使用工具</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByCallCount" data-sort="callCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.calls">调用</span> <span class="sort-indicator" style="font-size: 10px;">▼</span></th>
+              <th id="sortBySuccessCount" data-sort="successCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.success">成功</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortBySuccessRate" data-sort="successRate" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.successRate">成功率</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByDuration" data-sort="duration" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.avgDuration">平均耗时</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
             </tr>
           </thead>
           <tbody id="toolStatsTableBody"></tbody>
         </table>
         <div id="toolStatsUnusedSection" style="display: none; margin-top: 16px;">
-          <div style="font-size: 12px; font-weight: 600; color: #999; margin-bottom: 6px;">未使用工具</div>
+          <div style="font-size: 12px; font-weight: 600; color: #999; margin-bottom: 6px;" data-i18n="toolStats.unusedTools">未使用工具</div>
           <div id="toolStatsUnusedList" style="display: flex; flex-wrap: wrap; gap: 6px 4px;"></div>
         </div>
-        <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
+        <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="toolStats.noData">暂无统计数据</div>
       </div>
     </div>
   </div>
@@ -315,27 +315,27 @@
   <!-- Token 使用统计子弹窗 -->
   <div class="modal-overlay" id="tokenStatsOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 520px; width: 90%; max-height: 540px; display: flex; flex-direction: column;">
-      <button class="prompt-modal-close" id="tokenStatsClose" title="关闭">×</button>
-      <button id="tokenStatsRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
-      <div class="modal-title">🪙 Token 使用统计</div>
+      <button class="prompt-modal-close" id="tokenStatsClose" data-i18n-title="common.close" title="关闭">×</button>
+      <button id="tokenStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title" data-i18n="tokenStatsPanel.title">🪙 Token 使用统计</div>
       <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 12px; color: #999;">单次问答 ReAct 会话维度 & 总体维度</span>
-        <button id="tokenStatsClearBtn" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+        <span style="font-size: 12px; color: #999;" data-i18n="tokenStatsPanel.subtitle">单次问答 ReAct 会话维度 & 总体维度</span>
+        <button id="tokenStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
       </div>
       <div style="flex: 1; overflow-y: auto; padding-right: 12px;">
-        <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
-        <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无统计数据</div>
+        <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
+        <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="tokenStatsPanel.noData">暂无统计数据</div>
         <div id="tokenStatsContent" style="display: none;">
           <div style="margin-bottom: 14px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">当前会话</div>
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.currentSession">当前会话</div>
             <div id="tokenSessionStats"></div>
           </div>
           <div style="margin-bottom: 14px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;">全局统计</div>
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.globalStats">全局统计</div>
             <div id="tokenOverallStats"></div>
           </div>
           <div>
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;">近期调用</div>
+            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;" data-i18n="tokenStatsPanel.recentCalls">近期调用</div>
             <div id="tokenRecentCalls"></div>
           </div>
         </div>
@@ -346,11 +346,11 @@
   <!-- 自定义确认弹窗 -->
   <div class="modal-overlay" id="customConfirmOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 380px; width: 90%;">
-      <div class="modal-title" id="customConfirmTitle">确认操作</div>
+      <div class="modal-title" id="customConfirmTitle" data-i18n="customConfirm.defaultTitle">确认操作</div>
       <div class="modal-message" id="customConfirmMessage" style="color: #555; font-size: 14px; margin-bottom: 20px; line-height: 1.6;"></div>
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
-        <button id="customConfirmCancelBtn" style="padding: 8px 20px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 14px; cursor: pointer;">取消</button>
-        <button id="customConfirmOkBtn" style="padding: 8px 20px; border: none; border-radius: 6px; background: #e53e3e; color: white; font-size: 14px; cursor: pointer;">确认</button>
+        <button id="customConfirmCancelBtn" style="padding: 8px 20px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 14px; cursor: pointer;" data-i18n="common.cancel">取消</button>
+        <button id="customConfirmOkBtn" style="padding: 8px 20px; border: none; border-radius: 6px; background: #e53e3e; color: white; font-size: 14px; cursor: pointer;" data-i18n="common.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -358,66 +358,66 @@
   <div class="input-container">
     <div class="input-toolbar">
       <div class="input-toolbar-left">
-        <label class="check-toggle core-feature" for="isolateChatBtn" title="勾选后，前文问答将作为上下文（默认全部，条数可配置）">
+        <label class="check-toggle core-feature" for="isolateChatBtn" data-i18n-title="toggle.memoryHint" title="勾选后，前文问答将作为上下文（默认全部，条数可配置）">
           <input type="checkbox" id="isolateChatBtn">
           <span class="checkmark"></span>
-          <span class="tool-toggle-label">记忆</span>
+          <span class="tool-toggle-label" data-i18n="memory.label">记忆</span>
         </label>
         <label class="memory-limit-label" id="memoryLimitLabel" for="isolateChatBtn"></label>
         <div class="memory-limit-dropdown" id="memoryLimitDropdown">
           <div class="memory-limit-dropdown-title">
-            记忆历史限制
-            <span class="memory-limit-info-icon" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
+            <span data-i18n="memory.historyLimit">记忆历史限制</span>
+            <span class="memory-limit-info-icon" data-i18n-title="memory.hint" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
           </div>
           <div class="memory-limit-options" id="memoryLimitOptions">
-            <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span>不限制</div>
-            <div class="memory-limit-option" data-value="200"><span class="memory-limit-check"></span>最近200条</div>
-            <div class="memory-limit-option" data-value="100"><span class="memory-limit-check"></span>最近100条</div>
-            <div class="memory-limit-option" data-value="50"><span class="memory-limit-check"></span>最近50条</div>
-            <div class="memory-limit-option" data-value="20"><span class="memory-limit-check"></span>最近20条</div>
-            <div class="memory-limit-option" data-value="10"><span class="memory-limit-check"></span>最近10条</div>
-            <div class="memory-limit-option" data-value="5"><span class="memory-limit-check"></span>最近5条</div>
-            <div class="memory-limit-option" data-value="2"><span class="memory-limit-check"></span>最近2条</div>
+            <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span><span data-i18n="memory.unlimited">不限制</span></div>
+            <div class="memory-limit-option" data-value="200"><span class="memory-limit-check"></span><span data-i18n="memory.recent200">最近200条</span></div>
+            <div class="memory-limit-option" data-value="100"><span class="memory-limit-check"></span><span data-i18n="memory.recent100">最近100条</span></div>
+            <div class="memory-limit-option" data-value="50"><span class="memory-limit-check"></span><span data-i18n="memory.recent50">最近50条</span></div>
+            <div class="memory-limit-option" data-value="20"><span class="memory-limit-check"></span><span data-i18n="memory.recent20">最近20条</span></div>
+            <div class="memory-limit-option" data-value="10"><span class="memory-limit-check"></span><span data-i18n="memory.recent10">最近10条</span></div>
+            <div class="memory-limit-option" data-value="5"><span class="memory-limit-check"></span><span data-i18n="memory.recent5">最近5条</span></div>
+            <div class="memory-limit-option" data-value="2"><span class="memory-limit-check"></span><span data-i18n="memory.recent2">最近2条</span></div>
           </div>
           <div class="memory-limit-custom">
-            <span class="memory-limit-custom-label">自定义:</span>
+            <span class="memory-limit-custom-label" data-i18n="memory.custom">自定义:</span>
             <input type="number" id="memoryLimitInput" min="1" max="400" placeholder="1-400" class="memory-limit-input">
-            <span class="memory-limit-custom-unit">条</span>
+            <span class="memory-limit-custom-unit" data-i18n="memory.unit">条</span>
           </div>
         </div>
         <div class="tool-toggle-wrapper">
-          <label class="check-toggle core-feature" title="工具总开关：勾选后启用工具调用">
+          <label class="check-toggle core-feature" data-i18n-title="toggle.toolsHint" title="工具总开关：勾选后启用工具调用">
             <input type="checkbox" id="enableToolsBtn">
             <span class="checkmark"></span>
-            <span class="tool-toggle-label">工具</span>
+            <span class="tool-toggle-label" data-i18n="toggle.tools">工具</span>
           </label>
-          <button class="tool-config-btn" id="toolsConfigBtn" title="点击打开工具详细配置">
+          <button class="tool-config-btn" id="toolsConfigBtn" data-i18n-title="toolPanel.configBtnTitle" title="点击打开工具详细配置">
             <svg t="1781344735648" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3217" width="16" height="16"><path d="M275.84 908.8c-32.64 0-65.28-12.16-90.24-37.12-24.32-24.32-37.12-56.32-37.12-90.24s13.44-65.92 37.12-90.24l96-96c10.88-10.88 14.72-26.88 10.24-40.96-39.04-119.04-8.32-248.32 80.64-337.28 72.32-72.32 172.8-106.88 274.56-94.08 33.28 3.84 60.16 26.24 71.04 57.6 10.88 31.36 3.2 65.92-20.48 89.6L548.48 418.56c-12.16 12.16-18.56 28.16-18.56 44.8s6.4 33.28 18.56 44.8c12.16 12.16 28.16 18.56 44.8 18.56s33.28-6.4 44.8-18.56L787.2 359.68c23.68-23.68 58.24-31.36 89.6-20.48 31.36 10.88 53.76 37.76 57.6 71.04 12.8 101.76-21.76 202.24-94.08 274.56-88.32 88.96-217.6 119.68-337.28 80.64-14.08-4.48-30.08-0.64-40.96 10.24l-96 96c-24.96 24.96-57.6 37.12-90.24 37.12zM605.44 183.68c-70.4 0-137.6 27.52-188.16 78.08-71.04 71.68-96 176-64.64 272 12.16 37.12 2.56 78.08-25.6 106.24l-96 96c-24.96 24.96-24.96 65.28 0 90.24 24.96 24.96 65.28 24.96 90.24 0l96-96c28.16-28.16 69.12-38.4 106.24-25.6 96 31.36 200.32 6.4 272-64.64 58.24-58.24 86.4-139.52 76.16-221.44-1.28-12.16-10.88-17.28-14.72-18.56-3.84-1.28-14.72-3.84-23.68 5.12l-149.12 149.12c-24.32 24.32-56.32 37.12-90.24 37.12s-65.92-13.44-90.24-37.12c-24.32-24.32-37.12-56.32-37.12-90.24s13.44-65.92 37.12-90.24L652.8 224.64c8.96-8.96 7.04-19.84 5.12-23.68-1.28-3.84-5.76-13.44-18.56-14.72-11.52-1.28-22.4-2.56-33.92-2.56z" fill="currentColor" p-id="3218"></path></svg>
           </button>
         </div>
-        <label class="check-toggle core-feature" title="勾选后，划词选中内容后可快速提问">
+        <label class="check-toggle core-feature" data-i18n-title="toggle.selectionHint" title="勾选后，划词选中内容后可快速提问">
           <input type="checkbox" id="enableSelectionQueryBtn">
           <span class="checkmark"></span>
-          <span class="tool-toggle-label">划词</span>
+          <span class="tool-toggle-label" data-i18n="toggle.selection">划词</span>
         </label>
       </div>
       <div class="input-toolbar-right">
         <div class="temp-selector">
-          <div class="temp-display" id="tempDisplay" title="模型设置">
+          <div class="temp-display" id="tempDisplay" data-i18n-title="toggle.modelSettings" title="模型设置">
             <svg t="1781178113808" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="16573" width="16" height="16"><path d="M706.23 441.2v-12.76h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87V337.3h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87v-32.43h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87.95C695.79 89.21 612.8 12.13 512.1 12.13c-107.04 0-194.13 87.08-194.13 194.12v234.88c-78.35 60.31-124.68 153.46-124.68 252.21 0 175.78 143.01 318.79 318.8 318.79s318.8-143.01 318.8-318.79c0.01-98.78-46.32-191.9-124.66-252.14zM512.1 953.42c-143.42 0-260.1-116.68-260.1-260.09 0-85.98 40.85-163.7 112.08-213.24l12.59-8.76V206.25c0-74.67 60.75-135.42 135.43-135.42s135.43 60.75 135.43 135.42v265.2l12.61 8.75c71.22 49.45 112.06 127.13 112.06 213.13 0 143.42-116.68 260.09-260.1 260.09z" fill="#666666" p-id="16574"></path><path d="M541.45 536.57V177.3c0-16.21-13.14-29.35-29.35-29.35s-29.35 13.14-29.35 29.35v359.26c-75.56 13.87-133.04 80.09-133.04 159.6 0 89.54 72.84 162.38 162.39 162.38s162.39-72.84 162.39-162.38c0-79.5-57.48-145.72-133.04-159.59zM512.1 799.85c-57.17 0-103.69-46.51-103.69-103.68 0-57.17 46.51-103.69 103.69-103.69S615.78 639 615.78 696.17c0 57.16-46.51 103.68-103.68 103.68z" fill="#666666" p-id="16575"></path></svg>
             <span class="temp-icon-value" id="tempIconValue">0.20</span>
           </div>
           <div class="temp-dropdown" id="tempDropdown">
-            <div class="temp-dropdown-title">模型设置</div>
+            <div class="temp-dropdown-title" data-i18n="toggle.modelSettings">模型设置</div>
             <div class="model-section" id="modelSection">
-              <div class="model-section-title">选择模型</div>
+              <div class="model-section-title" data-i18n="model.selectModel">选择模型</div>
               <div class="model-option" data-value="deepseek-v4-pro"><span class="model-option-check"></span>deepseek-v4-pro</div>
               <div class="model-option" data-value="deepseek-v4-flash"><span class="model-option-check"></span>deepseek-v4-flash</div>
             </div>
             <div class="temp-preset-list" id="tempPresetList"></div>
             <div class="temp-slider-section">
               <div class="temp-slider-row">
-                <span class="temp-slider-label">温度</span>
+                <span class="temp-slider-label" data-i18n="model.temperature">温度</span>
                 <input type="range" class="temp-slider" id="tempSlider" min="0" max="1" step="0.01" value="0.2">
                 <input type="number" class="temp-number-input" id="tempNumberInput" min="0" max="1" step="0.01" value="0.20">
               </div>
@@ -428,25 +428,25 @@
     </div>
     <div class="selection-indicator" id="selectionIndicator">
       <span class="selection-text" id="selectionText"></span>
-      <button class="selection-close" id="selectionClose" title="取消选中内容">✕</button>
+      <button class="selection-close" id="selectionClose" data-i18n-title="selection.clearSelection" title="取消选中内容">✕</button>
     </div>
     <!-- 网页选中指示器 -->
     <div class="page-indicator" id="pageIndicator" style="display: none;">
-      <span class="page-indicator-label">🌐 网页</span>
+      <span class="page-indicator-label" data-i18n="selection.page">🌐 网页</span>
       <span class="page-indicator-name" id="pageIndicatorName"></span>
-      <button class="page-indicator-close" id="pageIndicatorClose" title="取消网页">✕</button>
+      <button class="page-indicator-close" id="pageIndicatorClose" data-i18n-title="selection.clearPage" title="取消网页">✕</button>
     </div>
     <!-- MCP 服务选中指示器 -->
     <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
       <span class="mcp-indicator-label">🔌 MCP</span>
       <span class="mcp-indicator-name" id="mcpIndicatorName"></span>
-      <button class="mcp-indicator-close" id="mcpIndicatorClose" title="取消MCP服务">✕</button>
+      <button class="mcp-indicator-close" id="mcpIndicatorClose" data-i18n-title="selection.clearMcp" title="取消MCP服务">✕</button>
     </div>
     <!-- 技能选中指示器 -->
     <div class="skill-indicator" id="skillIndicator" style="display: none;">
-      <span class="skill-indicator-label">🧩 技能</span>
+      <span class="skill-indicator-label" data-i18n="selection.skill">🧩 技能</span>
       <span class="skill-indicator-name" id="skillIndicatorName"></span>
-      <button class="skill-indicator-close" id="skillIndicatorClose" title="取消技能">✕</button>
+      <button class="skill-indicator-close" id="skillIndicatorClose" data-i18n-title="selection.clearSkill" title="取消技能">✕</button>
     </div>
     <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
     <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
@@ -454,11 +454,11 @@
     <div class="prompt-selector" id="promptSelector" style="display: none;">
       <div class="prompt-dropdown" id="promptDropdown">
         <div class="prompt-dropdown-tabs" id="promptDropdownTabs">
-          <button class="prompt-tab active" data-tab="prompts">提示词</button>
-          <button class="prompt-tab" data-tab="skills" id="skillsTab" style="display: none;">技能</button>
+          <button class="prompt-tab active" data-tab="prompts" data-i18n="promptSelector.prompts">提示词</button>
+          <button class="prompt-tab" data-tab="skills" id="skillsTab" style="display: none;" data-i18n="promptSelector.skills">技能</button>
           <button class="prompt-tab" data-tab="mcp" id="mcpTab" style="display: none;">MCP</button>
         </div>
-        <div class="prompt-dropdown-header" id="promptDropdownHeader"><span class="prompt-dropdown-header-text">方向键切换 · Enter发送 · Ctrl+Enter带入文本框</span></div>
+        <div class="prompt-dropdown-header" id="promptDropdownHeader"><span class="prompt-dropdown-header-text" data-i18n="promptSelector.switchHint">方向键切换 · Enter发送 · Ctrl+Enter带入文本框</span></div>
         <div id="promptList"></div>
         <div id="skillList" style="display: none;"></div>
         <div id="mcpList" style="display: none;"></div>
@@ -468,11 +468,11 @@
     <div class="prompt-selector" id="agentAtSelector" style="display: none;">
       <div class="prompt-dropdown" id="agentAtDropdown">
         <div class="prompt-dropdown-tabs" id="agentAtTabs">
-          <button class="prompt-tab active" data-tab="pages">网页</button>
-          <button class="prompt-tab" data-tab="agents">助手</button>
-          <button class="prompt-tab" data-tab="proxies">代理</button>
+          <button class="prompt-tab active" data-tab="pages" data-i18n="promptSelector.pages">网页</button>
+          <button class="prompt-tab" data-tab="agents" data-i18n="promptSelector.agents">助手</button>
+          <button class="prompt-tab" data-tab="proxies" data-i18n="promptSelector.proxies">代理</button>
         </div>
-        <div class="prompt-dropdown-header">方向键切换 · Enter选择 · Esc取消<span class="agent-add-btn" id="agentAddBtn" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" title="新增/编辑代理" style="display:none;">✚</span></div>
+        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span></div>
         <div id="agentAtList"></div>
         <div id="agentPageList" style="display: none;"></div>
         <div id="agentProxyList" style="display: none;"></div>
@@ -480,18 +480,18 @@
     </div>
     <div class="input-wrapper">
       <input type="file" id="fileInput" multiple accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf" style="display:none;">
-      <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" title="提示词 (单击) / 网页 (Ctrl/Cmd+单击)">
+      <button class="input-inner-btn prompt-inner-btn" id="promptTriggerBtn" data-i18n-title="input.atHint" title="提示词 (单击) / 网页 (Ctrl/Cmd+单击)">
         <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M274.090667 107.861333l43.235555 116.792889 116.792889 43.235556-116.792889 43.235555-43.235555 116.736-43.235556-116.792889-116.736-43.235555 116.736-43.235556 43.235556-116.736zM717.937778 532.138667l51.825778 140.117333 140.117333 51.882667-140.117333 51.882666-51.882667 140.117334-51.825778-140.117334-140.174222-51.882666 140.174222-51.882667 51.825778-140.117333zM699.278222 190.350222a36.977778 36.977778 0 1 0-64.056889-36.977778L219.192889 873.927111a36.977778 36.977778 0 1 0 64.056889 36.977778l416.028444-720.554667z" fill="currentColor"/></svg>
       </button>
-      <textarea id="userInput" placeholder="输入'/'快捷提示、'@'切换助手或网页、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
+      <textarea id="userInput" data-i18n-placeholder="input.placeholder" placeholder="输入'/'快捷提示、'@'切换助手或网页、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
       <div class="input-right-buttons">
-        <button class="input-inner-btn screenshot-inner-btn" id="screenshotBtn" title="截取当前页面（Ctrl/Shift+点击可区域截图）" style="display:none;">
+        <button class="input-inner-btn screenshot-inner-btn" id="screenshotBtn" data-i18n-title="input.screenshot" title="截取当前页面（Ctrl/Shift+点击可区域截图）" style="display:none;">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
         </button>
-        <button class="input-inner-btn file-attach-btn" id="fileAttachBtn" title="上传文件（PDF/Word/Excel/文本）" style="display:none;">
+        <button class="input-inner-btn file-attach-btn" id="fileAttachBtn" data-i18n-title="input.uploadFile" title="上传文件（PDF/Word/Excel/文本）" style="display:none;">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <button class="input-inner-btn send-inner-btn" id="sendBtn" title="发送">
+        <button class="input-inner-btn send-inner-btn" id="sendBtn" data-i18n-title="input.send" title="发送">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>
         </button>
       </div>
@@ -501,11 +501,11 @@
   <!-- 确认模态框 -->
   <div class="modal-overlay" id="confirmModal">
     <div class="modal-container">
-      <div class="modal-title">确认清除</div>
-      <div class="modal-message">确定要清除所有对话历史吗？</div>
+      <div class="modal-title" data-i18n="chat.confirmClearTitle">确认清除</div>
+      <div class="modal-message" data-i18n="chat.confirmClearMessage">确定要清除所有对话历史吗？</div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="modalCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="modalConfirmBtn">确定</button>
+        <button class="modal-btn cancel" id="modalCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="modalConfirmBtn" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>
@@ -513,11 +513,11 @@
   <!-- 删除确认模态框 -->
   <div class="modal-overlay" id="deleteConfirmModal" style="z-index: 4000;">
     <div class="modal-container">
-      <div class="modal-title">确认删除</div>
-      <div class="modal-message" id="deleteConfirmMessage">确定要删除这个提示词吗？</div>
+      <div class="modal-title" data-i18n="chat.confirmDeletePromptTitle">确认删除</div>
+      <div class="modal-message" id="deleteConfirmMessage" data-i18n="chat.confirmDeletePromptMessage">确定要删除这个提示词吗？</div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="deleteCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="deleteConfirmBtn">删除</button>
+        <button class="modal-btn cancel" id="deleteCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="deleteConfirmBtn" data-i18n="common.delete">删除</button>
       </div>
     </div>
   </div>
@@ -525,10 +525,10 @@
   <!-- 提示词校验错误模态框 -->
   <div class="modal-overlay" id="promptErrorModal" style="z-index: 4000;">
     <div class="modal-container">
-      <div class="modal-title">提示</div>
+      <div class="modal-title" data-i18n="promptDialog.title">提示</div>
       <div class="modal-message" id="promptErrorMessage"></div>
       <div class="modal-actions">
-        <button class="modal-btn confirm" id="promptErrorConfirmBtn" style="background: #667eea;">确定</button>
+        <button class="modal-btn confirm" id="promptErrorConfirmBtn" style="background: #667eea;" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>
@@ -536,19 +536,19 @@
   <!-- 提示词管理模态框 -->
   <div class="modal-overlay" id="promptManageModal">
     <div class="modal-container" style="max-width: 600px;">
-      <button class="prompt-modal-close" id="promptModalCloseBtn" title="关闭">×</button>
-      <div class="modal-title">提示词管理</div>
+      <button class="prompt-modal-close" id="promptModalCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="promptManager.title">提示词管理</div>
       <div style="max-height: 300px; overflow-y: auto; margin-bottom: 16px;">
         <div id="promptManageList"></div>
       </div>
       <div style="margin-bottom: 16px;">
         <input type="text" id="editPromptIndex" placeholder="" style="display: none;">
-        <input type="text" id="newPromptCode" placeholder="编码（如: code）" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
-        <textarea id="newPromptContent" placeholder="提示词内容" rows="3" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
+        <input type="text" id="newPromptCode" data-i18n-placeholder="promptManager.codePlaceholder" placeholder="编码（如: code）" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+        <textarea id="newPromptContent" data-i18n-placeholder="promptManager.contentPlaceholder" placeholder="提示词内容" rows="3" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
       </div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="promptManageCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="promptManageAddBtn" style="background: #667eea;">添加提示词</button>
+        <button class="modal-btn cancel" id="promptManageCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="promptManageAddBtn" style="background: #667eea;" data-i18n="promptManager.addPrompt">添加提示词</button>
       </div>
     </div>
   </div>
@@ -560,8 +560,8 @@
         <div class="clarify-header">
           <div class="clarify-icon">⚠️</div>
           <div class="clarify-header-content">
-            <div class="clarify-title">操作确认</div>
-            <div class="clarify-question" id="confirmMessage">模型请求执行敏感操作，是否允许？</div>
+            <div class="clarify-title" data-i18n="dialog.operationConfirm">操作确认</div>
+            <div class="clarify-question" id="confirmMessage" data-i18n="dialog.confirmDefaultMessage">模型请求执行敏感操作，是否允许？</div>
             <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: #e67e22; margin-top: 4px;"></div>
             <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: #666; margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px;"></div>
             <div class="confirm-countdown" id="confirmCountdown" style="margin-top: 12px; font-size: 13px; color: #e67e22; display: flex; align-items: center; gap: 6px;">
@@ -573,9 +573,9 @@
       </div>
       
       <div class="clarify-footer">
-        <button class="clarify-btn cancel" id="confirmDenyBtn">拒绝</button>
-        <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">本次放行</button>
-        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" style="background: linear-gradient(135deg, #2980b9, #3498db);">当前任务放行</button>
+        <button class="clarify-btn cancel" id="confirmDenyBtn" data-i18n="dialog.deny">拒绝</button>
+        <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" data-i18n="dialog.approveOnce" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">本次放行</button>
+        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" data-i18n="dialog.approveLoop" style="background: linear-gradient(135deg, #2980b9, #3498db);">当前任务放行</button>
       </div>
     </div>
   </div>
@@ -587,35 +587,35 @@
         <div class="clarify-header">
           <div class="clarify-icon">💡</div>
           <div class="clarify-header-content">
-            <div class="clarify-title">需要您的澄清</div>
+            <div class="clarify-title" data-i18n="clarify.title">需要您的澄清</div>
             <div class="clarify-session-name" id="clarifySessionName"></div>
             <div class="clarify-question" id="clarifyQuestion"></div>
             <div class="clarify-timer" id="clarifyTimer">
               <span class="clarify-timer-icon">⏱️</span>
-              <span id="clarifyTimerText">剩余时间: 3:00</span>
+              <span id="clarifyTimerText" data-i18n="clarify.remainingTime">剩余时间: 3:00</span>
             </div>
           </div>
         </div>
-        
+
         <div class="clarify-options" id="clarifyOptions">
-          <div class="clarify-options-title">请选择一个选项</div>
+          <div class="clarify-options-title" data-i18n="clarify.selectOption">请选择一个选项</div>
           <div id="clarifyOptionsList">
             <div class="clarify-custom-input" id="clarifyCustomInput">
-              <textarea class="clarify-custom-textarea" id="clarifyCustomTextarea" placeholder="请输入您的自定义内容..."></textarea>
+              <textarea class="clarify-custom-textarea" id="clarifyCustomTextarea" data-i18n-placeholder="clarify.customPlaceholder" placeholder="请输入您的自定义内容..."></textarea>
             </div>
           </div>
         </div>
-        
+
         <div class="clarify-additional-info" id="clarifyAdditionalInfo">
-          <div class="clarify-additional-title">补充说明（可选）</div>
-          <div class="clarify-additional-hint">如果您有更多相关信息，可以在此补充说明</div>
-          <textarea class="clarify-additional-textarea" id="clarifyAdditionalTextarea" placeholder="请输入补充信息（可选）..."></textarea>
+          <div class="clarify-additional-title" data-i18n="clarify.additionalTitle">补充说明（可选）</div>
+          <div class="clarify-additional-hint" data-i18n="clarify.additionalHint">如果您有更多相关信息，可以在此补充说明</div>
+          <textarea class="clarify-additional-textarea" id="clarifyAdditionalTextarea" data-i18n-placeholder="clarify.inputPlaceholder" placeholder="请输入补充信息（可选）..."></textarea>
         </div>
       </div>
-      
+
       <div class="clarify-footer">
-        <button class="clarify-btn cancel" id="clarifyCancelBtn">取消</button>
-        <button class="clarify-btn confirm" id="clarifyConfirmBtn">确认</button>
+        <button class="clarify-btn cancel" id="clarifyCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="clarify-btn confirm" id="clarifyConfirmBtn" data-i18n="common.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -623,12 +623,12 @@
   <!-- 会话重命名弹窗 -->
   <div class="modal-overlay" id="sessionRenameModal" style="z-index: 4000;">
     <div class="modal-container">
-      <button class="prompt-modal-close" id="sessionRenameCloseBtn" title="关闭">×</button>
-      <div class="modal-title">重命名会话</div>
-      <input type="text" class="modal-input" id="sessionRenameInput" placeholder="请输入会话名称" maxlength="50">
+      <button class="prompt-modal-close" id="sessionRenameCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="session.renameTitle">重命名会话</div>
+      <input type="text" class="modal-input" id="sessionRenameInput" data-i18n-placeholder="session.renamePlaceholder" placeholder="请输入会话名称" maxlength="50">
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="sessionRenameCancelBtn">取消</button>
-        <button class="modal-btn primary" id="sessionRenameConfirmBtn">确定</button>
+        <button class="modal-btn cancel" id="sessionRenameCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn primary" id="sessionRenameConfirmBtn" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>
@@ -636,12 +636,12 @@
   <!-- 会话删除确认弹窗 -->
   <div class="modal-overlay" id="sessionDeleteModal" style="z-index: 4000;">
     <div class="modal-container">
-      <button class="prompt-modal-close" id="sessionDeleteCloseBtn" title="关闭">×</button>
-      <div class="modal-title">确认关闭会话</div>
-      <div class="modal-message" id="sessionDeleteMessage">确定要关闭该会话吗？此操作不可撤销。</div>
+      <button class="prompt-modal-close" id="sessionDeleteCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="session.confirmCloseTitle">确认关闭会话</div>
+      <div class="modal-message" id="sessionDeleteMessage" data-i18n="session.confirmCloseMessage">确定要关闭该会话吗？此操作不可撤销。</div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="sessionDeleteCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="sessionDeleteConfirmBtn">关闭</button>
+        <button class="modal-btn cancel" id="sessionDeleteCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="sessionDeleteConfirmBtn" data-i18n="common.close">关闭</button>
       </div>
     </div>
   </div>
@@ -651,28 +651,28 @@
     <div class="prototype-container" id="prototypeContainer">
       <div class="prototype-header">
         <div class="prototype-header-content">
-          <div class="prototype-title" id="prototypeTitle">UI 原型预览</div>
+          <div class="prototype-title" id="prototypeTitle" data-i18n="prototype.previewTitle">UI 原型预览</div>
           <div class="prototype-description" id="prototypeDescription"></div>
         </div>
-        <button class="prototype-close-btn" id="prototypeCloseBtn" title="关闭">×</button>
+        <button class="prototype-close-btn" id="prototypeCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
       </div>
-      
+
       <div class="prototype-content" id="prototypeContent">
         <iframe class="prototype-iframe" id="prototypeIframe" sandbox="allow-scripts" scrolling="auto"></iframe>
         <div class="prototype-zoom-toolbar" id="prototypeZoomToolbar">
-          <button class="prototype-zoom-btn" id="prototypeZoomOutBtn" title="缩小 (Ctrl+滚轮)">−</button>
-          <span class="prototype-zoom-level" id="prototypeZoomLevel" title="点击重置">100%</span>
-          <button class="prototype-zoom-btn" id="prototypeZoomInBtn" title="放大 (Ctrl+滚轮)">+</button>
+          <button class="prototype-zoom-btn" id="prototypeZoomOutBtn" data-i18n-title="prototype.zoomOut" title="缩小 (Ctrl+滚轮)">−</button>
+          <span class="prototype-zoom-level" id="prototypeZoomLevel" data-i18n-title="prototype.resetZoom" title="点击重置">100%</span>
+          <button class="prototype-zoom-btn" id="prototypeZoomInBtn" data-i18n-title="prototype.zoomIn" title="放大 (Ctrl+滚轮)">+</button>
         </div>
       </div>
-      
+
       <div class="prototype-footer">
         <div class="prototype-footer-left">
-          <button class="prototype-footer-btn" id="prototypeDownloadBtn" title="下载">📥</button>
-          <button class="prototype-footer-btn" id="prototypeOpenTabBtn" title="新标签页打开">🔗</button>
-          <button class="prototype-footer-btn" id="prototypeLocalOpenBtn" title="本地浏览器打开" style="display:none;">🖥</button>
+          <button class="prototype-footer-btn" id="prototypeDownloadBtn" data-i18n-title="prototype.download" title="下载">📥</button>
+          <button class="prototype-footer-btn" id="prototypeOpenTabBtn" data-i18n-title="prototype.openInNewTab" title="新标签页打开">🔗</button>
+          <button class="prototype-footer-btn" id="prototypeLocalOpenBtn" data-i18n-title="prototype.openLocal" title="本地浏览器打开" style="display:none;">🖥</button>
         </div>
-        <button class="prototype-footer-primary" id="prototypeContinueBtn">💡 继续优化</button>
+        <button class="prototype-footer-primary" id="prototypeContinueBtn" data-i18n="prototype.continueOptimize">💡 继续优化</button>
       </div>
     </div>
   </div>
@@ -680,11 +680,11 @@
   <!-- 通用确认弹窗 -->
   <div class="modal-overlay" id="genericConfirmModal" style="z-index: 5000;">
     <div class="modal-container" style="max-width: 380px;">
-      <div class="modal-title" id="genericConfirmTitle">确认操作</div>
+      <div class="modal-title" id="genericConfirmTitle" data-i18n="customConfirm.defaultTitle">确认操作</div>
       <div class="modal-message" id="genericConfirmMessage"></div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="genericConfirmCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="genericConfirmOkBtn">确认</button>
+        <button class="modal-btn cancel" id="genericConfirmCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="genericConfirmOkBtn" data-i18n="common.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -692,19 +692,19 @@
   <!-- 原型页面库列表弹窗 -->
   <div class="modal-overlay" id="prototypeLibraryModal" style="z-index: 4000;">
     <div class="modal-container prototype-library-container">
-      <button class="prompt-modal-close" id="prototypeLibraryCloseBtn" title="关闭">×</button>
-      <div class="modal-title">🎨 原型页面库</div>
+      <button class="prompt-modal-close" id="prototypeLibraryCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="prototype.libraryTitle">🎨 原型页面库</div>
       <div class="prototype-library-toolbar">
-        <input type="text" class="prototype-library-search" id="prototypeLibrarySearch" placeholder="搜索原型..." />
+        <input type="text" class="prototype-library-search" id="prototypeLibrarySearch" data-i18n-placeholder="prototype.searchPlaceholder" placeholder="搜索原型..." />
         <select class="prototype-library-sort" id="prototypeLibrarySort">
-          <option value="createdAt_desc">时间 (新→旧)</option>
-          <option value="createdAt_asc">时间 (旧→新)</option>
-          <option value="title_asc">标题 (A→Z)</option>
-          <option value="title_desc">标题 (Z→A)</option>
+          <option value="createdAt_desc" data-i18n="prototype.sortTimeNew">时间 (新→旧)</option>
+          <option value="createdAt_asc" data-i18n="prototype.sortTimeOld">时间 (旧→新)</option>
+          <option value="title_asc" data-i18n="prototype.sortTitleAz">标题 (A→Z)</option>
+          <option value="title_desc" data-i18n="prototype.sortTitleZa">标题 (Z→A)</option>
         </select>
       </div>
       <div class="prototype-library-list" id="prototypeLibraryList">
-        <div class="prototype-library-empty">暂无原型</div>
+        <div class="prototype-library-empty" data-i18n="prototype.empty">暂无原型</div>
       </div>
     </div>
   </div>
@@ -717,33 +717,33 @@
   <!-- 快捷键查看弹窗 -->
   <div class="modal-overlay" id="shortcutsModal" style="z-index: 4000;">
     <div class="modal-container shortcuts-container">
-      <button class="prompt-modal-close" id="shortcutsCloseBtn" title="关闭">×</button>
-      <div class="modal-title">⌨️ 快捷键</div>
+      <button class="prompt-modal-close" id="shortcutsCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="shortcuts.title">⌨️ 快捷键</div>
       <div class="shortcuts-table-wrapper">
         <table class="shortcuts-table">
           <thead>
-            <tr><th>快捷键</th><th>功能</th><th>平台</th></tr>
+            <tr><th data-i18n="shortcuts.colShortcut">快捷键</th><th data-i18n="shortcuts.colFunction">功能</th><th data-i18n="shortcuts.colPlatform">平台</th></tr>
           </thead>
           <tbody>
-            <tr><td><kbd>Alt</kbd> + <kbd>↑</kbd></td><td>跳转到上一条消息</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>↓</kbd></td><td>跳转到下一条消息</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↑</kbd></td><td>回到对话顶部</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↓</kbd></td><td>跳到对话底部</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>↑</kbd></td><td data-i18n="shortcuts.gotoPrev">跳转到上一条消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>↓</kbd></td><td data-i18n="shortcuts.gotoNext">跳转到下一条消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↑</kbd></td><td data-i18n="shortcuts.scrollTop">回到对话顶部</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>↓</kbd></td><td data-i18n="shortcuts.scrollBottom">跳到对话底部</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>S</kbd></td><td>全页面截图</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td>区域截图</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>S</kbd></td><td data-i18n="shortcuts.fullScreenshot">全页面截图</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td data-i18n="shortcuts.regionScreenshot">区域截图</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
-            <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>T</kbd></td><td>打开/关闭工具配置</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>/</kbd></td><td>打开快捷键面板</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Ctrl/Cmd</kbd> + <kbd>T</kbd></td><td data-i18n="shortcuts.toggleToolConfig">打开/关闭工具配置</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>/</kbd></td><td data-i18n="shortcuts.openShortcutPanel">打开快捷键面板</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>N</kbd></td><td>新建会话</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td>关闭当前会话</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td>编辑最近一条用户消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>N</kbd></td><td data-i18n="shortcuts.newSession">新建会话</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td data-i18n="shortcuts.closeCurrentSession">关闭当前会话</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td data-i18n="shortcuts.editLastMessage">编辑最近一条用户消息</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
-            <tr><td><kbd>Enter</kbd></td><td>发送消息</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>换行</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>输入历史（输入框内）</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Esc</kbd></td><td>清空输入框</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td data-i18n="shortcuts.sendMessage">发送消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.newLine">换行</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td data-i18n="shortcuts.inputHistory">输入历史（输入框内）</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td data-i18n="shortcuts.clearInput">清空输入框</td><td>Win / Mac</td></tr>
           </tbody>
         </table>
       </div>
@@ -753,11 +753,11 @@
   <!-- 图片预览弹窗 -->
   <div class="modal-overlay" id="imagePreviewOverlay" style="z-index: 5000;">
     <div class="modal-container image-preview-container" style="max-width:90vw;max-height:90vh;padding:12px;background:transparent;box-shadow:none;">
-      <button class="image-preview-close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:3;">×</button>
-      <button class="image-preview-download" id="imagePreviewDownload" title="下载图片" style="position:absolute;top:8px;right:48px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">↓</button>
-      <button class="image-preview-edit" id="imagePreviewEdit" title="编辑图片" style="position:absolute;top:8px;right:88px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">✏️</button>
-      <button class="image-preview-nav prev" id="imagePreviewPrev" title="上一张" style="display:none;">◀</button>
-      <button class="image-preview-nav next" id="imagePreviewNext" title="下一张" style="display:none;">▶</button>
+      <button class="image-preview-close" data-i18n-title="common.close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:3;">×</button>
+      <button class="image-preview-download" id="imagePreviewDownload" data-i18n-title="imageEditor.downloadImage" title="下载图片" style="position:absolute;top:8px;right:48px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">↓</button>
+      <button class="image-preview-edit" id="imagePreviewEdit" data-i18n-title="imageEditor.editImage" title="编辑图片" style="position:absolute;top:8px;right:88px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">✏️</button>
+      <button class="image-preview-nav prev" id="imagePreviewPrev" data-i18n-title="imageEditor.prevImage" title="上一张" style="display:none;">◀</button>
+      <button class="image-preview-nav next" id="imagePreviewNext" data-i18n-title="imageEditor.nextImage" title="下一张" style="display:none;">▶</button>
       <div id="imagePreviewViewport" style="overflow:hidden;display:flex;align-items:center;justify-content:center;max-width:calc(90vw - 24px);max-height:calc(90vh - 24px);border-radius:8px;position:relative;">
         <img id="imagePreviewLarge" src="" style="max-width:100%;max-height:100%;border-radius:8px;object-fit:contain;transform-origin:center center;user-select:none;-webkit-user-drag:none;">
         <canvas id="imagePreviewEditCanvas" class="image-preview-canvas" style="display:none;"></canvas>
@@ -765,28 +765,28 @@
       </div>
       <div class="image-preview-counter" id="imagePreviewCounter" style="display:none;"></div>
       <div class="image-preview-editor-toolbar" id="imagePreviewEditorToolbar" style="display:none;">
-        <button class="editor-tool-btn active" data-tool="brush" title="画笔 (B)">
+        <button class="editor-tool-btn active" data-tool="brush" data-i18n-title="imageEditor.brush" title="画笔 (B)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 20h9"/>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
           </svg>
         </button>
-        <button class="editor-tool-btn" data-tool="rectangle" title="矩形 (R)">
+        <button class="editor-tool-btn" data-tool="rectangle" data-i18n-title="imageEditor.rect" title="矩形 (R)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="4" width="18" height="16" rx="2"/>
           </svg>
         </button>
-        <button class="editor-tool-btn" data-tool="ellipse" title="椭圆 (E)">
+        <button class="editor-tool-btn" data-tool="ellipse" data-i18n-title="imageEditor.ellipse" title="椭圆 (E)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <ellipse cx="12" cy="12" rx="8" ry="6"/>
           </svg>
         </button>
-        <button class="editor-tool-btn" data-tool="arrow" title="箭头 (A)">
+        <button class="editor-tool-btn" data-tool="arrow" data-i18n-title="imageEditor.arrow" title="箭头 (A)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12h14M12 5l7 7-7 7"/>
           </svg>
         </button>
-        <button class="editor-tool-btn" data-tool="line" title="直线 (L)">
+        <button class="editor-tool-btn" data-tool="line" data-i18n-title="imageEditor.line" title="直线 (L)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -795,28 +795,28 @@
         <div class="editor-color-picker">
           <input type="color" id="editorColorPicker" value="#ff4757">
         </div>
-        <input type="range" id="editorBrushSize" min="1" max="20" value="4" title="画笔粗细">
+        <input type="range" id="editorBrushSize" min="1" max="20" value="4" data-i18n-title="imageEditor.brushSize" title="画笔粗细">
         <span class="editor-tool-divider"></span>
-        <button class="editor-tool-btn" data-tool="eraser" title="橡皮擦">
+        <button class="editor-tool-btn" data-tool="eraser" data-i18n-title="imageEditor.eraser" title="橡皮擦">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="5" y="5" width="14" height="14" rx="2"/>
             <path d="M18 5l-5 5"/>
             <path d="M13 5l5 5"/>
           </svg>
         </button>
-        <button class="editor-tool-btn" id="editorUndoBtn" title="撤销 (Ctrl+Z)">
+        <button class="editor-tool-btn" id="editorUndoBtn" data-i18n-title="imageEditor.undo" title="撤销 (Ctrl+Z)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 7v6h6"/>
             <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
           </svg>
         </button>
         <span class="editor-tool-divider"></span>
-        <button class="editor-tool-btn confirm" id="editorConfirmBtn" title="确认 (Enter)">
+        <button class="editor-tool-btn confirm" id="editorConfirmBtn" data-i18n-title="imageEditor.confirm" title="确认 (Enter)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M5 12l5 5L19 7"/>
           </svg>
         </button>
-        <button class="editor-tool-btn cancel" id="editorCancelBtn" title="取消 (Esc)">
+        <button class="editor-tool-btn cancel" id="editorCancelBtn" data-i18n-title="imageEditor.cancel" title="取消 (Esc)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
@@ -828,20 +828,20 @@
   <!-- 导出会话选择弹窗 -->
   <div class="modal-overlay" id="exportSessionsModal" style="z-index: 4000;">
     <div class="modal-container export-sessions-container">
-      <button class="prompt-modal-close" id="exportSessionsCloseBtn" title="关闭">×</button>
-      <div class="modal-title">导出会话</div>
+      <button class="prompt-modal-close" id="exportSessionsCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="chatExport.exportSessions">导出会话</div>
       <div class="export-sessions-actions-bar">
-        <button class="export-action-btn" id="exportSelectAllBtn">全选</button>
-        <button class="export-action-btn" id="exportDeselectAllBtn">取消全选</button>
-        <button class="export-action-btn" id="exportSelectCurrentBtn">仅选当前</button>
+        <button class="export-action-btn" id="exportSelectAllBtn" data-i18n="common.selectAll">全选</button>
+        <button class="export-action-btn" id="exportDeselectAllBtn" data-i18n="common.deselectAll">取消全选</button>
+        <button class="export-action-btn" id="exportSelectCurrentBtn" data-i18n="chatExport.selectCurrentOnly">仅选当前</button>
         <span class="export-selected-count" id="exportSelectedCount">已选 0 个</span>
       </div>
       <div class="export-sessions-list" id="exportSessionsList">
-        <div class="export-sessions-empty">加载中...</div>
+        <div class="export-sessions-empty" data-i18n="common.loading">加载中...</div>
       </div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="exportSessionsCancelBtn">取消</button>
-        <button class="modal-btn confirm" id="exportSessionsOkBtn">导出选中</button>
+        <button class="modal-btn cancel" id="exportSessionsCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="exportSessionsOkBtn" data-i18n="chatExport.exportSelected">导出选中</button>
       </div>
     </div>
   </div>
@@ -852,18 +852,18 @@
   <!-- Agent 编辑模态框 -->
   <div class="modal-overlay" id="agentEditModal" style="display:none; z-index: 5000;">
     <div class="modal-container" style="max-width: 650px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; position: relative;">
-      <button class="prompt-modal-close" id="agentModalCloseBtn" title="关闭" style="position: absolute; top: 12px; right: 16px; z-index: 1;">×</button>
-      <div class="modal-title" id="agentEditTitle" style="flex-shrink: 0; margin-bottom: 12px;">创建新助手</div>
+      <button class="prompt-modal-close" id="agentModalCloseBtn" data-i18n-title="common.close" title="关闭" style="position: absolute; top: 12px; right: 16px; z-index: 1;">×</button>
+      <div class="modal-title" id="agentEditTitle" style="flex-shrink: 0; margin-bottom: 12px;" data-i18n="agentEditor.createNew">创建新助手</div>
       <input type="hidden" id="agentEditId">
       
       <div style="flex: 1; overflow-y: auto; padding-right: 4px;">
       <div style="display: flex; gap: 12px; margin-bottom: 12px;">
         <div style="flex: 1;">
-          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">名称</label>
-          <input type="text" id="agentEditName" placeholder="助手名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.nameLabel">名称</label>
+          <input type="text" id="agentEditName" data-i18n-placeholder="agentEditor.namePlaceholder" placeholder="助手名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
         </div>
         <div style="width: 70px; position: relative;">
-          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">图标</label>
+          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.icon">图标</label>
           <button type="button" id="agentEditIconBtn" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center; background: white; cursor: pointer;">🤖</button>
           <input type="hidden" id="agentEditIcon" value="🤖">
           <div class="emoji-picker" id="emojiPicker" style="display:none;"></div>
@@ -871,50 +871,50 @@
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">简短描述</label>
-        <input type="text" id="agentEditDesc" placeholder="这个助手擅长什么？" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.descLabel">简短描述</label>
+          <input type="text" id="agentEditDesc" data-i18n-placeholder="agentEditor.descPlaceholder" placeholder="这个助手擅长什么？" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">模板快速创建</label>
-        <select id="agentTemplateSelect" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
-          <option value="">-- 选择模板（可选） --</option>
-        </select>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.templateQuickCreate">模板快速创建</label>
+          <select id="agentTemplateSelect" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+            <option value="" data-i18n="agentEditor.selectTemplate">-- 选择模板（可选） --</option>
+          </select>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">系统提示词（定义助手的角色和能力）</label>
-        <textarea id="agentEditPrompt" placeholder="你是一个专业的..." rows="6" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.systemPrompt">系统提示词（定义助手的角色和能力）</label>
+          <textarea id="agentEditPrompt" data-i18n-placeholder="agentEditor.promptPlaceholder" placeholder="你是一个专业的..." rows="6" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">可用工具 <span id="agentToolCount" style="color: #999;"></span>（不勾选则继承全局工具设置）</label>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableTools">可用工具</span> <span id="agentToolCount" style="color: #999;"></span><span data-i18n="agentEditor.toolsInheritGlobal">（不勾选则继承全局工具设置）</span></label>
         <div id="agentToolActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
-          <button type="button" class="agent-tool-action-btn" data-action="selectAll">全选</button>
-          <button type="button" class="agent-tool-action-btn" data-action="deselectAll">取消全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="selectAll" data-i18n="common.selectAll">全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="deselectAll" data-i18n="common.deselectAll">取消全选</button>
         </div>
         <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">可用技能 <span id="agentSkillCount" style="color: #999;"></span>（不勾选则使用全部启用技能）</label>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableSkills">可用技能</span> <span id="agentSkillCount" style="color: #999;"></span><span data-i18n="agentEditor.skillsInheritAll">（不勾选则使用全部启用技能）</span></label>
         <div id="agentSkillActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
-          <button type="button" class="agent-tool-action-btn" data-action="selectAllSkills">全选</button>
-          <button type="button" class="agent-tool-action-btn" data-action="deselectAllSkills">取消全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="selectAllSkills" data-i18n="common.selectAll">全选</button>
+          <button type="button" class="agent-tool-action-btn" data-action="deselectAllSkills" data-i18n="common.deselectAll">取消全选</button>
         </div>
         <div id="agentSkillList" style="max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;">模型设置（留空则使用全局设置）</label>
+        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.modelSettings">模型设置（留空则使用全局设置）</label>
         <div style="display: flex; gap: 12px;">
           <div style="flex: 1;">
-            <input type="text" id="agentEditModel" placeholder="选择或输入模型名称" list="agentModelList" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+            <input type="text" id="agentEditModel" data-i18n-placeholder="agentEditor.modelPlaceholder" placeholder="选择或输入模型名称" list="agentModelList" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
             <datalist id="agentModelList"></datalist>
           </div>
           <div style="width: 160px;">
             <select id="agentEditTempPreset" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; color: #333;">
-              <option value="">不设置（使用全局）</option>
+              <option value="" data-i18n="agentEditor.noPreset">不设置（使用全局）</option>
             </select>
           </div>
         </div>
@@ -924,14 +924,14 @@
         <label class="check-toggle" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #555;">
           <input type="checkbox" id="agentEditAllowSub" style="display:none;">
           <span class="checkmark"></span>
-          允许作为子助手被调度
+          <span data-i18n="agentEditor.allowSubAgent">允许作为子助手被调度</span>
         </label>
       </div>
       </div>
 
       <div class="modal-actions" style="flex-shrink: 0; padding-top: 12px; margin-top: 0;">
-        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" title="删除此助手">删除</button>
-        <button class="modal-btn confirm" id="agentSaveBtn" style="background: #667eea;">保存</button>
+        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" data-i18n-title="agentEditor.deleteAgentTitle" title="删除此助手" data-i18n="common.delete">删除</button>
+        <button class="modal-btn confirm" id="agentSaveBtn" style="background: #667eea;" data-i18n="common.save">保存</button>
       </div>
     </div>
   </div>
@@ -939,37 +939,37 @@
   <!-- 命令执行审计弹窗 -->
   <div class="modal-overlay" id="auditLogOverlay" style="display: none; z-index: 4000;">
     <div class="modal-container" style="max-width: 640px; width: 90%; height: 520px; display: flex; flex-direction: column;">
-      <button class="prompt-modal-close" id="auditLogClose" title="关闭">×</button>
-      <button id="auditLogRefreshBtn" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
-      <div class="modal-title">📋 命令执行审计</div>
+      <button class="prompt-modal-close" id="auditLogClose" data-i18n-title="common.close" title="关闭">×</button>
+      <button id="auditLogRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <div class="modal-title" data-i18n="auditLog.title">📋 命令执行审计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <span style="font-size: 12px; color: #999;">分类筛选:</span>
+        <span style="font-size: 12px; color: #999;" data-i18n="auditLog.categoryFilter">分类筛选:</span>
         <select id="auditLogCategoryFilter" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-          <option value="">全部</option>
-          <option value="exec">命令执行</option>
-          <option value="fs">文件操作</option>
-          <option value="auth">认证</option>
-          <option value="security">安全</option>
-          <option value="system">系统</option>
+          <option value="" data-i18n="auditLog.filterAll">全部</option>
+          <option value="exec" data-i18n="auditLog.filterCommand">命令执行</option>
+          <option value="fs" data-i18n="auditLog.filterFile">文件操作</option>
+          <option value="auth" data-i18n="auditLog.filterAuth">认证</option>
+          <option value="security" data-i18n="auditLog.filterSecurity">安全</option>
+          <option value="system" data-i18n="auditLog.filterSystem">系统</option>
         </select>
-        <span style="font-size: 12px; color: #999; margin-left: 8px;">条数:</span>
+        <span style="font-size: 12px; color: #999; margin-left: 8px;" data-i18n="auditLog.countLabel">条数:</span>
         <select id="auditLogLimit" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
-          <option value="50">最近50条</option>
-          <option value="100">最近100条</option>
-          <option value="200" selected>最近200条</option>
-          <option value="500">最近500条</option>
+          <option value="50" data-i18n="auditLog.recent50">最近50条</option>
+          <option value="100" data-i18n="auditLog.recent100">最近100条</option>
+          <option value="200" selected data-i18n="auditLog.recent200">最近200条</option>
+          <option value="500" data-i18n="auditLog.recent500">最近500条</option>
         </select>
       </div>
       <div style="margin-bottom: 10px; position: relative;">
-        <input type="text" id="auditLogSearch" placeholder="搜索操作名、命令或路径..." style="width: 100%; padding: 8px 32px 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
-        <button type="button" id="auditLogSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 14px; cursor: pointer; display: none; padding: 2px 6px; line-height: 1; border-radius: 50%;" title="清除">✕</button>
+        <input type="text" id="auditLogSearch" data-i18n-placeholder="auditLog.searchPlaceholder" placeholder="搜索操作名、命令或路径..." style="width: 100%; padding: 8px 32px 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
+        <button type="button" id="auditLogSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 14px; cursor: pointer; display: none; padding: 2px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="common.clear" title="清除">✕</button>
       </div>
       <div style="flex: 1; overflow-y: auto;" id="auditLogContent">
-        <div id="auditLogLoading" style="text-align: center; padding: 60px; color: #999;">加载中...</div>
-        <div id="auditLogEmpty" style="display: none; text-align: center; padding: 60px; color: #999;">暂无审计日志</div>
+        <div id="auditLogLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
+        <div id="auditLogEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="auditLog.noLogs">暂无审计日志</div>
         <div id="auditLogList" style="display: none;"></div>
       </div>
-      <div style="padding-top: 8px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center;">
+      <div style="padding-top: 8px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center;" data-i18n="auditLog.defaultRange">
         默认查询最近7天的审计日志
       </div>
     </div>
@@ -978,11 +978,11 @@
   <!-- Agent 确认对话框 -->
   <div class="modal-overlay" id="agentConfirmModal" style="display:none; z-index: 6000;">
     <div class="modal-container">
-      <div class="modal-title" id="agentConfirmTitle">确认</div>
+      <div class="modal-title" id="agentConfirmTitle" data-i18n="common.confirm">确认</div>
       <div class="modal-message" id="agentConfirmMessage"></div>
       <div class="modal-actions">
-        <button class="modal-btn cancel" id="agentConfirmCancel">取消</button>
-        <button class="modal-btn confirm" id="agentConfirmOk" style="background: #667eea;">确定</button>
+        <button class="modal-btn cancel" id="agentConfirmCancel" data-i18n="common.cancel">取消</button>
+        <button class="modal-btn confirm" id="agentConfirmOk" style="background: #667eea;" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>

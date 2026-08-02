@@ -2,6 +2,7 @@
 // 从 toolbox-config.js 拆分，包含 MCP 服务器的增删改查与连接管理
 
 import { state, agentApi, escapeHtml, getAgentConnection } from './toolbox-shared.js';
+import { t } from '../shared/i18n.js';
 
 // ==================== MCP 服务器管理 ====================
 
@@ -31,8 +32,8 @@ export function renderMcpServers(servers) {
     container.innerHTML = `
       <div class="toolbox-empty">
         <div class="toolbox-empty-icon">🔌</div>
-        <div class="toolbox-empty-title">代理未连接</div>
-        <div class="toolbox-empty-desc">请先在「代理」Tab 中连接 Agent 服务后，再配置 MCP 服务器</div>
+        <div class="toolbox-empty-title">${t('toolbox.emptyAgentNotConnectedTitle')}</div>
+        <div class="toolbox-empty-desc">${t('toolbox.emptyAgentNotConnectedDescMcp')}</div>
       </div>`;
     return;
   }
@@ -41,8 +42,8 @@ export function renderMcpServers(servers) {
     container.innerHTML = `
       <div class="toolbox-empty">
         <div class="toolbox-empty-icon">📦</div>
-        <div class="toolbox-empty-title">暂无 MCP 服务器</div>
-        <div class="toolbox-empty-desc">点击下方按钮添加 MCP 服务器，扩展 AI 助手的工具能力</div>
+        <div class="toolbox-empty-title">${t('toolbox.emptyNoMcpTitle')}</div>
+        <div class="toolbox-empty-desc">${t('toolbox.emptyNoMcpDesc')}</div>
       </div>`;
     return;
   }
@@ -55,32 +56,32 @@ export function renderMcpServers(servers) {
         <div class="mcp-server-card editing">
           <div class="mcp-add-form">
             <div class="mcp-add-form-row">
-              <input type="text" id="mcpEditId" value="${escapeHtml(s.id)}" placeholder="服务器 ID" class="toolbox-input">
-              <input type="text" id="mcpEditName" value="${escapeHtml(s.name || '')}" placeholder="显示名称" class="toolbox-input">
+              <input type="text" id="mcpEditId" value="${escapeHtml(s.id)}" placeholder="${t('toolbox.mcpIdPlaceholder')}" class="toolbox-input">
+              <input type="text" id="mcpEditName" value="${escapeHtml(s.name || '')}" placeholder="${t('toolbox.mcpNamePlaceholder')}" class="toolbox-input">
             </div>
             ${renderTransportSelector('mcpEdit', transport)}
             ${renderTransportFields('mcpEdit', transport, s.url || '', s.command || '', (s.args || []).join(' '))}
             <div class="mcp-env-section" id="mcpEditEnvSection" style="display:${transport === 'stdio' ? '' : 'none'};">
               <div class="mcp-env-header">
-                <span class="mcp-env-title">环境变量</span>
-                <span class="mcp-env-hint">（仅 stdio 传输需要，敏感值优先在 shell 配置中 export）</span>
+                <span class="mcp-env-title">${t('toolbox.mcpEnvVars')}</span>
+                <span class="mcp-env-hint">${t('toolbox.mcpEnvVarsHint')}</span>
               </div>
               <div class="mcp-env-rows" id="mcpEditEnvRows">
                 ${renderEnvVarRows(s.env || {})}
               </div>
-              <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpEditEnvRows" style="font-size: 12px; padding: 2px 10px;">+ 添加变量</button>
+              <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpEditEnvRows" style="font-size: 12px; padding: 2px 10px;">${t('toolbox.mcpAddVar')}</button>
             </div>
             ${renderHeadersSection('mcpEdit', s.headers || {}, transport)}
             <div class="mcp-add-form-actions">
-              <button class="toolbox-btn toolbox-btn-cancel" data-mcp-id="${escapeHtml(s.id)}" data-action="cancel-edit">取消</button>
-              <button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="save-edit">保存</button>
+              <button class="toolbox-btn toolbox-btn-cancel" data-mcp-id="${escapeHtml(s.id)}" data-action="cancel-edit">${t('common.cancel')}</button>
+              <button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="save-edit">${t('common.save')}</button>
             </div>
           </div>
         </div>`;
     }
 
     const statusClass = s.connected ? 'connected' : 'disconnected';
-    const statusText = s.connected ? '已连接' : '未连接';
+    const statusText = s.connected ? t('toolbox.mcpConnected') : t('toolbox.mcpDisconnected');
     const statusDot = s.connected ? '🟢' : '🔴';
     const toolCount = s.toolCount || 0;
     const enabledClass = s.enabled !== false ? 'enabled' : 'disabled';
@@ -94,7 +95,7 @@ export function renderMcpServers(servers) {
             <span class="mcp-server-badge">${escapeHtml(s.transport || 'stdio')}</span>
           </div>
           <div class="mcp-server-header-right">
-            <label class="toolbox-toggle" title="${s.enabled !== false ? '启用中，点击停用' : '已停用，点击启用'}">
+            <label class="toolbox-toggle" title="${s.enabled !== false ? t('toolbox.mcpToggleEnabled') : t('toolbox.mcpToggleDisabled')}">
               <input type="checkbox" ${s.enabled !== false ? 'checked' : ''} data-mcp-id="${escapeHtml(s.id)}" data-action="toggle">
               <span class="toolbox-toggle-slider"></span>
             </label>
@@ -108,24 +109,24 @@ export function renderMcpServers(servers) {
           ${s.tools && s.tools.length > 0 ? `
           <div class="mcp-tools-section">
             <button class="mcp-tools-toggle" data-mcp-id="${escapeHtml(s.id)}" data-action="toggle-tools">
-              &#9654; 查看 ${s.tools.length} 个工具
+              &#9654; ${t('toolbox.viewTools', { count: s.tools.length })}
             </button>
             <div class="mcp-tools-list" id="mcp-tools-${escapeHtml(s.id)}" style="display:none;">
-              ${s.tools.map(t => `
+              ${s.tools.map(tool => `
                 <div class="mcp-tool-item">
-                  <div class="mcp-tool-name">${escapeHtml(t.name)}</div>
-                  <div class="mcp-tool-desc">${escapeHtml(t.description || '')}</div>
+                  <div class="mcp-tool-name">${escapeHtml(tool.name)}</div>
+                  <div class="mcp-tool-desc">${escapeHtml(tool.description || '')}</div>
                 </div>
               `).join('')}
             </div>
           </div>` : ''}
           <div class="mcp-server-actions">
           ${s.connected
-            ? `<button class="toolbox-btn toolbox-btn-warn" data-mcp-id="${escapeHtml(s.id)}" data-action="disconnect">断开</button>`
-            : `<button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="connect">连接</button>`
+            ? `<button class="toolbox-btn toolbox-btn-warn" data-mcp-id="${escapeHtml(s.id)}" data-action="disconnect">${t('toolbox.mcpDisconnectBtn')}</button>`
+            : `<button class="toolbox-btn toolbox-btn-primary" data-mcp-id="${escapeHtml(s.id)}" data-action="connect">${t('toolbox.mcpConnectBtn')}</button>`
           }
-          <button class="toolbox-btn toolbox-btn-edit" data-mcp-id="${escapeHtml(s.id)}" data-action="edit">编辑</button>
-          <button class="toolbox-btn toolbox-btn-danger" data-mcp-id="${escapeHtml(s.id)}" data-action="delete">删除</button>
+          <button class="toolbox-btn toolbox-btn-edit" data-mcp-id="${escapeHtml(s.id)}" data-action="edit">${t('common.edit')}</button>
+          <button class="toolbox-btn toolbox-btn-danger" data-mcp-id="${escapeHtml(s.id)}" data-action="delete">${t('common.delete')}</button>
           </div>
         </div>
       </div>`;
@@ -145,10 +146,10 @@ export function renderEnvVarRows(envObj = {}) {
   }
   return entries.map(([key, value]) => `
     <div class="mcp-env-row">
-      <input type="text" class="mcp-env-key toolbox-input" placeholder="变量名" value="${escapeHtml(key)}" style="flex: 1;">
+      <input type="text" class="mcp-env-key toolbox-input" placeholder="${t('toolbox.mcpVarNamePlaceholder')}" value="${escapeHtml(key)}" style="flex: 1;">
       <div class="mcp-env-value-wrap token-input-wrapper" style="flex: 2;">
-        <input type="password" class="mcp-env-value token-input" placeholder="值" value="${escapeHtml(value)}">
-        <button type="button" class="mcp-env-eye toggle-token-btn" title="显示/隐藏" data-action="toggle-env-eye">
+        <input type="password" class="mcp-env-value token-input" placeholder="${t('toolbox.mcpVarValuePlaceholder')}" value="${escapeHtml(value)}">
+        <button type="button" class="mcp-env-eye toggle-token-btn" title="${t('toolbox.mcpToggleEye')}" data-action="toggle-env-eye">
           <svg class="icon-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
@@ -159,7 +160,7 @@ export function renderEnvVarRows(envObj = {}) {
           </svg>
         </button>
       </div>
-      <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="删除此行" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
+      <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="${t('toolbox.mcpRemoveRow')}" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
     </div>
   `).join('');
 }
@@ -193,10 +194,10 @@ export function renderHeaderRows(headersObj = {}) {
   }
   return entries.map(([key, value]) => `
     <div class="mcp-env-row">
-      <input type="text" class="mcp-env-key toolbox-input" placeholder="Header 名" value="${escapeHtml(key)}" style="flex: 1;">
+      <input type="text" class="mcp-env-key toolbox-input" placeholder="${t('toolbox.mcpHeaderNamePlaceholder')}" value="${escapeHtml(key)}" style="flex: 1;">
       <div class="mcp-env-value-wrap token-input-wrapper" style="flex: 2;">
-        <input type="password" class="mcp-env-value token-input" placeholder="值" value="${escapeHtml(value)}">
-        <button type="button" class="mcp-env-eye toggle-token-btn" title="显示/隐藏" data-action="toggle-env-eye">
+        <input type="password" class="mcp-env-value token-input" placeholder="${t('toolbox.mcpVarValuePlaceholder')}" value="${escapeHtml(value)}">
+        <button type="button" class="mcp-env-eye toggle-token-btn" title="${t('toolbox.mcpToggleEye')}" data-action="toggle-env-eye">
           <svg class="icon-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
             <circle cx="12" cy="12" r="3"></circle>
@@ -207,7 +208,7 @@ export function renderHeaderRows(headersObj = {}) {
           </svg>
         </button>
       </div>
-      <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="删除此行" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
+      <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="${t('toolbox.mcpRemoveRow')}" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
     </div>
   `).join('');
 }
@@ -240,13 +241,13 @@ export function renderHeadersSection(idPrefix, headers = {}, transport = 'stdio'
   return `
     <div class="mcp-env-section" id="${idPrefix}HeadersSection" style="display:${isHttp ? '' : 'none'};">
       <div class="mcp-env-header">
-        <span class="mcp-env-title">请求头 (Headers)</span>
-        <span class="mcp-env-hint">（HTTP 传输时附加的请求头，如 Authorization、X-API-Key 等）</span>
+        <span class="mcp-env-title">${t('toolbox.mcpHeaders')}</span>
+        <span class="mcp-env-hint">${t('toolbox.mcpHeadersHint')}</span>
       </div>
       <div class="mcp-env-rows" id="${idPrefix}HeaderRows">
         ${renderHeaderRows(headers)}
       </div>
-      <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="${idPrefix}HeaderRows" style="font-size: 12px; padding: 2px 10px;">+ 添加请求头</button>
+      <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="${idPrefix}HeaderRows" style="font-size: 12px; padding: 2px 10px;">${t('toolbox.mcpAddHeader')}</button>
     </div>`;
 }
 
@@ -293,10 +294,10 @@ export function handleEnvAction(e) {
       const newRow = document.createElement('div');
       newRow.className = 'mcp-env-row';
       newRow.innerHTML = `
-        <input type="text" class="mcp-env-key toolbox-input" placeholder="变量名" style="flex: 1;">
+        <input type="text" class="mcp-env-key toolbox-input" placeholder="${t('toolbox.mcpVarNamePlaceholder')}" style="flex: 1;">
         <div class="mcp-env-value-wrap token-input-wrapper" style="flex: 2;">
-          <input type="password" class="mcp-env-value token-input" placeholder="值">
-          <button type="button" class="mcp-env-eye toggle-token-btn" title="显示/隐藏" data-action="toggle-env-eye">
+          <input type="password" class="mcp-env-value token-input" placeholder="${t('toolbox.mcpVarValuePlaceholder')}">
+          <button type="button" class="mcp-env-eye toggle-token-btn" title="${t('toolbox.mcpToggleEye')}" data-action="toggle-env-eye">
             <svg class="icon-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
               <circle cx="12" cy="12" r="3"></circle>
@@ -307,7 +308,7 @@ export function handleEnvAction(e) {
             </svg>
           </button>
         </div>
-        <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="删除此行" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
+        <button type="button" class="mcp-env-remove toolbox-btn toolbox-btn-danger" title="${t('toolbox.mcpRemoveRow')}" data-action="remove-env-row" style="flex-shrink: 0;">×</button>
       `;
       target.appendChild(newRow);
       // 聚焦新行的变量名输入框
@@ -331,10 +332,10 @@ export function handleEnvAction(e) {
  */
 export function renderTransportSelector(idPrefix, transport = 'stdio') {
   const options = [
-    { value: 'stdio', label: 'stdio', title: '子进程通信 (npx/python 等)' },
-    { value: 'sse', label: 'SSE', title: 'Server-Sent Events (HTTP GET 长连接 + POST 发消息)' },
-    { value: 'streamableHttp', label: 'Streamable HTTP', title: 'MCP 官方推荐 HTTP 传输 (POST + GET SSE)' },
-    { value: 'websocket', label: 'WebSocket', title: 'WebSocket 双向通信' }
+    { value: 'stdio', label: 'stdio', title: t('toolbox.transportStdioTitle') },
+    { value: 'sse', label: 'SSE', title: t('toolbox.transportSseTitle') },
+    { value: 'streamableHttp', label: 'Streamable HTTP', title: t('toolbox.transportStreamableHttpTitle') },
+    { value: 'websocket', label: 'WebSocket', title: t('toolbox.transportWebsocketTitle') }
   ];
 
   return `
@@ -363,8 +364,8 @@ export function renderTransportFields(idPrefix, transport = 'stdio', url = '', c
   const isHttp = transport === 'sse' || transport === 'streamableHttp' || transport === 'websocket';
   return `
     <div class="mcp-add-form-row" id="${idPrefix}StdioRow" style="display:${isHttp ? 'none' : 'flex'};">
-      <input type="text" id="${idPrefix}Command" value="${escapeHtml(command)}" placeholder="命令路径，如 npx、python" class="toolbox-input" style="flex: 2;">
-      <input type="text" id="${idPrefix}Args" value="${escapeHtml(args)}" placeholder="参数，空格分隔" class="toolbox-input" style="flex: 3;">
+      <input type="text" id="${idPrefix}Command" value="${escapeHtml(command)}" placeholder="${t('toolbox.mcpCommandPlaceholder')}" class="toolbox-input" style="flex: 2;">
+      <input type="text" id="${idPrefix}Args" value="${escapeHtml(args)}" placeholder="${t('toolbox.mcpArgsPlaceholder')}" class="toolbox-input" style="flex: 3;">
     </div>
     <div class="mcp-add-form-row" id="${idPrefix}UrlRow" style="display:${isHttp ? 'flex' : 'none'};">
       <input type="text" id="${idPrefix}Url" value="${escapeHtml(url)}" placeholder="http://localhost:3000/mcp" class="toolbox-input" style="flex: 1;">
@@ -392,7 +393,7 @@ export function renderMcpServerAddress(server) {
 export function renderMcpMetaInfo(server) {
   const headerCount = Object.keys(server.headers || {}).length;
   if (headerCount > 0) {
-    return `<div class="mcp-server-meta">${headerCount} 个自定义请求头</div>`;
+    return `<div class="mcp-server-meta">${t('toolbox.mcpCustomHeadersCount', { count: headerCount })}</div>`;
   }
   return '';
 }
@@ -444,25 +445,25 @@ export function showAddMcpForm() {
   container.innerHTML = `
     <div class="mcp-add-form">
       <div class="mcp-add-form-row">
-        <input type="text" id="mcpAddId" placeholder="服务器 ID（唯一标识）" class="toolbox-input">
-        <input type="text" id="mcpAddName" placeholder="显示名称" class="toolbox-input">
+        <input type="text" id="mcpAddId" placeholder="${t('toolbox.mcpIdPlaceholderUnique')}" class="toolbox-input">
+        <input type="text" id="mcpAddName" placeholder="${t('toolbox.mcpNamePlaceholder')}" class="toolbox-input">
       </div>
       ${renderTransportSelector('mcpAdd')}
       ${renderTransportFields('mcpAdd')}
       <div class="mcp-env-section" id="mcpAddEnvSection">
         <div class="mcp-env-header">
-          <span class="mcp-env-title">环境变量</span>
-          <span class="mcp-env-hint">（仅 stdio 传输需要，敏感值优先在 shell 配置中 export）</span>
+          <span class="mcp-env-title">${t('toolbox.mcpEnvVars')}</span>
+          <span class="mcp-env-hint">${t('toolbox.mcpEnvVarsHint')}</span>
         </div>
         <div class="mcp-env-rows" id="mcpAddEnvRows">
           ${renderEnvVarRows()}
         </div>
-        <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpAddEnvRows" style="font-size: 12px; padding: 2px 10px;">+ 添加变量</button>
+        <button type="button" class="toolbox-btn mcp-env-add-row" data-action="add-env-row" data-target="mcpAddEnvRows" style="font-size: 12px; padding: 2px 10px;">${t('toolbox.mcpAddVar')}</button>
       </div>
       ${renderHeadersSection('mcpAdd', {}, 'stdio')}
       <div class="mcp-add-form-actions">
-        <button class="toolbox-btn toolbox-btn-cancel" id="mcpAddCancel">取消</button>
-        <button class="toolbox-btn toolbox-btn-primary" id="mcpAddConfirm">添加</button>
+        <button class="toolbox-btn toolbox-btn-cancel" id="mcpAddCancel">${t('common.cancel')}</button>
+        <button class="toolbox-btn toolbox-btn-primary" id="mcpAddConfirm">${t('common.add')}</button>
       </div>
     </div>`;
 }
@@ -484,7 +485,7 @@ export async function addMcpServer(serverData) {
     if (result.success) {
       return true;
     }
-    throw new Error(result.error || '添加失败');
+    throw new Error(result.error || t('toolbox.mcpAddFailedShort'));
   } catch (err) {
     throw err;
   }
@@ -497,7 +498,7 @@ export async function removeMcpServer(serverId) {
   try {
     const result = await agentApi('DELETE', '/api/mcp/servers', { id: serverId });
     if (result.success) return true;
-    throw new Error(result.error || '删除失败');
+    throw new Error(result.error || t('toolbox.mcpDeleteFailedShort'));
   } catch (err) {
     throw err;
   }
@@ -509,7 +510,7 @@ export async function removeMcpServer(serverId) {
 export async function connectMcpServer(serverId) {
   const result = await agentApi('POST', '/api/mcp/servers/connect', { id: serverId });
   if (result.success) return result;
-  throw new Error(result.error || '连接失败');
+  throw new Error(result.error || t('toolbox.mcpConnectFailedShort'));
 }
 
 /**
@@ -518,7 +519,7 @@ export async function connectMcpServer(serverId) {
 export async function disconnectMcpServer(serverId) {
   const result = await agentApi('POST', '/api/mcp/servers/disconnect', { id: serverId });
   if (result.success) return true;
-  throw new Error(result.error || '断开失败');
+  throw new Error(result.error || t('toolbox.mcpDisconnectFailedShort'));
 }
 
 /**
@@ -527,7 +528,7 @@ export async function disconnectMcpServer(serverId) {
 export async function toggleMcpServer(serverId, enabled) {
   const result = await agentApi('PUT', '/api/mcp/servers/toggle', { id: serverId, enabled });
   if (result.success) return true;
-  throw new Error(result.error || '操作失败');
+  throw new Error(result.error || t('toolbox.mcpOperationFailedShort'));
 }
 
 // MCP 服务器管理函数已通过 export 暴露给 toolbox-config.js

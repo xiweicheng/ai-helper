@@ -2,6 +2,7 @@
 
 import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -47,7 +48,7 @@ function ensureModelDeleteButtons() {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.className = 'delete-model-btn';
-    deleteBtn.title = '删除此模型';
+    deleteBtn.title = t('settings.deleteModel');
     deleteBtn.innerHTML = '×';
     deleteBtn.style.display = 'inline-block';
     option.appendChild(deleteBtn);
@@ -103,7 +104,7 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
           deleteBtn = document.createElement('button');
           deleteBtn.type = 'button';
           deleteBtn.className = 'delete-model-btn';
-          deleteBtn.title = '删除此模型';
+          deleteBtn.title = t('settings.deleteModel');
           deleteBtn.innerHTML = '×';
         }
         deleteBtn.style.display = 'inline-block';
@@ -163,7 +164,7 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
    const deleteBtn = document.createElement('button');
    deleteBtn.type = 'button';
    deleteBtn.className = 'delete-model-btn';
-   deleteBtn.title = '删除此模型';
+   deleteBtn.title = t('settings.deleteModel');
    deleteBtn.innerHTML = '×';
    deleteBtn.style.display = 'inline-block';
    rightSpan.appendChild(deleteBtn);
@@ -288,7 +289,7 @@ export function loadCustomModels(callback) {
                 const deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button';
                 deleteBtn.className = 'delete-model-btn';
-                deleteBtn.title = '删除此模型';
+                deleteBtn.title = t('settings.deleteModel');
                 deleteBtn.innerHTML = '×';
                 deleteBtn.style.display = 'inline-block';
                 rightSpan.appendChild(deleteBtn);
@@ -311,7 +312,7 @@ export function loadCustomModels(callback) {
               const deleteBtn = document.createElement('button');
               deleteBtn.type = 'button';
               deleteBtn.className = 'delete-model-btn';
-              deleteBtn.title = '删除此模型';
+              deleteBtn.title = t('settings.deleteModel');
               deleteBtn.innerHTML = '×';
               deleteBtn.style.display = 'inline-block';
               rightSpan.appendChild(deleteBtn);
@@ -346,7 +347,7 @@ export function loadCustomModels(callback) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'delete-model-btn';
-        deleteBtn.title = '删除此模型';
+        deleteBtn.title = t('settings.deleteModel');
         deleteBtn.innerHTML = '×';
         deleteBtn.style.display = 'inline-block';
         rightSpan.appendChild(deleteBtn);
@@ -481,7 +482,7 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'delete-model-btn';
-  deleteBtn.title = '删除此模型';
+  deleteBtn.title = t('settings.deleteModel');
   deleteBtn.innerHTML = '×';
   // 图片模型删除按钮始终可见
   deleteBtn.style.display = 'inline-block';
@@ -582,7 +583,7 @@ export function loadImageModels(callback) {
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'delete-model-btn';
-      deleteBtn.title = '删除此模型';
+      deleteBtn.title = t('settings.deleteModel');
       deleteBtn.innerHTML = '×';
       deleteBtn.style.display = 'inline-block';
       rightSpan.appendChild(deleteBtn);
@@ -653,7 +654,7 @@ function buildApiBaseOption(url, label, isCustom) {
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'delete-model-btn';
-  deleteBtn.title = '删除此地址';
+  deleteBtn.title = t('settings.deleteApiBase');
   deleteBtn.innerHTML = '×';
   deleteBtn.style.display = 'inline-block';
   rightSpan.appendChild(deleteBtn);
@@ -830,7 +831,7 @@ function buildImageApiBaseOption(url, label, isCustom) {
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'delete-model-btn';
-  deleteBtn.title = '删除此地址';
+  deleteBtn.title = t('settings.deleteApiBase');
   deleteBtn.innerHTML = '×';
   deleteBtn.style.display = 'inline-block';
   rightSpan.appendChild(deleteBtn);
@@ -1061,7 +1062,7 @@ export function loadConfig() {
       streamExpandToolsEl.checked = result.streamExpandTools === true;
     }
     if (streamExpandToolsLabel) {
-      streamExpandToolsLabel.textContent = streamExpandToolsEl?.checked ? '已启用' : '已停用';
+      streamExpandToolsLabel.textContent = streamExpandToolsEl?.checked ? t('common.enabled') : t('common.disabled');
     }
     if (streamExpandToolsWrap) {
       streamExpandToolsWrap.style.display = (result.streamEnabled !== undefined ? result.streamEnabled : true) ? 'block' : 'none';
@@ -1172,19 +1173,19 @@ export function saveConfig() {
   
   // 验证 ReAct 配置范围
   if (reactMaxIterations < 10 || reactMaxIterations > 1000) {
-    showToast('❌ 最大循环次数必须在 10-1000 之间', 'error');
+    showToast(`❌ ${t('settings.maxIterationsRangeError')}`, 'error');
     return;
   }
   if (reactApiTimeout < 60000 || reactApiTimeout > 600000) {
-    showToast('❌ API 请求超时必须在 1-10 分钟 之间', 'error');
+    showToast(`❌ ${t('settings.apiTimeoutRangeError')}`, 'error');
     return;
   }
   if (reactLoopTimeout < 60000 || reactLoopTimeout > 7200000) {
-    showToast('❌ 整体循环超时必须在 1-120 分钟 之间', 'error');
+    showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');
     return;
   }
   if (reactToolTimeout < 60000 || reactToolTimeout > 1800000) {
-    showToast('❌ 工具执行超时必须在 1-30 分钟 之间', 'error');
+    showToast(`❌ ${t('settings.toolTimeoutRangeError')}`, 'error');
     return;
   }
   
@@ -1195,7 +1196,7 @@ export function saveConfig() {
   
   // 验证必填字段
   if (!apiKey) {
-    showToast('❌ API Key 不能为空', 'error');
+    showToast(`❌ ${t('settings.apiKeyEmpty')}`, 'error');
     return;
   }
   
@@ -1225,9 +1226,9 @@ export function saveConfig() {
     streamExpandTools: streamExpandTools
   }, async function() {
     if (chrome.runtime.lastError) {
-      showToast('❌ 保存失败：' + chrome.runtime.lastError.message, 'error');
+      showToast(`❌ ${t('settings.saveFailed', { message: chrome.runtime.lastError.message })}`, 'error');
     } else {
-      showToast('✅ 配置已保存成功！', 'success');
+      showToast(`✅ ${t('settings.saveSuccess')}`, 'success');
       const status = document.getElementById('status');
       status.style.display = 'none';
 

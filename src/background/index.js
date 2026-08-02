@@ -11,6 +11,10 @@ import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
 import logger from '../shared/logger.js';
+import { initI18n } from '../shared/i18n.js';
+
+// 初始化国际化（读取语言偏好，供 local-agent-client 设置 Accept-Language 头）
+initI18n();
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
 // 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）

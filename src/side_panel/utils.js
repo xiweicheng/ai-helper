@@ -4,6 +4,7 @@ import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
 import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 /**
  * 显示 Toast 提示
@@ -101,9 +102,9 @@ function _oneDecimal(n) {
  */
 export function getStatusText(status) {
   const statusMap = {
-    'success': '成功',
-    'failed': '失败',
-    'processing': '处理中'
+    'success': t('common.statusSuccess'),
+    'failed': t('common.statusFailed'),
+    'processing': t('common.statusProcessing')
   };
   return statusMap[status] || status;
 }
@@ -144,7 +145,7 @@ export function copyToClipboard(text, btn) {
         btn.classList.remove('copied');
       }, 2000);
     } catch (e) {
-      showToast('复制失败', 'error');
+      showToast(t('common.copyFailed'), 'error');
     }
     document.body.removeChild(textArea);
   });

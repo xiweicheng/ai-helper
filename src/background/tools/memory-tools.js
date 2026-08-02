@@ -1,6 +1,6 @@
-// memory-tools - 长期记忆工具定义（3合1）
-// 记忆文件路径：~/.ai-helper-agent/memory/global-memory.json（Agent 系统配置目录）
-// 实际存储于 Agent 本地文件系统，通过 agent_file 读写
+// memory-tools - long-term memory tool definitions (3-in-1)
+// Memory file path: ~/.ai-helper-agent/memory/global-memory.json (Agent system config directory)
+// Actually stored on the Agent local file system, read/written via agent_file
 
 export const MEMORY_TOOLS = [
   {
@@ -12,23 +12,23 @@ export const MEMORY_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_memory',
-      description: '长期记忆管理',
+      description: 'Long-term memory management',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['store', 'recall', 'manage'], description: '操作类型' },
-          subAction: { type: 'string', description: '子操作: store时=add/update/delete, manage时=review/compact' },
-          type: { type: 'string', enum: ['fact', 'summary'], description: '记忆类型' },
-          category: { type: 'string', enum: ['preference', 'knowledge', 'decision', 'custom'], description: 'store时可选: 记忆分类' },
-          content: { type: 'string', description: 'store时必填: 记忆内容' },
-          title: { type: 'string', description: 'store时可选: summary类型标题' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'store/recall时可选: 标签筛选' },
-          importance: { type: 'integer', description: 'store时可选: 重要性1-10' },
-          memoryId: { type: 'string', description: 'store时update/delete必填: 记忆ID' },
-          sourceSessionId: { type: 'string', description: 'store时可选: 来源会话ID' },
-          query: { type: 'string', description: 'recall时必填: 检索关键词' },
-          memoryType: { type: 'string', enum: ['fact', 'summary', 'all'], description: 'recall时可选: 记忆类型筛选,默认all' },
-          limit: { type: 'integer', description: 'recall时可选: 返回数量上限,默认10' }
+          action: { type: 'string', enum: ['store', 'recall', 'manage'], description: 'Operation type' },
+          subAction: { type: 'string', description: 'Sub-action: when store = add/update/delete, when manage = review/compact' },
+          type: { type: 'string', enum: ['fact', 'summary'], description: 'Memory type' },
+          category: { type: 'string', enum: ['preference', 'knowledge', 'decision', 'custom'], description: 'optional for store: memory category' },
+          content: { type: 'string', description: 'required for store: memory content' },
+          title: { type: 'string', description: 'optional for store: title for summary type' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'optional for store/recall: tag filter' },
+          importance: { type: 'integer', description: 'optional for store: importance 1-10' },
+          memoryId: { type: 'string', description: 'required for store update/delete: memory ID' },
+          sourceSessionId: { type: 'string', description: 'optional for store: source session ID' },
+          query: { type: 'string', description: 'required for recall: search keyword' },
+          memoryType: { type: 'string', enum: ['fact', 'summary', 'all'], description: 'optional for recall: memory type filter, default all' },
+          limit: { type: 'integer', description: 'optional for recall: max number of results, default 10' }
         },
         required: ['action']
       }

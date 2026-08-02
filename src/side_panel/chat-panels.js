@@ -3,6 +3,7 @@
 
 import { escapeHtml, formatDuration } from './utils.js';
 import { renderExecutionLogForPanel } from './execution-log-render.js';
+import { t } from '../shared/i18n.js';
 
 // ============================================================
 // 反思信息面板
@@ -22,23 +23,23 @@ function showReflectionInfo(data, anchorBtn) {
 
   const scoreColor = overallScore >= 8 ? 'score-high' : (overallScore >= 5 ? 'score-mid' : 'score-low');
   const scoreEmoji = overallScore >= 8 ? '✅' : (overallScore >= 5 ? '🔍' : '⚠️');
-  const decisionLabel = decision === 'passed' ? '✅ 通过' : (decision === 'revised' ? '🔧 已修订' : (decision === 'needs_improvement' ? '⚠️ 需改进' : ''));
+  const decisionLabel = decision === 'passed' ? t('chatPanels.decisionPassed') : (decision === 'revised' ? t('chatPanels.decisionRevised') : (decision === 'needs_improvement' ? t('chatPanels.decisionNeedsImprovement') : ''));
 
   const dimLabels = {
-    accuracy: '准确性',
-    completeness: '完整性',
-    relevance: '相关性',
-    clarity: '清晰度',
-    usefulness: '实用性',
-    safety: '安全性',
-    efficiency: '效率'
+    accuracy: t('chatPanels.dimAccuracy'),
+    completeness: t('chatPanels.dimCompleteness'),
+    relevance: t('chatPanels.dimRelevance'),
+    clarity: t('chatPanels.dimClarity'),
+    usefulness: t('chatPanels.dimUsefulness'),
+    safety: t('chatPanels.dimSafety'),
+    efficiency: t('chatPanels.dimEfficiency')
   };
 
   let dimensionsHtml = '';
   if (dimensions && Object.keys(dimensions).length > 0) {
     dimensionsHtml = `
       <div class="ri-section">
-        <div class="ri-section-title">📊 各维度评分</div>
+        <div class="ri-section-title">${t('chatPanels.dimensionsTitle')}</div>
         <div class="ri-dimensions">
           ${Object.entries(dimensions).map(([key, val]) => {
             const label = dimLabels[key] || key;
@@ -60,7 +61,7 @@ function showReflectionInfo(data, anchorBtn) {
   if (issues && issues.length > 0) {
     issuesHtml = `
       <div class="ri-section">
-        <div class="ri-section-title">📋 发现的问题</div>
+        <div class="ri-section-title">${t('chatPanels.issuesTitle')}</div>
         <ul class="ri-list">${issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
       </div>
     `;
@@ -70,7 +71,7 @@ function showReflectionInfo(data, anchorBtn) {
   if (suggestions && suggestions.length > 0) {
     suggestionsHtml = `
       <div class="ri-section">
-        <div class="ri-section-title">💡 改进建议</div>
+        <div class="ri-section-title">${t('chatPanels.suggestionsTitle')}</div>
         <ul class="ri-list">${suggestions.map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
       </div>
     `;
@@ -79,14 +80,14 @@ function showReflectionInfo(data, anchorBtn) {
   let processHtml = '';
   if (rounds > 0 || decision || useful !== null) {
     const processItems = [];
-    if (rounds > 0) processItems.push(`<span class="ri-tag">🔄 经过 ${rounds} 轮评估${wasRevised ? '（已修订）' : ''}</span>`);
-    if (decision) processItems.push(`<span class="ri-tag">🎯 最终决策: ${decisionLabel}</span>`);
-    if (useful !== null) processItems.push(`<span class="ri-tag">${useful ? '✅ AI 认为结果有用' : '⚠️ AI 认为结果需要改进'}</span>`);
+    if (rounds > 0) processItems.push(`<span class="ri-tag">${t('chatPanels.roundsEvaluated', { rounds, revised: wasRevised ? t('chatPanels.revisedTag') : '' })}</span>`);
+    if (decision) processItems.push(`<span class="ri-tag">${t('chatPanels.finalDecision', { label: decisionLabel })}</span>`);
+    if (useful !== null) processItems.push(`<span class="ri-tag">${useful ? t('chatPanels.resultUseful') : t('chatPanels.resultNeedsImprovement')}</span>`);
     if (reasoning) processItems.push(`<div class="ri-reasoning">📝 ${escapeHtml(reasoning)}</div>`);
 
     processHtml = `
       <div class="ri-section">
-        <div class="ri-section-title">🔍 评估过程</div>
+        <div class="ri-section-title">${t('chatPanels.processTitle')}</div>
         <div class="ri-process">${processItems.join('')}</div>
       </div>
     `;
@@ -94,25 +95,25 @@ function showReflectionInfo(data, anchorBtn) {
 
   // 评分说明
   const scoreExplanation = overallScore >= 8
-    ? 'AI 认为回答质量较高，准确性和完整性良好，可以直接使用。'
+    ? t('chatPanels.scoreHighExplanation')
     : (overallScore >= 5
-      ? 'AI 认为回答存在一些不足，建议核实关键信息或补充细节后再使用。'
-      : 'AI 认为回答质量较低，可能存在较多错误或遗漏，建议重新提问或调整问题表述。');
+      ? t('chatPanels.scoreMidExplanation')
+      : t('chatPanels.scoreLowExplanation'));
 
   overlay.innerHTML = `
     <div class="reflection-info-panel">
       <div class="ri-header">
-        <div class="ri-title">质量评估详情</div>
-        <button class="ri-close" title="关闭">✕</button>
+        <div class="ri-title">${t('chatPanels.reflectionTitle')}</div>
+        <button class="ri-close" title="${t('common.close')}">✕</button>
       </div>
       <div class="ri-body">
         <div class="ri-score-overview">
           <span class="ri-score-emoji">${scoreEmoji}</span>
           <span class="ri-score-value ${scoreColor}">${overallScore}<span class="ri-score-max">/10</span></span>
-          <span class="ri-score-label">综合评分</span>
+          <span class="ri-score-label">${t('chatPanels.overallScore')}</span>
         </div>
         <div class="ri-section">
-          <div class="ri-section-title">📖 评分说明</div>
+          <div class="ri-section-title">${t('chatPanels.scoreExplanationTitle')}</div>
           <p class="ri-text">${scoreExplanation}</p>
         </div>
         ${dimensionsHtml}
@@ -120,9 +121,9 @@ function showReflectionInfo(data, anchorBtn) {
         ${suggestionsHtml}
         ${processHtml}
         <div class="ri-section ri-about">
-          <div class="ri-section-title">ℹ️ 什么是质量评估？</div>
-          <p class="ri-text">质量评估是 AI 在生成回答后，对自己的回答进行的<strong>自我反思和评分</strong>。AI 会从准确性、完整性、相关性等多个维度审视回答质量，发现潜在问题并尝试改进。</p>
-          <p class="ri-text ri-text-sm">评分标准：<span style="color:#10b981">✅ 8-10分 质量良好</span> · <span style="color:#f59e0b">🔍 5-7分 需要关注</span> · <span style="color:#ef4444">⚠️ 1-4分 存在较多问题</span></p>
+          <div class="ri-section-title">${t('chatPanels.aboutTitle')}</div>
+          <p class="ri-text">${t('chatPanels.aboutDesc')}</p>
+          <p class="ri-text ri-text-sm">${t('chatPanels.scoreStandard')}</p>
         </div>
       </div>
     </div>
@@ -189,8 +190,8 @@ function showExecutionLog(executionLog) {
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <h3>执行日志</h3>
-          ${planTaskCount > 0 ? `<span class="log-badge">任务拆解</span>` : ''}
+          <h3>${t('chatPanels.executionLogTitle')}</h3>
+          ${planTaskCount > 0 ? `<span class="log-badge">${t('chatPanels.taskBreakdown')}</span>` : ''}
         </div>
         <div class="log-close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -199,51 +200,51 @@ function showExecutionLog(executionLog) {
           </svg>
         </div>
       </div>
-      
+
       <div class="log-summary">
-        <div class="summary-item" title="总耗时: ${formatDuration(totalDuration)}">
+        <div class="summary-item" title="${t('chatPanels.totalDurationTitle', { duration: formatDuration(totalDuration) })}">
           <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <polyline points="12 6 12 12 16 14"></polyline>
           </svg>
-          <span class="summary-label">总耗时</span>
+          <span class="summary-label">${t('chatPanels.totalDuration')}</span>
           <span class="summary-value">${formatDuration(totalDuration)}</span>
         </div>
-        <div class="summary-combo" title="总节点: ${executionLog.length}">
+        <div class="summary-combo" title="${t('chatPanels.totalNodesTitle', { count: executionLog.length })}">
           <div class="combo-main">
             <span class="combo-icon">◉</span>
-            <span class="combo-label">总节点</span>
+            <span class="combo-label">${t('chatPanels.totalNodes')}</span>
             <span class="combo-value">${executionLog.length}</span>
           </div>
           <div class="combo-stats">
-            <div class="combo-stat success" data-status="success" title="成功: ${successCount}">
+            <div class="combo-stat success" data-status="success" title="${t('chatPanels.successCountTitle', { count: successCount })}">
               <span class="stat-icon">✓</span>
-              <span class="stat-label">成功</span>
+              <span class="stat-label">${t('chatPanels.successLabel')}</span>
               <span class="stat-value">${successCount}</span>
             </div>
-            <div class="combo-stat failed" data-status="failed" title="失败: ${failedCount}">
+            <div class="combo-stat failed" data-status="failed" title="${t('chatPanels.failedCountTitle', { count: failedCount })}">
               <span class="stat-icon">✗</span>
-              <span class="stat-label">失败</span>
+              <span class="stat-label">${t('chatPanels.failedLabel')}</span>
               <span class="stat-value">${failedCount}</span>
             </div>
             ${subtaskCount > 0 ? `
-            <div class="combo-stat subtask" data-status="subtask" title="子任务: ${completedSubtasks}/${subtaskCount}">
+            <div class="combo-stat subtask" data-status="subtask" title="${t('chatPanels.subtaskCountTitle', { completed: completedSubtasks, total: subtaskCount })}">
               <span class="stat-icon">🔀</span>
-              <span class="stat-label">子任务</span>
+              <span class="stat-label">${t('chatPanels.subtaskLabel')}</span>
               <span class="stat-value">${completedSubtasks}/${subtaskCount}</span>
             </div>
             ` : ''}
             ${postReflection ? `
-            <div class="combo-stat reflection" title="质量评估: ${postReflection.overallScore}/10">
+            <div class="combo-stat reflection" title="${t('chatPanels.scoreTitle', { score: postReflection.overallScore })}">
               <span class="stat-icon">🎯</span>
-              <span class="stat-label">评分</span>
+              <span class="stat-label">${t('chatPanels.scoreLabel')}</span>
               <span class="stat-value">${postReflection.overallScore}/10</span>
             </div>
             ` : ''}
           </div>
         </div>
         <div class="summary-actions">
-          <button class="toggle-expand-btn" title="展开全部节点">
+          <button class="toggle-expand-btn" title="${t('chatPanels.expandAll')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="7 13 12 18 17 13"></polyline>
               <polyline points="7 6 12 11 17 6"></polyline>
@@ -288,10 +289,10 @@ function showExecutionLog(executionLog) {
     const svg = toggleExpandBtn.querySelector('svg');
     if (isExpanded) {
       svg.innerHTML = '<polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline>';
-      toggleExpandBtn.setAttribute('title', '收起全部节点');
+      toggleExpandBtn.setAttribute('title', t('chatPanels.collapseAll'));
     } else {
       svg.innerHTML = '<polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline>';
-      toggleExpandBtn.setAttribute('title', '展开全部节点');
+      toggleExpandBtn.setAttribute('title', t('chatPanels.expandAll'));
     }
   });
   

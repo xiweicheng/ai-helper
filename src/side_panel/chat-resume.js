@@ -7,6 +7,7 @@ import { formatDuration } from './utils.js';
 import { renderMessageMermaid } from './markdown-render.js';
 import { appendMessageToSession, markSessionCompleted } from './session-manager.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 从 chat-manager.js 导入核心函数（依赖注入方向：chat-manager → chat-resume）
 import {
@@ -33,16 +34,16 @@ export function showResumeDialog() {
     container.style.cssText = 'background:#fff;border-radius:8px;padding:24px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
 
     const title = document.createElement('h3');
-    title.textContent = '继续执行任务';
+    title.textContent = t('chatResume.title');
     title.style.cssText = 'margin:0 0 8px 0;font-size:16px;color:#1a202c;';
 
     const desc = document.createElement('p');
-    desc.textContent = '可以追加描述以调整任务方向（可选，留空则按原任务继续）';
+    desc.textContent = t('chatResume.desc');
     desc.style.cssText = 'margin:0 0 16px 0;font-size:13px;color:#718096;line-height:1.5;';
 
     const textarea = document.createElement('textarea');
     textarea.className = 'resume-dialog-textarea';
-    textarea.placeholder = '例如：请跳过已完成的步骤，直接进入测试阶段...';
+    textarea.placeholder = t('chatResume.placeholder');
     textarea.style.cssText = 'width:100%;min-height:80px;padding:8px 12px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.5;';
     textarea.rows = 3;
 
@@ -50,11 +51,11 @@ export function showResumeDialog() {
     btnContainer.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:16px;';
 
     const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = '取消';
+    cancelBtn.textContent = t('common.cancel');
     cancelBtn.style.cssText = 'padding:6px 16px;border:1px solid #cbd5e0;background:#fff;color:#4a5568;border-radius:4px;cursor:pointer;font-size:13px;';
 
     const confirmBtn = document.createElement('button');
-    confirmBtn.textContent = '继续执行';
+    confirmBtn.textContent = t('chatResume.continueBtn');
     confirmBtn.style.cssText = 'padding:6px 16px;border:none;background:#3182ce;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;';
 
     btnContainer.appendChild(cancelBtn);
@@ -188,9 +189,9 @@ export async function _checkForAbandonedCheckpoint() {
 
       const checkpoint = resp.checkpoint;
       const duration = checkpoint.updatedAt ? formatDuration(Date.now() - checkpoint.updatedAt) : '';
-      const elapsedText = duration ? `（中断 ${duration} 前）` : '';
+      const elapsedText = duration ? t('chatResume.interruptedAgo', { duration }) : '';
 
-      const content = `⚠️ 任务执行被中断${elapsedText}\n\n检测到您有一个未完成的任务，是否继续执行？`;
+      const content = t('chatResume.taskInterrupted', { elapsed: elapsedText });
 
       // 如果 messageHistory 中已有 resumable 消息但 DOM 中没有按钮，更新消息内容并重新渲染
       if (hasResumableMessage) {
@@ -279,7 +280,7 @@ export async function resumeTask(sessionId, userGuidance = '') {
     const checkpointResp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
     if (!checkpointResp?.exists) {
       logger.warn('[SidePanel] resumeTask: checkpoint 不存在，无法恢复, sessionId:', sessionId);
-      const errorContent = '❌ 恢复失败：未找到可恢复的任务 checkpoint。\n\n可能原因：\n• 任务已正常完成（checkpoint 已被清理）\n• 任务中断时间过久（超过 7 天已过期）\n• 任务执行初期被中断（断点未及保存）\n\n建议重新发起任务。';
+      const errorContent = t('chatResume.checkpointNotFound');
       const { messageId } = addMessage('assistant', errorContent, true, []);
       state.messageHistory.push({ role: 'assistant', content: errorContent, executionLog: [], messageId, resumable: false, resumed: true });
       saveChatHistory();
@@ -329,11 +330,11 @@ export async function resumeTask(sessionId, userGuidance = '') {
       const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
                         errorResult.message === '任务已被用户停止';
       if (errorResult.message === '任务已被用户停止') {
-        appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], resumable, resumed: true });
+        appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
       } else if (errorResult.swRestarted) {
-        appendMessageToSession(mySessionId, { role: 'assistant', content: '⚠️ 后台服务重启，恢复中断', executionLog: errorResult.executionLog || [], resumable, resumed: true });
+        appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.swRestarted'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
       } else {
-        const errorContent = '❌ 恢复失败：' + (errorResult.message || '未知错误');
+        const errorContent = t('chatResume.resumeFailed', { message: errorResult.message || t('chatResume.unknownError') });
         // 恢复失败时不标记 resumable，避免在错误消息上再显示"继续执行"按钮（防止无限错误循环）
         appendMessageToSession(mySessionId, { role: 'assistant', content: errorContent, executionLog: errorResult.executionLog || [], resumable: false, resumed: true });
       }
@@ -345,8 +346,8 @@ export async function resumeTask(sessionId, userGuidance = '') {
     // 用户主动取消
     if (errorResult.message === '任务已被用户停止') {
       removeLoadingMessage(loadingId);
-      const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || []);
-      state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId, resumable: true, resumed: true });
+      const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || []);
+      state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true, resumed: true });
       saveChatHistory();
       return false;
     }
@@ -355,15 +356,15 @@ export async function resumeTask(sessionId, userGuidance = '') {
     if (errorResult.swRestarted) {
       removeLoadingMessage(loadingId);
       const resumable = !!errorResult.checkpoint;
-      const { messageId } = addMessage('assistant', '⚠️ 后台服务重启，恢复中断', false, errorResult.executionLog || []);
-      state.messageHistory.push({ role: 'assistant', content: '⚠️ 后台服务重启，恢复中断', executionLog: errorResult.executionLog || [], messageId, resumable, resumed: true });
+      const { messageId } = addMessage('assistant', t('chatResume.swRestarted'), false, errorResult.executionLog || []);
+      state.messageHistory.push({ role: 'assistant', content: t('chatResume.swRestarted'), executionLog: errorResult.executionLog || [], messageId, resumable, resumed: true });
       saveChatHistory();
       return false;
     }
 
     // 其他错误（如 checkpoint 不存在）
     removeLoadingMessage(loadingId);
-    const errorContent = '❌ 恢复失败：' + (errorResult.message || '未知错误');
+    const errorContent = t('chatResume.resumeFailed', { message: errorResult.message || t('chatResume.unknownError') });
     const { element: messageDiv, messageId } = addMessage('assistant', errorContent, true, errorResult.executionLog || []);
     // 恢复失败时不标记 resumable，避免在错误消息上再显示"继续执行"按钮（防止无限错误循环）
     state.messageHistory.push({ role: 'assistant', content: errorContent, executionLog: errorResult.executionLog || [], messageId, resumable: false, resumed: true });

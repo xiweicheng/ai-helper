@@ -1,4 +1,4 @@
-// tab-tools - tab management + bookmark history 工具定义
+// tab-tools - tab management + bookmark history tool definitions
 
 export const TAB_TOOLS = [
   {
@@ -11,18 +11,18 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_tab',
-      description: '标签页管理',
+      description: 'Tab management',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: 'navigate=历史前进/后退(配合direction)；打开URL用open' },
-          url: { type: 'string', description: '仅open' },
-          tabId: { type: 'integer', description: '非open时需要' },
+          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: 'navigate=history back/forward (with direction); use open for URL' },
+          url: { type: 'string', description: 'open only' },
+          tabId: { type: 'integer', description: 'required for non-open actions' },
           active: { type: 'boolean' },
           waitForLoad: { type: 'boolean' },
           loadTimeout: { type: 'integer' },
           bypassCache: { type: 'boolean' },
-          direction: { type: 'string', enum: ['back', 'forward'], description: '仅navigate' }
+          direction: { type: 'string', enum: ['back', 'forward'], description: 'navigate only' }
         },
         required: ['action']
       }
@@ -37,7 +37,7 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'list_tabs',
-      description: '获取标签页列表；mode=active 返回当前活动页 tabId（不确定操作哪个 tab 时用此查询）',
+      description: 'Get tab list; mode=active returns the current active tab tabId (use this when unsure which tab to operate on)',
       parameters: {
         type: 'object',
         properties: {
@@ -57,15 +57,15 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'search_browser_data',
-      description: '搜索浏览器书签/历史',
+      description: 'Search browser bookmarks/history',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['bookmark', 'history'] },
           query: { type: 'string' },
           maxResults: { type: 'integer' },
-          startTime: { type: 'integer', description: '仅history' },
-          endTime: { type: 'integer', description: '仅history' }
+          startTime: { type: 'integer', description: 'history only' },
+          endTime: { type: 'integer', description: 'history only' }
         },
         required: ['action', 'query']
       }

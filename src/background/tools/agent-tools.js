@@ -1,4 +1,4 @@
-// agent-tools - local agent 工具定义
+// agent-tools - local agent tool definitions
 
 export const AGENT_TOOLS = [
   {
@@ -11,13 +11,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_file',
-      description: '文件操作',
+      description: 'File operations',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'], description: '操作类型' },
-          path: { type: 'string', description: 'list时可选' },
-          content: { type: 'string', description: 'write时需要' }
+          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'], description: 'Operation type' },
+          path: { type: 'string', description: 'optional for list' },
+          content: { type: 'string', description: 'required for write' }
         },
         required: ['action']
       }
@@ -32,12 +32,12 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_trash',
-      description: '回收站管理',
+      description: 'Trash management',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'restore'], description: '操作类型' },
-          trashId: { type: 'string', description: 'restore时需要' },
+          action: { type: 'string', enum: ['list', 'restore'], description: 'Operation type' },
+          trashId: { type: 'string', description: 'required for restore' },
           hours: { type: 'integer' },
           type: { type: 'string', enum: ['file', 'directory'] }
         },
@@ -54,13 +54,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec',
-      description: '执行命令',
+      description: 'Execute command',
       parameters: {
         type: 'object',
         properties: {
           command: { type: 'string' },
           cwd: { type: 'string' },
-          force: { type: 'boolean', description: '强制执行已确认命令' },
+          force: { type: 'boolean', description: 'Force execute confirmed command' },
           timeoutMs: { type: 'integer' }
         },
         required: ['command']
@@ -76,7 +76,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_search',
-      description: '搜索文件/内容',
+      description: 'Search files/content',
       parameters: {
         type: 'object',
         properties: {
@@ -102,13 +102,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill',
-      description: 'Skill 加载与执行（Workflow 用 run，Agent 用 load）',
+      description: 'Skill load and execute (use run for Workflow, use load for Agent)',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['load', 'run'], description: 'run 仅用于 Workflow Skill；load 用于加载 Agent Skill 说明' },
+          action: { type: 'string', enum: ['load', 'run'], description: 'run is only for Workflow Skill; load is for loading Agent Skill instructions' },
           name: { type: 'string' },
-          params: { type: 'object', description: 'run时需要' }
+          params: { type: 'object', description: 'required for run' }
         },
         required: ['action', 'name']
       }
@@ -123,12 +123,12 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_agent',
-      description: '代理管理',
+      description: 'Agent management',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['list', 'switch'] },
-          agentId: { type: 'string', description: 'switch时需要' },
+          agentId: { type: 'string', description: 'required for switch' },
           agentName: { type: 'string' }
         },
         required: ['action']
@@ -144,13 +144,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'exec_log',
-      description: '提取历史执行日志，分析成功路径与失败教训。',
+      description: 'Extract historical execution logs to analyze successful paths and failure lessons.',
       parameters: {
         type: 'object',
         properties: {
-          scope: { type: 'string', enum: ['last_n_rounds', 'full_session'], description: '范围' },
-          rounds: { type: 'integer', description: '轮数(默认3)' },
-          sessionId: { type: 'string', description: '会话ID' }
+          scope: { type: 'string', enum: ['last_n_rounds', 'full_session'], description: 'Scope' },
+          rounds: { type: 'integer', description: 'Number of rounds (default 3)' },
+          sessionId: { type: 'string', description: 'Session ID' }
         },
         required: ['scope']
       }

@@ -1,4 +1,4 @@
-// storage-tools - storage management + network request 工具定义
+// storage-tools - storage management + network request tool definitions
 
 export const STORAGE_TOOLS = [
 {
@@ -10,14 +10,14 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_storage',
-      description: '存储读写',
+      description: 'Storage read/write',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'], description: '操作类型' },
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'clear'], description: 'Operation type' },
           storage: { type: 'string', enum: ['local', 'session'] },
           key: { type: 'string' },
-          value: { type: 'string', description: 'set时需要' }
+          value: { type: 'string', description: 'required for set' }
         },
         required: ['action', 'storage']
       }
@@ -32,13 +32,13 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_cookies',
-      description: 'Cookie管理',
+      description: 'Cookie management',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'], description: '操作类型' },
+          action: { type: 'string', enum: ['get', 'set', 'remove', 'list'], description: 'Operation type' },
           name: { type: 'string' },
-          value: { type: 'string', description: 'set时需要' },
+          value: { type: 'string', description: 'required for set' },
           domain: { type: 'string' },
           path: { type: 'string' },
           secure: { type: 'boolean' },
@@ -58,7 +58,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'clear_data',
-      description: '清除站点数据',
+      description: 'Clear site data',
       parameters: {
         type: 'object',
         properties: {
@@ -76,7 +76,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'fetch_url',
-      description: 'HTTP请求',
+      description: 'HTTP request',
       parameters: {
         type: 'object',
         properties: {

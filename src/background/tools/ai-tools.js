@@ -1,4 +1,4 @@
-// ai-tools - ai collaboration 工具定义
+// ai-tools - ai collaboration tool definitions
 
 export const AI_TOOLS = [
   {
@@ -10,7 +10,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'clarify_question',
-      description: '澄清问题',
+      description: 'Clarify question',
       parameters: {
         type: 'object',
         properties: {
@@ -33,7 +33,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'highlight_text',
-      description: '高亮文本',
+      description: 'Highlight text',
       parameters: {
         type: 'object',
         properties: {
@@ -53,7 +53,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'plan_task',
-      description: '任务规划',
+      description: 'Task planning',
       parameters: {
         type: 'object',
         properties: {
@@ -88,11 +88,11 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'search_chats',
-      description: '搜索对话记录。query为空时返回当前会话全部消息',
+      description: 'Search conversation history. When query is empty, returns all messages of the current session',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: '搜索关键词，为空返回全部' },
+          query: { type: 'string', description: 'Search keyword; empty returns all' },
           maxResults: { type: 'integer' },
           searchScope: { type: 'string', enum: ['current_session', 'all_sessions'] }
         }
@@ -108,15 +108,15 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'preview_ui',
-      description: 'UI原型预览/获取',
+      description: 'UI prototype preview/get',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['preview', 'get'] },
-          html: { type: 'string', description: 'preview时必填' },
-          title: { type: 'string', description: 'preview时必填' },
+          html: { type: 'string', description: 'required for preview' },
+          title: { type: 'string', description: 'required for preview' },
           description: { type: 'string' },
-          prototypeId: { type: 'string', description: 'get时需要' }
+          prototypeId: { type: 'string', description: 'required for get' }
         },
         required: ['action']
       }
@@ -131,7 +131,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'dispatch_task',
-      description: '分派任务给子代理',
+      description: 'Dispatch task to sub-agent',
       parameters: {
         type: 'object',
         properties: {

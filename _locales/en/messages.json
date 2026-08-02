@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "AI Helper - Web Smart Assistant"
+  },
+  "extDescription": {
+    "message": "Select text to trigger API calls and get intelligent results"
+  },
+  "commandToggleSidepanel": {
+    "message": "Toggle side panel"
+  }
+}

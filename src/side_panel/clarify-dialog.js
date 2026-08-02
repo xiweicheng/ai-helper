@@ -3,6 +3,7 @@
 import state from './state.js';
 import { showToast } from './utils.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 export function formatTimeDisplay(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -51,7 +52,7 @@ export function updateClarifyTimer(remainingSeconds, totalSeconds) {
   if (!timerElement || !timerTextElement) return;
   
   // 更新显示文本
-  timerTextElement.textContent = `剩余时间: ${formatTimeDisplay(remainingSeconds)}`;
+  timerTextElement.textContent = t('clarify.remainingTimeDynamic', { time: formatTimeDisplay(remainingSeconds) });
   
   // 计算剩余百分比
   const percentage = (remainingSeconds / totalSeconds) * 100;
@@ -62,7 +63,7 @@ export function updateClarifyTimer(remainingSeconds, totalSeconds) {
   if (remainingSeconds <= 10) {
     // 最后 10 秒：紧急状态
     timerElement.classList.add('critical');
-    timerTextElement.textContent = `即将超时: ${formatTimeDisplay(remainingSeconds)}`;
+    timerTextElement.textContent = t('clarify.timeoutSoon', { time: formatTimeDisplay(remainingSeconds) });
   } else if (remainingSeconds <= 30 || percentage <= 15) {
     // 最后 30 秒或 15%：警告状态
     timerElement.classList.add('warning');
@@ -122,10 +123,10 @@ export function showClarifyDialog(data) {
     if (sessionId && state.sessions) {
       const session = state.sessions.find(s => s.id === sessionId);
       if (session) {
-        sessionNameEl.textContent = `会话: ${session.title}`;
+        sessionNameEl.textContent = t('clarify.sessionNameTitle', { title: session.title });
         sessionNameEl.style.display = 'block';
       } else {
-        sessionNameEl.textContent = `会话: ${sessionId.substring(0, 8)}...`;
+        sessionNameEl.textContent = t('clarify.sessionNameId', { id: sessionId.substring(0, 8) });
         sessionNameEl.style.display = 'block';
       }
     } else {
@@ -161,7 +162,7 @@ export function showClarifyDialog(data) {
       item.dataset.index = index;
       item.innerHTML = `
         <div class="clarify-option-radio"></div>
-        <div class="clarify-option-content">${option}${isRecommended ? '<span class="clarify-option-badge">推荐</span>' : ''}</div>
+        <div class="clarify-option-content">${option}${isRecommended ? `<span class="clarify-option-badge">${t('clarify.recommended')}</span>` : ''}</div>
       `;
       item.addEventListener('click', () => selectClarifyOption(index));
       optionsList.appendChild(item);
@@ -174,7 +175,7 @@ export function showClarifyDialog(data) {
       otherItem.dataset.index = -1;
       otherItem.innerHTML = `
         <div class="clarify-option-radio"></div>
-        <div class="clarify-option-content clarify-option-other">其他（请自定义输入）</div>
+        <div class="clarify-option-content clarify-option-other">${t('clarify.otherOption')}</div>
       `;
       otherItem.addEventListener('click', () => selectClarifyOption(-1));
       optionsList.appendChild(otherItem);
@@ -363,7 +364,7 @@ export function initClarifyEvents() {
       if (timerElement && timerTextElement) {
         timerElement.classList.remove('warning');
         timerElement.classList.add('critical');
-        timerTextElement.textContent = '已超时';
+        timerTextElement.textContent = t('clarify.timedOut');
       }
       playNotificationSound('error');
     }

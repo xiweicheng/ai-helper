@@ -6,6 +6,7 @@ import { escapeHtml } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 当前 @ 弹出框激活的 Tab：'pages' | 'agents' | 'proxies'
 export let activeAtTab = 'pages';
@@ -56,10 +57,10 @@ async function updateAtTabCounts() {
     const agentsTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="agents"]');
     const pagesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="pages"]');
     const proxiesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="proxies"]');
-    if (agentsTab) agentsTab.textContent = `助手 (${allAgents.length})`;
-    if (pagesTab) pagesTab.textContent = `网页 (${allTabs.length})`;
+    if (agentsTab) agentsTab.textContent = t('promptSelector.agentsCount', { count: allAgents.length });
+    if (pagesTab) pagesTab.textContent = t('promptSelector.pagesCount', { count: allTabs.length });
     if (proxiesTab) {
-      proxiesTab.textContent = `代理 (${allProxies.length})`;
+      proxiesTab.textContent = t('promptSelector.proxiesCount', { count: allProxies.length });
       proxiesTab.style.display = allProxies.length > 0 ? '' : 'none';
     }
   } catch {
@@ -246,7 +247,7 @@ async function renderAgentAtList(filterText = '') {
   });
 
   if (filteredAgents.length === 0) {
-    agentAtList.innerHTML = '<div class="prompt-empty">暂无匹配的助手</div>';
+    agentAtList.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchAgent')}</div>`;
     state.selectedAgentAtIndex = -1;
     return;
   }
@@ -255,8 +256,8 @@ async function renderAgentAtList(filterText = '') {
 
   agentAtList.innerHTML = filteredAgents.map((agent, index) => {
     const isActive = agent.id === state.activeAgentId || (!state.activeAgentId && agent.id === 'default');
-    const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? '全局' : 0);
-    const toolLabel = typeof toolCount === 'number' ? `${toolCount} 个工具` : '继承全局工具';
+    const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? null : 0);
+    const toolLabel = toolCount === null ? t('promptSelector.inheritGlobal') : t('promptSelector.toolCount', { count: toolCount });
     return `
       <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isActive ? 'agent-at-active' : ''}"
            data-index="${index}" data-agent-id="${escapeHtml(agent.id)}">
@@ -266,8 +267,8 @@ async function renderAgentAtList(filterText = '') {
         <span class="prompt-item-code">${escapeHtml(agent.description || toolLabel)}</span>
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
-          <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="编辑助手">✎</span>
-          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="删除助手">✕</span>` : ''}
+          <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.editAgentTitle')}">✎</span>
+          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.deleteAgentTitle')}">✕</span>` : ''}
         </span>
       </div>
     `;
@@ -321,7 +322,7 @@ async function renderProxyAtList(filterText = '') {
   });
 
   if (filteredProxies.length === 0) {
-    agentProxyList.innerHTML = '<div class="prompt-empty">暂无匹配的代理</div>';
+    agentProxyList.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchProxy')}</div>`;
     state.selectedProxyAtIndex = -1;
     return;
   }
@@ -351,7 +352,7 @@ async function renderProxyAtList(filterText = '') {
       dotClass = isOnline ? 'online' : 'offline';
     }
 
-    const displayName = proxy.name || '未命名代理';
+    const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
     return `
       <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isActive ? 'agent-at-active' : ''} ${isDisabled ? 'agent-disabled' : ''} prompt-item-proxy"
@@ -364,10 +365,10 @@ async function renderProxyAtList(filterText = '') {
           ${isActive ? '<span class="agent-active-mark">✓</span>' : ''}
         </span>
         ${isDisabled
-          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="启用">▶</span>`
-          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="停用">⏸</span>`
+          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="${t('promptSelector.enableTitle')}">▶</span>`
+          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="${t('promptSelector.disableTitle')}">⏸</span>`
         }
-        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="删除">✕</span>
+        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="${t('common.delete')}">✕</span>
       </div>
     `;
   }).join('');
@@ -416,7 +417,7 @@ async function renderMergedAtList(filterText = '') {
   const totalCount = filteredAgents.length + filteredTabs.length + filteredProxies.length;
 
   if (totalCount === 0) {
-    agentAtList.innerHTML = '<div class="prompt-empty">暂无匹配的助手、网页或代理</div>';
+    agentAtList.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchAll')}</div>`;
     state.selectedAgentAtIndex = -1;
     return;
   }
@@ -428,8 +429,8 @@ async function renderMergedAtList(filterText = '') {
 
   filteredAgents.forEach((agent) => {
     const isActive = agent.id === state.activeAgentId || (!state.activeAgentId && agent.id === 'default');
-    const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? '全局' : 0);
-    const toolLabel = typeof toolCount === 'number' ? `${toolCount} 个工具` : '继承全局工具';
+    const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? null : 0);
+    const toolLabel = toolCount === null ? t('promptSelector.inheritGlobal') : t('promptSelector.toolCount', { count: toolCount });
     html += `
       <div class="prompt-item${globalIndex === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}"
            data-index="${globalIndex}" data-type="agent" data-agent-id="${escapeHtml(agent.id)}">
@@ -439,8 +440,8 @@ async function renderMergedAtList(filterText = '') {
         <span class="prompt-item-code">${escapeHtml(agent.description || toolLabel)}</span>
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
-          <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="编辑助手">✎</span>
-          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="删除助手">✕</span>` : ''}
+          <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.editAgentTitle')}">✎</span>
+          ${!agent.isBuiltin ? `<span class="agent-delete-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.deleteAgentTitle')}">✕</span>` : ''}
         </span>
       </div>`;
     globalIndex++;
@@ -449,7 +450,7 @@ async function renderMergedAtList(filterText = '') {
   const currentSelectedPageId = state.selectedPage ? state.selectedPage.id : null;
 
   filteredTabs.forEach((tab) => {
-    const title = tab.title || '无标题';
+    const title = tab.title || t('promptSelector.noTitle');
     const url = tab.url || '';
     const favIcon = tab.favIconUrl
       ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" onerror="this.style.display='none'">`
@@ -489,7 +490,7 @@ async function renderMergedAtList(filterText = '') {
       dotClass = isOnline ? 'online' : 'offline';
     }
 
-    const displayName = proxy.name || '未命名代理';
+    const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
     html += `
       <div class="prompt-item${globalIndex === 0 && filteredAgents.length === 0 && filteredTabs.length === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
@@ -500,10 +501,10 @@ async function renderMergedAtList(filterText = '') {
         <span class="prompt-item-code" title="${escapeHtml(proxy.url || '')}">${escapeHtml(proxy.url || '')}</span>
         ${isActive ? '<span class="agent-item-actions"><span class="agent-active-mark">✓</span></span>' : ''}
         ${isDisabled
-          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="启用">▶</span>`
-          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="停用">⏸</span>`
+          ? `<span class="proxy-enable-btn" data-action="enable" data-id="${escapeHtml(proxy.id)}" title="${t('promptSelector.enableTitle')}">▶</span>`
+          : `<span class="proxy-disable-btn" data-action="disable" data-id="${escapeHtml(proxy.id)}" title="${t('promptSelector.disableTitle')}">⏸</span>`
         }
-        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="删除">✕</span>
+        <span class="proxy-delete-btn" data-action="delete" data-id="${escapeHtml(proxy.id)}" title="${t('common.delete')}">✕</span>
       </div>`;
     globalIndex++;
   });
@@ -660,10 +661,10 @@ async function handleProxyToolbarAction(action, agentId) {
     }
     case 'delete': {
       const agent = agents.find(a => a.id === agentId);
-      const urlInfo = agent?.url ? `\n地址：${agent.url}` : '';
+      const urlInfo = agent?.url ? `\n${t('promptSelector.proxyAddress')}: ${agent.url}` : '';
       const confirmed = await window.showCustomConfirm(
-        '删除代理',
-        `确定要删除代理"${agent?.name || agentId}"吗？${urlInfo}\n此操作不可恢复。`
+        t('promptSelector.deleteProxyTitle'),
+        t('promptSelector.confirmDeleteProxy', { name: agent?.name || agentId, urlInfo })
       );
       if (!confirmed) return;
       agents = agents.filter(a => a.id !== agentId);

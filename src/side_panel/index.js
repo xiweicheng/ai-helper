@@ -13,6 +13,7 @@ import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
+import { initI18n, applyI18n, subscribe, t } from '../shared/i18n.js';
 
 window.showCustomConfirm = function(message, title = '确认操作') {
   return new Promise((resolve) => {
@@ -1462,6 +1463,11 @@ async function initAgentDropdown() {
 const sessionDOMCache = new Map();
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 初始化国际化（读取语言偏好 + 跨环境同步监听）
+  await initI18n();
+  applyI18n();
+  subscribe(() => applyI18n());
+
   // 存储表格数据供工具栏按钮使用
   window.__tableBlocks = [];
 
@@ -1774,8 +1780,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="temp-preset-item ${index === selectedIndex ? 'selected' : ''}" data-index="${index}">
         <div class="temp-preset-radio"></div>
         <div class="temp-preset-info">
-          <div class="temp-preset-name">${mode.label}</div>
-          <div class="temp-preset-desc" title="${mode.tip}">${mode.tip}</div>
+          <div class="temp-preset-name">${t(mode.labelKey)}</div>
+          <div class="temp-preset-desc" title="${t(mode.tipKey)}">${t(mode.tipKey)}</div>
         </div>
         <div class="temp-preset-value">${mode.temp.toFixed(2)}</div>
       </div>

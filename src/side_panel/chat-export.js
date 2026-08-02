@@ -4,6 +4,7 @@
 import { showToast } from './utils.js';
 import { formatMarkdown } from './markdown-render.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   Table, TableRow, TableCell, AlignmentType, WidthType,
@@ -777,7 +778,7 @@ export async function exportAssistantMessageToDocx(messageDiv, exportBtn, export
     logger.debug('[SidePanel] Word (docx) 文档导出成功');
   } catch (error) {
     logger.error('[SidePanel] 导出 Word 失败:', error);
-    showToast('导出失败: ' + error.message, 'error');
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
   });
@@ -797,7 +798,7 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
     const html2canvasFunc = window.html2canvas || null;
 
     if (!jsPDF || !html2canvasFunc) {
-      showToast('PDF 导出库未加载', 'error');
+      showToast(t('chatExport.pdfLibNotLoaded'), 'error');
       resetExportButton(exportBtn);
       return;
     }
@@ -897,13 +898,13 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       logger.debug('[SidePanel] PDF 导出成功:', fileName);
     }).catch(error => {
       logger.error('[SidePanel] PDF 导出失败:', error);
-      showToast('导出失败: ' + error.message, 'error');
+      showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
       document.body.removeChild(container);
       resetExportButton(exportBtn);
     });
   } catch (error) {
     logger.error('[SidePanel] 导出 PDF 失败:', error);
-    showToast('导出失败: ' + error.message, 'error');
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
   });
@@ -930,7 +931,7 @@ export function exportAssistantMessageToMarkdown(messageDiv, exportBtn, exportDr
     }
 
     if (!markdownContent.trim()) {
-      showToast('没有可导出的内容', 'error');
+      showToast(t('chatExport.noContent'), 'error');
       resetExportButton(exportBtn);
       return;
     }
@@ -954,7 +955,7 @@ export function exportAssistantMessageToMarkdown(messageDiv, exportBtn, exportDr
     logger.debug('[SidePanel] Markdown 导出成功:', fileName);
   } catch (error) {
     logger.error('[SidePanel] 导出 Markdown 失败:', error);
-    showToast('导出失败: ' + error.message, 'error');
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
   });
@@ -974,7 +975,7 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
         const html2canvasFunc = window.html2canvas || null;
 
         if (!html2canvasFunc) {
-          showToast('图片导出库未加载', 'error');
+          showToast(t('chatExport.imageLibNotLoaded'), 'error');
           resetExportButton(exportBtn);
           return;
         }
@@ -1045,7 +1046,7 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
         logger.debug('[SidePanel] 图片导出成功:', fileName);
       } catch (error) {
         logger.error('[SidePanel] 导出图片失败:', error);
-        showToast('导出失败: ' + error.message, 'error');
+        showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
         if (tempContainer && tempContainer.parentNode) {
           document.body.removeChild(tempContainer);
         }

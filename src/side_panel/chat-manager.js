@@ -23,6 +23,7 @@ import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { clearPageSelection } from './page-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 从拆分子模块导入复制与导出相关函数
 import { copyMessage, copyAssistantMessage, quoteAndAsk, setQuoteContextInjector } from './chat-copy.js';
@@ -137,7 +138,7 @@ function setQuoteContext(content) {
     } else {
       displayText = textContent;
     }
-    selectionText.textContent = `💬 已引用: ${displayText}`;
+    selectionText.textContent = t('chat.quotedPrefix', { text: displayText });
     indicator.classList.add('show');
   }
 }
@@ -241,13 +242,13 @@ export async function loadChatHistory() {
           let bubbleText = '';
           switch (bubble.type) {
             case 'skill':
-              bubbleText = `使用技能「${bubble.name}」进行问答${bubble.description ? '：' + bubble.description : ''}`;
+              bubbleText = t('chat.bubbleSkill', { name: bubble.name, desc: bubble.description ? '：' + bubble.description : '' });
               break;
             case 'mcp':
-              bubbleText = `使用MCP服务「${bubble.serverName}」进行问答`;
+              bubbleText = t('chat.bubbleMcp', { name: bubble.serverName });
               break;
             case 'page':
-              bubbleText = `网页「${bubble.title}」\n${bubble.url}`;
+              bubbleText = t('chat.bubblePage', { title: bubble.title, url: bubble.url });
               break;
             case 'file':
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
@@ -344,8 +345,8 @@ export function clearChatHistory() {
           <div class="icon-wrapper">
             <div class="icon">💬</div>
           </div>
-          <h2>开始对话</h2>
-          <p>输入您的问题，AI 助手将为您解答</p>
+          <h2>${t('chat.welcomeTitle')}</h2>
+          <p>${t('chat.welcomeSubtitle')}</p>
         `;
         chatContainer.appendChild(welcomeDiv);
       }
@@ -438,7 +439,7 @@ export async function sendMessage() {
   if (skillContext) {
     finalText = skillContext + finalText;
     // 添加技能上下文气泡（用户可见）
-    addContextBubble('skill', `使用技能「${state.selectedSkill.name}」进行问答${state.selectedSkill.description ? '：' + state.selectedSkill.description : ''}`, false);
+    addContextBubble('skill', t('chat.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
     contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
@@ -449,7 +450,7 @@ export async function sendMessage() {
   if (mcpContext) {
     finalText = mcpContext + finalText;
     // 添加 MCP 上下文气泡
-    addContextBubble('mcp', `使用MCP服务「${state.selectedMcpService.serverName}」进行问答`, false);
+    addContextBubble('mcp', t('chat.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
     contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
     // 清除 MCP 指示器
     clearMcpService();
@@ -460,7 +461,7 @@ export async function sendMessage() {
     const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
     finalText = pageCtx + finalText;
     // 添加网页上下文气泡
-    addContextBubble('page', `网页「${state.selectedPage.title}」\n${state.selectedPage.url}`, false);
+    addContextBubble('page', t('chat.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
     contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
     // 清除网页指示器
     clearPageSelection();
@@ -661,11 +662,11 @@ export async function sendMessage() {
         const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
                           errorResult.message === '任务已被用户停止';
         if (errorResult.message === '任务已被用户停止') {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], resumable });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable });
         } else if (errorResult.swRestarted) {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: '⚠️ 后台服务重启，任务中断', executionLog: errorResult.executionLog || [], resumable });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], resumable });
         } else {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: '❌ 请求失败：' + (errorResult.message || '未知错误'), executionLog: errorResult.executionLog || [], resumable });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.requestFailed', { message: errorResult.message || t('chatResume.unknownError') }), executionLog: errorResult.executionLog || [], resumable });
         }
         // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
@@ -678,8 +679,8 @@ export async function sendMessage() {
       if (errorResult.message === '任务已被用户停止') {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
-        const { messageId } = addMessage('assistant', '任务已取消', false, errorResult.executionLog || [], null, false, null, null, [], true);
-        state.messageHistory.push({ role: 'assistant', content: '任务已取消', executionLog: errorResult.executionLog || [], messageId, resumable: true });
+        const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || [], null, false, null, null, [], true);
+        state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true });
         saveChatHistory();
         return;
       }
@@ -689,8 +690,8 @@ export async function sendMessage() {
         removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         const resumable = !!errorResult.checkpoint;
-        const { messageId } = addMessage('assistant', '⚠️ 后台服务重启，任务中断', false, errorResult.executionLog || [], null, false, null, null, [], resumable);
-        state.messageHistory.push({ role: 'assistant', content: '⚠️ 后台服务重启，任务中断', executionLog: errorResult.executionLog || [], messageId, resumable });
+        const { messageId } = addMessage('assistant', t('chat.taskInterruptedSwRestart'), false, errorResult.executionLog || [], null, false, null, null, [], resumable);
+        state.messageHistory.push({ role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], messageId, resumable });
         saveChatHistory();
         return;
       }
@@ -699,13 +700,13 @@ export async function sendMessage() {
       state.substituteLoadingIds.delete(mySessionId);
 
       // 网络错误给用户更友好的提示
-      const errMsg = errorResult.message || '未知错误';
+      const errMsg = errorResult.message || t('chatResume.unknownError');
       if (errMsg.includes('network') || errMsg.includes('Network')) {
-        content = '❌ 网络连接失败，LLM 服务不可达。请检查：\n1. API 地址和端口是否正确\n2. 网络代理/VPN 是否正常\n3. 服务端是否在运行';
+        content = t('chat.networkError');
       } else if (errMsg.includes('timeout') || errMsg.includes('超时')) {
-        content = '❌ 请求超时：' + errMsg;
+        content = t('chat.timeoutError', { message: errMsg });
       } else {
-        content = '❌ 请求失败：' + errMsg;
+        content = t('chat.requestFailed', { message: errMsg });
       }
       executionLog = errorResult.executionLog || [];
 
@@ -877,11 +878,11 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.dataset.role = 'context';
   
   const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : '📌'))));
-  const label = type === 'quoted' ? '引用内容' : (type === 'skill' ? '使用技能' : (type === 'mcp' ? '使用MCP服务' : (type === 'page' ? '网页问答' : (type === 'file' ? '文件问答' : '选中内容'))));
-  
+  const label = type === 'quoted' ? t('chat.labelQuoted') : (type === 'skill' ? t('chat.labelSkill') : (type === 'mcp' ? t('chat.labelMcp') : (type === 'page' ? t('chat.labelPage') : (type === 'file' ? t('chat.labelFile') : t('chat.labelSelection')))));
+
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
-      <div class="context-bubble-header" title="点击展开/收起">
+      <div class="context-bubble-header" title="${t('chat.clickToExpand')}">
         <span class="context-icon">${icon}</span>
         <span class="context-type">${label}</span>
       </div>
@@ -940,12 +941,12 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const footerCopyBtn = document.createElement('button');
     footerCopyBtn.className = 'copy-btn';
-    footerCopyBtn.title = '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)';
+    footerCopyBtn.title = t('chat.copyMarkdownTitle');
     footerCopyBtn.innerHTML = [
       '<svg viewBox="0 0 16 16" fill="currentColor">',
       '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>',
       '</svg>',
-      '<span>复制</span>'
+      `<span>${t('common.copy')}</span>`
     ].join('');
     footerCopyBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -956,10 +957,10 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const quoteBtn = document.createElement('button');
     quoteBtn.className = 'quote-btn';
-    quoteBtn.title = '引用该内容问答';
+    quoteBtn.title = t('chat.quoteTitle');
     quoteBtn.innerHTML = [
       '<svg t="1781246498458" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="9645" width="14" height="14"><path d="M156.09136 606.57001a457.596822 457.596822 0 0 1 221.680239-392.516385 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z m406.752731 0a457.596822 457.596822 0 0 1 221.680239-392.007944 50.844091 50.844091 0 1 1 50.844091 86.943396 355.90864 355.90864 0 0 0-138.804369 152.532274h16.77855a152.532274 152.532274 0 1 1-152.532274 152.532274z" fill="#8a8a8a" p-id="9646"></path></svg>',
-      '<span>引用</span>'
+      `<span>${t('chat.quote')}</span>`
     ].join('');
     quoteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -973,7 +974,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const exportTriggerBtn = document.createElement('button');
     exportTriggerBtn.className = 'export-trigger-btn';
-    exportTriggerBtn.innerHTML = '<svg t="1781245244396" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="14" height="14"><path d="M496.213333 739.84c2.133333 2.133333 4.693333 3.84 7.68 5.12 0.853333 0.426667 2.133333 0.426667 2.986667 0.853333 1.706667 0.426667 2.986667 0.853333 4.693333 0.853334 5.546667 0 11.093333-2.133333 14.933334-6.4l256-256c8.533333-8.533333 8.533333-21.76 0-30.293334s-21.76-8.533333-30.293334 0L533.333333 674.133333V128c0-11.946667-9.386667-21.333333-21.333333-21.333333s-21.333333 9.386667-21.333333 21.333333v545.706667l-219.306667-219.306667c-8.533333-8.533333-21.76-8.533333-30.293333 0s-8.533333 21.76 0 30.293333l255.146666 255.146667zM768 874.666667H256c-11.946667 0-21.333333 9.386667-21.333333 21.333333s9.386667 21.333333 21.333333 21.333333h512c11.946667 0 21.333333-9.386667 21.333333-21.333333s-9.386667-21.333333-21.333333-21.333333z" fill="#8a8a8a" p-id="5116"></path></svg><span>导出</span><svg class="dropdown-arrow" width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M0 0l4 6 4-6z"/></svg>';
+    exportTriggerBtn.innerHTML = `<svg t="1781245244396" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5115" width="14" height="14"><path d="M496.213333 739.84c2.133333 2.133333 4.693333 3.84 7.68 5.12 0.853333 0.426667 2.133333 0.426667 2.986667 0.853333 1.706667 0.426667 2.986667 0.853333 4.693333 0.853334 5.546667 0 11.093333-2.133333 14.933334-6.4l256-256c8.533333-8.533333 8.533333-21.76 0-30.293334s-21.76-8.533333-30.293334 0L533.333333 674.133333V128c0-11.946667-9.386667-21.333333-21.333333-21.333333s-21.333333 9.386667-21.333333 21.333333v545.706667l-219.306667-219.306667c-8.533333-8.533333-21.76-8.533333-30.293333 0s-8.533333 21.76 0 30.293333l255.146666 255.146667zM768 874.666667H256c-11.946667 0-21.333333 9.386667-21.333333 21.333333s9.386667 21.333333 21.333333 21.333333h512c11.946667 0 21.333333-9.386667 21.333333-21.333333s-9.386667-21.333333-21.333333-21.333333z" fill="#8a8a8a" p-id="5116"></path></svg><span>${t('chat.export')}</span><svg class="dropdown-arrow" width="8" height="6" viewBox="0 0 8 6" fill="currentColor"><path d="M0 0l4 6 4-6z"/></svg>`;
     
     const exportDropdown = document.createElement('div');
     exportDropdown.className = 'export-dropdown';

@@ -1,11 +1,26 @@
 import state from './state.js';
-import { BUILTIN_TOOLS, TOOL_CATEGORY_NAMES, CATEGORY_ORDER } from './constants.js';
+import { BUILTIN_TOOLS, CATEGORY_ORDER } from './constants.js';
 import { showToast, escapeHtml, escapeAttr } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // MCP 工具缓存（从 chrome.storage.local 读取）
 let mcpToolsCache = [];
+
+/**
+ * 获取工具的本地化描述
+ * 内置工具走 i18n（t('tool.<id>.description')）；MCP 工具或缺失 key 时回退到原始 description
+ * @param {{id: string, description?: string}} tool
+ * @returns {string}
+ */
+export function getToolDesc(tool) {
+  if (!tool) return '';
+  const key = `tool.${tool.id}.description`;
+  const val = t(key);
+  // t() 在找不到 key 时返回 key 本身，此时回退到原始 description（MCP 工具等）
+  return val === key ? (tool.description || '') : val;
+}
 
 /**
  * 从 chrome.storage.local 加载 MCP 工具
@@ -194,7 +209,7 @@ function renderToolsPopupList() {
   if (isAgentRestricted) {
     const banner = document.createElement('div');
     banner.className = 'popup-tool-agent-banner';
-    banner.innerHTML = `<span>🔒 当前助手已限定工具范围，以下仅展示该助手绑定的工具（范围内可自由调整）</span>`;
+    banner.innerHTML = `<span>${t('toolPanel.agentRestrictedBanner')}</span>`;
     toolsList.appendChild(banner);
   }
   
@@ -210,7 +225,7 @@ function renderToolsPopupList() {
     // 过滤：搜索
     if (state.currentSearch) {
       const nameMatch = tool.name.toLowerCase().includes(state.currentSearch);
-      const descMatch = tool.description.toLowerCase().includes(state.currentSearch);
+      const descMatch = getToolDesc(tool).toLowerCase().includes(state.currentSearch);
       if (!nameMatch && !descMatch) {
         return;
       }
@@ -223,36 +238,34 @@ function renderToolsPopupList() {
     groupedTools[category].push(tool);
   });
   
-  // 分类名称映射（用于显示）
-  const categoryNames = TOOL_CATEGORY_NAMES;
-  
+  // 分类名称映射（用于显示）：统一走 i18n
   // 优化后的分类排序（按使用频率和逻辑顺序）
   const categoryOrder = CATEGORY_ORDER;
-  
+
   categoryOrder.forEach(category => {
     const tools = groupedTools[category];
     if (!tools || tools.length === 0) return;
-    
+
     // 计算该分类下的工具总数和已启用数（使用过滤后的工具列表）
     const categoryTools = filteredTools.filter(t => t.category === category);
     const totalCount = categoryTools.length;
     const enabledCount = categoryTools.filter(t => state.enabledTools.includes(t.id)).length;
-    
+
     // 创建分类容器
     const categoryContainer = document.createElement('div');
     categoryContainer.className = 'popup-tool-category-group';
     categoryContainer.dataset.category = category;
-    
+
     // 添加分类标题（带折叠按钮）
     const categoryHeader = document.createElement('div');
     categoryHeader.className = 'popup-tool-category';
     categoryHeader.dataset.category = category;
-    
+
     const isCollapsed = state.collapsedCategories[category] || false;
-    
+
     categoryHeader.innerHTML = `
       <span class="category-expand-icon">${isCollapsed ? '▶' : '▼'}</span>
-      <span class="category-name">${categoryNames[category] || category}</span>
+      <span class="category-name">${t('toolCategory.' + category)}</span>
       <span class="category-count">${enabledCount}/${totalCount}</span>
     `;
     
@@ -274,11 +287,12 @@ function renderToolsPopupList() {
       const toolItem = document.createElement('div');
       toolItem.className = 'popup-tool-item';
       toolItem.dataset.category = category;
+      const toolDesc = getToolDesc(tool);
       toolItem.innerHTML = `
         <input type="checkbox" id="tool_${tool.id}" ${isChecked ? 'checked' : ''}>
         <div class="popup-tool-content">
           <div class="popup-tool-name" title="${escapeAttr(tool.name)}">${escapeHtml(tool.name)}</div>
-          <div class="popup-tool-desc" title="${escapeAttr(tool.description)}">${escapeHtml(tool.description)}</div>
+          <div class="popup-tool-desc" title="${escapeAttr(toolDesc)}">${escapeHtml(toolDesc)}</div>
         </div>
       `;
       
@@ -319,7 +333,7 @@ function renderToolsPopupList() {
   if (toolsList.children.length === 0) {
     const emptyMsg = document.createElement('div');
     emptyMsg.className = 'popup-tool-empty';
-    emptyMsg.textContent = '没有找到匹配的工具';
+    emptyMsg.textContent = t('toolPanel.noMatch');
     toolsList.appendChild(emptyMsg);
   }
 }
@@ -377,7 +391,7 @@ function getVisibleTools() {
     // 搜索筛选
     if (state.currentSearch) {
       const nameMatch = tool.name.toLowerCase().includes(state.currentSearch.toLowerCase());
-      const descMatch = tool.description.toLowerCase().includes(state.currentSearch.toLowerCase());
+      const descMatch = getToolDesc(tool).toLowerCase().includes(state.currentSearch.toLowerCase());
       if (!nameMatch && !descMatch) {
         return false;
       }
@@ -434,7 +448,7 @@ function updateToolsPopupTitle() {
   const validToolIds = new Set(filteredTools.map(t => t.id));
   const enabledCount = state.enabledTools.filter(id => validToolIds.has(id)).length;
   
-  countSpan.textContent = `(已启用 ${enabledCount}/${totalCount})`;
+  countSpan.textContent = t('toolPanel.enabledCount', { enabled: enabledCount, total: totalCount });
 }
 
 function saveToolsFromPopup() {
@@ -483,7 +497,7 @@ function saveToolsFromPopup() {
   const filteredTools = getAgentFilteredTools();
   const filteredIds = new Set(filteredTools.map(t => t.id));
   const effectiveCount = state.enabledTools.filter(id => filteredIds.has(id)).length;
-  showToast(state.useTools ? `已启用 ${effectiveCount} 个工具` : '工具已全部禁用', 'success');
+  showToast(state.useTools ? t('toolPanel.toolsEnabled', { count: effectiveCount }) : t('toolPanel.allToolsDisabled'), 'success');
 }
 
 function updateToolsToggleState() {
@@ -496,10 +510,10 @@ function updateToolsToggleState() {
   if (toolsToggleBtn) {
     if (state.useTools && validEnabledCount > 0) {
       toolsToggleBtn.classList.add('active');
-      toolsToggleBtn.title = `工具 (${validEnabledCount}个启用)`;
+      toolsToggleBtn.title = t('toolPanel.toggleBtnEnabled', { count: validEnabledCount });
     } else {
       toolsToggleBtn.classList.remove('active');
-      toolsToggleBtn.title = '工具 (未启用)';
+      toolsToggleBtn.title = t('toolPanel.toggleBtnDisabled');
     }
   }
   

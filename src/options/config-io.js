@@ -3,6 +3,7 @@
 import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -94,10 +95,10 @@ export async function exportConfig() {
     URL.revokeObjectURL(url);
 
     hideExportDialog();
-    showToast('配置已导出', 'success');
+    showToast(t('configDialog.exportSuccess'), 'success');
   } catch (err) {
     logger.error('[Options] 导出配置失败:', err);
-    showToast('导出失败: ' + err.message, 'error');
+    showToast(t('configDialog.exportFailed', { error: err.message }), 'error');
   }
 }
 
@@ -124,13 +125,13 @@ function hideExportDialog() {
 function showImportPreview(importData) {
   const config = importData.config || importData;
   const count = Object.keys(config).length;
-  const exportedAt = importData.exportedAt 
+  const exportedAt = importData.exportedAt
     ? new Date(importData.exportedAt).toLocaleString('zh-CN')
-    : '未知';
+    : t('configDialog.unknownTime');
 
   const summaryEl = document.getElementById('importSummary');
   if (summaryEl) {
-    summaryEl.textContent = `导出时间: ${exportedAt}，包含 ${count} 项配置`;
+    summaryEl.textContent = t('configDialog.importSummary', { time: exportedAt, count });
   }
 
   const modal = document.getElementById('importConfigModal');
@@ -166,7 +167,7 @@ export function triggerImport() {
  */
 function validateImportData(data) {
   if (!data || typeof data !== 'object') {
-    return { valid: false, error: '无效的文件格式' };
+    return { valid: false, error: t('configDialog.invalidFileFormat') };
   }
 
   let config;
@@ -176,13 +177,13 @@ function validateImportData(data) {
     // 兼容直接是配置对象的老格式
     config = data;
   } else {
-    return { valid: false, error: '无法识别的配置格式' };
+    return { valid: false, error: t('configDialog.unrecognizedFormat') };
   }
 
   // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）
   for (const key of Object.keys(config)) {
     if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_')) {
-      return { valid: false, error: `未知的配置项: ${key}` };
+      return { valid: false, error: t('configDialog.unknownConfigKey', { key }) };
     }
   }
 
@@ -200,14 +201,14 @@ export async function handleImportFile(file) {
     const validation = validateImportData(data);
 
     if (!validation.valid) {
-      showToast('导入失败: ' + validation.error, 'error');
+      showToast(t('configDialog.importFailed', { error: validation.error }), 'error');
       return;
     }
 
     showImportPreview(data);
   } catch (err) {
     logger.error('[Options] 导入文件解析失败:', err);
-    showToast('导入失败: 无法解析文件格式', 'error');
+    showToast(t('configDialog.importParseFailed'), 'error');
   }
 }
 
@@ -239,7 +240,7 @@ export async function confirmImport() {
     }
 
     hideImportDialog();
-    showToast(`已导入 ${Object.keys(config).length} 项配置`, 'success');
+    showToast(t('configDialog.importedCount', { count: Object.keys(config).length }), 'success');
 
     // 刷新页面显示新值
     setTimeout(() => {
@@ -256,7 +257,7 @@ export async function confirmImport() {
     }, 300);
   } catch (err) {
     logger.error('[Options] 导入配置失败:', err);
-    showToast('导入失败: ' + err.message, 'error');
+    showToast(t('configDialog.importFailed', { error: err.message }), 'error');
   }
 }
 

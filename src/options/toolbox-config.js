@@ -16,6 +16,7 @@ import {
   reloadSkills, showAgentSkillEditor, getAgentSkillMarkdown, showImportDialog
 } from './toolbox-skills.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 注册刷新回调（refreshToolbox 是函数声明，会被 hoist，可安全引用）
 // 供 toolbox-skills.js 调用，避免循环依赖
@@ -57,7 +58,7 @@ function updateMcpToolCount(servers) {
   if (total === 0) {
     countEl.style.display = 'none';
   } else {
-    countEl.textContent = `已启用 ${enabled} / 共 ${total}`;
+    countEl.textContent = t('toolbox.enabledCountTotal', { enabled, total });
     countEl.style.display = '';
   }
 }
@@ -83,7 +84,7 @@ function updateSkillCount(skills) {
   if (total === 0) {
     countEl.style.display = 'none';
   } else {
-    countEl.textContent = `已启用 ${enabled} / 共 ${total}`;
+    countEl.textContent = t('toolbox.enabledCountTotal', { enabled, total });
     countEl.style.display = '';
   }
 }
@@ -112,11 +113,11 @@ export async function refreshToolbox() {
   const statusEl = document.getElementById('toolboxAgentStatus');
   if (statusEl) {
     if (state.agentConnected) {
-      const agentName = state.agentName || '未知代理';
-      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> 当前代理：<strong>${escapeHtml(agentName)}</strong> — 支持MCP和Skill`;
+      const agentName = state.agentName || t('toolbox.unknownAgent');
+      statusEl.innerHTML = `<span class="toolbox-status-dot connected"></span> ${t('toolbox.currentAgentSupports', { name: escapeHtml(agentName) })}`;
       statusEl.className = 'toolbox-agent-status connected';
     } else {
-      statusEl.innerHTML = `<span class="toolbox-status-dot disconnected"></span> 代理未连接 — 请在「代理」Tab 中连接`;
+      statusEl.innerHTML = `<span class="toolbox-status-dot disconnected"></span> ${t('toolbox.agentNotConnectedHint')}`;
       statusEl.className = 'toolbox-agent-status disconnected';
     }
   }
@@ -174,18 +175,18 @@ async function saveMcpEdit() {
   const isHttp = transport === 'sse' || transport === 'streamableHttp' || transport === 'websocket';
 
   if (!id) {
-    showToolboxToast('请填写服务器 ID', 'warning');
+    showToolboxToast(t('toolbox.mcpIdRequired'), 'warning');
     return;
   }
 
   if (isHttp) {
     if (!url) {
-      showToolboxToast('请填写服务端 URL', 'warning');
+      showToolboxToast(t('toolbox.mcpUrlRequired'), 'warning');
       return;
     }
   } else {
     if (!command) {
-      showToolboxToast('请填写命令路径', 'warning');
+      showToolboxToast(t('toolbox.mcpCommandRequired'), 'warning');
       return;
     }
   }
@@ -208,27 +209,27 @@ async function saveMcpEdit() {
     // 如果编辑前处于连接状态，断开旧连接并使用新配置重连
     const wasConnected = state.cachedMcpServers.find(s => s.id === state.editingMcpId)?.connected;
     if (wasConnected) {
-      showToolboxToast('正在重新连接...', 'info');
+      showToolboxToast(t('toolbox.mcpReconnecting'), 'info');
       // 用旧 ID 断开，用新 ID 重连（防止 ID 被修改的情况）
       await disconnectMcpServer(state.editingMcpId);
       // 短暂等待确保旧进程完全退出
       await new Promise(r => setTimeout(r, 500));
       const connectResult = await connectMcpServer(id);
       if (connectResult.success) {
-        showToolboxToast(`MCP 服务器更新成功，已重连（${connectResult.toolCount || 0} 工具）`, 'success');
+        showToolboxToast(t('toolbox.mcpUpdateReconnected', { count: connectResult.toolCount || 0 }), 'success');
       } else {
-        const errMsg = connectResult.error || '未知错误，请检查命令与参数是否正确';
-        showToolboxToast(`配置已更新，但重连失败: ${errMsg}`, 'warning');
+        const errMsg = connectResult.error || t('toolbox.mcpUnknownError');
+        showToolboxToast(t('toolbox.mcpUpdatedReconnectFailed', { error: errMsg }), 'warning');
       }
     } else {
-      showToolboxToast('MCP 服务器更新成功', 'success');
+      showToolboxToast(t('toolbox.mcpUpdateSuccess'), 'success');
     }
 
     state.editingMcpId = null;
     notifyMcpChange();
     await refreshToolbox();
   } catch (err) {
-    showToolboxToast(`更新失败: ${err.message}`, 'error');
+    showToolboxToast(t('toolbox.mcpUpdateFailed', { error: err.message }), 'error');
   }
 }
 
@@ -239,7 +240,7 @@ function updateGlobalToggleUI(type, enabled) {
   const label = document.getElementById(type === 'mcp' ? 'mcpToggleLabel' : 'skillToggleLabel');
   const section = document.getElementById(type === 'mcp' ? 'mcpSection' : 'skillSection');
   if (label) {
-    label.textContent = enabled ? '已启用' : '已停用';
+    label.textContent = enabled ? t('common.enabled') : t('common.disabled');
     label.style.color = enabled ? '#666' : '#999';
   }
   if (section) {
@@ -279,7 +280,7 @@ export function initToolbox() {
       const enabled = mcpToggle.checked;
       chrome.storage.local.set({ mcpEnabled: enabled });
       updateGlobalToggleUI('mcp', enabled);
-      showToolboxToast(`MCP 服务已${enabled ? '启用' : '停用'}`, 'info');
+      showToolboxToast(enabled ? t('toolbox.mcpServiceEnabled') : t('toolbox.mcpServiceDisabled'), 'info');
     });
   }
 
@@ -289,7 +290,7 @@ export function initToolbox() {
       const enabled = skillToggle.checked;
       chrome.storage.local.set({ skillsEnabled: enabled });
       updateGlobalToggleUI('skill', enabled);
-      showToolboxToast(`Skill 服务已${enabled ? '启用' : '停用'}`, 'info');
+      showToolboxToast(enabled ? t('toolbox.skillServiceEnabled') : t('toolbox.skillServiceDisabled'), 'info');
     });
   }
 
@@ -333,18 +334,18 @@ export function initToolbox() {
         const isHttp = transport === 'sse' || transport === 'streamableHttp' || transport === 'websocket';
 
         if (!id) {
-          showToolboxToast('请填写服务器 ID', 'warning');
+          showToolboxToast(t('toolbox.mcpIdRequired'), 'warning');
           return;
         }
 
         if (isHttp) {
           if (!url) {
-            showToolboxToast('请填写服务端 URL', 'warning');
+            showToolboxToast(t('toolbox.mcpUrlRequired'), 'warning');
             return;
           }
         } else {
           if (!command) {
-            showToolboxToast('请填写命令路径', 'warning');
+            showToolboxToast(t('toolbox.mcpCommandRequired'), 'warning');
             return;
           }
         }
@@ -365,12 +366,12 @@ export function initToolbox() {
 
         try {
           await addMcpServer(serverData);
-          showToolboxToast('MCP 服务器添加成功', 'success');
+          showToolboxToast(t('toolbox.mcpAddSuccess'), 'success');
           hideAddMcpForm();
           notifyMcpChange();
           await refreshToolbox();
         } catch (err) {
-          showToolboxToast(`添加失败: ${err.message}`, 'error');
+          showToolboxToast(t('toolbox.mcpAddFailed', { error: err.message }), 'error');
         }
       }
     });
@@ -399,27 +400,27 @@ export function initToolbox() {
 
       try {
         if (action === 'connect') {
-          showToolboxToast('正在连接...', 'info');
+          showToolboxToast(t('toolbox.mcpConnecting'), 'info');
           await connectMcpServer(serverId);
-          showToolboxToast('连接成功', 'success');
+          showToolboxToast(t('toolbox.mcpConnectSuccess'), 'success');
           notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'disconnect') {
           await disconnectMcpServer(serverId);
-          showToolboxToast('已断开连接', 'success');
+          showToolboxToast(t('toolbox.mcpDisconnectSuccess'), 'success');
           notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'toggle') {
           const enabled = btn.checked;
           await toggleMcpServer(serverId, enabled);
-          showToolboxToast(enabled ? '已启用' : '已禁用', 'success');
+          showToolboxToast(enabled ? t('toolbox.mcpEnabledToast') : t('toolbox.mcpDisabledToast'), 'success');
           notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'delete') {
-          const confirmed = await showCustomConfirm('确定要删除该 MCP 服务器吗？', '删除确认');
+          const confirmed = await showCustomConfirm(t('toolbox.mcpConfirmDelete'), t('toolbox.deleteConfirmTitle'));
           if (!confirmed) return;
           await removeMcpServer(serverId);
-          showToolboxToast('删除成功', 'success');
+          showToolboxToast(t('toolbox.deleteSuccess'), 'success');
           notifyMcpChange();
           await refreshToolbox();
         } else if (action === 'edit') {
@@ -435,12 +436,12 @@ export function initToolbox() {
             const isHidden = toolsList.style.display === 'none';
             toolsList.style.display = isHidden ? 'block' : 'none';
             toggleBtn.innerHTML = isHidden
-              ? `&#9660; 收起 ${toolsList.children.length} 个工具`
-              : `&#9654; 查看 ${toolsList.children.length} 个工具`;
+              ? `&#9660; ${t('toolbox.collapseTools', { count: toolsList.children.length })}`
+              : `&#9654; ${t('toolbox.viewTools', { count: toolsList.children.length })}`;
           }
         }
       } catch (err) {
-        showToolboxToast(`操作失败: ${err.message}`, 'error');
+        showToolboxToast(t('toolbox.operationFailed', { error: err.message }), 'error');
       }
     });
   }
@@ -469,7 +470,7 @@ export function initToolbox() {
             const resources = JSON.parse(decodeURIComponent(btn.dataset.full || '[]'));
             const paramsContainer = btn.parentElement;
             if (paramsContainer && paramsContainer.classList.contains('skill-card-params')) {
-              const allTags = resources.map(r => `<span class="skill-param-tag" title="大小: ${r.size} 字节">📄 ${escapeHtml(r.name)}</span>`).join('');
+              const allTags = resources.map(r => `<span class="skill-param-tag" title="${t('toolbox.sizeBytes', { size: r.size })}">📄 ${escapeHtml(r.name)}</span>`).join('');
               paramsContainer.innerHTML = allTags;
             }
           } catch (e) {
@@ -483,19 +484,19 @@ export function initToolbox() {
 
       try {
         if (action === 'delete-skill') {
-          const confirmed = await showCustomConfirm(`确定要删除 Skill "${skillName}" 吗？`, '删除确认');
+          const confirmed = await showCustomConfirm(t('toolbox.skillConfirmDelete', { name: skillName }), t('toolbox.deleteConfirmTitle'));
           if (!confirmed) return;
           await deleteSkill(skillName);
-          showToolboxToast('删除成功', 'success');
+          showToolboxToast(t('toolbox.deleteSuccess'), 'success');
           await refreshToolbox();
         } else if (action === 'toggle-skill') {
           const enabled = await toggleSkill(skillName);
-          showToolboxToast(`已${enabled ? '启用' : '停用'} Skill "${skillName}"`, 'success');
+          showToolboxToast(enabled ? t('toolbox.skillEnabledToast', { name: skillName }) : t('toolbox.skillDisabledToast', { name: skillName }), 'success');
           await refreshToolbox();
         } else if (action === 'run-skill') {
           const skillInfo = await agentApi('GET', `/api/skill/detail?name=${encodeURIComponent(skillName)}`);
           if (!skillInfo?.success || !skillInfo.skill) {
-            showToolboxToast(`获取 Skill 信息失败: ${skillInfo?.error || '未知错误'}`, 'error');
+            showToolboxToast(t('toolbox.skillInfoFailed', { error: skillInfo?.error || t('agentConfig.unknownError') }), 'error');
             return;
           }
           // 解析参数定义
@@ -504,12 +505,12 @@ export function initToolbox() {
             // 有参数需要填写，弹窗收集
             const userParams = await showSkillParamsDialog(skillName, paramsDef);
             if (userParams === null) return; // 用户取消
-            showToolboxToast(`正在运行 Skill "${skillName}"...`, 'info');
+            showToolboxToast(t('toolbox.skillRunning', { name: skillName }), 'info');
             const result = await runSkill(skillName, userParams);
             showSkillRunResult(skillName, skillInfo, result);
           } else {
             // 无必填参数，直接执行
-            showToolboxToast(`正在运行 Skill "${skillName}"...`, 'info');
+            showToolboxToast(t('toolbox.skillRunning', { name: skillName }), 'info');
             const result = await runSkill(skillName);
             showSkillRunResult(skillName, skillInfo, result);
           }
@@ -519,10 +520,10 @@ export function initToolbox() {
             if (data.success) {
               showAgentSkillEditor(skillName, data);
             } else {
-              showToolboxToast(data.error || '获取 Skill 内容失败', 'error');
+              showToolboxToast(data.error || t('toolbox.skillContentFailed'), 'error');
             }
           } catch (err) {
-            showToolboxToast(`获取失败: ${err.message}`, 'error');
+            showToolboxToast(t('toolbox.skillGetFailed', { error: err.message }), 'error');
           }
         } else if (action === 'view-agent-skill') {
           try {
@@ -530,14 +531,14 @@ export function initToolbox() {
             if (data.success) {
               showAgentSkillViewer(skillName, data);
             } else {
-              showToolboxToast(data.error || '获取 Skill 内容失败', 'error');
+              showToolboxToast(data.error || t('toolbox.skillContentFailed'), 'error');
             }
           } catch (err) {
-            showToolboxToast(`获取失败: ${err.message}`, 'error');
+            showToolboxToast(t('toolbox.skillGetFailed', { error: err.message }), 'error');
           }
         }
       } catch (err) {
-        showToolboxToast(`操作失败: ${err.message}`, 'error');
+        showToolboxToast(t('toolbox.operationFailed', { error: err.message }), 'error');
       }
     });
   }
@@ -554,10 +555,10 @@ export function initToolbox() {
     reloadBtn.addEventListener('click', async () => {
       try {
         const result = await reloadSkills();
-        showToolboxToast(`已重新加载 ${result.count || 0} 个 Skill`, 'success');
+        showToolboxToast(t('toolbox.skillsReloaded', { count: result.count || 0 }), 'success');
         await refreshToolbox();
       } catch (err) {
-        showToolboxToast(`重新加载失败: ${err.message}`, 'error');
+        showToolboxToast(t('toolbox.skillsReloadFailed', { error: err.message }), 'error');
       }
     });
   }

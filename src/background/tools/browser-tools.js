@@ -1,4 +1,4 @@
-// browser-tools - page interaction + form operation + content extraction 工具定义
+// browser-tools - page interaction + form operation + content extraction tool definitions
 
 export const BROWSER_TOOLS = [
   {
@@ -10,16 +10,16 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'interact_element',
-      description: '点击或悬停元素（支持 ref/text/selector 三种定位，优先 ref，ref 来自 query_elements）',
+      description: 'Click or hover element (supports ref/text/selector locating; prefer ref from query_elements)',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['click', 'hover'] },
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
-          ref: { type: 'integer', description: 'query_elements 返回的编号（推荐）；仅当前页面有效，导航后需重新 query' },
-          text: { type: 'string', description: '按文本匹配元素（如"登录"），找到即点击' },
-          tag: { type: 'string', description: '配合 text 限定标签如 button/a' },
-          selector: { type: 'string', description: 'CSS 选择器（ref/text 均未提供时使用）；避免纯 nth-child 长链，优先用 query_elements 返回的 selector' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
+          ref: { type: 'integer', description: 'Index returned by query_elements (recommended); valid only on current page, re-query after navigation' },
+          text: { type: 'string', description: 'Match element by text (e.g. "Login"), click on first match' },
+          tag: { type: 'string', description: 'Restrict tag with text, e.g. button/a' },
+          selector: { type: 'string', description: 'CSS selector (used when neither ref nor text provided); avoid long nth-child chains, prefer selector returned by query_elements' },
           waitTime: { type: 'integer' },
           timeout: { type: 'integer' }
         },
@@ -36,20 +36,20 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_to',
-      description: '滚动页面（定位到元素/坐标/文本）；无限滚动收集用 scroll_collect',
+      description: 'Scroll page (locate element/coordinates/text); use scroll_collect for infinite scroll collection',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
-          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'], description: 'selector需selector，coordinates需x/y，text需text' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
+          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'], description: 'selector requires selector, coordinates requires x/y, text requires text' },
           selector: { type: 'string' },
-          text: { type: 'string', description: 'target=text 时，滚动到包含此文本的元素' },
+          text: { type: 'string', description: 'When target=text, scroll to element containing this text' },
           x: { type: 'integer' },
           y: { type: 'integer' },
           align: { type: 'string', enum: ['start', 'center', 'end', 'nearest'] },
           behavior: { type: 'string', enum: ['smooth', 'auto'] },
-          maxScrolls: { type: 'integer', description: 'target=text 时最大滚动次数（默认20）' },
-          pauseMs: { type: 'integer', description: 'target=text 时每次滚动后等待ms（默认500）' }
+          maxScrolls: { type: 'integer', description: 'When target=text, max scroll attempts (default 20)' },
+          pauseMs: { type: 'integer', description: 'When target=text, wait ms after each scroll (default 500)' }
         },
         required: []
       }
@@ -64,11 +64,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'wait_element',
-      description: '等待元素状态变化；页面跳转等待用 wait_navigation',
+      description: 'Wait for element state change; use wait_navigation for page navigation',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           selector: { type: 'string' },
           state: { type: 'string', enum: ['appeared', 'disappeared', 'visible', 'hidden'] },
           timeout: { type: 'integer' }
@@ -86,11 +86,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'drag_drop',
-      description: '拖拽元素（⚠️实验性，多数网页可能不生效，必要时改用点击）',
+      description: 'Drag element (⚠️ experimental, may not work on most pages; use click instead if needed)',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           sourceSelector: { type: 'string' },
           targetSelector: { type: 'string' }
         },
@@ -107,11 +107,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'wait_navigation',
-      description: '等待导航',
+      description: 'Wait for navigation',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           timeout: { type: 'integer' },
           waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }
         },
@@ -128,11 +128,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'fill_form',
-      description: '批量填充表单；React 受控组件单字段建议用 keyboard_input',
+      description: 'Batch fill form; for React controlled components with a single field, prefer keyboard_input',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           fields: {
             type: 'array',
             items: {
@@ -160,11 +160,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'keyboard_input',
-      description: '键盘输入（text=输入文本到聚焦元素，key=派发按键如Enter/Escape；绕过 React 受控组件）',
+      description: 'Keyboard input (text=type text into focused element, key=dispatch key such as Enter/Escape; bypasses React controlled components)',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           key: { type: 'string' },
           text: { type: 'string' },
           ctrlKey: { type: 'boolean' },
@@ -184,15 +184,15 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'file_upload',
-      description: '上传文件',
+      description: 'Upload file',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           selector: { type: 'string' },
           fileName: { type: 'string' },
-          fileContent: { type: 'string', description: '文件内容(base64)' },
-          fileType: { type: 'string', description: 'MIME类型，如image/png' }
+          fileContent: { type: 'string', description: 'File content (base64)' },
+          fileType: { type: 'string', description: 'MIME type, e.g. image/png' }
         },
         required: ['selector', 'fileName', 'fileContent']
       }
@@ -207,12 +207,12 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'select_dropdown',
-      description: '下拉选择（自定义组件也支持；触发器可用 ref 代替 triggerSelector）',
+      description: 'Dropdown selection (also supports custom components; trigger can use ref instead of triggerSelector)',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
-          ref: { type: 'integer', description: 'query_elements 返回的编号（优先于 triggerSelector）' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
+          ref: { type: 'integer', description: 'Index returned by query_elements (takes precedence over triggerSelector)' },
           triggerSelector: { type: 'string' },
           optionText: { type: 'string' },
           optionSelector: { type: 'string' },
@@ -231,11 +231,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'page_content',
-      description: '获取页面内容；元素定位用 query_elements，结构化抽取用 extract_data',
+      description: 'Get page content; use query_elements for element locating, extract_data for structured extraction',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           format: { type: 'string', enum: ['text', 'html'] },
           selector: { type: 'string' },
           maxLength: { type: 'integer' }
@@ -253,19 +253,19 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'extract_data',
-      description: '提取结构化数据',
+      description: 'Extract structured data',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'] },
           selector: { type: 'string' },
-          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: '仅links' },
-          includeHeaders: { type: 'boolean', description: '仅table' },
-          format: { type: 'string', enum: ['json', 'markdown'], description: '仅table' },
-          includeImages: { type: 'boolean', description: '仅links' },
-          minWidth: { type: 'integer', description: '仅images' },
-          minHeight: { type: 'integer', description: '仅images' },
+          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: 'links only' },
+          includeHeaders: { type: 'boolean', description: 'table only' },
+          format: { type: 'string', enum: ['json', 'markdown'], description: 'table only' },
+          includeImages: { type: 'boolean', description: 'links only' },
+          minWidth: { type: 'integer', description: 'images only' },
+          minHeight: { type: 'integer', description: 'images only' },
           maxResults: { type: 'integer' }
         },
         required: ['dataType']
@@ -281,11 +281,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'query_elements',
-      description: '查询可交互元素，推荐优先用于元素定位，返回的 selector 可直接用于 interact_element/fill_form',
+      description: 'Query interactive elements; recommended as the primary locating method; returned selector can be used directly in interact_element/fill_form',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           filterByText: { type: 'string' },
           elementTypes: {
             type: 'array',
@@ -307,11 +307,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'search_in_page',
-      description: '当前页面文本搜索',
+      description: 'Text search in current page',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           query: { type: 'string' },
           mode: { type: 'string', enum: ['plain', 'regex'] },
           caseSensitive: { type: 'boolean' },
@@ -332,11 +332,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'iframe_content',
-      description: '获取iframe内容',
+      description: 'Get iframe content',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           selector: { type: 'string' },
           includeNested: { type: 'boolean' },
           maxLength: { type: 'integer' }
@@ -354,11 +354,11 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_collect',
-      description: '滚动页面并收集内容，适用于无限滚动/懒加载页面',
+      description: 'Scroll page and collect content, suitable for infinite scroll/lazy-loaded pages',
       parameters: {
         type: 'object',
         properties: {
-          tabId: { type: 'integer', description: '省略则用当前活动页' },
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
           scrollPixels: { type: 'integer' },
           maxScrolls: { type: 'integer' },
           pauseMs: { type: 'integer' },

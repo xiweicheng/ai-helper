@@ -1,4 +1,5 @@
 import logger from '../shared/logger.js';
+import { getLanguage } from '../shared/i18n.js';
 
 // background/local-agent-client.js - 代理通信客户端
 // 封装与代理服务的 HTTP 和 WebSocket 通信
@@ -240,7 +241,10 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
     const extensionId = chrome.runtime.id;
     const response = await fetch(`${agentUrl}/api/pair`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept-Language': getLanguage()
+      },
       body: JSON.stringify({ code: pairCode, extensionId })
     });
     const data = await response.json();
@@ -249,10 +253,10 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
       if (!name) {
         try {
           const [statusResp, detailResp] = await Promise.all([
-            fetch(`${agentUrl}/api/status`, { cache: 'no-cache' }),
-            fetch(`${agentUrl}/api/status/detail`, { 
+            fetch(`${agentUrl}/api/status`, { cache: 'no-cache', headers: { 'Accept-Language': getLanguage() } }),
+            fetch(`${agentUrl}/api/status/detail`, {
               cache: 'no-cache',
-              headers: { 'Authorization': `Bearer ${data.token}` }
+              headers: { 'Authorization': `Bearer ${data.token}`, 'Accept-Language': getLanguage() }
             })
           ]);
           
@@ -375,7 +379,8 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
       method,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        'Authorization': `Bearer ${config.token}`,
+        'Accept-Language': getLanguage()
       },
       signal: controller.signal
     };
@@ -419,7 +424,10 @@ async function agentGet(path, timeoutMs = 30000) {
   try {
     const response = await fetch(`${config.url}${path}`, {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${config.token}` },
+      headers: {
+        'Authorization': `Bearer ${config.token}`,
+        'Accept-Language': getLanguage()
+      },
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -465,7 +473,8 @@ async function uploadFile(file) {
     const response = await fetch(`${config.url}/api/files/upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${config.token}`
+        'Authorization': `Bearer ${config.token}`,
+        'Accept-Language': getLanguage()
       },
       body: formData,
       signal: controller.signal
@@ -555,7 +564,7 @@ async function getAgentStatus() {
     return { success: false, error: 'Agent 未配对' };
   }
   try {
-    const response = await fetch(`${config.url}/api/status`, { cache: 'no-cache' });
+    const response = await fetch(`${config.url}/api/status`, { cache: 'no-cache', headers: { 'Accept-Language': getLanguage() } });
     return await response.json();
   } catch (err) {
     return { success: false, error: `无法连接到 Agent: ${err.message}` };

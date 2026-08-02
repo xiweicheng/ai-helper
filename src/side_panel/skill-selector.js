@@ -2,6 +2,7 @@
 import state from './state.js';
 import { escapeHtml, escapeAttr } from './utils.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // 技能列表缓存
 let skillListCache = [];
@@ -109,7 +110,7 @@ export async function renderSkillList(filterText = '') {
   });
 
   if (filteredSkills.length === 0) {
-    skillListEl.innerHTML = '<div class="prompt-empty">暂无匹配的技能</div>';
+    skillListEl.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchSkill')}</div>`;
     state.selectedSkillIndex = -1;
     return;
   }
@@ -244,7 +245,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'block';
     if (mcpList) mcpList.style.display = 'none';
-    if (headerText) headerText.textContent = '方向键切换 · Enter选中技能 · Esc取消';
+    if (headerText) headerText.textContent = t('promptSelector.skillHint');
     state.selectedPromptIndex = -1;
     state.selectedMcpServiceIndex = -1;
     await renderSkillList();
@@ -252,7 +253,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'none';
     if (mcpList) mcpList.style.display = 'block';
-    if (headerText) headerText.textContent = '方向键切换 · Enter选中MCP服务 · Esc取消';
+    if (headerText) headerText.textContent = t('promptSelector.mcpHint');
     state.selectedPromptIndex = -1;
     state.selectedSkillIndex = -1;
     await renderMcpList();
@@ -260,7 +261,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'block';
     if (skillList) skillList.style.display = 'none';
     if (mcpList) mcpList.style.display = 'none';
-    if (headerText) headerText.textContent = '方向键切换 · Enter发送 · Ctrl+Enter带入文本框';
+    if (headerText) headerText.textContent = t('promptSelector.switchHint');
     state.selectedSkillIndex = -1;
     state.selectedMcpServiceIndex = -1;
   }
@@ -292,7 +293,7 @@ export function addSkillManageButton() {
 
   const manageBtn = document.createElement('button');
   manageBtn.className = 'skill-manage-btn';
-  manageBtn.title = '技能管理';
+  manageBtn.title = t('promptSelector.skillManageTitle');
   manageBtn.style.display = 'none'; // 默认隐藏，仅技能 Tab 显示
   manageBtn.style.fontSize = '14px';
   manageBtn.innerHTML = '🧩';
@@ -486,7 +487,7 @@ export async function renderMcpList(filterText = '') {
   });
 
   if (filteredServices.length === 0) {
-    mcpListEl.innerHTML = '<div class="prompt-empty">暂无MCP服务</div>';
+    mcpListEl.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchMcp')}</div>`;
     state.selectedMcpServiceIndex = -1;
     return;
   }
@@ -501,7 +502,7 @@ export async function renderMcpList(filterText = '') {
         <div class="mcp-list-item-name">${escapeHtml(svc.serverName)}</div>
         <div class="mcp-list-item-desc">${escapeHtml(svc.serverId)}</div>
       </div>
-      <span class="mcp-list-item-badge">${svc.toolCount}个工具</span>
+      <span class="mcp-list-item-badge">${t('promptSelector.toolCount', { count: svc.toolCount })}</span>
     </div>
   `).join('');
 
@@ -606,7 +607,7 @@ export function addMcpManageButton() {
 
   const manageBtn = document.createElement('button');
   manageBtn.className = 'mcp-manage-btn';
-  manageBtn.title = 'MCP管理';
+  manageBtn.title = t('promptSelector.mcpManageTitle');
   manageBtn.style.display = 'none';
   manageBtn.style.fontSize = '14px';
   manageBtn.innerHTML = '🔌';

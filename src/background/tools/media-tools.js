@@ -1,4 +1,4 @@
-// media-tools - media output + debug dev 工具定义
+// media-tools - media output + debug dev tool definitions
 
 export const MEDIA_TOOLS = [
   {
@@ -10,7 +10,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'notify',
-      description: '显示通知',
+      description: 'Show notification',
       parameters: {
         type: 'object',
         properties: {
@@ -35,13 +35,13 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: '剪贴板读写',
+      description: 'Clipboard read/write',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['copy', 'paste', 'get_selected'] },
-          text: { type: 'string', description: 'copy时需要' },
-          format: { type: 'string', enum: ['text', 'html'], description: 'get_selected时' }
+          text: { type: 'string', description: 'required for copy' },
+          format: { type: 'string', enum: ['text', 'html'], description: 'for get_selected' }
         },
         required: ['action']
       }
@@ -56,7 +56,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'download_file',
-      description: '下载文件',
+      description: 'Download file',
       parameters: {
         type: 'object',
         properties: {
@@ -76,7 +76,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'qrcode',
-      description: '生成二维码',
+      description: 'Generate QR code',
       parameters: {
         type: 'object',
         properties: {
@@ -97,16 +97,16 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'capture_page',
-      description: '截取当前页面截图。用户消息已含图片时直接分析，勿调用本工具。',
+      description: 'Capture screenshot of current page. If the user message already contains an image, analyze it directly and do not call this tool.',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['download', 'analyze', 'both'] },
-          tabId: { type: 'integer', description: 'analyze/both时需要' },
+          tabId: { type: 'integer', description: 'required for analyze/both' },
           format: { type: 'string', enum: ['jpeg', 'png'] },
           quality: { type: 'integer' },
-          visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048, description: '视觉分析图片最大边长(px)' },
-          visionQuality: { type: 'integer', minimum: 30, maximum: 95, description: '视觉分析图片JPEG质量' }
+          visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048, description: 'Max dimension (px) of image for vision analysis' },
+          visionQuality: { type: 'integer', minimum: 30, maximum: 95, description: 'JPEG quality of image for vision analysis' }
         }
       }
     }
@@ -120,7 +120,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'browser_info',
-      description: '浏览器信息',
+      description: 'Browser information',
       parameters: {
         type: 'object',
         properties: {}
@@ -136,13 +136,13 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'inject_css',
-      description: '注入CSS',
+      description: 'Inject CSS',
       parameters: {
         type: 'object',
         properties: {
           css: { type: 'string' },
           targetSelector: { type: 'string' },
-          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style=插入样式表, inline=内联样式' }
+          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style=insert stylesheet, inline=inline style' }
         },
         required: ['css']
       }

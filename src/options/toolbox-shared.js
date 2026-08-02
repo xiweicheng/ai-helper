@@ -3,6 +3,7 @@
 
 import { showToast } from './config-manager.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 // ==================== 共享状态 ====================
 // 所有模块通过此对象读写共享状态，确保 live binding 一致性
@@ -33,7 +34,7 @@ export async function triggerRefresh() {
 /**
  * 自定义确认弹窗（返回 Promise<boolean>）
  */
-export function showCustomConfirm(message, title = '确认操作') {
+export function showCustomConfirm(message, title = t('customConfirm.defaultTitle')) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -46,8 +47,8 @@ export function showCustomConfirm(message, title = '确认操作') {
           <p>${escapeHtml(message)}</p>
         </div>
         <div class="modal-actions">
-          <button class="btn btn-cancel" id="confirmCancelBtn">取消</button>
-          <button class="btn btn-primary" id="confirmOkBtn" style="width: auto;">确定</button>
+          <button class="btn btn-cancel" id="confirmCancelBtn">${t('common.cancel')}</button>
+          <button class="btn btn-primary" id="confirmOkBtn" style="width: auto;">${t('common.ok')}</button>
         </div>
       </div>
     `;
@@ -84,36 +85,36 @@ export function showAgentSkillViewer(skillName, data) {
 
   modalContainer.innerHTML = `
     <div class="modal-header">
-      <h3>查看 Skill: ${escapeHtml(skillName)}</h3>
+      <h3>${t('toolbox.viewSkillTitle', { name: skillName })}</h3>
       <button class="modal-close-btn">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>名称</label>
+        <label>${t('toolbox.skillNameLabel')}</label>
         <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:#f5f5f5;color:#666;">
       </div>
       <div class="form-group">
-        <label>描述</label>
+        <label>${t('toolbox.skillDescLabel')}</label>
         <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:#f5f5f5;color:#666;">
       </div>
       <div class="form-group">
-        <label>版本</label>
+        <label>${t('toolbox.skillVersionLabel')}</label>
         <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:#f5f5f5;color:#666;">
       </div>
       <div class="form-group">
-        <label>SKILL.md 内容</label>
+        <label>${t('toolbox.skillMarkdownLabel')}</label>
         <textarea readonly style="min-height: 350px; font-family: monospace; background:#f5f5f5; color:#666; resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
       </div>
       ${data.resources && data.resources.length > 0 ? `
       <div class="form-group">
-        <label>资源文件 (${data.resources.length})</label>
+        <label>${t('toolbox.existingResources')} (${data.resources.length})</label>
         <div class="skill-resources-preview">
           ${data.resources.map(r => `<span class="skill-resource-tag">📄 ${escapeHtml(r.name || r)}</span>`).join('')}
         </div>
       </div>` : ''}
     </div>
     <div class="modal-actions">
-      <button class="btn btn-cancel">关闭</button>
+      <button class="btn btn-cancel">${t('common.close')}</button>
     </div>
   `;
 

@@ -1,0 +1,11 @@
+{
+  "extName": {
+    "message": "AI Helper - 网页智能助手"
+  },
+  "extDescription": {
+    "message": "选中文本内容直接发起API调用，获取智能结果展示"
+  },
+  "commandToggleSidepanel": {
+    "message": "打开/关闭侧边栏"
+  }
+}

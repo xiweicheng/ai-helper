@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "AI Helper - 网页智能助手",
+  "default_locale": "zh",
+  "name": "__MSG_extName__",
   "version": "1.0.0",
-  "description": "选中文本内容直接发起API调用，获取智能结果展示",
+  "description": "__MSG_extDescription__",
   "permissions": [
     "activeTab",
     "storage",
@@ -62,7 +63,7 @@
         "default": "Ctrl+Shift+Y",
         "mac": "Command+Shift+Y"
       },
-      "description": "打开/关闭侧边栏"
+      "description": "__MSG_commandToggleSidepanel__"
     }
   },
   "action": {

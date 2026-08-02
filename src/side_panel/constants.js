@@ -3,24 +3,27 @@ import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../backgrou
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
 export const CATEGORY_ORDER = [...new Set([..._CATEGORY_ORDER, 'mcp'])];
 
+// 预设温度档位：labelKey/tipKey 对应 locales 中的 presetMode 模块
 export const PRESET_MODES = [
-  { label: "精准严谨", temp: 0.2, topP: 1.0, tip: "改错、调试、要准确答案（低随机性，适合修 bug）" },
-  { label: "日常通用", temp: 0.45, topP: 0.9, tip: "多数场景都好用（平衡稳定与灵活，适合写脚本）" },
-  { label: "思路发散", temp: 0.65, topP: 0.9, tip: "要多种方案做对比（适合重构、方案对比）" },
-  { label: "创意脑暴", temp: 0.9, topP: 0.9, tip: "写文案、起名、头脑风暴（高随机性，不建议正式代码）" }
+  { labelKey: 'presetMode.preciseLabel', tipKey: 'presetMode.preciseTip', temp: 0.2, topP: 1.0 },
+  { labelKey: 'presetMode.generalLabel', tipKey: 'presetMode.generalTip', temp: 0.45, topP: 0.9 },
+  { labelKey: 'presetMode.divergentLabel', tipKey: 'presetMode.divergentTip', temp: 0.65, topP: 0.9 },
+  { labelKey: 'presetMode.creativeLabel', tipKey: 'presetMode.creativeTip', temp: 0.9, topP: 0.9 }
 ];
 
+// 工具分类名称：通过 t('toolCategory.<category>') 获取本地化名称
+// 此映射保留作为分类 key 列表参考；显示文案统一走 i18n
 export const TOOL_CATEGORY_NAMES = {
-    'page_interaction': '🖱️ 页面交互',
-    'form_operation': '📝 表单操作',
-    'content_extraction': '📄 内容提取',
-    'tab_management': '📑 标签页管理',
-    'bookmark_history': '🔖 书签历史',
-    'storage_management': '💾 存储管理',
-    'network_request': '🌐 网络请求',
-    'media_output': '📷 媒体与输出',
-    'debug_dev': '🔧 调试开发',
-    'ai_collaboration': '🤖 AI协作',
-    'local_agent': '🖥️ 代理',
-    'mcp': '🔌 MCP'
+    'page_interaction': 'page_interaction',
+    'form_operation': 'form_operation',
+    'content_extraction': 'content_extraction',
+    'tab_management': 'tab_management',
+    'bookmark_history': 'bookmark_history',
+    'storage_management': 'storage_management',
+    'network_request': 'network_request',
+    'media_output': 'media_output',
+    'debug_dev': 'debug_dev',
+    'ai_collaboration': 'ai_collaboration',
+    'local_agent': 'local_agent',
+    'mcp': 'mcp'
 };

@@ -22,6 +22,7 @@ import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents }
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
+import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
 
 let currentTools = [];
 
@@ -52,6 +53,55 @@ function activateByHash() {
 
 // 页面加载时获取已保存的配置
 document.addEventListener('DOMContentLoaded', async function() {
+  // 初始化国际化（读取语言偏好 + 跨环境同步监听）
+  await initI18n();
+  applyI18n();
+  subscribe(() => applyI18n());
+
+  // 初始化语言选择器（自定义下拉框，与其他下拉框风格一致）
+  const langInput = document.getElementById('languageInput');
+  const langDropdown = document.getElementById('languageDropdown');
+  if (langInput && langDropdown) {
+    const renderLanguageOptions = (selectedCode) => {
+      langDropdown.innerHTML = '';
+      SUPPORTED_LANGUAGES.forEach(({ code, label }) => {
+        const option = document.createElement('div');
+        option.className = 'model-option' + (code === selectedCode ? ' selected' : '');
+        option.dataset.value = code;
+        option.textContent = label;
+        langDropdown.appendChild(option);
+      });
+      const current = SUPPORTED_LANGUAGES.find(x => x.code === selectedCode);
+      langInput.value = current ? current.label : '';
+    };
+    renderLanguageOptions(getLanguage());
+
+    langInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+      langDropdown.classList.toggle('show');
+    });
+
+    langDropdown.addEventListener('click', (e) => {
+      const option = e.target.closest('.model-option');
+      if (!option) return;
+      e.stopPropagation();
+      const code = option.dataset.value;
+      langDropdown.querySelectorAll('.model-option').forEach(o => o.classList.remove('selected'));
+      option.classList.add('selected');
+      langInput.value = option.textContent;
+      langDropdown.classList.remove('show');
+      setLanguage(code);
+      applyI18n();
+      showToast(t('settings.languageChanged'), 'success');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!langDropdown.contains(e.target) && e.target !== langInput) {
+        langDropdown.classList.remove('show');
+      }
+    });
+  }
+
   // Tab 切换事件
   document.querySelectorAll('.tab-nav-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -140,7 +190,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       toolbarConfigEl.classList.add('disabled');
     }
     if (toolbarToggleLabelEl) {
-      toolbarToggleLabelEl.textContent = enableSelToolbarCheckbox.checked ? '已启用' : '已停用';
+      toolbarToggleLabelEl.textContent = enableSelToolbarCheckbox.checked ? t('common.enabled') : t('common.disabled');
     }
   }
   
@@ -194,7 +244,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     addModelToggleBtn.addEventListener('click', function() {
       const isVisible = addModelForm.style.display !== 'none';
       addModelForm.style.display = isVisible ? 'none' : '';
-      addModelToggleBtn.textContent = isVisible ? '+ 添加模型' : '− 收起';
+      addModelToggleBtn.textContent = isVisible ? t('settings.addModel') : t('settings.collapse');
       if (!isVisible) {
         addModelName.value = '';
         addModelContextWindow.value = '';
@@ -204,7 +254,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     cancelAddModelBtn.addEventListener('click', function() {
       addModelForm.style.display = 'none';
-      addModelToggleBtn.textContent = '+ 添加模型';
+      addModelToggleBtn.textContent = t('settings.addModel');
       addModelName.value = '';
       addModelContextWindow.value = '';
     });
@@ -213,7 +263,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const name = addModelName.value.trim();
       const ctxWindow = parseInt(addModelContextWindow.value) || 0;
       if (!name) {
-        showToast('❌ 请输入模型名称', 'error');
+        showToast('❌ ' + t('settings.modelNameRequired'), 'error');
         return;
       }
       addCustomModelToDropdown(name, ctxWindow);
@@ -222,10 +272,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateModelSelection(name);
       chrome.storage.local.set({ modelName: name });
       addModelForm.style.display = 'none';
-      addModelToggleBtn.textContent = '+ 添加模型';
+      addModelToggleBtn.textContent = t('settings.addModel');
       addModelName.value = '';
       addModelContextWindow.value = '';
-      showToast('✅ 模型已添加', 'success');
+      showToast('✅ ' + t('settings.modelAdded'), 'success');
     });
 
     // 回车键确认添加
@@ -309,7 +359,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     addImageModelToggleBtn.addEventListener('click', function() {
       const isVisible = addImageModelForm.style.display !== 'none';
       addImageModelForm.style.display = isVisible ? 'none' : '';
-      addImageModelToggleBtn.textContent = isVisible ? '+ 添加模型' : '− 收起';
+      addImageModelToggleBtn.textContent = isVisible ? t('settings.addModel') : t('settings.collapse');
       if (!isVisible) {
         addImageModelName.value = '';
         addImageModelContextWindow.value = '';
@@ -319,7 +369,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     cancelAddImageModelBtn.addEventListener('click', function() {
       addImageModelForm.style.display = 'none';
-      addImageModelToggleBtn.textContent = '+ 添加模型';
+      addImageModelToggleBtn.textContent = t('settings.addModel');
       addImageModelName.value = '';
       addImageModelContextWindow.value = '';
     });
@@ -328,7 +378,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const name = addImageModelName.value.trim();
       const ctxWindow = parseInt(addImageModelContextWindow.value) || 0;
       if (!name) {
-        showToast('❌ 请输入模型名称', 'error');
+        showToast('❌ ' + t('settings.modelNameRequired'), 'error');
         return;
       }
       addCustomImageModelToDropdown(name, ctxWindow);
@@ -337,10 +387,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateImageModelSelection(name);
       chrome.storage.local.set({ imageModelName: name });
       addImageModelForm.style.display = 'none';
-      addImageModelToggleBtn.textContent = '+ 添加模型';
+      addImageModelToggleBtn.textContent = t('settings.addModel');
       addImageModelName.value = '';
       addImageModelContextWindow.value = '';
-      showToast('✅ 图片模型已添加', 'success');
+      showToast('✅ ' + t('settings.imageModelAdded'), 'success');
     });
 
     // 回车键确认添加
@@ -389,7 +439,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         apiBaseDropdown.classList.remove('show');
         // 自动保存
         chrome.storage.local.set({ apiBase: value });
-        showToast('✅ API Base URL 已切换，请确保 API Key 对应有效', 'info');
+        showToast('✅ ' + t('settings.apiBaseSwitched'), 'info');
       }
     });
 
@@ -445,7 +495,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     addApiBaseToggleBtn.addEventListener('click', function() {
       const isVisible = addApiBaseForm.style.display !== 'none';
       addApiBaseForm.style.display = isVisible ? 'none' : '';
-      addApiBaseToggleBtn.textContent = isVisible ? '+ 添加地址' : '− 收起';
+      addApiBaseToggleBtn.textContent = isVisible ? t('settings.addAddress') : t('settings.collapse');
       if (!isVisible) {
         addApiBaseUrl.value = '';
         addApiBaseLabel.value = '';
@@ -455,7 +505,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     cancelAddApiBaseBtn.addEventListener('click', function() {
       addApiBaseForm.style.display = 'none';
-      addApiBaseToggleBtn.textContent = '+ 添加地址';
+      addApiBaseToggleBtn.textContent = t('settings.addAddress');
       addApiBaseUrl.value = '';
       addApiBaseLabel.value = '';
     });
@@ -464,14 +514,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       const url = addApiBaseUrl.value.trim();
       const label = addApiBaseLabel.value.trim();
       if (!url) {
-        showToast('❌ 请输入 API Base URL', 'error');
+        showToast('❌ ' + t('settings.apiBaseRequired'), 'error');
         return;
       }
       // 简单校验 URL 格式
       try {
         new URL(url);
       } catch {
-        showToast('❌ URL 格式不正确', 'error');
+        showToast('❌ ' + t('settings.urlInvalid'), 'error');
         return;
       }
       addCustomApiBase(url, label);
@@ -479,10 +529,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateApiBaseSelection(url);
       chrome.storage.local.set({ apiBase: url });
       addApiBaseForm.style.display = 'none';
-      addApiBaseToggleBtn.textContent = '+ 添加地址';
+      addApiBaseToggleBtn.textContent = t('settings.addAddress');
       addApiBaseUrl.value = '';
       addApiBaseLabel.value = '';
-      showToast('✅ API Base URL 已添加', 'success');
+      showToast('✅ ' + t('settings.apiBaseAdded'), 'success');
     });
 
     // 回车键确认添加
@@ -525,7 +575,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         updateImageApiBaseSelection(value);
         imageApiBaseDropdown.classList.remove('show');
         chrome.storage.local.set({ imageApiBase: value });
-        showToast('✅ 图片 API Base URL 已切换', 'info');
+        showToast('✅ ' + t('settings.imageApiBaseSwitched'), 'info');
       }
     });
 
@@ -579,7 +629,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     addImageApiBaseToggleBtn.addEventListener('click', function() {
       const isVisible = addImageApiBaseForm.style.display !== 'none';
       addImageApiBaseForm.style.display = isVisible ? 'none' : '';
-      addImageApiBaseToggleBtn.textContent = isVisible ? '+ 添加地址' : '− 收起';
+      addImageApiBaseToggleBtn.textContent = isVisible ? t('settings.addAddress') : t('settings.collapse');
       if (!isVisible) {
         addImageApiBaseUrl.value = '';
         addImageApiBaseLabel.value = '';
@@ -589,7 +639,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     cancelAddImageApiBaseBtn.addEventListener('click', function() {
       addImageApiBaseForm.style.display = 'none';
-      addImageApiBaseToggleBtn.textContent = '+ 添加地址';
+      addImageApiBaseToggleBtn.textContent = t('settings.addAddress');
       addImageApiBaseUrl.value = '';
       addImageApiBaseLabel.value = '';
     });
@@ -598,13 +648,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       const url = addImageApiBaseUrl.value.trim();
       const label = addImageApiBaseLabel.value.trim();
       if (!url) {
-        showToast('❌ 请输入 API Base URL', 'error');
+        showToast('❌ ' + t('settings.apiBaseRequired'), 'error');
         return;
       }
       try {
         new URL(url);
       } catch {
-        showToast('❌ URL 格式不正确', 'error');
+        showToast('❌ ' + t('settings.urlInvalid'), 'error');
         return;
       }
       addCustomImageApiBase(url, label);
@@ -612,10 +662,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateImageApiBaseSelection(url);
       chrome.storage.local.set({ imageApiBase: url });
       addImageApiBaseForm.style.display = 'none';
-      addImageApiBaseToggleBtn.textContent = '+ 添加地址';
+      addImageApiBaseToggleBtn.textContent = t('settings.addAddress');
       addImageApiBaseUrl.value = '';
       addImageApiBaseLabel.value = '';
-      showToast('✅ 图片 API Base URL 已添加', 'success');
+      showToast('✅ ' + t('settings.imageApiBaseAdded'), 'success');
     });
 
     addImageApiBaseUrl.addEventListener('keydown', function(e) {
@@ -701,7 +751,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     if (toolbarToggleLabel) {
-      toolbarToggleLabel.textContent = enabled ? '已启用' : '已停用';
+      toolbarToggleLabel.textContent = enabled ? t('common.enabled') : t('common.disabled');
     }
   }
   
@@ -824,7 +874,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     if (reflectionToggleLabel) {
-      reflectionToggleLabel.textContent = enabled ? '已启用' : '已停用';
+      reflectionToggleLabel.textContent = enabled ? t('common.enabled') : t('common.disabled');
     }
   }
   
@@ -890,13 +940,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (streamEnabledEl && streamEnabledLabel) {
     streamEnabledEl.addEventListener('change', function() {
       if (streamEnabledLabel) {
-        streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
+        streamEnabledLabel.textContent = streamEnabledEl.checked ? t('common.enabled') : t('common.disabled');
       }
       chrome.storage.local.set({ streamEnabled: streamEnabledEl.checked });
       updateStreamExpandToolsVisibility();
     });
     if (streamEnabledLabel) {
-      streamEnabledLabel.textContent = streamEnabledEl.checked ? '已启用' : '已停用';
+      streamEnabledLabel.textContent = streamEnabledEl.checked ? t('common.enabled') : t('common.disabled');
     }
     updateStreamExpandToolsVisibility();
   }
@@ -906,10 +956,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   const streamExpandToolsLabel = document.getElementById('streamExpandToolsLabel');
   if (streamExpandToolsEl && streamExpandToolsLabel) {
     streamExpandToolsEl.addEventListener('change', function() {
-      streamExpandToolsLabel.textContent = this.checked ? '已启用' : '已停用';
+      streamExpandToolsLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
       chrome.storage.local.set({ streamExpandTools: this.checked });
     });
-    streamExpandToolsLabel.textContent = streamExpandToolsEl.checked ? '已启用' : '已停用';
+    streamExpandToolsLabel.textContent = streamExpandToolsEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
   // 敏感操作确认开关状态标签
@@ -917,10 +967,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   const toolConfirmationEnabledLabel = document.getElementById('toolConfirmationEnabledLabel');
   if (toolConfirmationEnabledEl && toolConfirmationEnabledLabel) {
     toolConfirmationEnabledEl.addEventListener('change', function() {
-      toolConfirmationEnabledLabel.textContent = this.checked ? '已启用' : '已停用';
+      toolConfirmationEnabledLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
       chrome.storage.local.set({ toolConfirmationEnabled: this.checked });
     });
-    toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? '已启用' : '已停用';
+    toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
   // 启用执行日志开关状态标签
@@ -928,10 +978,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   const enableExecutionLogLabel = document.getElementById('enableExecutionLogLabel');
   if (enableExecutionLogEl && enableExecutionLogLabel) {
     enableExecutionLogEl.addEventListener('change', function() {
-      enableExecutionLogLabel.textContent = this.checked ? '已启用' : '已停用';
+      enableExecutionLogLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
       chrome.storage.local.set({ enableExecutionLog: this.checked });
     });
-    enableExecutionLogLabel.textContent = enableExecutionLogEl.checked ? '已启用' : '已停用';
+    enableExecutionLogLabel.textContent = enableExecutionLogEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
   // ==================== Agent 配置 ====================
@@ -1037,12 +1087,12 @@ function initAgentConfig() {
 
     if (agents.length === 0) {
       pairedAgentsSection.style.display = 'none';
-      addAgentTitle.textContent = '添加新代理';
+      addAgentTitle.textContent = t('agentConfig.addAgentTitle');
       return;
     }
 
     pairedAgentsSection.style.display = '';
-    addAgentTitle.textContent = '再添加一个代理';
+    addAgentTitle.textContent = t('agentConfig.addAnotherAgent');
 
     // 先渲染列表，状态统一显示"检测中"，停用的显示"已停用"，活跃的显示"已连接"
     pairedAgentsList.innerHTML = agents.map((a) => {
@@ -1052,34 +1102,34 @@ function initAgentConfig() {
 
       if (isDisabled) {
         dotClass = isActive ? 'active-disabled' : 'disabled';
-        statusLabel = '已停用';
+        statusLabel = t('common.disabled');
         statusClass = 'disabled';
       } else if (isActive) {
         dotClass = 'active-checking';
-        statusLabel = '已连接';
+        statusLabel = t('agentConfig.connected');
         statusClass = 'connected';
       } else {
         dotClass = 'checking';
-        statusLabel = '检测中';
+        statusLabel = t('agentConfig.checking');
         statusClass = 'checking';
       }
 
       return `
         <div class="paired-agent-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
           <span class="paired-agent-dot ${dotClass}" title="${statusLabel}"></span>
-          <span class="paired-agent-name" data-agent-id="${a.id}" data-original="${escHtml(a.name)}" title="点击编辑名称">${escHtml(a.name)}</span>
+          <span class="paired-agent-name" data-agent-id="${a.id}" data-original="${escHtml(a.name)}" title="${t('agentConfig.clickToEditName')}">${escHtml(a.name)}</span>
           <span class="paired-agent-url">${escHtml(a.url)}</span>
           <span class="paired-agent-status-text ${statusClass}">${statusLabel}</span>
           <div class="paired-agent-actions">
             ${isDisabled
-              ? `<button class="paired-agent-btn enable-btn" data-action="enable" data-id="${a.id}">启用</button>`
+              ? `<button class="paired-agent-btn enable-btn" data-action="enable" data-id="${a.id}">${t('agentConfig.enable')}</button>`
               : (isActive
-                ? `<button class="paired-agent-btn disconnect-btn" data-action="deactivate" data-id="${a.id}">断开</button>`
-                : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">连接</button>`
+                ? `<button class="paired-agent-btn disconnect-btn" data-action="deactivate" data-id="${a.id}">${t('agentConfig.disconnect')}</button>`
+                : `<button class="paired-agent-btn switch-btn" data-action="switch" data-id="${a.id}">${t('agentConfig.connect')}</button>`
               )
             }
-            ${isDisabled ? '' : `<button class="paired-agent-btn disable-btn" data-action="disable" data-id="${a.id}">停用</button>`}
-            <button class="paired-agent-btn delete-btn" data-action="delete" data-id="${a.id}">删除</button>
+            ${isDisabled ? '' : `<button class="paired-agent-btn disable-btn" data-action="disable" data-id="${a.id}">${t('agentConfig.disable')}</button>`}
+            <button class="paired-agent-btn delete-btn" data-action="delete" data-id="${a.id}">${t('common.delete')}</button>
           </div>
         </div>`;
     }).join('');
@@ -1113,12 +1163,12 @@ function initAgentConfig() {
       ? (online ? 'active-online' : 'active-offline')
       : (online ? 'online' : 'offline');
     const statusLabel = isActive
-      ? (online ? '已连接' : '未连接')
-      : (online ? '在线' : '离线');
+      ? (online ? t('agentConfig.connected') : t('agentConfig.notConnected'))
+      : (online ? t('agentConfig.online') : t('agentConfig.offline'));
 
     if (dotEl) {
       dotEl.className = `paired-agent-dot ${dotClass}`;
-      dotEl.title = `${isActive ? '当前使用 · ' : ''}${statusLabel}`;
+      dotEl.title = `${isActive ? t('agentConfig.currentInUse') : ''}${statusLabel}`;
     }
     if (statusEl) {
       statusEl.className = `paired-agent-status-text ${online ? 'online' : 'offline'}`;
@@ -1129,7 +1179,7 @@ function initAgentConfig() {
       chrome.runtime.sendMessage({
         type: 'AGENT_STATUS_CHANGE',
         connected: online,
-        status: online ? '在线' : '离线',
+        status: online ? t('agentConfig.online') : t('agentConfig.offline'),
         agentId
       }).catch(() => {});
     }
@@ -1224,7 +1274,7 @@ function initAgentConfig() {
       agentId
     }).catch(() => {});
 
-    showToast(`已连接到: ${agent.name}`, 'success');
+    showToast(t('agentConfig.connectedTo', { name: agent.name }), 'success');
 
     // 重新渲染列表
     await renderPairedAgents();
@@ -1242,8 +1292,8 @@ function initAgentConfig() {
 
     // 自定义确认弹窗
     const confirmed = await showCustomConfirm(
-      `确定要删除代理 "${agent.name}" (${agent.url}) 吗？\n删除后需重新配对才能使用。`,
-      '删除代理'
+      t('agentConfig.confirmDeleteAgent', { name: agent.name, url: agent.url }),
+      t('agentConfig.deleteAgentTitle')
     );
     if (!confirmed) return;
 
@@ -1274,7 +1324,7 @@ function initAgentConfig() {
       }).catch(() => {});
     }
 
-    showToast(`已删除代理: ${agent.name}`, 'info');
+    showToast(t('agentConfig.agentDeleted', { name: agent.name }), 'info');
     await renderPairedAgents();
     await refreshActiveAgentUI();
     // 切换了代理时同步刷新工具箱
@@ -1311,7 +1361,7 @@ function initAgentConfig() {
     agents[idx].disabled = true;
     await chrome.storage.local.set({ pairedAgents: agents });
 
-    showToast(`已停用代理: ${agent.name}`, 'info');
+    showToast(t('agentConfig.agentDisabledToast', { name: agent.name }), 'info');
     await renderPairedAgents();
     await refreshActiveAgentUI();
     // 切换了代理时同步刷新工具箱
@@ -1330,18 +1380,18 @@ function initAgentConfig() {
     agents[idx].disabled = false;
     await chrome.storage.local.set({ pairedAgents: agents });
 
-    showToast(`已启用代理: ${agents[idx].name}`, 'success');
+    showToast(t('agentConfig.agentEnabledToast', { name: agents[idx].name }), 'success');
     await renderPairedAgents();
   }
 
   /** 获取活跃代理详情并更新状态 UI */
   async function fetchAndShowAgentDetail(url, token) {
-    updateStatusUI('checking', '正在获取代理信息...');
+    updateStatusUI('checking', t('agentConfig.fetchingAgentInfo'));
 
     try {
       const statusResp = await fetch(`${url}/api/status`, { cache: 'no-cache' });
       if (!statusResp.ok) {
-        updateStatusUI('disconnected', '代理服务不可达');
+        updateStatusUI('disconnected', t('agentConfig.agentUnreachable'));
         return;
       }
       const statusData = await statusResp.json();
@@ -1360,13 +1410,13 @@ function initAgentConfig() {
           if (merged.nodeVersion) labelParts.push(`Node ${merged.nodeVersion}`);
           updateStatusUI('connected', labelParts.join(' | '), merged);
         } else {
-          updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+          updateStatusUI('disconnected', t('agentConfig.tokenExpired'));
         }
       } catch {
-        updateStatusUI('disconnected', 'Token 已失效 - 请重新配对');
+        updateStatusUI('disconnected', t('agentConfig.tokenExpired'));
       }
     } catch {
-      updateStatusUI('disconnected', '无法连接到代理 - 请确认代理服务已启动');
+      updateStatusUI('disconnected', t('agentConfig.cannotConnectAgent'));
     }
   }
 
@@ -1378,7 +1428,7 @@ function initAgentConfig() {
 
     if (!activeId || agents.length === 0) {
       const hasAgents = agents.length > 0;
-      updateStatusUI('disconnected', hasAgents ? '未连接 - 请从列表中选择代理连接' : '未连接 - 请添加代理配对');
+      updateStatusUI('disconnected', hasAgents ? t('agentConfig.notConnectedSelect') : t('agentConfig.notConnectedAdd'));
       return;
     }
 
@@ -1392,7 +1442,7 @@ function initAgentConfig() {
   // ========== 原有详情渲染辅助函数 ==========
 
   function formatBytes(bytes) {
-    if (bytes == null || bytes === 0) return '无限制';
+    if (bytes == null || bytes === 0) return t('agentConfig.unlimited');
     const units = ['B', 'KB', 'MB', 'GB'];
     let i = 0;
     let val = bytes;
@@ -1401,7 +1451,7 @@ function initAgentConfig() {
   }
 
   function formatDuration(ms) {
-    if (ms == null || ms === 0) return '无限制';
+    if (ms == null || ms === 0) return t('agentConfig.unlimited');
     if (ms < 1000) return ms + 'ms';
     if (ms < 60000) return (ms / 1000).toFixed(0) + 's';
     return (ms / 60000).toFixed(1) + ' min';
@@ -1441,10 +1491,10 @@ function initAgentConfig() {
 
   // 格式化运行中进程列表：空 → 空闲；非空 → 数量 + 每条命令摘要（截断 + pid + 时长）
   function formatRunningProcesses(procs) {
-    if (!Array.isArray(procs) || procs.length === 0) return '空闲';
+    if (!Array.isArray(procs) || procs.length === 0) return t('agentConfig.idle');
     return procs.map(p => {
       const cmd = (p.command || '').replace(/\s+/g, ' ').trim();
-      const short = cmd.length > 48 ? cmd.slice(0, 48) + '…' : (cmd || '(未知命令)');
+      const short = cmd.length > 48 ? cmd.slice(0, 48) + '…' : (cmd || t('agentConfig.unknownCommand'));
       const pid = p.pid ? `pid=${escHtml(String(p.pid))}` : '';
       const dur = formatRunDuration(p.duration);
       const parts = [`<code>${escHtml(short)}</code>`, pid, escHtml(dur)].filter(Boolean);
@@ -1459,54 +1509,54 @@ function initAgentConfig() {
     const rows = [];
 
     if (data.version) {
-      rows.push(`<div class="detail-row"><span class="detail-label">版本</span><span class="detail-value">${escHtml(data.version)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailVersion')}</span><span class="detail-value">${escHtml(data.version)}</span></div>`);
     }
     if (data.platformName) {
       const archInfo = data.arch ? ` (${data.arch})` : '';
-      rows.push(`<div class="detail-row"><span class="detail-label">系统</span><span class="detail-value">${escHtml(data.platformName)}${archInfo}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailSystem')}</span><span class="detail-value">${escHtml(data.platformName)}${archInfo}</span></div>`);
     } else if (data.platform) {
       const archInfo = data.arch ? ` (${data.arch})` : '';
-      rows.push(`<div class="detail-row"><span class="detail-label">系统</span><span class="detail-value">${escHtml(data.platform)}${archInfo}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailSystem')}</span><span class="detail-value">${escHtml(data.platform)}${archInfo}</span></div>`);
     }
     if (data.hostname) {
-      rows.push(`<div class="detail-row"><span class="detail-label">主机名</span><span class="detail-value">${escHtml(data.hostname)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailHostname')}</span><span class="detail-value">${escHtml(data.hostname)}</span></div>`);
     }
     if (data.shell) {
       rows.push(`<div class="detail-row"><span class="detail-label">Shell</span><span class="detail-value">${escHtml(data.shell)}</span></div>`);
     }
     if (data.homeDir) {
-      rows.push(`<div class="detail-row"><span class="detail-label">用户目录</span><span class="detail-value">${escHtml(data.homeDir)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailHomeDir')}</span><span class="detail-value">${escHtml(data.homeDir)}</span></div>`);
     }
     if (data.nodeVersion) {
       rows.push(`<div class="detail-row"><span class="detail-label">Node.js</span><span class="detail-value">${escHtml(data.nodeVersion)}</span></div>`);
     }
     if (data.runningProcesses != null) {
       const count = Array.isArray(data.runningProcesses) ? data.runningProcesses.length : 0;
-      const label = count > 0 ? `运行中进程 (${count})` : '运行中进程';
+      const label = count > 0 ? t('agentConfig.detailRunningProcessesCount', { count }) : t('agentConfig.detailRunningProcesses');
       rows.push(`<div class="detail-row"><span class="detail-label">${label}</span><span class="detail-value">${formatRunningProcesses(data.runningProcesses)}</span></div>`);
     }
     if (data.resourceUsage) {
       const ru = data.resourceUsage;
-      rows.push(`<div class="detail-row"><span class="detail-label">内存使用</span><span class="detail-value">堆 ${ru.memoryUsedMB}MB / 总 ${ru.memoryTotalMB}MB · RSS ${ru.memoryRssMB}MB</span></div>`);
-      rows.push(`<div class="detail-row"><span class="detail-label">运行时长</span><span class="detail-value">${formatUptime(ru.uptimeSeconds)}</span></div>`);
-      rows.push(`<div class="detail-row"><span class="detail-label">CPU 用户态</span><span class="detail-value">${formatCpuTime(ru.cpuUser)}</span></div>`);
-      rows.push(`<div class="detail-row"><span class="detail-label">CPU 内核态</span><span class="detail-value">${formatCpuTime(ru.cpuSystem)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailMemoryUsage')}</span><span class="detail-value">${t('agentConfig.detailMemoryDetail', { used: ru.memoryUsedMB, total: ru.memoryTotalMB, rss: ru.memoryRssMB })}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailUptime')}</span><span class="detail-value">${formatUptime(ru.uptimeSeconds)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailCpuUser')}</span><span class="detail-value">${formatCpuTime(ru.cpuUser)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailCpuSystem')}</span><span class="detail-value">${formatCpuTime(ru.cpuSystem)}</span></div>`);
     }
     if (data.commandTimeout != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">命令超时</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailCommandTimeout')}</span><span class="detail-value">${formatDuration(data.commandTimeout)}</span></div>`);
     }
     if (data.uploadMaxSize != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">上传大小限制</span><span class="detail-value">${formatBytes(data.uploadMaxSize)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailUploadMaxSize')}</span><span class="detail-value">${formatBytes(data.uploadMaxSize)}</span></div>`);
     }
     if (data.fileMaxSize != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">读取大小限制</span><span class="detail-value">${formatBytes(data.fileMaxSize)}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailFileMaxSize')}</span><span class="detail-value">${formatBytes(data.fileMaxSize)}</span></div>`);
     }
     if (data.allowedPaths && data.allowedPaths.length > 0) {
       const pathsHtml = data.allowedPaths.map(p => `<code>${escHtml(p)}</code>`).join('<br>');
-      rows.push(`<div class="detail-row"><span class="detail-label">允许访问的目录</span><span class="detail-value">${pathsHtml}</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailAllowedPaths')}</span><span class="detail-value">${pathsHtml}</span></div>`);
     }
     if (data.pairCodeTTL != null) {
-      rows.push(`<div class="detail-row"><span class="detail-label">配对码有效期</span><span class="detail-value">${data.pairCodeTTL}s</span></div>`);
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailPairCodeTTL')}</span><span class="detail-value">${data.pairCodeTTL}s</span></div>`);
     }
 
     agentDetailPanel.innerHTML = rows.join('');
@@ -1532,7 +1582,7 @@ function initAgentConfig() {
       if (detailData) {
         agentInfo.style.display = '';
         if (detailData.workdir) {
-          agentWorkdirEl.innerHTML = `📁 工作目录: ${detailData.workdir}`;
+          agentWorkdirEl.innerHTML = t('agentConfig.detailWorkdir', { dir: detailData.workdir });
         }
         renderAgentDetail(detailData);
       }
@@ -1576,13 +1626,13 @@ function initAgentConfig() {
     const code = pairCodeInput.value.trim();
 
     if (!code || code.length !== 6) {
-      showToast('请输入6位配对码', 'warning');
+      showToast(t('agentConfig.pairCodeRequired'), 'warning');
       return;
     }
 
-    updateStatusUI('checking', '正在配对...');
+    updateStatusUI('checking', t('agentConfig.pairing'));
     connectBtn.disabled = true;
-    connectBtn.textContent = '配对中...';
+    connectBtn.textContent = t('agentConfig.pairingBtn');
 
     try {
       const response = await fetch(`${url}/api/pair`, {
@@ -1612,7 +1662,7 @@ function initAgentConfig() {
             else if (statusData.arch) parts.push(statusData.arch);
             name = parts.length > 0 ? parts.join(' ') : new URL(url).hostname;
           } catch { name = new URL(url).hostname; }
-          if (!name) name = '未命名代理';
+          if (!name) name = t('agentConfig.unnamedAgent');
         }
 
         // 生成 ID 并加入列表
@@ -1626,7 +1676,7 @@ function initAgentConfig() {
 
         pairCodeInput.value = '';
         if (agentNameInput) agentNameInput.value = '';
-        showToast(`配对成功！已添加: ${name}`, 'success');
+        showToast(t('agentConfig.pairSuccess', { name }), 'success');
 
         // 展示详情
         try {
@@ -1652,15 +1702,15 @@ function initAgentConfig() {
           agentId: id
         }).catch(() => {});
       } else {
-        updateStatusUI('disconnected', '配对失败：' + (data.error || '未知错误'));
-        showToast(data.error || '配对失败', 'error');
+        updateStatusUI('disconnected', t('agentConfig.pairFailed', { error: data.error || t('agentConfig.unknownError') }));
+        showToast(data.error || t('agentConfig.pairFailedShort'), 'error');
       }
     } catch (err) {
-      updateStatusUI('disconnected', '连接失败 - 请确认代理服务已启动');
-      showToast('无法连接到 Agent: ' + err.message, 'error');
+      updateStatusUI('disconnected', t('agentConfig.connectFailed'));
+      showToast(t('agentConfig.cannotConnectAgentMsg', { error: err.message }), 'error');
     } finally {
       connectBtn.disabled = false;
-      connectBtn.textContent = '连接';
+      connectBtn.textContent = t('agentConfig.connect');
     }
   }
 
@@ -1671,8 +1721,8 @@ function initAgentConfig() {
 
     await chrome.storage.local.set({ activeAgentId: null });
 
-    updateStatusUI('disconnected', '未连接 - 请从列表中选择代理连接');
-    showToast('已断开连接', 'info');
+    updateStatusUI('disconnected', t('agentConfig.notConnectedSelect'));
+    showToast(t('agentConfig.disconnectedToast'), 'info');
 
     await renderPairedAgents();
 
@@ -1687,7 +1737,7 @@ function initAgentConfig() {
     agentDetailToggle.addEventListener('click', () => {
       const isOpen = getComputedStyle(agentDetailPanel).display !== 'none';
       agentDetailPanel.style.display = isOpen ? 'none' : 'block';
-      agentDetailToggle.textContent = isOpen ? '▶ 详细信息' : '▼ 详细信息';
+      agentDetailToggle.textContent = isOpen ? t('agentConfig.detailToggle') : t('agentConfig.detailToggleOpen');
       agentDetailToggle.classList.toggle('open', !isOpen);
     });
   }

@@ -6,9 +6,10 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 /**
  * 初始化 Agent 管理
@@ -61,11 +62,11 @@ export async function renderAgentSelector() {
         <span class="agent-item-icon">${escapeHtml(agent.icon)}</span>
         <div class="agent-item-info">
           <span class="agent-item-name">${escapeHtml(agent.name)}</span>
-          <span class="agent-item-desc" title="${escapeAttr(agent.description || `${toolCount} 个工具`)}">${escapeHtml(agent.description || `${toolCount} 个工具`)}</span>
+          <span class="agent-item-desc" title="${escapeAttr(agent.description || t('agentConfig.toolCount', { count: toolCount }))}">${escapeHtml(agent.description || t('agentConfig.toolCount', { count: toolCount }))}</span>
         </div>
         <div class="agent-item-actions">
-          ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="编辑">✎</button>` : ''}
-          ${!agent.isBuiltin ? `<button class="agent-item-delete" data-action="delete" data-agent-id="${escapeAttr(agent.id)}" title="删除">✕</button>` : ''}
+          ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="${escapeAttr(t('common.edit'))}">✎</button>` : ''}
+          ${!agent.isBuiltin ? `<button class="agent-item-delete" data-action="delete" data-agent-id="${escapeAttr(agent.id)}" title="${escapeAttr(t('common.delete'))}">✕</button>` : ''}
           ${isActive ? '<span class="agent-item-check">✓</span>' : ''}
         </div>
       </div>`;
@@ -628,20 +629,6 @@ async function renderAgentToolSelector(selectedToolIds) {
 
   const selectedSet = new Set(selectedToolIds || []);
   const selectedCount = selectedToolIds ? selectedToolIds.length : allTools.length;
-  const categoryNames = {
-    'page_interaction': '🖱️ 页面交互',
-    'form_operation': '📝 表单操作',
-    'content_extraction': '📄 内容提取',
-    'tab_management': '📑 标签页管理',
-    'bookmark_history': '🔖 书签历史',
-    'storage_management': '💾 存储管理',
-    'network_request': '🌐 网络请求',
-    'media_output': '📷 媒体与输出',
-    'debug_dev': '🔧 调试开发',
-    'ai_collaboration': '🤖 AI协作',
-    'local_agent': '🖥️ 代理',
-    'mcp': '🔌 MCP'
-  };
 
   // 按类别分组
   const grouped = {};
@@ -655,17 +642,19 @@ async function renderAgentToolSelector(selectedToolIds) {
 
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {
-    const catName = categoryNames[cat] || cat;
+    const catName = t(`toolCategory.${cat}`) !== `toolCategory.${cat}` ? t(`toolCategory.${cat}`) : cat;
     const catTotal = tools.length;
     const catSelected = tools.filter(t => selectedSet.has(t.id)).length;
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="点击切换该分类全选/取消全选">${catName} <span style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
+      const desc = getToolDesc(tool);
+      const truncated = desc.length > 40 ? desc.substring(0, 40) + '...' : desc;
       html += `
         <label class="agent-tool-item" data-category="${escapeAttr(cat)}">
           <input type="checkbox" value="${escapeAttr(tool.id)}" ${checked} data-tool-id="${escapeAttr(tool.id)}">
           <span class="agent-tool-name" title="${escapeAttr(tool.name)}">${escapeHtml(tool.name)}</span>
-          <span class="agent-tool-desc" title="${escapeAttr(tool.description)}">${escapeHtml(tool.description.substring(0, 40))}${tool.description.length > 40 ? '...' : ''}</span>
+          <span class="agent-tool-desc" title="${escapeAttr(desc)}">${escapeHtml(truncated)}</span>
         </label>`;
     }
   }
@@ -674,7 +663,7 @@ async function renderAgentToolSelector(selectedToolIds) {
   // 更新总工具数
   const countEl = document.getElementById('agentToolCount');
   if (countEl) {
-    countEl.textContent = `(已选 ${selectedCount} / 共 ${totalCount})`;
+    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedCount, total: totalCount });
   }
 }
 
@@ -726,7 +715,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
 
   const countEl = document.getElementById('agentSkillCount');
   if (countEl) {
-    countEl.textContent = `(已选 ${selectedCount} / 共 ${totalCount})`;
+    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedCount, total: totalCount });
   }
 }
 
@@ -786,7 +775,7 @@ function populateTempPresetDropdown(selectedIndex) {
   PRESET_MODES.forEach((mode, index) => {
     const option = document.createElement('option');
     option.value = index;
-    option.textContent = `${mode.label}（${mode.temp.toFixed(2)}）`;
+    option.textContent = `${t(mode.labelKey)}（${mode.temp.toFixed(2)}）`;
     select.appendChild(option);
   });
 

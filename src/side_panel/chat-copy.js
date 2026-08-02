@@ -5,6 +5,7 @@ import state from './state.js';
 import { showToast } from './utils.js';
 import { formatMarkdown, cleanTableForClipboard } from './markdown-render.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 function replaceMermaidWithCodeBlock(tempContainer) {
   const mermaidElements = tempContainer.querySelectorAll('.mermaid');
@@ -92,13 +93,13 @@ export function copyMessage(messageDiv, copyBtn) {
           copyBtn.classList.remove('copied');
         }, 2000);
       } catch (e) {
-        showToast('复制失败', 'error');
+        showToast(t('chatCopy.copyFailed'), 'error');
       }
       document.body.removeChild(textArea);
     });
   } catch (error) {
     logger.error('[SidePanel] 复制失败:', error);
-    showToast('复制失败', 'error');
+    showToast(t('chatCopy.copyFailed'), 'error');
   }
 }
 
@@ -158,7 +159,7 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
     }
   } catch (error) {
     logger.error('[SidePanel] 复制失败:', error);
-    showToast('复制失败', 'error');
+    showToast(t('chatCopy.copyFailed'), 'error');
   }
 }
 
@@ -168,7 +169,7 @@ export function showCopySuccess(copyBtn, isRichText = false) {
     <svg viewBox="0 0 16 16" fill="currentColor">
       <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
     </svg>
-    <span>${isRichText ? '已复制富文本' : '已复制Markdown'}</span>
+    <span>${isRichText ? t('chatCopy.copiedRich') : t('chatCopy.copiedMarkdown')}</span>
   `;
   copyBtn.classList.add('copied');
 
@@ -189,7 +190,7 @@ export function fallbackCopyText(text, copyBtn) {
     document.execCommand('copy');
     showCopySuccess(copyBtn);
   } catch (e) {
-    showToast('复制失败，请手动选择内容复制', 'error');
+    showToast(t('chatCopy.copyFailedManual'), 'error');
   }
   document.body.removeChild(textArea);
 }
@@ -346,7 +347,7 @@ export function quoteAndAsk(messageDiv) {
         <svg viewBox="0 0 16 16" fill="currentColor">
           <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
         </svg>
-        <span>已引用</span>
+        <span>${t('chatCopy.quoted')}</span>
       `;
       quoteBtn.classList.add('quoted');
 
@@ -361,6 +362,6 @@ export function quoteAndAsk(messageDiv) {
     logger.debug('[SidePanel] 已引用消息内容到提示条，输入框已获取焦点');
   } catch (error) {
     logger.error('[SidePanel] 引用提问失败:', error);
-    showToast('引用失败: ' + error.message, 'error');
+    showToast(t('chatCopy.quoteFailed', { message: error.message }), 'error');
   }
 }

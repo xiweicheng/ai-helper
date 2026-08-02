@@ -2,6 +2,7 @@
 
 import state from './state.js';
 import logger from '../shared/logger.js';
+import { t } from '../shared/i18n.js';
 
 let confirmResolve = null;
 let countdownTimer = null;
@@ -60,7 +61,7 @@ export function showConfirmDialog(data) {
   // 显示说明消息
   const messageEl = document.getElementById('confirmMessage');
   if (messageEl) {
-    messageEl.textContent = message || `模型请求执行操作: ${toolLabel || toolName}`;
+    messageEl.textContent = message || t('dialog.confirmAction', { name: toolLabel || toolName });
   }
   
   // 清理之前的计时器
@@ -88,10 +89,10 @@ export function showConfirmDialog(data) {
       if (remainingSeconds <= 0) {
         clearInterval(countdownTimer);
         countdownTimer = null;
-        countdownEl.textContent = '剩余时间: 0:00';
+        countdownEl.textContent = t('dialog.remainingTime', { time: '0:00' });
         return;
       }
-      countdownEl.textContent = `剩余时间: ${formatCountdown(remainingSeconds)}`;
+      countdownEl.textContent = t('dialog.remainingTime', { time: formatCountdown(remainingSeconds) });
       
       // 最后30秒变红闪烁
       if (remainingSeconds <= 30) {

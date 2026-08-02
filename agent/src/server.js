@@ -44,6 +44,7 @@ import {
   getSkillsDir
 } from './skill/registry.js';
 import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './skill/loader.js';
+import { getRequestI18n } from './i18n.js';
 import XLSX from 'xlsx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -255,10 +256,11 @@ function jsonResponse(res, status, data) {
  * 解析请求 body（带大小限制）
  */
 function parseBody(req) {
+  const { t } = getRequestI18n(req);
   return new Promise((resolve, reject) => {
     const contentLength = parseInt(req.headers['content-length'] || '0', 10);
     if (contentLength > MAX_BODY_SIZE) {
-      reject(new Error('请求体过大'));
+      reject(new Error(t('error.bodyTooLarge')));
       return;
     }
 
@@ -268,7 +270,7 @@ function parseBody(req) {
     req.on('data', (chunk) => {
       totalSize += chunk.length;
       if (totalSize > MAX_BODY_SIZE) {
-        reject(new Error('请求体过大'));
+        reject(new Error(t('error.bodyTooLarge')));
         req.destroy();
         return;
       }
@@ -280,10 +282,10 @@ function parseBody(req) {
       // 空 body 视为 {}（兼容无 body 的 POST 请求，如 /api/skill/reload）
       if (body.trim() === '') { resolve({}); return; }
       try { resolve(JSON.parse(body)); }
-      catch { reject(new Error('请求体不是有效的 JSON')); }
+      catch { reject(new Error(t('error.invalidJson'))); }
     });
 
-    req.on('error', () => reject(new Error('读取请求失败')));
+    req.on('error', () => reject(new Error(t('error.readRequestFailed'))));
   });
 }
 
@@ -293,11 +295,12 @@ function parseBody(req) {
  * @returns {Promise<{fileBuffer: Buffer, fileName: string, mimeType: string}>}
  */
 function parseMultipartBody(req) {
+  const { t } = getRequestI18n(req);
   return new Promise((resolve, reject) => {
     const contentType = req.headers['content-type'] || '';
     const boundaryMatch = contentType.match(/boundary=(.+)/);
     if (!boundaryMatch) {
-      reject(new Error('不是有效的 multipart/form-data 请求'));
+      reject(new Error(t('error.invalidMultipart')));
       return;
     }
     const boundary = boundaryMatch[1].trim();
@@ -305,7 +308,7 @@ function parseMultipartBody(req) {
 
     const contentLength = parseInt(req.headers['content-length'] || '0', 10);
     if (contentLength > MAX_BODY_SIZE) {
-      reject(new Error('文件过大，超出限制'));
+      reject(new Error(t('error.fileTooLarge')));
       return;
     }
 
@@ -315,7 +318,7 @@ function parseMultipartBody(req) {
     req.on('data', (chunk) => {
       totalSize += chunk.length;
       if (totalSize > MAX_BODY_SIZE) {
-        reject(new Error('文件过大，超出限制'));
+        reject(new Error(t('error.fileTooLarge')));
         req.destroy();
         return;
       }
@@ -328,14 +331,14 @@ function parseMultipartBody(req) {
       // 找到文件部分的起始位置
       const startIdx = buffer.indexOf(boundaryBuffer) + boundaryBuffer.length + 2; // +2 for \r\n
       if (startIdx < boundaryBuffer.length + 2) {
-        reject(new Error('multipart 数据格式不正确'));
+        reject(new Error(t('error.malformedMultipart')));
         return;
       }
 
       // 找 headers 结束位置（\r\n\r\n）
       const headersEnd = buffer.indexOf('\r\n\r\n', startIdx);
       if (headersEnd === -1) {
-        reject(new Error('multipart headers 格式不正确'));
+        reject(new Error(t('error.malformedMultipartHeaders')));
         return;
       }
 
@@ -349,7 +352,7 @@ function parseMultipartBody(req) {
       const dataEnd = buffer.indexOf(boundaryBuffer, dataStart) - 2; // -2 for \r\n before boundary
 
       if (dataEnd <= dataStart) {
-        reject(new Error('找不到文件数据'));
+        reject(new Error(t('error.noFileData')));
         return;
       }
 
@@ -362,7 +365,7 @@ function parseMultipartBody(req) {
       });
     });
 
-    req.on('error', () => reject(new Error('读取文件失败')));
+    req.on('error', () => reject(new Error(t('error.readFileFailed'))));
   });
 }
 
@@ -393,11 +396,17 @@ export function startServer() {
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch((err) => {
       console.error('[Agent] 请求处理异常:', err);
-      try { jsonResponse(res, 500, { success: false, error: '服务器内部错误' }); } catch {}
+      try {
+        const { t } = getRequestI18n(req);
+        jsonResponse(res, 500, { success: false, error: t('error.internal') });
+      } catch {}
     });
   });
 
   async function handleRequest(req, res) {
+    // 初始化国际化（根据 Accept-Language 头选择语言）
+    const { t } = getRequestI18n(req);
+
     // CORS 预检（仅放行 Chrome 扩展来源）
     if (req.method === 'OPTIONS') {
       const optHeaders = {
@@ -417,7 +426,7 @@ export function startServer() {
     try {
       url = new URL(req.url, `http://${host}:${port}`);
     } catch {
-      return jsonResponse(res, 400, { success: false, error: '请求 URL 格式无效' });
+      return jsonResponse(res, 400, { success: false, error: t('error.invalidUrl') });
     }
     const pathname = url.pathname;
 
@@ -459,13 +468,13 @@ export function startServer() {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       logSecurity('auth_missing', { path: pathname });
-      return jsonResponse(res, 401, { success: false, error: '未提供认证 token' });
+      return jsonResponse(res, 401, { success: false, error: t('error.noToken') });
     }
     const token = authHeader.slice(7);
     const extId = verifyToken(token);
     if (!extId) {
       logSecurity('auth_invalid', { path: pathname });
-      return jsonResponse(res, 403, { success: false, error: '认证 token 无效' });
+      return jsonResponse(res, 403, { success: false, error: t('error.invalidToken') });
     }
 
     // 心跳接口（需认证）：仅刷新 lastAuthTime 维持"插件在线"状态，不返回敏感信息
@@ -476,16 +485,16 @@ export function startServer() {
     // Agent 关闭（需认证）
     if (req.method === 'POST' && pathname === '/api/shutdown') {
       if (agentOperationInProgress) {
-        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
+        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
       }
       if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
         const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
-        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+        return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
       }
       agentOperationInProgress = true;
       lastOperationTime = Date.now();
       logSystem('shutdown', { reason: 'api_request', extId });
-      jsonResponse(res, 200, { success: true, message: 'Agent 正在关闭...' });
+      jsonResponse(res, 200, { success: true, message: t('message.shuttingDown') });
       shutdown();
       return;
     }
@@ -493,16 +502,16 @@ export function startServer() {
     // 重启 Agent（需认证）
     if (req.method === 'POST' && pathname === '/api/agent/restart') {
       if (agentOperationInProgress) {
-        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
+        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
       }
       if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
         const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
-        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+        return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
       }
       agentOperationInProgress = true;
       lastOperationTime = Date.now();
       logSystem('restart', { reason: 'api_request', extId });
-      jsonResponse(res, 200, { success: true, message: 'Agent 正在重启...' });
+      jsonResponse(res, 200, { success: true, message: t('message.restarting') });
 
       // 转成绝对路径，避免相对路径在 detached 子进程中失效
       const agentScript = resolve(process.argv[1]);
@@ -543,11 +552,11 @@ export function startServer() {
     // 更新并重启 Agent（需认证）
     if (req.method === 'POST' && pathname === '/api/agent/update') {
       if (agentOperationInProgress) {
-        return jsonResponse(res, 409, { success: false, error: '已有操作正在进行中，请稍后再试' });
+        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
       }
       if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
         const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
-        return jsonResponse(res, 429, { success: false, error: `操作过于频繁，请 ${wait} 秒后再试` });
+        return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
       }
       agentOperationInProgress = true;
       lastOperationTime = Date.now();
@@ -581,7 +590,7 @@ export function startServer() {
             // 超时保护（90s），防止 npm 卡住导致前端长等待
             const timer = setTimeout(() => {
               try { npm.kill('SIGTERM'); } catch {}
-              resolvePromise({ success: false, error: 'npm install 超时（90s）' });
+              resolvePromise({ success: false, error: t('error.npmInstallTimeout') });
             }, 90000);
             timer.unref();
 
@@ -592,7 +601,7 @@ export function startServer() {
           });
           npmSuccess = result.success;
           if (!npmSuccess) {
-            npmError = result.error || `npm install 退出码: ${result.code}`;
+            npmError = result.error || t('error.npmInstallExitCode', { code: result.code });
           }
         } catch (err) {
           npmError = err.message;
@@ -604,14 +613,14 @@ export function startServer() {
           logError('update_npm_failed', npmError + ' | output: ' + npmOutput.join('\n').slice(-500));
           jsonResponse(res, 200, {
             success: false,
-            error: '更新失败，请手动执行：npm install -g ai-helper-agent@latest'
+            error: t('error.updateFailed')
           });
           return;
         }
 
         // 更新成功：返回响应并触发两阶段重启
         logSystem('update_success', { output: npmOutput.join('\n').slice(-500) });
-        jsonResponse(res, 200, { success: true, message: '更新成功，Agent 正在重启...' });
+        jsonResponse(res, 200, { success: true, message: t('message.updateSuccess') });
 
         // spawn 两阶段重启包装器
         const child = spawn(process.execPath, [
@@ -706,7 +715,7 @@ export function startServer() {
         });
       } catch (err) {
         logError('fs', 'upload_error', { error: err.message });
-        return jsonResponse(res, 400, { success: false, error: `文件上传失败: ${err.message}` });
+        return jsonResponse(res, 400, { success: false, error: t('exec.uploadFailed', { message: err.message }) });
       }
     }
 
@@ -715,7 +724,7 @@ export function startServer() {
     if (req.method === 'POST' && pathname === '/api/fs/upload-stream') {
       const targetPath = url.searchParams.get('path');
       if (!targetPath || typeof targetPath !== 'string') {
-        return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+        return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
       }
       const check = await checkPath(targetPath);
       if (!check.allowed) {
@@ -726,7 +735,7 @@ export function startServer() {
       const maxSize = MAX_UPLOAD_SIZE;
       const declaredSize = parseInt(req.headers['content-length'] || '0', 10);
       if (declaredSize > maxSize) {
-        return jsonResponse(res, 400, { success: false, error: `文件过大 (${declaredSize} > ${maxSize})` });
+        return jsonResponse(res, 400, { success: false, error: t('error.fileTooLargeDeclared', { declared: declaredSize, limit: maxSize }) });
       }
 
       await mkdir(dirname(check.resolved), { recursive: true });
@@ -744,7 +753,7 @@ export function startServer() {
               aborted = true;
               try { ws.destroy(); } catch {}
               try { req.destroy(); } catch {}
-              reject(new Error(`文件过大 (已接收 ${totalWritten} > ${maxSize})`));
+              reject(new Error(t('error.fileSizeExceeded', { received: totalWritten, limit: maxSize })));
             }
           };
           req.on('data', onReqData);
@@ -778,7 +787,7 @@ export function startServer() {
       } catch (err) {
         logError('fs', 'upload_stream_error', { path: check.resolved, error: err.message });
         try { await unlink(check.resolved); } catch {}  // 清理半成品文件
-        return jsonResponse(res, 400, { success: false, error: `上传失败: ${err.message}` });
+        return jsonResponse(res, 400, { success: false, error: t('exec.uploadFailed', { message: err.message }) });
       }
     }
 
@@ -791,7 +800,7 @@ export function startServer() {
       if (pathname === '/api/config/workdir' && req.method === 'POST') {
         const newWorkdir = body.workdir;
         if (!newWorkdir || typeof newWorkdir !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 workdir 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingWorkdir') });
         }
 
         // 展开 ~ 到用户主目录
@@ -807,7 +816,7 @@ export function startServer() {
 
         // 必须是绝对路径（跨平台：path.isAbsolute 覆盖 Unix /、Windows 盘符、UNC 路径）
         if (!isAbsolute(resolvedWorkdir)) {
-          return jsonResponse(res, 400, { success: false, error: 'workdir 必须是绝对路径' });
+          return jsonResponse(res, 400, { success: false, error: t('error.workdirNotAbsolute') });
         }
         resolvedWorkdir = resolve(resolvedWorkdir);
 
@@ -815,7 +824,7 @@ export function startServer() {
         const AGENT_DIR_PATH = join(homedir(), '.ai-helper-agent');
         if (resolvedWorkdir === AGENT_DIR_PATH) {
           logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: '禁止设为 Agent 系统目录' });
-          return jsonResponse(res, 403, { success: false, error: '不能将 Agent 系统目录设为工作目录' });
+          return jsonResponse(res, 403, { success: false, error: t('error.workdirIsSystemDir') });
         }
 
         try {
@@ -839,11 +848,11 @@ export function startServer() {
             success: true,
             workdir: resolvedWorkdir,
             allowedPaths: updatedConfig.allowedPaths,
-            message: '工作目录已切换'
+            message: t('message.workdirSwitched')
           });
         } catch (err) {
           logError('config', 'workdir_switch_error', { path: resolvedWorkdir, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `切换工作目录失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.switchWorkdirFailed', { message: err.message }) });
         }
       }
 
@@ -851,7 +860,7 @@ export function startServer() {
       if (pathname === '/api/config/allowed-paths/remove' && req.method === 'POST') {
         const targetPath = body.path;
         if (!targetPath || typeof targetPath !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
 
         let resolvedPath = targetPath.trim();
@@ -863,7 +872,7 @@ export function startServer() {
         // 规整 MSYS 路径格式，与 workdir 切换端点保持一致
         resolvedPath = normalizePathFormat(resolvedPath);
         if (!isAbsolute(resolvedPath)) {
-          return jsonResponse(res, 400, { success: false, error: 'path 必须是绝对路径' });
+          return jsonResponse(res, 400, { success: false, error: t('error.pathNotAbsolute') });
         }
         resolvedPath = resolve(resolvedPath);
 
@@ -872,7 +881,7 @@ export function startServer() {
           const currentWorkdir = resolve(freshConfig.workdir || '');
           // 禁止移除当前工作目录
           if (resolvedPath === currentWorkdir) {
-            return jsonResponse(res, 400, { success: false, error: '不能移除当前工作目录，请先切换到其它目录' });
+            return jsonResponse(res, 400, { success: false, error: t('error.cannotRemoveWorkdir') });
           }
 
           const allowedPaths = Array.isArray(freshConfig.allowedPaths) ? freshConfig.allowedPaths : [];
@@ -882,7 +891,7 @@ export function startServer() {
 
           // 没有变化说明该路径不在列表中
           if (filtered.length === allowedPaths.length) {
-            return jsonResponse(res, 200, { success: true, allowedPaths: filtered, message: '该目录不在允许列表中' });
+            return jsonResponse(res, 200, { success: true, allowedPaths: filtered, message: t('error.pathNotInAllowedList') });
           }
 
           const updatedConfig = { ...freshConfig, allowedPaths: filtered };
@@ -892,11 +901,11 @@ export function startServer() {
           return jsonResponse(res, 200, {
             success: true,
             allowedPaths: updatedConfig.allowedPaths,
-            message: '已从允许列表中移除'
+            message: t('message.removedFromAllowedList')
           });
         } catch (err) {
           logError('config', 'allowed_path_remove_error', { path: resolvedPath, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `移除允许目录失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.removeAllowedPathFailed', { message: err.message }) });
         }
       }
 
@@ -920,7 +929,7 @@ export function startServer() {
           return jsonResponse(res, result.success ? 200 : 403, result);
         } catch (err) {
           logError('fs', 'search_files_error', { path: body.path, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `文件搜索异常: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.fileSearchFailed', { message: err.message }) });
         }
       }
 
@@ -945,7 +954,7 @@ export function startServer() {
           return jsonResponse(res, result.success ? 200 : 403, result);
         } catch (err) {
           logError('fs', 'search_content_error', { path: body.path, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `内容搜索异常: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.contentSearchFailed', { message: err.message }) });
         }
       }
 
@@ -956,10 +965,10 @@ export function startServer() {
           logSecurity('fs_read_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件不存在' });
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: t('error.fileNotFound') });
         const fstat = await stat(check.resolved);
-        if (fstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: '路径是目录' });
-        if (fstat.size > maxSize) return jsonResponse(res, 400, { success: false, error: `文件过大 (${fstat.size} > ${maxSize})` });
+        if (fstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: t('error.pathIsDir') });
+        if (fstat.size > maxSize) return jsonResponse(res, 400, { success: false, error: t('error.fileTooLargeStat', { size: fstat.size, limit: maxSize }) });
         const content = await readFile(check.resolved, 'utf-8');
         logFs('read', { path: check.resolved, size: fstat.size });
         return jsonResponse(res, 200, { success: true, content, size: fstat.size, path: check.resolved });
@@ -978,7 +987,7 @@ export function startServer() {
         const buf = encoding === 'base64'
           ? Buffer.from(rawContent, 'base64')
           : Buffer.from(rawContent, 'utf-8');
-        if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: `内容过大 (${buf.length} > ${maxSize})` });
+        if (buf.length > maxSize) return jsonResponse(res, 400, { success: false, error: t('error.contentTooLarge', { size: buf.length, limit: maxSize }) });
         // 确保父目录存在
         await mkdir(dirname(check.resolved), { recursive: true });
         if (encoding === 'base64') {
@@ -1010,9 +1019,9 @@ export function startServer() {
           logSecurity('fs_list_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '目录不存在' });
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: t('error.dirNotFound') });
         const dstat = await stat(check.resolved);
-        if (!dstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: '路径不是目录' });
+        if (!dstat.isDirectory()) return jsonResponse(res, 400, { success: false, error: t('error.pathNotDir') });
         const names = await readdir(check.resolved);
         const entries = await Promise.all(names.map(async (name) => {
           const fullPath = join(check.resolved, name);
@@ -1033,7 +1042,7 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
         if (!await exists(check.resolved)) {
-          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+          return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
         }
         const s = await stat(check.resolved);
         const info = {
@@ -1064,7 +1073,7 @@ export function startServer() {
           logSecurity('fs_delete_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
-        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+        if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
         const fstat2 = await stat(check.resolved);
         const isDir = fstat2.isDirectory();
         const trashResult = await moveToTrash(check.resolved);
@@ -1073,14 +1082,14 @@ export function startServer() {
           return jsonResponse(res, 500, { success: false, error: trashResult.error });
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size, trashId: trashResult.trashId });
-        return jsonResponse(res, 200, { success: true, path: check.resolved, isDir: trashResult.isDir, trashId: trashResult.trashId, message: '已移至回收站（7天后自动清理）' });
+        return jsonResponse(res, 200, { success: true, path: check.resolved, isDir: trashResult.isDir, trashId: trashResult.trashId, message: t('message.movedToTrash') });
       }
 
       // 下载文件/目录（返回 base64 内容，目录自动打包为 zip）
       if (pathname === '/api/fs/download') {
         const targetPath = body.path;
         if (!targetPath || typeof targetPath !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
         const check = await checkPath(targetPath);
         if (!check.allowed) {
@@ -1088,7 +1097,7 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
         if (!await exists(check.resolved)) {
-          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+          return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
         }
 
         try {
@@ -1115,7 +1124,7 @@ export function startServer() {
           } else {
             // 单个文件
             if (fstat.size > maxSize) {
-              return jsonResponse(res, 400, { success: false, error: `文件过大 (${fstat.size} > ${maxSize})` });
+              return jsonResponse(res, 400, { success: false, error: t('error.fileTooLargeStat', { size: fstat.size, limit: maxSize }) });
             }
             const buf = await readFile(check.resolved);
             const mimeType = getMimeType(check.resolved);
@@ -1131,7 +1140,7 @@ export function startServer() {
           }
         } catch (err) {
           logError('fs', 'download_error', { path: targetPath, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.downloadFailed', { message: err.message }) });
         }
       }
 
@@ -1139,7 +1148,7 @@ export function startServer() {
       if (pathname === '/api/fs/download-multi') {
         const paths = body.paths;
         if (!Array.isArray(paths) || paths.length === 0) {
-          return jsonResponse(res, 400, { success: false, error: '缺少 paths 参数或为空数组' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPathsParam') });
         }
 
         const resolvedPaths = [];
@@ -1147,10 +1156,10 @@ export function startServer() {
           const check = await checkPath(p);
           if (!check.allowed) {
             logSecurity('fs_download_blocked', { path: p, reason: check.reason });
-            return jsonResponse(res, 403, { success: false, error: `路径 "${p}" 不允许访问` });
+            return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
           }
           if (!await exists(check.resolved)) {
-            return jsonResponse(res, 404, { success: false, error: `路径 "${p}" 不存在` });
+            return jsonResponse(res, 404, { success: false, error: t('error.pathNotExist', { path: p }) });
           }
           resolvedPaths.push(check.resolved);
         }
@@ -1176,7 +1185,7 @@ export function startServer() {
           }
         } catch (err) {
           logError('fs', 'download_multi_error', { paths, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `打包失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.packFailed', { message: err.message }) });
         }
       }
 
@@ -1229,10 +1238,10 @@ export function startServer() {
               const check = await checkPath(p);
               if (!check.allowed) {
                 logSecurity('fs_download_blocked', { path: p, reason: check.reason });
-                return jsonResponse(res, 403, { success: false, error: `路径 "${p}" 不允许访问` });
+                return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
               }
               if (!await exists(check.resolved)) {
-                return jsonResponse(res, 404, { success: false, error: `路径 "${p}" 不存在` });
+                return jsonResponse(res, 404, { success: false, error: t('error.pathNotExist', { path: p }) });
               }
               resolvedPaths.push(check.resolved);
             }
@@ -1256,7 +1265,7 @@ export function startServer() {
               return jsonResponse(res, 403, { success: false, error: check.reason });
             }
             if (!await exists(check.resolved)) {
-              return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+              return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
             }
 
             const fstat = await stat(check.resolved);
@@ -1292,11 +1301,11 @@ export function startServer() {
               return;
             }
           } else {
-            return jsonResponse(res, 400, { success: false, error: '缺少 path 或 paths 参数' });
+            return jsonResponse(res, 400, { success: false, error: t('error.missingPathOrPaths') });
           }
         } catch (err) {
           logError('fs', 'download_stream_error', { path: targetPath, paths, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `下载失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.downloadFailed', { message: err.message }) });
         }
       }
 
@@ -1304,7 +1313,7 @@ export function startServer() {
       if (pathname === '/api/fs/preview-xlsx') {
         const filePath = body.path;
         if (!filePath || typeof filePath !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
         const check = await checkPath(filePath);
         if (!check.allowed) {
@@ -1353,7 +1362,7 @@ export function startServer() {
           return jsonResponse(res, 200, { success: true, data: { sheets } });
         } catch (err) {
           logError('fs', 'preview_xlsx_error', { path: filePath, error: err.message });
-          return jsonResponse(res, 500, { success: false, error: `解析失败: ${err.message}` });
+          return jsonResponse(res, 500, { success: false, error: t('error.parseFailed', { message: err.message }) });
         }
       }
 
@@ -1361,7 +1370,7 @@ export function startServer() {
       if (pathname === '/api/fs/mkdir') {
         const dirPath = body.path;
         if (!dirPath || typeof dirPath !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
         const check = await checkPath(dirPath);
         if (!check.allowed) {
@@ -1374,7 +1383,7 @@ export function startServer() {
           return jsonResponse(res, 200, { success: true, path: check.resolved });
         } catch (err) {
           if (err.code === 'EEXIST') {
-            return jsonResponse(res, 409, { success: false, error: '目录已存在' });
+            return jsonResponse(res, 409, { success: false, error: t('error.dirExists') });
           }
           throw err;
         }
@@ -1385,14 +1394,14 @@ export function startServer() {
         const oldPath = body.path;
         const newName = body.newName;
         if (!oldPath || typeof oldPath !== 'string' || !newName || typeof newName !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 或 newName 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPathOrNewName') });
         }
         if (newName.includes('/') || newName.includes('\\')) {
-          return jsonResponse(res, 400, { success: false, error: '新名称不能包含路径分隔符' });
+          return jsonResponse(res, 400, { success: false, error: t('error.newNameHasSeparator') });
         }
         // Windows 文件名非法字符（仅 Windows 拦截；Unix 允许这些字符）
         if (os.platform() === 'win32' && /[:*?"<>|]/.test(newName)) {
-          return jsonResponse(res, 400, { success: false, error: '新名称包含 Windows 非法字符 (: * ? " < > |)' });
+          return jsonResponse(res, 400, { success: false, error: t('error.newNameInvalidChars') });
         }
         const check = await checkPath(oldPath);
         if (!check.allowed) {
@@ -1400,20 +1409,20 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
         if (!await exists(check.resolved)) {
-          return jsonResponse(res, 404, { success: false, error: '文件/目录不存在' });
+          return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
         }
         const newFullPath = join(dirname(check.resolved), newName);
         // 确保目标路径也在允许范围内
         const newCheck = await checkPath(newFullPath);
         if (!newCheck.allowed) {
           logSecurity('fs_rename_blocked', { path: newFullPath, reason: newCheck.reason });
-          return jsonResponse(res, 403, { success: false, error: `目标路径不允许: ${newCheck.reason}` });
+          return jsonResponse(res, 403, { success: false, error: t('error.targetPathNotAllowed', { reason: newCheck.reason }) });
         }
         // 防止覆盖：目标已存在时统一返回 409。
         // macOS/Linux 的 fs.rename 会静默覆盖目标文件（仅 Windows 报 EEXIST），
         // 主动检查避免跨平台数据丢失风险
         if (await exists(newFullPath)) {
-          return jsonResponse(res, 409, { success: false, error: '目标名称已存在' });
+          return jsonResponse(res, 409, { success: false, error: t('error.targetExists') });
         }
         try {
           await rename(check.resolved, newFullPath);
@@ -1421,7 +1430,7 @@ export function startServer() {
           return jsonResponse(res, 200, { success: true, newPath: newFullPath, newName });
         } catch (err) {
           if (err.code === 'ENOTEMPTY' || err.code === 'EEXIST') {
-            return jsonResponse(res, 409, { success: false, error: '目标名称已存在' });
+            return jsonResponse(res, 409, { success: false, error: t('error.targetExists') });
           }
           throw err;
         }
@@ -1432,7 +1441,7 @@ export function startServer() {
         const srcPath = body.path;
         const destDir = body.destDir;
         if (!srcPath || typeof srcPath !== 'string' || !destDir || typeof destDir !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 或 destDir 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPathOrDestDir') });
         }
         const srcCheck = await checkPath(srcPath);
         if (!srcCheck.allowed) {
@@ -1445,22 +1454,22 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: destCheck.reason });
         }
         if (!await exists(srcCheck.resolved)) {
-          return jsonResponse(res, 404, { success: false, error: '源文件/目录不存在' });
+          return jsonResponse(res, 404, { success: false, error: t('error.sourceNotFound') });
         }
         const destStat = await stat(destCheck.resolved).catch(() => null);
         if (!destStat || !destStat.isDirectory()) {
-          return jsonResponse(res, 400, { success: false, error: '目标不是有效目录' });
+          return jsonResponse(res, 400, { success: false, error: t('error.targetNotDir') });
         }
         const itemName = basename(srcCheck.resolved);
         const destPath = join(destCheck.resolved, itemName);
         const destCheck2 = await checkPath(destPath);
         if (!destCheck2.allowed) {
           logSecurity('fs_move_blocked', { path: destPath, reason: destCheck2.reason });
-          return jsonResponse(res, 403, { success: false, error: `移动目标路径不允许: ${destCheck2.reason}` });
+          return jsonResponse(res, 403, { success: false, error: t('error.moveTargetNotAllowed', { reason: destCheck2.reason }) });
         }
         // 防止覆盖：目标已存在时统一返回 409（与 rename 端点一致，避免 macOS/Linux 静默覆盖）
         if (await exists(destPath)) {
-          return jsonResponse(res, 409, { success: false, error: '目标位置已存在同名文件/目录' });
+          return jsonResponse(res, 409, { success: false, error: t('error.targetNameExists') });
         }
         try {
           await rename(srcCheck.resolved, destPath);
@@ -1468,7 +1477,7 @@ export function startServer() {
           return jsonResponse(res, 200, { success: true, newPath: destPath });
         } catch (err) {
           if (err.code === 'ENOTEMPTY' || err.code === 'EEXIST') {
-            return jsonResponse(res, 409, { success: false, error: '目标位置已存在同名文件/目录' });
+            return jsonResponse(res, 409, { success: false, error: t('error.targetNameExists') });
           }
           throw err;
         }
@@ -1478,7 +1487,7 @@ export function startServer() {
       if (pathname === '/api/browser/open') {
         const targetPath = body.path;
         if (!targetPath || typeof targetPath !== 'string') {
-          return jsonResponse(res, 400, { success: false, error: '缺少 path 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
         const check = await checkPath(targetPath);
         if (!check.allowed) {
@@ -1486,7 +1495,7 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: check.reason });
         }
         if (!await exists(check.resolved)) {
-          return jsonResponse(res, 404, { success: false, error: '文件不存在' });
+          return jsonResponse(res, 404, { success: false, error: t('error.fileNotFound') });
         }
 
         const fileUrl = pathToFileURL(check.resolved).href;
@@ -1516,14 +1525,14 @@ export function startServer() {
 
       if (pathname === '/api/exec') {
         const { command, cwd, wait, force } = body;
-        if (!command || typeof command !== 'string') return jsonResponse(res, 400, { success: false, error: '缺少 command 参数（必须是字符串）' });
+        if (!command || typeof command !== 'string') return jsonResponse(res, 400, { success: false, error: t('error.missingCommand') });
 
         // 校验 cwd
         let resolvedCwd = cwd || config.workdir;
         const cwdCheck = await checkPath(resolvedCwd);
         if (!cwdCheck.allowed) {
           logSecurity('exec_cwd_blocked', { command, cwd: resolvedCwd, reason: cwdCheck.reason });
-          return jsonResponse(res, 403, { success: false, error: '执行目录校验失败: ' + cwdCheck.reason });
+          return jsonResponse(res, 403, { success: false, error: t('error.execDirCheckFailed', { reason: cwdCheck.reason }) });
         }
 
         // 安全检查
@@ -1562,7 +1571,7 @@ export function startServer() {
             });
           } catch (err) {
             logError('exec', 'error', { command, error: err.message });
-            return jsonResponse(res, 500, { success: false, error: `命令执行异常: ${err.message}` });
+            return jsonResponse(res, 500, { success: false, error: t('error.execFailed', { message: err.message }) });
           }
         }
 
@@ -1596,7 +1605,7 @@ export function startServer() {
 
       // 回收站恢复
       if (pathname === '/api/trash/restore') {
-        if (!body.trashId) return jsonResponse(res, 400, { success: false, error: '缺少 trashId 参数' });
+        if (!body.trashId) return jsonResponse(res, 400, { success: false, error: t('error.missingTrashId') });
         const result = await restoreFromTrash(body.trashId);
         if (result.success) {
           logFs('trash_restore', { trashId: body.trashId, restoredPath: result.restoredPath });
@@ -1630,7 +1639,7 @@ export function startServer() {
 
       // 执行 Skill
       if (pathname === '/api/skill/run') {
-        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
         const result = await runSkill(body.name, body.params || {});
         logSystem('skill_run', { skillName: body.name, success: result.success });
         return jsonResponse(res, result.success ? 200 : 400, result);
@@ -1639,7 +1648,7 @@ export function startServer() {
       // 导入 Skill
       if (pathname === '/api/skill/import') {
         if (!body.name || !body.steps) {
-          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: name, steps' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingNameAndSteps') });
         }
         const result = await importSkill(body);
         logSystem('skill_import', { skillName: body.name });
@@ -1648,7 +1657,7 @@ export function startServer() {
 
       // 删除 Skill
       if (pathname === '/api/skill/delete') {
-        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
         const result = await removeSkill(body.name);
         logSystem('skill_remove', { skillName: body.name });
         return jsonResponse(res, result.success ? 200 : 400, result);
@@ -1656,7 +1665,7 @@ export function startServer() {
 
       // 切换 Skill 启用/停用
       if (pathname === '/api/skill/toggle') {
-        if (!body.name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+        if (!body.name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
         const result = toggleSkill(body.name);
         logSystem('skill_toggle', { skillName: body.name, enabled: result.enabled });
         return jsonResponse(res, result.success ? 200 : 400, result);
@@ -1674,16 +1683,16 @@ export function startServer() {
       // 创建/更新 Agent Skill Markdown
       if (pathname === '/api/skill/save-markdown') {
         if (!body.name) {
-          return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
         }
         if (!body.markdown && !body.prompt) {
-          return jsonResponse(res, 400, { success: false, error: '缺少 markdown/prompt 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingMarkdownOrPrompt') });
         }
         // 检查是否为不可编辑的内置技能
         const { skills: skillsMap } = await import('./skill/registry.js');
         const existingSkill = skillsMap.get(body.name);
         if (existingSkill?.builtin && existingSkill?.editable === false) {
-          return jsonResponse(res, 403, { success: false, error: `"${body.name}" 是内置技能，不可编辑` });
+          return jsonResponse(res, 403, { success: false, error: t('error.builtinSkillNotEditable', { name: body.name }) });
         }
         const skillDef = {
           type: 'agent',
@@ -1710,7 +1719,7 @@ export function startServer() {
       // 从 Zip 导入 Agent Skill（base64 编码的 zip 内容）
       if (pathname === '/api/skill/import-zip') {
         if (!body.zipData) {
-          return jsonResponse(res, 400, { success: false, error: '缺少 zipData 参数（base64 编码的 zip 内容）' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingZipData') });
         }
         try {
           const zipBuffer = Buffer.from(body.zipData, 'base64');
@@ -1722,14 +1731,14 @@ export function startServer() {
           }
           return jsonResponse(res, result.success ? 200 : 400, result);
         } catch (err) {
-          return jsonResponse(res, 400, { success: false, error: `Zip 导入失败: ${err.message}` });
+          return jsonResponse(res, 400, { success: false, error: t('error.zipImportFailed', { message: err.message }) });
         }
       }
 
       // 从 URL 导入 Agent Skill
       if (pathname === '/api/skill/import-url') {
         if (!body.url) {
-          return jsonResponse(res, 400, { success: false, error: '缺少 url 参数' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingUrl') });
         }
         try {
           const result = await importMarkdownSkillFromUrl(getSkillsDir(), body.url);
@@ -1740,7 +1749,7 @@ export function startServer() {
           }
           return jsonResponse(res, result.success ? 200 : 400, result);
         } catch (err) {
-          return jsonResponse(res, 400, { success: false, error: `URL 导入失败: ${err.message}` });
+          return jsonResponse(res, 400, { success: false, error: t('error.urlImportFailed', { message: err.message }) });
         }
       }
 
@@ -1750,13 +1759,13 @@ export function startServer() {
       if (pathname === '/api/mcp/servers' && req.method === 'POST') {
         const isHttp = body.transport === 'sse' || body.transport === 'streamableHttp' || body.transport === 'websocket';
         if (!body.id) {
-          return jsonResponse(res, 400, { success: false, error: '缺少必要参数: id' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingId') });
         }
         if (isHttp && !body.url) {
-          return jsonResponse(res, 400, { success: false, error: 'HTTP 传输需要提供 url' });
+          return jsonResponse(res, 400, { success: false, error: t('error.httpRequiresUrl') });
         }
         if (!isHttp && !body.command) {
-          return jsonResponse(res, 400, { success: false, error: 'stdio 传输需要提供 command' });
+          return jsonResponse(res, 400, { success: false, error: t('error.stdioRequiresCommand') });
         }
         // stdio 传输：对 command + args 做安全校验，防止 MCP 成为命令管控后门
         if (!isHttp) {
@@ -1766,11 +1775,11 @@ export function startServer() {
           const cmdCheck = checkCommand(fullCmd, false);
           if (cmdCheck.level === 'deny') {
             logSecurity('mcp_stdio_denied', { command: fullCmd, reason: cmdCheck.reason });
-            return jsonResponse(res, 403, { success: false, error: `MCP 命令被拦截: ${cmdCheck.reason}` });
+            return jsonResponse(res, 403, { success: false, error: t('error.mcpCommandBlocked', { reason: cmdCheck.reason }) });
           }
           if (cmdCheck.level === 'confirm') {
             logSecurity('mcp_stdio_confirm_required', { command: fullCmd, reason: cmdCheck.reason });
-            return jsonResponse(res, 200, { success: true, level: 'confirm', reason: cmdCheck.reason, message: `MCP 命令需要确认: ${cmdCheck.reason}` });
+            return jsonResponse(res, 200, { success: true, level: 'confirm', reason: cmdCheck.reason, message: t('message.mcpCommandConfirm', { reason: cmdCheck.reason }) });
           }
         }
         const result = await addMcpServer(body);
@@ -1780,7 +1789,7 @@ export function startServer() {
 
       // 删除 MCP 服务器
       if (pathname === '/api/mcp/servers' && req.method === 'DELETE') {
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: t('error.missingIdParam') });
         const result = await removeMcpServer(body.id);
         logSystem('mcp_server_remove', { serverId: body.id });
         return jsonResponse(res, result.success ? 200 : 400, result);
@@ -1788,7 +1797,7 @@ export function startServer() {
 
       // MCP 连接
       if (pathname === '/api/mcp/servers/connect') {
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: t('error.missingIdParam') });
         const result = await connectMcpServer(body.id);
         logSystem('mcp_server_connect', { serverId: body.id, success: result.success });
         return jsonResponse(res, result.success ? 200 : 500, result);
@@ -1796,7 +1805,7 @@ export function startServer() {
 
       // MCP 断开
       if (pathname === '/api/mcp/servers/disconnect') {
-        if (!body.id) return jsonResponse(res, 400, { success: false, error: '缺少 id 参数' });
+        if (!body.id) return jsonResponse(res, 400, { success: false, error: t('error.missingIdParam') });
         const result = await disconnectMcpServer(body.id);
         logSystem('mcp_server_disconnect', { serverId: body.id });
         return jsonResponse(res, 200, result);
@@ -1805,7 +1814,7 @@ export function startServer() {
       // MCP 启用/禁用切换
       if (pathname === '/api/mcp/servers/toggle') {
         if (body.id === undefined || body.enabled === undefined) {
-          return jsonResponse(res, 400, { success: false, error: '缺少参数: id, enabled' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingIdAndEnabled') });
         }
         // 禁用时先断开连接，确保工具立即可用/不可用
         if (!body.enabled) {
@@ -1819,7 +1828,7 @@ export function startServer() {
       // MCP 工具调用
       if (pathname === '/api/mcp/call') {
         if (!body.serverId || !body.toolName) {
-          return jsonResponse(res, 400, { success: false, error: '缺少参数: serverId, toolName' });
+          return jsonResponse(res, 400, { success: false, error: t('error.missingServerIdAndToolName') });
         }
         const result = await callMcpTool(body.serverId, body.toolName, body.args || {});
         logSystem('mcp_tool_call', { serverId: body.serverId, toolName: body.toolName, success: result.success });
@@ -1837,7 +1846,7 @@ export function startServer() {
     // Skill 详情
     if (req.method === 'GET' && pathname === '/api/skill/detail') {
       const name = url.searchParams.get('name');
-      if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      if (!name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
       return jsonResponse(res, 200, getSkill(name));
     }
 
@@ -1850,7 +1859,7 @@ export function startServer() {
     // 按需加载单个 Agent Skill 的完整内容
     if (req.method === 'GET' && pathname === '/api/skill/agent-prompt') {
       const skillName = url.searchParams.get('name');
-      if (!skillName) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      if (!skillName) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
       const result = getAgentSkillPrompt(skillName);
       return jsonResponse(res, result.success ? 200 : 404, result);
     }
@@ -1858,12 +1867,12 @@ export function startServer() {
     // Agent Skill 的 SKILL.md 内容
     if (req.method === 'GET' && pathname === '/api/skill/markdown') {
       const name = url.searchParams.get('name');
-      if (!name) return jsonResponse(res, 400, { success: false, error: '缺少 name 参数' });
+      if (!name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
       const result = getSkill(name);
       if (!result.success) return jsonResponse(res, 404, result);
       const skill = result.skill;
       if (skill.type !== 'agent') {
-        return jsonResponse(res, 400, { success: false, error: '该 Skill 不是 Agent 类型' });
+        return jsonResponse(res, 400, { success: false, error: t('error.notAgentSkill') });
       }
       return jsonResponse(res, 200, {
         success: true,
@@ -1885,23 +1894,23 @@ export function startServer() {
       const name = url.searchParams.get('name');
       const resource = url.searchParams.get('resource');
       if (!name || !resource) {
-        return jsonResponse(res, 400, { success: false, error: '缺少 name 或 resource 参数' });
+        return jsonResponse(res, 400, { success: false, error: t('error.missingNameOrResource') });
       }
       const result = getSkill(name);
       if (!result.success) return jsonResponse(res, 404, result);
       const skill = result.skill;
       if (skill.type !== 'agent') {
-        return jsonResponse(res, 400, { success: false, error: '该 Skill 不是 Agent 类型' });
+        return jsonResponse(res, 400, { success: false, error: t('error.notAgentSkill') });
       }
       const resInfo = skill.resources?.find(r => r.name === resource);
       if (!resInfo) {
-        return jsonResponse(res, 404, { success: false, error: `资源 "${resource}" 不存在` });
+        return jsonResponse(res, 404, { success: false, error: t('error.resourceNotFound', { resource }) });
       }
       try {
         const content = await readFile(resInfo.path, 'utf-8');
         return jsonResponse(res, 200, { success: true, name: resource, content, size: resInfo.size });
       } catch (err) {
-        return jsonResponse(res, 500, { success: false, error: `读取资源失败: ${err.message}` });
+        return jsonResponse(res, 500, { success: false, error: t('error.readResourceFailed', { message: err.message }) });
       }
     }
 
@@ -1925,7 +1934,7 @@ export function startServer() {
     }
 
     // 404
-    jsonResponse(res, 404, { success: false, error: '未知的 API 路径' });
+    jsonResponse(res, 404, { success: false, error: t('error.unknownApiPath') });
   }
 
   // 追踪所有活跃 socket 连接，用于优雅关闭时强制断开
@@ -1972,7 +1981,7 @@ export function startServer() {
       wss.handleUpgrade(request, socket, head, (ws) => {
         const added = addWsClient(execId, ws);
         if (!added) {
-          ws.send(JSON.stringify({ type: 'error', error: '进程不存在或已结束', execId }));
+          ws.send(JSON.stringify({ type: 'error', error: getRequestI18n(request).t('error.processNotFound'), execId }));
           // 进程已不存在，发送错误后关闭 WebSocket，避免客户端空等
           ws.close();
           return;
