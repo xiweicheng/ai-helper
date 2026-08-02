@@ -189,12 +189,12 @@ ai-helper/
 │   │   └── constants.js                # 默认配置、40+ 个内建工具定义、分类映射
 │   │   ├── state.js                    # 多会话取消控制、API 计数器
 │   │   └── tools/                       # 工具定义分目录
-│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (16)
+│   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (15)
 │   │       ├── tab-tools.js            # 标签页管理 + 书签历史 (3)
 │   │       ├── storage-tools.js        # 存储管理 + 网络请求 (4)
 │   │       ├── media-tools.js          # 媒体输出 + 调试开发 (7)
-│   │       ├── ai-tools.js             # AI 协作 (6)
-│   │       ├── agent-tools.js          # 本地代理 (6)
+│   │       ├── ai-tools.js             # AI 协作 + 调试开发 (6)
+│   │       ├── agent-tools.js          # 本地代理 + AI 协作 (7)
 │   │       ├── memory-tools.js         # 长期记忆 (1)
 │   │       ├── tool-memory.js          # 长期记忆工具 handler
 │   │       ├── tool-network.js         # fetchWithTimeout + fetchWithRetry
@@ -621,14 +621,13 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 ## 内建工具（40+ 项可配置 + MCP 动态扩展）
 
-### 内容提取（7 个）
+### 内容提取（6 个）
 | 工具 | 说明 |
 |------|------|
 | `page_content` | 获取页面内容（text/html 格式，支持跨标签页提取） |
 | `extract_data` | 提取结构化数据（table/links/forms/images/metadata，支持跨标签页） |
 | `query_elements` | 提取可交互元素（推荐优先使用，省 Token，支持 countOnly 模式） |
 | `search_in_page` | 正则搜索页面文本（支持高亮） |
-| `find_similar` | 查找相似结构元素 |
 | `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_collect` | 滚动收集长内容（去重聚合） |
 
@@ -681,11 +680,12 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `download_file` | 下载文件（需确认） |
 | `notify` | 桌面通知 |
 
-### 调试与开发（2 个）
+### 调试与开发（3 个）
 | 工具 | 说明 |
 |------|------|
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `browser_info` | 获取浏览器环境信息 |
+| `highlight_text` | 高亮页面文本 |
 
 ### AI 协作（7 个）
 | 工具 | 说明 |
@@ -695,8 +695,8 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `preview_ui` | UI 原型预览与管理（支持 preview/get 两种 action） |
 | `search_chats` | 搜索对话记忆（当前会话 / 所有历史会话） |
 | `dispatch_task` | 子任务分派给子 Agent 执行（支持并行分派） |
-| `highlight_text` | 高亮页面文本 |
 | `manage_agent` | 管理已配对代理（查询状态、切换代理） |
+| `exec_log` | 提取历史执行日志，分析成功路径与失败教训 |
 
 ### Agent（5 个）—— 需安装代理服务
 | 工具 | 说明 |
@@ -719,8 +719,8 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 以下工具操作前会弹出确认对话框（30 秒超时自动拒绝，可全局关闭）：
 
-- `manage_tab`（close action）、`download_file`、`manage_cookies`、`clear_page_data`
-- `agent_file`（delete action）、`agent_exec_command`
+- `manage_tab`（close action）、`download_file`、`manage_cookies`、`clear_data`
+- `agent_file`（delete action）、`agent_exec`
 
 Agent 命令执行三级安全：
 1. **黑名单**（始终禁止）：`rm -rf /`、`mkfs.*`、fork 炸弹、curl-to-shell 管道等

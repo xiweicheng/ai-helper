@@ -185,12 +185,12 @@ ai-helper/
 │   │   ├── constants.js                # Defaults, 40+ built-in tools, category mapping
 │   │   ├── state.js                    # Multi-session cancel control, API counter
 │   │   └── tools/                       # Tool definitions by category
-│   │       ├── browser-tools.js        │ Page interaction + Form + Content (16)
+│   │       ├── browser-tools.js        │ Page interaction + Form + Content (15)
 │   │       ├── tab-tools.js            │ Tab mgmt + Bookmarks/History (3)
 │   │       ├── storage-tools.js        │ Storage mgmt + Network (4)
 │   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
-│   │       ├── ai-tools.js             │ AI Collaboration (6)
-│   │       ├── agent-tools.js          │ Local Agent (6)
+│   │       ├── ai-tools.js             │ AI Collaboration + Debug/Dev (6)
+│   │       ├── agent-tools.js          │ Local Agent + AI Collaboration (7)
 │   │       └── memory-tools.js         │ Long-term Memory (1)
 │   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
@@ -593,14 +593,13 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
-### Content Extraction (7)
+### Content Extraction (6)
 | Tool | Description |
 |------|-------------|
 | `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
 | `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
 | `query_elements` | Extract interactive elements (recommended for token savings, supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
-| `find_similar` | Find similar structure elements |
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
 
@@ -653,11 +652,12 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 | `download_file` | Download files (requires confirmation) |
 | `notify` | Desktop notifications |
 
-### Debug & Dev (2)
+### Debug & Dev (3)
 | Tool | Description |
 |------|-------------|
 | `inject_css` | Inject CSS styles (global/scoped/inline) |
 | `browser_info` | Get browser environment info |
+| `highlight_text` | Highlight text on page |
 
 ### AI Collaboration (7)
 | Tool | Description |
@@ -667,8 +667,8 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 | `preview_ui` | UI prototype preview & management (preview/get actions) |
 | `search_chats` | Search chat memory (current session / all history sessions) |
 | `dispatch_task` | Dispatch subtasks to sub-agents (supports parallel dispatch) |
-| `highlight_text` | Highlight text on page |
 | `manage_agent` | Manage paired agents (query status, switch agent) |
+| `exec_log` | Extract historical execution logs, analyze success paths and failure lessons |
 
 ### Agent (5) — Requires Agent Service
 | Tool | Description |
@@ -691,8 +691,8 @@ When connected to third-party MCP servers, tools are automatically registered. Q
 
 The following tool operations show a confirmation dialog before execution (30-second timeout auto-reject, can be globally disabled):
 
-- `manage_tab` (close action), `download_file`, `manage_cookies`, `clear_page_data`
-- `agent_file` (delete action), `agent_exec_command`
+- `manage_tab` (close action), `download_file`, `manage_cookies`, `clear_data`
+- `agent_file` (delete action), `agent_exec`
 
 Agent command execution three-tier security:
 1. **Blacklist** (always blocked): `rm -rf /`, `mkfs.*`, fork bombs, curl-to-shell pipes, etc.
