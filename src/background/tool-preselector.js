@@ -4,6 +4,29 @@ import { getStoredConfig } from './config.js';
 import { fetchWithRetry } from './tool-executor.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  preselector: {
+    nodeName: '工具预筛选',
+    reasonFewTools: '工具数量少',
+    reasonExtractFailed: '无法提取用户问题',
+    reasonApiFailed: 'API 请求失败: {status}',
+    reasonEmptyResult: '模型返回空数组',
+    reasonNoMatch: '筛选结果无匹配',
+  },
+});
+
+registerTranslations('en', {
+  preselector: {
+    nodeName: 'Tool Pre-filter',
+    reasonFewTools: 'Too few tools',
+    reasonExtractFailed: 'Unable to extract user question',
+    reasonApiFailed: 'API request failed: {status}',
+    reasonEmptyResult: 'Model returned empty array',
+    reasonNoMatch: 'No matching results after filtering',
+  },
+});
 
 /**
  * 截断过长内容（仅保留文本部分，避免 Base64 图片污染）
@@ -216,7 +239,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     iteration: 0,
     timestamp: now,
     nodeType: 'preselect',
-    nodeName: '工具预筛选',
+    nodeName: t('preselector.nodeName'),
     ...extra,
     status
   });
@@ -228,13 +251,13 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
   // 如果工具数量未超过阈值，不需要筛选
   if (totalCount <= preselectMinToolCount) {
     logger.debug(`[ToolPreselector] 工具数量 ${totalCount} <= ${preselectMinToolCount}，跳过预筛选`);
-    return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'skip', params: { reason: '工具数量少', toolCount: totalCount } }, duration: 1 })] };
+    return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'skip', params: { reason: t('preselector.reasonFewTools'), toolCount: totalCount } }, duration: 1 })] };
   }
 
   const userQuestion = extractLastUserQuestion(messages);
   if (!userQuestion) {
     logger.warn('[ToolPreselector] 无法提取用户问题，使用全量工具');
-    return { type: 'tools', tools, executionLog: [createEntry('failed', { error: '无法提取用户问题' })] };
+    return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonExtractFailed') })] };
   }
 
   const historyContext = extractHistoryContext(messages);
@@ -275,7 +298,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
     if (!response.ok) {
       logger.warn('[ToolPreselector] API 请求失败，使用全量工具');
-      return { type: 'tools', tools, executionLog: [createEntry('failed', { error: `API 请求失败: ${response.status}`, duration })] };
+      return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonApiFailed', { status: response.status }), duration })] };
     }
 
     const data = await response.json();
@@ -296,7 +319,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
       if (selectedNames.length === 0) {
         logger.warn('[ToolPreselector] 返回空工具数组，使用全量工具');
-        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '模型返回空数组' } }, duration })] };
+        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: t('preselector.reasonEmptyResult') } }, duration })] };
       }
 
       // 使用 case-insensitive 匹配，防止模型返回大小写不一致的工具名
@@ -321,7 +344,7 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
       if (selectedTools.length === 0) {
         logger.warn('[ToolPreselector] 筛选后工具为空，使用全量工具');
-        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: '筛选结果无匹配' } }, duration })] };
+        return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: t('preselector.reasonNoMatch') } }, duration })] };
       }
 
       logger.debug(`[ToolPreselector] 预筛选完成: ${totalCount} → ${selectedTools.length} 个工具`,

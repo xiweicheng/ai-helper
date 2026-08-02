@@ -5,6 +5,27 @@ import { injectStyles } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
+// 注册工具名称翻译（与 options/constants.js 共享 key，content script 上下文独立）
+registerTranslations('zh', {
+  optionsConst: {
+    aiSearch: 'AI搜索',
+    explain: '解释',
+    translate: '翻译',
+    summary: '总结',
+    copy: '复制',
+  },
+});
+
+registerTranslations('en', {
+  optionsConst: {
+    aiSearch: 'AI Search',
+    explain: 'Explain',
+    translate: 'Translate',
+    summary: 'Summarize',
+    copy: 'Copy',
+  },
+});
+
 registerTranslations('zh', {
   selToolbar: {
     settings: '设置',
@@ -216,11 +237,11 @@ export function isExtensionValid() {
 
 // ==================== 工具栏工具加载 ====================
 const DEFAULT_TOOLS = [
-  { id: 'ai-search',  name: 'AI搜索', systemPrompt: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。', builtin: true, order: 0 },
-  { id: 'explain',   name: '解释',   systemPrompt: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。', builtin: true, order: 1 },
-  { id: 'translate', name: '翻译',   systemPrompt: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。', builtin: true, order: 2 },
-  { id: 'summary',   name: '总结',   systemPrompt: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。', builtin: true, order: 3 },
-  { id: 'copy',      name: '复制',   systemPrompt: '将选中内容复制到剪贴板。', builtin: true, order: 99 }
+  { id: 'ai-search',  name: t('optionsConst.aiSearch'), systemPrompt: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。', builtin: true, order: 0 },
+  { id: 'explain',   name: t('optionsConst.explain'),   systemPrompt: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。', builtin: true, order: 1 },
+  { id: 'translate', name: t('optionsConst.translate'), systemPrompt: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。', builtin: true, order: 2 },
+  { id: 'summary',   name: t('optionsConst.summary'),   systemPrompt: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。', builtin: true, order: 3 },
+  { id: 'copy',      name: t('optionsConst.copy'),      systemPrompt: '将选中内容复制到剪贴板。', builtin: true, order: 99 }
 ];
 
 function loadToolbarTools() {
@@ -381,14 +402,14 @@ async function createToolbar() {
   toolbarEl.id = 'aih-selection-toolbar';
   
   let buttonsHtml = `<span class="aih-tb-buttons">`;
-  buttonsHtml += `<span class="aih-tb-grip" title="拖拽移动">${ICONS.grip}</span>`;
+  buttonsHtml += `<span class="aih-tb-grip" title="${t('selToolbar.dragToMove')}">${ICONS.grip}</span>`;
   
   const iconMode = toolbarIconOnly; // 图标精简模式：仅显示图标
   
   // AI搜索固定在第一个，始终显示
   if (aiSearchTool) {
-    buttonsHtml += `<div class="aih-tb-btn primary" role="button" tabindex="0" data-action="ai-search" title="AI 搜索">
-      <span class="aih-tb-icon">${ICONS.search}</span>${iconMode ? '' : 'AI搜索'}
+    buttonsHtml += `<div class="aih-tb-btn primary" role="button" tabindex="0" data-action="ai-search" title="${t('optionsConst.aiSearch')}">
+      <span class="aih-tb-icon">${ICONS.search}</span>${iconMode ? '' : t('optionsConst.aiSearch')}
     </div>`;
   }
   
@@ -400,14 +421,14 @@ async function createToolbar() {
   });
   
   // "更多"按钮始终显示，提供溢出工具 + 设置/屏蔽入口
-  buttonsHtml += `<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="更多工具">
+  buttonsHtml += `<div class="aih-tb-btn aih-tb-btn-overflow" role="button" tabindex="0" title="${t('selToolbar.moreTools')}">
     <span class="aih-tb-icon">${ICONS.more}</span>
   </div>`;
   renderOverflowDropdown(overflowTools);
   
   // 复制按钮固定在最后
   buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="copy" title="${t('selToolbar.copySelectedTitle')}">
-    <span class="aih-tb-icon">${ICONS.copy}</span>${iconMode ? '' : '复制'}
+    <span class="aih-tb-icon">${ICONS.copy}</span>${iconMode ? '' : t('optionsConst.copy')}
   </div>`;
   buttonsHtml += `</span>`; // close .aih-tb-buttons
 
@@ -771,7 +792,7 @@ function showResultError(x, y, errorMsg) {
   resultPanelEl.style.display = 'flex';
   
   const body = resultPanelEl.querySelector('.aih-result-body');
-  body.innerHTML = `<div class="aih-result-error">请求失败: ${escapeHtml(errorMsg)}</div>`;
+  body.innerHTML = `<div class="aih-result-error">${t('selToolbar.requestFailed', { msg: escapeHtml(errorMsg) })}</div>`;
   
   positionPanel(resultPanelEl, x, y);
   isResultVisible = true;
@@ -1280,7 +1301,7 @@ function showCopyErrorToast() {
   
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
-  toast.textContent = '复制失败，请手动复制';
+  toast.textContent = t('selToolbar.copyFailed');
   toast.style.cssText = `
     position: fixed;
     top: 50%;
@@ -1308,7 +1329,7 @@ function showCopyToast() {
   
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
-  toast.textContent = '已复制';
+  toast.textContent = t('selToolbar.copied');
   toast.style.cssText = `
     position: fixed;
     top: 50%;
@@ -1381,10 +1402,10 @@ function sendToAI(action, text, customSystemPrompt) {
   createResultPanel();
   
   const actionTitles = {
-    'ai-search': 'AI搜索',
-    'explain': '解释',
-    'translate': '翻译',
-    'summary': '总结'
+    'ai-search': t('optionsConst.aiSearch'),
+    'explain': t('optionsConst.explain'),
+    'translate': t('optionsConst.translate'),
+    'summary': t('optionsConst.summary')
   };
   let panelTitle = actionTitles[action];
   if (!panelTitle && toolbarTools) {

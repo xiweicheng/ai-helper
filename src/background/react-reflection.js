@@ -4,6 +4,35 @@ import { fetchWithRetry } from './tool-executor.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+registerTranslations('zh', {
+  reflection: {
+    qualityAssessment: '质量评估',
+    qualityAssessmentScore: '质量评估: {score}/10 ({decision})',
+    decisionPassed: '通过',
+    decisionRevised: '已修订',
+    decisionNeedsImprovement: '需改进',
+    postNodeName: '质量评估 {round}/{maxRounds}',
+    subtaskNodeName: '子任务反思: {name}',
+    lowScoreRevised: '⚠️ 原答案评分过低，已由反思修订',
+    retrySuggestion: '建议：重新执行任务，基于反思问题调整工具选择和执行策略',
+  },
+});
+
+registerTranslations('en', {
+  reflection: {
+    qualityAssessment: 'Quality Assessment',
+    qualityAssessmentScore: 'Quality Assessment: {score}/10 ({decision})',
+    decisionPassed: 'Passed',
+    decisionRevised: 'Revised',
+    decisionNeedsImprovement: 'Needs Improvement',
+    postNodeName: 'Quality Assessment {round}/{maxRounds}',
+    subtaskNodeName: 'Subtask Reflection: {name}',
+    lowScoreRevised: '⚠️ Original score too low, revised by reflection',
+    retrySuggestion: 'Suggestion: Re-execute the task, adjust tool selection and execution strategy based on reflection issues',
+  },
+});
 
 // 反思总轮数上限（模块级常量）
 export const MAX_REFLECTION_ROUNDS = 10;
@@ -252,7 +281,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
   let bestDecision = 'passed';
   let wasRevised = false;
 
-  sendStatusUpdate('质量评估', 'processing');
+  sendStatusUpdate(t('reflection.qualityAssessment'), 'processing');
 
   try {
     const apiUrl = `${config.apiBase}/chat/completions`;
@@ -321,19 +350,19 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
           // 标记这是低分修订
           parsed.issues = parsed.issues || [];
           if (!parsed.issues.some(i => i.includes('反思修订'))) {
-            parsed.issues.unshift('⚠️ 原答案评分过低，已由反思修订');
+            parsed.issues.unshift(t('reflection.lowScoreRevised'));
           }
         } else {
           decision = 'needs_improvement';
           parsed.suggestions = parsed.suggestions || [];
           if (!parsed.suggestions.some(s => s.includes('重新执行') || s.includes('retry'))) {
-            parsed.suggestions.push('建议：重新执行任务，基于反思问题调整工具选择和执行策略');
+            parsed.suggestions.push(t('reflection.retrySuggestion'));
           }
         }
       }
 
       bestDecision = decision;  // 追踪每轮的实际决策
-      const decisionLabel = decision === 'passed' ? '通过' : decision === 'revised' ? '已修订' : '需改进';
+      const decisionLabel = decision === 'passed' ? t('reflection.decisionPassed') : decision === 'revised' ? t('reflection.decisionRevised') : t('reflection.decisionNeedsImprovement');
 
       reflectionLog.push({
         id: roundId,
@@ -341,7 +370,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
         timestamp: new Date().toISOString(),
         status: 'success',
         nodeType: 'reflection',
-        nodeName: `质量评估 ${round}/${maxRounds}`,
+        nodeName: t('reflection.postNodeName', { round: round, maxRounds: maxRounds }),
         reflectionType: 'post',
         round,
         overallScore: parsed.overallScore,
@@ -390,9 +419,9 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     const lastEntry = reflectionLog[reflectionLog.length - 1];
     const finalScore = bestScore ?? lastEntry?.overallScore;
     const finalDecision = bestDecision || lastEntry?.action?.decision || 'passed';
-    const decisionLabel = finalDecision === 'passed' ? '通过' : finalDecision === 'revised' ? '已修订' : '需改进';
+    const decisionLabel = finalDecision === 'passed' ? t('reflection.decisionPassed') : finalDecision === 'revised' ? t('reflection.decisionRevised') : t('reflection.decisionNeedsImprovement');
 
-    sendStatusUpdate(`质量评估: ${finalScore}/10 (${decisionLabel})`, 'success');
+    sendStatusUpdate(t('reflection.qualityAssessmentScore', { score: finalScore, decision: decisionLabel }), 'success');
     logger.debug(`[Background] 反思完成: 评分 ${finalScore}/10, 决策: ${decisionLabel}, 修订: ${wasRevised}, 总耗时: ${totalDuration}ms`);
 
     return {
@@ -412,7 +441,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
       timestamp: new Date().toISOString(),
       status: 'failed',
       nodeType: 'reflection',
-      nodeName: '质量评估',
+      nodeName: t('reflection.qualityAssessment'),
       reflectionType: 'post',
       error: error.message,
       duration
@@ -592,7 +621,7 @@ Output the evaluation result in JSON format (do not include markdown code blocks
       timestamp: new Date().toISOString(),
       status: 'success',
       nodeType: 'reflection',
-      nodeName: `子任务反思: ${subtaskName}`,
+      nodeName: t('reflection.subtaskNodeName', { name: subtaskName }),
       reflectionType: 'subtask',
       overallScore: parsed.overallScore,
       dimensions: parsed.dimensions,
@@ -640,7 +669,7 @@ Output the evaluation result in JSON format (do not include markdown code blocks
       timestamp: new Date().toISOString(),
       status: 'failed',
       nodeType: 'reflection',
-      nodeName: `子任务反思: ${subtaskName}`,
+      nodeName: t('reflection.subtaskNodeName', { name: subtaskName }),
       reflectionType: 'subtask',
       error: error.message,
       duration
