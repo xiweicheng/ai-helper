@@ -626,7 +626,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `page_content` | 获取页面内容（text/html 格式，支持跨标签页提取） |
 | `extract_data` | 提取结构化数据（table/links/forms/images/metadata，支持跨标签页） |
-| `query_elements` | 提取可交互元素（推荐优先使用，省 Token，支持 countOnly 模式） |
+| `query_elements` | 提取可交互元素（推荐优先使用，返回 ref/selector 供 interact_element 等使用，支持 countOnly 模式） |
 | `search_in_page` | 正则搜索页面文本（支持高亮） |
 | `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_collect` | 滚动收集长内容（去重聚合） |
@@ -634,9 +634,9 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 ### 页面交互（5 个）
 | 工具 | 说明 |
 |------|------|
-| `interact_element` | 页面元素交互（click/hover，CSS 选择器） |
-| `drag_drop` | 拖拽操作 |
-| `scroll_to` | 滚动到指定位置/元素（支持对齐方式） |
+| `interact_element` | 页面元素交互（click/hover，支持 ref/text/selector 三种定位，优先 ref） |
+| `drag_drop` | 拖拽操作（⚠️实验性，多数网页可能不生效，必要时改用点击） |
+| `scroll_to` | 滚动到指定位置/元素/文本（支持对齐方式） |
 | `wait_element` | 等待元素出现/消失（严格可见性检测） |
 | `wait_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
 
@@ -646,7 +646,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `fill_form` | 批量填表（支持富文本编辑器/contenteditable） |
 | `keyboard_input` | 键盘输入（绕过 React 受控组件） |
 | `file_upload` | 文件上传（DataTransfer 注入） |
-| `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件） |
+| `select_dropdown` | 下拉菜单选择（原生 select + 自定义组件，支持 ref 定位） |
 
 ### 标签页管理（2 个）
 | 工具 | 说明 |
@@ -674,7 +674,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 ### 媒体与输出（5 个）
 | 工具 | 说明 |
 |------|------|
-| `capture_page` | 页面截图（支持可视区/全页/下载/视觉分析四种模式） |
+| `capture_page` | 页面截图（支持下载/视觉分析/下载+分析三种模式，仅可视区截图） |
 | `clipboard` | 剪贴板操作（复制/粘贴/获取页面选中文本） |
 | `qrcode` | 生成二维码（QRCode 库 + Canvas 降级） |
 | `download_file` | 下载文件（需确认） |

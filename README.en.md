@@ -598,7 +598,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 |------|-------------|
 | `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
 | `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
-| `query_elements` | Extract interactive elements (recommended for token savings, supports countOnly mode) |
+| `query_elements` | Extract interactive elements (recommended, returns ref/selector for interact_element etc., supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
@@ -606,9 +606,9 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 ### Page Interaction (5)
 | Tool | Description |
 |------|-------------|
-| `interact_element` | Page element interaction (click/hover, CSS selector) |
-| `drag_drop` | Drag-and-drop operation |
-| `scroll_to` | Scroll to position/element (with alignment options) |
+| `interact_element` | Page element interaction (click/hover, supports ref/text/selector positioning, ref preferred) |
+| `drag_drop` | Drag-and-drop operation (⚠️ experimental, may not work on most pages, use click instead) |
+| `scroll_to` | Scroll to position/element/text (with alignment options) |
 | `wait_element` | Wait for element appear/disappear (strict visibility check) |
 | `wait_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
 
@@ -618,7 +618,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 | `fill_form` | Batch form filling (supports rich text editor/contenteditable) |
 | `keyboard_input` | Keyboard input (bypasses React controlled components) |
 | `file_upload` | File upload (DataTransfer injection) |
-| `select_dropdown` | Dropdown selection (native select + custom components) |
+| `select_dropdown` | Dropdown selection (native select + custom components, supports ref positioning) |
 
 ### Tab Management (2)
 | Tool | Description |
@@ -646,7 +646,7 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 ### Media & Output (5)
 | Tool | Description |
 |------|-------------|
-| `capture_page` | Page screenshot (viewport/fullpage/download/visual analysis four modes) |
+| `capture_page` | Page screenshot (download/visual analysis/download+analysis three modes, viewport only) |
 | `clipboard` | Clipboard operations (copy/paste/get page selection) |
 | `qrcode` | Generate QR code (QRCode library + Canvas fallback) |
 | `download_file` | Download files (requires confirmation) |
