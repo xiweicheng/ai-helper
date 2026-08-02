@@ -9,12 +9,13 @@ import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import logger from '../shared/logger.js';
-import { t, registerTranslations } from '../shared/i18n.js';
+import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
 registerTranslations('zh', {
   agentMgr: {
     allTools: '全部',
     defaultAgentName: '默认助手',
+    defaultAgentDesc: '全能 AI 助手，拥有所有工具能力',
     switchedTo: '已切换到：{name}',
     editAgent: '编辑助手',
     templateLoaded: '已加载模板：{name}',
@@ -40,12 +41,23 @@ registerTranslations('zh', {
     emojiCatSymbolSigns: '符号标志',
     confirm: '确认',
   },
+  agentTemplates: {
+    codeReviewName: '代码审查专家',
+    codeReviewDesc: '专注于代码审查和质量保证',
+    webAutomationName: '网页自动化助手',
+    webAutomationDesc: '专注于网页交互和自动化',
+    dataAnalystName: '数据分析师',
+    dataAnalystDesc: '专注于数据提取、分析和可视化',
+    documentationName: '文档助手',
+    documentationDesc: '专注于技术文档和内容整理',
+  },
 });
 
 registerTranslations('en', {
   agentMgr: {
     allTools: 'All',
-    defaultAgentName: 'Default assistant',
+    defaultAgentName: 'Default Assistant',
+    defaultAgentDesc: 'All-purpose AI assistant with all tool capabilities',
     switchedTo: 'Switched to: {name}',
     editAgent: 'Edit assistant',
     templateLoaded: 'Template loaded: {name}',
@@ -70,6 +82,16 @@ registerTranslations('en', {
     emojiCatNatureWeather: 'Nature & weather',
     emojiCatSymbolSigns: 'Symbols & signs',
     confirm: 'Confirm',
+  },
+  agentTemplates: {
+    codeReviewName: 'Code Review Expert',
+    codeReviewDesc: 'Focused on code review and quality assurance',
+    webAutomationName: 'Web Automation Assistant',
+    webAutomationDesc: 'Focused on web interaction and automation',
+    dataAnalystName: 'Data Analyst',
+    dataAnalystDesc: 'Focused on data extraction, analysis, and visualization',
+    documentationName: 'Documentation Assistant',
+    documentationDesc: 'Focused on technical documentation and content organization',
   },
 });
 
@@ -119,12 +141,15 @@ export async function renderAgentSelector() {
   for (const agent of allAgents) {
     const isActive = agent.id === activeId || (!activeId && agent.id === 'default');
     const toolCount = agent.toolIds ? agent.toolIds.length : t('agentMgr.allTools');
+    // 对内置默认 Agent 使用翻译后的名称和描述
+    const displayName = agent.id === 'default' ? t('agentMgr.defaultAgentName') : agent.name;
+    const displayDesc = agent.id === 'default' ? t('agentMgr.defaultAgentDesc') : (agent.description || t('agentConfig.toolCount', { count: toolCount }));
     html += `
       <div class="agent-item ${isActive ? 'active' : ''} ${!agent.isBuiltin ? 'is-editable' : ''}" data-agent-id="${escapeAttr(agent.id)}">
         <span class="agent-item-icon">${escapeHtml(agent.icon)}</span>
         <div class="agent-item-info">
-          <span class="agent-item-name">${escapeHtml(agent.name)}</span>
-          <span class="agent-item-desc" title="${escapeAttr(agent.description || t('agentConfig.toolCount', { count: toolCount }))}">${escapeHtml(agent.description || t('agentConfig.toolCount', { count: toolCount }))}</span>
+          <span class="agent-item-name">${escapeHtml(displayName)}</span>
+          <span class="agent-item-desc" title="${escapeAttr(displayDesc)}">${escapeHtml(displayDesc)}</span>
         </div>
         <div class="agent-item-actions">
           ${!agent.isBuiltin ? `<button class="agent-item-edit" data-action="edit" data-agent-id="${escapeAttr(agent.id)}" title="${escapeAttr(t('common.edit'))}">✎</button>` : ''}
@@ -161,7 +186,9 @@ function updateAgentSelectorButton(allAgents, activeId) {
     || allAgents.find(a => a.id === 'default');
   
   if (activeAgent) {
-    text.textContent = `${activeAgent.icon} ${activeAgent.name}`;
+    // 内置默认 Agent 使用翻译后的名称
+    const displayName = activeAgent.id === 'default' ? t('agentMgr.defaultAgentName') : activeAgent.name;
+    text.textContent = `${activeAgent.icon} ${displayName}`;
     if (emoji) emoji.textContent = activeAgent.icon;
   } else {
     text.textContent = t('header.defaultAssistant');
@@ -617,10 +644,17 @@ function renderTemplateOptions() {
   const select = document.getElementById('agentTemplateSelect');
   if (!select) return;
 
+  const templateNames = [
+    t('agentTemplates.codeReviewName'),
+    t('agentTemplates.webAutomationName'),
+    t('agentTemplates.dataAnalystName'),
+    t('agentTemplates.documentationName'),
+  ];
+
   let html = `<option value="">${t('agentEditor.selectTemplate')}</option>`;
   for (let i = 0; i < AGENT_TEMPLATES.length; i++) {
-    const t = AGENT_TEMPLATES[i];
-    html += `<option value="${i}">${t.icon} ${t.name}</option>`;
+    const tmpl = AGENT_TEMPLATES[i];
+    html += `<option value="${i}">${tmpl.icon} ${templateNames[i]}</option>`;
   }
   select.innerHTML = html;
 }
@@ -636,12 +670,25 @@ function onTemplateSelect(e) {
   const modal = document.getElementById('agentEditModal');
   if (!modal) return;
 
-  modal.querySelector('#agentEditName').value = template.name;
+  const templateNameKeys = [
+    'agentTemplates.codeReviewName',
+    'agentTemplates.webAutomationName',
+    'agentTemplates.dataAnalystName',
+    'agentTemplates.documentationName',
+  ];
+  const templateDescKeys = [
+    'agentTemplates.codeReviewDesc',
+    'agentTemplates.webAutomationDesc',
+    'agentTemplates.dataAnalystDesc',
+    'agentTemplates.documentationDesc',
+  ];
+
+  modal.querySelector('#agentEditName').value = t(templateNameKeys[idx]);
   modal.querySelector('#agentEditIcon').value = template.icon;
   const iconBtn = modal.querySelector('#agentEditIconBtn');
   if (iconBtn) iconBtn.textContent = template.icon;
-  modal.querySelector('#agentEditDesc').value = template.description;
-  modal.querySelector('#agentEditPrompt').value = template.systemPrompt;
+  modal.querySelector('#agentEditDesc').value = t(templateDescKeys[idx]);
+  modal.querySelector('#agentEditPrompt').value = getLanguage() === 'en' ? template.systemPrompt : (template.systemPromptZh || template.systemPrompt);
   modal.querySelector('#agentEditAllowSub').checked = template.allowSubDispatch || false;
   modal.querySelector('#agentEditModel').value = template.model || '';
   // 反查温度预设档位
