@@ -66,6 +66,8 @@ import {
   setProcessStartTime,
   setReasoningContent,
   bindProcessHeaderClick,
+  notifyNonStreamContentArrived,
+  autoScrollToBottom,
 } from './chat-streaming.js';
 // 重导出保持对外接口不变（其他模块可能通过 chat-manager 导入）
 export { reconnectStreamingElement, cancelStreamingTask };
@@ -879,6 +881,8 @@ export async function sendMessage() {
         const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
         assistantMsgId = messageId;
         await renderMessageMermaid(messageDiv);
+        // 非流式模式下，内容一次性到达，若用户已上滚则显示 badge 提醒
+        notifyNonStreamContentArrived();
       } else {
         // 流式模式下仅清理可能的残留
         if (state.substituteLoadingIds.has(mySessionId)) {
@@ -1558,11 +1562,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   }
   
   if (scroll) {
-    const assistantMessages = chatContainer.querySelectorAll('.message.assistant');
-    if (assistantMessages.length > 0) {
-      const latestAssistantMessage = assistantMessages[assistantMessages.length - 1];
-      latestAssistantMessage.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    // 使用 autoScrollToBottom 以尊重用户的上滚状态（用户上滚时不自动滚动）
+    autoScrollToBottom(chatContainer, { smooth: true });
   }
   
   if (role === 'assistant') {

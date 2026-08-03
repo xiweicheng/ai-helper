@@ -155,10 +155,46 @@ let agentNameCache = new Map(); // agentId -> agentName
 // 流式滚动控制：区分程序自动滚动与用户手动滚动
 // 用于「AI 回答完成后回顶」功能：若用户在流式过程中主动上滚查看，
 // 则回答完成后不强制滚回顶部，尊重用户当前阅读位置。
+//
+// 智能滚动：流式输出过程中，若用户滚到底部，则自动跟随下滚；
+// 若用户上滚查看，则暂停自动滚动，并在右侧显示"滚动到底部"按钮。
 // ============================================================
 let _isProgramScroll = false;      // 程序自动滚动标志（避免误判为用户滚动）
 let _userScrolledUp = false;       // 用户是否在流式过程中主动上滚
 let _scrollListenerBound = false;  // scroll 监听是否已绑定（防止重复绑定）
+let _hasPendingContent = false;    // 用户上滚后，是否有新的流式内容产生（用于按钮 badge）
+
+/** 更新滚动到底部按钮的显示状态 */
+function updateScrollButtonState() {
+  const btn = document.getElementById('scrollToBottomBtn');
+  const badge = document.getElementById('scrollToBottomBadge');
+  if (!btn) return;
+  const cc = document.getElementById('chatContainer');
+  if (!cc) return;
+
+  const atBottom = cc.scrollHeight - cc.scrollTop - cc.clientHeight < 80;
+
+  if (!atBottom) {
+    btn.classList.add('visible');
+  } else {
+    btn.classList.remove('visible');
+    _hasPendingContent = false;
+  }
+
+  if (badge) {
+    if (_hasPendingContent && !atBottom) {
+      badge.classList.add('active');
+      // 流式输出中 → 脉冲动画；流式结束后 → 静态圆点（提醒用户下面还有未看内容）
+      if (state.isGenerating) {
+        badge.classList.add('pulsing');
+      } else {
+        badge.classList.remove('pulsing');
+      }
+    } else {
+      badge.classList.remove('active', 'pulsing');
+    }
+  }
+}
 
 /** 确保 chatContainer 的 scroll 监听已绑定（仅绑一次） */
 function ensureScrollListener() {
@@ -171,17 +207,99 @@ function ensureScrollListener() {
     // 距底部超过 80px 视为用户主动上滚查看
     const atBottom = cc.scrollHeight - cc.scrollTop - cc.clientHeight < 80;
     _userScrolledUp = !atBottom;
+    // 用户滚回底部时清除待处理内容标记
+    if (atBottom) {
+      _hasPendingContent = false;
+    } else if (state.isGenerating) {
+      // 生成过程中用户上滚，标记有待处理内容，以便 badge 正常显示
+      _hasPendingContent = true;
+    }
+    updateScrollButtonState();
+  }, { passive: true });
+
+  // 监听生成状态变化：生成开始时标记待处理内容（防止非流式模式执行过程中 badge 不出现），
+  // 生成结束后刷新按钮状态将 pulse 转为静态。
+  document.addEventListener('generating-state-changed', () => {
+    if (state.isGenerating) {
+      _hasPendingContent = true;
+    }
+    requestAnimationFrame(() => updateScrollButtonState());
   });
 }
 
-/** 程序自动滚动到底部（设置标志，避免触发用户滚动判定） */
-function autoScrollToBottom(chatContainer) {
+/**
+ * 智能滚动到底部
+ * @param {HTMLElement} chatContainer
+ * @param {Object} [options]
+ * @param {boolean} [options.force=false] - 是否强制滚动（忽略用户上滚状态）
+ * @param {boolean} [options.smooth=false] - 是否平滑滚动
+ */
+function autoScrollToBottom(chatContainer, options = {}) {
   if (!chatContainer) return;
   ensureScrollListener();
+
+  const { force = false, smooth = false } = options;
+
+  if (!force && _userScrolledUp) {
+    // 用户已上滚查看，不自动滚动，但标记有新内容等待查看
+    _hasPendingContent = true;
+    updateScrollButtonState();
+    return;
+  }
+
   _isProgramScroll = true;
-  chatContainer.scrollTop = chatContainer.scrollHeight;
+  if (smooth) {
+    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+  } else {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  }
   // 下一帧复位标志（scroll 事件通常在同步或下一帧触发）
   requestAnimationFrame(() => { _isProgramScroll = false; });
+}
+
+/** 重置滚动状态（新对话开始时调用） */
+function resetScrollState() {
+  _userScrolledUp = false;
+  _hasPendingContent = false;
+  // 重置后若正在生成中，立即标记有待处理内容，确保 badge 能正常显示
+  if (state.isGenerating) {
+    _hasPendingContent = true;
+  }
+  updateScrollButtonState();
+}
+
+/** 初始化滚动到底部按钮的事件绑定（同时绑定 scroll 监听供全场景使用） */
+function initScrollToBottomBtn() {
+  // 确保 scroll 监听在页面加载时就绑定（无论流式/非流式模式）
+  ensureScrollListener();
+  const btn = document.getElementById('scrollToBottomBtn');
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+  btn.addEventListener('click', () => {
+    const cc = document.getElementById('chatContainer');
+    if (!cc) return;
+    _userScrolledUp = false;
+    _hasPendingContent = false;
+    updateScrollButtonState();
+    autoScrollToBottom(cc, { force: true, smooth: true });
+  });
+  // 初始化后立即更新按钮状态（处理页面刷新/恢复会话等场景）
+  updateScrollButtonState();
+}
+
+/**
+ * 非流式内容到达时：若用户已上滚，标记有待处理内容并显示静态 badge
+ * 供 chat-manager.js 在非流式 addMessage 后调用
+ */
+function notifyNonStreamContentArrived() {
+  ensureScrollListener();
+  const cc = document.getElementById('chatContainer');
+  if (!cc) return;
+  const atBottom = cc.scrollHeight - cc.scrollTop - cc.clientHeight < 80;
+  if (!atBottom) {
+    _hasPendingContent = true;
+  }
+  updateScrollButtonState();
 }
 
 /**
@@ -415,9 +533,10 @@ export function addStreamingMessage(targetSessionId) {
   const shouldMount = !targetSessionId || targetSessionId === state.activeSessionId;
   if (shouldMount && chatContainer) {
     chatContainer.appendChild(wrapper);
-    _userScrolledUp = false; // 新流式消息开始，重置用户滚动标记
+    resetScrollState(); // 新流式消息开始，重置滚动状态
+    updateScrollButtonState(); // 初始隐藏按钮
     requestAnimationFrame(() => {
-      autoScrollToBottom(chatContainer);
+      autoScrollToBottom(chatContainer, { force: true });
     });
   }
 
@@ -1678,8 +1797,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }
-    // 重置标记，供下一次对话使用
-    _userScrolledUp = false;
+    // 流式结束后保留待处理内容标记（转为静态圆点，提醒用户下面还有未看内容）
+    // _hasPendingContent 仅当用户点击按钮或滚回底部时才清除
+    updateScrollButtonState();
   });
 }
 
@@ -1762,3 +1882,5 @@ export function finalizeCancelledStream(element) {
   // 隐藏所有"终止命令"按钮
   element.querySelectorAll('.tool-call-terminate-btn').forEach(el => el.style.display = 'none');
 }
+
+export { initScrollToBottomBtn, updateScrollButtonState, resetScrollState, notifyNonStreamContentArrived, autoScrollToBottom };

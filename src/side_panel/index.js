@@ -2307,9 +2307,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const scrollKey = 'scrollPosition_' + (sessionId || 'default');
       chrome.storage.local.get([scrollKey], (result) => {
         if (result[scrollKey] !== undefined) {
-          setTimeout(() => {
+          setTimeout(async () => {
             const el = document.getElementById('chatContainer');
             if (el) el.scrollTop = result[scrollKey];
+            // 恢复滚动位置后更新"滚动到底部"按钮状态
+            const { updateScrollButtonState } = await import('./chat-streaming.js');
+            updateScrollButtonState();
           }, 150);
         }
       });
@@ -4008,8 +4011,9 @@ document.addEventListener('DOMContentLoaded', initPrototypeEvents);
 document.addEventListener('DOMContentLoaded', initExportDialogEvents);
 document.addEventListener('DOMContentLoaded', () => initAgentManager());
 document.addEventListener('DOMContentLoaded', async () => {
-  const { refreshAgentNames } = await import('./chat-streaming.js');
+  const { refreshAgentNames, initScrollToBottomBtn } = await import('./chat-streaming.js');
   refreshAgentNames();
+  initScrollToBottomBtn();
 });
 
 // 图片辅助函数（updateImagePreviewVisibility / updateTextareaPadding / updateFileInputVisibility

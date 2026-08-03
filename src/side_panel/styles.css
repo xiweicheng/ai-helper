@@ -3488,6 +3488,86 @@ body {
 .thinking-content {
   /* 无额外样式，作为语义化容器 */
 }
+/* ========== 滚动到底部按钮 ========== */
+.scroll-to-bottom-placeholder {
+  position: relative;
+  height: 0;
+  width: 100%;
+  z-index: 50;
+  pointer-events: none;
+}
+.scroll-to-bottom-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  transition: opacity 0.25s ease, transform 0.25s ease, background 0.2s ease;
+  opacity: 0;
+  transform: translate(-50%, 8px) scale(0.85);
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.scroll-to-bottom-btn.visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  pointer-events: auto;
+}
+.scroll-to-bottom-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  transform: translate(-50%, -1px) scale(1);
+}
+.scroll-to-bottom-btn:active {
+  transform: translate(-50%, 0) scale(0.95);
+}
+.scroll-to-bottom-btn svg {
+  width: 18px;
+  height: 18px;
+  color: #555;
+  transition: color 0.2s;
+}
+.scroll-to-bottom-btn:hover svg {
+  color: #333;
+}
+/* 新内容指示器（小蓝点 badge） */
+.scroll-to-bottom-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #667eea;
+  border: 2px solid white;
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
+}
+.scroll-to-bottom-badge.active {
+  opacity: 1;
+  transform: scale(1);
+}
+/* 脉冲动画：流式输出过程中有新内容时播放 */
+.scroll-to-bottom-badge.pulsing {
+  animation: badgePulse 2s ease-in-out infinite;
+}
+@keyframes badgePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(102, 126, 234, 0); }
+}
+
 .input-container {
   padding: 16px;
   background: rgba(255, 255, 255, 0.85);
