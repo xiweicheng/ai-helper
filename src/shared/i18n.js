@@ -22,6 +22,21 @@ export const SUPPORTED_LANGUAGES = [
 
 export const DEFAULT_LANGUAGE = 'zh';
 
+/**
+ * 根据浏览器 UI 语言自动匹配合适的语言代码
+ * chrome.i18n.getUILanguage() 返回如 "zh-CN", "en-US", "ja" 等
+ * 当前仅支持 zh 和 en 两种，zh* 匹配中文，其余统一用英文
+ * @returns {'zh'|'en'}
+ */
+function detectBrowserLanguage() {
+  if (typeof chrome === 'undefined' || !chrome.i18n) return DEFAULT_LANGUAGE;
+  try {
+    const browserLang = chrome.i18n.getUILanguage(); // e.g. "zh-CN", "en-US"
+    if (browserLang && browserLang.startsWith('zh')) return 'zh';
+  } catch (e) { /* 获取失败，走默认 */ }
+  return 'en';
+}
+
 // 当前语言
 let currentLang = DEFAULT_LANGUAGE;
 
@@ -157,11 +172,18 @@ export async function initI18n() {
   try {
     const result = await chrome.storage.local.get('language');
     if (result.language && translations[result.language]) {
-      // 不持久化（避免重复写），仅设置内存
+      // 用户已手动设置语言偏好，直接使用
       currentLang = result.language;
+    } else {
+      // 未设置偏好，根据浏览器语言自动检测并持久化
+      const detectedLang = detectBrowserLanguage();
+      currentLang = detectedLang;
+      // 持久化自动检测结果，后续启动直接复用
+      chrome.storage.local.set({ language: detectedLang }).catch(() => {});
     }
   } catch (e) {
-    // 读取失败，保持默认语言
+    // 读取失败，根据浏览器语言 fallback
+    currentLang = detectBrowserLanguage();
   }
   // 监听 storage 变更，跨环境同步语言（不持久化，避免循环写入）
   if (!storageListenerBound) {

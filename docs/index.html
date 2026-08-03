@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Helper — 让你的浏览器会思考</title>
-<meta name="description" content="AI Helper 是开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、40+ 个内置工具、长期记忆系统、多智能体协作、任务断点续接、Skill 系统、MCP 协议扩展、工作目录管理、消息搜索收藏、文件回收站，基于 ReAct 推理循环架构。">
-<meta name="keywords" content="AI Helper, 浏览器助手, Chrome扩展, LLM, ReAct, 多智能体, Skill, MCP, 自动化, 开源">
+<title data-i18n="page-title">AI Helper — Make Your Browser Think</title>
+<meta name="description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
+<meta name="keywords" content="AI Helper, Browser Assistant, Chrome Extension, LLM, ReAct, Multi-Agent, Skill, MCP, Automation, Open Source">
 <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB1klEQVQ4jaWSS0sbcRTFZz0zmVdmkjBqfMRYzaujY4xGm6RqoyaShRu3ui0UpaALRQUfKD6QgG6FfpripzrlXE1KWpFCF2e4nPM7d15/RVVddGToPhxzBK6VhmePI+ZkRJzpMYvofpenlG45wnIKnv0BiWgOvvsRfV4g4kyPGRmyPQt0PQHbGIZrjyERzaPPm0QyXkQ22RJxpseMDFl2ugtMox+OOYq4k4HvBUj5n1HL72Gj1BZxpseMDFl2ZIGmxWAZSbjWmDxumNnC6vwt1itttCoPaFUfZKbHjAxZdthVdC0O2xiUjzQzs4ulxWssL91h5UsbjfqjiDM9ZmTIssOuwgu3Ra00woXvWFi9RGXtFrXGPRabbRFneszIkGVHFmhaDGaE3yCFwqcdlNYuMNe8wnzzBtkfzyLO9JiRIcuOvIKquvJvLWMIudlvmF4+RbF+jlL9EpmnnyLO9JiRIds5DwovnaeYCL8iqJxgqnqKsHqGsHb+ouqZeMzIdO7ec5B0LYF0YRv5uUMUykcIyscIyievOhaPGRmyf51EVU5jPwaGG8iG+8gVD3pEjxmZN4+y2pUHy0xjaHQTE8GeiDM9Zn/ybyz4LSeaE73HvLvgX/TfC34BQ3B2TrlPmzgAAAAASUVORK5CYII=">
 <style>
   :root {
@@ -110,6 +110,26 @@
     transition: opacity .2s;
   }
   .nav-cta:hover { opacity: 0.9; }
+
+  /* ─── Language Toggle ─── */
+  .lang-toggle {
+    display: inline-flex; align-items: center; gap: 0;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px;
+    cursor: pointer; transition: all .2s;
+    user-select: none; margin-left: 8px;
+  }
+  .lang-toggle:hover { border-color: var(--accent); }
+  .lang-option {
+    padding: 4px 10px; border-radius: 16px;
+    font-size: 12px; font-weight: 600; color: var(--text-muted);
+    transition: all .25s; position: relative; z-index: 1;
+    line-height: 1;
+  }
+  .lang-option.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+  }
 
   /* ─── Hero ─── */
   .hero {
@@ -682,360 +702,364 @@
 <div class="bg-glow glow-2"></div>
 <div class="bg-glow glow-3"></div>
 
-<!-- 导航 -->
+<!-- Navigation -->
 <nav class="nav">
   <div class="nav-inner">
     <div class="nav-logo">AI Helper</div>
     <div class="nav-links">
-      <a href="#features">特性</a>
-      <a href="#tools">工具</a>
-      <a href="#screenshots">截图</a>
-      <a href="#arch">架构</a>
-      <a href="#showcase">创意成果</a>
-      <a href="#start">快速开始</a>
+      <a href="#features" data-i18n="nav-features">Features</a>
+      <a href="#tools" data-i18n="nav-tools">Tools</a>
+      <a href="#screenshots" data-i18n="nav-screenshots">Screenshots</a>
+      <a href="#arch" data-i18n="nav-arch">Architecture</a>
+      <a href="#showcase" data-i18n="nav-showcase">Showcase</a>
+      <a href="#start" data-i18n="nav-start">Quick Start</a>
       <a class="nav-cta" href="https://github.com/xiweicheng/ai-helper" target="_blank">GitHub</a>
       <a class="nav-cta" href="https://gitee.com/xiweicheng/ai-helper" target="_blank">Gitee</a>
+      <div class="lang-toggle" id="langToggle" title="Switch Language / 切换语言">
+        <span class="lang-option active" data-lang="en">EN</span>
+        <span class="lang-option" data-lang="zh">中文</span>
+      </div>
     </div>
   </div>
 </nav>
 
 <!-- Hero -->
 <section class="hero">
-  <div class="hero-badge"><span class="dot"></span>v1.0 正式发布 · 开源免费 · MIT 协议</div>
-  <h1>让你的浏览器<br><span>会思考、能行动</span></h1>
-  <div class="hero-subhead">不止是对话，更是能真正动手做事的 AI 助手</div>
-  <p>基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。</p>
+  <div class="hero-badge"><span class="dot"></span><span data-i18n="hero-badge">v1.0 Released · Open Source · MIT License</span></div>
+  <h1><span data-i18n="hero-title-1">Make Your Browser</span><br><span data-i18n="hero-title-2">Think &amp; Act</span></h1>
+  <div class="hero-subhead" data-i18n="hero-subhead">More Than Chat — A Real Action-Taking AI Assistant</div>
+  <p data-i18n="hero-desc">A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
-      立即体验
+      <span data-i18n="hero-btn-exp">Try It Now</span>
     </a>
     <a class="btn btn-primary" href="https://gitee.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/></svg>
       Gitee
     </a>
-    <a class="btn btn-outline" href="#features">了解更多 →</a>
+    <a class="btn btn-outline" href="#features"><span data-i18n="hero-btn-learn">Learn More</span> →</a>
   </div>
 </section>
 
-<!-- 关键数据 -->
+<!-- Stats -->
 <div class="stats">
   <div class="stat">
     <div class="stat-num">40+</div>
-    <div class="stat-label">内置工具</div>
+    <div class="stat-label" data-i18n="stat-tools">Built-in Tools</div>
   </div>
   <div class="stat">
     <div class="stat-num">10+</div>
-    <div class="stat-label">工具分类</div>
+    <div class="stat-label" data-i18n="stat-categories">Tool Categories</div>
   </div>
   <div class="stat">
     <div class="stat-num">Multi-Agent</div>
-    <div class="stat-label">多智能体</div>
+    <div class="stat-label" data-i18n="stat-multi-agent">Multi-Agent</div>
   </div>
   <div class="stat">
     <div class="stat-num">OSS</div>
-    <div class="stat-label">开源免费</div>
+    <div class="stat-label" data-i18n="stat-oss">Open Source</div>
   </div>
 </div>
 
-<!-- 差异化对比 -->
+<!-- Compare -->
 <section class="compare-section">
   <div class="section-title">
-    <h2>为什么选择 AI Helper？</h2>
-    <p>从被动问答到主动行动，重新定义浏览器 AI 体验</p>
+    <h2 data-i18n="compare-title">Why AI Helper?</h2>
+    <p data-i18n="compare-desc">From passive Q&A to proactive action — redefining the browser AI experience</p>
   </div>
   <div class="compare-grid">
     <div class="compare-card before">
-      <span class="compare-label">传统 AI 助手</span>
-      <h3>只能聊，不能做</h3>
+      <span class="compare-label" data-i18n="compare-before-label">Traditional AI Assistants</span>
+      <h3 data-i18n="compare-before-title">Only Chat, Can't Act</h3>
       <ul class="compare-list">
-        <li><span class="icon">✗</span>只能生成文本答案，无法实际操作</li>
-        <li><span class="icon">✗</span>对话上下文有限，容易遗忘历史</li>
-        <li><span class="icon">✗</span>工具能力单一，缺少复杂任务能力</li>
-        <li><span class="icon">✗</span>无法访问本地文件和系统</li>
-        <li><span class="icon">✗</span>任务中断后无法恢复</li>
+        <li><span class="icon">✗</span><span data-i18n="compare-before-1">Only generates text answers, can't perform real actions</span></li>
+        <li><span class="icon">✗</span><span data-i18n="compare-before-2">Limited conversation context, easily forgets history</span></li>
+        <li><span class="icon">✗</span><span data-i18n="compare-before-3">Single tool capability, lacks complex task handling</span></li>
+        <li><span class="icon">✗</span><span data-i18n="compare-before-4">Cannot access local files and system</span></li>
+        <li><span class="icon">✗</span><span data-i18n="compare-before-5">Cannot resume after task interruption</span></li>
       </ul>
     </div>
     <div class="compare-card after">
       <span class="compare-label">AI Helper</span>
-      <h3>会思考，更能行动</h3>
+      <h3 data-i18n="compare-after-title">Thinks &amp; Acts</h3>
       <ul class="compare-list">
-        <li><span class="icon">✓</span>40+ 个工具调用，真正完成浏览器操作</li>
-        <li><span class="icon">✓</span>长期记忆系统，对话持久化存储</li>
-        <li><span class="icon">✓</span>多智能体协作，复杂任务自动拆分</li>
-        <li><span class="icon">✓</span>本地代理访问，直接操作文件系统</li>
-        <li><span class="icon">✓</span>断点续接，任务随时中断随时恢复</li>
+        <li><span class="icon">✓</span><span data-i18n="compare-after-1">40+ tool calls, truly completes browser operations</span></li>
+        <li><span class="icon">✓</span><span data-i18n="compare-after-2">Long-term memory system with persistent conversation storage</span></li>
+        <li><span class="icon">✓</span><span data-i18n="compare-after-3">Multi-agent collaboration with automatic task decomposition</span></li>
+        <li><span class="icon">✓</span><span data-i18n="compare-after-4">Local proxy access, directly operate on file system</span></li>
+        <li><span class="icon">✓</span><span data-i18n="compare-after-5">Checkpoint recovery, pause and resume tasks anytime</span></li>
       </ul>
     </div>
   </div>
 </section>
 
-<!-- 特性 -->
+<!-- Features -->
 <section class="section" id="features">
   <div class="section-title">
-    <h2>核心能力</h2>
-    <p>不止是问答机器人，更是浏览器自动化引擎</p>
+    <h2 data-i18n="features-title">Core Capabilities</h2>
+    <p data-i18n="features-desc">More than a Q&A bot — a browser automation engine</p>
   </div>
   <div class="cards">
     <div class="card">
       <div class="card-icon">🧠</div>
-      <h3>ReAct 推理循环</h3>
-      <p>LLM 思考 → 调用工具 → 结果反馈 → 继续推理。支持多轮工具调用、任务拆解、流式响应、三级反思质量保障。</p>
+      <h3 data-i18n="feat-react-title">ReAct Reasoning Loop</h3>
+      <p data-i18n="feat-react-desc">LLM Think → Call Tool → Result Feedback → Continue Reasoning. Supports multi-turn tool calls, task decomposition, streaming responses, and three-level reflection quality assurance.</p>
     </div>
     <div class="card">
       <div class="card-icon">🤖</div>
-      <h3>多智能体协作</h3>
-      <p>创建和管理多个自定义 AI 助手，内置代码审查、数据分析等模板。支持 Agent 子任务分发和并行协作。</p>
+      <h3 data-i18n="feat-multiagent-title">Multi-Agent Collaboration</h3>
+      <p data-i18n="feat-multiagent-desc">Create and manage multiple custom AI assistants with built-in templates for code review, data analysis, and more. Supports agent sub-task distribution and parallel collaboration.</p>
     </div>
     <div class="card">
       <div class="card-icon">🖱️</div>
-      <h3>浏览器自动化</h3>
-      <p>点击、填表、滚动、拖拽、截图、等待元素、下拉选择。用自然语言操控网页，无需写一行脚本。</p>
+      <h3 data-i18n="feat-browser-title">Browser Automation</h3>
+      <p data-i18n="feat-browser-desc">Click, fill forms, scroll, drag, screenshot, wait for elements, dropdown selection. Control web pages with natural language without writing a single script.</p>
     </div>
     <div class="card">
       <div class="card-icon">📄</div>
-      <h3>内容智能提取</h3>
-      <p>纯文本、HTML、表格、链接、表单、图片、元数据。支持 Markdown/JSON 格式化输出，滚动收集长内容。支持指定 tabId 跨标签页提取，无需切换标签页。</p>
+      <h3 data-i18n="feat-content-title">Smart Content Extraction</h3>
+      <p data-i18n="feat-content-desc">Plain text, HTML, tables, links, forms, images, metadata. Supports Markdown/JSON formatted output, scrolling collection of long content. Cross-tab extraction via tabId without switching tabs.</p>
     </div>
     <div class="card">
       <div class="card-icon">🧩</div>
-      <h3>长期记忆系统</h3>
-      <p>自动存储用户偏好、知识和决策记录。支持事实存储和对话摘要两种记忆类型，智能检索历史记忆，自动压缩与淘汰低价值记忆，让 AI 越用越懂你。</p>
+      <h3 data-i18n="feat-memory-title">Long-Term Memory System</h3>
+      <p data-i18n="feat-memory-desc">Automatically stores user preferences, knowledge, and decision records. Supports fact storage and conversation summary memory types, intelligent history retrieval, auto compression and eviction of low-value memories — the more you use it, the better it understands you.</p>
     </div>
     <div class="card">
       <div class="card-icon">🖥️</div>
-      <h3>代理本地操作</h3>
-      <p>读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。</p>
+      <h3 data-i18n="feat-agent-title">Agent Local Operations</h3>
+      <p data-i18n="feat-agent-desc">Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.</p>
     </div>
     <div class="card">
       <div class="card-icon">🎯</div>
-      <h3>Skill 技能系统</h3>
-      <p>Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能，一键创建可复用工作流。</p>
+      <h3 data-i18n="feat-skill-title">Skill System</h3>
+      <p data-i18n="feat-skill-desc">Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill for one-click reusable workflow creation.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔌</div>
-      <h3>MCP 协议扩展</h3>
-      <p>支持 Model Context Protocol，连接第三方 MCP Server。自动发现工具、多 Server 并行，无限扩展能力边界。</p>
+      <h3 data-i18n="feat-mcp-title">MCP Protocol Extension</h3>
+      <p data-i18n="feat-mcp-desc">Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, infinitely expand capability boundaries.</p>
     </div>
     <div class="card">
       <div class="card-icon">📊</div>
-      <h3>Markdown & 图表</h3>
-      <p>代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。</p>
+      <h3 data-i18n="feat-markdown-title">Markdown &amp; Charts</h3>
+      <p data-i18n="feat-markdown-desc">Code highlighting, Mermaid flowcharts/sequence diagrams, table export to Excel. Supports chart zoom, PNG download, source code copy.</p>
     </div>
     <div class="card">
       <div class="card-icon">📎</div>
-      <h3>多模态文件问答</h3>
-      <p>上传 PDF/Word/Excel/文本文件直接提问。浏览器端智能提取内容，连接 Agent 后支持上传至工作目录深度操作。</p>
+      <h3 data-i18n="feat-file-title">Multimodal File Q&amp;A</h3>
+      <p data-i18n="feat-file-desc">Upload PDF/Word/Excel/text files and ask questions directly. Browser-side intelligent content extraction, connect to Agent for deep file operations in workspace.</p>
     </div>
     <div class="card">
       <div class="card-icon">✏️</div>
-      <h3>图片标注编辑器</h3>
-      <p>内建画笔、矩形、椭圆、箭头、橡皮擦 6 种标注工具。支持颜色/粗细调节和 Ctrl+Z 撤销，编辑后直接发送。</p>
+      <h3 data-i18n="feat-annotate-title">Image Annotation Editor</h3>
+      <p data-i18n="feat-annotate-desc">Built-in 6 annotation tools: pen, rectangle, ellipse, arrow, eraser. Supports color/thickness adjustment and Ctrl+Z undo, send edited images directly.</p>
     </div>
     <div class="card">
       <div class="card-icon">👁️</div>
-      <h3>视觉模型识图</h3>
-      <p>对接视觉语言模型，支持截图识图对话。独立 API 配置，自动图片压缩减少 Token 消耗。</p>
+      <h3 data-i18n="feat-vision-title">Vision Model Image Analysis</h3>
+      <p data-i18n="feat-vision-desc">Connects to vision language models, supports screenshot-based image Q&A. Independent API configuration, automatic image compression to reduce Token consumption.</p>
     </div>
     <div class="card">
       <div class="card-icon">💡</div>
-      <h3>上下文智能压缩</h3>
-      <p>长引用内容自动摘要压缩，按 Token 数智能截断。三级压力监测，避免无关信息永久占据上下文空间。</p>
+      <h3 data-i18n="feat-compress-title">Smart Context Compression</h3>
+      <p data-i18n="feat-compress-desc">Auto-summary compression of long referenced content, intelligent truncation by Token count. Three-level pressure monitoring to prevent irrelevant information from permanently occupying context space.</p>
     </div>
     <div class="card">
       <div class="card-icon">💰</div>
-      <h3>Token 统计面板</h3>
-      <p>实时追踪 Token 消耗，会话/今日/历史多维度统计。趋势图展示、预算管理、上下文压力三级监测。</p>
+      <h3 data-i18n="feat-token-title">Token Statistics Panel</h3>
+      <p data-i18n="feat-token-desc">Real-time Token consumption tracking, session/today/history multi-dimensional statistics. Trend charts, budget management, three-level context pressure monitoring.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔄</div>
-      <h3>任务断点续接</h3>
-      <p>任务执行中自动保存 Checkpoint，中断后一键恢复继续执行。支持 SW 重启恢复、流式输出保留、7 天 TTL 自动过期，确保长任务不丢失进度。</p>
+      <h3 data-i18n="feat-checkpoint-title">Task Checkpoint Recovery</h3>
+      <p data-i18n="feat-checkpoint-desc">Auto-save checkpoints during task execution, one-click resume after interruption. Supports SW restart recovery, streaming output preservation, 7-day TTL auto-expiry — ensures long tasks never lose progress.</p>
     </div>
     <div class="card">
       <div class="card-icon">🌐</div>
-      <h3>@ 网页选择器</h3>
-      <p>输入 @ 即可弹出选择器，「网页」Tab 列出所有打开的标签页。选中页面后自动将内容注入为对话上下文，让 AI 跨页面理解信息。</p>
+      <h3 data-i18n="feat-selector-title">@ Web Selector</h3>
+      <p data-i18n="feat-selector-desc">Type @ to bring up the selector, "Web" tab lists all open tabs. Select a page to auto-inject its content as conversation context, enabling cross-page information understanding.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔍</div>
-      <h3>Shadow DOM 深度穿透</h3>
-      <p>递归穿透多层 Shadow DOM 和同源 iframe 查找元素。支持 React 受控组件、富文本编辑器，确保在各种前端框架下都能精准操作页面。</p>
+      <h3 data-i18n="feat-shadow-title">Shadow DOM Deep Penetration</h3>
+      <p data-i18n="feat-shadow-desc">Recursively penetrate multi-layer Shadow DOM and same-origin iframes to locate elements. Supports React controlled components, rich text editors — ensures precise page operations across all frontend frameworks.</p>
     </div>
     <div class="card">
       <div class="card-icon">📤</div>
-      <h3>消息多格式导出</h3>
-      <p>单条消息支持导出为 Word（含 Mermaid 图表预渲染）、PDF、图片、JSON 等多种格式，满足不同场景的分享和归档需求。</p>
+      <h3 data-i18n="feat-export-title">Multi-Format Message Export</h3>
+      <p data-i18n="feat-export-desc">Single messages support export to Word (with pre-rendered Mermaid charts), PDF, image, JSON and more formats, meeting sharing and archiving needs across different scenarios.</p>
     </div>
     <div class="card">
       <div class="card-icon">💾</div>
-      <h3>会话导出/导入</h3>
-      <p>批量导出对话为 .aihelper.json，支持完整消息历史、执行日志、质量评分。兼容新版/旧版格式导入恢复。</p>
+      <h3 data-i18n="feat-backup-title">Conversation Export/Import</h3>
+      <p data-i18n="feat-backup-desc">Batch export conversations as .aihelper.json, including complete message history, execution logs, and quality scores. Compatible with new/old format import and recovery.</p>
     </div>
     <div class="card">
       <div class="card-icon">📁</div>
-      <h3>工作目录管理</h3>
-      <p>在侧边栏中直接浏览和管理 Agent 本地文件系统。目录树导航、批量操作、拖拽移动、文件预览，像 IDE 文件管理器一样便捷。</p>
+      <h3 data-i18n="feat-workspace-title">Workspace Management</h3>
+      <p data-i18n="feat-workspace-desc">Browse and manage Agent's local file system directly in the sidebar. Directory tree navigation, batch operations, drag-and-drop moving, file preview — as convenient as an IDE file manager.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔍</div>
-      <h3>消息搜索</h3>
-      <p>全文搜索所有历史对话，支持 AND/OR 高级搜索语法。双模式搜索（全局/当前会话），增量式加载，结果高亮定位。</p>
+      <h3 data-i18n="feat-search-title">Message Search</h3>
+      <p data-i18n="feat-search-desc">Full-text search across all conversation history, supports AND/OR advanced search syntax. Dual-mode search (global/current session), incremental loading, result highlight positioning.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔖</div>
-      <h3>消息收藏</h3>
-      <p>一键收藏重要 AI 回答，支持置顶、搜索、分组。点击收藏条目自动跳转到对应会话的消息位置，方便快速回顾。</p>
+      <h3 data-i18n="feat-bookmark-title">Message Bookmarks</h3>
+      <p data-i18n="feat-bookmark-desc">One-click bookmark important AI responses, supports pinning, search, and grouping. Click a bookmark to auto-navigate to the corresponding message in the conversation for quick review.</p>
     </div>
     <div class="card">
       <div class="card-icon">🗑️</div>
-      <h3>文件回收站</h3>
-      <p>Agent 文件删除默认为软删除至回收站，7 天保留期，支持一键恢复。告别误删文件的烦恼。</p>
+      <h3 data-i18n="feat-recycle-title">File Recycle Bin</h3>
+      <p data-i18n="feat-recycle-desc">Agent file deletion defaults to soft-delete to recycle bin with 7-day retention, supports one-click recovery. Say goodbye to accidental file deletion.</p>
     </div>
     <div class="card">
       <div class="card-icon">📄</div>
-      <h3>文件预览</h3>
-      <p>支持文本/代码高亮、PDF、Word、Excel、图片等多种格式的内置预览，无需离开侧边栏即可查看文件内容。</p>
+      <h3 data-i18n="feat-preview-title">File Preview</h3>
+      <p data-i18n="feat-preview-desc">Built-in preview for text/code highlighting, PDF, Word, Excel, images and more formats — view file contents without leaving the sidebar.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔄</div>
-      <h3>Agent 在线更新</h3>
-      <p>代理服务支持在线重启和一键自动更新，无需手动操作终端。更新失败自动回退，不影响当前运行状态。</p>
+      <h3 data-i18n="feat-update-title">Agent Online Update</h3>
+      <p data-i18n="feat-update-desc">Agent service supports online restart and one-click auto-update, no manual terminal operations needed. Auto-rollback on update failure without affecting current running state.</p>
     </div>
     <div class="card">
       <div class="card-icon">💡</div>
-      <h3>上下文增量摘要</h3>
-      <p>当对话上下文 Token 超出预算时，自动将旧的工具调用轮次压缩为一句话摘要，保留关键信息而不丢失上下文。</p>
+      <h3 data-i18n="feat-summary-title">Context Incremental Summary</h3>
+      <p data-i18n="feat-summary-desc">When conversation context Token exceeds budget, automatically compresses old tool call rounds into one-sentence summaries, preserving key information without losing context.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔒</div>
-      <h3>隐私与安全</h3>
-      <p>API Key 本地存储。代理命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护，配对认证。</p>
+      <h3 data-i18n="feat-privacy-title">Privacy &amp; Security</h3>
+      <p data-i18n="feat-privacy-desc">API Key local storage. Agent command tiered control (blacklist blocking + graylist confirmation), file operation sandbox protection, pairing authentication.</p>
     </div>
   </div>
 </section>
 
-<!-- 使用场景 -->
+<!-- Scenarios -->
 <section class="section" style="padding-bottom: 40px;">
   <div class="section-title">
-    <h2>典型使用场景</h2>
-    <p>一个助手，覆盖你日常工作的方方面面</p>
+    <h2 data-i18n="scenarios-title">Typical Use Cases</h2>
+    <p data-i18n="scenarios-desc">One assistant, covering every aspect of your daily work</p>
   </div>
   <div class="scenarios-grid">
     <div class="scenario-card">
       <div class="scenario-icon">👨‍💻</div>
-      <h3>全栈开发助手</h3>
-      <p>直接在浏览器中编写、调试、重构代码。访问本地文件、执行命令、预览效果，从需求到上线一气呵成。</p>
-      <span class="scenario-tag">开发提效</span>
+      <h3 data-i18n="scenario-dev-title">Full-Stack Development Assistant</h3>
+      <p data-i18n="scenario-dev-desc">Write, debug, and refactor code directly in the browser. Access local files, execute commands, preview results — from requirements to deployment in one go.</p>
+      <span class="scenario-tag" data-i18n="scenario-dev-tag">Dev Efficiency</span>
     </div>
     <div class="scenario-card">
       <div class="scenario-icon">📊</div>
-      <h3>数据采集分析</h3>
-      <p>自动登录网站、抓取数据、生成报表。支持多页面导航、表单填写、数据清洗，告别手动复制粘贴。</p>
-      <span class="scenario-tag">数据工作</span>
+      <h3 data-i18n="scenario-data-title">Data Collection &amp; Analysis</h3>
+      <p data-i18n="scenario-data-desc">Auto-login to websites, scrape data, generate reports. Supports multi-page navigation, form filling, data cleaning — say goodbye to manual copy-paste.</p>
+      <span class="scenario-tag" data-i18n="scenario-data-tag">Data Work</span>
     </div>
     <div class="scenario-card">
       <div class="scenario-icon">🎨</div>
-      <h3>内容创作生产</h3>
-      <p>写作、翻译、排版、配图一站式完成。多模态文件问答支持 PDF、图片、代码理解，创作效率翻倍。</p>
-      <span class="scenario-tag">内容创作</span>
+      <h3 data-i18n="scenario-content-title">Content Creation</h3>
+      <p data-i18n="scenario-content-desc">Writing, translation, typesetting, and illustration all in one place. Multimodal file Q&A supports PDF, images, code understanding — double your creative efficiency.</p>
+      <span class="scenario-tag" data-i18n="scenario-content-tag">Content Creation</span>
     </div>
     <div class="scenario-card">
       <div class="scenario-icon">🧪</div>
-      <h3>自动化测试</h3>
-      <p>自然语言描述测试用例，自动生成并执行浏览器测试。截图验证、断言检查、缺陷定位一键完成。</p>
-      <span class="scenario-tag">质量保障</span>
+      <h3 data-i18n="scenario-test-title">Automated Testing</h3>
+      <p data-i18n="scenario-test-desc">Describe test cases in natural language, auto-generate and execute browser tests. Screenshot verification, assertion checks, defect location — all in one click.</p>
+      <span class="scenario-tag" data-i18n="scenario-test-tag">Quality Assurance</span>
     </div>
     <div class="scenario-card">
       <div class="scenario-icon">🔍</div>
-      <h3>深度研究调研</h3>
-      <p>多搜索引擎并行检索，自动汇总整理结果。支持网页摘要、内容提取、知识图谱构建研究报告。</p>
-      <span class="scenario-tag">研究分析</span>
+      <h3 data-i18n="scenario-research-title">Deep Research &amp; Investigation</h3>
+      <p data-i18n="scenario-research-desc">Multi-search-engine parallel retrieval, auto-aggregation and organization of results. Supports webpage summarization, content extraction, and knowledge graph-based research reports.</p>
+      <span class="scenario-tag" data-i18n="scenario-research-tag">Research &amp; Analysis</span>
     </div>
     <div class="scenario-card">
       <div class="scenario-icon">⚙️</div>
-      <h3>工作流自动化</h3>
-      <p>将重复性操作交给 AI。邮件处理、日程管理、表单提交、文件整理，释放你的时间做更有价值的事。</p>
-      <span class="scenario-tag">效率工具</span>
+      <h3 data-i18n="scenario-automation-title">Workflow Automation</h3>
+      <p data-i18n="scenario-automation-desc">Hand repetitive operations to AI. Email processing, schedule management, form submission, file organization — free up your time for more valuable work.</p>
+      <span class="scenario-tag" data-i18n="scenario-automation-tag">Productivity Tools</span>
     </div>
   </div>
 </section>
 
-<!-- 工具能力 -->
+<!-- Tools -->
 <section class="section" id="tools">
   <div class="section-title">
-    <h2>40+ 个内置工具</h2>
-    <p>覆盖浏览器自动化全场景，支持 Skill 和 MCP 扩展</p>
+    <h2 data-i18n="tools-title">40+ Built-in Tools</h2>
+    <p data-i18n="tools-desc">Covering full-scenario browser automation, extensible via Skill and MCP</p>
   </div>
   <div class="tools-grid">
     <div class="tool-cat">
       <div class="cat-icon">🖱️</div>
-      <div class="cat-name">页面交互</div>
+      <div class="cat-name" data-i18n="tool-interaction">Page Interaction</div>
       <div class="cat-count">5</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📝</div>
-      <div class="cat-name">表单与输入</div>
+      <div class="cat-name" data-i18n="tool-forms">Forms &amp; Input</div>
       <div class="cat-count">4</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📄</div>
-      <div class="cat-name">内容提取</div>
+      <div class="cat-name" data-i18n="tool-extraction">Content Extraction</div>
       <div class="cat-count">6</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📑</div>
-      <div class="cat-name">标签页管理</div>
+      <div class="cat-name" data-i18n="tool-tabs">Tab Management</div>
       <div class="cat-count">2</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🔖</div>
-      <div class="cat-name">书签与历史</div>
+      <div class="cat-name" data-i18n="tool-bookmarks">Bookmarks &amp; History</div>
       <div class="cat-count">1</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">💾</div>
-      <div class="cat-name">存储管理</div>
+      <div class="cat-name" data-i18n="tool-storage">Storage Management</div>
       <div class="cat-count">3</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🌐</div>
-      <div class="cat-name">网络请求</div>
+      <div class="cat-name" data-i18n="tool-network">Network Requests</div>
       <div class="cat-count">1</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📷</div>
-      <div class="cat-name">媒体与输出</div>
+      <div class="cat-name" data-i18n="tool-media">Media &amp; Output</div>
       <div class="cat-count">5</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🔧</div>
-      <div class="cat-name">调试与开发</div>
+      <div class="cat-name" data-i18n="tool-debug">Debugging &amp; Dev</div>
       <div class="cat-count">3</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🤖</div>
-      <div class="cat-name">AI 协作</div>
+      <div class="cat-name" data-i18n="tool-ai">AI Collaboration</div>
       <div class="cat-count">7</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🖥️</div>
-      <div class="cat-name">Agent 代理</div>
+      <div class="cat-name" data-i18n="tool-agent">Agent Proxy</div>
       <div class="cat-count">5</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🧠</div>
-      <div class="cat-name">长期记忆</div>
+      <div class="cat-name" data-i18n="tool-memory">Long-Term Memory</div>
       <div class="cat-count">1</div>
     </div>
   </div>
 </section>
 
-<!-- 系统截图 -->
+<!-- Screenshots -->
 <section class="section" id="screenshots">
   <div class="section-title">
-    <h2>系统预览</h2>
-    <p>实际运行截图，一睹为快</p>
+    <h2 data-i18n="screenshots-title">System Preview</h2>
+    <p data-i18n="screenshots-desc">Real running screenshots, a sneak peek</p>
   </div>
   <div class="screenshots-grid">
     <div class="screenshot-card">
@@ -1152,7 +1176,7 @@
   <span class="lightbox-arrow next" id="lb-next">&#8250;</span>
   <div class="lightbox-zoombar" id="lb-zoombar">
     <button id="lb-zoom-out" title="缩小">−</button>
-    <span class="zoom-label" id="lb-zoom-label">适应</span>
+    <span class="zoom-label" id="lb-zoom-label" data-i18n="lb-fit">Fit</span>
     <button id="lb-zoom-in" title="放大">+</button>
     <button id="lb-zoom-reset" title="重置" style="font-size:14px">↺</button>
   </div>
@@ -1163,96 +1187,96 @@
   <div class="lightbox-counter" id="lb-counter"></div>
 </div>
 
-<!-- 架构 -->
+<!-- Architecture -->
 <section class="section" id="arch">
   <div class="section-title">
-    <h2>六层架构</h2>
-    <p>Chrome Extension API 消息通道，各层职责清晰，含工作目录管理、Checkpoint 持久化</p>
+    <h2 data-i18n="arch-title">Six-Layer Architecture</h2>
+    <p data-i18n="arch-desc">Chrome Extension API message channels, clear layer responsibilities with workspace management &amp; Checkpoint persistence</p>
   </div>
   <div class="arch">
     <div class="arch-flow">
       <div class="arch-box highlight">
         <div class="arch-title">Side Panel</div>
-        <div class="arch-desc">对话界面<br>工作目录管理<br>Markdown/Mermaid 渲染<br>Agent 多助手管理<br>消息搜索/收藏</div>
+        <div class="arch-desc" data-i18n="arch-side-panel">Chat Interface<br>Workspace Management<br>Markdown/Mermaid Rendering<br>Multi-Agent Management<br>Message Search/Bookmarks</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box highlight">
         <div class="arch-title">Background Worker</div>
-        <div class="arch-desc">消息路由<br>ReAct 推理引擎<br>上下文增量摘要<br>Checkpoint 断点管理<br>工具调度 &amp; Token 管理</div>
+        <div class="arch-desc" data-i18n="arch-bg-worker">Message Routing<br>ReAct Reasoning Engine<br>Context Incremental Summary<br>Checkpoint Management<br>Tool Dispatch &amp; Token Mgmt</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
         <div class="arch-title">Content Script</div>
-        <div class="arch-desc">DOM 操作<br>页面注入<br>40+ 页面工具</div>
+        <div class="arch-desc" data-i18n="arch-content">DOM Operations<br>Page Injection<br>40+ Page Tools</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
-        <div class="arch-title">Offscreen 文档</div>
-        <div class="arch-desc">剪贴板操作<br>MV3 兼容桥接</div>
+        <div class="arch-title">Offscreen Doc</div>
+        <div class="arch-desc" data-i18n="arch-offscreen">Clipboard Operations<br>MV3 Compatibility Bridge</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box highlight">
-        <div class="arch-title">代理服务</div>
-        <div class="arch-desc">文件读写<br>命令执行<br>回收站/在线更新<br>Skill/MCP 扩展</div>
+        <div class="arch-title">Agent Service</div>
+        <div class="arch-desc" data-i18n="arch-agent">File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
-        <div class="arch-title">Storage 层</div>
-        <div class="arch-desc">IndexedDB 会话<br>Checkpoint 断点持久化<br>chrome.storage 配置<br>Token 统计持久化</div>
+        <div class="arch-title">Storage Layer</div>
+        <div class="arch-desc" data-i18n="arch-storage">IndexedDB Sessions<br>Checkpoint Persistence<br>chrome.storage Config<br>Token Stats Persistence</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- 快速开始 -->
+<!-- Quick Start -->
 <section class="section" id="start">
   <div class="section-title">
-    <h2>30 秒快速开始</h2>
-    <p>三步完成安装配置，即刻开始使用</p>
+    <h2 data-i18n="start-title">Quick Start in 30 Seconds</h2>
+    <p data-i18n="start-desc">Three steps to install and configure, start using immediately</p>
   </div>
   <div class="steps">
     <div class="step">
       <div class="step-num">1</div>
-      <h3>加载扩展</h3>
-      <p>从 GitHub/Gitee 下载项目压缩包并解压，打开 chrome://extensions 开启开发者模式，点击「加载已解压的扩展程序」选择 dist 目录。</p>
-      <code>下载 ZIP → 解压 → 加载 dist 目录</code>
+      <h3 data-i18n="start-1-title">Load Extension</h3>
+      <p data-i18n="start-1-desc">Download the zip from GitHub/Gitee and extract. Open chrome://extensions, enable Developer Mode, click "Load unpacked" and select the dist folder.</p>
+      <code data-i18n="start-1-code">Download ZIP → Extract → Load dist folder</code>
     </div>
     <div class="step">
       <div class="step-num">2</div>
-      <h3>配置 API Key</h3>
-      <p>右键扩展图标 → 选项，填入 DeepSeek API Key（或其他 OpenAI 兼容 API）。</p>
-      <code>API Key → 填入 → 保存</code>
+      <h3 data-i18n="start-2-title">Configure API Key</h3>
+      <p data-i18n="start-2-desc">Right-click extension icon → Options, enter your DeepSeek API Key (or other OpenAI-compatible API).</p>
+      <code data-i18n="start-2-code">API Key → Enter → Save</code>
     </div>
     <div class="step">
       <div class="step-num">3</div>
-      <h3>安装代理（可选）</h3>
-      <p>如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。</p>
+      <h3 data-i18n="start-3-title">Install Agent (Optional)</h3>
+      <p data-i18n="start-3-desc">For local file read/write and command execution, install the agent service globally and start it. Copy the pairing code from terminal output into the extension's Agent settings to connect.</p>
       <code>npm i -g ai-helper-agent &amp;&amp; ai-helper-agent start</code>
     </div>
   </div>
 </section>
 
-<!-- 创意成果展示区 -->
+<!-- Showcase -->
 <section class="section" id="showcase">
   <div class="section-title">
-    <h2>创意成果展示区</h2>
-    <p>AI Helper 驱动的创意项目，点击即可体验</p>
+    <h2 data-i18n="showcase-title">Creative Showcase</h2>
+    <p data-i18n="showcase-desc">AI Helper-powered creative projects, click to experience</p>
   </div>
   <div class="cards">
     <a class="showcase-card" href="fruit-slash-3d.html" target="_blank">
       <div class="showcase-thumb">🍉</div>
       <div class="showcase-info">
-        <h3>3D 切水果</h3>
-        <p>基于 Three.js 的 3D 切水果小游戏，挥动鼠标切开缤纷水果，连击得分挑战高分。</p>
-        <span class="showcase-link">打开体验 →</span>
+        <h3 data-i18n="showcase-fruit-title">3D Fruit Slash</h3>
+        <p data-i18n="showcase-fruit-desc">A Three.js 3D fruit-slashing mini-game, swing your mouse to slice colorful fruits and challenge high scores.</p>
+        <span class="showcase-link" data-i18n="showcase-open">Open →</span>
       </div>
     </a>
     <a class="showcase-card" href="creative-product.html" target="_blank">
       <div class="showcase-thumb">🎨</div>
       <div class="showcase-info">
-        <h3>创意产品展示</h3>
-        <p>AI Helper 产品能力展示页，全方位呈现智能助手的核心功能与使用场景。</p>
-        <span class="showcase-link">打开体验 →</span>
+        <h3 data-i18n="showcase-product-title">Creative Product Showcase</h3>
+        <p data-i18n="showcase-product-desc">AI Helper product capability showcase — presenting the core features and use cases of the intelligent assistant.</p>
+        <span class="showcase-link" data-i18n="showcase-open2">Open →</span>
       </div>
     </a>
   </div>
@@ -1260,8 +1284,8 @@
 
 <!-- CTA -->
 <div class="cta-section">
-  <h2>准备好了吗？</h2>
-  <p>开源免费，MIT 协议，欢迎 Star &amp; PR</p>
+  <h2 data-i18n="cta-title">Ready to Get Started?</h2>
+  <p data-i18n="cta-desc">Open source &amp; free, MIT License, welcome Star &amp; PR</p>
   <div class="hero-actions" style="justify-content: center;">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       ⭐ GitHub
@@ -1271,16 +1295,16 @@
       Gitee
     </a>
     <a class="btn btn-outline" href="https://github.com/xiweicheng/ai-helper/blob/main/README.md" target="_blank">
-      查看文档 →
+      <span data-i18n="cta-docs">View Docs</span> →
     </a>
   </div>
 </div>
 
-<!-- 合作联系 -->
+<!-- Contact -->
 <div class="section" style="text-align: center;">
   <div class="section-title">
-    <h2>合作与支持</h2>
-    <p>欢迎反馈、建议或商务合作</p>
+    <h2 data-i18n="contact-title">Contact &amp; Support</h2>
+    <p data-i18n="contact-desc">Welcome feedback, suggestions, or business collaboration</p>
   </div>
   <div style="display: inline-flex; align-items: center; gap: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 28px;">
     <span style="font-size: 24px;">📧</span>
@@ -1314,7 +1338,7 @@
       lbImg.style.width = 'auto';
       lbImg.style.maxWidth = '100%';
       lbImg.style.maxHeight = '82vh';
-      lbZoomLabel.textContent = '适应';
+      lbZoomLabel.textContent = 'Fit';
     } else {
       lbImgWrap.classList.add('zoomed');
       lbImg.style.maxWidth = 'none';
@@ -1460,6 +1484,224 @@
       case '0':           e.preventDefault(); resetZoom(); break;
     }
   });
+})();
+
+// --- i18n Engine ---
+(function() {
+  var LANG_KEY = 'ai-helper-lang';
+  var translations = {
+    'nav-features':       { en: 'Features', zh: '特性' },
+    'nav-tools':          { en: 'Tools', zh: '工具' },
+    'nav-screenshots':    { en: 'Screenshots', zh: '截图' },
+    'nav-arch':           { en: 'Architecture', zh: '架构' },
+    'nav-showcase':       { en: 'Showcase', zh: '创意成果' },
+    'nav-start':          { en: 'Quick Start', zh: '快速开始' },
+    'page-title':         { en: 'AI Helper — Make Your Browser Think', zh: 'AI Helper — 让你的浏览器会思考' },
+    'hero-badge':   { en: 'v1.0 Released \u00b7 Open Source \u00b7 MIT License', zh: 'v1.0 正式发布 \u00b7 开源免费 \u00b7 MIT 协议' },
+    'hero-title-1': { en: 'Make Your Browser', zh: '让你的浏览器' },
+    'hero-title-2': { en: 'Think & Act', zh: '会思考、能行动' },
+    'hero-subhead': { en: 'More Than Chat — A Real Action-Taking AI Assistant', zh: '不止是对话，更是能真正动手做事的 AI 助手' },
+    'hero-desc':    { en: 'A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.', zh: '基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。' },
+    'hero-btn-exp':  { en: 'Try It Now', zh: '立即体验' },
+    'hero-btn-learn': { en: 'Learn More', zh: '了解更多' },
+    'stat-tools':      { en: 'Built-in Tools', zh: '内置工具' },
+    'stat-categories':  { en: 'Tool Categories', zh: '工具分类' },
+    'stat-multi-agent': { en: 'Multi-Agent', zh: '多智能体' },
+    'stat-oss':         { en: 'Open Source', zh: '开源免费' },
+    'compare-title':        { en: 'Why AI Helper?', zh: '为什么选择 AI Helper？' },
+    'compare-desc':         { en: 'From passive Q&A to proactive action — redefining the browser AI experience', zh: '从被动问答到主动行动，重新定义浏览器 AI 体验' },
+    'compare-before-label': { en: 'Traditional AI Assistants', zh: '传统 AI 助手' },
+    'compare-before-title': { en: 'Only Chat, Can\'t Act', zh: '只能聊，不能做' },
+    'compare-before-1':     { en: 'Only generates text answers, can\'t perform real actions', zh: '只能生成文本答案，无法实际操作' },
+    'compare-before-2':     { en: 'Limited conversation context, easily forgets history', zh: '对话上下文有限，容易遗忘历史' },
+    'compare-before-3':     { en: 'Single tool capability, lacks complex task handling', zh: '工具能力单一，缺少复杂任务能力' },
+    'compare-before-4':     { en: 'Cannot access local files and system', zh: '无法访问本地文件和系统' },
+    'compare-before-5':     { en: 'Cannot resume after task interruption', zh: '任务中断后无法恢复' },
+    'compare-after-title':  { en: 'Thinks & Acts', zh: '会思考，更能行动' },
+    'compare-after-1':      { en: '40+ tool calls, truly completes browser operations', zh: '40+ 个工具调用，真正完成浏览器操作' },
+    'compare-after-2':      { en: 'Long-term memory system with persistent conversation storage', zh: '长期记忆系统，对话持久化存储' },
+    'compare-after-3':      { en: 'Multi-agent collaboration with automatic task decomposition', zh: '多智能体协作，复杂任务自动拆分' },
+    'compare-after-4':      { en: 'Local proxy access, directly operate on file system', zh: '本地代理访问，直接操作文件系统' },
+    'compare-after-5':      { en: 'Checkpoint recovery, pause and resume tasks anytime', zh: '断点续接，任务随时中断随时恢复' },
+    'features-title':        { en: 'Core Capabilities', zh: '核心能力' },
+    'features-desc':         { en: 'More than a Q&A bot — a browser automation engine', zh: '不止是问答机器人，更是浏览器自动化引擎' },
+    'feat-react-title':      { en: 'ReAct Reasoning Loop', zh: 'ReAct 推理循环' },
+    'feat-react-desc':       { en: 'LLM Think → Call Tool → Result Feedback → Continue Reasoning. Supports multi-turn tool calls, task decomposition, streaming responses, and three-level reflection quality assurance.', zh: 'LLM 思考 → 调用工具 → 结果反馈 → 继续推理。支持多轮工具调用、任务拆解、流式响应、三级反思质量保障。' },
+    'feat-multiagent-title': { en: 'Multi-Agent Collaboration', zh: '多智能体协作' },
+    'feat-multiagent-desc':  { en: 'Create and manage multiple custom AI assistants with built-in templates for code review, data analysis, and more. Supports agent sub-task distribution and parallel collaboration.', zh: '创建和管理多个自定义 AI 助手，内置代码审查、数据分析等模板。支持 Agent 子任务分发和并行协作。' },
+    'feat-browser-title':    { en: 'Browser Automation', zh: '浏览器自动化' },
+    'feat-browser-desc':     { en: 'Click, fill forms, scroll, drag, screenshot, wait for elements, dropdown selection. Control web pages with natural language without writing a single script.', zh: '点击、填表、滚动、拖拽、截图、等待元素、下拉选择。用自然语言操控网页，无需写一行脚本。' },
+    'feat-content-title':    { en: 'Smart Content Extraction', zh: '内容智能提取' },
+    'feat-content-desc':     { en: 'Plain text, HTML, tables, links, forms, images, metadata. Supports Markdown/JSON formatted output, scrolling collection of long content. Cross-tab extraction via tabId without switching tabs.', zh: '纯文本、HTML、表格、链接、表单、图片、元数据。支持 Markdown/JSON 格式化输出，滚动收集长内容。支持指定 tabId 跨标签页提取，无需切换标签页。' },
+    'feat-memory-title':     { en: 'Long-Term Memory System', zh: '长期记忆系统' },
+    'feat-memory-desc':      { en: 'Automatically stores user preferences, knowledge, and decision records. Supports fact storage and conversation summary memory types, intelligent history retrieval, auto compression and eviction of low-value memories — the more you use it, the better it understands you.', zh: '自动存储用户偏好、知识和决策记录。支持事实存储和对话摘要两种记忆类型，智能检索历史记忆，自动压缩与淘汰低价值记忆，让 AI 越用越懂你。' },
+    'feat-agent-title':      { en: 'Agent Local Operations', zh: '代理本地操作' },
+    'feat-agent-desc':       { en: 'Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.', zh: '读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。' },
+    'feat-skill-title':      { en: 'Skill System', zh: 'Skill 技能系统' },
+    'feat-skill-desc':       { en: 'Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill for one-click reusable workflow creation.', zh: 'Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能，一键创建可复用工作流。' },
+    'feat-mcp-title':        { en: 'MCP Protocol Extension', zh: 'MCP 协议扩展' },
+    'feat-mcp-desc':         { en: 'Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, infinitely expand capability boundaries.', zh: '支持 Model Context Protocol，连接第三方 MCP Server。自动发现工具、多 Server 并行，无限扩展能力边界。' },
+    'feat-markdown-title':   { en: 'Markdown & Charts', zh: 'Markdown & 图表' },
+    'feat-markdown-desc':    { en: 'Code highlighting, Mermaid flowcharts/sequence diagrams, table export to Excel. Supports chart zoom, PNG download, source code copy.', zh: '代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。' },
+    'feat-file-title':       { en: 'Multimodal File Q&A', zh: '多模态文件问答' },
+    'feat-file-desc':        { en: 'Upload PDF/Word/Excel/text files and ask questions directly. Browser-side intelligent content extraction, connect to Agent for deep file operations in workspace.', zh: '上传 PDF/Word/Excel/文本文件直接提问。浏览器端智能提取内容，连接 Agent 后支持上传至工作目录深度操作。' },
+    'feat-annotate-title':   { en: 'Image Annotation Editor', zh: '图片标注编辑器' },
+    'feat-annotate-desc':    { en: 'Built-in 6 annotation tools: pen, rectangle, ellipse, arrow, eraser. Supports color/thickness adjustment and Ctrl+Z undo, send edited images directly.', zh: '内建画笔、矩形、椭圆、箭头、橡皮擦 6 种标注工具。支持颜色/粗细调节和 Ctrl+Z 撤销，编辑后直接发送。' },
+    'feat-vision-title':     { en: 'Vision Model Image Analysis', zh: '视觉模型识图' },
+    'feat-vision-desc':      { en: 'Connects to vision language models, supports screenshot-based image Q&A. Independent API configuration, automatic image compression to reduce Token consumption.', zh: '对接视觉语言模型，支持截图识图对话。独立 API 配置，自动图片压缩减少 Token 消耗。' },
+    'feat-compress-title':   { en: 'Smart Context Compression', zh: '上下文智能压缩' },
+    'feat-compress-desc':    { en: 'Auto-summary compression of long referenced content, intelligent truncation by Token count. Three-level pressure monitoring to prevent irrelevant information from permanently occupying context space.', zh: '长引用内容自动摘要压缩，按 Token 数智能截断。三级压力监测，避免无关信息永久占据上下文空间。' },
+    'feat-token-title':      { en: 'Token Statistics Panel', zh: 'Token 统计面板' },
+    'feat-token-desc':       { en: 'Real-time Token consumption tracking, session/today/history multi-dimensional statistics. Trend charts, budget management, three-level context pressure monitoring.', zh: '实时追踪 Token 消耗，会话/今日/历史多维度统计。趋势图展示、预算管理、上下文压力三级监测。' },
+    'feat-checkpoint-title': { en: 'Task Checkpoint Recovery', zh: '任务断点续接' },
+    'feat-checkpoint-desc':  { en: 'Auto-save checkpoints during task execution, one-click resume after interruption. Supports SW restart recovery, streaming output preservation, 7-day TTL auto-expiry — ensures long tasks never lose progress.', zh: '任务执行中自动保存 Checkpoint，中断后一键恢复继续执行。支持 SW 重启恢复、流式输出保留、7 天 TTL 自动过期，确保长任务不丢失进度。' },
+    'feat-selector-title':   { en: '@ Web Selector', zh: '@ 网页选择器' },
+    'feat-selector-desc':    { en: 'Type @ to bring up the selector, "Web" tab lists all open tabs. Select a page to auto-inject its content as conversation context, enabling cross-page information understanding.', zh: '输入 @ 即可弹出选择器，「网页」Tab 列出所有打开的标签页。选中页面后自动将内容注入为对话上下文，让 AI 跨页面理解信息。' },
+    'feat-shadow-title':     { en: 'Shadow DOM Deep Penetration', zh: 'Shadow DOM 深度穿透' },
+    'feat-shadow-desc':      { en: 'Recursively penetrate multi-layer Shadow DOM and same-origin iframes to locate elements. Supports React controlled components, rich text editors — ensures precise page operations across all frontend frameworks.', zh: '递归穿透多层 Shadow DOM 和同源 iframe 查找元素。支持 React 受控组件、富文本编辑器，确保在各种前端框架下都能精准操作页面。' },
+    'feat-export-title':     { en: 'Multi-Format Message Export', zh: '消息多格式导出' },
+    'feat-export-desc':      { en: 'Single messages support export to Word (with pre-rendered Mermaid charts), PDF, image, JSON and more formats, meeting sharing and archiving needs across different scenarios.', zh: '单条消息支持导出为 Word（含 Mermaid 图表预渲染）、PDF、图片、JSON 等多种格式，满足不同场景的分享和归档需求。' },
+    'feat-backup-title':     { en: 'Conversation Export/Import', zh: '会话导出/导入' },
+    'feat-backup-desc':      { en: 'Batch export conversations as .aihelper.json, including complete message history, execution logs, and quality scores. Compatible with new/old format import and recovery.', zh: '批量导出对话为 .aihelper.json，支持完整消息历史、执行日志、质量评分。兼容新版/旧版格式导入恢复。' },
+    'feat-workspace-title':  { en: 'Workspace Management', zh: '工作目录管理' },
+    'feat-workspace-desc':   { en: 'Browse and manage Agent\'s local file system directly in the sidebar. Directory tree navigation, batch operations, drag-and-drop moving, file preview — as convenient as an IDE file manager.', zh: '在侧边栏中直接浏览和管理 Agent 本地文件系统。目录树导航、批量操作、拖拽移动、文件预览，像 IDE 文件管理器一样便捷。' },
+    'feat-search-title':     { en: 'Message Search', zh: '消息搜索' },
+    'feat-search-desc':      { en: 'Full-text search across all conversation history, supports AND/OR advanced search syntax. Dual-mode search (global/current session), incremental loading, result highlight positioning.', zh: '全文搜索所有历史对话，支持 AND/OR 高级搜索语法。双模式搜索（全局/当前会话），增量式加载，结果高亮定位。' },
+    'feat-bookmark-title':   { en: 'Message Bookmarks', zh: '消息收藏' },
+    'feat-bookmark-desc':    { en: 'One-click bookmark important AI responses, supports pinning, search, and grouping. Click a bookmark to auto-navigate to the corresponding message in the conversation for quick review.', zh: '一键收藏重要 AI 回答，支持置顶、搜索、分组。点击收藏条目自动跳转到对应会话的消息位置，方便快速回顾。' },
+    'feat-recycle-title':    { en: 'File Recycle Bin', zh: '文件回收站' },
+    'feat-recycle-desc':     { en: 'Agent file deletion defaults to soft-delete to recycle bin with 7-day retention, supports one-click recovery. Say goodbye to accidental file deletion.', zh: 'Agent 文件删除默认为软删除至回收站，7 天保留期，支持一键恢复。告别误删文件的烦恼。' },
+    'feat-preview-title':    { en: 'File Preview', zh: '文件预览' },
+    'feat-preview-desc':     { en: 'Built-in preview for text/code highlighting, PDF, Word, Excel, images and more formats — view file contents without leaving the sidebar.', zh: '支持文本/代码高亮、PDF、Word、Excel、图片等多种格式的内置预览，无需离开侧边栏即可查看文件内容。' },
+    'feat-update-title':     { en: 'Agent Online Update', zh: 'Agent 在线更新' },
+    'feat-update-desc':      { en: 'Agent service supports online restart and one-click auto-update, no manual terminal operations needed. Auto-rollback on update failure without affecting current running state.', zh: '代理服务支持在线重启和一键自动更新，无需手动操作终端。更新失败自动回退，不影响当前运行状态。' },
+    'feat-summary-title':    { en: 'Context Incremental Summary', zh: '上下文增量摘要' },
+    'feat-summary-desc':     { en: 'When conversation context Token exceeds budget, automatically compresses old tool call rounds into one-sentence summaries, preserving key information without losing context.', zh: '当对话上下文 Token 超出预算时，自动将旧的工具调用轮次压缩为一句话摘要，保留关键信息而不丢失上下文。' },
+    'feat-privacy-title':    { en: 'Privacy & Security', zh: '隐私与安全' },
+    'feat-privacy-desc':     { en: 'API Key local storage. Agent command tiered control (blacklist blocking + graylist confirmation), file operation sandbox protection, pairing authentication.', zh: 'API Key 本地存储。代理命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护，配对认证。' },
+    'scenarios-title':          { en: 'Typical Use Cases', zh: '典型使用场景' },
+    'scenarios-desc':           { en: 'One assistant, covering every aspect of your daily work', zh: '一个助手，覆盖你日常工作的方方面面' },
+    'scenario-dev-title':       { en: 'Full-Stack Development Assistant', zh: '全栈开发助手' },
+    'scenario-dev-desc':        { en: 'Write, debug, and refactor code directly in the browser. Access local files, execute commands, preview results — from requirements to deployment in one go.', zh: '直接在浏览器中编写、调试、重构代码。访问本地文件、执行命令、预览效果，从需求到上线一气呵成。' },
+    'scenario-dev-tag':         { en: 'Dev Efficiency', zh: '开发提效' },
+    'scenario-data-title':      { en: 'Data Collection & Analysis', zh: '数据采集分析' },
+    'scenario-data-desc':       { en: 'Auto-login to websites, scrape data, generate reports. Supports multi-page navigation, form filling, data cleaning — say goodbye to manual copy-paste.', zh: '自动登录网站、抓取数据、生成报表。支持多页面导航、表单填写、数据清洗，告别手动复制粘贴。' },
+    'scenario-data-tag':        { en: 'Data Work', zh: '数据工作' },
+    'scenario-content-title':   { en: 'Content Creation', zh: '内容创作生产' },
+    'scenario-content-desc':    { en: 'Writing, translation, typesetting, and illustration all in one place. Multimodal file Q&A supports PDF, images, code understanding — double your creative efficiency.', zh: '写作、翻译、排版、配图一站式完成。多模态文件问答支持 PDF、图片、代码理解，创作效率翻倍。' },
+    'scenario-content-tag':     { en: 'Content Creation', zh: '内容创作' },
+    'scenario-test-title':      { en: 'Automated Testing', zh: '自动化测试' },
+    'scenario-test-desc':       { en: 'Describe test cases in natural language, auto-generate and execute browser tests. Screenshot verification, assertion checks, defect location — all in one click.', zh: '自然语言描述测试用例，自动生成并执行浏览器测试。截图验证、断言检查、缺陷定位一键完成。' },
+    'scenario-test-tag':        { en: 'Quality Assurance', zh: '质量保障' },
+    'scenario-research-title':  { en: 'Deep Research & Investigation', zh: '深度研究调研' },
+    'scenario-research-desc':   { en: 'Multi-search-engine parallel retrieval, auto-aggregation and organization of results. Supports webpage summarization, content extraction, and knowledge graph-based research reports.', zh: '多搜索引擎并行检索，自动汇总整理结果。支持网页摘要、内容提取、知识图谱构建研究报告。' },
+    'scenario-research-tag':    { en: 'Research & Analysis', zh: '研究分析' },
+    'scenario-automation-title':{ en: 'Workflow Automation', zh: '工作流自动化' },
+    'scenario-automation-desc': { en: 'Hand repetitive operations to AI. Email processing, schedule management, form submission, file organization — free up your time for more valuable work.', zh: '将重复性操作交给 AI。邮件处理、日程管理、表单提交、文件整理，释放你的时间做更有价值的事。' },
+    'scenario-automation-tag':  { en: 'Productivity Tools', zh: '效率工具' },
+    'tools-title':       { en: '40+ Built-in Tools', zh: '40+ 个内置工具' },
+    'tools-desc':        { en: 'Covering full-scenario browser automation, extensible via Skill and MCP', zh: '覆盖浏览器自动化全场景，支持 Skill 和 MCP 扩展' },
+    'tool-interaction':  { en: 'Page Interaction', zh: '页面交互' },
+    'tool-forms':        { en: 'Forms & Input', zh: '表单与输入' },
+    'tool-extraction':   { en: 'Content Extraction', zh: '内容提取' },
+    'tool-tabs':         { en: 'Tab Management', zh: '标签页管理' },
+    'tool-bookmarks':    { en: 'Bookmarks & History', zh: '书签与历史' },
+    'tool-storage':      { en: 'Storage Management', zh: '存储管理' },
+    'tool-network':      { en: 'Network Requests', zh: '网络请求' },
+    'tool-media':        { en: 'Media & Output', zh: '媒体与输出' },
+    'tool-debug':        { en: 'Debugging & Dev', zh: '调试与开发' },
+    'tool-ai':           { en: 'AI Collaboration', zh: 'AI 协作' },
+    'tool-agent':        { en: 'Agent Proxy', zh: 'Agent 代理' },
+    'tool-memory':       { en: 'Long-Term Memory', zh: '长期记忆' },
+    'screenshots-title': { en: 'System Preview', zh: '系统预览' },
+    'screenshots-desc':  { en: 'Real running screenshots, a sneak peek', zh: '实际运行截图，一睹为快' },
+    'lb-fit':            { en: 'Fit', zh: '适应' },
+    'arch-title':        { en: 'Six-Layer Architecture', zh: '六层架构' },
+    'arch-desc':         { en: 'Chrome Extension API message channels, clear layer responsibilities with workspace management & Checkpoint persistence', zh: 'Chrome Extension API 消息通道，各层职责清晰，含工作目录管理、Checkpoint 持久化' },
+    'arch-side-panel':   { en: 'Chat Interface<br>Workspace Management<br>Markdown/Mermaid Rendering<br>Multi-Agent Management<br>Message Search/Bookmarks', zh: '对话界面<br>工作目录管理<br>Markdown/Mermaid 渲染<br>Agent 多助手管理<br>消息搜索/收藏' },
+    'arch-bg-worker':    { en: 'Message Routing<br>ReAct Reasoning Engine<br>Context Incremental Summary<br>Checkpoint Management<br>Tool Dispatch & Token Mgmt', zh: '消息路由<br>ReAct 推理引擎<br>上下文增量摘要<br>Checkpoint 断点管理<br>工具调度 & Token 管理' },
+    'arch-content':      { en: 'DOM Operations<br>Page Injection<br>40+ Page Tools', zh: 'DOM 操作<br>页面注入<br>40+ 页面工具' },
+    'arch-offscreen':    { en: 'Clipboard Operations<br>MV3 Compatibility Bridge', zh: '剪贴板操作<br>MV3 兼容桥接' },
+    'arch-agent':        { en: 'File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension', zh: '文件读写<br>命令执行<br>回收站/在线更新<br>Skill/MCP 扩展' },
+    'arch-storage':      { en: 'IndexedDB Sessions<br>Checkpoint Persistence<br>chrome.storage Config<br>Token Stats Persistence', zh: 'IndexedDB 会话<br>Checkpoint 断点持久化<br>chrome.storage 配置<br>Token 统计持久化' },
+    'start-title':       { en: 'Quick Start in 30 Seconds', zh: '30 秒快速开始' },
+    'start-desc':        { en: 'Three steps to install and configure, start using immediately', zh: '三步完成安装配置，即刻开始使用' },
+    'start-1-title':     { en: 'Load Extension', zh: '加载扩展' },
+    'start-1-desc':      { en: 'Download the zip from GitHub/Gitee and extract. Open chrome://extensions, enable Developer Mode, click "Load unpacked" and select the dist folder.', zh: '从 GitHub/Gitee 下载项目压缩包并解压，打开 chrome://extensions 开启开发者模式，点击「加载已解压的扩展程序」选择 dist 目录。' },
+    'start-1-code':      { en: 'Download ZIP → Extract → Load dist folder', zh: '下载 ZIP → 解压 → 加载 dist 目录' },
+    'start-2-title':     { en: 'Configure API Key', zh: '配置 API Key' },
+    'start-2-desc':      { en: 'Right-click extension icon → Options, enter your DeepSeek API Key (or other OpenAI-compatible API).', zh: '右键扩展图标 → 选项，填入 DeepSeek API Key（或其他 OpenAI 兼容 API）。' },
+    'start-2-code':      { en: 'API Key → Enter → Save', zh: 'API Key → 填入 → 保存' },
+    'start-3-title':     { en: 'Install Agent (Optional)', zh: '安装代理（可选）' },
+    'start-3-desc':      { en: 'For local file read/write and command execution, install the agent service globally and start it. Copy the pairing code from terminal output into the extension\'s Agent settings to connect.', zh: '如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。' },
+    'showcase-title':          { en: 'Creative Showcase', zh: '创意成果展示区' },
+    'showcase-desc':           { en: 'AI Helper-powered creative projects, click to experience', zh: 'AI Helper 驱动的创意项目，点击即可体验' },
+    'showcase-fruit-title':    { en: '3D Fruit Slash', zh: '3D 切水果' },
+    'showcase-fruit-desc':     { en: 'A Three.js 3D fruit-slashing mini-game, swing your mouse to slice colorful fruits and challenge high scores.', zh: '基于 Three.js 的 3D 切水果小游戏，挥动鼠标切开缤纷水果，连击得分挑战高分。' },
+    'showcase-product-title':  { en: 'Creative Product Showcase', zh: '创意产品展示' },
+    'showcase-product-desc':   { en: 'AI Helper product capability showcase — presenting the core features and use cases of the intelligent assistant.', zh: 'AI Helper 产品能力展示页，全方位呈现智能助手的核心功能与使用场景。' },
+    'showcase-open':    { en: 'Open →', zh: '打开体验 →' },
+    'showcase-open2':   { en: 'Open →', zh: '打开体验 →' },
+    'cta-title':        { en: 'Ready to Get Started?', zh: '准备好了吗？' },
+    'cta-desc':         { en: 'Open source & free, MIT License, welcome Star & PR', zh: '开源免费，MIT 协议，欢迎 Star & PR' },
+    'cta-docs':         { en: 'View Docs', zh: '查看文档' },
+    'contact-title':    { en: 'Contact & Support', zh: '合作与支持' },
+    'contact-desc':     { en: 'Welcome feedback, suggestions, or business collaboration', zh: '欢迎反馈、建议或商务合作' }
+  };
+
+  function getUrlLang() {
+    var m = location.search.match(/[?&]lang=([a-z]+)/i);
+    return m ? m[1] : null;
+  }
+
+  function getLang() {
+    var urlLang = getUrlLang();
+    if (urlLang && (urlLang === 'en' || urlLang === 'zh')) {
+      localStorage.setItem(LANG_KEY, urlLang);
+      return urlLang;
+    }
+    return localStorage.getItem(LANG_KEY) || 'en';
+  }
+
+  function setLang(lang) {
+    localStorage.setItem(LANG_KEY, lang);
+  }
+
+  function applyLang(lang) {
+    // Update toggle buttons
+    document.querySelectorAll('.lang-option').forEach(function(opt) {
+      var active = opt.getAttribute('data-lang') === lang;
+      opt.classList.toggle('active', active);
+    });
+
+    // Apply translations
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var key = el.getAttribute('data-i18n');
+      if (translations[key] && translations[key][lang]) {
+        el.innerHTML = translations[key][lang];
+      }
+    });
+
+    // Update page title
+    document.title = translations['page-title'][lang];
+
+    // Update lightbox zoom label (dynamic element)
+    var lbZoomLabel = document.getElementById('lb-zoom-label');
+    if (lbZoomLabel) {
+      lbZoomLabel.textContent = translations['lb-fit'][lang];
+    }
+  }
+
+  // Language toggle click handler
+  document.getElementById('langToggle').addEventListener('click', function() {
+    var current = getLang();
+    var next = current === 'en' ? 'zh' : 'en';
+    setLang(next);
+    applyLang(next);
+  });
+
+  // Apply saved language on load
+  applyLang(getLang());
 })();
 </script>
 

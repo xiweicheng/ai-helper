@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Helper — 能操控浏览器的智能网页助手</title>
+<title data-i18n="cp-title">AI Helper — Smart Browser Agent</title>
+<meta name="description" content="AI Helper is a Chrome intelligent assistant extension with 50+ built-in tools, ReAct reasoning loop, multi-agent collaboration, Skill system, and MCP protocol extension — making LLMs truly operate browsers like humans.">
 <style>
 :root {
   --bg-deep: #06060E;
@@ -658,6 +659,25 @@ section { padding: 80px 0; }
 }
 .nav-repo:hover svg { opacity: 1; }
 
+/* --- Language Toggle --- */
+.lang-toggle {
+  display: inline-flex; align-items: center; gap: 0;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px;
+  cursor: pointer; transition: all .2s;
+  user-select: none; margin-left: 10px;
+}
+.lang-toggle:hover { border-color: var(--accent-cyan); }
+.lang-option {
+  padding: 4px 10px; border-radius: 16px;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  transition: all .25s; position: relative; z-index: 1; line-height: 1;
+}
+.lang-option.active {
+  color: #000;
+  background: var(--accent-cyan);
+}
+
 /* Clean scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
@@ -671,7 +691,7 @@ section { padding: 80px 0; }
 <nav class="top-nav">
   <div class="container">
     <div class="nav-logo"><span>AI Helper</span></div>
-    <div class="nav-repos">
+    <div class="nav-repos" style="display:flex;align-items:center;">
       <a class="nav-repo" href="https://github.com/xiweicheng/ai-helper" target="_blank" rel="noopener">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
         GitHub
@@ -680,6 +700,10 @@ section { padding: 80px 0; }
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/></svg>
         Gitee
       </a>
+      <div class="lang-toggle" id="langToggle" title="Switch Language / 切换语言">
+        <span class="lang-option active" data-lang="en">EN</span>
+        <span class="lang-option" data-lang="zh">中文</span>
+      </div>
     </div>
   </div>
 </nav>
@@ -696,30 +720,30 @@ section { padding: 80px 0; }
     <div class="hero-content">
       <div class="hero-badge">
         <span class="dot"></span>
-        Chrome 浏览器扩展 · Manifest V3
+        <span data-i18n="cp-hero-badge">Chrome Extension · Manifest V3</span>
       </div>
       <h1>
-        让 AI <span class="highlight">住进浏览器</span>，<br>像人一样操控网页
+        <span data-i18n="cp-hero-title-1">Let AI</span> <span class="highlight" data-i18n="cp-hero-title-hl">Live in Your Browser</span>，<br><span data-i18n="cp-hero-title-2">Operate Web Pages Like a Human</span>
       </h1>
-      <p class="subtitle">
-        AI Helper 不仅仅是一个 Chat 工具。它基于 ReAct 推理循环，能真正操控浏览器——点击、填表、拖拽、提取数据，让 AI 替你完成网页上的复杂任务。
+      <p class="subtitle" data-i18n="cp-hero-desc">
+        AI Helper is more than a Chat tool. Built on the ReAct reasoning loop, it can truly control browsers — click, fill forms, drag, extract data — letting AI handle complex web tasks for you.
       </p>
       <div class="hero-stats">
         <div class="hero-stat">
           <span class="num">50+</span>
-          <span class="label">内建工具</span>
+          <span class="label" data-i18n="cp-stat-builtin">Built-in Tools</span>
         </div>
         <div class="hero-stat">
           <span class="num">MCP</span>
-          <span class="label">协议动态扩展</span>
+          <span class="label" data-i18n="cp-stat-mcp">Dynamic Protocol Extension</span>
         </div>
         <div class="hero-stat">
-          <span class="num">3级</span>
-          <span class="label">反思质量保障</span>
+          <span class="num">3-Level</span>
+          <span class="label" data-i18n="cp-stat-reflection">Reflection Quality Assurance</span>
         </div>
         <div class="hero-stat">
-          <span class="num">多Agent</span>
-          <span class="label">协作分派</span>
+          <span class="num">Multi-Agent</span>
+          <span class="label" data-i18n="cp-stat-agent">Collaborative Dispatch</span>
         </div>
       </div>
     </div>
@@ -731,21 +755,21 @@ section { padding: 80px 0; }
         <div class="chrome-url">ai-helper.sidepanel</div>
       </div>
       <div class="mockup-body">
-        <div class="mockup-msg user">帮我把这个页面上所有的商品信息提取出来，导出为 Excel</div>
+        <div class="mockup-msg user" data-i18n="cp-mockup-user">Extract all product info from this page and export to Excel</div>
         <div class="mockup-msg ai">
           <div class="tool-tag">🔧 page_content</div>
-          正在读取页面内容...
+          <span data-i18n="cp-mockup-1">Reading page content...</span>
         </div>
         <div class="mockup-msg ai">
           <div class="tool-tag">🔧 extract_data</div>
-          已提取 48 条商品数据，含名称、价格、评分
+          <span data-i18n="cp-mockup-2">Extracted 48 product records with name, price, rating</span>
         </div>
         <div class="mockup-thinking">
           <span></span><span></span><span></span>
         </div>
         <div class="mockup-msg ai">
           <div class="tool-tag">🔧 download_file</div>
-          已生成 Excel 文件，下载中...
+          <span data-i18n="cp-mockup-3">Excel file generated, downloading...</span>
         </div>
       </div>
     </div>
@@ -756,30 +780,30 @@ section { padding: 80px 0; }
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="tag">为什么选择 AI Helper</span>
-      <h2>不只是聊天，而是真正的浏览器智能体</h2>
-      <p>相较于普通 Chat 工具，AI Helper 拥有以下关键差异化能力</p>
+      <span class="tag" data-i18n="cp-why-tag">Why AI Helper</span>
+      <h2 data-i18n="cp-why-title">More Than Chat — A Real Browser Agent</h2>
+      <p data-i18n="cp-why-desc">Compared to regular Chat tools, AI Helper has these key differentiators</p>
     </div>
     <div class="why-grid">
       <div class="why-card reveal">
         <div class="icon cyan">🖱️</div>
-        <h3>真正的浏览器操控</h3>
-        <p>不仅读取网页内容，还能<strong>点击、填表、拖拽、滚动、等待元素、上传文件</strong>——LLM 可以像人类一样操作网页，无需你手动介入。</p>
+        <h3 data-i18n="cp-why-1-title">Real Browser Control</h3>
+        <p data-i18n="cp-why-1-desc">Not just reading web content — can <strong>click, fill forms, drag, scroll, wait for elements, upload files</strong> — LLM can operate web pages like a human without your manual intervention.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon green">🛡️</div>
-        <h3>三级质量保障体系</h3>
-        <p>预筛选 → 工具级反思 → 子任务反思 → 后置反思，7维度质量评分确保输出结果准确可靠，而非简单返回 LLM 原始输出。</p>
+        <h3 data-i18n="cp-why-2-title">Three-Level Quality System</h3>
+        <p data-i18n="cp-why-2-desc">Pre-filtering → tool-level reflection → subtask reflection → post-reflection, 7-dimension quality scoring ensures accurate and reliable output, not just raw LLM responses.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon purple">🤖</div>
-        <h3>多 Agent 协作</h3>
-        <p>支持将复杂任务拆解为子任务，<strong>分派给不同专业 Agent 并行处理</strong>——代码审查、数据分析、文档撰写各司其职，协同完成。</p>
+        <h3 data-i18n="cp-why-3-title">Multi-Agent Collaboration</h3>
+        <p data-i18n="cp-why-3-desc">Supports decomposing complex tasks into subtasks, <strong>dispatching to different specialized Agents for parallel processing</strong> — code review, data analysis, documentation writing each handled expertly.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon amber">⚡</div>
-        <h3>智能成本控制</h3>
-        <p>50+ 工具定义通过<strong>轻量 API 预筛选</strong>缩减为 5-10 个相关项，Token 预算动态管理，上下文自动压缩——大幅降低 API 调用成本。</p>
+        <h3 data-i18n="cp-why-4-title">Smart Cost Control</h3>
+        <p data-i18n="cp-why-4-desc">50+ tool definitions reduced to 5-10 relevant items via <strong>lightweight API pre-filtering</strong>, dynamic Token budget management, auto context compression — dramatically reduces API call costs.</p>
       </div>
     </div>
   </div>
@@ -791,23 +815,23 @@ section { padding: 80px 0; }
     <div class="stats-bar reveal">
       <div class="stat-item">
         <div class="s-num">50+</div>
-        <div class="s-label">内建工具</div>
+        <div class="s-label" data-i18n="cp-stats-tools">Built-in Tools</div>
       </div>
       <div class="stat-item">
         <div class="s-num">7</div>
-        <div class="s-label">质量评分维度</div>
+        <div class="s-label" data-i18n="cp-stats-dims">Quality Dimensions</div>
       </div>
       <div class="stat-item">
         <div class="s-num">5</div>
-        <div class="s-label">内置 Agent 角色</div>
+        <div class="s-label" data-i18n="cp-stats-roles">Built-in Agent Roles</div>
       </div>
       <div class="stat-item">
         <div class="s-num">4</div>
-        <div class="s-label">多模态输入方式</div>
+        <div class="s-label" data-i18n="cp-stats-inputs">Multimodal Input Methods</div>
       </div>
       <div class="stat-item">
         <div class="s-num">100+</div>
-        <div class="s-label">可配置参数</div>
+        <div class="s-label" data-i18n="cp-stats-params">Configurable Parameters</div>
       </div>
     </div>
   </div>
@@ -817,29 +841,29 @@ section { padding: 80px 0; }
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="tag">技术架构</span>
-      <h2>五层架构 · 消息驱动</h2>
-      <p>通过 Chrome Extension API 消息通道实现各层高效通信</p>
+      <span class="tag" data-i18n="cp-arch-tag">Technical Architecture</span>
+      <h2 data-i18n="cp-arch-title">Five-Layer Architecture · Message-Driven</h2>
+      <p data-i18n="cp-arch-desc">Efficient communication between layers via Chrome Extension API message channels</p>
     </div>
     <div class="arch-diagram reveal">
       <div class="arch-row">
-        <div class="arch-node panel">Side Panel<br><small>对话 UI · Markdown 渲染</small></div>
+        <div class="arch-node panel"><span data-i18n="cp-arch-side">Side Panel</span><br><small data-i18n="cp-arch-side-sub">Chat UI · Markdown Rendering</small></div>
       </div>
       <div class="arch-arrow">↓ chrome.runtime.sendMessage</div>
       <div class="arch-row">
-        <div class="arch-node core">Background Worker<br><small>ReAct 推理循环 · 工具调度</small></div>
+        <div class="arch-node core"><span data-i18n="cp-arch-bg">Background Worker</span><br><small data-i18n="cp-arch-bg-sub">ReAct Reasoning Loop · Tool Dispatch</small></div>
       </div>
       <div class="arch-arrow">↓ chrome.tabs.sendMessage · HTTP/WS</div>
       <div class="arch-row">
-        <div class="arch-node content">Content Script<br><small>页面工具执行</small></div>
-        <div class="arch-node agent">Local Agent (Node.js)<br><small>文件/命令/MCP/Skill</small></div>
+        <div class="arch-node content"><span data-i18n="cp-arch-cs">Content Script</span><br><small data-i18n="cp-arch-cs-sub">Page Tool Execution</small></div>
+        <div class="arch-node agent"><span data-i18n="cp-arch-agent">Local Agent (Node.js)</span><br><small data-i18n="cp-arch-agent-sub">Files/Commands/MCP/Skill</small></div>
       </div>
       <div class="arch-divider"></div>
       <div class="arch-row" style="gap:32px;">
-        <div class="arch-node panel" style="font-size:12px;">IndexedDB<br><small>会话/原型/Token</small></div>
-        <div class="arch-node core" style="font-size:12px;">chrome.storage<br><small>配置/Agent 定义</small></div>
-        <div class="arch-node content" style="font-size:12px;">OpenAI API<br><small>LLM + Vision</small></div>
-        <div class="arch-node agent" style="font-size:12px;">MCP Protocol<br><small>第三方工具扩展</small></div>
+        <div class="arch-node panel" style="font-size:12px;">IndexedDB<br><small data-i18n="cp-arch-db">Sessions/Prototypes/Token</small></div>
+        <div class="arch-node core" style="font-size:12px;">chrome.storage<br><small data-i18n="cp-arch-storage">Config/Agent Definitions</small></div>
+        <div class="arch-node content" style="font-size:12px;">OpenAI API<br><small data-i18n="cp-arch-api">LLM + Vision</small></div>
+        <div class="arch-node agent" style="font-size:12px;">MCP Protocol<br><small data-i18n="cp-arch-mcp">Third-Party Tool Extension</small></div>
       </div>
     </div>
   </div>
@@ -849,15 +873,15 @@ section { padding: 80px 0; }
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="tag">能力矩阵</span>
-      <h2>50+ 项内建工具 · 11 大类别</h2>
-      <p>覆盖浏览器操控的方方面面，还支持 MCP 协议动态扩展第三方工具</p>
+      <span class="tag" data-i18n="cp-tools-tag">Capability Matrix</span>
+      <h2 data-i18n="cp-tools-title">50+ Built-in Tools · 11 Categories</h2>
+      <p data-i18n="cp-tools-desc">Covering all aspects of browser control, with MCP protocol support for dynamic third-party tool extension</p>
     </div>
     <div class="tools-grid">
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(0,212,255,0.1);color:var(--accent-cyan);">📄</div>
-          <span class="cat-name">内容提取</span>
+          <span class="cat-name" data-i18n="cp-cat-extract">Content Extraction</span>
           <span class="cat-count">7 tools</span>
         </div>
         <ul>
@@ -866,13 +890,13 @@ section { padding: 80px 0; }
           <li>query_elements</li>
           <li>search_in_page</li>
           <li>scroll_collect</li>
-          <li>跨标签页提取</li>
+          <li data-i18n="cp-cat-extract-item">Cross-tab Extraction</li>
         </ul>
       </div>
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(123,94,255,0.1);color:var(--accent-purple);">🖱️</div>
-          <span class="cat-name">页面交互</span>
+          <span class="cat-name" data-i18n="cp-cat-interact">Page Interaction</span>
           <span class="cat-count">6 tools</span>
         </div>
         <ul>
@@ -886,7 +910,7 @@ section { padding: 80px 0; }
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(52,211,153,0.1);color:var(--accent-green);">📝</div>
-          <span class="cat-name">表单输入</span>
+          <span class="cat-name" data-i18n="cp-cat-forms">Form Input</span>
           <span class="cat-count">4 tools</span>
         </div>
         <ul>
@@ -899,7 +923,7 @@ section { padding: 80px 0; }
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(251,191,36,0.1);color:var(--accent-amber);">🗂️</div>
-          <span class="cat-name">标签页管理</span>
+          <span class="cat-name" data-i18n="cp-cat-tabs">Tab Management</span>
           <span class="cat-count">8 tools</span>
         </div>
         <ul>
@@ -908,13 +932,13 @@ section { padding: 80px 0; }
           <li>list_tabs</li>
           <li>reload_tab</li>
           <li>search_bookmarks</li>
-          <li>跨标签页内容提取</li>
+          <li data-i18n="cp-cat-tabs-item">Cross-tab Content Extraction</li>
         </ul>
       </div>
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(0,212,255,0.1);color:var(--accent-cyan);">🤖</div>
-          <span class="cat-name">AI 协作</span>
+          <span class="cat-name" data-i18n="cp-cat-ai">AI Collaboration</span>
           <span class="cat-count">6 tools</span>
         </div>
         <ul>
@@ -928,7 +952,7 @@ section { padding: 80px 0; }
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(123,94,255,0.1);color:var(--accent-purple);">🖥️</div>
-          <span class="cat-name">本地 Agent</span>
+          <span class="cat-name" data-i18n="cp-cat-agent">Local Agent</span>
           <span class="cat-count">12 tools</span>
         </div>
         <ul>
@@ -944,7 +968,7 @@ section { padding: 80px 0; }
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(52,211,153,0.1);color:var(--accent-green);">📸</div>
-          <span class="cat-name">媒体输出</span>
+          <span class="cat-name" data-i18n="cp-cat-media">Media Output</span>
           <span class="cat-count">5 tools</span>
         </div>
         <ul>
@@ -958,15 +982,15 @@ section { padding: 80px 0; }
       <div class="tool-category reveal">
         <div class="cat-header">
           <div class="cat-icon" style="background:rgba(251,191,36,0.1);color:var(--accent-amber);">🔌</div>
-          <span class="cat-name">MCP 动态扩展</span>
+          <span class="cat-name" data-i18n="cp-cat-mcp">MCP Dynamic Extension</span>
           <span class="cat-count">∞</span>
         </div>
         <ul>
           <li>JSON-RPC 2.0</li>
-          <li>Stdio 传输</li>
-          <li>多 Server 管理</li>
-          <li>自动工具发现</li>
-          <li>环境变量配置</li>
+          <li data-i18n="cp-cat-mcp-1">Stdio Transport</li>
+          <li data-i18n="cp-cat-mcp-2">Multi-Server Management</li>
+          <li data-i18n="cp-cat-mcp-3">Auto Tool Discovery</li>
+          <li data-i18n="cp-cat-mcp-4">Env Variable Config</li>
         </ul>
       </div>
     </div>
@@ -977,44 +1001,44 @@ section { padding: 80px 0; }
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="tag">核心亮点</span>
-      <h2>不止于工具调用</h2>
-      <p>从输入到输出，全链路打磨每一个环节</p>
+      <span class="tag" data-i18n="cp-features-tag">Key Highlights</span>
+      <h2 data-i18n="cp-features-title">Beyond Tool Calling</h2>
+      <p data-i18n="cp-features-desc">From input to output, polished every step of the way</p>
     </div>
     <div class="features-list">
       <div class="feature-item reveal">
         <div class="f-num">01</div>
         <div>
-          <h4>多模态输入 — 图片 + 文件随心问</h4>
-          <p>支持图片识别（Vision API）、PDF/Word/Excel 文件提取问答。内建图片标注编辑器，6 种标注工具，支持 Undo。有 Agent 时优先上传至工作目录供 AI 直接操作原始文件。</p>
+          <h4 data-i18n="cp-feat-1-title">Multimodal Input — Images + Files, Ask Anything</h4>
+          <p data-i18n="cp-feat-1-desc">Supports image recognition (Vision API), PDF/Word/Excel file extraction and Q&A. Built-in image annotation editor with 6 annotation tools and Undo support. With Agent, files are prioritized to workspace for AI to directly operate on originals.</p>
         </div>
       </div>
       <div class="feature-item reveal">
         <div class="f-num">02</div>
         <div>
-          <h4>ReAct 推理循环 — 思考与行动的闭环</h4>
-          <p>LLM 思考 → 决定调用工具 → 并行执行 → 结果反馈 → 继续推理。支持工具预筛选、Token 预算管理、上下文智能压缩、流式响应、多级超时控制和会话隔离取消。</p>
+          <h4 data-i18n="cp-feat-2-title">ReAct Reasoning Loop — Think & Act Closed Loop</h4>
+          <p data-i18n="cp-feat-2-desc">LLM Think → Decide to Call Tools → Parallel Execution → Result Feedback → Continue Reasoning. Supports tool pre-filtering, Token budget management, smart context compression, streaming responses, multi-level timeout control and session-isolated cancellation.</p>
         </div>
       </div>
       <div class="feature-item reveal">
         <div class="f-num">03</div>
         <div>
-          <h4>Skill 系统 + MCP 协议 — 能力无限扩展</h4>
-          <p>Workflow Skill 实现确定性自动化流程，Agent Skill 提供 AI 自主调用的知识扩展。MCP 协议支持动态注册第三方工具，多 Server 同时连接，工具自动合并。</p>
+          <h4 data-i18n="cp-feat-3-title">Skill System + MCP Protocol — Infinite Extensibility</h4>
+          <p data-i18n="cp-feat-3-desc">Workflow Skills enable deterministic automation flows, Agent Skills provide AI-autonomous knowledge extension. MCP protocol supports dynamic registration of third-party tools, multi-server simultaneous connection, and automatic tool merging.</p>
         </div>
       </div>
       <div class="feature-item reveal">
         <div class="f-num">04</div>
         <div>
-          <h4>划词浮动工具栏 — 无处不在的 AI 入口</h4>
-          <p>选中任意网页文本即弹出毛玻璃风格工具栏，支持 AI 搜索、解释、翻译、总结、自定义提示词工具，可拖拽缩放的结果面板，让 AI 能力无缝融入浏览体验。</p>
+          <h4 data-i18n="cp-feat-4-title">Floating Selection Toolbar — AI Everywhere</h4>
+          <p data-i18n="cp-feat-4-desc">Select any web text to pop up a frosted-glass style toolbar, supporting AI search, explanation, translation, summarization, and custom prompt tools. Draggable, resizable result panel seamlessly integrates AI capabilities into your browsing experience.</p>
         </div>
       </div>
       <div class="feature-item reveal">
         <div class="f-num">05</div>
         <div>
-          <h4>长期记忆 — 让 AI 越用越懂你</h4>
-          <p>自动存储用户偏好、知识、决策记录和对话摘要。AI 在对话中主动调用记忆工具进行存储和检索，支持标签分类、重要性评分、智能压缩淘汰，让每次对话都更贴合你的需求。</p>
+          <h4 data-i18n="cp-feat-5-title">Long-Term Memory — AI That Knows You Better</h4>
+          <p data-i18n="cp-feat-5-desc">Automatically stores user preferences, knowledge, decision records, and conversation summaries. AI proactively calls memory tools during conversations for storage and retrieval, supporting tag classification, importance scoring, and smart compression/eviction — making each conversation more tailored to your needs.</p>
         </div>
       </div>
     </div>
@@ -1025,29 +1049,29 @@ section { padding: 80px 0; }
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="tag">价值与意义</span>
-      <h2>效率提升 × 能力平权</h2>
+      <span class="tag" data-i18n="cp-value-tag">Value & Impact</span>
+      <h2 data-i18n="cp-value-title">Efficiency Boost × Capability Equality</h2>
     </div>
     <div class="why-grid">
       <div class="why-card reveal">
         <div class="icon cyan">📈</div>
-        <h3>商业价值</h3>
-        <p>面向运营、产品、研究等职场人群，将原本需要数十分钟的手动网页操作压缩为一句话指令。智能工具预筛选 + Token 预算管理大幅降低 AI 调用成本，让企业级 AI 自动化成为可能。</p>
+        <h3 data-i18n="cp-value-1-title">Business Value</h3>
+        <p data-i18n="cp-value-1-desc">For operations, product, and research professionals — compress minutes of manual web operations into a single sentence command. Smart tool pre-filtering + Token budget management drastically reduces AI call costs, making enterprise-grade AI automation achievable.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon green">⚡</div>
-        <h3>效率提升</h3>
-        <p>批量填表、数据采集、多页面信息聚合——这些原本需要逐个页面手动操作的任务，现在由 AI 自动完成。用户只需用自然语言描述需求，AI 会规划步骤、调用工具、反思结果、交付成品。</p>
+        <h3 data-i18n="cp-value-2-title">Efficiency Boost</h3>
+        <p data-i18n="cp-value-2-desc">Batch form filling, data collection, multi-page information aggregation — tasks that previously required manual page-by-page operations are now automatically completed by AI. Just describe your needs in natural language, and AI will plan steps, call tools, reflect on results, and deliver the finished product.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon purple">🌍</div>
-        <h3>社会价值</h3>
-        <p>非技术用户无需学习编程即可通过自然语言操控浏览器完成复杂任务，降低技术门槛。划词工具栏让任何网页信息都能一键获得 AI 帮助，推动信息无障碍获取，实现技术能力平权。</p>
+        <h3 data-i18n="cp-value-3-title">Social Value</h3>
+        <p data-i18n="cp-value-3-desc">Non-technical users can control browsers and complete complex tasks via natural language without learning to code, lowering the technical barrier. The selection toolbar enables one-click AI assistance for any web content, promoting accessible information access and achieving technical capability equality.</p>
       </div>
       <div class="why-card reveal">
         <div class="icon amber">🔓</div>
-        <h3>开放扩展</h3>
-        <p>基于 MCP 开放协议，任何开发者都可以为 AI Helper 编写工具扩展。Skill 系统支持从对话中自动沉淀技能，形成「越用越强」的正向循环。开源架构，社区共建。</p>
+        <h3 data-i18n="cp-value-4-title">Open & Extensible</h3>
+        <p data-i18n="cp-value-4-desc">Based on the MCP open protocol, any developer can write tool extensions for AI Helper. The Skill system supports auto-distilling skills from conversations, forming a positive "use more, get stronger" cycle. Open-source architecture, community co-creation.</p>
       </div>
     </div>
   </div>
@@ -1056,8 +1080,8 @@ section { padding: 80px 0; }
 <!-- CTA -->
 <section class="cta-section">
   <div class="container reveal">
-    <h2>让 AI 住进你的浏览器</h2>
-    <p>不再是在聊天窗口和网页之间来回切换<br>AI Helper 让大模型成为真正的浏览器智能体</p>
+    <h2 data-i18n="cp-cta-title">Let AI Live in Your Browser</h2>
+    <p data-i18n="cp-cta-desc">No more switching between chat windows and web pages<br>AI Helper makes LLMs a true browser agent</p>
     <div class="cta-platforms">
       <span class="cta-tag">Chrome 114+</span>
       <span class="cta-tag">Manifest V3</span>
@@ -1098,6 +1122,131 @@ document.querySelectorAll('.why-grid, .tools-grid, .features-list').forEach(cont
     child.style.transitionDelay = `${i * 80}ms`;
   });
 });
+
+// --- i18n Engine ---
+(function() {
+  var LANG_KEY = 'ai-helper-lang';
+  var t = {};
+
+  function tr(k,en,zh) { t[k] = {en:en, zh:zh}; }
+
+  tr('cp-title','AI Helper — Smart Browser Agent','AI Helper — 能操控浏览器的智能网页助手');
+  tr('cp-hero-badge','Chrome Extension · Manifest V3','Chrome 浏览器扩展 · Manifest V3');
+  tr('cp-hero-title-1','Let AI','让 AI');
+  tr('cp-hero-title-hl','Live in Your Browser','住进浏览器');
+  tr('cp-hero-title-2','Operate Web Pages Like a Human','像人一样操控网页');
+  tr('cp-hero-desc','AI Helper is more than a Chat tool. Built on the ReAct reasoning loop, it can truly control browsers — click, fill forms, drag, extract data — letting AI handle complex web tasks for you.','AI Helper 不仅仅是一个 Chat 工具。它基于 ReAct 推理循环，能真正操控浏览器——点击、填表、拖拽、提取数据，让 AI 替你完成网页上的复杂任务。');
+  tr('cp-stat-builtin','Built-in Tools','内建工具');
+  tr('cp-stat-mcp','Dynamic Protocol Extension','协议动态扩展');
+  tr('cp-stat-reflection','Reflection Quality Assurance','反思质量保障');
+  tr('cp-stat-agent','Collaborative Dispatch','协作分派');
+  tr('cp-mockup-user','Extract all product info from this page and export to Excel','帮我把这个页面上所有的商品信息提取出来，导出为 Excel');
+  tr('cp-mockup-1','Reading page content...','正在读取页面内容...');
+  tr('cp-mockup-2','Extracted 48 product records with name, price, rating','已提取 48 条商品数据，含名称、价格、评分');
+  tr('cp-mockup-3','Excel file generated, downloading...','已生成 Excel 文件，下载中...');
+  tr('cp-why-tag','Why AI Helper','为什么选择 AI Helper');
+  tr('cp-why-title','More Than Chat — A Real Browser Agent','不只是聊天，而是真正的浏览器智能体');
+  tr('cp-why-desc','Compared to regular Chat tools, AI Helper has these key differentiators','相较于普通 Chat 工具，AI Helper 拥有以下关键差异化能力');
+  tr('cp-why-1-title','Real Browser Control','真正的浏览器操控');
+  tr('cp-why-1-desc','Not just reading web content — can click, fill forms, drag, scroll, wait for elements, upload files','不仅读取网页内容，还能点击、填表、拖拽、滚动、等待元素、上传文件');
+  tr('cp-why-2-title','Three-Level Quality System','三级质量保障体系');
+  tr('cp-why-2-desc','Pre-filtering → tool-level reflection → subtask reflection → post-reflection','预筛选 → 工具级反思 → 子任务反思 → 后置反思');
+  tr('cp-why-3-title','Multi-Agent Collaboration','多 Agent 协作');
+  tr('cp-why-3-desc','Decompose complex tasks into subtasks, dispatch to specialized Agents','将复杂任务拆解为子任务，分派给不同专业 Agent 并行处理');
+  tr('cp-why-4-title','Smart Cost Control','智能成本控制');
+  tr('cp-why-4-desc','50+ tool definitions reduced to 5-10 via lightweight API pre-filtering','50+ 工具定义通过轻量 API 预筛选缩减为 5-10 个相关项');
+  tr('cp-stats-tools','Built-in Tools','内建工具');
+  tr('cp-stats-dims','Quality Dimensions','质量评分维度');
+  tr('cp-stats-roles','Built-in Agent Roles','内置 Agent 角色');
+  tr('cp-stats-inputs','Multimodal Input Methods','多模态输入方式');
+  tr('cp-stats-params','Configurable Parameters','可配置参数');
+  tr('cp-arch-tag','Technical Architecture','技术架构');
+  tr('cp-arch-title','Five-Layer Architecture · Message-Driven','五层架构 · 消息驱动');
+  tr('cp-arch-desc','Efficient communication between layers','各层高效通信');
+  tr('cp-arch-side','Side Panel','Side Panel');
+  tr('cp-arch-side-sub','Chat UI · Markdown Rendering','对话 UI · Markdown 渲染');
+  tr('cp-arch-bg','Background Worker','Background Worker');
+  tr('cp-arch-bg-sub','ReAct Reasoning Loop · Tool Dispatch','ReAct 推理循环 · 工具调度');
+  tr('cp-arch-cs','Content Script','Content Script');
+  tr('cp-arch-cs-sub','Page Tool Execution','页面工具执行');
+  tr('cp-arch-agent','Local Agent (Node.js)','Local Agent (Node.js)');
+  tr('cp-arch-agent-sub','Files/Commands/MCP/Skill','文件/命令/MCP/Skill');
+  tr('cp-arch-db','Sessions/Prototypes/Token','会话/原型/Token');
+  tr('cp-arch-storage','Config/Agent Definitions','配置/Agent 定义');
+  tr('cp-arch-api','LLM + Vision','LLM + Vision');
+  tr('cp-arch-mcp','Third-Party Tool Extension','第三方工具扩展');
+  tr('cp-tools-tag','Capability Matrix','能力矩阵');
+  tr('cp-tools-title','50+ Built-in Tools · 11 Categories','50+ 项内建工具 · 11 大类别');
+  tr('cp-tools-desc','Covering all aspects of browser control','覆盖浏览器操控的方方面面');
+  tr('cp-cat-extract','Content Extraction','内容提取');
+  tr('cp-cat-extract-item','Cross-tab Extraction','跨标签页提取');
+  tr('cp-cat-interact','Page Interaction','页面交互');
+  tr('cp-cat-forms','Form Input','表单输入');
+  tr('cp-cat-tabs','Tab Management','标签页管理');
+  tr('cp-cat-tabs-item','Cross-tab Content Extraction','跨标签页内容提取');
+  tr('cp-cat-ai','AI Collaboration','AI 协作');
+  tr('cp-cat-agent','Local Agent','本地 Agent');
+  tr('cp-cat-media','Media Output','媒体输出');
+  tr('cp-cat-mcp','MCP Dynamic Extension','MCP 动态扩展');
+  tr('cp-cat-mcp-1','Stdio Transport','Stdio 传输');
+  tr('cp-cat-mcp-2','Multi-Server Management','多 Server 管理');
+  tr('cp-cat-mcp-3','Auto Tool Discovery','自动工具发现');
+  tr('cp-cat-mcp-4','Env Variable Config','环境变量配置');
+  tr('cp-features-tag','Key Highlights','核心亮点');
+  tr('cp-features-title','Beyond Tool Calling','不止于工具调用');
+  tr('cp-features-desc','From input to output, polished every step','从输入到输出，全链路打磨每一个环节');
+  tr('cp-feat-1-title','Multimodal Input — Images + Files','多模态输入 — 图片 + 文件随心问');
+  tr('cp-feat-1-desc','Supports image recognition, PDF/Word/Excel file extraction','支持图片识别、PDF/Word/Excel 文件提取问答');
+  tr('cp-feat-2-title','ReAct Reasoning Loop','ReAct 推理循环 — 思考与行动的闭环');
+  tr('cp-feat-2-desc','LLM Think → Call Tools → Execute → Feedback','LLM 思考 → 调用工具 → 执行 → 反馈');
+  tr('cp-feat-3-title','Skill System + MCP Protocol','Skill 系统 + MCP 协议 — 能力无限扩展');
+  tr('cp-feat-3-desc','Workflow Skills + Agent Skills for extensibility','Workflow Skill + Agent Skill 双重扩展能力');
+  tr('cp-feat-4-title','Floating Selection Toolbar','划词浮动工具栏 — 无处不在的 AI');
+  tr('cp-feat-4-desc','Select text to pop up AI toolbar','选中网页文本即弹出 AI 工具栏');
+  tr('cp-feat-5-title','Long-Term Memory','长期记忆 — 让 AI 越用越懂你');
+  tr('cp-feat-5-desc','Auto stores preferences, knowledge, decision records','自动存储偏好、知识、决策记录和对话摘要');
+  tr('cp-value-tag','Value & Impact','价值与意义');
+  tr('cp-value-title','Efficiency Boost × Capability Equality','效率提升 × 能力平权');
+  tr('cp-value-1-title','Business Value','商业价值');
+  tr('cp-value-1-desc','Compress manual web operations into commands','将手动网页操作压缩为指令');
+  tr('cp-value-2-title','Efficiency Boost','效率提升');
+  tr('cp-value-2-desc','Batch filling, data collection — AI automated','批量填表、数据采集由 AI 自动完成');
+  tr('cp-value-3-title','Social Value','社会价值');
+  tr('cp-value-3-desc','Natural language control without coding','无需编程即可通过自然语言操控浏览器');
+  tr('cp-value-4-title','Open & Extensible','开放扩展');
+  tr('cp-value-4-desc','MCP open protocol, community co-creation','MCP 开放协议，社区共建');
+  tr('cp-cta-title','Let AI Live in Your Browser','让 AI 住进你的浏览器');
+  tr('cp-cta-desc','No more switching between chat and web pages','不再在聊天窗口和网页之间来回切换');
+
+  function getUrlLang() {
+    var m = location.search.match(/[?&]lang=([a-z]+)/i);
+    return m ? m[1] : null;
+  }
+  function getLang() {
+    var urlLang = getUrlLang();
+    if (urlLang && (urlLang === 'en' || urlLang === 'zh')) {
+      localStorage.setItem(LANG_KEY, urlLang);
+      return urlLang;
+    }
+    return localStorage.getItem(LANG_KEY) || 'en';
+  }
+  function setLang(l) { localStorage.setItem(LANG_KEY, l); }
+  function applyLang(lang) {
+    document.querySelectorAll('.lang-option').forEach(function(o) {
+      o.classList.toggle('active', o.getAttribute('data-lang') === lang);
+    });
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var k = el.getAttribute('data-i18n');
+      if (t[k] && t[k][lang]) el.textContent = t[k][lang];
+    });
+    document.title = t['cp-title'][lang];
+  }
+  document.getElementById('langToggle').addEventListener('click', function() {
+    var cur = getLang(), next = cur === 'en' ? 'zh' : 'en';
+    setLang(next); applyLang(next);
+  });
+  applyLang(getLang());
+})();
 </script>
 </body>
 </html>
