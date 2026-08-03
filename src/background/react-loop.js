@@ -4,7 +4,7 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
@@ -873,7 +873,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         
         const requestBody = {
           model: model || config.modelName,
-          messages: filteredMessages,
+          messages: sanitizeImageUrlsForApi(filteredMessages),
           tools: apiTools.map(t => {
             const { id, ...clean } = t;
             return clean;
@@ -2483,7 +2483,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
     const requestBody = {
       model: model || config.modelName,
-      messages: filteredMessages,
+      messages: sanitizeImageUrlsForApi(filteredMessages),
       stream: useStream
     };
 

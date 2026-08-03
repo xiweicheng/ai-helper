@@ -506,8 +506,8 @@ export function filterApiMessages(messages) {
     }
 
     // 清理 multipart content 中 image_url 的内部字段
-    // original_url 是原图 Base64（仅供 UI 预览/编辑），不可传给 API
-    // width/height 为轻量字段，保留供 Token 估算，API 会忽略
+    // filterApiMessages 负责剥离 original_url（原图 Base64），保留 width/height 供 token 估算
+    // 此函数在 token 估算之前调用，width/height 用于 estimateImageTokens 按分辨率精准估算（避免按 Base64 字节高估约 20 倍）
     if (Array.isArray(result.content)) {
       result.content = result.content.map(part => {
         if (part && part.type === 'image_url' && part.image_url) {
@@ -581,6 +581,29 @@ export function filterApiMessages(messages) {
   }
 
   return filtered;
+}
+
+/**
+ * 清理 image_url 中的额外字段，仅保留标准 url 字段
+ * 在实际构建 API 请求体时调用，移除 width/height 等所有非标准字段
+ * 返回浅拷贝新数组，不修改原数组，不影响后续 token 估算和裁剪逻辑
+ * @param {Array} messages - 消息数组
+ * @returns {Array} 清理后的消息数组
+ */
+export function sanitizeImageUrlsForApi(messages) {
+  if (!messages || messages.length === 0) return messages;
+  return messages.map(msg => {
+    if (!msg || !Array.isArray(msg.content)) return msg;
+    let contentChanged = false;
+    const newContent = msg.content.map(part => {
+      if (part && part.type === 'image_url' && part.image_url) {
+        contentChanged = true;
+        return { type: 'image_url', image_url: { url: part.image_url.url } };
+      }
+      return part;
+    });
+    return contentChanged ? { ...msg, content: newContent } : msg;
+  });
 }
 
 /**
