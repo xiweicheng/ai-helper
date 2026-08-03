@@ -23,6 +23,8 @@ registerTranslations('zh', {
     subDispatchDesc: '使用 dispatch_task(subAgentId, task) 分派子任务给其他助手执行，支持并行调用。',
     subDispatchAvailable: '可用子助手：',
     agentTerm: '- **代理**：远端执行服务，提供文件操作、命令执行等能力。可通过 manage_agent 工具查询或切换代理',
+    agentHostLabel: '- 代理主机地址：',
+    agentHostHint: '（访问代理端服务时请优先使用此地址）',
     terminologyTitle: '## 术语定义',
     taskPlanningTitle: '## 任务拆解',
     taskPlanningDesc: '复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。',
@@ -61,6 +63,8 @@ registerTranslations('en', {
     subDispatchDesc: 'Use dispatch_task(subAgentId, task) to dispatch subtasks to other assistants. Parallel calls are supported.',
     subDispatchAvailable: 'Available sub-assistants:',
     agentTerm: '- **Agent**: A remote execution service that provides file operations, command execution, and other capabilities. Use the manage_agent tool to query or switch agents',
+    agentHostLabel: '- Agent host: ',
+    agentHostHint: '(Please use this address first when accessing agent services)',
     terminologyTitle: '## Terminology',
     taskPlanningTitle: '## Task Decomposition',
     taskPlanningDesc: 'Break down complex tasks (multi-step, with dependencies) into 2-5 subtasks; execute simple tasks directly. Use plan_task(taskDescription, subtasks) to submit the plan.',
@@ -346,13 +350,35 @@ ${t('util.cmdExecEnvTitle')}
   const subAgents = allAgents.filter(a => a.allowSubDispatch && a.id !== (agent?.id || ''));
   const hasSubDispatch = subAgents.length > 0 && agentHasTool('dispatch_task', agent?.toolIds);
   
-  // 判断是否有配对的代理
+  // 判断是否有配对的代理，并获取活跃代理主机地址
   let hasPairedAgents = false;
+  let activeAgentHost = null;
   try {
-    const result = await chrome.storage.local.get(['pairedAgents']);
-    hasPairedAgents = (result.pairedAgents || []).length > 0;
+    const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+    const agents = result.pairedAgents || [];
+    hasPairedAgents = agents.length > 0;
+    if (hasPairedAgents && result.activeAgentId) {
+      const activeAgent = agents.find(a => a.id === result.activeAgentId);
+      if (activeAgent?.url) {
+        try {
+          activeAgentHost = new URL(activeAgent.url).hostname;
+        } catch {
+          // URL 解析失败时降级：通过字符串处理提取 hostname（不含端口）
+          const stripped = activeAgent.url.replace(/^https?:\/\//, '').replace(/\/.*$/, '').split(':')[0];
+          if (stripped) {
+            activeAgentHost = stripped;
+          }
+        }
+      }
+    }
   } catch { /* 获取失败不影响主流程 */ }
   
+  // 代理主机地址注入——当代理已连接且有活跃代理 Host 时
+  let agentHostSection = '';
+  if (activeAgentHost) {
+    agentHostSection = `\n${t('util.agentHostLabel')}${activeAgentHost}${t('util.agentHostHint')}`;
+  }
+
   let assistantTerminology = '';
   let agentTerminology = '';
   let dispatchToolRule = '';
@@ -433,7 +459,7 @@ ${notesText}
 
 ${t('util.currentEnvTitle')}
 - ${t('util.currentTimeLabel')}${currentTime}
-- ${t('util.browserLabel')} / ${browserOS}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+- ${t('util.browserLabel')} / ${browserOS}${agentHostSection}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 `;
 
     // 注入 Agent Skill Prompts
@@ -457,7 +483,7 @@ ${t('util.requirementTitle')}
 ${t('util.requirementDesc')}${taskPlanningRules}${dispatchToolRule}${memoryRules}
 
 ${t('util.envTitle')}
-${currentTime} | Chrome Side Panel / ${browserOS}${commandEnvSection}
+${currentTime} | Chrome Side Panel / ${browserOS}${agentHostSection}${commandEnvSection}
 `;
 
   // 注入 Agent Skill Prompts
