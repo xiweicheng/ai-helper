@@ -275,14 +275,126 @@ function initScrollToBottomBtn() {
   const btn = document.getElementById('scrollToBottomBtn');
   if (!btn || btn.dataset.bound) return;
   btn.dataset.bound = '1';
-  btn.addEventListener('click', () => {
-    const cc = document.getElementById('chatContainer');
-    if (!cc) return;
-    _userScrolledUp = false;
-    _hasPendingContent = false;
-    updateScrollButtonState();
-    autoScrollToBottom(cc, { force: true, smooth: true });
-  });
+
+  // 恢复保存的按钮位置（localStorage）
+  const savedPos = localStorage.getItem('scrollBtnPosition') || 'center';
+  btn.classList.add(`pos-${savedPos}`);
+
+  // ---------- 拖拽相关状态 ----------
+  let dragActive = false;      // 是否正在拖拽
+  let dragStartX = 0;         // 拖拽起始指针 X（页面坐标）
+  let dragStartLeft = 0;      // 拖拽起始按钮 left（相对于容器）
+  let dragMoved = false;      // 本次是否发生实质拖拽（>3px）
+  let dragLastLeft = 0;       // 拖拽过程中最后记录的 left
+  let dragStarted = false;    // 是否已从 CSS 类切换为内联 left
+
+  /** 拖拽结束 → 吸附到最近的三个位置之一 */
+  function snapToNearest() {
+    const container = document.getElementById('chatContainer');
+    if (!container) return;
+    const cw = container.clientWidth;
+    // 三档：左 1/6，中 1/2，右 5/6
+    const positions = { left: cw / 6, center: cw / 2, right: cw * 5 / 6 };
+    let best = 'center';
+    let bestDist = Infinity;
+    for (const [key, val] of Object.entries(positions)) {
+      const dist = Math.abs(dragLastLeft - val);
+      if (dist < bestDist) { bestDist = dist; best = key; }
+    }
+    // 应用位置类（清除旧类、内联样式，设置新类）
+    btn.classList.remove('pos-left', 'pos-center', 'pos-right');
+    btn.classList.add(`pos-${best}`);
+    btn.style.left = '';
+    btn.style.marginLeft = '';
+    btn.style.right = '';
+    // 持久化
+    localStorage.setItem('scrollBtnPosition', best);
+  }
+
+  /** 切换到内联 left 以便自由拖拽（仅在首次实质移动时调用） */
+  function switchToInlineLeft() {
+    const container = document.getElementById('chatContainer');
+    const btnRect = btn.getBoundingClientRect();
+    const containerRect = container ? container.getBoundingClientRect() : null;
+    const currentLeft = containerRect ? btnRect.left - containerRect.left + btnRect.width / 2 : dragStartX;
+    btn.classList.remove('pos-left', 'pos-center', 'pos-right');
+    btn.style.left = `${currentLeft}px`;
+    btn.style.marginLeft = '0';
+    btn.style.right = 'auto';
+    btn.classList.add('dragging');
+    dragStartLeft = currentLeft;
+    dragStarted = true;
+  }
+
+  /** 拖拽开始：纯记录坐标，不改变 CSS，避免纯点击时晃动 */
+  function onDragStart(e) {
+    // 只响应主按键（鼠标左键）或触摸
+    if (e.type === 'mousedown' && e.button !== 0) return;
+    e.preventDefault();
+    dragActive = true;
+    dragMoved = false;
+    dragStarted = false;
+    dragStartX = e.touches ? e.touches[0].clientX : e.clientX;
+  }
+
+  /** 拖拽移动：首次移动 > 3px 时才从 CSS 类切换到内联 left */
+  function onDragMove(e) {
+    if (!dragActive) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    if (!dragStarted) {
+      // 还未切换为内联 left：检查是否已移动超过阈值
+      if (Math.abs(clientX - dragStartX) <= 3) return;
+      dragMoved = true;
+      switchToInlineLeft();
+    }
+    const container = document.getElementById('chatContainer');
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    let newLeft = dragStartLeft + (clientX - dragStartX);
+    // 边界限制：按钮左边缘不低于 0，右边缘不超出容器
+    const halfW = btn.offsetWidth / 2;
+    newLeft = Math.max(halfW, Math.min(containerRect.width - halfW, newLeft));
+    dragLastLeft = newLeft;
+    btn.style.left = `${newLeft}px`;
+  }
+
+  /** 拖拽结束：已拖拽则吸附，未拖拽则直接滚到底部 */
+  function onDragEnd() {
+    if (!dragActive) return;
+    dragActive = false;
+    if (dragMoved) {
+      // 发生了实质拖拽 → 吸附到最近位置
+      btn.classList.remove('dragging');
+      snapToNearest();
+    } else {
+      // 纯点击（无拖拽）→ 直接滚到底部，不经过 click 事件
+      if (dragStarted) {
+        // 切换过内联但没有实质移动（理论上不应发生，做防护）
+        btn.classList.remove('dragging');
+        btn.style.left = '';
+        btn.style.marginLeft = '';
+        btn.style.right = '';
+      }
+      const cc = document.getElementById('chatContainer');
+      if (cc) {
+        _userScrolledUp = false;
+        _hasPendingContent = false;
+        updateScrollButtonState();
+        autoScrollToBottom(cc, { force: true, smooth: true });
+      }
+    }
+    dragMoved = false;
+    dragStarted = false;
+  }
+
+  // 绑定拖拽事件
+  btn.addEventListener('mousedown', onDragStart);
+  btn.addEventListener('touchstart', onDragStart, { passive: false });
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('touchmove', onDragMove, { passive: false });
+  document.addEventListener('mouseup', onDragEnd);
+  document.addEventListener('touchend', onDragEnd);
+
   // 初始化后立即更新按钮状态（处理页面刷新/恢复会话等场景）
   updateScrollButtonState();
 }
