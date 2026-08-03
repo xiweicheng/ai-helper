@@ -7,8 +7,6 @@ import { t, registerTranslations } from '../shared/i18n.js';
 registerTranslations('zh', {
   promptSelector: {
     noMatchSkill: '暂无匹配的技能',
-    skillHint: '技能',
-    mcpHint: 'MCP 服务',
     skillManageTitle: '管理技能',
     noMatchMcp: '暂无匹配的 MCP 服务',
     toolCount: '{count} 个工具',
@@ -18,8 +16,6 @@ registerTranslations('zh', {
 registerTranslations('en', {
   promptSelector: {
     noMatchSkill: 'No matching skills',
-    skillHint: 'Skills',
-    mcpHint: 'MCP Services',
     skillManageTitle: 'Manage skills',
     noMatchMcp: 'No matching MCP services',
     toolCount: '{count} tools',
@@ -294,7 +290,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'block';
     if (mcpList) mcpList.style.display = 'none';
-    if (headerText) headerText.textContent = t('promptSelector.skillHint');
+    if (headerText) headerText.textContent = t('promptSelector.switchHintSelect');
     state.selectedPromptIndex = -1;
     state.selectedMcpServiceIndex = -1;
     await renderSkillList();
@@ -302,7 +298,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'none';
     if (mcpList) mcpList.style.display = 'block';
-    if (headerText) headerText.textContent = t('promptSelector.mcpHint');
+    if (headerText) headerText.textContent = t('promptSelector.switchHintSelect');
     state.selectedPromptIndex = -1;
     state.selectedSkillIndex = -1;
     await renderMcpList();

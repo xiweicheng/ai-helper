@@ -10,13 +10,13 @@ import { homedir, tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import os from 'os';
-import { loadConfig, saveConfig } from './config.js';
-import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest } from './auth.js';
-import { checkPath, checkCommand, normalizePathFormat } from './security.js';
-import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup } from './trash.js';
-import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses } from './executor.js';
+import { loadConfig, saveConfig, setConfigLang } from './config.js';
+import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest, setAuthLang } from './auth.js';
+import { checkPath, checkCommand, normalizePathFormat, setSecurityLang } from './security.js';
+import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup, setTrashLang } from './trash.js';
+import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, setExecutorLang } from './executor.js';
 import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
-import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent } from './search.js';
+import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import {
   initializeMcpRegistry,
   shutdownMcpRegistry,
@@ -43,7 +43,10 @@ import {
   getAgentSkillPrompt,
   getSkillsDir
 } from './skill/registry.js';
-import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './skill/loader.js';
+import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl, setSkillLoaderLang } from './skill/loader.js';
+import { setSkillExecutorLang } from './skill/executor.js';
+import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
+import { setMcpClientLang } from './mcp/client.js';
 import { getRequestI18n } from './i18n.js';
 import XLSX from 'xlsx';
 
@@ -405,7 +408,19 @@ export function startServer() {
 
   async function handleRequest(req, res) {
     // 初始化国际化（根据 Accept-Language 头选择语言）
-    const { t } = getRequestI18n(req);
+    const { t, lang } = getRequestI18n(req);
+
+    // 将当前请求的语言同步到各子模块（用于模块内部硬编码中文的国际化）
+    setConfigLang(lang);
+    setAuthLang(lang);
+    setSecurityLang(lang);
+    setTrashLang(lang);
+    setExecutorLang(lang);
+    setSearchLang(lang);
+    setSkillExecutorLang(lang);
+    setSkillLoaderLang(lang);
+    setMarkdownLoaderLang(lang);
+    setMcpClientLang(lang);
 
     // CORS 预检（仅放行 Chrome 扩展来源）
     if (req.method === 'OPTIONS') {
@@ -441,7 +456,7 @@ export function startServer() {
       let body;
       try { body = await parseBody(req); }
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
-      const result = await handlePairRequest(body.code, body.extensionId);
+      const result = await handlePairRequest(body.code, body.extensionId, t);
       if (result.success) {
         logAuth('pair_success', { extensionId: body.extensionId });
       } else {
@@ -726,7 +741,7 @@ export function startServer() {
       if (!targetPath || typeof targetPath !== 'string') {
         return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
       }
-      const check = await checkPath(targetPath);
+      const check = await checkPath(targetPath, t);
       if (!check.allowed) {
         logSecurity('fs_upload_stream_blocked', { path: targetPath, reason: check.reason });
         return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -919,7 +934,8 @@ export function startServer() {
             body.path || '.',
             body.pattern || '*',
             body.recursive !== false,
-            maxResults
+            maxResults,
+            t
           );
           if (result.success) {
             logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -944,7 +960,8 @@ export function startServer() {
             body.caseSensitive || false,
             body.recursive !== false,
             maxResults,
-            body.contextLines !== undefined ? body.contextLines : 2
+            body.contextLines !== undefined ? body.contextLines : 2,
+            t
           );
           if (result.success) {
             logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -960,7 +977,7 @@ export function startServer() {
 
       // 读取文件
       if (pathname === '/api/fs/read') {
-        const check = await checkPath(body.path);
+        const check = await checkPath(body.path, t);
         if (!check.allowed) {
           logSecurity('fs_read_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -976,7 +993,7 @@ export function startServer() {
 
       // 写入文件
       if (pathname === '/api/fs/write') {
-        const check = await checkPath(body.path);
+        const check = await checkPath(body.path, t);
         if (!check.allowed) {
           logSecurity('fs_write_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1014,7 +1031,7 @@ export function startServer() {
       // 列出目录
       if (pathname === '/api/fs/list') {
         const dirPath = body.path || '.';
-        const check = await checkPath(dirPath);
+        const check = await checkPath(dirPath, t);
         if (!check.allowed) {
           logSecurity('fs_list_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1036,7 +1053,7 @@ export function startServer() {
 
       // 获取文件详细信息（权限、创建/访问/修改时间、MIME 类型等）
       if (pathname === '/api/fs/stat') {
-        const check = await checkPath(body.path);
+        const check = await checkPath(body.path, t);
         if (!check.allowed) {
           logSecurity('fs_stat_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1068,7 +1085,7 @@ export function startServer() {
 
       // 删除文件/目录（移至回收站，7天后自动清理）
       if (pathname === '/api/fs/delete') {
-        const check = await checkPath(body.path);
+        const check = await checkPath(body.path, t);
         if (!check.allowed) {
           logSecurity('fs_delete_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1076,7 +1093,7 @@ export function startServer() {
         if (!await exists(check.resolved)) return jsonResponse(res, 404, { success: false, error: t('error.fileOrDirNotFound') });
         const fstat2 = await stat(check.resolved);
         const isDir = fstat2.isDirectory();
-        const trashResult = await moveToTrash(check.resolved);
+        const trashResult = await moveToTrash(check.resolved, t);
         if (!trashResult.success) {
           logError('fs', 'trash_error', { path: check.resolved, error: trashResult.error });
           return jsonResponse(res, 500, { success: false, error: trashResult.error });
@@ -1091,7 +1108,7 @@ export function startServer() {
         if (!targetPath || typeof targetPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(targetPath);
+        const check = await checkPath(targetPath, t);
         if (!check.allowed) {
           logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1153,7 +1170,7 @@ export function startServer() {
 
         const resolvedPaths = [];
         for (const p of paths) {
-          const check = await checkPath(p);
+          const check = await checkPath(p, t);
           if (!check.allowed) {
             logSecurity('fs_download_blocked', { path: p, reason: check.reason });
             return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
@@ -1235,7 +1252,7 @@ export function startServer() {
             // 多文件打包流式下载
             const resolvedPaths = [];
             for (const p of paths) {
-              const check = await checkPath(p);
+              const check = await checkPath(p, t);
               if (!check.allowed) {
                 logSecurity('fs_download_blocked', { path: p, reason: check.reason });
                 return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
@@ -1259,7 +1276,7 @@ export function startServer() {
             }
           } else if (targetPath && typeof targetPath === 'string') {
             // 单文件/目录流式下载
-            const check = await checkPath(targetPath);
+            const check = await checkPath(targetPath, t);
             if (!check.allowed) {
               logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
               return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1315,7 +1332,7 @@ export function startServer() {
         if (!filePath || typeof filePath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(filePath);
+        const check = await checkPath(filePath, t);
         if (!check.allowed) {
           logSecurity('fs_preview_xlsx_blocked', { path: filePath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1372,7 +1389,7 @@ export function startServer() {
         if (!dirPath || typeof dirPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(dirPath);
+        const check = await checkPath(dirPath, t);
         if (!check.allowed) {
           logSecurity('fs_mkdir_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1403,7 +1420,7 @@ export function startServer() {
         if (os.platform() === 'win32' && /[:*?"<>|]/.test(newName)) {
           return jsonResponse(res, 400, { success: false, error: t('error.newNameInvalidChars') });
         }
-        const check = await checkPath(oldPath);
+        const check = await checkPath(oldPath, t);
         if (!check.allowed) {
           logSecurity('fs_rename_blocked', { path: oldPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1413,7 +1430,7 @@ export function startServer() {
         }
         const newFullPath = join(dirname(check.resolved), newName);
         // 确保目标路径也在允许范围内
-        const newCheck = await checkPath(newFullPath);
+        const newCheck = await checkPath(newFullPath, t);
         if (!newCheck.allowed) {
           logSecurity('fs_rename_blocked', { path: newFullPath, reason: newCheck.reason });
           return jsonResponse(res, 403, { success: false, error: t('error.targetPathNotAllowed', { reason: newCheck.reason }) });
@@ -1443,12 +1460,12 @@ export function startServer() {
         if (!srcPath || typeof srcPath !== 'string' || !destDir || typeof destDir !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPathOrDestDir') });
         }
-        const srcCheck = await checkPath(srcPath);
+        const srcCheck = await checkPath(srcPath, t);
         if (!srcCheck.allowed) {
           logSecurity('fs_move_blocked', { path: srcPath, reason: srcCheck.reason });
           return jsonResponse(res, 403, { success: false, error: srcCheck.reason });
         }
-        const destCheck = await checkPath(destDir);
+        const destCheck = await checkPath(destDir, t);
         if (!destCheck.allowed) {
           logSecurity('fs_move_blocked', { path: destDir, reason: destCheck.reason });
           return jsonResponse(res, 403, { success: false, error: destCheck.reason });
@@ -1462,7 +1479,7 @@ export function startServer() {
         }
         const itemName = basename(srcCheck.resolved);
         const destPath = join(destCheck.resolved, itemName);
-        const destCheck2 = await checkPath(destPath);
+        const destCheck2 = await checkPath(destPath, t);
         if (!destCheck2.allowed) {
           logSecurity('fs_move_blocked', { path: destPath, reason: destCheck2.reason });
           return jsonResponse(res, 403, { success: false, error: t('error.moveTargetNotAllowed', { reason: destCheck2.reason }) });
@@ -1489,7 +1506,7 @@ export function startServer() {
         if (!targetPath || typeof targetPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(targetPath);
+        const check = await checkPath(targetPath, t);
         if (!check.allowed) {
           logSecurity('browser_open_blocked', { path: targetPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1529,14 +1546,14 @@ export function startServer() {
 
         // 校验 cwd
         let resolvedCwd = cwd || config.workdir;
-        const cwdCheck = await checkPath(resolvedCwd);
+        const cwdCheck = await checkPath(resolvedCwd, t);
         if (!cwdCheck.allowed) {
           logSecurity('exec_cwd_blocked', { command, cwd: resolvedCwd, reason: cwdCheck.reason });
           return jsonResponse(res, 403, { success: false, error: t('error.execDirCheckFailed', { reason: cwdCheck.reason }) });
         }
 
         // 安全检查
-        const cmdCheck = checkCommand(command, !!force);
+        const cmdCheck = checkCommand(command, !!force, t);
         if (cmdCheck.level === 'deny') {
           logSecurity('exec_denied', { command, reason: cmdCheck.reason });
           return jsonResponse(res, 403, { success: false, error: cmdCheck.reason, level: 'deny' });
@@ -1606,7 +1623,7 @@ export function startServer() {
       // 回收站恢复
       if (pathname === '/api/trash/restore') {
         if (!body.trashId) return jsonResponse(res, 400, { success: false, error: t('error.missingTrashId') });
-        const result = await restoreFromTrash(body.trashId);
+        const result = await restoreFromTrash(body.trashId, t);
         if (result.success) {
           logFs('trash_restore', { trashId: body.trashId, restoredPath: result.restoredPath });
         } else {
@@ -1772,7 +1789,7 @@ export function startServer() {
           const fullCmd = body.args?.length > 0
             ? `${body.command} ${body.args.join(' ')}`
             : body.command;
-          const cmdCheck = checkCommand(fullCmd, false);
+          const cmdCheck = checkCommand(fullCmd, false, t);
           if (cmdCheck.level === 'deny') {
             logSecurity('mcp_stdio_denied', { command: fullCmd, reason: cmdCheck.reason });
             return jsonResponse(res, 403, { success: false, error: t('error.mcpCommandBlocked', { reason: cmdCheck.reason }) });
@@ -1960,6 +1977,12 @@ export function startServer() {
 
     if (pathParts[1] === 'ws' && pathParts[2] === 'exec') {
       const execId = pathParts[3];
+
+      // WebSocket 连接也同步语言到各子模块
+      const wsLang = getRequestI18n(request).lang;
+      setExecutorLang(wsLang);
+      setSecurityLang(wsLang);
+      setConfigLang(wsLang);
 
       // WebSocket 认证：优先用 Authorization Header；回退到 ?token= query 是因为
       // 浏览器 WebSocket API 不支持自定义 Header（插件端 new WebSocket() 无法设置 Header）。

@@ -111,6 +111,64 @@ registerTranslations('zh', {
     chatMessageLabel: '消息',
     fileWritten: '文件已写入: {path} ({size} 字节)',
     dirContent: '目录 "{path}" 包含 {count} 个项目:',
+    operationFailed: '操作失败: {error}',
+    noClarification: '未提供澄清信息',
+    selectedOption: '已选择: {option}',
+    customInput: '自定义输入: {input}',
+    requestTimeout: '请求超时 ({timeout}ms)，目标服务器响应过慢。如需获取数据，可尝试：\n1. 适当增大 timeout 参数重新请求\n2. 检查该 URL 在浏览器中是否能快速访问\n3. 如果是 API 接口，尝试缩小请求范围',
+    requestFailed: '无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题',
+    downloadStarted: '文件下载已开始',
+    tabOpened: '已打开标签页 tabId={tabId}。{hint}',
+    tabOpenTimeout: '标签页已打开但加载超时（{timeout}ms），页面可能较慢或无法访问。{hint}',
+    tabLoaded: '已打开并加载完成: {url}。{hint}',
+    tabSwitched: '已切换到标签页 tabId={tabId}。后续操作此页的工具请传 tabId={tabId}（不传则默认用此页）',
+    cookieSet: '已设置Cookie: {name}',
+    cookieDeleted: '已删除Cookie: {name}',
+    prototypeCodeLoaded: '已获取原型 "{title}" 的代码',
+    skillLoadedCached: '已加载 Agent Skill "{name}" 的完整说明：\n\n{prompt}',
+    skillLoaded: '已加载 Agent Skill "{name}" 的完整说明：\n\n{prompt}',
+    navWaitTimeout: '等待导航超时 ({timeout}ms)',
+    pageLoadComplete: '页面加载完成',
+    trashDeleted: '已删除{typeLabel}: {path}，可在回收站中恢复（7天后自动清理）',
+    trashEmpty: '回收站为空，没有可恢复的{typeHint}。',
+    trashRestored: '已恢复: {path}',
+    downloadTriggerFailed: '下载触发失败: {error}',
+    unsupportedFormat: '不支持的格式: {format}，可选: text, html',
+    unsupportedDataType: '不支持的数据类型: {dataType}，可选: table, metadata, links, forms, images',
+    unsupportedClipboardAction: '不支持的操作: {action}，可选: copy, paste, get_selected',
+    agentListContent: '已配对代理列表：\n{summary}\n\n完整数据：{data}',
+    agentListFailed: '查询代理列表失败: {error}',
+    agentNotFound: '未找到代理 "{id}"。当前可用的代理：\n{list}',
+    agentDisabled: '代理 "{name}" 已停用，请先启用后再切换',
+    onlyShowFirst: '... (仅显示前 {count} 条)',
+    agentSwitchSuccess: '已成功切换到代理 "{name}" ({id}){warning}',
+    agentSwitchFailed: '切换代理失败: {error}',
+    agentSwitchFailedSimple: '切换到代理 "{name}" 失败',
+    agentOfflineWarning: '（注意：该代理当前离线）',
+    agentStatusDisabled: '已停用',
+    agentStatusOnline: '在线',
+    agentStatusOffline: '离线',
+    agentStatusUnknown: '状态未知',
+    agentStatusActive: ' ★当前活跃',
+    commandExecFailed: '命令执行失败',
+    commandNeedConfirm: '⚠️ 命令需要用户确认：{reason}\n\n命令: `{command}`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。',
+    commandExecFailedWithOutput: '命令执行失败：{error}\n\n已收集的输出:\n{output}',
+    exitCodeInfo: '(exitCode: {code})',
+    noExitCodeInfo: '(无 exitCode)',
+    commandKilledWarning: '⚠️ 命令因超时被强制终止',
+    commandNoExitCodeWarning: '⚠️ 代理未返回 exitCode',
+    commandExecComplete: '命令执行完毕 {exitInfo}',
+    commandExitCodeError: '命令执行失败，exitCode: {code}',
+    commandNoExitCodeErrorMsg: '命令执行失败，代理未返回 exitCode',
+    stdoutOutput: '输出:\n```\n{stdout}\n```',
+    stderrOutput: '[stderr]\n```\n{stderr}\n```',
+    agentSearchFilesResult: '找到 {total} 个文件{engineLabel}',
+    agentSearchContentResult: '找到 {total} 条匹配{engineLabel}',
+    engineLabelFd: ' (引擎: fd)',
+    engineLabelNodejs: ' (引擎: Node.js)',
+    engineLabelRipgrep: ' (引擎: ripgrep)',
+    fileListLimitHint: '\n\n... (仅显示前 {count} 条)',
+    matchListLimitHint: '\n\n... (仅显示前 {count} 条)',
   },
 });
 registerTranslations('en', {
@@ -211,6 +269,64 @@ registerTranslations('en', {
     chatMessageLabel: 'Message',
     fileWritten: 'File written: {path} ({size} bytes)',
     dirContent: 'Directory "{path}" contains {count} items:',
+    operationFailed: 'Operation failed: {error}',
+    noClarification: 'No clarification provided',
+    selectedOption: 'Selected: {option}',
+    customInput: 'Custom input: {input}',
+    requestTimeout: 'Request timed out ({timeout}ms), target server is slow. To get data, try:\n1. Increase timeout parameter and retry\n2. Check if the URL is accessible quickly in browser\n3. If it is an API, try narrowing the request scope',
+    requestFailed: 'Cannot access target URL, possible reasons:\n1. Target server is unreachable\n2. URL does not exist or has expired\n3. Target server refused connection\n4. Network connection issue',
+    downloadStarted: 'File download started',
+    tabOpened: 'Opened tab tabId={tabId}. {hint}',
+    tabOpenTimeout: 'Tab opened but loading timed out ({timeout}ms), page may be slow or inaccessible. {hint}',
+    tabLoaded: 'Opened and loaded: {url}. {hint}',
+    tabSwitched: 'Switched to tab tabId={tabId}. For subsequent tools on this page, pass tabId={tabId} (omit to use this tab by default)',
+    cookieSet: 'Cookie set: {name}',
+    cookieDeleted: 'Cookie deleted: {name}',
+    prototypeCodeLoaded: 'Loaded prototype "{title}" code',
+    skillLoadedCached: 'Loaded Agent Skill "{name}" full description:\n\n{prompt}',
+    skillLoaded: 'Loaded Agent Skill "{name}" full description:\n\n{prompt}',
+    navWaitTimeout: 'Navigation wait timed out ({timeout}ms)',
+    pageLoadComplete: 'Page load complete',
+    trashDeleted: 'Deleted {typeLabel}: {path}, can be restored from trash (auto-cleaned after 7 days)',
+    trashEmpty: 'Trash is empty, no {typeHint} to restore.',
+    trashRestored: 'Restored: {path}',
+    downloadTriggerFailed: 'Download trigger failed: {error}',
+    unsupportedFormat: 'Unsupported format: {format}, options: text, html',
+    unsupportedDataType: 'Unsupported data type: {dataType}, options: table, metadata, links, forms, images',
+    unsupportedClipboardAction: 'Unsupported action: {action}, options: copy, paste, get_selected',
+    agentListContent: 'Paired agent list:\n{summary}\n\nFull data: {data}',
+    agentListFailed: 'Failed to query agent list: {error}',
+    agentNotFound: 'Agent "{id}" not found. Available agents:\n{list}',
+    agentDisabled: 'Agent "{name}" is disabled, please enable it first before switching',
+    onlyShowFirst: '... (showing first {count} only)',
+    agentSwitchSuccess: 'Successfully switched to agent "{name}" ({id}){warning}',
+    agentSwitchFailed: 'Failed to switch agent: {error}',
+    agentSwitchFailedSimple: 'Failed to switch to agent "{name}"',
+    agentOfflineWarning: ' (Note: This agent is currently offline)',
+    agentStatusDisabled: 'Disabled',
+    agentStatusOnline: 'Online',
+    agentStatusOffline: 'Offline',
+    agentStatusUnknown: 'Unknown',
+    agentStatusActive: ' ★Active',
+    commandExecFailed: 'Command execution failed',
+    commandNeedConfirm: 'Command requires user confirmation: {reason}\n\nCommand: `{command}`\n\nIf you agree to execute, please reply "confirm" or "yes", I will re-execute this command with force: true.',
+    commandExecFailedWithOutput: 'Command execution failed: {error}\n\nCollected output:\n{output}',
+    exitCodeInfo: '(exitCode: {code})',
+    noExitCodeInfo: '(no exitCode)',
+    commandKilledWarning: 'Command was terminated due to timeout',
+    commandNoExitCodeWarning: 'Agent did not return exitCode',
+    commandExecComplete: 'Command execution complete {exitInfo}',
+    commandExitCodeError: 'Command execution failed, exitCode: {code}',
+    commandNoExitCodeErrorMsg: 'Command execution failed, agent did not return exitCode',
+    stdoutOutput: 'stdout:\n```\n{stdout}\n```',
+    stderrOutput: '[stderr]\n```\n{stderr}\n```',
+    agentSearchFilesResult: 'Found {total} files{engineLabel}',
+    agentSearchContentResult: 'Found {total} matches{engineLabel}',
+    engineLabelFd: ' (engine: fd)',
+    engineLabelNodejs: ' (engine: Node.js)',
+    engineLabelRipgrep: ' (engine: ripgrep)',
+    fileListLimitHint: '\n\n... (showing first {count} only)',
+    matchListLimitHint: '\n\n... (showing first {count} only)',
   },
 });
 
@@ -1161,7 +1277,7 @@ function normalizeToolResult(result, toolCallId) {
         result.content = result.message;
       } else if (!result.success && result.error) {
         const escapedError = String(result.error).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-        result.content = `操作失败: ${escapedError}`;
+        result.content = t('toolExec.operationFailed', { error: escapedError });
         result.message = result.error;
       } else {
         const { success, error, tool_call_id, ...rest } = result;
@@ -2043,11 +2159,11 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         
         let result = '';
         if (selectedOption >= 0 && options[selectedOption]) {
-          result = `已选择: ${options[selectedOption]}`;
+          result = t('toolExec.selectedOption', { option: options[selectedOption] });
         } else if (customInput && customInput.trim()) {
-          result = `自定义输入: ${customInput.trim()}`;
+          result = t('toolExec.customInput', { input: customInput.trim() });
         } else {
-          result = '未提供澄清信息';
+          result = t('toolExec.noClarification');
         }
         
         if (additionalInfo && additionalInfo.trim()) {
@@ -2382,11 +2498,11 @@ export async function executeFetchUrl(args, toolCallId) {
     
     if (error.name === 'AbortError') {
       console.warn('[Background] HTTP 请求超时:', url, `(${timeout}ms)`);
-      errorMessage = `请求超时 (${timeout}ms)，目标服务器响应过慢。如需获取数据，可尝试：\n1. 适当增大 timeout 参数重新请求\n2. 检查该 URL 在浏览器中是否能快速访问\n3. 如果是 API 接口，尝试缩小请求范围`;
+      errorMessage = t('toolExec.requestTimeout', { timeout });
     } else {
       console.error('[Background] HTTP 请求失败:', error.name, error.message);
       if (error.message === 'Failed to fetch') {
-        errorMessage = `无法访问目标 URL，可能原因：\n1. 目标服务器不可达\n2. URL 不存在或已失效\n3. 目标服务器拒绝连接\n4. 网络连接问题`;
+        errorMessage = t('toolExec.requestFailed');
       } else if (error.message.includes('CORS')) {
         errorMessage = `CORS 跨域限制，目标服务器不允许跨域访问`;
       }
@@ -2459,7 +2575,7 @@ export function executeDownloadFile(args, toolCallId) {
         console.log('[Background] 下载已创建，ID:', downloadId);
         resolve({ 
           success: true, 
-          message: `文件下载已开始`,
+          message: t('toolExec.downloadStarted'),
           downloadId: downloadId,
           filename: downloadFilename
         });
@@ -2497,7 +2613,7 @@ export function executeOpenTab(args, toolCallId, sessionId) {
       if (!waitForLoad) {
         resolve({
           success: true,
-          message: `已打开标签页 tabId=${tab.id}。${hint}`,
+          message: t('toolExec.tabOpened', { tabId: tab.id, hint }),
           tabId: tab.id,
           url: tab.url,
           tool_call_id: toolCallId
@@ -2516,7 +2632,7 @@ export function executeOpenTab(args, toolCallId, sessionId) {
         console.warn('[Background] 页面加载超时:', url, `(${safeTimeout}ms)`);
         resolve({
           success: true,
-          message: `标签页已打开但加载超时（${safeTimeout}ms），页面可能较慢或无法访问。${hint}`,
+          message: t('toolExec.tabOpenTimeout', { timeout: safeTimeout, hint }),
           tabId: tab.id,
           url: tab.url,
           loadTimedOut: true,
@@ -2533,7 +2649,7 @@ export function executeOpenTab(args, toolCallId, sessionId) {
           console.log('[Background] 页面加载完成:', updatedTab.url);
           resolve({
             success: true,
-            message: `已打开并加载完成: ${updatedTab.url}。${hint}`,
+            message: t('toolExec.tabLoaded', { url: updatedTab.url, hint }),
             tabId: tab.id,
             url: updatedTab.url,
             tool_call_id: toolCallId
@@ -2566,7 +2682,7 @@ export function executeSwitchTab(args, toolCallId, sessionId) {
         }
         resolve({
           success: true,
-          message: `已切换到标签页 tabId=${tab.id}。后续操作此页的工具请传 tabId=${tab.id}（不传则默认用此页）`,
+          message: t('toolExec.tabSwitched', { tabId: tab.id }),
           tabId: tab.id,
           url: tab.url
         });
@@ -2713,7 +2829,7 @@ export function executeManageCookies(args, toolCallId) {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
-              resolve({ success: true, cookie: cookie, message: `已设置Cookie: ${name}`, tool_call_id: toolCallId });
+              resolve({ success: true, cookie: cookie, message: t('toolExec.cookieSet', { name }), tool_call_id: toolCallId });
             }
           });
           break;
@@ -2727,7 +2843,7 @@ export function executeManageCookies(args, toolCallId) {
             if (chrome.runtime.lastError) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
-              resolve({ success: true, message: `已删除Cookie: ${name}`, tool_call_id: toolCallId });
+              resolve({ success: true, message: t('toolExec.cookieDeleted', { name }), tool_call_id: toolCallId });
               appendAuditLog('cookie_write', `删除 Cookie: ${name}`, { domain: cookieDomain, name });
             }
           });
@@ -3077,7 +3193,7 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
       
       return { 
         success: true, 
-        message: `已获取原型 "${prototype.title}" 的代码`,
+        message: t('toolExec.prototypeCodeLoaded', { title: prototype.title }),
         prototypeId: prototype.id,
         title: prototype.title,
         description: prototype.description || '',
@@ -3238,7 +3354,7 @@ async function executeAgentSkill(args, toolCallId) {
   if (cached && (Date.now() - cached.timestamp < 60000)) {
     return {
       success: true,
-      content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${cached.prompt}`,
+      content: t('toolExec.skillLoadedCached', { name, prompt: cached.prompt }),
       skill: cached.skill,
       tool_call_id: toolCallId
     };
@@ -3251,7 +3367,7 @@ async function executeAgentSkill(args, toolCallId) {
       skillLoadCache.set(name, { timestamp: Date.now(), prompt: result.prompt, skill: result.skill });
       return {
         success: true,
-        content: `已加载 Agent Skill "${name}" 的完整说明：\n\n${result.prompt}`,
+        content: t('toolExec.skillLoaded', { name, prompt: result.prompt }),
         skill: result.skill,
         tool_call_id: toolCallId
       };
@@ -3299,7 +3415,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
           resolved = true;
           chrome.tabs.onUpdated.removeListener(listener);
           console.warn('[Background] 等待导航超时:', timeout + 'ms');
-          resolve({ success: false, error: `等待导航超时 (${timeout}ms)`, tool_call_id: toolCallId });
+          resolve({ success: false, error: t('toolExec.navWaitTimeout', { timeout }), tool_call_id: toolCallId });
         }
       }, timeout);
 
@@ -3342,7 +3458,7 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
           resolved = true;
           clearTimeout(timeoutId);
           chrome.tabs.onUpdated.removeListener(listener);
-          resolve({ success: true, status: 'complete', url: tab.url, message: '页面加载完成', tool_call_id: toolCallId });
+          resolve({ success: true, status: 'complete', url: tab.url, message: t('toolExec.pageLoadComplete'), tool_call_id: toolCallId });
         } else if (changeInfo.status === 'loading' && waitUntil === 'domcontentloaded') {
           // 对于 domcontentloaded，loading 状态已经意味着 DOM 开始解析
           // 但我们仍然等 complete（稳妥）
@@ -3404,7 +3520,7 @@ async function executeAgentDeleteFile(args, toolCallId) {
   if (result.success) {
     const typeLabel = result.isDir ? '目录' : '文件';
     appendAuditLog('file_delete', `删除${typeLabel}: ${result.path}`, { path: result.path, isDir: result.isDir });
-    return { success: true, message: `已删除${typeLabel}: ${result.path}，可在回收站中恢复（7天后自动清理）`, path: result.path, isDir: result.isDir, tool_call_id: toolCallId };
+    return { success: true, message: t('toolExec.trashDeleted', { typeLabel, path: result.path }), path: result.path, isDir: result.isDir, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }
@@ -3429,7 +3545,7 @@ async function executeAgentListTrash(args, toolCallId) {
     }
     if (entries.length === 0) {
       const typeHint = args.type === 'file' ? '文件' : args.type === 'directory' ? '目录' : '项目';
-      return { success: true, content: `回收站为空，没有可恢复的${typeHint}。`, entries: [], tool_call_id: toolCallId };
+      return { success: true, content: t('toolExec.trashEmpty', { typeHint }), entries: [], tool_call_id: toolCallId };
     }
     const now = Date.now();
     const text = `回收站中共有 ${entries.length} 个项目（7天后自动清理）:\n\n` +
@@ -3454,7 +3570,7 @@ async function executeAgentRestoreTrash(args, toolCallId) {
   const result = await AgentClient.restoreTrash(trashId);
   if (result.success) {
     appendAuditLog('file_restore', `恢复文件: ${result.restoredPath}`, { trashId, restoredPath: result.restoredPath });
-    return { success: true, message: `已恢复: ${result.restoredPath}`, restoredPath: result.restoredPath, tool_call_id: toolCallId };
+    return { success: true, message: t('toolExec.trashRestored', { path: result.restoredPath }), restoredPath: result.restoredPath, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
 }
@@ -3561,16 +3677,16 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
     
     if (initResult.level === 'deny') {
-      return { success: false, error: initResult.error || '命令执行被拒绝', level: 'deny', tool_call_id: toolCallId };
+      return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
     }
     if (!initResult.success && !initResult.level) {
-      return { success: false, error: initResult.error || '命令执行失败', tool_call_id: toolCallId };
+      return { success: false, error: initResult.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
     }
     if (initResult.level === 'confirm') {
       return {
         success: true,
         level: 'confirm',
-        message: `⚠️ 命令需要用户确认：${initResult.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
+        message: t('toolExec.commandNeedConfirm', { reason: initResult.reason, command }),
         reason: initResult.reason,
         command,
         cwd,
@@ -3860,7 +3976,10 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
           stdout: stdoutCollected,
           stderr: stderrCollected,
           killed: true,
-          message: `命令执行失败：${errorMessage}\n\n已收集的输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : ''}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}`,
+          message: t('toolExec.commandExecFailedWithOutput', {
+            error: errorMessage,
+            output: (stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '') + (stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : '')
+          }),
           error: errorMessage
         };
       }
@@ -3898,7 +4017,14 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     
     const hasExitCode = exitCode !== null && exitCode !== undefined;
     const isSuccess = hasExitCode && exitCode >= 0 && exitCode <= 127;
-    const message = `命令执行完毕 ${hasExitCode ? '(exitCode: ' + exitCode + ')' : '(无 exitCode)'}\n\n${stdoutCollected ? '输出:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\n[stderr]\n```\n' + stderrCollected + '\n```' : ''}${killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`;
+    const exitInfo = hasExitCode
+      ? t('toolExec.exitCodeInfo', { code: exitCode })
+      : t('toolExec.noExitCodeInfo');
+    let message = t('toolExec.commandExecComplete', { exitInfo });
+    if (stdoutCollected) message += '\n\n' + t('toolExec.stdoutOutput', { stdout: stdoutCollected });
+    if (stderrCollected) message += '\n' + t('toolExec.stderrOutput', { stderr: stderrCollected });
+    if (killed) message += '\n' + t('toolExec.commandKilledWarning');
+    if (!hasExitCode) message += '\n' + t('toolExec.commandNoExitCodeWarning');
     return {
       success: isSuccess,
       level: 'allow',
@@ -3909,7 +4035,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       killed,
       content: message,
       message,
-      error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
+      error: !isSuccess ? (hasExitCode ? t('toolExec.commandExitCodeError', { code: exitCode }) : t('toolExec.commandNoExitCodeErrorMsg')) : undefined,
       tool_call_id: toolCallId
     };
   }
@@ -3934,7 +4060,7 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
 
   // 网络/认证错误
   if (!result.success && !result.level) {
-    return { success: false, error: result.error || '命令执行失败', tool_call_id: toolCallId };
+    return { success: false, error: result.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
   }
   
   // 灰名单 - 需要确认
@@ -3942,7 +4068,7 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
     return {
       success: true,
       level: 'confirm',
-      message: `⚠️ 命令需要用户确认：${result.reason}\n\n命令: \`${command}\`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。`,
+      message: t('toolExec.commandNeedConfirm', { reason: result.reason, command }),
       reason: result.reason,
       command,
       cwd,
@@ -3954,6 +4080,14 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
   appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
   const hasExitCode = result.exitCode !== null && result.exitCode !== undefined;
   const isSuccess = hasExitCode && result.exitCode >= 0 && result.exitCode <= 127;
+  const exitInfo2 = hasExitCode
+    ? t('toolExec.exitCodeInfo', { code: result.exitCode })
+    : t('toolExec.noExitCodeInfo');
+  let msg2 = t('toolExec.commandExecComplete', { exitInfo: exitInfo2 });
+  if (result.stdout) msg2 += '\n\n' + t('toolExec.stdoutOutput', { stdout: result.stdout });
+  if (result.stderr) msg2 += '\n' + t('toolExec.stderrOutput', { stderr: result.stderr });
+  if (result.killed) msg2 += '\n' + t('toolExec.commandKilledWarning');
+  if (!hasExitCode) msg2 += '\n' + t('toolExec.commandNoExitCodeWarning');
   return {
     success: isSuccess,
     level: 'allow',
@@ -3962,8 +4096,8 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     killed: result.killed || false,
-    message: `命令执行完毕 ${hasExitCode ? '(exitCode: ' + result.exitCode + ')' : '(无 exitCode)'}\n\n${result.stdout ? '输出:\n```\n' + result.stdout + '\n```' : ''}${result.stderr ? '\n[stderr]\n```\n' + result.stderr + '\n```' : ''}${result.killed ? '\n⚠️ 命令因超时被强制终止' : ''}${!hasExitCode ? '\n⚠️ 代理未返回 exitCode' : ''}`,
-    error: !isSuccess ? (hasExitCode ? `命令执行失败，exitCode: ${result.exitCode}` : '命令执行失败，代理未返回 exitCode') : undefined,
+    message: msg2,
+    error: !isSuccess ? (hasExitCode ? t('toolExec.commandExitCodeError', { code: result.exitCode }) : t('toolExec.commandNoExitCodeErrorMsg')) : undefined,
     tool_call_id: toolCallId
   };
 }
@@ -3977,13 +4111,14 @@ async function executeAgentSearchFiles(args, toolCallId) {
   
   const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
   if (result.success) {
-    const engineLabel = result.engine === 'fd' ? ' (引擎: fd)' : ' (引擎: Node.js)';
+    const engineLabel = result.engine === 'fd' ? t('toolExec.engineLabelFd') : t('toolExec.engineLabelNodejs');
+    const fileList = result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n');
     return {
       success: true,
       results: result.results,
       total: result.total,
       engine: result.engine,
-      message: `找到 ${result.total} 个文件${engineLabel}\n\n${result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n')}${result.total > 50 ? '\n\n... (仅显示前 50 条)' : ''}`,
+      message: t('toolExec.agentSearchFilesResult', { total: result.total, engineLabel }) + '\n\n' + fileList + (result.total > 50 ? t('toolExec.fileListLimitHint', { count: 50 }) : ''),
       tool_call_id: toolCallId
     };
   }
@@ -4004,13 +4139,14 @@ async function executeAgentSearchContent(args, toolCallId) {
     contextLines !== undefined ? contextLines : 2
   );
   if (result.success) {
-    const engineLabel = result.engine === 'rg' ? ' (引擎: ripgrep)' : ' (引擎: Node.js)';
+    const engineLabel = result.engine === 'rg' ? t('toolExec.engineLabelRipgrep') : t('toolExec.engineLabelNodejs');
+    const matchList = result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n');
     return {
       success: true,
       results: result.results,
       total: result.total,
       engine: result.engine,
-      message: `找到 ${result.total} 条匹配${engineLabel}\n\n${result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n')}${result.total > 30 ? '\n\n... (仅显示前 30 条)' : ''}`,
+      message: t('toolExec.agentSearchContentResult', { total: result.total, engineLabel }) + '\n\n' + matchList + (result.total > 30 ? t('toolExec.matchListLimitHint', { count: 30 }) : ''),
       tool_call_id: toolCallId
     };
   }
@@ -4285,20 +4421,20 @@ async function executeAgentList(args, toolCallId) {
     }
     
     const summary = list.map(a => {
-      const status = a.disabled ? '已停用' : (a.reachable === true ? '在线' : a.reachable === false ? '离线' : '状态未知');
-      const activeMark = a.isActive ? ' ★当前活跃' : '';
+      const status = a.disabled ? t('toolExec.agentStatusDisabled') : (a.reachable === true ? t('toolExec.agentStatusOnline') : a.reachable === false ? t('toolExec.agentStatusOffline') : t('toolExec.agentStatusUnknown'));
+      const activeMark = a.isActive ? t('toolExec.agentStatusActive') : '';
       return `- ${a.name} (${a.id}): ${status}${activeMark}`;
     }).join('\n');
     
     return {
       success: true,
-      content: `已配对代理列表：\n${summary}\n\n完整数据：${JSON.stringify(list, null, 2)}`,
+      content: t('toolExec.agentListContent', { summary, data: JSON.stringify(list, null, 2) }),
       agents: list,
       activeAgentId: activeAgent?.id || null,
       tool_call_id: toolCallId
     };
   } catch (err) {
-    return { success: false, error: `查询代理列表失败: ${err.message}`, tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.agentListFailed', { error: err.message }), tool_call_id: toolCallId };
   }
 }
 
@@ -4332,7 +4468,7 @@ async function executeAgentSwitch(args, toolCallId) {
       const availableList = agents.map(a => `- ${a.name} (${a.id})`).join('\n');
       return {
         success: false,
-        error: `未找到代理 "${agentId || agentName}"。当前可用的代理：\n${availableList}`,
+        error: t('toolExec.agentNotFound', { id: agentId || agentName, list: availableList }),
         tool_call_id: toolCallId
       };
     }
@@ -4340,7 +4476,7 @@ async function executeAgentSwitch(args, toolCallId) {
     if (targetAgent.disabled) {
       return {
         success: false,
-        error: `代理 "${targetAgent.name}" 已停用，请先启用后再切换`,
+        error: t('toolExec.agentDisabled', { name: targetAgent.name }),
         tool_call_id: toolCallId
       };
     }
@@ -4349,23 +4485,23 @@ async function executeAgentSwitch(args, toolCallId) {
     if (!switched) {
       return {
         success: false,
-        error: `切换到代理 "${targetAgent.name}" 失败`,
+        error: t('toolExec.agentSwitchFailedSimple', { name: targetAgent.name }),
         tool_call_id: toolCallId
       };
     }
     
     const reachable = AgentClient.isAgentReachable(targetAgent.id);
-    const warning = reachable !== true ? `（注意：该代理当前离线）` : '';
+    const warning = reachable !== true ? t('toolExec.agentOfflineWarning') : '';
     
     return {
       success: true,
-      content: `已成功切换到代理 "${targetAgent.name}" (${targetAgent.id})${warning}`,
+      content: t('toolExec.agentSwitchSuccess', { name: targetAgent.name, id: targetAgent.id, warning }),
       agentId: targetAgent.id,
       agentName: targetAgent.name,
       offline: reachable !== true,
       tool_call_id: toolCallId
     };
   } catch (err) {
-    return { success: false, error: `切换代理失败: ${err.message}`, tool_call_id: toolCallId };
+    return { success: false, error: t('toolExec.agentSwitchFailed', { error: err.message }), tool_call_id: toolCallId };
   }
 }

@@ -4,6 +4,30 @@ import { readdir, stat, readFile } from 'fs/promises';
 import { statSync } from 'fs';
 import { join, basename, extname, resolve, isAbsolute } from 'path';
 import { checkPath } from './security.js';
+import { t as translate } from './i18n.js';
+
+// 默认使用 zh 语言（独立调用场景）；server.js 调用时会传入 req 的 lang
+let currentLang = 'zh';
+
+/**
+ * 设置 search 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setSearchLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助：使用当前模块语言或传入的 t 函数
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @param {Function} [tFn] - 可选的 t 函数（优先使用）
+ * @returns {string}
+ */
+function tr(key, params, tFn) {
+  if (typeof tFn === 'function') return tFn(key, params);
+  return translate(currentLang, key, params);
+}
 
 // 缓存检测结果，避免每次启动重复检测
 let fdAvailable = null;
@@ -191,10 +215,11 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
  * @param {string} filePattern - 文件名模式（glob），如 "*.js"
  * @param {boolean} recursive - 是否递归
  * @param {number} maxResults - 最大结果数
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {Array<{path, name, size, mtime}>}
  */
-export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200) {
-  const pathCheck = await checkPath(rootPath);
+export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200, tFn) {
+  const pathCheck = await checkPath(rootPath, tFn);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }
@@ -203,12 +228,12 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
   try {
     await stat(resolved);
   } catch {
-    return { success: false, error: '搜索路径不存在' };
+    return { success: false, error: tr('search.pathNotExist', undefined, tFn) };
   }
 
   const s = await stat(resolved);
   if (!s.isDirectory()) {
-    return { success: false, error: '搜索路径不是目录' };
+    return { success: false, error: tr('search.pathNotDir', undefined, tFn) };
   }
 
   let results;
@@ -381,10 +406,11 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
  * @param {boolean} recursive - 是否递归搜索子目录
  * @param {number} maxResults - 最大结果数
  * @param {number} contextLines - 上下文行数
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {{ success: boolean, results: Array, total: number, engine: string }}
  */
-export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2) {
-  const pathCheck = await checkPath(rootPath);
+export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, tFn) {
+  const pathCheck = await checkPath(rootPath, tFn);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }
@@ -393,11 +419,11 @@ export async function searchContent(rootPath, pattern, filePattern = null, caseS
   try {
     await stat(resolved);
   } catch {
-    return { success: false, error: '搜索路径不存在' };
+    return { success: false, error: tr('search.pathNotExist', undefined, tFn) };
   }
 
   if (!pattern || !pattern.trim()) {
-    return { success: false, error: '搜索内容不能为空' };
+    return { success: false, error: tr('search.emptyPattern', undefined, tFn) };
   }
 
   let results;

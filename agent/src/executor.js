@@ -4,6 +4,18 @@ import { existsSync } from 'fs';
 import crypto from 'crypto';
 import os from 'os';
 import { loadConfig } from './config.js';
+import { t as translate } from './i18n.js';
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 executor 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setExecutorLang(lang) {
+  if (lang) currentLang = lang;
+}
 
 function getShellForExec() {
   const platform = os.platform();
@@ -208,7 +220,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     entry.stdoutBuf = appendWithLimit(entry.stdoutBuf, str, truncState);
     entry.truncStdout = truncState.truncated;
     if (truncState.truncated) {
-      broadcast({ type: 'stdout_truncated', message: 'stdout 输出超过 5MB 上限，已截断', execId });
+      broadcast({ type: 'stdout_truncated', message: translate(currentLang, 'error.stdoutTruncated'), execId });
     }
     broadcast({ type: 'stdout', data: str, execId });
   });
@@ -221,7 +233,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     entry.stderrBuf = appendWithLimit(entry.stderrBuf, str, truncState);
     entry.truncStderr = truncState.truncated;
     if (truncState.truncated) {
-      broadcast({ type: 'stderr_truncated', message: 'stderr 输出超过 5MB 上限，已截断', execId });
+      broadcast({ type: 'stderr_truncated', message: translate(currentLang, 'error.stderrTruncated'), execId });
     }
     broadcast({ type: 'stderr', data: str, execId });
   });
@@ -313,7 +325,7 @@ function executeCommandSync(command, cwd) {
       if (!resolved) {
         resolved = true;
         killProcess(execId);
-        resolve({ execId, exitCode: -1, killed: true, stdout: '', stderr: '', error: 'Command timed out' });
+        resolve({ execId, exitCode: -1, killed: true, stdout: '', stderr: '', error: translate(currentLang, 'error.commandTimeout') });
       }
     }, timeout + 5000);
   });

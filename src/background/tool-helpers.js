@@ -2,6 +2,30 @@
 // 从 tool-executor.js 拆分，提供参数解析、结果格式化、统计、消息重试等通用能力
 
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 toolHelpers 命名空间翻译
+registerTranslations('zh', {
+  toolHelpers: {
+    operationFailed: '操作失败: {error}',
+    unknownResultFormat: '未知结果格式',
+    cannotAccessTab: '无法访问该标签页: {message}',
+    cannotUseOnSystemPage: '无法在系统页面使用工具: {url}',
+    contentScriptNotFound: '无法找到 content script 文件',
+    injectContentScriptFailed: '注入 Content Script 失败: {message}',
+  },
+});
+
+registerTranslations('en', {
+  toolHelpers: {
+    operationFailed: 'Operation failed: {error}',
+    unknownResultFormat: 'Unknown result format',
+    cannotAccessTab: 'Cannot access this tab: {message}',
+    cannotUseOnSystemPage: 'Cannot use tools on system pages: {url}',
+    contentScriptNotFound: 'Cannot find content script file',
+    injectContentScriptFailed: 'Failed to inject Content Script: {message}',
+  },
+});
 
 /**
  * 自动补全截断的 JSON 字符串
@@ -272,7 +296,7 @@ export function normalizeToolResult(result, toolCallId) {
         result.content = result.message;
       } else if (!result.success && result.error) {
         // 失败且有 error 时，将错误信息作为内容展示，确保 LLM 和用户能看到失败原因
-        result.content = `操作失败: ${result.error}`;
+        result.content = t('toolHelpers.operationFailed', { error: result.error });
         result.message = result.error;
       } else {
         const { success, error, tool_call_id, ...rest } = result;
@@ -288,7 +312,7 @@ export function normalizeToolResult(result, toolCallId) {
     logger.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
     return { success: true, content: result, tool_call_id: toolCallId };
   }
-  return { success: false, error: '未知结果格式', content: '', tool_call_id: toolCallId };
+  return { success: false, error: t('toolHelpers.unknownResultFormat'), content: '', tool_call_id: toolCallId };
 }
 
 /**
@@ -338,13 +362,13 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
 
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) {
-            resolve({ success: false, error: '无法访问该标签页: ' + errorMsg, tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolHelpers.cannotAccessTab', { message: errorMsg }), tool_call_id: toolCallId });
             return;
           }
 
           const url = tab.url || '';
           if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
-            resolve({ success: false, error: '无法在系统页面使用工具: ' + url, tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolHelpers.cannotUseOnSystemPage', { url }), tool_call_id: toolCallId });
             return;
           }
 
@@ -353,7 +377,7 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
           const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
           const contentFileIdx = contentJsFiles.findIndex(f => /content/i.test(f) && f.endsWith('.js'));
           if (contentFileIdx === -1) {
-            resolve({ success: false, error: '无法找到 content script 文件', tool_call_id: toolCallId });
+            resolve({ success: false, error: t('toolHelpers.contentScriptNotFound'), tool_call_id: toolCallId });
             return;
           }
           const contentFilePath = contentJsFiles[contentFileIdx];
@@ -391,7 +415,7 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             })
             .catch(err => {
               logger.error('[Background] 注入 content script 失败:', err);
-              resolve({ success: false, error: '注入 Content Script 失败: ' + err.message, tool_call_id: toolCallId });
+              resolve({ success: false, error: t('toolHelpers.injectContentScriptFailed', { message: err.message }), tool_call_id: toolCallId });
             });
         });
       } else {

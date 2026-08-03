@@ -6,6 +6,28 @@ import { join, extname } from 'path';
 import { homedir } from 'os';
 import { loadAllMarkdownSkills, saveMarkdownSkill, deleteMarkdownSkillDir, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './markdown-loader.js';
 import { SKILL_CREATOR_SEED_MD, SKILL_CREATOR_DIR } from './skill-creator-seed.js';
+import { t as translate } from '../i18n.js';
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 skill loader 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setSkillLoaderLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @returns {string}
+ */
+function tr(key, params) {
+  return translate(currentLang, key, params);
+}
 
 const SKILLS_DIR = join(homedir(), '.ai-helper-agent', 'skills');
 
@@ -18,10 +40,10 @@ function validateWorkflowSkill(skill) {
   const errors = [];
 
   if (!skill.name || typeof skill.name !== 'string') {
-    errors.push('缺少 name 字段');
+    errors.push(tr('skill.missingNameField'));
   }
   if (!skill.description || typeof skill.description !== 'string') {
-    errors.push('缺少 description 字段');
+    errors.push(tr('skill.missingDescriptionField'));
   }
   if (!skill.version) {
     skill.version = '1.0';
@@ -30,11 +52,11 @@ function validateWorkflowSkill(skill) {
     skill.parameters = {};
   }
   if (!Array.isArray(skill.steps) || skill.steps.length === 0) {
-    errors.push('steps 必须是非空数组');
+    errors.push(tr('skill.stepsMustBeArray'));
   } else {
     skill.steps.forEach((step, i) => {
-      if (!step.id) errors.push(`步骤 ${i}: 缺少 id`);
-      if (!step.tool) errors.push(`步骤 ${i}: 缺少 tool`);
+      if (!step.id) errors.push(tr('skill.stepMissingId', { index: i }));
+      if (!step.tool) errors.push(tr('skill.stepMissingTool', { index: i }));
     });
   }
 
@@ -204,7 +226,7 @@ export function saveSkillFile(skill) {
     // Workflow Skill：保存为 JSON 文件
     const validation = validateWorkflowSkill(skill);
     if (!validation.valid) {
-      return { success: false, error: `校验失败: ${validation.errors.join(', ')}` };
+      return { success: false, error: tr('skill.validationFailed', { errors: validation.errors.join(', ') }) };
     }
 
     const safeSkill = {
@@ -220,7 +242,7 @@ export function saveSkillFile(skill) {
     writeFileSync(filePath, JSON.stringify(safeSkill, null, 2), 'utf-8');
     return { success: true, filePath };
   } catch (err) {
-    return { success: false, error: `保存失败: ${err.message}` };
+    return { success: false, error: tr('skill.saveFailed', { message: err.message }) };
   }
 }
 
@@ -243,13 +265,13 @@ export function deleteSkillFile(name, type) {
       const agentResult = deleteMarkdownSkillDir(SKILLS_DIR, name);
       if (agentResult.success) return agentResult;
     }
-    return { success: false, error: `Skill "${name}" 不存在` };
+    return { success: false, error: tr('skill.skillNotFound', { name }) };
   }
   try {
     unlinkSync(jsonPath);
     return { success: true };
   } catch (err) {
-    return { success: false, error: `删除失败: ${err.message}` };
+    return { success: false, error: tr('skill.deleteFailed', { message: err.message }) };
   }
 }
 

@@ -1565,13 +1565,14 @@ textarea {
 /* Tab 导航样式 */
 .tab-nav {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   margin-bottom: 24px;
   border-bottom: 2px solid #e0e0e0;
   padding-bottom: 0;
 }
 .tab-nav-btn {
-  padding: 10px 20px;
+  flex: 1;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   color: #888;

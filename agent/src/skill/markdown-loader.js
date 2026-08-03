@@ -9,8 +9,30 @@ import { tmpdir } from 'os';
 import { lookup as dnsLookup } from 'dns/promises';
 import https from 'https';
 import http from 'http';
+import { t as translate } from '../i18n.js';
 
 const execFileAsync = promisify(execFile);
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 markdown-loader 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setMarkdownLoaderLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @returns {string}
+ */
+function tr(key, params) {
+  return translate(currentLang, key, params);
+}
 
 /**
  * 解析 YAML frontmatter（--- 包裹的元数据）
@@ -218,10 +240,10 @@ export function loadAllMarkdownSkills(skillsDir) {
 export function saveMarkdownSkill(skillsDir, skillDef) {
   try {
     if (!skillDef.name) {
-      return { success: false, error: '缺少 name 字段' };
+      return { success: false, error: tr('skill.missingNameField') };
     }
     if (!skillDef.prompt && !skillDef.fullPrompt) {
-      return { success: false, error: '缺少 prompt 内容' };
+      return { success: false, error: tr('skill.missingPromptContent') };
     }
 
     const skillDir = join(skillsDir, skillDef.name);
@@ -249,7 +271,7 @@ export function saveMarkdownSkill(skillsDir, skillDef) {
 
     return { success: true, dirPath: skillDir };
   } catch (err) {
-    return { success: false, error: `保存失败: ${err.message}` };
+    return { success: false, error: tr('skill.saveFailed', { message: err.message }) };
   }
 }
 
@@ -261,13 +283,13 @@ export function saveMarkdownSkill(skillsDir, skillDef) {
 export function deleteMarkdownSkillDir(skillsDir, name) {
   const skillDir = join(skillsDir, name);
   if (!existsSync(skillDir)) {
-    return { success: false, error: `Skill "${name}" 不存在` };
+    return { success: false, error: tr('skill.skillNotFound', { name }) };
   }
   try {
     rmSync(skillDir, { recursive: true, force: true });
     return { success: true };
   } catch (err) {
-    return { success: false, error: `删除失败: ${err.message}` };
+    return { success: false, error: tr('skill.deleteFailed', { message: err.message }) };
   }
 }
 
@@ -307,29 +329,29 @@ function isPrivateIp(ip) {
  * @returns {Promise<{ ok: boolean, error?: string }>}
  */
 async function assertPublicHost(hostname) {
-  if (!hostname) return { ok: false, error: '缺少 hostname' };
+  if (!hostname) return { ok: false, error: tr('skill.missingHostname') };
   const blockedHostnames = ['localhost', 'ip6-localhost', 'ip6-loopback'];
   if (blockedHostnames.includes(hostname.toLowerCase())) {
-    return { ok: false, error: '禁止访问本地地址' };
+    return { ok: false, error: tr('skill.forbiddenLocalAddress') };
   }
   // 直接 IP 形式（含 IPv6）：直接判断
   const stripped = hostname.replace(/^\[|]$/g, '');
   if (/^(\d{1,3}\.){3}\d{1,3}$/.test(stripped) || /^[0-9a-f:]+$/i.test(stripped)) {
-    if (isPrivateIp(stripped)) return { ok: false, error: '禁止访问内网地址' };
+    if (isPrivateIp(stripped)) return { ok: false, error: tr('skill.forbiddenPrivateAddress') };
     return { ok: true };
   }
   // 域名：DNS 解析后判断所有结果（防 DNS 重绑定：解析阶段即拒绝内网 IP）
   try {
     const results = await dnsLookup(hostname, { all: true });
-    if (results.length === 0) return { ok: false, error: `域名解析为空: ${hostname}` };
+    if (results.length === 0) return { ok: false, error: tr('skill.dnsEmptyResult', { hostname }) };
     for (const r of results) {
       if (isPrivateIp(r.address)) {
-        return { ok: false, error: `域名 ${hostname} 解析到内网地址 ${r.address}` };
+        return { ok: false, error: tr('skill.dnsResolvesPrivate', { hostname, address: r.address }) };
       }
     }
     return { ok: true };
   } catch {
-    return { ok: false, error: `域名解析失败: ${hostname}` };
+    return { ok: false, error: tr('skill.dnsFailed', { hostname }) };
   }
 }
 
@@ -397,7 +419,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     }
 
     if (!foundSkillMd) {
-      return { success: false, error: 'Zip 包中未找到 SKILL.md 文件' };
+      return { success: false, error: tr('skill.zipNoSkillMd') };
     }
 
     const content = readFileSync(foundSkillMd, 'utf-8');
@@ -407,7 +429,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     // 名称安全校验：防止命令注入与路径穿越（name 来源于 zip 内可控内容）
     const safeName = sanitizeSkillName(rawName);
     if (!safeName) {
-      return { success: false, error: `无效的 Skill 名称: "${rawName}"（仅允许字母、数字、下划线、短横线）` };
+      return { success: false, error: tr('skill.invalidSkillName', { name: rawName }) };
     }
 
     // 目标目录越界校验：确保 destDir 仍在 skillsDir 之下
@@ -416,7 +438,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     const normalizedSkills = normalize(skillsDir);
     if (normalizedDest !== normalizedSkills &&
         !(normalizedDest.startsWith(normalizedSkills + sep))) {
-      return { success: false, error: '目标路径越界，拒绝写入' };
+      return { success: false, error: tr('skill.targetPathEscape') };
     }
 
     if (existsSync(destDir)) {
@@ -430,7 +452,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     const skill = loadMarkdownSkill(destDir);
     return { success: true, skill };
   } catch (err) {
-    return { success: false, error: `导入失败: ${err.message}` };
+    return { success: false, error: tr('skill.importFailed', { message: err.message }) };
   } finally {
     // 清理临时文件
     try {
@@ -452,10 +474,10 @@ export async function importMarkdownSkillFromUrl(skillsDir, url) {
   try {
     parsed = new URL(url);
   } catch {
-    return { success: false, error: '无效的 URL' };
+    return { success: false, error: tr('skill.invalidUrl') };
   }
   if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { success: false, error: '仅支持 http/https 协议的 URL' };
+    return { success: false, error: tr('skill.urlProtocolNotSupported') };
   }
   // 主机安全校验（含 DNS 解析，防 DNS 重绑定与 IP 编码绕过）
   const hostCheck = await assertPublicHost(parsed.hostname);
@@ -467,7 +489,7 @@ export async function importMarkdownSkillFromUrl(skillsDir, url) {
     const buffer = await downloadFile(url, 5);
     return await importMarkdownSkillFromZip(skillsDir, buffer);
   } catch (err) {
-    return { success: false, error: `下载失败: ${err.message}` };
+    return { success: false, error: tr('skill.downloadFailed', { message: err.message }) };
   }
 }
 
@@ -481,17 +503,17 @@ function downloadFile(url, maxRedirects = 5) {
     try {
       parsed = new URL(url);
     } catch {
-      reject(new Error('无效的重定向 URL'));
+      reject(new Error(tr('skill.invalidRedirectUrl')));
       return;
     }
     if (!['http:', 'https:'].includes(parsed.protocol)) {
-      reject(new Error('仅支持 http/https 协议'));
+      reject(new Error(tr('skill.protocolNotSupported')));
       return;
     }
     // 重定向目标必须重新校验主机（防止 302 跳转到内网/元数据端点）
     assertPublicHost(parsed.hostname).then((hostCheck) => {
       if (!hostCheck.ok) {
-        reject(new Error(`重定向被拦截: ${hostCheck.error}`));
+        reject(new Error(tr('skill.redirectBlocked', { error: hostCheck.error })));
         return;
       }
       const protocol = parsed.protocol === 'https:' ? https : http;
@@ -502,7 +524,7 @@ function downloadFile(url, maxRedirects = 5) {
         // 处理重定向（带次数限制 + 主机重校验）
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           if (maxRedirects <= 0) {
-            reject(new Error('重定向次数过多'));
+            reject(new Error(tr('skill.tooManyRedirects')));
             return;
           }
           downloadFile(res.headers.location, maxRedirects - 1).then(resolve).catch(reject);
@@ -517,7 +539,7 @@ function downloadFile(url, maxRedirects = 5) {
         res.on('data', (chunk) => {
           totalSize += chunk.length;
           if (totalSize > MAX_SKILL_DOWNLOAD_SIZE) {
-            reject(new Error(`下载内容超过上限 ${MAX_SKILL_DOWNLOAD_SIZE} 字节`));
+            reject(new Error(tr('skill.downloadTooLarge', { size: MAX_SKILL_DOWNLOAD_SIZE })));
             req.destroy();
             return;
           }
@@ -528,7 +550,7 @@ function downloadFile(url, maxRedirects = 5) {
       });
       req.on('error', reject);
       req.on('timeout', () => {
-        req.destroy(new Error('下载超时'));
+        req.destroy(new Error(tr('skill.downloadTimeout')));
       });
     }).catch(reject);
   });

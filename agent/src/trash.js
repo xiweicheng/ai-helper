@@ -4,6 +4,30 @@ import { mkdir, rename, readFile, writeFile, readdir, stat, unlink, rmdir } from
 import { join, basename } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
+import { t as translate } from './i18n.js';
+
+// 默认使用 zh 语言（独立调用场景）；server.js 调用时会传入 req 的 lang
+let currentLang = 'zh';
+
+/**
+ * 设置 trash 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setTrashLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助：使用当前模块语言或传入的 t 函数
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @param {Function} [tFn] - 可选的 t 函数（优先使用）
+ * @returns {string}
+ */
+function tr(key, params, tFn) {
+  if (typeof tFn === 'function') return tFn(key, params);
+  return translate(currentLang, key, params);
+}
 
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const TRASH_DIR = join(AGENT_DIR, '.trash');
@@ -103,9 +127,10 @@ async function cleanExpiredTrash() {
 /**
  * 将文件/目录移动到回收站（使用 rename，同文件系统瞬时完成）
  * @param {string} sourcePath - 源文件/目录的绝对路径
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {Promise<{success: boolean, trashId?: string, isDir?: boolean, error?: string}>}
  */
-export async function moveToTrash(sourcePath) {
+export async function moveToTrash(sourcePath, tFn) {
   await ensureTrashDir();
   await cleanExpiredTrash();
 
@@ -139,20 +164,21 @@ export async function moveToTrash(sourcePath) {
     console.log(`[Trash] 已移至回收站: ${sourcePath} -> ${trashPath} (${size} 字节, ${isDir ? '目录' : '文件'})`);
     return { success: true, trashId: id, isDir };
   } catch (err) {
-    return { success: false, error: `移至回收站失败: ${err.message}` };
+    return { success: false, error: tr('trash.moveFailed', { message: err.message }, tFn) };
   }
 }
 
 /**
  * 从回收站恢复文件/目录
  * @param {string} trashId - 回收站条目 ID
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {Promise<{success: boolean, restoredPath?: string, error?: string}>}
  */
-export async function restoreFromTrash(trashId) {
+export async function restoreFromTrash(trashId, tFn) {
   const entries = await loadMetadata();
   const idx = entries.findIndex(e => e.id === trashId);
   if (idx === -1) {
-    return { success: false, error: '回收站条目不存在或已过期' };
+    return { success: false, error: tr('trash.entryNotFound', undefined, tFn) };
   }
 
   const entry = entries[idx];
@@ -161,12 +187,12 @@ export async function restoreFromTrash(trashId) {
   if (!existsSync(trashPath)) {
     entries.splice(idx, 1);
     await saveMetadata(entries);
-    return { success: false, error: '回收站文件已不存在' };
+    return { success: false, error: tr('trash.fileNotFound', undefined, tFn) };
   }
 
   try {
     if (existsSync(entry.originalPath)) {
-      return { success: false, error: `原位置已有文件: ${entry.originalPath}` };
+      return { success: false, error: tr('trash.originalPathOccupied', { path: entry.originalPath }, tFn) };
     }
 
     await rename(trashPath, entry.originalPath);
@@ -176,7 +202,7 @@ export async function restoreFromTrash(trashId) {
     console.log(`[Trash] 已恢复: ${entry.originalPath}`);
     return { success: true, restoredPath: entry.originalPath };
   } catch (err) {
-    return { success: false, error: `恢复失败: ${err.message}` };
+    return { success: false, error: tr('trash.restoreFailed', { message: err.message }, tFn) };
   }
 }
 

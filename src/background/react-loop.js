@@ -30,6 +30,8 @@ registerTranslations('zh', {
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
     userCancelled: '用户取消',
+    skippedAfterPlanTask: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
+    toolError: '错误: {message}',
   },
 });
 
@@ -50,6 +52,8 @@ registerTranslations('en', {
     subtaskNode: 'Subtask {index}: {name}',
     subtaskCompleted: 'Subtask {index}: {name} (completed)',
     subtaskFailed: 'Subtask {index}: {name} (failed)',
+    skippedAfterPlanTask: 'Skipped (plan_task has decomposed subtasks, other tool calls in this round are no longer executed)',
+    toolError: 'Error: {message}',
   },
 });
 import { summarizeRound } from './context-summarizer.js';
@@ -1421,7 +1425,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                         toolCallId: skippedId,
                         toolName: skippedName,
                         success: false,
-                        content: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
+                        content: t('reactLoop.skippedAfterPlanTask'),
                         truncated: false,
                         duration: 0
                       }
@@ -1576,7 +1580,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   toolCallId: toolCallId,
                   toolName,
                   success: false,
-                  content: `错误: ${toolError.message}`,
+                  content: t('reactLoop.toolError', { message: toolError.message }),
                   truncated: false,
                   duration: Date.now() - toolStartTime
                 }

@@ -11,6 +11,7 @@ registerTranslations('zh', {
     translate: '翻译',
     summary: '总结',
     copy: '复制',
+    defaultSystemPrompt: 'AI Helper：IT技术助手。\n\n## 能力\n编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用\n\n## 要求\n精准的技术术语、可运行的代码示例、Markdown格式、可操作的解决方案、不生成违反安全规定的代码',
   },
 });
 
@@ -21,6 +22,7 @@ registerTranslations('en', {
     translate: 'Translate',
     summary: 'Summarize',
     copy: 'Copy',
+    defaultSystemPrompt: 'AI Helper: IT Technical Assistant.\n\n## Capabilities\nProgramming development and debugging (Java/Python/JavaScript/Go/C++), architecture optimization, performance tuning, code review, documentation writing, browser tool invocation\n\n## Requirements\nPrecise technical terminology, runnable code examples, Markdown format, actionable solutions, no security-violating code',
   },
 });
 
@@ -79,6 +81,14 @@ const BUILTIN_TOOL_NAME_KEYS = {
 export function getBuiltinToolName(toolId) {
   const key = BUILTIN_TOOL_NAME_KEYS[toolId];
   return key ? t(key) : undefined;
+}
+
+/**
+ * 获取当前语言对应的默认系统提示词
+ * @returns {string}
+ */
+export function getDefaultSystemPrompt() {
+  return t('optionsConst.defaultSystemPrompt');
 }
 
 export const DEFAULT_TOOLBAR_MAX_VISIBLE = 5;

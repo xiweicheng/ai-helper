@@ -1,6 +1,30 @@
 // agent/src/auth.js - 配对认证模块
 import crypto from 'crypto';
 import { loadConfig, loadPairings, savePairing } from './config.js';
+import { t as translate } from './i18n.js';
+
+// 默认使用 zh 语言（独立调用场景）；server.js 调用时会传入 req 的 lang
+let currentLang = 'zh';
+
+/**
+ * 设置 auth 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setAuthLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助：使用当前模块语言或传入的 t 函数
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @param {Function} [tFn] - 可选的 t 函数（优先使用）
+ * @returns {string}
+ */
+function tr(key, params, tFn) {
+  if (typeof tFn === 'function') return tFn(key, params);
+  return translate(currentLang, key, params);
+}
 
 // 当前有效的配对码（定时刷新 + 一次性使用）
 let currentPairCode = null;
@@ -106,14 +130,17 @@ function verifyToken(token) {
  * 安全策略：
  *   - 失败锁定：连续失败 PAIR_FAIL_LIMIT 次后临时锁定，并立即轮换配对码使已观测码失效
  *   - 一次性使用：配对成功后立即轮换配对码，防止配对码被重复利用
+ * @param {string} code - 配对码
+ * @param {string} extensionId - 扩展 ID
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  */
-async function handlePairRequest(code, extensionId) {
+async function handlePairRequest(code, extensionId, tFn) {
   // 锁定期内直接拒绝（不泄露是否处于锁定状态细节）
   if (Date.now() < pairLockUntil) {
-    return { success: false, error: '配对尝试过于频繁，请稍后再试' };
+    return { success: false, error: tr('auth.tooFrequent', undefined, tFn) };
   }
   if (!code || !extensionId) {
-    return { success: false, error: '缺少配对码或扩展ID' };
+    return { success: false, error: tr('auth.missingCodeOrExtId', undefined, tFn) };
   }
   if (code.toUpperCase() !== currentPairCode) {
     pairFailCount++;
@@ -124,7 +151,7 @@ async function handlePairRequest(code, extensionId) {
       currentPairCode = generatePairCode();
       console.log('[Agent] 配对失败次数过多，已临时锁定 60s 并轮换配对码');
     }
-    return { success: false, error: '配对码无效' };
+    return { success: false, error: tr('auth.invalidCode', undefined, tFn) };
   }
   // 配对码正确：重置失败计数
   pairFailCount = 0;
@@ -135,19 +162,19 @@ async function handlePairRequest(code, extensionId) {
     // 一次性使用：成功后立即轮换配对码
     currentPairCode = generatePairCode();
     console.log('[Agent] 配对码校验通过，配对码已轮换（一次性使用）');
-    return { success: true, token: pairings[extensionId].token, message: '已配对，返回现有 token' };
+    return { success: true, token: pairings[extensionId].token, message: tr('auth.alreadyPaired', undefined, tFn) };
   }
   // 生成新 token 并保存
   const token = crypto.randomBytes(32).toString('hex');
   try {
     await savePairing(extensionId, token);
   } catch (err) {
-    return { success: false, error: `配对保存失败: ${err.message}` };
+    return { success: false, error: tr('auth.saveFailed', { message: err.message }, tFn) };
   }
   // 一次性使用：成功后立即轮换配对码
   currentPairCode = generatePairCode();
   console.log('[Agent] 配对成功，配对码已轮换（一次性使用）');
-  return { success: true, token, message: '配对成功' };
+  return { success: true, token, message: tr('auth.pairSuccess', undefined, tFn) };
 }
 
 export {

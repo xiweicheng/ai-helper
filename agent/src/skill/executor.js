@@ -4,6 +4,28 @@ import { render } from './template.js';
 import { readFile, writeFile, readdir, stat, unlink } from 'fs/promises';
 import { checkPath, checkCommand } from '../security.js';
 import { join, basename } from 'path';
+import { t as translate } from '../i18n.js';
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 skill executor 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setSkillExecutorLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @returns {string}
+ */
+function tr(key, params) {
+  return translate(currentLang, key, params);
+}
 
 // 执行上下文（当前活跃的执行任务）
 const activeExecutions = new Map(); // execId → { skill, status, steps, results }
@@ -70,7 +92,7 @@ async function executeToolCall(toolName, args) {
           }
           case 'write': {
             await writeFile(check.resolved, String(args.content || ''), 'utf-8');
-            return { success: true, message: `文件已写入: ${check.resolved}` };
+            return { success: true, message: tr('skill.fileWritten', { path: check.resolved }) };
           }
           case 'list': {
             const names = await readdir(check.resolved);
@@ -82,14 +104,14 @@ async function executeToolCall(toolName, args) {
           }
           case 'delete': {
             await unlink(check.resolved);
-            return { success: true, message: `已删除: ${check.resolved}` };
+            return { success: true, message: tr('skill.fileDeleted', { path: check.resolved }) };
           }
           case 'download': {
             const content = await readFile(check.resolved);
             return { success: true, content, path: check.resolved, filename: basename(check.resolved) };
           }
           default:
-            return { success: false, error: `未知 action: ${action}` };
+            return { success: false, error: tr('skill.unknownAction', { action }) };
         }
       }
 
@@ -100,7 +122,7 @@ async function executeToolCall(toolName, args) {
         }
         // Workflow Skill 自动执行，没有交互确认环节，灰名单命令直接拒绝
         if (cmdCheck.level === 'confirm') {
-          return { success: false, error: `需要用户确认的命令: ${cmdCheck.reason}` };
+          return { success: false, error: tr('skill.commandNeedsConfirm', { reason: cmdCheck.reason }) };
         }
         const { exec } = await import('child_process');
         return new Promise((resolve) => {
@@ -147,7 +169,7 @@ async function executeToolCall(toolName, args) {
       }
 
       default:
-        return { success: false, error: `未知工具: ${toolName}` };
+        return { success: false, error: tr('skill.unknownTool', { toolName }) };
     }
   } catch (err) {
     return { success: false, error: err.message };
@@ -226,13 +248,13 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
         if (step.when !== undefined) {
           const whenResult = render(step.when, variables);
           if (!whenResult || whenResult === 'false' || whenResult === false) {
-            onStepUpdate(step.id, 'skipped', '条件不满足');
+            onStepUpdate(step.id, 'skipped', tr('skill.conditionNotMet'));
             completed.add(step.id);
             return;
           }
         }
 
-        onStepUpdate(step.id, 'running', '执行中...');
+        onStepUpdate(step.id, 'running', tr('skill.executing'));
 
         // 渲染参数中的模板变量（包含前面步骤的结果）
         const stepArgs = step.args || step.params || {};
@@ -253,9 +275,9 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
         variables[`step.${step.id}.content`] = result.content || '';
 
         if (result.success) {
-          onStepUpdate(step.id, 'success', result.content || '执行成功');
+          onStepUpdate(step.id, 'success', result.content || tr('skill.execSuccess'));
         } else {
-          onStepUpdate(step.id, 'error', result.error || '执行失败');
+          onStepUpdate(step.id, 'error', result.error || tr('skill.execFailed'));
         }
 
         completed.add(step.id);
@@ -307,7 +329,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
     for (const [key, def] of Object.entries(props)) {
       if (!def || typeof def !== 'object') continue;
       if (requiredList.includes(key) && (params[key] === undefined || params[key] === null || params[key] === '')) {
-        return { success: false, execId, error: `缺少必需参数: ${key}` };
+        return { success: false, execId, error: tr('skill.missingParam', { key }) };
       }
       if (params[key] !== undefined && def.type) {
         // 基本类型检查
@@ -344,7 +366,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
     const results = await Promise.race([
       executeSkillSteps(skill, params, execId, notify),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Skill 执行超时（5 分钟）')), EXECUTION_TIMEOUT)
+        setTimeout(() => reject(new Error(tr('skill.skillExecTimeout'))), EXECUTION_TIMEOUT)
       )
     ]);
 
@@ -359,7 +381,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
         execId,
         partial: true,
         results,
-        message: `Skill "${skill.name}" 执行完成（${failedSteps.length} 个步骤失败）`
+        message: tr('skill.skillExecPartial', { name: skill.name, count: failedSteps.length })
       };
     }
 
@@ -372,13 +394,13 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
       success: true,
       execId,
       results,
-      message: `Skill "${skill.name}" 执行完成（${Object.keys(results).length} 个步骤）`
+      message: tr('skill.skillExecDone', { name: skill.name, count: Object.keys(results).length })
     };
   } catch (err) {
     execution.status = 'error';
     execution.error = err.message;
     activeExecutions.set(execId, execution);
-    return { success: false, execId, error: `执行异常: ${err.message}` };
+    return { success: false, execId, error: tr('skill.execError', { message: err.message }) };
   }
 }
 
@@ -388,7 +410,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
 export function getSkillExecutionStatus(execId) {
   const execution = activeExecutions.get(execId);
   if (!execution) {
-    return { success: false, error: `执行 ID "${execId}" 不存在` };
+    return { success: false, error: tr('skill.execIdNotFound', { execId }) };
   }
   return {
     success: true,

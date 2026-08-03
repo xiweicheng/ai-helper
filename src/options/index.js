@@ -4,7 +4,7 @@ import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, a
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
 import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
-import { DEFAULT_SYSTEM_PROMPT } from './constants.js';
+import { getDefaultSystemPrompt } from './constants.js';
 import {
   loadToolbarTools,
   renderToolbarToolsList,
@@ -729,7 +729,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const resetSystemPromptBtn = document.getElementById('resetSystemPromptBtn');
   if (resetSystemPromptBtn) {
     resetSystemPromptBtn.addEventListener('click', function() {
-      document.getElementById('systemPrompt').value = DEFAULT_SYSTEM_PROMPT;
+      document.getElementById('systemPrompt').value = getDefaultSystemPrompt();
     });
   }
   

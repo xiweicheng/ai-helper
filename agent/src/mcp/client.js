@@ -3,6 +3,28 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { WebSocketClientTransport } from '@modelcontextprotocol/sdk/client/websocket.js';
+import { t as translate } from '../i18n.js';
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 MCP client 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setMcpClientLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @returns {string}
+ */
+function tr(key, params) {
+  return translate(currentLang, key, params);
+}
 
 // 支持的传输协议类型
 const TRANSPORT_STDIO = 'stdio';
@@ -32,7 +54,7 @@ export class McpClient {
     switch (transportType) {
       case TRANSPORT_SSE: {
         const url = this.serverConfig.url;
-        if (!url) throw new Error('SSE 传输需要提供 url');
+        if (!url) throw new Error(tr('mcp.sseRequiresUrl'));
         const opts = {};
         if (Object.keys(headers).length > 0) {
           opts.requestInit = { headers };
@@ -42,7 +64,7 @@ export class McpClient {
 
       case TRANSPORT_STREAMABLE_HTTP: {
         const url = this.serverConfig.url;
-        if (!url) throw new Error('StreamableHTTP 传输需要提供 url');
+        if (!url) throw new Error(tr('mcp.streamableHttpRequiresUrl'));
         const opts = {};
         if (Object.keys(headers).length > 0) {
           opts.requestInit = { headers };
@@ -52,14 +74,14 @@ export class McpClient {
 
       case TRANSPORT_WEBSOCKET: {
         const url = this.serverConfig.url;
-        if (!url) throw new Error('WebSocket 传输需要提供 url');
+        if (!url) throw new Error(tr('mcp.websocketRequiresUrl'));
         return new WebSocketClientTransport(new URL(url));
       }
 
       case TRANSPORT_STDIO:
       default: {
         const command = this.serverConfig.command;
-        if (!command) throw new Error('stdio 传输需要提供 command');
+        if (!command) throw new Error(tr('mcp.stdioRequiresCommand'));
         return new StdioClientTransport({
           command: this.serverConfig.command,
           args: this.serverConfig.args || [],
@@ -106,7 +128,7 @@ export class McpClient {
 
   async callTool(toolName, args) {
     if (!this.connected) {
-      return { success: false, error: `MCP Server "${this.serverName}" 未连接` };
+      return { success: false, error: tr('mcp.serverNotConnected', { name: this.serverName }) };
     }
 
     try {
@@ -116,7 +138,7 @@ export class McpClient {
       });
 
       if (result && result.error) {
-        return { success: false, error: result.error.message || '工具调用失败' };
+        return { success: false, error: result.error.message || tr('mcp.toolCallFailed') };
       }
 
       const content = result?.content || [];
@@ -131,7 +153,7 @@ export class McpClient {
         raw: result
       };
     } catch (err) {
-      return { success: false, error: `工具调用异常: ${err.message}` };
+      return { success: false, error: tr('mcp.toolCallError', { message: err.message }) };
     }
   }
 

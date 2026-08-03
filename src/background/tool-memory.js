@@ -4,6 +4,106 @@
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 import { makeResult } from './tool-helpers.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 toolMemory 命名空间翻译
+registerTranslations('zh', {
+  toolMemory: {
+    missingAction: '缺少 action 参数',
+    missingType: '缺少 type 参数',
+    missingContent: '缺少 content 参数',
+    readFailed: '读取记忆文件失败: {error}',
+    writeFailed: '写入记忆文件失败: {error}',
+    parseFailed: '记忆文件解析失败: {error}',
+    updatedDuplicate: '已更新已有记忆: {id}（内容相同，已合并）',
+    added: '已添加记忆: {id} ({type}){warning}',
+    nearLimitWarning: '\n⚠️ 记忆数量接近上限（事实: {facts}/{maxFacts}, 摘要: {summaries}/{maxSummaries}），建议调用 agent_memory action=manage 进行审查整理。',
+    updateNeedsId: 'update 操作需要 memoryId 参数',
+    deleteNeedsId: 'delete 操作需要 memoryId 参数',
+    typeMismatch: '记忆 {id} 类型不匹配（实际类型: {type}）',
+    notFound: '未找到记忆: {id}',
+    updated: '已更新记忆: {id}',
+    deleted: '已删除记忆: {id}',
+    unsupportedAction: '不支持的操作: {action}',
+    storeMissingSubAction: 'store 操作缺少 subAction (add/update/delete)',
+    manageMissingSubAction: 'manage 操作缺少 subAction (review/compact)',
+    unsupportedMemoryAction: '不支持的 action: {action}',
+    memoryEmpty: '记忆文件为空，暂无存储的记忆。',
+    noMatch: '未找到匹配的记忆。',
+    foundResults: '找到 {count} 条相关记忆:{note}',
+    recallNoteAllOld: '（注：以上记忆在本对话中已检索过，此处为重复返回）',
+    recallNoteMixed: '（注：{oldCount} 条记忆在本对话中已检索过，仅返回新的 {newCount} 条）',
+    compactDone: '记忆压缩完成。移除了 {facts} 条事实记忆和 {summaries} 条摘要记忆（价值低于 {threshold}）。当前: 事实 {totalFacts}, 摘要 {totalSummaries}',
+    reviewTitle: '## 记忆审查报告',
+    reviewOverview: '**概况**: 事实 {facts}/{maxFacts}, 摘要 {summaries}/{maxSummaries}',
+    reviewLastReview: '**上次审查**: {date}',
+    reviewNeverReviewed: '从未审查',
+    reviewCandidates: '**低价值记忆候选** (价值 < {threshold}):',
+    reviewNoCandidates: '无候选淘汰项，所有记忆价值良好。',
+    reviewSuggestion: '**建议操作**:',
+    reviewSuggestionDelete: '- 对于确实过时/不再适用的记忆，使用 agent_memory action=store subAction=delete 删除',
+    reviewSuggestionMerge: '- 对于内容相似的记忆，使用 agent_memory action=store subAction=update 合并',
+    reviewSuggestionKeep: '- 对于仍有用但价值低的记忆，可保留不做处理',
+    factLabel: '事实',
+    summaryLabel: '摘要',
+    neverAccessed: '从未',
+    memoryItemHeader: '**{index}. [{type}] {id}**',
+    memoryItemContent: '   内容: {content}',
+    memoryItemTitle: '   标题: {title}',
+    memoryItemTags: '   标签: {tags}',
+    memoryItemStats: '   重要性: {importance}/10 | 访问: {accessCount}次 | 创建: {createdAt}',
+    reviewItemCreated: '   创建: {createdAt} | 最后访问: {lastAccess} | 访问: {accessCount}次',
+  },
+});
+
+registerTranslations('en', {
+  toolMemory: {
+    missingAction: 'Missing action parameter',
+    missingType: 'Missing type parameter',
+    missingContent: 'Missing content parameter',
+    readFailed: 'Failed to read memory file: {error}',
+    writeFailed: 'Failed to write memory file: {error}',
+    parseFailed: 'Memory file parse failed: {error}',
+    updatedDuplicate: 'Updated existing memory: {id} (content identical, merged)',
+    added: 'Added memory: {id} ({type}){warning}',
+    nearLimitWarning: '\n⚠️ Memory count approaching limit (facts: {facts}/{maxFacts}, summaries: {summaries}/{maxSummaries}). Consider calling agent_memory action=manage to review and clean up.',
+    updateNeedsId: 'update action requires memoryId parameter',
+    deleteNeedsId: 'delete action requires memoryId parameter',
+    typeMismatch: 'Memory {id} type mismatch (actual type: {type})',
+    notFound: 'Memory not found: {id}',
+    updated: 'Updated memory: {id}',
+    deleted: 'Deleted memory: {id}',
+    unsupportedAction: 'Unsupported action: {action}',
+    storeMissingSubAction: 'store action missing subAction (add/update/delete)',
+    manageMissingSubAction: 'manage action missing subAction (review/compact)',
+    unsupportedMemoryAction: 'Unsupported action: {action}',
+    memoryEmpty: 'Memory file is empty, no stored memories.',
+    noMatch: 'No matching memories found.',
+    foundResults: 'Found {count} relevant memories:{note}',
+    recallNoteAllOld: '(Note: The above memories have already been retrieved in this conversation, returned again)',
+    recallNoteMixed: '(Note: {oldCount} memories already retrieved in this conversation, only returning {newCount} new ones)',
+    compactDone: 'Memory compaction complete. Removed {facts} fact memories and {summaries} summary memories (value below {threshold}). Current: facts {totalFacts}, summaries {totalSummaries}',
+    reviewTitle: '## Memory Review Report',
+    reviewOverview: '**Overview**: Facts {facts}/{maxFacts}, Summaries {summaries}/{maxSummaries}',
+    reviewLastReview: '**Last review**: {date}',
+    reviewNeverReviewed: 'Never reviewed',
+    reviewCandidates: '**Low-value memory candidates** (value < {threshold}):',
+    reviewNoCandidates: 'No candidates for removal, all memories have good value.',
+    reviewSuggestion: '**Suggested actions**:',
+    reviewSuggestionDelete: '- For outdated/no longer applicable memories, use agent_memory action=store subAction=delete to remove',
+    reviewSuggestionMerge: '- For similar memories, use agent_memory action=store subAction=update to merge',
+    reviewSuggestionKeep: '- For still useful but low-value memories, keep them as-is',
+    factLabel: 'Fact',
+    summaryLabel: 'Summary',
+    neverAccessed: 'Never',
+    memoryItemHeader: '**{index}. [{type}] {id}**',
+    memoryItemContent: '   Content: {content}',
+    memoryItemTitle: '   Title: {title}',
+    memoryItemTags: '   Tags: {tags}',
+    memoryItemStats: '   Importance: {importance}/10 | Access: {accessCount} times | Created: {createdAt}',
+    reviewItemCreated: '   Created: {createdAt} | Last access: {lastAccess} | Access: {accessCount} times',
+  },
+});
 
 // ==================== 记忆操作异步锁 ====================
 // 防止并发 readMemoryFile → 修改 → writeMemoryFile 导致的竞态覆盖
@@ -67,7 +167,7 @@ export async function readMemoryFile() {
       }
     };
   } catch (e) {
-    return { success: false, error: `记忆文件解析失败: ${e.message}` };
+    return { success: false, error: t('toolMemory.parseFailed', { error: e.message }) };
   }
 }
 
@@ -133,14 +233,14 @@ async function withMemoryLock(task) {
 export async function executeAgentMemoryStore(args, toolCallId) {
   const { action, type, category, content, title, tags, importance, memoryId, sourceSessionId } = args;
 
-  if (!action) return makeResult(false, '缺少 action 参数', toolCallId);
+  if (!action) return makeResult(false, t('toolMemory.missingAction'), toolCallId);
   // delete 不需要 type（memoryId 全局唯一），add/update 需要
-  if (!type && action !== 'delete') return makeResult(false, '缺少 type 参数', toolCallId);
-  if (!content && action !== 'delete') return makeResult(false, '缺少 content 参数', toolCallId);
+  if (!type && action !== 'delete') return makeResult(false, t('toolMemory.missingType'), toolCallId);
+  if (!content && action !== 'delete') return makeResult(false, t('toolMemory.missingContent'), toolCallId);
 
   return withMemoryLock(async () => {
       const readResult = await readMemoryFile();
-      if (!readResult.success) return makeResult(false, `读取记忆文件失败: ${readResult.error}`, toolCallId);
+      if (!readResult.success) return makeResult(false, t('toolMemory.readFailed', { error: readResult.error }), toolCallId);
   
     const memoryData = readResult.data;
     const now = new Date().toISOString();
@@ -173,9 +273,9 @@ export async function executeAgentMemoryStore(args, toolCallId) {
         duplicate.importance = importance || duplicate.importance;
         duplicate.sourceSessionId = sourceSessionId || duplicate.sourceSessionId;
         const writeResult = await writeMemoryFile(memoryData);
-        if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
+        if (!writeResult.success) return makeResult(false, t('toolMemory.writeFailed', { error: writeResult.error }), toolCallId);
         return {
-          ...makeResult(true, `已更新已有记忆: ${duplicate.id}（内容相同，已合并）`, toolCallId),
+          ...makeResult(true, t('toolMemory.updatedDuplicate', { id: duplicate.id }), toolCallId),
           memory: duplicate,
           action: 'updated',
           stats: memoryData.stats
@@ -184,8 +284,8 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
       targetArray.push(newMemory);
       const writeResult = await writeMemoryFile(memoryData);
-      if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
-  
+      if (!writeResult.success) return makeResult(false, t('toolMemory.writeFailed', { error: writeResult.error }), toolCallId);
+
       // 检查是否接近上限
       const maxFacts = memoryData.meta.maxFacts;
       const maxSummaries = memoryData.meta.maxSummaries;
@@ -193,11 +293,11 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       const summaryRatio = memoryData.summaries.length / maxSummaries;
       let warning = '';
       if (factRatio >= 0.8 || summaryRatio >= 0.8) {
-        warning = `\n⚠️ 记忆数量接近上限（事实: ${memoryData.facts.length}/${maxFacts}, 摘要: ${memoryData.summaries.length}/${maxSummaries}），建议调用 agent_memory action=manage 进行审查整理。`;
+        warning = t('toolMemory.nearLimitWarning', { facts: memoryData.facts.length, maxFacts, summaries: memoryData.summaries.length, maxSummaries });
       }
-  
+
       return {
-        ...makeResult(true, `已添加记忆: ${newMemory.id} (${type})${warning}`, toolCallId),
+        ...makeResult(true, t('toolMemory.added', { id: newMemory.id, type, warning }), toolCallId),
         memory: newMemory,
         action: 'added',
         stats: memoryData.stats
@@ -205,17 +305,17 @@ export async function executeAgentMemoryStore(args, toolCallId) {
     }
   
     if (action === 'update') {
-      if (!memoryId) return makeResult(false, 'update 操作需要 memoryId 参数', toolCallId);
-  
+      if (!memoryId) return makeResult(false, t('toolMemory.updateNeedsId'), toolCallId);
+
       const idx = targetArray.findIndex(m => m.id === memoryId);
       if (idx === -1) {
         // 尝试在另一个数组中查找
         const otherArray = type === 'fact' ? memoryData.summaries : memoryData.facts;
         const otherIdx = otherArray.findIndex(m => m.id === memoryId);
         if (otherIdx !== -1) {
-          return makeResult(false, `记忆 ${memoryId} 类型不匹配（实际类型: ${otherArray[otherIdx].type}）`, toolCallId);
+          return makeResult(false, t('toolMemory.typeMismatch', { id: memoryId, type: otherArray[otherIdx].type }), toolCallId);
         }
-        return makeResult(false, `未找到记忆: ${memoryId}`, toolCallId);
+        return makeResult(false, t('toolMemory.notFound', { id: memoryId }), toolCallId);
       }
   
       const existing = targetArray[idx];
@@ -227,10 +327,10 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       existing.updatedAt = now;
   
       const writeResult = await writeMemoryFile(memoryData);
-      if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
+      if (!writeResult.success) return makeResult(false, t('toolMemory.writeFailed', { error: writeResult.error }), toolCallId);
   
       return {
-        ...makeResult(true, `已更新记忆: ${memoryId}`, toolCallId),
+        ...makeResult(true, t('toolMemory.updated', { id: memoryId }), toolCallId),
         memory: existing,
         action: 'updated',
         stats: memoryData.stats
@@ -238,7 +338,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
     }
   
     if (action === 'delete') {
-      if (!memoryId) return makeResult(false, 'delete 操作需要 memoryId 参数', toolCallId);
+      if (!memoryId) return makeResult(false, t('toolMemory.deleteNeedsId'), toolCallId);
 
       // 在 facts 和 summaries 两个数组中查找（不依赖 type 参数）
       const arrays = [memoryData.facts, memoryData.summaries];
@@ -248,19 +348,19 @@ export async function executeAgentMemoryStore(args, toolCallId) {
           const removed = arr.splice(idx, 1)[0];
           removeFromRecalledCache(memoryId);
           const writeResult = await writeMemoryFile(memoryData);
-          if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
+          if (!writeResult.success) return makeResult(false, t('toolMemory.writeFailed', { error: writeResult.error }), toolCallId);
           return {
-            ...makeResult(true, `已删除记忆: ${memoryId}`, toolCallId),
+            ...makeResult(true, t('toolMemory.deleted', { id: memoryId }), toolCallId),
             removed,
             stats: memoryData.stats
           };
         }
       }
 
-      return makeResult(false, `未找到记忆: ${memoryId}`, toolCallId);
+      return makeResult(false, t('toolMemory.notFound', { id: memoryId }), toolCallId);
     }
-  
-    return makeResult(false, `不支持的操作: ${action}`, toolCallId);
+
+    return makeResult(false, t('toolMemory.unsupportedAction', { action }), toolCallId);
     });
   }
   
@@ -289,7 +389,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
   return withMemoryLock(async () => {
     const readResult = await readMemoryFile();
-    if (!readResult.success) return makeResult(false, `读取记忆文件失败: ${readResult.error}`, toolCallId);
+    if (!readResult.success) return makeResult(false, t('toolMemory.readFailed', { error: readResult.error }), toolCallId);
   
     const memoryData = readResult.data;
     const now = Date.now();
@@ -305,7 +405,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
     if (candidates.length === 0) {
       return {
-        ...makeResult(true, '记忆文件为空，暂无存储的记忆。', toolCallId),
+        ...makeResult(true, t('toolMemory.memoryEmpty'), toolCallId),
         results: [],
         total: 0
       };
@@ -457,11 +557,11 @@ export async function executeAgentMemoryStore(args, toolCallId) {
         
         // 优先返回新记忆；如果没有新记忆，但有旧记忆，则返回旧记忆并提示
         if (newResults.length === 0 && oldResults.length > 0) {
-          recallNote = '（注：以上记忆在本对话中已检索过，此处为重复返回）';
+          recallNote = t('toolMemory.recallNoteAllOld');
           results = oldResults;
         } else if (newResults.length > 0) {
           if (oldResults.length > 0) {
-            recallNote = `（注：${oldResults.length} 条记忆在本对话中已检索过，仅返回新的 ${newResults.length} 条）`;
+            recallNote = t('toolMemory.recallNoteMixed', { oldCount: oldResults.length, newCount: newResults.length });
           }
           results = newResults;
         }
@@ -501,13 +601,13 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   
     // 格式化输出
     const resultText = results.length === 0
-      ? '未找到匹配的记忆。'
-      : `找到 ${results.length} 条相关记忆:${recallNote}\n\n` + results.map((m, i) => {
-          let text = `**${i + 1}. [${m.type === 'fact' ? '事实' : '摘要'}] ${m.id}**\n`;
-          text += `   内容: ${m.content}\n`;
-          if (m.title) text += `   标题: ${m.title}\n`;
-          if (m.tags && m.tags.length > 0) text += `   标签: ${m.tags.join(', ')}\n`;
-          text += `   重要性: ${m.importance}/10 | 访问: ${m.accessCount}次 | 创建: ${m.createdAt}`;
+      ? t('toolMemory.noMatch')
+      : t('toolMemory.foundResults', { count: results.length, note: recallNote }) + '\n\n' + results.map((m, i) => {
+          let text = t('toolMemory.memoryItemHeader', { index: i + 1, type: m.type === 'fact' ? t('toolMemory.factLabel') : t('toolMemory.summaryLabel'), id: m.id }) + '\n';
+          text += t('toolMemory.memoryItemContent', { content: m.content }) + '\n';
+          if (m.title) text += t('toolMemory.memoryItemTitle', { title: m.title }) + '\n';
+          if (m.tags && m.tags.length > 0) text += t('toolMemory.memoryItemTags', { tags: m.tags.join(', ') }) + '\n';
+          text += t('toolMemory.memoryItemStats', { importance: m.importance, accessCount: m.accessCount, createdAt: m.createdAt });
           return text;
         }).join('\n\n');
   
@@ -531,11 +631,11 @@ export async function executeAgentMemoryStore(args, toolCallId) {
   export async function executeAgentMemoryManage(args, toolCallId) {
     const { action } = args;
   
-    if (!action) return makeResult(false, '缺少 action 参数', toolCallId);
+    if (!action) return makeResult(false, t('toolMemory.missingAction'), toolCallId);
   
   return withMemoryLock(async () => {
     const readResult = await readMemoryFile();
-    if (!readResult.success) return makeResult(false, `读取记忆文件失败: ${readResult.error}`, toolCallId);
+    if (!readResult.success) return makeResult(false, t('toolMemory.readFailed', { error: readResult.error }), toolCallId);
   
     const memoryData = readResult.data;
     const now = Date.now();
@@ -571,22 +671,22 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       const candidates = scored.filter(s => parseFloat(s.value) < lowValueThreshold);
   
       const reviewText =
-        `## 记忆审查报告\n\n` +
-        `**概况**: 事实 ${factsCount}/${maxFacts}, 摘要 ${summariesCount}/${maxSummaries}\n` +
-        `**上次审查**: ${memoryData.stats.lastReviewAt || '从未审查'}\n\n` +
-        `**低价值记忆候选** (价值 < ${lowValueThreshold}):\n\n` +
+        t('toolMemory.reviewTitle') + '\n\n' +
+        t('toolMemory.reviewOverview', { facts: factsCount, maxFacts, summaries: summariesCount, maxSummaries }) + '\n' +
+        t('toolMemory.reviewLastReview', { date: memoryData.stats.lastReviewAt || t('toolMemory.reviewNeverReviewed') }) + '\n\n' +
+        t('toolMemory.reviewCandidates', { threshold: lowValueThreshold }) + '\n\n' +
         (candidates.length === 0
-          ? '无候选淘汰项，所有记忆价值良好。\n'
+          ? t('toolMemory.reviewNoCandidates') + '\n'
           : candidates.map((c, i) =>
-              `${i + 1}. **[${c.type}] ${c.id}** (价值: ${c.value})\n` +
-              `   内容: ${c.content}\n` +
-              `   创建: ${c.createdAt} | 最后访问: ${c.lastAccessAt || '从未'} | 访问: ${c.accessCount}次\n`
+              `${i + 1}. ` + t('toolMemory.memoryItemHeader', { index: i + 1, type: c.type, id: c.id }) + ` (${t('toolMemory.factLabel') === '事实' ? 'value' : 'value'}: ${c.value})\n` +
+              t('toolMemory.memoryItemContent', { content: c.content }) + '\n' +
+              t('toolMemory.reviewItemCreated', { createdAt: c.createdAt, lastAccess: c.lastAccessAt || t('toolMemory.neverAccessed'), accessCount: c.accessCount }) + '\n'
             ).join('\n')
         ) +
-        `\n**建议操作**:\n` +
-        `- 对于确实过时/不再适用的记忆，使用 agent_memory action=store subAction=delete 删除\n` +
-        `- 对于内容相似的记忆，使用 agent_memory action=store subAction=update 合并\n` +
-        `- 对于仍有用但价值低的记忆，可保留不做处理`;
+        '\n' + t('toolMemory.reviewSuggestion') + '\n' +
+        t('toolMemory.reviewSuggestionDelete') + '\n' +
+        t('toolMemory.reviewSuggestionMerge') + '\n' +
+        t('toolMemory.reviewSuggestionKeep');
   
       return {
         ...makeResult(true, reviewText, toolCallId),
@@ -623,17 +723,17 @@ export async function executeAgentMemoryStore(args, toolCallId) {
       memoryData.stats.lastReviewAt = new Date().toISOString();
   
       const writeResult = await writeMemoryFile(memoryData);
-      if (!writeResult.success) return makeResult(false, `写入记忆文件失败: ${writeResult.error}`, toolCallId);
+      if (!writeResult.success) return makeResult(false, t('toolMemory.writeFailed', { error: writeResult.error }), toolCallId);
   
       return {
-        ...makeResult(true, `记忆压缩完成。移除了 ${removedFacts} 条事实记忆和 ${removedSummaries} 条摘要记忆（价值低于 ${threshold}）。当前: 事实 ${memoryData.stats.totalFacts}, 摘要 ${memoryData.stats.totalSummaries}`, toolCallId),
+        ...makeResult(true, t('toolMemory.compactDone', { facts: removedFacts, summaries: removedSummaries, threshold, totalFacts: memoryData.stats.totalFacts, totalSummaries: memoryData.stats.totalSummaries }), toolCallId),
         removedFacts,
         removedSummaries,
         stats: memoryData.stats
       };
     }
   
-    return makeResult(false, `不支持的操作: ${action}`, toolCallId);
+    return makeResult(false, t('toolMemory.unsupportedAction', { action }), toolCallId);
     });
   }
   
@@ -646,7 +746,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
 export async function executeAgentMemory(args, toolCallId, sessionId) {
   const { action, subAction } = args;
 
-  if (!action) return makeResult(false, '缺少 action 参数', toolCallId);
+  if (!action) return makeResult(false, t('toolMemory.missingAction'), toolCallId);
 
   if (action === 'recall') {
     return executeAgentMemoryRecall(args, toolCallId, sessionId);
@@ -654,17 +754,17 @@ export async function executeAgentMemory(args, toolCallId, sessionId) {
 
   if (action === 'store') {
     // 将 subAction 映射为原 store 函数期望的 action 参数
-    if (!subAction) return makeResult(false, 'store 操作缺少 subAction (add/update/delete)', toolCallId);
+    if (!subAction) return makeResult(false, t('toolMemory.storeMissingSubAction'), toolCallId);
     const storeArgs = { ...args, action: subAction };
     return executeAgentMemoryStore(storeArgs, toolCallId);
   }
 
   if (action === 'manage') {
     // 将 subAction 映射为原 manage 函数期望的 action 参数
-    if (!subAction) return makeResult(false, 'manage 操作缺少 subAction (review/compact)', toolCallId);
+    if (!subAction) return makeResult(false, t('toolMemory.manageMissingSubAction'), toolCallId);
     const manageArgs = { ...args, action: subAction };
     return executeAgentMemoryManage(manageArgs, toolCallId);
   }
 
-  return makeResult(false, `不支持的 action: ${action}`, toolCallId);
+  return makeResult(false, t('toolMemory.unsupportedMemoryAction', { action }), toolCallId);
 }

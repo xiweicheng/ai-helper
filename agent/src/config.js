@@ -2,6 +2,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
+import { t as translate } from './i18n.js';
 
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
@@ -31,6 +32,17 @@ let pairingsCacheMtime = 0;
 
 // 写入互斥锁（防止并发写互相覆盖）
 let writeLock = Promise.resolve();
+
+// 当前模块使用的语言（由 server.js 在请求入口处设置）
+let currentLang = 'zh';
+
+/**
+ * 设置 config 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setConfigLang(lang) {
+  if (lang) currentLang = lang;
+}
 
 function withWriteLock(fn) {
   const prev = writeLock;
@@ -147,7 +159,7 @@ export async function saveConfig(config) {
  */
 export async function updateConfigField(key, value) {
   if (!VALID_CONFIG_KEYS.includes(key)) {
-    throw new Error(`无效配置项: ${key}`);
+    throw new Error(translate(currentLang, 'error.invalidConfigKey', { key }));
   }
   return withWriteLock(async () => {
     const config = loadConfig();

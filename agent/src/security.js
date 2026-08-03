@@ -3,6 +3,30 @@ import { resolve, normalize, sep, isAbsolute, join, dirname } from 'path';
 import { realpath } from 'fs/promises';
 import { homedir, platform } from 'os';
 import { loadConfig, MEMORY_DIR } from './config.js';
+import { t as translate } from './i18n.js';
+
+// 默认使用 zh 语言（独立调用场景，如单元测试）；server.js 调用时会传入 req 的 lang
+let currentLang = 'zh';
+
+/**
+ * 设置 security 模块当前使用的语言（由 server.js 在请求入口处调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setSecurityLang(lang) {
+  if (lang) currentLang = lang;
+}
+
+/**
+ * 翻译辅助：使用当前模块语言或传入的 t 函数
+ * @param {string} key - 翻译 key
+ * @param {object} [params] - 插值参数
+ * @param {Function} [tFn] - 可选的 t 函数（优先使用）
+ * @returns {string}
+ */
+function tr(key, params, tFn) {
+  if (typeof tFn === 'function') return tFn(key, params);
+  return translate(currentLang, key, params);
+}
 
 const isWin32 = platform() === 'win32';
 
@@ -78,11 +102,13 @@ function isHardBlocked(normalizedPath, platformOverride) {
 /**
  * 检查路径是否在白名单内
  * 使用 realpath 防止符号链接绕过
+ * @param {string} pathStr - 待检查的路径
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {{ allowed: boolean, reason?: string, resolved?: string }}
  */
-async function checkPath(pathStr) {
+async function checkPath(pathStr, tFn) {
   if (!pathStr || typeof pathStr !== 'string') {
-    return { allowed: false, reason: '路径无效' };
+    return { allowed: false, reason: tr('security.pathInvalid', undefined, tFn) };
   }
 
   // 展开 ~ 到用户主目录（扩展端无法知道 Agent 所在机器的 home 路径）
@@ -103,7 +129,7 @@ async function checkPath(pathStr) {
 
     // 0. 硬阻止检查（优先级最高，不可绕过）
     if (isHardBlocked(normalized)) {
-      return { allowed: false, reason: '禁止访问代理系统文件' };
+      return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
     }
 
     // 0.5. 系统目录白名单：记忆存储目录（Agent 内部管理，可读写）
@@ -122,11 +148,11 @@ async function checkPath(pathStr) {
         try {
           const realPath = await realpath(resolved);
           if (isHardBlocked(realPath)) {
-            return { allowed: false, reason: '禁止访问代理系统文件' };
+            return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
           }
         } catch (err) {
           if (err.code !== 'ENOENT') {
-            return { allowed: false, reason: `无法解析路径: ${err.message}` };
+            return { allowed: false, reason: tr('security.cannotResolvePath', { message: err.message }, tFn) };
           }
           // ENOENT：路径尚不存在（如待创建的文件），无法通过符号链接绕过，放行
         }
@@ -147,7 +173,7 @@ async function checkPath(pathStr) {
       }
     }
     if (!prefixMatch) {
-      return { allowed: false, reason: '路径不在允许的目录范围内' };
+      return { allowed: false, reason: tr('security.pathNotInAllowedDir', undefined, tFn) };
     }
 
     // realpath 校验：防止符号链接绕过
@@ -170,20 +196,20 @@ async function checkPath(pathStr) {
               existing = parent;
               continue;
             }
-            return { allowed: false, reason: `无法解析路径: ${parentErr.message}` };
+            return { allowed: false, reason: tr('security.cannotResolvePath', { message: parentErr.message }, tFn) };
           }
         }
         if (!realPath) {
-          return { allowed: false, reason: `路径检查异常: ${err.message}` };
+          return { allowed: false, reason: tr('security.pathCheckError', { message: err.message }, tFn) };
         }
       } else {
-        return { allowed: false, reason: `无法解析路径: ${err.message}` };
+        return { allowed: false, reason: tr('security.cannotResolvePath', { message: err.message }, tFn) };
       }
     }
 
     // 对 realPath 做硬阻止检查（防止通过符号链接绕过）
     if (isHardBlocked(realPath)) {
-      return { allowed: false, reason: '禁止访问代理系统文件' };
+      return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
     }
 
     // 对 realPath 再次做前缀检查
@@ -195,9 +221,9 @@ async function checkPath(pathStr) {
       }
     }
 
-    return { allowed: false, reason: '路径指向了允许范围之外的位置' };
+    return { allowed: false, reason: tr('security.pathOutOfRange', undefined, tFn) };
   } catch (err) {
-    return { allowed: false, reason: `路径检查异常: ${err.message}` };
+    return { allowed: false, reason: tr('security.pathCheckError', { message: err.message }, tFn) };
   }
 }
 
@@ -242,42 +268,43 @@ const SCRIPT_EXTENSIONS = '(sh|bash|zsh|py|js|mjs|rb|pl|php|lua)';
 const SCRIPT_INTERPRETERS = '(bash|sh|zsh|python3?|node|ruby|perl|php|lua)';
 
 const GRAYLIST_PATTERNS = [
-  { pattern: /^\s*sudo\s/, reason: '命令需要管理员权限 (sudo)' },
-  { pattern: /npm\s+(i|install)\s+-g\s/, reason: '全局安装 npm 包' },
-  { pattern: /pip\s+(install|uninstall)\s/, reason: 'pip 安装/卸载包' },
-  { pattern: /^\s*chmod\s+-R\s+777\s/, reason: '递归修改权限为 777' },
-  { pattern: /^\s*rm\s+-rf\s+(?!\/|~)/, reason: '递归强制删除文件/目录' },
-  { pattern: /git\s+push\s+(-f|--force)/, reason: 'Git 强制推送' },
-  { pattern: /^\s*(shutdown|reboot|halt|poweroff)/, reason: '关机或重启系统' },
-  { pattern: /^\s*>\s*\/etc\/hosts/, reason: '修改系统 hosts 文件' },
-  { pattern: /\beval\s+/, reason: '使用 eval 执行命令' },
+  { pattern: /^\s*sudo\s/, reasonKey: 'security.cmdSudo' },
+  { pattern: /npm\s+(i|install)\s+-g\s/, reasonKey: 'security.cmdNpmGlobal' },
+  { pattern: /pip\s+(install|uninstall)\s/, reasonKey: 'security.cmdPip' },
+  { pattern: /^\s*chmod\s+-R\s+777\s/, reasonKey: 'security.cmdChmod777' },
+  { pattern: /^\s*rm\s+-rf\s+(?!\/|~)/, reasonKey: 'security.cmdRmrf' },
+  { pattern: /git\s+push\s+(-f|--force)/, reasonKey: 'security.cmdGitForcePush' },
+  { pattern: /^\s*(shutdown|reboot|halt|poweroff)/, reasonKey: 'security.cmdShutdown' },
+  { pattern: /^\s*>\s*\/etc\/hosts/, reasonKey: 'security.cmdHosts' },
+  { pattern: /\beval\s+/, reasonKey: 'security.cmdEval' },
 
   // 脚本解释器执行外部文件
-  { pattern: new RegExp(`^\\s*${SCRIPT_INTERPRETERS}(\\s+[^-]\\S*)*\\s+\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '执行外部脚本文件' },
+  { pattern: new RegExp(`^\\s*${SCRIPT_INTERPRETERS}(\\s+[^-]\\S*)*\\s+\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reasonKey: 'security.cmdExecExternalScript' },
   // 直接执行脚本
-  { pattern: new RegExp(`^\\s*\\.?\\/\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reason: '直接执行脚本文件' },
+  { pattern: new RegExp(`^\\s*\\.?\\/\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reasonKey: 'security.cmdExecScriptDirectly' },
   // chmod +x 授予执行权限
-  { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-9][0-9])\s/, reason: '修改文件执行权限' },
+  { pattern: /^\s*chmod\s+(\+x|a\+x|u\+x|g\+x|o\+x|[0-7]*[1-7][0-9][0-9])\s/, reasonKey: 'security.cmdChmodExec' },
 
   // Windows 命令（大小写不敏感）
-  { pattern: /^\s*rmdir?\s+\/s\b/i, reason: '递归删除目录 (rd/rmdir /s)' },
-  { pattern: /^\s*(del|erase)\s+\/[a-zA-Z]*f/i, reason: '强制删除文件 (del /f)' },
-  { pattern: /^\s*icacls\b/i, reason: '修改文件权限 (icacls)' },
-  { pattern: /^\s*takeown\b/i, reason: '夺取文件所有权 (takeown)' },
-  { pattern: /^\s*reg\s+(add|delete|import|load|restore)\b/i, reason: '修改注册表 (reg)' },
-  { pattern: /^\s*net\s+(user|localgroup)\b/i, reason: '用户/用户组管理 (net)' },
-  { pattern: /^\s*sc\s+(stop|delete|config)\b/i, reason: '服务管理 (sc)' },
-  { pattern: /^\s*taskkill\s+\/[a-zA-Z]*f/i, reason: '强制结束进程 (taskkill /f)' },
+  { pattern: /^\s*rmdir?\s+\/s\b/i, reasonKey: 'security.cmdRmdirS' },
+  { pattern: /^\s*(del|erase)\s+\/[a-zA-Z]*f/i, reasonKey: 'security.cmdDelF' },
+  { pattern: /^\s*icacls\b/i, reasonKey: 'security.cmdIcacls' },
+  { pattern: /^\s*takeown\b/i, reasonKey: 'security.cmdTakeown' },
+  { pattern: /^\s*reg\s+(add|delete|import|load|restore)\b/i, reasonKey: 'security.cmdReg' },
+  { pattern: /^\s*net\s+(user|localgroup)\b/i, reasonKey: 'security.cmdNet' },
+  { pattern: /^\s*sc\s+(stop|delete|config)\b/i, reasonKey: 'security.cmdSc' },
+  { pattern: /^\s*taskkill\s+\/[a-zA-Z]*f/i, reasonKey: 'security.cmdTaskkillF' },
 ];
 
 /**
  * 检查命令安全性
  * @param {boolean} [force=false] - 用户已确认（跳过灰名单但保留黑名单）
+ * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {{ safe: boolean, level: 'allow'|'confirm'|'deny', reason?: string }}
  */
-function checkCommand(command, force = false) {
+function checkCommand(command, force = false, tFn) {
   if (!command || typeof command !== 'string') {
-    return { safe: false, level: 'deny', reason: '命令无效' };
+    return { safe: false, level: 'deny', reason: tr('security.commandInvalid', undefined, tFn) };
   }
 
   const trimmed = command.trim();
@@ -288,7 +315,7 @@ function checkCommand(command, force = false) {
       return {
         safe: false,
         level: 'deny',
-        reason: `高危命令被拦截: "${trimmed.substring(0, 100)}"`
+        reason: tr('security.commandBlocked', { command: trimmed.substring(0, 100) }, tFn)
       };
     }
   }
@@ -302,7 +329,7 @@ function checkCommand(command, force = false) {
       return {
         safe: false,
         level: 'deny',
-        reason: '禁止访问代理系统文件'
+        reason: tr('security.forbiddenAgentFile', undefined, tFn)
       };
     }
   }
@@ -318,7 +345,7 @@ function checkCommand(command, force = false) {
       return {
         safe: false,
         level: 'confirm',
-        reason: entry.reason
+        reason: tr(entry.reasonKey, undefined, tFn)
       };
     }
   }
