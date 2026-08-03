@@ -21,6 +21,9 @@ export default {
     enabled: '已启用',
     disabled: '已停用',
     bytes: '字节',
+    copy: '复制',
+    copySuccess: '已复制',
+    copyFailed: '复制失败',
   },
 
   // 敏感操作确认对话框（confirm-dialog 试点）
@@ -166,6 +169,11 @@ export default {
     confirmClearMessage: '确定要清除所有对话历史吗？',
     confirmDeletePromptTitle: '确认删除',
     confirmDeletePromptMessage: '确定要删除这个提示词吗？',
+    requestFailed: '请求失败: {message}',
+    quote: '引用',
+    export: '导出',
+    quoteTitle: '引用此消息',
+    quotedPrefix: '💬 已引用: {text}',
   },
 
   // 工具面板

@@ -21,6 +21,9 @@ export default {
     enabled: 'Enabled',
     disabled: 'Disabled',
     bytes: 'bytes',
+    copy: 'Copy',
+    copySuccess: 'Copied',
+    copyFailed: 'Copy failed',
   },
 
   // Sensitive operation confirmation dialog (confirm-dialog pilot)
@@ -166,6 +169,11 @@ export default {
     confirmClearMessage: 'Are you sure you want to clear all conversation history?',
     confirmDeletePromptTitle: 'Confirm Delete',
     confirmDeletePromptMessage: 'Are you sure you want to delete this prompt?',
+    requestFailed: 'Request failed: {message}',
+    quote: 'Quote',
+    export: 'Export',
+    quoteTitle: 'Quote this message',
+    quotedPrefix: '💬 Quoted: {text}',
   },
 
   // Tool panel
