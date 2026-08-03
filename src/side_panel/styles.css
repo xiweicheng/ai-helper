@@ -6205,6 +6205,7 @@ body {
   transition: background 0.2s, opacity 0.3s;
   text-align: left;
   box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .export-dropdown-item:hover {
@@ -8560,6 +8561,16 @@ body {
   100% { background-color: transparent; }
 }
 
+/* 全屏模式下 TOC 的 z-index 需高于 overlay 的 9999 */
+.workspace-panel.preview-fullscreen .message-toc-container {
+  z-index: 10000 !important;
+}
+
+/* 工作目录预览模式下 TOC 也需要高 z-index */
+.message-toc-container {
+  z-index: 10000 !important;
+}
+
 /* 窄栏模式：消息底部工具栏只显示图标，隐藏文字 */
 @media (max-width: 420px) {
   .message.assistant .copy-btn span,
@@ -10398,6 +10409,82 @@ body {
   background: #f0fef0;
   border-color: #27ae60;
   color: #27ae60;
+}
+
+/* 导出菜单 */
+.workspace-preview-export-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ws-export-trigger-btn {
+  border: 1px solid #ddd !important;
+  border-radius: 4px !important;
+  background: white !important;
+}
+
+.ws-export-trigger-btn:hover {
+  background: #f0f5ff !important;
+  border-color: #4a90d9 !important;
+  color: #4a90d9 !important;
+}
+
+.ws-export-dropdown {
+  display: none;
+  position: fixed;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 2147483647;
+  min-width: 160px;
+  padding: 4px;
+  flex-direction: column;
+  animation: wsExportFadeIn 0.2s ease-out;
+}
+
+.ws-export-dropdown.show {
+  display: flex;
+}
+
+@keyframes wsExportFadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ws-export-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.ws-export-dropdown-item:hover {
+  background: #f0f5ff;
+  color: #4a90d9;
+}
+
+.ws-export-dropdown-item svg {
+  flex-shrink: 0;
+}
+
+.ws-export-dropdown-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 图标按钮（无文字，仅 SVG 图标） */

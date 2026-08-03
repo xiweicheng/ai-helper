@@ -47,12 +47,15 @@ export function handleMouseOver(event) {
     return;
   }
   
-  // 如果目标是消息区域
+  // 如果目标是消息区域或工作目录预览 Markdown 区域
   const messageDiv = event.target.closest('.message.assistant');
-  if (!messageDiv) return;
+  const workspacePreview = event.target.closest('.workspace-preview-markdown');
+  if (!messageDiv && !workspacePreview) return;
+
+  const container = messageDiv || workspacePreview;
   
   // 检查是否包含 H 标题
-  const headings = messageDiv.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
+  const headings = container.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
   
   if (headings.length === 0) {
     hideMessageToc();
@@ -60,7 +63,7 @@ export function handleMouseOver(event) {
   }
   
   // 生成目录
-  showMessageToc(messageDiv, headings);
+  showMessageToc(container, headings);
 }
 
 /**
@@ -80,15 +83,18 @@ export function handleMouseOut(event) {
     return;
   }
   
-  // 如果目标是消息区域
+  // 如果目标是消息区域或工作目录预览 Markdown 区域
   const messageDiv = event.target.closest('.message.assistant');
-  if (!messageDiv) return;
+  const workspacePreview = event.target.closest('.workspace-preview-markdown');
+  if (!messageDiv && !workspacePreview) return;
+
+  const container = messageDiv || workspacePreview;
   
-  // 检查 relatedTarget 是否在目录区域或消息区域内
+  // 检查 relatedTarget 是否在目录区域或容器区域内
   const relatedTarget = event.relatedTarget;
   if (relatedTarget) {
-    if (relatedTarget.closest('.message-toc-container') || relatedTarget.closest('.message.assistant')) {
-      return; // 移动到目录区域或消息区域，不隐藏
+    if (relatedTarget.closest('.message-toc-container') || relatedTarget.closest('.message.assistant') || relatedTarget.closest('.workspace-preview-markdown')) {
+      return; // 移动到目录区域或容器区域，不隐藏
     }
   }
   
@@ -179,7 +185,9 @@ export function showMessageToc(messageDiv, headings) {
   const messageRect = messageDiv.getBoundingClientRect();
   // 容器默认 CSS 为 right: 0; width: 280px，其默认左边界 = viewportWidth - 280
   const defaultContainerLeft = window.innerWidth - 280;
-  // 如果消息右边界在容器左边界左侧（存在间隙），则扩展容器左边界以覆盖间隙
+
+  // 工作目录预览模式与对话消息模式使用相同的 fixed right 定位
+  // 不做特殊处理，复用对话消息 TOC 的定位逻辑
   if (messageRect.right < defaultContainerLeft) {
     container.style.left = messageRect.right + 'px';
     container.style.right = '0';

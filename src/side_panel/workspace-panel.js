@@ -16,7 +16,8 @@ import { showToast, copyToClipboard } from './utils.js';
 import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
-import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents } from './markdown-render.js';
+import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
+import { renderMermaidInContainer, convertSvgsToImages } from './chat-export.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import { pptxToHtml } from '@jvmr/pptx-to-html';
@@ -238,6 +239,13 @@ registerTranslations('zh', {
     agentNotPaired: 'Agent 未配对',
     fileDetailsLabel: '文件详情',
     loadingLabel: '加载中...',
+    // 导出
+    export: '导出',
+    exportDocx: 'Word',
+    exportPdf: 'PDF',
+    exportImage: '图片',
+    exportMd: 'Markdown',
+    copyMarkdownHint: '按住 Ctrl/Cmd 点击复制富文本',
   },
 });
 
@@ -452,6 +460,13 @@ registerTranslations('en', {
     agentNotPaired: 'Agent not paired',
     fileDetailsLabel: 'File Details',
     loadingLabel: 'Loading...',
+    // Export
+    export: 'Export',
+    exportDocx: 'Word',
+    exportPdf: 'PDF',
+    exportImage: 'Image',
+    exportMd: 'Markdown',
+    copyMarkdownHint: 'Ctrl/Cmd+Click to copy rich text',
   },
 });
 
@@ -598,6 +613,33 @@ export function initWorkspacePanel() {
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
             </svg>
           </button>
+          <div class="workspace-preview-export-menu" id="workspacePreviewExportMenu" style="display:none;">
+            <button class="workspace-preview-export-btn workspace-preview-icon-btn ws-export-trigger-btn" id="workspacePreviewExportBtn" title="${t('workspace.export')}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+            <div class="ws-export-dropdown" id="workspacePreviewExportDropdown">
+              <button class="ws-export-dropdown-item" data-export-type="docx">
+                <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M747.936 901.171H276.819c-72.2 0-130.953-55.224-130.953-123.078V244.721c0-67.854 58.752-123.078 130.953-123.078h383.525c6.597 0 12.937 2.505 17.795 6.954l192.363 178.046c5.317 4.96 8.386 11.914 8.386 19.227v452.223c0 67.854-58.752 123.078-130.952 123.078zM276.819 174.004c-43.31 0-78.592 31.703-78.592 70.717v533.372c0 39.015 35.282 70.718 78.592 70.718h471.117c43.31 0 78.592-31.703 78.592-70.718V337.324l-176.461-163.32H276.819z" fill="#555"/><path d="M830.567 331.546H669.446c-14.471 0-26.18-11.71-26.18-26.181V156.209c0-14.471 11.709-26.18 26.18-26.18s26.181 11.709 26.181 26.18v122.976h134.94c14.471 0 26.181 11.709 26.181 26.18s-11.711 26.181-26.181 26.181z" fill="#555"/><path d="M730.214 428.749l-92.04 343.616h-53.179L511.363 498.29l-75.677 274.074h-53.179l-92.04-343.616h49.088l69.542 255.667 69.541-255.667h63.406l69.541 255.667 69.541-255.667h49.088z" fill="#555"/></svg>
+                <span>${t('workspace.export')} ${t('workspace.exportDocx')}</span>
+              </button>
+              <button class="ws-export-dropdown-item" data-export-type="pdf">
+                <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M582.4 864H170.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V170.666667c0-6.4 4.266667-10.666667 10.666667-10.666667h309.333333V320c0 40.533333 34.133333 74.666667 74.666667 74.666667h160v38.4c0 17.066667 14.933333 32 32 32s32-14.933333 32-32V298.666667c0-8.533333-4.266667-17.066667-8.533334-23.466667l-170.666666-170.666667c-6.4-6.4-14.933333-8.533333-23.466667-8.533333H170.666667C130.133333 96 96 130.133333 96 170.666667v682.666666c0 40.533333 34.133333 74.666667 74.666667 74.666667h411.733333c17.066667 0 32-14.933333 32-32s-14.933333-32-32-32z m132.266667-550.4v17.066667H554.666667c-6.4 0-10.666667-4.266667-10.666667-10.666667V160h19.2l151.466667 153.6z" fill="#555"/><path d="M332.8 533.333333c-12.8 0-19.2 2.133333-25.6 6.4-6.4 4.266667-8.533333 12.8-8.533333 23.466667v206.933333c0 6.4 2.133333 12.8 6.4 19.2 4.266667 4.266667 10.666667 8.533333 21.333333 8.533334s17.066667-4.266667 21.333333-8.533334c4.266667-4.266667 6.4-10.666667 6.4-19.2v-64h32c57.6 0 89.6-29.866667 89.6-87.466666 0-27.733333-8.533333-51.2-23.466666-64-14.933333-14.933333-36.266667-21.333333-66.133334-21.333334h-53.333333z m87.466667 85.333334c0 12.8-2.133333 23.466667-8.533334 27.733333-4.266667 4.266667-14.933333 8.533333-27.733333 8.533333h-32v-70.4H384c12.8 0 21.333333 2.133333 27.733333 8.533334 6.4 4.266667 8.533333 12.8 8.533334 25.6zM667.733333 571.733333c-8.533333-12.8-21.333333-21.333333-34.133333-29.866666-14.933333-4.266667-32-8.533333-51.2-8.533334h-61.866667c-8.533333 0-17.066667 0-23.466666 8.533334-2.133333 4.266667-4.266667 10.666667-4.266667 19.2V768c0 8.533333 2.133333 14.933333 4.266667 19.2 6.4 8.533333 14.933333 8.533333 23.466666 8.533333h64c19.2 0 34.133333-4.266667 49.066667-10.666666 12.8-6.4 25.6-17.066667 34.133333-29.866667 8.533333-12.8 14.933333-25.6 19.2-42.666667 4.266667-14.933333 6.4-32 6.4-49.066666 0-17.066667-2.133333-34.133333-6.4-49.066667-4.266667-14.933333-10.666667-29.866667-19.2-42.666667z m-42.666666 153.6c-8.533333 12.8-21.333333 19.2-38.4 19.2h-38.4v-160H576c21.333333 0 38.4 6.4 46.933333 19.2 10.666667 12.8 14.933333 34.133333 14.933334 59.733334 2.133333 27.733333-4.266667 46.933333-12.8 61.866666zM851.2 533.333333h-106.666667c-8.533333 0-17.066667 2.133333-21.333333 6.4-6.4 4.266667-8.533333 12.8-8.533333 21.333334v209.066666c0 6.4 2.133333 12.8 6.4 17.066667 4.266667 6.4 10.666667 8.533333 21.333333 8.533333 8.533333 0 17.066667-2.133333 21.333333-8.533333 2.133333-4.266667 6.4-8.533333 6.4-19.2v-85.333333h72.533334c12.8 0 23.466667-6.4 25.6-17.066667 2.133333-8.533333 2.133333-14.933333 0-17.066667-2.133333-4.266667-6.4-17.066667-25.6-17.066666H768v-49.066667h81.066667c8.533333 0 14.933333-2.133333 19.2-4.266667 4.266667-2.133333 8.533333-8.533333 8.533333-21.333333 2.133333-12.8-8.533333-23.466667-25.6-23.466667z" fill="#555"/></svg>
+                <span>${t('workspace.export')} ${t('workspace.exportPdf')}</span>
+              </button>
+              <button class="ws-export-dropdown-item" data-export-type="image">
+                <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M400.696 268.795c-17.249 0-31.233 13.986-31.233 31.233v30.471c0 17.249 13.986 31.233 31.233 31.233s31.233-13.986 31.233-31.233v-30.471c0-17.249-13.985-31.233-31.233-31.233z" fill="#555"/><path d="M623.649 361.734c17.249 0 31.234-13.986 31.234-31.233v-30.471c0-17.249-13.986-31.233-31.234-31.233s-31.233 13.986-31.233 31.233v30.471c-0.001 17.248 13.985 31.233 31.233 31.233z" fill="#555"/><path d="M438.295 388.804c-14.656 9.104-19.155 28.362-10.050 43.013 11.209 18.047 41.976 48.59 86.157 48.59 43.958 0 75.1-30.313 86.574-48.223 9.303-14.529 5.068-33.847-9.455-43.15-14.539-9.298-33.852-5.068-43.15 9.455-0.122 0.199-13.38 19.45-33.969 19.45-20.009 0-32.444-18.128-33.278-19.373-9.166-14.423-28.28-18.805-42.829-9.761z" fill="#555"/><path d="M824.508503 116.690676 571.592236 116.690676c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c40.181141 0 72.878844 32.692586 72.878844 72.878844l0 396.966057-189.334159-165.29465c-12.20088-10.655687-30.517037-10.207479-42.173518 0.9967L468.578048 674.16231 309.521472 517.519714c-11.895935-11.70253-30.903847-12.002358-43.154869-0.645706L126.957507 646.163629l0-394.126382c0-40.186258 32.692586-72.878844 72.878844-72.878844l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352S470.000444 116.690676 452.751594 116.690676L199.836351 116.690676c-74.632791 0-135.346571 60.71378-135.346571 135.346571l0 520.56405c0 74.632791 60.71378 135.346571 135.346571 135.346571l252.916267 0c17.248849 0 31.233352-13.985526 31.233352-31.233352s-13.985526-31.233352-31.233352-31.233352L199.836351 845.481164c-40.186258 0-72.878844-32.692586-72.878844-72.878844l0-41.23924 160.003134-148.385539 159.428036 157.007917c12.048407 11.865235 31.361265 11.981892 43.546795 0.274246l198.576661-190.68697 208.876238 182.346001 0 40.683585c0 40.186258-32.697703 72.878844-72.878844 72.878844L571.592236 845.481164c-17.248849 0-31.233352 13.985526-31.233352 31.233352s13.985526 31.233352 31.233352 31.233352l252.916267 0c74.627674 0 135.346571-60.71378 135.346571-135.346571L959.855074 252.037247C959.855074 177.404456 899.136178 116.690676 824.508503 116.690676z" fill="#555"/></svg>
+                <span>${t('workspace.export')} ${t('workspace.exportImage')}</span>
+              </button>
+              <button class="ws-export-dropdown-item" data-export-type="md">
+                <svg viewBox="0 0 1024 1024" width="18" height="18"><path d="M601.216 85.333333a42.666667 42.666667 0 0 1 30.485333 12.821334l209.450667 213.973333a42.666667 42.666667 0 0 1 12.181333 29.866667V853.333333a85.333333 85.333333 0 0 1-85.333333 85.333334H256a85.333333 85.333333 0 0 1-85.333333-85.333334V170.666667a85.333333 85.333333 0 0 1 85.333333-85.333334h345.216z m-35.584 64H256a21.333333 21.333333 0 0 0-21.333333 21.333334v682.666666a21.333333 21.333333 0 0 0 21.333333 21.333334h512a21.333333 21.333333 0 0 0 21.333333-21.333334V395.413333h-191.68a32 32 0 0 1-32-32L565.632 149.333333z" fill="#555"/><path d="M384.341333 800l-3.072-0.106667a32 32 0 0 1-29.162666-34.624l21.973333-256c2.752-32.256 46.165333-40.490667 60.544-11.477333l77.290667 156.010667 78.805333-156.224c14.08-27.925333 55.082667-20.906667 60.074667 8.789333l0.384 3.050667 20.714666 256a32 32 0 0 1-63.786666 5.162666l-11.541334-142.549333-56.341333 111.722667c-11.413333 22.613333-42.88 23.381333-55.744 2.517333l-1.493333-2.730667-54.912-110.826666-12.181334 142.016a32 32 0 0 1-31.552 29.269333z" fill="#555"/></svg>
+                <span>${t('workspace.export')} ${t('workspace.exportMd')}</span>
+              </button>
+            </div>
+          </div>
           <button class="workspace-preview-md-toggle-btn workspace-preview-icon-btn" id="workspacePreviewMdToggleBtn" title="${t('workspace.toggleRenderPreview')}" style="display:none;">
             <svg class="workspace-preview-md-icon-preview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -842,7 +884,7 @@ function bindEvents() {
 
   // 预览关闭
   document.getElementById('workspacePreviewClose').addEventListener('click', () => closePreview());
-  document.getElementById('workspacePreviewCopyBtn').addEventListener('click', copyPreviewContent);
+  document.getElementById('workspacePreviewCopyBtn').addEventListener('click', (e) => copyPreviewContent(e));
   document.getElementById('workspacePreviewDownloadBtn').addEventListener('click', downloadPreviewFile);
   document.getElementById('workspacePreviewOpenBrowserBtn').addEventListener('click', openPreviewInBrowser);
   document.getElementById('workspacePreviewFullscreenBtn').addEventListener('click', togglePreviewFullscreen);
@@ -850,6 +892,9 @@ function bindEvents() {
   document.getElementById('workspacePreviewEditBtn').addEventListener('click', enterEditMode);
   document.getElementById('workspacePreviewSaveBtn').addEventListener('click', saveEditedFile);
   document.getElementById('workspacePreviewCancelBtn').addEventListener('click', cancelEditMode);
+
+  // 导出菜单事件绑定
+  bindExportMenuEvents();
   
   // 编辑模式快捷键
   document.addEventListener('keydown', handlePreviewKeydown);
@@ -1720,12 +1765,18 @@ async function previewFile(filePath, fileName) {
       mdToggleBtn.classList.add('active');
       mdToggleBtn.title = t('workspace.switchToSourcePreview');
       updateMdToggleIcon(mdToggleBtn, true);
-      copyBtn.style.display = 'none';
+      copyBtn.style.display = '';
+      // 渲染模式下显示导出菜单，隐藏下载按钮
+      const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
+      if (downloadBtn) downloadBtn.style.display = 'none';
+      const exportMenu = document.getElementById('workspacePreviewExportMenu');
+      if (exportMenu) exportMenu.style.display = '';
       previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(text)}</div>`;
       renderMermaidChartsInContainer(previewContent);
       bindCodeCopyButtonsInContainer(previewContent);
       addTableToolbarEvents();
       lineCountEl.textContent = '';
+      updateCopyBtnTooltip(true);
       return;
     }
     // 普通文本/代码
@@ -2783,10 +2834,593 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
   }
 }
 
+// ====== 导出菜单事件与功能 ======
+
+let exportInProgress = false;
+
+function positionExportDropdown(exportBtn, exportDropdown) {
+  const rect = exportBtn.getBoundingClientRect();
+  exportDropdown.style.top = (rect.bottom + 4) + 'px';
+  // 右对齐按钮
+  const dropdownWidth = 160;
+  const left = rect.right - dropdownWidth;
+  exportDropdown.style.left = Math.max(4, left) + 'px';
+  exportDropdown.style.right = 'auto';
+}
+
+function showExportDropdown(exportBtn, exportDropdown) {
+  positionExportDropdown(exportBtn, exportDropdown);
+  exportDropdown.classList.add('show');
+}
+
+function bindExportMenuEvents() {
+  const exportMenu = document.getElementById('workspacePreviewExportMenu');
+  const exportBtn = document.getElementById('workspacePreviewExportBtn');
+  let exportDropdown = document.getElementById('workspacePreviewExportDropdown');
+  if (!exportMenu || !exportBtn || !exportDropdown) return;
+
+  // 将下拉菜单移到 body 下，避免被 .workspace-panel 的 transform 创建包含块导致 fixed 失效
+  document.body.appendChild(exportDropdown);
+
+  // 点击导出按钮切换下拉菜单
+  exportBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (exportDropdown.classList.contains('show')) {
+      exportDropdown.classList.remove('show');
+    } else {
+      showExportDropdown(exportBtn, exportDropdown);
+    }
+  });
+
+  // 悬停展开下拉菜单（延迟 200ms 显示，避免误触）
+  let hoverTimer = null;
+  let hideTimer = null;
+  exportMenu.addEventListener('mouseenter', () => {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    hoverTimer = setTimeout(() => {
+      showExportDropdown(exportBtn, exportDropdown);
+    }, 200);
+  });
+  exportMenu.addEventListener('mouseleave', () => {
+    if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    // 延迟 300ms 隐藏，给用户时间移动到下拉菜单
+    hideTimer = setTimeout(() => {
+      if (!exportMenu.matches(':hover') && !exportDropdown.matches(':hover')) {
+        exportDropdown.classList.remove('show');
+      }
+    }, 300);
+  });
+
+  // 下拉菜单自身的 mouseenter 取消隐藏
+  exportDropdown.addEventListener('mouseenter', () => {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  });
+  exportDropdown.addEventListener('mouseleave', () => {
+    hideTimer = setTimeout(() => {
+      if (!exportMenu.matches(':hover') && !exportDropdown.matches(':hover')) {
+        exportDropdown.classList.remove('show');
+      }
+    }, 200);
+  });
+
+  // 点击下拉菜单项
+  exportDropdown.querySelectorAll('.ws-export-dropdown-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const exportType = item.dataset.exportType;
+      exportDropdown.classList.remove('show');
+      handleExport(exportType);
+    });
+  });
+
+  // 点击其他地方关闭下拉菜单
+  document.addEventListener('click', (e) => {
+    if (!exportMenu.contains(e.target) && !exportDropdown.contains(e.target)) {
+      exportDropdown.classList.remove('show');
+    }
+  });
+
+  // 滚动或窗口大小变化时重新定位
+  const reposition = () => {
+    if (exportDropdown.classList.contains('show')) {
+      positionExportDropdown(exportBtn, exportDropdown);
+    }
+  };
+  document.getElementById('workspacePreviewContent')?.addEventListener('scroll', reposition);
+  window.addEventListener('resize', reposition);
+}
+
+function getExportMarkdownContent() {
+  const previewArea = document.getElementById('workspacePreviewArea');
+  return previewArea.dataset.markdownText || '';
+}
+
+function getExportHtmlContent() {
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const markdownBody = previewContent.querySelector('.workspace-preview-markdown');
+  if (markdownBody) {
+    return markdownBody.innerHTML;
+  }
+  return previewContent.innerHTML;
+}
+
+async function handleExport(type) {
+  if (exportInProgress) return;
+  exportInProgress = true;
+
+  const exportBtn = document.getElementById('workspacePreviewExportBtn');
+  const exportMenu = document.getElementById('workspacePreviewExportMenu');
+  const exportDropdown = document.getElementById('workspacePreviewExportDropdown');
+  const previewArea = document.getElementById('workspacePreviewArea');
+  const fileName = previewArea.dataset.previewName || 'export';
+
+  // 设置 loading 状态
+  const originalHtml = exportBtn.innerHTML;
+  exportBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" style="animation: spin 0.8s linear infinite; width: 14px; height: 14px; flex-shrink: 0;"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="31.4" stroke-dashoffset="10" opacity="0.25"/><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="31.4" stroke-dashoffset="10"/></svg>`;
+  exportBtn.disabled = true;
+  exportBtn.style.opacity = '0.6';
+
+  try {
+    switch (type) {
+      case 'docx':
+        await exportWorkspaceDocx(fileName);
+        break;
+      case 'pdf':
+        await exportWorkspacePdf(fileName);
+        break;
+      case 'image':
+        await exportWorkspaceImage(fileName);
+        break;
+      case 'md':
+        exportWorkspaceMarkdown(fileName);
+        break;
+    }
+  } catch (error) {
+    logger.error('[WorkspacePanel] 导出失败:', error);
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
+  } finally {
+    exportInProgress = false;
+    // 恢复按钮
+    exportBtn.innerHTML = originalHtml;
+    exportBtn.disabled = false;
+    exportBtn.style.opacity = '1';
+    exportDropdown.classList.remove('show');
+  }
+}
+
+async function preRenderMermaidForExport(container) {
+  if (typeof mermaid === 'undefined') return;
+  await renderMermaidInContainer(container);
+  await convertSvgsToImages(container);
+}
+
+/**
+ * 将 Markdown 中的 mermaid 代码块预渲染为 data URL 图片
+ * 返回替换后的 Markdown（mermaid 块变为 ![mermaid](data:image/png;base64,...)）
+ */
+async function renderMermaidBlocksToImagesLocal(markdownContent) {
+  if (typeof mermaid === 'undefined') return markdownContent;
+  if (!/```mermaid/i.test(markdownContent)) return markdownContent;
+
+  try {
+    const htmlContent = formatMarkdown(markdownContent);
+    const tempContainer = document.createElement('div');
+    tempContainer.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+    tempContainer.innerHTML = htmlContent;
+    document.body.appendChild(tempContainer);
+
+    await renderMermaidInContainer(tempContainer);
+    await convertSvgsToImages(tempContainer);
+
+    const mermaidContainers = tempContainer.querySelectorAll('.mermaid');
+    const imgDataUrls = [];
+    for (const container of mermaidContainers) {
+      const img = container.querySelector('img');
+      if (img && img.src && img.src.startsWith('data:')) {
+        imgDataUrls.push(img.src);
+      } else {
+        imgDataUrls.push(null);
+      }
+    }
+    document.body.removeChild(tempContainer);
+
+    if (imgDataUrls.length === 0) return markdownContent;
+
+    let idx = 0;
+    return markdownContent.replace(/```\s*mermaid\s*[\r\n]+([\s\S]*?)```/gi, (match) => {
+      const dataUrl = imgDataUrls[idx];
+      idx++;
+      if (dataUrl) return `![mermaid](${dataUrl})`;
+      return match;
+    });
+  } catch (e) {
+    logger.warn('[WorkspacePanel] Mermaid 预渲染失败:', e.message);
+    return markdownContent;
+  }
+}
+
+async function exportWorkspaceDocx(fileName) {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip } = await import('docx');
+  
+  let markdownContent = getExportMarkdownContent();
+  if (!markdownContent) {
+    showToast(t('chatExport.noContent'), 'error');
+    return;
+  }
+
+  // 预渲染 mermaid 图表为 data URL 图片，替换 markdown 中的 mermaid 代码块
+  markdownContent = await renderMermaidBlocksToImagesLocal(markdownContent);
+
+  const children = await parseMarkdownToDocxChildrenLocal(markdownContent);
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: { run: { font: 'Calibri', size: 22 } },
+        heading1: { run: { size: 36, bold: true }, paragraph: { spacing: { before: 320, after: 160 } } },
+        heading2: { run: { size: 30, bold: true }, paragraph: { spacing: { before: 280, after: 120 } } },
+        heading3: { run: { size: 26, bold: true }, paragraph: { spacing: { before: 240, after: 100 } } },
+      }
+    },
+    sections: [{
+      properties: { page: { margin: { top: convertInchesToTwip(1), right: convertInchesToTwip(1), bottom: convertInchesToTwip(1), left: convertInchesToTwip(1) } } },
+      children
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const timestamp = new Date().getTime();
+  const dlName = `word-${timestamp}.docx`;
+  downloadBlob(blob, dlName);
+  showToast(t('workspace.downloaded', { name: dlName }), 'success');
+}
+
+async function parseMarkdownToDocxChildrenLocal(markdown) {
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip } = await import('docx');
+  
+  if (!markdown || !markdown.trim()) {
+    return [new Paragraph({ children: [new TextRun({ text: '' })] })];
+  }
+
+  const children = [];
+  let content = markdown;
+
+  // 提取代码块
+  const codeBlocks = [];
+  content = content.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: lang || '', code: code.trimEnd() });
+    return `\n\n%%CODEBLOCK_${idx}%%\n\n`;
+  });
+
+  // 提取 HTML 表格
+  const htmlTables = [];
+  content = content.replace(/<table[\s\S]*?<\/table>/gi, (match) => {
+    const idx = htmlTables.length;
+    htmlTables.push(match);
+    return `\n\n%%HTMLTABLE_${idx}%%\n\n`;
+  });
+
+  // 提取 Markdown 表格
+  const mdTables = [];
+  content = content.replace(/(?:^\|.+\|\s*$\n)+^\|[\s\-:|]+\|\s*$\n(?:^\|.+\|\s*$\n?)+/gm, (match) => {
+    const idx = mdTables.length;
+    mdTables.push(match);
+    return `\n\n%%MDTABLE_${idx}%%\n\n`;
+  });
+
+  const blocks = content.split(/\n{2,}/).filter(b => b.trim());
+
+  function parseInline(text) {
+    if (!text) return [];
+    const tokenRegex = /(\*\*(.+?)\*\*|(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|__(.+?)__|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|!\[([^\]]*)\]\(([^)]+)\))/;
+    const result = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+      const match = remaining.match(tokenRegex);
+      if (!match) { result.push(new TextRun({ text: remaining })); break; }
+      const idx = match.index;
+      if (idx > 0) result.push(new TextRun({ text: remaining.slice(0, idx) }));
+      const fullMatch = match[1];
+      if (match[2] !== undefined) result.push(new TextRun({ text: match[2], bold: true }));
+      else if (match[3] !== undefined) result.push(new TextRun({ text: match[3], italics: true }));
+      else if (match[4] !== undefined) result.push(new TextRun({ text: match[4], bold: true }));
+      else if (match[5] !== undefined) result.push(new TextRun({ text: match[5], italics: true }));
+      else if (match[6] !== undefined) result.push(new TextRun({ text: match[6], font: 'Consolas', size: 20 }));
+      else if (match[7] !== undefined) result.push(new ExternalHyperlink({ children: [new TextRun({ text: match[7], style: 'Hyperlink' })], link: match[8] }));
+      else if (match[9] !== undefined) {
+        const imgUrl = match[10];
+        if (imgUrl.startsWith('data:')) {
+          try {
+            const [header, base64] = imgUrl.split(',');
+            const mimeMatch = header.match(/data:(image\/(\w+))/);
+            if (mimeMatch && base64) {
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              result.push(new ImageRun({ data: bytes, transformation: { width: 400, height: 300 }, type: mimeMatch[2] }));
+            }
+          } catch { result.push(new TextRun({ text: '[Image]', italics: true, color: '999999' })); }
+        } else {
+          result.push(new TextRun({ text: '[Image: ' + (match[9] || imgUrl) + ']', italics: true, color: '999999' }));
+        }
+      }
+      remaining = remaining.slice(idx + fullMatch.length);
+    }
+    return result;
+  }
+
+  function parseHtmlTable(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const rows = [];
+    doc.querySelectorAll('tr').forEach(tr => {
+      const row = [];
+      tr.querySelectorAll('th, td').forEach(cell => row.push(cell.textContent.trim()));
+      if (row.length > 0) rows.push(row);
+    });
+    return rows;
+  }
+
+  function parseMdTable(md) {
+    const lines = md.trim().split('\n');
+    const rows = [];
+    for (const line of lines) {
+      if (/^[\s\|:\-]+$/.test(line.replace(/\|/g, ''))) continue;
+      const cells = line.split('|').map(c => c.trim()).filter(c => c !== '');
+      if (cells.length > 0) rows.push(cells);
+    }
+    return rows;
+  }
+
+  function createTable(rows) {
+    if (rows.length === 0) return new Paragraph({ children: [] });
+    const colCount = Math.max(...rows.map(r => r.length));
+    const tableRows = rows.map((row, rowIdx) => {
+      const cells = [];
+      for (let i = 0; i < colCount; i++) {
+        const cellText = row[i] || '';
+        cells.push(new TableCell({
+          children: [new Paragraph({ children: parseInline(cellText), spacing: { before: 40, after: 40 } })],
+          shading: rowIdx === 0 ? { fill: 'F2F2F2' } : undefined,
+          width: { size: 100 / colCount, type: WidthType.PERCENTAGE }
+        }));
+      }
+      return new TableRow({ children: cells });
+    });
+    return new Table({
+      rows: tableRows,
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      borders: {
+        top: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
+        bottom: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
+        left: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
+        right: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
+        insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' },
+        insideVertical: { style: BorderStyle.SINGLE, size: 1, color: 'DDDDDD' }
+      }
+    });
+  }
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+
+    const cbMatch = trimmed.match(/^%%CODEBLOCK_(\d+)%%$/);
+    if (cbMatch) {
+      const { lang, code } = codeBlocks[parseInt(cbMatch[1])];
+      const title = lang ? `${lang} code` : 'code';
+      children.push(new Paragraph({ children: [new TextRun({ text: title, bold: true, font: 'Consolas', size: 18 })] }));
+      const codeLines = code.split('\n');
+      for (const line of codeLines) {
+        children.push(new Paragraph({
+          children: [new TextRun({ text: line || ' ', font: 'Consolas', size: 18 })],
+          spacing: { before: 0, after: 0, line: 240 },
+          shading: { fill: 'F5F5F5' }
+        }));
+      }
+      children.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+      continue;
+    }
+
+    const htMatch = trimmed.match(/^%%HTMLTABLE_(\d+)%%$/);
+    if (htMatch) {
+      const rows = parseHtmlTable(htmlTables[parseInt(htMatch[1])]);
+      if (rows.length > 0) { children.push(createTable(rows)); children.push(new Paragraph({ children: [new TextRun({ text: '' })] })); }
+      continue;
+    }
+
+    const mtMatch = trimmed.match(/^%%MDTABLE_(\d+)%%$/);
+    if (mtMatch) {
+      const rows = parseMdTable(mdTables[parseInt(mtMatch[1])]);
+      children.push(createTable(rows));
+      children.push(new Paragraph({ children: [new TextRun({ text: '' })] }));
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      const levelMap = { 1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3, 4: HeadingLevel.HEADING_4, 5: HeadingLevel.HEADING_5, 6: HeadingLevel.HEADING_6 };
+      children.push(new Paragraph({ children: parseInline(headingMatch[2]), heading: levelMap[headingMatch[1].length] || HeadingLevel.HEADING_1 }));
+      continue;
+    }
+
+    if (/^(---|\*\*\*|___)\s*$/.test(trimmed)) {
+      children.push(new Paragraph({ children: [], border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC' } }, spacing: { before: 200, after: 200 } }));
+      continue;
+    }
+
+    if (/^[\-\*\+]\s+/.test(trimmed)) {
+      const listItems = block.split(/\n(?=[\-\*\+]\s+)/);
+      for (const item of listItems) {
+        children.push(new Paragraph({ children: parseInline(item.replace(/^[\-\*\+]\s+/, '')), bullet: { level: 0 }, spacing: { before: 40, after: 40 } }));
+      }
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const listItems = block.split(/\n(?=\d+\.\s+)/);
+      for (const item of listItems) {
+        children.push(new Paragraph({ children: parseInline(item.replace(/^\d+\.\s+/, '')), numbering: { reference: 'default', level: 0 }, spacing: { before: 40, after: 40 } }));
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith('>')) {
+      const quoteLines = block.split('\n').map(line => line.replace(/^>\s?/, '')).join('\n');
+      children.push(new Paragraph({ children: parseInline(quoteLines), indent: { left: convertInchesToTwip(0.5) }, border: { left: { style: BorderStyle.SINGLE, size: 12, color: 'CCCCCC' } }, spacing: { before: 60, after: 60 } }));
+      continue;
+    }
+
+    const inlineChildren = parseInline(trimmed);
+    children.push(new Paragraph({ children: inlineChildren.length > 0 ? inlineChildren : [new TextRun({ text: trimmed })], spacing: { before: 60, after: 60 } }));
+  }
+
+  return children;
+}
+
+async function exportWorkspacePdf(fileName) {
+  const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
+  const html2canvasFunc = window.html2canvas || null;
+
+  if (!jsPDF || !html2canvasFunc) {
+    showToast(t('chatExport.pdfLibNotLoaded'), 'error');
+    return;
+  }
+
+  const markdownContent = getExportMarkdownContent();
+  if (!markdownContent) {
+    showToast(t('chatExport.noContent'), 'error');
+    return;
+  }
+
+  const PDF_WIDTH = 595;
+  const PDF_HEIGHT = 842;
+  const PADDING = 40;
+  const CONTENT_WIDTH = PDF_WIDTH - PADDING * 2;
+
+  const container = document.createElement('div');
+  container.style.cssText = `position:fixed;left:-9999px;top:-9999px;width:${CONTENT_WIDTH}px;padding:${PADDING}px;background:white;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;font-size:12px;line-height:1.6;color:#333;box-sizing:border-box;`;
+  container.innerHTML = `<div class="markdown-body">${formatMarkdown(markdownContent)}</div>`;
+  document.body.appendChild(container);
+
+  await preRenderMermaidForExport(container);
+
+  const containerHeight = container.scrollHeight;
+  const pageContentHeight = PDF_HEIGHT - PADDING * 2;
+  const totalPages = Math.ceil(containerHeight / pageContentHeight);
+
+  html2canvasFunc(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', willReadFrequently: true }).then(canvas => {
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PDF_WIDTH, PDF_HEIGHT] });
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    const scaleRatio = canvasHeight / containerHeight;
+    const pageCanvasHeight = pageContentHeight * scaleRatio;
+
+    for (let page = 0; page < totalPages; page++) {
+      if (page > 0) pdf.addPage();
+      const startY = page * pageCanvasHeight;
+      const endY = Math.min(startY + pageCanvasHeight, canvasHeight);
+      const pageHeight = endY - startY;
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasWidth;
+      tempCanvas.height = pageHeight;
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      tempCtx.drawImage(canvas, 0, startY, canvasWidth, pageHeight, 0, 0, canvasWidth, pageHeight);
+
+      let imgData;
+      try { imgData = tempCanvas.toDataURL('image/png'); } catch { imgData = tempCanvas.toDataURL('image/jpeg', 0.92); }
+      const imgHeight = pageHeight / scaleRatio;
+      pdf.addImage(imgData, 'PNG', 0, 0, PDF_WIDTH, imgHeight);
+    }
+
+    const timestamp = new Date().getTime();
+    const dlName = `pdf-${timestamp}.pdf`;
+    pdf.save(dlName);
+    document.body.removeChild(container);
+    showToast(t('workspace.downloaded', { name: dlName }), 'success');
+  }).catch(error => {
+    logger.error('[WorkspacePanel] PDF 导出失败:', error);
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
+    document.body.removeChild(container);
+  });
+}
+
+async function exportWorkspaceImage(fileName) {
+  const html2canvasFunc = window.html2canvas || null;
+  if (!html2canvasFunc) {
+    showToast(t('chatExport.imageLibNotLoaded'), 'error');
+    return;
+  }
+
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const markdownBody = previewContent.querySelector('.workspace-preview-markdown');
+  if (!markdownBody) {
+    showToast(t('chatExport.noContent'), 'error');
+    return;
+  }
+
+  // Clone the rendered markdown content
+  const clone = markdownBody.cloneNode(true);
+  const tempContainer = document.createElement('div');
+  tempContainer.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:800px;padding:40px;background:white;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Hiragino Sans GB\",\"Microsoft YaHei\",sans-serif;font-size:14px;line-height:1.6;color:#333;box-sizing:border-box;';
+  tempContainer.appendChild(clone);
+  document.body.appendChild(tempContainer);
+
+  await preRenderMermaidForExport(tempContainer);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  try {
+    const canvas = await html2canvasFunc(tempContainer, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', willReadFrequently: true });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const link = document.createElement('a');
+    link.href = imgData;
+    const timestamp = new Date().getTime();
+    const dlName = `image-${timestamp}.jpg`;
+    link.download = dlName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(t('workspace.downloaded', { name: dlName }), 'success');
+  } catch (error) {
+    logger.error('[WorkspacePanel] 图片导出失败:', error);
+    showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
+  } finally {
+    document.body.removeChild(tempContainer);
+  }
+}
+
+function exportWorkspaceMarkdown(fileName) {
+  const markdownContent = getExportMarkdownContent();
+  if (!markdownContent) {
+    showToast(t('chatExport.noContent'), 'error');
+    return;
+  }
+
+  const cleanContent = markdownContent.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+  const blob = new Blob([cleanContent], { type: 'text/markdown;charset=utf-8' });
+  const timestamp = new Date().getTime();
+  const dlName = `md-${timestamp}.md`;
+  downloadBlob(blob, dlName);
+  showToast(t('workspace.downloaded', { name: dlName }), 'success');
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /**
  * 复制预览内容
+ * 普通点击：复制纯 Markdown 文本
+ * Ctrl/Cmd + 点击：复制富文本（HTML），保留格式
  */
-async function copyPreviewContent() {
+async function copyPreviewContent(event) {
   const previewArea = document.getElementById('workspacePreviewArea');
   const filePath = previewArea.dataset.previewPath;
   if (!filePath) return;
@@ -2799,17 +3433,133 @@ async function copyPreviewContent() {
     return;
   }
 
-  const result = await readFileContent(filePath);
-  if (result.success) {
+  const isCtrlPressed = event && (event.ctrlKey || event.metaKey);
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const isRendered = previewContent.classList.contains('markdown-rendered');
+
+  if (isCtrlPressed && isRendered) {
+    // Ctrl/Cmd + 点击：复制富文本 HTML
+    await copyWorkspaceRichText();
+  } else {
+    // 普通点击：复制 Markdown 文本
+    const markdownText = previewArea.dataset.markdownText || '';
+    if (markdownText) {
+      try {
+        await navigator.clipboard.writeText(markdownText);
+        showToast(t('workspace.copiedToClipboard'), 'success');
+      } catch {
+        showToast(t('workspace.copyFailedManual'), 'error');
+      }
+    } else {
+      // 非 Markdown 文件：读取文件内容
+      const result = await readFileContent(filePath);
+      if (result.success) {
+        try {
+          await navigator.clipboard.writeText(result.content || '');
+          showToast(t('workspace.copiedToClipboard'), 'success');
+        } catch {
+          showToast(t('workspace.copyFailedManual'), 'error');
+        }
+      } else {
+        showToast(t('workspace.getContentFailed'), 'error');
+      }
+    }
+  }
+}
+
+/**
+ * 复制工作目录预览的富文本（HTML）
+ */
+async function copyWorkspaceRichText() {
+  const previewContent = document.getElementById('workspacePreviewContent');
+  const markdownBody = previewContent.querySelector('.workspace-preview-markdown');
+  if (!markdownBody) {
+    showToast(t('chatCopy.copyFailedManual'), 'error');
+    return;
+  }
+
+  // 克隆并清理表格
+  const clone = markdownBody.cloneNode(true);
+  clone.querySelectorAll('table').forEach(table => {
+    const cleanTable = cleanTableForClipboard(table);
+    table.parentNode.replaceChild(cleanTable, table);
+  });
+
+  const htmlContent = clone.innerHTML;
+  const textContent = clone.textContent || '';
+
+  // 包装 HTML 样式
+  const styledHtml = wrapExportHtmlWithStyles(htmlContent);
+
+  try {
+    if (typeof ClipboardItem !== 'undefined') {
+      const clipboardData = new ClipboardItem({
+        'text/plain': new Blob([textContent], { type: 'text/plain' }),
+        'text/html': new Blob([styledHtml], { type: 'text/html' })
+      });
+      await navigator.clipboard.write([clipboardData]);
+    } else {
+      // 降级方案
+      const container = document.createElement('div');
+      container.style.position = 'fixed';
+      container.style.left = '-999999px';
+      container.style.top = '-999999px';
+      container.innerHTML = styledHtml;
+      document.body.appendChild(container);
+
+      const range = document.createRange();
+      range.selectNodeContents(container);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      try {
+        document.execCommand('copy');
+      } catch {
+        // 最终降级：复制纯文本
+        await navigator.clipboard.writeText(textContent);
+      } finally {
+        selection.removeAllRanges();
+        document.body.removeChild(container);
+      }
+    }
+    showToast(t('chatCopy.copiedRich'), 'success');
+  } catch (err) {
+    logger.warn('[WorkspacePanel] 富文本复制失败:', err.message);
+    // 降级为纯文本
     try {
-      await navigator.clipboard.writeText(result.content || '');
+      await navigator.clipboard.writeText(textContent);
       showToast(t('workspace.copiedToClipboard'), 'success');
     } catch {
       showToast(t('workspace.copyFailedManual'), 'error');
     }
-  } else {
-    showToast(t('workspace.getContentFailed'), 'error');
   }
+}
+
+function wrapExportHtmlWithStyles(html) {
+  const styles = `
+    <style>
+      h1 { font-size: 24px; font-weight: bold; margin: 16px 0 8px; }
+      h2 { font-size: 20px; font-weight: bold; margin: 14px 0 6px; }
+      h3 { font-size: 18px; font-weight: bold; margin: 12px 0 6px; }
+      h4 { font-size: 16px; font-weight: bold; margin: 10px 0 6px; }
+      p { margin: 6px 0; line-height: 1.6; }
+      ul, ol { margin: 8px 0; padding-left: 24px; }
+      li { margin: 4px 0; }
+      blockquote { border-left: 4px solid #ddd; padding-left: 12px; margin: 8px 0; color: #666; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+      pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 14px 16px; margin: 12px 0; overflow-x: auto; font-family: monospace; font-size: 13px; line-height: 1.6; color: #24292f; white-space: pre-wrap; word-break: break-word; }
+      pre code { background: none; padding: 0; border: none; border-radius: 0; }
+      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
+      th { background: #f9f9f9; font-weight: bold; }
+      strong { font-weight: bold; }
+      em { font-style: italic; }
+      a { color: #007bff; text-decoration: underline; }
+      img { max-width: 100%; }
+    </style>
+  `;
+  return `<!DOCTYPE html><html><head>${styles}</head><body>${html}</body></html>`;
 }
 
 /**
@@ -2884,25 +3634,35 @@ function toggleMarkdownPreview() {
   const btn = document.getElementById('workspacePreviewMdToggleBtn');
   const lineCountEl = document.getElementById('workspacePreviewLineCount');
   const copyBtn = document.getElementById('workspacePreviewCopyBtn');
+  const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
+  const exportMenu = document.getElementById('workspacePreviewExportMenu');
 
   const isRendered = previewContent.classList.toggle('markdown-rendered');
   const markdownText = previewArea.dataset.markdownText || '';
 
   if (isRendered) {
+    // 渲染模式
     btn.classList.add('active');
     btn.title = t('workspace.switchToSourcePreview');
     updateMdToggleIcon(btn, true);
-    copyBtn.style.display = 'none';
+    // 渲染模式下显示导出菜单和复制按钮（支持 Ctrl+Click 富文本复制），隐藏下载按钮
+    copyBtn.style.display = '';
+    if (downloadBtn) downloadBtn.style.display = 'none';
+    if (exportMenu) exportMenu.style.display = '';
     previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
     renderMermaidChartsInContainer(previewContent);
     bindCodeCopyButtonsInContainer(previewContent);
     addTableToolbarEvents();
     lineCountEl.textContent = '';
   } else {
+    // 源码模式
     btn.classList.remove('active');
     btn.title = t('workspace.switchToRenderPreview');
     updateMdToggleIcon(btn, false);
+    // 源码模式下显示复制和下载按钮，隐藏导出菜单
     copyBtn.style.display = '';
+    if (downloadBtn) downloadBtn.style.display = '';
+    if (exportMenu) exportMenu.style.display = 'none';
     const fileName = previewArea.dataset.previewName || '';
     const lang = getLanguageClass(fileName);
     const lines = (markdownText || '').split('\n');
@@ -2913,6 +3673,22 @@ function toggleMarkdownPreview() {
     }
     numberedHtml += '</tbody></table>';
     previewContent.innerHTML = numberedHtml;
+  }
+
+  // 更新复制按钮 tooltip
+  updateCopyBtnTooltip(isRendered);
+}
+
+/**
+ * 更新复制按钮 tooltip：渲染模式下提示 Ctrl/Cmd 复制富文本
+ */
+function updateCopyBtnTooltip(isRendered) {
+  const copyBtn = document.getElementById('workspacePreviewCopyBtn');
+  if (!copyBtn) return;
+  if (isRendered) {
+    copyBtn.title = t('workspace.copyAllTitle') + '\n' + t('workspace.copyMarkdownHint');
+  } else {
+    copyBtn.title = t('workspace.copyAllTitle');
   }
 }
 
@@ -3036,6 +3812,11 @@ async function closePreview(force = false) {
     URL.revokeObjectURL(currentMediaUrl);
     currentMediaUrl = null;
   }
+  // 隐藏导出菜单，重置复制按钮
+  const exportMenu = document.getElementById('workspacePreviewExportMenu');
+  if (exportMenu) exportMenu.style.display = 'none';
+  const copyBtn = document.getElementById('workspacePreviewCopyBtn');
+  if (copyBtn) copyBtn.title = t('workspace.copyAllTitle');
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
   return true;
@@ -3070,6 +3851,9 @@ function enterEditMode() {
   downloadBtn.style.display = 'none';
   mdToggleBtn.style.display = 'none';
   editBtn.style.display = 'none';
+  // 隐藏导出菜单
+  const exportMenu = document.getElementById('workspacePreviewExportMenu');
+  if (exportMenu) exportMenu.style.display = 'none';
 
   // 显示编辑模式按钮
   saveBtn.style.display = '';

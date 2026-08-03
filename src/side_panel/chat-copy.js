@@ -167,7 +167,7 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
       copyRichText(textToCopy, cleanedHtml, copyBtn, firstPngBlob);
     } else {
       navigator.clipboard.writeText(textToCopy).then(() => {
-        showCopySuccess(copyBtn);
+        if (copyBtn) showCopySuccess(copyBtn);
       }).catch(() => {
         fallbackCopyText(textToCopy, copyBtn);
       });
