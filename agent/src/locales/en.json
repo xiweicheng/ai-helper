@@ -210,5 +210,18 @@
     "toolCallError": "Tool call error: {message}",
     "serverNotConnected": "MCP Server \"{name}\" not connected",
     "toolCallFailed": "Tool call failed"
+  },
+  "server": {
+    "requestException": "Request processing error",
+    "serverError": "Server error",
+    "portInUse": "Port already in use, check if another Agent is running",
+    "httpStarted": "HTTP server started: http://{host}:{port}",
+    "wsStarted": "WebSocket server started: ws://{host}:{port}",
+    "mcpInitFailed": "MCP registry initialization failed",
+    "skillInitFailed": "Skill registry initialization failed",
+    "shuttingDown": "Shutting down...",
+    "gracefulShutdownTimeout": "Graceful shutdown timeout, force exit",
+    "uncaughtException": "Uncaught exception",
+    "unhandledRejection": "Unhandled Promise rejection"
   }
 }

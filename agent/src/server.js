@@ -47,7 +47,11 @@ import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromU
 import { setSkillExecutorLang } from './skill/executor.js';
 import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
 import { setMcpClientLang } from './mcp/client.js';
-import { getRequestI18n } from './i18n.js';
+import { getRequestI18n, t, parseAcceptLanguage } from './i18n.js';
+
+// Server-level i18n helper (uses env/CLI language)
+const serverLang = parseAcceptLanguage();
+const ln = (key, params) => t(serverLang, `server.${key}`, params);
 import XLSX from 'xlsx';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -398,7 +402,7 @@ export function startServer() {
   // ==================== HTTP Server ====================
   const server = http.createServer((req, res) => {
     handleRequest(req, res).catch((err) => {
-      console.error('[Agent] 请求处理异常:', err);
+      console.error(`[Agent] ${ln('requestException')}:`, err);
       try {
         const { t } = getRequestI18n(req);
         jsonResponse(res, 500, { success: false, error: t('error.internal') });
@@ -2019,19 +2023,19 @@ export function startServer() {
     }
   });
 
-  // 启动服务器
+  // Start server
   server.on('error', (err) => {
-    console.error('[Agent] 服务器错误:', err.message);
+    console.error(`[Agent] ${ln('serverError')}:`, err.message);
     logError('system', 'server_error', { message: err.message, code: err.code });
     if (err.code === 'EADDRINUSE') {
-      console.error('[Agent] 端口已被占用，请检查是否已有 Agent 在运行');
+      console.error(`[Agent] ${ln('portInUse')}`);
       process.exit(1);
     }
   });
 
   server.listen(port, host, () => {
-    console.log(`[Agent] HTTP 服务已启动: http://${host}:${port}`);
-    console.log(`[Agent] WebSocket 服务已启动: ws://${host}:${port}`);
+    console.log(`[Agent] ${ln('httpStarted', { host, port })}`);
+    console.log(`[Agent] ${ln('wsStarted', { host, port })}`);
     startPairCodeRotation();
 
     // 启动回收站定期清理（每6小时）+ 启动时清理一次过期文件
@@ -2042,13 +2046,13 @@ export function startServer() {
       try {
         await initializeMcpRegistry();
       } catch (err) {
-        console.error('[Agent] MCP 注册表初始化失败:', err.message);
+        console.error(`[Agent] ${ln('mcpInitFailed')}:`, err.message);
       }
 
       try {
         await initializeSkillRegistry();
       } catch (err) {
-        console.error('[Agent] Skill 注册表初始化失败:', err.message);
+        console.error(`[Agent] ${ln('skillInitFailed')}:`, err.message);
       }
     })();
   });
@@ -2057,11 +2061,11 @@ export function startServer() {
   async function shutdown() {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log('[Agent] 正在关闭...');
+    console.log(`[Agent] ${ln('shuttingDown')}`);
 
-    // 超时兜底：10 秒后强制退出，防止 server.close() 等待连接挂起
+    // Timeout safety: force exit after 10s to prevent server.close() from hanging
     const forceExitTimer = setTimeout(() => {
-      console.log('[Agent] 优雅关闭超时，强制退出');
+      console.log(`[Agent] ${ln('gracefulShutdownTimeout')}`);
       process.exit(1);
     }, 10000);
     forceExitTimer.unref();
@@ -2107,14 +2111,14 @@ export function startServer() {
   // 全局崩溃防护：捕获未处理的异常，记录日志但不退出进程
   if (process.listenerCount('uncaughtException') === 0) {
     process.on('uncaughtException', (err) => {
-      console.error('[Agent] 未捕获异常:', err);
+      console.error(`[Agent] ${ln('uncaughtException')}:`, err);
       logError('system', 'uncaught_exception', { message: err.message, stack: err.stack });
     });
   }
 
   if (process.listenerCount('unhandledRejection') === 0) {
     process.on('unhandledRejection', (reason) => {
-      console.error('[Agent] 未处理的 Promise 拒绝:', reason);
+      console.error(`[Agent] ${ln('unhandledRejection')}:`, reason);
       logError('system', 'unhandled_rejection', { message: reason?.message || String(reason), stack: reason?.stack });
     });
   }

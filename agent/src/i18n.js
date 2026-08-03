@@ -1,6 +1,6 @@
-// agent/src/i18n.js - 代理端国际化模块
-// 解析 HTTP 请求的 Accept-Language 头，返回对应语言的文案
-// 默认中文（zh），支持英文（en）
+// agent/src/i18n.js - Agent-side i18n module
+// Parses HTTP request Accept-Language header and returns localized strings
+// Default: English (en), supports Chinese (zh)
 
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
@@ -8,25 +8,26 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// 加载语言包
+// Load language packs
 const translations = {
   zh: JSON.parse(readFileSync(join(__dirname, 'locales', 'zh.json'), 'utf-8')),
   en: JSON.parse(readFileSync(join(__dirname, 'locales', 'en.json'), 'utf-8')),
 };
 
-const DEFAULT_LANG = 'zh';
+// Default language: check env var (set by CLI), fallback to 'en'
+const DEFAULT_LANG = (process.env.AI_HELPER_LANG === 'zh') ? 'zh' : 'en';
 const SUPPORTED_LANGS = Object.keys(translations);
 
 /**
- * 从 Accept-Language 头解析最佳匹配语言
- * 支持格式：zh, zh-CN, en-US, zh;q=0.9,en;q=0.8
- * @param {string} [acceptLanguage] - Accept-Language 头的值
- * @returns {string} 匹配的语言代码（zh 或 en）
+ * Parse best matching language from Accept-Language header
+ * Supports: zh, zh-CN, en-US, zh;q=0.9,en;q=0.8
+ * @param {string} [acceptLanguage] - Accept-Language header value
+ * @returns {string} Matched language code (zh or en)
  */
 export function parseAcceptLanguage(acceptLanguage) {
   if (!acceptLanguage || typeof acceptLanguage !== 'string') return DEFAULT_LANG;
 
-  // 解析语言列表并按权重排序
+  // Parse language list and sort by weight
   const langs = acceptLanguage
     .split(',')
     .map(part => {
@@ -39,9 +40,9 @@ export function parseAcceptLanguage(acceptLanguage) {
     .sort((a, b) => b.q - a.q);
 
   for (const { code } of langs) {
-    // 精确匹配
+    // Exact match
     if (SUPPORTED_LANGS.includes(code)) return code;
-    // 前缀匹配（如 zh-CN → zh）
+    // Prefix match (e.g. zh-CN → zh)
     const prefix = code.split('-')[0];
     if (SUPPORTED_LANGS.includes(prefix)) return prefix;
   }
@@ -50,11 +51,11 @@ export function parseAcceptLanguage(acceptLanguage) {
 }
 
 /**
- * 翻译函数
- * @param {string} lang - 语言代码
- * @param {string} key - 翻译键（支持点号分隔，如 'error.fileNotFound'）
- * @param {object} [params] - 插值参数（如 { path: '/foo' } 替换 {path}）
- * @returns {string} 翻译后的文本，找不到则返回 key
+ * Translation function
+ * @param {string} lang - Language code
+ * @param {string} key - Translation key (supports dot notation, e.g. 'error.fileNotFound')
+ * @param {object} [params] - Interpolation params (e.g. { path: '/foo' } replaces {path})
+ * @returns {string} Translated text, returns key if not found
  */
 export function t(lang, key, params) {
   const dict = translations[lang] || translations[DEFAULT_LANG];
@@ -62,7 +63,7 @@ export function t(lang, key, params) {
     .split('.')
     .reduce((obj, k) => (obj && typeof obj === 'object' ? obj[k] : undefined), dict);
 
-  // 回退到默认语言
+  // Fallback to default language
   if (value === undefined && lang !== DEFAULT_LANG) {
     value = key
       .split('.')
@@ -71,7 +72,7 @@ export function t(lang, key, params) {
 
   if (value === undefined) return key;
 
-  // 参数插值
+  // Parameter interpolation
   if (params && typeof value === 'string') {
     return value.replace(/\{(\w+)\}/g, (_, name) => (params[name] !== undefined ? params[name] : `{${name}}`));
   }
@@ -80,8 +81,8 @@ export function t(lang, key, params) {
 }
 
 /**
- * 从 HTTP 请求中提取语言并返回翻译函数
- * @param {import('http').IncomingMessage} req - HTTP 请求对象
+ * Extract language from HTTP request and return translation function
+ * @param {import('http').IncomingMessage} req - HTTP request object
  * @returns {{ lang: string, t: (key: string, params?: object) => string }}
  */
 export function getRequestI18n(req) {

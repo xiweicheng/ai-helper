@@ -64,7 +64,7 @@ function ensureAgentDir() {
       }
     }
   } catch (err) {
-    console.error('[Config] 无法创建 Agent 目录:', err.message);
+    console.error('[Config] Cannot create Agent directory:', err.message);
     throw err;
   }
 }
@@ -105,17 +105,17 @@ export function loadConfig() {
     configCache = { ...DEFAULTS, ...userConfig };
     configCacheMtime = mtime;
   } catch (err) {
-    console.error('[Config] 配置文件解析失败:', err.message);
+    console.error('[Config] Config file parse failed:', err.message);
     configCache = { ...DEFAULTS, allowedPaths: [DEFAULTS.workdir] };
     configCacheMtime = 0;
   }
 
-  // 自动将 skills 目录加入白名单，确保 AI 可以直接写入 skill 文件
+  // Auto-add skills directory to allowlist
   if (!configCache.allowedPaths.includes(SKILLS_DIR)) {
     configCache.allowedPaths.push(SKILLS_DIR);
   }
 
-  // 自动将 workspace 目录加入白名单，确保 AI 可以访问工作目录
+  // Auto-add workspace directory to allowlist
   if (!configCache.allowedPaths.includes(WORKSPACE_DIR)) {
     configCache.allowedPaths.push(WORKSPACE_DIR);
   }
@@ -148,7 +148,7 @@ export async function saveConfig(config) {
       configCache = { ...DEFAULTS, ...JSON.parse(raw) };
       configCacheMtime = mtime;
     } catch (err) {
-      console.error('[Config] 保存配置失败:', err.message);
+      console.error('[Config] Save config failed:', err.message);
       throw err;
     }
   });
@@ -190,7 +190,7 @@ export function loadPairings() {
     pairingsCacheMtime = mtime;
     return pairingsCache;
   } catch (err) {
-    console.error('[Config] 配对文件解析失败:', err.message);
+    console.error('[Config] Pairings file parse failed:', err.message);
     pairingsCache = {};
     pairingsCacheMtime = 0;
     return {};
@@ -210,7 +210,7 @@ export async function savePairing(extensionId, token) {
       pairingsCache = pairings;
       pairingsCacheMtime = getMtime(PAIRINGS_FILE);
     } catch (err) {
-      console.error('[Config] 保存配对失败:', err.message);
+      console.error('[Config] Save pairing failed:', err.message);
       throw err;
     }
   });

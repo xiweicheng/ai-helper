@@ -45,7 +45,7 @@ async function ensureTrashDir() {
       await mkdir(TRASH_DIR, { recursive: true });
     }
   } catch (err) {
-    console.error('[Trash] 无法创建回收站目录:', err.message);
+    console.error('[Trash] Cannot create trash directory:', err.message);
     throw err;
   }
 }
@@ -120,7 +120,7 @@ async function cleanExpiredTrash() {
 
   if (expired.length > 0) {
     await saveMetadata(kept);
-    console.log(`[Trash] 清理了 ${expired.length} 个过期回收站条目`);
+    console.log(`[Trash] Cleaned up ${expired.length} expired trash entries`);
   }
 }
 
@@ -161,7 +161,7 @@ export async function moveToTrash(sourcePath, tFn) {
     });
     await saveMetadata(entries);
 
-    console.log(`[Trash] 已移至回收站: ${sourcePath} -> ${trashPath} (${size} 字节, ${isDir ? '目录' : '文件'})`);
+    console.log(`[Trash] Moved to trash: ${sourcePath} -> ${trashPath} (${size} bytes, ${isDir ? 'directory' : 'file'})`);
     return { success: true, trashId: id, isDir };
   } catch (err) {
     return { success: false, error: tr('trash.moveFailed', { message: err.message }, tFn) };
@@ -199,7 +199,7 @@ export async function restoreFromTrash(trashId, tFn) {
     entries.splice(idx, 1);
     await saveMetadata(entries);
 
-    console.log(`[Trash] 已恢复: ${entry.originalPath}`);
+    console.log(`[Trash] Restored: ${entry.originalPath}`);
     return { success: true, restoredPath: entry.originalPath };
   } catch (err) {
     return { success: false, error: tr('trash.restoreFailed', { message: err.message }, tFn) };
@@ -233,11 +233,11 @@ export function startPeriodicCleanup() {
     try {
       await cleanExpiredTrash();
     } catch (err) {
-      console.error('[Trash] 定期清理出错:', err.message);
+      console.error('[Trash] Periodic cleanup error:', err.message);
     }
   }, PERIODIC_CLEAN_INTERVAL_MS);
   if (periodicCleanTimer.unref) periodicCleanTimer.unref();
-  console.log('[Trash] 定期清理已启动（间隔6小时）');
+  console.log('[Trash] Periodic cleanup started (interval: 6 hours)');
 }
 
 /**

@@ -9,7 +9,7 @@ import { SKILL_CREATOR_SEED_MD, SKILL_CREATOR_DIR } from './skill-creator-seed.j
 import { t as translate } from '../i18n.js';
 
 // 当前模块使用的语言（由 server.js 在请求入口处设置）
-let currentLang = 'zh';
+let currentLang = 'en';
 
 /**
  * 设置 skill loader 模块当前使用的语言（由 server.js 在请求入口处调用）
@@ -151,7 +151,7 @@ function loadSkillFile(filePath) {
 
     const validation = validateWorkflowSkill(skill);
     if (!validation.valid) {
-      console.warn(`[Skill Loader] "${filePath}" 校验失败:`, validation.errors.join(', '));
+      console.warn(`[Skill Loader] "${filePath}" validation failed:`, validation.errors.join(', '));
       return null;
     }
 
@@ -160,7 +160,7 @@ function loadSkillFile(filePath) {
     skill.type = 'workflow';
     return skill;
   } catch (err) {
-    console.warn(`[Skill Loader] 加载 "${filePath}" 失败:`, err.message);
+    console.warn(`[Skill Loader] Load "${filePath}" failed:`, err.message);
     return null;
   }
 }
@@ -178,7 +178,7 @@ export function loadAllSkills() {
     try {
       files = readdirSync(SKILLS_DIR);
     } catch (err) {
-      console.warn('[Skill Loader] 读取 Skills 目录失败:', err.message);
+      console.warn('[Skill Loader] Read Skills directory failed:', err.message);
       files = [];
     }
 
@@ -307,7 +307,7 @@ export function seedSkillCreator() {
     writeFileSync(skillMdPath, SKILL_CREATOR_SEED_MD, 'utf-8');
     return true;
   } catch (err) {
-    console.warn('[Skill] 种子写入 skill-creator 失败:', err.message);
+    console.warn('[Skill] Seed write to skill-creator failed:', err.message);
     return false;
   }
 }

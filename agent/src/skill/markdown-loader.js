@@ -193,7 +193,7 @@ export function loadMarkdownSkill(skillDir) {
       _filePath: skillMdPath
     };
   } catch (err) {
-    console.warn(`[Markdown Loader] 加载 "${skillMdPath}" 失败:`, err.message);
+    console.warn(`[Markdown Loader] Load "${skillMdPath}" failed:`, err.message);
     return null;
   }
 }
@@ -211,7 +211,7 @@ export function loadAllMarkdownSkills(skillsDir) {
   try {
     entries = readdirSync(skillsDir);
   } catch (err) {
-    console.warn('[Markdown Loader] 读取目录失败:', err.message);
+    console.warn('[Markdown Loader] Read directory failed:', err.message);
     return [];
   }
 

@@ -210,5 +210,18 @@
     "toolCallError": "工具调用异常: {message}",
     "serverNotConnected": "MCP Server \"{name}\" 未连接",
     "toolCallFailed": "工具调用失败"
+  },
+  "server": {
+    "requestException": "请求处理异常",
+    "serverError": "服务器错误",
+    "portInUse": "端口已被占用，请检查是否已有 Agent 在运行",
+    "httpStarted": "HTTP 服务已启动: http://{host}:{port}",
+    "wsStarted": "WebSocket 服务已启动: ws://{host}:{port}",
+    "mcpInitFailed": "MCP 注册表初始化失败",
+    "skillInitFailed": "Skill 注册表初始化失败",
+    "shuttingDown": "正在关闭...",
+    "gracefulShutdownTimeout": "优雅关闭超时，强制退出",
+    "uncaughtException": "未捕获异常",
+    "unhandledRejection": "未处理的 Promise 拒绝"
   }
 }

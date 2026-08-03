@@ -132,6 +132,8 @@ registerTranslations('zh', {
     trashDeleted: '已删除{typeLabel}: {path}，可在回收站中恢复（7天后自动清理）',
     trashEmpty: '回收站为空，没有可恢复的{typeHint}。',
     trashRestored: '已恢复: {path}',
+    typeDirectory: '目录',
+    typeFile: '文件',
     downloadTriggerFailed: '下载触发失败: {error}',
     unsupportedFormat: '不支持的格式: {format}，可选: text, html',
     unsupportedDataType: '不支持的数据类型: {dataType}，可选: table, metadata, links, forms, images',
@@ -290,6 +292,8 @@ registerTranslations('en', {
     trashDeleted: 'Deleted {typeLabel}: {path}, can be restored from trash (auto-cleaned after 7 days)',
     trashEmpty: 'Trash is empty, no {typeHint} to restore.',
     trashRestored: 'Restored: {path}',
+    typeDirectory: 'directory',
+    typeFile: 'file',
     downloadTriggerFailed: 'Download trigger failed: {error}',
     unsupportedFormat: 'Unsupported format: {format}, options: text, html',
     unsupportedDataType: 'Unsupported data type: {dataType}, options: table, metadata, links, forms, images',
@@ -592,7 +596,7 @@ function rebuildBgHandlers() {
   }
 }
 
-// ==================== 敏感操作审计日志 ====================
+// ==================== Sensitive Operation Audit Log ====================
 
 const AUDIT_LOG_KEY = 'sensitiveAuditLog';
 const MAX_AUDIT_ENTRIES = 100;
@@ -604,7 +608,7 @@ async function appendAuditLog(category, action, details = {}) {
     entries.unshift({ timestamp: new Date().toISOString(), category, action, details });
     if (entries.length > MAX_AUDIT_ENTRIES) entries.length = MAX_AUDIT_ENTRIES;
     await chrome.storage.local.set({ [AUDIT_LOG_KEY]: entries });
-  } catch (e) { console.warn('[Background] 审计日志写入失败:', e); }
+  } catch (e) { console.warn('[Background] Audit log write failed:', e); }
 }
 
 // Agent 连通性缓存（按 agentId 隔离，避免切换代理后命中旧缓存）
@@ -2844,7 +2848,7 @@ export function executeManageCookies(args, toolCallId) {
               resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
             } else {
               resolve({ success: true, message: t('toolExec.cookieDeleted', { name }), tool_call_id: toolCallId });
-              appendAuditLog('cookie_write', `删除 Cookie: ${name}`, { domain: cookieDomain, name });
+              appendAuditLog('cookie_write', `Delete cookie: ${name}`, { domain: cookieDomain, name });
             }
           });
           break;
@@ -3065,7 +3069,7 @@ export function executeClearPageData(args, toolCallId) {
 
       Promise.allSettled(cleanupTasks).then(() => {
         const uniqueCleared = [...new Set(cleared)];
-        appendAuditLog('page_data_clear', `清除页面数据: ${targetSite}`, { site: targetSite, cleared: uniqueCleared });
+        appendAuditLog('page_data_clear', `Clear page data: ${targetSite}`, { site: targetSite, cleared: uniqueCleared });
         resolve({
           success: true,
           cleared: uniqueCleared,
@@ -3484,7 +3488,7 @@ async function executeAgentWriteFile(args, toolCallId) {
   
   const result = await AgentClient.writeFile(path, content);
   if (result.success) {
-    appendAuditLog('file_write', `写入文件: ${result.path}`, { path: result.path, size: result.size });
+    appendAuditLog('file_write', `Write file: ${result.path}`, { path: result.path, size: result.size });
     return { success: true, message: t('toolExec.fileWritten', { path: result.path, size: result.size }), path: result.path, size: result.size, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
@@ -3518,8 +3522,9 @@ async function executeAgentDeleteFile(args, toolCallId) {
   
   const result = await AgentClient.deleteFile(path);
   if (result.success) {
-    const typeLabel = result.isDir ? '目录' : '文件';
-    appendAuditLog('file_delete', `删除${typeLabel}: ${result.path}`, { path: result.path, isDir: result.isDir });
+    const typeLabel = t(result.isDir ? 'toolExec.typeDirectory' : 'toolExec.typeFile');
+    const typeLabelEn = result.isDir ? 'directory' : 'file';
+    appendAuditLog('file_delete', `Delete ${typeLabelEn}: ${result.path}`, { path: result.path, isDir: result.isDir });
     return { success: true, message: t('toolExec.trashDeleted', { typeLabel, path: result.path }), path: result.path, isDir: result.isDir, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
@@ -3569,7 +3574,7 @@ async function executeAgentRestoreTrash(args, toolCallId) {
 
   const result = await AgentClient.restoreTrash(trashId);
   if (result.success) {
-    appendAuditLog('file_restore', `恢复文件: ${result.restoredPath}`, { trashId, restoredPath: result.restoredPath });
+    appendAuditLog('file_restore', `Restore file: ${result.restoredPath}`, { trashId, restoredPath: result.restoredPath });
     return { success: true, message: t('toolExec.trashRestored', { path: result.restoredPath }), restoredPath: result.restoredPath, tool_call_id: toolCallId };
   }
   return { success: false, error: result.error, tool_call_id: toolCallId };
@@ -3951,7 +3956,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       const isCancelled = cancelledSessions.has(sessionId);
       if (isCancelled) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        appendAuditLog('command_exec', `命令执行取消: ${command}`, { command, cwd, exitCode: -1, error: t('toolExec.userCancelled') });
+        appendAuditLog('command_exec', `Command cancelled: ${command}`, { command, cwd, exitCode: -1, error: t('toolExec.userCancelled') });
         return {
           success: false,
           level: 'allow',
@@ -3967,7 +3972,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
       if (errorMessage.includes('超时') || errorMessage.includes('中断') || stopped) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-        appendAuditLog('command_exec', `命令执行失败: ${command}`, { command, cwd, exitCode: -1, error: errorMessage });
+        appendAuditLog('command_exec', `Command failed: ${command}`, { command, cwd, exitCode: -1, error: errorMessage });
         return {
           success: false,
           level: 'allow',
@@ -3994,7 +3999,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       return formatAgentExecResult(result.value, command, cwd, toolCallId);
     }
 
-    appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode });
+    appendAuditLog('command_exec', `Execute command: ${command}`, { command, cwd, exitCode });
     
     // 空闲超时：挂起型命令（如服务启动），返回已收集的输出作为部分结果
     if (idleTimeout) {
@@ -4077,7 +4082,7 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
   }
   
   // 命令执行完毕，返回完整输出
-  appendAuditLog('command_exec', `执行命令: ${command}`, { command, cwd, exitCode: result.exitCode });
+  appendAuditLog('command_exec', `Execute command: ${command}`, { command, cwd, exitCode: result.exitCode });
   const hasExitCode = result.exitCode !== null && result.exitCode !== undefined;
   const isSuccess = hasExitCode && result.exitCode >= 0 && result.exitCode <= 127;
   const exitInfo2 = hasExitCode

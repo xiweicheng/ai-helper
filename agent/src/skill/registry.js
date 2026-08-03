@@ -37,7 +37,7 @@ function saveDisabledState(disabledSet) {
   try {
     writeFileSync(DISABLED_STATE_FILE, JSON.stringify({ disabled: [...disabledSet] }, null, 2), 'utf-8');
   } catch (e) {
-    console.error('[Skill Registry] 无法保存停用状态:', e.message);
+    console.error('[Skill Registry] Cannot save disabled state:', e.message);
   }
 }
 
@@ -62,7 +62,7 @@ function saveBuiltinState(state) {
   try {
     writeFileSync(BUILTIN_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (e) {
-    console.error('[Skill Registry] 无法保存内置技能状态:', e.message);
+    console.error('[Skill Registry] Cannot save builtin skill state:', e.message);
   }
 }
 
@@ -123,7 +123,7 @@ export function initializeSkillRegistry() {
   const enabledCount = [...skills.values()].filter(s => s.enabled !== false).length;
 
   if (skills.size > 0) {
-    console.log(`[Skill] ${skills.size} 个已注册 (${workflowCount} Workflow + ${agentCount} Agent)，已启用 ${enabledCount}`);
+    console.log(`[Skill] ${skills.size} registered (${workflowCount} Workflow + ${agentCount} Agent), ${enabledCount} enabled`);
   }
   return skills.size;
 }
@@ -356,7 +356,7 @@ export function toggleSkill(name) {
     }
   } catch (err) {
     // 写源文件失败不影响状态，disabled_skills.json 已经持久化
-    console.warn(`[Skill Registry] 更新 "${name}" 源文件失败（状态已通过 disabled_skills.json 保存）:`, err.message);
+    console.warn(`[Skill Registry] Update "${name}" source file failed (state saved to disabled_skills.json):`, err.message);
   }
 
   return { success: true, enabled: newEnabled };

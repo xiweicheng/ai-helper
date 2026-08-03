@@ -33,9 +33,9 @@ export async function initializeMcpRegistry() {
   if (config.servers.length > 0) {
     if (failed > 0) {
       const failedList = failedServers.map(fs => `${fs.id}(${fs.error})`).join(', ');
-      console.warn(`[MCP] ${connected}/${config.servers.length} 已连接，${failed} 个失败: ${failedList}`);
+      console.warn(`[MCP] ${connected}/${config.servers.length} connected, ${failed} failed: ${failedList}`);
     } else if (connected > 0) {
-      console.log(`[MCP] ${connected} 个 Server 已连接`);
+      console.log(`[MCP] ${connected} servers connected`);
     }
   }
   return { connected, failed };
@@ -109,7 +109,7 @@ export async function callMcpTool(serverId, toolName, args) {
     return { success: false, error: `MCP Server "${serverId}" 未连接` };
   }
 
-  console.log(`[MCP Registry] 调用工具: ${serverId}/${toolName}`, args);
+  console.log(`[MCP Registry] Calling tool: ${serverId}/${toolName}`, args);
   const result = await client.callTool(toolName, args);
   return result;
 }

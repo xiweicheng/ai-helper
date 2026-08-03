@@ -52,7 +52,7 @@ export function loadMcpConfig() {
     configCacheMtime = mtime;
     return configCache;
   } catch (err) {
-    console.error('[MCP Config] 配置文件解析失败:', err.message);
+    console.error('[MCP Config] Config file parse failed:', err.message);
     configCache = { servers: [] };
     configCacheMtime = 0;
     return configCache;
@@ -69,7 +69,7 @@ export async function saveMcpConfig(config) {
       configCache = JSON.parse(JSON.stringify(config)); // 深拷贝
       configCacheMtime = getMtime(MCP_CONFIG_FILE);
     } catch (err) {
-      console.error('[MCP Config] 保存配置失败:', err.message);
+      console.error('[MCP Config] Save config failed:', err.message);
       throw err;
     }
   });

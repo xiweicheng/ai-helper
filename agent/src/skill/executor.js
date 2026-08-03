@@ -303,7 +303,7 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
 
     // 防止死循环：如果没有任何步骤变为就绪但还有未完成的步骤
     if (ready.length === 0 && completed.size < skill.steps.length) {
-      console.warn('[Skill Executor] 可能存在循环依赖或缺失的依赖步骤');
+      console.warn('[Skill Executor] Possible circular dependency or missing prerequisite step');
       break;
     }
   }
