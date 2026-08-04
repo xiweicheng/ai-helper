@@ -297,25 +297,48 @@ function removeOrphanedEntries() {
   }
 }
 
-function copyOffscreenDocument() {
+async function copyOffscreenDocument() {
   const srcDir = path.join(__dirname, '..', 'src', 'offscreen');
   const destDir = path.join(distDir, 'offscreen');
-  
+
   if (!fs.existsSync(srcDir)) {
     console.log('⚠️  offscreen 源目录不存在，跳过');
     return;
   }
-  
+
   if (!fs.existsSync(destDir)) {
     fs.mkdirSync(destDir, { recursive: true });
   }
-  
+
   const files = fs.readdirSync(srcDir);
   for (const file of files) {
     const srcFile = path.join(srcDir, file);
     const destFile = path.join(destDir, file);
-    fs.copyFileSync(srcFile, destFile);
-    console.log(`📋 Copied offscreen/${file}`);
+
+    if (file.endsWith('.js')) {
+      // offscreen.js 使用 ES module 语法（import '../shared/i18n.js'），
+      // 但 dist 中没有 shared 目录，且 html 以普通 script 加载，
+      // 因此用 esbuild 打包为自包含 IIFE，避免 "Cannot use import statement outside a module"。
+      try {
+        await esbuild.build({
+          entryPoints: [srcFile],
+          bundle: true,
+          format: 'iife',
+          outfile: destFile,
+          platform: 'browser',
+          minify: true,
+          sourcemap: false,
+          external: ['chrome'],
+        });
+        console.log(`📦 Bundled offscreen/${file} to IIFE`);
+      } catch (err) {
+        console.error(`❌ Failed to bundle offscreen/${file}:`, err.message);
+        process.exit(1);
+      }
+    } else {
+      fs.copyFileSync(srcFile, destFile);
+      console.log(`📋 Copied offscreen/${file}`);
+    }
   }
 }
 
@@ -329,7 +352,7 @@ async function run() {
   
   fixBuild();
   removeOrphanedEntries();
-  copyOffscreenDocument();
+  await copyOffscreenDocument();
 
   console.log('✅ Build artifacts fixed successfully!\n');
 }

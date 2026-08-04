@@ -5174,6 +5174,20 @@ body {
   background: #e0e8ff;
   color: #667eea;
 }
+/* 当前激活标签页标识 */
+.current-tab-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: #667eea;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 2px;
+}
+.prompt-item.selected .current-tab-badge {
+  background: #4f5dbd;
+}
 .prompt-item-index {
   width: 24px;
   font-size: 11px;
@@ -5399,40 +5413,27 @@ body {
   border-color: #c0c8d4;
   color: #667eea;
 }
-.prompt-dropdown-header .prompt-manage-btn {
-  width: 22px;
-  height: 22px;
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-.prompt-dropdown-header .prompt-manage-btn:hover {
-  background: #eef1f6;
-  color: #667eea;
-}
+/* 提示条管理按钮：与 @ 选择器助手/代理的 ✚ 按钮样式保持一致 */
+.prompt-dropdown-header .prompt-manage-btn,
 .prompt-dropdown-header .skill-manage-btn {
-  width: 22px;
-  height: 22px;
-  background: transparent;
+  width: 20px;
+  height: 20px;
+  background: rgba(102, 126, 234, 0.1);
   border: none;
-  border-radius: 4px;
+  border-radius: 50%;
   flex-shrink: 0;
   cursor: pointer;
-  color: #666;
-  display: flex;
+  color: #667eea;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  transition: background 0.2s;
 }
-.prompt-dropdown-header .skill-manage-btn svg {
-  width: 16px;
-  height: 16px;
-  pointer-events: none;
-}
+.prompt-dropdown-header .prompt-manage-btn:hover,
 .prompt-dropdown-header .skill-manage-btn:hover {
-  background: #eef1f6;
-  color: #38a169;
+  background: rgba(102, 126, 234, 0.25);
+  color: #667eea;
 }
 
 /* 提示词/技能 Tab 栏 */
@@ -5814,29 +5815,25 @@ body {
   color: #1557b0;
 }
 
-/* MCP 管理按钮 */
+/* MCP 管理按钮：与 @ 选择器助手/代理的 ✚ 按钮样式保持一致 */
 .prompt-dropdown-header .mcp-manage-btn {
-  width: 22px;
-  height: 22px;
-  background: transparent;
+  width: 20px;
+  height: 20px;
+  background: rgba(102, 126, 234, 0.1);
   border: none;
-  border-radius: 4px;
+  border-radius: 50%;
   flex-shrink: 0;
   cursor: pointer;
-  color: #666;
-  display: flex;
+  color: #667eea;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0;
-}
-.prompt-dropdown-header .mcp-manage-btn svg {
-  width: 16px;
-  height: 16px;
-  pointer-events: none;
+  transition: background 0.2s;
 }
 .prompt-dropdown-header .mcp-manage-btn:hover {
-  background: #eef1f6;
-  color: #1a73e8;
+  background: rgba(102, 126, 234, 0.25);
+  color: #667eea;
 }
 
 /* 提示词管理列表项样式 */

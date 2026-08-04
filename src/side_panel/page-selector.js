@@ -9,24 +9,29 @@ registerTranslations('zh', {
   pageSelector: {
     noOpenPages: '暂无打开的网页',
     noTitle: '无标题',
-    currentTab: ' · 当前',
+    currentTab: '当前',
   },
 });
 registerTranslations('en', {
   pageSelector: {
     noOpenPages: 'No open pages',
     noTitle: 'Untitled',
-    currentTab: ' · Current',
+    currentTab: 'Current',
   },
 });
 
 /**
  * 获取当前窗口所有打开的标签页
+ * 当前激活的标签页会排在首位，便于 @ 弹出列表时快速默认选中当前页面
  */
 export async function getOpenTabs() {
   try {
     const tabs = await chrome.tabs.query({ currentWindow: true });
-    return tabs;
+    // 稳定排序：当前激活的标签页置顶，其余保持原顺序
+    return [...tabs].sort((a, b) => {
+      if (a.active === b.active) return 0;
+      return a.active ? -1 : 1;
+    });
   } catch (err) {
     logger.error('[PageSelector] getlabelpage failed:', err);
     return [];
@@ -67,7 +72,7 @@ export async function renderPageList(filterText = '') {
     const favIcon = tab.favIconUrl
       ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" onerror="this.style.display='none'">`
       : '<span style="font-size:14px;flex-shrink:0;">🌐</span>';
-    const isActive = tab.active ? t('pageSelector.currentTab') : '';
+    const isActiveBadge = tab.active ? `<span class="current-tab-badge">${t('pageSelector.currentTab')}</span>` : '';
     const isPageSelected = tab.id === currentSelectedPageId;
 
     return `
@@ -76,7 +81,8 @@ export async function renderPageList(filterText = '') {
         <span class="prompt-item-index">${index + 1}</span>
         ${favIcon}
         <span class="prompt-item-content" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-        <span class="prompt-item-code" title="${escapeHtml(url)}">${escapeHtml(url)}${isActive}</span>
+        ${isActiveBadge}
+        <span class="prompt-item-code" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
         ${isPageSelected ? `<span class="page-item-actions"><span class="page-selected-mark">✓</span></span>` : ''}
       </div>
     `;

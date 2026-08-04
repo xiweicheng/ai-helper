@@ -374,8 +374,8 @@ export function addSkillManageButton() {
   manageBtn.className = 'skill-manage-btn';
   manageBtn.title = t('promptSelector.skillManageTitle');
   manageBtn.style.display = 'none'; // 默认隐藏，仅技能 Tab 显示
-  manageBtn.style.fontSize = '14px';
-  manageBtn.innerHTML = '🧩';
+  manageBtn.style.fontSize = '13px';
+  manageBtn.innerHTML = '✚';
   manageBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbox' });
@@ -692,8 +692,8 @@ export function addMcpManageButton() {
   manageBtn.className = 'mcp-manage-btn';
   manageBtn.title = t('promptSelector.mcpManageTitle');
   manageBtn.style.display = 'none';
-  manageBtn.style.fontSize = '14px';
-  manageBtn.innerHTML = '🔌';
+  manageBtn.style.fontSize = '13px';
+  manageBtn.innerHTML = '✚';
   manageBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbox' });

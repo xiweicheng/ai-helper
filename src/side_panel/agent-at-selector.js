@@ -666,6 +666,28 @@ async function selectProxyByAt(proxyId) {
   adjustInputHeight();
 }
 
+let tabActivationListenerInited = false;
+
+/**
+ * 监听浏览器 Tab 切换：当 @ 选择器展开时实时刷新网页列表，
+ * 使「当前网页」置顶与默认选中态跟随用户切换的标签页自动更新
+ */
+function initTabActivationListener() {
+  if (tabActivationListenerInited) return;
+  tabActivationListenerInited = true;
+
+  chrome.tabs.onActivated.addListener(() => {
+    const agentAtSelector = document.getElementById('agentAtSelector');
+    if (!agentAtSelector || agentAtSelector.style.display !== 'block') return;
+    // 仅网页相关模式（网页 Tab / 搜索合并模式）需要跟随 Tab 切换刷新
+    if (activeAtTab !== 'pages' && !isMergedMode) return;
+    const userInput = document.getElementById('userInput');
+    const filterText = userInput ? getAtFilterText(userInput.value) : '';
+    renderActiveAtList(filterText);
+  });
+}
+initTabActivationListener();
+
 /**
  * 处理代理工具栏操作（停用/启用/删除）
  */
