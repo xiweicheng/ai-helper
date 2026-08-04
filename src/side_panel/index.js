@@ -2466,6 +2466,99 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 在对话消息之间跳转：direction = 'prev' | 'next'；toEnd = true 时直接跳到第一条/最后一条
+  function jumpToMessage(direction, toEnd) {
+    const chatContainer = document.getElementById('chatContainer');
+    if (!chatContainer) return;
+
+    const messages = chatContainer.querySelectorAll('.message.user, .message.assistant, .user-context-bubble');
+
+    // 快速回到顶部/底部（Ctrl/Cmd+点击 或 Alt+Ctrl/Cmd+方向键）
+    if (toEnd) {
+      if (messages.length === 0) return;
+      if (direction === 'prev') {
+        messages[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        messages[messages.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      return;
+    }
+
+    if (messages.length === 0) return;
+
+    const containerRect = chatContainer.getBoundingClientRect();
+    const viewportTop = containerRect.top;
+    const threshold = 10; // 小阈值避免重复定位到同一条消息
+
+    // 找到当前视口中第一条可见消息
+    let currentIndex = -1;
+    for (let i = 0; i < messages.length; i++) {
+      const rect = messages[i].getBoundingClientRect();
+      if (rect.bottom > viewportTop + threshold) {
+        currentIndex = i;
+        break;
+      }
+    }
+
+    if (direction === 'prev') {
+      // 如果所有消息都在视口上方，则从最后一条开始
+      if (currentIndex === -1) {
+        currentIndex = messages.length;
+      }
+      // 跳到前一条
+      const targetIndex = currentIndex - 1;
+      if (targetIndex >= 0) {
+        messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } else {
+      if (currentIndex === -1) return;
+      // 跳到下一条
+      const targetIndex = currentIndex + 1;
+      if (targetIndex < messages.length) {
+        messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }
+
+  // 消息跳转按钮：上一条/下一条（Ctrl/Cmd+点击 跳到最顶端/底端，与 Alt+Ctrl/Cmd+方向键快捷键一致）
+  const chatNavUp = document.getElementById('chatNavUp');
+  const chatNavDown = document.getElementById('chatNavDown');
+  if (chatNavUp) {
+    chatNavUp.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      jumpToMessage('prev', e.ctrlKey || e.metaKey);
+    });
+  }
+  if (chatNavDown) {
+    chatNavDown.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      jumpToMessage('next', e.ctrlKey || e.metaKey);
+    });
+  }
+
+  // 消息跳转按钮展开/收起：默认收起为左侧窄条，鼠标移入展开
+  const chatNavHotzone = document.getElementById('chatNavHotzone');
+  const chatNavButtons = document.getElementById('chatNavButtons');
+  if (chatNavHotzone && chatNavButtons) {
+    let navHideTimer = null;
+    const showChatNav = () => {
+      clearTimeout(navHideTimer);
+      chatNavButtons.classList.add('expanded');
+    };
+    const hideChatNav = () => {
+      clearTimeout(navHideTimer);
+      navHideTimer = setTimeout(() => {
+        chatNavButtons.classList.remove('expanded');
+      }, 200);
+    };
+    chatNavHotzone.addEventListener('mouseenter', showChatNav);
+    chatNavHotzone.addEventListener('mouseleave', hideChatNav);
+    chatNavButtons.addEventListener('mouseenter', showChatNav);
+    chatNavButtons.addEventListener('mouseleave', hideChatNav);
+  }
+
   // 全局键盘快捷键
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -2534,66 +2627,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Alt+ArrowUp/ArrowDown 系列快捷键：在对话消息之间快速跳转
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-      const chatContainer = document.getElementById('chatContainer');
-      if (!chatContainer) return;
-
-      const messages = chatContainer.querySelectorAll('.message.user, .message.assistant, .user-context-bubble');
-
-      // Alt+Shift+ArrowUp/ArrowDown：快速回到顶部/底部
-      if (e.shiftKey) {
-        e.preventDefault();
-        if (e.key === 'ArrowUp' && messages.length > 0) {
-          messages[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } else if (e.key === 'ArrowDown' && messages.length > 0) {
-          messages[messages.length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        return;
-      }
-
-      if (messages.length === 0) return;
-
-      const containerRect = chatContainer.getBoundingClientRect();
-      const viewportTop = containerRect.top;
-      const threshold = 10; // 小阈值避免重复定位到同一条消息
-
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        // 找到当前视口中第一条可见消息，然后跳转到它前面的那条
-        let currentIndex = -1;
-        for (let i = 0; i < messages.length; i++) {
-          const rect = messages[i].getBoundingClientRect();
-          if (rect.bottom > viewportTop + threshold) {
-            currentIndex = i;
-            break;
-          }
-        }
-        // 如果所有消息都在视口上方，则从最后一条开始
-        if (currentIndex === -1) {
-          currentIndex = messages.length;
-        }
-        // 跳到前一条
-        const targetIndex = currentIndex - 1;
-        if (targetIndex >= 0) {
-          messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        // 找到当前视口中第一条消息，然后跳转到它后面的那条
-        let currentIndex = -1;
-        for (let i = 0; i < messages.length; i++) {
-          const rect = messages[i].getBoundingClientRect();
-          if (rect.bottom > viewportTop + threshold) {
-            currentIndex = i;
-            break;
-          }
-        }
-        if (currentIndex === -1) return;
-        // 跳到下一条
-        const targetIndex = currentIndex + 1;
-        if (targetIndex < messages.length) {
-          messages[targetIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }
+      e.preventDefault();
+      const direction = e.key === 'ArrowUp' ? 'prev' : 'next';
+      // Alt+Ctrl/Cmd+ArrowUp/ArrowDown：快速回到顶部/底部
+      jumpToMessage(direction, e.ctrlKey || e.metaKey);
+      return;
     }
   });
 

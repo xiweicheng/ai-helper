@@ -174,6 +174,8 @@ export default {
     export: 'Export',
     quoteTitle: 'Quote this message',
     quotedPrefix: '💬 Quoted: {text}',
+    navPrevTitle: 'Previous message (Alt+↑), Ctrl/Cmd+click to go to top',
+    navNextTitle: 'Next message (Alt+↓), Ctrl/Cmd+click to go to bottom',
   },
 
   // Tool panel

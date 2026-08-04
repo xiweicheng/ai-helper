@@ -174,6 +174,8 @@ export default {
     export: '导出',
     quoteTitle: '引用此消息',
     quotedPrefix: '💬 已引用: {text}',
+    navPrevTitle: '上一条消息 (Alt+↑)，Ctrl/Cmd+点击回到最顶端',
+    navNextTitle: '下一条消息 (Alt+↓)，Ctrl/Cmd+点击跳到底端',
   },
 
   // 工具面板
