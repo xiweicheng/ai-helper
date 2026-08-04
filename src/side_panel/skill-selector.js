@@ -35,6 +35,9 @@ registerTranslations('zh', {
     paramJoin: '、',
     sentenceEnd: '。\n',
     selectedMcpContext: '[已选MCP服务: {name}]\n请使用「{name}」MCP服务来处理以下问题：\n',
+    disabledBadge: '未启用',
+    disabledTooltip: '未启用（不会自动注入 AI 提示词），仍可手动选择使用',
+    manualUseSuffix: '手动使用',
   },
 });
 registerTranslations('en', {
@@ -50,6 +53,9 @@ registerTranslations('en', {
     paramJoin: ', ',
     sentenceEnd: '.\n',
     selectedMcpContext: '[Selected MCP service: {name}]\nPlease use the "{name}" MCP service to handle the following problem:\n',
+    disabledBadge: 'Disabled',
+    disabledTooltip: 'Not enabled (won\'t be auto-injected into the AI prompt), but you can still select and use it manually',
+    manualUseSuffix: 'Manual',
   },
 });
 
@@ -119,13 +125,17 @@ export async function getEnabledSkills(forceRefresh = false) {
 }
 
 /**
- * 获取当前 Agent 可见的技能列表（已启用 + 按 Agent skillIds 过滤）
- * 用于输入框下拉展示，与 Agent 绑定联动
+ * 获取当前 Agent 可见的技能列表（按 Agent skillIds 过滤）
+ * 包含已启用和未启用的技能，已启用的排在前面，未启用的排在后面。
+ * 用于输入框下拉展示，与 Agent 绑定联动。
+ * 未启用的技能虽然不会被自动注入系统提示词，但用户仍可主动选择，
+ * 通过加载/执行工具正常使用（agent 端加载不校验 enabled）。
  * @param {boolean} forceRefresh - 是否强制刷新缓存
  * @returns {Promise<Array>}
  */
 export async function getVisibleSkills(forceRefresh = false) {
-  let skills = await getEnabledSkills(forceRefresh);
+  // 拷贝数组，避免排序污染 fetchSkillList 的缓存
+  let skills = [...(await fetchSkillList(forceRefresh))];
 
   const currentAgentId = state.activeAgentId;
   if (currentAgentId) {
@@ -136,6 +146,13 @@ export async function getVisibleSkills(forceRefresh = false) {
       skills = skills.filter(s => allowedSet.has(s.name));
     }
   }
+
+  // 已启用的排在前面，未启用的排在后面
+  skills.sort((a, b) => {
+    const aEnabled = a.enabled !== false ? 0 : 1;
+    const bEnabled = b.enabled !== false ? 0 : 1;
+    return aEnabled - bEnabled;
+  });
 
   return skills;
 }
@@ -170,15 +187,20 @@ export async function renderSkillList(filterText = '') {
     const isAgent = skill.type === 'agent';
     const badge = isAgent ? 'Agent' : 'Workflow';
     const desc = skill.description || '';
+    const isDisabled = skill.enabled === false;
+    const itemTitle = isDisabled
+      ? `${skill.name}\n${t('skillSelector.disabledTooltip')}`
+      : skill.name;
     return `
-      <div class="skill-list-item ${index === 0 ? 'selected' : ''}" data-index="${index}" data-skill-name="${escapeHtml(skill.name)}">
+      <div class="skill-list-item ${index === 0 ? 'selected' : ''} ${isDisabled ? 'skill-list-item-disabled' : ''}" data-index="${index}" data-skill-name="${escapeHtml(skill.name)}" title="${escapeAttr(itemTitle)}">
         <span class="skill-list-item-index">${index + 1}</span>
         <span class="skill-list-item-icon">🧩</span>
         <div class="skill-list-item-info">
-          <div class="skill-list-item-name" title="${escapeAttr(skill.name)}">${escapeHtml(skill.name)}</div>
+          <div class="skill-list-item-name">${escapeHtml(skill.name)}</div>
           ${desc ? `<div class="skill-list-item-desc" title="${escapeAttr(desc)}">${escapeHtml(desc)}</div>` : ''}
         </div>
         <span class="skill-list-item-badge">${badge}</span>
+        ${isDisabled ? `<span class="skill-list-item-badge badge-disabled">${t('skillSelector.disabledBadge')}</span>` : ''}
       </div>
     `;
   }).join('');
@@ -220,14 +242,20 @@ export function selectSkill(skillName, skills) {
     description: skill.description || '',
     type: skill.type || 'agent',
     stepCount: skill.stepCount || 0,
-    parameters: skill.parameters || {}
+    parameters: skill.parameters || {},
+    enabled: skill.enabled !== false
   };
 
   // 显示技能指示器
   const indicator = document.getElementById('skillIndicator');
   const nameEl = document.getElementById('skillIndicatorName');
   if (indicator && nameEl) {
-    nameEl.textContent = skill.name;
+    const isDisabled = skill.enabled === false;
+    nameEl.textContent = isDisabled
+      ? `${skill.name} (${t('skillSelector.manualUseSuffix')})`
+      : skill.name;
+    indicator.classList.toggle('skill-indicator-manual', isDisabled);
+    indicator.title = isDisabled ? t('skillSelector.disabledTooltip') : '';
     indicator.style.display = 'flex';
   }
 
@@ -250,6 +278,8 @@ export function clearSkillSelection() {
   const indicator = document.getElementById('skillIndicator');
   if (indicator) {
     indicator.style.display = 'none';
+    indicator.classList.remove('skill-indicator-manual');
+    indicator.title = '';
   }
 
   logger.debug('[SidePanel] skill clearedselect');

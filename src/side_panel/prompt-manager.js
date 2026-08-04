@@ -1,5 +1,5 @@
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml, escapeAttr } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
@@ -436,11 +436,16 @@ async function renderMergedList(filterText = '') {
   }).join('');
 
   const skillHtml = filteredSkills.map(s => {
+    const isDisabled = s.enabled === false;
+    const itemTitle = isDisabled
+      ? `${s.name}\n${t('skillSelector.disabledTooltip')}`
+      : s.name;
     const html = `
-      <div class="prompt-item merged-skill-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="skill" data-skill-name="${escapeHtml(s.name)}">
+      <div class="prompt-item merged-skill-item ${mergedIndex === 0 ? 'selected' : ''} ${isDisabled ? 'merged-skill-item-disabled' : ''}" data-index="${mergedIndex}" data-type="skill" data-skill-name="${escapeHtml(s.name)}" title="${escapeAttr(itemTitle)}">
         <span class="prompt-item-index">${mergedIndex + 1}</span>
         <span class="prompt-item-content">🧩 ${escapeHtml(s.name)}${s.description ? ' - ' + escapeHtml(s.description) : ''}</span>
         <span class="merged-item-badge badge-skill">${t('promptSelector.skills')}</span>
+        ${isDisabled ? `<span class="merged-item-badge badge-disabled">${t('skillSelector.disabledBadge')}</span>` : ''}
       </div>`;
     mergedIndex++;
     return html;

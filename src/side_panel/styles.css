@@ -5654,6 +5654,28 @@ body {
   background: #e0f5e8;
   color: #38a169;
 }
+/* 未启用的技能：提示"未启用"但不弱化可点击性，仍可手动选择使用 */
+.skill-list-item-disabled .skill-list-item-name {
+  color: #666;
+}
+.skill-list-item-disabled .skill-list-item-desc {
+  color: #999;
+}
+.badge-disabled {
+  background: #fef3c7;
+  color: #b45309;
+}
+.skill-list-item.selected .badge-disabled {
+  background: #fde68a;
+  color: #92400e;
+}
+.merged-skill-item-disabled .prompt-item-content {
+  color: #666;
+}
+/* 选中未启用技能时，指示器显示手动使用模式（橙色） */
+.skill-indicator-manual {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+}
 
 /* 合并列表中的技能标识 */
 .merged-item-badge {
