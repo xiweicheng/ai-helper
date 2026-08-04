@@ -374,13 +374,13 @@ export async function loadChatHistory() {
           let bubbleText = '';
           switch (bubble.type) {
             case 'skill':
-              bubbleText = t('chat.bubbleSkill', { name: bubble.name, desc: bubble.description ? '：' + bubble.description : '' });
+              bubbleText = t('contextBubble.bubbleSkill', { name: bubble.name, desc: bubble.description ? '：' + bubble.description : '' });
               break;
             case 'mcp':
-              bubbleText = t('chat.bubbleMcp', { name: bubble.serverName });
+              bubbleText = t('contextBubble.bubbleMcp', { name: bubble.serverName });
               break;
             case 'page':
-              bubbleText = t('chat.bubblePage', { title: bubble.title, url: bubble.url });
+              bubbleText = t('contextBubble.bubblePage', { title: bubble.title, url: bubble.url });
               break;
             case 'file':
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
@@ -571,7 +571,7 @@ export async function sendMessage() {
   if (skillContext) {
     finalText = skillContext + finalText;
     // 添加技能上下文气泡（用户可见）
-    addContextBubble('skill', t('chat.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
+    addContextBubble('skill', t('contextBubble.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
     contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
@@ -582,7 +582,7 @@ export async function sendMessage() {
   if (mcpContext) {
     finalText = mcpContext + finalText;
     // 添加 MCP 上下文气泡
-    addContextBubble('mcp', t('chat.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
+    addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
     contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
     // 清除 MCP 指示器
     clearMcpService();
@@ -593,7 +593,7 @@ export async function sendMessage() {
     const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
     finalText = pageCtx + finalText;
     // 添加网页上下文气泡
-    addContextBubble('page', t('chat.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
+    addContextBubble('page', t('contextBubble.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
     contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
     // 清除网页指示器
     clearPageSelection();
@@ -992,11 +992,11 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.dataset.role = 'context';
   
   const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : '📌'))));
-  const label = type === 'quoted' ? t('chat.labelQuoted') : (type === 'skill' ? t('chat.labelSkill') : (type === 'mcp' ? t('chat.labelMcp') : (type === 'page' ? t('chat.labelPage') : (type === 'file' ? t('chat.labelFile') : t('chat.labelSelection')))));
+  const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : t('contextBubble.labelSelection')))));
 
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
-      <div class="context-bubble-header" title="${t('chat.clickToExpand')}">
+      <div class="context-bubble-header" title="${t('contextBubble.clickToExpand')}">
         <span class="context-icon">${icon}</span>
         <span class="context-type">${label}</span>
       </div>
@@ -1018,6 +1018,21 @@ export function addContextBubble(type, contextText, scroll = true) {
   }
   
   return bubbleDiv;
+}
+
+// 剥离用户消息中注入的技能上下文（仅显示用，messageHistory 保留完整内容供 AI 使用）
+// 覆盖中英双语三种格式（前缀随界面语言而定）：
+//   Agent Skill 成功: [已选技能: name - desc]/[Selected skill: name - desc]\n<完整技能说明>\n\n<锚定句>\n
+//   Agent Skill 降级: ...\n请使用 `agent_skill`（action=load）...处理以下问题。\n
+//                    / ...\nPlease use `agent_skill` (action=load) ... handle the following problem.\n
+//   Workflow Skill:    ...\n请使用 `agent_skill`（action=run）...处理以下问题[，调用参数：...]。\n
+//                    / ...\nPlease use `agent_skill` (action=run) ... handle the following problem[, parameters: ...].\n
+function stripSkillContext(text) {
+  return text
+    // Agent Skill 成功：完整说明直到锚定句结束（中/英）
+    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[^\n]*处理以下问题[：:]|Please use the relevant tools[^\n]*handle the following problem[.:])\s*\n/, '')
+    // Agent 降级 / Workflow：单行提示句（中/英）
+    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
 }
 
 export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false) {
@@ -1390,8 +1405,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   } else {
     let displayText = textContent;
     displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
-    displayText = displayText.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
-    displayText = displayText.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+    displayText = stripSkillContext(displayText);
+    displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
     
     const quotedMatch = displayText.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const selectedMatch = displayText.match(/^\[选中内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -1410,8 +1425,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       }
       // 去除上下文前缀（仅显示用）
       userQuestion = userQuestion.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
-      userQuestion = userQuestion.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
-      userQuestion = userQuestion.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+      userQuestion = stripSkillContext(userQuestion);
+      userQuestion = userQuestion.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       userQuestion = userQuestion.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv._pendingContext = { type, contextText, userQuestion };
@@ -1427,11 +1442,11 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       }
       // 去除上下文前缀（仅显示用，messageHistory 中保留完整内容供 AI 使用）
       // 网页上下文: [网页上下文]\n标题: ...\nURL: ...\ntabId: ...\n
-      // 技能上下文: [已选技能: xxx - xxx]\n请使用「xxx」技能来处理以下问题：\n
+      // 技能上下文: [已选技能: xxx - xxx]\n（技能说明/提示）...处理以下问题...\n
       // MCP上下文: [已选MCP服务: xxx]\n请使用「xxx」MCP服务来处理以下问题：\n
       displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
-      displayText = displayText.replace(/^\[已选技能: [^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
-      displayText = displayText.replace(/^\[已选MCP服务: [^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+      displayText = stripSkillContext(displayText);
+      displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       displayText = displayText.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv.textContent = displayText;
@@ -3302,7 +3317,7 @@ export function editAndResendMessage(messageDiv) {
     // 3a. 恢复技能上下文（如果消息使用了技能）
     clearSkillSelection();
     clearMcpService();
-    const skillMatch = textContent_.match(/^\[已选技能:\s*([^\n\]]+)\]/);
+    const skillMatch = textContent_.match(/^\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/);
     if (skillMatch) {
       const skillName = skillMatch[1].split(' - ')[0].trim();
       state.selectedSkill = { name: skillName, description: '', type: 'agent' };
@@ -3315,7 +3330,7 @@ export function editAndResendMessage(messageDiv) {
     }
 
     // 3b. 恢复 MCP 服务上下文
-    const mcpMatch = textContent_.match(/^\[已选MCP服务:\s*([^\n\]]+)\]/);
+    const mcpMatch = textContent_.match(/^\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/);
     if (mcpMatch) {
       const mcpName = mcpMatch[1].split(' - ')[0].trim();
       state.selectedMcpService = { serverId: '', serverName: mcpName, toolCount: 0 };
@@ -3333,10 +3348,10 @@ export function editAndResendMessage(messageDiv) {
       textContentClean = textContentClean.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
     }
     if (mcpMatch) {
-      textContentClean = textContent_.replace(/^\[已选MCP服务:[^\]]+\]\n请使用「[^」]+」MCP服务来处理以下问题：\n/, '');
+      textContentClean = textContent_.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
     }
     if (skillMatch) {
-      textContentClean = textContentClean.replace(/^\[已选技能:[^\]]+\]\n请使用「[^」]+」技能来处理以下问题：\n/, '');
+      textContentClean = stripSkillContext(textContentClean);
     }
 
     // 5. 恢复引用/选中上下文，显示在输入框上方

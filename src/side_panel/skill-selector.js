@@ -31,6 +31,8 @@ registerTranslations('zh', {
     requiredParam: '必填',
     optionalParam: '可选',
     callParamsPrefix: '，调用参数：',
+    paramItem: '（{flag}，{type}：{desc}）',
+    paramJoin: '、',
     sentenceEnd: '。\n',
     selectedMcpContext: '[已选MCP服务: {name}]\n请使用「{name}」MCP服务来处理以下问题：\n',
   },
@@ -44,6 +46,8 @@ registerTranslations('en', {
     requiredParam: 'required',
     optionalParam: 'optional',
     callParamsPrefix: ', parameters: ',
+    paramItem: '({flag}, {type}: {desc})',
+    paramJoin: ', ',
     sentenceEnd: '.\n',
     selectedMcpContext: '[Selected MCP service: {name}]\nPlease use the "{name}" MCP service to handle the following problem:\n',
   },
@@ -384,7 +388,7 @@ export async function getSkillContextText() {
   const skill = state.selectedSkill;
   const isAgent = skill.type === 'agent';
 
-  let text = `[已选技能: ${skill.name}`;
+  let text = t('skillSelector.selectedSkillStart', { name: skill.name });
   if (skill.description) {
     text += ` - ${skill.description}`;
   }
@@ -403,27 +407,31 @@ export async function getSkillContextText() {
         });
       });
       if (response && response.prompt) {
-        text += `${response.prompt}\n\n请根据上述技能说明，使用相关工具处理以下问题：\n`;
+        text += `${response.prompt}\n\n${t('skillSelector.useSkillToolsHint')}`;
       } else {
         // 降级：加载失败时仍提示使用工具加载
-        text += `请使用 \`agent_skill\`（action=load）加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n`;
+        text += t('skillSelector.loadSkillHint', { name: skill.name });
       }
     } catch {
       // 降级：加载失败时仍提示使用工具加载
-      text += `请使用 \`agent_skill\`（action=load）加载「${skill.name}」的完整说明，然后根据说明自主调用相关工具处理以下问题。\n`;
+      text += t('skillSelector.loadSkillHint', { name: skill.name });
     }
   } else {
     // Workflow Skill：提示 AI 使用 agent_skill (action=run) 执行，并附上参数定义
-    text += `请使用 \`agent_skill\`（action=run）执行「${skill.name}」技能来处理以下问题`;
+    text += t('skillSelector.runSkillHint', { name: skill.name });
     const params = skill.parameters;
     if (params && params.properties && Object.keys(params.properties).length > 0) {
       const required = params.required || [];
       const paramList = Object.entries(params.properties)
-        .map(([key, def]) => `${key}（${required.includes(key) ? '必填' : '可选'}，${def.type || 'string'}：${def.description || ''}）`)
-        .join('、');
-      text += `，调用参数：${paramList}`;
+        .map(([key, def]) => t('skillSelector.paramItem', {
+          flag: required.includes(key) ? t('skillSelector.requiredParam') : t('skillSelector.optionalParam'),
+          type: def.type || 'string',
+          desc: def.description || '',
+        }))
+        .join(t('skillSelector.paramJoin'));
+      text += t('skillSelector.callParamsPrefix') + paramList;
     }
-    text += `。\n`;
+    text += t('skillSelector.sentenceEnd');
   }
   return text;
 }
@@ -628,7 +636,7 @@ export function getMcpContextText() {
   if (!state.selectedMcpService) return '';
 
   const svc = state.selectedMcpService;
-  return `[已选MCP服务: ${svc.serverName}]\n请使用「${svc.serverName}」MCP服务来处理以下问题：\n`;
+  return t('skillSelector.selectedMcpContext', { name: svc.serverName });
 }
 
 /**
