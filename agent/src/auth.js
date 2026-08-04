@@ -2,9 +2,10 @@
 import crypto from 'crypto';
 import { loadConfig, loadPairings, savePairing } from './config.js';
 import { t as translate } from './i18n.js';
+import { detectSystemLang } from './sys-lang.js';
 
-// 默认使用 zh 语言（独立调用场景）；server.js 调用时会传入 req 的 lang
-let currentLang = 'zh';
+// 默认跟随系统语言（独立调用场景）；server.js 调用时会传入 req 的 lang
+let currentLang = detectSystemLang();
 
 /**
  * 设置 auth 模块当前使用的语言（由 server.js 在请求入口处调用）
@@ -77,7 +78,7 @@ function startPairCodeRotation() {
 
   // Generate a pairing code immediately on startup (for initial pairing; lastAuthTime=0 ensures refresh)
   currentPairCode = generatePairCode();
-  console.log(`\n[Agent] Pairing code: ${currentPairCode}\n`);
+  console.log(`\n[Agent] ${tr('auth.pairCode', { code: currentPairCode })}\n`);
 
   if (pairCodeTimer) clearInterval(pairCodeTimer);
   pairCodeTimer = setInterval(() => {
@@ -89,14 +90,14 @@ function startPairCodeRotation() {
     if (hasPairings && isRecentlyActive) {
       if (currentPairCode !== null) {
         currentPairCode = null;
-        console.log('[Agent] Active connection detected, stopping pairing code rotation');
+        console.log(`[Agent] ${tr('auth.activeConnectionDetected')}`);
       }
       return;
     }
 
     // No pairing or extension offline timeout: rotate pairing code to allow new extension pairing
     currentPairCode = generatePairCode();
-    console.log(`[Agent] Pairing code updated: ${currentPairCode}`);
+    console.log(`[Agent] ${tr('auth.pairCodeUpdated', { code: currentPairCode })}`);
   }, ttl);
 }
 
@@ -149,7 +150,7 @@ async function handlePairRequest(code, extensionId, tFn) {
       pairFailCount = 0;
       // 锁定时立即轮换配对码，使攻击者已观测到的配对码失效
       currentPairCode = generatePairCode();
-      console.log('[Agent] Too many failed pairing attempts, locked for 60s and pairing code rotated');
+      console.log(`[Agent] ${tr('auth.tooManyFailedAttempts')}`);
     }
     return { success: false, error: tr('auth.invalidCode', undefined, tFn) };
   }
@@ -161,7 +162,7 @@ async function handlePairRequest(code, extensionId, tFn) {
   if (pairings[extensionId]) {
     // 一次性使用：成功后立即轮换配对码
     currentPairCode = generatePairCode();
-    console.log('[Agent] Pairing code verified, code rotated (one-time use)');
+    console.log(`[Agent] ${tr('auth.codeVerifiedRotated')}`);
     return { success: true, token: pairings[extensionId].token, message: tr('auth.alreadyPaired', undefined, tFn) };
   }
   // 生成新 token 并保存
@@ -173,7 +174,7 @@ async function handlePairRequest(code, extensionId, tFn) {
   }
   // 一次性使用：成功后立即轮换配对码
   currentPairCode = generatePairCode();
-  console.log('[Agent] Pairing successful, pairing code rotated (one-time use)');
+  console.log(`[Agent] ${tr('auth.pairSuccessRotated')}`);
   return { success: true, token, message: tr('auth.pairSuccess', undefined, tFn) };
 }
 

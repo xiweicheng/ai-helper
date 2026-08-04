@@ -7,9 +7,10 @@ import { homedir } from 'os';
 import { loadAllMarkdownSkills, saveMarkdownSkill, deleteMarkdownSkillDir, importMarkdownSkillFromZip, importMarkdownSkillFromUrl } from './markdown-loader.js';
 import { SKILL_CREATOR_SEED_MD, SKILL_CREATOR_DIR } from './skill-creator-seed.js';
 import { t as translate } from '../i18n.js';
+import { detectSystemLang } from '../sys-lang.js';
 
-// 当前模块使用的语言（由 server.js 在请求入口处设置）
-let currentLang = 'en';
+// 当前模块使用的语言（默认跟随系统语言；server.js 在请求入口处设置）
+let currentLang = detectSystemLang();
 
 /**
  * 设置 skill loader 模块当前使用的语言（由 server.js 在请求入口处调用）
@@ -151,7 +152,7 @@ function loadSkillFile(filePath) {
 
     const validation = validateWorkflowSkill(skill);
     if (!validation.valid) {
-      console.warn(`[Skill Loader] "${filePath}" validation failed:`, validation.errors.join(', '));
+      console.warn(`[Skill Loader] "${filePath}" ${tr('skill.validationFailed', { errors: validation.errors.join(', ') })}`);
       return null;
     }
 
@@ -160,7 +161,7 @@ function loadSkillFile(filePath) {
     skill.type = 'workflow';
     return skill;
   } catch (err) {
-    console.warn(`[Skill Loader] Load "${filePath}" failed:`, err.message);
+    console.warn(`[Skill Loader] "${filePath}" ${tr('skill.loadFailed', { message: err.message })}`);
     return null;
   }
 }

@@ -4,8 +4,17 @@ import { McpClient } from './client.js';
 import { loadMcpConfig, addMcpServer, removeMcpServer, toggleMcpServer } from './mcp-config.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 
-const LANG = parseAcceptLanguage();
+// 默认跟随系统语言；server.js 启动时可用 setMcpRegistryLang 同步 serverLang
+let LANG = parseAcceptLanguage();
 const T = (key, params) => translate(LANG, key, params);
+
+/**
+ * 设置 MCP 注册表当前使用的语言（由 server.js 在启动时调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setMcpRegistryLang(lang) {
+  if (lang) LANG = lang;
+}
 
 // 已连接的 MCP Client 映射表: serverId → McpClient
 const clients = new Map();
@@ -37,9 +46,9 @@ export async function initializeMcpRegistry() {
   if (config.servers.length > 0) {
     if (failed > 0) {
       const failedList = failedServers.map(fs => `${fs.id}(${fs.error})`).join(', ');
-      console.warn(`[MCP] ${connected}/${config.servers.length} connected, ${failed} failed: ${failedList}`);
+      console.warn(`[MCP] ${T('mcp.someFailed', { connected, total: config.servers.length, failed, list: failedList })}`);
     } else if (connected > 0) {
-      console.log(`[MCP] ${connected} servers connected`);
+      console.log(`[MCP] ${T('mcp.serversConnected', { count: connected })}`);
     }
   }
   return { connected, failed };
@@ -113,7 +122,7 @@ export async function callMcpTool(serverId, toolName, args) {
     return { success: false, error: T('mcp.serverNotConnected', { name: serverId }) };
   }
 
-  console.log(`[MCP Registry] Calling tool: ${serverId}/${toolName}`, args);
+  console.log(`[MCP Registry] ${T('mcp.callingTool', { serverId, toolName })}`, args);
   const result = await client.callTool(toolName, args);
   return result;
 }

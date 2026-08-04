@@ -5,9 +5,10 @@ import { join, basename } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { t as translate } from './i18n.js';
+import { detectSystemLang } from './sys-lang.js';
 
-// 默认使用 zh 语言（独立调用场景）；server.js 调用时会传入 req 的 lang
-let currentLang = 'zh';
+// 默认跟随系统语言（独立调用场景）；server.js 调用时会传入 req 的 lang
+let currentLang = detectSystemLang();
 
 /**
  * 设置 trash 模块当前使用的语言（由 server.js 在请求入口处调用）
@@ -45,7 +46,7 @@ async function ensureTrashDir() {
       await mkdir(TRASH_DIR, { recursive: true });
     }
   } catch (err) {
-    console.error('[Trash] Cannot create trash directory:', err.message);
+    console.error(`[Trash] ${tr('trash.cannotCreateDir', { message: err.message })}`);
     throw err;
   }
 }
@@ -120,7 +121,7 @@ async function cleanExpiredTrash() {
 
   if (expired.length > 0) {
     await saveMetadata(kept);
-    console.log(`[Trash] Cleaned up ${expired.length} expired trash entries`);
+    console.log(`[Trash] ${tr('trash.cleanedUp', { count: expired.length })}`);
   }
 }
 
@@ -161,7 +162,7 @@ export async function moveToTrash(sourcePath, tFn) {
     });
     await saveMetadata(entries);
 
-    console.log(`[Trash] Moved to trash: ${sourcePath} -> ${trashPath} (${size} bytes, ${isDir ? 'directory' : 'file'})`);
+    console.log(`[Trash] ${tr('trash.movedToTrashLog', { source: sourcePath, target: trashPath, size, type: tr(isDir ? 'trash.typeDirectory' : 'trash.typeFile') })}`);
     return { success: true, trashId: id, isDir };
   } catch (err) {
     return { success: false, error: tr('trash.moveFailed', { message: err.message }, tFn) };
@@ -199,7 +200,7 @@ export async function restoreFromTrash(trashId, tFn) {
     entries.splice(idx, 1);
     await saveMetadata(entries);
 
-    console.log(`[Trash] Restored: ${entry.originalPath}`);
+    console.log(`[Trash] ${tr('trash.restoredLog', { path: entry.originalPath })}`);
     return { success: true, restoredPath: entry.originalPath };
   } catch (err) {
     return { success: false, error: tr('trash.restoreFailed', { message: err.message }, tFn) };
@@ -233,11 +234,11 @@ export function startPeriodicCleanup() {
     try {
       await cleanExpiredTrash();
     } catch (err) {
-      console.error('[Trash] Periodic cleanup error:', err.message);
+      console.error(`[Trash] ${tr('trash.periodicCleanError', { message: err.message })}`);
     }
   }, PERIODIC_CLEAN_INTERVAL_MS);
   if (periodicCleanTimer.unref) periodicCleanTimer.unref();
-  console.log('[Trash] Periodic cleanup started (interval: 6 hours)');
+  console.log(`[Trash] ${tr('trash.periodicCleanStarted')}`);
 }
 
 /**

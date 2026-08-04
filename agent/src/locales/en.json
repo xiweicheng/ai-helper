@@ -106,7 +106,13 @@
     "invalidCode": "Invalid pairing code",
     "alreadyPaired": "Already paired, returning existing token",
     "saveFailed": "Pairing save failed: {message}",
-    "pairSuccess": "Pairing successful"
+    "pairSuccess": "Pairing successful",
+    "pairCode": "Pairing code: {code}",
+    "pairCodeUpdated": "Pairing code updated: {code}",
+    "activeConnectionDetected": "Active connection detected, stopping pairing code rotation",
+    "tooManyFailedAttempts": "Too many failed pairing attempts, locked for 60s and pairing code rotated",
+    "codeVerifiedRotated": "Pairing code verified, code rotated (one-time use)",
+    "pairSuccessRotated": "Pairing successful, pairing code rotated (one-time use)"
   },
   "exec": {
     "requestTimeout": "Request timeout ({ms}ms)",
@@ -149,7 +155,15 @@
     "entryNotFound": "Trash entry does not exist or has expired",
     "fileNotFound": "Trash file no longer exists",
     "originalPathOccupied": "Original location already has a file: {path}",
-    "restoreFailed": "Restore failed: {message}"
+    "restoreFailed": "Restore failed: {message}",
+    "cannotCreateDir": "Cannot create trash directory: {message}",
+    "cleanedUp": "Cleaned up {count} expired trash entries",
+    "movedToTrashLog": "Moved to trash: {source} -> {target} ({size} bytes, {type})",
+    "typeDirectory": "directory",
+    "typeFile": "file",
+    "restoredLog": "Restored: {path}",
+    "periodicCleanStarted": "Periodic cleanup started (interval: 6 hours)",
+    "periodicCleanError": "Periodic cleanup error: {message}"
   },
   "search": {
     "pathNotExist": "Search path does not exist",
@@ -166,6 +180,8 @@
     "execError": "Execution error: {message}",
     "execIdNotFound": "Execution ID \"{execId}\" does not exist",
     "validationFailed": "Validation failed: {errors}",
+    "loadFailed": "Load failed: {message}",
+    "registered": "{count} registered ({workflow} Workflow + {agent} Agent), {enabled} enabled",
     "saveFailed": "Save failed: {message}",
     "deleteFailed": "Delete failed: {message}",
     "skillNotFound": "Skill \"{name}\" does not exist",
@@ -223,7 +239,10 @@
     "toolCallError": "Tool call error: {message}",
     "serverNotConnected": "MCP Server \"{name}\" not connected",
     "serverNotFound": "MCP Server \"{name}\" does not exist",
-    "toolCallFailed": "Tool call failed"
+    "toolCallFailed": "Tool call failed",
+    "serversConnected": "{count} MCP servers connected",
+    "someFailed": "{connected}/{total} connected, {failed} failed: {list}",
+    "callingTool": "Calling tool: {serverId}/{toolName}"
   },
   "server": {
     "requestException": "Request processing error",

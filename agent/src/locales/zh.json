@@ -106,7 +106,13 @@
     "invalidCode": "配对码无效",
     "alreadyPaired": "已配对，返回现有 token",
     "saveFailed": "配对保存失败: {message}",
-    "pairSuccess": "配对成功"
+    "pairSuccess": "配对成功",
+    "pairCode": "配对码: {code}",
+    "pairCodeUpdated": "配对码已更新: {code}",
+    "activeConnectionDetected": "检测到活跃连接，停止配对码轮换",
+    "tooManyFailedAttempts": "配对失败次数过多，已锁定 60 秒并轮换配对码",
+    "codeVerifiedRotated": "配对码验证成功，配对码已轮换（一次性使用）",
+    "pairSuccessRotated": "配对成功，配对码已轮换（一次性使用）"
   },
   "exec": {
     "requestTimeout": "请求超时 ({ms}ms)",
@@ -149,7 +155,15 @@
     "entryNotFound": "回收站条目不存在或已过期",
     "fileNotFound": "回收站文件已不存在",
     "originalPathOccupied": "原位置已有文件: {path}",
-    "restoreFailed": "恢复失败: {message}"
+    "restoreFailed": "恢复失败: {message}",
+    "cannotCreateDir": "无法创建回收站目录: {message}",
+    "cleanedUp": "已清理 {count} 个过期的回收站条目",
+    "movedToTrashLog": "已移至回收站: {source} -> {target} ({size} 字节, {type})",
+    "typeDirectory": "目录",
+    "typeFile": "文件",
+    "restoredLog": "已恢复: {path}",
+    "periodicCleanStarted": "定期清理已启动（间隔: 6 小时）",
+    "periodicCleanError": "定期清理异常: {message}"
   },
   "search": {
     "pathNotExist": "搜索路径不存在",
@@ -166,6 +180,8 @@
     "execError": "执行异常: {message}",
     "execIdNotFound": "执行 ID \"{execId}\" 不存在",
     "validationFailed": "校验失败: {errors}",
+    "loadFailed": "加载失败: {message}",
+    "registered": "已注册 {count} 个技能（{workflow} 个 Workflow + {agent} 个 Agent），启用 {enabled} 个",
     "saveFailed": "保存失败: {message}",
     "deleteFailed": "删除失败: {message}",
     "skillNotFound": "Skill \"{name}\" 不存在",
@@ -223,7 +239,10 @@
     "toolCallError": "工具调用异常: {message}",
     "serverNotConnected": "MCP Server \"{name}\" 未连接",
     "serverNotFound": "MCP Server \"{name}\" 不存在",
-    "toolCallFailed": "工具调用失败"
+    "toolCallFailed": "工具调用失败",
+    "serversConnected": "{count} 个 MCP 服务器已连接",
+    "someFailed": "已连接 {connected}/{total} 个服务器，{failed} 个失败: {list}",
+    "callingTool": "调用工具: {serverId}/{toolName}"
   },
   "server": {
     "requestException": "请求处理异常",

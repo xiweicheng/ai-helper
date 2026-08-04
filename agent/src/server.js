@@ -15,7 +15,7 @@ import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairReq
 import { checkPath, checkCommand, normalizePathFormat, setSecurityLang } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup, setTrashLang } from './trash.js';
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, setExecutorLang } from './executor.js';
-import { setConsoleOutput, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
+import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import {
   initializeMcpRegistry,
@@ -28,7 +28,8 @@ import {
   loadMcpConfig,
   addMcpServer,
   removeMcpServer,
-  toggleMcpServer
+  toggleMcpServer,
+  setMcpRegistryLang
 } from './mcp/registry.js';
 import {
   initializeSkillRegistry,
@@ -41,7 +42,8 @@ import {
   reloadSkills,
   getAgentSkillPrompts,
   getAgentSkillPrompt,
-  getSkillsDir
+  getSkillsDir,
+  setSkillRegistryLang
 } from './skill/registry.js';
 import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl, setSkillLoaderLang } from './skill/loader.js';
 import { setSkillExecutorLang } from './skill/executor.js';
@@ -2036,6 +2038,22 @@ export function startServer() {
   server.listen(port, host, () => {
     console.log(`[Agent] ${ln('httpStarted', { host, port })}`);
     console.log(`[Agent] ${ln('wsStarted', { host, port })}`);
+
+    // 同步 server 级语言到各子模块，确保启动日志语言一致（--lang / AI_HELPER_LANG / 系统检测）
+    setLoggerLocale(serverLang);
+    setAuthLang(serverLang);
+    setTrashLang(serverLang);
+    setConfigLang(serverLang);
+    setExecutorLang(serverLang);
+    setSecurityLang(serverLang);
+    setSearchLang(serverLang);
+    setSkillLoaderLang(serverLang);
+    setSkillRegistryLang(serverLang);
+    setSkillExecutorLang(serverLang);
+    setMarkdownLoaderLang(serverLang);
+    setMcpRegistryLang(serverLang);
+    setMcpClientLang(serverLang);
+
     startPairCodeRotation();
 
     // 启动回收站定期清理（每6小时）+ 启动时清理一次过期文件

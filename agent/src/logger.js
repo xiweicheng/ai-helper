@@ -2,6 +2,7 @@
 import { appendFileSync, mkdirSync, existsSync, readdirSync, statSync, unlinkSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { detectSystemLang } from './sys-lang.js';
 
 const LOG_DIR = join(homedir(), '.ai-helper-agent', 'logs');
 const MAX_LOG_FILES = 30;               // Max log files to retain
@@ -28,7 +29,11 @@ const CATEGORY_LABELS_EN = {
   auth: 'Auth', fs: 'File', exec: 'Exec', security: 'Security', system: 'System'
 };
 
-let currentLocale = (process.env.AI_HELPER_LANG === 'zh') ? 'zh' : 'en';
+let currentLocale = (() => {
+  const env = process.env.AI_HELPER_LANG;
+  if (env === 'zh' || env === 'en') return env;
+  return detectSystemLang();
+})();
 
 /**
  * Set locale for log category labels

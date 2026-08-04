@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from '
 import { spawn } from 'child_process';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { detectSystemLang } from '../src/sys-lang.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
@@ -25,7 +26,7 @@ function loadCliTranslations() {
 }
 
 function resolveLang(args) {
-  // Priority: --lang flag > AI_HELPER_LANG env > default 'en'
+  // Priority: --lang flag > AI_HELPER_LANG env > system language detection > default 'en'
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--lang' && args[i + 1]) {
       const val = args[i + 1].toLowerCase();
@@ -34,7 +35,7 @@ function resolveLang(args) {
   }
   const envLang = process.env.AI_HELPER_LANG;
   if (envLang && (envLang === 'zh' || envLang === 'en')) return envLang;
-  return 'en';
+  return detectSystemLang();
 }
 
 // Remove --lang <val> from args to avoid passing to server

@@ -7,8 +7,17 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 
-const LANG = parseAcceptLanguage();
+// 默认跟随系统语言；server.js 启动时可用 setSkillRegistryLang 同步 serverLang
+let LANG = parseAcceptLanguage();
 const T = (key, params) => translate(LANG, key, params);
+
+/**
+ * 设置 Skill 注册表当前使用的语言（由 server.js 在启动时调用）
+ * @param {string} lang - 语言代码（'zh' | 'en'）
+ */
+export function setSkillRegistryLang(lang) {
+  if (lang) LANG = lang;
+}
 
 // Skill 映射表: name → skill定义
 const skills = new Map();
@@ -41,7 +50,7 @@ function saveDisabledState(disabledSet) {
   try {
     writeFileSync(DISABLED_STATE_FILE, JSON.stringify({ disabled: [...disabledSet] }, null, 2), 'utf-8');
   } catch (e) {
-    console.error('[Skill Registry] Cannot save disabled state:', e.message);
+    console.error(`[Skill Registry] ${T('skill.saveFailed', { message: e.message })}`);
   }
 }
 
@@ -66,7 +75,7 @@ function saveBuiltinState(state) {
   try {
     writeFileSync(BUILTIN_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
   } catch (e) {
-    console.error('[Skill Registry] Cannot save builtin skill state:', e.message);
+    console.error(`[Skill Registry] ${T('skill.saveFailed', { message: e.message })}`);
   }
 }
 
@@ -127,7 +136,7 @@ export function initializeSkillRegistry() {
   const enabledCount = [...skills.values()].filter(s => s.enabled !== false).length;
 
   if (skills.size > 0) {
-    console.log(`[Skill] ${skills.size} registered (${workflowCount} Workflow + ${agentCount} Agent), ${enabledCount} enabled`);
+    console.log(`[Skill] ${T('skill.registered', { count: skills.size, workflow: workflowCount, agent: agentCount, enabled: enabledCount })}`);
   }
   return skills.size;
 }

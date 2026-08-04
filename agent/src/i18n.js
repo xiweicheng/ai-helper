@@ -5,6 +5,7 @@
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { detectSystemLang } from './sys-lang.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -14,8 +15,12 @@ const translations = {
   en: JSON.parse(readFileSync(join(__dirname, 'locales', 'en.json'), 'utf-8')),
 };
 
-// Default language: check env var (set by CLI), fallback to 'en'
-const DEFAULT_LANG = (process.env.AI_HELPER_LANG === 'zh') ? 'zh' : 'en';
+// Default language: --lang / AI_HELPER_LANG env (set by CLI) > system language detection > 'en'
+const DEFAULT_LANG = (() => {
+  const env = process.env.AI_HELPER_LANG;
+  if (env === 'zh' || env === 'en') return env;
+  return detectSystemLang();
+})();
 const SUPPORTED_LANGS = Object.keys(translations);
 
 /**
