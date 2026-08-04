@@ -446,8 +446,8 @@ function applyNodeFilter(processHistory, filter) {
 export function bindProcessHeaderClick(header) {
   if (!header || header._filterBound) return;
   header._filterBound = true;
-  // 给三个统计项标记 data-filter（顺序：总节点=all / 成功=success / 失败=failed）
-  const filters = ['all', 'success', 'failed'];
+  // 只给"成功/失败"统计项标记 data-filter（总节点为纯展示，不参与筛选）
+  const filters = ['', 'success', 'failed'];
   header.querySelectorAll('.thinking-process-stat').forEach((s, i) => {
     if (filters[i]) {
       s.dataset.filter = filters[i];
@@ -457,21 +457,22 @@ export function bindProcessHeaderClick(header) {
   header.addEventListener('click', (e) => {
     // Ctrl/Meta + Click 用于复制，不触发筛选或折叠
     if (e.ctrlKey || e.metaKey) return;
-    const stat = e.target.closest('.thinking-process-stat[data-filter]');
+    const stat = e.target.closest('.thinking-process-stat');
     const processHistory = header.closest('.thinking-process');
     if (!processHistory) return;
-    if (stat) {
-      // 点击统计数字：按状态筛选（不折叠）
-      applyNodeFilter(processHistory, stat.dataset.filter);
+    if (stat && stat.dataset.filter) {
+      // 成功/失败：点击切换筛选，再次点击已激活的项则取消（恢复显示全部）
+      const nextFilter = (processHistory.dataset.activeFilter === stat.dataset.filter) ? 'all' : stat.dataset.filter;
+      applyNodeFilter(processHistory, nextFilter);
     } else {
-      // 点击其他区域：折叠/展开
+      // 点击总节点（不参与筛选）或其他区域：折叠/展开
       processHistory.classList.toggle('collapsed');
     }
   });
-  // 恢复筛选态（rebind 后从 dataset 恢复）
+  // 恢复筛选态（rebind 后从 dataset 恢复）；无筛选时显示全部且不选中任何统计项
   const processHistory = header.closest('.thinking-process');
-  if (processHistory && processHistory.dataset.activeFilter) {
-    applyNodeFilter(processHistory, processHistory.dataset.activeFilter);
+  if (processHistory) {
+    applyNodeFilter(processHistory, processHistory.dataset.activeFilter || 'all');
   }
 }
 
@@ -1029,8 +1030,9 @@ export function appendToolCallItems(element, toolCalls) {
       });
     }
     
-    // 点击展开/折叠
-    item.querySelector('.tool-call-header').addEventListener('click', () => {
+    // 点击展开/折叠（Ctrl/Meta + Click 用于复制代码段，不触发折叠）
+    item.querySelector('.tool-call-header').addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) return;
       item.classList.toggle('expanded');
     });
     
@@ -1242,7 +1244,8 @@ export function createPreSelectCard(entry) {
     </div>
   `;
   
-  card.querySelector('.tool-call-header').addEventListener('click', () => {
+  card.querySelector('.tool-call-header').addEventListener('click', (e) => {
+    if (e.ctrlKey || e.metaKey) return;
     card.classList.toggle('expanded');
   });
   
