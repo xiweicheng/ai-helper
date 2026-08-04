@@ -1,7 +1,38 @@
 import logger from './logger.js';
+import { t, registerTranslations } from './i18n.js';
 
 // shared/token-counter.js - Token 估算工具
 // 使用字符数估算 token 数，无需引入 tiktoken 等重量级依赖
+
+registerTranslations('zh', {
+  tokenCounter: {
+    truncatedMiddle: '\n\n... [中间 {tokens} tokens 已截断] ...\n\n',
+    omittedTokens: '\n\n... [省略 {tokens} tokens] ...\n\n',
+    omittedMiddleHtml: '\n<!-- 省略中间内容 -->\n',
+    truncated: '[截断]',
+    omittedKey: '...[省略]',
+    moreFields: '还有 {count} 个字段',
+    unknownTool: '未知工具',
+    userQuestion: '- 用户问题：{question}',
+    usedTools: '- 使用的工具：{tools}',
+    historySummary: '[历史摘要]',
+  },
+});
+
+registerTranslations('en', {
+  tokenCounter: {
+    truncatedMiddle: '\n\n... [middle {tokens} tokens truncated] ...\n\n',
+    omittedTokens: '\n\n... [{tokens} tokens omitted] ...\n\n',
+    omittedMiddleHtml: '\n<!-- middle content omitted -->\n',
+    truncated: '[truncated]',
+    omittedKey: '...[omitted]',
+    moreFields: '{count} more fields',
+    unknownTool: 'Unknown tool',
+    userQuestion: '- User question: {question}',
+    usedTools: '- Tools used: {tools}',
+    historySummary: '[History Summary]',
+  },
+});
 
 // 估算常量：中文约 1.5 字符/token，英文约 4 字符/token
 // 参考 DeepSeek tokenizer 的行为特征
@@ -182,7 +213,7 @@ export function truncateByTokens(content, maxTokens) {
   const tail = content.slice(-tailChars);
 
   const truncatedTokens = currentTokens - maxTokens;
-  return head + `\n\n... [中间 ${truncatedTokens} tokens 已截断] ...\n\n` + tail;
+  return head + t('tokenCounter.truncatedMiddle', { tokens: truncatedTokens }) + tail;
 }
 
 /**
@@ -222,7 +253,7 @@ export function truncateContentSmart(content, maxTokens, contentType) {
   const tailChars = Math.floor(maxTokens * 0.2 * CHARS_PER_TOKEN_EN);
   const head = content.slice(0, headChars);
   const tail = content.slice(-tailChars);
-  return head + `\n\n... [省略 ${estimateTokens(content) - maxTokens} tokens] ...\n\n` + tail;
+  return head + t('tokenCounter.omittedTokens', { tokens: estimateTokens(content) - maxTokens }) + tail;
 }
 
 /**
@@ -240,7 +271,7 @@ function truncateHtmlSmart(content, maxTokens) {
     const bodyChars = Math.floor(bodyBudget * CHARS_PER_TOKEN_EN);
     return content.slice(0, headChars) +
       bodyContent.slice(0, bodyChars) +
-      '\n<!-- 省略中间内容 -->\n' +
+      t('tokenCounter.omittedMiddleHtml') +
       bodyContent.slice(-Math.floor(bodyChars * 0.3)) +
       content.slice(-Math.floor(headChars * 0.3));
   }
@@ -266,7 +297,7 @@ function truncateJsonSmart(content, maxTokens) {
       const key = keys[i];
       const val = obj[key];
       if (typeof val === 'string' && val.length > 200) {
-        summarized[key] = val.substring(0, 200) + '...[截断]';
+        summarized[key] = val.substring(0, 200) + '...' + t('tokenCounter.truncated');
       } else if (typeof val === 'object' && val !== null) {
         summarized[key] = `[${Array.isArray(val) ? `Array(${val.length})` : `Object(${Object.keys(val).length} keys)`}]`;
       } else {
@@ -469,23 +500,23 @@ export function generateMessagesSummary(trimmedMessages) {
       }
     } else if (msg.role === 'assistant' && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
-        const name = tc.function?.name || tc.name || '未知工具';
+        const name = tc.function?.name || tc.name || t('tokenCounter.unknownTool');
         toolCalls.push(name);
       }
     }
   }
 
   if (userQuestions.length > 0) {
-    summaryParts.push(`- 用户问题：${userQuestions[userQuestions.length - 1]}`);
+    summaryParts.push(t('tokenCounter.userQuestion', { question: userQuestions[userQuestions.length - 1] }));
   }
   if (toolCalls.length > 0) {
     // 去重并限制数量
     const uniqueTools = [...new Set(toolCalls)].slice(0, 10);
-    summaryParts.push(`- 使用的工具：${uniqueTools.join('、')}`);
+    summaryParts.push(t('tokenCounter.usedTools', { tools: uniqueTools.join(', ') }));
   }
 
   if (summaryParts.length === 0) return null;
-  return '[历史摘要]\n' + summaryParts.join('\n');
+  return t('tokenCounter.historySummary') + '\n' + summaryParts.join('\n');
 }
 
 const API_ALLOWED_FIELDS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'reasoning_content', 'prefix']);

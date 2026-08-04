@@ -5,6 +5,10 @@ import { executeSkill } from './executor.js';
 import { SKILLS_DIR } from './loader.js';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, basename, dirname } from 'path';
+import { t as translate, parseAcceptLanguage } from '../i18n.js';
+
+const LANG = parseAcceptLanguage();
+const T = (key, params) => translate(LANG, key, params);
 
 // Skill 映射表: name → skill定义
 const skills = new Map();
@@ -181,7 +185,7 @@ export function getSkill(name) {
 export async function runSkill(name, params = {}, onStepUpdate) {
   const skill = skills.get(name);
   if (!skill) {
-    return { success: false, error: `Skill "${name}" 不存在或未启用` };
+    return { success: false, error: T('skill.skillNotExistOrDisabled', { name }) };
   }
 
   if (skill.type === 'agent') {
@@ -208,22 +212,22 @@ export function getAgentSkillPrompts() {
   if (agentSkills.length === 0) return '';
 
   const parts = [];
-  parts.push('## 可用技能 (Skills)');
+  parts.push(T('skill.skillPromptHeader'));
   parts.push('');
-  parts.push('以下是可用的 Agent Skill（AI 能力扩展）列表。当用户需求与某个技能高度匹配时，使用 `agent_skill` 工具（action: load）加载该技能的完整说明，然后根据说明自主完成任务。');
+  parts.push(T('skill.skillPromptIntro'));
   parts.push('');
-  parts.push('**使用策略**：');
-  parts.push('- 仅在用户需求明确匹配技能描述时才加载，不要为一般性的编程/技术问题加载技能');
-  parts.push('- 一次只加载一个技能，加载后根据 SKILL.md 说明执行');
-  parts.push('- 技能加载会消耗较多 token，避免无故加载');
+  parts.push(T('skill.skillPromptStrategy'));
+  parts.push(T('skill.skillPromptStrategy1'));
+  parts.push(T('skill.skillPromptStrategy2'));
+  parts.push(T('skill.skillPromptStrategy3'));
   parts.push('');
 
   for (const skill of agentSkills) {
     parts.push(`### ${skill.name}`);
-    parts.push(`**描述**: ${skill.description}`);
+    parts.push(T('skill.skillPromptDesc', { description: skill.description }));
     if (skill.resources && skill.resources.length > 0) {
       const resourceNames = skill.resources.map(r => `\`${r.name}\``).join(', ');
-      parts.push(`**可用资源**: ${resourceNames}`);
+      parts.push(T('skill.skillPromptResources', { resources: resourceNames }));
     }
     parts.push('');
   }
@@ -244,7 +248,7 @@ export function getAgentSkillPrompt(name) {
   // 如果 skill 有 dirPath，在 prompt 前注入工作目录信息，方便 AI 解析相对路径引用
   let prompt = skill.fullPrompt || skill.prompt || '';
   if (skill.dirPath) {
-    prompt = `[技能工作目录: ${skill.dirPath}]\n\n${prompt}`;
+    prompt = T('skill.skillPromptWorkdir', { path: skill.dirPath, prompt });
   }
   return {
     success: true,

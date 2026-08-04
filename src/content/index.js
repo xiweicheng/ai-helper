@@ -148,7 +148,7 @@ const HANDLERS = {
     if (msg.ref != null && !triggerSelector) {
       triggerSelector = getSelectorByRef(msg.ref);
       if (!triggerSelector) {
-        return { success: false, error: `无效的元素编号 ref=${msg.ref}，请先调用 query_elements` };
+        return { success: false, error: t('contentIndex.invalidRef', { ref: msg.ref }) };
       }
     }
     return selectDropdown(triggerSelector, msg.optionText, msg.optionSelector, msg.timeout);

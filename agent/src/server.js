@@ -842,7 +842,7 @@ export function startServer() {
         // 禁止设为 Agent 系统目录本身（防敏感文件暴露）
         const AGENT_DIR_PATH = join(homedir(), '.ai-helper-agent');
         if (resolvedWorkdir === AGENT_DIR_PATH) {
-          logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: '禁止设为 Agent 系统目录' });
+          logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: t('error.workdirIsSystemDir') });
           return jsonResponse(res, 403, { success: false, error: t('error.workdirIsSystemDir') });
         }
 

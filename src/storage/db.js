@@ -1,7 +1,22 @@
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
 
 // storage/db.js - IndexedDB 封装层
 // 提供 Promise 化的 IndexedDB 操作，支持 side panel 和 service worker 共享访问
+
+registerTranslations('zh', {
+  db: {
+    sessionLabel: '会话 {id}',
+    archivedLabel: '[归档] {label}',
+  },
+});
+
+registerTranslations('en', {
+  db: {
+    sessionLabel: 'Session {id}',
+    archivedLabel: '[Archived] {label}',
+  },
+});
 
 const DB_NAME = 'ai-helper-db';
 const DB_VERSION = 5;
@@ -466,7 +481,7 @@ export function searchActiveSessionsMessages(sessionId) {
     // 指定 sessionId 时使用 O(1) 主键查询，避免全量加载所有会话
     return getSession(sessionId).then((session) => {
       if (!session) return [];
-      const label = session.title || `会话 ${session.id?.slice(0, 8)}`;
+      const label = session.title || t('db.sessionLabel', { id: session.id?.slice(0, 8) });
       return (session.messageHistory || []).filter(msg => msg.content).map((msg, idx) => ({
         session: session.id,
         sessionLabel: label,
@@ -480,7 +495,7 @@ export function searchActiveSessionsMessages(sessionId) {
     const sessions = all;
     const results = [];
     sessions.forEach((session) => {
-      const label = session.title || `会话 ${session.id?.slice(0, 8)}`;
+      const label = session.title || t('db.sessionLabel', { id: session.id?.slice(0, 8) });
       (session.messageHistory || []).forEach((msg, idx) => {
         if (msg.content) {
           results.push({
@@ -505,7 +520,7 @@ export function getArchivedSessionsMessages() {
   return getAllArchivedSessions().then((archiveSessions) => {
     const results = [];
     archiveSessions.forEach((session) => {
-      const label = `[归档] ${session.title || `会话 ${session.id?.slice(0, 8)}`}`;
+      const label = t('db.archivedLabel', { label: session.title || t('db.sessionLabel', { id: session.id?.slice(0, 8) }) });
       (session.messages || []).forEach((msg, idx) => {
         if (msg.content) {
           results.push({

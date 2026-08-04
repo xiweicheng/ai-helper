@@ -3,6 +3,10 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { t as translate, parseAcceptLanguage } from '../i18n.js';
+
+const LANG = parseAcceptLanguage();
+const T = (key, params) => translate(LANG, key, params);
 
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const MCP_CONFIG_FILE = join(AGENT_DIR, 'mcp_servers.json');
@@ -100,7 +104,7 @@ export async function removeMcpServer(serverId) {
   const config = loadMcpConfig();
   const idx = config.servers.findIndex(s => s.id === serverId);
   if (idx < 0) {
-    return { success: false, error: `MCP Server "${serverId}" 不存在` };
+    return { success: false, error: T('mcp.serverNotFound', { name: serverId }) };
   }
   config.servers.splice(idx, 1);
   await saveMcpConfig(config);
@@ -114,7 +118,7 @@ export async function toggleMcpServer(serverId, enabled) {
   const config = loadMcpConfig();
   const server = config.servers.find(s => s.id === serverId);
   if (!server) {
-    return { success: false, error: `MCP Server "${serverId}" 不存在` };
+    return { success: false, error: T('mcp.serverNotFound', { name: serverId }) };
   }
   server.enabled = enabled;
   await saveMcpConfig(config);

@@ -149,8 +149,8 @@ const DEFAULT_MEMORY_DATA = {
 export async function readMemoryFile() {
   const result = await AgentClient.readFile(MEMORY_FILE_PATH);
   if (!result.success) {
-    // 文件不存在时返回空数据结构
-    if (result.error && (result.error.includes('ENOENT') || result.error.includes('not found') || result.error.includes('不存在'))) {
+    // 文件不存在时返回空数据结构（兼容系统 ENOENT 与 agent 端双语 fileNotFound 文案）
+    if (result.error && (result.error.includes('ENOENT') || result.error.includes('File does not exist') || result.error.includes('文件不存在'))) {
       return { success: true, data: { ...DEFAULT_MEMORY_DATA, updatedAt: new Date().toISOString() } };
     }
     return { success: false, error: result.error };

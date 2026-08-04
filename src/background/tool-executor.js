@@ -171,6 +171,18 @@ registerTranslations('zh', {
     engineLabelRipgrep: ' (引擎: ripgrep)',
     fileListLimitHint: '\n\n... (仅显示前 {count} 条)',
     matchListLimitHint: '\n\n... (仅显示前 {count} 条)',
+    additionalParamsDesc: '其他 {count} 个参数已省略: {names}',
+    captureDownloadAction: '操作模式：download=下载截图',
+    captureDownloadDesc: '页面截图并下载到本地',
+    planTaskDesc: '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。',
+    requiredToolsDesc: '该子任务所需的工具ID列表（必填）。可用工具: {tools}。根据子任务描述选择所需工具，填 [] 表示继承全部工具。',
+    screenshotBasicInfo: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。',
+    visionPrompt: '请详细描述这张网页截图的内容，包括：\n1. 页面整体布局和主要区块\n2. 可见的文本内容（标题、段落、按钮文字等）\n3. UI 元素（导航栏、按钮、输入框、表格、图片等）\n4. 页面的视觉状态和风格\n5. 如有明显错误、异常或问题，请指出\n\n截图来源: {title} ({url})',
+    screenshotAnalysisFailed: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别分析失败（API 返回 {status}），请检查图片识别 API 配置。',
+    screenshotAnalysisEmpty: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别返回结果为空，请重试。',
+    screenshotAnalysisResult: '页面截图分析结果：\n\n**页面**: {title}\n**地址**: {url}\n\n{analysis}',
+    screenshotAnalysisTimeout: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。',
+    screenshotAnalysisError: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别分析失败: {error}',
   },
 });
 registerTranslations('en', {
@@ -331,6 +343,18 @@ registerTranslations('en', {
     engineLabelRipgrep: ' (engine: ripgrep)',
     fileListLimitHint: '\n\n... (showing first {count} only)',
     matchListLimitHint: '\n\n... (showing first {count} only)',
+    additionalParamsDesc: '{count} additional parameters omitted: {names}',
+    captureDownloadAction: 'Action mode: download=download screenshot',
+    captureDownloadDesc: 'Take a page screenshot and download it locally',
+    planTaskDesc: 'Plan and decompose complex tasks into subtasks. Important: you MUST specify the tool ID list for the requiredTools field of every subtask; subtasks only inherit the tools specified here.',
+    requiredToolsDesc: 'Tool ID list required for this subtask (required). Available tools: {tools}. Select tools based on the subtask description, use [] to inherit all tools.',
+    screenshotBasicInfo: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nPlease analyze based on the page URL and title. To enable image recognition analysis, configure the image recognition API in the settings page.',
+    visionPrompt: 'Please describe this webpage screenshot in detail, including:\n1. Overall page layout and main sections\n2. Visible text content (headings, paragraphs, button text, etc.)\n3. UI elements (navigation bar, buttons, input fields, tables, images, etc.)\n4. Visual state and style of the page\n5. Point out any obvious errors, anomalies, or issues\n\nScreenshot source: {title} ({url})',
+    screenshotAnalysisFailed: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition analysis failed (API returned {status}), please check the image recognition API configuration.',
+    screenshotAnalysisEmpty: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition returned an empty result, please retry.',
+    screenshotAnalysisResult: 'Page screenshot analysis result:\n\n**Page**: {title}\n**URL**: {url}\n\n{analysis}',
+    screenshotAnalysisTimeout: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition analysis timed out (60 seconds), please check if the image recognition API is available or try taking a new screenshot.',
+    screenshotAnalysisError: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition analysis failed: {error}',
   },
 });
 
@@ -430,7 +454,7 @@ function compressMcpSchema(schema) {
       kept.forEach(k => { newProps[k] = rest.properties[k]; });
       newProps.additionalParams = {
         type: 'object',
-        description: `其他 ${truncated.length} 个参数已省略: ${truncated.join(', ').slice(0, 100)}`
+        description: t('toolExec.additionalParamsDesc', { count: truncated.length, names: truncated.join(', ').slice(0, 100) })
       };
       rest.properties = newProps;
     }
@@ -782,9 +806,9 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
             if (!visionEnabled) {
               // 关闭图片识别时，仅保留 download 模式
               actionProp.enum = ['download'];
-              actionProp.description = '操作模式：download=下载截图';
+              actionProp.description = t('toolExec.captureDownloadAction');
               actionProp.default = 'download';
-              cloned.function.description = '页面截图并下载到本地';
+              cloned.function.description = t('toolExec.captureDownloadDesc');
             }
           }
 
@@ -802,7 +826,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
               subtaskItemProps.requiredTools = {
                 type: 'array',
                 items: { type: 'string' },
-                description: `该子任务所需的工具ID列表（必填）。可用工具: ${finalToolIds.join(', ')}。根据子任务描述选择所需工具，填 [] 表示继承全部工具。`
+                description: t('toolExec.requiredToolsDesc', { tools: finalToolIds.join(', ') })
               };
 
               // 3. 将 requiredTools 加入 required 数组，强制大模型必须填写
@@ -1004,19 +1028,12 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
 
   if (!apiBase || !apiKey) {
     console.log('[Background] image recognition API not configured,returnscreenshotbasicinfo');
-    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。`;
+    return t('toolExec.screenshotBasicInfo', { title: pageTitle, url: pageUrl });
   }
 
   console.log('[Background] calling image recognition API to analyze screenshot,model:', model, 'endpoint:', apiBase, 'streaming:', useStream);
 
-  const visionPrompt = `请详细描述这张网页截图的内容，包括：
-1. 页面整体布局和主要区块
-2. 可见的文本内容（标题、段落、按钮文字等）
-3. UI 元素（导航栏、按钮、输入框、表格、图片等）
-4. 页面的视觉状态和风格
-5. 如有明显错误、异常或问题，请指出
-
-截图来源: ${pageTitle} (${pageUrl})`;
+  const visionPrompt = t('toolExec.visionPrompt', { title: pageTitle, url: pageUrl });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
@@ -1082,7 +1099,7 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
     if (err.name === 'AbortError') {
       return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。`;
     }
-    return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别分析失败: ${err.message}`;
+    return t('toolExec.screenshotAnalysisError', { title: pageTitle, url: pageUrl, error: err.message });
   }
 }
 

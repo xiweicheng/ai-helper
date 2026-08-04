@@ -10,6 +10,7 @@ registerTranslations('zh', {
   pageTools: {
     noSelection: '当前没有选中的内容',
     tableNotFound: '未找到匹配选择器的表格: {selector}',
+    emptyTable: '表格为空',
     copiedToClipboard: '已复制到剪贴板',
     copiedToClipboardFallback: '已复制到剪贴板（降级方案）',
     elementNotFound: '未找到元素: {selector}',
@@ -25,6 +26,7 @@ registerTranslations('en', {
   pageTools: {
     noSelection: 'No content selected',
     tableNotFound: 'No table found matching selector: {selector}',
+    emptyTable: 'Table is empty',
     copiedToClipboard: 'Copied to clipboard',
     copiedToClipboardFallback: 'Copied to clipboard (fallback method)',
     elementNotFound: 'Element not found: {selector}',
@@ -112,7 +114,7 @@ export function getSelectedContent(format = 'text') {
   try {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-      return { success: false, error: '当前没有选中的内容' };
+      return { success: false, error: t('pageTools.noSelection') };
     }
 
     const result = {
@@ -153,7 +155,7 @@ export function extractTable(selector = 'table', includeHeaders = true, format =
   try {
     const table = deepQuerySelector(selector);
     if (!table) {
-      return { success: false, error: `未找到匹配选择器的表格: ${selector}` };
+      return { success: false, error: t('pageTools.tableNotFound', { selector }) };
     }
 
     const rows = Array.from(table.querySelectorAll('tr'));
@@ -169,7 +171,7 @@ export function extractTable(selector = 'table', includeHeaders = true, format =
 
     if (format === 'markdown') {
       if (data.length === 0) {
-        return { success: true, content: '表格为空' };
+        return { success: true, content: t('pageTools.emptyTable') };
       }
       const header = `| ${data[0].join(' | ')} |`;
       const separator = `| ${data[0].map(() => '---').join(' | ')} |`;
@@ -200,7 +202,7 @@ export async function copyToClipboard(text) {
       textarea.select();
       document.execCommand('copy');
       document.body.removeChild(textarea);
-      return { success: true, message: '已复制到剪贴板（降级方案）' };
+      return { success: true, message: t('pageTools.copiedToClipboardFallback') };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -226,7 +228,7 @@ export async function hoverElement(selector) {
   try {
     const element = deepQuerySelector(selector);
     if (!element) {
-      return { success: false, error: `未找到元素: ${selector}` };
+      return { success: false, error: t('pageTools.elementNotFound', { selector }) };
     }
 
     const sigBefore = getDomSignature();
@@ -235,9 +237,11 @@ export async function hoverElement(selector) {
     const wait = await autoWaitAfterAction(sigBefore, 300, 2000);
 
     const changeHint = wait.changed
-      ? `（检测到${wait.urlChanged ? '导航' : 'DOM'}变化，已等待 ${wait.waitedMs}ms）`
+      ? (wait.urlChanged
+          ? t('pageTools.navChangeHint', { ms: wait.waitedMs })
+          : t('pageTools.domChangeHint', { ms: wait.waitedMs }))
       : '';
-    return { success: true, message: `已在元素上触发悬停效果: ${selector}${changeHint}`, ...wait };
+    return { success: true, message: t('pageTools.hoverTriggered', { selector, hint: changeHint }), ...wait };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -249,7 +253,7 @@ export async function hoverElement(selector) {
 export function highlightText(text, color = 'yellow') {
   try {
     if (!text) {
-      return { success: false, error: '未提供要高亮的文本' };
+      return { success: false, error: t('pageTools.noHighlightText') };
     }
 
     // 移除之前的高亮

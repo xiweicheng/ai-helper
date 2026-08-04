@@ -32,6 +32,13 @@ registerTranslations('zh', {
     userCancelled: '用户取消',
     skippedAfterPlanTask: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
     toolError: '错误: {message}',
+    loopTimeout: 'ReAct 循环总超时 ({timeout}ms，不含澄清等待时间)',
+    apiInvalidJson: 'API 响应不是有效的 JSON (HTTP {status}): {error}。响应前100字符: {preview}',
+    infiniteLoopDetected: '连续{count}次执行完全相同的工具调用（入参和返参均相同），疑似陷入死循环，已自动终止。请更换策略或缩小任务范围后重试。',
+    maxIterationsExceeded: 'ReAct 循环超过最大迭代次数 ({maxIterations})',
+    toolTimeout: '工具执行超时 ({timeout}ms): {tool}',
+    toolAborted: '工具执行已被用户终止: {tool}',
+    jsonParseFailed: 'JSON 解析失败 (HTTP {status}): {error}。响应前100字符: {preview}',
   },
 });
 
@@ -54,6 +61,13 @@ registerTranslations('en', {
     subtaskFailed: 'Subtask {index}: {name} (failed)',
     skippedAfterPlanTask: 'Skipped (plan_task has decomposed subtasks, other tool calls in this round are no longer executed)',
     toolError: 'Error: {message}',
+    loopTimeout: 'ReAct loop total timeout ({timeout}ms, excluding clarification wait time)',
+    apiInvalidJson: 'API response is not valid JSON (HTTP {status}): {error}. First 100 chars: {preview}',
+    infiniteLoopDetected: 'Executed the exact same tool call {count} times in a row (both inputs and outputs identical), likely stuck in an infinite loop. Automatically terminated. Please change strategy or narrow the task scope and retry.',
+    maxIterationsExceeded: 'ReAct loop exceeded maximum iterations ({maxIterations})',
+    toolTimeout: 'Tool execution timed out ({timeout}ms): {tool}',
+    toolAborted: 'Tool execution was aborted by user: {tool}',
+    jsonParseFailed: 'JSON parse failed (HTTP {status}): {error}. First 100 chars: {preview}',
   },
 });
 import { summarizeRound } from './context-summarizer.js';
@@ -781,7 +795,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const elapsedTime = Date.now() - loopStartTime;
       const adjustedTimeout = loopTimeout + totalPausedDuration;
       if (elapsedTime > adjustedTimeout) {
-        throw createErrorWithLog(`ReAct 循环总超时 (${loopTimeout}ms，不含澄清等待时间)`, executionLog);
+        throw createErrorWithLog(t('reactLoop.loopTimeout', { timeout: loopTimeout }), executionLog);
       }
       
       iteration++;
@@ -971,7 +985,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           } catch (parseError) {
             logger.error('[Background] JSON parse failed:', parseError);
             logger.error('[Background] originalresponse:', responseText);
-            throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+            throw new Error(t('reactLoop.apiInvalidJson', { status: fetchResponse.status, error: parseError.message, preview: responseText.substring(0, 100) }));
           }
 
           // 非流式模式下，规范化 tool_calls 的 ID（不发送 STREAM_TOOL_CALL，前端不创建流式元素）
@@ -1766,7 +1780,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
           if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
             throw createErrorWithLog(
-              `连续${repeatedCallCount}次执行完全相同的工具调用（入参和返参均相同），疑似陷入死循环，已自动终止。请更换策略或缩小任务范围后重试。`,
+              t('reactLoop.infiniteLoopDetected', { count: repeatedCallCount }),
               executionLog
             );
           }
@@ -1834,7 +1848,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       return { content, executionLog, reasoningContent };
     }
 
-    const error = new Error(`ReAct 循环超过最大迭代次数 (${maxIterations})`);
+    const error = new Error(t('reactLoop.maxIterationsExceeded', { maxIterations }));
     error.executionLog = executionLog;
     throw error;
   } catch (error) {
@@ -2426,13 +2440,13 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
   
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      reject(new Error(`工具执行超时 (${effectiveTimeout}ms): ${toolName}`));
+      reject(new Error(t('reactLoop.toolTimeout', { timeout: effectiveTimeout, tool: toolName })));
     }, effectiveTimeout);
 
     // 用户手动终止等待
     const onAbort = () => {
       clearTimeout(timeoutId);
-      reject(new Error(`工具执行已被用户终止: ${toolName}`));
+      reject(new Error(t('reactLoop.toolAborted', { tool: toolName })));
     };
 
     if (toolAbortController && !toolAbortController.signal.aborted) {
@@ -2544,7 +2558,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
         return { content, usage: data.usage || null };
       } catch (parseErr) {
         logger.error('[Background] JSON parse failed,originalresponse:', responseText.substring(0, 500));
-        throw new Error(`JSON 解析失败 (HTTP ${response.status}): ${parseErr.message}。响应前100字符: ${responseText.substring(0, 100)}`);
+        throw new Error(t('reactLoop.jsonParseFailed', { status: response.status, error: parseErr.message, preview: responseText.substring(0, 100) }));
       }
     })
     .catch(error => {

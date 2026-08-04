@@ -11,6 +11,7 @@ registerTranslations('zh', {
     targetElementNotFound: '未找到目标元素',
     elementNotFound: '未找到匹配选择器的元素: {selector}',
     searchKeywordRequired: '需要提供搜索关键词',
+    contentTruncated: '内容已截断',
   },
 });
 
@@ -20,6 +21,7 @@ registerTranslations('en', {
     targetElementNotFound: 'Target element not found',
     elementNotFound: 'No element found matching selector: {selector}',
     searchKeywordRequired: 'Search keyword is required',
+    contentTruncated: 'Content truncated',
   },
 });
 
@@ -336,7 +338,7 @@ export function extractImages(options = {}) {
       success: true,
       total: images.length,
       images: images.slice(0, maxResults),
-      message: download ? `已开始下载 ${Math.min(images.length, 10)} 张图片` : ''
+      message: download ? t('pageExtract.startedDownloadingImages', { count: Math.min(images.length, 10) }) : ''
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -350,7 +352,7 @@ export function pageToMarkdown(selector = null, includeImages = true, includeLin
   try {
     const element = selector ? document.querySelector(selector) : document.body;
     if (!element) {
-      return { success: false, error: '未找到目标元素' };
+      return { success: false, error: t('pageExtract.targetElementNotFound') };
     }
 
     let markdown = '';
@@ -453,7 +455,7 @@ export function pageToMarkdown(selector = null, includeImages = true, includeLin
     markdown = markdown.replace(/\n{3,}/g, '\n\n').trim();
 
     if (markdown.length > maxLength) {
-      markdown = markdown.substring(0, maxLength) + '...\n\n*内容已截断*';
+      markdown = markdown.substring(0, maxLength) + '...\n\n*' + t('pageExtract.contentTruncated') + '*';
     }
 
     return {
@@ -670,7 +672,7 @@ export function searchInPage(options = {}) {
     const searchPattern = query || pattern;
 
     if (!searchPattern) {
-      return { success: false, error: '需要提供搜索关键词' };
+      return { success: false, error: t('pageExtract.searchKeywordRequired') };
     }
 
     if (mode === 'plain') {

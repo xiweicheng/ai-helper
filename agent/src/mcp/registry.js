@@ -2,6 +2,10 @@
 // 管理所有 MCP Client 实例，提供统一的工具发现和调用接口
 import { McpClient } from './client.js';
 import { loadMcpConfig, addMcpServer, removeMcpServer, toggleMcpServer } from './mcp-config.js';
+import { t as translate, parseAcceptLanguage } from '../i18n.js';
+
+const LANG = parseAcceptLanguage();
+const T = (key, params) => translate(LANG, key, params);
 
 // 已连接的 MCP Client 映射表: serverId → McpClient
 const clients = new Map();
@@ -103,10 +107,10 @@ export function getMcpTools(serverId) {
 export async function callMcpTool(serverId, toolName, args) {
   const client = clients.get(serverId);
   if (!client) {
-    return { success: false, error: `MCP Server "${serverId}" 不存在` };
+    return { success: false, error: T('mcp.serverNotFound', { name: serverId }) };
   }
   if (!client.connected) {
-    return { success: false, error: `MCP Server "${serverId}" 未连接` };
+    return { success: false, error: T('mcp.serverNotConnected', { name: serverId }) };
   }
 
   console.log(`[MCP Registry] Calling tool: ${serverId}/${toolName}`, args);
@@ -121,7 +125,7 @@ export async function connectMcpServer(serverId) {
   const config = loadMcpConfig();
   const server = config.servers.find(s => s.id === serverId);
   if (!server) {
-    return { success: false, error: `MCP Server "${serverId}" 不存在` };
+    return { success: false, error: T('mcp.serverNotFound', { name: serverId }) };
   }
 
   // 先断开已有连接
