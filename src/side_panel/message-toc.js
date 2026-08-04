@@ -32,7 +32,7 @@ export function initMessageToc() {
   document.addEventListener('mouseover', handleMouseOver, true);
   document.addEventListener('mouseout', handleMouseOut, true);
   
-  logger.debug('[SidePanel] 消息目录功能已初始化');
+  logger.debug('[SidePanel] messagedirectory featureinitializing');
 }
 
 /**

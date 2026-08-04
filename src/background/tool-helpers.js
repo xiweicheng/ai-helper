@@ -197,12 +197,12 @@ export function tryParseToolArgs(argsStr) {
   try {
     return JSON.parse(trimmed);
   } catch {
-    logger.warn('[Background] 工具参数直接解析失败，尝试修复...');
+    logger.warn('[Background] tool parameterdirectparse failed,attemptrepair...');
   }
 
   // 安全检查：输入过长（>100KB）跳过正则修复，避免 ReDoS
   if (trimmed.length > 102400) {
-    logger.warn('[Background] 工具参数过长（' + trimmed.length + ' 字符），跳过正则修复');
+    logger.warn('[Background] tool parameteroverlong (' + trimmed.length + ' chars),skip regexrepair');
     return null;
   }
 
@@ -246,7 +246,7 @@ export function tryParseToolArgs(argsStr) {
   } while (fixed !== prevFixed && fixIterations < MAX_FIX_ITERATIONS);
 
   if (fixIterations >= MAX_FIX_ITERATIONS && fixed !== prevFixed) {
-    logger.warn('[Background] 工具参数修复迭代达到上限（' + MAX_FIX_ITERATIONS + '次），停止修复');
+    logger.warn('[Background] tool parameterrepair iterationreach to limit (' + MAX_FIX_ITERATIONS + ' times),stop repair');
     return null;
   }
 
@@ -265,10 +265,10 @@ export function tryParseToolArgs(argsStr) {
   // 阶段 2 最终尝试
   try {
     const result = JSON.parse(fixed);
-    logger.debug('[Background] 工具参数修复解析成功:', result);
+    logger.debug('[Background] tool parameterrepairparse successful:', result);
     return result;
   } catch (e) {
-    logger.error('[Background] 工具参数修复解析也失败:', e, '修复后字符串:', fixed.substring(0, 200));
+    logger.error('[Background] tool parameterrepairparse also failed:', e, 'after repaircharsstring:', fixed.substring(0, 200));
     return null;
   }
 }
@@ -303,13 +303,13 @@ export function normalizeToolResult(result, toolCallId) {
         result.content = JSON.stringify(rest);
         result.metadata = rest;
       }
-      logger.debug('[Background] 工具返回格式不标准（缺少 content 字段），已自动补充');
+      logger.debug('[Background] toolreturnformatnon-standard (missing content field),auto-filled');
     }
     if (!result.tool_call_id) result.tool_call_id = toolCallId;
     return result;
   }
   if (typeof result === 'string') {
-    logger.warn('[Background] 工具返回了纯字符串而非标准对象，请改用 makeResult()');
+    logger.warn('[Background] toolreturnpurecharsstring but non-standardobject,use instead with  makeResult()');
     return { success: true, content: result, tool_call_id: toolCallId };
   }
   return { success: false, error: t('toolHelpers.unknownResultFormat'), content: '', tool_call_id: toolCallId };
@@ -331,7 +331,7 @@ export async function recordToolStats(toolName, result, duration) {
     toolStats[toolName] = entry;
     chrome.storage.local.set({ [toolStatsKey]: toolStats });
   } catch (e) {
-    logger.warn('[Background] 记录工具统计失败:', e);
+    logger.warn('[Background] recordtoolstats failed:', e);
   }
 }
 
@@ -358,7 +358,7 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
     chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
         const errorMsg = chrome.runtime.lastError.message;
-        logger.warn('[Background] 发送消息到 content script 失败:', errorMsg);
+        logger.warn('[Background] sendmessage to  content script failed:', errorMsg);
 
         chrome.tabs.get(tabId, (tab) => {
           if (chrome.runtime.lastError || !tab) {
@@ -372,7 +372,7 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             return;
           }
 
-          logger.debug('[Background] 尝试自动注入 content script 到 Tab:', tabId);
+          logger.debug('[Background] attempt autoinject content script  to  Tab:', tabId);
           const manifest = chrome.runtime.getManifest();
           const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
           const contentFileIdx = contentJsFiles.findIndex(f => /content/i.test(f) && f.endsWith('.js'));
@@ -401,11 +401,11 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             args: [contentUrl]
           })
             .then(() => {
-              logger.debug('[Background] Content script 注入成功, 重试发送消息');
+              logger.debug('[Background] Content script inject successful, retrysendmessage');
               setTimeout(() => {
                 chrome.tabs.sendMessage(tabId, message, (retryResponse) => {
                   if (chrome.runtime.lastError) {
-                    logger.warn('[Background] 重试发送消息也失败:', chrome.runtime.lastError.message);
+                    logger.warn('[Background] retrysendmessage also failed:', chrome.runtime.lastError.message);
                     resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
                   } else {
                     resolve({ ...retryResponse, tool_call_id: toolCallId });
@@ -414,7 +414,7 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
               }, 500);
             })
             .catch(err => {
-              logger.error('[Background] 注入 content script 失败:', err);
+              logger.error('[Background] inject content script failed:', err);
               resolve({ success: false, error: t('toolHelpers.injectContentScriptFailed', { message: err.message }), tool_call_id: toolCallId });
             });
         });

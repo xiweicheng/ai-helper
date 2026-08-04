@@ -11,9 +11,9 @@ export async function loadBookmarks() {
   try {
     const all = await getAllBookmarks();
     state.bookmarks = all || [];
-    logger.debug('[Bookmark] 已加载收藏:', state.bookmarks.length, '条');
+    logger.debug('[Bookmark] loadedbookmark:', state.bookmarks.length, '');
   } catch (e) {
-    logger.error('[Bookmark] 加载收藏失败:', e);
+    logger.error('[Bookmark] load bookmarks failed:', e);
     state.bookmarks = [];
   }
 }
@@ -56,11 +56,11 @@ export async function addBookmark(sessionId, messageId, content, sessionTitle) {
     const ok = await putBookmark(bookmark);
     if (ok) {
       state.bookmarks.push(bookmark);
-      logger.debug('[Bookmark] 收藏成功:', bookmark.id);
+      logger.debug('[Bookmark] bookmark successful:', bookmark.id);
       return bookmark;
     }
   } catch (e) {
-    logger.error('[Bookmark] 收藏失败:', e);
+    logger.error('[Bookmark] bookmark failed:', e);
   }
   return null;
 }
@@ -79,11 +79,11 @@ export async function removeBookmark(sessionId, messageId) {
     const ok = await deleteBookmark(existing.id);
     if (ok) {
       state.bookmarks = state.bookmarks.filter(b => b.id !== existing.id);
-      logger.debug('[Bookmark] 取消收藏:', existing.id);
+      logger.debug('[Bookmark] cancelbookmark:', existing.id);
       return true;
     }
   } catch (e) {
-    logger.error('[Bookmark] 取消收藏失败:', e);
+    logger.error('[Bookmark] cancelbookmark failed:', e);
   }
   return false;
 }
@@ -99,7 +99,7 @@ export async function removeBookmarkById(bookmarkId) {
       return true;
     }
   } catch (e) {
-    logger.error('[Bookmark] 取消收藏失败:', e);
+    logger.error('[Bookmark] cancelbookmark failed:', e);
   }
   return false;
 }
@@ -119,7 +119,7 @@ export async function toggleBookmarkPin(bookmarkId, pinned) {
       return true;
     }
   } catch (e) {
-    logger.error('[Bookmark] 置顶操作失败:', e);
+    logger.error('[Bookmark] pin operation failed:', e);
   }
   return false;
 }
@@ -154,7 +154,7 @@ export async function updateBookmarkSessionTitle(sessionId, newTitle) {
     try {
       await putBookmark(bm);
     } catch (e) {
-      logger.warn('[Bookmark] 更新会话标题失败:', e);
+      logger.warn('[Bookmark] updatesessiontargetquestion failed:', e);
     }
   }
 }

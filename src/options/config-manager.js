@@ -230,7 +230,7 @@ export function saveCustomModels() {
     });
   });
   chrome.storage.local.set({ customModels, deletedPresetModels }, () => {
-    logger.debug('[Options] 自定义模型已保存:', customModels, '已删除预设:', deletedPresetModels);
+    logger.debug('[Options] custommodel saved:', customModels, 'deletedpreset:', deletedPresetModels);
   });
 }
 
@@ -359,7 +359,7 @@ export function loadCustomModels(callback) {
       // 如果存在旧格式数据，自动迁移为新格式
       if (needsMigration) {
         saveCustomModels();
-        logger.debug('[Options] 自定义模型已自动迁移为新格式');
+        logger.debug('[Options] custommodelauto-migratedisnewformat');
       }
       
       // 调用回调函数
@@ -527,7 +527,7 @@ export function saveImageModels() {
     });
   });
   chrome.storage.local.set({ imageModels }, () => {
-    logger.debug('[Options] 图片识别模型已保存:', imageModels);
+    logger.debug('[Options] image recognitionmodel saved:', imageModels);
   });
 }
 
@@ -595,7 +595,7 @@ export function loadImageModels(callback) {
     // 如果存在旧格式数据，自动迁移
     if (needsMigration) {
       saveImageModels();
-      logger.debug('[Options] 图片识别模型已自动迁移为新格式');
+      logger.debug('[Options] image recognitionmodelauto-migratedisnewformat');
     }
 
     if (typeof callback === 'function') {
@@ -738,7 +738,7 @@ export function saveApiBases() {
     customApiBases: customBases,
     deletedPresetApiBases
   }, () => {
-    logger.debug('[Options] API Base URL 列表已保存:', customBases, '已删除预设:', deletedPresetApiBases);
+    logger.debug('[Options] API Base URL  column table saved:', customBases, 'deletedpreset:', deletedPresetApiBases);
   });
 }
 
@@ -901,7 +901,7 @@ export function saveImageApiBases() {
     customImageApiBases: customBases,
     deletedPresetImageApiBases
   }, () => {
-    logger.debug('[Options] 图片 API Base URL 列表已保存:', customBases);
+    logger.debug('[Options] image API Base URL  column table saved:', customBases);
   });
 }
 

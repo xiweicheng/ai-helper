@@ -116,7 +116,7 @@ export async function showExportDialog() {
       updateSelectedCount();
     }
   } catch (err) {
-    logger.error('[SidePanel] 加载会话列表失败:', err);
+    logger.error('[SidePanel] loadsession column table failed:', err);
     listEl.innerHTML = `<div class="export-sessions-empty">${t('exportImport.loadFailed')}</div>`;
   }
 
@@ -209,10 +209,10 @@ export async function performExport() {
     URL.revokeObjectURL(url);
 
     hideExportDialog();
-    logger.debug('[SidePanel] 会话已导出:', fileName, '共', count, '个会话');
+    logger.debug('[SidePanel] sessionexported:', fileName, 'total ', count, 'session');
     showToast(t('exportImport.exportSuccess', { count }), 'success');
   } catch (err) {
-    logger.error('[SidePanel] 导出失败:', err);
+    logger.error('[SidePanel] export failed:', err);
     showToast(t('exportImport.exportFailed', { message: err.message }), 'error');
   }
 }
@@ -293,10 +293,10 @@ export async function handleImportFile(file) {
     // 刷新会话标签栏
     await renderSessionTabs();
     
-    logger.debug('[SidePanel] 导入完成:', createdSessions.length, '个会话');
+    logger.debug('[SidePanel] import complete:', createdSessions.length, 'session');
     showToast(t('exportImport.importSuccess', { count: createdSessions.length }), 'success');
   } catch (err) {
-    logger.error('[SidePanel] 导入失败:', err);
+    logger.error('[SidePanel] import failed:', err);
     showToast(t('exportImport.importFailed', { message: err.message }), 'error');
   }
 }

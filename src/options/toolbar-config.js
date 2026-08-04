@@ -160,7 +160,7 @@ export function saveToolbarConfig() {
       toolbarIconOnly: iconOnly,
       enableSelectionToolbar: enableSelectionToolbar
     }, () => {
-      logger.debug('[Options] 工具栏配置已保存');
+      logger.debug('[Options] toolbarconfiguration saved');
     });
   });
 }
@@ -188,7 +188,7 @@ export function deleteTool(tools, index) {
   const tool = sorted[index];
   
   if (tool.builtin) {
-    logger.warn('[Options] 不能删除内置工具');
+    logger.warn('[Options] cannot deletebuilt-in tool');
     return tools;
   }
   

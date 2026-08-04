@@ -240,7 +240,7 @@ export async function processFile(file, index) {
         renderFilePreviews();
         return;
       } catch (agentErr) {
-        logger.warn('[FileExtract] Agent 上传失败，降级到浏览器端提取:', agentErr.message);
+        logger.warn('[FileExtract] Agent upload failed,downgrade to browserside extraction:', agentErr.message);
       }
     }
 
@@ -255,7 +255,7 @@ export async function processFile(file, index) {
     fileEntry.text = await extractFileContent(file);
     fileEntry.status = 'done';
   } catch (err) {
-    logger.error('[FileExtract] 文件提取失败:', file.name, err);
+    logger.error('[FileExtract] file extract failed:', file.name, err);
     fileEntry.status = 'error';
     fileEntry.error = err.message;
   }

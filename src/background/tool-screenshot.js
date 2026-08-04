@@ -15,9 +15,9 @@ export function triggerScreenshotDownload(dataUrl, format) {
     saveAs: false
   }, (downloadId) => {
     if (chrome.runtime.lastError) {
-      logger.error('[Background] 下载失败:', chrome.runtime.lastError.message);
+      logger.error('[Background] download failed:', chrome.runtime.lastError.message);
     } else {
-      logger.debug('[Background] 截图已触发下载，ID:', downloadId, '文件名:', fileName);
+      logger.debug('[Background] screenshottriggerdownload,ID:', downloadId, 'filename:', fileName);
     }
   });
 }

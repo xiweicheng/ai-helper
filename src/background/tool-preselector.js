@@ -118,7 +118,7 @@ function extractToolListFromResponse(text) {
     const inner = fencedMatch[1].trim();
     const result = tryParseJson(inner);
     if (result) {
-      logger.debug('[ToolPreselector] 从代码块中提取 JSON 成功');
+      logger.debug('[ToolPreselector]  from code blockmentionedfetch JSON successful');
       return result;
     }
   }
@@ -145,7 +145,7 @@ function extractToolListFromResponse(text) {
       const jsonCandidate = text.substring(firstBracket, lastBracket + 1);
       const result = tryParseJson(jsonCandidate);
       if (result) {
-        logger.debug('[ToolPreselector] 从文本中提取 JSON 数组成功');
+        logger.debug('[ToolPreselector] from textmentionedfetch JSON group successful');
         return result;
       }
     }
@@ -157,7 +157,7 @@ function extractToolListFromResponse(text) {
     for (const candidate of arrayMatches) {
       const result = tryParseJson(candidate);
       if (result) {
-        logger.debug('[ToolPreselector] 通过正则提取 JSON 数组成功');
+        logger.debug('[ToolPreselector] via regexmentionedfetch JSON group successful');
         return result;
       }
     }
@@ -250,20 +250,20 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
   // 如果工具数量未超过阈值，不需要筛选
   if (totalCount <= preselectMinToolCount) {
-    logger.debug(`[ToolPreselector] 工具数量 ${totalCount} <= ${preselectMinToolCount}，跳过预筛选`);
+    logger.debug(`[ToolPreselector] tool count  count  ${totalCount} <= ${preselectMinToolCount},skip pre-filter`);
     return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'skip', params: { reason: t('preselector.reasonFewTools'), toolCount: totalCount } }, duration: 1 })] };
   }
 
   const userQuestion = extractLastUserQuestion(messages);
   if (!userQuestion) {
-    logger.warn('[ToolPreselector] 无法提取用户问题，使用全量工具');
+    logger.warn('[ToolPreselector] cannot extractuseraskquestion,using alltool');
     return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonExtractFailed') })] };
   }
 
   const historyContext = extractHistoryContext(messages);
   const systemPrompt = buildPreselectPrompt(tools);
 
-  logger.debug(`[ToolPreselector] 开始预筛选，全量工具: ${totalCount} 个，携带历史消息: ${historyContext.length} 条`);
+  logger.debug(`[ToolPreselector] start pre-filter,full count tool: ${totalCount} ,with historymessage: ${historyContext.length} `);
 
   const startTime = Date.now();
 
@@ -297,14 +297,14 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     const duration = Date.now() - startTime;
 
     if (!response.ok) {
-      logger.warn('[ToolPreselector] API 请求失败，使用全量工具');
+      logger.warn('[ToolPreselector] API request failed,using alltool');
       return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonApiFailed', { status: response.status }), duration })] };
     }
 
     const data = await response.json();
     const rawContent = (data.choices?.[0]?.message?.content || '').trim();
 
-    logger.debug('[ToolPreselector] 大模型返回:', rawContent);
+    logger.debug('[ToolPreselector] largemodelreturn:', rawContent);
 
     // 健壮的 JSON 提取，支持多种格式
     const extractedJson = extractToolListFromResponse(rawContent);
@@ -313,12 +313,12 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
       const selectedNames = extractedJson;
 
       if (!Array.isArray(selectedNames)) {
-        logger.warn('[ToolPreselector] 提取的结果不是数组，当作直接回答');
+        logger.warn('[ToolPreselector] mentionedfetch resultis not an array,treated as directreplyanswer');
         return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
       }
 
       if (selectedNames.length === 0) {
-        logger.warn('[ToolPreselector] 返回空工具数组，使用全量工具');
+        logger.warn('[ToolPreselector] returned empty toolgroup,using alltool');
         return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: t('preselector.reasonEmptyResult') } }, duration })] };
       }
 
@@ -336,18 +336,18 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
             const tool = tools.find(t => t.function.name === toolName);
             if (tool) {
               selectedTools.push(tool);
-              logger.debug(`[ToolPreselector] 兜底追加原型工具: ${toolName}`);
+              logger.debug(`[ToolPreselector] fallback appendprototypetool: ${toolName}`);
             }
           }
         }
       }
 
       if (selectedTools.length === 0) {
-        logger.warn('[ToolPreselector] 筛选后工具为空，使用全量工具');
+        logger.warn('[ToolPreselector] filter after toolempty,using alltool');
         return { type: 'tools', tools, executionLog: [createEntry('success', { action: { name: 'all_tools', params: { reason: t('preselector.reasonNoMatch') } }, duration })] };
       }
 
-      logger.debug(`[ToolPreselector] 预筛选完成: ${totalCount} → ${selectedTools.length} 个工具`,
+      logger.debug(`[ToolPreselector] pre-filter complete: ${totalCount} → ${selectedTools.length} tool`,
         selectedTools.map(t => t.function.name));
 
       return {
@@ -366,11 +366,11 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     }
 
     // 无法提取 JSON 数组，当作直接回答
-    logger.debug('[ToolPreselector] 模型直接回答，无需二次调用');
+    logger.debug('[ToolPreselector] modeldirect answer,no secondarycall with ');
     return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
   } catch (error) {
     const duration = Date.now() - startTime;
-    logger.warn('[ToolPreselector] 预筛选异常，使用全量工具:', error.message);
+    logger.warn('[ToolPreselector] pre-filter exception,using alltool:', error.message);
     return { type: 'tools', tools, executionLog: [createEntry('failed', { error: error.message, duration })] };
   }
 }

@@ -123,7 +123,7 @@ export class StreamController {
 
     if (finishReason === 'tool_calls') {
       // 打印完整的 tool_calls 摘要（而非每个 chunk 都打印）
-      logger.debug(`[StreamController] tool_calls 完成: ${this.toolCalls.length} 个调用`, 
+      logger.debug(`[StreamController] tool_calls complete: ${this.toolCalls.length} call with `, 
         this.toolCalls.map(tc => ({ name: tc.function?.name, argsLen: tc.function?.arguments?.length })));
       return { type: 'tool_calls' };
     }
@@ -351,11 +351,11 @@ export async function readSSEStream(reader, controller, abortSignal) {
     return { status: 'done', ...controller.getResult() };
   } catch (error) {
     if (error.name === 'AbortError') {
-      logger.debug('[StreamController] 流式读取已被取消');
+      logger.debug('[StreamController] streamingread was already cancel');
       // 不发送 STREAM_DONE，避免残留消息被新任务处理
       throw error;
     } else {
-      logger.error('[StreamController] 流式读取错误:', error.message);
+      logger.error('[StreamController] streamingread error:', error.message);
     }
     controller.finish();
     throw error;

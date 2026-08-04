@@ -30,6 +30,6 @@ export async function recordTokenUsage({ sessionId, model, usage, callType }) {
     });
   } catch (err) {
     // 静默失败，不影响主流程
-    logger.warn('[TokenRecorder] 记录 token 统计失败:', err.message);
+    logger.warn('[TokenRecorder] record token stats failed:', err.message);
   }
 }

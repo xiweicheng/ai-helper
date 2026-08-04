@@ -166,7 +166,7 @@ export async function captureFullPageScreenshot() {
       showToast(t('imageHelper.screenshotSuccess'));
     }
   } catch (err) {
-    logger.error('[SidePanel] 全页面截图失败:', err);
+    logger.error('[SidePanel] full page screenshot failed:', err);
     showToast(t('imageHelper.screenshotFailed'));
   }
 }
@@ -190,7 +190,7 @@ export async function captureRegionScreenshot() {
       return;
     }
 
-    logger.debug('[SidePanel] 区域选择结果:', rect);
+    logger.debug('[SidePanel] regionselectresult:', rect);
 
     // 先截取整个可见区域
     const capResponse = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB' });
@@ -211,7 +211,7 @@ export async function captureRegionScreenshot() {
     const blob = await res.blob();
     compressAndAttachImage(blob);
   } catch (err) {
-    logger.error('[SidePanel] 区域截图失败:', err);
+    logger.error('[SidePanel] region screenshot failed:', err);
     showToast(t('imageHelper.regionScreenshotFailed'));
   }
 }
@@ -264,7 +264,7 @@ export async function handlePageScreenshotResult(dataUrl, mode, rect) {
     compressAndAttachImage(blob);
     showToast(t('imageHelper.screenshotSuccess'));
   } catch (err) {
-    logger.error('[SidePanel] 页面快捷键截图处理失败:', err);
+    logger.error('[SidePanel] pageshortcutscreenshotprocessing failed:', err);
     showToast(t('imageHelper.screenshotProcessFailed'));
   }
 }

@@ -69,7 +69,7 @@ export function updateCalibration(estimated, actual) {
   const ratio = actual / estimated;
   // 过滤异常比例（如估算或实际值明显错误）
   if (ratio < CALIBRATION_RATIO_MIN || ratio > CALIBRATION_RATIO_MAX) {
-    logger.warn(`[TokenCounter] 校准比例异常，忽略: estimated=${estimated}, actual=${actual}, ratio=${ratio.toFixed(3)}`);
+    logger.warn(`[TokenCounter] calibration ratioexception,ignore: estimated=${estimated}, actual=${actual}, ratio=${ratio.toFixed(3)}`);
     return;
   }
 
@@ -79,7 +79,7 @@ export function updateCalibration(estimated, actual) {
   const oldFactor = calibrationFactor;
   calibrationFactor = calibrationFactor * (1 - alpha) + ratio * alpha;
 
-  logger.debug(`[TokenCounter] Token校准更新: ratio=${ratio.toFixed(3)}, alpha=${alpha.toFixed(3)}, 旧=${oldFactor.toFixed(3)} → 新=${calibrationFactor.toFixed(3)}, samples=${calibrationSamples}`);
+  logger.debug(`[TokenCounter] Tokencalibration update: ratio=${ratio.toFixed(3)}, alpha=${alpha.toFixed(3)}, old=${oldFactor.toFixed(3)} → new=${calibrationFactor.toFixed(3)}, samples=${calibrationSamples}`);
 }
 
 /**
@@ -522,7 +522,7 @@ export function filterApiMessages(messages) {
 
     if (result.role === 'tool') {
       if (!result.tool_call_id) {
-        logger.warn(`[Background] 发现消息 ${index} 缺少 tool_call_id，已跳过`, msg);
+        logger.warn(`[Background] foundmessage ${index} missing tool_call_id,skipped`, msg);
         return null;
       }
       return result;
@@ -535,7 +535,7 @@ export function filterApiMessages(messages) {
         function: tc.function
       }));
     } else if (result.role === 'assistant' && result.tool_calls !== undefined) {
-      logger.warn(`[Background] 发现消息 ${index} tool_calls 非数组 (类型: ${typeof result.tool_calls})，已清除`);
+      logger.warn(`[Background] foundmessage ${index} tool_calls  non-group (type: ${typeof result.tool_calls}),cleared`);
       delete result.tool_calls;
     }
 
@@ -565,7 +565,7 @@ export function filterApiMessages(messages) {
 
       if (matchedCalls.length === 0) {
         // 完全没有匹配的 tool 响应 → 清除所有 tool_calls
-        logger.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息 tool_calls 无匹配 tool 响应，已清除');
+        logger.warn('[Background] filterApiMessages: ', i, ' assistant message tool_calls  no matchconfig  tool response,cleared');
         delete msg.tool_calls;
         if (!msg.content) {
           filtered.splice(i, 1);
@@ -574,7 +574,7 @@ export function filterApiMessages(messages) {
       } else if (matchedCalls.length < msg.tool_calls.length) {
         // 部分匹配 → 只保留有响应的 tool_calls
         const unmatched = msg.tool_calls.filter(tc => !followingToolIds.has(tc.id));
-        logger.warn('[Background] filterApiMessages: 第', i, '条 assistant 消息', unmatched.length, '个 tool_call 无对应响应，已移除，保留', matchedCalls.length, '个');
+        logger.warn('[Background] filterApiMessages: ', i, ' assistant message', unmatched.length, ' tool_call no corresponding response,removed,keep', matchedCalls.length, '');
         msg.tool_calls = matchedCalls;
       }
     }
@@ -663,6 +663,6 @@ export function compressQuotedContext(ctx) {
     return { compressed: ctx, wasCompressed: false };
   }
   const truncated = truncateByTokens(ctx, MAX_QUOTED_CONTEXT_TOKENS);
-  logger.debug(`[TokenCounter] 引用内容压缩: ${tokens} → ${estimateTokens(truncated)} tokens`);
+  logger.debug(`[TokenCounter] referenced contentcompress: ${tokens} → ${estimateTokens(truncated)} tokens`);
   return { compressed: truncated, wasCompressed: true };
 }

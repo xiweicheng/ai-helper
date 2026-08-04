@@ -58,7 +58,7 @@ function replaceMermaidWithCodeBlock(tempContainer) {
         container.remove();
       }
     } catch (err) {
-      logger.warn('[SidePanel] Mermaid 图表处理失败，移除:', err.message);
+      logger.warn('[SidePanel] Mermaid chartprocessing failed,remove:', err.message);
       container.remove();
     }
   }
@@ -87,7 +87,7 @@ export function copyMessage(messageDiv, copyBtn) {
         copyBtn.classList.remove('copied');
       }, 2000);
     }).catch(err => {
-      logger.error('[SidePanel] 复制失败:', err);
+      logger.error('[SidePanel] copy failed:', err);
       const textArea = document.createElement('textarea');
       textArea.value = textToCopy;
       textArea.style.position = 'fixed';
@@ -113,7 +113,7 @@ export function copyMessage(messageDiv, copyBtn) {
       document.body.removeChild(textArea);
     });
   } catch (error) {
-    logger.error('[SidePanel] 复制失败:', error);
+    logger.error('[SidePanel] copy failed:', error);
     showToast(t('chatCopy.copyFailed'), 'error');
   }
 }
@@ -173,7 +173,7 @@ export function copyAssistantMessage(messageDiv, copyBtn, event) {
       });
     }
   } catch (error) {
-    logger.error('[SidePanel] 复制失败:', error);
+    logger.error('[SidePanel] copy failed:', error);
     showToast(t('chatCopy.copyFailed'), 'error');
   }
 }
@@ -233,7 +233,7 @@ export function copyRichText(text, html, copyBtn, pngBlob = null) {
     navigator.clipboard.write([clipboardData]).then(() => {
       showCopySuccess(copyBtn, true);
     }).catch(err => {
-      logger.warn('[SidePanel] Clipboard API 写入失败，使用兜底方案:', err.message);
+      logger.warn('[SidePanel] Clipboard API write failed,using fallback plan:', err.message);
       fallbackCopyRichText(text, styledHtml, copyBtn);
     });
   } else {
@@ -340,13 +340,13 @@ export function quoteAndAsk(messageDiv) {
     const content = messageDiv.dataset.rawMarkdown || messageDiv.dataset.rawContent || '';
 
     if (!content) {
-      logger.warn('[SidePanel] 无法获取消息内容');
+      logger.warn('[SidePanel] unable to getmessagecontent');
       return;
     }
 
     const userInput = document.getElementById('userInput');
     if (!userInput) {
-      logger.warn('[SidePanel] 找不到输入框');
+      logger.warn('[SidePanel] cannot find input box');
       return;
     }
 
@@ -374,9 +374,9 @@ export function quoteAndAsk(messageDiv) {
 
     userInput.focus();
 
-    logger.debug('[SidePanel] 已引用消息内容到提示条，输入框已获取焦点');
+    logger.debug('[SidePanel] quote with messagecontent to prompt,input boxfocused');
   } catch (error) {
-    logger.error('[SidePanel] 引用提问失败:', error);
+    logger.error('[SidePanel] quoted question failed:', error);
     showToast(t('chatCopy.quoteFailed', { message: error.message }), 'error');
   }
 }

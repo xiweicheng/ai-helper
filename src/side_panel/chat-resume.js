@@ -210,7 +210,7 @@ export async function _checkForAbandonedCheckpoint() {
   try {
     const resp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
     if (resp?.exists) {
-      logger.debug('[SidePanel] 发现被遗弃的 checkpoint，自动添加恢复提示卡片');
+      logger.debug('[SidePanel] found abandoned  checkpoint,auto addrestorehint card');
 
       // 清除该会话的 DOM 缓存，确保下次切换会话时走全量重建路径
       // 避免缓存中包含不完整的恢复卡片（没有按钮）导致重复
@@ -268,7 +268,7 @@ export async function _checkForAbandonedCheckpoint() {
       _verifyCheckpointAndHideButton(messageDiv, sessionId);
     }
   } catch (e) {
-    logger.warn('[SidePanel] 检查被遗弃的 checkpoint 失败:', e.message);
+    logger.warn('[SidePanel] check abandoned  checkpoint failed:', e.message);
   }
 }
 
@@ -287,30 +287,30 @@ export async function _checkForAbandonedCheckpoint() {
  */
 export async function resumeTask(sessionId, userGuidance = '') {
   if (!sessionId) {
-    logger.warn('[SidePanel] resumeTask: 缺少 sessionId');
+    logger.warn('[SidePanel] resumeTask: missing sessionId');
     return false;
   }
 
   // 如果当前活跃会话不是要恢复的会话，先切换
   if (state.activeSessionId !== sessionId) {
-    logger.warn('[SidePanel] resumeTask: 当前活跃会话与目标会话不一致，请先切换到目标会话');
+    logger.warn('[SidePanel] resumeTask: currently activesessionwith targetsession not consistent,please switch firstto targetsession');
     return false;
   }
 
   // 如果已有进行中的 API 调用，拒绝恢复
   if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.has(sessionId)) {
-    logger.warn('[SidePanel] resumeTask: 当前会话已有进行中的任务');
+    logger.warn('[SidePanel] resumeTask: currentsession has ongoingtask');
     return false;
   }
 
-  logger.debug('[SidePanel] resumeTask: 开始恢复任务, sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)');
+  logger.debug('[SidePanel] resumeTask: startrestoretask, sessionId:', sessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '( no )');
 
   // 前置检查：验证 checkpoint 是否存在，避免无效的恢复请求
   // 如果 checkpoint 不存在（已过期/被清理/从未保存），直接给出友好提示，不发送 RESUME_REACT
   try {
     const checkpointResp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
     if (!checkpointResp?.exists) {
-      logger.warn('[SidePanel] resumeTask: checkpoint 不存在，无法恢复, sessionId:', sessionId);
+      logger.warn('[SidePanel] resumeTask: checkpoint not found, no way to restore, sessionId:', sessionId);
       const errorContent = t('chatResume.checkpointNotFound');
       const { messageId } = addMessage('assistant', errorContent, true, []);
       state.messageHistory.push({ role: 'assistant', content: errorContent, executionLog: [], messageId, resumable: false, resumed: true });
@@ -319,9 +319,9 @@ export async function resumeTask(sessionId, userGuidance = '') {
       _clearResumableFlagsForSession(sessionId);
       return false;
     }
-    logger.debug('[SidePanel] resumeTask: checkpoint 验证通过, iteration:', checkpointResp.checkpoint?.iteration);
+    logger.debug('[SidePanel] resumeTask: checkpoint verified, iteration:', checkpointResp.checkpoint?.iteration);
   } catch (e) {
-    logger.warn('[SidePanel] resumeTask: 验证 checkpoint 时通信失败，继续尝试恢复:', e.message);
+    logger.warn('[SidePanel] resumeTask: verify checkpoint hourcommunication failed,continue tryrestore:', e.message);
     // 通信失败时不阻止恢复，让 SW 端再判断一次
   }
 

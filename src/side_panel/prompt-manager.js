@@ -53,7 +53,7 @@ const PROMPT_ICON_SVG = '<svg viewBox="0 0 1024 1024" width="12" height="12" fil
  * 清除选中内容上下文
  */
 function clearSelectedContext() {
-  logger.debug('[SidePanel] 清除选中内容上下文');
+  logger.debug('[SidePanel] clear selectedcontenttext ');
   state.selectedContextText = '';
   state.quotedContextText = '';
   const indicator = document.getElementById('selectionIndicator');
@@ -61,7 +61,7 @@ function clearSelectedContext() {
 
   if (indicator) {
     indicator.classList.remove('show');
-    logger.debug('[SidePanel] 已隐藏选中内容提示条');
+    logger.debug('[SidePanel] hiddenselected contentprompt');
   }
 
   // 隐藏浮动菜单
@@ -83,7 +83,7 @@ function clearSelectedContext() {
     if (startIndex > 0) {
       userInput.value = lines.slice(startIndex).join('\n');
       userInput.dispatchEvent(new Event('input'));
-      logger.debug('[SidePanel] 已移除输入框中的选中内容前缀');
+      logger.debug('[SidePanel] removedinput box selected content before suffix');
     }
   }
 
@@ -586,7 +586,7 @@ export function insertPromptToInputByCode(code) {
   // 自动调整输入框高度
   adjustInputHeight();
 
-  logger.debug('[SidePanel] 已追加提示词到输入框:', prompt.code, prompt.content);
+  logger.debug('[SidePanel] trackaddpromptword to input box:', prompt.code, prompt.content);
 }
 
 /**
@@ -598,7 +598,7 @@ export async function sendPromptByCode(code) {
 
   // 防止重复点击
   if (state.isGenerating) {
-    logger.debug('[SidePanel] 正在生成中，请稍候...');
+    logger.debug('[SidePanel] generating,please wait...');
     return;
   }
 
@@ -614,7 +614,7 @@ export async function sendPromptByCode(code) {
 
   // 如果有选中内容且划词问答开启，拼接到用户消息前面，并标记为已使用
   let userMessage = prompt.content;
-  const hasSelectedContext = state.enableSelectionQuery && state.selectedContextText && state.selectedContextText.trim();
+  const hasSelectedContext = state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
 
   // 优先处理引用内容
@@ -682,7 +682,7 @@ export async function sendPromptByCode(code) {
     // 确保配置已加载
     await ensureChatConfigLoaded();
 
-    logger.debug('[SidePanel] 发送消息调试信息:');
+    logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - isolateChat:', state.isolateChat);
     logger.debug('  - chatConfig:', state.chatConfig);
     logger.debug('  - messageHistory.length:', state.messageHistory.length);
@@ -709,7 +709,7 @@ export async function sendPromptByCode(code) {
       const maxMemory = state.chatConfig.maxMemoryMessages;
       if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
         historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
       }
 
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];

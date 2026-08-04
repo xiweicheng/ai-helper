@@ -199,7 +199,7 @@ function safeCanvasToDataUrl(canvas) {
       return pngData;
     }
   } catch (e) {
-    logger.debug('[SidePanel] PNG toDataURL 失败，降级为 JPEG:', e.message);
+    logger.debug('[SidePanel] PNG toDataURL failed,downgrade to JPEG:', e.message);
   }
 
   try {
@@ -208,7 +208,7 @@ function safeCanvasToDataUrl(canvas) {
       return jpgData;
     }
   } catch (e2) {
-    logger.debug('[SidePanel] JPEG toDataURL 也失败:', e2.message);
+    logger.debug('[SidePanel] JPEG toDataURL  also failed:', e2.message);
   }
 
   throw new Error(t('markdown.canvasExportFailed'));
@@ -219,7 +219,7 @@ export function svgToPngDataUrl(svgElement) {
     try {
       let { width: svgWidth, height: svgHeight } = getSvgRenderSize(svgElement);
 
-      logger.debug('[SidePanel] svgToPngDataUrl 尺寸:', svgWidth, 'x', svgHeight);
+      logger.debug('[SidePanel] svgToPngDataUrl size:', svgWidth, 'x', svgHeight);
 
       let scaleFactor = 2;
       if (svgWidth > MAX_SVG_DIM || svgHeight > MAX_SVG_DIM) {
@@ -242,7 +242,7 @@ export function svgToPngDataUrl(svgElement) {
           canvas.width = Math.ceil((svgWidth + padding * 2) * scaleFactor);
           canvas.height = Math.ceil((svgHeight + padding * 2) * scaleFactor);
 
-          logger.debug('[SidePanel] Canvas 尺寸:', canvas.width, 'x', canvas.height);
+          logger.debug('[SidePanel] Canvas size:', canvas.width, 'x', canvas.height);
 
           const ctx = canvas.getContext('2d');
 
@@ -506,9 +506,9 @@ export function downloadTableAsExcel(tableBlock) {
     link.click();
     document.body.removeChild(link);
     
-    logger.debug('[SidePanel] Excel 下载成功');
+    logger.debug('[SidePanel] Excel download successful');
   } catch (error) {
-    logger.error('[SidePanel] 下载 Excel 失败:', error);
+    logger.error('[SidePanel] download Excel failed:', error);
     showToast(t('markdown.downloadFailed', { message: error.message }), 'error');
   }
 }
@@ -560,7 +560,7 @@ async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRI
       // 某些错误重试无意义（如语法错误），直接返回失败
       const noRetry = /(Parse error|syntax error|Lexical error|No diagram type detected)/i;
       if (noRetry.test(detail) || attempt >= retries) {
-        logger.error('[SidePanel] Mermaid 渲染失败，原始内容（前300字符）:', originalContent.substring(0, 300));
+        logger.error('[SidePanel] Mermaid render failed,original content ( before 300chars):', originalContent.substring(0, 300));
         // 恢复原始内容，方便调用方显示友好的错误提示
         container.textContent = originalContent;
         return { success: false, detail, err };
@@ -573,14 +573,14 @@ async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRI
 
 export async function renderMermaidCharts() {
   if (typeof mermaid === 'undefined') {
-    logger.warn('[SidePanel] Mermaid 库未加载');
+    logger.warn('[SidePanel] Mermaid lib not loaded');
     return;
   }
   
-  logger.debug('[SidePanel] ===== renderMermaidCharts 开始 =====');
+  logger.debug('[SidePanel] ===== renderMermaidCharts start =====');
   
   const mermaidElements = document.querySelectorAll('.mermaid');
-  logger.debug('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
+  logger.debug('[SidePanel] find to  mermaid element count:', mermaidElements.length);
   
   if (mermaidElements.length === 0) {
     return;
@@ -592,17 +592,17 @@ export async function renderMermaidCharts() {
     const result = await renderSingleMermaid(container);
     
     if (result.success) {
-      logger.debug('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
+      logger.debug('[SidePanel] ', i + 1, ' mermaid chart render successful');
       addMermaidControls(container);
     } else {
-      logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
+      logger.error('[SidePanel] ', i + 1, ' mermaid chart render failed:', result.detail, result.err);
       if (!container.querySelector('svg') && !container.querySelector('.mermaid-controls')) {
         container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">${t('markdown.chartRenderFailed', { detail: result.detail })}</div>`;
       }
     }
   }
   
-  logger.debug('[SidePanel] ===== renderMermaidCharts 完成 =====');
+  logger.debug('[SidePanel] ===== renderMermaidCharts complete =====');
 }
 
 /**
@@ -626,12 +626,12 @@ export function addMermaidControls(container) {
   // 等待 SVG 渲染完成
   const svgElement = container.querySelector('svg');
   if (!svgElement) {
-    logger.warn('[SidePanel] SVG 元素未找到，当前内容:', container.innerHTML.substring(0, 100));
+    logger.warn('[SidePanel] SVG elementnot found,current content:', container.innerHTML.substring(0, 100));
     return;
   }
   
-  logger.debug('[SidePanel] 找到 SVG 元素，开始添加工具栏');
-  logger.debug('[SidePanel] container 类名:', container.className);
+  logger.debug('[SidePanel] find to  SVG element,start addingtoolbar');
+  logger.debug('[SidePanel] container class name:', container.className);
   logger.debug('[SidePanel] container HTML:', container.innerHTML.substring(0, 200));
   
   // 设置 container 为 relative 定位
@@ -686,15 +686,15 @@ export function addMermaidControls(container) {
   `;
   
   container.appendChild(controls);
-  logger.debug('[SidePanel] 工具栏 HTML 已添加');
-  logger.debug('[SidePanel] container 子元素:', Array.from(container.children).map(c => c.className).join(', '));
+  logger.debug('[SidePanel] toolbar HTML added');
+  logger.debug('[SidePanel] container subelement:', Array.from(container.children).map(c => c.className).join(', '));
 
   if (!container._pngDataUrl) {
     svgToPngDataUrl(svgElement).then(dataUrl => {
       container._pngDataUrl = dataUrl;
       container._pngBlob = null;
     }).catch(err => {
-      logger.warn('[SidePanel] Mermaid PNG 预转换失败:', err.message);
+      logger.warn('[SidePanel] Mermaid PNG pre-convert failed:', err.message);
     });
   }
 
@@ -898,7 +898,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
         showToast(t('markdown.mermaidCopied'), 'success');
         return;
       } catch (clipboardErr) {
-        logger.warn('[SidePanel] Clipboard API 写入失败，降级为下载:', clipboardErr.message);
+        logger.warn('[SidePanel] Clipboard API write failed,downgrade to download:', clipboardErr.message);
       }
     }
 
@@ -906,7 +906,7 @@ export async function copyMermaidToClipboard(svgElement, svgWrapper, scale) {
     showToast(t('markdown.autoDownloadChart'), 'warning');
     downloadDataUrl(dataUrl, downloadFilename);
   } catch (error) {
-    logger.error('[SidePanel] 复制到剪贴板失败:', error);
+    logger.error('[SidePanel] copyto clipboard failed:', error);
     showToast(t('markdown.copyFailed', { message: error.message }), 'error');
   }
 }
@@ -928,7 +928,7 @@ export async function downloadMermaidPNG(svgElement, scale) {
     const dataUrl = await svgToPngDataUrl(svgElement);
     downloadDataUrl(dataUrl, filename);
   } catch (error) {
-    logger.error('[SidePanel] 下载 PNG 失败:', error);
+    logger.error('[SidePanel] download PNG failed:', error);
     showToast(t('markdown.downloadFailed', { message: error.message }), 'error');
   }
 }
@@ -1032,10 +1032,10 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
  * 在消息添加后渲染 mermaid
  */
 export async function renderMessageMermaid(messageDiv) {
-  logger.debug('[SidePanel] ===== renderMessageMermaid 开始 =====');
+  logger.debug('[SidePanel] ===== renderMessageMermaid start =====');
   
   if (typeof mermaid === 'undefined') {
-    logger.warn('[SidePanel] Mermaid 库未加载');
+    logger.warn('[SidePanel] Mermaid lib not loaded');
     return;
   }
   
@@ -1044,10 +1044,10 @@ export async function renderMessageMermaid(messageDiv) {
   
   // 获取消息中所有的 mermaid 元素
   const mermaidElements = messageDiv.querySelectorAll('.mermaid');
-  logger.debug('[SidePanel] 找到 mermaid 元素数量:', mermaidElements.length);
+  logger.debug('[SidePanel] find to  mermaid element count:', mermaidElements.length);
   
   if (mermaidElements.length === 0) {
-    logger.debug('[SidePanel] 未找到 mermaid 元素');
+    logger.debug('[SidePanel] not found mermaid element');
     return;
   }
   
@@ -1061,21 +1061,21 @@ export async function renderMessageMermaid(messageDiv) {
       const currentContainer = messageDiv.querySelectorAll('.mermaid')[i];
       
       if (result.success && currentContainer) {
-        logger.debug('[SidePanel] 第', i + 1, '个 mermaid 图表渲染成功');
+        logger.debug('[SidePanel] ', i + 1, ' mermaid chart render successful');
         addMermaidControls(currentContainer);
       } else if (currentContainer && !currentContainer.querySelector('svg') && !currentContainer.querySelector('.mermaid-controls')) {
-        logger.error('[SidePanel] 第', i + 1, '个 mermaid 图表渲染失败:', result.detail, result.err);
+        logger.error('[SidePanel] ', i + 1, ' mermaid chart render failed:', result.detail, result.err);
         currentContainer.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px;">${t('markdown.chartRenderFailed', { detail: result.detail })}</div>`;
       }
     }
     
-    logger.debug('[SidePanel] Mermaid 渲染完成');
+    logger.debug('[SidePanel] Mermaid rendercomplete');
     
     // 验证工具栏是否添加成功
     const controls = messageDiv.querySelectorAll('.mermaid-controls');
-    logger.debug('[SidePanel] 工具栏添加结果:', controls.length, '个成功');
+    logger.debug('[SidePanel] toolbar addresult:', controls.length, 'successful');
   } catch (error) {
-    logger.error('[SidePanel] Mermaid 渲染整体失败:', error);
+    logger.error('[SidePanel] Mermaid overall render failed:', error);
   }
   
   // 添加代码块复制按钮事件
@@ -1130,7 +1130,7 @@ function setupCodeCtrlClick() {
       const label = isCodeBlock ? t('markdown.codeBlockLabel') : t('markdown.codeLabel');
       showToast(t('markdown.copiedToClipboard', { label }), 'success');
     }).catch((err) => {
-      logger.error('[SidePanel] Ctrl+单击复制失败:', err);
+      logger.error('[SidePanel] Ctrl+clickcopy failed:', err);
       // 降级方案
       const textArea = document.createElement('textarea');
       textArea.value = codeText;
@@ -1144,7 +1144,7 @@ function setupCodeCtrlClick() {
     });
   });
 
-  logger.debug('[SidePanel] Ctrl+单击复制代码事件已绑定');
+  logger.debug('[SidePanel] Ctrl+clickcopycodeeventbound');
 }
 
 /**
@@ -1152,33 +1152,33 @@ function setupCodeCtrlClick() {
  */
 export function addCodeCopyButtons() {
   const copyButtons = document.querySelectorAll('.code-copy-btn');
-  logger.debug('[SidePanel] 找到代码复制按钮数量:', copyButtons.length);
+  logger.debug('[SidePanel] found codecopybutton count:', copyButtons.length);
   
   copyButtons.forEach((btn, index) => {
     // 避免重复绑定
     if (btn.dataset.bound) {
-      // logger.debug('[SidePanel] 按钮', index, '已绑定，跳过');
+      // logger.debug('[SidePanel] button', index, 'bound,skip');
       return;
     }
     btn.dataset.bound = 'true';
     
     btn.addEventListener('click', (e) => {
-      logger.debug('[SidePanel] 代码复制按钮被点击');
+      logger.debug('[SidePanel] codecopybutton clicked');
       e.stopPropagation();
       // 从父容器获取代码，而不是全局查询
       const container = btn.closest('.code-block-container');
-      logger.debug('[SidePanel] 找到容器:', !!container);
+      logger.debug('[SidePanel] found container:', !!container);
       if (container) {
         const codeElement = container.querySelector('pre code');
-        logger.debug('[SidePanel] 找到代码元素:', !!codeElement);
+        logger.debug('[SidePanel] found codeelement:', !!codeElement);
         if (codeElement) {
           const codeText = codeElement.textContent;
-          logger.debug('[SidePanel] 代码长度:', codeText.length);
+          logger.debug('[SidePanel] code length:', codeText.length);
           copyToClipboard(codeText, btn);
         }
       }
     });
-    // logger.debug('[SidePanel] 已绑定按钮', index);
+    // logger.debug('[SidePanel] boundbutton', index);
   });
   
   // 设置 Ctrl+单击复制（只绑定一次）
@@ -1389,7 +1389,7 @@ export function addTableToolbarEvents() {
         document.body.removeChild(link);
         showToast(t('markdown.tableImageExported'));
       } catch (err) {
-        logger.error('[SidePanel] 导出表格图片失败:', err);
+        logger.error('[SidePanel] export tableimage failed:', err);
         showToast(t('markdown.exportImageFailed'), 'error');
       }
     });

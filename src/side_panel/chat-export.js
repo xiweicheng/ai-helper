@@ -126,7 +126,7 @@ function parseInlineMarkdown(text) {
             }));
           }
         } catch (e) {
-          logger.warn('[ChatExport] ImageRun 创建失败:', e.message);
+          logger.warn('[ChatExport] ImageRun create failed:', e.message);
           result.push(new TextRun({ text: t('chatExport.imagePlaceholder', { name: match[9] || 'image' }), italics: true, color: '999999' }));
         }
       } else {
@@ -441,7 +441,7 @@ function safeCanvasToDataUrl(canvas) {
       return { dataUrl: pngData, format: 'PNG' };
     }
   } catch (e) {
-    logger.debug('[ChatExport] PNG toDataURL 失败，降级为 JPEG:', e.message);
+    logger.debug('[ChatExport] PNG toDataURL failed,downgrade to JPEG:', e.message);
   }
 
   // PNG 失败或数据异常小，降级为 JPEG
@@ -475,7 +475,7 @@ export async function renderMermaidInContainer(container) {
     try {
       await mermaid.run({ nodes: [el] });
     } catch (e) {
-      logger.warn('[SidePanel] 导出时 mermaid 渲染失败:', e);
+      logger.warn('[SidePanel] exporthour mermaid render failed:', e);
     }
   }
 }
@@ -566,7 +566,7 @@ export async function convertSvgsToImages(container) {
       imgTag.style.cssText = `max-width:100%;width:${width}px;height:auto;`;
       svg.parentNode.replaceChild(imgTag, svg);
     } catch (e) {
-      logger.warn('[SidePanel] SVG 转图片失败:', e.name, e.message);
+      logger.warn('[SidePanel] SVG rotationimage failed:', e.name, e.message);
     }
   }
 }
@@ -714,7 +714,7 @@ async function renderMermaidBlocksToImages(markdownContent) {
 
     return result;
   } catch (e) {
-    logger.warn('[ChatExport] Mermaid 预渲染失败，将保留为代码块:', e.message);
+    logger.warn('[ChatExport] Mermaid pre-render failed,will keep ascodeblock:', e.message);
     return markdownContent;
   }
 }
@@ -798,9 +798,9 @@ export async function exportAssistantMessageToDocx(messageDiv, exportBtn, export
     URL.revokeObjectURL(url);
 
     setExportButtonSuccess(exportBtn, 'docx');
-    logger.debug('[SidePanel] Word (docx) 文档导出成功');
+    logger.debug('[SidePanel] Word (docx) document export successful');
   } catch (error) {
-    logger.error('[SidePanel] 导出 Word 失败:', error);
+    logger.error('[SidePanel] export Word failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
@@ -918,15 +918,15 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       setExportButtonSuccess(exportBtn, 'pdf');
 
       document.body.removeChild(container);
-      logger.debug('[SidePanel] PDF 导出成功:', fileName);
+      logger.debug('[SidePanel] PDF export successful:', fileName);
     }).catch(error => {
-      logger.error('[SidePanel] PDF 导出失败:', error);
+      logger.error('[SidePanel] PDF export failed:', error);
       showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
       document.body.removeChild(container);
       resetExportButton(exportBtn);
     });
   } catch (error) {
-    logger.error('[SidePanel] 导出 PDF 失败:', error);
+    logger.error('[SidePanel] export PDF failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
@@ -975,9 +975,9 @@ export function exportAssistantMessageToMarkdown(messageDiv, exportBtn, exportDr
     URL.revokeObjectURL(url);
 
     setExportButtonSuccess(exportBtn, 'md');
-    logger.debug('[SidePanel] Markdown 导出成功:', fileName);
+    logger.debug('[SidePanel] Markdown export successful:', fileName);
   } catch (error) {
-    logger.error('[SidePanel] 导出 Markdown 失败:', error);
+    logger.error('[SidePanel] export Markdown failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     resetExportButton(exportBtn);
   }
@@ -1066,9 +1066,9 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
         setExportButtonSuccess(exportBtn, 'image');
         document.body.removeChild(tempContainer);
         tempContainer = null;
-        logger.debug('[SidePanel] 图片导出成功:', fileName);
+        logger.debug('[SidePanel] image export successful:', fileName);
       } catch (error) {
-        logger.error('[SidePanel] 导出图片失败:', error);
+        logger.error('[SidePanel] export image failed:', error);
         showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
         if (tempContainer && tempContainer.parentNode) {
           document.body.removeChild(tempContainer);

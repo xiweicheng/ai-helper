@@ -432,7 +432,7 @@ export function compressAndAttachImage(blob) {
 
   img.onerror = () => {
     URL.revokeObjectURL(url);
-    logger.error('[ChatManager] 图片加载失败');
+    logger.error('[ChatManager] imageload failed');
   };
 
   img.src = url;

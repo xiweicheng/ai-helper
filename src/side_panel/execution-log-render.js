@@ -1165,7 +1165,7 @@ export function updateExecutionStatus(loadingId, nodeName, status, executionLog)
   const loadingDiv = document.getElementById(loadingId);
   if (!loadingDiv) return;
   
-  logger.debug('[SidePanel] updateExecutionStatus 被调用:', nodeName, status, '日志数量:', executionLog?.length);
+  logger.debug('[SidePanel] updateExecutionStatus called:', nodeName, status, 'log count:', executionLog?.length);
   
   const nodeNameSpan = loadingDiv.querySelector('.current-node-name');
   if (nodeNameSpan) {

@@ -68,6 +68,15 @@ registerTranslations('zh', {
     copyFailed: '复制失败，请手动复制',
     copied: '已复制',
     noResponse: '无响应',
+    sysPromptAisearch: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。',
+    sysPromptExplain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
+    sysPromptTranslate: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。',
+    sysPromptSummary: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。',
+    sysPromptCopy: '将选中内容复制到剪贴板。',
+    userMsgAisearch: '搜索并分析以下内容：\n\n{text}',
+    userMsgExplain: '用1-3句话简洁解释以下内容，不需要展开说明。\n\n{text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3',
+    userMsgTranslate: '翻译以下内容，只输出翻译结果：\n\n{text}',
+    userMsgSummary: '用3-5个要点总结以下内容，每条要点一句话。\n\n{text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3',
   },
 });
 
@@ -98,6 +107,15 @@ registerTranslations('en', {
     copyFailed: 'Copy failed, please copy manually',
     copied: 'Copied',
     noResponse: 'No response',
+    sysPromptAisearch: 'You are processing content selected by the user on a web page. Use ReAct Agent mode to answer selected questions through multiple rounds of thinking, searching, and reasoning.',
+    sysPromptExplain: 'You are processing content selected by the user on a web page. Explain the selected content in 1-3 concise sentences, supplementing with a brief example if necessary. Do not expand into lengthy discussions.',
+    sysPromptTranslate: 'You are processing content selected by the user on a web page. Auto-detect language: Chinese→English, English→Chinese, other languages→provide both Chinese and English. Output only the translation result, no additional explanations.',
+    sysPromptSummary: 'You are processing content selected by the user on a web page. Summarize the selected content in 3-5 bullet points, one sentence per point, distilling the core information.',
+    sysPromptCopy: 'Copy the selected content to the clipboard.',
+    userMsgAisearch: 'Search and analyze the following content:\n\n{text}',
+    userMsgExplain: 'Explain the following content in 1-3 concise sentences without expanding.\n\n{text}\n\n---\nAfter answering, please provide 3 follow-up questions on a new line in the following format:\n---SUGGESTIONS---\nQuestion 1\nQuestion 2\nQuestion 3',
+    userMsgTranslate: 'Translate the following content, output only the translation:\n\n{text}',
+    userMsgSummary: 'Summarize the following content in 3-5 bullet points, one sentence per point.\n\n{text}\n\n---\nAfter answering, please provide 3 follow-up questions on a new line in the following format:\n---SUGGESTIONS---\nQuestion 1\nQuestion 2\nQuestion 3',
   },
 });
 
@@ -161,7 +179,7 @@ if (!isTopFrame) {
     // 跨域无法访问 top.document，保持默认行为
   }
 }
-logger.debug('[SelectionToolbar] 模块加载 isTopFrame:', isTopFrame, 'top===window:', window.top === window, 'hasBody:', !!document.body, 'parent===top:', window.parent === window.top);
+logger.debug('[SelectionToolbar] moduleload isTopFrame:', isTopFrame, 'top===window:', window.top === window, 'hasBody:', !!document.body, 'parent===top:', window.parent === window.top);
 
 let lastSentIframeText = '';              // 防止iframe重复发送相同选区
 let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区数据 { text, x, y }
@@ -252,11 +270,11 @@ export function isExtensionValid() {
 
 // ==================== 工具栏工具加载 ====================
 const DEFAULT_TOOLS = [
-  { id: 'ai-search',  name: t('optionsConst.aiSearch'), systemPrompt: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。', builtin: true, order: 0 },
-  { id: 'explain',   name: t('optionsConst.explain'),   systemPrompt: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。', builtin: true, order: 1 },
-  { id: 'translate', name: t('optionsConst.translate'), systemPrompt: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。', builtin: true, order: 2 },
-  { id: 'summary',   name: t('optionsConst.summary'),   systemPrompt: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。', builtin: true, order: 3 },
-  { id: 'copy',      name: t('optionsConst.copy'),      systemPrompt: '将选中内容复制到剪贴板。', builtin: true, order: 99 }
+  { id: 'ai-search',  name: t('optionsConst.aiSearch'), systemPrompt: t('selToolbar.sysPromptAisearch'), builtin: true, order: 0 },
+  { id: 'explain',   name: t('optionsConst.explain'),   systemPrompt: t('selToolbar.sysPromptExplain'), builtin: true, order: 1 },
+  { id: 'translate', name: t('optionsConst.translate'), systemPrompt: t('selToolbar.sysPromptTranslate'), builtin: true, order: 2 },
+  { id: 'summary',   name: t('optionsConst.summary'),   systemPrompt: t('selToolbar.sysPromptSummary'), builtin: true, order: 3 },
+  { id: 'copy',      name: t('optionsConst.copy'),      systemPrompt: t('selToolbar.sysPromptCopy'), builtin: true, order: 99 }
 ];
 
 /** 为 DEFAULT_TOOLS 应用当前语言的名称（用于 fallback 场景） */
@@ -893,7 +911,7 @@ function sendToSidePanelInput(text) {
       text: text,
       selectedText: selText
     }).catch(err => {
-      logger.error('[SelectionToolbar] 发送追问到侧边栏失败:', err);
+      logger.error('[SelectionToolbar] sendfollow-up tosidebar failed:', err);
     });
   } catch {
     // 扩展上下文失效时静默忽略
@@ -909,7 +927,7 @@ function sendToSidePanelInputWithContext(text, selectedText) {
       text: text,
       selectedText: selectedText || ''
     }).catch(err => {
-      logger.error('[SelectionToolbar] 发送到侧边栏失败:', err);
+      logger.error('[SelectionToolbar] send to sidesidebar failed:', err);
     });
   } catch {
     // 扩展上下文失效时静默忽略
@@ -1009,7 +1027,7 @@ function onSelectionChange() {
       // 暂存选区数据，等待 mouseup 时再发送（与顶层 frame 行为一致）
       const pos = getRangeViewportPosition(result.range);
       pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
-      logger.debug('[SelectionToolbar] iframe pendingIframeSelection 已设置');
+      logger.debug('[SelectionToolbar] iframe pendingIframeSelection set');
     } else if (currentSelectedText) {
       // 选区被清除，通知顶层 frame 隐藏工具栏
       currentSelectedText = '';
@@ -1263,7 +1281,7 @@ function copySelectedText(text) {
   copyToClipboard(text).then(() => {
     showCopyToast();
   }).catch(err => {
-    logger.error('[SelectionToolbar] 复制失败:', err);
+    logger.error('[SelectionToolbar] copy failed:', err);
     showCopyErrorToast();
   });
 }
@@ -1274,7 +1292,7 @@ function copyResultContent() {
   copyToClipboard(text).then(() => {
     showCopyToast();
   }).catch(err => {
-    logger.error('[SelectionToolbar] 复制结果失败:', err);
+    logger.error('[SelectionToolbar] copyresult failed:', err);
     showCopyErrorToast();
   });
 }
@@ -1390,15 +1408,15 @@ function showCopyToast() {
 
 function sendToAI(action, text, customSystemPrompt) {
   if (!isExtensionValid()) {
-    logger.warn('[SelectionToolbar] 扩展上下文已失效，请刷新页面');
+    logger.warn('[SelectionToolbar] extensiontextexpired,pleaserefreshpage');
     return;
   }
   
   const actionLabels = {
-    'ai-search': `搜索并分析以下内容：\n\n${text}`,
-    'explain': `用1-3句话简洁解释以下内容，不需要展开说明。\n\n${text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3`,
-    'translate': `翻译以下内容，只输出翻译结果：\n\n${text}`,
-    'summary': `用3-5个要点总结以下内容，每条要点一句话。\n\n${text}\n\n---\n回答完毕后，请在最后另起一行，严格按以下格式提供3个用户可能追问的问题：\n---SUGGESTIONS---\n问题1\n问题2\n问题3`
+    'ai-search': t('selToolbar.userMsgAisearch', { text }),
+    'explain': t('selToolbar.userMsgExplain', { text }),
+    'translate': t('selToolbar.userMsgTranslate', { text }),
+    'summary': t('selToolbar.userMsgSummary', { text }),
   };
   
   const message = customSystemPrompt ? `请处理以下内容：\n\n${text}` : (actionLabels[action] || text);
@@ -1417,7 +1435,7 @@ function sendToAI(action, text, customSystemPrompt) {
         text: text,
         prompt: message
       }).catch(err => {
-        logger.error('[SelectionToolbar] 发送消息失败:', err);
+        logger.error('[SelectionToolbar] sendmessage failed:', err);
       });
     } catch {
       // 扩展上下文失效时静默忽略
@@ -1459,7 +1477,7 @@ function sendToAI(action, text, customSystemPrompt) {
     prompt: message,
     systemPrompt: customSystemPrompt || ''
   }).catch(err => {
-    logger.error('[SelectionToolbar] 发送消息失败:', err);
+    logger.error('[SelectionToolbar] sendmessage failed:', err);
     showResultError(pos.x, pos.y, err.message);
   });
 }
@@ -1472,7 +1490,7 @@ if (isExtensionValid()) {
   if (message.type === 'IFRAME_SELECTION') {
     if (!isTopFrame) return;
     
-    logger.debug('[SelectionToolbar] 收到 IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
+    logger.debug('[SelectionToolbar] recei to  IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
     
     currentSelectedText = message.text;
     
@@ -1665,7 +1683,7 @@ function loadToggleState() {
   chrome.storage.local.get(['enableSelectionToolbar', 'blockedDomains'], (result) => {
     enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? !!result.enableSelectionToolbar : true;
     blockedDomains = result.blockedDomains || [];
-    logger.debug('[SelectionToolbar] 开关状态:', enableSelectionToolbar ? '已启用' : '已禁用', '屏蔽域名:', blockedDomains.length);
+    logger.debug('[SelectionToolbar] toggle state:', enableSelectionToolbar ? 'enabled' : 'disabled', 'blocked domains:', blockedDomains.length);
   });
 }
 
@@ -1701,6 +1719,14 @@ subscribe(() => {
     toolbarEl = null;
   }
   createToolbar();
+  // 重建结果面板以确保新语言文本立即生效
+  if (resultPanelEl) {
+    resultPanelEl.remove();
+    resultPanelEl = null;
+    isResultVisible = false;
+    isResultLocked = false;
+    resultRawContent = '';
+  }
 });
 
 // ==================== 导出的启动/停止函数 ====================
@@ -1778,7 +1804,7 @@ export function initSelectionToolbar() {
     mutationObserver.observe(document.body, { childList: true, subtree: true });
   }
   
-  logger.debug('[SelectionToolbar] 初始化完成', isTopFrame ? '(顶层frame)' : '(子frame)');
+  logger.debug('[SelectionToolbar] initialization complete', isTopFrame ? '(toplayerframe)' : '(subframe)');
 }
 
 export function destroySelectionToolbar() {

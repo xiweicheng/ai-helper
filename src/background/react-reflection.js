@@ -246,7 +246,7 @@ export function parseReflectionResult(rawContent) {
     }
   }
 
-  logger.warn('[Background] 无法解析反思结果，使用默认值');
+  logger.warn('[Background] cannot parsereflection result,using default value');
   return defaults;
 }
 
@@ -422,7 +422,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     const decisionLabel = finalDecision === 'passed' ? t('reflection.decisionPassed') : finalDecision === 'revised' ? t('reflection.decisionRevised') : t('reflection.decisionNeedsImprovement');
 
     sendStatusUpdate(t('reflection.qualityAssessmentScore', { score: finalScore, decision: decisionLabel }), 'success');
-    logger.debug(`[Background] 反思完成: 评分 ${finalScore}/10, 决策: ${decisionLabel}, 修订: ${wasRevised}, 总耗时: ${totalDuration}ms`);
+    logger.debug(`[Background] reflection complete: score ${finalScore}/10, decision: ${decisionLabel}, revise: ${wasRevised}, total time: ${totalDuration}ms`);
 
     return {
       content: currentContent,
@@ -433,7 +433,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     };
 
   } catch (error) {
-    logger.warn('[Background] 反思 API 调用失败:', error.message);
+    logger.warn('[Background] reflection API call with failed:', error.message);
     const duration = Date.now() - startTime;
     reflectionLog.push({
       id: crypto.randomUUID(),
@@ -538,7 +538,7 @@ If the result is not helpful, set useful to false and provide a suggestion.`;
 
     return null;
   } catch (error) {
-    logger.warn('[Background] 工具反思调用失败:', error.message);
+    logger.warn('[Background] toolreflection call failed:', error.message);
     return null;
   }
 }
@@ -641,7 +641,7 @@ Output the evaluation result in JSON format (do not include markdown code blocks
       duration
     });
 
-    logger.debug(`[Background] 子任务反思完成: ${subtaskName}, 评分: ${parsed.overallScore}/10, 耗时: ${duration}ms`);
+    logger.debug(`[Background] subtask reflectioncomplete: ${subtaskName}, score: ${parsed.overallScore}/10, elapsed: ${duration}ms`);
 
     // 记录子任务反思 token 使用统计
     if (data.usage) {
@@ -660,7 +660,7 @@ Output the evaluation result in JSON format (do not include markdown code blocks
     };
 
   } catch (error) {
-    logger.warn('[Background] 子任务反思失败:', error.message);
+    logger.warn('[Background] subtask reflection failed:', error.message);
     const duration = Date.now() - startTime;
 
     reflectionLog.push({

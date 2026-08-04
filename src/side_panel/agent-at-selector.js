@@ -625,7 +625,7 @@ function selectPageByAt(tabId) {
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
-      logger.error('[AgentAtSelector] 获取标签页信息失败:', chrome.runtime.lastError);
+      logger.error('[AgentAtSelector] getlabelpageinfo failed:', chrome.runtime.lastError);
       return;
     }
     selectPage(tab);
@@ -658,9 +658,9 @@ async function selectProxyByAt(proxyId) {
   try {
     await chrome.storage.local.set({ activeAgentId: proxyId });
     chrome.runtime.sendMessage({ type: 'AGENT_CONNECTION_CHANGED', connected: true, agentId: proxyId });
-    logger.debug('[AgentAtSelector] 已切换到代理:', proxyId);
+    logger.debug('[AgentAtSelector] switched to agent:', proxyId);
   } catch (err) {
-    logger.error('[AgentAtSelector] 切换代理失败:', err);
+    logger.error('[AgentAtSelector] switchagent failed:', err);
   }
 
   adjustInputHeight();

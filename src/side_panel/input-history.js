@@ -36,8 +36,8 @@ export function addToInputHistory(text) {
 export function saveInputHistory() {
   try {
     chrome.storage.local.set({ inputHistory: state.inputHistory });
-    logger.debug('[SidePanel] 输入历史已保存，数量:', state.inputHistory.length);
+    logger.debug('[SidePanel] input history saved,count:', state.inputHistory.length);
   } catch (e) {
-    logger.error('[SidePanel] 保存输入历史失败:', e);
+    logger.error('[SidePanel] saveinput history failed:', e);
   }
 }

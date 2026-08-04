@@ -28,7 +28,7 @@ export async function getOpenTabs() {
     const tabs = await chrome.tabs.query({ currentWindow: true });
     return tabs;
   } catch (err) {
-    logger.error('[PageSelector] 获取标签页失败:', err);
+    logger.error('[PageSelector] getlabelpage failed:', err);
     return [];
   }
 }
@@ -166,7 +166,7 @@ function selectPageByTabId(tabId) {
   // 通过代理获取 tab 信息
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
-      logger.error('[PageSelector] 获取标签页信息失败:', chrome.runtime.lastError);
+      logger.error('[PageSelector] getlabelpageinfo failed:', chrome.runtime.lastError);
       return;
     }
 

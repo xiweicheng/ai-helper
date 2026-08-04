@@ -55,7 +55,7 @@ export function cancelReactLoop(sessionIdOrTabId) {
   // 旧版兼容：tabId 是数字
   if (typeof sessionIdOrTabId === 'number') {
     cancelledTabs.set(sessionIdOrTabId, true);
-    logger.debug('[Background] ReAct 循环已取消，tabId:', sessionIdOrTabId);
+    logger.debug('[Background] ReAct loop cancelled,tabId:', sessionIdOrTabId);
     return;
   }
 
@@ -65,20 +65,20 @@ export function cancelReactLoop(sessionIdOrTabId) {
     // 取消所有正在进行的 fetch 请求
     for (const [id, controller] of sessionAbortControllers) {
       controller.abort();
-      logger.debug('[Background] 已取消会话的 fetch 请求，sessionId:', id);
+      logger.debug('[Background] cancelledsession  fetch requested ,sessionId:', id);
     }
     sessionAbortControllers.clear();
     toolAbortControllers.clear();
-    logger.debug('[Background] 所有会话的 ReAct 循环已取消');
+    logger.debug('[Background] all has session  ReAct loop cancelled');
   } else {
     cancelledSessions.set(sessionIdOrTabId, true);
     // 立即中断该会话正在进行的 fetch 请求
     const controller = sessionAbortControllers.get(sessionIdOrTabId);
     if (controller) {
       controller.abort();
-      logger.debug('[Background] 已取消会话的 fetch 请求，sessionId:', sessionIdOrTabId);
+      logger.debug('[Background] cancelledsession  fetch requested ,sessionId:', sessionIdOrTabId);
     }
-    logger.debug('[Background] ReAct 循环已取消，sessionId:', sessionIdOrTabId);
+    logger.debug('[Background] ReAct loop cancelled,sessionId:', sessionIdOrTabId);
   }
 }
 
@@ -94,7 +94,7 @@ export function resetReactCancel(sessionIdOrTabId) {
   if (sessionIdOrTabId !== undefined && sessionIdOrTabId !== null) {
     cancelledSessions.delete(sessionIdOrTabId);
     sessionAbortControllers.delete(sessionIdOrTabId);
-    logger.debug('[Background] 会话取消状态已重置，sessionId:', sessionIdOrTabId);
+    logger.debug('[Background] sessioncancelstatereset,sessionId:', sessionIdOrTabId);
   }
 }
 

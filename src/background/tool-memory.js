@@ -596,7 +596,7 @@ export async function executeAgentMemoryStore(args, toolCallId) {
     try {
       await writeMemoryFile(memoryData);
     } catch (e) {
-      logger.warn('[Memory] 更新访问计数失败:', e.message);
+      logger.warn('[Memory] update visitcount failed:', e.message);
     }
   
     // 格式化输出

@@ -276,7 +276,7 @@ function setQuoteContext(content) {
 }
 
 export function clearSelectedContext() {
-  logger.debug('[SidePanel] 清除选中内容上下文');
+  logger.debug('[SidePanel] clear selectedcontenttext ');
   state.selectedContextText = '';
   state.quotedContextText = '';
   const indicator = document.getElementById('selectionIndicator');
@@ -284,7 +284,7 @@ export function clearSelectedContext() {
   
   if (indicator) {
     indicator.classList.remove('show');
-    logger.debug('[SidePanel] 已隐藏选中内容提示条');
+    logger.debug('[SidePanel] hiddenselected contentprompt');
   }
   
   if (typeof window.hideFloatingMenu === 'function') {
@@ -449,10 +449,10 @@ export async function loadChatHistory() {
 export function saveChatHistory() {
   try {
     saveCurrentSession().catch(err => {
-      logger.error('[SidePanel] 保存当前会话失败:', err);
+      logger.error('[SidePanel] save currentsession failed:', err);
     });
   } catch (e) {
-    logger.error('[SidePanel] 保存对话历史异常:', e);
+    logger.error('[SidePanel] save conversationhistory exception:', e);
   }
 }
 
@@ -460,7 +460,7 @@ export async function saveChatHistoryAsync() {
   try {
     await saveCurrentSession();
   } catch (e) {
-    logger.error('[SidePanel] 保存对话历史异常:', e);
+    logger.error('[SidePanel] save conversationhistory exception:', e);
   }
 }
 
@@ -541,7 +541,7 @@ export async function sendMessage() {
   }
 
   let finalText = text;
-  const hasSelectedContext = state.enableSelectionQuery && state.selectedContextText && state.selectedContextText.trim();
+  const hasSelectedContext = state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
   
   // 收集上下文气泡信息，用于持久化保存和刷新恢复
@@ -668,8 +668,8 @@ export async function sendMessage() {
     state.activeAgentToolIds = agentToolIds;
     state.activeAgentSkillIds = agentSkillIds;
     
-    logger.debug('[SidePanel] 发送消息调试信息:');
-    logger.debug('  - agent:', currentAgent ? currentAgent.name : '默认助手');
+    logger.debug('[SidePanel] sendmessagedebuginfo:');
+    logger.debug('  - agent:', currentAgent ? currentAgent.name : 'default assistant');
     logger.debug('  - agentToolIds:', agentToolIds);
     logger.debug('  - isolateChat:', state.isolateChat);
     logger.debug('  - chatConfig:', state.chatConfig);
@@ -698,7 +698,7 @@ export async function sendMessage() {
       const maxMemory = state.chatConfig.maxMemoryMessages;
       if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
         historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
       }
 
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];
@@ -733,9 +733,9 @@ export async function sendMessage() {
             : summary;
           messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + truncatedSummary };
         }
-        logger.debug(`[SidePanel] Token 预算裁剪: 保留 ${keptHistory.length} 条历史消息, 裁剪 ${trimmedCount} 条 (预算: ${historyBudget} tokens)`);
+        logger.debug(`[SidePanel] Token budget trimming: keep ${keptHistory.length} historymessage, trimming ${trimmedCount}  (budget: ${historyBudget} tokens)`);
       } else {
-        logger.debug(`[SidePanel] Token 预算内: ${keptHistory.length} 条历史消息 (预算: ${historyBudget} tokens)`);
+        logger.debug(`[SidePanel] Token budgetinternal: ${keptHistory.length} historymessage (budget: ${historyBudget} tokens)`);
       }
 
       historyToSend = [...keptHistory, currentMsg];
@@ -758,17 +758,17 @@ export async function sendMessage() {
     const msgTokens = estimateMessagesTokens(messages);
     const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
     const pressure = assessContextPressure(msgTokens, contextWindow);
-    logger.debug(`[SidePanel] 发送上下文: ${msgTokens} tokens (消息: ${messages.length} 条), 压力: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
+    logger.debug(`[SidePanel] send context: ${msgTokens} tokens (message: ${messages.length} ), pressure: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
     
     if (pressure.level === 'critical') {
-      logger.warn('[SidePanel] 上下文压力过高，主动裁剪...');
+      logger.warn('[SidePanel] context pressure too high,maindynamictrimming...');
       // 使用实际系统提示词 + 工具定义 token，而非固定估算值
       const actualSysTokens = estimateTokens(messages[0]?.content || '');
       const actualToolTokens = state.enabledTools.length * 200;
       const budget = contextWindow - actualSysTokens - actualToolTokens - 4096 - 2000;
       const trimResult = trimMessagesByBudget(messages, Math.max(budget, 2000), { generateSummary: false });
       messages = trimResult.messages;
-      logger.warn(`[SidePanel] 已主动裁剪: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} 条)`);
+      logger.warn(`[SidePanel] proactively trimmed: ${msgTokens} → ${estimateMessagesTokens(messages)} tokens (${trimResult.trimmedCount} )`);
     }
 
     let content, executionLog, reflectionScore, wasRevised = false, wasStreamed = false;
@@ -917,7 +917,7 @@ export async function sendMessage() {
     state.messageHistory.push(msgEntry);
     
   } catch (error) {
-    logger.error('[SidePanel] sendMessage 异常:', error?.message || error);
+    logger.error('[SidePanel] sendMessage exception:', error?.message || error);
   } finally {
     // 合并在此处统一保存，减少 IndexedDB 写入次数
     saveChatHistory();
@@ -937,15 +937,11 @@ export function triggerSelectionSearch(prompt, selectedText) {
   const userInput = document.getElementById('userInput');
   
   if (!selectedText || state.isGenerating) {
-    logger.debug('[SidePanel] triggerSelectionSearch 跳过:', { hasText: !!selectedText, isGenerating: state.isGenerating });
+    logger.debug('[SidePanel] triggerSelectionSearch skip:', { hasText: !!selectedText, isGenerating: state.isGenerating });
     return;
   }
   
-  // 保存原有的 enableSelectionQuery 状态
-  const prevEnableSelectionQuery = state.enableSelectionQuery;
-  
   // 设置选中内容上下文（复用现有机制，会显示上下文气泡 + [选中内容] 格式）
-  state.enableSelectionQuery = true;
   state.selectedContextText = selectedText;
   state.quotedContextText = '';
   
@@ -956,13 +952,6 @@ export function triggerSelectionSearch(prompt, selectedText) {
   
   // 发送消息（sendMessage 内部会同步处理 selectedContextText，生成 [选中内容]...[用户问题] 格式）
   sendMessage();
-  
-  // 上下文处理完成后，临时禁用选中内容查询，防止 setInterval 重复显示指示器
-  // 1.5 秒后恢复原有状态（此时页面选中文本已被清除，不会再触发）
-  state.enableSelectionQuery = false;
-  setTimeout(() => {
-    state.enableSelectionQuery = prevEnableSelectionQuery;
-  }, 1500);
 }
 
 // 填充侧边栏输入框（不自动发送，由用户决定是否发送）
@@ -982,7 +971,6 @@ export function directSend(text, selectedText = '') {
   
   // 设置选中内容上下文
   if (selectedText) {
-    state.enableSelectionQuery = true;
     state.selectedContextText = selectedText;
     state.quotedContextText = '';
   }
@@ -991,14 +979,6 @@ export function directSend(text, selectedText = '') {
   userInput.dispatchEvent(new Event('input'));
   userInput.focus();
   sendMessage();
-  
-  // 上下文处理完成后，临时禁用选中内容查询
-  if (selectedText) {
-    state.enableSelectionQuery = false;
-    setTimeout(() => {
-      state.enableSelectionQuery = true;
-    }, 1500);
-  }
 }
 
 // ============================================================
@@ -1294,7 +1274,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
         if (prototypeId) {
           loadAndShowPrototype(prototypeId);
         } else {
-          logger.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+          logger.error('[SidePanel] not found prototypeId,entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
         }
       });
       rightActionsContainer.appendChild(prototypeBtn);
@@ -1598,10 +1578,10 @@ export function bindExecutionLogDelegate() {
     
     try {
       const log = JSON.parse(rawLog);
-      logger.debug('[chat-manager] 执行日志按钮点击(委托), entries:', log.length);
+      logger.debug('[chat-manager] exec log buttonclick(delegate), entries:', log.length);
       showExecutionLog(log);
     } catch (err) {
-      logger.error('[chat-manager] 解析 executionLog 失败:', err);
+      logger.error('[chat-manager] parse executionLog failed:', err);
     }
   });
   
@@ -1632,7 +1612,7 @@ export function bindReflectionBadgeDelegate() {
       const data = JSON.parse(rawData);
       showReflectionInfo(data, btn);
     } catch (err) {
-      logger.error('[chat-manager] 解析 reflectionData 失败:', err);
+      logger.error('[chat-manager] parse reflectionData failed:', err);
     }
   });
 
@@ -1724,7 +1704,7 @@ export function addLoadingMessage() {
       return false;
     }
     if (message.type === 'EXECUTION_STATUS_UPDATE') {
-      logger.debug('[SidePanel] 收到执行状态更新:', message.nodeName, message.status, '日志数量:', message.executionLog?.length);
+      logger.debug('[SidePanel] recei to execution statusupdate:', message.nodeName, message.status, 'log count:', message.executionLog?.length);
       updateExecutionStatus(loadingId, message.nodeName, message.status, message.executionLog);
       return false;
     }
@@ -1984,7 +1964,7 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
           if (prototypeId) {
             loadAndShowPrototype(prototypeId);
           } else {
-            logger.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+            logger.error('[SidePanel] not found prototypeId,entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
           }
         });
       }
@@ -2568,14 +2548,14 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
   if (messageId && state.activeSessionId) {
     deleteMessageFromSession(state.activeSessionId, messageId).then((ok) => {
       if (!ok) {
-        logger.warn('[SidePanel] IndexedDB 消息清理失败, messageId:', messageId);
+        logger.warn('[SidePanel] IndexedDB messagecleanup failed, messageId:', messageId);
       }
     }).catch(err => {
-      logger.error('[SidePanel] IndexedDB 消息清理异常:', err);
+      logger.error('[SidePanel] IndexedDB messagecleanup exception:', err);
     });
   }
 
-  logger.debug(`[SidePanel] 已删除消息: ${role}, messageId: ${messageId}`);
+  logger.debug(`[SidePanel] deletedmessage: ${role}, messageId: ${messageId}`);
 }
 
 export async function callApi(messages, model, useTools = false, apiParams = {}, options = {}) {
@@ -2603,7 +2583,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   const myCallId = resumeFromCheckpoint
     ? `resume_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
     : `call_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  logger.debug(`[SidePanel] callApi: 生成 callId: ${myCallId}${resumeFromCheckpoint ? ' (恢复模式)' : ''}`);
+  logger.debug(`[SidePanel] callApi: generating callId: ${myCallId}${resumeFromCheckpoint ? ' (restoremode)' : ''}`);
 
   // 恢复模式：将外部传入的 loadingId 注入到 apiParams._loadingId，
   // 让 STREAM_START 处理逻辑能正确移除 resumeTask 创建的 loading 消息
@@ -2613,7 +2593,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
 
   // 如果当前会话有正在进行的 API 调用，先取消旧的，防止旧任务残留输出
   if (state.pendingCancelApiMap && state.pendingCancelApiMap.has(mySessionId)) {
-    logger.debug('[SidePanel] callApi: 检测到会话已有进行中的 API 调用，先取消旧的');
+    logger.debug('[SidePanel] callApi: detectedsession has ongoing API call with , first cancelold');
     const oldCancel = state.pendingCancelApiMap.get(mySessionId);
     if (oldCancel) {
       oldCancel({ message: t('chatMsg.errTaskReplaced'), executionLog: [] });
@@ -2631,14 +2611,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 建立长连接端口以保持 Service Worker 存活，
   // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
-  logger.debug('[SidePanel] keepalive 端口已连接, sessionId:', mySessionId);
+  logger.debug('[SidePanel] keepalive portconnected, sessionId:', mySessionId);
 
   // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
   const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null, checkpoint: null };
   keepalivePort.onMessage.addListener((msg) => {
     if (msg.type === 'SW_RESTARTED' && msg.sessionId === mySessionId) {
-      logger.warn('[SidePanel] ⚠️ 收到 SW_RESTARTED 通知，后台已重启，API 调用已丢失');
+      logger.warn('[SidePanel] ⚠️ recei to  SW_RESTARTED notification,background re started,API call lost');
       _swRestartCtx.restarted = true;
       _swRestartCtx.checkpoint = msg.checkpoint || null;
       // 如果 Promise executor 已经初始化（rejectFn 已设置），直接触发清理和拒绝
@@ -2715,7 +2695,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     state.pendingCancelApi = cancelApi;
     state.pendingCallApiSessionIds.add(mySessionId);
     syncPendingSessionsToStorage();
-    logger.debug('[SidePanel] callApi: 添加 pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
+    logger.debug('[SidePanel] callApi: add pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
     
     _timeoutCtx.timeoutId = setTimeout(() => {
       cancelApi({
@@ -2728,7 +2708,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         tabId: state.currentTabId,
         sessionId: state.activeSessionId
       }).catch(err => {
-        logger.debug('[SidePanel] 发送取消请求失败:', err.message);
+        logger.debug('[SidePanel] sendcancelrequest failed:', err.message);
       });
     }, timeoutMs);
     
@@ -2741,7 +2721,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         pauseStartTime = Date.now();
         clearTimeout(_timeoutCtx.timeoutId);
         _timeoutCtx.timeoutId = null;
-        logger.debug('[SidePanel] 前端超时已暂停（等待用户响应：澄清/敏感工具确认）');
+        logger.debug('[SidePanel]  before sidetimeoutpaused (waitinguser response:clarification/sensitive toolconfirm)');
       }
     };
     
@@ -2772,16 +2752,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
             tabId: state.currentTabId,
             sessionId: mySessionId
           }).catch(err => {
-            logger.debug('[SidePanel] 发送取消请求失败:', err.message);
+            logger.debug('[SidePanel] sendcancelrequest failed:', err.message);
           });
         }, remainingTime);
         
-        logger.debug('[SidePanel] 前端超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(remainingTime / 1000), 's');
+        logger.debug('[SidePanel]  before sidetimeoutrestored,pause duration:', Math.round(pauseDuration / 1000), 's,remaining time:', Math.round(remainingTime / 1000), 's');
       }
     };
 
     const listener = (message) => {
-      // logger.debug('[SidePanel] 收到消息:', message);
+      // logger.debug('[SidePanel] receito cancelinfo:', message);
       
       // 过滤：只处理属于本会话或没有 sessionId 的消息（兼容）
       // 使用捕获的 mySessionId 而非 state.activeSessionId，确保切换会话后仍能收到本会话的响应
@@ -2964,7 +2944,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       
       // 流式输出消息处理
       if (message.type === 'STREAM_PRESELECT') {
-        logger.debug('[SidePanel] 收到预筛选日志，条数:', message.preselectLog?.length);
+        logger.debug('[SidePanel] received pre-filterlog,:', message.preselectLog?.length);
         setPendingPreselectLog(message.preselectLog || null);
         // 如果流式元素已创建（STREAM_START 先于本消息到达），立即添加预筛选卡片
         if (_se() && getPendingPreselectLog() && getPendingPreselectLog().length > 0) {
@@ -2975,14 +2955,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               mc.insertBefore(preselectCard, mc.firstChild);
             });
             setPendingPreselectLog(null);
-            logger.debug('[SidePanel] 预筛选卡片已追加到已有流式元素');
+            logger.debug('[SidePanel] pre-filtercard imageappended to existingstreamingelement');
           }
         }
         return false;
       }
       
       if (message.type === 'STREAM_START') {
-        logger.debug('[SidePanel] 流式输出开始');
+        logger.debug('[SidePanel] streamingoutput start');
         // 移除 loading 消息（通过 _loadingId 精确定位当前会话的 loading）
         const loadingId = apiParams._loadingId;
         const loadingDiv = loadingId ? document.getElementById(loadingId) : document.querySelector('.loading-message');
@@ -3016,7 +2996,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           if (contentDiv) {
             const existingThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)');
             if (existingThinking) {
-              logger.warn('[STREAM_START] 已有可见的思考指示器，跳过创建:', existingThinking);
+              logger.warn('[STREAM_START]  has can seen thinking indicator,skipcreate:', existingThinking);
             }
             if (!existingThinking) {
               const newThinking = document.createElement('div');
@@ -3204,7 +3184,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       // 恢复模式：发送 RESUME_REACT，由 background 读取 checkpoint 并恢复 ReAct 循环
       // 流式消息（STREAM_START/STREAM_CHUNK/STREAM_DONE/API_COMPLETE/API_ERROR）的处理
       // 与 CALL_API 完全一致，复用上面的 listener
-      logger.debug('[SidePanel] 发送 RESUME_REACT 消息，sessionId:', state.activeSessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '(无)', 'timeout:', timeoutMs);
+      logger.debug('[SidePanel] send RESUME_REACT message,sessionId:', state.activeSessionId, 'userGuidance:', userGuidance ? `"${userGuidance.substring(0, 50)}..."` : '( no )', 'timeout:', timeoutMs);
       chrome.runtime.sendMessage({
         type: 'RESUME_REACT',
         sessionId: state.activeSessionId,
@@ -3212,7 +3192,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         userGuidance: userGuidance || '',
       });
     } else {
-      logger.debug('[SidePanel] 发送 CALL_API 消息，useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
+      logger.debug('[SidePanel] send CALL_API message,useTools:', useTools, 'tabId:', state.currentTabId, 'sessionId:', state.activeSessionId, 'apiParams:', apiParams, 'timeout:', timeoutMs);
       chrome.runtime.sendMessage({
         type: 'CALL_API',
         sessionId: state.activeSessionId,
@@ -3432,9 +3412,9 @@ export function editAndResendMessage(messageDiv) {
     userInput.focus();
     userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
     
-    logger.debug('[SidePanel] 已加载消息内容到输入框，等待用户编辑后发送');
+    logger.debug('[SidePanel] loadedmessagecontent to input box,waitingafter user editsend');
   } catch (error) {
-    logger.error('[SidePanel] 编辑消息失败:', error);
+    logger.error('[SidePanel] editmessage failed:', error);
     showToast(t('chatMsg.editFailed', { message: error.message }), 'error');
   }
 }

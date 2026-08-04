@@ -134,7 +134,7 @@ export function initSearchPanel() {
   document.body.appendChild(container);
 
   bindSearchPanelEvents();
-  logger.debug('[SearchPanel] 搜索面板已初始化');
+  logger.debug('[SearchPanel] search panelinitializing');
 }
 
 /**
@@ -357,7 +357,7 @@ async function performSearch(query) {
       await searchCurrentSession(query, content, count);
     }
   } catch (err) {
-    logger.error('[SearchPanel] 搜索出错:', err);
+    logger.error('[SearchPanel] search error:', err);
     if (!cancelSearch) {
       content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.searchError')}</div>`;
     }
@@ -457,7 +457,7 @@ async function searchAllSessions(query, content, count) {
         renderSearchResults(searchResults, query, content);
       }
     } catch (err) {
-      logger.warn('[SearchPanel] 搜索会话失败:', session.id, err);
+      logger.warn('[SearchPanel] searchsession failed:', session.id, err);
     }
 
     // 每搜索一个会话后短暂暂停，让 UI 更新
@@ -667,10 +667,10 @@ async function navigateToSearchResult(sessionId, messageId) {
         const { renderSessionTabs } = await import('./session-manager-ui.js');
         renderSessionTabs();
       } catch (e) {
-        logger.warn('[SearchPanel] 刷新会话Tab失败:', e);
+        logger.warn('[SearchPanel] refreshsessionTab failed:', e);
       }
     } catch (e) {
-      logger.error('[SearchPanel] 切换会话失败:', e);
+      logger.error('[SearchPanel] switchsession failed:', e);
       return;
     }
   }
@@ -679,7 +679,7 @@ async function navigateToSearchResult(sessionId, messageId) {
   setTimeout(async () => {
     const chatContainer = document.getElementById('chatContainer');
     if (!chatContainer) {
-      logger.warn('[SearchPanel] chatContainer 不存在');
+      logger.warn('[SearchPanel] chatContainer not found');
       return;
     }
     let messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
@@ -690,7 +690,7 @@ async function navigateToSearchResult(sessionId, messageId) {
     // 调试日志：输出所有 data-message-id，方便排查匹配失败原因
     if (!messageEl) {
       const allMsgIds = Array.from(chatContainer.querySelectorAll('[data-message-id]'), el => el.dataset.messageId);
-      logger.warn('[SearchPanel] 定位消息失败', {
+      logger.warn('[SearchPanel] positionmessage failed', {
         targetSessionId: sessionId,
         activeSessionId: state.activeSessionId,
         targetMessageId: messageId,
@@ -726,10 +726,10 @@ async function navigateToSearchResult(sessionId, messageId) {
             content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
             if (count) count.textContent = t('searchPanel.noResult');
           }
-          logger.debug('[SearchPanel] 已清理 IndexedDB 脏数据:', sessionId, messageId);
+          logger.debug('[SearchPanel] cleaned IndexedDB dirtydata:', sessionId, messageId);
         }
       } catch (e) {
-        logger.warn('[SearchPanel] 清理脏数据失败:', e);
+        logger.warn('[SearchPanel] cleanupdirtydata failed:', e);
       }
     }
   }, 500);

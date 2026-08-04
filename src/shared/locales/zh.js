@@ -891,6 +891,20 @@ export default {
     importFailed: '导入失败: {error}',
   },
 
+  // 上下文气泡
+  contextBubble: {
+    labelSelection: '选中内容',
+    labelQuoted: '引用',
+    labelSkill: '技能',
+    labelMcp: 'MCP',
+    labelPage: '网页',
+    labelFile: '文件',
+    clickToExpand: '点击展开',
+    bubbleSkill: '{name} 🧩',
+    bubbleMcp: '{name} 🔌',
+    bubblePage: '{title} 🌐',
+  },
+
   // options.html - 导出/导入配置弹窗
   configDialog: {
     exportTitle: '导出配置',

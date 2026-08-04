@@ -178,7 +178,7 @@ export async function getAgentConfig() {
     _agentConfig = { url: active.url, token: active.token };
     return _agentConfig;
   } catch (err) {
-    logger.warn('[WorkspaceManager] 获取Agent配置失败:', err.message);
+    logger.warn('[WorkspaceManager] getAgentconfiguration failed:', err.message);
     return null;
   }
 }
@@ -202,7 +202,7 @@ export async function getWorkspaceRoot() {
       }
     }
   } catch (err) {
-    logger.warn('[WorkspaceManager] 获取工作目录失败:', err.message);
+    logger.warn('[WorkspaceManager] get workingdirectory failed:', err.message);
   }
   return null;
 }
@@ -232,7 +232,7 @@ export async function getAgentStatusDetail() {
       if (data.success) return data;
     }
   } catch (err) {
-    logger.warn('[WorkspaceManager] 获取状态详情失败:', err.message);
+    logger.warn('[WorkspaceManager] get statusdetailcase failed:', err.message);
   }
   return null;
 }

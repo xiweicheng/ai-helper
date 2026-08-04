@@ -250,7 +250,7 @@ export function initBookmarkPanel() {
     await navigateToBookmark(sessionId, messageId);
   });
 
-  logger.debug('[BookmarkPanel] 收藏面板已初始化');
+  logger.debug('[BookmarkPanel] bookmark panelinitializing');
 }
 
 /**
@@ -428,10 +428,10 @@ async function navigateToBookmark(sessionId, messageId) {
         const { renderSessionTabs } = await import('./session-manager-ui.js');
         renderSessionTabs();
       } catch (e) {
-        logger.warn('[BookmarkPanel] 刷新会话Tab失败:', e);
+        logger.warn('[BookmarkPanel] refreshsessionTab failed:', e);
       }
     } catch (e) {
-      logger.error('[BookmarkPanel] 切换会话失败:', e);
+      logger.error('[BookmarkPanel] switchsession failed:', e);
       return;
     }
   }

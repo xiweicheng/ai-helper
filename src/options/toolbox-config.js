@@ -31,7 +31,7 @@ function notifyMcpChange() {
   try {
     chrome.runtime.sendMessage({ type: 'RELOAD_MCP_TOOLS' }, (resp) => {
       if (resp?.success) {
-        logger.debug(`[Toolbox] Background 已重载 ${resp.count} 个 MCP 工具`);
+        logger.debug(`[Toolbox] Background re loaded ${resp.count}  MCP tool`);
       }
     });
   } catch (_) { /* 忽略错误，background 可能未运行 */ }

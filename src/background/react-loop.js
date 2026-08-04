@@ -90,7 +90,7 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
   const confirmTimeout = 300000; // 5分钟确认超时
   
-  logger.debug(`[Background] 请求用户确认工具操作: ${toolName}`, toolArgs);
+  logger.debug(`[Background] requesting user confirmation for tool operation: ${toolName}`, toolArgs);
 
   // 为 manage_tab(close) 获取标签页标题和 URL，帮助用户判断
   let extraMessage = '';
@@ -108,11 +108,11 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
       if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolName) {
         chrome.runtime.onMessage.removeListener(handler);
         clearTimeout(timeoutId);
-        logger.debug(`[Background] 用户确认结果: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
+        logger.debug(`[Background] userconfirmresult: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
         if (message.confirmed && message.scope === 'loop') {
           // 当前任务放行：后续工具调用自动通过
           loopApprovedSessions.add(sessionId);
-          logger.debug(`[Background] 会话 ${sessionId} 已设为当前任务放行`);
+          logger.debug(`[Background] session ${sessionId} set as current taskallow`);
         }
         resolve(message.confirmed);
       }
@@ -122,7 +122,7 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
     
     const timeoutId = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(handler);
-      logger.debug(`[Background] 确认超时，默认拒绝: ${toolName}`);
+      logger.debug(`[Background] confirmtimeout,defaultdeny: ${toolName}`);
       resolve(false); // 超时默认拒绝
     }, confirmTimeout);
     
@@ -139,7 +139,7 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
         message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined
       }
     }).catch(err => {
-      logger.debug('[Background] 发送确认对话框消息失败:', err.message);
+      logger.debug('[Background] sendconfirm dialogmessage failed:', err.message);
       // 发送失败，直接放行
       chrome.runtime.onMessage.removeListener(handler);
       clearTimeout(timeoutId);
@@ -185,23 +185,23 @@ async function persistCheckpoint(sessionId, data) {
   try {
     const ok = await saveReactCheckpoint({ sessionId, ...data });
     if (ok) {
-      logger.debug(`[Background] checkpoint 已保存 (sessionId=${sessionId}, iteration=${data.iteration}, reason=${data.interruptedReason})`);
+      logger.debug(`[Background] checkpoint saved (sessionId=${sessionId}, iteration=${data.iteration}, reason=${data.interruptedReason})`);
       // 验证写入：读回确认 checkpoint 确实落盘（防止 IndexedDB 升级阻塞导致静默失败）
       try {
         const verified = await getReactCheckpoint(sessionId);
         if (!verified) {
-          logger.error(`[Background] ⚠️ checkpoint 写入返回成功但读回为空！sessionId=${sessionId}，可能是 DB store 不存在或事务未提交`);
+          logger.error(`[Background] ⚠️ checkpoint write returned successfulbut read-back empty!sessionId=${sessionId}, possibly is DB store does not exist or transaction not committed`);
         } else {
-          logger.debug(`[Background] checkpoint 写入验证通过，消息数=${verified.currentMessages?.length || 0}`);
+          logger.debug(`[Background] checkpoint write verifypassed,message=${verified.currentMessages?.length || 0}`);
         }
       } catch (verifyErr) {
-        logger.error('[Background] checkpoint 读回验证失败:', verifyErr.message);
+        logger.error('[Background] checkpoint read-backverify failed:', verifyErr.message);
       }
     } else {
-      logger.error(`[Background] checkpoint 保存返回 false (sessionId=${sessionId}, iteration=${data.iteration})，可能是 reactCheckpoints store 不存在，DB 升级被阻塞`);
+      logger.error(`[Background] checkpoint save returned false (sessionId=${sessionId}, iteration=${data.iteration}), possibly is reactCheckpoints store not found,DB upgrade blocked`);
     }
   } catch (e) {
-    logger.error('[Background] 保存 checkpoint 失败:', e.message, e.stack);
+    logger.error('[Background] save checkpoint failed:', e.message, e.stack);
   }
 }
 
@@ -212,9 +212,9 @@ async function clearCheckpoint(sessionId) {
   if (!sessionId) return;
   try {
     await deleteReactCheckpoint(sessionId);
-    logger.debug(`[Background] checkpoint 已清理 (sessionId=${sessionId})`);
+    logger.debug(`[Background] checkpoint cleaned (sessionId=${sessionId})`);
   } catch (e) {
-    logger.warn('[Background] 清理 checkpoint 失败:', e.message);
+    logger.warn('[Background] cleanup checkpoint failed:', e.message);
   }
 }
 
@@ -239,7 +239,7 @@ function cleanupIncompleteMessagePairs(messages) {
     if (msg.role === 'tool') {
       const prevMsg = i > 0 ? messages[i - 1] : null;
       if (!prevMsg || prevMsg.role !== 'assistant' || !prevMsg.tool_calls) {
-        logger.warn('[Background] cleanupIncompleteMessagePairs: 跳过孤立的 tool 消息（index=' + i + '）');
+        logger.warn('[Background] cleanupIncompleteMessagePairs: skip orphaned tool message (index=' + i + ')');
         i++;
         continue;
       }
@@ -251,7 +251,7 @@ function cleanupIncompleteMessagePairs(messages) {
       const nextMsg = i + 1 < messages.length ? messages[i + 1] : null;
       if (!nextMsg || nextMsg.role !== 'tool') {
         // 孤立的 assistant(tool_calls)：清除 tool_calls，保留消息内容（可能是思考过程）
-        logger.warn('[Background] cleanupIncompleteMessagePairs: 孤立的 assistant(tool_calls)，清除 tool_calls（index=' + i + '）');
+        logger.warn('[Background] cleanupIncompleteMessagePairs: orphaned assistant(tool_calls),clear tool_calls (index=' + i + ')');
         cleaned.push({ ...msg, tool_calls: undefined });
         i++;
         continue;
@@ -263,7 +263,7 @@ function cleanupIncompleteMessagePairs(messages) {
   }
 
   if (cleaned.length !== messages.length) {
-    logger.debug('[Background] cleanupIncompleteMessagePairs: 清理完成，消息数:', messages.length, '→', cleaned.length);
+    logger.debug('[Background] cleanupIncompleteMessagePairs: cleanup complete,message:', messages.length, '→', cleaned.length);
   }
 
   return cleaned;
@@ -282,16 +282,16 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
   if (!sessionId) return null;
   const checkpoint = await getReactCheckpoint(sessionId);
   if (!checkpoint) {
-    logger.warn(`[Background] 未找到 sessionId=${sessionId} 的 checkpoint，无法恢复`);
+    logger.warn(`[Background] not found sessionId=${sessionId}   checkpoint, no way to restore`);
     // 诊断：列出所有已保存的 checkpoint，帮助排查 sessionId 不匹配问题
     let diagInfo = '';
     try {
       const all = await getAllReactCheckpoints();
       if (all.length === 0) {
-        logger.warn('[Background] IndexedDB 中没有任何 checkpoint 记录（可能从未保存成功）');
+        logger.warn('[Background] IndexedDB contains no checkpoint record (may never have been saved successful)');
         diagInfo = '（IndexedDB 中无任何 checkpoint 记录）';
       } else {
-        logger.warn('[Background] 当前 IndexedDB 中的 checkpoint 列表:', all.map(cp => ({
+        logger.warn('[Background] current IndexedDB   checkpoint  column table:', all.map(cp => ({
           sessionId: cp.sessionId,
           iteration: cp.iteration,
           updatedAt: new Date(cp.updatedAt).toISOString(),
@@ -300,14 +300,14 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
         diagInfo = `（共 ${all.length} 个 checkpoint: ${all.map(cp => cp.sessionId).join(', ')}）`;
       }
     } catch (e) {
-      logger.error('[Background] 读取 checkpoint 列表失败:', e);
+      logger.error('[Background] read checkpoint  column table failed:', e);
       diagInfo = `（读取 checkpoint 列表失败: ${e.message}）`;
     }
     // 将诊断信息附加到返回值，供前端展示
     return null;
   }
 
-  logger.debug(`[Background] 从 checkpoint 恢复 ReAct 循环: sessionId=${sessionId}, iteration=${checkpoint.iteration}, messages=${checkpoint.currentMessages?.length}, userGuidance=${userGuidance ? '有' : '无'}, resumeCallId=${resumeCallId}`);
+  logger.debug(`[Background]  from  checkpoint restore ReAct loop: sessionId=${sessionId}, iteration=${checkpoint.iteration}, messages=${checkpoint.currentMessages?.length}, userGuidance=${userGuidance ? ' has ' : ' no '}, resumeCallId=${resumeCallId}`);
 
   // 恢复 currentMessages：深拷贝避免修改 checkpoint 原始数据
   let restoredMessages = JSON.parse(JSON.stringify(checkpoint.currentMessages || []));
@@ -324,7 +324,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
       content: `[Task Resume Notice] The task was previously interrupted during execution and is now resuming from the checkpoint.\n\nAdditional user instructions: ${userGuidance.trim()}\n\nPlease continue completing the task based on the previous tool call results, taking the above instructions into account. Do not repeat already completed steps.`,
     };
     restoredMessages.push(guidanceMsg);
-    logger.debug('[Background] 已注入用户追加描述，消息总数:', restoredMessages.length);
+    logger.debug('[Background] injected user additionaldescription,messagetotal:', restoredMessages.length);
   } else {
     // 即使没有用户描述，也注入一个系统级提示，告知模型任务是被恢复的
     const resumeHintMsg = {
@@ -332,7 +332,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
       content: `[Task Resume Notice] The task was previously interrupted during execution and is now resuming from the checkpoint. Please continue completing the task based on the previous tool call results. Do not repeat already completed steps.`,
     };
     restoredMessages.push(resumeHintMsg);
-    logger.debug('[Background] 已注入默认恢复提示，消息总数:', restoredMessages.length);
+    logger.debug('[Background] injected defaultrestoreprompt,messagetotal:', restoredMessages.length);
   }
 
   // 恢复时合并 checkpoint 状态并调用 reactLoop
@@ -404,10 +404,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       reactTokenBudget = contextWindow - actualSystemTokens - actualToolDefTokens - 4096 - 2000;
       // 确保预算为正数
       if (reactTokenBudget < 1000) {
-        logger.warn(`[Background] ReAct Token 预算过低: ${reactTokenBudget}，使用最小预算 1000`);
+        logger.warn(`[Background] ReAct Token budget too low: ${reactTokenBudget},using minimumbudget 1000`);
         reactTokenBudget = 1000;
       }
-      logger.debug(`[Background] ReAct Token 预算: ${reactTokenBudget} tokens (模型: ${modelName}, 实际系统提示词: ${actualSystemTokens}, 实际工具定义: ${actualToolDefTokens}, 上下文窗口: ${contextWindow})`);
+      logger.debug(`[Background] ReAct Token budget: ${reactTokenBudget} tokens (model: ${modelName}, actualsystem promptword: ${actualSystemTokens}, actual tooldefinition: ${actualToolDefTokens}, context window: ${contextWindow})`);
     }
     return reactTokenBudget;
   };
@@ -469,7 +469,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       if (roundStart === -1) break; // 没有可摘要的轮次
 
       const roundMessages = rest.slice(roundStart, roundEnd);
-      logger.debug(`[Background] 尝试摘要第 ${summaryRoundCount + 1} 轮 (消息 ${roundStart}-${roundEnd - 1})`);
+      logger.debug(`[Background] attemptsummarystep ${summaryRoundCount + 1} round (message ${roundStart}-${roundEnd - 1})`);
 
       const summary = await summarizeRound(roundMessages, config, model, {
         signal: abortSignal,
@@ -477,7 +477,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       });
 
       if (!summary) {
-        logger.debug('[Background] 摘要失败，降级到权重裁剪');
+        logger.debug('[Background] summary failed,downgraded to weight-based trimming');
         break; // 摘要失败，退出摘要循环，进入兜底裁剪
       }
 
@@ -511,7 +511,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
 
       const newTokensAfterSummary = est([...systemMsg, ...rest]);
-      logger.debug(`[Background] 摘要完成: ${oldTokens} → ${newTokensAfterSummary} tokens (${roundMessages.length}条 → 1条摘要)`);
+      logger.debug(`[Background] summary complete: ${oldTokens} → ${newTokensAfterSummary} tokens (${roundMessages.length} → 1summary)`);
     }
 
     // ============================================================
@@ -519,7 +519,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     // ============================================================
     totalTokens = est([...systemMsg, ...rest]);
     if (totalTokens > budget) {
-      logger.debug(`[Background] 摘要后仍超标 (${totalTokens} > ${budget})，启用兜底裁剪`);
+      logger.debug(`[Background] still exceeding after summary (${totalTokens} > ${budget}),enablefallbacktrimming`);
 
       // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
       const getWeight = (msg) => {
@@ -571,7 +571,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
     currentMessages = [...systemMsg, ...rest];
     const newTokens = est(currentMessages);
-    logger.debug(`[Background] ReAct Token 裁剪: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} 条)`);
+    logger.debug(`[Background] ReAct Token trimming: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} )`);
   };
 
   const executionLog = [...initialLog];
@@ -590,22 +590,22 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   async function saveCheckpointNow(reason = '', force = false) {
     // 子任务不保存 checkpoint（子任务中断视为整体失败，由父任务重试）
     if (taskContext) {
-      logger.debug(`[Background] saveCheckpointNow 跳过（子任务）: reason=${reason}`);
+      logger.debug(`[Background] saveCheckpointNow skip (subtask): reason=${reason}`);
       return;
     }
     if (!sessionId) {
-      logger.warn('[Background] saveCheckpointNow 跳过（sessionId 为空）');
+      logger.warn('[Background] saveCheckpointNow skip (sessionId empty)');
       return;
     }
 
     const now = Date.now();
     if (!force && now - lastCheckpointSaveTime < CHECKPOINT_THROTTLE_MS) {
-      logger.debug(`[Background] saveCheckpointNow 节流跳过: reason=${reason}, 距上次保存 ${now - lastCheckpointSaveTime}ms < ${CHECKPOINT_THROTTLE_MS}ms`);
+      logger.debug(`[Background] saveCheckpointNow throttlestreamskip: reason=${reason}, since last save ${now - lastCheckpointSaveTime}ms < ${CHECKPOINT_THROTTLE_MS}ms`);
       return;
     }
     lastCheckpointSaveTime = now;
 
-    logger.debug(`[Background] saveCheckpointNow 开始保存: sessionId=${sessionId}, reason=${reason}, force=${force}, iteration=${iteration}, messages=${currentMessages.length}, callId=${callId}`);
+    logger.debug(`[Background] saveCheckpointNow start saving: sessionId=${sessionId}, reason=${reason}, force=${force}, iteration=${iteration}, messages=${currentMessages.length}, callId=${callId}`);
 
     await persistCheckpoint(sessionId, {
       currentMessages: currentMessages.map(msg => {
@@ -663,9 +663,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     ? { ...config.streamConfig, streamEnabled: false }
     : config.streamConfig;
 
-  logger.debug('[Background] reactLoop 配置:', reactConfig);
-  logger.debug('[Background] reactLoop 收到工具列表:', tools.map(t => t.function.name), '数量:', tools.length);
-  logger.debug('[Background] reactLoop 任务上下文:', taskContext ? `子任务 ${taskContext.subtaskId || '无'} (${taskContext.subtaskName || '主任务'})` : '无');
+  logger.debug('[Background] reactLoop configuration:', reactConfig);
+  logger.debug('[Background] reactLoop received tool column table:', tools.map(t => t.function.name), 'count:', tools.length);
+  logger.debug('[Background] reactLoop tasktext:', taskContext ? `subtask ${taskContext.subtaskId || ' no '} (${taskContext.subtaskName || 'maintask'})` : ' no ');
   
   /**
    * 发送实时执行状态更新消息（200ms 节流，子任务大量执行时防止消息拥塞）
@@ -711,10 +711,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
       
       chrome.runtime.sendMessage(msg).catch(err => {
-        logger.debug('[Background] 发送执行状态更新失败:', err.message);
+        logger.debug('[Background] sendexecution statusupdate failed:', err.message);
       });
     } catch (e) {
-      logger.debug('[Background] 发送执行状态更新异常:', e.message);
+      logger.debug('[Background] sendexecution statusupdate exception:', e.message);
     }
   }
   
@@ -738,7 +738,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     if (!isPaused) {
       pauseStartTime = Date.now();
       isPaused = true;
-      logger.debug('[Background] 整体循环超时已暂停');
+      logger.debug('[Background] overall looptimeoutpaused');
     }
   }
   
@@ -760,7 +760,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       pauseStartTime = null;
       isPaused = false;
       
-      logger.debug('[Background] 整体循环超时已恢复，暂停时长:', Math.round(pauseDuration / 1000), 's，剩余时间:', Math.round(getRemainingTime() / 1000), 's');
+      logger.debug('[Background] overall looptimeoutrestored,pause duration:', Math.round(pauseDuration / 1000), 's,remaining time:', Math.round(getRemainingTime() / 1000), 's');
     }
   }
   
@@ -788,7 +788,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 递增 API 调用计数器（预筛选已经用了第1次）
       incrementDialogApiCallCount(sessionId);
       const remainingTime = adjustedTimeout - elapsedTime;
-      logger.debug(`[Background] ReAct 循环第 ${iteration} 次，剩余时间: ${Math.round(remainingTime / 1000)}s (已暂停: ${Math.round(totalPausedDuration / 1000)}s)`);
+      logger.debug(`[Background] ReAct loopstep ${iteration}  times,remaining time: ${Math.round(remainingTime / 1000)}s (paused: ${Math.round(totalPausedDuration / 1000)}s)`);
       
       let response;
       const apiCallStartTime = Date.now();
@@ -811,7 +811,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const hasPlanTask = tools.some(t => t.function?.name === 'plan_task');
       const apiTools = tools;
       if (hasPlanTask) {
-        logger.debug('[Background] 当前迭代包含 plan_task，使用 Agent 限定工具进行任务拆解，工具数:', apiTools.length);
+        logger.debug('[Background] current iterationcontains plan_task,using Agent limittool into  task decomposition,tool count :', apiTools.length);
       }
 
       // 上下文压力评估与主动裁剪：在每次 API 调用前检查并防止超限
@@ -831,13 +831,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const pressure = assessContextPressure(totalEstimate, contextWindow);
       
       if (pressure.level !== 'safe') {
-        logger.warn(`[Background] 上下文压力: ${pressure.level} (${Math.round(pressure.ratio * 100)}% 已用, 消息: ${filteredTokens}, 工具: ${actualToolTokens}, 预估总计: ${totalEstimate}/${contextWindow} tokens)`);
+        logger.warn(`[Background] context pressure: ${pressure.level} (${Math.round(pressure.ratio * 100)}% used, message: ${filteredTokens}, tool: ${actualToolTokens}, estimated total: ${totalEstimate}/${contextWindow} tokens)`);
         
         // 当总预估超过上下文窗口 85%，主动裁剪消息以留出安全余量
         if (pressure.level === 'critical' || totalEstimate > contextWindow * 0.85) {
           const reactBudget = getReactTokenBudget(model || 'default');
           const targetBudget = Math.floor(reactBudget * 0.75); // 裁剪到预算的 75%
-          logger.warn(`[Background] 上下文压力过高，主动裁剪消息: 当前 ${filteredTokens} tokens → 目标预算 ${targetBudget}`);
+          logger.warn(`[Background] context pressure too high,maindynamictrimmingmessage: current ${filteredTokens} tokens → target budget ${targetBudget}`);
           const trimmed = trimMessagesByBudget(currentMessages, Math.max(targetBudget, 2000));
           if (trimmed.trimmedCount > 0) {
             currentMessages = trimmed.messages;
@@ -846,7 +846,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             for (let i = 0; i < filteredMessages.length - 1; i++) {
               filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
             }
-            logger.warn(`[Background] 主动裁剪完成: ${trimmed.trimmedCount} 条消息被移除，剩余 ${currentMessages.length} 条, ${estimateMessagesTokens(filteredMessages)} tokens`);
+            logger.warn(`[Background] maindynamictrimmingcomplete: ${trimmed.trimmedCount} messageremove,remaining ${currentMessages.length} , ${estimateMessagesTokens(filteredMessages)} tokens`);
           }
         }
       }
@@ -873,7 +873,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 
       try {
         const apiUrl = `${config.apiBase}/chat/completions`;
-        logger.debug('[Background] API 请求工具数量:', apiTools.length);
+        logger.debug('[Background] API requesttool count  count :', apiTools.length);
         
         const requestBody = {
           model: model || config.modelName,
@@ -885,7 +885,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           stream: streamConfig.streamEnabled !== false
         };
         
-        logger.debug('[Background] API 请求体 stream 模式:', requestBody.stream, '工具数量:', requestBody.tools.length, '消息数量:', requestBody.messages.length, 'model:', requestBody.model);
+        logger.debug('[Background] API requestbody stream mode:', requestBody.stream, 'tool count  count :', requestBody.tools.length, 'messagecount:', requestBody.messages.length, 'model:', requestBody.model);
         
         // 添加 temperature 和 top_p 参数
         if (apiParams.temperature !== undefined) {
@@ -899,7 +899,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 外层超时保护：独立 setTimeout watchdog，防止 fetchWithRetry 因 AbortSignal bug 永久挂起
         const outerTimeoutMs = Math.max(remainingTime - 30000, apiTimeout);
         outerWatchdog = setTimeout(() => {
-          logger.warn(`[Background] ⚠️ API 调用外层超时保护触发 (${Math.round(outerTimeoutMs / 1000)}s)，强制 abort`);
+          logger.warn(`[Background] ⚠️ API call outertimeoutprotection triggered (${Math.round(outerTimeoutMs / 1000)}s),force abort`);
           abortController?.abort();
         }, outerTimeoutMs);
 
@@ -910,7 +910,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             sessionId: sessionId,
             callId: callId
           }).catch(() => {});
-          logger.debug('[Background] STREAM_START 已发送（API 调用前）');
+          logger.debug('[Background] STREAM_START sent (API call with  before )');
         }
 
         const fetchResponse = await fetchWithRetry(apiUrl, {
@@ -922,22 +922,22 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           body: JSON.stringify(requestBody),
           signal: abortSignal
         }, apiTimeout, reactConfig.apiRetryCount, reactConfig.apiRetryBaseDelay, (retryAttempt, retryError) => {
-          logger.warn(`[Background] API 重试 ${retryAttempt} 次后:`, retryError.message);
+          logger.warn(`[Background] API retry ${retryAttempt}  times after :`, retryError.message);
         });
         clearTimeout(outerWatchdog);
 
         if (!fetchResponse.ok) {
           const errorText = await fetchResponse.text();
-          logger.error('[Background] API 响应错误:', fetchResponse.status, errorText);
+          logger.error('[Background] API response error:', fetchResponse.status, errorText);
           throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${errorText.substring(0, 500)}`);
         }
 
         // 流式模式：读取 SSE 流
         if (streamConfig.streamEnabled !== false && fetchResponse.body) {
-          logger.debug('[Background] 进入流式模式，streamEnabled:', streamConfig.streamEnabled);
+          logger.debug('[Background] enteringstreamingmode,streamEnabled:', streamConfig.streamEnabled);
           const streamController = new StreamController(sessionId, streamConfig, { callId, preStarted: true });
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
-          logger.debug('[Background] 流式 API 响应完成，内容长度:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
+          logger.debug('[Background] streaming API responsecomplete,content length:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
           
           // 构建兼容现有代码的 response 对象
           // 流式模式下 tool_calls 的 id 可能为空，需要规范化，确保与 tool 消息的 tool_call_id 匹配
@@ -964,13 +964,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         } else {
           // 非流式模式：保持原有逻辑
           const responseText = await fetchResponse.text();
-          logger.debug('[Background] API 响应状态:', fetchResponse.status, '原始文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+          logger.debug('[Background] API responsestate:', fetchResponse.status, 'originaltext length:', responseText.length, 'preview:', responseText.substring(0, 200));
 
           try {
             response = JSON.parse(responseText);
           } catch (parseError) {
-            logger.error('[Background] JSON 解析失败:', parseError);
-            logger.error('[Background] 原始响应:', responseText);
+            logger.error('[Background] JSON parse failed:', parseError);
+            logger.error('[Background] originalresponse:', responseText);
             throw new Error(`API 响应不是有效的 JSON (HTTP ${fetchResponse.status}): ${parseError.message}。响应前100字符: ${responseText.substring(0, 100)}`);
           }
 
@@ -991,9 +991,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 区分用户取消（AbortError）和真正的 API 错误
         const isAborted = error.name === 'AbortError';
         if (isAborted) {
-          logger.debug('[Background] API 调用已被用户取消');
+          logger.debug('[Background] API call with by usercancel');
         } else {
-          logger.error('[Background] API 调用失败:', error.message || error);
+          logger.error('[Background] API call with failed:', error.message || error);
         }
         
         // 更新 API 调用日志状态为失败
@@ -1025,7 +1025,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       
       // 如果内容被截断，记录警告（循环仍继续，让模型在下一轮处理）
       if (finishReason === 'length') {
-        logger.warn(`[Background] API 响应因 token 限制被截断 (finish_reason: length)，内容可能不完整`);
+        logger.warn(`[Background] API response reason  token limit truncated (finish_reason: length),contentmay be incomplete`);
       }
       
       const apiLogIndex = executionLog.findIndex(log => log.id === apiLogId);
@@ -1068,7 +1068,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           updateCalibration(preCallPromptEstimate, response.usage.prompt_tokens);
           const calInfo = getCalibrationInfo();
           if (calInfo.active) {
-            logger.debug(`[Background] Token校准已激活: factor=${calInfo.factor.toFixed(3)}, samples=${calInfo.samples}`);
+            logger.debug(`[Background] Tokencalibration activated: factor=${calInfo.factor.toFixed(3)}, samples=${calInfo.samples}`);
           }
         }
       }
@@ -1078,7 +1078,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
-        logger.debug('[Background] 收到工具调用:', assistantMessage.tool_calls);
+        logger.debug('[Background] recei to tool call:', assistantMessage.tool_calls);
         
         // 计算本轮工具调用的入参指纹（仅用于日志，死循环判定在工具执行完毕后结合返参进行）
         const currentInputFingerprint = JSON.stringify(
@@ -1089,7 +1089,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               : tc.function?.arguments || {}
           }))
         );
-        logger.debug('[Background] 本轮工具调用入参指纹:', currentInputFingerprint.substring(0, 200));
+        logger.debug('[Background] this roundtool callinput fingerprint:', currentInputFingerprint.substring(0, 200));
         
         currentMessages.push(assistantMessage);
         await trimMessages();
@@ -1112,7 +1112,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           const toolStartTime = Date.now();
           // 防御：arguments 可能是 string 或已解析的 object
           const rawArgs = toolCall.function?.arguments;
-          logger.debug('[Background] executeSingleToolCall 收到工具调用:', JSON.stringify({ name: toolName, argsType: typeof rawArgs, argsRaw: typeof rawArgs === 'string' ? rawArgs.substring(0, 200) : JSON.stringify(rawArgs).substring(0, 200), id: toolCall.id }));
+          logger.debug('[Background] executeSingleToolCall recei to tool call:', JSON.stringify({ name: toolName, argsType: typeof rawArgs, argsRaw: typeof rawArgs === 'string' ? rawArgs.substring(0, 200) : JSON.stringify(rawArgs).substring(0, 200), id: toolCall.id }));
           const toolArgs = (() => {
             if (!rawArgs) return {};
             if (typeof rawArgs === 'object') return rawArgs;
@@ -1130,7 +1130,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           if (needsConfirmation) {
             // 如果该会话已获得"当前任务放行"，跳过确认
             if (sessionId && loopApprovedSessions.has(sessionId)) {
-              logger.debug(`[Background] 会话 ${sessionId} 已获当前任务放行，跳过确认: ${toolName}`);
+              logger.debug(`[Background] session ${sessionId} got currenttaskallow,skip confirm: ${toolName}`);
             } else {
               // 暂停整体循环超时 + 通知前端暂停单次请求超时
               // （等待用户确认的时间不应计入超时，与 clarify_question 行为一致）
@@ -1139,7 +1139,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 type: 'TOOL_CONFIRM_START',
                 ...(sessionId ? { sessionId } : {})
               }).catch(err => {
-                logger.debug('[Background] 发送 TOOL_CONFIRM_START 消息失败:', err.message);
+                logger.debug('[Background] send TOOL_CONFIRM_START message failed:', err.message);
               });
 
               let confirmed;
@@ -1152,7 +1152,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   type: 'TOOL_CONFIRM_END',
                   ...(sessionId ? { sessionId } : {})
                 }).catch(err => {
-                  logger.debug('[Background] 发送 TOOL_CONFIRM_END 消息失败:', err.message);
+                  logger.debug('[Background] send TOOL_CONFIRM_END message failed:', err.message);
                 });
               }
               if (!confirmed) {
@@ -1241,7 +1241,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               type: 'CLARIFY_START',
               ...(sessionId ? { sessionId } : {})
             }).catch(err => {
-              logger.debug('[Background] 发送 CLARIFY_START 消息失败:', err.message);
+              logger.debug('[Background] send CLARIFY_START message failed:', err.message);
             });
           }
           
@@ -1257,11 +1257,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 type: 'CLARIFY_END',
                 ...(sessionId ? { sessionId } : {})
               }).catch(err => {
-                logger.debug('[Background] 发送 CLARIFY_END 消息失败:', err.message);
+                logger.debug('[Background] send CLARIFY_END message failed:', err.message);
               });
               
               // 澄清后重新预筛选工具：用户补充了新信息，工具集需要同步更新
-              logger.debug('[Background] 澄清完成，重新预筛选工具...');
+              logger.debug('[Background] clarification complete,re-filteringtool...');
               try {
                 const fullTools = await getTools();
                 const config = await getStoredConfig();
@@ -1272,17 +1272,17 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
                     reactTokenBudget = null; // 工具集变更，重置 Token 预算缓存
-                    logger.debug('[Background] 澄清后工具重新筛选完成:', tools.map(t => t.function.name));
+                    logger.debug('[Background] clarification after toolre-filtercomplete:', tools.map(t => t.function.name));
                   }
                   // 合并重新筛选的执行日志
                   if (reSelection.executionLog) {
                     executionLog.push(...reSelection.executionLog);
                   }
                 } else if (!enableToolPreselect) {
-                  logger.debug('[Background] 工具预筛选已关闭，澄清后不重新筛选');
+                  logger.debug('[Background] toolpre-filterclosed,after clarification, notre-filter');
                 }
               } catch (rePreselectErr) {
-                logger.warn('[Background] 澄清后工具重新筛选失败，继续使用当前工具集:', rePreselectErr.message);
+                logger.warn('[Background] clarification after toolre-filter failed, continue withcurrenttoolset:', rePreselectErr.message);
               }
             }
             
@@ -1306,7 +1306,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
               // 自动检测内容类型，智能截断
               const truncated = truncateContentSmart(toolResultStr, MAX_TOOL_RESULT_TOKENS);
-              logger.debug(`[Background] 工具 ${toolName} 结果截断: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
+              logger.debug(`[Background] tool ${toolName} result truncated: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
               toolResultTruncated = true;
               toolResultForDisplay = truncated;
               toolResultStr = truncated;
@@ -1363,7 +1363,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             // 处理任务规划工具的结果，提取子任务列表
             if (toolName === 'plan_task' && toolResult && toolResult.success && toolResult.data) {
               subtaskPlan = toolResult.data;
-              logger.debug('[Background] 收到任务规划结果:', JSON.stringify(subtaskPlan));
+              logger.debug('[Background] received taskplanresult:', JSON.stringify(subtaskPlan));
               
               // 先添加 plan_task 工具的响应消息（必须先响应工具调用）
               const planTaskContent = JSON.stringify({
@@ -1409,7 +1409,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   const skippedCall = assistantMessage.tool_calls[j];
                   const skippedName = skippedCall.function?.name || skippedCall.name || 'unknown';
                   const skippedId = skippedCall.id || `tc_fallback_${crypto.randomUUID()}`;
-                  logger.debug('[Background] 补发跳过工具的 STREAM_TOOL_RESULT:', skippedName, 'id:', skippedId);
+                  logger.debug('[Background] resend skiptool  STREAM_TOOL_RESULT:', skippedName, 'id:', skippedId);
                   // 为被跳过的工具添加 tool 消息，满足 API 的 tool_calls 配对要求
                   currentMessages.push({
                     role: 'tool',
@@ -1486,7 +1486,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             });
             await trimMessages();
             
-            logger.debug('[Background] 工具执行结果长度:', toolResultStr.length, '内容预览:', toolResultStr.substring(0, 200));
+            logger.debug('[Background] toolexec result length:', toolResultStr.length, 'content preview:', toolResultStr.substring(0, 200));
             
             // 更新工具执行日志
             const toolLogIndex = executionLog.findIndex(log => log.id === toolLogId);
@@ -1521,7 +1521,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             return { planTaskHandled: false, toolResultStr, toolName, toolCallId: toolCallId, toolResult };
             
           } catch (toolError) {
-            logger.warn('[Background] 工具执行失败（ReAct 循环继续）:', toolError.message);
+            logger.warn('[Background] toolexecution failed (ReAct loop continue):', toolError.message);
             
             // 如果是澄清工具，恢复整体循环超时计时
             if (toolName === 'clarify_question') {
@@ -1530,7 +1530,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 type: 'CLARIFY_END',
                 ...(sessionId ? { sessionId } : {})
               }).catch(err => {
-                logger.debug('[Background] 发送 CLARIFY_END 消息失败:', err.message);
+                logger.debug('[Background] send CLARIFY_END message failed:', err.message);
               });
             }
             
@@ -1567,7 +1567,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             
             // 工具执行失败时返回错误结果而非 throw，让 ReAct 循环继续下一轮
             // 模型可以根据错误信息调整策略（如重试、换工具、或直接给出结论）
-            logger.warn(`[Background] 工具 ${toolName} 执行失败，ReAct 循环继续:`, toolError.message);
+            logger.warn(`[Background] tool ${toolName} execution failed,ReAct loop continue:`, toolError.message);
             sendExecutionStatusUpdate(t('reactLoop.toolExec', { name: toolName }), 'failed');
 
             // 发送工具错误结果到 Side Panel 展示（更新 UI 中的工具卡片状态）
@@ -1603,7 +1603,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         async function processPendingReflections() {
           if (pendingReflections.length === 0) return;
           if (totalReflectionRounds >= MAX_REFLECTION_ROUNDS) {
-            logger.warn('[Background] 反思总轮数已达上限，跳过工具反思');
+            logger.warn('[Background] reflectiontotal roundsreached limit,skip toolreflection');
             return;
           }
           
@@ -1634,7 +1634,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 suggestion: toolReflection.suggestion
               };
               executionLog.push(toolReflectionEntry);
-              logger.debug(`[Background] 工具反思: ${ref.toolName} - ${toolReflection.useful ? '有用' : '无效'} - ${toolReflection.reasoning}`);
+              logger.debug(`[Background] toolreflection: ${ref.toolName} - ${toolReflection.useful ? ' has  with ' : 'invalid'} - ${toolReflection.reasoning}`);
               
               // 将反思建议附加到工具结果消息中
               if (!toolReflection.useful && toolReflection.suggestion) {
@@ -1661,7 +1661,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         
         if (allParallelizable && assistantMessage.tool_calls.length > 1) {
           // 并行执行路径
-          logger.debug('[Background] 并行执行工具调用:', assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name));
+          logger.debug('[Background] parallel exectool call:', assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name));
           
           // 记录并行执行前的消息数量，用于后续按 tool_calls 顺序重排 tool 消息
           const msgCountBefore = currentMessages.length;
@@ -1694,7 +1694,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           for (let i = 0; i < assistantMessage.tool_calls.length; i++) {
             const result = parallelResults[i];
             if (result.error) {
-              logger.warn(`[Background] 并行工具执行失败: ${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name} - ${result.error}`);
+              logger.warn(`[Background] parallel toolsexecution failed: ${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name} - ${result.error}`);
             }
             if (result.planTaskHandled) {
               planTaskHandled = true;
@@ -1762,7 +1762,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         if (currentCombinedFingerprint === lastCombinedFingerprint) {
           repeatedCallCount++;
           const _toolNames = assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', ');
-          logger.warn(`[Background] 检测到死循环：入参和返参完全相同 (第${repeatedCallCount}次连续重复): ${_toolNames}`);
+          logger.warn(`[Background] detected infiniteloop:input and outputidentical (${repeatedCallCount} consecutive repeats): ${_toolNames}`);
 
           if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
             throw createErrorWithLog(
@@ -1779,7 +1779,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               content: `[System Notice] You have called the exact same tool with the same parameters ${repeatedCallCount} times in a row and received identical results, which indicates the current strategy is making no progress. Please switch to a different strategy or tool immediately and do not repeat this operation. If the current tool cannot obtain the required data, try alternative approaches, or directly provide a conclusion based on the information already available.`
             };
             currentMessages.push(warnMsg);
-            logger.debug('[Background] 注入死循环警告消息');
+            logger.debug('[Background] inject infinite loopwarningmessage');
           }
         } else {
           lastCombinedFingerprint = currentCombinedFingerprint;
@@ -1793,7 +1793,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       
       const content = assistantMessage?.content || '';
       const reasoningContent = assistantMessage?.reasoning_content || null;
-      logger.debug('[Background] ReAct 循环完成，最终内容长度:', content.length);
+      logger.debug('[Background] ReAct loop complete,finalcontent length:', content.length);
 
       // 任务正常完成：先保存最终 checkpoint（供反思失败时仍可续接），然后清理
       await saveCheckpointNow('final_answer');
@@ -1804,7 +1804,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       // 后置反思：对最终答案进行质量评估
       const reflectionConfig = reactConfig.reflection;
       if (reflectionConfig?.enabled && reflectionConfig?.postReflection?.enabled && shouldReflect(executionLog, taskContext)) {
-        logger.debug('[Background] 触发后置反思...');
+        logger.debug('[Background] triggered post-reflection...');
         const reflectionResult = await reflectOnResult(
           currentMessages, content, executionLog, model, config,
           reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds
@@ -1923,7 +1923,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     chrome.runtime.sendMessage(msg).catch(err => {});
   }
   
-  logger.debug('[Background] 开始执行子任务，策略:', strategy, '失败策略:', failureStrategy, '最大重试:', maxRetries, '数量:', subtasks.length);
+  logger.debug('[Background] start executing subtask,strategy:', strategy, 'failedstrategy:', failureStrategy, 'maxretry:', maxRetries, 'count:', subtasks.length);
   
   // 按依赖关系排序（拓扑排序）
   const sortedSubtasks = strategy === 'dependency' 
@@ -1937,7 +1937,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
    * 回滚已完成的子任务
    */
   async function rollbackCompletedTasks() {
-    logger.debug('[Background] 开始回滚已完成的子任务');
+    logger.debug('[Background] start rollback completed subtask');
     
     // 逆序回滚
     for (let i = completedSubtasks.length - 1; i >= 0; i--) {
@@ -1945,7 +1945,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       
       if (typeof subtask.rollback === 'function') {
         try {
-          logger.debug(`[Background] 回滚子任务: ${subtask.name}`);
+          logger.debug(`[Background] rollback subtask: ${subtask.name}`);
           await subtask.rollback(result);
           
           // 记录回滚日志
@@ -1963,7 +1963,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           sendSubtaskStatusUpdate(t('reactLoop.subtaskRolledBack', { name: subtask.name }), 'rolledback', parentExecutionLog);
           
         } catch (rollbackError) {
-          logger.error('[Background] 回滚失败:', rollbackError.message);
+          logger.error('[Background] rollback failed:', rollbackError.message);
           parentExecutionLog.push({
             id: crypto.randomUUID(),
             iteration: 0,
@@ -2015,12 +2015,12 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     for (let retry = 0; retry <= maxRetries; retry++) {
       // 每次重试前检查是否已取消（使用原始 sessionId 检查取消状态）
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        logger.debug('[Background] 子任务重试已被用户取消');
+        logger.debug('[Background] subtaskretryby usercancel');
         throw createErrorWithLog(t('bg.reactCancelled'), parentExecutionLog);
       }
       
       try {
-        logger.debug(`[Background] 执行子任务 ${subtaskIndex + 1}/${sortedSubtasks.length}: ${subtask.name} (尝试 ${retry + 1}/${maxRetries + 1})`);
+        logger.debug(`[Background] execute subtask ${subtaskIndex + 1}/${sortedSubtasks.length}: ${subtask.name} (attempt ${retry + 1}/${maxRetries + 1})`);
         
         // 为子任务创建独立的消息上下文
         const subtaskMessages = [
@@ -2112,7 +2112,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           const shouldReflectSubtask = !subtaskReflectConfig.onlyForComplexSubtasks || isComplexSubtask;
           
           if (shouldReflectSubtask && subtaskReflectConfig.maxRounds > 0) {
-            logger.debug(`[Background] 子任务 ${subtask.name} 触发反思，复杂度: ${isComplexSubtask ? '复杂' : '普通'}`);
+            logger.debug(`[Background] subtask ${subtask.name} trigger reflection,complexity: ${isComplexSubtask ? 'repmisc' : 'normal'}`);
             
             const reflectionResult = await reflectOnSubtask(
               subtaskMessages, 
@@ -2130,7 +2130,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
             // 如果反思有修订，使用修订后的结果
             if (reflectionResult.refinedContent) {
               finalResult = reflectionResult.refinedContent;
-              logger.debug(`[Background] 子任务 ${subtask.name} 反思后已修订`);
+              logger.debug(`[Background] subtask ${subtask.name} after reflectionrevise`);
             }
             
             subtaskReflectionScore = reflectionResult.score;
@@ -2165,7 +2165,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         
       } catch (error) {
         lastError = error;
-        logger.warn(`[Background] 子任务 ${subtask.name} 尝试 ${retry + 1} 失败:`, error.message);
+        logger.warn(`[Background] subtask ${subtask.name} attempt ${retry + 1} failed:`, error.message);
         
         if (retry >= maxRetries) {
           // 重试次数用尽，记录失败
@@ -2221,7 +2221,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     for (let i = 0; i < sortedSubtasks.length; i++) {
       // 在每个子任务执行前检查是否已取消
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        logger.debug('[Background] 子任务执行已被用户取消');
+        logger.debug('[Background] subtaskexec by usercancel');
         return results;
       }
       
@@ -2232,11 +2232,11 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       results.push(result);
       
       if (!result.success) {
-        logger.debug(`[Background] 子任务 ${subtask.name} 失败，失败策略: ${failureStrategy}`);
+        logger.debug(`[Background] subtask ${subtask.name} failed,failedstrategy: ${failureStrategy}`);
         
         if (failureStrategy === 'stop') {
           // 停止执行并回滚
-          logger.debug('[Background] 执行回滚');
+          logger.debug('[Background] execute rollback');
           await rollbackCompletedTasks();
           return results;
         }
@@ -2246,13 +2246,13 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       
       // 每个子任务完成后检查是否已取消
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        logger.debug('[Background] 子任务执行已被用户取消');
+        logger.debug('[Background] subtaskexec by usercancel');
         return results;
       }
     }
   } else if (strategy === 'parallel') {
     // 并行执行
-    logger.debug('[Background] 并行执行子任务，最大并发数:', maxParallel);
+    logger.debug('[Background] parallel executing subtask,max concurrency:', maxParallel);
     
     const executing = [];
     const resultsMap = new Map();
@@ -2260,7 +2260,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     for (let i = 0; i < sortedSubtasks.length; i++) {
       // 在每个子任务执行前检查是否已取消
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        logger.debug('[Background] 子任务并行执行已被用户取消');
+        logger.debug('[Background] subtaskparallel execby usercancel');
         return results;
       }
       
@@ -2300,12 +2300,12 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     
     // 如果有失败且策略是 stop，执行回滚
     if (hasFailed && failureStrategy === 'stop') {
-      logger.debug('[Background] 并行执行中发生失败，执行回滚');
+      logger.debug('[Background] parallel execoccurred failed,execute rollback');
       await rollbackCompletedTasks();
     }
   } else {
     // 未知策略，降级为顺序执行
-    logger.warn(`[Background] 未知执行策略: ${strategy}，降级为顺序执行`);
+    logger.warn(`[Background]  not knownexec strategy: ${strategy},downgraded to sequentialexec `);
     return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration, reflectionConfig, config, lastSentLogSnapshot, callId);
   }
   
@@ -2371,7 +2371,7 @@ export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
 
   // 工具数未达阈值，不做筛选，全量继承（已移除 plan_task）
   if (filteredTools.length <= preselectMinToolCount) {
-    logger.debug(`[Background] 子任务工具筛选：工具数 ${filteredTools.length} <= ${preselectMinToolCount}，全量继承（已排除 plan_task）`);
+    logger.debug(`[Background] subtasktoolfilter:tool count  ${filteredTools.length} <= ${preselectMinToolCount},full count inherit (excluded plan_task)`);
     subtasks.forEach(subtask => {
       toolSets[subtask.id] = [...filteredTools];
     });
@@ -2387,11 +2387,11 @@ export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
       const filtered = filteredTools.filter(t => subtask.requiredTools.includes(t.id));
       const metaTools = filteredTools.filter(t => META_TOOL_IDS.includes(t.id));
       toolSets[subtask.id] = [...filtered, ...metaTools];
-      logger.debug(`[Background] 子任务 ${subtask.name} 筛选工具: ${filtered.length}/${filteredTools.length} 个（预筛选模式）`);
+      logger.debug(`[Background] subtask ${subtask.name} filter tools: ${filtered.length}/${filteredTools.length}  (pre-filter mode)`);
     } else {
       // 全量继承（默认，或开关开启但未标注 requiredTools）
       toolSets[subtask.id] = [...filteredTools];
-      logger.debug(`[Background] 子任务 ${subtask.name} 继承父任务 ${filteredTools.length} 个工具（已排除 plan_task）`);
+      logger.debug(`[Background] subtask ${subtask.name} inherit parent task ${filteredTools.length} tool (excluded plan_task)`);
     }
   });
 
@@ -2410,7 +2410,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
   // 2. 内部有独立的澄清超时控制
   // 3. 此处不设置外层超时，直接执行
   if (toolName === 'clarify_question') {
-    logger.debug(`[Background] 澄清工具直接执行，无外层超时（整体循环超时已暂停）`);
+    logger.debug(`[Background] clarificationtooldirectly execute, no outertimeout (overall looptimeoutpaused)`);
     return executeTool(toolCall, tabId, sessionId);
   }
   
@@ -2419,7 +2419,7 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
   // 取 min(工具自定义超时, 全局超时)，确保工具超时不超过全局上限
   // 未配置自定义超时的工具沿用全局 toolTimeout
   const effectiveTimeout = toolSpecificTimeout ? Math.min(toolSpecificTimeout, timeoutMs) : timeoutMs;
-  logger.debug(`[Background] 工具 ${toolName} 使用超时: ${effectiveTimeout}ms${toolSpecificTimeout ? ` (自定义: ${toolSpecificTimeout}ms, 全局上限: ${timeoutMs}ms)` : ''}`);
+  logger.debug(`[Background] tool ${toolName} usingtimeout: ${effectiveTimeout}ms${toolSpecificTimeout ? ` (custom: ${toolSpecificTimeout}ms, globallimit: ${timeoutMs}ms)` : ''}`);
   
   // 创建工具级 AbortController，支持用户手动终止等待
   const toolAbortController = getOrCreateToolAbortController(sessionId);
@@ -2483,7 +2483,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 
     const useStream = config.streamConfig?.streamEnabled !== false;
 
-    logger.debug('[Background] 发送 API 请求到:', apiUrl, '流式:', useStream);
+    logger.debug('[Background] send API request to :', apiUrl, 'streaming:', useStream);
 
     const requestBody = {
       model: model || config.modelName,
@@ -2506,7 +2506,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
         sessionId: sessionId,
         callId: callId
       }).catch(() => {});
-      logger.debug('[Background] STREAM_START 已发送（API 调用前）');
+      logger.debug('[Background] STREAM_START sent (API call with  before )');
     }
 
     return fetchWithRetry(apiUrl, {
@@ -2521,7 +2521,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
     .then(async response => {
       if (!response.ok) {
         const responseText = await response.text();
-        logger.error('[Background] API 响应错误:', response.status, responseText);
+        logger.error('[Background] API response error:', response.status, responseText);
         throw new Error(`HTTP error! status: ${response.status}, message: ${responseText.substring(0, 500)}`);
       }
 
@@ -2529,29 +2529,29 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       if (useStream && response.body) {
         const streamController = new StreamController(sessionId, config.streamConfig, { ...streamOptions, callId, preStarted: true });
         const result = await readSSEStream(response.body.getReader(), streamController, abortSignal);
-        logger.debug('[Background] 流式 API 响应完成，内容长度:', result.content.length, 'usage:', result.usage);
+        logger.debug('[Background] streaming API responsecomplete,content length:', result.content.length, 'usage:', result.usage);
         return { content: result.content, usage: result.usage, reasoningContent: result.reasoningContent };
       }
 
       // 非流式模式：保持原有逻辑
       const responseText = await response.text();
-      logger.debug('[Background] 非流式 API 响应状态:', response.status, '文本长度:', responseText.length, '预览:', responseText.substring(0, 200));
+      logger.debug('[Background]  non-streaming API responsestate:', response.status, 'text length:', responseText.length, 'preview:', responseText.substring(0, 200));
 
       try {
         const data = JSON.parse(responseText);
-        logger.debug('[Background] API 响应:', JSON.stringify(data).substring(0, 200));
+        logger.debug('[Background] API response:', JSON.stringify(data).substring(0, 200));
         const content = data.choices?.[0]?.message?.content || '';
         return { content, usage: data.usage || null };
       } catch (parseErr) {
-        logger.error('[Background] JSON 解析失败，原始响应:', responseText.substring(0, 500));
+        logger.error('[Background] JSON parse failed,originalresponse:', responseText.substring(0, 500));
         throw new Error(`JSON 解析失败 (HTTP ${response.status}): ${parseErr.message}。响应前100字符: ${responseText.substring(0, 100)}`);
       }
     })
     .catch(error => {
       if (error.name === 'AbortError') {
-        logger.debug('[Background] API 调用已被用户取消');
+        logger.debug('[Background] API call with by usercancel');
       } else {
-        logger.error('[Background] API 调用失败:', error.message || error);
+        logger.error('[Background] API call with failed:', error.message || error);
       }
       throw error;
     });

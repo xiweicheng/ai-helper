@@ -265,7 +265,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.chatMaxMemoryMessages) {
     state.chatConfig.maxMemoryMessages = changes.chatMaxMemoryMessages.newValue;
     updateMemoryLimitLabel();
-    logger.debug('[SidePanel] 记忆限制配置已更新:', state.chatConfig.maxMemoryMessages);
+    logger.debug('[SidePanel] memory limitconfiguration updated:', state.chatConfig.maxMemoryMessages);
   }
 });
 
@@ -746,7 +746,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   window.hideFloatingMenu();
 
   if (state.isGenerating) {
-    logger.debug('[SidePanel] 正在生成中，请稍候...');
+    logger.debug('[SidePanel] generating,please wait...');
     return;
   }
 
@@ -783,7 +783,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   try {
     await ensureChatConfigLoaded();
 
-    logger.debug('[SidePanel] 发送消息调试信息:');
+    logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - isolateChat:', state.isolateChat);
     logger.debug('  - chatConfig:', state.chatConfig);
     logger.debug('  - messageHistory.length:', state.messageHistory.length);
@@ -811,7 +811,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       const maxMemory = state.chatConfig.maxMemoryMessages;
       if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
         historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] 记忆条数限制: ${state.messageHistory.length - 1} → ${maxMemory} 条历史消息`);
+        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
       }
 
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];
@@ -1625,12 +1625,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'CLOSE_SIDEPANEL') {
       // 来自全局快捷键 _toggle_sidepanel：关闭 Side Panel 自身
-      logger.debug('[SidePanel] 收到 CLOSE_SIDEPANEL，关闭侧边栏');
+      logger.debug('[SidePanel] recei to  CLOSE_SIDEPANEL,closesidebar');
       try { window.close(); } catch (e) { /* 忽略 */ }
       return;
     }
     if (message.type === 'SELECTION_AI_SEARCH' && message.prompt) {
-      logger.debug('[SidePanel] 收到选中文本 AI 搜索:', message.selectedText?.substring(0, 50));
+      logger.debug('[SidePanel] received selectedtext AI search:', message.selectedText?.substring(0, 50));
       if (message.selectedText) {
         setSelectedContext(message.selectedText);
       }
@@ -1639,13 +1639,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.session.remove('pendingSelectionSearch').catch(() => {});
     }
     if (message.type === 'FILL_SIDEPANEL_INPUT' && message.text) {
-      logger.debug('[SidePanel] 收到追问填充:', message.text?.substring(0, 50));
+      logger.debug('[SidePanel] received follow-upfill:', message.text?.substring(0, 50));
       fillSidePanelInput(message.text);
       // 清除存储的待填充文本
       chrome.storage.session.remove('pendingFillInput').catch(() => {});
     }
     if (message.type === 'DIRECT_SEND' && message.text) {
-      logger.debug('[SidePanel] 收到直接发送:', message.text?.substring(0, 50));
+      logger.debug('[SidePanel] received directsend:', message.text?.substring(0, 50));
       if (message.selectedText) {
         setSelectedContext(message.selectedText);
       }
@@ -1654,7 +1654,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.session.remove('pendingDirectSend').catch(() => {});
     }
     if (message.type === 'AGENT_STATUS_CHANGE') {
-      logger.debug('[SidePanel] 收到 Agent 状态变化:', message.connected, message.status);
+      logger.debug('[SidePanel] recei to  Agent status change:', message.connected, message.status);
       // 直接使用消息中的 connected 值，不重新读 storage（storage 可能是过期状态）
       state.agentPlatform = { ...state.agentPlatform, connected: message.connected };
       updateAgentIndicator(state.agentPlatform);
@@ -1668,7 +1668,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (message.type === 'AGENT_CONNECTION_CHANGED') {
       // 选项页配对/断开/切换时更新
-      logger.debug('[SidePanel] 收到 Agent 连接状态变更:', message.connected, message.agentId);
+      logger.debug('[SidePanel] recei to  Agent connection statuschanged:', message.connected, message.agentId);
 
       if (!message.connected) {
         state.agentPlatform = { connected: false };
@@ -1779,7 +1779,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
     if (message.type === 'SCREENSHOT_RESULT' && message.dataUrl) {
-      logger.debug('[SidePanel] 收到页面快捷键截图结果:', message.mode);
+      logger.debug('[SidePanel] received pageshortcutscreenshotresult:', message.mode);
       handlePageScreenshotResult(message.dataUrl, message.mode, message.rect);
     }
   });
@@ -1788,7 +1788,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stored = await chrome.storage.session.get('pendingSelectionSearch');
   if (stored.pendingSelectionSearch && stored.pendingSelectionSearch.selectedText) {
     const { prompt, selectedText } = stored.pendingSelectionSearch;
-    logger.debug('[SidePanel] 有待处理的选中文本搜索:', selectedText?.substring(0, 50));
+    logger.debug('[SidePanel] pending selected textsearch:', selectedText?.substring(0, 50));
     setSelectedContext(selectedText);
     // 延迟执行，确保 UI 已完全初始化
     setTimeout(() => {
@@ -1801,7 +1801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const fillStored = await chrome.storage.session.get('pendingFillInput');
   if (fillStored.pendingFillInput && fillStored.pendingFillInput.text) {
     const { text } = fillStored.pendingFillInput;
-    logger.debug('[SidePanel] 有待填充的追问文本:', text?.substring(0, 50));
+    logger.debug('[SidePanel] pending fill trackasktext:', text?.substring(0, 50));
     setTimeout(() => {
       fillSidePanelInput(text);
     }, 500);
@@ -1812,7 +1812,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sendStored = await chrome.storage.session.get('pendingDirectSend');
   if (sendStored.pendingDirectSend && sendStored.pendingDirectSend.text) {
     const { text, selectedText } = sendStored.pendingDirectSend;
-    logger.debug('[SidePanel] 有待直接发送的文本:', text?.substring(0, 50));
+    logger.debug('[SidePanel] pending directsend text:', text?.substring(0, 50));
     if (selectedText) {
       setSelectedContext(selectedText);
     }
@@ -1824,13 +1824,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 监听 Tab 切换事件,更新当前 Tab ID
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
-    logger.debug('[SidePanel] Tab 切换, 新 Tab ID:', activeInfo.tabId);
+    logger.debug('[SidePanel] Tab switch, new  Tab ID:', activeInfo.tabId);
     state.currentTabId = activeInfo.tabId;
   });
 
   chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     if (changeInfo.status === 'complete' && state.currentTabId === tabId) {
-      logger.debug('[SidePanel] 当前 Tab 页面更新:', changeInfo);
+      logger.debug('[SidePanel] current Tab page update:', changeInfo);
     }
   });
 
@@ -1840,7 +1840,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       breaks: true,
       gfm: true
     });
-    logger.debug('[SidePanel] Marked 库已加载');
+    logger.debug('[SidePanel] Marked library loaded');
   }
 
   // 初始化 mermaid
@@ -1851,7 +1851,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       securityLevel: 'loose',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     });
-    logger.debug('[SidePanel] Mermaid 库已加载');
+    logger.debug('[SidePanel] Mermaid library loaded');
   }
 
   const userInput = document.getElementById('userInput');
@@ -2049,7 +2049,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const response = await new Promise((resolve) => {
           chrome.tabs.sendMessage(tabs[0].id, { action: 'getSelectedText' }, (res) => {
             if (chrome.runtime.lastError) {
-              console.debug('[SidePanel] content script 未加载或无法通信:', chrome.runtime.lastError.message);
+              console.debug('[SidePanel] content script not loaded or unreachable:', chrome.runtime.lastError.message);
               resolve(null);
             } else {
               resolve(res);
@@ -2298,7 +2298,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 如果切回的会话有正在执行的后台流式任务，重建流式元素以恢复实时输出
     logger.debug('[SidePanel] session-switched: pendingTask?', hasPendingTask, 'pendingSessionIds:', [...state.pendingCallApiSessionIds], 'activeSessionId:', sessionId, 'hasCancelApi:', !!state.pendingCancelApi);
     if (hasPendingTask) {
-      logger.debug('[SidePanel] 切回有后台任务的会话，重建流式输出元素');
+      logger.debug('[SidePanel] switch back tobackground task session,rebuildstreamingoutput element');
       reconnectStreamingElement(sessionId);
     }
 
@@ -3055,7 +3055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
           }
         } catch (err) {
-          logger.warn('[SidePanel] 解析 workspace 拖拽数据失败:', err);
+          logger.warn('[SidePanel] parse workspace dragdata failed:', err);
         }
       }
 
@@ -3099,7 +3099,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           await captureFullPageScreenshot();
         }
       } catch (err) {
-        logger.error('[SidePanel] 截图失败:', err);
+        logger.error('[SidePanel] screenshot failed:', err);
         showToast(t('sidePanel.screenshotFailed'));
       }
     });
@@ -3548,7 +3548,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   isolateChatBtn.addEventListener('change', () => {
     state.isolateChat = isolateChatBtn.checked;
     chrome.storage.local.set({ isolateChat: state.isolateChat });
-    logger.debug('[SidePanel] 记忆对话:', state.isolateChat ? '已启用' : '已停用');
+    logger.debug('[SidePanel] conv memory:', state.isolateChat ? 'enabled' : 'disabled');
   });
 
   // 划词问答开关
@@ -3557,7 +3557,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     enableSelectionQueryBtn.addEventListener('change', () => {
       state.enableSelectionQuery = enableSelectionQueryBtn.checked;
       chrome.storage.local.set({ enableSelectionQuery: state.enableSelectionQuery });
-      logger.debug('[SidePanel] 划词问答:', state.enableSelectionQuery ? '已启用' : '已停用');
+      logger.debug('[SidePanel] text Q&A:', state.enableSelectionQuery ? 'enabled' : 'disabled');
 
       if (!state.enableSelectionQuery && state.selectedContextText) {
         clearSelectedContext();
@@ -3577,7 +3577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
 
-      logger.debug('[SidePanel] 工具总开关:', state.useTools ? '已启用' : '已禁用');
+      logger.debug('[SidePanel] tool master switch:', state.useTools ? 'enabled' : 'disabled');
     });
   }
 
@@ -3717,7 +3717,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (toolsPreselectToggle) {
     toolsPreselectToggle.addEventListener('change', () => {
       chrome.storage.local.set({ enableToolPreselect: toolsPreselectToggle.checked }, () => {
-        logger.debug('[SidePanel] 工具预筛选开关已更新:', toolsPreselectToggle.checked);
+        logger.debug('[SidePanel] toolpre-filter toggle updated:', toolsPreselectToggle.checked);
       });
     });
   }
@@ -3847,7 +3847,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       loading.style.display = 'none';
       table.style.display = '';
     } catch (err) {
-      logger.error('[SidePanel] 加载统计失败:', err);
+      logger.error('[SidePanel] loadstats failed:', err);
       loading.style.display = 'none';
       empty.textContent = t('sidePanel.toolStatsLoadFailed');
       empty.style.display = '';
@@ -3965,7 +3965,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectionCloseBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      logger.debug('[SidePanel] 用户点击关闭选中内容按钮');
+      logger.debug('[SidePanel] user clickcloseselected content by button');
       clearSelectedContext();
       window.hideFloatingMenu();
       state.lastSelectedText = '';

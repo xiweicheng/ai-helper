@@ -205,7 +205,7 @@ export function copyToClipboard(text, btn) {
       btn.classList.remove('copied');
     }, 2000);
   }).catch(err => {
-    logger.error('[SidePanel] 复制失败:', err);
+    logger.error('[SidePanel] copy failed:', err);
     // 降级方案
     const textArea = document.createElement('textarea');
     textArea.value = text;
@@ -586,7 +586,7 @@ export function loadChatConfig() {
     chrome.runtime.sendMessage({ type: 'GET_CHAT_CONFIG' }, (response) => {
       if (response) {
         state.chatConfig = response;
-        logger.debug('[SidePanel] 对话配置已加载:', state.chatConfig);
+        logger.debug('[SidePanel] conversationconfiguration loaded:', state.chatConfig);
       }
       resolve(response);
     });
@@ -601,7 +601,7 @@ export async function ensureChatConfigLoaded() {
     chrome.runtime.sendMessage({ type: 'GET_CHAT_CONFIG' }, (response) => {
       if (response) {
         state.chatConfig = response;
-        logger.debug('[SidePanel] 同步加载对话配置:', state.chatConfig);
+        logger.debug('[SidePanel] sync loadconversationconfiguration:', state.chatConfig);
       }
       resolve();
     });
@@ -616,10 +616,10 @@ export async function getCurrentActiveTabId() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs.length > 0 && tabs[0].id) {
         state.currentTabId = tabs[0].id;
-        logger.debug('[SidePanel] 获取当前 Tab ID:', state.currentTabId, 'URL:', tabs[0].url);
+        logger.debug('[SidePanel] get current Tab ID:', state.currentTabId, 'URL:', tabs[0].url);
         resolve(state.currentTabId);
       } else {
-        logger.warn('[SidePanel] 未获取到有效的 Tab ID');
+        logger.warn('[SidePanel] did not getvalid  Tab ID');
         resolve(null);
       }
     });
@@ -655,10 +655,10 @@ export async function getSelectedTextFromPage() {
       if (tabs && tabs.length > 0) {
         chrome.tabs.sendMessage(tabs[0].id, { action: 'getSelectedText' }, (response) => {
           if (chrome.runtime.lastError) {
-            logger.warn('[SidePanel] 获取选中内容失败:', chrome.runtime.lastError.message);
+            logger.warn('[SidePanel] getselected content failed:', chrome.runtime.lastError.message);
             resolve('');
           } else {
-            logger.debug('[SidePanel] 获取到选中内容:', response?.text);
+            logger.debug('[SidePanel] got selectedcontent:', response?.text);
             resolve(response?.text || '');
           }
         });

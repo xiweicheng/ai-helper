@@ -75,17 +75,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   if (changes.mcpTools) {
     mcpToolsCache = changes.mcpTools.newValue || [];
-    logger.debug('[SidePanel] MCP 工具缓存已更新:', mcpToolsCache.length, '个');
+    logger.debug('[SidePanel] MCP toolcache updated:', mcpToolsCache.length, '');
     needsRefresh = true;
   }
   if (changes.mcpEnabled) {
     globalMcpEnabled = changes.mcpEnabled.newValue === true;
-    logger.debug('[SidePanel] MCP 全局开关变更:', globalMcpEnabled);
+    logger.debug('[SidePanel] MCP globaltoggle changed:', globalMcpEnabled);
     needsRefresh = true;
   }
   if (changes.skillsEnabled) {
     globalSkillsEnabled = changes.skillsEnabled.newValue !== false;
-    logger.debug('[SidePanel] Skill 全局开关变更:', globalSkillsEnabled);
+    logger.debug('[SidePanel] Skill global toggle changed:', globalSkillsEnabled);
     needsRefresh = true;
   }
 
@@ -197,7 +197,7 @@ async function openToolsPopup() {
   // 显示弹窗（使用 modal-overlay 的 show 类）
   toolsPopupOverlay.classList.add('show');
   
-  logger.debug('[SidePanel] 打开工具弹窗');
+  logger.debug('[SidePanel] opentool popup');
 }
 
 function closeToolsPopup() {
@@ -216,7 +216,7 @@ function closeToolsPopup() {
   // 隐藏弹窗
   toolsPopupOverlay.classList.remove('show');
   
-  logger.debug('[SidePanel] 关闭工具弹窗');
+  logger.debug('[SidePanel] closetool popup');
 }
 
 function renderToolsPopupList() {
@@ -500,7 +500,7 @@ function saveToolsFromPopup() {
   // 保存到当前智能体独立的 storage key
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
   chrome.storage.local.set({ [agentToolsKey]: state.enabledTools }, () => {
-    logger.debug('[SidePanel] 工具配置已保存到智能体:', agentToolsKey, state.enabledTools);
+    logger.debug('[SidePanel] tool configurationsavedto agent:', agentToolsKey, state.enabledTools);
   });
   
   // 同步更新当前会话的 enabledTools，避免下次加载时被旧会话数据覆盖
@@ -510,7 +510,7 @@ function saveToolsFromPopup() {
   const preselectToggle = document.getElementById('toolsPreselectToggle');
   if (preselectToggle) {
     chrome.storage.local.set({ enableToolPreselect: preselectToggle.checked }, () => {
-      logger.debug('[SidePanel] 工具预筛选开关已保存:', preselectToggle.checked);
+      logger.debug('[SidePanel] toolpre-filter toggle saved:', preselectToggle.checked);
     });
   }
   

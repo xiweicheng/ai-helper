@@ -1,7 +1,7 @@
 import { McpClient } from '../src/mcp/client.js';
 
 async function testMcpClient() {
-  console.log('=== MCP Client 测试 ===\n');
+  console.log('=== MCP Client test ===\n');
 
   const serverConfig = {
     id: 'test-server',
@@ -14,39 +14,39 @@ async function testMcpClient() {
 
   const client = new McpClient(serverConfig);
 
-  console.log('1. 连接 MCP Server...');
+  console.log('1. connection MCP Server...');
   const connectResult = await client.connect();
-  console.log('连接结果:', JSON.stringify(connectResult, null, 2));
+  console.log('connection result:', JSON.stringify(connectResult, null, 2));
 
   if (!connectResult.success) {
-    console.error('连接失败:', connectResult.error);
+    console.error('connection failed:', connectResult.error);
     return;
   }
 
-  console.log('\n2. 获取客户端状态...');
+  console.log('\n2. getclient status...');
   const status = client.getStatus();
-  console.log('状态:', JSON.stringify(status, null, 2));
+  console.log('state:', JSON.stringify(status, null, 2));
 
-  console.log('\n3. 调用 add 工具...');
+  console.log('\n3. call with  add tool...');
   const addResult = await client.callTool('add', { a: 10, b: 20 });
-  console.log('add 结果:', JSON.stringify(addResult, null, 2));
+  console.log('add result:', JSON.stringify(addResult, null, 2));
 
-  console.log('\n4. 调用 echo 工具...');
+  console.log('\n4. call with  echo tool...');
   const echoResult = await client.callTool('echo', { message: 'Hello MCP!' });
-  console.log('echo 结果:', JSON.stringify(echoResult, null, 2));
+  console.log('echo result:', JSON.stringify(echoResult, null, 2));
 
-  console.log('\n5. 调用 get_time 工具...');
+  console.log('\n5. call with  get_time tool...');
   const timeResult = await client.callTool('get_time', { format: 'locale' });
-  console.log('get_time 结果:', JSON.stringify(timeResult, null, 2));
+  console.log('get_time result:', JSON.stringify(timeResult, null, 2));
 
-  console.log('\n6. 断开连接...');
+  console.log('\n6. disconnectconnection...');
   client.disconnect();
-  console.log('断开完成');
+  console.log('disconnect complete');
 
-  console.log('\n=== 测试完成 ===');
+  console.log('\n=== test complete ===');
 }
 
 testMcpClient().catch(err => {
-  console.error('测试异常:', err);
+  console.error('test exception:', err);
   process.exit(1);
 });

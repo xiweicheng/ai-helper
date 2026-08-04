@@ -1808,7 +1808,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       if (prototypeId) {
         loadAndShowPrototype(prototypeId);
       } else {
-        logger.error('[SidePanel] 未找到 prototypeId，entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
+        logger.error('[SidePanel] not found prototypeId,entry keys:', Object.keys(prototypeCall), 'observation:', prototypeCall.observation);
       }
     });
     rightActionsContainer.appendChild(prototypeBtn);

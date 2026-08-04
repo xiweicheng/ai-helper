@@ -47,9 +47,9 @@ registerTranslations('en', {
 });
 
 // 初始化 i18n：从 chrome.storage.local 读取语言偏好，跨环境同步
-initI18n();
+const i18nReady = initI18n();
 
-console.log('[ContentScript] 内容脚本已加载 URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
+console.log('[ContentScript] content script loaded URL:', window.location.href, 'isTopFrame:', window.top === window, 'hasBody:', !!document.body);
 
 // ==================== 快捷键支持 ====================
 document.addEventListener('keydown', (e) => {
@@ -249,8 +249,8 @@ if (isExtensionValid()) {
 });
 }
 
-// 初始化选中文本浮动工具栏
-initSelectionToolbar();
+// 初始化选中文本浮动工具栏（确保在 i18n 就绪后执行，首次渲染使用正确语言）
+i18nReady.then(() => { initSelectionToolbar(); });
 
 // ==================== 区域截图选择 ====================
 

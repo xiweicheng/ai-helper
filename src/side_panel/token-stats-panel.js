@@ -119,7 +119,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       renderOverallSummary(overallSummary);
       renderRecentCalls(sessionSummary.records || []);
     } catch (err) {
-      logger.error('[TokenStats] 加载统计失败:', err);
+      logger.error('[TokenStats] loadstats failed:', err);
       if (loading) loading.style.display = 'none';
       if (empty) {
         empty.textContent = t('tokenStats.loadFailed');

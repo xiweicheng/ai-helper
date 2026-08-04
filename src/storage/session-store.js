@@ -33,7 +33,7 @@ async function cleanupCheckpointForSession(sessionId) {
   try {
     await idb.deleteReactCheckpoint(sessionId);
   } catch (e) {
-    logger.warn('[session-store] 清理 ReAct checkpoint 失败:', e);
+    logger.warn('[session-store] cleanup ReAct checkpoint failed:', e);
   }
 }
 
@@ -68,11 +68,11 @@ async function cleanupOrphanScrollPositions() {
 
     if (orphanKeys.length > 0) {
       await chrome.storage.local.remove(orphanKeys);
-      logger.debug(`[session-store] 清理了 ${orphanKeys.length} 个孤儿 scrollPosition key:`, orphanKeys);
+      logger.debug(`[session-store] cleanup ${orphanKeys.length} orphan scrollPosition key:`, orphanKeys);
     }
   } catch (e) {
     // 非关键路径，静默失败
-    logger.warn('[session-store] 清理孤儿 scrollPosition 失败:', e);
+    logger.warn('[session-store] cleanup orphaned scrollPosition failed:', e);
   }
 }
 
@@ -129,7 +129,7 @@ export async function saveCurrentSession() {
 
   const currentSession = await idb.getSession(state.activeSessionId);
   if (!currentSession) {
-    logger.warn('[SessionStore] saveCurrentSession 找不到当前会话:', state.activeSessionId);
+    logger.warn('[SessionStore] saveCurrentSession cannot find currentsession:', state.activeSessionId);
     return false;
   }
 
@@ -167,7 +167,7 @@ export async function saveCurrentSession() {
 
   const saved = await idb.putSession(currentSession);
   if (!saved) {
-    logger.error('[SessionStore] putSession 失败, sessionId:', state.activeSessionId);
+    logger.error('[SessionStore] putSession failed, sessionId:', state.activeSessionId);
     return false;
   }
   return true;
@@ -296,7 +296,7 @@ export async function switchToSession(sessionId) {
 
   const targetSession = await idb.getSession(sessionId);
   if (!targetSession) {
-    logger.error('[SessionStore] 找不到会话:', sessionId);
+    logger.error('[SessionStore] find not  to session:', sessionId);
     return false;
   }
 
@@ -355,7 +355,7 @@ export async function switchToSession(sessionId) {
     state.generatingSessionIds.add(sessionId);
   } else if (targetSession.isGenerating) {
     // DB 中有生成标记但实际无后台任务，异步清理过期状态（不阻塞切换）
-    logger.debug('[SessionStore] 检测到过期的 isGenerating 标记，异步清理:', sessionId);
+    logger.debug('[SessionStore] detected expiredperiod  isGenerating mark,async cleanup:', sessionId);
     (async () => {
       try {
         const session = await idb.getSession(sessionId);
@@ -364,7 +364,7 @@ export async function switchToSession(sessionId) {
           await idb.putSession(session);
         }
       } catch (e) {
-        logger.warn('[SessionStore] 清理过期 isGenerating 标记失败:', e);
+        logger.warn('[SessionStore] cleanup expired isGenerating mark failed:', e);
       }
     })();
   }
@@ -395,10 +395,10 @@ export async function deleteStoreSession(sessionId) {
       await idb.deleteBookmark(bm.id);
     }
     if (toDelete.length > 0) {
-      logger.info(`[SessionStore] 已清理 ${toDelete.length} 条收藏（会话 ${sessionId} 已删除）`);
+      logger.info(`[SessionStore] cleaned ${toDelete.length} bookmark (session ${sessionId} deleted)`);
     }
   } catch (e) {
-    logger.warn('[SessionStore] 清理收藏失败:', e);
+    logger.warn('[SessionStore] cleanup bookmarks failed:', e);
   }
 
   // 如果删除的是当前活跃会话，就近激活：优先右侧紧邻，无右侧则左侧紧邻

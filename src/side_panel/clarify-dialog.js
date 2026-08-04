@@ -62,9 +62,9 @@ export function playNotificationSound(soundType = 'default') {
     oscillator.start(audioContext.currentTime);
     oscillator.stop(audioContext.currentTime + config.duration);
     
-    logger.debug('[SidePanel] 提示音已播放:', soundType);
+    logger.debug('[SidePanel] soundplay:', soundType);
   } catch (error) {
-    logger.error('[SidePanel] 播放提示音失败:', error.message);
+    logger.error('[SidePanel] play sound failed:', error.message);
   }
 }
 
@@ -129,7 +129,7 @@ export function stopClarifyTimer() {
 }
 
 export function showClarifyDialog(data) {
-  logger.debug('[SidePanel] 显示澄清对话框:', data);
+  logger.debug('[SidePanel] showclarification dialog:', data);
   
   const { question, recommendedOption, allowCustomInput = true, allowAdditionalInfo = true, toolCallId, timeout = 300000, sessionId } = data;
   
@@ -242,7 +242,7 @@ export function showClarifyDialog(data) {
   // 启动倒计时
   startClarifyTimer(timeout);
   
-  logger.debug('[SidePanel] 澄清对话框已显示');
+  logger.debug('[SidePanel] clarification dialogshown');
 }
 
 export function hideClarifyDialog() {
@@ -253,7 +253,7 @@ export function hideClarifyDialog() {
   state.currentClarifyToolCallId = null;
   state.currentClarifySessionId = null;
   stopClarifyTimer();  // 停止倒计时
-  logger.debug('[SidePanel] 澄清对话框已隐藏');
+  logger.debug('[SidePanel] clarification dialoghidden');
 }
 
 export function selectClarifyOption(index) {
@@ -285,12 +285,12 @@ export function selectClarifyOption(index) {
     }
   }
   
-  logger.debug('[SidePanel] 选择澄清选项:', index);
+  logger.debug('[SidePanel] selectclarificationselect :', index);
 }
 
 export function sendClarifyResponse() {
   if (!state.currentClarifyToolCallId) {
-    logger.error('[SidePanel] 没有当前工具调用ID');
+    logger.error('[SidePanel] no  has currenttool callID');
     return;
   }
   
@@ -319,7 +319,7 @@ export function sendClarifyResponse() {
     additionalInfo
   };
   
-  logger.debug('[SidePanel] 发送澄清响应:', responseData);
+  logger.debug('[SidePanel] send clarificationresponse:', responseData);
   
   // 发送消息到 background.js（不需要回调响应）
   chrome.runtime.sendMessage(responseData);
@@ -363,21 +363,21 @@ export function initClarifyEvents() {
   // 监听来自 background.js 的澄清请求
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'SHOW_CLARIFY_DIALOG') {
-      logger.debug('[SidePanel] 收到澄清请求:', message, '当前激活会话:', state.activeSessionId);
+      logger.debug('[SidePanel] received clarificationrequested :', message, 'currently activesession:', state.activeSessionId);
       
       // 澄清弹窗始终显示（因为后台 ReAct 循环被阻塞），通过会话名称区分归属
       showClarifyDialog(message.data);
       sendResponse({ success: true });
     } else if (message.type === 'PLAY_NOTIFICATION_SOUND') {
-      logger.debug('[SidePanel] 收到播放提示音请求:', message);
+      logger.debug('[SidePanel] recei to play soundrequested :', message);
       playNotificationSound(message.soundType);
       sendResponse({ success: true });
     } else if (message.type === 'CLARIFY_TIMEOUT') {
-      logger.debug('[SidePanel] 收到澄清超时通知:', message);
+      logger.debug('[SidePanel] received clarificationtimeoutnotification:', message);
       
       // 只处理当前显示的澄清会话的超时
       if (message.sessionId && state.currentClarifySessionId && message.sessionId !== state.currentClarifySessionId) {
-        logger.debug('[SidePanel] 澄清超时来自其他会话，忽略');
+        logger.debug('[SidePanel] clarificationtimeoutfrom othersession,ignore');
         return;
       }
       
@@ -393,5 +393,5 @@ export function initClarifyEvents() {
     }
   });
   
-  logger.debug('[SidePanel] 澄清对话框事件已初始化');
+  logger.debug('[SidePanel] clarification dialogeventinitializing');
 }

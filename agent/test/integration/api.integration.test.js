@@ -103,9 +103,9 @@ before(async () => {
   ctx.testDir = join(ctx.workdir, `_integration_test_${Date.now()}`);
   const mkdirRes = await req('/api/fs/mkdir', { path: ctx.testDir });
   assert.equal(mkdirRes.data.success, true, `创建测试目录失败: ${JSON.stringify(mkdirRes)}`);
-  console.log(`[测试] 工作目录: ${ctx.workdir}`);
-  console.log(`[测试] Agent home: ${ctx.agentHomeDir}`);
-  console.log(`[测试] 临时目录: ${ctx.testDir}`);
+  console.log(`[test] working directory: ${ctx.workdir}`);
+  console.log(`[test] Agent home: ${ctx.agentHomeDir}`);
+  console.log(`[test] temp directory: ${ctx.testDir}`);
 });
 
 after(async () => {
@@ -114,13 +114,13 @@ after(async () => {
     const cur = await get('/api/status/detail').catch(() => ({}));
     if (cur.data?.workdir && cur.data.workdir !== ctx.originalWorkdir) {
       await req('/api/config/workdir', { workdir: ctx.originalWorkdir }).catch(() => {});
-      console.log(`[测试] 已恢复原始工作目录: ${ctx.originalWorkdir}`);
+      console.log(`[test] restoredoriginal workingdirectory: ${ctx.originalWorkdir}`);
     }
   }
   // 清理临时目录（移到回收站）
   if (ctx.testDir) {
     await req('/api/fs/delete', { path: ctx.testDir }).catch(() => {});
-    console.log(`[测试] 已清理临时目录`);
+    console.log(`[test] cleaned tempdirectory`);
   }
 });
 

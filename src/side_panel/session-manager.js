@@ -18,7 +18,7 @@ export async function restoreCompletedSessions() {
     const ids = result[COMPLETED_SESSIONS_KEY] || [];
     state.completedSessionIds = new Set(ids);
   } catch (e) {
-    logger.warn('[SessionManager] 恢复 completedSessionIds 失败:', e);
+    logger.warn('[SessionManager] restore completedSessionIds failed:', e);
   }
 }
 
@@ -31,7 +31,7 @@ async function persistCompletedSessions() {
       [COMPLETED_SESSIONS_KEY]: Array.from(state.completedSessionIds),
     });
   } catch (e) {
-    logger.warn('[SessionManager] 持久化 completedSessionIds 失败:', e);
+    logger.warn('[SessionManager] persist completedSessionIds failed:', e);
   }
 }
 

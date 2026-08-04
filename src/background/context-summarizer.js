@@ -87,13 +87,13 @@ function extractKeyParams(args) {
  */
 export async function summarizeRound(roundMessages, config, model, options = {}) {
   if (!roundMessages || roundMessages.length < 2) {
-    logger.debug('[ContextSummarizer] 轮次消息不足，跳过摘要');
+    logger.debug('[ContextSummarizer] round timesmessage not sufficient,skip summary');
     return null;
   }
 
   const assistantMsg = roundMessages.find(m => m.role === 'assistant' && m.tool_calls);
   if (!assistantMsg) {
-    logger.debug('[ContextSummarizer] 未找到 assistant(tool_calls)，跳过摘要');
+    logger.debug('[ContextSummarizer] not found assistant(tool_calls),skip summary');
     return null;
   }
 
@@ -144,7 +144,7 @@ Output requirements: Summarize in one sentence what this round of operations did
     }, options.timeout || 15000, 1, 500); // 摘要只重试 1 次，快速失败
 
     if (!response.ok) {
-      logger.warn(`[ContextSummarizer] API 请求失败: ${response.status}`);
+      logger.warn(`[ContextSummarizer] API request failed: ${response.status}`);
       return null;
     }
 
@@ -152,14 +152,14 @@ Output requirements: Summarize in one sentence what this round of operations did
     const summary = (data.choices?.[0]?.message?.content || '').trim();
 
     if (!summary) {
-      logger.warn('[ContextSummarizer] 摘要返回为空');
+      logger.warn('[ContextSummarizer] summary returnedempty');
       return null;
     }
 
-    logger.debug(`[ContextSummarizer] 摘要完成: ${summary.substring(0, 100)}`);
+    logger.debug(`[ContextSummarizer] summary complete: ${summary.substring(0, 100)}`);
     return summary;
   } catch (error) {
-    logger.warn('[ContextSummarizer] 摘要请求异常:', error.message);
+    logger.warn('[ContextSummarizer] summary requestexception:', error.message);
     return null;
   }
 }

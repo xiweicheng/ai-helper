@@ -699,7 +699,7 @@ export function initWorkspacePanel() {
   bindEvents();
   loadSearchHistory();
   updateWorkspaceAgentName();
-  logger.debug('[WorkspacePanel] 工作目录面板已初始化');
+  logger.debug('[WorkspacePanel] workspace panelinitializing');
 }
 
 /**
@@ -1858,7 +1858,7 @@ async function previewFile(filePath, fileName) {
         previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.unsupportedFileType')}</div>`;
     }
   } catch (err) {
-    logger.error('[WorkspacePanel] 预览失败:', filePath, err);
+    logger.error('[WorkspacePanel] preview failed:', filePath, err);
     const msg = err instanceof Error ? err.message : (typeof err === 'string' ? err : String(err));
     previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.previewFailed', { error: escapeHtml(msg || t('workspace.unknownError')) })}</div>`;
   }
@@ -2976,7 +2976,7 @@ async function handleExport(type) {
         break;
     }
   } catch (error) {
-    logger.error('[WorkspacePanel] 导出失败:', error);
+    logger.error('[WorkspacePanel] export failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
   } finally {
     exportInProgress = false;
@@ -3034,7 +3034,7 @@ async function renderMermaidBlocksToImagesLocal(markdownContent) {
       return match;
     });
   } catch (e) {
-    logger.warn('[WorkspacePanel] Mermaid 预渲染失败:', e.message);
+    logger.warn('[WorkspacePanel] Mermaid pre-render failed:', e.message);
     return markdownContent;
   }
 }
@@ -3339,7 +3339,7 @@ async function exportWorkspacePdf(fileName) {
     document.body.removeChild(container);
     showToast(t('workspace.downloaded', { name: dlName }), 'success');
   }).catch(error => {
-    logger.error('[WorkspacePanel] PDF 导出失败:', error);
+    logger.error('[WorkspacePanel] PDF export failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
     document.body.removeChild(container);
   });
@@ -3382,7 +3382,7 @@ async function exportWorkspaceImage(fileName) {
     document.body.removeChild(link);
     showToast(t('workspace.downloaded', { name: dlName }), 'success');
   } catch (error) {
-    logger.error('[WorkspacePanel] 图片导出失败:', error);
+    logger.error('[WorkspacePanel] image export failed:', error);
     showToast(t('chatExport.exportFailed', { message: error.message }), 'error');
   } finally {
     document.body.removeChild(tempContainer);
@@ -3525,7 +3525,7 @@ async function copyWorkspaceRichText() {
     }
     showToast(t('chatCopy.copiedRich'), 'success');
   } catch (err) {
-    logger.warn('[WorkspacePanel] 富文本复制失败:', err.message);
+    logger.warn('[WorkspacePanel] rich textcopy failed:', err.message);
     // 降级为纯文本
     try {
       await navigator.clipboard.writeText(textContent);
@@ -3908,7 +3908,7 @@ async function saveEditedFile() {
   try {
     const result = await writeFileContent(filePath, newContent);
     if (result.success) {
-      logger.info('[WorkspacePanel] 文件保存成功:', filePath);
+      logger.info('[WorkspacePanel] file save successful:', filePath);
       showToast(t('workspace.saveSuccess'));
       // 更新原始内容
       previewArea.dataset.origContent = newContent;
@@ -3918,13 +3918,13 @@ async function saveEditedFile() {
       const fileName = previewArea.dataset.previewName;
       await previewFile(filePath, fileName);
     } else {
-      logger.error('[WorkspacePanel] 文件保存失败:', filePath, result.error);
+      logger.error('[WorkspacePanel] filesave failed:', filePath, result.error);
       showToast(t('workspace.saveFailedWithError', { error: result.error || t('workspace.unknownError') }));
       saveBtn.title = originalTitle;
       saveBtn.disabled = false;
     }
   } catch (err) {
-    logger.error('[WorkspacePanel] 文件保存异常:', filePath, err);
+    logger.error('[WorkspacePanel] file saveexception:', filePath, err);
     showToast(t('workspace.saveFailedWithError', { error: err.message || err }));
     saveBtn.title = originalTitle;
     saveBtn.disabled = false;
@@ -4742,7 +4742,7 @@ async function updateWorkspaceAgentName() {
     agentNameEl.textContent = '';
     agentNameEl.style.display = 'none';
   } catch (e) {
-    logger.debug('[WorkspacePanel] 更新代理名称失败:', e);
+    logger.debug('[WorkspacePanel] update agentname failed:', e);
   }
 }
 
@@ -4756,7 +4756,7 @@ async function handleStorageChange(changes, namespace) {
   const oldAgentId = changes.activeAgentId?.oldValue;
 
   if (newAgentId !== oldAgentId) {
-    logger.debug('[WorkspacePanel] Agent 已变更，刷新工作目录');
+    logger.debug('[WorkspacePanel] Agent changed,refreshworking directory');
 
     resetWorkspaceRoot();
     workspaceRoot = null;
@@ -5552,7 +5552,7 @@ async function performSwitchWorkdir(newWorkdir) {
       }
     }
   } catch (e) {
-    logger.debug('[WorkspacePanel] 同步下拉列表 workdir 失败:', e);
+    logger.debug('[WorkspacePanel] sync dropdown column table workdir failed:', e);
   }
 
   // 6) 重新导航到新 root

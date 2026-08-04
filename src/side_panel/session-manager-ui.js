@@ -867,7 +867,7 @@ export async function handleDuplicateSession(sourceSessionId, upToMessageId = nu
     await handleSessionSwitch(newSession.id);
     showToast(upToMessageId ? t('session.forkedFrom', { title: newSession.title }) : t('session.forkedSession', { title: newSession.title }), 'success');
   } catch (err) {
-    logger.error('[SessionUI] 复制/分叉会话失败:', err);
+    logger.error('[SessionUI] copy/forksession failed:', err);
     showToast(t('session.operationFailed', { message: err.message }), 'error');
   }
 }

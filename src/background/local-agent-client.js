@@ -106,7 +106,7 @@ const _agentReachability = new Map();
 function setAgentReachable(agentId, reachable) {
   const prev = _agentReachability.get(agentId);
   if (prev !== reachable) {
-    logger.debug('[AgentClient] 代理可达性变更:', agentId, reachable ? '可达' : '不可达');
+    logger.debug('[AgentClient] agentreachable toggle change:', agentId, reachable ? 'reachable' : 'unreachable');
   }
   _agentReachability.set(agentId, reachable);
 }
@@ -167,11 +167,11 @@ async function migrateFromLegacyFormat() {
         activeAgentId: id
       });
       await chrome.storage.local.remove(['agentUrl', 'agentToken', 'agentPlatform']);
-      logger.debug('[AgentClient] 已从旧格式迁移代理配置:', name);
+      logger.debug('[AgentClient] from old formatmigrate agentconfiguration:', name);
       return true;
     }
   } catch (err) {
-    logger.warn('[AgentClient] 旧格式迁移失败:', err.message);
+    logger.warn('[AgentClient] old format migration failed:', err.message);
   }
   return false;
 }
@@ -234,7 +234,7 @@ async function switchActiveAgent(agentId) {
   const agents = await getPairedAgents();
   const target = agents.find(a => a.id === agentId);
   if (!target) {
-    logger.warn('[AgentClient] 切换失败，代理不存在:', agentId);
+    logger.warn('[AgentClient] switch failed,agent not found:', agentId);
     return false;
   }
   await chrome.storage.local.set({ activeAgentId: agentId });
@@ -248,7 +248,7 @@ async function switchActiveAgent(agentId) {
     agentId: agentId
   }).catch(() => {});
 
-  logger.debug('[AgentClient] 已切换到代理:', agentId);
+  logger.debug('[AgentClient] switched to agent:', agentId);
   return true;
 }
 
@@ -314,7 +314,7 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
       agents.push(newAgent);
       await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: id });
 
-      logger.debug('[AgentClient] 配对成功:', name);
+      logger.debug('[AgentClient] pairing successful:', name);
       return { success: true, token: data.token, agentId: id, name };
     }
     return { success: false, error: data.error || t('agentClient.pairingFailed') };
@@ -345,7 +345,7 @@ async function unpairAgent(agentId) {
 
   // 清理可达性缓存
   _agentReachability.delete(agentId);
-  logger.debug('[AgentClient] 已断开代理:', agentId);
+  logger.debug('[AgentClient] disconnected agent:', agentId);
 }
 
 /**
@@ -379,7 +379,7 @@ async function toggleAgentDisabled(agentId, disabled) {
     _agentReachability.delete(agentId);
   }
 
-  logger.debug(`[AgentClient] 代理 ${agents[idx].name} 已${disabled ? '停用' : '启用'}`);
+  logger.debug(`[AgentClient] agent ${agents[idx].name} ${disabled ? 'disable' : 'enable'}`);
   return true;
 }
 
@@ -658,7 +658,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     ws.onopen = () => {
       if (settled) return;
       settled = true;
-      logger.debug('[AgentClient] WebSocket 已连接:', normalizedWsUrl, '(with token)');
+      logger.debug('[AgentClient] WebSocket connected:', normalizedWsUrl, '(with token)');
       resolve(ws);
     };
 
@@ -672,7 +672,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
     };
 
     ws.onclose = () => {
-      logger.debug('[AgentClient] WebSocket 已关闭');
+      logger.debug('[AgentClient] WebSocket closed');
       if (onClose) onClose();
     };
 
@@ -680,7 +680,7 @@ async function createExecWebSocket(wsUrl, onMessage, onClose, onError, _idleTime
       if (settled) return;
       settled = true;
       const error = event instanceof Error ? event : new Error('WebSocket 连接失败');
-      logger.error('[AgentClient] WebSocket 错误:', error.message || event);
+      logger.error('[AgentClient] WebSocket error:', error.message || event);
       if (onError) onError(error);
       reject(error);
     };

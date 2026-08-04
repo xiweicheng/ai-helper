@@ -233,7 +233,7 @@ export function selectSkill(skillName, skills) {
   if (promptSelector) promptSelector.style.display = 'none';
   if (promptDropdown) promptDropdown.classList.remove('show');
 
-  logger.debug('[SidePanel] 已选中技能:', skill.name);
+  logger.debug('[SidePanel] skill selected:', skill.name);
 }
 
 /**
@@ -248,7 +248,7 @@ export function clearSkillSelection() {
     indicator.style.display = 'none';
   }
 
-  logger.debug('[SidePanel] 已清除技能选择');
+  logger.debug('[SidePanel] skill clearedselect');
 }
 
 /**
@@ -602,7 +602,7 @@ export function selectMcpService(serverId, serverName, services) {
   if (promptSelector) promptSelector.style.display = 'none';
   if (promptDropdown) promptDropdown.classList.remove('show');
 
-  logger.debug('[SidePanel] 已选中 MCP 服务:', serverName);
+  logger.debug('[SidePanel] selected MCP service:', serverName);
 }
 
 /**
@@ -617,7 +617,7 @@ export function clearMcpService() {
     indicator.style.display = 'none';
   }
 
-  logger.debug('[SidePanel] 已清除 MCP 服务选择');
+  logger.debug('[SidePanel] cleared MCP serviceselect');
 }
 
 /**

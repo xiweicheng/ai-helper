@@ -1,17 +1,14 @@
 // skill/markdown-loader.js - Markdown Skill 加载器
 // 扫描子目录中的 SKILL.md，解析 YAML frontmatter 和正文内容
 import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
-import { join, basename, extname, normalize, sep } from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import { join, basename, extname, normalize, sep, dirname } from 'path';
+import { inflateRawSync } from 'zlib';
 import { randomBytes } from 'crypto';
 import { tmpdir } from 'os';
 import { lookup as dnsLookup } from 'dns/promises';
 import https from 'https';
 import http from 'http';
 import { t as translate } from '../i18n.js';
-
-const execFileAsync = promisify(execFile);
 
 // 当前模块使用的语言（由 server.js 在请求入口处设置）
 let currentLang = 'zh';
@@ -366,6 +363,96 @@ function sanitizeSkillName(name) {
 }
 
 /**
+ * 纯 JavaScript ZIP 解压，替换外部命令（powershell/unzip），消除 spawn EPERM 问题
+ * 支持 stored（无压缩）和 deflate（压缩方法 8）两种方式
+ * 内置路径穿越安全校验
+ * @param {Buffer} zipBuffer - ZIP 文件内容
+ * @param {string} destDir - 解压目标目录
+ * @throws {Error} 解压或安全校验失败时抛出
+ */
+function extractZipPureJs(zipBuffer, destDir) {
+  const EOCD_SIG = 0x06054b50;
+  const CD_SIG = 0x02014b50;
+  const LFH_SIG = 0x04034b50;
+
+  // 1. 从末尾反向扫描 EOCD（End of Central Directory）
+  let eocdOffset = -1;
+  const maxComment = Math.min(65535, zipBuffer.length - 22);
+  for (let i = zipBuffer.length - 22; i >= Math.max(0, zipBuffer.length - 22 - maxComment); i--) {
+    if (zipBuffer.readUInt32LE(i) === EOCD_SIG) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset === -1) throw new Error('Invalid ZIP: EOCD not found');
+
+  // 2. 读取 Central Directory 元信息
+  const cdOffset = zipBuffer.readUInt32LE(eocdOffset + 16);
+  const cdSize  = zipBuffer.readUInt32LE(eocdOffset + 12);
+  const totalEntries = zipBuffer.readUInt16LE(eocdOffset + 8);
+
+  // 3. 解析 Central Directory 条目，收集文件信息
+  let cdPos = cdOffset;
+  const entries = [];
+
+  for (let i = 0; i < totalEntries; i++) {
+    if (zipBuffer.readUInt32LE(cdPos) !== CD_SIG) throw new Error('Invalid central directory entry');
+
+    const compressionMethod   = zipBuffer.readUInt16LE(cdPos + 10);
+    const compressedSize      = zipBuffer.readUInt32LE(cdPos + 20);
+    const uncompressedSize    = zipBuffer.readUInt32LE(cdPos + 24);
+    const fileNameLen         = zipBuffer.readUInt16LE(cdPos + 28);
+    const extraLen            = zipBuffer.readUInt16LE(cdPos + 30);
+    const commentLen          = zipBuffer.readUInt16LE(cdPos + 32);
+    const localHeaderOffset   = zipBuffer.readUInt32LE(cdPos + 42);
+
+    const fileName = zipBuffer.slice(cdPos + 46, cdPos + 46 + fileNameLen).toString('utf8');
+
+    entries.push({ fileName, compressionMethod, localHeaderOffset, compressedSize, uncompressedSize });
+
+    cdPos += 46 + fileNameLen + extraLen + commentLen;
+  }
+
+  // 4. 逐文件解压并写入磁盘
+  for (const entry of entries) {
+    // 跳过目录条目（以 / 结尾）
+    if (entry.fileName.endsWith('/') || entry.fileName.endsWith('\\')) continue;
+
+    // 路径穿越安全校验：拒绝 .. 或绝对路径
+    const normalizedName = normalize(entry.fileName).replace(/^[/\\]+/, '');
+    if (normalizedName.startsWith('..') || entry.fileName.startsWith('/')) {
+      throw new Error(`Path traversal detected: ${entry.fileName}`);
+    }
+
+    // 读取本地文件头（Local File Header）
+    const lfh = entry.localHeaderOffset;
+    if (zipBuffer.readUInt32LE(lfh) !== LFH_SIG) throw new Error(`Invalid local file header for: ${entry.fileName}`);
+
+    const lfhFileNameLen = zipBuffer.readUInt16LE(lfh + 26);
+    const lfhExtraLen    = zipBuffer.readUInt16LE(lfh + 28);
+    const dataOffset     = lfh + 30 + lfhFileNameLen + lfhExtraLen;
+
+    // 根据压缩方法提取数据
+    let fileData;
+    if (entry.compressionMethod === 0) {
+      // Stored（无压缩）
+      fileData = zipBuffer.slice(dataOffset, dataOffset + entry.uncompressedSize);
+    } else if (entry.compressionMethod === 8) {
+      // Deflate 压缩（zlib inflateRawSync 可直接解压）
+      const compressed = zipBuffer.slice(dataOffset, dataOffset + entry.compressedSize);
+      fileData = inflateRawSync(compressed);
+    } else {
+      throw new Error(`Unsupported compression method ${entry.compressionMethod} for: ${entry.fileName}`);
+    }
+
+    // 写入目标文件
+    const destPath = join(destDir, normalizedName);
+    mkdirSync(dirname(destPath), { recursive: true });
+    writeFileSync(destPath, fileData);
+  }
+}
+
+/**
  * 从 Zip 文件导入 Skill
  * 要求 zip 包内有一个顶层目录，目录中包含 SKILL.md
  * @param {string} skillsDir - skills 根目录
@@ -375,24 +462,12 @@ function sanitizeSkillName(name) {
  */
 export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName) {
   const tmpDir = join(tmpdir(), `ai-helper-skill-import-${Date.now()}-${randomBytes(4).toString('hex')}`);
-  const tmpZip = join(tmpdir(), `ai-helper-skill-${Date.now()}-${randomBytes(4).toString('hex')}.zip`);
 
   try {
     mkdirSync(tmpDir, { recursive: true });
-    writeFileSync(tmpZip, zipBuffer);
 
-    // 解压到临时目录（跨平台：Windows 用 PowerShell Expand-Archive，Unix 用 unzip）
-    if (process.platform === 'win32') {
-      // PowerShell 单引号转义：路径中的单引号用两个单引号表示（tmpZip/tmpDir 由程序生成，正常不含单引号）
-      const esc = (s) => s.replace(/'/g, "''");
-      await execFileAsync('powershell.exe',
-        ['-NoProfile', '-NonInteractive', '-Command',
-         `Expand-Archive -LiteralPath '${esc(tmpZip)}' -DestinationPath '${esc(tmpDir)}' -Force`],
-        { timeout: 30000, windowsHide: true });
-    } else {
-      // execFile 数组参数，不经 shell，杜绝命令注入
-      await execFileAsync('unzip', ['-o', tmpZip, '-d', tmpDir], { timeout: 30000, windowsHide: true });
-    }
+    // 纯 JavaScript ZIP 解压（无需外部命令，消除 spawn EPERM）
+    extractZipPureJs(zipBuffer, tmpDir);
 
     // 查找 SKILL.md
     const entries = readdirSync(tmpDir);
@@ -445,7 +520,7 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
       rmSync(destDir, { recursive: true, force: true });
     }
 
-    // 复制（跨平台：fs.cpSync 替代 cp -r，Windows 无 cp 命令；destDir 已被 rmSync 清空）
+    // 复制（跨平台：fs.cpSync 替代 cp -r，Windows 无 cp 命令）
     cpSync(skillDir, destDir, { recursive: true });
 
     // 重新加载
@@ -457,7 +532,6 @@ export async function importMarkdownSkillFromZip(skillsDir, zipBuffer, skillName
     // 清理临时文件
     try {
       rmSync(tmpDir, { recursive: true, force: true });
-      if (existsSync(tmpZip)) rmSync(tmpZip);
     } catch { /* ignore cleanup errors */ }
   }
 }

@@ -891,6 +891,20 @@ export default {
     importFailed: 'Import failed: {error}',
   },
 
+  // Context bubble
+  contextBubble: {
+    labelSelection: 'Selection',
+    labelQuoted: 'Quote',
+    labelSkill: 'Skill',
+    labelMcp: 'MCP',
+    labelPage: 'Page',
+    labelFile: 'File',
+    clickToExpand: 'Click to expand',
+    bubbleSkill: '{name} 🧩',
+    bubbleMcp: '{name} 🔌',
+    bubblePage: '{title} 🌐',
+  },
+
   // options.html - Export/import config dialogs
   configDialog: {
     exportTitle: 'Export Settings',

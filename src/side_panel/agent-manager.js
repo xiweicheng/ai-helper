@@ -103,7 +103,7 @@ export async function initAgentManager() {
   await renderAgentSelector();
   initAgentSelectorEvents();
   initAgentModalEvents();
-  logger.debug('[AgentMgr] Agent 管理器初始化完成, activeAgentId:', state.activeAgentId);
+  logger.debug('[AgentMgr] Agent managerinitialization complete, activeAgentId:', state.activeAgentId);
 }
 
 /**
@@ -123,7 +123,7 @@ async function loadAgentState() {
   const currentAgentId = state.activeAgentId || activeId;
   const activeAgent = allAgents.find(a => a.id === currentAgentId || (!currentAgentId && a.id === 'default'));
   state.activeAgentToolIds = activeAgent ? activeAgent.toolIds : null;
-  logger.debug('[AgentMgr] Agent 状态已加载, activeAgentId:', state.activeAgentId, 'total:', allAgents.length, 'toolIds:', state.activeAgentToolIds);
+  logger.debug('[AgentMgr] Agent state loaded, activeAgentId:', state.activeAgentId, 'total:', allAgents.length, 'toolIds:', state.activeAgentToolIds);
 }
 
 /**
@@ -370,7 +370,7 @@ export async function switchAgent(agentId) {
   const agentName = agent ? agent.name : t('agentMgr.defaultAgentName');
   showToast(t('agentMgr.switchedTo', { name: agentName }), 'info', 2000);
   
-  logger.debug('[AgentMgr] 已切换 Agent:', agentId, agentName);
+  logger.debug('[AgentMgr] switched Agent:', agentId, agentName);
 }
 
 /**
@@ -967,7 +967,7 @@ async function saveAgent() {
     await renderAgentSelector();
     closeAgentEditor();
   } catch (err) {
-    logger.error('[AgentMgr] 保存 Agent 失败:', err);
+    logger.error('[AgentMgr] save Agent failed:', err);
     showToast(t('agentMgr.saveFailed', { message: err.message }), 'error');
   }
 }
@@ -997,7 +997,7 @@ async function deleteCurrentAgent() {
     await renderAgentSelector();
     closeAgentEditor();
   } catch (err) {
-    logger.error('[AgentMgr] 删除 Agent 失败:', err);
+    logger.error('[AgentMgr] delete Agent failed:', err);
     showToast(t('agentMgr.deleteFailed', { message: err.message }), 'error');
   }
 }
@@ -1026,7 +1026,7 @@ export async function deleteAgentWithConfirm(agentId) {
     await renderAgentSelector();
     return true;
   } catch (err) {
-    logger.error('[AgentMgr] 删除 Agent 失败:', err);
+    logger.error('[AgentMgr] delete Agent failed:', err);
     showToast(t('agentMgr.deleteFailed', { message: err.message }), 'error');
     return false;
   }

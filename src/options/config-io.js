@@ -97,7 +97,7 @@ export async function exportConfig() {
     hideExportDialog();
     showToast(t('configDialog.exportSuccess'), 'success');
   } catch (err) {
-    logger.error('[Options] 导出配置失败:', err);
+    logger.error('[Options] exportconfiguration failed:', err);
     showToast(t('configDialog.exportFailed', { error: err.message }), 'error');
   }
 }
@@ -207,7 +207,7 @@ export async function handleImportFile(file) {
 
     showImportPreview(data);
   } catch (err) {
-    logger.error('[Options] 导入文件解析失败:', err);
+    logger.error('[Options] import fileparse failed:', err);
     showToast(t('configDialog.importParseFailed'), 'error');
   }
 }
@@ -256,7 +256,7 @@ export async function confirmImport() {
       });
     }, 300);
   } catch (err) {
-    logger.error('[Options] 导入配置失败:', err);
+    logger.error('[Options] importconfiguration failed:', err);
     showToast(t('configDialog.importFailed', { error: err.message }), 'error');
   }
 }
