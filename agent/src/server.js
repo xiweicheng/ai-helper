@@ -1,7 +1,7 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, createWriteStream, createReadStream, statSync, existsSync } from 'fs';
+import { readFileSync, createWriteStream, createReadStream, statSync, existsSync, watch } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
 import { join, dirname, basename, resolve, isAbsolute, relative } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -2069,11 +2069,44 @@ export function startServer() {
 
       try {
         await initializeSkillRegistry();
+        startSkillDirWatcher();
       } catch (err) {
         console.error(`[Agent] ${ln('skillInitFailed')}:`, err.message);
       }
     })();
   });
+
+  /**
+   * 监听技能目录（~/.ai-helper-agent/skills/）的文件变更，
+   * 当对话中通过写文件创建/更新技能后，自动重新扫描并加载，无需手动「重新加载」。
+   */
+  let skillDirWatchTimer = null;
+  let skillDirWatcher = null;
+  function startSkillDirWatcher() {
+    try {
+      const dir = getSkillsDir();
+      if (!existsSync(dir)) return;
+      skillDirWatcher = watch(dir, { recursive: true }, (_event, filename) => {
+        if (!filename) return;
+        // 仅关心 SKILL.md / _meta.json 等技能相关文件变更
+        if (!/\.md$|\.json$/.test(filename)) return;
+        if (skillDirWatchTimer) clearTimeout(skillDirWatchTimer);
+        skillDirWatchTimer = setTimeout(async () => {
+          try {
+            await reloadSkills();
+            logSystem('skill_auto_reload', { reason: 'dir_change', file: filename });
+          } catch (err) {
+            console.error(`[Agent] Skill auto-reload failed:`, err.message);
+          }
+        }, 800);
+      });
+      skillDirWatcher.on('error', (err) => {
+        console.warn(`[Agent] Skill dir watcher error:`, err.message);
+      });
+    } catch (err) {
+      console.warn(`[Agent] Failed to start skill dir watcher:`, err.message);
+    }
+  }
 
   // 优雅关闭（异步 + 防并发 + 超时兜底）
   async function shutdown() {
