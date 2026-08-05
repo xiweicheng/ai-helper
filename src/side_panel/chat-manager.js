@@ -2,7 +2,7 @@
 // 从 index.js 提取的聊天相关函数
 
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, formatDuration, getReactConfig } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, getReactConfig } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
@@ -13,7 +13,7 @@ import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
 
 // 从提取的子模块导入
-import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus } from './execution-log-render.js';
+import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
@@ -2858,8 +2858,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                   ? (currentNode.nodeType === 'tool_exec' ? '🔧' : currentNode.nodeType === 'api_call' ? '📡' : currentNode.nodeType === 'reflection' ? '🎯' : currentNode.nodeType === 'preselect' ? '🔍' : '○')
                   : '○';
                 const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : t('chatMsg.preparing');
+                // 提取当前执行工具的参数预览（命令/路径/URL/query 等）
+                const currentNodeCmd = currentNode ? getToolCallPreview(currentNode) : '';
+                const cmdHtml = currentNodeCmd
+                  ? ` <span class="subtask-current-cmd" title="${escapeAttr(currentNodeCmd)}">${escapeHtml(currentNodeCmd)}</span>`
+                  : '';
                 progressLineHtml = `<div class="subtask-progress-line">
-                  <span class="subtask-current-node"><span class="subtask-current-spinner"></span>${nodeTypeIcon} ${currentNodeName}</span>
+                  <span class="subtask-current-node"><span class="subtask-current-spinner"></span><span class="node-label">${nodeTypeIcon} ${currentNodeName}</span>${cmdHtml}</span>
                   <span class="subtask-node-stats">
                     <span class="subtask-stat-total">${totalNodes}</span>
                     <span class="subtask-stat-done">✓${succeedNodes}</span>
@@ -2903,10 +2908,18 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
                     const dur = node.duration ? formatDuration(node.duration) : '';
                     const name = escapeHtml(node.nodeName || t('chatMsg.unknownNode'));
+                    // 提取工具调用的参数预览（命令/路径/URL/query 等），带 title 显示完整内容
+                    let cmdHtml = '';
+                    if (node.nodeType === 'tool_exec') {
+                      const cmd = getToolCallPreview(node);
+                      if (cmd) {
+                        cmdHtml = `<span class="subtask-node-cmd" title="${escapeAttr(cmd)}">${escapeHtml(cmd)}</span>`;
+                      }
+                    }
                     return `<div class="subtask-node ${stClass}">
                       <span class="subtask-node-icon">${icon}</span>
                       <span class="subtask-node-status">${stIcon}</span>
-                      <span class="subtask-node-name">${name}</span>
+                      <span class="subtask-node-name">${name}${cmdHtml}</span>
                       ${dur ? `<span class="subtask-node-dur">${dur}</span>` : ''}
                     </div>`;
                   }).join('');

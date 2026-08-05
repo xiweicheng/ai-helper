@@ -2,7 +2,7 @@
 // 从 chat-manager.js 提取
 
 import state from './state.js';
-import { escapeHtml, formatDuration } from './utils.js';
+import { escapeHtml, escapeAttr, formatDuration } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -147,6 +147,57 @@ function getStatusText(status) {
   return statusMap[status] || status;
 }
 
+// 提取工具调用的参数预览（如 execute_command 的命令、agent_file 的路径等），用于节点 header 展示
+export function getToolCallPreview(entry) {
+  if (entry?.nodeType !== 'tool_exec' || !entry?.action) return '';
+  const toolName = entry.action.name || '';
+  let p = entry.action.params;
+  if (p == null) return '';
+  if (typeof p === 'string') {
+    p = (() => { try { return JSON.parse(p); } catch { return { raw: p }; } })();
+  }
+  if (typeof p !== 'object') return String(p).trim();
+
+  // 命令执行类：显示具体命令
+  if (toolName === 'execute_command' || toolName === 'agent_exec') {
+    return (p.command || p.cmd || '').toString().trim();
+  }
+  // 文件操作类：显示路径
+  if (toolName === 'agent_file' || toolName === 'file_upload' || toolName === 'download_file') {
+    return (p.file_path || p.filePath || p.path || p.filename || p.fileName || p.url || '').toString().trim();
+  }
+  // 网页类：显示 URL 或 selector
+  if (toolName === 'fetch_url' || toolName === 'interact_element' || toolName === 'fill_form' || toolName === 'manage_tab' || toolName === 'preview_ui') {
+    return (p.url || p.href || p.selector || '').toString().trim();
+  }
+  // 搜索类：显示 query
+  if (toolName === 'search_browser_data' || toolName === 'search_in_page' || toolName === 'exec_log') {
+    return (p.query || p.keyword || p.text || '').toString().trim();
+  }
+  // 子 Agent 分派：显示 task 预览
+  if (toolName === 'dispatch_task') {
+    return (p.task || '').toString().trim();
+  }
+  // 记忆类：显示 action
+  if (toolName === 'agent_memory') {
+    return (p.action || p.subAction || '').toString().trim();
+  }
+  // 通用兜底：取关键参数键值对
+  const keys = Object.keys(p).filter(k => p[k] != null && p[k] !== '');
+  if (keys.length === 0) return '';
+  if (keys.length === 1) {
+    const val = String(p[keys[0]]);
+    return `${keys[0]}: ${val}`;
+  }
+  // 多参数：取前 2 个关键参数
+  return keys.slice(0, 2).map(k => `${k}=${JSON.stringify(p[k])}`).join(', ');
+}
+
+// 向后兼容旧名称
+function getToolCommandPreview(entry) {
+  return getToolCallPreview(entry);
+}
+
 export function renderExecutionTimeline(executionLog) {
   const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const totalCount = sortedLog.length;
@@ -222,6 +273,13 @@ export function renderExecutionTimeline(executionLog) {
       }
       if (info.length > 0) {
         nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
+      }
+    }
+    
+    if (isToolExec) {
+      const cmd = getToolCommandPreview(entry);
+      if (cmd) {
+        nodeName += ` <span class="node-cmd-preview" title="${escapeAttr(cmd)}">${escapeHtml(cmd)}</span>`;
       }
     }
     
@@ -568,6 +626,13 @@ function renderSingleEntry(entry, index, totalCount) {
     }
     if (info.length > 0) {
       nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
+    }
+  }
+  
+  if (isToolExec) {
+    const cmd = getToolCommandPreview(entry);
+    if (cmd) {
+      nodeName += ` <span class="node-cmd-preview" title="${escapeAttr(cmd)}">${escapeHtml(cmd)}</span>`;
     }
   }
   

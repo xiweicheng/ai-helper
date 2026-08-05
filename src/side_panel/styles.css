@@ -2751,6 +2751,23 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.subtask-node-cmd {
+  display: inline-block;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  color: #2563eb;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #eef2ff;
+  border-radius: 3px;
+  padding: 1px 5px;
+  cursor: default;
+}
 .subtask-node-dur {
   flex-shrink: 0;
   font-size: 11px;
@@ -2826,6 +2843,7 @@ body {
 }
 .subtask-current-node {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2834,6 +2852,21 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.subtask-current-node .node-label {
+  flex-shrink: 0;
+}
+.subtask-current-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #555;
+  font-weight: 400;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  cursor: default;
 }
 .subtask-current-spinner {
   flex-shrink: 0;
@@ -8211,6 +8244,28 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.execution-log-panel .node-cmd-preview {
+  display: inline-block;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-weight: 400;
+  font-size: 12px;
+  color: #2563eb;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #eef2ff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: default;
+  flex-shrink: 1;
   min-width: 0;
 }
 
