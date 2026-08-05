@@ -519,6 +519,22 @@ export function generateMessagesSummary(trimmedMessages) {
   return t('tokenCounter.historySummary') + '\n' + summaryParts.join('\n');
 }
 
+/**
+ * 清洗消息 content 字符串中的非法 Unicode 字符
+ * - 替换孤立代理对字符（lone surrogates，由 substring 截断 emoji 等导致）为 U+FFFD
+ * - 某些 API 服务端 JSON 解析器（如支持 \x 扩展的解析器）会因非法 Unicode 而解析失败
+ * @param {string} str - 原始字符串
+ * @returns {string} 清洗后的字符串
+ */
+function sanitizeContentForApi(str) {
+  if (typeof str !== 'string') return str;
+  // 匹配：
+  // 1. 高位代理 U+D800..U+DBFF 后面没有紧跟低位代理
+  // 2. 低位代理 U+DC00..U+DFFF 前面没有高位代理
+  // 使用 Unicode property escapes 可读性更好，但兼容性考虑用显式范围
+  return str.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD');
+}
+
 const API_ALLOWED_FIELDS = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'reasoning_content', 'prefix']);
 
 /**
@@ -547,8 +563,18 @@ export function filterApiMessages(messages) {
           if (part.image_url.height != null) clean.height = part.image_url.height;
           return { ...part, image_url: clean };
         }
+        // 清洗 text part 中的非法 Unicode 字符
+        if (part && part.type === 'text' && typeof part.text === 'string') {
+          return { ...part, text: sanitizeContentForApi(part.text) };
+        }
         return part;
       });
+    }
+
+    // 清洗 content 字符串中的非法 Unicode（如孤立的代理对字符）
+    // 防止 substring 截断 emoji 等原因产生的非法字符导致 API 服务端 JSON 解析失败
+    if (typeof result.content === 'string') {
+      result.content = sanitizeContentForApi(result.content);
     }
 
     if (result.role === 'tool') {
