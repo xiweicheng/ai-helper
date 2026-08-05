@@ -106,7 +106,7 @@ export async function shouldShowSkillsTab() {
     return false;
   }
 
-  // 检查是否有当前 Agent 可见的技能（考虑 Agent skillIds 绑定）
+  // 检查是否存在可选技能（全量，不受子助手 skillIds 绑定与启用状态限制）
   try {
     const visibleSkills = await getVisibleSkills();
     return visibleSkills.length > 0;
@@ -125,27 +125,19 @@ export async function getEnabledSkills(forceRefresh = false) {
 }
 
 /**
- * 获取当前 Agent 可见的技能列表（按 Agent skillIds 过滤）
+ * 获取输入框下拉可选的技能列表（全量，不做任何过滤）
  * 包含已启用和未启用的技能，已启用的排在前面，未启用的排在后面。
- * 用于输入框下拉展示，与 Agent 绑定联动。
- * 未启用的技能虽然不会被自动注入系统提示词，但用户仍可主动选择，
- * 通过加载/执行工具正常使用（agent 端加载不校验 enabled）。
+ * 说明：
+ * - 不受子助手（Agent）skillIds 绑定限制。子助手绑定只影响系统提示词中自动注入的技能，
+ *   不应限制用户手动通过 "/" 触发选择技能。
+ * - 不受 enabled 限制。未启用的技能虽然不会被自动注入系统提示词，但用户仍可主动选择，
+ *   通过加载/执行工具正常使用（agent 端加载不校验 enabled）。
  * @param {boolean} forceRefresh - 是否强制刷新缓存
  * @returns {Promise<Array>}
  */
 export async function getVisibleSkills(forceRefresh = false) {
   // 拷贝数组，避免排序污染 fetchSkillList 的缓存
-  let skills = [...(await fetchSkillList(forceRefresh))];
-
-  const currentAgentId = state.activeAgentId;
-  if (currentAgentId) {
-    const { getAgent } = await import('./agent-store.js');
-    const agent = await getAgent(currentAgentId);
-    if (agent && agent.skillIds != null && Array.isArray(agent.skillIds)) {
-      const allowedSet = new Set(agent.skillIds);
-      skills = skills.filter(s => allowedSet.has(s.name));
-    }
-  }
+  const skills = [...(await fetchSkillList(forceRefresh))];
 
   // 已启用的排在前面，未启用的排在后面
   skills.sort((a, b) => {
@@ -472,7 +464,7 @@ export async function getSkillContextText() {
 
 /**
  * 判断 MCP Tab 是否应该显示
- * 条件：Agent 已连接 且 MCP 全局开关开启 且有 MCP 服务可用
+ * 条件：Agent 已连接 且 MCP 全局开关开启 且存在当前会话实际可用的 MCP 服务
  * @returns {Promise<boolean>}
  */
 export async function shouldShowMcpTab() {
@@ -480,60 +472,45 @@ export async function shouldShowMcpTab() {
     return false;
   }
 
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['mcpEnabled', 'mcpTools'], async (result) => {
-      if (!result.mcpEnabled) {
-        resolve(false);
-        return;
-      }
-      const tools = result.mcpTools || [];
-      if (tools.length === 0) {
-        resolve(false);
-        return;
-      }
-
-      // 检查当前 Agent 是否允许 MCP 工具
-      if (state.activeAgentId) {
-        try {
-          const { getAgent } = await import('./agent-store.js');
-          const agent = await getAgent(state.activeAgentId);
-          if (agent && agent.toolIds != null && Array.isArray(agent.toolIds)) {
-            // Agent 有具体的工具列表，检查是否包含任何 MCP 工具
-            const hasMcpTool = agent.toolIds.some(id => id.startsWith('mcp_'));
-            if (!hasMcpTool) {
-              resolve(false);
-              return;
-            }
-          }
-        } catch { /* ignore */ }
-      }
-
-      resolve(true);
-    });
+  const mcpEnabled = await new Promise((resolve) => {
+    chrome.storage.local.get(['mcpEnabled'], (result) => resolve(result.mcpEnabled));
   });
+  if (!mcpEnabled) {
+    return false;
+  }
+
+  // 与 MCP 列表口径一致：没有实际可用的 MCP 服务则不显示 Tab
+  const services = await getMcpServices();
+  return services.length > 0;
 }
 
 /**
  * 从 chrome.storage 获取 MCP 服务列表（按 serverId 分组）
- * 如果当前 Agent 限定了 toolIds，只返回绑定工具中涉及的 MCP 服务
+ * 只返回当前会话「实际会下发给大模型」的 MCP 工具所属的服务。
+ * 原因：未生效的 MCP 工具不会随请求下发，模型无法识别调用，列出来没有意义。
+ * 这与技能不同——技能是把内容注入消息，无需工具支撑，故不做此限制。
+ *
+ * 生效工具 = 子助手绑定范围(activeAgentToolIds) ∩ 用户勾选(enabledTools)，
+ * 与 tool-panel.js 的口径保持一致：
+ * - activeAgentToolIds 为 null/undefined 表示不限定（默认助手），只看勾选
+ * - 子助手未绑定任何 MCP 工具时，交集为空，列表自然为空
  * @returns {Promise<Array<{serverId, serverName, toolCount}>>}
  */
 export async function getMcpServices() {
-  return new Promise(async (resolve) => {
-    chrome.storage.local.get(['mcpTools'], async (result) => {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['mcpTools'], (result) => {
       let tools = result.mcpTools || [];
 
-      // 如果当前 Agent 有具体的 toolIds 限定，只保留 Agent 允许的 MCP 工具
-      if (state.activeAgentId) {
-        try {
-          const { getAgent } = await import('./agent-store.js');
-          const agent = await getAgent(state.activeAgentId);
-          if (agent && agent.toolIds != null && Array.isArray(agent.toolIds)) {
-            const allowedSet = new Set(agent.toolIds);
-            tools = tools.filter(t => allowedSet.has(t.id));
-          }
-        } catch { /* ignore */ }
+      // 1. 子助手绑定范围限定（null/undefined = 不限定）
+      const agentToolIds = state.activeAgentToolIds;
+      if (agentToolIds !== null && agentToolIds !== undefined) {
+        const agentSet = new Set(agentToolIds);
+        tools = tools.filter(t => agentSet.has(t.id));
       }
+
+      // 2. 用户在工具设置里的勾选状态
+      const enabledSet = new Set(state.enabledTools || []);
+      tools = tools.filter(t => enabledSet.has(t.id));
 
       const serverMap = new Map();
       tools.forEach(t => {

@@ -261,7 +261,7 @@ async function updateTabCounts(showSkills, showMcp) {
       promptsTab.textContent = t('promptMgr.promptsTabCount', { count: promptCount });
     }
 
-    // 技能数量（按当前 Agent 可见的技能计）
+    // 技能数量（全量可选技能，不受子助手绑定限制）
     if (showSkills) {
       const skills = await getVisibleSkills();
       const skillsTab = document.getElementById('skillsTab');
