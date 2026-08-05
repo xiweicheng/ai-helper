@@ -1030,7 +1030,8 @@ export function addContextBubble(type, contextText, scroll = true) {
 function stripSkillContext(text) {
   return text
     // Agent Skill 成功：完整说明直到锚定句结束（中/英）
-    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[^\n]*处理以下问题[：:]|Please use the relevant tools[^\n]*handle the following problem[.:])\s*\n/, '')
+    // 锚定句中间内容可能跨行，使用 [\s\S]*? 非贪婪匹配
+    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[\s\S]*?处理以下问题[：:]|Please use the relevant tools[\s\S]*?handle the following problem[.:])\s*\n/, '')
     // Agent 降级 / Workflow：单行提示句（中/英）
     .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
 }
@@ -3348,7 +3349,7 @@ export function editAndResendMessage(messageDiv) {
       textContentClean = textContentClean.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
     }
     if (mcpMatch) {
-      textContentClean = textContent_.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+      textContentClean = textContentClean.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
     }
     if (skillMatch) {
       textContentClean = stripSkillContext(textContentClean);

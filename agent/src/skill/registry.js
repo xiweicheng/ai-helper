@@ -22,6 +22,53 @@ export function setSkillRegistryLang(lang) {
 // Skill 映射表: name → skill定义
 const skills = new Map();
 
+/**
+ * 名称归一化：转小写 + 空格/连字符/下划线统一为连字符
+ * 用于大小写/分隔符不敏感的模糊匹配
+ * @param {string} name
+ * @returns {string}
+ */
+function normalizeName(name) {
+  return String(name || '').toLowerCase().replace(/[\s_]+/g, '-').trim();
+}
+
+/**
+ * 三级模糊查找 Agent Skill
+ * 解决 SKILL.md frontmatter `name`（如 "Agent Browser"）与目录名/slug（如 `agent-browser`）不一致的问题
+ *
+ * 匹配顺序：
+ *   ① 精确 name 匹配（skills Map 的 key）
+ *   ② 目录名匹配（basename(dirPath)）
+ *   ③ 归一化后大小写/空格/连字符/下划线不敏感匹配
+ *
+ * @param {string} name - AI 调用时使用的名称（可能是 frontmatter name、目录名或 slug）
+ * @returns {Object|undefined} 匹配到的 skill 定义，未找到返回 undefined
+ */
+function findAgentSkillByName(name) {
+  if (!name) return undefined;
+
+  // ① 精确 name 匹配
+  const exact = skills.get(name);
+  if (exact && exact.type === 'agent') return exact;
+
+  // ② 目录名匹配
+  for (const [, skill] of skills) {
+    if (skill.type !== 'agent') continue;
+    if (skill.dirPath && basename(skill.dirPath) === name) return skill;
+  }
+
+  // ③ 归一化后模糊匹配
+  const target = normalizeName(name);
+  if (!target) return undefined;
+  for (const [, skill] of skills) {
+    if (skill.type !== 'agent') continue;
+    if (normalizeName(skill.name) === target) return skill;
+    if (skill.dirPath && normalizeName(basename(skill.dirPath)) === target) return skill;
+  }
+
+  return undefined;
+}
+
 // 内置技能状态持久化文件
 const BUILTIN_STATE_FILE = join(dirname(SKILLS_DIR), 'builtin_skills_state.json');
 
@@ -167,6 +214,10 @@ export function getSkillList(type) {
     } else if (skill.type === 'agent') {
       item.resourceCount = skill.resources?.length || 0;
       item.resources = (skill.resources || []).map(r => ({ name: r.name, type: r.type, size: r.size }));
+      // 暴露目录名（slug），方便前端展示和 AI 调用
+      if (skill.dirPath) {
+        item.dirName = basename(skill.dirPath);
+      }
     }
 
     list.push(item);
@@ -232,7 +283,13 @@ export function getAgentSkillPrompts() {
   parts.push('');
 
   for (const skill of agentSkills) {
-    parts.push(`### ${skill.name}`);
+    // 当 frontmatter name 与目录名（slug）不一致时，标题同时显示 slug，引导 AI 用正确名称调用
+    const dirName = skill.dirPath ? basename(skill.dirPath) : '';
+    if (dirName && dirName !== skill.name) {
+      parts.push(`### ${skill.name} (slug: \`${dirName}\`)`);
+    } else {
+      parts.push(`### ${skill.name}`);
+    }
     parts.push(T('skill.skillPromptDesc', { description: skill.description }));
     if (skill.resources && skill.resources.length > 0) {
       const resourceNames = skill.resources.map(r => `\`${r.name}\``).join(', ');
@@ -250,8 +307,8 @@ export function getAgentSkillPrompts() {
  * @returns {{ success: boolean, error?: string, skill?: Object, prompt?: string }}
  */
 export function getAgentSkillPrompt(name) {
-  const skill = skills.get(name);
-  if (!skill || skill.type !== 'agent') {
+  const skill = findAgentSkillByName(name);
+  if (!skill) {
     return { success: false, error: `Skill "${name}" 不存在或不是 Agent Skill` };
   }
   // 如果 skill 有 dirPath，在 prompt 前注入工作目录信息，方便 AI 解析相对路径引用
