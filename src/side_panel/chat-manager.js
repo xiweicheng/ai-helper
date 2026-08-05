@@ -1209,6 +1209,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     // 0. 文件产物按钮：从 executionLog 提取写文件操作（放在执行日志按钮之前）
     const artifacts = extractArtifactsFromExecutionLog(executionLog);
+    console.log('[addMessage] executionLog entries:', executionLog?.length, '| agent_file entries:', executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| artifacts:', artifacts.length);
     if (artifacts.length > 0) {
       const artifactsBtn = document.createElement('button');
       artifactsBtn.className = 'artifacts-btn';
@@ -3256,6 +3257,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         const streamingConnected = streamingEl ? streamingEl.isConnected : false;
         const streamingMsgId = streamingEl ? streamingEl.dataset.messageId : null;
         cleanupCallApi();
+        console.log('[callApi API_COMPLETE] wasStreamed:', wasStreamed, '| message.executionLog entries:', message.executionLog?.length || 0, '| local executionLog entries:', executionLog.length, '| agent_file entries:', (message.executionLog || executionLog)?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length || 0);
         resolve({ 
           content: message.content, 
           executionLog: message.executionLog || executionLog,

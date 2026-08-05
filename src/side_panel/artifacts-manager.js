@@ -135,6 +135,98 @@ function extractPathFromObservation(observation) {
 }
 
 /**
+ * 从 agent_exec 命令字符串中解析写入的文件路径
+ * 支持：echo > file、echo >> file、touch、mkdir、cp、cat > file、tee 等模式
+ * @param {string} command - 完整的命令字符串
+ * @returns {string[]} - 提取出的文件路径列表（绝对路径或相对路径）
+ */
+function extractFilesFromAgentExec(command) {
+  if (!command || typeof command !== 'string') return [];
+
+  const results = [];
+  let cwd = ''; // 跟踪 cd 切换的目录
+
+  // 按 && 和 ; 分割命令链
+  const parts = command.split(/\s*&&\s*|\s*;\s*/);
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+
+    // cd 命令：更新当前工作目录
+    const cdMatch = trimmed.match(/^cd\s+(.+?)\s*$/);
+    if (cdMatch) {
+      const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
+      if (target.startsWith('/')) {
+        cwd = target;
+      } else if (target === '..' && cwd) {
+        cwd = normalizePath(cwd).replace(/\/[^/]+$/, '') || '/';
+      } else if (cwd) {
+        cwd = normalizePath(cwd.replace(/\/$/, '') + '/' + target);
+      }
+      continue;
+    }
+
+    /** 将相对路径转为绝对路径 */
+    const resolvePath = (p) => {
+      p = p.replace(/^['"]|['"]$/g, '');
+      if (!p.startsWith('/') && cwd) {
+        p = normalizePath(cwd.replace(/\/$/, '') + '/' + p);
+      }
+      return normalizePath(p);
+    };
+
+    // mkdir -p dir
+    const mkdirMatch = trimmed.match(/^mkdir\s+(?:-[pm]+\s+)*(.+?)$/);
+    if (mkdirMatch) {
+      const dirs = mkdirMatch[1].split(/\s+/).filter(d => d && !d.startsWith('-'));
+      for (const d of dirs) results.push(resolvePath(d));
+      continue;
+    }
+
+    // touch file1 file2 ...
+    const touchMatch = trimmed.match(/^touch\s+(.+)$/);
+    if (touchMatch) {
+      const fileList = touchMatch[1].split(/\s+/).filter(f => f && !f.startsWith('-'));
+      for (const f of fileList) results.push(resolvePath(f));
+      continue;
+    }
+
+    let filePath = null;
+
+    // echo "..." > file 或 >> file（重定向在末尾）
+    const redirectMatch = trimmed.match(/\s[>]{1,2}\s*['"]?([^\s|&;'"]+)['"]?\s*$/);
+    if (redirectMatch) {
+      filePath = redirectMatch[1];
+    }
+
+    // cat > file
+    if (!filePath) {
+      const catMatch = trimmed.match(/^cat\s+>\s*['"]?([^\s|&;'"]+)['"]?/);
+      if (catMatch) filePath = catMatch[1];
+    }
+
+    // cp src ... dest（dest 是最后一个参数）
+    if (!filePath) {
+      const cpMatch = trimmed.match(/^cp\s+(?:-[a-zA-Z]+\s+)*(?:.+?\s+)+?['"]?([^\s|&;'"]+)['"]?\s*$/);
+      if (cpMatch) filePath = cpMatch[1];
+    }
+
+    // tee file
+    if (!filePath) {
+      const teeMatch = trimmed.match(/tee\s+(?:-[a-zA-Z]+\s+)*['"]?([^\s|&;'"]+)['"]?/);
+      if (teeMatch) filePath = teeMatch[1];
+    }
+
+    if (filePath) {
+      results.push(resolvePath(filePath));
+    }
+  }
+
+  return results;
+}
+
+/**
  * 从 executionLog 中提取所有文件产物（写/创建/编辑文件操作）
  * @param {Array} executionLog - 执行日志
  * @returns {Array} 产物列表 [{ path, fileName, toolName, action, size, timestamp, status }]
@@ -162,9 +254,39 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     }
     if (typeof params !== 'object') continue;
 
+    // agent_exec: 从 shell 命令中解析写入的文件路径
+    if (toolName === 'agent_exec') {
+      const command = params.command || '';
+      if (!command) continue;
+
+      const candidatePaths = extractFilesFromAgentExec(command);
+      for (const filePath of candidatePaths) {
+        if (!filePath) continue;
+
+        // 去重
+        if (seenPaths.has(filePath)) {
+          const idx = artifacts.findIndex(a => a.path === filePath);
+          if (idx >= 0) artifacts.splice(idx, 1);
+        }
+        seenPaths.add(filePath);
+
+        if (entry.status === 'failed') continue;
+
+        artifacts.push({
+          path: filePath,
+          fileName: getFileName(filePath),
+          toolName,
+          action: 'typeCreate',
+          size: 0,
+          timestamp: entry.timestamp || null,
+          status: entry.status || 'unknown',
+        });
+      }
+      continue;
+    }
+
     let filePath = null;
     let actionLabel = 'typeOther';
-    let isWriteOp = false;
 
     // agent_file: action=write
     if (toolName === 'agent_file') {
@@ -172,31 +294,23 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       if (action === 'write') {
         filePath = params.path || params.filePath;
         actionLabel = 'typeWrite';
-        isWriteOp = true;
-      } else if (action === 'delete') {
-        // 删除操作不算产物
-        continue;
       } else {
         continue;
       }
     }
-    // agent_exec: 可能通过命令写文件，较难准确判断，跳过
     // file_upload: 上传文件到工作目录
     else if (toolName === 'file_upload') {
       filePath = params.path || params.filePath || params.filename;
       actionLabel = 'typeCreate';
-      isWriteOp = true;
     }
-    // download_file: 下载文件到工作目录
+    // download_file: 下载文件到工作目录，跳过
     else if (toolName === 'download_file') {
-      // download_file 通常是下载到用户下载目录，不一定在工作目录，跳过
       continue;
     }
     // 其他可能的写文件工具（自定义扩展）
     else if (params.file_path && (params.content !== undefined || params.action === 'write' || params.action === 'create')) {
       filePath = params.file_path;
       actionLabel = params.action === 'create' ? 'typeCreate' : 'typeWrite';
-      isWriteOp = true;
     }
 
     if (!filePath) continue;
@@ -208,7 +322,6 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 
     // 去重（同一路径只保留最后一次操作）
     if (seenPaths.has(finalPath)) {
-      // 移除旧的，保留新的（后面的操作覆盖前面的）
       const idx = artifacts.findIndex(a => a.path === finalPath);
       if (idx >= 0) artifacts.splice(idx, 1);
     }

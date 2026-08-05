@@ -677,6 +677,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         
         logger.debug('[Background] API call complete,content length:', content.length, 'execution logcount:', executionLog.length);
+        console.log('[Background API_COMPLETE] useTools:', useTools, '| executionLog entries:', executionLog.length, '| agent_file entries:', executionLog.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| first few types:', executionLog.slice(0, 5).map(e => `${e.nodeType}${e.action ? `(${e.action.name})` : ''}`));
         // 安全截断：防止 executionLog 超过 chrome.runtime.sendMessage 的 64MiB 限制
         const truncatedLog = executionLog.length > MAX_LOG_ENTRIES_FOR_MSG
           ? executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
