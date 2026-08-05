@@ -14,6 +14,7 @@ import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { handleDuplicateSession } from './session-manager-ui.js';
+import { extractArtifactsFromExecutionLog, showArtifactsModal } from './artifacts-manager.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -1726,7 +1727,30 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   rightActionsContainer.style.display = 'flex';
   rightActionsContainer.style.alignItems = 'center';
   rightActionsContainer.style.gap = '8px';
-  
+
+  // 文件产物按钮：从 executionLog 提取写文件操作
+  const artifacts = extractArtifactsFromExecutionLog(executionLog);
+  if (artifacts.length > 0) {
+    const artifactsBtn = document.createElement('button');
+    artifactsBtn.className = 'artifacts-btn';
+    artifactsBtn.type = 'button';
+    artifactsBtn.title = t('artifacts.btnTitle', { count: artifacts.length });
+    artifactsBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+      <span class="artifacts-btn-count">${artifacts.length}</span>
+    `;
+    artifactsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showArtifactsModal(artifacts);
+    });
+    rightActionsContainer.appendChild(artifactsBtn);
+  }
+
   // 执行日志按钮（如果启用且有日志）
   if (executionLog && executionLog.length > 0 && state.chatConfig?.enableExecutionLog) {
     const logBtn = document.createElement('button');

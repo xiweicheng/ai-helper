@@ -20,6 +20,7 @@ import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from '.
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
+import { extractArtifactsFromExecutionLog, showArtifactsModal } from './artifacts-manager.js';
 import { clearPageSelection } from './page-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
@@ -1206,6 +1207,29 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     // 提取反思详情数据（用于弹窗展示）
     const postReflection = executionLog?.find(e => e.nodeType === 'reflection' && e.reflectionType === 'post');
 
+    // 0. 文件产物按钮：从 executionLog 提取写文件操作（放在执行日志按钮之前）
+    const artifacts = extractArtifactsFromExecutionLog(executionLog);
+    if (artifacts.length > 0) {
+      const artifactsBtn = document.createElement('button');
+      artifactsBtn.className = 'artifacts-btn';
+      artifactsBtn.type = 'button';
+      artifactsBtn.title = t('artifacts.btnTitle', { count: artifacts.length });
+      artifactsBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+        <span class="artifacts-btn-count">${artifacts.length}</span>
+      `;
+      artifactsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showArtifactsModal(artifacts);
+      });
+      rightActionsContainer.appendChild(artifactsBtn);
+    }
+
     // 1. 执行日志按钮（独立的时钟图标）
     if (hasExecutionLog && state.chatConfig.enableExecutionLog) {
       const logBtn = document.createElement('button');
@@ -1295,7 +1319,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       });
       rightActionsContainer.appendChild(prototypeBtn);
     }
-    
+
     // 收藏按钮
     const bookmarkBtn = document.createElement('button');
     bookmarkBtn.className = 'bookmark-btn';
@@ -1776,6 +1800,60 @@ export function removeLoadingMessage(loadingId) {
 // ============================================================
 
 /**
+ * 重新绑定文件产物按钮点击事件
+ * 历史消息从保存的 HTML / 缓存恢复后，产物按钮的事件绑定会丢失（只有 DOM，无监听器），
+ * 需要从消息元素上保存的 executionLog 重新提取产物并绑定点击事件。
+ * @param {HTMLElement} messageEl - 消息元素
+ */
+function rebindArtifactsButton(messageEl) {
+  if (!messageEl) return;
+  const artifacts = extractArtifactsFromExecutionLog(
+    (() => {
+      try {
+        const raw = messageEl.dataset.executionLog;
+        return raw ? JSON.parse(raw) : [];
+      } catch { return []; }
+    })()
+  );
+  if (artifacts.length === 0) return;
+
+  let btn = messageEl.querySelector('.artifacts-btn');
+  if (!btn) {
+    // 兜底：旧版本消息的 HTML 中可能没有产物按钮，则按需创建并保持其在执行日志按钮之前
+    const rightActions = messageEl.querySelector('.footer-right-actions');
+    if (!rightActions) return;
+    btn = document.createElement('button');
+    btn.className = 'artifacts-btn';
+    btn.type = 'button';
+    btn.title = t('artifacts.btnTitle', { count: artifacts.length });
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+      <span class="artifacts-btn-count">${artifacts.length}</span>
+    `;
+    const logBtn = rightActions.querySelector('.execution-log-btn');
+    if (logBtn) {
+      rightActions.insertBefore(btn, logBtn);
+    } else {
+      rightActions.prepend(btn);
+    }
+  }
+  // 防止重复绑定（同一元素可能被多次恢复/重绑）
+  // 注意：不能用 dataset 属性做标记，data-* 属性会随 outerHTML 被序列化持久化，
+  // 导致下次刷新恢复后误判"已绑定"而跳过事件绑定（入口失效）。用普通 JS 属性不会序列化。
+  if (btn._artifactsBound) return;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    showArtifactsModal(artifacts);
+  });
+  btn._artifactsBound = true;
+}
+
+/**
  * 从保存的 HTML 恢复消息（用于流式消息的持久化恢复）
  * @param {string} htmlContent - 消息的 outerHTML
  */
@@ -2049,6 +2127,9 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
         });
       });
     }
+
+    // 重新绑定文件产物按钮点击事件
+    rebindArtifactsButton(messageEl);
   }
 
   // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）
@@ -2317,6 +2398,9 @@ export function rebindAllMessages(container) {
         });
       });
     }
+
+    // 重新绑定文件产物按钮点击事件
+    rebindArtifactsButton(messageEl);
   });
 
   // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）

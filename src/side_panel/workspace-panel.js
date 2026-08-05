@@ -4998,6 +4998,178 @@ export function updateWorkspacePanelVisibility(connected) {
   }
 }
 
+/**
+ * 剥离工作目录前缀（大小写不敏感，兼容 Windows 盘符大小写差异）
+ * @param {string} p - 规范化后的绝对路径
+ * @param {string} root - 规范化后的工作目录绝对路径
+ * @returns {string|null} 相对路径；不在 root 下返回 null
+ */
+function stripRootPrefix(p, root) {
+  const rootLower = root.toLowerCase();
+  const pLower = p.toLowerCase();
+  if (pLower === rootLower) return '';
+  if (pLower.startsWith(rootLower + '/')) return p.substring(root.length + 1);
+  return null;
+}
+
+/**
+ * 通过工作目录 basename 截取相对路径：
+ * 处理远程代理/沙箱路径前缀与本地不同的情况
+ * （如 /home/agent/workspace/src/x.js vs /Users/me/workspace/src/x.js）
+ * @returns {string|null} 相对路径；无法匹配返回 null
+ */
+function stripByRootBasename(p, root) {
+  const rootBase = root.split('/').filter(Boolean).pop();
+  if (!rootBase) return null;
+  // 从后往前找最后一次出现的 '/basename'，工作目录通常是路径中最深的一层
+  const idx = p.lastIndexOf('/' + rootBase);
+  if (idx === -1) return null;
+  const afterBase = p.substring(idx + rootBase.length + 1);
+  if (afterBase === '') return '';
+  return afterBase;
+}
+
+/**
+ * 将产物路径解析为工作目录内的绝对路径。
+ * 支持多种来源格式：
+ * - 相对路径：src/utils/helper.js
+ * - 本地绝对路径：/Users/xx/proj/src/utils/helper.js
+ * - 远程/沙箱绝对路径（前缀不同）：/home/agent/proj/src/utils/helper.js
+ * - Windows 盘符/反斜杠：C:\proj\src\utils\helper.js
+ * - ~ 开头：~/proj/src/utils/helper.js
+ * @param {string} filePath - 产物原始路径
+ * @param {string} workspaceRootPath - 工作目录绝对路径
+ * @returns {string|null} 解析后的绝对路径；无法定位返回 null
+ */
+function resolveWorkspacePath(filePath, workspaceRootPath) {
+  if (!filePath) return null;
+  const root = normalizePath(workspaceRootPath);
+  if (!root) return null;
+
+  let p = normalizePath(filePath).trim();
+  if (!p || p === '.') return null;
+
+  // 展开 ~ 前缀：~/xxx 视为工作目录下的相对路径
+  if (p === '~') return root;
+  if (p.startsWith('~/')) p = p.substring(2);
+
+  const isAbs = p.startsWith('/') || /^[a-zA-Z]:\//.test(p);
+  if (!isAbs) {
+    // 相对路径：直接拼接到工作目录
+    return root + '/' + p;
+  }
+
+  // 绝对路径：先尝试直接剥离工作目录前缀
+  let rel = stripRootPrefix(p, root);
+  if (rel === null) {
+    // 前缀不同：尝试通过工作目录 basename 截取（远程/沙箱场景）
+    rel = stripByRootBasename(p, root);
+  }
+  if (rel === null) return null;
+  return rel === '' ? root : root + '/' + rel;
+}
+
+/**
+ * 定位到工作目录中的某个文件：
+ * 1. 展开工作目录面板
+ * 2. 导航到文件所在目录
+ * 3. 高亮目标文件项
+ * @param {string} filePath - 产物路径（相对/绝对/~ 均可）
+ */
+export async function locateFileInWorkspace(filePath) {
+  if (!filePath) return;
+  const panel = document.getElementById('workspacePanel');
+  const container = document.getElementById('workspacePanelContainer');
+  if (!panel || !container) return;
+
+  // 展开面板
+  panel.classList.add('expanded');
+  container.classList.add('click-opened');
+
+  // 确保已获取 workspaceRoot
+  if (!workspaceRoot) {
+    workspaceRoot = await getWorkspaceRoot();
+  }
+  if (!workspaceRoot) {
+    showError(t('workspace.noWorkspace'));
+    return;
+  }
+
+  // 将产物路径解析为工作目录内的绝对路径（兼容相对/绝对/Windows/~ 等格式）
+  const resolved = resolveWorkspacePath(filePath, workspaceRoot);
+  if (!resolved) {
+    showError(t('artifacts.locateFailed'));
+    return;
+  }
+
+  // 计算所在目录
+  const lastSlash = resolved.lastIndexOf('/');
+  const dirPath = lastSlash > 0 ? resolved.substring(0, lastSlash) : workspaceRoot;
+  const fileName = lastSlash > 0 ? resolved.substring(lastSlash + 1) : resolved;
+
+  // 导航到目录（带搜索高亮）
+  await navigateToPath(dirPath);
+
+  // 高亮目标文件项
+  setTimeout(() => {
+    const items = document.querySelectorAll('.workspace-file-item');
+    let targetItem = null;
+    items.forEach(item => {
+      const name = item.dataset.name;
+      if (name === fileName) {
+        targetItem = item;
+      }
+    });
+    if (targetItem) {
+      targetItem.classList.add('highlighted');
+      targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // 3秒后移除高亮
+      setTimeout(() => targetItem.classList.remove('highlighted'), 3000);
+    } else {
+      // 目录已定位但文件未找到（可能已删除/不在列表中），给出提示
+      showToast(t('artifacts.fileNotFound'));
+    }
+  }, 300);
+}
+
+/**
+ * 预览工作目录中的文件（调用内部 previewFile）
+ * @param {string} filePath - 产物路径（相对/绝对/~ 均可）
+ * @param {string} fileName - 文件名
+ */
+export async function previewArtifactFile(filePath, fileName) {
+  if (!filePath) return;
+  const panel = document.getElementById('workspacePanel');
+  const container = document.getElementById('workspacePanelContainer');
+  if (!panel || !container) return;
+
+  // 展开面板
+  panel.classList.add('expanded');
+  container.classList.add('click-opened');
+
+  // 确保已获取 workspaceRoot
+  if (!workspaceRoot) {
+    workspaceRoot = await getWorkspaceRoot();
+  }
+  if (!workspaceRoot) {
+    showError(t('workspace.noWorkspace'));
+    return;
+  }
+
+  // 将产物路径解析为工作目录内的绝对路径，避免远程前缀/格式不一致导致读取失败
+  const resolved = resolveWorkspacePath(filePath, workspaceRoot);
+  if (!resolved) {
+    showError(t('artifacts.locateFailed'));
+    return;
+  }
+
+  // 关闭旧的预览
+  await closePreview(true);
+
+  // 直接调用 previewFile
+  await previewFile(resolved, fileName);
+}
+
 async function closePanelInternal(force = false) {
   // 强制关闭时才销毁预览（如 Agent 断开连接），普通切换面板时保留预览状态
   if (force) {

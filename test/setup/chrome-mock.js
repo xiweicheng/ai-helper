@@ -3,7 +3,10 @@
 if (typeof globalThis.chrome === 'undefined') {
   const noop = () => {};
   globalThis.chrome = {
-    storage: { local: { get: noop, set: noop } },
+    storage: {
+      local: { get: noop, set: noop },
+      onChanged: { addListener: noop },
+    },
     runtime: {
       lastError: null,
       getManifest: () => ({ content_scripts: [{ js: [] }] }),
