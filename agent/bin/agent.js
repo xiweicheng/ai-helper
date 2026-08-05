@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // agent/bin/agent.js - CLI entry point
 // Usage: ai-helper-agent <start|stop|restart|status|paircode|config> [options]
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
@@ -38,17 +38,42 @@ function resolveLang(args) {
   return detectSystemLang();
 }
 
-// Remove --lang <val> from args to avoid passing to server
+// Remove --lang <val> and background flags from args to avoid passing to server
 function filterLangArgs(args) {
   const filtered = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--lang' && args[i + 1]) {
       i++; // skip the value too
+    } else if (args[i] === '-b' || args[i] === '--background') {
+      // 过滤后台标志，避免子进程递归 fork 孙进程
     } else {
       filtered.push(args[i]);
     }
   }
   return filtered;
+}
+
+// 健康检查：轮询 GET /api/status，直到成功或超时（最多 8 秒）
+async function healthCheck(port, host, timeoutMs = 8000, intervalMs = 500) {
+  const endpoint = `http://${host}:${port}/api/status`;
+  const maxAttempts = Math.ceil(timeoutMs / intervalMs);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(endpoint);
+      if (res.ok) return true;
+    } catch {
+      // 服务尚未就绪，继续等待
+    }
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+  return false;
+}
+
+// 等待后台服务就绪（带超时），成功返回 true
+async function waitForAgentReady(port, host) {
+  return healthCheck(port, host);
 }
 
 const lang = resolveLang(process.argv);
@@ -272,9 +297,11 @@ if (command === 'start') {
       process.exit(0);
     }
 
+    const agentScript = resolve(process.argv[1]);
+
     const child = spawn(process.execPath, [
       ...process.execArgv,
-      process.argv[1],
+      agentScript,
       'start',
       ...passArgs
     ], {
@@ -293,9 +320,11 @@ if (command === 'start') {
       process.exit(1);
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // 健康检查：轮询 /api/status，最多等待 8 秒，确保服务真正就绪
+    const readyConfig = applyCliArgs(readAgentConfig(), passArgs);
+    const healthy = !spawnFailed && child.pid ? await waitForAgentReady(readyConfig.port, readyConfig.host) : false;
 
-    if (!spawnFailed && child.pid) {
+    if (!spawnFailed && child.pid && healthy) {
       try {
         writeFileSync(PID_FILE, String(child.pid));
       } catch (err) {
@@ -306,6 +335,11 @@ if (command === 'start') {
       console.log(`[Agent] ${t('agentStartedBg', { pid: child.pid })}`);
       console.log(`[Agent] ${t('stopHint')}`);
       console.log(`[Agent] ${t('statusHint')}`);
+    } else if (!spawnFailed && child.pid && !healthy) {
+      // 服务未在超时内就绪，清理 PID 文件并报错
+      try { unlinkSync(PID_FILE); } catch {}
+      console.error(`[Agent] ${t('backgroundStartFailed')}: health check timed out`);
+      process.exit(1);
     }
 
     process.exit(spawnFailed ? 1 : 0);
@@ -398,9 +432,11 @@ if (command === 'start') {
   if (isBg) {
     ensureAgentDir();
 
+    const agentScript = resolve(process.argv[1]);
+
     const child = spawn(process.execPath, [
       ...process.execArgv,
-      process.argv[1],
+      agentScript,
       'start',
       ...passArgs
     ], {
@@ -419,9 +455,11 @@ if (command === 'start') {
       process.exit(1);
     });
 
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // 健康检查：轮询 /api/status，最多等待 8 秒，确保服务真正就绪
+    const readyConfig = applyCliArgs(readAgentConfig(), passArgs);
+    const healthy = !spawnFailed && child.pid ? await waitForAgentReady(readyConfig.port, readyConfig.host) : false;
 
-    if (!spawnFailed && child.pid) {
+    if (!spawnFailed && child.pid && healthy) {
       try {
         writeFileSync(PID_FILE, String(child.pid));
       } catch (err) {
@@ -431,6 +469,10 @@ if (command === 'start') {
       child.unref();
       console.log(`[Agent] ${t('agentRestartedBg', { pid: child.pid })}`);
       console.log(`[Agent] ${t('stopHint')}`);
+    } else if (!spawnFailed && child.pid && !healthy) {
+      try { unlinkSync(PID_FILE); } catch {}
+      console.error(`[Agent] ${t('backgroundRestartFailed')}: health check timed out`);
+      process.exit(1);
     }
 
     process.exit(spawnFailed ? 1 : 0);
