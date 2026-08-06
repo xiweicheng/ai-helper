@@ -124,22 +124,18 @@ async function executeToolCall(toolName, args) {
         if (cmdCheck.level === 'confirm') {
           return { success: false, error: tr('skill.commandNeedsConfirm', { reason: cmdCheck.reason }) };
         }
-        const { exec } = await import('child_process');
-        return new Promise((resolve) => {
-          exec(args.command, {
-            cwd: args.cwd || process.cwd(),
-            encoding: 'utf-8',
-            timeout: 30000,
-            maxBuffer: 10 * 1024 * 1024,
-            windowsHide: true
-          }, (error, stdout, stderr) => {
-            if (error) {
-              resolve({ success: false, error: error.message, stdout, stderr });
-            } else {
-              resolve({ success: true, stdout, exitCode: 0, stderr });
-            }
-          });
-        });
+        // 走统一命令执行器（支持 Git Bash 等环境下 Bash 花括号扩展等特性）
+        const { executeCommandSync } = await import('../executor.js');
+        const result = await executeCommandSync(args.command, args.cwd || process.cwd());
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        if (result.error) {
+          return { success: false, error: result.error, stdout, stderr };
+        }
+        if (result.exitCode !== 0) {
+          return { success: false, error: stderr || tr('skill.execFailed'), stdout, stderr };
+        }
+        return { success: true, stdout, exitCode: result.exitCode, stderr };
       }
 
       case 'agent_search':

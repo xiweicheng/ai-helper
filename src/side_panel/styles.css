@@ -7968,7 +7968,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 0;
 }
 
 .artifacts-table {
@@ -7990,10 +7990,38 @@ body {
   z-index: 1;
 }
 
+/* 可排序表头：可点击、hover 变色、排序箭头指示 */
+.artifacts-table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.artifacts-table thead th.sortable:hover {
+  color: #667eea;
+}
+
+.artifacts-table thead th .sort-indicator {
+  margin-left: 4px;
+  font-size: 10px;
+  color: #667eea;
+  display: inline-block;
+  min-width: 10px;
+}
+
+.artifacts-table thead th.sorted-asc .sort-indicator::after {
+  content: '↑';
+}
+
+.artifacts-table thead th.sorted-desc .sort-indicator::after {
+  content: '↓';
+}
+
 .artifacts-table tbody tr {
   border-bottom: 1px solid var(--border-color, #eee);
   cursor: pointer;
   transition: background 0.15s;
+  user-select: none;
 }
 
 .artifacts-table tbody tr:hover {
@@ -8004,6 +8032,16 @@ body {
   padding: 10px 12px;
   color: var(--text-color, #333);
   vertical-align: middle;
+}
+
+/* 序号列：固定宽度、居中、灰色小字 */
+.artifacts-table .col-index {
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+  color: #aaa;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .artifacts-table .col-file {
@@ -8017,7 +8055,39 @@ body {
 
 .artifacts-table .col-file .artifact-name {
   font-weight: 500;
-  word-break: break-all;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.artifacts-table .col-file .artifact-name:hover {
+  color: #667eea;
+}
+
+/* 复制按钮：默认隐藏，行悬停或按钮自身悬停时显示，hover 变蓝 */
+.artifact-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #999;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  line-height: 1;
+}
+
+.artifact-copy-btn:hover {
+  opacity: 1 !important;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.08);
+}
+
+.artifacts-table tbody tr:hover .artifact-copy-btn {
+  opacity: 1;
 }
 
 .artifacts-table .col-type {
@@ -8035,7 +8105,7 @@ body {
 }
 
 .artifacts-table .col-action {
-  width: 80px;
+  width: 110px;
   text-align: right;
   white-space: nowrap;
 }
@@ -8124,7 +8194,7 @@ body {
     padding: 8px 10px;
   }
   .artifacts-table .col-action {
-    width: 64px;
+    width: 96px;
   }
 }
 

@@ -5170,6 +5170,20 @@ export async function previewArtifactFile(filePath, fileName) {
   await previewFile(resolved, fileName);
 }
 
+/**
+ * 关闭工作目录预览窗口（供产物管理等外部模块调用）
+ */
+export async function closeWorkspacePreview() {
+  await closePreview(true);
+}
+
+/**
+ * 关闭（收起）工作目录面板（供产物管理等外部模块调用）
+ */
+export function closeWorkspacePanel() {
+  closePanelInternal(true);
+}
+
 async function closePanelInternal(force = false) {
   // 强制关闭时才销毁预览（如 Agent 断开连接），普通切换面板时保留预览状态
   if (force) {
