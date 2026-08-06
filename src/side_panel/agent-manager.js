@@ -427,6 +427,22 @@ function initAgentModalEvents() {
       if (!catHeader) return;
       toggleCategorySelection(catHeader.dataset.category);
     });
+    // 工具勾选变化：联动更新分类计数和总计数
+    toolList.addEventListener('change', (e) => {
+      if (e.target.matches('input[type="checkbox"]')) {
+        updateAgentToolCounts();
+      }
+    });
+  }
+
+  // 技能勾选变化：联动更新总计数
+  const skillList = document.getElementById('agentSkillList');
+  if (skillList) {
+    skillList.addEventListener('change', (e) => {
+      if (e.target.matches('input[type="checkbox"]')) {
+        updateAgentSkillCount();
+      }
+    });
   }
 
   // 点击外部关闭 emoji picker
@@ -507,21 +523,25 @@ function initEmojiPicker() {
 function selectAllTools() {
   const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
   checkboxes.forEach(cb => { cb.checked = true; });
+  updateAgentToolCounts();
 }
 
 function deselectAllTools() {
   const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
   checkboxes.forEach(cb => { cb.checked = false; });
+  updateAgentToolCounts();
 }
 
 function selectAllSkills() {
   const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
   checkboxes.forEach(cb => { cb.checked = true; });
+  updateAgentSkillCount();
 }
 
 function deselectAllSkills() {
   const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
   checkboxes.forEach(cb => { cb.checked = false; });
+  updateAgentSkillCount();
 }
 
 function toggleCategorySelection(category) {
@@ -534,6 +554,51 @@ function toggleCategorySelection(category) {
   if (checkboxes.length === 0) return;
   const allChecked = checkboxes.every(cb => cb.checked);
   checkboxes.forEach(cb => { cb.checked = !allChecked; });
+  updateAgentToolCounts();
+}
+
+/**
+ * 根据当前勾选状态刷新工具分类计数和总计数
+ */
+function updateAgentToolCounts() {
+  const container = document.getElementById('agentToolList');
+  if (!container) return;
+
+  let totalCount = 0;
+  let totalSelected = 0;
+  const items = Array.from(container.querySelectorAll('.agent-tool-item'));
+  container.querySelectorAll('.agent-tool-category-clickable').forEach(catEl => {
+    const cat = catEl.dataset.category;
+    const catItems = items.filter(item => item.dataset.category === cat);
+    const catTotal = catItems.length;
+    const catSelected = catItems.filter(item => {
+      const cb = item.querySelector('input[type="checkbox"]');
+      return cb && cb.checked;
+    }).length;
+    totalCount += catTotal;
+    totalSelected += catSelected;
+    const countSpan = catEl.querySelector('.agent-tool-cat-count');
+    if (countSpan) countSpan.textContent = `${catSelected}/${catTotal}`;
+  });
+
+  const countEl = document.getElementById('agentToolCount');
+  if (countEl) {
+    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: totalSelected, total: totalCount });
+  }
+}
+
+/**
+ * 根据当前勾选状态刷新技能总计数
+ */
+function updateAgentSkillCount() {
+  const container = document.getElementById('agentSkillList');
+  const countEl = document.getElementById('agentSkillCount');
+  if (!container || !countEl) return;
+
+  const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+  const total = checkboxes.length;
+  const selected = container.querySelectorAll('input[type="checkbox"]:checked').length;
+  countEl.textContent = t('agentConfig.selectedTotalCount', { selected, total });
 }
 
 /**
@@ -754,7 +819,7 @@ async function renderAgentToolSelector(selectedToolIds) {
     const catName = t(`toolCategory.${cat}`) !== `toolCategory.${cat}` ? t(`toolCategory.${cat}`) : cat;
     const catTotal = tools.length;
     const catSelected = tools.filter(t => selectedSet.has(t.id)).length;
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span class="agent-tool-cat-count" style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
       const desc = getToolDesc(tool);
