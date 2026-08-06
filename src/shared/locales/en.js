@@ -379,7 +379,7 @@ export default {
   // Input area
   input: {
     atHint: 'Prompts (click) / Pages (Ctrl/Cmd+click)',
-    placeholder: "Type '/' for prompts, '@' to switch assistant/page, '↑↓' for history, Esc to clear",
+    placeholder: "Type '/' for prompts, '@' to switch assistant/page, '$' to pick workspace file, '↑↓' for history, Esc to clear",
     send: 'Send',
     clearSelection: 'Clear selected content',
     pageLabel: '🌐 Page',

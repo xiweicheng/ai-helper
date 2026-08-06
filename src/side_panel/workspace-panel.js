@@ -5898,11 +5898,20 @@ async function attachFilesForQuestion(paths) {
   const regularFiles = [];
   const imageFiles = [];
 
-  for (const path of paths) {
+  for (const item of paths) {
+    // 支持直接传入带元数据的条目对象（如 $ 选择器：{ fullPath, name, type, size, mtime }），
+    // 或仅传入路径字符串（从工作目录面板现有缓存条目中查找）
+    const hasMeta = item && typeof item === 'object';
+    const path = hasMeta ? (item.fullPath || item.path) : item;
     const name = path.split(/[\\/]/).pop();
-    let entry = cachedEntries.find(e => e.path === path);
-    if (!entry) {
-      entry = searchResults.find(e => e.fullPath === path);
+    let entry;
+    if (hasMeta) {
+      entry = item;
+    } else {
+      entry = cachedEntries.find(e => e.path === path);
+      if (!entry) {
+        entry = searchResults.find(e => e.fullPath === path);
+      }
     }
     const size = entry ? entry.size : 0;
     const mime = getMimeType(name);

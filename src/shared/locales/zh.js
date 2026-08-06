@@ -379,7 +379,7 @@ export default {
   // 输入区
   input: {
     atHint: '提示词 (单击) / 网页 (Ctrl/Cmd+单击)',
-    placeholder: "输入'/'快捷提示、'@'切换助手或网页、'↑↓'切换历史输入、Esc清空",
+    placeholder: "输入'/'快捷提示、'@'切换助手或网页、'$'选择工作目录文件、'↑↓'切换历史输入、Esc清空",
     send: '发送',
     clearSelection: '取消选中内容',
     pageLabel: '🌐 网页',

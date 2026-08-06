@@ -237,6 +237,9 @@ import {
   showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab
 } from './agent-at-selector.js';
 import {
+  showFileAtSelector, hideFileAtSelector, updateFileAtSelection, isFileAtSelectorVisible
+} from './file-at-selector.js';
+import {
   initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
   switchDropdownTab, getSkillContextText, clearSkillSelection,
   updateMcpSelection, renderMcpList, selectMcpService, getMcpServices,
@@ -2367,6 +2370,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (agentAtSelector && !agentAtSelector.contains(e.target)) {
       hideAgentAtSelector();
     }
+
+    const fileAtSelector = document.getElementById('fileAtSelector');
+    if (fileAtSelector && !fileAtSelector.contains(e.target)) {
+      hideFileAtSelector();
+    }
     
     if (selectionFloatingMenu && !selectionFloatingMenu.contains(e.target)) {
       const selection = window.getSelection();
@@ -2425,9 +2433,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const input = document.getElementById('userInput');
         if (input) input.focus();
         hidePromptSelector();
+        hideFileAtSelector();
         showAgentAtSelector('');
       } else {
         hideAgentAtSelector();
+        hideFileAtSelector();
         togglePromptSelector();
       }
     });
@@ -2726,6 +2736,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    // ========== $ 工作目录文件选择器键盘处理 ==========
+    const fileAtSelector = document.getElementById('fileAtSelector');
+    const fileAtDropdown = document.getElementById('fileAtDropdown');
+    if (fileAtSelector && fileAtDropdown && fileAtSelector.style.display !== 'none' && fileAtDropdown.classList.contains('show')) {
+      const fileAtList = document.getElementById('fileAtList');
+      const fileItems = fileAtList ? fileAtList.querySelectorAll('.prompt-item') : [];
+      const fileCount = fileItems.length;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        // 选择器打开时方向键不落入历史输入导航
+        e.preventDefault();
+        if (fileCount > 0) {
+          const newIdx = e.key === 'ArrowDown'
+            ? (state.selectedFileAtIndex < 0 ? 0 : (state.selectedFileAtIndex + 1) % fileCount)
+            : (state.selectedFileAtIndex < 0 ? fileCount - 1 : (state.selectedFileAtIndex === 0 ? fileCount - 1 : state.selectedFileAtIndex - 1));
+          state.selectedFileAtIndex = newIdx;
+          updateFileAtSelection(fileItems);
+        }
+        return;
+      }
+
+      if (e.key === 'Enter' && fileCount > 0 && state.selectedFileAtIndex >= 0) {
+        e.preventDefault();
+        fileItems[state.selectedFileAtIndex].click();
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        hideFileAtSelector();
+        return;
+      }
+    }
+
     // ========== / 提示词选择器键盘处理 ==========
     if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
       // 合并列表模式（搜索时）
@@ -2964,7 +3008,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isPromptSelectorVisible = promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show');
     const isAgentAtSelectorVisible = agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show');
-    if (!isPromptSelectorVisible && !isAgentAtSelectorVisible && !state.isGenerating) {
+    const isFileAtSelectorVisible = fileAtSelector.style.display !== 'none' && fileAtDropdown.classList.contains('show');
+    if (!isPromptSelectorVisible && !isAgentAtSelectorVisible && !isFileAtSelectorVisible && !state.isGenerating) {
       if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (state.inputHistoryIndex === -1) {
@@ -3000,6 +3045,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       if (state.isComposing) return;
       e.preventDefault();
+      hideFileAtSelector();
       sendMessage();
     }
   });
@@ -3173,66 +3219,54 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const lastSlashIndex = value.lastIndexOf('/');
     const lastAtIndex = value.lastIndexOf('@');
+    const lastDollarIndex = value.lastIndexOf('$');
 
-    // 优先级：在同一个触发区域（空格后或行首），/ 和 @ 都需要在合法位置触发
-    // 确定 / 是否在合法位置（且后面没有空格，输入空格表示匹配结束）
-    let slashValid = false;
-    if (lastSlashIndex !== -1) {
-      slashValid = (lastSlashIndex === 0 || value[lastSlashIndex - 1] === '\n' || value[lastSlashIndex - 1] === ' ');
-      if (slashValid) {
-        const afterSlash = value.substring(lastSlashIndex + 1);
-        if (afterSlash.includes(' ') || afterSlash.includes('\n')) {
-          slashValid = false;
-        }
-      }
-    }
+    // 优先级：在同一个触发区域（空格后或行首），/、@、$ 都需要在合法位置触发
+    // 确定触发符是否在合法位置（且后面没有空格/换行，输入空格表示匹配结束）
+    const isTriggerValid = (index) => {
+      if (index === -1) return false;
+      if (index !== 0 && value[index - 1] !== '\n' && value[index - 1] !== ' ') return false;
+      const after = value.substring(index + 1);
+      if (after.includes(' ') || after.includes('\n')) return false;
+      return true;
+    };
 
-    // 确定 @ 是否在合法位置（且后面没有空格，输入空格表示匹配结束）
-    let atValid = false;
-    if (lastAtIndex !== -1) {
-      atValid = (lastAtIndex === 0 || value[lastAtIndex - 1] === '\n' || value[lastAtIndex - 1] === ' ');
-      if (atValid) {
-        const afterAt = value.substring(lastAtIndex + 1);
-        if (afterAt.includes(' ') || afterAt.includes('\n')) {
-          atValid = false;
-        }
-      }
-    }
+    const slashValid = isTriggerValid(lastSlashIndex);
+    const atValid = isTriggerValid(lastAtIndex);
+    const dollarValid = isTriggerValid(lastDollarIndex);
 
-    // 当 / 和 @ 同时存在时，取最后出现的一个
-    if (slashValid && atValid) {
-      if (lastAtIndex > lastSlashIndex) {
-        // @ 在后面，显示 Agent 选择器
-        slashValid = false;
-        hidePromptSelector();
-        const filterText = value.substring(lastAtIndex + 1);
-        showAgentAtSelector(filterText);
-      } else {
-        // / 在后面，显示提示词选择器
-        atValid = false;
-        hideAgentAtSelector();
-        const filterText = value.substring(lastSlashIndex + 1);
-        if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
-          updatePromptList(filterText);
-        } else {
-          showPromptSelector(filterText);
-        }
-      }
-    } else if (slashValid) {
+    // 当多个触发符同时有效时，取最后出现的一个
+    let activeTrigger = null;
+    if (slashValid) activeTrigger = { key: 'slash', index: lastSlashIndex };
+    if (atValid && (!activeTrigger || lastAtIndex > activeTrigger.index)) activeTrigger = { key: 'at', index: lastAtIndex };
+    if (dollarValid && (!activeTrigger || lastDollarIndex > activeTrigger.index)) activeTrigger = { key: 'dollar', index: lastDollarIndex };
+
+    if (activeTrigger && activeTrigger.key === 'dollar') {
+      // $ 在后面，显示工作目录文件选择器
+      hidePromptSelector();
       hideAgentAtSelector();
+      const filterText = value.substring(lastDollarIndex + 1);
+      showFileAtSelector(filterText);
+    } else if (activeTrigger && activeTrigger.key === 'at') {
+      // @ 在后面，显示 Agent 选择器
+      hidePromptSelector();
+      hideFileAtSelector();
+      const filterText = value.substring(lastAtIndex + 1);
+      showAgentAtSelector(filterText);
+    } else if (activeTrigger && activeTrigger.key === 'slash') {
+      // / 在后面，显示提示词选择器
+      hideAgentAtSelector();
+      hideFileAtSelector();
       const filterText = value.substring(lastSlashIndex + 1);
       if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
         updatePromptList(filterText);
       } else {
         showPromptSelector(filterText);
       }
-    } else if (atValid) {
-      hidePromptSelector();
-      const filterText = value.substring(lastAtIndex + 1);
-      showAgentAtSelector(filterText);
     } else {
       hidePromptSelector();
       hideAgentAtSelector();
+      hideFileAtSelector();
     }
 
     adjustInputHeight();

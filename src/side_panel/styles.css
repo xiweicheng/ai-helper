@@ -5330,6 +5330,32 @@ body {
   color: #999;
   font-size: 13px;
 }
+/* $ 工作目录文件选择器样式 */
+#fileAtDropdown .file-at-path {
+  flex: 0 1 auto;
+  max-width: 45%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  color: #999;
+  margin-left: auto;
+  padding-left: 12px;
+}
+#fileAtDropdown .prompt-item.selected .file-at-path {
+  color: #8899cc;
+}
+.file-at-truncated {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #aaa;
+  text-align: center;
+  border-top: 1px solid #f0f0f0;
+  background: #fafbfc;
+  user-select: none;
+}
 /* @ Agent 选择器样式 */
 .agent-at-icon {
   font-size: 16px;
