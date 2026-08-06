@@ -8064,11 +8064,14 @@ body {
 }
 
 /* 复制按钮：默认隐藏，行悬停或按钮自身悬停时显示，hover 变蓝 */
+/* 固定宽高并统一内部图标尺寸，避免复制成功后图标切换（打勾）导致行高跳动 */
 .artifact-copy-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px 5px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   margin-left: 4px;
   border: none;
   background: transparent;
@@ -8078,6 +8081,15 @@ body {
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
   line-height: 1;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.artifact-copy-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
 }
 
 .artifact-copy-btn:hover {

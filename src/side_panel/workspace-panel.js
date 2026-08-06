@@ -5184,6 +5184,20 @@ export function closeWorkspacePanel() {
   closePanelInternal(true);
 }
 
+/**
+ * 将路径解析为工作目录内的绝对路径（供产物管理等外部模块调用）
+ * @param {string} filePath - 相对/绝对/~ 路径均可
+ * @returns {Promise<string|null>}
+ */
+export async function resolveWorkspaceAbsolutePath(filePath) {
+  if (!filePath) return null;
+  if (!workspaceRoot) {
+    workspaceRoot = await getWorkspaceRoot();
+  }
+  if (!workspaceRoot) return null;
+  return resolveWorkspacePath(filePath, workspaceRoot);
+}
+
 async function closePanelInternal(force = false) {
   // 强制关闭时才销毁预览（如 Agent 断开连接），普通切换面板时保留预览状态
   if (force) {

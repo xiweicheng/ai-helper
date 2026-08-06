@@ -162,28 +162,34 @@ export function getToolCallPreview(entry) {
   if (toolName === 'execute_command' || toolName === 'agent_exec') {
     return (p.command || p.cmd || '').toString().trim();
   }
-  // 文件操作类：显示路径
+  // 文件操作类：显示路径（提取不到时回退到通用兜底）
   if (toolName === 'agent_file' || toolName === 'file_upload' || toolName === 'download_file') {
-    return (p.file_path || p.filePath || p.path || p.filename || p.fileName || p.url || '').toString().trim();
+    const filePreview = (p.file_path || p.filePath || p.path || p.filename || p.fileName || p.url || '').toString().trim();
+    if (filePreview) return filePreview;
   }
-  // 网页类：显示 URL 或 selector
+  // 网页类：显示 URL 或 selector（如 manage_tab 的 action/tabId 等参数回退到通用兜底）
   if (toolName === 'fetch_url' || toolName === 'interact_element' || toolName === 'fill_form' || toolName === 'manage_tab' || toolName === 'preview_ui') {
-    return (p.url || p.href || p.selector || '').toString().trim();
+    const webPreview = (p.url || p.href || p.selector || '').toString().trim();
+    if (webPreview) return webPreview;
   }
   // 搜索类：显示 query
   if (toolName === 'search_browser_data' || toolName === 'search_in_page' || toolName === 'exec_log') {
-    return (p.query || p.keyword || p.text || '').toString().trim();
+    const searchPreview = (p.query || p.keyword || p.text || '').toString().trim();
+    if (searchPreview) return searchPreview;
   }
   // 子 Agent 分派：显示 task 预览
   if (toolName === 'dispatch_task') {
-    return (p.task || '').toString().trim();
+    const taskPreview = (p.task || '').toString().trim();
+    if (taskPreview) return taskPreview;
   }
   // 记忆类：显示 action
   if (toolName === 'agent_memory') {
-    return (p.action || p.subAction || '').toString().trim();
+    const memoryPreview = (p.action || p.subAction || '').toString().trim();
+    if (memoryPreview) return memoryPreview;
   }
-  // 通用兜底：取关键参数键值对
-  const keys = Object.keys(p).filter(k => p[k] != null && p[k] !== '');
+  // 通用兜底：取关键参数键值对（排除大内容字段，避免 header 拼接长文本）
+  const LARGE_PARAM_KEYS = ['content', 'text', 'prompt', 'description', 'markdown', 'html', 'css', 'js', 'code', 'script', 'data'];
+  const keys = Object.keys(p).filter(k => p[k] != null && p[k] !== '' && !LARGE_PARAM_KEYS.includes(k));
   if (keys.length === 0) return '';
   if (keys.length === 1) {
     const val = String(p[keys[0]]);
@@ -841,6 +847,14 @@ function renderExecutionLogOriginal(sortedLog) {
       }
       if (info.length > 0) {
         nodeName += ` <span class="api-info-badge">（${info.join(' ')}）</span>`;
+      }
+    }
+
+    // 工具执行类：拼接命令/参数预览（与 timeline 渲染一致，宽度不足时省略号，悬停 title 显示完整）
+    if (isToolExec) {
+      const cmd = getToolCommandPreview(entry);
+      if (cmd) {
+        nodeName += ` <span class="node-cmd-preview" title="${escapeAttr(cmd)}">${escapeHtml(cmd)}</span>`;
       }
     }
     

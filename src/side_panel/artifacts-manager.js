@@ -4,7 +4,7 @@
 
 import { t, registerTranslations } from '../shared/i18n.js';
 import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream } from './workspace-manager.js';
-import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, closeWorkspacePanel } from './workspace-panel.js';
+import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, closeWorkspacePanel, resolveWorkspaceAbsolutePath } from './workspace-panel.js';
 import { showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
 
@@ -650,13 +650,18 @@ function bindArtifactRowEvents(modal, sortedList) {
       });
     }
 
-    // 复制按钮：普通点击复制文件名，Ctrl/Cmd+点击复制文件路径
+    // 复制按钮：普通点击复制文件名，Ctrl/Cmd+点击复制文件绝对路径
     const copyBtn = row.querySelector('.artifact-copy-btn');
     if (copyBtn) {
-      copyBtn.addEventListener('click', (e) => {
+      copyBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const copyPath = e.ctrlKey || e.metaKey;
-        const text = copyPath ? artifact.path : artifact.fileName;
+        let text = artifact.fileName;
+        if (copyPath) {
+          // 解析为工作目录内的绝对路径（失败时回退原始路径）
+          const abs = await resolveWorkspaceAbsolutePath(artifact.path);
+          text = abs || artifact.path;
+        }
         copyToClipboard(text, copyBtn);
         showToast(copyPath ? t('artifacts.copiedPath') : t('artifacts.copiedName', { name: artifact.fileName }), 'success');
       });
@@ -737,8 +742,14 @@ async function handleArtifactDownload(artifact) {
 
   const url = URL.createObjectURL(result.blob);
   const a = document.createElement('a');
+  // 目录下载：压缩包以目录名命名（如 myapp → myapp.zip）
+  let dlName = result.name || getFileName(artifact.path) || 'workspace.zip';
+  if (artifact.type === 'directory') {
+    const dirName = getFileName(artifact.path);
+    if (dirName) dlName = dirName.replace(/\.zip$/i, '') + '.zip';
+  }
   a.href = url;
-  a.download = result.name || getFileName(artifact.path);
+  a.download = dlName;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -824,7 +835,13 @@ export function showArtifactsModal(artifacts) {
   // 关闭按钮
   document.getElementById('artifactsModalClose').addEventListener('click', hideArtifactsModal);
 
-  // 注意：点击遮罩区域不自动关闭，仅允许用户通过关闭按钮/ESC 手动关闭
+  // 注意：点击遮罩区域不关闭弹窗本身，仅收起工作目录面板与预览窗口（若已打开）
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target !== modalOverlay) return;
+    // 预览已随面板关闭，重置标记避免关闭弹框时重复收起
+    previewOpenedFromModal = false;
+    closeWorkspacePanel();
+  });
 
   // ESC 关闭
   const escHandler = (e) => {
