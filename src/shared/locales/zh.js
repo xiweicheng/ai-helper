@@ -125,7 +125,7 @@ export default {
   header: {
     docTitle: 'AI Helper - 模型问答',
     settingsTitle: '插件设置',
-    switchAgent: '切换 Agent',
+    switchAgent: '切换助手',
     defaultAssistant: '🤖 默认助手',
     notConnected: '未连接',
     agentAddress: '代理地址',

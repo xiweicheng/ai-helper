@@ -190,14 +190,16 @@ function updateAgentSelectorButton(allAgents, activeId) {
     const displayName = activeAgent.id === 'default' ? t('agentMgr.defaultAgentName') : activeAgent.name;
     text.textContent = `${activeAgent.icon} ${displayName}`;
     if (emoji) emoji.textContent = activeAgent.icon;
+    btn.title = `${t('header.switchAgent')}: ${activeAgent.icon} ${displayName}`;
   } else {
     text.textContent = t('header.defaultAssistant');
     if (emoji) emoji.textContent = '🤖';
+    btn.title = t('header.switchAgent');
   }
 }
 
 /**
- * 动态定位下拉框：居中于按钮下方，clamp 在面板边界内
+ * 动态定位下拉框：水平居中于按钮上方，clamp 在面板边界内
  */
 function positionDropdown() {
   const btn = document.getElementById('agentSelectorBtn');

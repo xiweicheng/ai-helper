@@ -7,12 +7,12 @@
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
   <script type="module" crossorigin src="/assets/chunk-CMxvf4Kt.js"></script>
   <script type="module" crossorigin src="/assets/constants-C8wFpWJV.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-D9j68hMd.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-CPNL6cCA.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-B1RQKkQc.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-AArDMwTf.js"></script>
+  <script type="module" crossorigin src="/assets/agent-defaults-TRbjcOsl.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-DxP5Aq-K.js"></script>
   <script type="module" crossorigin src="/assets/state-B9PZN_fc.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-DAvBIuzY.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-fsUFrL5a.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-BWvd382a.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-G4mlLgOm.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -23,17 +23,6 @@
       <span class="header-title-text">AI Helper</span>
     </h1>
     <div style="display: flex; align-items: center; gap: 4px;">
-      <div class="agent-selector-wrapper" id="agentSelectorWrapper">
-        <button class="agent-selector-btn" id="agentSelectorBtn" data-i18n-title="header.switchAgent" title="切换 Agent">
-          <span class="agent-selector-label" id="agentSelectorText" data-i18n="header.defaultAssistant">🤖 默认助手</span>
-          <span class="agent-selector-emoji" id="agentSelectorEmoji">🤖</span>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
-        </button>
-        <div class="agent-selector-dropdown" id="agentSelectorDropdown" style="display:none;">
-          <div class="agent-list-scroll" id="agentListItems"></div>
-          <div class="agent-dropdown-footer" id="agentDropdownFooter"></div>
-        </div>
-      </div>
       <div class="header-agent-wrapper" id="headerAgentWrapper">
         <button class="header-agent-trigger" id="headerAgentTrigger">
           <span class="header-agent-dot unknown" id="headerAgentDot"></span>
@@ -427,6 +416,16 @@
         </label>
       </div>
       <div class="input-toolbar-right">
+        <div class="agent-selector-wrapper" id="agentSelectorWrapper">
+          <button class="agent-selector-btn" id="agentSelectorBtn" data-i18n-title="header.switchAgent" title="切换助手">
+            <span class="agent-selector-label" id="agentSelectorText" data-i18n="header.defaultAssistant">🤖 默认助手</span>
+            <span class="agent-selector-emoji" id="agentSelectorEmoji">🤖</span>
+          </button>
+          <div class="agent-selector-dropdown" id="agentSelectorDropdown" style="display:none;">
+            <div class="agent-list-scroll" id="agentListItems"></div>
+            <div class="agent-dropdown-footer" id="agentDropdownFooter"></div>
+          </div>
+        </div>
         <div class="temp-selector">
           <div class="temp-display" id="tempDisplay" data-i18n-title="toggle.modelSettings" title="模型设置">
             <svg t="1781178113808" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="16573" width="16" height="16"><path d="M706.23 441.2v-12.76h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87V337.3h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87v-32.43h87c16.21 0 29.35-13.14 29.35-29.35s-13.14-29.35-29.35-29.35h-87.95C695.79 89.21 612.8 12.13 512.1 12.13c-107.04 0-194.13 87.08-194.13 194.12v234.88c-78.35 60.31-124.68 153.46-124.68 252.21 0 175.78 143.01 318.79 318.8 318.79s318.8-143.01 318.8-318.79c0.01-98.78-46.32-191.9-124.66-252.14zM512.1 953.42c-143.42 0-260.1-116.68-260.1-260.09 0-85.98 40.85-163.7 112.08-213.24l12.59-8.76V206.25c0-74.67 60.75-135.42 135.43-135.42s135.43 60.75 135.43 135.42v265.2l12.61 8.75c71.22 49.45 112.06 127.13 112.06 213.13 0 143.42-116.68 260.09-260.1 260.09z" fill="#666666" p-id="16574"></path><path d="M541.45 536.57V177.3c0-16.21-13.14-29.35-29.35-29.35s-29.35 13.14-29.35 29.35v359.26c-75.56 13.87-133.04 80.09-133.04 159.6 0 89.54 72.84 162.38 162.39 162.38s162.39-72.84 162.39-162.38c0-79.5-57.48-145.72-133.04-159.59zM512.1 799.85c-57.17 0-103.69-46.51-103.69-103.68 0-57.17 46.51-103.69 103.69-103.69S615.78 639 615.78 696.17c0 57.16-46.51 103.68-103.68 103.68z" fill="#666666" p-id="16575"></path></svg>
