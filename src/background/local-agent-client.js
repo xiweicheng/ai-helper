@@ -475,6 +475,22 @@ async function readFile(filePath) {
   return agentRequest('/api/fs/read', { path: filePath });
 }
 
+/**
+ * 检查文件是否存在（调用 Agent /api/fs/stat）
+ * 注意：agentRequest 失败时无法区分「404 文件不存在」和「Agent 离线/网络错误」，
+ * 因此统一返回 { success: false }，由调用方决定如何处理（安全策略：假设存在）
+ * @param {string} filePath - 文件绝对路径
+ * @returns {Promise<{success: boolean, exists?: boolean, info?: object}>}
+ */
+async function statFile(filePath) {
+  const result = await agentRequest('/api/fs/stat', { path: filePath });
+  if (result.success) {
+    return { success: true, exists: true, info: result.info };
+  }
+  // 无法区分 404 和网络错误，返回 success:false 让调用方处理
+  return { success: false };
+}
+
 async function writeFile(filePath, content) {
   return agentRequest('/api/fs/write', { path: filePath, content });
 }
@@ -1022,6 +1038,7 @@ export {
   isLocalAgent,
   agentRequest,
   readFile,
+  statFile,
   writeFile,
   uploadFile,
   openBrowser,

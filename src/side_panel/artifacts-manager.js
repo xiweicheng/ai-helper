@@ -47,6 +47,7 @@ registerTranslations('zh', {
     serialCol: '序号',
     deletedBadge: '已删除',
     deletedFile: '文件已删除',
+    deletedCount: '{count} 个已删除',
   },
 });
 
@@ -86,6 +87,7 @@ registerTranslations('en', {
     serialCol: '#',
     deletedBadge: 'Deleted',
     deletedFile: 'File deleted',
+    deletedCount: '{count} deleted',
   },
 });
 
@@ -1176,6 +1178,44 @@ async function handleArtifactDownload(artifact) {
 }
 
 /**
+ * 通过后端 Agent 批量检查文件是否存在，将不存在的文件标记为 deleted
+ * 作为命令解析的补充：Agent 在线时以实际文件系统为准
+ * @param {Array} artifacts - 产物列表（原地修改）
+ * @returns {Promise<boolean>} 是否有产物被新标记为 deleted
+ */
+export async function checkArtifactsFileExistence(artifacts) {
+  if (!artifacts || artifacts.length === 0) return false;
+
+  // 只检查未被标记为 deleted 且有路径的产物
+  const pathsToCheck = artifacts
+    .filter(a => !a.deleted && a.path)
+    .map(a => a.path);
+
+  if (pathsToCheck.length === 0) return false;
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'CHECK_FILES_EXIST',
+      paths: pathsToCheck,
+    });
+
+    if (!response || !response.success || !response.results) return false;
+
+    let changed = false;
+    for (const artifact of artifacts) {
+      if (!artifact.deleted && artifact.path && response.results[artifact.path] === false) {
+        artifact.deleted = true;
+        changed = true;
+      }
+    }
+    return changed;
+  } catch (err) {
+    // Agent 离线或通信失败 → 静默忽略，保留命令解析结果
+    return false;
+  }
+}
+
+/**
  * 显示产物弹框
  * @param {Array} artifacts - 产物列表
  */
@@ -1287,6 +1327,21 @@ export function showArtifactsModal(artifacts) {
 
   // 首次渲染行
   renderArtifactRows(modal, artifacts);
+
+  // 异步检查文件实际存在性（Agent 在线时以文件系统为准）
+  checkArtifactsFileExistence(artifacts).then(changed => {
+    if (changed && modalOverlay) {
+      // 更新计数
+      const countEl = modal.querySelector('.artifacts-modal-count');
+      if (countEl) {
+        const deletedCount = artifacts.filter(a => a.deleted).length;
+        countEl.textContent = t('artifacts.totalCount', { count: artifacts.length }) +
+          (deletedCount > 0 ? ` (${t('artifacts.deletedCount', { count: deletedCount })})` : '');
+      }
+      // 重新渲染行（反映新的 deleted 状态）
+      renderArtifactRows(modal, artifacts);
+    }
+  }).catch(() => { /* 静默失败 */ });
 }
 
 /**

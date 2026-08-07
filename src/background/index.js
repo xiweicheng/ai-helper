@@ -995,6 +995,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return false;
   }
+  // 批量检查文件是否存在（产物删除标记用）
+  // 安全策略：Agent 离线/请求失败时假设文件存在，避免误标记删除
+  // 此时保留命令解析的快照状态作为兜底
+  if (message.type === 'CHECK_FILES_EXIST') {
+    const paths = message.paths || [];
+    if (paths.length === 0) {
+      sendResponse({ success: true, results: {} });
+      return false;
+    }
+    (async () => {
+      const results = await Promise.allSettled(
+        paths.map(p => AgentClient.statFile(p))
+      );
+      const existenceMap = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled' && r.value.success) {
+          existenceMap[paths[i]] = r.value.exists;
+        } else {
+          // Agent 离线或请求失败 → 不标记，保留命令解析结果
+          existenceMap[paths[i]] = true;
+        }
+      });
+      sendResponse({ success: true, results: existenceMap });
+    })();
+    return true; // 异步 sendResponse
+  }
   // 重启代理
   if (message.type === 'AGENT_RESTART') {
     (async () => {
