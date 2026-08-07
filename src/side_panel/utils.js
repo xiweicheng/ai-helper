@@ -195,6 +195,183 @@ function _oneDecimal(n) {
 }
 
 /**
+ * 格式化 Token 数量：紧凑显示，大数字用 K/M 缩写
+ * 例：500 → "500"，1200 → "1.2K"，15000 → "15K"，1200000 → "1.2M"
+ */
+export function formatTokenCount(n) {
+  if (!n || n <= 0) return '0';
+  if (n < 1000) return String(n);
+  if (n < 10000) return (Math.round(n / 100) / 10) + 'K';
+  if (n < 1000000) return Math.round(n / 1000) + 'K';
+  return (Math.round(n / 100000) / 10) + 'M';
+}
+
+/**
+ * 格式化 Token 数量：完整显示，带千位分隔符
+ */
+export function formatTokenFull(n) {
+  if (!n && n !== 0) return '0';
+  return Number(n).toLocaleString('en-US');
+}
+
+/**
+ * 从 executionLog 汇总 Token 消耗
+ * @param {Array} executionLog
+ * @returns {{ promptTokens: number, completionTokens: number, totalTokens: number }}
+ */
+export function aggregateTokenUsage(executionLog) {
+  if (!executionLog || !Array.isArray(executionLog)) return null;
+  let promptTokens = 0, completionTokens = 0, totalTokens = 0;
+  let hasData = false;
+  for (const entry of executionLog) {
+    const usage = entry.apiResponse?.tokenUsage;
+    if (usage) {
+      promptTokens += usage.prompt_tokens || 0;
+      completionTokens += usage.completion_tokens || 0;
+      totalTokens += usage.total_tokens || 0;
+      hasData = true;
+    }
+  }
+  return hasData ? { promptTokens, completionTokens, totalTokens } : null;
+}
+
+// Token 弹窗 i18n 翻译
+registerTranslations('zh', {
+  tokenPopup: {
+    title: 'Token 消耗明细',
+    total: '总计',
+    input: '输入',
+    output: '输出',
+    inputUnit: 'tokens',
+    outputUnit: 'tokens',
+    percent: '{p}%',
+  }
+});
+registerTranslations('en', {
+  tokenPopup: {
+    title: 'Token Usage Details',
+    total: 'Total',
+    input: 'Input',
+    output: 'Output',
+    inputUnit: 'tokens',
+    outputUnit: 'tokens',
+    percent: '{p}%',
+  }
+});
+
+/**
+ * 显示 Token 消耗明细弹窗
+ * @param {{ promptTokens: number, completionTokens: number, totalTokens: number }} tokenSummary
+ * @param {HTMLElement} anchorEl - 点击的锚点元素，弹窗定位在其附近
+ */
+export function showTokenPopup(tokenSummary, anchorEl) {
+  if (!tokenSummary) return;
+
+  // 关闭已有弹窗
+  const existing = document.querySelector('.token-detail-popup');
+  if (existing) {
+    existing.remove();
+    // 如果点击的是同一个锚点，则只是关闭
+    if (anchorEl._tokenPopupOpen) {
+      anchorEl._tokenPopupOpen = false;
+      return;
+    }
+  }
+
+  // 重置其他锚点状态
+  document.querySelectorAll('[data-token-popup-open]').forEach(el => {
+    el._tokenPopupOpen = false;
+    el.removeAttribute('data-token-popup-open');
+  });
+
+  const { promptTokens, completionTokens, totalTokens } = tokenSummary;
+  const inputPercent = totalTokens > 0 ? Math.round(promptTokens / totalTokens * 100) : 0;
+  const outputPercent = totalTokens > 0 ? Math.round(completionTokens / totalTokens * 100) : 0;
+
+  const popup = document.createElement('div');
+  popup.className = 'token-detail-popup';
+  popup.innerHTML = `
+    <div class="token-popup-header">
+      <span class="token-popup-title">${t('tokenPopup.title')}</span>
+      <button class="token-popup-close" aria-label="${t('common.close')}">×</button>
+    </div>
+    <div class="token-popup-body">
+      <div class="token-popup-row token-popup-total">
+        <span class="token-popup-label">${t('tokenPopup.total')}</span>
+        <span class="token-popup-value">${formatTokenFull(totalTokens)}</span>
+      </div>
+      <div class="token-popup-divider"></div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t('tokenPopup.input')}</span>
+        <div class="token-popup-right">
+          <span class="token-popup-value">${formatTokenFull(promptTokens)}</span>
+          <span class="token-popup-percent">${inputPercent}%</span>
+        </div>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t('tokenPopup.output')}</span>
+        <div class="token-popup-right">
+          <span class="token-popup-value">${formatTokenFull(completionTokens)}</span>
+          <span class="token-popup-percent">${outputPercent}%</span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 定位：放在锚点元素上方或下方
+  document.body.appendChild(popup);
+
+  const rect = anchorEl.getBoundingClientRect();
+  const popupRect = popup.getBoundingClientRect();
+  const viewportHeight = window.innerHeight;
+
+  // 优先显示在锚点上方
+  let top, left;
+  if (rect.top - popupRect.height - 8 > 0) {
+    top = rect.top - popupRect.height - 8;
+  } else {
+    top = rect.bottom + 8;
+  }
+
+  left = rect.left + rect.width / 2 - popupRect.width / 2;
+  // 边界约束
+  left = Math.max(8, Math.min(left, window.innerWidth - popupRect.width - 8));
+  if (top + popupRect.height > viewportHeight - 8) {
+    top = viewportHeight - popupRect.height - 8;
+  }
+
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+
+  // 标记锚点
+  anchorEl._tokenPopupOpen = true;
+  anchorEl.setAttribute('data-token-popup-open', '');
+
+  // 关闭按钮
+  const closeBtn = popup.querySelector('.token-popup-close');
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    popup.remove();
+    anchorEl._tokenPopupOpen = false;
+    anchorEl.removeAttribute('data-token-popup-open');
+  });
+
+  // 点击外部关闭
+  const outsideHandler = (e) => {
+    if (!popup.contains(e.target) && !anchorEl.contains(e.target)) {
+      popup.remove();
+      anchorEl._tokenPopupOpen = false;
+      anchorEl.removeAttribute('data-token-popup-open');
+      document.removeEventListener('click', outsideHandler, true);
+    }
+  };
+  // 延迟添加，避免当前点击事件立即触发
+  setTimeout(() => {
+    document.addEventListener('click', outsideHandler, true);
+  }, 0);
+}
+
+/**
  * 获取状态文本
  */
 export function getStatusText(status) {

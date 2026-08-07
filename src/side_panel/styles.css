@@ -3337,6 +3337,148 @@ body {
 .thinking-process-stat.failed .stat-value {
   color: #f87171;
 }
+/* Token 统计样式（思考过程 header） */
+.thinking-process-stat.token-stat .token-icon {
+  font-size: 8px;
+  line-height: 1;
+  color: #f59e0b;
+}
+.thinking-process-stat.token-stat .stat-value {
+  color: #f59e0b;
+}
+
+/* Token 消耗标签（消息 footer） */
+.token-usage-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #f59e0b;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+  line-height: 1.4;
+}
+.token-usage-tag:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+.token-usage-tag .token-tag-icon {
+  font-size: 8px;
+  line-height: 1;
+  color: #f59e0b;
+}
+.token-usage-tag .token-tag-value {
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+/* Token 汇总样式（执行日志面板 summary） */
+.token-summary .summary-icon.token-summary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  line-height: 1;
+  color: #f59e0b;
+}
+.token-summary .summary-value {
+  color: #f59e0b;
+}
+
+/* Token 消耗明细弹窗 */
+.token-detail-popup {
+  position: fixed;
+  z-index: 10000;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  min-width: 220px;
+  max-width: 280px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  animation: tokenPopupFadeIn 0.15s ease-out;
+}
+@keyframes tokenPopupFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.token-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.token-popup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.token-popup-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.token-popup-close:hover {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+.token-popup-body {
+  padding: 10px 14px 12px;
+}
+.token-popup-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+.token-popup-row.token-popup-total {
+  padding: 6px 0 8px;
+}
+.token-popup-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+.token-popup-total .token-popup-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.token-popup-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.token-popup-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  font-variant-numeric: tabular-nums;
+}
+.token-popup-total .token-popup-value {
+  font-size: 15px;
+  color: #b45309;
+}
+.token-popup-percent {
+  font-size: 11px;
+  color: #9ca3af;
+  min-width: 32px;
+  text-align: right;
+}
+.token-popup-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 4px 0 6px;
+}
+
 /* 节点数点击筛选：可点击态与选中高亮 */
 .thinking-process-stat.filterable {
   cursor: pointer;
@@ -3364,6 +3506,10 @@ body {
   }
   .stat-label {
     display: none;
+  }
+  .token-usage-tag {
+    padding: 1px 5px;
+    font-size: 10px;
   }
 }
 
@@ -3701,7 +3847,7 @@ body {
 
 .input-container {
   position: relative;
-  padding: 16px;
+  padding: 16px 16px 22px 16px;
   background: rgba(255, 255, 255, 0.85);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
@@ -3741,6 +3887,22 @@ body {
 .input-container textarea:focus {
   border-color: rgba(102, 126, 234, 0.4);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+.input-disclaimer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  color: #b0b0b0;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 5;
 }
 .input-wrapper {
   position: relative;

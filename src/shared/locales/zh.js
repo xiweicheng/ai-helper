@@ -392,6 +392,7 @@ export default {
     attachFileTitle: '上传文件（PDF/Word/Excel/文本）',
     screenshot: '截取当前页面（Ctrl/Shift+点击可区域截图）',
     uploadFile: '上传文件（PDF/Word/Excel/文本）',
+    aiDisclaimer: '内容由 AI 生成，仅供参考',
   },
 
   // 模型选择下拉

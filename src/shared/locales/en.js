@@ -392,6 +392,7 @@ export default {
     attachFileTitle: 'Upload file (PDF/Word/Excel/Text)',
     screenshot: 'Capture current page (Ctrl/Shift+click for area screenshot)',
     uploadFile: 'Upload file (PDF/Word/Excel/Text)',
+    aiDisclaimer: 'AI-generated content, for reference only.',
   },
 
   // Model selector dropdown

@@ -2,7 +2,7 @@
 // 从 index.js 提取的聊天相关函数
 
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, getReactConfig } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
@@ -1390,6 +1390,22 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     });
     rightActionsContainer.appendChild(deleteBtn);
 
+
+    // Token 消耗小标签（方案三：footer 快速概览）
+    const footerTokenSummary = aggregateTokenUsage(executionLog);
+    if (footerTokenSummary) {
+      const tokenTag = document.createElement('span');
+      tokenTag.className = 'token-usage-tag';
+      tokenTag.title = t('chatStream.tokenUsageTitle', { total: formatTokenCount(footerTokenSummary.totalTokens), prompt: formatTokenCount(footerTokenSummary.promptTokens), completion: formatTokenCount(footerTokenSummary.completionTokens) });
+      tokenTag.innerHTML = `<span class="token-tag-icon">⬤</span><span class="token-tag-value">${formatTokenCount(footerTokenSummary.totalTokens)}</span>`;
+      tokenTag.style.cursor = 'pointer';
+      tokenTag.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showTokenPopup(footerTokenSummary, tokenTag);
+      });
+      rightActionsContainer.appendChild(tokenTag);
+    }
+
     footer.appendChild(rightActionsContainer);
 
     // "继续执行"按钮：仅当消息标记为 resumable 时显示
@@ -2131,6 +2147,24 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
 
     // 重新绑定文件产物按钮点击事件
     rebindArtifactsButton(messageEl);
+
+    // 重新绑定 Token 消耗标签点击事件（HTML 恢复后事件丢失）
+    const tokenTag = footer.querySelector('.token-usage-tag');
+    if (tokenTag && !tokenTag._clickBound) {
+      tokenTag._clickBound = true;
+      tokenTag.style.cursor = 'pointer';
+      tokenTag.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          const rawLog = messageEl.dataset.executionLog;
+          const log = rawLog ? JSON.parse(rawLog) : [];
+          const tokenSummary = aggregateTokenUsage(log);
+          if (tokenSummary) {
+            showTokenPopup(tokenSummary, tokenTag);
+          }
+        } catch {}
+      });
+    }
   }
 
   // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）
@@ -2402,6 +2436,24 @@ export function rebindAllMessages(container) {
 
     // 重新绑定文件产物按钮点击事件
     rebindArtifactsButton(messageEl);
+
+    // 重新绑定 Token 消耗标签点击事件（历史消息恢复后事件丢失）
+    const tokenTag = footer.querySelector('.token-usage-tag');
+    if (tokenTag && !tokenTag._clickBound) {
+      tokenTag._clickBound = true;
+      tokenTag.style.cursor = 'pointer';
+      tokenTag.addEventListener('click', (e) => {
+        e.stopPropagation();
+        try {
+          const rawLog = messageEl.dataset.executionLog;
+          const log = rawLog ? JSON.parse(rawLog) : [];
+          const tokenSummary = aggregateTokenUsage(log);
+          if (tokenSummary) {
+            showTokenPopup(tokenSummary, tokenTag);
+          }
+        } catch {}
+      });
+    }
   });
 
   // 用户消息工具栏按钮事件（.message-toolbar：编辑、复制、删除）

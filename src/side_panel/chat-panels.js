@@ -1,7 +1,7 @@
 // side_panel/chat-panels.js - 聊天面板渲染函数
 // 从 chat-manager.js 拆分，包含执行日志面板与反思信息面板的渲染逻辑
 
-import { escapeHtml, formatDuration } from './utils.js';
+import { escapeHtml, formatDuration, formatTokenCount, aggregateTokenUsage } from './utils.js';
 import { renderExecutionLogForPanel } from './execution-log-render.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -50,6 +50,8 @@ registerTranslations('zh', {
     subtaskLabel: '子任务',
     scoreTitle: '评分 {score}/10',
     scoreLabel: '评分',
+    tokenUsage: 'Token 消耗',
+    tokenUsageTitle: 'Token 消耗: {total} (Prompt: {prompt}, Completion: {completion})',
     expandAll: '展开全部',
     collapseAll: '收起全部',
   },
@@ -99,6 +101,8 @@ registerTranslations('en', {
     subtaskLabel: 'Subtasks',
     scoreTitle: 'Score {score}/10',
     scoreLabel: 'Score',
+    tokenUsage: 'Token Usage',
+    tokenUsageTitle: 'Token usage: {total} (Prompt: {prompt}, Completion: {completion})',
     expandAll: 'Expand All',
     collapseAll: 'Collapse All',
   },
@@ -281,6 +285,9 @@ function showExecutionLog(executionLog) {
   const reflectionEntries = executionLog.filter(entry => entry.nodeType === 'reflection');
   const postReflection = reflectionEntries.find(e => e.reflectionType === 'post');
   
+  // 汇总 Token 消耗
+  const tokenSummary = aggregateTokenUsage(executionLog);
+  
   panel.innerHTML = `
     <div class="log-container">
       <div class="log-header">
@@ -309,6 +316,13 @@ function showExecutionLog(executionLog) {
           <span class="summary-label">${t('chatPanels.totalDuration')}</span>
           <span class="summary-value">${formatDuration(totalDuration)}</span>
         </div>
+        ${tokenSummary ? `
+        <div class="summary-item token-summary" title="${t('chatPanels.tokenUsageTitle', { total: formatTokenCount(tokenSummary.totalTokens), prompt: formatTokenCount(tokenSummary.promptTokens), completion: formatTokenCount(tokenSummary.completionTokens) })}">
+          <span class="summary-icon token-summary-icon">⬤</span>
+          <span class="summary-label">${t('chatPanels.tokenUsage')}</span>
+          <span class="summary-value">${formatTokenCount(tokenSummary.totalTokens)}</span>
+        </div>
+        ` : ''}
         <div class="summary-combo" title="${t('chatPanels.totalNodesTitle', { count: executionLog.length })}">
           <div class="combo-main">
             <span class="combo-icon">◉</span>

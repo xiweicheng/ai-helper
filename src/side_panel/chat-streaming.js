@@ -6,7 +6,7 @@
 // 通过访问器函数提供给 chat-manager.js 的 callApi 使用。
 
 import state from './state.js';
-import { escapeHtml, formatDuration } from './utils.js';
+import { escapeHtml, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup } from './utils.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid } from './markdown-render.js';
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
@@ -56,6 +56,8 @@ registerTranslations('zh', {
     totalNodes: '总节点',
     successLabel: '成功',
     failedLabel: '失败',
+    tokenLabel: 'Token',
+    tokenUsageTitle: 'Token 消耗: {total} (Prompt: {prompt}, Completion: {completion})',
     thinkingProcess: '思考过程',
     copyMarkdown: '复制 Markdown 内容 (Ctrl/Cmd + 点击复制富文本)',
     copy: '复制',
@@ -122,6 +124,8 @@ registerTranslations('en', {
     totalNodes: 'Total nodes',
     successLabel: 'Success',
     failedLabel: 'Failed',
+    tokenLabel: 'Token',
+    tokenUsageTitle: 'Token usage: {total} (Prompt: {prompt}, Completion: {completion})',
     thinkingProcess: 'Thinking process',
     copyMarkdown: 'Copy Markdown content (Ctrl/Cmd + click to copy rich text)',
     copy: 'Copy',
@@ -455,12 +459,31 @@ export function bindProcessHeaderClick(header) {
       s.classList.add('filterable');
     }
   });
+  // Token 统计项标记可点击
+  header.querySelectorAll('.token-stat').forEach(s => {
+    s.style.cursor = 'pointer';
+  });
   header.addEventListener('click', (e) => {
     // Ctrl/Meta + Click 用于复制，不触发筛选或折叠
     if (e.ctrlKey || e.metaKey) return;
     const stat = e.target.closest('.thinking-process-stat');
     const processHistory = header.closest('.thinking-process');
     if (!processHistory) return;
+    // Token 统计点击：弹出明细弹窗
+    if (stat && stat.classList.contains('token-stat')) {
+      const messageEl = processHistory.closest('.message');
+      if (messageEl) {
+        try {
+          const rawLog = messageEl.dataset.executionLog;
+          const log = rawLog ? JSON.parse(rawLog) : [];
+          const tokenSummary = aggregateTokenUsage(log);
+          if (tokenSummary) {
+            showTokenPopup(tokenSummary, stat);
+          }
+        } catch {}
+      }
+      return;
+    }
     if (stat && stat.dataset.filter) {
       // 成功/失败：点击切换筛选，再次点击已激活的项则取消（恢复显示全部）
       const nextFilter = (processHistory.dataset.activeFilter === stat.dataset.filter) ? 'all' : stat.dataset.filter;
@@ -1334,6 +1357,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const failCount = reactNodes.filter(e => e.status === 'failed').length;
     const nodeCount = reactNodes.length;
     
+    // 汇总 Token 消耗
+    const tokenSummary = aggregateTokenUsage(executionLog);
+    
     // 创建可折叠的思考过程区域
     const processHistory = document.createElement('div');
     processHistory.className = 'thinking-process collapsed';
@@ -1358,18 +1384,39 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         <span class="stat-value">${failCount}</span>
       </span>
     ` : '';
+    // Token 统计 HTML（有数据时才展示）
+    const tokenStatsHtml = tokenSummary ? `
+      ${nodeCount > 0 ? '<span class="thinking-process-divider">|</span>' : ''}
+      <span class="thinking-process-stat token-stat" title="${t('chatStream.tokenUsageTitle', { total: formatTokenCount(tokenSummary.totalTokens), prompt: formatTokenCount(tokenSummary.promptTokens), completion: formatTokenCount(tokenSummary.completionTokens) })}">
+        <span class="stat-icon token-icon">⬤</span>
+        <span class="stat-label">${t('chatStream.tokenLabel')}</span>
+        <span class="stat-value">${formatTokenCount(tokenSummary.totalTokens)}</span>
+      </span>
+    ` : '';
     processHeader.innerHTML = `
       <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
         <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
       </svg>
       <span class="thinking-process-title">${t('chatStream.thinkingProcess')}</span>
-      <div class="thinking-process-stats">${statsHtml}</div>
+      <div class="thinking-process-stats">${statsHtml}${tokenStatsHtml}</div>
       <span class="thinking-process-duration">${totalDuration}</span>
       <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     `;
+    
+    // Token 统计点击事件（弹出明细弹窗）
+    if (tokenSummary) {
+      const tokenStat = processHeader.querySelector('.token-stat');
+      if (tokenStat) {
+        tokenStat.style.cursor = 'pointer';
+        tokenStat.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showTokenPopup(tokenSummary, tokenStat);
+        });
+      }
+    }
     
     const processBody = document.createElement('div');
     processBody.className = 'thinking-process-body';
@@ -1488,6 +1535,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
         const failCount = reactNodes.filter(e => e.status === 'failed').length;
         const nodeCount = reactNodes.length;
         
+        // 汇总 Token 消耗
+        const tokenSummary = aggregateTokenUsage(executionLog);
+        
         const processHistory = document.createElement('div');
         processHistory.className = 'thinking-process collapsed';
         
@@ -1511,18 +1561,39 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
             <span class="stat-value">${failCount}</span>
           </span>
         ` : '';
+        // Token 统计 HTML（有数据时才展示）
+        const tokenStatsHtml = tokenSummary ? `
+          ${nodeCount > 0 ? '<span class="thinking-process-divider">|</span>' : ''}
+          <span class="thinking-process-stat token-stat" title="${t('chatStream.tokenUsageTitle', { total: formatTokenCount(tokenSummary.totalTokens), prompt: formatTokenCount(tokenSummary.promptTokens), completion: formatTokenCount(tokenSummary.completionTokens) })}">
+            <span class="stat-icon token-icon">⬤</span>
+            <span class="stat-label">${t('chatStream.tokenLabel')}</span>
+            <span class="stat-value">${formatTokenCount(tokenSummary.totalTokens)}</span>
+          </span>
+        ` : '';
         processHeader.innerHTML = `
           <svg class="thinking-process-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
             <circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>
           </svg>
           <span class="thinking-process-title">${t('chatStream.thinkingProcess')}</span>
-          <div class="thinking-process-stats">${statsHtml}</div>
+          <div class="thinking-process-stats">${statsHtml}${tokenStatsHtml}</div>
           <span class="thinking-process-duration">${totalDuration}</span>
           <svg class="thinking-process-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="6 9 12 15 18 9"/>
           </svg>
         `;
+        
+        // Token 统计点击事件（弹出明细弹窗）
+        if (tokenSummary) {
+          const tokenStat = processHeader.querySelector('.token-stat');
+          if (tokenStat) {
+            tokenStat.style.cursor = 'pointer';
+            tokenStat.addEventListener('click', (e) => {
+              e.stopPropagation();
+              showTokenPopup(tokenSummary, tokenStat);
+            });
+          }
+        }
         
         const processBody = document.createElement('div');
         processBody.className = 'thinking-process-body';
@@ -1727,6 +1798,21 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   rightActionsContainer.style.display = 'flex';
   rightActionsContainer.style.alignItems = 'center';
   rightActionsContainer.style.gap = '8px';
+
+  // Token 消耗小标签（方案三：footer 快速概览）
+  const footerTokenSummary = aggregateTokenUsage(executionLog);
+  if (footerTokenSummary) {
+    const tokenTag = document.createElement('span');
+    tokenTag.className = 'token-usage-tag';
+    tokenTag.title = t('chatStream.tokenUsageTitle', { total: formatTokenCount(footerTokenSummary.totalTokens), prompt: formatTokenCount(footerTokenSummary.promptTokens), completion: formatTokenCount(footerTokenSummary.completionTokens) });
+    tokenTag.innerHTML = `<span class="token-tag-icon">⬤</span><span class="token-tag-value">${formatTokenCount(footerTokenSummary.totalTokens)}</span>`;
+    tokenTag.style.cursor = 'pointer';
+    tokenTag.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showTokenPopup(footerTokenSummary, tokenTag);
+    });
+    rightActionsContainer.appendChild(tokenTag);
+  }
 
   // 文件产物按钮：从 executionLog 提取写文件操作
   const artifacts = extractArtifactsFromExecutionLog(executionLog);
