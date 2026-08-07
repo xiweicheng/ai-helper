@@ -1,5 +1,5 @@
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml, escapeAttr } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml, escapeAttr, updateDropdownPosition } from './utils.js';
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
@@ -186,6 +186,9 @@ export function addPromptManageButton() {
 export async function showPromptSelector(filterText = '') {
   const promptSelector = document.getElementById('promptSelector');
   const promptDropdown = document.getElementById('promptDropdown');
+
+  // 动态计算下拉框位置，确保紧贴在输入框上方
+  updateDropdownPosition();
 
   promptSelector.style.display = 'block';
   promptDropdown.classList.add('show');

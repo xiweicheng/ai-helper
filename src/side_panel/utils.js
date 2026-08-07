@@ -133,6 +133,23 @@ export function adjustInputHeight() {
   } else {
     userInput.style.height = Math.min(scrollH, 100) + 'px';
   }
+  // 同步更新下拉弹出框定位（输入框高度变化后，下拉框需要跟着调整）
+  updateDropdownPosition();
+}
+
+/**
+ * 根据 input-wrapper 实际高度，动态设置弹出下拉框的 bottom 定位
+ * 通过 CSS 变量 --dropdown-bottom 传递给 .prompt-dropdown
+ */
+export function updateDropdownPosition() {
+  const inputWrapper = document.querySelector('.input-wrapper');
+  const inputContainer = document.querySelector('.input-container');
+  if (!inputWrapper || !inputContainer) return;
+  const wrapperRect = inputWrapper.getBoundingClientRect();
+  const containerRect = inputContainer.getBoundingClientRect();
+  // input-wrapper 顶边 距离 input-container 底边 的距离
+  const bottomOffset = containerRect.bottom - wrapperRect.top + 8;
+  inputContainer.style.setProperty('--dropdown-bottom', bottomOffset + 'px');
 }
 
 /**

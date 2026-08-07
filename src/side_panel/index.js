@@ -2,7 +2,7 @@
 
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
 import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
@@ -1881,6 +1881,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       userInput.style.height = Math.min(scrollH, 100) + 'px';
     }
+    // 同步更新下拉弹出框定位
+    updateDropdownPosition();
   }
 
   // 加载保存的温度设置（仅默认 Agent 使用全局存储值，自定义 Agent 由 loadChatHistory 设置）

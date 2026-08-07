@@ -3700,6 +3700,7 @@ body {
 }
 
 .input-container {
+  position: relative;
   padding: 16px;
   background: rgba(255, 255, 255, 0.85);
   border-top: 1px solid rgba(0, 0, 0, 0.06);
@@ -5184,13 +5185,21 @@ body {
   justify-content: flex-start;
 }
 
-/* 提示词选择器样式 */
+/* 提示词选择器样式 - 绝对定位脱离文档流，避免弹出时引起布局抖动 */
 .prompt-selector {
-  position: relative;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  pointer-events: none;
+}
+.prompt-selector:has(.prompt-dropdown.show) {
+  pointer-events: auto;
 }
 .prompt-dropdown {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: var(--dropdown-bottom, 80px);
   left: 0;
   right: 0;
   background: white;

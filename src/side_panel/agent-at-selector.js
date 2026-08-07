@@ -2,7 +2,7 @@
 import state from './state.js';
 import { getAllAgents } from './agent-store.js';
 import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-manager.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, updateDropdownPosition } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
 import logger from '../shared/logger.js';
@@ -69,6 +69,9 @@ let isMergedMode = false;
 export async function showAgentAtSelector(filterText = '') {
   const agentAtSelector = document.getElementById('agentAtSelector');
   const agentAtDropdown = document.getElementById('agentAtDropdown');
+
+  // 动态计算下拉框位置，确保紧贴在输入框上方
+  updateDropdownPosition();
 
   agentAtSelector.style.display = 'block';
   agentAtDropdown.classList.add('show');

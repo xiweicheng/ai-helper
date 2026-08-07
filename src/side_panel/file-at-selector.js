@@ -2,7 +2,7 @@
 import state from './state.js';
 import { getWorkspaceRoot, listDirectory, searchFilesRemote, getFileIcon } from './workspace-manager.js';
 import { attachFilesForQuestion } from './workspace-panel.js';
-import { escapeHtml, adjustInputHeight } from './utils.js';
+import { escapeHtml, adjustInputHeight, updateDropdownPosition } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -59,6 +59,9 @@ export async function showFileAtSelector(filterText = '') {
   const fileAtSelector = document.getElementById('fileAtSelector');
   const fileAtDropdown = document.getElementById('fileAtDropdown');
   if (!fileAtSelector || !fileAtDropdown) return;
+
+  // 动态计算下拉框位置，确保紧贴在输入框上方
+  updateDropdownPosition();
 
   fileAtSelector.style.display = 'block';
   fileAtDropdown.classList.add('show');
