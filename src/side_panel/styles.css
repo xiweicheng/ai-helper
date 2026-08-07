@@ -8198,6 +8198,53 @@ body {
   background: var(--hover-bg, #f5f5f5);
 }
 
+/* ── 已删除文件产物样式 ── */
+
+/* 已删除行：降低不透明度、文件名加删除线 */
+.artifacts-table tbody tr.artifact-deleted-row {
+  opacity: 0.55;
+}
+
+.artifacts-table tbody tr.artifact-deleted-row .artifact-name {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.artifacts-table tbody tr.artifact-deleted-row:hover {
+  background: rgba(200, 80, 80, 0.04);
+}
+
+/* 已删除标记：红色小标签 */
+.artifact-deleted-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  color: #d9534f;
+  background: rgba(217, 83, 79, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+/* 禁用状态的操作按钮：灰色、不可点击 */
+.artifact-action-btn.artifact-btn-disabled,
+.artifact-action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+  border-color: var(--border-color, #ddd);
+  color: #bbb;
+}
+
+.artifact-action-btn.artifact-btn-disabled:hover,
+.artifact-action-btn:disabled:hover {
+  background: transparent;
+  border-color: var(--border-color, #ddd);
+  color: #bbb;
+}
+
 /* 窄屏适配：侧边栏很窄时隐藏「类型」「时间」列，只保留文件名与操作列，避免被挤压看不清 */
 @media (max-width: 560px) {
   .artifacts-modal {

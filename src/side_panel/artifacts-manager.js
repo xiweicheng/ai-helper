@@ -45,6 +45,8 @@ registerTranslations('zh', {
     dblClickHint: '双击文件名可预览',
     sortHint: '点击排序',
     serialCol: '序号',
+    deletedBadge: '已删除',
+    deletedFile: '文件已删除',
   },
 });
 
@@ -82,6 +84,8 @@ registerTranslations('en', {
     dblClickHint: 'Double-click to preview',
     sortHint: 'Click to sort',
     serialCol: '#',
+    deletedBadge: 'Deleted',
+    deletedFile: 'File deleted',
   },
 });
 
@@ -262,11 +266,11 @@ function extractPathFromObservation(observation) {
  * @param {string} command - 完整的命令字符串
  * @returns {{path: string, isDir: boolean}[]} - 提取出的文件路径列表（绝对路径或相对路径）
  */
-function extractFilesFromAgentExec(command) {
+function extractFilesFromAgentExec(command, initialCwd) {
   if (!command || typeof command !== 'string') return [];
 
   const results = [];
-  let cwd = ''; // 跟踪 cd 切换的目录
+  let cwd = initialCwd || ''; // 初始工作目录（来自 agent_exec 的 params.cwd）
 
   // 按 && 和 ; 分割命令链（忽略花括号内部）
   const parts = [];
@@ -295,16 +299,23 @@ function extractFilesFromAgentExec(command) {
     const trimmed = part.trim();
     if (!trimmed) continue;
 
+    // 剥离引号内内容：防止引号内的 > < | 等特殊字符被误识别为 shell 操作符
+    // 保留引号本身以维持参数边界，仅将引号内文本替换为空
+    const stripped = trimmed
+      .replace(/"[^"]*"/g, '""')
+      .replace(/'[^']*'/g, "''");
+
     // cd 命令：更新当前工作目录
     const cdMatch = trimmed.match(/^cd\s+(.+?)\s*$/);
     if (cdMatch) {
       const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
       if (target.startsWith('/')) {
         cwd = target;
-      } else if (target === '..' && cwd) {
-        cwd = normalizePath(cwd).replace(/\/[^/]+$/, '') || '/';
-      } else if (cwd) {
-        cwd = normalizePath(cwd.replace(/\/$/, '') + '/' + target);
+      } else if (target === '..') {
+        cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
+      } else {
+        // 相对路径 cd：无论 cwd 是否已设置都累积拼接
+        cwd = cwd ? normalizePath(cwd.replace(/\/$/, '') + '/' + target) : normalizePath(target);
       }
       continue;
     }
@@ -318,23 +329,23 @@ function extractFilesFromAgentExec(command) {
       return normalizePath(p);
     };
 
-    // mkdir -p dir/{a,b}
-    const mkdirMatch = trimmed.match(/^mkdir\s+(?:-[a-z]+\s+)*(.+?)$/);
+    // mkdir -p dir/{a,b}（使用 stripped 避免引号内干扰）
+    const mkdirMatch = stripped.match(/^mkdir\s+(?:-[a-z]+\s+)*(.+?)$/);
     if (mkdirMatch) {
       const dirs = splitTopLevel(mkdirMatch[1], ' \t')
         .map(d => d.trim())
-        .filter(d => d && !d.startsWith('-'));
+        .filter(d => d && !d.startsWith('-') && d !== '""' && d !== "''");
       const expanded = expandAndResolvePaths(dirs, resolvePath);
       for (const d of expanded) results.push({ path: d, isDir: true });
       continue;
     }
 
     // touch {x,y}.txt
-    const touchMatch = trimmed.match(/^touch\s+(.+)$/);
+    const touchMatch = stripped.match(/^touch\s+(.+)$/);
     if (touchMatch) {
       const fileList = splitTopLevel(touchMatch[1], ' \t')
         .map(f => f.trim())
-        .filter(f => f && !f.startsWith('-'));
+        .filter(f => f && !f.startsWith('-') && f !== '""' && f !== "''");
       const expanded = expandAndResolvePaths(fileList, resolvePath);
       for (const f of expanded) results.push({ path: f, isDir: false });
       continue;
@@ -342,33 +353,332 @@ function extractFilesFromAgentExec(command) {
 
     let filePath = null;
 
-    // echo "..." > file 或 >> file（重定向在末尾）
-    const redirectMatch = trimmed.match(/\s[>]{1,2}\s*['"]?([^\s|&;'"]+)['"]?\s*$/);
+    // echo "..." > file 或 >> file（重定向在末尾，使用 stripped 避免引号内 > 被误匹配）
+    const redirectMatch = stripped.match(/\s[>]{1,2}\s*['"]?([^\s|&;'"]+)['"]?\s*$/);
     if (redirectMatch) {
       filePath = redirectMatch[1];
     }
 
     // cat > file
     if (!filePath) {
-      const catMatch = trimmed.match(/^cat\s+>\s*['"]?([^\s|&;'"]+)['"]?/);
+      const catMatch = stripped.match(/^cat\s+>\s*['"]?([^\s|&;'"]+)['"]?/);
       if (catMatch) filePath = catMatch[1];
     }
 
-    // cp src ... dest（dest 是最后一个参数）
+    // cp src ... dest（dest 是最后一个参数，使用原始 trimmed 保留完整路径）
     if (!filePath) {
       const cpMatch = trimmed.match(/^cp\s+(?:-[a-zA-Z]+\s+)*(?:.+?\s+)+?['"]?([^\s|&;'"]+)['"]?\s*$/);
       if (cpMatch) filePath = cpMatch[1];
     }
 
-    // tee file
+    // tee file（使用 stripped，避免匹配引号内作为文本内容的 tee）
     if (!filePath) {
-      const teeMatch = trimmed.match(/tee\s+(?:-[a-zA-Z]+\s+)*['"]?([^\s|&;'"]+)['"]?/);
+      const teeMatch = stripped.match(/tee\s+(?:-[a-zA-Z]+\s+)*['"]?([^\s|&;'"]+)['"]?/);
       if (teeMatch) filePath = teeMatch[1];
     }
 
     if (filePath) {
       const expanded = expandAndResolvePaths([filePath], resolvePath);
       for (const f of expanded) results.push({ path: f, isDir: false });
+    }
+  }
+
+  return results;
+}
+
+// ============================================================
+// 脚本内容分析：从脚本文件中提取可能创建的文件路径
+// ============================================================
+
+/**
+ * 从脚本文件内容中提取可能创建的文件路径
+ * 当 agent 写入脚本后又执行它时，脚本内部创建的文件也能被追踪为产物。
+ * 跨平台支持：
+ *   - Unix Shell（.sh/.bash/.zsh）
+ *   - Windows CMD 批处理（.bat/.cmd）
+ *   - PowerShell（.ps1）
+ *   - Python（.py）
+ * @param {string} content - 脚本文件内容
+ * @param {string} ext - 文件扩展名（小写）
+ * @returns {string[]} - 提取到的文件路径列表
+ */
+function extractDerivedFilesFromScript(content, ext) {
+  if (!content || typeof content !== 'string') return [];
+  const results = [];
+  const lines = content.split('\n');
+
+  if (['sh', 'bash', 'zsh'].includes(ext)) {
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      // 重定向: > file 或 >> file
+      const redirectMatches = [...trimmed.matchAll(/[>]{1,2}\s*['"]?([^\s|&;>'"]+)['"]?/g)];
+      for (const m of redirectMatches) {
+        if (m[1] && !m[1].startsWith('/dev/')) results.push(m[1]);
+      }
+      // mkdir -p dir
+      const mkdirMatch = trimmed.match(/^mkdir\s+(?:-[a-z]+\s+)*(.+?)$/);
+      if (mkdirMatch) {
+        const dirs = splitTopLevel(mkdirMatch[1], ' \t')
+          .map(d => d.trim()).filter(d => d && !d.startsWith('-'));
+        results.push(...dirs);
+      }
+      // touch file
+      const touchMatch = trimmed.match(/^touch\s+(.+)$/);
+      if (touchMatch) {
+        const files = splitTopLevel(touchMatch[1], ' \t')
+          .map(f => f.trim()).filter(f => f && !f.startsWith('-'));
+        results.push(...files);
+      }
+      // cp src ... dest
+      const cpMatch = trimmed.match(/^cp\s+(?:-[a-zA-Z]+\s+)*(?:.+?\s+)+?['"]?([^\s|&;'"]+)['"]?\s*$/);
+      if (cpMatch) results.push(cpMatch[1]);
+      // tee file
+      const teeMatch = trimmed.match(/tee\s+(?:-[a-zA-Z]+\s+)*['"]?([^\s|&;'"]+)['"]?/);
+      if (teeMatch) results.push(teeMatch[1]);
+    }
+  }
+
+  // ── Windows CMD 批处理 (.bat / .cmd) ──
+  else if (ext === 'bat' || ext === 'cmd') {
+    for (const line of lines) {
+      // 去掉 @ 前缀（如 @echo off）
+      let trimmed = line.trim().replace(/^@/, '');
+      if (!trimmed) continue;
+      const upper = trimmed.toUpperCase();
+      // 跳过注释行: REM ... 或 :: ...
+      if (/^REM\b/i.test(trimmed) || trimmed.startsWith('::')) continue;
+      // 跳过 echo 输出命令（echo text > file 除外，由下方重定向统一处理）
+      if (/^ECHO\b/i.test(trimmed) && !/[>]{1,2}/.test(trimmed)) continue;
+
+      // 重定向: > file 或 >> file（CMD 通用，覆盖 echo > file 等）
+      const redirectMatches = [...trimmed.matchAll(/[>]{1,2}\s*"?([^\s|&;>"]+)"?/g)];
+      for (const m of redirectMatches) {
+        if (m[1] && m[1].toUpperCase() !== 'NUL') results.push(m[1]);
+      }
+      // mkdir / md dir
+      const mkdirMatch = trimmed.match(/^(?:mkdir|md)\s+(?:"([^"]+)"|(\S+))/i);
+      if (mkdirMatch) results.push(mkdirMatch[1] || mkdirMatch[2]);
+      // copy src dest（最后一个参数是目标）
+      const copyMatch = trimmed.match(/^copy\s+(?:\/\S+\s+)*(?:.+?\s+)+?"?([^\s|&;"]+)"?\s*$/i);
+      if (copyMatch) results.push(copyMatch[1]);
+      // xcopy src dest /flags
+      const xcopyMatch = trimmed.match(/^xcopy\s+(?:\/\S+\s+)*(?:"[^"]+"|\S+)\s+(?:"([^"]+)"|(\S+))/i);
+      if (xcopyMatch) results.push(xcopyMatch[1] || xcopyMatch[2]);
+      // type nul > file（创建空文件，已由重定向覆盖）
+    }
+  }
+
+  // ── PowerShell (.ps1) ──
+  else if (ext === 'ps1') {
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      // 重定向: > file 或 >> file（PowerShell 也支持）
+      const redirectMatches = [...trimmed.matchAll(/[>]{1,2}\s*"?([^\s|;>'"]+)"?/g)];
+      for (const m of redirectMatches) {
+        if (m[1] && m[1].toUpperCase() !== 'NUL') results.push(m[1]);
+      }
+      // Set-Content / Out-File / Add-Content -Path "path" 或 位置参数
+      const psWriteMatch = trimmed.match(
+        /(?:Set-Content|Out-File|Add-Content)\s+(?:-[\w]+\s+)*"?([^";\s|]+)"?/i
+      );
+      if (psWriteMatch) results.push(psWriteMatch[1]);
+      // New-Item -Path "path" [-ItemType file|directory]
+      const newItemMatch = trimmed.match(/New-Item\s+(?:-[\w]+\s+)*-Path\s+"?([^";\s|]+)"?/i);
+      if (newItemMatch) results.push(newItemMatch[1]);
+      // New-Item "path" -ItemType file/directory（位置参数在前）
+      const newItemPosMatch = trimmed.match(/New-Item\s+"?([^";\s|]+)"?\s+(?:-[\w]+\s+)*-ItemType/i);
+      if (newItemPosMatch) results.push(newItemPosMatch[1]);
+      // Copy-Item src -Destination "path"
+      const copyMatch = trimmed.match(/Copy-Item\s+(?:-[\w]+\s+)*"?([^";\s|]+)"?\s+(?:-[\w]+\s+)*-Destination\s+"?([^";\s|]+)"?/i);
+      if (copyMatch) results.push(copyMatch[2]);
+      // Move-Item src -Destination "path"
+      const moveMatch = trimmed.match(/Move-Item\s+(?:-[\w]+\s+)*"?([^";\s|]+)"?\s+(?:-[\w]+\s+)*-Destination\s+"?([^";\s|]+)"?/i);
+      if (moveMatch) results.push(moveMatch[2]);
+    }
+  }
+
+  // ── Python (.py) ──
+  else if (ext === 'py') {
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      // open('path', 'w'/'a'/'x')
+      const openMatch = trimmed.match(/open\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"][wax][+]?['"]/);
+      if (openMatch) results.push(openMatch[1]);
+      // os.makedirs / os.mkdir
+      const makedirsMatch = trimmed.match(/os\.(?:makedirs|mkdir)\s*\(\s*['"]([^'"]+)['"]/);
+      if (makedirsMatch) results.push(makedirsMatch[1]);
+      // shutil.copy2 / shutil.copy / shutil.move
+      const shutilMatch = trimmed.match(/shutil\.(?:copy2?|move)\s*\([^,]+,\s*['"]([^'"]+)['"]/);
+      if (shutilMatch) results.push(shutilMatch[1]);
+      // pathlib.Path('path').write_text / .write_bytes / .touch / .mkdir
+      const pathlibMatch = trimmed.match(/Path\s*\(\s*['"]([^'"]+)['"]\s*\)\s*\.\s*(?:write_text|write_bytes|touch|mkdir)/);
+      if (pathlibMatch) results.push(pathlibMatch[1]);
+    }
+  }
+
+  // 去重并过滤不可静态解析的路径（含变量引用、纯相对路径片段等）
+  const seen = new Set();
+  return results.filter(p => {
+    if (!p || seen.has(p)) return false;
+    seen.add(p);
+    // 过滤含未解析变量引用的路径：$VAR / ${VAR}（Unix）、%VAR%（Windows CMD）
+    if (/\$[\w({]|%[\w]+%/.test(p)) return false;
+    // 至少包含一个路径分隔符（/ 或 \）或扩展名，才视为有效文件路径
+    return p.includes('/') || p.includes('\\') || p.includes('.');
+  });
+}
+
+/**
+ * 检测 agent_exec 命令是否在执行已知脚本文件，返回脚本路径或 null
+ * 跨平台支持：
+ *   - Unix: bash/sh/python/node ./script.sh
+ *   - Windows CMD: cmd /c script.bat, script.bat
+ *   - Windows PowerShell: powershell -File script.ps1
+ */
+function detectScriptExecution(command, knownScriptPaths) {
+  if (!command || typeof command !== 'string') return null;
+  const trimmed = command.trim();
+  for (const scriptPath of knownScriptPaths) {
+    const scriptName = getFileName(scriptPath);
+    const escapedName = scriptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedPath = scriptPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // 同时生成反斜杠版本的路径模式（Windows 路径可能用 \）
+    const escapedPathBs = scriptPath.replace(/\//g, '\\').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const pattern = new RegExp(
+      // Unix: bash script.sh / sh script.sh
+      `(?:^|[;\\s&|])(?:ba)?sh\\s+.*${escapedName}|` +
+      // Unix: python script.py
+      `(?:^|[;\\s&|])python[23]?\\s+.*${escapedName}|` +
+      // Unix: node script.js
+      `(?:^|[;\\s&|])node\\s+.*${escapedName}|` +
+      // Unix: ./script.sh 或 /path/to/script.sh
+      `(?:^|[;\\s&|])\\.?/${escapedName}|` +
+      // Windows CMD: cmd /c script.bat
+      `(?:^|[;\\s&|])cmd(?:\\.exe)?\\s+(?:/c|/k)\\s+.*${escapedName}|` +
+      // Windows PowerShell: powershell -File script.ps1
+      `(?:^|[;\\s&|])(?:powershell|pwsh)(?:\\.exe)?\\s+(?:-[\w-]+\\s+)*-File\\s+.*${escapedName}|` +
+      // 直接绝对/相对路径执行（/ 或 \\ 分隔）
+      `(?:^|[;\\s&|])${escapedPath}|` +
+      `(?:^|[;\\s&|])${escapedPathBs}`
+    );
+    if (pattern.test(trimmed)) return scriptPath;
+  }
+  return null;
+}
+
+/**
+ * 从 agent_exec 的命令中提取被删除的文件路径
+ * 跨平台支持：
+ *   - Unix: rm file、rm -rf dir
+ *   - Windows CMD: del/erase file、rmdir/rd /s dir
+ *   - PowerShell: Remove-Item [-Recurse] path
+ * @param {string} command - 命令字符串
+ * @returns {{path: string, isDir: boolean}[]}
+ */
+function extractFilesFromRm(command, initialCwd) {
+  if (!command || typeof command !== 'string') return [];
+  const results = [];
+  let cwd = initialCwd || ''; // 初始工作目录（来自 agent_exec 的 params.cwd）
+
+  const resolvePath = (p) => {
+    p = p.replace(/^['"]|['"]$/g, '');
+    // 兼容 Windows 路径：如果不是以 / 或盘符(X:\) 开头，则用 cwd 拼接
+    if (!p.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(p) && cwd) {
+      p = normalizePath(cwd.replace(/\/$/, '') + '/' + p);
+    }
+    return normalizePath(p);
+  };
+
+  // 按 && 和 ; 分割命令链
+  const parts = [];
+  {
+    let depth = 0;
+    let current = '';
+    for (let i = 0; i < command.length; i++) {
+      const ch = command[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth = Math.max(0, depth - 1);
+      if (depth === 0 && ch === ';') { parts.push(current); current = ''; }
+      else if (depth === 0 && ch === '&' && command[i + 1] === '&') { parts.push(current); current = ''; i++; }
+      else { current += ch; }
+    }
+    parts.push(current);
+  }
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+
+    // cd 跟踪（兼容 Windows cd 和盘符切换）
+    const cdMatch = trimmed.match(/^cd\s+(?:\/[dD]\s+)?(.+?)\s*$/);
+    if (cdMatch) {
+      const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
+      if (target.startsWith('/') || /^[A-Za-z]:/.test(target)) {
+        cwd = normalizePath(target);
+      } else if (target === '..') {
+        cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
+      } else {
+        // 相对路径 cd：无论 cwd 是否已设置都累积拼接
+        cwd = cwd ? normalizePath(cwd.replace(/\/$/, '') + '/' + target) : normalizePath(target);
+      }
+      continue;
+    }
+
+    // ── Unix: rm [-flags] files... ──
+    const rmMatch = trimmed.match(/^rm\s+((?:-[a-zA-Z]+\s+)*)(.+)$/);
+    if (rmMatch) {
+      const flags = rmMatch[1];
+      const fileArgs = rmMatch[2];
+      const isRecursive = /r|R/i.test(flags);
+      const files = splitTopLevel(fileArgs, ' \t')
+        .map(f => f.trim()).filter(f => f && !f.startsWith('-'));
+      const expanded = expandAndResolvePaths(files, resolvePath);
+      for (const p of expanded) results.push({ path: p, isDir: isRecursive });
+      continue;
+    }
+
+    // ── Windows CMD: del / erase [-flags] files... ──
+    const delMatch = trimmed.match(/^(?:del|erase)\s+((?:\/[a-zA-Z]+\s+)*)(.+)$/i);
+    if (delMatch) {
+      const flags = delMatch[1];
+      const fileArgs = delMatch[2];
+      const files = splitTopLevel(fileArgs, ' \t')
+        .map(f => f.trim()).filter(f => f && !f.startsWith('/'));
+      const expanded = expandAndResolvePaths(files, resolvePath);
+      for (const p of expanded) results.push({ path: p, isDir: false });
+      continue;
+    }
+
+    // ── Windows CMD: rmdir / rd [-flags] dirs... ──
+    const rdMatch = trimmed.match(/^(?:rmdir|rd)\s+((?:\/[a-zA-Z]+\s+)*)(.+)$/i);
+    if (rdMatch) {
+      const flags = rdMatch[1];
+      const dirArgs = rdMatch[2];
+      const isRecursive = /s|S/i.test(flags);
+      const dirs = splitTopLevel(dirArgs, ' \t')
+        .map(f => f.trim()).filter(f => f && !f.startsWith('/'));
+      const expanded = expandAndResolvePaths(dirs, resolvePath);
+      for (const p of expanded) results.push({ path: p, isDir: isRecursive });
+      continue;
+    }
+
+    // ── PowerShell: Remove-Item [-Recurse] [-Force] path ──
+    const psRmMatch = trimmed.match(/^Remove-Item\s+((?:-[\w-]+\s+)*(?:"[^"]+"|\S+)?(?:\s+(?:-[\w-]+\s+)*(?:"[^"]+"|\S+))*)/i);
+    if (psRmMatch) {
+      const fullArgs = psRmMatch[1];
+      const isRecursive = /-Recurse/i.test(fullArgs);
+      // 提取非 flag 参数（路径）
+      const pathArgs = [...fullArgs.matchAll(/(?:"([^"]+)"|(?<![-\/])(\S+))/g)]
+        .map(m => m[1] || m[2])
+        .filter(p => p && !p.startsWith('-'));
+      const expanded = expandAndResolvePaths(pathArgs, resolvePath);
+      for (const p of expanded) results.push({ path: p, isDir: isRecursive });
+      continue;
     }
   }
 
@@ -392,6 +702,27 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
   );
 
+  // ── 预扫描：收集通过 agent_file 写入的脚本文件内容，用于后续脚本执行时追踪派生文件 ──
+  const scriptContentMap = new Map(); // scriptPath → { content, ext }
+  for (const entry of sortedLog) {
+    if (entry.nodeType !== 'tool_exec' || entry.status === 'failed') continue;
+    if (entry.action?.name !== 'agent_file') continue;
+    let p = entry.action.params;
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch { continue; } }
+    if (!p || p.action !== 'write' || typeof p.content !== 'string') continue;
+    const path = normalizePath(p.path || p.filePath || '');
+    const ext = getFileExt(path);
+    if (['sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'py'].includes(ext)) {
+      scriptContentMap.set(path, { content: p.content, ext });
+    }
+  }
+
+  // 已知脚本路径列表（用于检测 agent_exec 是否在执行某个已写入的脚本）
+  const knownScriptPaths = [...scriptContentMap.keys()];
+
+  // 删除路径追踪：path → { isDir, timestamp }
+  const deletedPaths = new Map();
+
   for (const entry of sortedLog) {
     if (entry.nodeType !== 'tool_exec') continue;
     if (!entry.action) continue;
@@ -409,7 +740,44 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       const command = params.command || '';
       if (!command) continue;
 
-      const candidates = extractFilesFromAgentExec(command);
+      // ── 脚本执行检测：如果命令在运行已写入的脚本，提取脚本内容中创建的文件 ──
+      const executedScript = detectScriptExecution(command, knownScriptPaths);
+      if (executedScript && entry.status !== 'failed') {
+        const scriptInfo = scriptContentMap.get(executedScript);
+        if (scriptInfo) {
+          const derivedPaths = extractDerivedFilesFromScript(scriptInfo.content, scriptInfo.ext);
+          for (const dp of derivedPaths) {
+            if (!dp) continue;
+            const resolvedPath = dp.startsWith('/') ? normalizePath(dp) : normalizePath(dp);
+            if (seenPaths.has(resolvedPath)) {
+              const idx = artifacts.findIndex(a => a.path === resolvedPath);
+              if (idx >= 0) artifacts.splice(idx, 1);
+            }
+            seenPaths.add(resolvedPath);
+            artifacts.push({
+              path: resolvedPath,
+              fileName: getFileName(resolvedPath),
+              toolName,
+              action: 'typeCreate',
+              size: 0,
+              timestamp: entry.timestamp || null,
+              status: entry.status || 'unknown',
+              type: 'file',
+              deleted: deletedPaths.has(resolvedPath) || undefined,
+            });
+          }
+        }
+      }
+
+      // ── rm 命令检测：追踪文件删除 ──
+      if (entry.status !== 'failed') {
+        const rmCandidates = extractFilesFromRm(command, params.cwd);
+        for (const rmCandidate of rmCandidates) {
+          deletedPaths.set(rmCandidate.path, { isDir: rmCandidate.isDir, timestamp: entry.timestamp });
+        }
+      }
+
+      const candidates = extractFilesFromAgentExec(command, params.cwd);
       for (const candidate of candidates) {
         const filePath = candidate && candidate.path;
         if (!filePath) continue;
@@ -432,6 +800,7 @@ export function extractArtifactsFromExecutionLog(executionLog) {
           timestamp: entry.timestamp || null,
           status: entry.status || 'unknown',
           type: candidate.isDir ? 'directory' : 'file',
+          deleted: deletedPaths.has(filePath) || undefined,
         });
       }
       continue;
@@ -440,12 +809,19 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     let filePath = null;
     let actionLabel = 'typeOther';
 
-    // agent_file: action=write
+    // agent_file: action=write 或 action=delete
     if (toolName === 'agent_file') {
       const action = params.action;
       if (action === 'write') {
         filePath = params.path || params.filePath;
         actionLabel = 'typeWrite';
+      } else if (action === 'delete') {
+        // 标记文件已删除
+        const delPath = normalizePath(params.path || params.filePath || '');
+        if (delPath && entry.status !== 'failed') {
+          deletedPaths.set(delPath, { isDir: false, timestamp: entry.timestamp });
+        }
+        continue;
       } else {
         continue;
       }
@@ -503,7 +879,41 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       timestamp: entry.timestamp || null,
       status: entry.status || 'unknown',
       type: 'file',
+      deleted: deletedPaths.has(finalPath) || undefined,
     });
+  }
+
+  // ── 后处理：将后续被删除的文件标记为 deleted ──
+  // 处理场景：文件先被创建（已 push 到 artifacts），后续被 rm/agent_file delete 删除
+  if (deletedPaths.size > 0) {
+    const deletedPathList = [...deletedPaths.keys()];
+    /**
+     * 后缀路径匹配：当一个路径是绝对路径，另一个是相对路径时，
+     * 通过检查绝对路径是否以相对路径结尾（在路径段边界处）来匹配
+     * 解决场景：agent_file write 创建绝对路径文件，后续 rm 在无 cwd 时产生相对路径
+     */
+    const isPathMatch = (artifactPath, deletedPath) => {
+      if (artifactPath === deletedPath) return true;
+      // 一个是绝对路径，一个是相对路径时，尝试后缀匹配
+      const isAbsA = artifactPath.startsWith('/');
+      const isAbsD = deletedPath.startsWith('/');
+      if (isAbsA && !isAbsD) {
+        return artifactPath.endsWith('/' + deletedPath) || artifactPath.endsWith(deletedPath);
+      }
+      if (isAbsD && !isAbsA) {
+        return deletedPath.endsWith('/' + artifactPath) || deletedPath.endsWith(artifactPath);
+      }
+      return false;
+    };
+
+    for (const artifact of artifacts) {
+      if (!artifact.deleted) {
+        // 先尝试精确匹配，再尝试后缀匹配
+        if (deletedPaths.has(artifact.path) || deletedPathList.some(dp => isPathMatch(artifact.path, dp))) {
+          artifact.deleted = true;
+        }
+      }
+    }
   }
 
   return artifacts;
@@ -573,13 +983,19 @@ function buildArtifactRowHtml(a, idx) {
   const icon = getFileIcon(a.fileName, a.type);
   const typeText = t(`artifacts.${a.action}`);
   const timeText = formatHHMMSS(a.timestamp);
-  const previewable = canPreview(a.fileName);
+  const previewable = !a.deleted && canPreview(a.fileName);
+  const isDeleted = !!a.deleted;
+  const deletedBadgeHtml = isDeleted ? `<span class="artifact-deleted-badge" title="${t('artifacts.deletedFile')}">${t('artifacts.deletedBadge')}</span>` : '';
+  const disabledAttr = isDeleted ? 'disabled' : '';
+  const disabledClass = isDeleted ? ' artifact-btn-disabled' : '';
+  const rowClass = isDeleted ? ' artifact-deleted-row' : '';
   return `
-    <tr class="artifacts-row" data-idx="${idx}" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.fileName)}">
+    <tr class="artifacts-row${rowClass}" data-idx="${idx}" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.fileName)}">
       <td class="col-index">${idx + 1}</td>
       <td class="col-file">
         <span class="artifact-icon">${icon}</span>
-        <span class="artifact-name" title="${escapeHtml(a.path)} · ${t('artifacts.dblClickHint')}">${escapeHtml(a.fileName)}</span>
+        <span class="artifact-name" title="${escapeHtml(a.path)}${isDeleted ? ' · ' + t('artifacts.deletedFile') : ' · ' + t('artifacts.dblClickHint')}">${escapeHtml(a.fileName)}</span>
+        ${deletedBadgeHtml}
         <button class="artifact-copy-btn" title="${t('artifacts.copyFileName')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -590,14 +1006,14 @@ function buildArtifactRowHtml(a, idx) {
       <td class="col-type">${typeText}</td>
       <td class="col-time">${timeText}</td>
       <td class="col-action">
-        <button class="artifact-action-btn download-btn" title="${t('artifacts.download')}">
+        <button class="artifact-action-btn download-btn${disabledClass}" title="${isDeleted ? t('artifacts.deletedFile') : t('artifacts.download')}" ${disabledAttr}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-        <button class="artifact-action-btn locate-btn" title="${t('artifacts.locate')}">
+        <button class="artifact-action-btn locate-btn${disabledClass}" title="${isDeleted ? t('artifacts.deletedFile') : t('artifacts.locate')}" ${disabledAttr}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
             <circle cx="12" cy="10" r="3"/>
@@ -626,22 +1042,24 @@ function bindArtifactRowEvents(modal, sortedList) {
     const artifact = sortedList[idx];
     if (!artifact) return;
 
-    // 单击行：关闭当前预览窗口，并在侧边栏定位到该文件
+    // 单击行：已删除文件不触发定位
     row.addEventListener('click', (e) => {
       // 点击按钮（操作/复制/下载）不重复触发
       if (e.target.closest('.artifact-action-btn') || e.target.closest('.artifact-copy-btn')) return;
+      if (artifact.deleted) return;
       closeWorkspacePreview().catch(() => {});
       locateFileInWorkspace(artifact.path).catch(err => {
         logger.error('[Artifacts] locate failed:', err);
       });
     });
 
-    // 双击文件名：直接在预览窗口中打开文件内容（不触发定位）
+    // 双击文件名：已删除文件不触发预览
     const nameEl = row.querySelector('.artifact-name');
     if (nameEl) {
       nameEl.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         e.preventDefault(); // 阻止文本选中
+        if (artifact.deleted) return;
         if (!canPreview(artifact.fileName)) return;
         previewOpenedFromModal = true;
         previewArtifactFile(artifact.path, artifact.fileName).catch(err => {
@@ -667,17 +1085,18 @@ function bindArtifactRowEvents(modal, sortedList) {
       });
     }
 
-    // 下载按钮：文件走单文件流，目录走 Zip 流
+    // 下载按钮：已删除文件禁用
     const dlBtn = row.querySelector('.download-btn');
-    if (dlBtn) {
+    if (dlBtn && !dlBtn.disabled) {
       dlBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         handleArtifactDownload(artifact);
       });
     }
 
-    // 定位/预览按钮
+    // 定位/预览按钮：已删除文件禁用（HTML 中已设 disabled，此处做兜底）
     row.querySelectorAll('.locate-btn, .preview-btn').forEach(btn => {
+      if (btn.disabled) return;
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (btn.classList.contains('locate-btn')) {
