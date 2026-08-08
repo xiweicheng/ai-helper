@@ -1,3 +1,5 @@
+> [English](./README.en.md) | [中文](./README.md)
+
 # AI Helper Agent
 
 AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。

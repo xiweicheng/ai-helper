@@ -11,7 +11,8 @@
   "files": [
     "bin/",
     "src/",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "scripts": {
     "start": "node bin/agent.js start",
@@ -41,9 +42,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/xiweicheng/ai-helper.git",
+    "directory": "agent"
   },
-  "homepage": "",
+  "homepage": "https://github.com/xiweicheng/ai-helper/tree/main/agent#readme",
   "bugs": {
     "url": "https://github.com/xiweicheng/ai-helper/issues"
   }
