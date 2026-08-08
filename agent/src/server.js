@@ -516,7 +516,8 @@ export function startServer() {
       lastOperationTime = Date.now();
       logSystem('shutdown', { reason: 'api_request', extId });
       jsonResponse(res, 200, { success: true, message: t('message.shuttingDown') });
-      shutdown();
+      // 延迟 200ms 再关闭，确保响应数据已送达客户端（res.end() 仅写入缓冲区，不保证客户端已接收）
+      setTimeout(() => shutdown(), 200);
       return;
     }
 

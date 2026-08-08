@@ -372,20 +372,38 @@ if (command === 'start') {
 
   const running = await isRunning(config);
   if (running) {
+    let apiShutdownOk = false;
     try {
       const resp = await fetch(`http://${config.host}:${config.port}/api/shutdown`, {
         method: 'POST'
       });
       if (resp.ok) {
-        const data = await resp.json();
-        console.log(`[Agent] ${data.message || t('agentStopped')}`);
+        try {
+          const data = await resp.json();
+          console.log(`[Agent] ${data.message || t('agentStopped')}`);
+        } catch {
+          // 服务端在发送响应后立即关闭连接，json() 可能读不到完整数据
+          // 但 shutdown 请求已成功送达，服务正在关闭
+          console.log(`[Agent] ${t('agentStopped')}`);
+        }
+        apiShutdownOk = true;
         removePidFile();
         process.exit(0);
       }
     } catch (err) {
-      console.error(`[Agent] ${t('apiShutdownFailed')}: ${err.message}`);
+      // fetch 成功发出请求但读取响应失败（服务端已关闭连接）
+      // 说明 shutdown 请求已送达，服务正在关闭
+      if (err.cause?.code === 'ECONNRESET' || err.cause?.code === 'ECONNREFUSED' ||
+          err.type === 'system' || err.message?.includes('connection') ||
+          err.message?.includes('fetch')) {
+        apiShutdownOk = true;
+      } else {
+        console.error(`[Agent] ${t('apiShutdownFailed')}: ${err.message}`);
+      }
     }
-    console.log(`[Agent] ${t('apiShutdownFallback')}`);
+    if (!apiShutdownOk) {
+      console.log(`[Agent] ${t('apiShutdownFallback')}`);
+    }
   }
 
   const pid = getPidFromFile();
