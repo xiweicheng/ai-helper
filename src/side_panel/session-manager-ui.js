@@ -36,6 +36,13 @@ registerTranslations('zh', {
     forkedFrom: '已从 "{title}" 分叉',
     forkedSession: '已复制会话 "{title}"',
     operationFailed: '操作失败：{message}',
+    today: '今天',
+    yesterday: '昨天',
+    last7Days: '近 7 天',
+    earlier: '更早',
+    todayFormat: '今天 {hour}:{minute}',
+    yesterdayFormat: '昨天 {hour}:{minute}',
+    daysAgo: '{count} 天前',
   },
 });
 registerTranslations('en', {
@@ -53,6 +60,13 @@ registerTranslations('en', {
     forkedFrom: 'Forked from "{title}"',
     forkedSession: 'Duplicated session "{title}"',
     operationFailed: 'Operation failed: {message}',
+    today: 'Today',
+    yesterday: 'Yesterday',
+    last7Days: 'Last 7 days',
+    earlier: 'Earlier',
+    todayFormat: 'Today {hour}:{minute}',
+    yesterdayFormat: 'Yesterday {hour}:{minute}',
+    daysAgo: '{count}d ago',
   },
 });
 
@@ -68,6 +82,71 @@ let dragState = {
   draggedId: null,
   sourceType: null, // 'tab' | 'dropdown'
 };
+
+/**
+ * 将会话 updatedAt 格式化为友好的时间标签
+ * 今天 → "今天 HH:mm"，昨天 → "昨天 HH:mm"，7天内 → "X天前"，更早 → 日期
+ */
+function formatSessionTime(isoString) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const timestamp = date.getTime();
+
+  if (timestamp >= todayStart) {
+    return t('session.todayFormat', {
+      hour: String(date.getHours()).padStart(2, '0'),
+      minute: String(date.getMinutes()).padStart(2, '0'),
+    });
+  }
+
+  const yesterdayStart = todayStart - 86400000;
+  if (timestamp >= yesterdayStart) {
+    return t('session.yesterdayFormat', {
+      hour: String(date.getHours()).padStart(2, '0'),
+      minute: String(date.getMinutes()).padStart(2, '0'),
+    });
+  }
+
+  const daysAgo = Math.floor((todayStart - timestamp) / 86400000);
+  if (daysAgo <= 7) {
+    return t('session.daysAgo', { count: daysAgo });
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  }
+
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+/**
+ * 按 updatedAt 降序排序会话列表（最新的在前）
+ */
+function sortByUpdatedAt(sessions) {
+  return sessions.sort((a, b) => {
+    const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return tb - ta;
+  });
+}
+
+/**
+ * 获取会话所属的时间分组键
+ */
+function getTimeGroupKey(isoString) {
+  if (!isoString) return 'earlier';
+  const date = new Date(isoString);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const timestamp = date.getTime();
+
+  if (timestamp >= todayStart) return 'today';
+  if (timestamp >= todayStart - 86400000) return 'yesterday';
+  if (Math.floor((todayStart - timestamp) / 86400000) <= 7) return 'last7Days';
+  return 'earlier';
+}
 
 /**
  * 渲染会话标签栏（纯标签栏，不涉及消息区域）
@@ -387,7 +466,7 @@ async function openDropdown() {
   state.sessions = sessionsData.list;
   state.activeSessionId = sessionsData.activeSessionId;
 
-  dropdownState.filteredSessions = [...sessionsData.list];
+  dropdownState.filteredSessions = sortByUpdatedAt([...sessionsData.list]);
   dropdownState.highlightIndex = -1;
   dropdownState.visible = true;
 
@@ -476,7 +555,25 @@ function renderDropdownList() {
     return;
   }
 
+  const groupLabels = {
+    today: t('session.today'),
+    yesterday: t('session.yesterday'),
+    last7Days: t('session.last7Days'),
+    earlier: t('session.earlier'),
+  };
+  let lastGroup = null;
+
   dropdownState.filteredSessions.forEach((session, index) => {
+    // 时间分组标题
+    const group = getTimeGroupKey(session.updatedAt);
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const header = document.createElement('div');
+      header.className = 'session-dropdown-group-header';
+      header.textContent = groupLabels[group] || group;
+      listEl.appendChild(header);
+    }
+
     const item = document.createElement('div');
     item.className = 'session-dropdown-item';
     item.dataset.sessionId = session.id;
@@ -505,6 +602,12 @@ function renderDropdownList() {
     titleSpan.textContent = session.title || t('session.newSession');
     titleSpan.title = session.title || t('session.newSession');
     item.appendChild(titleSpan);
+
+    // 时间标签（绝对定位右侧，hover 时淡出让位给操作按钮）
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'session-dropdown-item-time';
+    timeSpan.textContent = formatSessionTime(session.updatedAt);
+    item.appendChild(timeSpan);
 
     // 操作按钮容器（重命名 + 分叉 + 关闭）
     const actionsWrapper = document.createElement('span');
@@ -570,14 +673,16 @@ function renderDropdownList() {
 
 function filterDropdownSessions(searchText) {
   const allSessions = state.sessions || [];
+  let filtered;
   if (!searchText.trim()) {
-    dropdownState.filteredSessions = [...allSessions];
+    filtered = [...allSessions];
   } else {
     const lower = searchText.trim().toLowerCase();
-    dropdownState.filteredSessions = allSessions.filter(s =>
+    filtered = allSessions.filter(s =>
       (s.title || t('session.newSession')).toLowerCase().includes(lower)
     );
   }
+  dropdownState.filteredSessions = sortByUpdatedAt(filtered);
   dropdownState.highlightIndex = -1;
   renderDropdownList();
 }

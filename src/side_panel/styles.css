@@ -1443,6 +1443,7 @@ body {
   align-items: center;
   gap: 6px;
 }
+/* === 基础复选框样式（agent editor 等通用） === */
 .check-toggle {
   position: relative;
   display: inline-flex;
@@ -1482,16 +1483,9 @@ body {
 .check-toggle input:checked + .checkmark {
   background-color: #667eea;
   border-color: #667eea;
-  transform: scale(1.1);
 }
 .check-toggle input:checked + .checkmark::after {
   display: block;
-  animation: checkmarkPop 0.2s ease-out;
-}
-@keyframes checkmarkPop {
-  0% { transform: rotate(45deg) scale(0); }
-  50% { transform: rotate(45deg) scale(1.2); }
-  100% { transform: rotate(45deg) scale(1); }
 }
 .check-toggle:hover .checkmark {
   border-color: #667eea;
@@ -1499,11 +1493,55 @@ body {
 .check-toggle input:checked ~ .tool-toggle-label {
   color: #667eea;
 }
+
+/* === 工具栏分组容器：统一边框和选中背景 === */
+.toolbar-chip-group,
+.tool-toggle-wrapper {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e8e8e8;
+  background: transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  gap: 4px;
+}
+.toolbar-chip-group:hover,
+.tool-toggle-wrapper:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+/* 分组容器选中态背景 */
+.toolbar-chip-group:has(input:checked),
+.tool-toggle-wrapper:has(input:checked) {
+  background: rgba(102, 126, 234, 0.13);
+  border-color: rgba(102, 126, 234, 0.30);
+}
+.toolbar-chip-group:has(input:checked):hover,
+.tool-toggle-wrapper:has(input:checked):hover {
+  background: rgba(102, 126, 234, 0.20);
+  border-color: rgba(102, 126, 234, 0.40);
+}
+
+/* === 文字标签样式 === */
+.input-toolbar-left .check-toggle {
+  user-select: none;
+  gap: 0;
+}
+/* 隐藏复选框圆点 */
+.input-toolbar-left .check-toggle .checkmark {
+  display: none;
+}
+/* 选中态：紫色文字 */
+.input-toolbar-left .check-toggle input:checked ~ .tool-toggle-label {
+  color: #667eea;
+  font-weight: 500;
+}
+/* 记忆条数标签 */
 .memory-limit-label {
-  font-size: 12px;
-  color: #999;
+  font-size: 11px;
+  color: #aaa;
   cursor: pointer;
-  margin-left: -6px;
+  margin-left: 0;
 }
 #isolateChatBtn:checked ~ .memory-limit-label {
   color: #667eea;
@@ -1723,37 +1761,27 @@ body {
   display: inline;
 }
 
-/* 工具开关包装器 */
-.tool-toggle-wrapper {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.tool-toggle-wrapper .check-toggle {
-  margin-right: 0;
-}
+/* 工具配置按钮 */
 .tool-config-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  border: 1px solid #ddd;
-  border-radius: 50%;
+  border: none;
+  border-radius: 4px;
   background: transparent;
   cursor: pointer;
-  color: #999;
+  color: #bbb;
   transition: all 0.2s;
 }
 .tool-config-btn:hover {
-  border-color: #667eea;
   color: #667eea;
   background: rgba(102, 126, 234, 0.1);
 }
 .tool-toggle-wrapper .check-toggle input:checked ~ .tool-config-btn {
   color: #667eea;
-  border-color: #667eea;
 }
 .chat-container {
   flex: 1;
@@ -2124,10 +2152,10 @@ body {
   visibility: visible;
 }
 
-/* 悬停时给标题留出按钮空间 */
+/* hover 时标题让位给操作按钮（绝对定位覆盖在时间上方） */
 .session-dropdown-item:hover .session-dropdown-item-title,
 .session-dropdown-item.highlighted .session-dropdown-item-title {
-  padding-right: 42px;
+  padding-right: 0;
 }
 
 .session-dropdown-item-close:hover {
@@ -2195,6 +2223,33 @@ body {
 .session-dropdown-item-rename:hover {
   color: #667eea;
   background: rgba(102, 126, 234, 0.1);
+}
+
+/* 下拉列表项时间标签（正常流布局，独占右侧空间） */
+.session-dropdown-item-time {
+  font-size: 11px;
+  color: #bbb;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+/* 悬停/高亮时时间淡出，让位给操作按钮 */
+.session-dropdown-item:hover .session-dropdown-item-time,
+.session-dropdown-item.highlighted .session-dropdown-item-time {
+  opacity: 0;
+}
+
+/* 会话下拉列表时间分组标题 */
+.session-dropdown-group-header {
+  padding: 6px 12px 3px;
+  font-size: 11px;
+  color: #999;
+  font-weight: 500;
+  user-select: none;
 }
 
 .session-dropdown-footer {

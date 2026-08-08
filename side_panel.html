@@ -361,35 +361,37 @@
   <div class="input-container">
     <div class="input-toolbar">
       <div class="input-toolbar-left">
-        <label class="check-toggle core-feature" for="isolateChatBtn" data-i18n-title="toggle.memoryHint" title="勾选后，前文问答将作为上下文（默认全部，条数可配置）">
-          <input type="checkbox" id="isolateChatBtn">
-          <span class="checkmark"></span>
-          <span class="tool-toggle-label" data-i18n="memory.label">记忆</span>
-        </label>
-        <label class="memory-limit-label" id="memoryLimitLabel" for="isolateChatBtn"></label>
-        <div class="memory-limit-dropdown" id="memoryLimitDropdown">
-          <div class="memory-limit-dropdown-title">
-            <span data-i18n="memory.historyLimit">记忆历史限制</span>
-            <span class="memory-limit-info-icon" data-i18n-title="memory.hint" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
-          </div>
-          <div class="memory-limit-options" id="memoryLimitOptions">
-            <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span><span data-i18n="memory.unlimited">不限制</span></div>
-            <div class="memory-limit-option" data-value="200"><span class="memory-limit-check"></span><span data-i18n="memory.recent200">最近200条</span></div>
-            <div class="memory-limit-option" data-value="100"><span class="memory-limit-check"></span><span data-i18n="memory.recent100">最近100条</span></div>
-            <div class="memory-limit-option" data-value="50"><span class="memory-limit-check"></span><span data-i18n="memory.recent50">最近50条</span></div>
-            <div class="memory-limit-option" data-value="20"><span class="memory-limit-check"></span><span data-i18n="memory.recent20">最近20条</span></div>
-            <div class="memory-limit-option" data-value="10"><span class="memory-limit-check"></span><span data-i18n="memory.recent10">最近10条</span></div>
-            <div class="memory-limit-option" data-value="5"><span class="memory-limit-check"></span><span data-i18n="memory.recent5">最近5条</span></div>
-            <div class="memory-limit-option" data-value="2"><span class="memory-limit-check"></span><span data-i18n="memory.recent2">最近2条</span></div>
-          </div>
-          <div class="memory-limit-custom">
-            <span class="memory-limit-custom-label" data-i18n="memory.custom">自定义:</span>
-            <input type="number" id="memoryLimitInput" min="1" max="400" placeholder="1-400" class="memory-limit-input">
-            <span class="memory-limit-custom-unit" data-i18n="memory.unit">条</span>
+        <div class="toolbar-chip-group" id="memoryGroup">
+          <label class="check-toggle core-feature" for="isolateChatBtn" data-i18n-title="toggle.memoryHint" title="开启后，前文问答将作为上下文（默认全部，条数可配置）">
+            <input type="checkbox" id="isolateChatBtn">
+            <span class="checkmark"></span>
+            <span class="tool-toggle-label" data-i18n="memory.label">记忆</span>
+          </label>
+          <label class="memory-limit-label" id="memoryLimitLabel" for="isolateChatBtn"></label>
+          <div class="memory-limit-dropdown" id="memoryLimitDropdown">
+            <div class="memory-limit-dropdown-title">
+              <span data-i18n="memory.historyLimit">记忆历史限制</span>
+              <span class="memory-limit-info-icon" data-i18n-title="memory.hint" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
+            </div>
+            <div class="memory-limit-options" id="memoryLimitOptions">
+              <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span><span data-i18n="memory.unlimited">不限制</span></div>
+              <div class="memory-limit-option" data-value="200"><span class="memory-limit-check"></span><span data-i18n="memory.recent200">最近200条</span></div>
+              <div class="memory-limit-option" data-value="100"><span class="memory-limit-check"></span><span data-i18n="memory.recent100">最近100条</span></div>
+              <div class="memory-limit-option" data-value="50"><span class="memory-limit-check"></span><span data-i18n="memory.recent50">最近50条</span></div>
+              <div class="memory-limit-option" data-value="20"><span class="memory-limit-check"></span><span data-i18n="memory.recent20">最近20条</span></div>
+              <div class="memory-limit-option" data-value="10"><span class="memory-limit-check"></span><span data-i18n="memory.recent10">最近10条</span></div>
+              <div class="memory-limit-option" data-value="5"><span class="memory-limit-check"></span><span data-i18n="memory.recent5">最近5条</span></div>
+              <div class="memory-limit-option" data-value="2"><span class="memory-limit-check"></span><span data-i18n="memory.recent2">最近2条</span></div>
+            </div>
+            <div class="memory-limit-custom">
+              <span class="memory-limit-custom-label" data-i18n="memory.custom">自定义:</span>
+              <input type="number" id="memoryLimitInput" min="1" max="400" placeholder="1-400" class="memory-limit-input">
+              <span class="memory-limit-custom-unit" data-i18n="memory.unit">条</span>
+            </div>
           </div>
         </div>
         <div class="tool-toggle-wrapper">
-          <label class="check-toggle core-feature" data-i18n-title="toggle.toolsHint" title="工具总开关：勾选后启用工具调用">
+          <label class="check-toggle core-feature" data-i18n-title="toggle.toolsHint" title="工具总开关：点击开启或关闭工具调用">
             <input type="checkbox" id="enableToolsBtn">
             <span class="checkmark"></span>
             <span class="tool-toggle-label" data-i18n="toggle.tools">工具</span>
@@ -398,11 +400,13 @@
             <svg t="1781344735648" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="3217" width="16" height="16"><path d="M275.84 908.8c-32.64 0-65.28-12.16-90.24-37.12-24.32-24.32-37.12-56.32-37.12-90.24s13.44-65.92 37.12-90.24l96-96c10.88-10.88 14.72-26.88 10.24-40.96-39.04-119.04-8.32-248.32 80.64-337.28 72.32-72.32 172.8-106.88 274.56-94.08 33.28 3.84 60.16 26.24 71.04 57.6 10.88 31.36 3.2 65.92-20.48 89.6L548.48 418.56c-12.16 12.16-18.56 28.16-18.56 44.8s6.4 33.28 18.56 44.8c12.16 12.16 28.16 18.56 44.8 18.56s33.28-6.4 44.8-18.56L787.2 359.68c23.68-23.68 58.24-31.36 89.6-20.48 31.36 10.88 53.76 37.76 57.6 71.04 12.8 101.76-21.76 202.24-94.08 274.56-88.32 88.96-217.6 119.68-337.28 80.64-14.08-4.48-30.08-0.64-40.96 10.24l-96 96c-24.96 24.96-57.6 37.12-90.24 37.12zM605.44 183.68c-70.4 0-137.6 27.52-188.16 78.08-71.04 71.68-96 176-64.64 272 12.16 37.12 2.56 78.08-25.6 106.24l-96 96c-24.96 24.96-24.96 65.28 0 90.24 24.96 24.96 65.28 24.96 90.24 0l96-96c28.16-28.16 69.12-38.4 106.24-25.6 96 31.36 200.32 6.4 272-64.64 58.24-58.24 86.4-139.52 76.16-221.44-1.28-12.16-10.88-17.28-14.72-18.56-3.84-1.28-14.72-3.84-23.68 5.12l-149.12 149.12c-24.32 24.32-56.32 37.12-90.24 37.12s-65.92-13.44-90.24-37.12c-24.32-24.32-37.12-56.32-37.12-90.24s13.44-65.92 37.12-90.24L652.8 224.64c8.96-8.96 7.04-19.84 5.12-23.68-1.28-3.84-5.76-13.44-18.56-14.72-11.52-1.28-22.4-2.56-33.92-2.56z" fill="currentColor" p-id="3218"></path></svg>
           </button>
         </div>
-        <label class="check-toggle core-feature" data-i18n-title="toggle.selectionHint" title="勾选后，划词选中内容后可快速提问">
-          <input type="checkbox" id="enableSelectionQueryBtn">
-          <span class="checkmark"></span>
-          <span class="tool-toggle-label" data-i18n="toggle.selection">划词</span>
-        </label>
+        <div class="toolbar-chip-group">
+          <label class="check-toggle core-feature" data-i18n-title="toggle.selectionHint" title="开启后，划词选中内容时可快速提问">
+            <input type="checkbox" id="enableSelectionQueryBtn">
+            <span class="checkmark"></span>
+            <span class="tool-toggle-label" data-i18n="toggle.selection">划词</span>
+          </label>
+        </div>
       </div>
       <div class="input-toolbar-right">
         <div class="agent-selector-wrapper" id="agentSelectorWrapper">

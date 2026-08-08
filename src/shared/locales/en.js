@@ -436,9 +436,9 @@ export default {
 
   // Toggle items
   toggle: {
-    memoryHint: 'When checked, previous Q&A will be used as context (all by default, configurable count)',
-    toolsHint: 'Master tool switch: enable tool calls when checked',
-    selectionHint: 'When checked, select text to quickly ask questions',
+    memoryHint: 'When enabled, previous Q&A will be used as context (all by default, configurable count)',
+    toolsHint: 'Master tool switch: click to enable or disable tool calls',
+    selectionHint: 'When enabled, select text on page to quickly ask questions',
     tools: 'Tools',
     selection: 'Selection',
     modelSettings: 'Model Settings',

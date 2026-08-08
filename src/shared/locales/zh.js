@@ -436,9 +436,9 @@ export default {
 
   // 开关项
   toggle: {
-    memoryHint: '勾选后，前文问答将作为上下文（默认全部，条数可配置）',
-    toolsHint: '工具总开关：勾选后启用工具调用',
-    selectionHint: '勾选后，划词选中内容后可快速提问',
+    memoryHint: '开启后，前文问答将作为上下文（默认全部，条数可配置）',
+    toolsHint: '工具总开关：点击开启或关闭工具调用',
+    selectionHint: '开启后，划词选中内容时可快速提问',
     tools: '工具',
     selection: '划词',
     modelSettings: '模型设置',
