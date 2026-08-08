@@ -1,6 +1,6 @@
 {
   "name": "ai-helper-agent",
-  "version": "1.14.7",
+  "version": "1.14.8",
   "description": "AI Helper Agent - Local file access and system command execution proxy for Chrome extension / AI Helper 代理服务，为 Chrome 扩展提供本地文件读写和系统命令执行",
   "type": "module",
   "main": "./src/server.js",
