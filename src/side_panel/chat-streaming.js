@@ -1228,29 +1228,39 @@ export function appendToolResult(result, streamingElement) {
  */
 export function createPreSelectCard(entry) {
   const card = document.createElement('div');
-  card.className = 'tool-call-item expanded preselect-card';
+  // 折叠状态跟随 streamExpandTools 配置，与其他工具卡片一致
+  card.className = 'tool-call-item preselect-card' + (state.chatConfig?.streamExpandTools ? ' expanded' : '');
   
   const isFailed = entry.status === 'failed';
-  const statusText = isFailed ? t('chatStream.statusFailed') : t('chatStream.statusCompleted');
-  const statusClass = isFailed ? 'fail' : 'success';
 
-  let summaryHtml = '';
+  // 标题区摘要：显示筛选结果概要（与其他工具卡片的 tool-call-summary 对齐）
+  let headerInfoHtml = '';
+  let bodySummaryHtml = '';
   if (entry.action?.params?.selected) {
-    // 成功筛选：显示筛选结果
     const selected = entry.action.params.selected;
     const toolCount = entry.apiRequest?.toolCount || '?';
-    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectFiltered', { total: toolCount, count: selected.length })}${selected.map(n => `<code>${escapeHtml(n)}</code>`).join(t('chatStream.listSeparator'))}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span>${t('chatStream.preselectFiltered', { total: toolCount, count: selected.length })}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary">${selected.map(n => `<code>${escapeHtml(n)}</code>`).join(t('chatStream.listSeparator'))}</span>`;
   } else if (entry.action?.name === 'all_tools') {
-    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedAll', { reason: escapeHtml(entry.action.params.reason || '') })}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span>${escapeHtml(entry.action.params.reason || '')}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedAll', { reason: escapeHtml(entry.action.params.reason || '') })}</span>`;
   } else if (entry.action?.name === 'skip') {
-    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedCount', { reason: escapeHtml(entry.action.params.reason || ''), count: entry.action.params.toolCount || '?' })}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span>${escapeHtml(entry.action.params.reason || '')}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedCount', { reason: escapeHtml(entry.action.params.reason || ''), count: entry.action.params.toolCount || '?' })}</span>`;
   } else if (entry.error) {
-    summaryHtml = `<span class="preselect-summary" style="color:#dc2626;">${escapeHtml(entry.error)}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span style="color:#dc2626;">${escapeHtml(entry.error)}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary" style="color:#dc2626;">${escapeHtml(entry.error)}</span>`;
   } else if (entry.thought) {
-    summaryHtml = `<span class="preselect-summary">${t('chatStream.preselectDirectAnswer')}${escapeHtml(entry.thought).substring(0, 200)}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span>${t('chatStream.preselectDirectAnswer')}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary">${t('chatStream.preselectDirectAnswer')}${escapeHtml(entry.thought).substring(0, 200)}</span>`;
   }
   
   const duration = entry.duration ? formatDuration(entry.duration) : '';
+  
+  // 状态图标：与其他工具卡片一致，使用 tool-result-status + SVG 打勾/叉号
+  const statusSvg = isFailed
+    ? '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>';
   
   card.innerHTML = `
     <div class="tool-call-header">
@@ -1258,12 +1268,13 @@ export function createPreSelectCard(entry) {
         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
       </svg>
       <span class="tool-call-name">${t('chatStream.toolPreselect')}</span>
-      <span class="tool-call-status ${statusClass}">${statusText}</span>
-      ${duration ? `<span class="tool-call-duration">${duration}</span>` : ''}
+      ${headerInfoHtml}
+      <span class="tool-result-status ${isFailed ? 'fail' : 'success'}">${statusSvg}</span>
+      ${duration ? `<span class="tool-result-duration">${duration}</span>` : ''}
       <svg class="tool-call-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     </div>
     <div class="tool-call-body">
-      ${summaryHtml}
+      ${bodySummaryHtml}
       ${entry.apiResponse?.toolCountAfter !== undefined ? `<div class="preselect-meta">${t('chatStream.toolsAfterFilter', { count: entry.apiResponse.toolCountAfter })}</div>` : ''}
     </div>
   `;

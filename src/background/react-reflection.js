@@ -309,7 +309,8 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
           ],
           stream: false,
           temperature: postConfig.temperature,
-          max_tokens: postConfig.maxTokens
+          max_tokens: postConfig.maxTokens,
+          response_format: { type: 'json_object' }
         })
       }, 30000, 1, 1000);
 
@@ -496,7 +497,8 @@ If the result is not helpful, set useful to false and provide a suggestion.`;
         ],
         stream: false,
         temperature: 0.1,
-        max_tokens: 256
+        max_tokens: 512,
+        response_format: { type: 'json_object' }
       })
     }, 15000, 1, 1000);
 

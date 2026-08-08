@@ -3219,29 +3219,6 @@ body {
 .preselect-card .tool-call-icon {
   color: #f59e0b;
 }
-.preselect-card .tool-call-status.success {
-  align-self: auto;
-  background: #ecfdf5;
-  color: #059669;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.preselect-card .tool-call-status.fail {
-  align-self: auto;
-  background: #fef2f2;
-  color: #dc2626;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-}
-.tool-call-duration {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-left: auto;
-}
 .preselect-summary {
   font-size: 13px;
   color: #374151;

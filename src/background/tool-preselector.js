@@ -85,26 +85,65 @@ function buildPreselectPrompt(tools) {
   return `You are an intelligent assistant. Based on the user's question, determine whether tools are needed to complete the task.
 
 Rules:
-1. If the question is very simple and you can answer directly (e.g., greetings, general knowledge, simple calculations), provide the answer content directly.
-2. If the question requires tools to complete (e.g., reading files, searching code, executing commands, fetching real-time information), output only a JSON string array containing the required tool names.
+1. If the question is very simple and you can answer directly (e.g., greetings, general knowledge, simple calculations), provide the answer directly.
+2. If the question requires tools to complete (e.g., reading files, searching code, executing commands, fetching real-time information), select the needed tools.
 
 Available tools:
 ${toolList}
 
-Output format:
-- For direct answers: output the answer content directly
-- When tools are needed: ["tool_name_1", "tool_name_2"]`;
+Output in JSON format:
+- For direct answers: {"type": "answer", "data": "your answer text"}
+- When tools are needed: {"type": "tools", "data": ["tool_name_1", "tool_name_2"]}`;
 }
 
 /**
- * 从模型返回的文本中健壮地提取工具名称 JSON 数组
+ * 解析工具预筛选的模型返回结果
  *
- * 支持的格式：
- * 1. 纯 JSON 数组：["tool1", "tool2"]
- * 2. JSON 代码块：```json\n["tool1"]\n```
- * 3. 无标记代码块：```\n["tool1"]\n```
- * 4. 文本中夹带 JSON：需要 ["tool1", "tool2"] 来完成
- * 5. 首尾有空白字符的情况
+ * 优先解析新 JSON 格式（response_format: json_object 模式）：
+ *   {"type": "answer", "data": "直接回答文本"}
+ *   {"type": "tools", "data": ["tool1", "tool2"]}
+ *
+ * 兜底：若模型不支持 response_format，退回到旧格式提取逻辑
+ *
+ * @param {string} text - 模型返回的原始文本
+ * @returns {{type: 'answer', content: string}|{type: 'tools', tools: Array}|null}
+ */
+function parsePreselectResponse(text) {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+
+  // 尝试解析为新 JSON 格式 { type, data }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && parsed.type && 'data' in parsed) {
+      if (parsed.type === 'answer' && typeof parsed.data === 'string') {
+        return { type: 'answer', content: parsed.data };
+      }
+      if (parsed.type === 'tools' && Array.isArray(parsed.data)) {
+        return { type: 'tools', tools: parsed.data };
+      }
+    }
+  } catch {
+    // 非 JSON 或新格式，退到旧逻辑
+  }
+
+  // 兜底：旧格式提取（兼容不支持 response_format 的模型）
+  const extracted = extractToolListFromResponse(trimmed);
+  if (extracted) {
+    return { type: 'tools', tools: extracted };
+  }
+
+  return null;
+}
+
+/**
+ * 从模型返回的文本中健壮地提取工具名称 JSON 数组（兜底逻辑）
+ *
+ * 当模型不支持 response_format 时，可能返回混合格式（文本中夹带 JSON），
+ * 此函数通过多种策略尝试提取：
+ * 1. 提取 ```json ... ``` 或 ``` ... ``` 代码块中的 JSON
+ * 2. 查找文本中的 JSON 数组（以 [ 开头、] 结尾的最大匹配）
+ * 3. 正则匹配 JSON 数组
  *
  * @param {string} text - 模型返回的原始文本
  * @returns {Array|null} 解析成功的工具名称数组，失败返回 null
@@ -282,7 +321,8 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
       messages: apiMessages,
       stream: false,
       temperature: 0.1,
-      max_tokens: Math.min(4096, Math.max(1024, totalCount * 30))
+      max_tokens: Math.min(4096, Math.max(1024, totalCount * 30)),
+      response_format: { type: 'json_object' }
     };
 
     const response = await fetchWithRetry(apiUrl, {
@@ -306,16 +346,18 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
 
     logger.debug('[ToolPreselector] largemodelreturn:', rawContent);
 
-    // 健壮的 JSON 提取，支持多种格式
-    const extractedJson = extractToolListFromResponse(rawContent);
+    // 解析模型返回结果（优先新 JSON 格式，兜底旧格式提取）
+    const parsed = parsePreselectResponse(rawContent);
 
-    if (extractedJson) {
-      const selectedNames = extractedJson;
-
-      if (!Array.isArray(selectedNames)) {
-        logger.warn('[ToolPreselector] mentionedfetch resultis not an array,treated as directreplyanswer');
-        return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
+    if (parsed) {
+      // 新格式直接判定为直接回答
+      if (parsed.type === 'answer') {
+        logger.debug('[ToolPreselector] modeldirect answer (newformat),no secondarycall with ');
+        return { type: 'answer', content: parsed.content, executionLog: [createEntry('success', { thought: parsed.content, duration })] };
       }
+
+      // parsed.type === 'tools'
+      const selectedNames = parsed.tools;
 
       if (selectedNames.length === 0) {
         logger.warn('[ToolPreselector] returned empty toolgroup,using alltool');
