@@ -899,6 +899,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           stream: streamConfig.streamEnabled !== false
         };
         
+        // 流式模式下请求包含 usage 统计（用于 Token 消耗展示）
+        if (requestBody.stream) {
+          requestBody.stream_options = { include_usage: true };
+        }
+        
         logger.debug('[Background] API requestbody stream mode:', requestBody.stream, 'tool count  count :', requestBody.tools.length, 'messagecount:', requestBody.messages.length, 'model:', requestBody.model);
         
         // 添加 temperature 和 top_p 参数
@@ -2504,6 +2509,11 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       messages: sanitizeImageUrlsForApi(filteredMessages),
       stream: useStream
     };
+
+    // 流式模式下请求包含 usage 统计（用于 Token 消耗展示）
+    if (useStream) {
+      requestBody.stream_options = { include_usage: true };
+    }
 
     // 添加 temperature 和 top_p 参数
     if (apiParams.temperature !== undefined) {

@@ -661,7 +661,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(result => {
         // 兼容两种返回格式：{ content, executionLog } 或 { content, usage }
         const content = result.content !== undefined ? result.content : result;
-        const executionLog = result.executionLog || [];
+        let executionLog = result.executionLog || [];
         const reflectionScore = result.reflectionScore;
         const wasRevised = result.wasRevised || false;
         const reasoningContent = result.reasoningContent || null;
@@ -674,6 +674,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             usage: result.usage,
             callType: 'non_stream'
           }).catch(() => {});
+
+          // 非 ReAct 模式下，将 usage 包装为 executionLog 条目，确保前端能展示 Token 消耗标签
+          if (executionLog.length === 0) {
+            executionLog = [{
+              nodeType: 'api_call',
+              nodeName: 'API Call',
+              status: 'success',
+              timestamp: new Date().toISOString(),
+              apiResponse: { tokenUsage: result.usage }
+            }];
+          }
         }
         
         logger.debug('[Background] API call complete,content length:', content.length, 'execution logcount:', executionLog.length);
