@@ -36,6 +36,9 @@ registerTranslations('zh', {
     forkedFrom: '已从 "{title}" 分叉',
     forkedSession: '已复制会话 "{title}"',
     operationFailed: '操作失败：{message}',
+    sessionListTitle: '会话列表',
+    closeGroupAll: '全部关闭',
+    confirmCloseGroupMessage: '确定要关闭“{group}”下的 {count} 个会话吗？',
     today: '今天',
     yesterday: '昨天',
     last7Days: '近 7 天',
@@ -60,6 +63,9 @@ registerTranslations('en', {
     forkedFrom: 'Forked from "{title}"',
     forkedSession: 'Duplicated session "{title}"',
     operationFailed: 'Operation failed: {message}',
+    sessionListTitle: 'Sessions',
+    closeGroupAll: 'Close all',
+    confirmCloseGroupMessage: 'Are you sure you want to close {count} sessions in "{group}"?',
     today: 'Today',
     yesterday: 'Yesterday',
     last7Days: 'Last 7 days',
@@ -385,67 +391,6 @@ function handleTabDragEnd(e) {
   dragState.sourceType = null;
 }
 
-// ==================== 下拉列表拖拽排序 ====================
-
-function handleDropdownDragStart(e, sessionId) {
-  dragState.draggedId = sessionId;
-  dragState.sourceType = 'dropdown';
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', sessionId);
-  e.currentTarget.classList.add('dragging');
-}
-
-function handleDropdownDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  e.currentTarget.classList.add('drag-over');
-}
-
-function handleDropdownDragLeave(e) {
-  e.currentTarget.classList.remove('drag-over');
-}
-
-async function handleDropdownDrop(e, targetId) {
-  e.preventDefault();
-  e.currentTarget.classList.remove('drag-over');
-  const draggedId = dragState.draggedId;
-  if (!draggedId || draggedId === targetId) return;
-
-  // 使用过滤后的列表做排序（下拉列表可能是搜索过滤后的子集）
-  const filtered = dropdownState.filteredSessions;
-  const draggedIndex = filtered.findIndex(s => s.id === draggedId);
-  const targetIndex = filtered.findIndex(s => s.id === targetId);
-  if (draggedIndex === -1 || targetIndex === -1) return;
-
-  const reorderedFiltered = [...filtered];
-  const [moved] = reorderedFiltered.splice(draggedIndex, 1);
-  reorderedFiltered.splice(targetIndex, 0, moved);
-
-  // 更新 filteredSessions
-  dropdownState.filteredSessions = reorderedFiltered;
-
-  // 映射回完整 sessions 列表
-  const allSessions = state.sessions || [];
-  const fullIds = allSessions.map(s => s.id);
-  const filteredIds = new Set(reorderedFiltered.map(s => s.id));
-  const nonFilteredIds = fullIds.filter(id => !filteredIds.has(id));
-
-  // 将过滤后重排的顺序与非过滤部分拼接
-  const newOrderedIds = [...reorderedFiltered.map(s => s.id), ...nonFilteredIds];
-
-  state.sessions = newOrderedIds.map(id => allSessions.find(s => s.id === id)).filter(Boolean);
-  await reorderSessions(newOrderedIds);
-  renderDropdownList();
-  renderSessionTabs();
-}
-
-function handleDropdownDragEnd(e) {
-  e.currentTarget.classList.remove('dragging');
-  document.querySelectorAll('.session-dropdown-item.drag-over').forEach(el => el.classList.remove('drag-over'));
-  dragState.draggedId = null;
-  dragState.sourceType = null;
-}
-
 // ==================== 下拉面板 ====================
 
 function toggleDropdown() {
@@ -471,22 +416,54 @@ async function openDropdown() {
   dropdownState.visible = true;
 
   renderDropdownList();
-  positionDropdown(moreBtn, dropdown);
+  dropdown.classList.add('show');
 
-  // 聚焦搜索框
+  // 绑定关闭按钮
+  const closeBtn = document.getElementById('sessionDropdownCloseBtn');
+  if (closeBtn) {
+    closeBtn.onclick = () => closeDropdown();
+  }
+
+  // 恢复搜索文本 + 绑定搜索框事件
   const searchInput = document.getElementById('sessionDropdownSearch');
+  const clearBtn = document.getElementById('sessionDropdownSearchClear');
   if (searchInput) {
-    searchInput.value = '';
+    searchInput.value = dropdownState.lastSearchText || '';
+    updateSearchClearVisibility();
+    // 恢复搜索过滤状态
+    if (dropdownState.lastSearchText) {
+      filterDropdownSessions(dropdownState.lastSearchText);
+    }
     setTimeout(() => searchInput.focus(), 50);
+
+    // 搜索输入事件：实时过滤
+    searchInput.oninput = () => {
+      dropdownState.lastSearchText = searchInput.value;
+      updateSearchClearVisibility();
+      filterDropdownSessions(searchInput.value);
+    };
+
+    // 搜索框键盘事件：上下键导航列表，Enter 选中，Escape 关闭
+    searchInput.onkeydown = (e) => {
+      handleDropdownKeydown(e);
+    };
+  }
+
+  // 清理按钮
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      if (searchInput) {
+        searchInput.value = '';
+        dropdownState.lastSearchText = '';
+        updateSearchClearVisibility();
+        filterDropdownSessions('');
+        searchInput.focus();
+      }
+    };
   }
 
   // 更新更多按钮样式
   moreBtn.classList.add('active');
-
-  // 外部点击关闭
-  setTimeout(() => {
-    document.addEventListener('click', handleOutsideClick);
-  }, 0);
 }
 
 function closeDropdown() {
@@ -498,40 +475,27 @@ function closeDropdown() {
   if (moreBtn) {
     moreBtn.classList.remove('active');
   }
+  // 保留搜索文本，下次打开时恢复
+  const searchInput = document.getElementById('sessionDropdownSearch');
+  if (searchInput) {
+    dropdownState.lastSearchText = searchInput.value;
+    searchInput.oninput = null;
+    searchInput.onkeydown = null;
+  }
+  const clearBtn = document.getElementById('sessionDropdownSearchClear');
+  if (clearBtn) clearBtn.onclick = null;
   dropdownState.visible = false;
   dropdownState.highlightIndex = -1;
   dropdownState.filteredSessions = [];
-  document.removeEventListener('click', handleOutsideClick);
 }
 
-function handleOutsideClick(e) {
-  const dropdown = document.getElementById('sessionDropdown');
-  const moreBtn = document.getElementById('sessionTabsMore');
-  if (!dropdown || !moreBtn) return;
-  if (!dropdown.contains(e.target) && e.target !== moreBtn && !moreBtn.contains(e.target)) {
-    closeDropdown();
+/** 更新搜索清理按钮的可见性 */
+function updateSearchClearVisibility() {
+  const searchInput = document.getElementById('sessionDropdownSearch');
+  const clearBtn = document.getElementById('sessionDropdownSearchClear');
+  if (clearBtn && searchInput) {
+    clearBtn.style.display = searchInput.value ? 'flex' : 'none';
   }
-}
-
-function positionDropdown(moreBtn, dropdown) {
-  dropdown.classList.add('show');
-  const rect = moreBtn.getBoundingClientRect();
-  const dropdownHeight = 360; // max-height
-
-  let top = rect.bottom + 4;
-  let left = rect.right - 240; // 右对齐
-
-  // 底部超出时向上翻转
-  if (top + dropdownHeight > window.innerHeight - 8) {
-    top = rect.top - dropdownHeight - 4;
-    if (top < 8) top = 8;
-  }
-
-  // 左侧超出修正
-  if (left < 8) left = 8;
-
-  dropdown.style.top = top + 'px';
-  dropdown.style.left = left + 'px';
 }
 
 function renderDropdownList() {
@@ -561,16 +525,40 @@ function renderDropdownList() {
     last7Days: t('session.last7Days'),
     earlier: t('session.earlier'),
   };
+
+  // 预计算每个分组的会话数量
+  const groupCounts = {};
+  dropdownState.filteredSessions.forEach(s => {
+    const g = getTimeGroupKey(s.updatedAt);
+    groupCounts[g] = (groupCounts[g] || 0) + 1;
+  });
+
   let lastGroup = null;
 
   dropdownState.filteredSessions.forEach((session, index) => {
-    // 时间分组标题
+    // 时间分组标题 + 分组关闭按钮
     const group = getTimeGroupKey(session.updatedAt);
     if (group !== lastGroup) {
       lastGroup = group;
       const header = document.createElement('div');
       header.className = 'session-dropdown-group-header';
-      header.textContent = groupLabels[group] || group;
+
+      const label = document.createElement('span');
+      label.textContent = groupLabels[group] || group;
+      header.appendChild(label);
+
+      const count = groupCounts[group] || 0;
+      if (count > 0) {
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'session-dropdown-group-close';
+        closeBtn.textContent = t('session.closeGroupAll');
+        closeBtn.onclick = (e) => {
+          e.stopPropagation();
+          handleGroupCloseAll(group, groupLabels[group] || group);
+        };
+        header.appendChild(closeBtn);
+      }
+
       listEl.appendChild(header);
     }
 
@@ -596,12 +584,26 @@ function renderDropdownList() {
       item.appendChild(completedDot);
     }
 
+    // 会话图标（聊天气泡）
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'session-dropdown-item-icon';
+    iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    item.appendChild(iconSpan);
+
     // 标题
     const titleSpan = document.createElement('span');
     titleSpan.className = 'session-dropdown-item-title';
     titleSpan.textContent = session.title || t('session.newSession');
     titleSpan.title = session.title || t('session.newSession');
     item.appendChild(titleSpan);
+
+    // 当前会话打勾标记
+    if (session.id === state.activeSessionId) {
+      const checkSpan = document.createElement('span');
+      checkSpan.className = 'session-dropdown-item-check';
+      checkSpan.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      item.appendChild(checkSpan);
+    }
 
     // 时间标签（绝对定位右侧，hover 时淡出让位给操作按钮）
     const timeSpan = document.createElement('span');
@@ -621,7 +623,6 @@ function renderDropdownList() {
     renameBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
-      closeDropdown();
       showRenameModal(session);
     });
     actionsWrapper.appendChild(renameBtn);
@@ -634,8 +635,12 @@ function renderDropdownList() {
     duplicateBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      closeDropdown();
       await handleDuplicateSession(session.id);
+      // 刷新列表
+      const sessionsData = await loadSessions();
+      state.sessions = sessionsData.list;
+      state.activeSessionId = sessionsData.activeSessionId;
+      filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
     });
     actionsWrapper.appendChild(duplicateBtn);
 
@@ -658,14 +663,6 @@ function renderDropdownList() {
       e.preventDefault();
       await handleDropdownSelectSession(session.id);
     });
-
-    // 拖拽排序支持
-    item.draggable = true;
-    item.addEventListener('dragstart', (e) => handleDropdownDragStart(e, session.id));
-    item.addEventListener('dragover', (e) => handleDropdownDragOver(e));
-    item.addEventListener('dragleave', (e) => handleDropdownDragLeave(e));
-    item.addEventListener('drop', (e) => handleDropdownDrop(e, session.id));
-    item.addEventListener('dragend', (e) => handleDropdownDragEnd(e));
 
     listEl.appendChild(item);
   });
@@ -699,9 +696,6 @@ async function handleDropdownCloseSession(sessionId) {
   const session = allSessions.find(s => s.id === sessionId);
   if (!session) return;
 
-  // 先关闭下拉面板，避免遮挡确认弹窗
-  closeDropdown();
-
   // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
   const msgCount = sessionId === state.activeSessionId
     ? (state.messageHistory?.length || 0)
@@ -717,63 +711,56 @@ async function handleDropdownCloseSession(sessionId) {
 
   await deleteSession(sessionId);
   await reloadAfterDelete();
-  // 更新下拉过滤列表
-  const searchInput = document.getElementById('sessionDropdownSearch');
-  const searchText = searchInput ? searchInput.value : '';
-  if (!searchText.trim()) {
-    dropdownState.filteredSessions = [...state.sessions];
-  } else {
-    const lower = searchText.trim().toLowerCase();
-    dropdownState.filteredSessions = state.sessions.filter(s =>
-      (s.title || t('session.newSession')).toLowerCase().includes(lower)
-    );
-  }
-  dropdownState.highlightIndex = Math.min(dropdownState.highlightIndex, dropdownState.filteredSessions.length - 1);
-  renderDropdownList();
+  // 刷新下拉列表（重新过滤 + 排序）
+  filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
 }
 
 async function handleCloseAllSessions() {
   const sessions = state.sessions || [];
   if (sessions.length === 0) return;
 
-  // 先关闭下拉面板，避免遮挡确认弹窗
-  closeDropdown();
-
   const confirmed = await showCustomConfirm(
     t('session.confirmCloseAllMessage', { count: sessions.length }),
     t('session.confirmCloseAllTitle')
   );
-  if (!confirmed) {
-    // 用户取消，重新打开下拉
-    openDropdown();
-    return;
-  }
+  if (!confirmed) return;
 
   // 逐个删除所有会话
   for (const session of sessions) {
     await deleteSession(session.id);
   }
   await reloadAfterDelete();
+  // 刷新下拉列表
+  filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
+}
+
+/** 关闭指定分组的会话 */
+async function handleGroupCloseAll(groupKey, groupLabel) {
+  const allSessions = state.sessions || [];
+  const groupSessions = allSessions.filter(s => getTimeGroupKey(s.updatedAt) === groupKey);
+  if (groupSessions.length === 0) return;
+
+  const confirmed = await showCustomConfirm(
+    t('session.confirmCloseGroupMessage', { group: groupLabel, count: groupSessions.length }),
+    t('session.closeSession')
+  );
+  if (!confirmed) return;
+
+  for (const session of groupSessions) {
+    await deleteSession(session.id);
+  }
+  await reloadAfterDelete();
+  // 刷新下拉列表
+  filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
 }
 
 function bindDropdownEvents() {
-  const searchInput = document.getElementById('sessionDropdownSearch');
   const closeAllBtn = document.getElementById('sessionDropdownCloseAll');
   const dropdown = document.getElementById('sessionDropdown');
 
   if (!dropdown) return;
 
-  // 搜索输入
-  if (searchInput) {
-    const newSearch = searchInput.cloneNode(true);
-    searchInput.parentNode.replaceChild(newSearch, searchInput);
-    newSearch.addEventListener('input', (e) => {
-      filterDropdownSessions(e.target.value);
-    });
-    newSearch.addEventListener('keydown', (e) => {
-      handleDropdownKeydown(e);
-    });
-  }
+  // 搜索框事件在 openDropdown 中动态绑定（支持历史导航和清理按钮）
 
   // 关闭全部按钮
   if (closeAllBtn) {
@@ -1032,8 +1019,6 @@ function showRenameModal(session) {
   if (!modal || !input) return;
 
   input.value = session.title;
-  input.focus();
-  input.select();
 
   const cleanup = () => {
     modal.classList.remove('show');
@@ -1042,12 +1027,16 @@ function showRenameModal(session) {
     closeBtn.removeEventListener('click', onCancel);
   };
 
-  const onConfirm = () => {
+  const onConfirm = async () => {
     const newTitle = input.value.trim();
     if (newTitle && newTitle !== session.title) {
-      renameSession(session.id, newTitle).then(() => {
-        renderSessionTabs();
-      });
+      await renameSession(session.id, newTitle);
+      renderSessionTabs();
+      // 刷新下拉列表
+      const sessionsData = await loadSessions();
+      state.sessions = sessionsData.list;
+      state.activeSessionId = sessionsData.activeSessionId;
+      filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
     }
     cleanup();
   };
@@ -1070,6 +1059,11 @@ function showRenameModal(session) {
   };
 
   modal.classList.add('show');
+  // 模态框显示后再聚焦
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 50);
 }
 
 /**

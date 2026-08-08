@@ -1997,23 +1997,57 @@ body {
   background: rgba(102, 126, 234, 0.1);
 }
 
-/* ========== 会话下拉面板 ========== */
+/* ========== 会话列表面板（全屏覆盖） ========== */
 .session-dropdown {
   display: none;
   position: fixed;
-  z-index: 10000;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10003;
   background: white;
-  border-radius: 10px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-  width: 240px;
-  max-height: 360px;
-  overflow: hidden;
   flex-direction: column;
   animation: dropdownFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .session-dropdown.show {
   display: flex;
+}
+
+/* 面板头部：标题 + 关闭按钮 */
+.session-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e8eaed;
+  flex-shrink: 0;
+}
+
+.session-dropdown-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.session-dropdown-header-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.session-dropdown-header-close:hover {
+  background: #f0f0f0;
+  color: #333;
 }
 
 .session-dropdown-search {
@@ -2047,10 +2081,31 @@ body {
   color: #bbb;
 }
 
+/* 搜索清理按钮 */
+.session-dropdown-search-clear {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #bbb;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.session-dropdown-search-clear:hover {
+  background: #f0f0f0;
+  color: #666;
+}
+
 .session-dropdown-list {
   flex: 1;
   overflow-y: auto;
-  max-height: 260px;
 }
 
 .session-dropdown-list::-webkit-scrollbar {
@@ -2095,6 +2150,19 @@ body {
   font-weight: 500;
 }
 
+/* 会话图标（聊天气泡） */
+.session-dropdown-item-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: #bbb;
+  margin-right: 6px;
+}
+
+.session-dropdown-item.active .session-dropdown-item-icon {
+  color: #667eea;
+}
+
 .session-dropdown-item-title {
   flex: 1;
   overflow: hidden;
@@ -2104,7 +2172,7 @@ body {
   transition: padding-right 0.15s ease;
 }
 
-/* 下拉列表项的"任务已完成"标记 */
+/* 下拉列表项的“任务已完成”标记 */
 .session-dropdown-item-completed {
   width: 6px;
   height: 6px;
@@ -2115,10 +2183,13 @@ body {
   box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
 }
 
-.session-dropdown-item.active .session-dropdown-item-title::before {
-  content: '● ';
-  font-size: 8px;
-  vertical-align: middle;
+/* 当前会话打勾标记 */
+.session-dropdown-item-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: #667eea;
+  margin-left: 4px;
 }
 
 /* 下拉列表拖拽样式 */
@@ -2146,8 +2217,7 @@ body {
   visibility: hidden;
 }
 
-.session-dropdown-item:hover .session-dropdown-item-close,
-.session-dropdown-item.highlighted .session-dropdown-item-close {
+.session-dropdown-item:hover .session-dropdown-item-close {
   opacity: 1;
   visibility: visible;
 }
@@ -2189,8 +2259,7 @@ body {
   visibility: hidden;
 }
 
-.session-dropdown-item:hover .session-dropdown-item-duplicate,
-.session-dropdown-item.highlighted .session-dropdown-item-duplicate {
+.session-dropdown-item:hover .session-dropdown-item-duplicate {
   opacity: 1;
   visibility: visible;
 }
@@ -2214,8 +2283,7 @@ body {
   visibility: hidden;
 }
 
-.session-dropdown-item:hover .session-dropdown-item-rename,
-.session-dropdown-item.highlighted .session-dropdown-item-rename {
+.session-dropdown-item:hover .session-dropdown-item-rename {
   opacity: 1;
   visibility: visible;
 }
@@ -2237,9 +2305,8 @@ body {
   padding-left: 8px;
 }
 
-/* 悬停/高亮时时间淡出，让位给操作按钮 */
-.session-dropdown-item:hover .session-dropdown-item-time,
-.session-dropdown-item.highlighted .session-dropdown-item-time {
+/* 悬停时时间淡出，让位给操作按钮 */
+.session-dropdown-item:hover .session-dropdown-item-time {
   opacity: 0;
 }
 
@@ -2250,6 +2317,27 @@ body {
   color: #999;
   font-weight: 500;
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 分组关闭全部按钮 */
+.session-dropdown-group-close {
+  font-size: 10px;
+  color: #ccc;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  font-weight: 400;
+}
+
+.session-dropdown-group-close:hover {
+  color: #e53e3e;
+  background: rgba(229, 62, 62, 0.08);
 }
 
 .session-dropdown-footer {

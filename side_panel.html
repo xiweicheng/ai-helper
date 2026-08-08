@@ -124,6 +124,7 @@
   <div class="session-tabs" id="sessionTabs">
     <div class="session-tabs-scroll" id="sessionTabsScroll"></div>
     <div class="session-tabs-actions" id="sessionTabsActions">
+      <div class="session-tab-add" id="sessionTabsAdd">+</div>
       <div class="session-tabs-more" id="sessionTabsMore" data-i18n-title="session.allSessions" title="全部会话">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="5" r="2"/>
@@ -131,17 +132,25 @@
           <circle cx="12" cy="19" r="2"/>
         </svg>
       </div>
-      <div class="session-tab-add" id="sessionTabsAdd">+</div>
     </div>
   </div>
 
-  <!-- 会话下拉面板 -->
+  <!-- 会话列表面板（全屏覆盖） -->
   <div class="session-dropdown" id="sessionDropdown">
+    <div class="session-dropdown-header">
+      <span class="session-dropdown-header-title" data-i18n="session.sessionListTitle">会话列表</span>
+      <button class="session-dropdown-header-close" id="sessionDropdownCloseBtn" data-i18n-title="common.close" title="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
     <div class="session-dropdown-search">
       <svg class="session-dropdown-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
       </svg>
       <input type="text" data-i18n-placeholder="session.searchPlaceholder" placeholder="搜索会话..." id="sessionDropdownSearch" />
+      <button class="session-dropdown-search-clear" id="sessionDropdownSearchClear" title="清除搜索" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
     <div class="session-dropdown-list" id="sessionDropdownList"></div>
     <div class="session-dropdown-footer">
@@ -646,7 +655,7 @@
   </div>
 
   <!-- 会话重命名弹窗 -->
-  <div class="modal-overlay" id="sessionRenameModal" style="z-index: 4000;">
+  <div class="modal-overlay" id="sessionRenameModal" style="z-index: 10004;">
     <div class="modal-container">
       <button class="prompt-modal-close" id="sessionRenameCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
       <div class="modal-title" data-i18n="session.renameTitle">重命名会话</div>
@@ -659,7 +668,7 @@
   </div>
 
   <!-- 会话删除确认弹窗 -->
-  <div class="modal-overlay" id="sessionDeleteModal" style="z-index: 4000;">
+  <div class="modal-overlay" id="sessionDeleteModal" style="z-index: 10004;">
     <div class="modal-container">
       <button class="prompt-modal-close" id="sessionDeleteCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
       <div class="modal-title" data-i18n="session.confirmCloseTitle">确认关闭会话</div>
