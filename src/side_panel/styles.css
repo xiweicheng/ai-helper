@@ -629,7 +629,7 @@ body {
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: normal;
   white-space: nowrap;
   transition: all 0.2s;
 }
@@ -735,7 +735,7 @@ body {
 .agent-item-name {
   display: block;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: normal;
   color: #333;
   white-space: nowrap;
   overflow: hidden;
