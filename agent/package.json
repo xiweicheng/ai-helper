@@ -11,6 +11,7 @@
   "files": [
     "bin/",
     "src/",
+    "dist/",
     "README.md",
     "README.zh-CN.md"
   ],
@@ -18,7 +19,9 @@
     "start": "node bin/agent.js start",
     "stop": "node bin/agent.js stop",
     "status": "node bin/agent.js status",
-    "release": "bash publish.sh"
+    "release": "bash publish.sh",
+    "prepublishOnly": "cp -r ../dist ./dist",
+    "postpublish": "rm -rf ./dist"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

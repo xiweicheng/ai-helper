@@ -1,6 +1,9 @@
 node_modules/
 .npmrc
 
+# NPM publish 时临时复制的扩展产物
+agent/dist/
+
 *.log
 .env
 .env.local
