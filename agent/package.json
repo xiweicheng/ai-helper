@@ -12,7 +12,7 @@
     "bin/",
     "src/",
     "README.md",
-    "README.en.md"
+    "README.zh-CN.md"
   ],
   "scripts": {
     "start": "node bin/agent.js start",

@@ -1,117 +1,117 @@
-> [English](./README.en.md) | [中文](./README.md)
+> [English](./README.md) | [中文](./README.zh-CN.md)
 
 # AI Helper Agent
 
-AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。
+AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) with local file read/write, system command execution, Skill system, and MCP protocol extension capabilities.
 
-## 安装
+## Installation
 
 ```bash
 npm install -g ai-helper-agent
 ```
 
-要求 Node.js >= 18.0.0。
+Requires Node.js >= 18.0.0.
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 前台启动（终端显示实时运行日志，适合调试）
+# Start in foreground (real-time logs in terminal, ideal for debugging)
 ai-helper-agent start
 
-# 后台启动（守护进程模式，终端立即返回）
+# Start in background (daemon mode, terminal returns immediately)
 ai-helper-agent start --background
 ai-helper-agent start -b
 
-# 指定工作目录和端口
+# Specify work directory and port
 ai-helper-agent start --workdir /path/to/your/project --port 18911
 ```
 
-启动后终端会显示 4 位配对码，在 Chrome 扩展设置页「代理」标签中填入即可完成配对。
+After startup, the terminal will display a 4-digit pairing code. Enter it in the "Agent" tab of the Chrome extension settings page to complete pairing.
 
-## CLI 命令
+## CLI Commands
 
-| 命令 | 说明 |
-|------|------|
-| `start` | 启动代理服务（前台运行，显示实时日志） |
-| `start --background` / `start -b` | 后台启动（守护进程模式） |
-| `stop` | 停止正在运行的 Agent |
-| `restart` | 重启代理服务（支持 -b 后台重启） |
-| `status` | 查看运行状态 |
-| `paircode` | 查看配对码提示 |
-| `config` | 查看当前配置 |
-| `help` | 显示帮助信息 |
-| `--version` / `-v` | 显示版本号 |
+| Command | Description |
+|---------|-------------|
+| `start` | Start the agent service (foreground, with real-time logs) |
+| `start --background` / `start -b` | Start in background (daemon mode) |
+| `stop` | Stop the running agent |
+| `restart` | Restart the agent service (supports -b for background restart) |
+| `status` | Check running status |
+| `paircode` | Show pairing code |
+| `config` | View current configuration |
+| `help` | Show help information |
+| `--version` / `-v` | Show version number |
 
-### 启动选项
-
-```
---background, -b    后台运行（守护进程模式）
---port <端口>       监听端口，默认 18910
---host <地址>       监听地址，默认 127.0.0.1
---workdir <目录>    工作目录（文件读写限制在此范围内）
-```
-
-### 前台 vs 后台运行
-
-| 模式 | 命令 | 终端行为 | 适用场景 |
-|------|------|----------|----------|
-| 前台 | `start` | 阻塞终端，实时显示运行日志 | 开发调试、问题排查 |
-| 后台 | `start --background` | 立即返回，终端无日志输出 | 生产环境、日常使用 |
-
-前台运行时，所有文件读写、命令执行、安全拦截等操作日志会以格式化形式实时输出到终端：
+### Startup Options
 
 ```
-[12:30:01] [INFO] [文件:read] path=/project/src/index.js size=2048
-[12:30:05] [INFO] [命令:started] command="npm test" cwd=/project execId=a1b2c3d4
-[12:30:12] [INFO] [命令:completed] execId=a1b2c3d4 exitCode=0 killed=false
-[12:31:00] [WARN] [安全:exec_denied] command="rm -rf /" reason=高危命令被拦截
+--background, -b    Run in background (daemon mode)
+--port <port>       Listen port, default 18910
+--host <address>    Listen address, default 127.0.0.1
+--workdir <dir>     Work directory (file read/write restricted to this scope)
 ```
 
-### 进程管理
+### Foreground vs Background
 
-Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周期：
+| Mode | Command | Terminal Behavior | Use Case |
+|------|---------|-------------------|----------|
+| Foreground | `start` | Blocks terminal, shows real-time logs | Development, debugging |
+| Background | `start --background` | Returns immediately, no log output | Production, daily use |
 
-- 启动时自动写入 PID 文件
-- `stop` 命令优先通过 API 优雅关闭，失败则通过 PID 文件 kill 进程
-- 正常关闭时自动清理 PID 文件
+When running in foreground, all file read/write, command execution, and security interception logs are output in real-time in a formatted manner:
 
-## 安全机制
+```
+[12:30:01] [INFO] [File:read] path=/project/src/index.js size=2048
+[12:30:05] [INFO] [Command:started] command="npm test" cwd=/project execId=a1b2c3d4
+[12:30:12] [INFO] [Command:completed] execId=a1b2c3d4 exitCode=0 killed=false
+[12:31:00] [WARN] [Security:exec_denied] command="rm -rf /" reason=High-risk command blocked
+```
 
-### 文件沙箱
+### Process Management
 
-所有文件操作限制在配置的 `allowedPaths` 白名单目录内。通过 `realpath` 解析防止符号链接绕过，确保物理路径安全。
+The agent manages process lifecycle via a PID file (`~/.ai-helper-agent/agent.pid`):
 
-### 命令分级管控
+- Automatically writes PID file on startup
+- `stop` command prefers graceful shutdown via API, falls back to killing process via PID file
+- Automatically cleans up PID file on normal shutdown
 
-**黑名单** — 直接拦截，不可绕过：
+## Security
 
-| 类型 | 示例 |
-|------|------|
-| 磁盘破坏 | `rm -rf /`、`mkfs.*`、`dd if=... of=/dev/...` |
-| 系统文件覆盖 | `> /etc/passwd`、`> /etc/shadow` |
-| 恶意管道执行 | `curl ... \| bash`、`git clone ... \| sh` |
-| Shell 注入 | 反引号、`$()`、`${}` 命令替换 |
+### File Sandbox
+
+All file operations are restricted to directories listed in the `allowedPaths` whitelist. `realpath` resolution prevents symlink bypasses, ensuring physical paths are safe.
+
+### Command Tiered Control
+
+**Blacklist** — Blocked directly, cannot be bypassed:
+
+| Type | Examples |
+|------|----------|
+| Disk destruction | `rm -rf /`, `mkfs.*`, `dd if=... of=/dev/...` |
+| System file overwrite | `> /etc/passwd`, `> /etc/shadow` |
+| Malicious pipe execution | `curl ... \| bash`, `git clone ... \| sh` |
+| Shell injection | Backticks, `$()`, `${}` command substitution |
 | Fork bomb | `:(){ :\|:& };:` |
 
-**灰名单** — 需要用户确认后才执行：
+**Greylist** — Requires user confirmation before execution:
 
-| 命令模式 | 原因 |
-|----------|------|
-| `sudo ...` | 需要管理员权限 |
-| `npm install -g ...` | 全局安装包 |
-| `pip install/uninstall` | Python 包管理 |
-| `chmod -R 777` | 递归修改权限 |
-| `rm -rf ...` | 递归强制删除 |
-| `git push --force` | 强制推送 |
-| `shutdown/reboot` | 关机/重启 |
+| Command Pattern | Reason |
+|-----------------|--------|
+| `sudo ...` | Requires admin privileges |
+| `npm install -g ...` | Global package installation |
+| `pip install/uninstall` | Python package management |
+| `chmod -R 777` | Recursive permission modification |
+| `rm -rf ...` | Recursive forced deletion |
+| `git push --force` | Force push |
+| `shutdown/reboot` | System shutdown/restart |
 
-### 认证机制
+### Authentication
 
-首次配对时用户在扩展中输入终端显示的 4 位配对码完成配对。配对码每 30 秒轮换。配对成功后使用 HMAC token 做后续请求认证，存储在 `~/.ai-helper-agent/pairings.json`。
+Pairing is completed by entering the 4-digit pairing code displayed in the terminal into the extension. The pairing code rotates every 30 seconds. After successful pairing, an HMAC token is used for subsequent request authentication, stored in `~/.ai-helper-agent/pairings.json`.
 
-## 配置
+## Configuration
 
-配置文件路径：`~/.ai-helper-agent/config.json`
+Configuration file path: `~/.ai-helper-agent/config.json`
 
 ```json
 {
@@ -125,209 +125,209 @@ Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周
 }
 ```
 
-| 字段 | 说明 | 默认值 |
-|------|------|--------|
-| `port` | 监听端口 | 18910 |
-| `host` | 监听地址 | 127.0.0.1 |
-| `workdir` | 默认工作目录 | 启动时当前目录 |
-| `allowedPaths` | 额外允许访问的目录列表 | `[]` |
-| `pairCodeTTL` | 配对码有效期（秒） | 30 |
-| `commandTimeout` | 命令执行超时（毫秒） | 300000（5分钟） |
-| `fileMaxSize` | 文件读写最大字节数 | 52428800（50MB） |
+| Field | Description | Default |
+|-------|-------------|---------|
+| `port` | Listen port | 18910 |
+| `host` | Listen address | 127.0.0.1 |
+| `workdir` | Default work directory | Current directory at startup |
+| `allowedPaths` | Additional allowed directory list | `[]` |
+| `pairCodeTTL` | Pairing code validity (seconds) | 30 |
+| `commandTimeout` | Command execution timeout (ms) | 300000 (5 min) |
+| `fileMaxSize` | Max file read/write size (bytes) | 52428800 (50 MB) |
 
-## 文件搜索
+## File Search
 
-Agent 优先使用系统原生搜索工具，不可用时自动回退到 Node.js 实现：
+The agent prefers native system search tools, with automatic fallback to Node.js implementation when unavailable:
 
-| 引擎 | 用途 | 检测命令 |
-|------|------|----------|
-| `fd` | 文件名搜索（快速） | `fd --version` |
-| `rg` (ripgrep) | 文件内容搜索（快速） | `rg --version` |
+| Engine | Purpose | Detection Command |
+|--------|---------|-------------------|
+| `fd` | Filename search (fast) | `fd --version` |
+| `rg` (ripgrep) | File content search (fast) | `rg --version` |
 
-状态接口返回当前可用的搜索工具：
+The status endpoint reports currently available search tools:
 
 ```json
 { "searchTools": { "fd": true, "rg": true } }
 ```
 
-## 审计日志
+## Audit Logs
 
-所有操作自动记录到审计日志中，日志文件位于 `~/.ai-helper-agent/logs/`。
+All operations are automatically recorded in audit logs, located in `~/.ai-helper-agent/logs/`.
 
-### 双通道输出
+### Dual Channel Output
 
-- **终端输出**（前台模式）：格式化可读格式，输出到 stderr
-- **文件输出**：JSON Lines 格式，写入日志文件
+- **Terminal output** (foreground mode): Formatted human-readable output to stderr
+- **File output**: JSON Lines format, written to log files
 
-两种通道同时工作，互不影响。
+Both channels work simultaneously without interfering with each other.
 
-### 日志格式
+### Log Format
 
-JSON Lines 格式，每行一条记录，文件按日命名 `agent-YYYY-MM-DD.log`。
+JSON Lines format, one record per line, files named by date `agent-YYYY-MM-DD.log`.
 
 ```json
 {"timestamp":"2026-01-15T10:30:00.123Z","level":"info","category":"fs","action":"read","path":"/home/user/project/src/index.js","size":2048}
 {"timestamp":"2026-01-15T10:30:05.456Z","level":"info","category":"exec","action":"completed","command":"npm test","cwd":"/home/user/project","execId":"a1b2c3d4","exitCode":0,"killed":false,"stdoutLen":1024,"stderrLen":0}
-{"timestamp":"2026-01-15T10:31:00.789Z","level":"warn","category":"security","action":"exec_denied","command":"rm -rf /","reason":"高危命令被拦截"}
+{"timestamp":"2026-01-15T10:31:00.789Z","level":"warn","category":"security","action":"exec_denied","command":"rm -rf /","reason":"High-risk command blocked"}
 ```
 
-### 日志分类
+### Log Categories
 
-| category | 说明 | 包含的操作 |
-|----------|------|-----------|
-| `auth` | 认证事件 | 配对成功/失败 |
-| `fs` | 文件操作 | read, write, list, delete, search_files, search_content |
-| `exec` | 命令执行 | started, completed, stopped, error |
-| `security` | 安全事件 | deny, confirm, auth 失败, 路径越权拦截 |
-| `system` | 系统事件 | server_start, server_stop, shutdown, server_error, uncaught_exception, unhandled_rejection |
+| Category | Description | Included Actions |
+|----------|-------------|-----------------|
+| `auth` | Authentication events | Pairing success/failure |
+| `fs` | File operations | read, write, list, delete, search_files, search_content |
+| `exec` | Command execution | started, completed, stopped, error |
+| `security` | Security events | deny, confirm, auth failure, path breach interception |
+| `system` | System events | server_start, server_stop, shutdown, server_error, uncaught_exception, unhandled_rejection |
 
-### 日志查询 API
+### Log Query API
 
 ```
 GET /api/logs?date=2026-01-15&category=security&limit=50&offset=0
 GET /api/logs/dates
 ```
 
-- `date` - 日期筛选 (YYYY-MM-DD)，不传默认今天
-- `category` - 分类筛选，不传返回全部
-- `limit` - 返回条数上限，默认 200
-- `offset` - 分页偏移
+- `date` - Date filter (YYYY-MM-DD), defaults to today
+- `category` - Category filter, returns all if omitted
+- `limit` - Max number of records returned, defaults to 200
+- `offset` - Pagination offset
 
-返回按时间倒序排列（最新的在前）。
+Results are returned in reverse chronological order (newest first).
 
-### 自动清理
+### Auto Cleanup
 
-- 最多保留 30 个日志文件
-- 单文件超过 10MB 自动删除
-- 每次写入日志时触发检查
+- Maximum 30 log files retained
+- Single files exceeding 10 MB are automatically deleted
+- Cleanup check triggered on every log write
 
-## API 端点
+## API Endpoints
 
-### 无需认证
+### No Authentication Required
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/pair` | 配对认证 |
-| GET | `/api/status` | 健康检查（版本号、平台信息、搜索工具可用性） |
-| POST | `/api/shutdown` | 关闭代理服务（仅限本地访问） |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/pair` | Pairing authentication |
+| GET | `/api/status` | Health check (version, platform info, search tool availability) |
+| POST | `/api/shutdown` | Shut down the agent service (local access only) |
 
-### 需要认证（Bearer Token）
+### Authentication Required (Bearer Token)
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/fs/read` | 读取文件内容 |
-| POST | `/api/fs/write` | 写入文件 |
-| POST | `/api/fs/list` | 列出目录 |
-| POST | `/api/fs/delete` | 删除文件/目录 |
-| POST | `/api/fs/search_files` | 按文件名模式搜索（glob） |
-| POST | `/api/fs/search_content` | 搜索文件内容（rg 优先，Node.js 回退） |
-| POST | `/api/exec` | 执行系统命令 |
-| POST | `/api/exec/stop` | 停止命令执行 |
-| GET | `/api/exec/running` | 运行中的进程列表 |
-| GET | `/api/status/detail` | 详细信息（含工作目录、配对码、搜索工具） |
-| GET | `/api/logs` | 查询审计日志（支持 date/category/limit/offset 参数） |
-| GET | `/api/logs/dates` | 获取可用日志日期列表 |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/fs/read` | Read file content |
+| POST | `/api/fs/write` | Write file |
+| POST | `/api/fs/list` | List directory |
+| POST | `/api/fs/delete` | Delete file/directory |
+| POST | `/api/fs/search_files` | Search files by name pattern (glob) |
+| POST | `/api/fs/search_content` | Search file content (rg preferred, Node.js fallback) |
+| POST | `/api/exec` | Execute system command |
+| POST | `/api/exec/stop` | Stop command execution |
+| GET | `/api/exec/running` | List running processes |
+| GET | `/api/status/detail` | Detailed info (work directory, pairing code, search tools) |
+| GET | `/api/logs` | Query audit logs (supports date/category/limit/offset params) |
+| GET | `/api/logs/dates` | Get available log date list |
 
 ### WebSocket
 
-| 路径 | 说明 |
-|------|------|
-| `ws://127.0.0.1:18910/ws/exec/:execId` | 命令执行实时输出流 |
+| Path | Description |
+|------|-------------|
+| `ws://127.0.0.1:18910/ws/exec/:execId` | Real-time command execution output stream |
 
-## 健壮性
+## Robustness
 
-Agent 内置多层异常保护，防止单个错误导致整个服务崩溃：
+The agent has built-in multi-layer exception protection to prevent a single error from crashing the entire service:
 
-- **请求级保护**：每个 HTTP 请求处理外层包裹异常捕获，异常时返回 500 而非崩溃
-- **URL 解析保护**：畸形 URL 不会导致进程崩溃，返回 400
-- **服务器级保护**：端口占用等服务器错误有专门处理，优雅报错退出
-- **全局兜底**：`uncaughtException` 和 `unhandledRejection` 全局捕获，记录错误日志但不退出进程
-- **文件 I/O 保护**：配置文件读写失败不影响服务运行
-- **进程管理保护**：`SIGTERM`/`SIGKILL` 发送对已退出进程有 try-catch 保护
+- **Request-level protection**: Each HTTP request handler is wrapped with exception catching, returns 500 instead of crashing
+- **URL parsing protection**: Malformed URLs don't crash the process, returns 400
+- **Server-level protection**: Server errors like port conflicts are handled gracefully
+- **Global fallback**: `uncaughtException` and `unhandledRejection` global handlers, logs errors but doesn't exit the process
+- **File I/O protection**: Config file read/write failures don't affect service operation
+- **Process management protection**: `SIGTERM`/`SIGKILL` sending has try-catch protection for already-exited processes
 
-## Skill 系统
+## Skill System
 
-Agent 服务内置 Skill 系统，支持将操作流程沉淀为可复用的技能。
+The agent has a built-in Skill system that allows codifying workflows into reusable skills.
 
-### Skill 类型
+### Skill Types
 
-| 类型 | 定义格式 | 执行方式 | 用途 |
-|------|----------|----------|------|
-| **Workflow Skill** | JSON/YAML | 直接执行 | 自动化流程，按步骤执行 |
-| **Agent Skill** | SKILL.md | AI 自主调用 | 知识沉淀，在对话中触发 |
+| Type | Definition Format | Execution | Purpose |
+|------|-------------------|-----------|---------|
+| **Workflow Skill** | JSON/YAML | Direct execution | Automated workflows, step-by-step |
+| **Agent Skill** | SKILL.md | AI autonomous invocation | Knowledge codification, triggered in conversation |
 
-### Skill 目录结构
+### Skill Directory Structure
 
-所有 Skill 存储在 `~/.ai-helper-agent/skills/` 目录下：
+All skills are stored in `~/.ai-helper-agent/skills/`:
 
 ```
 ~/.ai-helper-agent/skills/
-├── workflow-skill.json          # Workflow Skill（JSON 格式）
-├── another-skill.yaml           # Workflow Skill（YAML 格式）
-└── agent-skill/                 # Agent Skill（目录形式）
-    ├── SKILL.md                 # 技能定义文件
-    └── _meta.json               # 元数据（可选）
+├── workflow-skill.json          # Workflow Skill (JSON format)
+├── another-skill.yaml           # Workflow Skill (YAML format)
+└── agent-skill/                 # Agent Skill (directory form)
+    ├── SKILL.md                 # Skill definition file
+    └── _meta.json               # Metadata (optional)
 ```
 
-### SKILL.md 格式
+### SKILL.md Format
 
 ```markdown
 ---
 name: <skill-name>
-description: "<简明描述，包含：(1) 技能做什么，(2) 何时触发调用>"
+description: "<Brief description including: (1) what the skill does, (2) when to trigger>"
 enabled: true
 ---
 
-# <技能标题>
+# <Skill Title>
 
 ## When to Use This Skill
 
-- 触发条件1
-- 触发条件2
+- Trigger condition 1
+- Trigger condition 2
 
 ## Core Capabilities
 
-- 能力1
-- 能力2
+- Capability 1
+- Capability 2
 
 ## Usage
 
 ### Step-by-Step
 
-1. 步骤1
-2. 步骤2
+1. Step 1
+2. Step 2
 
 ## Examples
 
-[具体示例]
+[Concrete examples]
 
 ## Source
 
-从对话中沉淀，创建日期：YYYY-MM-DD
+Codified from conversation, created: YYYY-MM-DD
 ```
 
-### 内置技能
+### Built-in Skills
 
-- **skill-creator**：元技能，用于从对话中创建和更新其他技能
+- **skill-creator**: Meta-skill for creating and updating other skills from conversations
 
 ### Skill API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/skill/list` | 获取所有 Skill 列表 |
-| GET | `/api/skill/:name` | 获取单个 Skill 完整定义 |
-| POST | `/api/skill/import` | 导入新 Skill |
-| POST | `/api/skill/:name/toggle` | 切换启用/停用状态 |
-| DELETE | `/api/skill/:name` | 删除 Skill |
-| POST | `/api/skill/:name/run` | 执行 Workflow Skill |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/skill/list` | Get all skills list |
+| GET | `/api/skill/:name` | Get a single skill's full definition |
+| POST | `/api/skill/import` | Import a new skill |
+| POST | `/api/skill/:name/toggle` | Toggle enable/disable status |
+| DELETE | `/api/skill/:name` | Delete a skill |
+| POST | `/api/skill/:name/run` | Execute a workflow skill |
 
-## MCP 协议扩展
+## MCP Protocol Extension
 
-支持 Model Context Protocol（MCP），扩展第三方工具能力。
+Supports Model Context Protocol (MCP) to extend third-party tool capabilities.
 
-### MCP Server 配置
+### MCP Server Configuration
 
-配置文件路径：`~/.ai-helper-agent/config.json`
+Configuration file path: `~/.ai-helper-agent/config.json`
 
 ```json
 {
@@ -344,28 +344,28 @@ enabled: true
 
 ### MCP API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/mcp/status` | 获取所有 MCP Server 状态 |
-| POST | `/api/mcp/:serverId/connect` | 连接指定 MCP Server |
-| POST | `/api/mcp/:serverId/disconnect` | 断开连接 |
-| GET | `/api/mcp/tools` | 获取所有 MCP 工具列表 |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/mcp/status` | Get all MCP server statuses |
+| POST | `/api/mcp/:serverId/connect` | Connect to specified MCP server |
+| POST | `/api/mcp/:serverId/disconnect` | Disconnect |
+| GET | `/api/mcp/tools` | Get all MCP tools list |
 
-### 工作原理
+### How It Works
 
-1. Agent 启动时自动连接所有启用的 MCP Server
-2. 通过 stdio 建立 JSON-RPC 2.0 通信
-3. 自动发现 MCP Server 提供的工具
-4. 工具调用请求通过 Agent 转发到 MCP Server
-5. 工具结果返回给扩展
+1. Agent auto-connects all enabled MCP servers on startup
+2. Establishes JSON-RPC 2.0 communication via stdio
+3. Auto-discover tools provided by MCP servers
+4. Tool call requests are forwarded to MCP servers via the agent
+5. Tool results are returned to the extension
 
-## 技术栈
+## Tech Stack
 
 - Node.js >= 18
-- 原生 `http` 模块（HTTP 服务）
-- `ws` 库（WebSocket 服务）
-- 零外部框架依赖
-- 可选依赖：`fd`、`rg`（ripgrep）— 用于加速文件搜索
+- Native `http` module (HTTP server)
+- `ws` library (WebSocket server)
+- Zero external framework dependencies
+- Optional dependencies: `fd`, `rg` (ripgrep) — for accelerated file search
 
 ## License
 
