@@ -11,18 +11,18 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_tab',
-      description: 'Tab management',
+      description: 'Manage browser tabs. open=navigate to URL (requires url), switch=change active tab (requires tabId), close=close tab, reload=refresh page, navigate=history back/forward (requires direction)',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: 'navigate=history back/forward (with direction); use open for URL' },
-          url: { type: 'string', description: 'open only' },
-          tabId: { type: 'integer', description: 'required for non-open actions' },
+          action: { type: 'string', enum: ['open', 'switch', 'close', 'reload', 'navigate'], description: 'open: new URL; switch: change tab; close: close tab; reload: refresh; navigate: history back/forward' },
+          url: { type: 'string', description: 'Required when action=open' },
+          tabId: { type: 'integer', description: 'Required for switch/close/reload; omit for open' },
           active: { type: 'boolean' },
           waitForLoad: { type: 'boolean' },
           loadTimeout: { type: 'integer' },
           bypassCache: { type: 'boolean' },
-          direction: { type: 'string', enum: ['back', 'forward'], description: 'navigate only' }
+          direction: { type: 'string', enum: ['back', 'forward'], description: 'Required when action=navigate' }
         },
         required: ['action']
       }
@@ -37,7 +37,7 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'list_tabs',
-      description: 'Get tab list; mode=active returns the current active tab tabId (use this when unsure which tab to operate on)',
+      description: 'Get list of open tabs. Use mode=active to get current tab tabId when unsure which tab to operate on',
       parameters: {
         type: 'object',
         properties: {
@@ -57,15 +57,15 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'search_browser_data',
-      description: 'Search browser bookmarks/history',
+      description: 'Search browser bookmarks or history',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['bookmark', 'history'] },
+          action: { type: 'string', enum: ['bookmark', 'history'], description: 'bookmark: search bookmarks; history: search browsing history' },
           query: { type: 'string' },
           maxResults: { type: 'integer' },
-          startTime: { type: 'integer', description: 'history only' },
-          endTime: { type: 'integer', description: 'history only' }
+          startTime: { type: 'integer', description: 'history only: start timestamp (ms)' },
+          endTime: { type: 'integer', description: 'history only: end timestamp (ms)' }
         },
         required: ['action', 'query']
       }

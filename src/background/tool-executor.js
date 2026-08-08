@@ -183,6 +183,10 @@ registerTranslations('zh', {
     screenshotAnalysisResult: '页面截图分析结果：\n\n**页面**: {title}\n**地址**: {url}\n\n{analysis}',
     screenshotAnalysisTimeout: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别分析超时（60秒），请检查图片识别 API 是否可用或尝试重新截图。',
     screenshotAnalysisError: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n图片识别分析失败: {error}',
+    dialogAccept: '自动确认（accept）',
+    dialogDismiss: '自动取消（dismiss）',
+    dialogRestore: '恢复原生弹窗',
+    dialogSet: '弹窗处理已设置: {mode}。后续 alert/confirm/prompt 将按此模式自动处理',
   },
 });
 registerTranslations('en', {
@@ -355,6 +359,10 @@ registerTranslations('en', {
     screenshotAnalysisResult: 'Page screenshot analysis result:\n\n**Page**: {title}\n**URL**: {url}\n\n{analysis}',
     screenshotAnalysisTimeout: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition analysis timed out (60 seconds), please check if the image recognition API is available or try taking a new screenshot.',
     screenshotAnalysisError: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nImage recognition analysis failed: {error}',
+    dialogAccept: 'auto-accept',
+    dialogDismiss: 'auto-dismiss',
+    dialogRestore: 'restore native dialogs',
+    dialogSet: 'Dialog handling set to: {mode}. Subsequent alert/confirm/prompt will be handled accordingly',
   },
 });
 
@@ -1686,6 +1694,7 @@ const TOOL_HANDLERS = {
   agent_search: executeAgentSearch,
   agent_skill: executeAgentSkill,
   wait_navigation: executeWaitForNavigation,
+  handle_dialog: executeHandleDialog,
   dispatch_task: executeDispatchSubAgent,
   agent_memory: async (args, toolCallId, sessionId) => executeAgentMemory(args, toolCallId, sessionId),
   // ── 合并后的工具 ──
@@ -2536,6 +2545,70 @@ export async function executeFetchUrl(args, toolCallId) {
       url: url,
       tool_call_id: toolCallId 
     };
+  }
+}
+
+/**
+ * 处理页面弹窗（alert/confirm/prompt）
+ * 通过注入脚本到页面 MAIN world 覆盖原生弹窗行为
+ */
+export async function executeHandleDialog(args, toolCallId, sessionId) {
+  const action = args.action;
+  if (!action) {
+    return { success: false, error: t('toolExec.missingAction'), tool_call_id: toolCallId };
+  }
+
+  const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
+  const targetTabId = args.tabId || lastOperatedTab || await getActiveTabId();
+  if (!targetTabId) {
+    return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: targetTabId },
+      world: 'MAIN',
+      func: (dialogAction) => {
+        if (dialogAction === 'restore') {
+          // 恢复原生弹窗
+          if (window.__aihOriginalAlert) {
+            window.alert = window.__aihOriginalAlert;
+            window.confirm = window.__aihOriginalConfirm;
+            window.prompt = window.__aihOriginalPrompt;
+            delete window.__aihOriginalAlert;
+            delete window.__aihOriginalConfirm;
+            delete window.__aihOriginalPrompt;
+          }
+          return 'restored';
+        }
+        // 保存原始方法（仅首次）
+        if (!window.__aihOriginalAlert) {
+          window.__aihOriginalAlert = window.alert;
+          window.__aihOriginalConfirm = window.confirm;
+          window.__aihOriginalPrompt = window.prompt;
+        }
+        if (dialogAction === 'accept') {
+          window.alert = function() {};
+          window.confirm = function() { return true; };
+          window.prompt = function() { return ''; };
+        } else if (dialogAction === 'dismiss') {
+          window.alert = function() {};
+          window.confirm = function() { return false; };
+          window.prompt = function() { return null; };
+        }
+        return dialogAction;
+      },
+      args: [action]
+    });
+
+    const actionLabels = {
+      accept: t('toolExec.dialogAccept'),
+      dismiss: t('toolExec.dialogDismiss'),
+      restore: t('toolExec.dialogRestore')
+    };
+    return makeResult(true, t('toolExec.dialogSet', { mode: actionLabels[action] || action }), { tool_call_id: toolCallId });
+  } catch (e) {
+    return { success: false, error: t('toolExec.executionFailed', { error: e.message }), tool_call_id: toolCallId };
   }
 }
 

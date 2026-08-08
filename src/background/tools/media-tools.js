@@ -35,12 +35,12 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: 'Clipboard read/write',
+      description: 'Clipboard operations. copy: write text to clipboard (requires text); paste: paste from clipboard; get_selected: get currently selected text on page',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['copy', 'paste', 'get_selected'] },
-          text: { type: 'string', description: 'required for copy' },
+          action: { type: 'string', enum: ['copy', 'paste', 'get_selected'], description: 'copy: write text; paste: paste clipboard; get_selected: get page selection' },
+          text: { type: 'string', description: 'Required for copy' },
           format: { type: 'string', enum: ['text', 'html'], description: 'for get_selected' }
         },
         required: ['action']
@@ -97,12 +97,12 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'capture_page',
-      description: 'Capture screenshot of current page. If the user message already contains an image, analyze it directly and do not call this tool.',
+      description: 'Capture page screenshot. download: save image locally; analyze: send to vision model for analysis (requires vision API configured); both: download + analyze',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['download', 'analyze', 'both'] },
-          tabId: { type: 'integer', description: 'required for analyze/both' },
+          action: { type: 'string', enum: ['download', 'analyze', 'both'], description: 'download: save locally; analyze: vision model analysis; both: download + analyze' },
+          tabId: { type: 'integer', description: 'Required for analyze/both' },
           format: { type: 'string', enum: ['jpeg', 'png'] },
           quality: { type: 'integer' },
           visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048, description: 'Max dimension (px) of image for vision analysis' },
@@ -120,7 +120,7 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'browser_info',
-      description: 'Browser information',
+      description: 'Get browser version, platform, and environment info',
       parameters: {
         type: 'object',
         properties: {}
@@ -136,13 +136,13 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'inject_css',
-      description: 'Inject CSS',
+      description: 'Inject custom CSS into the page. style: insert stylesheet; inline: apply inline style to matched elements',
       parameters: {
         type: 'object',
         properties: {
           css: { type: 'string' },
           targetSelector: { type: 'string' },
-          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style=insert stylesheet, inline=inline style' }
+          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style: insert <style> tag; inline: apply to elements matching targetSelector' }
         },
         required: ['css']
       }

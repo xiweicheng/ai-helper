@@ -10,7 +10,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'interact_element',
-      description: 'Click or hover element (supports ref/text/selector locating; prefer ref from query_elements)',
+      description: 'Click or hover on a page element. Locate via ref (recommended, from query_elements), text, or CSS selector',
       parameters: {
         type: 'object',
         properties: {
@@ -36,12 +36,12 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_to',
-      description: 'Scroll page (locate element/coordinates/text); use scroll_collect for infinite scroll collection',
+      description: 'Scroll page to a target. Use scroll_collect for infinite scroll collection',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'], description: 'selector requires selector, coordinates requires x/y, text requires text' },
+          target: { type: 'string', enum: ['selector', 'top', 'bottom', 'coordinates', 'text'], description: 'Scroll target type; selector→requires selector, coordinates→requires x/y, text→requires text' },
           selector: { type: 'string' },
           text: { type: 'string', description: 'When target=text, scroll to element containing this text' },
           x: { type: 'integer' },
@@ -64,7 +64,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'wait_element',
-      description: 'Wait for element state change; use wait_navigation for page navigation',
+      description: 'Wait for an element to appear/disappear/become visible/hidden. For page navigation, use wait_navigation',
       parameters: {
         type: 'object',
         properties: {
@@ -120,6 +120,26 @@ export const BROWSER_TOOLS = [
     }
   },
   {
+    id: 'handle_dialog',
+    category: 'page_interaction',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'handle_dialog',
+      description: 'Handle page dialogs (alert/confirm/prompt). Use BEFORE an action that triggers a dialog. accept=auto-confirm, dismiss=auto-cancel, restore=revert to native behavior',
+      parameters: {
+        type: 'object',
+        properties: {
+          tabId: { type: 'integer', description: 'Omit to use active tab' },
+          action: { type: 'string', enum: ['accept', 'dismiss', 'restore'], description: 'accept: auto-OK/Allow; dismiss: auto-Cancel/Block; restore: revert to native dialogs' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
     id: 'fill_form',
     category: 'form_operation',
     execution: 'content_script',
@@ -128,7 +148,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'fill_form',
-      description: 'Batch fill form; for React controlled components with a single field, prefer keyboard_input',
+      description: 'Fill multiple form fields at once. For single-field input on React/Vue apps (controlled components), prefer keyboard_input',
       parameters: {
         type: 'object',
         properties: {
@@ -160,7 +180,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'keyboard_input',
-      description: 'Keyboard input (text=type text into focused element, key=dispatch key such as Enter/Escape; bypasses React controlled components)',
+      description: 'Type text or dispatch a key event into the focused element. Bypasses React/Vue controlled components. text=type into field, key=single key like Enter/Escape',
       parameters: {
         type: 'object',
         properties: {
@@ -231,7 +251,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'page_content',
-      description: 'Get page content; use query_elements for element locating, extract_data for structured extraction',
+      description: 'Get page text or HTML content. For structured data (tables/links/images), use extract_data. For interactive elements, use query_elements',
       parameters: {
         type: 'object',
         properties: {
@@ -253,19 +273,19 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'extract_data',
-      description: 'Extract structured data',
+      description: 'Extract structured data from page',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'] },
+          dataType: { type: 'string', enum: ['table', 'metadata', 'links', 'forms', 'images'], description: 'table→HTML tables, metadata→meta/SEO tags, links→hyperlinks, forms→form elements, images→image elements' },
           selector: { type: 'string' },
-          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: 'links only' },
-          includeHeaders: { type: 'boolean', description: 'table only' },
-          format: { type: 'string', enum: ['json', 'markdown'], description: 'table only' },
-          includeImages: { type: 'boolean', description: 'links only' },
-          minWidth: { type: 'integer', description: 'images only' },
-          minHeight: { type: 'integer', description: 'images only' },
+          filterType: { type: 'string', enum: ['all', 'internal', 'external'], description: 'links only: filter by link target' },
+          includeHeaders: { type: 'boolean', description: 'table only: include header row' },
+          format: { type: 'string', enum: ['json', 'markdown'], description: 'table only: output format' },
+          includeImages: { type: 'boolean', description: 'links only: include images as links' },
+          minWidth: { type: 'integer', description: 'images only: min width filter' },
+          minHeight: { type: 'integer', description: 'images only: min height filter' },
           maxResults: { type: 'integer' }
         },
         required: ['dataType']
@@ -281,7 +301,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'query_elements',
-      description: 'Query interactive elements; recommended as the primary locating method; returned selector can be used directly in interact_element/fill_form',
+      description: 'Query interactive elements (buttons, inputs, links, etc). Returns ref numbers for use in interact_element/fill_form. Recommended as the primary element locating method',
       parameters: {
         type: 'object',
         properties: {
@@ -307,7 +327,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'search_in_page',
-      description: 'Text search in current page',
+      description: 'Find text in current page content',
       parameters: {
         type: 'object',
         properties: {
@@ -332,7 +352,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'iframe_content',
-      description: 'Get iframe content',
+      description: 'Get content of an iframe embedded in the page',
       parameters: {
         type: 'object',
         properties: {
@@ -354,7 +374,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'scroll_collect',
-      description: 'Scroll page and collect content, suitable for infinite scroll/lazy-loaded pages',
+      description: 'Scroll page and collect content incrementally. Use for infinite scroll or lazy-loaded pages',
       parameters: {
         type: 'object',
         properties: {

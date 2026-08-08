@@ -11,13 +11,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_file',
-      description: 'File operations',
+      description: 'File operations on the agent local filesystem. read: get file content; write: create/overwrite file (requires content); list: list directory; delete: move to trash; download: download file to browser',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'], description: 'Operation type' },
-          path: { type: 'string', description: 'optional for list' },
-          content: { type: 'string', description: 'required for write' }
+          action: { type: 'string', enum: ['read', 'write', 'list', 'delete', 'download'], description: 'read: get content; write: create/overwrite; list: directory listing; delete: trash; download: save to browser' },
+          path: { type: 'string', description: 'File/directory path; optional for list (defaults to workdir)' },
+          content: { type: 'string', description: 'Required for write: file content' }
         },
         required: ['action']
       }
@@ -32,12 +32,12 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_trash',
-      description: 'Trash management',
+      description: 'Manage agent trash bin. list: view deleted items; restore: recover from trash (requires trashId)',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'restore'], description: 'Operation type' },
-          trashId: { type: 'string', description: 'required for restore' },
+          action: { type: 'string', enum: ['list', 'restore'], description: 'list: view trash; restore: recover item (requires trashId)' },
+          trashId: { type: 'string', description: 'Required for restore' },
           hours: { type: 'integer' },
           type: { type: 'string', enum: ['file', 'directory'] }
         },
@@ -54,7 +54,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_exec',
-      description: 'Execute command',
+      description: 'Execute a shell command on the agent machine. Returns stdout/stderr and exit code',
       parameters: {
         type: 'object',
         properties: {
@@ -76,11 +76,11 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_search',
-      description: 'Search files/content',
+      description: 'Search files or file content on the agent machine. file: find files by name pattern; content: search text/regex inside files',
       parameters: {
         type: 'object',
         properties: {
-          searchType: { type: 'string', enum: ['file', 'content'] },
+          searchType: { type: 'string', enum: ['file', 'content'], description: 'file: find files by name; content: search inside files' },
           path: { type: 'string' },
           pattern: { type: 'string' },
           recursive: { type: 'boolean' },
@@ -102,13 +102,13 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_skill',
-      description: 'Skill load and execute (use run for Workflow, use load for Agent)',
+      description: 'Load or run a Skill. run: execute a Workflow Skill (requires params); load: load an Agent Skill instruction into context',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['load', 'run'], description: 'run is only for Workflow Skill; load is for loading Agent Skill instructions' },
+          action: { type: 'string', enum: ['load', 'run'], description: 'run: execute Workflow Skill (requires params); load: load Agent Skill instructions' },
           name: { type: 'string' },
-          params: { type: 'object', description: 'required for run' }
+          params: { type: 'object', description: 'Required for run: Workflow Skill parameters' }
         },
         required: ['action', 'name']
       }
@@ -123,12 +123,12 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_agent',
-      description: 'Agent management',
+      description: 'List or switch paired AI agents',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['list', 'switch'] },
-          agentId: { type: 'string', description: 'required for switch' },
+          action: { type: 'string', enum: ['list', 'switch'], description: 'list: show all paired agents; switch: change active agent (requires agentId)' },
+          agentId: { type: 'string', description: 'Required for switch' },
           agentName: { type: 'string' }
         },
         required: ['action']
