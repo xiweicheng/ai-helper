@@ -3475,6 +3475,39 @@ body {
   background: #f0f0f0;
   margin: 4px 0 6px;
 }
+/* 账户余额区域 */
+.token-popup-balance-section {
+  margin-top: 2px;
+}
+.token-popup-balance-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+.token-popup-balance-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667eea;
+}
+.token-popup-balance-loading,
+.token-popup-balance-error {
+  font-size: 11px;
+  color: #9ca3af;
+  padding: 4px 0;
+}
+.token-popup-balance-error {
+  color: #ef4444;
+}
+.token-popup-balance-value {
+  color: #059669 !important;
+  font-size: 14px !important;
+}
+.token-popup-balance-sub {
+  font-size: 12px !important;
+  color: #6b7280 !important;
+  font-weight: 500 !important;
+}
 
 /* 节点数点击筛选：可点击态与选中高亮 */
 .thinking-process-stat.filterable {

@@ -245,6 +245,12 @@ registerTranslations('zh', {
     inputUnit: 'tokens',
     outputUnit: 'tokens',
     percent: '{p}%',
+    balanceTitle: '账户余额',
+    balanceTotal: '总余额',
+    balanceGranted: '赠送余额',
+    balanceToppedUp: '充值余额',
+    balanceLoading: '查询中...',
+    balanceFailed: '查询失败',
   }
 });
 registerTranslations('en', {
@@ -256,6 +262,12 @@ registerTranslations('en', {
     inputUnit: 'tokens',
     outputUnit: 'tokens',
     percent: '{p}%',
+    balanceTitle: 'Account Balance',
+    balanceTotal: 'Total Balance',
+    balanceGranted: 'Granted',
+    balanceToppedUp: 'Topped Up',
+    balanceLoading: 'Loading...',
+    balanceFailed: 'Query Failed',
   }
 });
 
@@ -315,6 +327,15 @@ export function showTokenPopup(tokenSummary, anchorEl) {
           <span class="token-popup-percent">${outputPercent}%</span>
         </div>
       </div>
+      <div class="token-popup-balance-section" style="display:none;">
+        <div class="token-popup-divider"></div>
+        <div class="token-popup-balance-header">
+          <span class="token-popup-balance-title">${t('tokenPopup.balanceTitle')}</span>
+        </div>
+        <div class="token-popup-balance-content">
+          <span class="token-popup-balance-loading">${t('tokenPopup.balanceLoading')}</span>
+        </div>
+      </div>
     </div>
   `;
 
@@ -369,6 +390,68 @@ export function showTokenPopup(tokenSummary, anchorEl) {
   setTimeout(() => {
     document.addEventListener('click', outsideHandler, true);
   }, 0);
+
+  // DeepSeek 模型时异步查询账户余额
+  _fetchDeepSeekBalance(popup);
+}
+
+/**
+ * 查询 DeepSeek 账户余额并更新弹窗 UI
+ * 仅当当前模型名称包含 'deepseek' 时才发起查询
+ */
+async function _fetchDeepSeekBalance(popup) {
+  try {
+    const config = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName']);
+    const model = (config.modelName || '').toLowerCase();
+    // 仅 DeepSeek 模型展示余额
+    if (!model.includes('deepseek')) return;
+    const apiKey = config.apiKey;
+    if (!apiKey) return;
+
+    const balanceSection = popup.querySelector('.token-popup-balance-section');
+    if (!balanceSection) return;
+    balanceSection.style.display = '';
+
+    const apiBase = config.apiBase || 'https://api.deepseek.com';
+    const resp = await fetch(`${apiBase.replace(/\/+$/, '')}/user/balance`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${apiKey}` }
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    if (!data.is_available || !data.balance_infos?.length) {
+      const content = balanceSection.querySelector('.token-popup-balance-content');
+      content.innerHTML = `<span class="token-popup-balance-error">${t('tokenPopup.balanceFailed')}</span>`;
+      return;
+    }
+
+    const info = data.balance_infos[0];
+    const currency = info.currency || 'CNY';
+    const content = balanceSection.querySelector('.token-popup-balance-content');
+    content.innerHTML = `
+      <div class="token-popup-row token-popup-total">
+        <span class="token-popup-label">${t('tokenPopup.balanceTotal')}</span>
+        <span class="token-popup-value token-popup-balance-value">${info.total_balance} ${currency}</span>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t('tokenPopup.balanceToppedUp')}</span>
+        <span class="token-popup-value token-popup-balance-sub">${info.topped_up_balance} ${currency}</span>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t('tokenPopup.balanceGranted')}</span>
+        <span class="token-popup-value token-popup-balance-sub">${info.granted_balance} ${currency}</span>
+      </div>
+    `;
+  } catch (e) {
+    console.warn('[TokenPopup] Failed to fetch DeepSeek balance:', e);
+    const balanceSection = popup.querySelector('.token-popup-balance-section');
+    if (!balanceSection) return;
+    balanceSection.style.display = '';
+    const content = balanceSection.querySelector('.token-popup-balance-content');
+    content.innerHTML = `<span class="token-popup-balance-error">${t('tokenPopup.balanceFailed')}</span>`;
+  }
 }
 
 /**
