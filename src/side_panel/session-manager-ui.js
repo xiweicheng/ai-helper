@@ -167,6 +167,8 @@ export async function renderSessionTabs() {
   const actionsContainer = document.getElementById('sessionTabsActions');
   if (!tabsContainer || !scrollContainer || !actionsContainer) return;
 
+  // 先隐藏容器（清除上次的内联 opacity，让 CSS opacity:0 生效），避免重渲染时用户看到中间态
+  scrollContainer.style.opacity = '';
   scrollContainer.innerHTML = '';
 
   sessionsData.list.forEach(session => {
@@ -335,12 +337,16 @@ function setupOverflowObserver() {
 // ==================== 活跃标签滚动 ====================
 
 function scrollToActiveTab(scrollContainer) {
-  setTimeout(() => {
-    const activeTab = scrollContainer.querySelector('.session-tab.active');
-    if (activeTab) {
-      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    }
-  }, 50);
+  const activeTab = scrollContainer.querySelector('.session-tab.active');
+  if (activeTab) {
+    // 同步设置 scrollLeft：DOM 操作与滚动定位之间无异步间隙，浏览器不会在中间绘制
+    const tabLeft = activeTab.offsetLeft;
+    const tabWidth = activeTab.offsetWidth;
+    const containerWidth = scrollContainer.clientWidth;
+    scrollContainer.scrollLeft = tabLeft - (containerWidth - tabWidth) / 2;
+  }
+  // 渲染 + 定位均已完成，显示容器（内联样式覆盖 CSS 的 opacity:0）
+  scrollContainer.style.opacity = '1';
 }
 
 // ==================== 标签栏拖拽排序 ====================

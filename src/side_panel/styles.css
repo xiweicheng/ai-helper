@@ -1813,7 +1813,8 @@ body {
   overflow-y: hidden;
   flex: 1;
   min-width: 0;
-  scroll-behavior: smooth;
+  /* 默认隐藏，由 JS 渲染并定位滚动位置后再显示，避免首次打开时可见的滚动跳动 */
+  opacity: 0;
 }
 
 .session-tabs-scroll::-webkit-scrollbar {
