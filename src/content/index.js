@@ -55,19 +55,19 @@ console.log('[ContentScript] content script loaded URL:', window.location.href, 
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'A') {
     e.preventDefault();
-    chrome.action.click();
+    try { chrome.action.click(); } catch { /* 扩展上下文失效时静默忽略 */ }
   }
 
   // Alt+S ：全页面截图（页面焦点时可用）
   if (e.altKey && !e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
-    chrome.runtime.sendMessage({ type: 'CAPTURE_TAB_FROM_PAGE' });
+    try { chrome.runtime.sendMessage({ type: 'CAPTURE_TAB_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
   }
 
   // Alt+Shift+S ：区域截图（页面焦点时可用）
   if (e.altKey && e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
-    chrome.runtime.sendMessage({ type: 'CAPTURE_REGION_FROM_PAGE' });
+    try { chrome.runtime.sendMessage({ type: 'CAPTURE_REGION_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
   }
 });
 
@@ -248,6 +248,21 @@ if (isExtensionValid()) {
   sendResponse(result);
 });
 }
+
+// ==================== 全局兜底：屏蔽 Extension context invalidated 错误 ====================
+// 扩展上下文失效后，仍有异步回调/事件触发 chrome.runtime.* 调用，
+// 某些边界情况下 try-catch 无法完全覆盖，用全局过滤器兜底屏蔽。
+window.addEventListener('error', (event) => {
+  if (event.message && event.message.includes('Extension context invalidated')) {
+    event.preventDefault();
+  }
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = event.reason?.message || String(event.reason);
+  if (msg.includes('Extension context invalidated')) {
+    event.preventDefault();
+  }
+});
 
 // 初始化选中文本浮动工具栏（确保在 i18n 就绪后执行，首次渲染使用正确语言）
 i18nReady.then(() => { initSelectionToolbar(); });

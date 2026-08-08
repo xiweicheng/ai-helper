@@ -1180,7 +1180,7 @@ function onMouseUp() {
     }
     
     // 显示工具栏前，先通知所有 frame 关闭已有的工具栏和结果面板
-    chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {});
+    try { chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {}); } catch { /* 扩展上下文失效时静默忽略 */ }
     
     showToolbar(x, y);
     pendingSelection = null;
@@ -1470,16 +1470,20 @@ function sendToAI(action, text, customSystemPrompt) {
     : getToolbarPosition();
   showResultLoading(pos.x, pos.y);
   
-  chrome.runtime.sendMessage({
-    type: 'SELECTION_TOOLBAR_ACTION',
-    action: action,
-    text: text,
-    prompt: message,
-    systemPrompt: customSystemPrompt || ''
-  }).catch(err => {
-    logger.error('[SelectionToolbar] sendmessage failed:', err);
-    showResultError(pos.x, pos.y, err.message);
-  });
+  try {
+    chrome.runtime.sendMessage({
+      type: 'SELECTION_TOOLBAR_ACTION',
+      action: action,
+      text: text,
+      prompt: message,
+      systemPrompt: customSystemPrompt || ''
+    }).catch(err => {
+      logger.error('[SelectionToolbar] sendmessage failed:', err);
+      showResultError(pos.x, pos.y, err.message);
+    });
+  } catch {
+    // 扩展上下文失效时静默忽略
+  }
 }
 
 // ==================== 监听 AI 响应 ====================
