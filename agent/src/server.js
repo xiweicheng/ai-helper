@@ -485,6 +485,39 @@ export function startServer() {
       });
     }
 
+    // Agent 关闭：本机来源（CLI stop）免认证，远程来源仍需认证（防止 0.0.0.0 监听时遭网络攻击）
+    if (req.method === 'POST' && pathname === '/api/shutdown') {
+      const remoteIp = req.socket.remoteAddress || '';
+      const isLocal = remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1' || remoteIp === 'localhost';
+      if (!isLocal) {
+        // 远程来源：走正常认证流程
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          logSecurity('shutdown_auth_missing', { path: pathname, remote: remoteIp });
+          return jsonResponse(res, 401, { success: false, error: t('error.noToken') });
+        }
+        const extId = verifyToken(authHeader.slice(7));
+        if (!extId) {
+          logSecurity('shutdown_auth_invalid', { path: pathname, remote: remoteIp });
+          return jsonResponse(res, 403, { success: false, error: t('error.invalidToken') });
+        }
+      }
+      if (agentOperationInProgress) {
+        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
+      }
+      if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
+        const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
+        return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
+      }
+      agentOperationInProgress = true;
+      lastOperationTime = Date.now();
+      logSystem('shutdown', { reason: 'api_request', local: isLocal, remote: remoteIp });
+      jsonResponse(res, 200, { success: true, message: t('message.shuttingDown') });
+      // 延迟 200ms 再关闭，确保响应数据已送达客户端（res.end() 仅写入缓冲区，不保证客户端已接收）
+      setTimeout(() => shutdown(), 200);
+      return;
+    }
+
     // ---------- 需要认证的接口 ----------
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -501,24 +534,6 @@ export function startServer() {
     // 心跳接口（需认证）：仅刷新 lastAuthTime 维持"插件在线"状态，不返回敏感信息
     if (req.method === 'GET' && pathname === '/api/heartbeat') {
       return jsonResponse(res, 200, { success: true, time: Date.now() });
-    }
-
-    // Agent 关闭（需认证）
-    if (req.method === 'POST' && pathname === '/api/shutdown') {
-      if (agentOperationInProgress) {
-        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
-      }
-      if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
-        const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
-        return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
-      }
-      agentOperationInProgress = true;
-      lastOperationTime = Date.now();
-      logSystem('shutdown', { reason: 'api_request', extId });
-      jsonResponse(res, 200, { success: true, message: t('message.shuttingDown') });
-      // 延迟 200ms 再关闭，确保响应数据已送达客户端（res.end() 仅写入缓冲区，不保证客户端已接收）
-      setTimeout(() => shutdown(), 200);
-      return;
     }
 
     // 重启 Agent（需认证）
