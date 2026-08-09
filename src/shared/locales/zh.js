@@ -147,6 +147,8 @@ export default {
     tokenStats: 'Token 统计',
     auditLog: '命令执行审计',
     shortcuts: '查看快捷键',
+    detachTitle: '脱离为独立窗口',
+    attachTitle: '回归侧边栏',
   },
 
   // 会话管理

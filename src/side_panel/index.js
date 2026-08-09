@@ -4093,3 +4093,48 @@ document.addEventListener('DOMContentLoaded', async () => {
 // 图片辅助函数（updateImagePreviewVisibility / updateTextareaPadding / updateFileInputVisibility
 // / renderImagePreviews / captureFullPageScreenshot / captureRegionScreenshot
 // / cropImage / handlePageScreenshotResult）已拆分到 image-helpers.js
+
+// ==================== 脱离/回归侧边栏 ====================
+document.addEventListener('DOMContentLoaded', () => {
+  const isPopup = new URLSearchParams(window.location.search).has('popup');
+  const detachBtn = document.getElementById('detachBtn');
+  const attachBtn = document.getElementById('attachBtn');
+
+  if (isPopup) {
+    // 独立窗口模式：显示回归按钮
+    if (attachBtn) attachBtn.style.display = 'flex';
+  } else {
+    // 侧边栏模式：显示脱离按钮
+    if (detachBtn) detachBtn.style.display = 'flex';
+  }
+
+  // 点击脱离：侧边栏 → 独立窗口
+  if (detachBtn) {
+    detachBtn.addEventListener('click', async () => {
+      try {
+        const resp = await chrome.runtime.sendMessage({ type: 'DETACH_SIDEPANEL' });
+        if (resp?.success) {
+          // 关闭侧边栏
+          try { window.close(); } catch (e) { /* 忽略 */ }
+        }
+      } catch (e) {
+        logger.warn('[SidePanel] detach failed:', e?.message);
+      }
+    });
+  }
+
+  // 点击回归：独立窗口 → 侧边栏
+  if (attachBtn) {
+    attachBtn.addEventListener('click', async () => {
+      try {
+        // 获取当前弹窗的 windowId
+        const winId = (await chrome.windows.getCurrent()).id;
+        await chrome.runtime.sendMessage({ type: 'ATTACH_SIDEPANEL', windowId: winId });
+        // 关闭弹窗（background 会处理 remove，但以防万一）
+        try { window.close(); } catch (e) { /* 忽略 */ }
+      } catch (e) {
+        logger.warn('[SidePanel] attach failed:', e?.message);
+      }
+    });
+  }
+});

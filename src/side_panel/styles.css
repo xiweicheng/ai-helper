@@ -112,6 +112,28 @@ body {
   color: rgba(255, 255, 255, 0.95);
   transform: scale(1.08);
 }
+.header .detach-btn,
+.header .attach-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  margin-left: 4px;
+}
+.header .detach-btn:hover,
+.header .attach-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+  transform: scale(1.08);
+}
 .header-more-wrapper {
   position: relative;
 }

@@ -74,6 +74,23 @@ let skillPromptsCache = null;
 // 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
 const keepalivePorts = new Map(); // sessionId -> Port
 
+// 脱离窗口的 windowId（全局变量，同步访问）
+// chrome.sidePanel.open() 要求用户手势上下文，不能在 await 之后调用，
+// 因此用全局变量跟踪脱离窗口状态，避免 async storage 破坏手势上下文
+let _detachWindowId = null;
+
+// SW 启动时从 storage 恢复脱离窗口状态
+chrome.storage.local.get('_detachWindowId', (result) => {
+  _detachWindowId = result._detachWindowId || null;
+  // 验证窗口是否仍然存在
+  if (_detachWindowId) {
+    chrome.windows.get(_detachWindowId).catch(() => {
+      _detachWindowId = null;
+      chrome.storage.local.remove('_detachWindowId').catch(() => {});
+    });
+  }
+});
+
 chrome.runtime.onConnect.addListener(async (port) => {
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
@@ -121,8 +138,43 @@ chrome.runtime.onConnect.addListener(async (port) => {
 /**
  * Side Panel 路由配置
  * Chrome 114+ 使用 side_panel.open() API
+ * 不使用 openPanelOnActionClick，改为手动控制：
+ * 当脱离窗口存在时，点击插件图标不再打开侧边栏，避免多窗口并行
  */
-chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true });
+chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
+
+// 手动处理插件图标点击：脱离窗口存在时跳过，否则打开侧边栏
+// 注意：sidePanel.open() 要求用户手势上下文，必须同步调用，不能 await
+chrome.action.onClicked.addListener((tab) => {
+  if (_detachWindowId) {
+    // 脱离窗口仍存在，尝试聚焦到该窗口
+    try {
+      chrome.windows.update(_detachWindowId, { focused: true }).catch(() => {
+        // 窗口已不存在，清理并打开侧边栏
+        _detachWindowId = null;
+        chrome.storage.local.remove('_detachWindowId').catch(() => {});
+        chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
+      });
+    } catch {
+      _detachWindowId = null;
+      chrome.storage.local.remove('_detachWindowId').catch(() => {});
+      chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
+    }
+    return;
+  }
+  chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
+});
+
+// 监听脱离窗口被关闭（用户直接关闭窗口），清理 windowId
+// 注：windows.onRemoved 不在用户手势上下文中，无法调用 sidePanel.open()，
+// 因此不自动重开侧边栏，用户点击插件图标或快捷键即可重新打开
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (_detachWindowId === windowId) {
+    _detachWindowId = null;
+    chrome.storage.local.remove('_detachWindowId').catch(() => {});
+    logger.debug('[Background] detached window closed, cleaned up windowId:', windowId);
+  }
+});
 
 // 监听标签页变化，确保 Side Panel 可以正确打开
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -143,6 +195,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.commands?.onCommand?.addListener((command) => {
   if (command !== '_toggle_sidepanel') return;
   try {
+    // 脱离窗口存在时，快捷键聚焦到脱离窗口而非操作侧边栏
+    if (_detachWindowId) {
+      try {
+        chrome.windows.update(_detachWindowId, { focused: true }).catch(() => {
+          _detachWindowId = null;
+          chrome.storage.local.remove('_detachWindowId').catch(() => {});
+        });
+      } catch {
+        _detachWindowId = null;
+        chrome.storage.local.remove('_detachWindowId').catch(() => {});
+      }
+      return;
+    }
     const views = chrome.extension.getViews({ type: 'side_panel' });
     if (views.length > 0) {
       // 已打开 → 通知 Side Panel 关闭自身
@@ -150,9 +215,13 @@ chrome.commands?.onCommand?.addListener((command) => {
         logger.warn('[Background] send CLOSE_SIDEPANEL failed:', e?.message);
       });
     } else {
-      // 未打开 → 打开（onCommand 事件即用户手势）
-      chrome.sidePanel?.open?.().catch((e) => {
-        logger.warn('[Background] open sidePanel failed:', e?.message);
+      // 未打开 → 获取当前活动标签页后打开（onCommand 事件即用户手势）
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]?.id) {
+          chrome.sidePanel?.open?.({ tabId: tabs[0].id }).catch((e) => {
+            logger.warn('[Background] open sidePanel failed:', e?.message);
+          });
+        }
       });
     }
   } catch (e) {
@@ -179,6 +248,8 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | GET_SESSION                   | side_panel  | 获取当前模型配置            | 是   |
 // | GET_CHAT_CONFIG               | side_panel  | 获取聊天完整配置            | 是   |
 // | OPEN_OPTIONS_PAGE             | side_panel  | 打开配置页面                | 否   |
+// | DETACH_SIDEPANEL              | side_panel  | 脱离为独立窗口              | 是   |
+// | ATTACH_SIDEPANEL              | side_panel  | 回归侧边栏                  | 是   |
 // | SELECTION_TOOLBAR_ACTION      | content     | 划词工具栏操作（ai-search/explain/translate/summary）| 否 |
 // | FILL_SIDEPANEL_INPUT          | content     | 追问：填充输入框             | 否   |
 // | DIRECT_SEND                   | content     | 追问：直接发送文本           | 否   |
@@ -782,6 +853,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return false;
   }
+
+  // 脱离侧边栏为独立窗口
+  if (message.type === 'DETACH_SIDEPANEL') {
+    chrome.windows.create({
+      url: chrome.runtime.getURL('side_panel.html') + '?popup=1',
+      type: 'popup',
+      width: 480,
+      height: 720,
+    }, (win) => {
+      if (chrome.runtime.lastError) {
+        logger.warn('[Background] detach sidePanel failed:', chrome.runtime.lastError.message);
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      // 记录弹窗 windowId，供后续回归使用（全局变量 + storage 双写）
+      _detachWindowId = win.id;
+      chrome.storage.local.set({ _detachWindowId: win.id }).catch(() => {});
+      logger.debug('[Background] sidePanel detached, windowId:', win.id);
+      sendResponse({ success: true, windowId: win.id });
+    });
+    return true; // 异步响应
+  }
+
+  // 回归侧边栏
+  if (message.type === 'ATTACH_SIDEPANEL') {
+    // 清除全局变量和 storage
+    _detachWindowId = null;
+    // 关闭弹窗窗口
+    if (message.windowId) {
+      chrome.windows.remove(message.windowId).catch(() => {});
+    }
+    chrome.storage.local.remove('_detachWindowId').catch(() => {});
+    // 获取当前活动标签页后打开侧边栏
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.sidePanel?.open?.({ tabId: tabs[0].id }).catch(err => {
+          logger.warn('[Background] open sidePanel after attach failed:', err?.message);
+        });
+      }
+    });
+    sendResponse({ success: true });
+    return false;
+  }
+
   // 选中文本工具栏操作
   if (message.type === 'SELECTION_TOOLBAR_ACTION') {
     const { prompt, action, text, systemPrompt } = message;
@@ -792,8 +907,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // AI搜索：打开侧边栏，在侧边栏中发起搜索
     if (action === 'ai-search') {
-      // 在消息处理器中直接调用 sidePanel.open（必须在任何 await 之前，保留用户手势上下文）
-      if (tabId) {
+      // 检查脱离窗口是否存在，存在则不打开侧边栏（弹窗会接收消息）
+      const hasDetachWindow = chrome.extension.getViews().some(
+        v => v.location?.search?.includes('popup=1')
+      );
+      if (!hasDetachWindow && tabId) {
         chrome.sidePanel.open({ tabId }).catch(err => {
           logger.warn('[Background] open Side Panel failed:', err?.message || err);
         });

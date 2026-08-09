@@ -147,6 +147,8 @@ export default {
     tokenStats: 'Token Stats',
     auditLog: 'Command Audit',
     shortcuts: 'Shortcuts',
+    detachTitle: 'Detach to standalone window',
+    attachTitle: 'Attach back to side panel',
   },
 
   // Session management
