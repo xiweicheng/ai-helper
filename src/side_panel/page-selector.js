@@ -2,6 +2,7 @@
 import state from './state.js';
 import { escapeHtml, adjustInputHeight } from './utils.js';
 import { hideAgentAtSelector } from './agent-at-selector.js';
+import { sendMessage } from './chat-manager.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -10,6 +11,12 @@ registerTranslations('zh', {
     noOpenPages: '暂无打开的网页',
     noTitle: '无标题',
     currentTab: '当前',
+    interpretPage: '解读',
+    summarizePage: '总结',
+    translatePage: '翻译',
+    interpretMsg: '解读一下当前网页',
+    summarizeMsg: '总结一下当前网页',
+    translateMsg: '翻译一下当前网页',
   },
 });
 registerTranslations('en', {
@@ -17,6 +24,12 @@ registerTranslations('en', {
     noOpenPages: 'No open pages',
     noTitle: 'Untitled',
     currentTab: 'Current',
+    interpretPage: 'Interpret',
+    summarizePage: 'Summarize',
+    translatePage: 'Translate',
+    interpretMsg: 'Interpret the current webpage',
+    summarizeMsg: 'Summarize the current webpage',
+    translateMsg: 'Translate the current webpage',
   },
 });
 
@@ -76,7 +89,7 @@ export async function renderPageList(filterText = '') {
     const isPageSelected = tab.id === currentSelectedPageId;
 
     return `
-      <div class="prompt-item ${index === 0 ? 'selected' : ''}"
+      <div class="prompt-item prompt-item-page ${index === 0 ? 'selected' : ''}"
            data-index="${index}" data-tab-id="${tab.id}">
         <span class="prompt-item-index">${index + 1}</span>
         ${favIcon}
@@ -84,13 +97,25 @@ export async function renderPageList(filterText = '') {
         ${isActiveBadge}
         <span class="prompt-item-code" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
         ${isPageSelected ? `<span class="page-item-actions"><span class="page-selected-mark">✓</span></span>` : ''}
+        <span class="page-action-toolbar">
+          <span class="page-action-btn" data-action="interpret" data-tab-id="${tab.id}" title="${t('pageSelector.interpretPage')}">${t('pageSelector.interpretPage')}</span>
+          <span class="page-action-btn" data-action="summarize" data-tab-id="${tab.id}" title="${t('pageSelector.summarizePage')}">${t('pageSelector.summarizePage')}</span>
+          <span class="page-action-btn" data-action="translate" data-tab-id="${tab.id}" title="${t('pageSelector.translatePage')}">${t('pageSelector.translatePage')}</span>
+        </span>
       </div>
     `;
   }).join('');
 
   // 绑定点击事件
   pageList.querySelectorAll('.prompt-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+      // 工具栏按钮点击
+      const actionBtn = e.target.closest('.page-action-btn');
+      if (actionBtn) {
+        e.stopPropagation();
+        handlePageAction(parseInt(actionBtn.dataset.tabId), actionBtn.dataset.action);
+        return;
+      }
       const tabId = parseInt(item.dataset.tabId);
       selectPageByTabId(tabId);
     });
@@ -186,6 +211,36 @@ function selectPageByTabId(tabId) {
       userInput.focus();
       adjustInputHeight();
     }
+  });
+}
+
+/**
+ * 处理网页快捷操作（解读/总结/翻译）
+ */
+export function handlePageAction(tabId, action) {
+  const msgMap = {
+    interpret: t('pageSelector.interpretMsg'),
+    summarize: t('pageSelector.summarizeMsg'),
+    translate: t('pageSelector.translateMsg'),
+  };
+  const msg = msgMap[action];
+  if (!msg) return;
+
+  // 先选中该网页，再发送消息
+  chrome.tabs.get(tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab) {
+      logger.error('[PageSelector] get tab info failed:', chrome.runtime.lastError);
+      return;
+    }
+    selectPage(tab);
+    hideAgentAtSelector();
+
+    const userInput = document.getElementById('userInput');
+    if (userInput) {
+      userInput.value = msg;
+      adjustInputHeight();
+    }
+    sendMessage();
   });
 }
 

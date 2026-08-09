@@ -4,7 +4,7 @@ import { getAllAgents } from './agent-store.js';
 import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-manager.js';
 import { escapeHtml, updateDropdownPosition } from './utils.js';
 import { adjustInputHeight } from './utils.js';
-import { getOpenTabs, renderPageList, updatePageSelection, selectPage } from './page-selector.js';
+import { getOpenTabs, renderPageList, updatePageSelection, selectPage, handlePageAction } from './page-selector.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -496,13 +496,18 @@ async function renderMergedAtList(filterText = '') {
     const isPageSelected = tab.id === currentSelectedPageId;
 
     html += `
-      <div class="prompt-item"
+      <div class="prompt-item prompt-item-page"
            data-index="${globalIndex}" data-type="page" data-tab-id="${tab.id}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         ${favIcon}
         <span class="prompt-item-content" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
         <span class="prompt-item-code" title="${escapeHtml(url)}">${escapeHtml(url)}</span>
         ${isPageSelected ? `<span class="page-item-actions"><span class="page-selected-mark">✓</span></span>` : ''}
+        <span class="page-action-toolbar">
+          <span class="page-action-btn" data-action="interpret" data-tab-id="${tab.id}" title="${t('pageSelector.interpretPage')}">${t('pageSelector.interpretPage')}</span>
+          <span class="page-action-btn" data-action="summarize" data-tab-id="${tab.id}" title="${t('pageSelector.summarizePage')}">${t('pageSelector.summarizePage')}</span>
+          <span class="page-action-btn" data-action="translate" data-tab-id="${tab.id}" title="${t('pageSelector.translatePage')}">${t('pageSelector.translatePage')}</span>
+        </span>
       </div>`;
     globalIndex++;
   });
@@ -551,6 +556,13 @@ async function renderMergedAtList(filterText = '') {
 
   agentAtList.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', async (e) => {
+      // 网页快捷操作按钮
+      const pageActionBtn = e.target.closest('.page-action-btn');
+      if (pageActionBtn) {
+        e.stopPropagation();
+        handlePageAction(parseInt(pageActionBtn.dataset.tabId), pageActionBtn.dataset.action);
+        return;
+      }
       const toolbarBtn = e.target.closest('.proxy-disable-btn, .proxy-delete-btn, .proxy-enable-btn');
       if (toolbarBtn) {
         e.stopPropagation();
