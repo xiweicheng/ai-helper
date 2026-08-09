@@ -4125,7 +4125,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 点击脱离：侧边栏 → 独立窗口
   if (detachBtn) {
     detachBtn.addEventListener('click', async () => {
-      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) return;
+      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) {
+        showToast(t('detach.taskRunning'), 'warning');
+        return;
+      }
       try {
         const resp = await chrome.runtime.sendMessage({ type: 'DETACH_SIDEPANEL' });
         if (resp?.success) {
@@ -4141,7 +4144,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 点击回归：独立窗口 → 侧边栏
   if (attachBtn) {
     attachBtn.addEventListener('click', async () => {
-      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) return;
+      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) {
+        showToast(t('detach.taskRunning'), 'warning');
+        return;
+      }
       try {
         // 获取当前弹窗的 windowId
         const winId = (await chrome.windows.getCurrent()).id;
