@@ -35,10 +35,10 @@ echo -e "${CYAN}  ai-helper-agent NPM 发布脚本${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-# ─── 1. 检查 git 工作区是否干净 ───
-if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-    log_error "Git 工作区有未提交的更改，请先提交或暂存"
-    git status --short
+# ─── 1. 检查 git 工作区是否干净（仅检查 agent/ 目录，忽略父目录 dist/ 构建产物）───
+if ! git diff-index --quiet HEAD -- . 2>/dev/null; then
+    log_error "agent/ 目录有未提交的更改，请先提交或暂存"
+    git diff-index --name-only HEAD -- . 2>/dev/null
     exit 1
 fi
 
