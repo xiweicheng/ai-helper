@@ -4099,6 +4099,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const isPopup = new URLSearchParams(window.location.search).has('popup');
   const detachBtn = document.getElementById('detachBtn');
   const attachBtn = document.getElementById('attachBtn');
+  const activeBtn = isPopup ? attachBtn : detachBtn;
 
   if (isPopup) {
     // 独立窗口模式：显示回归按钮
@@ -4108,9 +4109,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (detachBtn) detachBtn.style.display = 'flex';
   }
 
+  // 任务执行中时禁用脱离/回归按钮，避免中断后台任务
+  const updateDetachAttachState = () => {
+    if (!activeBtn) return;
+    const hasRunningTask = state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0;
+    activeBtn.disabled = hasRunningTask;
+    activeBtn.style.opacity = hasRunningTask ? '0.35' : '';
+    activeBtn.style.cursor = hasRunningTask ? 'not-allowed' : 'pointer';
+    activeBtn.title = hasRunningTask ? t('detach.taskRunning') : (isPopup ? t('header.attachTitle') : t('header.detachTitle'));
+  };
+
+  updateDetachAttachState();
+  document.addEventListener('generating-state-changed', updateDetachAttachState);
+
   // 点击脱离：侧边栏 → 独立窗口
   if (detachBtn) {
     detachBtn.addEventListener('click', async () => {
+      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) return;
       try {
         const resp = await chrome.runtime.sendMessage({ type: 'DETACH_SIDEPANEL' });
         if (resp?.success) {
@@ -4126,6 +4141,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 点击回归：独立窗口 → 侧边栏
   if (attachBtn) {
     attachBtn.addEventListener('click', async () => {
+      if (state.pendingCallApiSessionIds && state.pendingCallApiSessionIds.size > 0) return;
       try {
         // 获取当前弹窗的 windowId
         const winId = (await chrome.windows.getCurrent()).id;

@@ -151,6 +151,11 @@ export default {
     attachTitle: 'Attach back to side panel',
   },
 
+  // Detach/attach window
+  detach: {
+    taskRunning: 'Task is running, please wait until it finishes',
+  },
+
   // Session management
   session: {
     allSessions: 'All Sessions',

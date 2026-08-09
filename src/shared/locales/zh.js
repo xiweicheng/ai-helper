@@ -151,6 +151,11 @@ export default {
     attachTitle: '回归侧边栏',
   },
 
+  // 脱离/回归窗口
+  detach: {
+    taskRunning: '任务执行中，请等待完成后再操作',
+  },
+
   // 会话管理
   session: {
     allSessions: '全部会话',

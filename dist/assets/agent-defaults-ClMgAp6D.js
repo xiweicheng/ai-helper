@@ -1,4 +1,4 @@
-import{a as e,c as t,l as n}from"./i18n-CKktvEmu.js";e(`zh`,{tokenCounter:{truncatedMiddle:`
+import{a as e,c as t,l as n}from"./i18n-DIQ9r8-s.js";e(`zh`,{tokenCounter:{truncatedMiddle:`
 
 ... [中间 {tokens} tokens 已截断] ...
 
@@ -94,4 +94,4 @@ Writing principles:
 - 示例先行：关键概念必须附带代码或配置示例
 - 面向读者：根据目标受众调整技术深度
 - 保持简洁：避免冗余，每段文字都应承载信息`,toolIds:[`page_content`,`clipboard`,`search_browser_data`,`search_chats`,`fetch_url`,`agent_file`,`agent_search`,`extract_data`,`capture_page`,`search_in_page`],allowSubDispatch:!1}];function Ne(){return`agent_`+Date.now().toString(36)+`_`+Math.random().toString(36).substring(2,6)}export{ge as A,te as B,pe as C,Y as D,G as E,v as F,le as G,C as H,_ as I,y as J,k as K,A as L,Ee as M,ae as N,be as O,M as P,ce as R,U as S,we as T,ie as U,g as V,S as W,ee as X,b as Y,Ce as _,Ae as a,_e as b,Se as c,X as d,ue as f,J as g,K as h,je as i,q as j,fe as k,Te as l,ye as m,Me as n,ke as o,he as p,oe as q,Ne as r,Oe as s,$ as t,W as u,Z as v,me as w,xe as x,H as y,D as z};
-//# sourceMappingURL=agent-defaults-DI_cNo2L.js.map
+//# sourceMappingURL=agent-defaults-ClMgAp6D.js.map
