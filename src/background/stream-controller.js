@@ -23,6 +23,7 @@ export class StreamController {
     this.lastSendTime = 0;
     this._pendingChunk = '';
     this._streamStarted = !!options.preStarted;
+    this._streamDone = false;
     // 支持自定义消息发送函数和消息类型前缀（用于向 content script 发送流式消息）
     this._sendFn = options.sendFn || ((msg) => chrome.runtime.sendMessage(msg).catch(() => {}));
     this._typePrefix = options.typePrefix || '';
@@ -56,6 +57,13 @@ export class StreamController {
       return { type: 'ignore' };
     }
 
+    // 提前提取 usage：OpenAI 兼容 API 在 stream_options.include_usage 时，
+    // usage 在独立的最终 chunk 中返回，该 chunk 的 choices 为空 []，
+    // 必须在 !choice 检查之前提取，否则会被下方的 ignore 跳过
+    if (chunk.usage) {
+      this.usage = chunk.usage;
+    }
+
     const choice = chunk.choices?.[0];
     if (!choice) {
       return { type: 'ignore' };
@@ -64,11 +72,6 @@ export class StreamController {
     const delta = choice.delta || {};
     
     const finishReason = choice.finish_reason;
-
-    // 提取 usage（在最后一个 chunk 中）
-    if (chunk.usage) {
-      this.usage = chunk.usage;
-    }
 
     // 推理内容（DeepSeek thinking mode 的 reasoning_content，需原样回传给 API）
     if (delta.reasoning_content) {
@@ -230,6 +233,8 @@ export class StreamController {
     this._flushChunk();
     this.fullContent = '';
     this.reasoningContent = '';
+    this.usage = null;
+    this._streamDone = false;
     this.toolCalls = [];
     this._pendingChunk = '';
     this._streamStarted = false;
@@ -330,9 +335,9 @@ export async function readSSEStream(reader, controller, abortSignal) {
           
           return { status: 'tool_calls', ...controller.getResult() };
         } else if (result.type === 'done') {
-          // 正常结束
-          controller.finish();
-          return { status: 'done', ...controller.getResult() };
+          // 标记流结束，但不立即返回——继续读取后续 chunk 以提取 usage
+          // （OpenAI 兼容 API 的 usage 在独立的最终 chunk 中，choices 为空）
+          controller._streamDone = true;
         }
       }
     }
