@@ -434,20 +434,20 @@ function createDocxTable(rows) {
  * @returns {{ dataUrl: string, format: string }} format 为 'PNG' 或 'JPEG'
  */
 function safeCanvasToDataUrl(canvas) {
-  // 先尝试 PNG
+  // 优先使用 JPEG（体积更小），失败时降级为 PNG
   try {
-    const pngData = canvas.toDataURL('image/png');
-    if (pngData && pngData.length > 100) {
-      return { dataUrl: pngData, format: 'PNG' };
+    const jpgData = canvas.toDataURL('image/jpeg', 0.85);
+    if (jpgData && jpgData.length > 100) {
+      return { dataUrl: jpgData, format: 'JPEG' };
     }
   } catch (e) {
-    logger.debug('[ChatExport] PNG toDataURL failed,downgrade to JPEG:', e.message);
+    logger.debug('[ChatExport] JPEG toDataURL failed, downgrade to PNG:', e.message);
   }
 
-  // PNG 失败或数据异常小，降级为 JPEG
+  // JPEG 失败 或数据异常小，降级为 PNG
   try {
-    const jpgData = canvas.toDataURL('image/jpeg', 0.92);
-    return { dataUrl: jpgData, format: 'JPEG' };
+    const pngData = canvas.toDataURL('image/png');
+    return { dataUrl: pngData, format: 'PNG' };
   } catch (e) {
     // 最后尝试低质量 JPEG
     try {
@@ -556,6 +556,9 @@ export async function convertSvgsToImages(container) {
       canvas.height = height * 2;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.scale(2, 2);
+      // 填充白色背景，避免 JPEG 导出时透明区域变黑
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, width, height);
 
       const { dataUrl, format } = safeCanvasToDataUrl(canvas);
@@ -884,7 +887,8 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
-        format: [PDF_WIDTH, PDF_HEIGHT]
+        format: [PDF_WIDTH, PDF_HEIGHT],
+        compress: true
       });
 
       const canvasWidth = canvas.width;
@@ -905,12 +909,15 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
         tempCanvas.width = canvasWidth;
         tempCanvas.height = pageHeight;
         const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        // 填充白色背景，避免 JPEG 透明区域变黑
+        tempCtx.fillStyle = '#ffffff';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
         tempCtx.drawImage(canvas, 0, startY, canvasWidth, pageHeight, 0, 0, canvasWidth, pageHeight);
 
         const { dataUrl: tempImgData, format: tempFormat } = safeCanvasToDataUrl(tempCanvas);
         
         const imgHeight = pageHeight / scaleRatio;
-        pdf.addImage(tempImgData, tempFormat, 0, 0, PDF_WIDTH, imgHeight);
+        pdf.addImage(tempImgData, tempFormat, 0, 0, PDF_WIDTH, imgHeight, undefined, 'FAST');
       }
 
       pdf.save(fileName);

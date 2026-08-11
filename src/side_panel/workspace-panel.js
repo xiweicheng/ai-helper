@@ -3310,7 +3310,7 @@ async function exportWorkspacePdf(fileName) {
   const totalPages = Math.ceil(containerHeight / pageContentHeight);
 
   html2canvasFunc(container, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff', willReadFrequently: true }).then(canvas => {
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PDF_WIDTH, PDF_HEIGHT] });
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [PDF_WIDTH, PDF_HEIGHT], compress: true });
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
     const scaleRatio = canvasHeight / containerHeight;
@@ -3325,12 +3325,22 @@ async function exportWorkspacePdf(fileName) {
       tempCanvas.width = canvasWidth;
       tempCanvas.height = pageHeight;
       const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      // 填充白色背景，避免 JPEG 透明区域变黑
+      tempCtx.fillStyle = '#ffffff';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tempCtx.drawImage(canvas, 0, startY, canvasWidth, pageHeight, 0, 0, canvasWidth, pageHeight);
 
-      let imgData;
-      try { imgData = tempCanvas.toDataURL('image/png'); } catch { imgData = tempCanvas.toDataURL('image/jpeg', 0.92); }
+      // 优先 JPEG（体积更小），失败降级 PNG
+      let imgData, imgFormat;
+      try {
+        imgData = tempCanvas.toDataURL('image/jpeg', 0.85);
+        imgFormat = 'JPEG';
+      } catch (e) {
+        imgData = tempCanvas.toDataURL('image/png');
+        imgFormat = 'PNG';
+      }
       const imgHeight = pageHeight / scaleRatio;
-      pdf.addImage(imgData, 'PNG', 0, 0, PDF_WIDTH, imgHeight);
+      pdf.addImage(imgData, imgFormat, 0, 0, PDF_WIDTH, imgHeight, undefined, 'FAST');
     }
 
     const timestamp = new Date().getTime();

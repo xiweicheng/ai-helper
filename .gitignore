@@ -3,6 +3,7 @@ node_modules/
 
 # NPM publish 时临时复制的扩展产物
 agent/dist/
+release/
 
 *.log
 .env
