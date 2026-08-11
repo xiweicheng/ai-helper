@@ -2378,6 +2378,77 @@ textarea {
   opacity: 0;
   transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
 }
+/* 搜索 + 筛选工具栏 */
+.toolbox-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.toolbox-search-input {
+  flex: 1;
+  width: 100%;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.toolbox-search-input:focus {
+  border-color: #667eea;
+}
+.toolbox-search-wrapper {
+  flex: 1;
+  position: relative;
+}
+.toolbox-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  display: none;
+}
+.toolbox-search-clear:hover {
+  color: #e53e3e;
+  background: rgba(229,62,62,0.08);
+}
+.toolbox-search-wrapper:has(.toolbox-search-input:not(:placeholder-shown)) .toolbox-search-clear {
+  display: block;
+}
+.toolbox-filter-tabs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.toolbox-filter-tab {
+  padding: 4px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.toolbox-filter-tab:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+.toolbox-filter-tab.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: #fff;
+}
+
 .toolbox-list {
   max-height: 400px;
   overflow-y: auto;

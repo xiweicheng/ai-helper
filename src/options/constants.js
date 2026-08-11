@@ -26,6 +26,27 @@ registerTranslations('en', {
   },
 });
 
+// 内置工具 systemPrompt 多语言文案（与 content/selection-toolbar.js 保持一致）
+registerTranslations('zh', {
+  selToolbar: {
+    sysPromptAisearch: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。',
+    sysPromptExplain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
+    sysPromptTranslate: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。',
+    sysPromptSummary: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。',
+    sysPromptCopy: '将选中内容复制到剪贴板。',
+  },
+});
+
+registerTranslations('en', {
+  selToolbar: {
+    sysPromptAisearch: 'You are processing content selected by the user on a web page. Use ReAct Agent mode to answer selected questions through multiple rounds of thinking, searching, and reasoning.',
+    sysPromptExplain: 'You are processing content selected by the user on a web page. Explain the selected content in 1-3 concise sentences, supplementing with a brief example if necessary. Do not expand into lengthy discussions.',
+    sysPromptTranslate: 'You are processing content selected by the user on a web page. Auto-detect language: Chinese→English, English→Chinese, other languages→provide both Chinese and English. Output only the translation result, no additional explanations.',
+    sysPromptSummary: 'You are processing content selected by the user on a web page. Summarize the selected content in 3-5 bullet points, one sentence per point, distilling the core information.',
+    sysPromptCopy: 'Copy the selected content to the clipboard.',
+  },
+});
+
 export const PRESET_MODELS = [
   'deepseek-v4-pro',
   'deepseek-v4-flash'
@@ -80,6 +101,25 @@ const BUILTIN_TOOL_NAME_KEYS = {
  */
 export function getBuiltinToolName(toolId) {
   const key = BUILTIN_TOOL_NAME_KEYS[toolId];
+  return key ? t(key) : undefined;
+}
+
+// 内置工具 systemPrompt i18n key 映射（用于运行时动态获取当前语言的提示词）
+const BUILTIN_TOOL_PROMPT_KEYS = {
+  'ai-search': 'selToolbar.sysPromptAisearch',
+  'explain': 'selToolbar.sysPromptExplain',
+  'translate': 'selToolbar.sysPromptTranslate',
+  'summary': 'selToolbar.sysPromptSummary',
+  'copy': 'selToolbar.sysPromptCopy',
+};
+
+/**
+ * 获取内置工具的当前语言 systemPrompt（每次调用都从 i18n 字典实时查找）
+ * @param {string} toolId - 工具 ID
+ * @returns {string|undefined} 当前语言的系统提示词
+ */
+export function getBuiltinToolPrompt(toolId) {
+  const key = BUILTIN_TOOL_PROMPT_KEYS[toolId];
   return key ? t(key) : undefined;
 }
 

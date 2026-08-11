@@ -14,6 +14,7 @@ export const state = {
   agentName: null,
   agentId: null,
   cachedMcpServers: [],
+  cachedSkills: [],
   editingMcpId: null,
   // 刷新回调：由主入口注册，避免循环依赖
   refreshCallback: null,

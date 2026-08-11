@@ -6,6 +6,10 @@ import { t } from '../shared/i18n.js';
 
 // ==================== MCP 服务器管理 ====================
 
+// 筛选状态（模块级，refreshToolbox 重渲染后保持）
+let mcpFilterText = '';
+let mcpFilterStatus = 'all'; // 'all' | 'enabled' | 'disabled'
+
 /**
  * 获取 MCP 服务器列表
  */
@@ -48,7 +52,31 @@ export function renderMcpServers(servers) {
     return;
   }
 
-  container.innerHTML = servers.map(s => {
+  // 应用搜索 + 状态筛选
+  const filtered = servers.filter(s => {
+    // 状态筛选
+    if (mcpFilterStatus === 'enabled' && s.enabled === false) return false;
+    if (mcpFilterStatus === 'disabled' && s.enabled !== false) return false;
+    // 文本搜索：匹配 name / id / command / url
+    if (mcpFilterText) {
+      const text = mcpFilterText.toLowerCase();
+      const haystack = [s.name, s.id, s.command, s.url, (s.args || []).join(' ')]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(text)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="toolbox-empty">
+        <div class="toolbox-empty-icon">🔍</div>
+        <div class="toolbox-empty-title">${t('toolbox.noMatchResult')}</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.map(s => {
     // 编辑中的服务器显示编辑表单
     if (s.id === state.editingMcpId) {
       const transport = s.transport || 'stdio';
@@ -529,6 +557,44 @@ export async function toggleMcpServer(serverId, enabled) {
   const result = await agentApi('PUT', '/api/mcp/servers/toggle', { id: serverId, enabled });
   if (result.success) return true;
   throw new Error(result.error || t('toolbox.mcpOperationFailedShort'));
+}
+
+/**
+ * 初始化 MCP 搜索 + 筛选事件
+ */
+export function initMcpFilter() {
+  const searchInput = document.getElementById('mcpSearchInput');
+  const filterTabs = document.querySelectorAll('.toolbox-filter-tab[data-target="mcp"]');
+
+  if (searchInput) {
+    let debounceTimer = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        mcpFilterText = searchInput.value.trim();
+        renderMcpServers(state.cachedMcpServers);
+      }, 200);
+    });
+  }
+
+  const clearBtn = document.getElementById('mcpSearchClear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      mcpFilterText = '';
+      renderMcpServers(state.cachedMcpServers);
+      searchInput.focus();
+    });
+  }
+
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      mcpFilterStatus = tab.dataset.filter;
+      renderMcpServers(state.cachedMcpServers);
+    });
+  });
 }
 
 // MCP 服务器管理函数已通过 export 暴露给 toolbox-config.js

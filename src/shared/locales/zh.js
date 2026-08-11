@@ -900,6 +900,13 @@ export default {
     agentSkillImported: 'Agent Skill "{name}" 导入成功',
     urlRequired: '请输入 URL',
     importFailed: '导入失败: {error}',
+    // 搜索 + 筛选
+    searchMcpPlaceholder: '搜索 MCP 服务器...',
+    searchSkillPlaceholder: '搜索技能...',
+    filterAll: '全部',
+    filterEnabled: '已启用',
+    filterDisabled: '已停用',
+    noMatchResult: '无匹配结果',
   },
 
   // 上下文气泡

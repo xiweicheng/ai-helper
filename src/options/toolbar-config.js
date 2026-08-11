@@ -1,6 +1,6 @@
 // options/toolbar-config.js - 工具栏配置管理
 
-import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR, getBuiltinToolName } from './constants.js';
+import { DEFAULT_TOOLBAR_TOOLS, DEFAULT_TOOLBAR_ICON_ONLY, DEFAULT_ENABLE_SELECTION_TOOLBAR, getBuiltinToolName, getBuiltinToolPrompt } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
 
@@ -21,7 +21,8 @@ export function loadToolbarTools() {
       const tools = rawTools.map(t => {
         if (t.builtin && defaultMap.has(t.id)) {
           const i18nName = getBuiltinToolName(t.id);
-          return { ...t, systemPrompt: defaultMap.get(t.id).systemPrompt, name: i18nName || t.name };
+          const i18nPrompt = getBuiltinToolPrompt(t.id);
+          return { ...t, systemPrompt: i18nPrompt || defaultMap.get(t.id).systemPrompt, name: i18nName || t.name };
         }
         return t;
       });

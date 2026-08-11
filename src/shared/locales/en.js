@@ -900,6 +900,13 @@ export default {
     agentSkillImported: 'Agent Skill "{name}" imported successfully',
     urlRequired: 'Please enter a URL',
     importFailed: 'Import failed: {error}',
+    // Search + filter
+    searchMcpPlaceholder: 'Search MCP servers...',
+    searchSkillPlaceholder: 'Search skills...',
+    filterAll: 'All',
+    filterEnabled: 'Enabled',
+    filterDisabled: 'Disabled',
+    noMatchResult: 'No matching results',
   },
 
   // Context bubble

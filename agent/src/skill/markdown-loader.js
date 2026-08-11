@@ -121,6 +121,21 @@ function parseValue(raw) {
  */
 export function scanResources(skillDir) {
   const resourceDirs = ['scripts', 'templates', 'assets', 'references'];
+  // 排除依赖目录、缓存与构建产物，避免将 node_modules / venv 等非技能资源计入
+  const ignoreSegments = new Set([
+    'node_modules',            // Node.js 依赖
+    '.git',                    // Git 仓库
+    'dist', 'build',           // 构建产物
+    '.cache',                   // 通用缓存
+    // Python
+    '__pycache__', '.venv', 'venv', 'env',
+    '.pytest_cache', '.mypy_cache', '.ruff_cache',
+    // Rust / Go / Java
+    'target', 'vendor',
+    '.gradle',
+  ]);
+  // 同时排除 *.egg-info 等 Python 包元数据目录
+  const ignoreSuffixes = ['.egg-info'];
   const resources = [];
 
   for (const dirName of resourceDirs) {
@@ -133,6 +148,12 @@ export function scanResources(skillDir) {
 
       const files = readdirSync(dirPath, { recursive: true });
       for (const file of files) {
+        // 过滤掉路径中包含忽略目录段的文件（node_modules / __pycache__ 等）
+        const segments = file.split(sep);
+        if (segments.some(seg => ignoreSegments.has(seg))) continue;
+        // 过滤 *.egg-info 等 Python 包元数据目录下的文件
+        if (segments.some(seg => ignoreSuffixes.some(suf => seg.endsWith(suf)))) continue;
+
         const fullPath = join(dirPath, file);
         try {
           const fstat = statSync(fullPath);

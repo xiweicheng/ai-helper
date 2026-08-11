@@ -7,6 +7,10 @@ import { t } from '../shared/i18n.js';
 
 // ==================== Skill 管理 ====================
 
+// 筛选状态（模块级，refreshToolbox 重渲染后保持）
+let skillFilterText = '';
+let skillFilterStatus = 'all'; // 'all' | 'enabled' | 'disabled'
+
 /**
  * 获取 Skill 列表
  */
@@ -26,6 +30,8 @@ export async function loadSkills() {
 export function renderSkills(skills) {
   const container = document.getElementById('skillList');
   if (!container) return;
+
+  state.cachedSkills = skills || [];
 
   if (!state.agentConnected) {
     container.innerHTML = `
@@ -47,8 +53,31 @@ export function renderSkills(skills) {
     return;
   }
 
-  const workflowSkills = skills.filter(s => s.type !== 'agent');
-  const agentSkills = skills.filter(s => s.type === 'agent');
+  // 应用搜索 + 状态筛选
+  const filtered = skills.filter(s => {
+    // 状态筛选
+    if (skillFilterStatus === 'enabled' && s.enabled === false) return false;
+    if (skillFilterStatus === 'disabled' && s.enabled !== false) return false;
+    // 文本搜索：匹配 name / description
+    if (skillFilterText) {
+      const text = skillFilterText.toLowerCase();
+      const haystack = [s.name, s.description].filter(Boolean).join(' ').toLowerCase();
+      if (!haystack.includes(text)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="toolbox-empty">
+        <div class="toolbox-empty-icon">🔍</div>
+        <div class="toolbox-empty-title">${t('toolbox.noMatchResult')}</div>
+      </div>`;
+    return;
+  }
+
+  const workflowSkills = filtered.filter(s => s.type !== 'agent');
+  const agentSkills = filtered.filter(s => s.type === 'agent');
 
   let html = '';
 
@@ -728,5 +757,43 @@ export function showImportDialog() {
   });
 }
 
+
+/**
+ * 初始化 Skill 搜索 + 筛选事件
+ */
+export function initSkillFilter() {
+  const searchInput = document.getElementById('skillSearchInput');
+  const filterTabs = document.querySelectorAll('.toolbox-filter-tab[data-target="skill"]');
+
+  if (searchInput) {
+    let debounceTimer = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        skillFilterText = searchInput.value.trim();
+        renderSkills(state.cachedSkills || []);
+      }, 200);
+    });
+  }
+
+  const clearBtn = document.getElementById('skillSearchClear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = '';
+      skillFilterText = '';
+      renderSkills(state.cachedSkills || []);
+      searchInput.focus();
+    });
+  }
+
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      skillFilterStatus = tab.dataset.filter;
+      renderSkills(state.cachedSkills || []);
+    });
+  });
+}
 
 // Skill 管理函数已通过 export 暴露给 toolbox-config.js

@@ -8,12 +8,14 @@ import {
   loadMcpServers, renderMcpServers, addMcpServer, removeMcpServer,
   connectMcpServer, disconnectMcpServer, toggleMcpServer,
   showAddMcpForm, hideAddMcpForm, handleEnvAction, handleTransportChange,
-  getTransportValue, parseEnvVars, parseHeaders
+  getTransportValue, parseEnvVars, parseHeaders,
+  initMcpFilter
 } from './toolbox-mcp.js';
 import {
   loadSkills, renderSkills, deleteSkill, toggleSkill, runSkill,
   parseSkillParams, showSkillParamsDialog, showSkillRunResult,
-  reloadSkills, showAgentSkillEditor, getAgentSkillMarkdown, showImportDialog
+  reloadSkills, showAgentSkillEditor, getAgentSkillMarkdown, showImportDialog,
+  initSkillFilter
 } from './toolbox-skills.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
@@ -562,6 +564,10 @@ export function initToolbox() {
       }
     });
   }
+
+  // 初始化搜索 + 筛选事件
+  initMcpFilter();
+  initSkillFilter();
 
   // 初始加载数据
   refreshToolbox();
