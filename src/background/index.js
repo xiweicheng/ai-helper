@@ -856,23 +856,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 脱离侧边栏为独立窗口
   if (message.type === 'DETACH_SIDEPANEL') {
-    chrome.windows.create({
-      url: chrome.runtime.getURL('side_panel.html') + '?popup=1',
-      type: 'popup',
-      width: 480,
-      height: 720,
-    }, (win) => {
-      if (chrome.runtime.lastError) {
-        logger.warn('[Background] detach sidePanel failed:', chrome.runtime.lastError.message);
-        sendResponse({ success: false, error: chrome.runtime.lastError.message });
-        return;
+    // 弹窗宽度参考侧边栏当前宽度（由侧边栏页面传入），clamp 到合理范围
+    const popupWidth = Math.min(Math.max(message.width || 480, 320), 900);
+    const popupHeight = 720;
+    (async () => {
+      try {
+        // 以当前浏览器窗口为基准计算居中位置
+        let win = null;
+        if (sender.tab?.windowId) {
+          try { win = await chrome.windows.get(sender.tab.windowId); } catch (e) { /* 忽略 */ }
+        }
+        if (!win) {
+          try { win = await chrome.windows.getLastFocused(); } catch (e) { /* 忽略 */ }
+        }
+        const left = win ? Math.max(win.left, Math.round(win.left + (win.width - popupWidth) / 2)) : undefined;
+        const top = win ? Math.max(win.top, Math.round(win.top + (win.height - popupHeight) / 2)) : undefined;
+        const newWin = await chrome.windows.create({
+          url: chrome.runtime.getURL('side_panel.html') + '?popup=1',
+          type: 'popup',
+          width: popupWidth,
+          height: popupHeight,
+          left,
+          top,
+        });
+        // 记录弹窗 windowId，供后续回归使用（全局变量 + storage 双写）
+        _detachWindowId = newWin.id;
+        await chrome.storage.local.set({ _detachWindowId: newWin.id }).catch(() => {});
+        logger.debug('[Background] sidePanel detached, windowId:', newWin.id);
+        sendResponse({ success: true, windowId: newWin.id });
+      } catch (e) {
+        logger.warn('[Background] detach sidePanel failed:', e?.message);
+        sendResponse({ success: false, error: e?.message });
       }
-      // 记录弹窗 windowId，供后续回归使用（全局变量 + storage 双写）
-      _detachWindowId = win.id;
-      chrome.storage.local.set({ _detachWindowId: win.id }).catch(() => {});
-      logger.debug('[Background] sidePanel detached, windowId:', win.id);
-      sendResponse({ success: true, windowId: win.id });
-    });
+    })();
     return true; // 异步响应
   }
 

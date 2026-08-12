@@ -4163,7 +4163,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       try {
-        const resp = await chrome.runtime.sendMessage({ type: 'DETACH_SIDEPANEL' });
+        // 携带侧边栏当前宽度，使弹窗宽度与侧边栏保持一致
+        const resp = await chrome.runtime.sendMessage({ type: 'DETACH_SIDEPANEL', width: window.innerWidth });
         if (resp?.success) {
           // 关闭侧边栏
           try { window.close(); } catch (e) { /* 忽略 */ }
