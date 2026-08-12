@@ -33,6 +33,9 @@ registerTranslations('zh', {
     // 面板标题与按钮
     workDir: '工作目录',
     closePanel: '关闭面板',
+    embedMode: '嵌入模式',
+    floatMode: '浮窗模式',
+    narrowViewportHint: '视口过窄，已切回浮窗模式',
     switchWorkdir: '切换工作目录',
     backToParent: '返回上级目录',
     uploadToCurrent: '上传文件到当前目录',
@@ -254,6 +257,9 @@ registerTranslations('en', {
     // Panel title and buttons
     workDir: 'Working Directory',
     closePanel: 'Close Panel',
+    embedMode: 'Embed mode',
+    floatMode: 'Floating mode',
+    narrowViewportHint: 'Viewport too narrow, switched back to floating mode',
     switchWorkdir: 'Switch Working Directory',
     backToParent: 'Back to Parent Directory',
     uploadToCurrent: 'Upload files to current directory',
@@ -479,6 +485,19 @@ let workspaceRoot = null;
 let pathHistory = [];
 // 路径历史最大长度，超出时丢弃最早的（防止无限增长）
 const PATH_HISTORY_MAX = 50;
+// 浮窗/嵌入双模式常量：嵌入面板最小宽度、左列（标签栏+对话+输入）最小宽度、阈值与默认宽度
+const EMBED_MIN_PANEL_W = 240;
+const EMBED_MIN_LEFT_W = 280;
+const EMBED_MIN_TOTAL_W = EMBED_MIN_PANEL_W + EMBED_MIN_LEFT_W;
+const EMBED_DEFAULT_W = 320;
+const STORAGE_EMBED_MODE = 'workspacePanelEmbedMode';
+const STORAGE_EMBED_WIDTH = 'workspacePanelEmbedWidth';
+// 是否处于嵌入模式；嵌入模式下面板宽度；等待宽度/连接就绪后补恢复的挂起标志；
+// 用户偏好的模式（与当前布局状态分离）：点 × 收起面板不改变偏好，下次打开直接按偏好进入
+let embedMode = false;
+let embedWidth = EMBED_DEFAULT_W;
+let pendingRestoreEmbed = false;
+let embedPreference = false;
 // 是否已初始化
 let initialized = false;
 // 当前排序：{ field: 'name'|'size'|'time', asc: boolean }
@@ -515,6 +534,12 @@ export function initWorkspacePanel() {
           </svg>
           <span>${t('workspace.workDir')}</span>
           <span class="workspace-agent-name" id="workspaceAgentName"></span>
+          <button class="workspace-panel-mode-btn" id="workspacePanelModeBtn" title="${t('workspace.embedMode')}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <path d="M15 3v18"/>
+            </svg>
+          </button>
           <button class="workspace-panel-close" id="workspacePanelClose" title="${t('workspace.closePanel')}">×</button>
         </div>
         <div class="workspace-panel-breadcrumb-row">
@@ -694,11 +719,16 @@ export function initWorkspacePanel() {
       </div>
     </div>
   `;
-  document.body.appendChild(container);
+  // 挂载到主内容区（mainRow）右侧：浮窗模式脱离文档流不受影响，嵌入模式作为右列参与分栏
+  const mainRow = document.getElementById('mainRow') || document.body;
+  mainRow.appendChild(container);
 
   bindEvents();
   loadSearchHistory();
   updateWorkspaceAgentName();
+  setupEmbedDivider();
+  setupEmbedResizeObserver();
+  restoreEmbedState();
   logger.debug('[WorkspacePanel] workspace panelinitializing');
 }
 
@@ -715,6 +745,21 @@ function bindEvents() {
     const isOpen = panel.classList.contains('expanded');
     if (isOpen) {
       closePanel();
+    } else if (embedPreference) {
+      // 偏好嵌入模式（点 × 收起不改变偏好）：打开时直接进入嵌入布局；宽度不足则回退浮窗
+      const mainRow = document.getElementById('mainRow');
+      const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
+      if (avail < EMBED_MIN_TOTAL_W) {
+        await openPanel();
+        showToast(t('workspace.narrowViewportHint'), 'error');
+        return;
+      }
+      await openPanel();
+      embedWidth = clampEmbedWidth(embedWidth);
+      applyEmbedMode();
+      embedMode = true;
+      pendingRestoreEmbed = false;
+      await persistEmbedState();
     } else {
       await openPanel();
     }
@@ -724,6 +769,12 @@ function bindEvents() {
   document.getElementById('workspacePanelClose').addEventListener('click', (e) => {
     e.stopPropagation();
     closePanel();
+  });
+
+  // 浮窗/嵌入模式切换按钮
+  document.getElementById('workspacePanelModeBtn').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await toggleEmbedMode();
   });
 
   // 切换工作目录按钮
@@ -982,6 +1033,214 @@ function highlightSearchMatch(text, query) {
   // 转义正则特殊字符
   const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return escaped.replace(new RegExp(`(${escapedQuery})`, 'gi'), '<mark class="search-highlight">$1</mark>');
+}
+
+// ========== 浮窗/嵌入双模式 ==========
+
+// 模式按钮图标：进入嵌入（右侧分栏）与退出嵌入（右侧面板含收起箭头）
+const EMBED_ICON_SPLIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>';
+const EMBED_ICON_FLOAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/><path d="m8 9-3 3 3 3"/></svg>';
+
+/**
+ * 计算嵌入模式下面板最大可用宽度（保证左列至少保留 EMBED_MIN_LEFT_W）
+ */
+function getMaxEmbedWidth() {
+  const mainRow = document.getElementById('mainRow');
+  const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
+  return Math.max(EMBED_MIN_PANEL_W, avail - EMBED_MIN_LEFT_W);
+}
+
+function clampEmbedWidth(w) {
+  return Math.max(EMBED_MIN_PANEL_W, Math.min(w, getMaxEmbedWidth()));
+}
+
+/**
+ * 同步模式按钮图标与 tooltip（embedded 为 true 时显示"浮窗模式"图标）
+ */
+function updateModeBtnIcon(embedded) {
+  const btn = document.getElementById('workspacePanelModeBtn');
+  if (!btn) return;
+  btn.title = t(embedded ? 'workspace.floatMode' : 'workspace.embedMode');
+  btn.innerHTML = embedded ? EMBED_ICON_FLOAT : EMBED_ICON_SPLIT;
+}
+
+function applyEmbedMode() {
+  const container = document.getElementById('workspacePanelContainer');
+  if (!container) return;
+  container.classList.add('embedded');
+  container.style.setProperty('--ws-embed-width', `${embedWidth}px`);
+  updateModeBtnIcon(true);
+}
+
+function exitEmbedMode() {
+  const container = document.getElementById('workspacePanelContainer');
+  if (container) container.classList.remove('embedded');
+  updateModeBtnIcon(false);
+}
+
+async function persistEmbedState() {
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_EMBED_MODE]: embedMode,
+      [STORAGE_EMBED_WIDTH]: embedWidth,
+    });
+  } catch (err) {
+    logger.warn('[WorkspacePanel] persist embed state failed', err);
+  }
+}
+
+/**
+ * 切换浮窗/嵌入模式：进入嵌入前检查宽度，不足则提示并保持浮窗
+ */
+async function toggleEmbedMode() {
+  if (embedMode) {
+    // 主动点切换按钮退出嵌入：偏好改为浮窗并持久化
+    embedMode = false;
+    embedPreference = false;
+    pendingRestoreEmbed = false;
+    exitEmbedMode();
+    await persistEmbedState();
+    return;
+  }
+  const mainRow = document.getElementById('mainRow');
+  const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
+  if (avail < EMBED_MIN_TOTAL_W) {
+    showToast(t('workspace.narrowViewportHint'), 'error');
+    return;
+  }
+  const panel = document.getElementById('workspacePanel');
+  if (!panel.classList.contains('expanded')) {
+    await openPanel();
+  }
+  embedWidth = clampEmbedWidth(embedWidth);
+  applyEmbedMode();
+  embedMode = true;
+  embedPreference = true;
+  pendingRestoreEmbed = false;
+  await persistEmbedState();
+}
+
+/**
+ * 嵌入模式宽度拖拽：面板左侧把手，拖拽时实时更新宽度，松手后持久化
+ */
+function setupEmbedDivider() {
+  const container = document.getElementById('workspacePanelContainer');
+  const divider = document.createElement('div');
+  divider.className = 'workspace-embed-divider';
+  divider.id = 'workspaceEmbedDivider';
+  container.appendChild(divider);
+
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = embedWidth;
+    container.classList.add('resizing');
+
+    function onMove(ev) {
+      // 把手在面板最左侧：向左拖（clientX 变小）面板变宽
+      const w = clampEmbedWidth(startW + (startX - ev.clientX));
+      embedWidth = w;
+      container.style.setProperty('--ws-embed-width', `${w}px`);
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      container.classList.remove('resizing');
+      persistEmbedState();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+/**
+ * 窄屏自动回退：嵌入模式下主内容区宽度不足阈值时自动切回浮窗；
+ * 挂起中的嵌入恢复（宽度不足或 Agent 未连接）在宽度就绪时自动补恢复
+ */
+function setupEmbedResizeObserver() {
+  const mainRow = document.getElementById('mainRow');
+  if (!mainRow || typeof ResizeObserver === 'undefined') return;
+  const ro = new ResizeObserver(() => {
+    if (embedMode) {
+      if (mainRow.clientWidth < EMBED_MIN_TOTAL_W) {
+        pendingRestoreEmbed = false;
+        embedMode = false;
+        embedPreference = false; // 宽度不允许，偏好回退为浮窗
+        exitEmbedMode();
+        persistEmbedState();
+        showToast(t('workspace.narrowViewportHint'), 'error');
+      }
+      return;
+    }
+    // 首次恢复因宽度未就绪而挂起时，宽度足够后自动补恢复
+    if (pendingRestoreEmbed && mainRow.clientWidth >= EMBED_MIN_TOTAL_W) {
+      deferredEmbedRestore();
+    }
+  });
+  ro.observe(mainRow);
+}
+
+/**
+ * 尝试应用嵌入模式恢复；宽度不足或 Agent 未连接（容器隐藏）时返回 false
+ * @returns {Promise<boolean>}
+ */
+async function tryApplyEmbedRestore() {
+  if (embedMode) return true;
+  const container = document.getElementById('workspacePanelContainer');
+  if (container && container.style.display === 'none') return false; // Agent 未连接，等待连接后恢复
+  const mainRow = document.getElementById('mainRow');
+  const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
+  if (avail < EMBED_MIN_TOTAL_W) return false; // 宽度尚未就绪
+  embedWidth = clampEmbedWidth(embedWidth);
+  const panel = document.getElementById('workspacePanel');
+  if (!panel.classList.contains('expanded')) {
+    await openPanel();
+  }
+  applyEmbedMode();
+  embedMode = true;
+  return true;
+}
+
+/**
+ * 触发一次补恢复；失败（宽度/连接仍未就绪）时保持挂起等待后续时机
+ */
+function deferredEmbedRestore() {
+  pendingRestoreEmbed = false;
+  tryApplyEmbedRestore()
+    .then(ok => {
+      if (!ok) pendingRestoreEmbed = true; // 仍未就绪，继续挂起等待
+    })
+    .catch(err => {
+      logger.warn('[WorkspacePanel] deferred embed restore failed', err);
+      pendingRestoreEmbed = true;
+    });
+}
+
+/**
+ * 从本地存储恢复嵌入模式状态（重开侧边栏后保持上次布局与宽度）
+ * 首屏布局/宽度未就绪时不放弃，标记挂起等待补恢复
+ */
+async function restoreEmbedState() {
+  try {
+    const data = await chrome.storage.local.get([STORAGE_EMBED_MODE, STORAGE_EMBED_WIDTH]);
+    if (typeof data[STORAGE_EMBED_WIDTH] === 'number' && data[STORAGE_EMBED_WIDTH] >= EMBED_MIN_PANEL_W) {
+      embedWidth = Math.round(data[STORAGE_EMBED_WIDTH]);
+    }
+    if (!data[STORAGE_EMBED_MODE]) return;
+    embedPreference = true; // 存储为嵌入：即使本次宽度不足挂起，偏好仍保持嵌入
+    // 等两帧让首屏布局稳定后再测量（side panel 初始宽度可能尚未恢复），setTimeout 兜底 rAF 不触发的情况
+    await new Promise(resolve => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      requestAnimationFrame(() => requestAnimationFrame(finish));
+      setTimeout(finish, 500);
+    });
+    if (await tryApplyEmbedRestore()) return;
+    // 宽度或 Agent 连接尚未就绪：挂起恢复，由 ResizeObserver / Agent 连接事件补恢复
+    pendingRestoreEmbed = true;
+  } catch (err) {
+    logger.warn('[WorkspacePanel] restore embed state failed', err);
+  }
 }
 
 /**
@@ -5002,6 +5261,17 @@ export function updateWorkspacePanelVisibility(connected) {
 
   if (connected) {
     container.style.display = '';
+    // 断开期间嵌入模式保留：重连后自动重新展开面板
+    if (embedMode) {
+      const panel = document.getElementById('workspacePanel');
+      if (panel && !panel.classList.contains('expanded')) {
+        openPanel().catch(err => logger.warn('[WorkspacePanel] reopen panel after reconnect failed', err));
+      }
+    }
+    // Agent 连接后补恢复之前因未连接而挂起的嵌入模式
+    if (pendingRestoreEmbed) {
+      deferredEmbedRestore();
+    }
   } else {
     container.style.display = 'none';
     closePanelInternal(true);
@@ -5220,6 +5490,14 @@ async function closePanelInternal(force = false) {
   if (container) {
     container.classList.remove('hover-expanded');
     container.classList.remove('click-opened');
+    // 嵌入模式下无 toggle 入口，正常关闭（非 Agent 断开）即退出嵌入布局；
+    // 但不持久化模式偏好（storage 保持嵌入），下次打开侧边栏直接恢复嵌入模式；
+    // 仅用户主动点切换按钮退出嵌入时才持久化为浮窗
+    if (embedMode && !force) {
+      embedMode = false;
+      pendingRestoreEmbed = false;
+      exitEmbedMode();
+    }
   }
 }
 

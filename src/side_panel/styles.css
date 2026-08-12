@@ -10809,6 +10809,24 @@ body {
 /* 搜索定位高亮效果复用 bookmark-highlight */
 
 /* ============================================
+   主内容区：左侧（标签栏+对话+输入）与右侧（工作目录面板）分栏容器
+   ============================================ */
+
+.main-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================
    工作目录文件管理器面板
    ============================================ */
 
@@ -10888,6 +10906,70 @@ body {
   transition: none !important;
 }
 
+/* 嵌入模式：面板由浮窗改为独占右侧区域（与左侧对话区左右分栏） */
+.workspace-panel-container.embedded {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: var(--ws-embed-width, 320px);
+  flex-shrink: 0;
+  background: #fff;
+  z-index: auto;
+}
+
+.workspace-panel-container.embedded .workspace-panel-toggle {
+  display: none;
+}
+
+.workspace-panel-container.embedded .workspace-panel {
+  position: relative;
+  right: auto;
+  top: auto;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  border-left: 1px solid #ececec;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.workspace-panel-container.embedded .workspace-panel-header {
+  border-radius: 0;
+}
+
+/* 嵌入模式下的预览全屏覆盖面板本身即可，无需额外处理 */
+
+/* 嵌入模式宽度拖拽把手（仅嵌入模式下显示，浮窗模式隐藏避免遮挡） */
+.workspace-embed-divider {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.workspace-panel-container.embedded .workspace-embed-divider {
+  display: block;
+}
+
+.workspace-embed-divider:hover {
+  background: rgba(74, 144, 217, 0.25);
+}
+
+.workspace-panel-container.resizing {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 
 /* 面板头部 */
 .workspace-panel-header {
@@ -10916,7 +10998,7 @@ body {
 }
 
 .workspace-panel-close {
-  margin-left: auto;
+  margin-left: 0;
   width: 20px;
   height: 20px;
   display: flex;
@@ -10934,6 +11016,33 @@ body {
 .workspace-panel-close:hover {
   background: #eee;
   color: #333;
+}
+
+/* 浮窗/嵌入模式切换按钮 */
+.workspace-panel-mode-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #888;
+  border-radius: 4px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.workspace-panel-mode-btn:hover {
+  background: #eee;
+  color: #4a90d9;
+}
+
+.workspace-panel-mode-btn svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* 切换工作目录按钮（面包屑行最前，紧邻当前路径） */

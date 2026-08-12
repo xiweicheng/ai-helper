@@ -12,7 +12,7 @@
   <script type="module" crossorigin src="/assets/agent-store-BWb5tsRB.js"></script>
   <script type="module" crossorigin src="/assets/state-B9PZN_fc.js"></script>
   <script type="module" crossorigin src="/assets/session-manager-DIyxGO3-.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-Bzi6QSV4.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-CU-D2lkr.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
@@ -145,6 +145,10 @@
     </div>
   </div>
   
+  <!-- 主内容区：左侧（标签栏+对话+输入）与右侧（工作目录面板，嵌入模式时参与分栏） -->
+  <div class="main-row" id="mainRow">
+  <div class="main-left" id="mainLeft">
+
   <!-- 会话标签栏 -->
   <div class="session-tabs" id="sessionTabs">
     <div class="session-tabs-scroll" id="sessionTabsScroll" style="opacity:0"></div>
@@ -557,6 +561,8 @@
         </button>
       </div>
     </div>
+  </div>
+  </div>
   </div>
   
   <!-- 确认模态框 -->

@@ -204,35 +204,31 @@ function updateAgentSelectorButton(allAgents, activeId) {
 function positionDropdown() {
   const btn = document.getElementById('agentSelectorBtn');
   const dropdown = document.getElementById('agentSelectorDropdown');
-  if (!btn || !dropdown) return;
+  const wrapper = document.getElementById('agentSelectorWrapper');
+  if (!btn || !dropdown || !wrapper) return;
 
-  const btnRect = btn.getBoundingClientRect();
-  const dropdownRect = dropdown.getBoundingClientRect();
-  const wrapperRect = document.getElementById('agentSelectorWrapper').getBoundingClientRect();
+  const wrapperRect = wrapper.getBoundingClientRect();
   const panelWidth = document.body.clientWidth;
 
-  // 按钮中心相对于视口
-  const btnCenter = btnRect.left + btnRect.width / 2;
+  // 重置左定位并固定宽度约束：若 left/right 并存且宽度自适应，绝对定位元素会被
+  // 拉伸为 wrapperWidth - left，导致宽度随开合次数累积变宽；列表项 nowrap 的完整
+  // 文本宽度是 shrink-to-fit 的下限，max-width 必须为固定上限而非面板全宽
+  dropdown.style.left = '';
+  dropdown.style.right = 'auto';
+  dropdown.style.maxWidth = Math.min(320, panelWidth - 16) + 'px';
 
-  // 理想位置：下拉框中心对齐按钮中心
-  let idealLeft = btnCenter - dropdownRect.width / 2;
+  // 受 max-width 约束后测量实际宽度（内容短时自适应，长时取上限），用于居中定位
+  const naturalWidth = dropdown.getBoundingClientRect().width;
+  const width = Math.min(naturalWidth, panelWidth - 16);
+
+  // 按钮中心相对于视口，理想位置：下拉框中心对齐按钮中心
+  const btnRect = btn.getBoundingClientRect();
+  const btnCenter = btnRect.left + btnRect.width / 2;
 
   // clamp 在面板边界内（左右各留 8px 边距）
   const minLeft = 8;
-  const maxLeft = panelWidth - dropdownRect.width - 8;
-
-  // 如果面板宽度不够放下下拉框，限制最大宽度
-  if (maxLeft < minLeft) {
-    dropdown.style.maxWidth = (panelWidth - 16) + 'px';
-    // 重新测量
-    const newRect = dropdown.getBoundingClientRect();
-    idealLeft = btnCenter - newRect.width / 2;
-    const newMaxLeft = panelWidth - newRect.width - 8;
-    idealLeft = Math.max(minLeft, Math.min(newMaxLeft, idealLeft));
-  } else {
-    dropdown.style.maxWidth = '';
-    idealLeft = Math.max(minLeft, Math.min(maxLeft, idealLeft));
-  }
+  const maxLeft = panelWidth - width - 8;
+  const idealLeft = Math.max(minLeft, Math.min(maxLeft, btnCenter - width / 2));
 
   dropdown.style.left = (idealLeft - wrapperRect.left) + 'px';
 }
@@ -247,15 +243,22 @@ function initAgentSelectorEvents() {
   if (!btn || !dropdown) return;
 
   // 点击按钮切换下拉
-  btn.addEventListener('click', (e) => {
+  btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const isOpen = dropdown.style.display === 'flex';
     if (isOpen) {
       dropdown.style.display = 'none';
     } else {
-      // 打开前先渲染，展示后再动态定位
-      renderAgentSelector();
+      // 先清除残留定位并应用宽度约束再显示，避免显示瞬间被 nowrap 内容撑满；
+      // 立即预定位一次，渲染完成后再按实际内容精确定位
+      dropdown.style.left = '';
+      dropdown.style.right = 'auto';
+      dropdown.style.maxWidth = Math.min(320, document.body.clientWidth - 16) + 'px';
       dropdown.style.display = 'flex';
+      positionDropdown();
+      try {
+        await renderAgentSelector();
+      } catch (e) { /* 渲染失败不影响定位 */ }
       positionDropdown();
     }
   });
