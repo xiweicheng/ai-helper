@@ -5570,7 +5570,8 @@ body {
 }
 .prompt-dropdown-header {
   position: sticky;
-  top: 0;
+  /* Tab 栏高度（8+17+8+1=34px），滚动时固定在 Tab 栏下方 */
+  top: 34px;
   z-index: 2;
   padding: 6px 12px;
   font-size: 11px;
@@ -5966,14 +5967,21 @@ body {
 
 /* 提示词/技能 Tab 栏 */
 .prompt-dropdown-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   gap: 0;
   border-bottom: 1px solid #e8ecf1;
   padding: 0 8px;
+  /* 不透明背景，滚动时遮挡下方的列表内容 */
+  background: #fff;
 }
 .prompt-tab {
   flex: 1;
   padding: 8px 0;
+  /* 固定行高，保证 Tab 栏高度精确为 34px（供 header sticky 偏移量使用） */
+  line-height: 17px;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -5989,6 +5997,26 @@ body {
 .prompt-tab.active {
   color: #667eea;
   border-bottom-color: #667eea;
+}
+/* 聚合搜索模式标题：占位高度与 Tab 一致（8+17+8=33px + 容器边框 1px），保证 header sticky 偏移精确 */
+.prompt-merged-title {
+  display: none;
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+  color: #667eea;
+  text-align: center;
+  user-select: none;
+}
+/* 聚合搜索模式：隐藏 Tab 按钮，显示聚合标题
+   !important 用于覆盖技能/MCP Tab 的 inline display（技能可用时被设为 block） */
+.prompt-dropdown-tabs.merged-mode .prompt-tab {
+  display: none !important;
+}
+.prompt-dropdown-tabs.merged-mode .prompt-merged-title {
+  display: block;
 }
 
 /* Agent 标签页中的新增按钮 */
@@ -6132,7 +6160,8 @@ body {
   background: #f5f7fa;
 }
 .skill-list-item.selected {
-  background: #f0fff4;
+  background: #e8f8ee;
+  font-weight: 500;
 }
 .skill-list-item-icon {
   font-size: 16px;
@@ -6161,7 +6190,7 @@ body {
   white-space: nowrap;
 }
 .skill-list-item.selected .skill-list-item-name {
-  color: #38a169;
+  color: #2f855a;
 }
 .skill-list-item-desc {
   font-size: 11px;
@@ -6292,6 +6321,7 @@ body {
 }
 .mcp-list-item.selected {
   background: #e8f0fe;
+  font-weight: 500;
 }
 .mcp-list-item-icon {
   font-size: 16px;

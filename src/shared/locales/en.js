@@ -422,6 +422,8 @@ export default {
     agentHeaderHint: 'Arrow keys to switch · Enter to select · Esc to cancel',
     switchHint: 'Arrow keys to switch · Enter to send · Ctrl+Enter to insert into input',
     switchHintSelect: 'Arrow keys to switch · Enter to select · Esc to cancel',
+    mergedTitle: 'Aggregated Search',
+    mergedTitleCount: 'Aggregated Search ({count})',
   },
 
   // Memory settings

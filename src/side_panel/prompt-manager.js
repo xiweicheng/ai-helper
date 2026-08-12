@@ -248,7 +248,7 @@ export function hidePromptSelector() {
 
   // 恢复 Tab 栏显示
   const tabsContainer = document.getElementById('promptDropdownTabs');
-  if (tabsContainer) tabsContainer.style.display = '';
+  if (tabsContainer) tabsContainer.classList.remove('merged-mode');
 }
 
 /**
@@ -371,8 +371,8 @@ async function renderMergedList(filterText = '') {
   const skillManageBtn = document.querySelector('#promptDropdownHeader .skill-manage-btn');
   const mcpManageBtn = document.querySelector('#promptDropdownHeader .mcp-manage-btn');
 
-  // 隐藏 Tab 栏和其他列表
-  if (tabsContainer) tabsContainer.style.display = 'none';
+  // 隐藏 Tab 按钮（显示聚合搜索标题）和其他列表
+  if (tabsContainer) tabsContainer.classList.add('merged-mode');
   if (skillList) skillList.style.display = 'none';
   if (mcpList) mcpList.style.display = 'none';
   if (promptList) promptList.style.display = 'block';
@@ -418,6 +418,9 @@ async function renderMergedList(filterText = '') {
   }
 
   const totalItems = filteredPrompts.length + filteredSkills.length + filteredMcpServices.length;
+  // 更新聚合搜索标题，附上结果数量
+  const mergedTitle = document.getElementById('promptMergedTitle');
+  if (mergedTitle) mergedTitle.textContent = t('promptSelector.mergedTitleCount', { count: totalItems });
   if (totalItems === 0) {
     promptList.innerHTML = `<div class="prompt-empty">${t('promptMgr.noMatchResult')}</div>`;
     state.selectedPromptIndex = -1;

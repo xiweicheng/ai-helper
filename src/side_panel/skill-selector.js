@@ -304,7 +304,7 @@ export async function switchDropdownTab(tab) {
   const headerText = document.querySelector('#promptDropdownHeader .prompt-dropdown-header-text');
 
   // 恢复 Tab 栏显示
-  if (tabsContainer) tabsContainer.style.display = '';
+  if (tabsContainer) tabsContainer.classList.remove('merged-mode');
 
   // 更新 Tab 激活状态
   tabs.forEach(t => {

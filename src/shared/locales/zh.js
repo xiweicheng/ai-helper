@@ -422,6 +422,8 @@ export default {
     agentHeaderHint: '方向键切换 · Enter选择 · Esc取消',
     switchHint: '方向键切换 · Enter发送 · Ctrl+Enter带入文本框',
     switchHintSelect: '方向键切换 · Enter选择 · Esc取消',
+    mergedTitle: '聚合搜索',
+    mergedTitleCount: '聚合搜索 ({count})',
   },
 
   // 记忆设置

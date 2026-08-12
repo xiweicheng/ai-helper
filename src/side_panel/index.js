@@ -2690,7 +2690,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ========== @ Agent/网页 选择器键盘处理 ==========
     if (agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show')) {
       const agentAtTabs = document.getElementById('agentAtTabs');
-      const isMerged = agentAtTabs && agentAtTabs.style.display === 'none';
+      const isMerged = agentAtTabs && agentAtTabs.classList.contains('merged-mode');
 
       // Tab 键切换标签（仅在非合并模式下）
       if (!isMerged && e.key === 'Tab') {

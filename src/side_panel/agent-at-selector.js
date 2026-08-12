@@ -222,9 +222,9 @@ async function renderActiveAtList(filterText = '') {
   const agentProxyList = document.getElementById('agentProxyList');
 
   if (filterText) {
-    // 搜索模式：隐藏 Tab，合并展示
+    // 搜索模式：隐藏 Tab 按钮（显示聚合搜索标题），合并展示
     isMergedMode = true;
-    if (tabsContainer) tabsContainer.style.display = 'none';
+    if (tabsContainer) tabsContainer.classList.add('merged-mode');
     if (agentPageList) agentPageList.style.display = 'none';
     if (agentProxyList) agentProxyList.style.display = 'none';
     if (agentAtList) agentAtList.style.display = '';
@@ -235,7 +235,7 @@ async function renderActiveAtList(filterText = '') {
   } else {
     // 默认 Tab 模式
     isMergedMode = false;
-    if (tabsContainer) tabsContainer.style.display = '';
+    if (tabsContainer) tabsContainer.classList.remove('merged-mode');
     // 恢复 Tab 激活状态
     if (tabsContainer) {
       tabsContainer.querySelectorAll('.prompt-tab').forEach(t => {
@@ -343,6 +343,51 @@ async function pingAgent(proxy) {
   }
 }
 
+// 代理在线状态缓存：避免渲染时阻塞等待网络 ping（TTL 内不重复请求）
+const proxyStatusCache = new Map();
+const PROXY_STATUS_TTL = 10000;
+
+/**
+ * 获取代理状态缓存（过期返回 null）
+ */
+function getCachedProxyStatus(proxy) {
+  const cached = proxyStatusCache.get(proxy.id);
+  if (cached && Date.now() - cached.ts < PROXY_STATUS_TTL) return cached;
+  return null;
+}
+
+/**
+ * 计算代理状态圆点的 class
+ */
+function getProxyDotClass(proxy, online) {
+  if (proxy.isDisabled) return 'disabled';
+  if (proxy.isActive) return online ? 'connected' : 'disconnected';
+  return online ? 'online' : 'offline';
+}
+
+/**
+ * 异步刷新代理在线状态：ping 完成后仅更新对应项的圆点，不重渲染列表
+ */
+async function refreshProxyStatus(proxy) {
+  // TTL 内已有缓存则跳过，避免输入过程中重复请求
+  if (getCachedProxyStatus(proxy)) return;
+  const pingResult = await pingAgent(proxy);
+  proxyStatusCache.set(proxy.id, {
+    online: pingResult.online,
+    version: pingResult.version || null,
+    platformName: pingResult.platformName || null,
+    ts: Date.now()
+  });
+  document.querySelectorAll('.prompt-item-proxy').forEach(item => {
+    if (item.dataset.proxyId === proxy.id) {
+      const dotEl = item.querySelector('.agent-at-dot');
+      if (dotEl) {
+        dotEl.className = `agent-at-dot agent-at-dot-${getProxyDotClass(proxy, pingResult.online)}`;
+      }
+    }
+  });
+}
+
 /**
  * 渲染代理列表（单独 Tab）
  */
@@ -367,28 +412,13 @@ async function renderProxyAtList(filterText = '') {
 
   state.selectedProxyAtIndex = 0;
 
-  const proxiesWithStatus = await Promise.all(
-    filteredProxies.map(async (proxy) => {
-      const pingResult = await pingAgent(proxy);
-      const version = pingResult.version || state.agentVersions.get(proxy.id);
-      const sysInfo = pingResult.platformName || state.agentSystemInfos.get(proxy.id);
-      return { ...proxy, online: pingResult.online, version, sysInfo };
-    })
-  );
-
-  agentProxyList.innerHTML = proxiesWithStatus.map((proxy, index) => {
+  // 立即用缓存状态渲染（不阻塞等待网络 ping），ping 完成后异步更新圆点
+  agentProxyList.innerHTML = filteredProxies.map((proxy, index) => {
+    const cached = getCachedProxyStatus(proxy);
     const isActive = proxy.isActive;
     const isDisabled = proxy.isDisabled;
-    const isOnline = proxy.online;
-
-    let dotClass;
-    if (isDisabled) {
-      dotClass = 'disabled';
-    } else if (isActive) {
-      dotClass = isOnline ? 'connected' : 'disconnected';
-    } else {
-      dotClass = isOnline ? 'online' : 'offline';
-    }
+    const isOnline = cached ? cached.online : false;
+    const dotClass = getProxyDotClass(proxy, isOnline);
 
     const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
@@ -422,6 +452,9 @@ async function renderProxyAtList(filterText = '') {
       await selectProxyByAt(item.dataset.proxyId);
     });
   });
+
+  // 异步刷新在线状态，不阻塞列表显示
+  filteredProxies.forEach(proxy => refreshProxyStatus(proxy));
 }
 
 /**
@@ -453,6 +486,9 @@ async function renderMergedAtList(filterText = '') {
   });
 
   const totalCount = filteredAgents.length + filteredTabs.length + filteredProxies.length;
+  // 更新聚合搜索标题，附上结果数量
+  const mergedTitle = document.getElementById('agentAtMergedTitle');
+  if (mergedTitle) mergedTitle.textContent = t('promptSelector.mergedTitleCount', { count: totalCount });
 
   if (totalCount === 0) {
     agentAtList.innerHTML = `<div class="prompt-empty">${t('promptSelector.noMatchAll')}</div>`;
@@ -512,26 +548,12 @@ async function renderMergedAtList(filterText = '') {
     globalIndex++;
   });
 
-  const proxiesWithStatus = await Promise.all(
-    filteredProxies.map(async (proxy) => {
-      const pingResult = await pingAgent(proxy);
-      return { ...proxy, online: pingResult.online };
-    })
-  );
-
-  proxiesWithStatus.forEach((proxy) => {
+  filteredProxies.forEach((proxy) => {
     const isActive = proxy.isActive;
     const isDisabled = proxy.isDisabled;
-    const isOnline = proxy.online;
-
-    let dotClass;
-    if (isDisabled) {
-      dotClass = 'disabled';
-    } else if (isActive) {
-      dotClass = isOnline ? 'connected' : 'disconnected';
-    } else {
-      dotClass = isOnline ? 'online' : 'offline';
-    }
+    const cached = getCachedProxyStatus(proxy);
+    const isOnline = cached ? cached.online : false;
+    const dotClass = getProxyDotClass(proxy, isOnline);
 
     const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
@@ -553,6 +575,9 @@ async function renderMergedAtList(filterText = '') {
   });
 
   agentAtList.innerHTML = html;
+
+  // 异步刷新代理在线状态，完成后仅更新圆点
+  filteredProxies.forEach(proxy => refreshProxyStatus(proxy));
 
   agentAtList.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', async (e) => {
