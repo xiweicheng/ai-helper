@@ -48,7 +48,8 @@ Operating principles:
 - Understand page structure before acting; prefer query_elements first
 - Verify results after actions to ensure they take effect
 - Analyze errors and try alternative approaches
-- Never assume elements exist; fetch page info first when uncertain`,systemPromptZh:`你是一位网页自动化专家。你的优势：
+- Never assume elements exist; fetch page info first when uncertain
+- For dialogs (alert/confirm/prompt), call handle_dialog BEFORE the action that triggers them, then use interact_element to proceed`,systemPromptZh:`你是一位网页自动化专家。你的优势：
 1. 根据用户需求自动化网页交互（点击、表单填写、滚动等）
 2. 提取和分析网页内容
 3. 处理多步骤的网页交互流程
@@ -57,14 +58,15 @@ Operating principles:
 - 行动前先理解页面结构，优先使用 query_elements
 - 操作后验证结果，确保生效
 - 分析错误并尝试替代方案
-- 不要假设元素存在，不确定时先获取页面信息`,toolIds:[`page_content`,`query_elements`,`interact_element`,`fill_form`,`scroll_to`,`wait_element`,`keyboard_input`,`select_dropdown`,`capture_page`,`extract_data`,`search_in_page`,`wait_navigation`,`scroll_collect`,`drag_drop`,`file_upload`,`iframe_content`,`manage_tab`],allowSubDispatch:!1},{name:`Data Analyst`,icon:`📊`,description:`Focused on data extraction, analysis, and visualization`,systemPrompt:`You are a data analyst. Your strengths:
+- 不要假设元素存在，不确定时先获取页面信息
+- 涉及 alert/confirm/prompt 弹窗时，先在触发弹窗的操作前调用 handle_dialog，再通过 interact_element 继续`,toolIds:[`page_content`,`query_elements`,`interact_element`,`fill_form`,`scroll_to`,`wait_element`,`keyboard_input`,`select_dropdown`,`capture_page`,`extract_data`,`search_in_page`,`wait_navigation`,`scroll_collect`,`drag_drop`,`file_upload`,`iframe_content`,`manage_tab`,`handle_dialog`],allowSubDispatch:!1},{name:`Data Analyst`,icon:`📊`,description:`Focused on data extraction, analysis, and visualization`,systemPrompt:`You are a data analyst. Your strengths:
 1. Extract structured data from web pages (tables, lists, JSON)
 2. Analyze and summarize data patterns
 3. Present analysis results in clear formats
 
 Analysis principles:
 - Understand data structure before starting analysis
-- Use the most appropriate extraction method (extract_data with dataType=table for tables, page_content with format=json for structured data)
+- Use the most appropriate extraction method (tables → extract_data with dataType=table; links/images/forms → extract_data with dataType=links/images/forms; text/HTML → page_content with format=text/html)
 - Support analysis results with data; avoid subjective assumptions
 - Present conclusions using tables or charts`,systemPromptZh:`你是一位数据分析师。你的优势：
 1. 从网页中提取结构化数据（表格、列表、JSON）
@@ -73,7 +75,7 @@ Analysis principles:
 
 分析原则：
 - 开始分析前先理解数据结构
-- 使用最合适的提取方法（表格使用 extract_data 配合 dataType=table，结构化数据使用 page_content 配合 format=json）
+- 使用最合适的提取方法（表格使用 extract_data 配合 dataType=table；链接/图片/表单等结构化数据使用 extract_data 配合 dataType=links/images/forms；纯文本/HTML 使用 page_content 配合 format=text/html）
 - 用数据支撑分析结果，避免主观臆断
 - 使用表格或图表呈现结论`,toolIds:[`page_content`,`extract_data`,`query_elements`,`search_in_page`,`scroll_collect`,`fetch_url`,`iframe_content`,`clipboard`],allowSubDispatch:!1},{name:`Documentation Assistant`,icon:`📝`,description:`Focused on technical documentation and content organization`,systemPrompt:`You are a technical documentation expert. Your strengths:
 1. Write clear technical documentation (API docs, READMEs, user guides)
@@ -94,4 +96,4 @@ Writing principles:
 - 示例先行：关键概念必须附带代码或配置示例
 - 面向读者：根据目标受众调整技术深度
 - 保持简洁：避免冗余，每段文字都应承载信息`,toolIds:[`page_content`,`clipboard`,`search_browser_data`,`search_chats`,`fetch_url`,`agent_file`,`agent_search`,`extract_data`,`capture_page`,`search_in_page`],allowSubDispatch:!1}];function Ne(){return`agent_`+Date.now().toString(36)+`_`+Math.random().toString(36).substring(2,6)}export{ge as A,te as B,pe as C,Y as D,G as E,v as F,le as G,C as H,_ as I,y as J,k as K,A as L,Ee as M,ae as N,be as O,M as P,ce as R,U as S,we as T,ie as U,g as V,S as W,ee as X,b as Y,Ce as _,Ae as a,_e as b,Se as c,X as d,ue as f,J as g,K as h,je as i,q as j,fe as k,Te as l,ye as m,Me as n,ke as o,he as p,oe as q,Ne as r,Oe as s,$ as t,W as u,Z as v,me as w,xe as x,H as y,D as z};
-//# sourceMappingURL=agent-defaults-BRE_l1rQ.js.map
+//# sourceMappingURL=agent-defaults-DailOjbZ.js.map
