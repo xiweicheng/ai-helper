@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
-  <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
-  <script type="module" crossorigin src="/assets/chunk-CMxvf4Kt.js"></script>
-  <script type="module" crossorigin src="/assets/constants-DBNqocFG.js"></script>
+  <script type="module" crossorigin src="/assets/rolldown-runtime-C0FnF6B9.js"></script>
   <script type="module" crossorigin src="/assets/i18n-BeZarAZC.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-DailOjbZ.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-CHDZs4cg.js"></script>
+  <script type="module" crossorigin src="/assets/constants-DBNqocFG.js"></script>
+  <script type="module" crossorigin src="/assets/agent-defaults-BEgEbjSw.js"></script>
   <script type="module" crossorigin src="/assets/state-B9PZN_fc.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-BjtjmXgc.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-jnZWkzd4.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-BRqpVAvZ.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-Cm411zzN.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-B1mcAVlG.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
+  <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
 </head>
 <body>
@@ -927,13 +927,21 @@
       <div style="display: flex; gap: 12px; margin-bottom: 12px;">
         <div style="flex: 1;">
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.nameLabel">名称</label>
-          <input type="text" id="agentEditName" data-i18n-placeholder="agentEditor.namePlaceholder" placeholder="助手名称" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+          <input type="text" id="agentEditName" data-i18n-placeholder="agentEditor.namePlaceholder" placeholder="助手名称" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
         </div>
         <div style="width: 70px; position: relative;">
           <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.icon">图标</label>
-          <button type="button" id="agentEditIconBtn" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center; background: white; cursor: pointer;">🤖</button>
+          <button type="button" id="agentEditIconBtn" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">🤖</button>
           <input type="hidden" id="agentEditIcon" value="🤖">
-          <div class="emoji-picker" id="emojiPicker" style="display:none;"></div>
+          <div class="emoji-picker" id="emojiPicker" style="display:none;">
+            <div class="emoji-search-bar">
+              <div class="emoji-search-wrap">
+                <input type="text" id="emojiSearchInput" class="emoji-search-input" data-i18n-placeholder="agentMgr.emojiSearchPlaceholder" placeholder="搜索 Emoji">
+                <button type="button" id="emojiSearchClear" class="emoji-search-clear" data-i18n-title="agentMgr.emojiSearchClear" title="清空搜索" style="display:none;">✕</button>
+              </div>
+            </div>
+            <div class="emoji-picker-body" id="emojiPickerBody"></div>
+          </div>
         </div>
       </div>
 

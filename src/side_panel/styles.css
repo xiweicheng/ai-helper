@@ -873,18 +873,72 @@ body {
   border: 1px solid #e0e0e0;
   border-radius: 12px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
-  padding: 10px;
   width: 330px;
-  max-height: 300px;
+  max-width: calc(100vw - 16px);
+  margin-top: 4px;
+  overflow: hidden;
+}
+.emoji-search-bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.emoji-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.emoji-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 4px 26px 4px 8px;
+  font-size: 12px;
+  outline: none;
+}
+.emoji-search-input:focus {
+  border-color: #667eea;
+}
+.emoji-search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: #f0f0f0;
+  color: #888;
+  font-size: 11px;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+.emoji-search-clear:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+.emoji-picker-body {
+  max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
-  margin-top: 4px;
+  padding: 0 10px 10px;
+}
+.emoji-picker-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #999;
 }
 .emoji-category-label {
   font-size: 10px;
   color: #aaa;
   padding: 4px 2px 2px;
-  grid-column: 1 / -1;
   margin-top: 4px;
 }
 .emoji-category-label:first-child {
@@ -892,8 +946,11 @@ body {
 }
 .emoji-picker-grid {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
+  /* minmax(0,1fr)：列宽不受内容（旗帜/ZWJ 组合等宽字符）撑宽，防止网格溢出 */
+  grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 2px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .emoji-picker-item {
   aspect-ratio: 1;
@@ -907,6 +964,9 @@ body {
   cursor: pointer;
   transition: background 0.15s;
   padding: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .emoji-picker-item:hover {
   background: #e8ecf4;

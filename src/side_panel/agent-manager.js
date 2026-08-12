@@ -8,6 +8,7 @@ import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
+import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
@@ -29,16 +30,18 @@ registerTranslations('zh', {
     agentDeleted: '助手已删除',
     deleteFailed: '删除失败：{message}',
     cannotDeleteDefault: '默认助手不支持删除',
-    emojiCatFaceExpressions: '人物表情',
-    emojiCatHandGestures: '手势动作',
-    emojiCatProfessionalRoles: '职业角色',
-    emojiCatAiTech: 'AI & 科技',
-    emojiCatToolObjects: '工具物品',
-    emojiCatDocData: '文档数据',
-    emojiCatStatusMarks: '状态标记',
-    emojiCatTransportTravel: '交通出行',
-    emojiCatNatureWeather: '自然天气',
-    emojiCatSymbolSigns: '符号标志',
+    emojiCatSmileys: '笑脸与表情',
+    emojiCatPeople: '人物与身体',
+    emojiCatAnimals: '动物与自然',
+    emojiCatFood: '食物与饮品',
+    emojiCatTravel: '旅行与交通',
+    emojiCatActivity: '活动与运动',
+    emojiCatObjects: '物品',
+    emojiCatSymbols: '符号',
+    emojiCatFlags: '旗帜',
+    emojiSearchPlaceholder: '搜索 Emoji（英文名 / 中文关键词）',
+    emojiSearchClear: '清空搜索',
+    emojiNoMatch: '未找到匹配的 Emoji',
     confirm: '确认',
   },
   agentTemplates: {
@@ -71,16 +74,18 @@ registerTranslations('en', {
     agentDeleted: 'Assistant deleted',
     deleteFailed: 'Delete failed: {message}',
     cannotDeleteDefault: 'Default assistant cannot be deleted',
-    emojiCatFaceExpressions: 'Face expressions',
-    emojiCatHandGestures: 'Hand gestures',
-    emojiCatProfessionalRoles: 'Professional roles',
-    emojiCatAiTech: 'AI & Tech',
-    emojiCatToolObjects: 'Tool objects',
-    emojiCatDocData: 'Document & data',
-    emojiCatStatusMarks: 'Status marks',
-    emojiCatTransportTravel: 'Transport & travel',
-    emojiCatNatureWeather: 'Nature & weather',
-    emojiCatSymbolSigns: 'Symbols & signs',
+    emojiCatSmileys: 'Smileys & Emotion',
+    emojiCatPeople: 'People & Body',
+    emojiCatAnimals: 'Animals & Nature',
+    emojiCatFood: 'Food & Drink',
+    emojiCatTravel: 'Travel & Places',
+    emojiCatActivity: 'Activities',
+    emojiCatObjects: 'Objects',
+    emojiCatSymbols: 'Symbols',
+    emojiCatFlags: 'Flags',
+    emojiSearchPlaceholder: 'Search emoji (name / keyword)',
+    emojiSearchClear: 'Clear search',
+    emojiNoMatch: 'No matching emoji',
     confirm: 'Confirm',
   },
   agentTemplates: {
@@ -460,37 +465,75 @@ function initAgentModalEvents() {
   });
 }
 
-// 常用 Emoji 分类
-const EMOJI_CATEGORIES = [
-  { label: t('agentMgr.emojiCatFaceExpressions'), emojis: ['😀','😃','😎','🤩','🥳','😇','🤔','🧐','😤','😭','🥺','🤗','😏','🫡','🤫','🤯','🥱','😴','🤤','💀'] },
-  { label: t('agentMgr.emojiCatHandGestures'), emojis: ['👋','🤝','👍','👎','👏','🙌','💪','✍️','🙏','🤞','✌️','🤘','👆','👇','👉','👈','🖐️','🤙','🤌','🫶'] },
-  { label: t('agentMgr.emojiCatProfessionalRoles'), emojis: ['🤖','🧑‍💻','👨‍🔬','👩‍🎨','🧑‍🏫','👨‍💼','🧑‍🔧','👩‍⚕️','🧑‍🚀','👨‍🍳','🧑‍🎓','👩‍🚒','👮','🕵️','👷','🧙','🦸','🧛','🧜','👼'] },
-  { label: t('agentMgr.emojiCatAiTech'), emojis: ['🧠','💡','🔍','🔬','🧪','🧬','🛰️','📡','🔗','🌐','💻','🖥️','⌨️','🖱️','🖨️','📱','🔌','💾','🎛️','⚙️'] },
-  { label: t('agentMgr.emojiCatToolObjects'), emojis: ['🔧','🔨','🪛','🔐','🔑','🛡️','🔒','🔓','✂️','📐','📏','🧲','💣','🧨','🔔','🔕','💎','💿','📀','🎥'] },
-  { label: t('agentMgr.emojiCatDocData'), emojis: ['📝','📋','📄','📊','📈','📉','🗂️','📁','📂','📚','📖','📌','📎','🖇️','✏️','🖊️','📏','📐','🗑️','📇'] },
-  { label: t('agentMgr.emojiCatStatusMarks'), emojis: ['✅','❌','⚠️','⛔','🚫','➕','➖','⭐','🔥','💯','🎯','🏆','🥇','📌','📍','💬','🗨️','💭','🗯️','💢'] },
-  { label: t('agentMgr.emojiCatTransportTravel'), emojis: ['🚀','✈️','🚗','🚲','🛵','🏎️','🚢','🚁','🛸','🏃','🚶','🧗','🏄','🚴','🏊','⛵','🚂','🚌','🚕','🛴'] },
-  { label: t('agentMgr.emojiCatNatureWeather'), emojis: ['☀️','🌙','⭐','🌈','☁️','⛈️','❄️','🔥','💧','🌊','🌸','🌺','🌻','🌲','🍀','🌍','🏔️','🌋','🏝️','🌌'] },
-  { label: t('agentMgr.emojiCatSymbolSigns'), emojis: ['©️','®️','™️','♻️','⚡','💲','🔴','🟠','🟡','🟢','🔵','🟣','⬛','⬜','🟤','❤️','💙','💚','💛','💜'] },
+// Emoji 分类标签（id 对应 emoji-data.js 中的分类字段）
+const EMOJI_CATEGORY_KEYS = [
+  ['smileys', 'emojiCatSmileys'],
+  ['people', 'emojiCatPeople'],
+  ['animals', 'emojiCatAnimals'],
+  ['food', 'emojiCatFood'],
+  ['travel', 'emojiCatTravel'],
+  ['activity', 'emojiCatActivity'],
+  ['objects', 'emojiCatObjects'],
+  ['symbols', 'emojiCatSymbols'],
+  ['flags', 'emojiCatFlags'],
 ];
+
+// 条目格式：[emoji字符, 英文名, 分类, 中文关键词]
+function emojiMatches(entry, query) {
+  if (entry[1].includes(query)) return true;
+  if (entry[3] && entry[3].includes(query)) return true;
+  return false;
+}
+
+// 渲染全量分类网格
+function renderEmojiGrid(body) {
+  let html = '';
+  for (const [catId, labelKey] of EMOJI_CATEGORY_KEYS) {
+    const items = EMOJI_DATA.filter(e => e[2] === catId);
+    if (!items.length) continue;
+    html += `<div class="emoji-category-label">${t('agentMgr.' + labelKey)}</div>`;
+    html += '<div class="emoji-picker-grid">';
+    for (const entry of items) {
+      html += `<button type="button" class="emoji-picker-item" data-emoji="${escapeAttr(entry[0])}" title="${escapeAttr(entry[1])}">${entry[0]}</button>`;
+    }
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+
+// 渲染搜索结果网格
+function renderEmojiSearch(body, query) {
+  const matched = EMOJI_DATA.filter(e => emojiMatches(e, query));
+  if (!matched.length) {
+    body.innerHTML = `<div class="emoji-picker-empty">${t('agentMgr.emojiNoMatch')}</div>`;
+    return;
+  }
+  let html = '<div class="emoji-picker-grid">';
+  for (const entry of matched) {
+    html += `<button type="button" class="emoji-picker-item" data-emoji="${escapeAttr(entry[0])}" title="${escapeAttr(entry[1])}">${entry[0]}</button>`;
+  }
+  html += '</div>';
+  body.innerHTML = html;
+}
 
 function initEmojiPicker() {
   const picker = document.getElementById('emojiPicker');
   const btn = document.getElementById('agentEditIconBtn');
   const hidden = document.getElementById('agentEditIcon');
+  const input = document.getElementById('emojiSearchInput');
+  const clearBtn = document.getElementById('emojiSearchClear');
+  const body = document.getElementById('emojiPickerBody');
   if (!picker || !btn) return;
 
-  // 构建分类 emoji 面板
-  let html = '';
-  for (const cat of EMOJI_CATEGORIES) {
-    html += `<div class="emoji-category-label">${cat.label}</div>`;
-    html += '<div class="emoji-picker-grid">';
-    for (const emoji of cat.emojis) {
-      html += `<button type="button" class="emoji-picker-item" data-emoji="${emoji}">${emoji}</button>`;
+  const render = () => {
+    const query = input ? input.value.trim().toLowerCase() : '';
+    if (query) {
+      renderEmojiSearch(body, query);
+    } else {
+      renderEmojiGrid(body);
     }
-    html += '</div>';
-  }
-  picker.innerHTML = html;
+    if (clearBtn) clearBtn.style.display = query ? 'flex' : 'none';
+  };
 
   // 点击按钮切换 picker
   btn.addEventListener('click', (e) => {
@@ -499,6 +542,9 @@ function initEmojiPicker() {
       picker.style.display = 'none';
       return;
     }
+    // 每次打开重置搜索并重新渲染（当前图标可能已变化）
+    if (input) input.value = '';
+    render();
     // 动态定位：判断按钮右侧空间，不够则靠右展开
     const btnRect = btn.getBoundingClientRect();
     const panelWidth = document.body.clientWidth;
@@ -513,6 +559,21 @@ function initEmojiPicker() {
     }
     picker.style.display = 'block';
   });
+
+  // 搜索过滤
+  if (input) {
+    input.addEventListener('input', render);
+  }
+
+  // 一键清空搜索
+  if (clearBtn) {
+    clearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (input) input.value = '';
+      render();
+      if (input) input.focus();
+    });
+  }
 
   // 选择 emoji
   picker.addEventListener('click', (e) => {
