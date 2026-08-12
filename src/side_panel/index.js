@@ -1338,6 +1338,37 @@ function startRecoveryPolling(agentId, maxAttempts = 20) {
 }
 
 /**
+ * 动态定位 header 代理下拉框：默认右对齐（wrapper 右侧 -20px），
+ * 窄屏时 clamp 在面板边界内，保证左右两侧都不被遮挡
+ */
+function positionHeaderAgentDropdown() {
+  const dropdown = document.getElementById('headerAgentDropdown');
+  const wrapper = document.getElementById('headerAgentWrapper');
+  if (!dropdown || !wrapper) return;
+
+  const panelWidth = document.body.clientWidth;
+  const wrapperRect = wrapper.getBoundingClientRect();
+  const ddWidth = dropdown.offsetWidth;
+
+  // 面板太窄时收缩下拉框宽度（覆盖 CSS min-width/max-width）
+  if (panelWidth < 312) {
+    dropdown.style.minWidth = (panelWidth - 16) + 'px';
+    dropdown.style.maxWidth = (panelWidth - 16) + 'px';
+  } else {
+    dropdown.style.minWidth = '';
+    dropdown.style.maxWidth = '';
+  }
+
+  // 默认位置：右边缘 = wrapper 右边缘右侧 20px（原视觉），左侧不超出边界
+  let left = wrapperRect.right + 20 - ddWidth;
+  const minLeft = 8;
+  const maxLeft = panelWidth - ddWidth - 8;
+  left = Math.max(minLeft, Math.min(maxLeft, left));
+
+  dropdown.style.left = (left - wrapperRect.left) + 'px';
+}
+
+/**
  * 初始化代理下拉事件
  */
 async function initAgentDropdown() {
@@ -1358,6 +1389,8 @@ async function initAgentDropdown() {
     const isOpen = dropdown.style.display !== 'none';
     dropdown.style.display = isOpen ? 'none' : '';
     if (!isOpen) {
+      // 窄屏时动态 clamp 下拉框位置，避免超出面板边界
+      positionHeaderAgentDropdown();
       // 打开时刷新列表并检测各代理在线状态
       updateAgentIndicator(state.agentPlatform || {});
       pingAllAgents();
