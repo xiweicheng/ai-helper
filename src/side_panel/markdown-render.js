@@ -80,6 +80,68 @@ registerTranslations('en', {
 const MAX_SVG_DIM = 2000;
 
 /**
+ * 检测 SVG 是否来自 Mermaid 类图（classDiagram）
+ * 类图的 foreignObject 含多行文本，需特殊处理避免文字重叠
+ */
+function isClassDiagramSvg(svg) {
+  const mermaidContainer = svg.closest('.mermaid');
+  if (!mermaidContainer) return false;
+  const rawCode = mermaidContainer.getAttribute('data-raw-code');
+  if (!rawCode) return false;
+  try {
+    const decoded = decodeURIComponent(rawCode);
+    return /^\s*classDiagram/im.test(decoded);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 将类图 SVG 中的 foreignObject 转换为 <text> 元素
+ *
+ * Mermaid 类图的 foreignObject 通过 transform 属性定位（非 x/y），
+ * 且每个标签是独立的 foreignObject（非多行合并）。
+ * 转换时必须复制 transform 属性，否则所有文字堆叠在原点。
+ */
+function convertClassDiagramForeignObjects(svgClone) {
+  const foreignObjects = svgClone.querySelectorAll('foreignObject');
+  foreignObjects.forEach(fo => {
+    const div = fo.querySelector('div');
+    if (!div) {
+      fo.remove();
+      return;
+    }
+    const span = div.querySelector('span');
+    const targetEl = span || div;
+    const textContent = targetEl.textContent.trim();
+    if (!textContent) {
+      fo.remove();
+      return;
+    }
+
+    const foW = parseFloat(fo.getAttribute('width')) || 100;
+    const foH = parseFloat(fo.getAttribute('height')) || 30;
+    const transform = fo.getAttribute('transform');
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', String(foW / 2));
+    text.setAttribute('y', String(foH / 2));
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    if (transform) {
+      text.setAttribute('transform', transform);
+    }
+    const spanClass = span ? span.getAttribute('class') : '';
+    if (spanClass) {
+      text.setAttribute('class', spanClass);
+    }
+    text.textContent = textContent;
+
+    fo.parentNode.replaceChild(text, fo);
+  });
+}
+
+/**
  * 清理 SVG 中可能导致 canvas 污染（tainted canvas）的元素
  * - 将 <foreignObject> 转换为 SVG <text> 元素（保留文字内容）
  * - 移除引用外部 http(s) 地址的 <image> 元素
@@ -95,39 +157,45 @@ function sanitizeSvgForExport(svgElement) {
   tempContainer.appendChild(clone);
   document.body.appendChild(tempContainer);
 
-  // 将 <foreignObject> 转换为 SVG <text> 元素
-  const foreignObjects = clone.querySelectorAll('foreignObject');
-  foreignObjects.forEach(fo => {
-    const div = fo.querySelector('div');
-    if (!div) {
-      fo.remove();
-      return;
-    }
+  // 类图的 foreignObject 含多行文本，展开 <switch> 让 <text> 降级元素生效
+  // 其他图保持原有 foreignObject → text 单行转换
+  if (isClassDiagramSvg(svgElement)) {
+    convertClassDiagramForeignObjects(clone);
+  } else {
+    // 将 <foreignObject> 转换为 SVG <text> 元素
+    const foreignObjects = clone.querySelectorAll('foreignObject');
+    foreignObjects.forEach(fo => {
+      const div = fo.querySelector('div');
+      if (!div) {
+        fo.remove();
+        return;
+      }
 
-    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    const foX = parseFloat(fo.getAttribute('x')) || 0;
-    const foY = parseFloat(fo.getAttribute('y')) || 0;
-    const foW = parseFloat(fo.getAttribute('width')) || 100;
-    const foH = parseFloat(fo.getAttribute('height')) || 30;
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      const foX = parseFloat(fo.getAttribute('x')) || 0;
+      const foY = parseFloat(fo.getAttribute('y')) || 0;
+      const foW = parseFloat(fo.getAttribute('width')) || 100;
+      const foH = parseFloat(fo.getAttribute('height')) || 30;
 
-    const span = div.querySelector('span');
-    const targetEl = span || div;
-    const elStyle = window.getComputedStyle(targetEl);
+      const span = div.querySelector('span');
+      const targetEl = span || div;
+      const elStyle = window.getComputedStyle(targetEl);
 
-    text.textContent = targetEl.textContent.trim();
-    text.setAttribute('x', String(foX + foW / 2));
-    text.setAttribute('y', String(foY + foH / 2));
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('dominant-baseline', 'central');
-    text.setAttribute('fill', elStyle.color || '#333');
-    text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
-    text.setAttribute('font-size', elStyle.fontSize || '14px');
-    if (elStyle.fontWeight === 'bold' || parseInt(elStyle.fontWeight) >= 600) {
-      text.setAttribute('font-weight', 'bold');
-    }
+      text.textContent = targetEl.textContent.trim();
+      text.setAttribute('x', String(foX + foW / 2));
+      text.setAttribute('y', String(foY + foH / 2));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'central');
+      text.setAttribute('fill', elStyle.color || '#333');
+      text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
+      text.setAttribute('font-size', elStyle.fontSize || '14px');
+      if (elStyle.fontWeight === 'bold' || parseInt(elStyle.fontWeight) >= 600) {
+        text.setAttribute('font-weight', 'bold');
+      }
 
-    fo.parentNode.replaceChild(text, fo);
-  });
+      fo.parentNode.replaceChild(text, fo);
+    });
+  }
 
   // 移除引用外部 http(s) 地址的 <image> 元素
   const images = clone.querySelectorAll('image');

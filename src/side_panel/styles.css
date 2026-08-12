@@ -46,7 +46,7 @@ body {
 /* 窄屏自适应：隐藏文字，仅保留图标 */
 @media (max-width: 420px) {
   .header {
-    padding: 14px 10px;
+    padding: 6px 10px;
   }
   .header h1 img {
     margin-right: 0;

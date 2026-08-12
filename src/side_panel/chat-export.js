@@ -481,6 +481,71 @@ export async function renderMermaidInContainer(container) {
 }
 
 /**
+ * 检测 SVG 是否来自 Mermaid 类图（classDiagram）
+ * 类图的 foreignObject 含多行文本，需特殊处理避免文字重叠
+ */
+function isClassDiagramSvg(svg) {
+  const mermaidContainer = svg.closest('.mermaid');
+  if (!mermaidContainer) return false;
+  const rawCode = mermaidContainer.getAttribute('data-raw-code');
+  if (!rawCode) return false;
+  try {
+    const decoded = decodeURIComponent(rawCode);
+    return /^\s*classDiagram/im.test(decoded);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 将类图 SVG 中的 foreignObject 转换为 <text> 元素
+ *
+ * Mermaid 类图的 foreignObject 通过 transform 属性定位（非 x/y），
+ * 且每个标签是独立的 foreignObject（非多行合并）。
+ * 转换时必须复制 transform 属性，否则所有文字堆叠在原点。
+ */
+function convertClassDiagramForeignObjects(svgClone) {
+  const foreignObjects = svgClone.querySelectorAll('foreignObject');
+  foreignObjects.forEach(fo => {
+    const div = fo.querySelector('div');
+    if (!div) {
+      fo.remove();
+      return;
+    }
+    const span = div.querySelector('span');
+    const targetEl = span || div;
+    const textContent = targetEl.textContent.trim();
+    if (!textContent) {
+      fo.remove();
+      return;
+    }
+
+    const foW = parseFloat(fo.getAttribute('width')) || 100;
+    const foH = parseFloat(fo.getAttribute('height')) || 30;
+    const transform = fo.getAttribute('transform');
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    // foreignObject 无 x/y 属性，文字居中于其自身宽高内
+    text.setAttribute('x', String(foW / 2));
+    text.setAttribute('y', String(foH / 2));
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    // 复制 transform 属性（类图标签通过 transform 定位，非 x/y）
+    if (transform) {
+      text.setAttribute('transform', transform);
+    }
+    // 复制 span 的 class 属性，保留 CSS 样式（nodeLabel、classTitle 等）
+    const spanClass = span ? span.getAttribute('class') : '';
+    if (spanClass) {
+      text.setAttribute('class', spanClass);
+    }
+    text.textContent = textContent;
+
+    fo.parentNode.replaceChild(text, fo);
+  });
+}
+
+/**
  * 将容器中的 SVG 元素转换为 base64 图片（Word 不支持 SVG，html2canvas 也无法正确处理 SVG）
  * @param {HTMLElement} container
  */
@@ -492,39 +557,45 @@ export async function convertSvgsToImages(container) {
     try {
       const svgClone = svg.cloneNode(true);
 
-      // 将 foreignObject 转为 text 元素，避免 canvas 污染导致 toDataURL 失败
-      // 同时保留文字内容，确保图表标签不丢失
-      const foreignObjects = svgClone.querySelectorAll('foreignObject');
-      foreignObjects.forEach(fo => {
-        const div = fo.querySelector('div');
-        if (!div) return;
+      // 类图（classDiagram）的 foreignObject 含多行文本，转单个 text 会重叠
+      // 仅对类图展开 <switch> 让 mermaid 的 <text> 降级元素生效，其他图保持原有转换
+      if (isClassDiagramSvg(svg)) {
+        convertClassDiagramForeignObjects(svgClone);
+      } else {
+        // 将 foreignObject 转为 text 元素，避免 canvas 污染导致 toDataURL 失败
+        // 同时保留文字内容，确保图表标签不丢失
+        const foreignObjects = svgClone.querySelectorAll('foreignObject');
+        foreignObjects.forEach(fo => {
+          const div = fo.querySelector('div');
+          if (!div) return;
 
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        const foX = parseFloat(fo.getAttribute('x')) || 0;
-        const foY = parseFloat(fo.getAttribute('y')) || 0;
-        const foW = parseFloat(fo.getAttribute('width')) || 100;
-        const foH = parseFloat(fo.getAttribute('height')) || 30;
+          const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          const foX = parseFloat(fo.getAttribute('x')) || 0;
+          const foY = parseFloat(fo.getAttribute('y')) || 0;
+          const foW = parseFloat(fo.getAttribute('width')) || 100;
+          const foH = parseFloat(fo.getAttribute('height')) || 30;
 
-        // 获取 div 的样式
-        const divStyle = window.getComputedStyle(div);
-        const span = div.querySelector('span');
-        const targetEl = span || div;
-        const elStyle = window.getComputedStyle(targetEl);
+          // 获取 div 的样式
+          const divStyle = window.getComputedStyle(div);
+          const span = div.querySelector('span');
+          const targetEl = span || div;
+          const elStyle = window.getComputedStyle(targetEl);
 
-        text.textContent = targetEl.textContent.trim();
-        text.setAttribute('x', String(foX + foW / 2));
-        text.setAttribute('y', String(foY + foH / 2));
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('dominant-baseline', 'central');
-        text.setAttribute('fill', elStyle.color || '#333');
-        text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
-        text.setAttribute('font-size', elStyle.fontSize || '14px');
-        if (elStyle.fontWeight === 'bold' || parseInt(elStyle.fontWeight) >= 600) {
-          text.setAttribute('font-weight', 'bold');
-        }
+          text.textContent = targetEl.textContent.trim();
+          text.setAttribute('x', String(foX + foW / 2));
+          text.setAttribute('y', String(foY + foH / 2));
+          text.setAttribute('text-anchor', 'middle');
+          text.setAttribute('dominant-baseline', 'central');
+          text.setAttribute('fill', elStyle.color || '#333');
+          text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
+          text.setAttribute('font-size', elStyle.fontSize || '14px');
+          if (elStyle.fontWeight === 'bold' || parseInt(elStyle.fontWeight) >= 600) {
+            text.setAttribute('font-weight', 'bold');
+          }
 
-        fo.parentNode.replaceChild(text, fo);
-      });
+          fo.parentNode.replaceChild(text, fo);
+        });
+      }
 
       // 优先从 viewBox 获取尺寸（mermaid SVG 必有 viewBox）
       const viewBox = svg.getAttribute('viewBox');
