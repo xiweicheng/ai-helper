@@ -8406,6 +8406,13 @@ body {
   align-items: center;
   justify-content: center;
   animation: artifacts-fade-in 0.2s ease;
+  pointer-events: auto;
+}
+
+/* 嵌入模式：overlay 挂载在左侧对话区域（mainLeft）内，
+   遮罩仅覆盖对话区，不遮挡右侧嵌入的工作目录区域 */
+.artifacts-modal-overlay.embedded-mode {
+  position: absolute;
 }
 
 @keyframes artifacts-fade-in {

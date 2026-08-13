@@ -4,7 +4,7 @@
 
 import { t, registerTranslations } from '../shared/i18n.js';
 import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream } from './workspace-manager.js';
-import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, closeWorkspacePanel, resolveWorkspaceAbsolutePath } from './workspace-panel.js';
+import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, resolveWorkspaceAbsolutePath } from './workspace-panel.js';
 import { showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
 
@@ -941,8 +941,6 @@ let modalOverlay = null;
 // 排序状态
 let artifactsSortKey = null; // 'name' | 'type' | 'time'
 let artifactsSortDir = 1;    // 1 升序, -1 降序
-// 预览是否由产物弹框触发（关闭弹框时据此收起工作区面板）
-let previewOpenedFromModal = false;
 
 /**
  * 格式化时间戳为 HH:MM:SS
@@ -1063,7 +1061,6 @@ function bindArtifactRowEvents(modal, sortedList) {
         e.preventDefault(); // 阻止文本选中
         if (artifact.deleted) return;
         if (!canPreview(artifact.fileName)) return;
-        previewOpenedFromModal = true;
         previewArtifactFile(artifact.path, artifact.fileName).catch(err => {
           logger.error('[Artifacts] preview failed:', err);
         });
@@ -1110,7 +1107,6 @@ function bindArtifactRowEvents(modal, sortedList) {
             logger.error('[Artifacts] locate failed:', err);
           }
         } else if (btn.classList.contains('preview-btn')) {
-          previewOpenedFromModal = true;
           try {
             // 预览完成后保持弹框打开，用户可继续操作
             await previewArtifactFile(artifact.path, artifact.fileName);
@@ -1244,10 +1240,9 @@ export function showArtifactsModal(artifacts) {
 
   if (!artifacts || artifacts.length === 0) return;
 
-  // 重置排序与预览标记
+  // 重置排序状态
   artifactsSortKey = null;
   artifactsSortDir = 1;
-  previewOpenedFromModal = false;
 
   modalOverlay = document.createElement('div');
   modalOverlay.className = 'artifacts-modal-overlay';
@@ -1307,19 +1302,27 @@ export function showArtifactsModal(artifacts) {
   modal.appendChild(body);
   modal.appendChild(footer);
   modalOverlay.appendChild(modal);
-  document.body.appendChild(modalOverlay);
+
+  // 嵌入模式检测：工作目录面板为 embedded 布局时，overlay 挂载到左侧对话区域
+  // （mainLeft）内，遮罩仅覆盖对话区，不遮挡右侧嵌入的工作目录区域
+  let mountTarget = document.body;
+  const workspaceContainer = document.getElementById('workspacePanelContainer');
+  if (workspaceContainer && workspaceContainer.classList.contains('embedded')) {
+    const mainLeft = document.getElementById('mainLeft');
+    if (mainLeft) {
+      modalOverlay.classList.add('embedded-mode');
+      // 确保 mainLeft 作为 absolute 定位的包含块
+      mainLeft.style.position = 'relative';
+      mountTarget = mainLeft;
+    }
+  }
+  mountTarget.appendChild(modalOverlay);
 
   // 绑定事件
   // 关闭按钮
   document.getElementById('artifactsModalClose').addEventListener('click', hideArtifactsModal);
 
-  // 注意：点击遮罩区域不关闭弹窗本身，仅收起工作目录面板与预览窗口（若已打开）
-  modalOverlay.addEventListener('click', (e) => {
-    if (e.target !== modalOverlay) return;
-    // 预览已随面板关闭，重置标记避免关闭弹框时重复收起
-    previewOpenedFromModal = false;
-    closeWorkspacePanel();
-  });
+  // 注意：点击遮罩区域不关闭弹窗本身（工作目录界面保持可操作）
 
   // ESC 关闭
   const escHandler = (e) => {
@@ -1371,9 +1374,5 @@ export function hideArtifactsModal() {
     modalOverlay.remove();
     modalOverlay = null;
   }
-  // 若预览窗口是由产物弹框打开的，关闭弹框时一并收起工作区面板
-  if (previewOpenedFromModal) {
-    previewOpenedFromModal = false;
-    closeWorkspacePanel();
-  }
+  // 关闭弹框不收起工作区面板/预览：工作目录中已打开的文件预览界面保持不变
 }
