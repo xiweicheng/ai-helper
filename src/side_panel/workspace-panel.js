@@ -509,6 +509,9 @@ let downloadInProgress = false;
 let uploadInProgress = false;
 // 键盘导航：当前聚焦的文件项索引（-1 表示无聚焦）
 let focusedIndex = -1;
+// 预览是否因产物入口（previewArtifactFile）而自动展开面板：
+// 为 true 时关闭预览会一并收起面板，避免残留空的工作目录页面（用户需关闭两次）
+let previewAutoClosePanel = false;
 
 /**
  * 初始化工作目录面板
@@ -743,6 +746,10 @@ function bindEvents() {
   toggle.addEventListener('click', async (e) => {
     e.stopPropagation();
     const isOpen = panel.classList.contains('expanded');
+    if (!isOpen) {
+      // 用户主动打开面板：取消“关闭预览自动收起面板”标记（面板不再因产物预览而展开）
+      previewAutoClosePanel = false;
+    }
     if (isOpen) {
       closePanel();
     } else if (embedPreference) {
@@ -1699,6 +1706,9 @@ async function handleFileListKeydown(e) {
 async function handleFileListClick(e) {
   const item = e.target.closest('.workspace-file-item');
   if (!item) return;
+  // 用户主动与文件列表交互：取消“关闭预览自动收起面板”标记，
+  // 面板不再因产物预览而展开，关闭预览时保持展开
+  previewAutoClosePanel = false;
 
   const path = item.dataset.path;
   const type = item.dataset.type;
@@ -1778,6 +1788,9 @@ async function handleFileListClick(e) {
 async function handleFileListDblClick(e) {
   const item = e.target.closest('.workspace-file-item');
   if (!item) return;
+  // 用户主动与文件列表交互：取消“关闭预览自动收起面板”标记，
+  // 面板不再因产物预览而展开，关闭预览时保持展开
+  previewAutoClosePanel = false;
 
   const path = item.dataset.path;
   const type = item.dataset.type;
@@ -4088,6 +4101,12 @@ async function closePreview(force = false) {
   if (copyBtn) copyBtn.title = t('workspace.copyAllTitle');
   previewArea.style.display = 'none';
   document.getElementById('workspacePreviewContent').innerHTML = '';
+  // 预览因产物入口而展开面板（面板之前是收起状态）：关闭预览后一并收起面板，
+  // 避免残留空的工作目录页面需要用户再关闭一次
+  if (previewAutoClosePanel) {
+    previewAutoClosePanel = false;
+    closePanelInternal(false);
+  }
   return true;
 }
 
@@ -5423,6 +5442,10 @@ export async function previewArtifactFile(filePath, fileName) {
   const container = document.getElementById('workspacePanelContainer');
   if (!panel || !container) return;
 
+  // 记录预览前面板是否已展开：面板因本次预览而展开（之前收起）时，
+  // 关闭预览后自动收起，避免残留一个空的工作目录页面
+  const panelWasExpanded = panel.classList.contains('expanded');
+
   // 展开面板
   panel.classList.add('expanded');
   container.classList.add('click-opened');
@@ -5448,6 +5471,10 @@ export async function previewArtifactFile(filePath, fileName) {
 
   // 直接调用 previewFile
   await previewFile(resolved, fileName);
+
+  // 面板因本次预览而展开（之前收起）：关闭预览时一并收起面板，
+  // 避免残留空的工作目录页面需要用户再关闭一次
+  previewAutoClosePanel = !panelWasExpanded;
 }
 
 /**

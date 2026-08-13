@@ -1177,6 +1177,10 @@ function canPreview(filePath) {
 // ============================================================
 
 let modalOverlay = null;
+// 单击行定位的防抖定时器：双击文件名会先触发两次单击（click）再触发 dblclick，
+// 立即定位会在预览前展开工作目录面板（用户期望双击只预览），
+// 延迟 250ms 等待 dblclick 取消 pending 定位
+let pendingLocateTimer = null;
 
 // 排序状态
 let artifactsSortKey = null; // 'name' | 'type' | 'time'
@@ -1283,14 +1287,20 @@ function bindArtifactRowEvents(modal, sortedList) {
     if (!artifact) return;
 
     // 单击行：已删除文件不触发定位
+    // 防抖延迟：双击文件名会先触发单击事件，若立即定位会在预览前展开工作目录面板，
+    // 等待 250ms 让 dblclick 有机会取消 pending 定位
     row.addEventListener('click', (e) => {
       // 点击按钮（操作/复制/下载）不重复触发
       if (e.target.closest('.artifact-action-btn') || e.target.closest('.artifact-copy-btn')) return;
       if (artifact.deleted) return;
-      closeWorkspacePreview().catch(() => {});
-      locateFileInWorkspace(artifact.path).catch(err => {
-        logger.error('[Artifacts] locate failed:', err);
-      });
+      clearTimeout(pendingLocateTimer);
+      pendingLocateTimer = setTimeout(() => {
+        pendingLocateTimer = null;
+        closeWorkspacePreview().catch(() => {});
+        locateFileInWorkspace(artifact.path).catch(err => {
+          logger.error('[Artifacts] locate failed:', err);
+        });
+      }, 250);
     });
 
     // 双击文件名：已删除文件不触发预览
@@ -1300,7 +1310,11 @@ function bindArtifactRowEvents(modal, sortedList) {
         e.stopPropagation();
         e.preventDefault(); // 阻止文本选中
         if (artifact.deleted) return;
+        // 不可预览的文件：保留单击的定位行为
         if (!canPreview(artifact.fileName)) return;
+        // 取消 pending 的单击定位，避免双击预览时先展开工作目录定位文件
+        clearTimeout(pendingLocateTimer);
+        pendingLocateTimer = null;
         previewArtifactFile(artifact.path, artifact.fileName).catch(err => {
           logger.error('[Artifacts] preview failed:', err);
         });
@@ -1610,6 +1624,11 @@ export function showArtifactsModal(artifacts) {
  * 隐藏产物弹框
  */
 export function hideArtifactsModal() {
+  // 取消 pending 的单击定位（弹窗已关闭，不应再展开工作目录定位）
+  if (pendingLocateTimer) {
+    clearTimeout(pendingLocateTimer);
+    pendingLocateTimer = null;
+  }
   if (modalOverlay) {
     modalOverlay.remove();
     modalOverlay = null;
