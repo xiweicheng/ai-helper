@@ -1187,13 +1187,26 @@ export async function checkArtifactsFileExistence(artifacts) {
   if (!artifacts || artifacts.length === 0) return false;
 
   // 只检查未被标记为 deleted 且有路径的产物
-  const pathsToCheck = artifacts
-    .filter(a => !a.deleted && a.path)
-    .map(a => a.path);
-
-  if (pathsToCheck.length === 0) return false;
+  const candidates = artifacts.filter(a => !a.deleted && a.path);
+  if (candidates.length === 0) return false;
 
   try {
+    // 产物路径可能是远程/沙箱路径（如 /workspace/fix.js），
+    // 先解析为 Agent 工作目录的真实绝对路径，避免 stat 时路径不一致
+    const pathMap = new Map();
+    await Promise.all(candidates.map(async (a) => {
+      let resolved = a.path;
+      try {
+        const abs = await resolveWorkspaceAbsolutePath(a.path);
+        if (abs) resolved = abs;
+      } catch { /* 解析失败保留原始路径 */ }
+      if (!pathMap.has(resolved)) pathMap.set(resolved, []);
+      pathMap.get(resolved).push(a.path);
+    }));
+
+    const pathsToCheck = [...pathMap.keys()];
+    if (pathsToCheck.length === 0) return false;
+
     const response = await chrome.runtime.sendMessage({
       type: 'CHECK_FILES_EXIST',
       paths: pathsToCheck,
@@ -1202,10 +1215,16 @@ export async function checkArtifactsFileExistence(artifacts) {
     if (!response || !response.success || !response.results) return false;
 
     let changed = false;
-    for (const artifact of artifacts) {
-      if (!artifact.deleted && artifact.path && response.results[artifact.path] === false) {
-        artifact.deleted = true;
-        changed = true;
+    // 将解析后路径的检查结果映射回原始产物路径
+    for (const [resolved, originals] of pathMap) {
+      if (response.results[resolved] === false) {
+        for (const original of originals) {
+          const artifact = artifacts.find(a => a.path === original);
+          if (artifact && !artifact.deleted) {
+            artifact.deleted = true;
+            changed = true;
+          }
+        }
       }
     }
     return changed;

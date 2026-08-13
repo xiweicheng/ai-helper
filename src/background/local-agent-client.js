@@ -422,7 +422,11 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
 
     const response = await fetch(`${config.url}${path}`, fetchOptions);
     clearTimeout(timeoutId);
-    return await response.json();
+    const data = await response.json();
+    // 附加 HTTP 状态码（而非 status，避免与 Agent 返回 body 中的 status 字段冲突），
+    // 供调用方区分「404 文件不存在」与「Agent 离线/网络错误」
+    if (data && typeof data === 'object') data.httpStatus = response.status;
+    return data;
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
@@ -477,8 +481,7 @@ async function readFile(filePath) {
 
 /**
  * 检查文件是否存在（调用 Agent /api/fs/stat）
- * 注意：agentRequest 失败时无法区分「404 文件不存在」和「Agent 离线/网络错误」，
- * 因此统一返回 { success: false }，由调用方决定如何处理（安全策略：假设存在）
+ * 通过 agentRequest 附加的 httpStatus 区分「404 文件不存在」与「Agent 离线/网络错误」
  * @param {string} filePath - 文件绝对路径
  * @returns {Promise<{success: boolean, exists?: boolean, info?: object}>}
  */
@@ -487,7 +490,11 @@ async function statFile(filePath) {
   if (result.success) {
     return { success: true, exists: true, info: result.info };
   }
-  // 无法区分 404 和网络错误，返回 success:false 让调用方处理
+  // HTTP 404 → 文件确实不存在
+  if (result.httpStatus === 404) {
+    return { success: true, exists: false };
+  }
+  // 其他失败 → Agent 离线/网络错误，无法确认（安全策略：假设存在）
   return { success: false };
 }
 
