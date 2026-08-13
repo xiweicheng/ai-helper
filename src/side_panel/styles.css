@@ -11010,6 +11010,11 @@ body {
   border-radius: 0;
 }
 
+/* 嵌入模式点 × 关闭时临时禁用过渡：避免面板跳回浮窗定位后执行 0.25s 淡出（闪现） */
+.workspace-panel-container.closing-no-anim .workspace-panel {
+  transition: none !important;
+}
+
 /* 嵌入模式下的预览全屏覆盖面板本身即可，无需额外处理 */
 
 /* 嵌入模式宽度拖拽把手（仅嵌入模式下显示，浮窗模式隐藏避免遮挡） */

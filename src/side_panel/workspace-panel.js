@@ -5523,7 +5523,11 @@ async function closePanelInternal(force = false) {
     if (embedMode && !force) {
       embedMode = false;
       pendingRestoreEmbed = false;
+      // 临时禁用过渡：嵌入样式强制面板可见，退出嵌入瞬间面板会跳回浮窗定位
+      // 并执行 0.25s 淡出过渡（先闪现浮窗再消失）；同帧移除 embedded 直接隐藏
+      container.classList.add('closing-no-anim');
       exitEmbedMode();
+      requestAnimationFrame(() => container.classList.remove('closing-no-anim'));
     }
   }
 }
