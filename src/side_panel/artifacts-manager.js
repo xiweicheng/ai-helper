@@ -268,34 +268,88 @@ function extractPathFromObservation(observation) {
  * @param {string} command - 完整的命令字符串
  * @returns {{path: string, isDir: boolean}[]} - 提取出的文件路径列表（绝对路径或相对路径）
  */
+/**
+ * 按 && 和 ; 分割命令链（忽略花括号内部）
+ * heredoc 内容整体并入当前片段，避免内容中的 && / ; 破坏分割
+ */
+function splitCommandChain(command) {
+  const parts = [];
+  let depth = 0;
+  let current = '';
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') depth = Math.max(0, depth - 1);
+    if (depth === 0 && ch === '<' && command[i + 1] === '<') {
+      // heredoc：内容整体并入 current，直到结束标记行，避免内容中的 && / ; 破坏分割
+      const end = findHeredocEnd(command, i);
+      if (end > i) {
+        current += command.substring(i, end);
+        i = end - 1;
+        continue;
+      }
+    }
+    if (depth === 0 && ch === ';') {
+      parts.push(current);
+      current = '';
+    } else if (depth === 0 && ch === '&' && command[i + 1] === '&') {
+      parts.push(current);
+      current = '';
+      i++;
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  return parts;
+}
+
+/**
+ * 定位 heredoc 内容结束位置（<< 之后到结束标记行末尾）
+ * @returns {number} 结束下标（不含），未找到返回 -1
+ */
+function findHeredocEnd(command, startIdx) {
+  const m = command.substring(startIdx).match(/^<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?/);
+  if (!m) return -1;
+  const delimiter = m[1];
+  const contentStart = startIdx + m[0].length;
+  const rest = command.substring(contentStart);
+  const closeRe = new RegExp('\\n\\s*' + delimiter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*(?=\\n|$)');
+  const closeMatch = rest.match(closeRe);
+  if (!closeMatch) return -1;
+  return contentStart + closeMatch.index + closeMatch[0].length;
+}
+
+/**
+ * 跟踪命令中的 cd 链，返回最终工作目录
+ * 用于观察输出解析时确定 ./ 相对路径的基准目录
+ */
+function trackCommandCwd(command, initialCwd) {
+  if (!command || typeof command !== 'string') return initialCwd || '';
+  let cwd = initialCwd || '';
+  for (const part of splitCommandChain(command)) {
+    const trimmed = part.trim();
+    const cdMatch = trimmed.match(/^cd\s+(.+?)\s*$/);
+    if (!cdMatch) continue;
+    const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
+    if (target.startsWith('/')) {
+      cwd = target;
+    } else if (target === '..') {
+      cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
+    } else {
+      cwd = cwd ? normalizePath(cwd.replace(/\/$/, '') + '/' + target) : normalizePath(target);
+    }
+  }
+  return cwd;
+}
+
 function extractFilesFromAgentExec(command, initialCwd) {
   if (!command || typeof command !== 'string') return [];
 
   const results = [];
   let cwd = initialCwd || ''; // 初始工作目录（来自 agent_exec 的 params.cwd）
 
-  // 按 && 和 ; 分割命令链（忽略花括号内部）
-  const parts = [];
-  {
-    let depth = 0;
-    let current = '';
-    for (let i = 0; i < command.length; i++) {
-      const ch = command[i];
-      if (ch === '{') depth++;
-      else if (ch === '}') depth = Math.max(0, depth - 1);
-      if (depth === 0 && ch === ';') {
-        parts.push(current);
-        current = '';
-      } else if (depth === 0 && ch === '&' && command[i + 1] === '&') {
-        parts.push(current);
-        current = '';
-        i++;
-      } else {
-        current += ch;
-      }
-    }
-    parts.push(current);
-  }
+  const parts = splitCommandChain(command);
 
   for (const part of parts) {
     const trimmed = part.trim();
@@ -330,6 +384,27 @@ function extractFilesFromAgentExec(command, initialCwd) {
       }
       return normalizePath(p);
     };
+
+    // ── heredoc 内联脚本：python3 - <<'EOF' ... EOF / bash <<EOF ... EOF ──
+    // 脚本内容未写入独立文件，直接从命令字符串中提取内容做静态分析，
+    // 追踪脚本内部创建的字面量路径（动态拼接路径无法静态解析，依赖观察输出兜底）
+    const heredocMatch = trimmed.match(/^(\S+)\s+.*<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*\n([\s\S]*?)\n\s*\2\s*$/);
+    if (heredocMatch) {
+      const interpreter = heredocMatch[1].split('/').pop().toLowerCase();
+      const scriptContent = heredocMatch[3];
+      let ext = null;
+      if (/^python[\d.]*$/.test(interpreter)) ext = 'py';
+      else if (/^(ba)?sh$/.test(interpreter)) ext = 'sh';
+      if (ext) {
+        for (const dp of extractDerivedFilesFromScript(scriptContent, ext)) {
+          if (!dp) continue;
+          results.push({ path: resolvePath(dp), isDir: false });
+        }
+        continue;
+      }
+      // cat 等其它解释器的 heredoc（如 cat > file << EOF）：不分析内容，
+      // 交由下方 cat > file 模式提取目标文件
+    }
 
     // mkdir -p dir/{a,b}（使用 stripped 避免引号内干扰）
     const mkdirMatch = stripped.match(/^mkdir\s+(?:-[a-z]+\s+)*(.+?)$/);
@@ -535,6 +610,144 @@ function extractDerivedFilesFromScript(content, ext) {
 }
 
 /**
+ * 从 agent_exec 的观察输出中解析文件/目录路径（列表类命令的兜底解析）
+ * 覆盖场景：内联 heredoc 脚本动态生成文件（路径无法静态解析）后，
+ * 通过 ls -R / find 等命令展示目录结构，从输出中反推产物路径。
+ * 支持两种输出格式：
+ *   - ls -R：目录头（./dir:）+ 条目（目录头之前的条目为根目录条目）
+ *   - find：整路径（./a/b/c.txt）
+ * 仅解析以 ./ 开头的相对路径，避免 ls -la 等带权限位的输出被误识别。
+ * @param {string} observation - 观察输出文本
+ * @param {string} cwd - 命令执行后的最终工作目录（相对路径的基准）
+ * @param {string} [command] - 原始命令（用于识别 find -type d/f）
+ * @returns {{path: string, isDir: boolean}[]} - 绝对路径列表
+ */
+function extractPathsFromListOutput(observation, cwd, command) {
+  if (!observation || typeof observation !== 'string') return [];
+  if (observation.startsWith('{') || observation.startsWith('[')) return [];
+  const tokens = observation.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  // 常见非产物条目黑名单
+  const IGNORED = new Set(['total', '.', '..', '...', '.git', '.DS_Store', 'node_modules', '__pycache__', '.learnings', 'dist', '.trae']);
+  // 权限位 token（drwxr-xr-x@ / -rw-r--r--@）：出现则说明是 ls -la 类输出，
+  // 禁用无 ./ 前缀的路径解析，避免权限位/用户名/时间被误识别为路径
+  const hasPermTokens = tokens.some(tk => /^[d-][rwx-]{9}[@+*]?$/.test(tk));
+
+  // find -type d / -type f：区分目录与文件
+  // 仅当命令中只有一个 find -type 时，用其类型作为无扩展名路径的兜底分类；
+  // 命令同时含 find -type d 与 find -type f（如脚本分别列出目录和文件）时，
+  // 按首个匹配无法区分两个列表，改由扩展名启发式分类，避免文件被误判为目录
+  const findTypeList = command ? [...command.matchAll(/find\b[\s\S]*?-type\s+([df])/g)].map(m => m[1]) : [];
+  const findType = findTypeList.length === 1 ? findTypeList[0] : null;
+
+  // relPath → isDir（目录标记优先：同一路径既作为文件又作为目录出现时，取目录）
+  const map = new Map();
+  const add = (rel, isDir) => {
+    if (!rel || IGNORED.has(rel) || /^\d+$/.test(rel)) return;
+    if (!map.has(rel) || isDir) map.set(rel, isDir);
+  };
+  const resolve = (rel) => {
+    if (rel.startsWith('/')) return normalizePath(rel);
+    return normalizePath((cwd ? cwd.replace(/\/$/, '') + '/' : '') + rel);
+  };
+  // 目录启发式：最后一段无扩展名视为目录（find -type d 输出的目录通常无扩展名）
+  const looksLikeDir = (rel) => {
+    const name = rel.split('/').pop() || '';
+    return !name.includes('.');
+  };
+
+  // 以 ./ 开头且以 : 结尾的 token 视为 ls -R 目录头（目录名不含冒号，排除 grep path:line 格式）
+  const hasDirHeaders = tokens.some(tk => /^\.\/([^:]+):$/.test(tk) && tk.length > 3);
+
+  if (hasDirHeaders) {
+    // ── ls -R 格式 ──
+    const dirHeaders = new Set();
+    for (const tk of tokens) {
+      const m = tk.match(/^\.\/([^:]+):$/);
+      if (m && m[1]) dirHeaders.add(m[1]);
+    }
+    let currentDir = null; // null = 根目录条目阶段（目录头之前）
+    for (const tk of tokens) {
+      const dirMatch = tk.match(/^\.\/([^:]+):$/);
+      if (dirMatch && dirMatch[1]) {
+        currentDir = dirMatch[1];
+        add(currentDir, true);
+        continue;
+      }
+      if (tk.startsWith('./')) {
+        // find 风格整路径（与 ls -R 混排）
+        const rel = tk.slice(2);
+        if (rel && !IGNORED.has(rel)) add(rel, dirHeaders.has(rel) || (looksLikeDir(rel) && findType !== 'f'));
+        continue;
+      }
+      // 带 -l 的 ls -R 输出含权限位，只解析目录头，跳过条目
+      if (IGNORED.has(tk) || tk.startsWith('-') || hasPermTokens || tk.endsWith('...')) continue;
+      if (currentDir === null) {
+        // 根目录条目：仅接受含 . 的裸文件名，或后续有目录头的目录名
+        if (tk.includes('.') || dirHeaders.has(tk)) add(tk, dirHeaders.has(tk));
+      } else {
+        // 目录条目；无 ./ 前缀的 find 整路径混排（含 /）直接作为完整路径
+        if (tk.includes('/')) {
+          add(tk, dirHeaders.has(tk) || looksLikeDir(tk));
+          continue;
+        }
+        const rel = currentDir + '/' + tk;
+        add(rel, dirHeaders.has(rel) || looksLikeDir(rel));
+      }
+    }
+  } else {
+    // ── find 格式（含无 ./ 前缀的相对路径，如脚本内 find "$ROOT" 的输出）──
+    for (const tk of tokens) {
+      if (IGNORED.has(tk) || tk.startsWith('-') || tk.startsWith('=') || tk.endsWith('...')) continue;
+      // 排除 grep path:line、key=value、时间（10:30）、文件大小（4.0K）等非路径 token
+      if (tk.includes(':') || tk.includes('=')) continue;
+      if (/^\d+$/.test(tk) || /^[\d.]+[KMGTPE]?B?$/i.test(tk)) continue;
+      let rel = null;
+      if (tk.startsWith('./')) {
+        if (tk.length <= 2) continue;
+        rel = tk.slice(2);
+      } else if (!hasPermTokens) {
+        // 无前缀相对路径：含 / 的路径，或含扩展名的文件名（根目录名等裸名跳过）
+        if (!tk.includes('/') && !/^.+\.[a-zA-Z0-9]+$/.test(tk)) continue;
+        rel = tk;
+      } else {
+        continue;
+      }
+      if (!rel || IGNORED.has(rel)) continue;
+      add(rel, looksLikeDir(rel) && findType !== 'f');
+    }
+  }
+
+  const results = [];
+  for (const [rel, isDir] of map) {
+    results.push({ path: resolve(rel), isDir });
+  }
+  return results;
+}
+
+/**
+ * 从 agent_exec 命令中提取通过 cat > file << 'EOF' 内联写入的脚本
+ * 与 agent_file write 写入的脚本同等对待，执行后可追踪脚本内创建的文件
+ * @param {string} command - 命令字符串
+ * @returns {{path: string, content: string, ext: string}[]}
+ */
+function extractScriptsFromAgentExec(command) {
+  if (!command || typeof command !== 'string') return [];
+  const results = [];
+  const re = /cat\s+>\s*['"]?(\S+)['"]?\s*<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*\n([\s\S]*?)\n\s*\2\s*(?=\n|$)/g;
+  let m;
+  while ((m = re.exec(command)) !== null) {
+    const path = m[1];
+    const ext = getFileExt(path);
+    if (['sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'py'].includes(ext)) {
+      results.push({ path: normalizePath(path), content: m[3], ext });
+    }
+  }
+  return results;
+}
+
+/**
  * 检测 agent_exec 命令是否在执行已知脚本文件，返回脚本路径或 null
  * 跨平台支持：
  *   - Unix: bash/sh/python/node ./script.sh
@@ -596,21 +809,7 @@ function extractFilesFromRm(command, initialCwd) {
     return normalizePath(p);
   };
 
-  // 按 && 和 ; 分割命令链
-  const parts = [];
-  {
-    let depth = 0;
-    let current = '';
-    for (let i = 0; i < command.length; i++) {
-      const ch = command[i];
-      if (ch === '{') depth++;
-      else if (ch === '}') depth = Math.max(0, depth - 1);
-      if (depth === 0 && ch === ';') { parts.push(current); current = ''; }
-      else if (depth === 0 && ch === '&' && command[i + 1] === '&') { parts.push(current); current = ''; i++; }
-      else { current += ch; }
-    }
-    parts.push(current);
-  }
+  const parts = splitCommandChain(command);
 
   for (const part of parts) {
     const trimmed = part.trim();
@@ -704,18 +903,28 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     (a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
   );
 
-  // ── 预扫描：收集通过 agent_file 写入的脚本文件内容，用于后续脚本执行时追踪派生文件 ──
+  // ── 预扫描：收集脚本文件内容（agent_file 写入 + agent_exec heredoc 内联写入），用于后续脚本执行时追踪派生文件 ──
   const scriptContentMap = new Map(); // scriptPath → { content, ext }
   for (const entry of sortedLog) {
     if (entry.nodeType !== 'tool_exec' || entry.status === 'failed') continue;
-    if (entry.action?.name !== 'agent_file') continue;
-    let p = entry.action.params;
-    if (typeof p === 'string') { try { p = JSON.parse(p); } catch { continue; } }
-    if (!p || p.action !== 'write' || typeof p.content !== 'string') continue;
-    const path = normalizePath(p.path || p.filePath || '');
-    const ext = getFileExt(path);
-    if (['sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'py'].includes(ext)) {
-      scriptContentMap.set(path, { content: p.content, ext });
+    if (entry.action?.name === 'agent_file') {
+      let p = entry.action.params;
+      if (typeof p === 'string') { try { p = JSON.parse(p); } catch { continue; } }
+      if (!p || p.action !== 'write' || typeof p.content !== 'string') continue;
+      const path = normalizePath(p.path || p.filePath || '');
+      const ext = getFileExt(path);
+      if (['sh', 'bash', 'zsh', 'bat', 'cmd', 'ps1', 'py'].includes(ext)) {
+        scriptContentMap.set(path, { content: p.content, ext });
+      }
+    } else if (entry.action?.name === 'agent_exec') {
+      // cat > script.sh << 'EOF' ... EOF 内联写入的脚本也可追踪派生文件
+      const rawParams = entry.action.params;
+      const command = typeof rawParams === 'string' ? rawParams : (rawParams && typeof rawParams === 'object' ? rawParams.command : null);
+      if (typeof command === 'string') {
+        for (const s of extractScriptsFromAgentExec(command)) {
+          if (!scriptContentMap.has(s.path)) scriptContentMap.set(s.path, { content: s.content, ext: s.ext });
+        }
+      }
     }
   }
 
@@ -804,6 +1013,32 @@ export function extractArtifactsFromExecutionLog(executionLog) {
           type: candidate.isDir ? 'directory' : 'file',
           deleted: deletedPaths.has(filePath) || undefined,
         });
+      }
+
+      // ── 观察输出兜底解析：ls -R / find 列表输出中的路径 ──
+      // 覆盖内联 heredoc 脚本动态生成文件（路径无法静态解析）的场景：
+      // 脚本执行后通过 ls -R / find 展示目录结构时，从输出中反推产物路径
+      if (entry.status !== 'failed' && typeof entry.observation === 'string') {
+        const finalCwd = trackCommandCwd(command, params.cwd);
+        const observedPaths = extractPathsFromListOutput(entry.observation, finalCwd, command);
+        for (const op of observedPaths) {
+          if (seenPaths.has(op.path)) {
+            const idx = artifacts.findIndex(a => a.path === op.path);
+            if (idx >= 0) artifacts.splice(idx, 1);
+          }
+          seenPaths.add(op.path);
+          artifacts.push({
+            path: op.path,
+            fileName: getFileName(op.path),
+            toolName,
+            action: 'typeCreate',
+            size: 0,
+            timestamp: entry.timestamp || null,
+            status: entry.status || 'unknown',
+            type: op.isDir ? 'directory' : 'file',
+            deleted: deletedPaths.has(op.path) || undefined,
+          });
+        }
       }
       continue;
     }
@@ -910,8 +1145,13 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 
     for (const artifact of artifacts) {
       if (!artifact.deleted) {
-        // 先尝试精确匹配，再尝试后缀匹配
-        if (deletedPaths.has(artifact.path) || deletedPathList.some(dp => isPathMatch(artifact.path, dp))) {
+        // 先精确匹配，再后缀匹配（绝对/相对），最后递归删除目录的包含匹配
+        if (deletedPaths.has(artifact.path) || deletedPathList.some(dp => {
+          if (isPathMatch(artifact.path, dp)) return true;
+          // rm -rf dir 递归删除：目录内的文件/子目录一并标记为已删除
+          const dpInfo = deletedPaths.get(dp);
+          return dpInfo && dpInfo.isDir && (artifact.path.startsWith(dp + '/') || artifact.path.startsWith(dp + '\\'));
+        })) {
           artifact.deleted = true;
         }
       }

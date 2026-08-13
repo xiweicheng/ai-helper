@@ -433,6 +433,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const MAX_TOOL_RESULT_TOKENS = 6000;
 
   /**
+   * 执行日志 observation 最大字符数
+   * 注意：日志中的 observation 会被产物提取（artifacts-manager）用于解析
+   * find / ls -R 等列表输出中动态生成的文件路径，截断过小会导致产物缺失。
+   * toolResultStr 已被 MAX_TOOL_RESULT_TOKENS 限制（约 24KB），
+   * 此处放宽到 50KB 作为日志存储的最终安全边界。
+   */
+  const MAX_LOG_OBSERVATION_CHARS = 50000;
+
+  /**
    * 基于 Token 总量的消息裁剪，替代原来的条数限制
    * 保留 system message，确保 tool_calls/tool 配对
    *
@@ -1519,7 +1528,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   name: toolName,
                   params: toolArgs
                 },
-                observation: isToolSuccess ? (toolResultStr.length > 500 ? toolResultStr.substring(0, 500) + '...' : toolResultStr) : undefined,
+                observation: isToolSuccess ? (toolResultStr.length > MAX_LOG_OBSERVATION_CHARS ? toolResultStr.substring(0, MAX_LOG_OBSERVATION_CHARS) + '...' : toolResultStr) : undefined,
                 prototypeId: toolResult?.prototypeId || null
               };
               if (!isToolSuccess && toolResult?.error) {
