@@ -48,6 +48,10 @@ registerTranslations('zh', {
     deletedBadge: '已删除',
     deletedFile: '文件已删除',
     deletedCount: '{count} 个已删除',
+    outsideFile: '文件不在工作目录下',
+    outsideHint: '该文件位于工作目录之外，无法定位/预览/下载',
+    outsideToast: '该文件不在工作目录下，暂不支持此操作',
+    outsideCount: '{count} 个在工作目录外',
   },
 });
 
@@ -88,8 +92,15 @@ registerTranslations('en', {
     deletedBadge: 'Deleted',
     deletedFile: 'File deleted',
     deletedCount: '{count} deleted',
+    outsideFile: 'File is outside the workspace',
+    outsideHint: 'This file is outside the workspace. Locate/preview/download are unavailable.',
+    outsideToast: 'This file is outside the workspace. This action is not supported.',
+    outsideCount: '{count} outside workspace',
   },
 });
+
+// 目录外标识图标：文件夹 + 斜线（琥珀色），悬停 title 展示完整说明
+const OUTSIDE_WORKSPACE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="4" y1="2" x2="22" y2="20"/></svg>';
 
 // ============================================================
 // 产物提取：从 executionLog 中解析写文件操作
@@ -1302,19 +1313,30 @@ function buildArtifactRowHtml(a, idx) {
   const icon = getFileIcon(a.fileName, a.type);
   const typeText = t(`artifacts.${a.action}`);
   const timeText = formatHHMMSS(a.timestamp);
-  const previewable = !a.deleted && canPreview(a.fileName);
+  const isOutside = !!a.outsideWorkspace;
+  const previewable = !a.deleted && !isOutside && canPreview(a.fileName);
   const isDeleted = !!a.deleted;
+  // 已删除/目录外的产物均禁用操作按钮（定位/预览/下载依赖工作目录 fs API）
+  const actionDisabled = isDeleted || isOutside;
+  const disabledTitle = isDeleted ? t('artifacts.deletedFile') : (isOutside ? t('artifacts.outsideHint') : '');
   const deletedBadgeHtml = isDeleted ? `<span class="artifact-deleted-badge" title="${t('artifacts.deletedFile')}">${t('artifacts.deletedBadge')}</span>` : '';
-  const disabledAttr = isDeleted ? 'disabled' : '';
-  const disabledClass = isDeleted ? ' artifact-btn-disabled' : '';
+  // 目录外标识：小图标 + 悬停说明（避免纯文字标签含义不明）
+  const outsideIconHtml = !isDeleted && isOutside ? `<span class="artifact-outside-icon" tabindex="0" aria-label="${t('artifacts.outsideFile')}" title="${t('artifacts.outsideHint')}">${OUTSIDE_WORKSPACE_ICON}</span>` : '';
+  const disabledAttr = actionDisabled ? 'disabled' : '';
+  const disabledClass = actionDisabled ? ' artifact-btn-disabled' : '';
   const rowClass = isDeleted ? ' artifact-deleted-row' : '';
+  const nameTitle = isDeleted
+    ? `${escapeHtml(a.path)} · ${t('artifacts.deletedFile')}`
+    : isOutside
+      ? `${escapeHtml(a.path)} · ${t('artifacts.outsideFile')}`
+      : `${escapeHtml(a.path)} · ${t('artifacts.dblClickHint')}`;
   return `
     <tr class="artifacts-row${rowClass}" data-idx="${idx}" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.fileName)}">
       <td class="col-index">${idx + 1}</td>
       <td class="col-file">
         <span class="artifact-icon">${icon}</span>
-        <span class="artifact-name" title="${escapeHtml(a.path)}${isDeleted ? ' · ' + t('artifacts.deletedFile') : ' · ' + t('artifacts.dblClickHint')}">${escapeHtml(a.fileName)}</span>
-        ${deletedBadgeHtml}
+        <span class="artifact-name" title="${nameTitle}">${escapeHtml(a.fileName)}</span>
+        ${deletedBadgeHtml}${outsideIconHtml}
         <button class="artifact-copy-btn" title="${t('artifacts.copyFileName')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -1325,21 +1347,21 @@ function buildArtifactRowHtml(a, idx) {
       <td class="col-type">${typeText}</td>
       <td class="col-time">${timeText}</td>
       <td class="col-action">
-        <button class="artifact-action-btn download-btn${disabledClass}" title="${isDeleted ? t('artifacts.deletedFile') : t('artifacts.download')}" ${disabledAttr}>
+        <button class="artifact-action-btn download-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.download')}" ${disabledAttr}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-        <button class="artifact-action-btn locate-btn${disabledClass}" title="${isDeleted ? t('artifacts.deletedFile') : t('artifacts.locate')}" ${disabledAttr}>
+        <button class="artifact-action-btn locate-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.locate')}" ${disabledAttr}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
             <circle cx="12" cy="10" r="3"/>
           </svg>
         </button>
-        ${previewable ? `
-        <button class="artifact-action-btn preview-btn" title="${t('artifacts.preview')}">
+        ${(previewable || actionDisabled) ? `
+        <button class="artifact-action-btn preview-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.preview')}" ${disabledAttr}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
             <circle cx="12" cy="12" r="3"/>
@@ -1371,6 +1393,11 @@ function bindArtifactRowEvents(modal, sortedList) {
       clearTimeout(pendingLocateTimer);
       pendingLocateTimer = setTimeout(() => {
         pendingLocateTimer = null;
+        // 目录外产物：友好提示代替定位（工作目录面板无法展示目录外文件）
+        if (artifact.outsideWorkspace) {
+          showToast(t('artifacts.outsideToast'), 'info');
+          return;
+        }
         closeWorkspacePreview().catch(() => {});
         locateFileInWorkspace(artifact.path).catch(err => {
           logger.error('[Artifacts] locate failed:', err);
@@ -1385,11 +1412,16 @@ function bindArtifactRowEvents(modal, sortedList) {
         e.stopPropagation();
         e.preventDefault(); // 阻止文本选中
         if (artifact.deleted) return;
-        // 不可预览的文件：保留单击的定位行为
-        if (!canPreview(artifact.fileName)) return;
         // 取消 pending 的单击定位，避免双击预览时先展开工作目录定位文件
         clearTimeout(pendingLocateTimer);
         pendingLocateTimer = null;
+        // 目录外产物：友好提示代替预览
+        if (artifact.outsideWorkspace) {
+          showToast(t('artifacts.outsideToast'), 'info');
+          return;
+        }
+        // 不可预览的文件：保留单击的定位行为
+        if (!canPreview(artifact.fileName)) return;
         previewArtifactFile(artifact.path, artifact.fileName).catch(err => {
           logger.error('[Artifacts] preview failed:', err);
         });
@@ -1590,6 +1622,20 @@ export async function checkArtifactsFileExistence(artifacts) {
 }
 
 /**
+ * 刷新弹框头部的产物计数文案（总数 + 已删除/目录外数量）
+ */
+function updateArtifactsModalCount(modal, artifacts) {
+  const countEl = modal.querySelector('.artifacts-modal-count');
+  if (!countEl) return;
+  const deletedCount = artifacts.filter(a => a.deleted).length;
+  const outsideCount = artifacts.filter(a => a.outsideWorkspace).length;
+  let text = t('artifacts.totalCount', { count: artifacts.length });
+  if (deletedCount > 0) text += ` (${t('artifacts.deletedCount', { count: deletedCount })})`;
+  if (outsideCount > 0) text += ` (${t('artifacts.outsideCount', { count: outsideCount })})`;
+  countEl.textContent = text;
+}
+
+/**
  * 显示产物弹框
  * @param {Array} artifacts - 产物列表
  */
@@ -1709,16 +1755,32 @@ export function showArtifactsModal(artifacts) {
   // 首次渲染行
   renderArtifactRows(modal, artifacts);
 
+  // 异步标记工作目录外的产物（命令绕过工作目录限制创建的文件）：
+  // 定位/预览/下载均依赖工作目录 fs API，目录外产物禁用操作按钮并在点击时提示
+  (async () => {
+    try {
+      const root = await getWorkspaceRoot();
+      if (!root || !modalOverlay) return;
+      const rootNorm = normalizePath(root);
+      let changed = false;
+      for (const a of artifacts) {
+        if (!a.outsideWorkspace && !isPathInsideWorkspace(a.path, rootNorm)) {
+          a.outsideWorkspace = true;
+          changed = true;
+        }
+      }
+      if (changed && modalOverlay) {
+        updateArtifactsModalCount(modal, artifacts);
+        renderArtifactRows(modal, artifacts);
+      }
+    } catch { /* 静默失败 */ }
+  })();
+
   // 异步检查文件实际存在性（Agent 在线时以文件系统为准）
   checkArtifactsFileExistence(artifacts).then(changed => {
     if (changed && modalOverlay) {
       // 更新计数
-      const countEl = modal.querySelector('.artifacts-modal-count');
-      if (countEl) {
-        const deletedCount = artifacts.filter(a => a.deleted).length;
-        countEl.textContent = t('artifacts.totalCount', { count: artifacts.length }) +
-          (deletedCount > 0 ? ` (${t('artifacts.deletedCount', { count: deletedCount })})` : '');
-      }
+      updateArtifactsModalCount(modal, artifacts);
       // 重新渲染行（反映新的 deleted 状态）
       renderArtifactRows(modal, artifacts);
     }

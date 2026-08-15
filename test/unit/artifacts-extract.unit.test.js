@@ -39,11 +39,15 @@ globalThis.chrome = {
 
 let extractArtifactsFromExecutionLog;
 let checkArtifactsFileExistence;
+let showArtifactsModal;
+let hideArtifactsModal;
 
 beforeAll(async () => {
   const mod = await import('../../src/side_panel/artifacts-manager.js');
   extractArtifactsFromExecutionLog = mod.extractArtifactsFromExecutionLog;
   checkArtifactsFileExistence = mod.checkArtifactsFileExistence;
+  showArtifactsModal = mod.showArtifactsModal;
+  hideArtifactsModal = mod.hideArtifactsModal;
 });
 
 function makeLogEntry(overrides = {}) {
@@ -777,5 +781,73 @@ describe('checkArtifactsFileExistence', () => {
     expect(changed).toBe(false);
     expect(capturedMsg).toBeTruthy();
     expect(capturedMsg.paths.length).toBe(1);
+  });
+});
+
+describe('showArtifactsModal 目录外产物交互', () => {
+  const WORKSPACE = '/Users/test/.ai-helper-agent/workspace';
+
+  function makeArtifact(path, overrides = {}) {
+    return {
+      path,
+      fileName: path.split('/').pop(),
+      toolName: 'agent_exec',
+      action: 'typeCreate',
+      size: 0,
+      timestamp: Date.now(),
+      status: 'success',
+      type: 'file',
+      ...overrides,
+    };
+  }
+
+  test('目录外产物操作按钮禁用、展示"目录外"图标及悬停说明，目录内产物不受影响', async () => {
+    globalThis.chrome.runtime.sendMessage = () => Promise.resolve({ success: true, results: {} });
+    const outside = makeArtifact('/tmp/outside_task/report.txt');
+    const inside = makeArtifact(`${WORKSPACE}/task_a/inside.txt`);
+    showArtifactsModal([outside, inside]);
+    // 等待异步标记完成（getWorkspaceRoot 为异步）
+    await new Promise(r => setTimeout(r, 50));
+
+    const rows = [...document.querySelectorAll('.artifacts-row')];
+    expect(rows.length).toBe(2);
+
+    const outsideRow = rows.find(r => r.dataset.path === '/tmp/outside_task/report.txt');
+    const outsideIcon = outsideRow.querySelector('.artifact-outside-icon');
+    expect(outsideIcon).toBeTruthy();
+    // 悬停提示应说明"位于工作目录之外"
+    expect(outsideIcon.title).toContain('工作目录之外');
+    expect(outsideRow.querySelector('.download-btn').disabled).toBe(true);
+    expect(outsideRow.querySelector('.locate-btn').disabled).toBe(true);
+    // 目录外的预览按钮与下载/定位保持一致：展示但禁用
+    expect(outsideRow.querySelector('.preview-btn').disabled).toBe(true);
+
+    const insideRow = rows.find(r => r.dataset.path === `${WORKSPACE}/task_a/inside.txt`);
+    expect(insideRow.querySelector('.artifact-outside-icon')).toBeNull();
+    expect(insideRow.querySelector('.download-btn').disabled).toBe(false);
+    expect(insideRow.querySelector('.locate-btn').disabled).toBe(false);
+
+    hideArtifactsModal();
+    expect(document.getElementById('artifactsModalOverlay')).toBeNull();
+  });
+
+  test('双击目录外产物文件名弹提示而不预览', async () => {
+    globalThis.chrome.runtime.sendMessage = () => Promise.resolve({ success: true, results: {} });
+    // toast 容器：utils.showToast 需要，缺失时静默跳过，这里补上以验证提示被触发
+    const toastContainer = document.createElement('div');
+    toastContainer.id = 'toastContainer';
+    document.body.appendChild(toastContainer);
+
+    const outside = makeArtifact('/tmp/outside_task/report.txt');
+    showArtifactsModal([outside]);
+    await new Promise(r => setTimeout(r, 50));
+
+    const nameEl = document.querySelector('.artifacts-row .artifact-name');
+    nameEl.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    // toast 文案应为目录外提示
+    expect(toastContainer.textContent).toContain('不在工作目录下');
+
+    hideArtifactsModal();
+    toastContainer.remove();
   });
 });

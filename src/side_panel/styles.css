@@ -8718,6 +8718,23 @@ body {
   line-height: 1.4;
 }
 
+/* 目录外标识：琥珀色文件夹图标（悬停 title 展示"位于工作目录之外"说明） */
+.artifact-outside-icon {
+  display: inline-flex;
+  align-items: center;
+  color: #d99a2b;
+  margin-left: 4px;
+  vertical-align: middle;
+  cursor: help;
+  line-height: 1;
+}
+
+.artifact-outside-icon:focus-visible {
+  outline: 2px solid rgba(217, 154, 43, 0.5);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
 /* 禁用状态的操作按钮：灰色、不可点击 */
 .artifact-action-btn.artifact-btn-disabled,
 .artifact-action-btn:disabled {
