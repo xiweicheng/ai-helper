@@ -492,6 +492,9 @@ const EMBED_MIN_TOTAL_W = EMBED_MIN_PANEL_W + EMBED_MIN_LEFT_W;
 const EMBED_DEFAULT_W = 320;
 const STORAGE_EMBED_MODE = 'workspacePanelEmbedMode';
 const STORAGE_EMBED_WIDTH = 'workspacePanelEmbedWidth';
+// 面板展开状态记忆：嵌入模式下点 × 收起后重开插件保持收起（不自动展开），
+// 用户主动点 toggle 打开时仍按嵌入偏好进入
+const STORAGE_PANEL_EXPANDED = 'workspacePanelExpanded';
 // 是否处于嵌入模式；嵌入模式下面板宽度；等待宽度/连接就绪后补恢复的挂起标志；
 // 用户偏好的模式（与当前布局状态分离）：点 × 收起面板不改变偏好，下次打开直接按偏好进入
 let embedMode = false;
@@ -1229,12 +1232,15 @@ function deferredEmbedRestore() {
  */
 async function restoreEmbedState() {
   try {
-    const data = await chrome.storage.local.get([STORAGE_EMBED_MODE, STORAGE_EMBED_WIDTH]);
+    const data = await chrome.storage.local.get([STORAGE_EMBED_MODE, STORAGE_EMBED_WIDTH, STORAGE_PANEL_EXPANDED]);
     if (typeof data[STORAGE_EMBED_WIDTH] === 'number' && data[STORAGE_EMBED_WIDTH] >= EMBED_MIN_PANEL_W) {
       embedWidth = Math.round(data[STORAGE_EMBED_WIDTH]);
     }
     if (!data[STORAGE_EMBED_MODE]) return;
     embedPreference = true; // 存储为嵌入：即使本次宽度不足挂起，偏好仍保持嵌入
+    // 上次点 × 收起了面板：保持收起不自动展开（偏好仍为嵌入，
+    // 用户主动点 toggle 打开时按偏好进入嵌入模式）
+    if (data[STORAGE_PANEL_EXPANDED] === false) return;
     // 等两帧让首屏布局稳定后再测量（side panel 初始宽度可能尚未恢复），setTimeout 兜底 rAF 不触发的情况
     await new Promise(resolve => {
       let done = false;
@@ -1257,6 +1263,8 @@ async function openPanel() {
   const panel = document.getElementById('workspacePanel');
   if (panel.classList.contains('expanded')) return;
   panel.classList.add('expanded');
+  // 记忆展开状态：重开插件后按上次状态恢复
+  chrome.storage.local.set({ [STORAGE_PANEL_EXPANDED]: true }).catch(() => {});
   await updateWorkspaceAgentName();
   if (!currentPath) {
     await navigateToRoot();
@@ -5513,7 +5521,14 @@ async function closePanelInternal(force = false) {
   }
   const panel = document.getElementById('workspacePanel');
   const container = document.getElementById('workspacePanelContainer');
-  if (panel) panel.classList.remove('expanded');
+  if (panel) {
+    panel.classList.remove('expanded');
+    // 记忆收起状态：重开插件后保持收起，不自动展开；
+    // Agent 断开的强制关闭除外（重连后仍按原流程恢复）
+    if (!force) {
+      chrome.storage.local.set({ [STORAGE_PANEL_EXPANDED]: false }).catch(() => {});
+    }
+  }
   if (container) {
     container.classList.remove('hover-expanded');
     container.classList.remove('click-opened');
