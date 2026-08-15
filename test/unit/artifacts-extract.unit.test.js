@@ -1,6 +1,15 @@
 // @vitest-environment jsdom
 // artifacts-manager.extractArtifactsFromExecutionLog 单元测试
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, vi } from 'vitest';
+
+// mock 工作目录根路径（checkArtifactsFileExistence 用于过滤目录外产物）
+vi.mock('../../src/side_panel/workspace-manager.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getWorkspaceRoot: async () => '/Users/test/.ai-helper-agent/workspace',
+  };
+});
 
 // 补全 chrome mock（import 链较深：chat-manager -> agent-at-selector -> tabs.onActivated 等）
 const noop = () => {};
@@ -29,10 +38,12 @@ globalThis.chrome = {
 };
 
 let extractArtifactsFromExecutionLog;
+let checkArtifactsFileExistence;
 
 beforeAll(async () => {
   const mod = await import('../../src/side_panel/artifacts-manager.js');
   extractArtifactsFromExecutionLog = mod.extractArtifactsFromExecutionLog;
+  checkArtifactsFileExistence = mod.checkArtifactsFileExistence;
 });
 
 function makeLogEntry(overrides = {}) {
@@ -434,6 +445,36 @@ describe('extractArtifactsFromExecutionLog', () => {
     expect(artifacts.map(a => a.path)).toContain(base + '/src/utils/helpers');
   });
 
+  // ── 纯查看既有目录：ls -la / find / du 不应把已有文件误识别为产物 ──
+  test('查看既有目录的 ls -la / find / du 输出不会被识别为产物', () => {
+    const base = '/Users/xiweicheng/.ai-helper-agent/workspace/aaa121';
+    const lsObs = 'total 952024 drwxr-xr-x@ 37 xiweicheng staff 1184 7 31 22:17 . '
+      + '-rw-r--r--@ 1 xiweicheng staff 1311080 7 31 22:17 03 Unit 1 Speaking.mp3 '
+      + '-rw-r--r--@ 1 xiweicheng staff 27248 7 27 21:03 2025年提成统计_计算结果.xlsx';
+    const duObs = `465M ${base} ---按大小排序--- 465M ${base} 177M ${base}/pdf-1784820229186.pdf 129M ${base}/考点串讲2回放.mp4`;
+    const log = [
+      {
+        id: 'log_ls', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: `ls -la ${base}` } },
+        observation: lsObs, duration: 100,
+      },
+      {
+        id: 'log_du', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: `du -sh ${base} && echo "---按大小排序---" && du -ah ${base} | sort -rh | head -10` } },
+        observation: duObs, duration: 70,
+      },
+      {
+        id: 'log_find', iteration: 1, timestamp: '2026-01-01T00:00:02Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: `find ${base} -maxdepth 1 -type f` } },
+        observation: `${base}/pdf-1784820229186.pdf ${base}/考点串讲2回放.mp4`, duration: 40,
+      },
+    ];
+    expect(extractArtifactsFromExecutionLog(log)).toEqual([]);
+  });
+
   // ── 观察输出解析：ls -la 不误报 ──
   test('ls -la 观察输出（无 ./ 前缀）不会被误识别为产物', () => {
     const command = 'ls -la /workspace';
@@ -665,5 +706,76 @@ describe('extractArtifactsFromExecutionLog', () => {
     // 分号拆链的旧 bug 会导致 heredoc 内文件丢失，此处应全部追踪到
     expect(paths).toContain('/workspace/heredoc_multi/dir_a/f1.txt');
     expect(paths).toContain('/workspace/heredoc_multi/dir_b/f2.txt');
+  });
+});
+
+describe('checkArtifactsFileExistence', () => {
+  const WORKSPACE = '/Users/test/.ai-helper-agent/workspace';
+
+  function makeArtifact(path, overrides = {}) {
+    return {
+      path,
+      fileName: path.split('/').pop(),
+      toolName: 'agent_exec',
+      action: 'typeCreate',
+      size: 0,
+      timestamp: Date.now(),
+      status: 'success',
+      type: 'file',
+      ...overrides,
+    };
+  }
+
+  test('工作目录外的产物不发起存在性检查，不被标记 deleted', async () => {
+    let capturedMsg = null;
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      capturedMsg = msg;
+      return Promise.resolve({ success: true, results: {} });
+    };
+    const outside = makeArtifact('/tmp/outside_task/report.txt');
+    const artifacts = [outside];
+    const changed = await checkArtifactsFileExistence(artifacts);
+    // 目录外产物被过滤后无路径可查，不应发起 CHECK_FILES_EXIST 请求
+    expect(changed).toBe(false);
+    expect(capturedMsg).toBeNull();
+    expect(outside.deleted).toBeFalsy();
+  });
+
+  test('工作目录内的产物正常检查，不存在的被标记 deleted', async () => {
+    const inside = makeArtifact(`${WORKSPACE}/task_a/keep.txt`);
+    const insideDeleted = makeArtifact(`${WORKSPACE}/task_a/gone.txt`);
+    const outside = makeArtifact('/etc/hosts');
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      // 只应包含工作目录内的两个路径
+      expect(msg.type).toBe('CHECK_FILES_EXIST');
+      expect(msg.paths.some(p => p.includes('keep.txt'))).toBe(true);
+      expect(msg.paths.some(p => p.includes('gone.txt'))).toBe(true);
+      expect(msg.paths.some(p => p.includes('hosts'))).toBe(false);
+      const results = {};
+      for (const p of msg.paths) {
+        results[p] = !p.includes('gone.txt');
+      }
+      return Promise.resolve({ success: true, results });
+    };
+    const artifacts = [inside, insideDeleted, outside];
+    const changed = await checkArtifactsFileExistence(artifacts);
+    expect(changed).toBe(true);
+    expect(inside.deleted).toBeFalsy();
+    expect(insideDeleted.deleted).toBe(true);
+    // 目录外产物保持原状态
+    expect(outside.deleted).toBeFalsy();
+  });
+
+  test('相对路径产物视为工作目录内，正常发起检查', async () => {
+    let capturedMsg = null;
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      capturedMsg = msg;
+      return Promise.resolve({ success: true, results: {} });
+    };
+    const rel = makeArtifact('task_b/rel_file.txt');
+    const changed = await checkArtifactsFileExistence([rel]);
+    expect(changed).toBe(false);
+    expect(capturedMsg).toBeTruthy();
+    expect(capturedMsg.paths.length).toBe(1);
   });
 });

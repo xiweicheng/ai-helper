@@ -3,7 +3,7 @@
 // 提供定位到工作目录文件、预览文件等功能。
 
 import { t, registerTranslations } from '../shared/i18n.js';
-import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream } from './workspace-manager.js';
+import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream, getWorkspaceRoot } from './workspace-manager.js';
 import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, resolveWorkspaceAbsolutePath } from './workspace-panel.js';
 import { showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
@@ -321,6 +321,47 @@ function findHeredocEnd(command, startIdx) {
 }
 
 /**
+ * 获取路径的父目录（用于归集"本任务创建的目录根"）
+ */
+function getParentDirPath(p) {
+  const normalized = normalizePath(p || '').replace(/\/$/, '');
+  if (!normalized) return '';
+  const idx = normalized.lastIndexOf('/');
+  return idx > 0 ? normalized.substring(0, idx) : '';
+}
+
+// 只读查看类命令黑名单：仅列举/统计已有内容，输出不应被解析为新产物
+const INSPECTION_VERBS = new Set(['du', 'df', 'stat', 'wc', 'file', 'cat', 'head', 'tail', 'grep', 'rg']);
+
+/**
+ * 判断命令链是否全部由只读查看类命令组成（如 du -sh ... && du -ah ... | sort）
+ * 此类命令的列表输出不应被兜底解析为产物
+ */
+function isInspectionOnlyCommand(command) {
+  if (!command || typeof command !== 'string') return false;
+  const parts = splitCommandChain(command);
+  if (parts.length === 0) return false;
+  for (const part of parts) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    // 剥离环境变量赋值前缀（VAR=x cmd）
+    while (tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) tokens.shift();
+    if (!tokens.length) continue;
+    let verb = tokens[0].split('/').pop().toLowerCase();
+    if (verb === 'sudo' && tokens.length > 1) verb = tokens[1].split('/').pop().toLowerCase();
+    if (!INSPECTION_VERBS.has(verb)) return false;
+  }
+  return true;
+}
+
+/**
+ * 判断路径是否位于某个已创建的根目录之下
+ */
+function isPathUnderAnyRoot(path, roots) {
+  const eq = p => path === p || path.startsWith(p.endsWith('/') ? p : p + '/');
+  return [...roots].some(eq);
+}
+
+/**
  * 跟踪命令中的 cd 链，返回最终工作目录
  * 用于观察输出解析时确定 ./ 相对路径的基准目录
  */
@@ -617,6 +658,8 @@ function extractDerivedFilesFromScript(content, ext) {
  *   - ls -R：目录头（./dir:）+ 条目（目录头之前的条目为根目录条目）
  *   - find：整路径（./a/b/c.txt）
  * 仅解析以 ./ 开头的相对路径，避免 ls -la 等带权限位的输出被误识别。
+ * 注意：调用方需自行把关（如仅在本任务有创建操作时才采信结果），
+ * 本函数不区分"新建文件"与"已有文件的列举"。
  * @param {string} observation - 观察输出文本
  * @param {string} cwd - 命令执行后的最终工作目录（相对路径的基准）
  * @param {string} [command] - 原始命令（用于识别 find -type d/f）
@@ -934,6 +977,11 @@ export function extractArtifactsFromExecutionLog(executionLog) {
   // 删除路径追踪：path → { isDir, timestamp }
   const deletedPaths = new Map();
 
+  // 本任务创建的目录根集合（各写操作产物的父目录 + cd 进入的目录）：
+  // 兜底解析列表输出时，只有位于这些目录之下的路径才可能是"新建产物"，
+  // 避免 ls/du/find 查看既有目录时把已有文件误识别为产物
+  const createdRoots = new Set();
+
   for (const entry of sortedLog) {
     if (entry.nodeType !== 'tool_exec') continue;
     if (!entry.action) continue;
@@ -989,6 +1037,13 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       }
 
       const candidates = extractFilesFromAgentExec(command, params.cwd);
+      // 本条命令创建的目录归入根集合（供后续条目兜底解析判断路径归属）
+      for (const candidate of candidates) {
+        if (candidate && candidate.path) {
+          const root = candidate.isDir ? candidate.path : getParentDirPath(candidate.path);
+          if (root) createdRoots.add(root);
+        }
+      }
       for (const candidate of candidates) {
         const filePath = candidate && candidate.path;
         if (!filePath) continue;
@@ -1017,10 +1072,26 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 
       // ── 观察输出兜底解析：ls -R / find 列表输出中的路径 ──
       // 覆盖内联 heredoc 脚本动态生成文件（路径无法静态解析）的场景：
-      // 脚本执行后通过 ls -R / find 展示目录结构时，从输出中反推产物路径
+      // 脚本执行后通过 ls -R / find 展示目录结构时，从输出中反推产物路径。
+      // 仅在本条命令确有创建操作（写文件/执行脚本/heredoc 内联脚本）时直接采信；
+      // 否则仅采信位于本任务已创建目录之下的路径，避免单纯查看既有目录
+      // （ls / du / find 等）时把已有文件误识别为产物
       if (entry.status !== 'failed' && typeof entry.observation === 'string') {
         const finalCwd = trackCommandCwd(command, params.cwd);
-        const observedPaths = extractPathsFromListOutput(entry.observation, finalCwd, command);
+        // 命令链含 cd：视为显式进入目标目录操作（如 cd newdir && ls -R），
+        // cd 后的最终目录归入根集合；无 cd 的纯查看命令不放宽
+        if (/\bcd\s/.test(command) && finalCwd) {
+          createdRoots.add(normalizePath(finalCwd));
+        }
+        let observedPaths = extractPathsFromListOutput(entry.observation, finalCwd, command);
+        const hasWriteInEntry = candidates.length > 0 || !!executedScript || /<<-?/.test(command);
+        if (observedPaths.length > 0 && !hasWriteInEntry) {
+          if (isInspectionOnlyCommand(command)) {
+            observedPaths = [];
+          } else {
+            observedPaths = observedPaths.filter(op => isPathUnderAnyRoot(op.path, createdRoots));
+          }
+        }
         for (const op of observedPaths) {
           if (seenPaths.has(op.path)) {
             const idx = artifacts.findIndex(a => a.path === op.path);
@@ -1094,6 +1165,10 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 
     // 只记录成功的写操作
     if (entry.status === 'failed') continue;
+
+    // 写入文件的父目录归入根集合（供列表输出兜底解析判断路径归属）
+    const writeParent = getParentDirPath(finalPath);
+    if (writeParent) createdRoots.add(writeParent);
 
     // 尝试从 observation 中获取文件大小
     let size = 0;
@@ -1428,6 +1503,27 @@ async function handleArtifactDownload(artifact) {
 }
 
 /**
+ * 判断产物路径是否位于工作目录内
+ * Agent 安全策略限制 fs 操作只能在工作目录（含白名单）内，
+ * 工作目录外的路径 stat 会被 403 拦截，调用方应跳过检查。
+ * 相对路径 / ~ 约定视为工作目录内（解析时基于工作目录拼接）；
+ * 绝对路径做前缀匹配（Windows 盘符大小写不敏感）
+ * @param {string} path - 产物原始路径
+ * @param {string|null} rootNormalized - 规范化后的工作目录根路径（未知时传 null，不拦截）
+ * @returns {boolean}
+ */
+function isPathInsideWorkspace(path, rootNormalized) {
+  if (!rootNormalized) return true; // 工作目录未知 → 不拦截，交由下游兜底
+  const norm = normalizePath(path || '');
+  if (!norm) return false;
+  const isAbs = norm.startsWith('/') || /^[a-zA-Z]:\//.test(norm);
+  if (!isAbs) return true; // 相对路径/~ 视为工作目录内
+  const lower = norm.toLowerCase();
+  const rootLower = rootNormalized.toLowerCase();
+  return lower === rootLower || lower.startsWith(rootLower + '/');
+}
+
+/**
  * 通过后端 Agent 批量检查文件是否存在，将不存在的文件标记为 deleted
  * 作为命令解析的补充：Agent 在线时以实际文件系统为准
  * @param {Array} artifacts - 产物列表（原地修改）
@@ -1436,8 +1532,17 @@ async function handleArtifactDownload(artifact) {
 export async function checkArtifactsFileExistence(artifacts) {
   if (!artifacts || artifacts.length === 0) return false;
 
-  // 只检查未被标记为 deleted 且有路径的产物
-  const candidates = artifacts.filter(a => !a.deleted && a.path);
+  // 工作目录外的产物（命令绕过工作目录限制创建）不发起存在性检查：
+  // Agent 安全策略会 403 拦截，且路径解析可能误映射到目录内同名文件，
+  // 直接保留命令解析的快照状态
+  let rootNorm = null;
+  try {
+    const root = await getWorkspaceRoot();
+    if (root) rootNorm = normalizePath(root);
+  } catch { /* 工作目录未知 → 不拦截 */ }
+
+  // 只检查未被标记为 deleted、有路径且位于工作目录内的产物
+  const candidates = artifacts.filter(a => !a.deleted && a.path && isPathInsideWorkspace(a.path, rootNorm));
   if (candidates.length === 0) return false;
 
   try {
