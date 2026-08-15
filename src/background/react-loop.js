@@ -191,6 +191,42 @@ async function runWithTimeout(promise, timeoutMs, errorMessage, executionLog) {
 // MAX_REFLECTION_ROUNDS 已拆分到 react-reflection.js
 
 /**
+ * 执行日志内存窗口上限：仅保留最近 N 条，防止长任务期间日志无限增长导致 SW 内存失控
+ * 与 index.js 最终结果返回侧的 MAX_LOG_ENTRIES_FOR_MSG（1000）对齐，保证产物提取能力不退化
+ */
+const EXECUTION_LOG_MEMORY_LIMIT = 1000;
+
+/**
+ * 执行日志内存窗口裁剪（原地修改）：超出上限时移除最旧的终态条目
+ * - 仅删除 status 不为 'processing' 的条目：进行中条目必须保留，
+ *   否则其后续状态流转无法再经增量机制发出，前端节点会卡在"执行中"
+ * - 距窗口 1000 条以前的条目早已在各自迭代内完成状态流转，必为终态；
+ *   status 判断作为双重保险
+ * - 同步清理 snapshotMap（增量发送快照）中对应记录，防止快照 Map 本身泄漏
+ * @param {Array} executionLog - 执行日志数组（原地裁剪）
+ * @param {Map} [snapshotMap] - 增量发送快照 Map（id -> { status, nodeName }）
+ * @param {number} [limit] - 窗口上限
+ * @returns {number} 移除的条目数
+ */
+function trimExecutionLogMemory(executionLog, snapshotMap, limit = EXECUTION_LOG_MEMORY_LIMIT) {
+  if (!executionLog || executionLog.length <= limit) return 0;
+  const overflow = executionLog.length - limit;
+  let removed = 0;
+  for (let i = 0; i < executionLog.length && removed < overflow; i++) {
+    if (executionLog[i].status !== 'processing') {
+      if (snapshotMap) snapshotMap.delete(executionLog[i].id);
+      executionLog.splice(i, 1);
+      removed++;
+      i--; // splice 后后续条目前移，保持索引
+    }
+  }
+  if (removed > 0) {
+    logger.debug(`[Background] executionLog memory trimmed: removed ${removed} terminal old entries, remaining ${executionLog.length}`);
+  }
+  return removed;
+}
+
+/**
  * 序列化 checkpoint 并写入 IndexedDB
  * 失败不阻塞主流程，仅记录日志
  */
@@ -628,6 +664,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
     }
     lastCheckpointSaveTime = now;
 
+    // checkpoint 只保留窗口内日志，与内存保持一致，避免全量日志的序列化压力
+    trimExecutionLogMemory(executionLog, lastSentLogSnapshot);
+
     logger.debug(`[Background] saveCheckpointNow start saving: sessionId=${sessionId}, reason=${reason}, force=${force}, iteration=${iteration}, messages=${currentMessages.length}, callId=${callId}`);
 
     await persistCheckpoint(sessionId, {
@@ -699,9 +738,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const lastSentLogSnapshot = new Map(); // id -> { status, nodeName }
   function sendExecutionStatusUpdate(nodeName, status) {
     try {
+      // 内存窗口裁剪：发送前封顶日志，防止长任务期间无限增长
+      trimExecutionLogMemory(executionLog, lastSentLogSnapshot);
       const now = Date.now();
       
-      // 回调通知父任务：始终传递完整日志（父任务需要完整日志进行合并）
+      // 回调通知父任务：传递窗口内的完整日志（父任务需要完整日志进行合并）
       if (typeof onLogUpdate === 'function') {
         onLogUpdate([...executionLog]);
       }
@@ -1921,6 +1962,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
    * 增量发送执行日志状态更新，避免 parentExecutionLog 超过 64MiB 限制
    */
   function sendSubtaskStatusUpdate(nodeName, status, logToSend, extraFields = {}) {
+    // 内存窗口裁剪：子任务合并日志增长快，发送前封顶父日志防止无限增长
+    trimExecutionLogMemory(parentExecutionLog, lastSentLogSnapshot);
     const deltaLog = [];
     for (const entry of logToSend) {
       const prev = lastSentLogSnapshot.get(entry.id);
