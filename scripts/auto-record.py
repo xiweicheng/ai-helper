@@ -10,6 +10,7 @@ AI Helper 参赛演示视频自动化录制脚本
   python3 auto-record.py --method pyautogui    # 方案 A
   python3 auto-record.py --method playwright    # 方案 B
   python3 auto-record.py --method pyautogui --dry-run  # 演练不录屏
+  python3 auto-record.py --find-coords         # 坐标定位工具
 """
 
 import argparse
@@ -23,9 +24,9 @@ import signal
 # 公共配置
 # ═══════════════════════════════════════════════════════════════════════════
 
-OUTPUT_DIR = os.path.expanduser("~/Desktop/ai-helper-demo")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "demo-video")
 VIDEO_PATH = os.path.join(OUTPUT_DIR, "demo-video.mp4")
-SCREEN_SIZE = (1920, 1080)  # 根据你的屏幕分辨率修改
+SCREEN_SIZE = (1440, 900)  # 已适配你的 MacBook Pro
 FPS = 30
 EXTENSION_DIST = "/Users/xiweicheng/Documents/trae_projects/ai-helper/dist"
 
@@ -45,36 +46,64 @@ WAIT_LONG = 10
 # ═══════════════════════════════════════════════════════════════════════════
 
 def method_pyautogui(dry_run=False):
-    import pyautogui
+    if dry_run:
+        # 演练模式：用 Mock 对象，不需要安装 pyautogui
+        class MockPyAutoGUI:
+            FAILSAFE = True
+            PAUSE = 0.5
+            def click(self, *a, **k): pass
+            def doubleClick(self, *a, **k): pass
+            def typewrite(self, *a, **k): pass
+            def write(self, *a, **k): pass
+            def hotkey(self, *a, **k): pass
+            def press(self, *a, **k): pass
+            def scroll(self, *a, **k): pass
+            def moveTo(self, *a, **k): pass
+            def screenshot(self, *a, **k): pass
+        pyautogui = MockPyAutoGUI()
+    else:
+        import pyautogui
 
-    # 安全设置：鼠标移到屏幕左上角(0,0)会紧急终止
-    pyautogui.FAILSAFE = True
+    # 安全设置：自动化录制时关闭 fail-safe（否则鼠标到角落会中断）
+    # 紧急停止方式：Ctrl+C 终端终止
+    pyautogui.FAILSAFE = False
     pyautogui.PAUSE = 0.5  # 每个动作之间暂停 0.5 秒
+
+    # 先把鼠标移到屏幕中央，避免初始位置在角落触发问题
+    if not dry_run:
+        pyautogui.moveTo(SCREEN_SIZE[0] // 2, SCREEN_SIZE[1] // 2, duration=0.3)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    # dry-run 模式下跳过所有 sleep
+    _real_sleep = time.sleep
+    if dry_run:
+        time.sleep = lambda s: None
+
     # ─── 1. 启动 ffmpeg 录屏 ───────────────────────────────────────────
     ffmpeg_proc = None
+    ts_path = VIDEO_PATH.replace(".mp4", ".ts")
     if not dry_run:
-        # macOS 主屏录制（需要安装 ffmpeg: brew install ffmpeg）
+        # macOS 屏幕录制：用 .ts 中间格式（不怕中断损坏），最后转 mp4
+        # 注意：Retina 屏实际分辨率是 2880x1800，录原生分辨率
         ffmpeg_cmd = [
             "ffmpeg",
             "-y",
-            "-f", "avfoundation",           # macOS 采集设备
+            "-f", "avfoundation",
             "-framerate", str(FPS),
-            "-i", "1:",                      # 1=主屏幕, :表示无音频(旁白后期加)
-            "-vf", f"scale={SCREEN_SIZE[0]}:{SCREEN_SIZE[1]}",
+            "-i", "2:",                      # 2=屏幕录制, :无音频
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "18",                    # 高质量
-            VIDEO_PATH,
+            "-preset", "fast",               # fast 编码更快，避免掉帧
+            "-crf", "20",
+            "-f", "mpegts",                  # TS 格式，流式写入不怕中断
+            ts_path,
         ]
         print(f"[ffmpeg] 启动录屏: {' '.join(ffmpeg_cmd)}")
         ffmpeg_proc = subprocess.Popen(
             ffmpeg_cmd,
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,        # 丢弃 stdout
+            stderr=subprocess.DEVNULL,       # 丢弃 stderr
         )
         time.sleep(2)  # 等待 ffmpeg 初始化
 
@@ -154,10 +183,30 @@ def method_pyautogui(dry_run=False):
         # ─── 3. 停止录屏 ──────────────────────────────────────────────
         if ffmpeg_proc:
             print("[ffmpeg] 停止录屏...")
-            ffmpeg_proc.stdin.write(b"q")
-            ffmpeg_proc.stdin.flush()
-            ffmpeg_proc.wait(timeout=10)
-            print(f"[ffmpeg] 视频已保存: {VIDEO_PATH}")
+            # macOS avfoundation 不读 stdin，用 SIGINT 信号停止
+            ffmpeg_proc.send_signal(signal.SIGINT)
+            try:
+                ffmpeg_proc.wait(timeout=15)
+            except Exception:
+                print("[ffmpeg] SIGINT 超时，强制终止...")
+                ffmpeg_proc.kill()
+                ffmpeg_proc.wait(timeout=5)
+
+            # TS 转 MP4（加上 faststart 优化网页播放）
+            if os.path.exists(ts_path):
+                print("[ffmpeg] 转换 TS → MP4...")
+                conv = subprocess.run(
+                    ["ffmpeg", "-y", "-i", ts_path,
+                     "-c", "copy",
+                     "-movflags", "+faststart",
+                     VIDEO_PATH],
+                    capture_output=True, timeout=30,
+                )
+                if conv.returncode == 0:
+                    print(f"[ffmpeg] 视频已保存: {VIDEO_PATH}")
+                    os.remove(ts_path)  # 删除中间 TS 文件
+                else:
+                    print(f"[ffmpeg] 转换失败，TS 文件保留: {ts_path}")
 
     print("\n[完成] 录制结束。")
     print(f"  视频: {VIDEO_PATH}")
@@ -167,20 +216,24 @@ def method_pyautogui(dry_run=False):
 def build_pyautogui_steps(pyautogui):
     """
     构建自动化操作步骤序列。
-    ⚠️ 坐标需要根据你的屏幕分辨率和窗口布局调整！
-    建议先用 --dry-run 演练，再实际录制。
+    坐标已适配 1440x900 MacBook Pro。
+    ⚠️ 请先用 --find-coords 确认坐标，再用 --dry-run 演练。
     """
-    W, H = SCREEN_SIZE
+    W, H = SCREEN_SIZE  # 1440, 900
 
-    # ─── 关键坐标（根据你的屏幕调整！）─────────────────────────────────
-    # Chrome 地址栏位置
-    CHROME_URL_BAR = (W // 2, 60)
-    # AI Helper 侧边栏输入框位置
-    SIDEPANEL_INPUT = (W - 200, H - 120)
-    # 侧边栏发送按钮位置
-    SIDEPANEL_SEND = (W - 40, H - 120)
-    # AI Helper 扩展图标位置（工具栏）
-    EXTENSION_ICON = (W - 80, 60)
+    # ─── 关键坐标（1440x900，已校准）──────────────────────────────────
+    # 校准日期：2026-08-16，通过 --find-coords 实测
+    CHROME_URL_BAR = (214, 89)           # Chrome 地址栏
+    EXTENSION_ICON = (1255, 89)         # AI Helper 扩展图标
+    SIDEPANEL_INPUT = (801, 770)        # 侧边栏输入框
+    SIDEPANEL_SEND = (1391, 773)        # 侧边栏发送按钮
+    AGENT_SELECTOR = (1302, 724)        # Agent 选择器（输入框上方工具栏）
+    AGENT_OPTION = (1302, 650)           # Agent 下拉列表选项（选择器下方约 74px）
+    WORKDIR_BUTTON = (1421, 348)        # 工作目录按钮（侧边栏右侧）
+    # 划词场景坐标（网页内容区域）
+    TEXT_SELECT_START = (200, 350)
+    TEXT_SELECT_END = (450, 350)
+    TOOLBAR_EXPLAIN_BTN = (350, 320)
 
     steps = [
         # ── 场景 0: 打开 Chrome ──
@@ -209,16 +262,16 @@ def build_pyautogui_steps(pyautogui):
 
         # ── 场景 3: 划词问答 ──
         {"name": "场景3: 划词问答", "action": "wait", "duration": 1, "pause": 0},
-        {"name": "选中网页文本-起点", "action": "move", "x": 300, "y": 400, "pause": 0.3},
-        {"name": "拖拽选中文本", "action": "click", "x": 500, "y": 400, "pause": 1},
+        {"name": "选中网页文本-起点", "action": "move", "x": TEXT_SELECT_START[0], "y": TEXT_SELECT_START[1], "pause": 0.3},
+        {"name": "拖拽选中文本", "action": "click", "x": TEXT_SELECT_END[0], "y": TEXT_SELECT_END[1], "pause": 1},
         {"name": "等待工具栏弹出", "action": "wait", "duration": 2, "pause": 0},
-        {"name": "点击'解释'", "action": "click", "x": 420, "y": 380, "pause": 0.5},
+        {"name": "点击'解释'", "action": "click", "x": TOOLBAR_EXPLAIN_BTN[0], "y": TOOLBAR_EXPLAIN_BTN[1], "pause": 0.5},
         {"name": "等待 AI 回答", "action": "wait", "duration": WAIT_AI_RESPONSE, "pause": 0},
 
         # ── 场景 4: Agent 切换 + 反思 ──
         {"name": "场景4: Agent 协作", "action": "wait", "duration": 1, "pause": 0},
-        {"name": "点击 Agent 选择器", "action": "click", "x": W - 120, "y": 80, "pause": 1},
-        {"name": "选择数据分析师", "action": "click", "x": W - 150, "y": 200, "pause": 1},
+        {"name": "点击 Agent 选择器", "action": "click", "x": AGENT_SELECTOR[0], "y": AGENT_SELECTOR[1], "pause": 1},
+        {"name": "选择数据分析师", "action": "click", "x": AGENT_OPTION[0], "y": AGENT_OPTION[1], "pause": 1},
         {"name": "点击输入框", "action": "click", "x": SIDEPANEL_INPUT[0], "y": SIDEPANEL_INPUT[1], "pause": 0.5},
         {"name": "输入复杂任务", "action": "type_chinese",
          "text": "分析这个页面的数据，总结关键信息", "pause": 0.5},
@@ -227,7 +280,7 @@ def build_pyautogui_steps(pyautogui):
 
         # ── 场景 5: 工作目录 ──
         {"name": "场景5: 工作目录", "action": "wait", "duration": 1, "pause": 0},
-        {"name": "点击工作目录按钮", "action": "click", "x": W - 60, "y": H - 60, "pause": 2},
+        {"name": "点击工作目录按钮", "action": "click", "x": WORKDIR_BUTTON[0], "y": WORKDIR_BUTTON[1], "pause": 2},
         {"name": "浏览文件", "action": "wait", "duration": 3, "pause": 0},
         {"name": "截图保存", "action": "screenshot", "path": os.path.join(OUTPUT_DIR, "workspace.png"), "pause": 1},
 
@@ -419,13 +472,52 @@ COMPARISON = """
 """
 
 
+def find_coords():
+    """坐标定位工具：实时显示鼠标位置，帮助校准坐标。"""
+    import pyautogui
+
+    print("=" * 60)
+    print("  坐标定位工具")
+    print("  把鼠标移到目标位置，按 Ctrl+C 退出")
+    print("=" * 60)
+    print()
+    print("需要校准的关键位置：")
+    print("  1. Chrome 地址栏")
+    print("  2. AI Helper 扩展图标（工具栏最右侧）")
+    print("  3. 侧边栏输入框")
+    print("  4. 侧边栏发送按钮")
+    print("  5. Agent 选择器")
+    print("  6. 工作目录按钮")
+    print()
+    print("当前鼠标坐标（实时）：")
+    print()
+
+    try:
+        while True:
+            x, y = pyautogui.position()
+            # 获取该位置的像素颜色，帮助识别
+            print(f"\r  鼠标位置: ({x:4d}, {y:4d})  ", end="", flush=True)
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        x, y = pyautogui.position()
+        print(f"\n\n  最后位置: ({x}, {y})")
+        print("\n将此坐标填入 build_pyautogui_steps() 对应变量即可。")
+        print("按 Ctrl+C 已退出。")
+
+
 def main():
     parser = argparse.ArgumentParser(description="AI Helper 演示视频自动化录制")
     parser.add_argument("--method", choices=["pyautogui", "playwright"],
                         default="pyautogui", help="选择录制方案")
     parser.add_argument("--dry-run", action="store_true",
                         help="演练模式，只打印步骤不实际执行")
+    parser.add_argument("--find-coords", action="store_true",
+                        help="坐标定位工具，实时显示鼠标位置")
     args = parser.parse_args()
+
+    if args.find_coords:
+        find_coords()
+        return
 
     print(COMPARISON)
     print(f"\n选择方案: {args.method}")
