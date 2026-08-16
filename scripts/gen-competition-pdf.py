@@ -631,6 +631,10 @@ def build_pdf():
     if tool_chart_path and os.path.exists(tool_chart_path):
         add_figure(story, tool_chart_path, "图 4: 内建工具分类分布", styles)
 
+    tools_screenshot = os.path.join(DOCS_IMAGES, "丰富自动化LLM调用工具.png")
+    if os.path.exists(tools_screenshot):
+        add_figure(story, tools_screenshot, "图 4a: 工具选择面板", styles)
+
     tools_data = [
         ["工具类别", "数量", "代表性工具"],
         ["内容提取", "6", "page_content, extract_data, query_elements, search_in_page, iframe_content, scroll_collect"],
@@ -670,6 +674,10 @@ def build_pdf():
     if os.path.exists(token_img_path):
         add_figure(story, token_img_path, "图 5: Token 统计面板", styles)
 
+    tool_usage_img = os.path.join(DOCS_IMAGES, "工具使用统计.png")
+    if os.path.exists(tool_usage_img):
+        add_figure(story, tool_usage_img, "图 5a: 工具使用统计", styles)
+
     # ══════════════════════════════════════════════════════════════════════
     # 3. 应用场景
     # ══════════════════════════════════════════════════════════════════════
@@ -688,7 +696,7 @@ def build_pdf():
         "包括 contenteditable 编辑器、prosemirror 富文本编辑器等，这是传统自动化工具难以做到的。"
     ), styles['body']))
 
-    react_img_path = os.path.join(DOCS_IMAGES, "ReAct推理循环配置.png")
+    react_img_path = os.path.join(DOCS_IMAGES, "推理循环配置化.png")
     if os.path.exists(react_img_path):
         add_figure(story, react_img_path, "图 6: ReAct 推理循环配置", styles)
 
@@ -714,6 +722,10 @@ def build_pdf():
     if os.path.exists(selection_img_path):
         add_figure(story, selection_img_path, "图 8: 划词浮动工具栏", styles)
 
+    toolbar_config_img = os.path.join(DOCS_IMAGES, "划词工具栏自定义配置.png")
+    if os.path.exists(toolbar_config_img):
+        add_figure(story, toolbar_config_img, "图 8a: 划词工具栏自定义配置", styles)
+
     story.append(Paragraph(normalize_text("3.4 多模态文件问答"), styles['h2']))
     story.append(Paragraph(normalize_text(
         "用户可直接在侧边栏上传 PDF、Word、Excel 等 50+ 种格式文件进行问答。"
@@ -737,6 +749,10 @@ def build_pdf():
     if os.path.exists(agent_img_path):
         add_figure(story, agent_img_path, "图 10: 多智能体助手管理", styles)
 
+    agent_custom_img = os.path.join(DOCS_IMAGES, "智能体助手自定义.png")
+    if os.path.exists(agent_custom_img):
+        add_figure(story, agent_custom_img, "图 10a: 智能体助手自定义", styles)
+
     story.append(Paragraph(normalize_text("3.6 本地文件管理与命令执行"), styles['h2']))
     story.append(Paragraph(normalize_text(
         "连接本地 Agent 服务后，AI Helper 可直接在侧边栏浏览和管理本地文件系统：目录树浏览、"
@@ -748,6 +764,10 @@ def build_pdf():
     if os.path.exists(file_img_path):
         add_figure(story, file_img_path, "图 11: Agent 文件管理与命令执行", styles)
 
+    agent_config_img = os.path.join(DOCS_IMAGES, "代理配置.png")
+    if os.path.exists(agent_config_img):
+        add_figure(story, agent_config_img, "图 11a: 代理服务配置", styles)
+
     story.append(Paragraph(normalize_text("3.7 MCP 协议无限扩展"), styles['h2']))
     story.append(Paragraph(normalize_text(
         "通过 MCP（Model Context Protocol）协议，用户可连接任意第三方工具服务器，工具自动注册到系统中。"
@@ -758,6 +778,35 @@ def build_pdf():
     mcp_img_path = os.path.join(DOCS_IMAGES, "MCP和Skill工具箱配置.png")
     if os.path.exists(mcp_img_path):
         add_figure(story, mcp_img_path, "图 12: MCP 与 Skill 工具箱配置", styles)
+
+    story.append(Paragraph(normalize_text("3.8 灵活配置与个性化"), styles['h2']))
+    story.append(Paragraph(normalize_text(
+        "AI Helper 提供丰富的配置选项，让用户根据自身需求个性化定制 AI 助手行为。"
+        "从 API 基础配置到模型参数微调，从提示词管理到 UI 原型生成，覆盖完整的工作流配置。"
+    ), styles['body']))
+
+    api_config_img = os.path.join(DOCS_IMAGES, "大模型对接基础配置.png")
+    if os.path.exists(api_config_img):
+        add_figure(story, api_config_img, "图 12a: 大模型对接基础配置", styles)
+
+    model_param_img = os.path.join(DOCS_IMAGES, "模型参数便捷按需调整.png")
+    if os.path.exists(model_param_img):
+        add_figure(story, model_param_img, "图 12b: 模型参数便捷调整", styles)
+
+    prompt_img = os.path.join(DOCS_IMAGES, "自定义提示词便捷触发发送.png")
+    if os.path.exists(prompt_img):
+        add_figure(story, prompt_img, "图 12c: 自定义提示词管理", styles)
+
+    story.append(Paragraph(normalize_text("3.9 UI 原型生成与管理"), styles['h2']))
+    story.append(Paragraph(normalize_text(
+        "AI Helper 支持 AI 在对话中直接生成可交互的 HTML 页面原型，并在侧边栏中实时预览。"
+        "生成的原型保存到 IndexedDB 原型库中，支持缩放预览、下载 HTML 文件、继续优化指令。"
+        "这为前端开发者和产品经理提供了从想法到原型的快速验证路径。"
+    ), styles['body']))
+
+    ui_proto_img = os.path.join(DOCS_IMAGES, "对话生成静态页面.png")
+    if os.path.exists(ui_proto_img):
+        add_figure(story, ui_proto_img, "图 12d: 对话生成 UI 原型页面", styles)
 
     # ══════════════════════════════════════════════════════════════════════
     # 4. 创新点
