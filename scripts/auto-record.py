@@ -99,13 +99,23 @@ def method_pyautogui(dry_run=False):
             ts_path,
         ]
         print(f"[ffmpeg] 启动录屏: {' '.join(ffmpeg_cmd)}")
+        ffmpeg_log = open(os.path.join(OUTPUT_DIR, "ffmpeg.log"), "w")
         ffmpeg_proc = subprocess.Popen(
             ffmpeg_cmd,
             stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,        # 丢弃 stdout
-            stderr=subprocess.DEVNULL,       # 丢弃 stderr
+            stdout=ffmpeg_log,
+            stderr=ffmpeg_log,
         )
-        time.sleep(2)  # 等待 ffmpeg 初始化
+        time.sleep(3)  # 等待 ffmpeg 初始化
+        # 检查 ffmpeg 是否真的在运行
+        if ffmpeg_proc.poll() is not None:
+            print(f"[ffmpeg] 启动失败！退出码: {ffmpeg_proc.returncode}")
+            ffmpeg_log.close()
+            with open(os.path.join(OUTPUT_DIR, "ffmpeg.log"), "r") as f:
+                print(f"[ffmpeg] 日志:\n{f.read()}")
+            return
+        else:
+            print(f"[ffmpeg] 录屏中... (PID: {ffmpeg_proc.pid})")
 
     # ─── 2. 自动化操作序列 ──────────────────────────────────────────────
     try:
