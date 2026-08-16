@@ -11,11 +11,15 @@ OUTPUT_PATH = os.path.join(IMG_DIR, "ai-helper-promo.gif")
 SELECTED = [
     "多智能体助手自由切换.png",
     "页面划词便捷AI问答.png",
+    "划词工具栏自定义配置.png",
     "对话生成静态页面.png",
     "对接视觉模型识图对话.png",
+    "自定义提示词便捷触发发送.png",
     "丰富自动化LLM调用工具.png",
     "MCP和Skill工具箱配置.png",
-    "强大灵活的系统配置能力.png",
+    "大模型对接基础配置.png",
+    "连接代理实现高级文件读写命令执行.png",
+    "循环推理执行日志追踪.png",
     "推理循环配置化.png",
 ]
 
@@ -23,17 +27,21 @@ SELECTED = [
 LABELS = [
     "多智能体助手自由切换",
     "页面划词便捷 AI 问答",
+    "划词工具栏自定义配置",
     "对话生成静态页面",
     "对接视觉模型识图对话",
+    "自定义提示词便捷触发发送",
     "丰富自动化 LLM 调用工具",
     "MCP & Skill 工具箱配置",
-    "强大灵活的系统配置能力",
+    "大模型对接基础配置",
+    "连接代理实现高级文件读写与命令执行",
+    "循环推理执行日志追踪",
     "ReAct 推理循环配置化",
 ]
 
 CANVAS_WIDTH = 800
 CANVAS_HEIGHT = 600
-FRAME_DURATION = 2500  # ms per frame
+FRAME_DURATION = 2000  # ms per frame
 BORDER_COLOR = (30, 41, 59)  # dark slate
 ACCENT_COLOR = (59, 130, 246)  # blue accent
 TEXT_COLOR = (255, 255, 255)
