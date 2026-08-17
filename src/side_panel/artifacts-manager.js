@@ -3,7 +3,7 @@
 // 提供定位到工作目录文件、预览文件等功能。
 
 import { t, registerTranslations } from '../shared/i18n.js';
-import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream, getWorkspaceRoot } from './workspace-manager.js';
+import { supportsPreview, getFileIcon, downloadFileStream, downloadFilesStream, getWorkspaceRoot, getHomeDir } from './workspace-manager.js';
 import { locateFileInWorkspace, previewArtifactFile, closeWorkspacePreview, resolveWorkspaceAbsolutePath } from './workspace-panel.js';
 import { showToast, copyToClipboard } from './utils.js';
 import logger from '../shared/logger.js';
@@ -869,8 +869,9 @@ function extractFilesFromRm(command, initialCwd) {
 
   const resolvePath = (p) => {
     p = p.replace(/^['"]|['"]$/g, '');
+    // ~/ 前缀视为不可展开的家目录基准，不与 cwd 拼接（与 extractFilesFromAgentExec 保持一致）
     // 兼容 Windows 路径：如果不是以 / 或盘符(X:\) 开头，则用 cwd 拼接
-    if (!p.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(p) && cwd) {
+    if (!p.startsWith('/') && !p.startsWith('~/') && !/^[A-Za-z]:[\\/]/.test(p) && cwd) {
       p = normalizePath(cwd.replace(/\/$/, '') + '/' + p);
     }
     return normalizePath(p);
@@ -888,6 +889,9 @@ function extractFilesFromRm(command, initialCwd) {
       const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
       if (target.startsWith('/') || /^[A-Za-z]:/.test(target)) {
         cwd = normalizePath(target);
+      } else if (target.startsWith('~/')) {
+        // ~ 无法展开为真实家目录：按独立基准保存，避免拼出 cwd/~/xxx 假路径
+        cwd = target;
       } else if (target === '..') {
         cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
       } else {
@@ -1001,6 +1005,14 @@ export function extractArtifactsFromExecutionLog(executionLog) {
   // 删除路径追踪：path → { isDir, timestamp }
   const deletedPaths = new Map();
 
+  // 时序把关：仅当删除发生在产物最后一次创建之后（含同时刻，
+  // 覆盖 touch f && rm f 同条命令场景）才应标记为已删除；
+  // 删除后被重建的文件实际存在，不得标记（时间戳缺失时保持旧行为采信）
+  const isDeletedAfterCreate = (artifactTs, dpInfo) => {
+    if (!dpInfo || artifactTs == null || dpInfo.timestamp == null) return true;
+    return new Date(dpInfo.timestamp || 0).getTime() >= new Date(artifactTs || 0).getTime();
+  };
+
   // 本任务创建的目录根集合（各写操作产物的父目录 + cd 进入的目录）：
   // 兜底解析列表输出时，只有位于这些目录之下的路径才可能是"新建产物"，
   // 避免 ls/du/find 查看既有目录时把已有文件误识别为产物
@@ -1050,7 +1062,6 @@ export function extractArtifactsFromExecutionLog(executionLog) {
               timestamp: entry.timestamp || null,
               status: entry.status || 'unknown',
               type: 'file',
-              deleted: deletedPaths.has(resolvedPath) || undefined,
             });
           }
         }
@@ -1094,7 +1105,6 @@ export function extractArtifactsFromExecutionLog(executionLog) {
           timestamp: entry.timestamp || null,
           status: entry.status || 'unknown',
           type: candidate.isDir ? 'directory' : 'file',
-          deleted: deletedPaths.has(filePath) || undefined,
         });
       }
 
@@ -1139,7 +1149,6 @@ export function extractArtifactsFromExecutionLog(executionLog) {
             timestamp: entry.timestamp || null,
             status: entry.status || 'unknown',
             type: op.isDir ? 'directory' : 'file',
-            deleted: deletedPaths.has(op.path) || undefined,
           });
         }
       }
@@ -1226,7 +1235,6 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       timestamp: entry.timestamp || null,
       status: entry.status || 'unknown',
       type: 'file',
-      deleted: deletedPaths.has(finalPath) || undefined,
     });
   }
 
@@ -1255,11 +1263,13 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 
     for (const artifact of artifacts) {
       if (!artifact.deleted) {
-        // 先精确匹配，再后缀匹配（绝对/相对），最后递归删除目录的包含匹配
-        if (deletedPaths.has(artifact.path) || deletedPathList.some(dp => {
+        // 先精确匹配，再后缀匹配（绝对/相对），最后递归删除目录的包含匹配；
+        // 均叠加时序把关：删除早于产物最后一次创建的（先清理后重建/删除后重建）不标记
+        if ((deletedPaths.has(artifact.path) && isDeletedAfterCreate(artifact.timestamp, deletedPaths.get(artifact.path))) || deletedPathList.some(dp => {
+          const dpInfo = deletedPaths.get(dp);
+          if (!isDeletedAfterCreate(artifact.timestamp, dpInfo)) return false;
           if (isPathMatch(artifact.path, dp)) return true;
           // rm -rf dir 递归删除：目录内的文件/子目录一并标记为已删除
-          const dpInfo = deletedPaths.get(dp);
           return dpInfo && dpInfo.isDir && (artifact.path.startsWith(dp + '/') || artifact.path.startsWith(dp + '\\'));
         })) {
           artifact.deleted = true;
@@ -1562,9 +1572,12 @@ async function handleArtifactDownload(artifact) {
  * 判断产物路径是否位于工作目录内
  * Agent 安全策略限制 fs 操作只能在工作目录（含白名单）内，
  * 工作目录外的路径 stat 会被 403 拦截，调用方应跳过检查。
- * 相对路径 / ~ 约定视为工作目录内（解析时基于工作目录拼接）；
+ * ~ 前缀按 shell 语义指向家目录：调用方应先通过 expandHomePath 展开为绝对路径
+ * （工作目录可能位于家目录下，展开后才能正确判定）；未能展开时视为目录外，
+ * 避免被误解析为工作目录相对路径 stat 到不存在的文件被误标已删除；
+ * 相对路径视为工作目录内（解析时基于工作目录拼接）；
  * 绝对路径做前缀匹配（Windows 盘符大小写不敏感）
- * @param {string} path - 产物原始路径
+ * @param {string} path - 产物原始路径（已展开 ~/ 为佳）
  * @param {string|null} rootNormalized - 规范化后的工作目录根路径（未知时传 null，不拦截）
  * @returns {boolean}
  */
@@ -1572,11 +1585,25 @@ function isPathInsideWorkspace(path, rootNormalized) {
   if (!rootNormalized) return true; // 工作目录未知 → 不拦截，交由下游兜底
   const norm = normalizePath(path || '');
   if (!norm) return false;
+  if (norm.startsWith('~/') || norm === '~') return false; // 未展开的家目录基准 → 目录外
   const isAbs = norm.startsWith('/') || /^[a-zA-Z]:\//.test(norm);
-  if (!isAbs) return true; // 相对路径/~ 视为工作目录内
+  if (!isAbs) return true; // 相对路径视为工作目录内
   const lower = norm.toLowerCase();
   const rootLower = rootNormalized.toLowerCase();
   return lower === rootLower || lower.startsWith(rootLower + '/');
+}
+
+/**
+ * 将 ~/ 前缀路径展开为真实绝对路径（家目录由调用方从 Agent 预先获取）
+ * 工作目录可能位于家目录下，展开后 ~/ 产物才能被正确判定为工作目录内，
+ * 支持定位/预览/下载与存在性检查；家目录未知时保持原样（回退目录外判定）
+ * @param {string} path - 产物原始路径
+ * @param {string|null} homeDir - Agent 家目录绝对路径
+ * @returns {string}
+ */
+function expandHomePath(path, homeDir) {
+  if (!homeDir || !(path === '~' || (path && path.startsWith('~/')))) return path;
+  return normalizePath(path === '~' ? homeDir : homeDir + '/' + path.slice(2));
 }
 
 /**
@@ -1597,8 +1624,14 @@ export async function checkArtifactsFileExistence(artifacts) {
     if (root) rootNorm = normalizePath(root);
   } catch { /* 工作目录未知 → 不拦截 */ }
 
+  // 展开 ~/ 路径为真实家目录（从 Agent 获取）：工作目录可能位于家目录下，
+  // 展开后才能正确判定位于工作目录内并发起检查；Agent 离线取不到时保持原样
+  // （isPathInsideWorkspace 视为目录外跳过检查，保留命令解析的快照状态）
+  let homeDir = null;
+  try { homeDir = await getHomeDir(); } catch { /* 家目录未知 → 不展开 */ }
+
   // 只检查未被标记为 deleted、有路径且位于工作目录内的产物
-  const candidates = artifacts.filter(a => !a.deleted && a.path && isPathInsideWorkspace(a.path, rootNorm));
+  const candidates = artifacts.filter(a => !a.deleted && a.path && isPathInsideWorkspace(expandHomePath(a.path, homeDir), rootNorm));
   if (candidates.length === 0) return false;
 
   try {
@@ -1786,9 +1819,12 @@ export function showArtifactsModal(artifacts) {
       const root = await getWorkspaceRoot();
       if (!root || !modalOverlay) return;
       const rootNorm = normalizePath(root);
+      // ~/ 产物先展开为真实家目录再判定（工作目录可能位于家目录下）
+      let homeDir = null;
+      try { homeDir = await getHomeDir(); } catch { /* 家目录未知 → 不展开 */ }
       let changed = false;
       for (const a of artifacts) {
-        if (!a.outsideWorkspace && !isPathInsideWorkspace(a.path, rootNorm)) {
+        if (!a.outsideWorkspace && !isPathInsideWorkspace(expandHomePath(a.path, homeDir), rootNorm)) {
           a.outsideWorkspace = true;
           changed = true;
         }

@@ -1,7 +1,7 @@
 // workspace-panel.js - 工作目录文件管理器 UI
 
 import {
-  getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig, getAgentStatusDetail,
+  getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig, getAgentStatusDetail, getHomeDir,
   listDirectory, readFileContent, writeFileContent,
   downloadFileStream, downloadFilesStream,
   downloadFileStreamWithProgress, downloadFilesStreamWithProgress,
@@ -5343,7 +5343,7 @@ function stripByRootBasename(p, root) {
  * - 本地绝对路径：/Users/xx/proj/src/utils/helper.js
  * - 远程/沙箱绝对路径（前缀不同）：/home/agent/proj/src/utils/helper.js
  * - Windows 盘符/反斜杠：C:\proj\src\utils\helper.js
- * - ~ 开头：~/proj/src/utils/helper.js
+ * - ~ 开头：~/proj/src/utils/helper.js（按 shell 语义指向家目录，侧边栏无法展开，返回 null）
  * @param {string} filePath - 产物原始路径
  * @param {string} workspaceRootPath - 工作目录绝对路径
  * @returns {string|null} 解析后的绝对路径；无法定位返回 null
@@ -5356,9 +5356,10 @@ function resolveWorkspacePath(filePath, workspaceRootPath) {
   let p = normalizePath(filePath).trim();
   if (!p || p === '.') return null;
 
-  // 展开 ~ 前缀：~/xxx 视为工作目录下的相对路径
-  if (p === '~') return root;
-  if (p.startsWith('~/')) p = p.substring(2);
+  // ~ 前缀按 shell 语义指向家目录，侧边栏无法自行展开：
+  // 调用方（resolveWorkspaceAbsolutePath）会先从 Agent 获取家目录展开；
+  // 无法展开时不可映射为工作目录相对路径（否则 stat/复制到错误路径），返回 null 回退原始路径
+  if (p === '~' || p.startsWith('~/')) return null;
 
   const isAbs = p.startsWith('/') || /^[a-zA-Z]:\//.test(p);
   if (!isAbs) {
@@ -5374,6 +5375,22 @@ function resolveWorkspacePath(filePath, workspaceRootPath) {
   }
   if (rel === null) return null;
   return rel === '' ? root : root + '/' + rel;
+}
+
+/**
+ * 展开 ~/ 前缀为真实绝对路径（家目录从 Agent 获取）
+ * 工作目录可能位于家目录下，定位/预览/存在性检查前必须先展开；
+ * 非 ~/ 路径或家目录未知时保持原样
+ * @param {string} filePath
+ * @returns {Promise<string>}
+ */
+async function expandHomePrefix(filePath) {
+  if (!(filePath === '~' || (filePath && filePath.startsWith('~/')))) return filePath;
+  try {
+    const home = await getHomeDir();
+    if (home) return normalizePath(filePath === '~' ? home : home + '/' + filePath.slice(2));
+  } catch { /* 家目录未知 → 保持原样 */ }
+  return filePath;
 }
 
 /**
@@ -5402,8 +5419,9 @@ export async function locateFileInWorkspace(filePath) {
     return;
   }
 
-  // 将产物路径解析为工作目录内的绝对路径（兼容相对/绝对/Windows/~ 等格式）
-  const resolved = resolveWorkspacePath(filePath, workspaceRoot);
+  // 将产物路径解析为工作目录内的绝对路径（兼容相对/绝对/Windows/~ 等格式）；
+  // ~/ 前缀先从 Agent 获取家目录展开（工作目录可能位于家目录下）
+  const resolved = resolveWorkspacePath(await expandHomePrefix(filePath), workspaceRoot);
   if (!resolved) {
     showError(t('artifacts.locateFailed'));
     return;
@@ -5414,19 +5432,32 @@ export async function locateFileInWorkspace(filePath) {
   const dirPath = lastSlash > 0 ? resolved.substring(0, lastSlash) : workspaceRoot;
   const fileName = lastSlash > 0 ? resolved.substring(lastSlash + 1) : resolved;
 
+  // 定位前失效目标目录缓存：目录或其内新文件可能是任务运行期刚创建的，
+  // 直接渲染陈旧缓存列表会找不到目标文件导致定位失败（手动刷新后成功的根因）
+  invalidateDirCache(dirPath);
+
   // 导航到目录（带搜索高亮）
   await navigateToPath(dirPath);
 
-  // 高亮目标文件项
-  setTimeout(() => {
-    const items = document.querySelectorAll('.workspace-file-item');
+  // 在已渲染的文件项中查找目标
+  const findTargetItem = (name) => {
     let targetItem = null;
-    items.forEach(item => {
-      const name = item.dataset.name;
-      if (name === fileName) {
-        targetItem = item;
-      }
+    document.querySelectorAll('.workspace-file-item').forEach(item => {
+      if (item.dataset.name === name) targetItem = item;
     });
+    return targetItem;
+  };
+
+  // 高亮目标文件项
+  setTimeout(async () => {
+    let targetItem = findTargetItem(fileName);
+    if (!targetItem) {
+      // 兜底重试：再次失效缓存并强制刷新（防列表请求与缓存写入的时序竞争）
+      invalidateDirCache(dirPath);
+      await navigateToPath(dirPath);
+      await new Promise(r => setTimeout(r, 300));
+      targetItem = findTargetItem(fileName);
+    }
     if (targetItem) {
       targetItem.classList.add('highlighted');
       targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5467,8 +5498,9 @@ export async function previewArtifactFile(filePath, fileName) {
     return;
   }
 
-  // 将产物路径解析为工作目录内的绝对路径，避免远程前缀/格式不一致导致读取失败
-  const resolved = resolveWorkspacePath(filePath, workspaceRoot);
+  // 将产物路径解析为工作目录内的绝对路径，避免远程前缀/格式不一致导致读取失败；
+  // ~/ 前缀先从 Agent 获取家目录展开（工作目录可能位于家目录下）
+  const resolved = resolveWorkspacePath(await expandHomePrefix(filePath), workspaceRoot);
   if (!resolved) {
     showError(t('artifacts.locateFailed'));
     return;
@@ -5510,7 +5542,10 @@ export async function resolveWorkspaceAbsolutePath(filePath) {
     workspaceRoot = await getWorkspaceRoot();
   }
   if (!workspaceRoot) return null;
-  return resolveWorkspacePath(filePath, workspaceRoot);
+  // ~/ 前缀：从 Agent 获取真实家目录展开为绝对路径（工作目录可能位于家目录下，
+  // 展开后才能正确判定位于工作目录内）；取不到时保持原样，
+  // 由 resolveWorkspacePath 回退返回 null
+  return resolveWorkspacePath(await expandHomePrefix(filePath), workspaceRoot);
 }
 
 async function closePanelInternal(force = false) {

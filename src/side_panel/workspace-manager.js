@@ -161,6 +161,7 @@ export function getMimeType(name) {
 
 // 缓存工作目录路径
 let _workspaceRoot = null;
+let _homeDir = null;
 let _agentConfig = null;
 
 /**
@@ -208,10 +209,36 @@ export async function getWorkspaceRoot() {
 }
 
 /**
+ * 获取 Agent 所在机器的家目录（用于展开产物路径中的 ~/ 前缀）
+ * 与 workdir 同源自 /api/status/detail 的 homeDir 字段
+ */
+export async function getHomeDir() {
+  if (_homeDir) return _homeDir;
+  const config = await getAgentConfig();
+  if (!config) return null;
+  try {
+    const resp = await fetch(`${config.url}/api/status/detail`, {
+      headers: { 'Authorization': `Bearer ${config.token}` }
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.success && data.homeDir) {
+        _homeDir = data.homeDir;
+        return _homeDir;
+      }
+    }
+  } catch (err) {
+    logger.warn('[WorkspaceManager] get homedir failed:', err.message);
+  }
+  return null;
+}
+
+/**
  * 重置工作目录缓存（切换代理时调用）
  */
 export function resetWorkspaceRoot() {
   _workspaceRoot = null;
+  _homeDir = null;
   _agentConfig = null;
 }
 

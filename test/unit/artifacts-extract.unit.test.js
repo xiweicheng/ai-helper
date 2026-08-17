@@ -3,11 +3,13 @@
 import { describe, test, expect, beforeAll, vi } from 'vitest';
 
 // mock 工作目录根路径（checkArtifactsFileExistence 用于过滤目录外产物）
+// 家目录通过 globalThis.__mockHomeDir 按用例控制（null 模拟 Agent 离线取不到）
 vi.mock('../../src/side_panel/workspace-manager.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
     getWorkspaceRoot: async () => '/Users/test/.ai-helper-agent/workspace',
+    getHomeDir: async () => globalThis.__mockHomeDir || null,
   };
 });
 
@@ -812,6 +814,43 @@ describe('extractArtifactsFromExecutionLog', () => {
     // 旧 bug：cd 目录自证 + HTML 碎片 token 曾产生 imap.yeah.net、</td></tr>... 等垃圾产物
     expect(artifacts).toEqual([]);
   });
+
+  // ── 回归：删除标记的时序把关（删除早于最后一次创建的不得标记）──
+  test('删除后重建的文件不被标记为已删除', () => {
+    const mkExec = (command, ts) => makeLogEntry({
+      timestamp: ts,
+      nodeName: '工具执行: agent_exec',
+      action: { name: 'agent_exec', params: { command } },
+      observation: '',
+    });
+    const createCmd = 'mkdir -p ~/Movies/test-files && cd ~/Movies/test-files && echo "Hello, this is file 1" > file1.txt && echo "Second file content" > file2.txt && ls -la';
+    const log = [
+      mkExec(createCmd, '2026-01-01T00:00:00Z'),
+      mkExec('rm -rf ~/Movies/test-files', '2026-01-01T00:00:01Z'),
+      mkExec(createCmd, '2026-01-01T00:00:02Z'),
+    ];
+    const artifacts = extractArtifactsFromExecutionLog(log);
+    expect(artifacts.length).toBeGreaterThan(0);
+    // 旧 bug：deletedPaths 无时序概念，重建后的文件仍被先前的删除记录标记为已删除
+    expect(artifacts.every(a => !a.deleted)).toBe(true);
+  });
+
+  test('先清理后创建的（删除早于创建）文件不被标记为已删除', () => {
+    const mkExec = (command, ts) => makeLogEntry({
+      timestamp: ts,
+      nodeName: '工具执行: agent_exec',
+      action: { name: 'agent_exec', params: { command } },
+      observation: '',
+    });
+    const log = [
+      mkExec('rm -rf ~/Movies/test-files', '2026-01-01T00:00:00Z'),
+      mkExec('mkdir -p ~/Movies/test-files && cd ~/Movies/test-files && date > timestamp.log', '2026-01-01T00:00:01Z'),
+    ];
+    const artifacts = extractArtifactsFromExecutionLog(log);
+    const file = artifacts.find(a => a.fileName === 'timestamp.log');
+    expect(file).toBeTruthy();
+    expect(artifacts.every(a => !a.deleted)).toBe(true);
+  });
 });
 
 describe('checkArtifactsFileExistence', () => {
@@ -882,6 +921,41 @@ describe('checkArtifactsFileExistence', () => {
     expect(changed).toBe(false);
     expect(capturedMsg).toBeTruthy();
     expect(capturedMsg.paths.length).toBe(1);
+  });
+
+  test('~ 前缀产物且家目录未知时视为目录外，不发起存在性检查不被误标 deleted', async () => {
+    let capturedMsg = null;
+    globalThis.__mockHomeDir = null;
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      capturedMsg = msg;
+      return Promise.resolve({ success: true, results: {} });
+    };
+    const home = makeArtifact('~/Movies/test-files/file1.txt');
+    const changed = await checkArtifactsFileExistence([home]);
+    // 旧 bug：~/ 被误映射为工作目录相对路径，stat 不存在的文件 → 误标已删除
+    expect(changed).toBe(false);
+    expect(capturedMsg).toBeNull();
+    expect(home.deleted).toBeFalsy();
+  });
+
+  test('工作目录位于家目录下时，~/ 产物展开后正常检查不误标，真实不存在才标 deleted', async () => {
+    globalThis.__mockHomeDir = '/Users/test';
+    globalThis.chrome.runtime.sendMessage = (msg) => {
+      expect(msg.type).toBe('CHECK_FILES_EXIST');
+      // ~/ 应展开为真实绝对路径而非工作目录拼接路径
+      expect(msg.paths).toContain('/Users/test/.ai-helper-agent/workspace/task_a/keep.txt');
+      expect(msg.paths.some(p => p.includes('~/'))).toBe(false);
+      const results = {};
+      for (const p of msg.paths) results[p] = !p.includes('gone.txt');
+      return Promise.resolve({ success: true, results });
+    };
+    const inside = makeArtifact('~/.ai-helper-agent/workspace/task_a/keep.txt');
+    const gone = makeArtifact('~/.ai-helper-agent/workspace/task_a/gone.txt');
+    const changed = await checkArtifactsFileExistence([inside, gone]);
+    expect(changed).toBe(true);
+    expect(inside.deleted).toBeFalsy();
+    expect(gone.deleted).toBe(true);
+    globalThis.__mockHomeDir = null;
   });
 });
 
