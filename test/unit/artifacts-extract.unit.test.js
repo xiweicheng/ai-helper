@@ -408,12 +408,21 @@ describe('extractArtifactsFromExecutionLog', () => {
       + './components/harbor_delta: karma_beta.csv nebula_harbor.sh quantum_mosaic.py '
       + './lib: frost_nimbus.json harbor_coral.js lunar_quantum '
       + './lib/lunar_quantum: coral_nebula.md harbor_lunar.sh pixel_mosaic.html';
-    const log = [{
-      id: 'log_lsr', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
-      nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
-      action: { name: 'agent_exec', params: { command, cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
-      observation, duration: 30,
-    }];
+    const log = [
+      // 前置创建操作：目录由脚本动态创建（时序把关要求兑底解析前已有写操作）
+      {
+        id: 'log_mkdir', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'mkdir -p /Users/xiweicheng/.ai-helper-agent/workspace/random_files_20260813_200845', cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: null, duration: 20,
+      },
+      {
+        id: 'log_lsr', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command, cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation, duration: 30,
+      },
+    ];
     const artifacts = extractArtifactsFromExecutionLog(log);
     const base = '/Users/xiweicheng/.ai-helper-agent/workspace/random_files_20260813_200845';
     const paths = artifacts.map(a => a.path);
@@ -436,16 +445,25 @@ describe('extractArtifactsFromExecutionLog', () => {
   test('find -type d 观察输出中的路径被追踪且识别为目录', () => {
     const command = 'cd /tmp/demo && find . -type d | sort';
     const observation = './src ./src/utils ./src/utils/helpers';
-    const log = [{
-      id: 'log_find', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
-      nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
-      action: { name: 'agent_exec', params: { command, cwd: '/tmp' } },
-      observation, duration: 30,
-    }];
+    const log = [
+      {
+        id: 'log_mk', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'mkdir -p /tmp/demo', cwd: '/tmp' } },
+        observation: null, duration: 20,
+      },
+      {
+        id: 'log_find', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command, cwd: '/tmp' } },
+        observation, duration: 30,
+      },
+    ];
     const artifacts = extractArtifactsFromExecutionLog(log);
     const base = '/tmp/demo';
-    expect(artifacts.length).toBe(3);
-    expect(artifacts.every(a => a.type === 'directory')).toBe(true);
+    const dirs = artifacts.filter(a => a.path.startsWith(base + '/'));
+    expect(dirs.length).toBe(3);
+    expect(dirs.every(a => a.type === 'directory')).toBe(true);
     expect(artifacts.map(a => a.path)).toContain(base + '/src/utils/helpers');
   });
 
@@ -644,12 +662,20 @@ describe('extractArtifactsFromExecutionLog', () => {
     const command = 'cd /tmp/demo && find . -type f | sort';
     // 500 字符截断后追加 '...'，最后一个 token 是残缺路径
     const observation = './a.txt ./b/c.json ./b/c/d.log .../g...';
-    const log = [{
-      id: 'log_trunc', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
-      nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
-      action: { name: 'agent_exec', params: { command, cwd: '/tmp' } },
-      observation, duration: 30,
-    }];
+    const log = [
+      {
+        id: 'log_mk', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'mkdir -p /tmp/demo', cwd: '/tmp' } },
+        observation: null, duration: 20,
+      },
+      {
+        id: 'log_trunc', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command, cwd: '/tmp' } },
+        observation, duration: 30,
+      },
+    ];
     const artifacts = extractArtifactsFromExecutionLog(log);
     const paths = artifacts.map(a => a.path);
     expect(paths).toContain('/tmp/demo/a.txt');
@@ -661,9 +687,16 @@ describe('extractArtifactsFromExecutionLog', () => {
   // ── rm -rf 目录递归删除：目录内文件一并标记为 deleted ──
   test('rm -rf 删除目录后，目录内已创建的文件被递归标记为 deleted', () => {
     const log = [
-      // 先创建目录树与文件（脚本生成）
+      // 先写入生成脚本（时序把关：后续兑底解析需在此之前已有写操作）
       {
-        id: 'log_create', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        id: 'log_gensh', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'cd /workspace && cat > /tmp/gen.sh << \'EOF\'\n#!/bin/bash\nmkdir -p "$ROOT"\nEOF', cwd: '/workspace' } },
+        observation: null, duration: 50,
+      },
+      // 执行脚本，动态创建目录树与文件（观察输出展示）
+      {
+        id: 'log_create', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
         nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
         action: { name: 'agent_exec', params: { command: 'cd /workspace && bash /tmp/gen.sh', cwd: '/workspace' } },
         observation: '=== 目录树 === random-structure-20260813-203044 '
@@ -674,7 +707,7 @@ describe('extractArtifactsFromExecutionLog', () => {
       },
       // 再递归删除整个目录
       {
-        id: 'log_rm', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        id: 'log_rm', iteration: 1, timestamp: '2026-01-01T00:00:02Z', status: 'success',
         nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
         action: { name: 'agent_exec', params: { command: 'cd /workspace && rm -rf random-structure-20260813-203044', cwd: '/workspace' } },
         observation: null, duration: 50,
@@ -682,9 +715,13 @@ describe('extractArtifactsFromExecutionLog', () => {
     ];
     const artifacts = extractArtifactsFromExecutionLog(log);
     const base = '/workspace/random-structure-20260813-203044';
-    expect(artifacts.length).toBe(2);
-    for (const a of artifacts) {
-      expect(a.path.startsWith(base + '/')).toBe(true);
+    expect(artifacts.length).toBe(3);
+    const genSh = artifacts.find(a => a.path === '/tmp/gen.sh');
+    expect(genSh).toBeTruthy();
+    expect(genSh.deleted).toBeFalsy();
+    const under = artifacts.filter(a => a.path.startsWith(base + '/'));
+    expect(under.length).toBe(2);
+    for (const a of under) {
       expect(a.deleted).toBe(true);
     }
   });
@@ -710,6 +747,70 @@ describe('extractArtifactsFromExecutionLog', () => {
     // 分号拆链的旧 bug 会导致 heredoc 内文件丢失，此处应全部追踪到
     expect(paths).toContain('/workspace/heredoc_multi/dir_a/f1.txt');
     expect(paths).toContain('/workspace/heredoc_multi/dir_b/f2.txt');
+  });
+
+  // ── 回归：cd 进既有目录的纯只读任务不得把已有文件误识别为产物 ──
+  test('查看既有目录（ls -la + cd && cat）的只读任务不产生任何产物', () => {
+    const demo = '/Users/xiweicheng/.ai-helper-agent/workspace/demo';
+    const log = [
+      {
+        id: 'log_ls', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: `ls -la ${demo} && file ${demo}`, cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: '命令执行完毕 (exitCode: 0)\n\n输出:\n```\ntotal 24\ndrwxr-xr-x@ 5 xiweicheng staff 160 8 6 21:16 .\n-rw-r--r--@ 1 xiweicheng staff 244 8 6 21:16 config.json\n-rw-r--r--@ 1 xiweicheng staff 101 8 6 21:16 hello.txt\n-rw-r--r--@ 1 xiweicheng staff 237 8 6 21:16 readme.md\n' + demo + ': directory\n```',
+        duration: 71,
+      },
+      {
+        id: 'log_cat', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: `cd ${demo} && echo "===== hello.txt =====" && cat hello.txt && echo "" && echo "===== readme.md =====" && cat readme.md && echo "" && echo "===== config.json =====" && cat config.json`, cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: '命令执行完毕 (exitCode: 0)\n\n输出:\n```\n===== hello.txt =====\n你好，世界！\n===== readme.md =====\n# 示例项目\n===== config.json =====\n{ "appName": "demo-app" }\n```',
+        duration: 34,
+      },
+    ];
+    // cd 进既有目录的自证漏洞曾导致 hello.txt/readme.md/config.json 被误识别为产物
+    expect(extractArtifactsFromExecutionLog(log)).toEqual([]);
+  });
+
+  // ── 回归：cd 进技能目录的只读邮件收取任务，JSON/HTML 输出不得被解析为产物 ──
+  test('只读邮件收取任务（cd 技能目录 + JSON 邮件输出）不产生任何产物', () => {
+    const emailHtml = '<table><tr><td><a href="https://x.com/a.html">标题</a>'
+      + '</p></td></tr></table></td></tr></table></td></tr><!----><!----></table><table>'
+      + '</table></td></tr></table></td></tr></table></td></tr></table></body></html>';
+    const mailJson = JSON.stringify([{
+      uid: 1400673507,
+      from: '"InfoQ" <InfoQChina@edm.infoq.com.cn>',
+      subject: 'DeepSeek + Pi 王炸组合跑赢 Claude Code？',
+      html: emailHtml,
+      snippet: 'InfoQ 每周精要',
+      flags: ['\\Seen'],
+    }], null, 2);
+    const log = [
+      {
+        id: 'log_cfg', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'cd ~/.ai-helper-agent/skills/imap-smtp-email && cat scripts/config.js && echo "=====PROVIDERS=====" && head -60 scripts/providers.js', cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: '命令执行完毕 (exitCode: 0)\n\n输出:\n```\n#!/usr/bin/env node\nconst path = require(\'path\');\n// Config file locations\nrequire(\'dotenv\').config({ path: path.resolve(__dirname, \'../.env\') });\n```',
+        duration: 380,
+      },
+      {
+        id: 'log_accounts', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'cd ~/.ai-helper-agent/skills/imap-smtp-email && node scripts/imap.js list-accounts 2>&1 | head -20', cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: '命令执行完毕 (exitCode: 0)\n\n输出:\n```\nAccount Email IMAP SMTP\ndefault xiwc87@yeah.net imap.yeah.net smtp.yeah.net ✓ Complete\n2 accounts total\n```',
+        duration: 1000,
+      },
+      {
+        id: 'log_check', iteration: 1, timestamp: '2026-01-01T00:00:02Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'cd ~/.ai-helper-agent/skills/imap-smtp-email && node scripts/imap.js check --recent 24h --limit 20 2>&1 | head -60', cwd: '/Users/xiweicheng/.ai-helper-agent/workspace' } },
+        observation: '命令执行完毕 (exitCode: 0)\n\n输出:\n```\n' + mailJson + '\n```',
+        duration: 1900,
+      },
+    ];
+    const artifacts = extractArtifactsFromExecutionLog(log);
+    // 旧 bug：cd 目录自证 + HTML 碎片 token 曾产生 imap.yeah.net、</td></tr>... 等垃圾产物
+    expect(artifacts).toEqual([]);
   });
 });
 

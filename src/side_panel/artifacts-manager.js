@@ -386,6 +386,10 @@ function trackCommandCwd(command, initialCwd) {
     const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
     if (target.startsWith('/')) {
       cwd = target;
+    } else if (target.startsWith('~/')) {
+      // ~ 无法在侧边栏展开为真实家目录：按独立基准保存，
+      // 避免与 cwd 拼出 workspace/~/xxx 假路径
+      cwd = target;
     } else if (target === '..') {
       cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
     } else {
@@ -419,6 +423,9 @@ function extractFilesFromAgentExec(command, initialCwd) {
       const target = cdMatch[1].trim().replace(/^['"]|['"]$/g, '');
       if (target.startsWith('/')) {
         cwd = target;
+      } else if (target.startsWith('~/')) {
+        // ~ 无法展开为真实家目录：按独立基准保存，避免拼出 cwd/~/xxx 假路径
+        cwd = target;
       } else if (target === '..') {
         cwd = cwd ? (normalizePath(cwd).replace(/\/[^/]+$/, '') || '/') : '..';
       } else {
@@ -431,7 +438,8 @@ function extractFilesFromAgentExec(command, initialCwd) {
     /** 将相对路径转为绝对路径 */
     const resolvePath = (p) => {
       p = p.replace(/^['"]|['"]$/g, '');
-      if (!p.startsWith('/') && cwd) {
+      // ~/ 前缀视为不可展开的家目录基准，不与 cwd 拼接（避免 cwd/~/xxx 假路径）
+      if (!p.startsWith('/') && !p.startsWith('~/') && cwd) {
         p = normalizePath(cwd.replace(/\/$/, '') + '/' + p);
       }
       return normalizePath(p);
@@ -695,10 +703,15 @@ function extractPathsFromListOutput(observation, cwd, command) {
   const findTypeList = command ? [...command.matchAll(/find\b[\s\S]*?-type\s+([df])/g)].map(m => m[1]) : [];
   const findType = findTypeList.length === 1 ? findTypeList[0] : null;
 
+  // 非法路径字符：HTML 标签碎片、引号、shell 操作符等（如 </td></tr>、'../.env')、#!/usr/bin/env）
+  // 出现即说明 token 来自命令输出中的正文/代码/HTML 而非文件列表，直接拒绝
+  const INVALID_PATH_CHARS = /[<>"'`|&;()[\]*?#!]/;
+
   // relPath → isDir（目录标记优先：同一路径既作为文件又作为目录出现时，取目录）
   const map = new Map();
   const add = (rel, isDir) => {
     if (!rel || IGNORED.has(rel) || /^\d+$/.test(rel)) return;
+    if (INVALID_PATH_CHARS.test(rel)) return;
     if (!map.has(rel) || isDir) map.set(rel, isDir);
   };
   const resolve = (rel) => {
@@ -993,6 +1006,10 @@ export function extractArtifactsFromExecutionLog(executionLog) {
   // 避免 ls/du/find 查看既有目录时把已有文件误识别为产物
   const createdRoots = new Set();
 
+  // 时序把关：截至当前条目，任务是否已发生过写操作（写文件/执行脚本/heredoc）。
+  // 纯只读任务的根集合恒为空，观察输出中列举的已有文件必然全部被归属过滤丢弃
+  let hadWriteSoFar = false;
+
   for (const entry of sortedLog) {
     if (entry.nodeType !== 'tool_exec') continue;
     if (!entry.action) continue;
@@ -1081,6 +1098,9 @@ export function extractArtifactsFromExecutionLog(executionLog) {
         });
       }
 
+      // 本条命令是否确有创建操作（静态解析出写路径/执行已知脚本/heredoc 内联脚本）
+      const hasWriteInEntry = candidates.length > 0 || !!executedScript || /<<-?/.test(command);
+
       // ── 观察输出兜底解析：ls -R / find 列表输出中的路径 ──
       // 覆盖内联 heredoc 脚本动态生成文件（路径无法静态解析）的场景：
       // 脚本执行后通过 ls -R / find 展示目录结构时，从输出中反推产物路径。
@@ -1090,12 +1110,13 @@ export function extractArtifactsFromExecutionLog(executionLog) {
       if (entry.status !== 'failed' && typeof entry.observation === 'string') {
         const finalCwd = trackCommandCwd(command, params.cwd);
         // 命令链含 cd：视为显式进入目标目录操作（如 cd newdir && ls -R），
-        // cd 后的最终目录归入根集合；无 cd 的纯查看命令不放宽
-        if (/\bcd\s/.test(command) && finalCwd) {
+        // cd 后的最终目录归入根集合。仅当任务已发生过写操作时才采信：
+        // 否则 cd 进既有目录的只读任务（cd skills/x && cat ...）会把 cd 目录
+        // 自证为"已创建根"，使输出中列举的已有文件全部通过归属过滤被误识别为产物
+        if (/\bcd\s/.test(command) && finalCwd && (hasWriteInEntry || hadWriteSoFar)) {
           createdRoots.add(normalizePath(finalCwd));
         }
         let observedPaths = extractPathsFromListOutput(entry.observation, finalCwd, command);
-        const hasWriteInEntry = candidates.length > 0 || !!executedScript || /<<-?/.test(command);
         if (observedPaths.length > 0 && !hasWriteInEntry) {
           if (isInspectionOnlyCommand(command)) {
             observedPaths = [];
@@ -1122,6 +1143,8 @@ export function extractArtifactsFromExecutionLog(executionLog) {
           });
         }
       }
+      // 更新时序写标记：仅成功的写操作计入（供后续条目的 cd 入根与兜底解析把关）
+      if (entry.status !== 'failed' && hasWriteInEntry) hadWriteSoFar = true;
       continue;
     }
 
@@ -1180,6 +1203,7 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     // 写入文件的父目录归入根集合（供列表输出兜底解析判断路径归属）
     const writeParent = getParentDirPath(finalPath);
     if (writeParent) createdRoots.add(writeParent);
+    hadWriteSoFar = true;
 
     // 尝试从 observation 中获取文件大小
     let size = 0;
