@@ -3127,9 +3127,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     fileAttachBtn.addEventListener('click', () => {
       fileInput.click();
     });
-    fileInput.addEventListener('change', () => {
+    fileInput.addEventListener('change', async () => {
       if (fileInput.files.length > 0) {
-        attachFiles(Array.from(fileInput.files));
+        const files = Array.from(fileInput.files);
+        // 与拖拽/粘贴一致：启用图片识别时图片按图片消息（缩略图）处理，其他文件走文件问答
+        const images = files.filter(f => f.type.startsWith('image/'));
+        const others = files.filter(f => !f.type.startsWith('image/'));
+        if (images.length > 0) {
+          if (state.enableImageInput) {
+            for (const img of images) {
+              await compressAndAttachImage(img);
+            }
+          } else {
+            // 未启用图片识别：回退为文件附件，避免静默丢弃
+            showToast(t('sidePanel.imageNotEnabled'));
+            attachFiles(images);
+          }
+        }
+        if (others.length > 0) {
+          attachFiles(others);
+        }
         fileInput.value = '';
       }
     });
