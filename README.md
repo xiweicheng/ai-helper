@@ -2,10 +2,10 @@
 
 # AI Helper — Web Intelligent Assistant
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](./package.json)
-[![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-blue.svg)]()
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+[![License](icons/badges/license-MIT.svg)](./LICENSE)
+[![Version](icons/badges/version.svg)](./package.json)
+![Platform](icons/badges/platform.svg)
+![PRs Welcome](icons/badges/prs-welcome.svg)
 
 > An LLM-powered browser smart assistant extension for Chrome and Edge.
 
