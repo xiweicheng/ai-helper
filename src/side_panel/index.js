@@ -530,18 +530,19 @@ function loadCustomModelsToDropdown(customModels, callback) {
         if (contextWindow && contextWindow > 0) {
           const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
           if (existingOption) {
-            // 确保左侧包裹
+            // 确保左侧包裹（仅迁移裸文本节点，避免带上勾选符号）
             let leftSpan = existingOption.querySelector('.model-option-left');
             if (!leftSpan) {
               leftSpan = document.createElement('span');
               leftSpan.className = 'model-option-left';
-              leftSpan.textContent = existingOption.textContent;
-              for (const child of [...existingOption.childNodes]) {
-                if (child.nodeType === Node.TEXT_NODE) {
-                  existingOption.removeChild(child);
-                }
+              const textNodes = [...existingOption.childNodes].filter(n => n.nodeType === Node.TEXT_NODE);
+              textNodes.forEach(n => leftSpan.appendChild(n));
+              const checkSpan = existingOption.querySelector('.model-option-check');
+              if (checkSpan) {
+                checkSpan.insertAdjacentElement('afterend', leftSpan);
+              } else {
+                existingOption.insertBefore(leftSpan, existingOption.firstChild);
               }
-              existingOption.insertBefore(leftSpan, existingOption.firstChild);
             }
 
             // 右侧容器（只有 badge，无删除按钮）
