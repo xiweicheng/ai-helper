@@ -228,7 +228,8 @@ export function aggregateTokenUsage(executionLog) {
     if (usage) {
       promptTokens += usage.prompt_tokens || 0;
       completionTokens += usage.completion_tokens || 0;
-      totalTokens += usage.total_tokens || 0;
+      // 部分模型不返回 total_tokens，用输入+输出兜底（与划词面板计算方式一致）
+      totalTokens += usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
       hasData = true;
     }
   }

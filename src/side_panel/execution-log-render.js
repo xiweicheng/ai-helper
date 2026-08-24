@@ -362,7 +362,7 @@ export function renderExecutionTimeline(executionLog) {
                   <strong>${t('execLog.labelTokenUsage')}</strong><br>
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
-                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || ((entry.apiResponse.tokenUsage.prompt_tokens || 0) + (entry.apiResponse.tokenUsage.completion_tokens || 0))}
                 ` : ''}
               </div>
             </div>
@@ -402,7 +402,7 @@ export function renderExecutionTimeline(executionLog) {
                 <div class="section-content">
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
-                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || ((entry.apiResponse.tokenUsage.prompt_tokens || 0) + (entry.apiResponse.tokenUsage.completion_tokens || 0))}
                 </div>
               </div>
               ` : ''}
@@ -715,7 +715,7 @@ function renderSingleEntry(entry, index, totalCount) {
                 <strong>${t('execLog.labelTokenUsage')}</strong><br>
                 - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                 - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
-                - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                - Total: ${entry.apiResponse.tokenUsage.total_tokens || ((entry.apiResponse.tokenUsage.prompt_tokens || 0) + (entry.apiResponse.tokenUsage.completion_tokens || 0))}
               ` : ''}
             </div>
           </div>
@@ -931,7 +931,7 @@ function renderExecutionLogOriginal(sortedLog) {
                   <strong>${t('execLog.labelTokenUsage')}</strong><br>
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
-                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || ((entry.apiResponse.tokenUsage.prompt_tokens || 0) + (entry.apiResponse.tokenUsage.completion_tokens || 0))}
                 ` : ''}
               </div>
             </div>
@@ -971,7 +971,7 @@ function renderExecutionLogOriginal(sortedLog) {
                 <div class="section-content">
                   - Prompt: ${entry.apiResponse.tokenUsage.prompt_tokens || 0}<br>
                   - Completion: ${entry.apiResponse.tokenUsage.completion_tokens || 0}<br>
-                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || 0}
+                  - Total: ${entry.apiResponse.tokenUsage.total_tokens || ((entry.apiResponse.tokenUsage.prompt_tokens || 0) + (entry.apiResponse.tokenUsage.completion_tokens || 0))}
                 </div>
               </div>
               ` : ''}

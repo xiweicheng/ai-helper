@@ -24,7 +24,8 @@ export async function recordTokenUsage({ sessionId, model, usage, callType }) {
       model: model || 'unknown',
       promptTokens: usage.prompt_tokens || 0,
       completionTokens: usage.completion_tokens || 0,
-      totalTokens: usage.total_tokens || 0,
+      // 部分模型不返回 total_tokens，用输入+输出兜底（与前端展示计算方式一致）
+      totalTokens: usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)),
       contextWindow,
       callType: callType || 'unknown'
     });
