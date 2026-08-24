@@ -749,18 +749,17 @@ function createResultPanel() {
 function showResultPanel(x, y, content, suggestions = []) {
   if (!resultPanelEl) return;
   
-  // 确保面板始终在 body 最末尾，处于最顶层
-  appendToDoc(resultPanelEl);
-  
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  
-  resultPanelEl.style.display = 'flex';
-  resultPanelEl.style.left = '-9999px';
-  resultPanelEl.style.top = '-9999px';
+  // 流式 → 最终渲染：面板已在显示中，原地更新内容，
+  // 不再移出屏外测量重定位，避免面板消失又重现的闪烁
+  const alreadyVisible = isResultVisible && resultPanelEl.style.display !== 'none';
   
   const body = resultPanelEl.querySelector('.aih-result-body');
+  
+  // 保持滚动行为：用户未手动上滚时，吸底展示最新内容
+  const scrollEl = resultPanelEl.querySelector('.aih-result-scroll');
+  const stickBottom = !scrollEl || scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 24;
   body.innerHTML = content;
+  if (stickBottom && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
   
   // 渲染推荐追问
   const suggestionsEl = resultPanelEl.querySelector('.aih-result-suggestions');
@@ -773,6 +772,19 @@ function showResultPanel(x, y, content, suggestions = []) {
   } else if (suggestionsEl) {
     suggestionsEl.style.display = 'none';
   }
+  
+  // 已显示时保留当前位置（含用户拖拽后的位置），跳过重新定位
+  if (alreadyVisible) return;
+  
+  // 确保面板始终在 body 最末尾，处于最顶层
+  appendToDoc(resultPanelEl);
+  
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  resultPanelEl.style.display = 'flex';
+  resultPanelEl.style.left = '-9999px';
+  resultPanelEl.style.top = '-9999px';
   
   requestAnimationFrame(() => {
     const rect = resultPanelEl.getBoundingClientRect();
