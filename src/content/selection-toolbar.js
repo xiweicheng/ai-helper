@@ -68,6 +68,8 @@ registerTranslations('zh', {
     requestFailed: '请求失败: {msg}',
     copyFailed: '复制失败，请手动复制',
     copied: '已复制',
+    copiedMarkdown: '已复制 Markdown',
+    copiedRich: '已复制富文本',
     noResponse: '无响应',
     sysPromptAisearch: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。',
     sysPromptExplain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
@@ -108,6 +110,8 @@ registerTranslations('en', {
     requestFailed: 'Request failed: {msg}',
     copyFailed: 'Copy failed, please copy manually',
     copied: 'Copied',
+    copiedMarkdown: 'Markdown copied',
+    copiedRich: 'Rich text copied',
     noResponse: 'No response',
     sysPromptAisearch: 'You are processing content selected by the user on a web page. Use ReAct Agent mode to answer selected questions through multiple rounds of thinking, searching, and reasoning.',
     sysPromptExplain: 'You are processing content selected by the user on a web page. Explain the selected content in 1-3 concise sentences, supplementing with a brief example if necessary. Do not expand into lengthy discussions.',
@@ -1181,8 +1185,14 @@ function onDocumentClick(e) {
   chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {});
 }
 
-function onMouseUp() {
+function onMouseUp(e) {
   logger.debug('[SelectionToolbar] onMouseUp isTopFrame:', isTopFrame, 'pendingSelection:', pendingSelection, 'pendingIframeSelection:', !!pendingIframeSelection, 'currentSelectedText:', !!currentSelectedText, 'isToolbarVisible:', isToolbarVisible, 'toolbarEl:', !!toolbarEl);
+  
+  // 三击（段落全选）：双击已显示的工具栏会被随后的第三次 click 关闭，
+  // 提前抑制该 click，保留工具栏；子 iframe 中同样避免上报关闭事件
+  if ((e.detail || 1) >= 3) {
+    suppressNextClick = true;
+  }
   
   // 子iframe：在 mouseup 时发送选区消息（与顶层 frame 行为一致）
   if (!isTopFrame) {
@@ -1212,43 +1222,88 @@ function onMouseUp() {
         // 扩展上下文失效时静默忽略
       }
       pendingIframeSelection = null;
+    } else if ((e.detail || 1) >= 3) {
+      // 三击（段落全选）：选区在 mouseup 之后才稳定，延迟重读选区再上报；无选中内容时不发送
+      setTimeout(() => {
+        const result = deepGetSelection();
+        if (!result.text || result.text.length < 2) return;
+        const pos = getRangeViewportPosition(result.range);
+        lastSentIframeText = result.text;
+        currentSelectedText = result.text;
+        try {
+          window.parent.postMessage({
+            type: 'IFRAME_SELECTION',
+            text: result.text,
+            x: pos.x,
+            y: pos.y
+          }, '*');
+        } catch {
+          // postMessage 失败时忽略
+        }
+        try {
+          chrome.runtime.sendMessage({
+            type: 'IFRAME_SELECTION',
+            text: result.text,
+            x: pos.x,
+            y: pos.y
+          }).catch(() => {});
+        } catch {
+          // 扩展上下文失效时静默忽略
+        }
+      }, 60);
     }
     return;
   }
   
-  // 工具栏已显示时，不重新定位（点击工具栏按钮导致）
+  // 工具栏已显示时，不重新定位（点击工具栏按钮导致；三击时保留双击已显示的选区工具栏）
   if (isToolbarVisible) return;
   
   if (pendingSelection && currentSelectedText) {
     suppressNextClick = true;
-    let x = window.innerWidth / 2;
-    let y = window.innerHeight / 2;
-    
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      if (rect.width > 0 || rect.height > 0) {
-        x = rect.left + rect.width / 2;
-        y = rect.top;
+    showToolbarFromSelection();
+  } else if ((e.detail || 1) >= 3) {
+    // 三击（段落全选）：第三次 mousedown 会先折叠选区导致 pendingSelection 被清空，
+    // 段落选区在 mouseup 之后才稳定，延迟重新检测；无有效选区则不显示工具栏
+    setTimeout(() => {
+      if (isAskMode) return;
+      onSelectionChange();
+      if (pendingSelection && currentSelectedText) {
+        showToolbarFromSelection();
       }
-    }
-    
-    if (x === window.innerWidth / 2 && y === window.innerHeight / 2) {
-      const shadowResult = deepGetSelection();
-      if (shadowResult.text && shadowResult.text.length >= 2) {
-        const pos = getRangeViewportPosition(shadowResult.range);
-        x = pos.x;
-        y = pos.y;
-      }
-    }
-    
-    // 显示工具栏前，先通知所有 frame 关闭已有的工具栏和结果面板
-    try { chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {}); } catch { /* 扩展上下文失效时静默忽略 */ }
-    
-    showToolbar(x, y);
-    pendingSelection = null;
+    }, 60);
   }
+}
+
+/** 基于当前选区计算位置并显示工具栏 */
+function showToolbarFromSelection() {
+  if (!pendingSelection || !currentSelectedText || isToolbarVisible) return;
+  let x = window.innerWidth / 2;
+  let y = window.innerHeight / 2;
+  
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      x = rect.left + rect.width / 2;
+      y = rect.top;
+    }
+  }
+  
+  if (x === window.innerWidth / 2 && y === window.innerHeight / 2) {
+    const shadowResult = deepGetSelection();
+    if (shadowResult.text && shadowResult.text.length >= 2) {
+      const pos = getRangeViewportPosition(shadowResult.range);
+      x = pos.x;
+      y = pos.y;
+    }
+  }
+  
+  // 显示工具栏前，先通知所有 frame 关闭已有的工具栏和结果面板
+  try { chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {}); } catch { /* 扩展上下文失效时静默忽略 */ }
+  
+  showToolbar(x, y);
+  pendingSelection = null;
 }
 
 // ==================== 滚动/缩放时的处理 ====================
@@ -1354,7 +1409,7 @@ function copyResultContent() {
   const text = resultRawContent;
   if (!text) return;
   copyToClipboard(text).then(() => {
-    showCopyToast();
+    showCopyToast(t('selToolbar.copiedMarkdown'));
   }).catch(err => {
     logger.error('[SelectionToolbar] copyresult failed:', err);
     showCopyErrorToast();
@@ -1378,7 +1433,7 @@ function copyResultRichContent() {
         'text/plain': new Blob([text], { type: 'text/plain' }),
       });
       navigator.clipboard.write([item]).then(() => {
-        showCopyToast();
+        showCopyToast(t('selToolbar.copiedRich'));
       }).catch(err => {
         logger.error('[SelectionToolbar] richcopy failed:', err);
         fallbackRichCopy();
@@ -1407,7 +1462,7 @@ function fallbackRichCopy() {
   sel.addRange(range);
   try {
     if (document.execCommand('copy')) {
-      showCopyToast();
+      showCopyToast(t('selToolbar.copiedRich'));
     } else {
       showCopyErrorToast();
     }
@@ -1490,13 +1545,13 @@ function showCopyErrorToast() {
   setTimeout(() => toast.remove(), 1800);
 }
 
-function showCopyToast() {
+function showCopyToast(text) {
   const oldToast = document.getElementById('aih-copy-toast');
   if (oldToast) oldToast.remove();
   
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
-  toast.textContent = t('selToolbar.copied');
+  toast.textContent = text || t('selToolbar.copied');
   toast.style.cssText = `
     position: fixed;
     top: 50%;
