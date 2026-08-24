@@ -59,6 +59,7 @@ registerTranslations('zh', {
     unlockWindow: '解除锁定',
     close: '关闭',
     copyAll: '复制',
+    copyRichTitle: '复制 Markdown 文本（Ctrl/⌘ + 单击复制富文本）',
     regenerate: '重新生成',
     suggestedFollowups: '💡 推荐追问',
     followupPlaceholder: '继续提问...',
@@ -98,6 +99,7 @@ registerTranslations('en', {
     unlockWindow: 'Unlock panel',
     close: 'Close',
     copyAll: 'Copy',
+    copyRichTitle: 'Copy Markdown text (Ctrl/⌘+Click to copy rich text)',
     regenerate: 'Regenerate',
     suggestedFollowups: '💡 Suggested follow-ups',
     followupPlaceholder: 'Ask a follow-up...',
@@ -166,6 +168,8 @@ let toolbarMaxVisible = 5;  // 直接显示的工具数量（固定为5）
 let toolbarIconOnly = false; // 图标精简模式
 let overflowDropdownEl = null;  // 溢出下拉菜单
 let streamContent = '';       // 流式模式下累积的内容
+let streamRenderPending = false; // 流式 Markdown 渲染的 rAF 节流标记
+let streamRenderToken = 0;    // 渲染令牌：STREAM_DONE/新会话时递增，作废挂起的 rAF 渲染
 let shadowSelectionListeners = new Set(); // Shadow DOM 选择监听器集合
 let isTopFrame = window.top === window;   // 是否为顶层 frame
 
@@ -644,7 +648,7 @@ function createResultPanel() {
     <div class="aih-result-scroll">
       <div class="aih-result-body"></div>
       <div class="aih-result-footer">
-        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="copy-result" title="${t('selToolbar.copyAll')}">
+        <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="copy-result" title="${t('selToolbar.copyRichTitle')}">
           <span class="aih-tb-icon">${ICONS.copyLarge}</span>${t('selToolbar.copyAll')}
         </div>
         <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="regenerate-result" title="${t('selToolbar.regenerate')}">
@@ -681,7 +685,12 @@ function createResultPanel() {
       if (!lastActionType || !savedActionText) return;
       sendToAI(lastActionType, savedActionText, lastActionCustomPrompt);
     } else if (action === 'copy-result') {
-      copyResultContent();
+      // Ctrl/⌘ + 单击：复制富文本；普通单击：复制 Markdown 原文
+      if (e.ctrlKey || e.metaKey) {
+        copyResultRichContent();
+      } else {
+        copyResultContent();
+      }
     }
   });
   
@@ -938,6 +947,49 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ==================== 流式 Markdown 实时渲染 ====================
+/** rAF 节流：每帧最多渲染一次，避免高频 chunk 造成重复解析 */
+function scheduleStreamRender() {
+  if (streamRenderPending) return;
+  streamRenderPending = true;
+  const token = streamRenderToken;
+  requestAnimationFrame(() => {
+    streamRenderPending = false;
+    // 令牌已变（流已结束或新会话开始），丢弃本次挂起的渲染，避免覆盖最终结果
+    if (token !== streamRenderToken) return;
+    renderStreamContent();
+  });
+}
+
+/** 将累积的流式内容实时渲染为 Markdown */
+function renderStreamContent() {
+  if (!resultPanelEl || !isResultVisible) return;
+  if (!streamContent) return;
+  const body = resultPanelEl.querySelector('.aih-result-body');
+  if (!body) return;
+
+  // 流式期间剥离 ---SUGGESTIONS--- 之后的内容，避免追问建议提前闪现
+  let text = streamContent;
+  const suggestIdx = text.indexOf('---SUGGESTIONS---');
+  if (suggestIdx !== -1) text = text.substring(0, suggestIdx);
+
+  // 用户未手动上滚时，渲染后自动吸底展示最新内容
+  const scrollEl = resultPanelEl.querySelector('.aih-result-scroll');
+  const stickBottom = !scrollEl || scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 24;
+  body.innerHTML = '<div class="aih-result-content-stream">' + renderStreamMarkdown(text) + '</div>';
+  if (stickBottom && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+}
+
+/** 流式 Markdown 渲染：未闭合的代码围栏临时补全，避免流式中途内容错乱 */
+function renderStreamMarkdown(text) {
+  if (typeof marked === 'undefined') {
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+  const fenceCount = (text.match(/```/g) || []).length;
+  const normalized = fenceCount % 2 === 1 ? text + '\n```' : text;
+  return marked.parse(normalized);
 }
 
 // ==================== 显示/隐藏 ====================
@@ -1297,6 +1349,65 @@ function copyResultContent() {
   });
 }
 
+/** 一键复制富文本（渲染后的 Markdown，同时附带纯文本） */
+function copyResultRichContent() {
+  const text = resultRawContent;
+  if (!text) return;
+  const html = typeof marked !== 'undefined'
+    ? marked.parse(text)
+    : escapeHtml(text).replace(/\n/g, '<br>');
+  // 包裹一层基础样式，保证粘贴到第三方编辑器时的基本可读性
+  const htmlDoc = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;">${html}</div>`;
+
+  if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
+    try {
+      const item = new ClipboardItem({
+        'text/html': new Blob([htmlDoc], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      });
+      navigator.clipboard.write([item]).then(() => {
+        showCopyToast();
+      }).catch(err => {
+        logger.error('[SelectionToolbar] richcopy failed:', err);
+        fallbackRichCopy();
+      });
+      return;
+    } catch (err) {
+      logger.error('[SelectionToolbar] richcopy failed:', err);
+    }
+  }
+  fallbackRichCopy();
+}
+
+/** 富文本复制兜底：选中已渲染内容区域后用 execCommand 复制，完成后恢复页面原选区 */
+function fallbackRichCopy() {
+  const body = resultPanelEl && resultPanelEl.querySelector('.aih-result-body');
+  if (!body) {
+    showCopyErrorToast();
+    return;
+  }
+  const sel = window.getSelection();
+  const prevRanges = [];
+  for (let i = 0; i < sel.rangeCount; i++) prevRanges.push(sel.getRangeAt(i).cloneRange());
+  const range = document.createRange();
+  range.selectNodeContents(body);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  try {
+    if (document.execCommand('copy')) {
+      showCopyToast();
+    } else {
+      showCopyErrorToast();
+    }
+  } catch (err) {
+    logger.error('[SelectionToolbar] fallback richcopy failed:', err);
+    showCopyErrorToast();
+  } finally {
+    sel.removeAllRanges();
+    prevRanges.forEach(r => sel.addRange(r));
+  }
+}
+
 async function copyToClipboard(text) {
   if (!navigator.clipboard) {
     return fallbackCopy(text);
@@ -1564,29 +1675,22 @@ if (isExtensionValid()) {
   // 流式输出：开始（保留 loading 动画，等第一个 chunk 到达后再替换）
   if (message.type === 'SELECTION_TOOLBAR_STREAM_START') {
     streamContent = '';
+    streamRenderPending = false;
+    streamRenderToken++;
     return;
   }
   
-  // 流式输出：内容增量
+  // 流式输出：内容增量（rAF 节流，实时渲染 Markdown）
   if (message.type === 'SELECTION_TOOLBAR_STREAM_CHUNK') {
     streamContent += (message.delta || '');
-    if (resultPanelEl && isResultVisible) {
-      const body = resultPanelEl.querySelector('.aih-result-body');
-      if (body) {
-        // 首个 chunk：替换 loading 动画为流式内容
-        if (!body.querySelector('.aih-result-content-stream')) {
-          body.innerHTML = '<div class="aih-result-content-stream"></div>';
-        }
-        // 流式过程中用纯文本显示，到 STREAM_DONE 时再渲染 markdown
-        const escaped = escapeHtml(streamContent).replace(/\n/g, '<br>');
-        body.innerHTML = '<div class="aih-result-content-stream">' + escaped + '</div>';
-      }
-    }
+    scheduleStreamRender();
     return;
   }
   
   // 流式输出：完成
   if (message.type === 'SELECTION_TOOLBAR_STREAM_DONE') {
+    // 先作废挂起的流式渲染，防止其用已清空的内容覆盖最终结果
+    streamRenderToken++;
     // 确保收到所有内容
     if (message.finalContent) {
       streamContent = message.finalContent;
