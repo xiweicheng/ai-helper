@@ -4,7 +4,9 @@ import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
-import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService } from './skill-selector.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { clearPageSelection } from './page-selector.js';
+import { buildFileContentText, clearFiles } from './file-extract.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -478,17 +480,15 @@ async function renderMergedList(filterText = '') {
       if (type === 'skill') {
         const skillName = item.dataset.skillName;
         const skills = await getVisibleSkills();
+        // selectSkill 内部会清除 / 触发文本并隐藏下拉框
         selectSkill(skillName, skills);
-        const userInput = document.getElementById('userInput');
-        if (userInput) userInput.value = '';
         hidePromptSelector();
       } else if (type === 'mcp') {
         const serverId = item.dataset.serverId;
         const serverName = item.dataset.serverName;
         const mcpServices = await getMcpServices();
+        // selectMcpService 内部会清除 / 触发文本并隐藏下拉框
         selectMcpService(serverId, serverName, mcpServices);
-        const userInput = document.getElementById('userInput');
-        if (userInput) userInput.value = '';
         hidePromptSelector();
       } else {
         const code = item.dataset.code;
@@ -629,6 +629,9 @@ export async function sendPromptByCode(code) {
   const hasSelectedContext = state.selectedContextText && state.selectedContextText.trim();
   const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
 
+  // 收集上下文气泡信息，用于持久化保存和刷新恢复
+  const contextBubbles = [];
+
   // 优先处理引用内容
   if (hasQuotedContext) {
     const ctx = state.quotedContextText.trim();
@@ -636,6 +639,7 @@ export async function sendPromptByCode(code) {
     userMessage = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立引用气泡
     addContextBubble('quoted', ctx, false);
+    contextBubbles.push({ type: 'quoted', text: ctx });
     // 清除引用内容，只使用一次
     state.quotedContextText = '';
   } else if (hasSelectedContext) {
@@ -644,8 +648,36 @@ export async function sendPromptByCode(code) {
     userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
+    contextBubbles.push({ type: 'selected', text: ctx });
     // 清除选中内容，只使用一次
     state.selectedContextText = '';
+  }
+
+  // 注入技能上下文（如果已选中技能），与主发送链路保持对齐
+  const skillContext = await getSkillContextText();
+  if (skillContext) {
+    userMessage = skillContext + userMessage;
+    addContextBubble('skill', t('contextBubble.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
+    contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
+    clearSkillSelection();
+  }
+
+  // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  const mcpContext = getMcpContextText();
+  if (mcpContext) {
+    userMessage = mcpContext + userMessage;
+    addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
+    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
+    clearMcpService();
+  }
+
+  // 注入网页上下文（如果已选中网页）
+  if (state.selectedPage) {
+    const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
+    userMessage = pageCtx + userMessage;
+    addContextBubble('page', t('contextBubble.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
+    contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
+    clearPageSelection();
   }
 
   // 如果选中内容或引用内容已使用，清除提示条
@@ -653,14 +685,29 @@ export async function sendPromptByCode(code) {
     clearSelectedContext();
   }
 
+  // 注入文件内容（发送给模型，但不显示在用户消息气泡中），与主发送链路保持对齐
+  const attachedFilesSnapshot = state.attachedFiles.slice();
+  if (attachedFilesSnapshot.length > 0) {
+    const fileContent = buildFileContentText();
+    if (fileContent) {
+      userMessage += fileContent;
+    }
+    // 收集文件信息用于持久化
+    attachedFilesSnapshot.forEach(f => {
+      if (f.status === 'done') {
+        contextBubbles.push({ type: 'file', name: f.name, size: f.size, fileType: f.type });
+      }
+    });
+  }
+
   // 构建用户消息 content（支持图片附件）
   const userContent = buildUserContent(userMessage);
 
-  // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复
-  const { messageId } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage);
+  // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复，文件标签由 attachedFilesSnapshot 渲染
+  const { messageId } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage, null, attachedFilesSnapshot);
 
-  // 更新消息历史
-  state.messageHistory.push({ role: 'user', content: userContent, messageId });
+  // 更新消息历史（附带上下文气泡信息，供刷新恢复）
+  state.messageHistory.push({ role: 'user', content: userContent, messageId, contextBubbles });
 
   // 保存历史
   saveChatHistory();
@@ -687,7 +734,15 @@ export async function sendPromptByCode(code) {
   // 图片数据已包含在 userContent 中，立即清除预览栏 DOM
   if (state.attachedImages.length > 0) {
     const previewBar = document.getElementById('imagePreviewBar');
-    if (previewBar) previewBar.innerHTML = '';
+    if (previewBar) {
+      previewBar.innerHTML = '';
+      previewBar.style.display = 'none';
+    }
+  }
+
+  // 文件内容已注入到消息中，清除文件附件
+  if (state.attachedFiles.length > 0) {
+    clearFiles();
   }
 
   try {

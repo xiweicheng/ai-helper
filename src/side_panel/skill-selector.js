@@ -1,6 +1,6 @@
 // side_panel/skill-selector.js - 技能选择器（提示词下拉框中的技能 Tab）
 import state from './state.js';
-import { escapeHtml, escapeAttr } from './utils.js';
+import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -221,6 +221,23 @@ export function updateSkillSelection(items) {
 }
 
 /**
+ * 清除输入框中的 / 触发文本（保留触发符之前的内容）
+ * 与 @ 选择器惯例对齐：从最后一个触发符处截断，恢复焦点与光标
+ */
+function clearSlashTriggerText() {
+  const userInput = document.getElementById('userInput');
+  if (!userInput) return;
+  const value = userInput.value;
+  const lastSlashIndex = value.lastIndexOf('/');
+  if (lastSlashIndex === -1) return;
+  const newValue = value.substring(0, lastSlashIndex);
+  userInput.value = newValue;
+  userInput.focus();
+  userInput.selectionStart = userInput.selectionEnd = newValue.length;
+  adjustInputHeight();
+}
+
+/**
  * 选中技能 - 显示技能指示器
  * @param {string} skillName - 技能名称
  * @param {Array} skills - 技能列表（用于查找完整信息）
@@ -250,6 +267,9 @@ export function selectSkill(skillName, skills) {
     indicator.title = isDisabled ? t('skillSelector.disabledTooltip') : '';
     indicator.style.display = 'flex';
   }
+
+  // 清除输入框中的 / 触发文本（含过滤关键字）
+  clearSlashTriggerText();
 
   // 隐藏下拉框（直接操作 DOM，避免循环依赖）
   const promptSelector = document.getElementById('promptSelector');
@@ -610,6 +630,9 @@ export function selectMcpService(serverId, serverName, services) {
     nameEl.textContent = serverName || serverId;
     indicator.style.display = 'flex';
   }
+
+  // 清除输入框中的 / 触发文本（含过滤关键字）
+  clearSlashTriggerText();
 
   // 隐藏下拉框
   const promptSelector = document.getElementById('promptSelector');
