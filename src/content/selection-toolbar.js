@@ -70,7 +70,11 @@ registerTranslations('zh', {
     copied: '已复制',
     copiedMarkdown: '已复制 Markdown',
     copiedRich: '已复制富文本',
-    tokenUsageTitle: 'Token 消耗：输入 {input} / 输出 {output}',
+    tokenUsageTitle: 'Token 消耗：输入 {input} / 输出 {output}，点击查看明细',
+    tokenPopupTitle: 'Token 消耗明细',
+    tokenPopupTotal: '总计',
+    tokenPopupInput: '输入',
+    tokenPopupOutput: '输出',
     noResponse: '无响应',
     sysPromptAisearch: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。',
     sysPromptExplain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
@@ -113,7 +117,11 @@ registerTranslations('en', {
     copied: 'Copied',
     copiedMarkdown: 'Markdown copied',
     copiedRich: 'Rich text copied',
-    tokenUsageTitle: 'Token usage: {input} input / {output} output',
+    tokenUsageTitle: 'Token usage: {input} input / {output} output, click for details',
+    tokenPopupTitle: 'Token Usage Details',
+    tokenPopupTotal: 'Total',
+    tokenPopupInput: 'Input',
+    tokenPopupOutput: 'Output',
     noResponse: 'No response',
     sysPromptAisearch: 'You are processing content selected by the user on a web page. Use ReAct Agent mode to answer selected questions through multiple rounds of thinking, searching, and reasoning.',
     sysPromptExplain: 'You are processing content selected by the user on a web page. Explain the selected content in 1-3 concise sentences, supplementing with a brief example if necessary. Do not expand into lengthy discussions.',
@@ -176,6 +184,8 @@ let overflowDropdownEl = null;  // 溢出下拉菜单
 let streamContent = '';       // 流式模式下累积的内容
 let streamRenderPending = false; // 流式 Markdown 渲染的 rAF 节流标记
 let streamRenderToken = 0;    // 渲染令牌：STREAM_DONE/新会话时递增，作废挂起的 rAF 渲染
+let currentTokenUsage = null; // 当前结果面板的 Token 消耗数据（点击标签弹明细用）
+let tokenPopupOpen = false;   // Token 明细弹窗是否打开
 let shadowSelectionListeners = new Set(); // Shadow DOM 选择监听器集合
 let isTopFrame = window.top === window;   // 是否为顶层 frame
 
@@ -687,6 +697,12 @@ function createResultPanel() {
   
   resultPanelEl.querySelector('.aih-result-footer').addEventListener('click', (e) => {
     e.stopPropagation();
+    const tokenEl = e.target.closest('.aih-result-token');
+    if (tokenEl) {
+      // 点击 Token 标签：开关消耗明细弹窗（与侧边栏 token 标签交互一致）
+      showTokenUsagePopup(tokenEl);
+      return;
+    }
     const action = e.target.closest('[data-action]')?.dataset?.action;
     if (action === 'regenerate-result') {
       if (!lastActionType || !savedActionText) return;
@@ -838,6 +854,7 @@ function showResultLoading(x, y) {
   
   // 隐藏上一次的 Token 消耗
   updateResultTokenUsage(null);
+  removeTokenUsagePopup();
   
   // 确保面板始终在 body 最末尾，处于最顶层
   appendToDoc(resultPanelEl);
@@ -910,6 +927,7 @@ function hideResultPanel() {
   isResultVisible = false;
   isResultLocked = false;
   resultRawContent = '';
+  removeTokenUsagePopup();
   updateLockButton();
 }
 
@@ -1028,6 +1046,7 @@ function formatTokenCount(n) {
 /** 在结果面板底部工具栏展示本次大模型调用的 Token 消耗，无数据时隐藏 */
 function updateResultTokenUsage(usage) {
   if (!resultPanelEl) return;
+  currentTokenUsage = usage || null;
   const tokenEl = resultPanelEl.querySelector('.aih-result-token');
   if (!tokenEl) return;
   const total = usage && (usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)));
@@ -1043,6 +1062,102 @@ function updateResultTokenUsage(usage) {
     output: formatTokenCount(usage.completion_tokens || 0)
   });
   tokenEl.style.display = 'inline-flex';
+}
+
+/** Token 数量完整显示（千位分隔，弹窗明细用） */
+function formatTokenFull(n) {
+  if (!n && n !== 0) return '0';
+  return Number(n).toLocaleString('en-US');
+}
+
+/** 关闭 Token 明细弹窗 */
+function removeTokenUsagePopup() {
+  const existing = document.querySelector('.aih-token-popup');
+  if (existing) existing.remove();
+  tokenPopupOpen = false;
+}
+
+/** 点击 Token 标签开关消耗明细弹窗（视觉与交互对齐侧边栏 showTokenPopup） */
+function showTokenUsagePopup(anchorEl) {
+  const usage = currentTokenUsage;
+  if (!usage) return;
+  const total = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
+  if (!total) return;
+
+  // 已打开则关闭（同一锚点再次点击即收起）
+  if (tokenPopupOpen) {
+    removeTokenUsagePopup();
+    return;
+  }
+  removeTokenUsagePopup();
+
+  const input = usage.prompt_tokens || 0;
+  const output = usage.completion_tokens || 0;
+  const inputPercent = Math.round(input / total * 100);
+  const outputPercent = Math.round(output / total * 100);
+
+  const popup = document.createElement('div');
+  popup.className = 'aih-token-popup';
+  popup.innerHTML = `
+    <div class="aih-token-popup-header">
+      <span class="aih-token-popup-title">${t('selToolbar.tokenPopupTitle')}</span>
+      <button class="aih-token-popup-close" type="button" aria-label="close">×</button>
+    </div>
+    <div class="aih-token-popup-body">
+      <div class="aih-token-popup-row aih-token-popup-total">
+        <span class="aih-token-popup-label">${t('selToolbar.tokenPopupTotal')}</span>
+        <span class="aih-token-popup-value">${formatTokenFull(total)}</span>
+      </div>
+      <div class="aih-token-popup-divider"></div>
+      <div class="aih-token-popup-row">
+        <span class="aih-token-popup-label">${t('selToolbar.tokenPopupInput')}</span>
+        <div class="aih-token-popup-right">
+          <span class="aih-token-popup-value">${formatTokenFull(input)}</span>
+          <span class="aih-token-popup-percent">${inputPercent}%</span>
+        </div>
+      </div>
+      <div class="aih-token-popup-row">
+        <span class="aih-token-popup-label">${t('selToolbar.tokenPopupOutput')}</span>
+        <div class="aih-token-popup-right">
+          <span class="aih-token-popup-value">${formatTokenFull(output)}</span>
+          <span class="aih-token-popup-percent">${outputPercent}%</span>
+        </div>
+      </div>
+    </div>
+  `;
+  appendToDoc(popup);
+  popup.style.zIndex = '2147483647';
+  tokenPopupOpen = true;
+
+  // 定位：优先锚点上方，空间不足时放下方，并做视口边界约束（与侧边栏一致）
+  const rect = anchorEl.getBoundingClientRect();
+  const popupRect = popup.getBoundingClientRect();
+  let top = rect.top - popupRect.height - 8 > 0
+    ? rect.top - popupRect.height - 8
+    : rect.bottom + 8;
+  let left = rect.left + rect.width / 2 - popupRect.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - popupRect.width - 8));
+  if (top + popupRect.height > window.innerHeight - 8) {
+    top = window.innerHeight - popupRect.height - 8;
+  }
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+
+  popup.querySelector('.aih-token-popup-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    removeTokenUsagePopup();
+  });
+
+  // 点击外部关闭（延迟注册，避免本次点击立即触发）
+  const outsideHandler = (e) => {
+    if (!popup.contains(e.target) && !anchorEl.contains(e.target)) {
+      removeTokenUsagePopup();
+      document.removeEventListener('click', outsideHandler, true);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', outsideHandler, true);
+  }, 0);
 }
 
 // ==================== 显示/隐藏 ====================
@@ -1203,6 +1318,8 @@ function onDocumentClick(e) {
   // 点击在工具栏或结果面板内部，不处理
   if (toolbarEl && toolbarEl.contains(e.target)) return;
   if (resultPanelEl && resultPanelEl.contains(e.target)) return;
+  // 点击在 Token 明细弹窗内部，不关闭面板（弹窗有自己的外部点击关闭逻辑）
+  if (e.target.closest && e.target.closest('.aih-token-popup')) return;
   
   // 抑制点击（鼠标抬起后立即触发的点击事件）
   if (suppressNextClick) {
@@ -1294,6 +1411,11 @@ function onMouseUp(e) {
   
   // 工具栏已显示时，不重新定位（点击工具栏按钮导致；三击时保留双击已显示的选区工具栏）
   if (isToolbarVisible) return;
+  
+  // 结果面板显示时，页面点击属于面板交互（如点击 Token 消耗标签），
+  // 不响应残留选区重新弹出工具栏——否则 showToolbarFromSelection 会广播
+  // IFRAME_CLICK_DISMISS，经后台中继后反过来关闭正在显示的结果面板
+  if (isResultVisible) return;
   
   if (pendingSelection && currentSelectedText) {
     suppressNextClick = true;
@@ -1961,6 +2083,14 @@ export function initSelectionToolbar() {
   window.addEventListener('message', (event) => {
     // 处理来自子 iframe 的选区消息（直接发给父 frame，避免 background 广播到所有 frame）
     if (event.data?.type === 'IFRAME_SELECTION' && isTopFrame) {
+      // 结果面板显示时不响应子 frame 选区，避免残留选区状态在后续点击中
+      // 触发 showToolbarFromSelection 广播 IFRAME_CLICK_DISMISS 关闭结果面板；
+      // 同时清掉本地残留选区状态，防止关闭面板后被误用
+      if (isResultVisible) {
+        currentSelectedText = '';
+        pendingSelection = null;
+        return;
+      }
       currentSelectedText = event.data.text;
       
       // 将顶层视口坐标转换为当前 frame 视口坐标
@@ -2033,6 +2163,7 @@ export function destroySelectionToolbar() {
   
   hideToolbar();
   hideResultPanel();
+  removeTokenUsagePopup();
   
   if (toolbarEl) {
     toolbarEl.remove();

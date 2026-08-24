@@ -444,14 +444,110 @@ export function injectStyles() {
       font-size: 11px;
       color: #999;
       white-space: nowrap;
-      cursor: default;
+      cursor: pointer;
       user-select: none;
       -webkit-user-select: none;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    #aih-selection-result .aih-result-token:hover {
+      color: #666;
     }
     #aih-selection-result .aih-result-token .aih-token-dot {
       color: #f59e0b;
       font-size: 8px;
       line-height: 1;
+    }
+    /* Token 消耗明细弹窗（视觉对齐侧边栏 token-detail-popup） */
+    .aih-token-popup {
+      position: fixed;
+      z-index: 2147483647;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+      min-width: 220px;
+      max-width: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      animation: aih-token-popup-in 0.15s ease-out;
+      box-sizing: border-box;
+    }
+    @keyframes aih-token-popup-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .aih-token-popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .aih-token-popup-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    .aih-token-popup-close {
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .aih-token-popup-close:hover {
+      background: #f3f4f6;
+      color: #4b5563;
+    }
+    .aih-token-popup-body {
+      padding: 10px 14px 12px;
+    }
+    .aih-token-popup-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+    }
+    .aih-token-popup-row.aih-token-popup-total {
+      padding: 6px 0 8px;
+    }
+    .aih-token-popup-label {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .aih-token-popup-total .aih-token-popup-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+    .aih-token-popup-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .aih-token-popup-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1f2937;
+      font-variant-numeric: tabular-nums;
+    }
+    .aih-token-popup-total .aih-token-popup-value {
+      font-size: 15px;
+      color: #b45309;
+    }
+    .aih-token-popup-percent {
+      font-size: 11px;
+      color: #9ca3af;
+      min-width: 32px;
+      text-align: right;
+    }
+    .aih-token-popup-divider {
+      height: 1px;
+      background: #f0f0f0;
+      margin: 4px 0 6px;
     }
     /* 推荐追问 */
     #aih-selection-result .aih-result-suggestions {
