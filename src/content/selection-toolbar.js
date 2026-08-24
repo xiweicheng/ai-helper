@@ -70,6 +70,7 @@ registerTranslations('zh', {
     copied: '已复制',
     copiedMarkdown: '已复制 Markdown',
     copiedRich: '已复制富文本',
+    tokenUsageTitle: 'Token 消耗：输入 {input} / 输出 {output}',
     noResponse: '无响应',
     sysPromptAisearch: '你正在处理用户在网页上选中的内容。使用ReAct Agent模式，通过多轮思考、搜索和推理来回答选中的问题。',
     sysPromptExplain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
@@ -112,6 +113,7 @@ registerTranslations('en', {
     copied: 'Copied',
     copiedMarkdown: 'Markdown copied',
     copiedRich: 'Rich text copied',
+    tokenUsageTitle: 'Token usage: {input} input / {output} output',
     noResponse: 'No response',
     sysPromptAisearch: 'You are processing content selected by the user on a web page. Use ReAct Agent mode to answer selected questions through multiple rounds of thinking, searching, and reasoning.',
     sysPromptExplain: 'You are processing content selected by the user on a web page. Explain the selected content in 1-3 concise sentences, supplementing with a brief example if necessary. Do not expand into lengthy discussions.',
@@ -658,6 +660,7 @@ function createResultPanel() {
         <div class="aih-result-footer-btn" role="button" tabindex="0" data-action="regenerate-result" title="${t('selToolbar.regenerate')}">
           <span class="aih-tb-icon">${ICONS.refresh}</span>${t('selToolbar.regenerate')}
         </div>
+        <div class="aih-result-token" style="display:none;"></div>
       </div>
       <div class="aih-result-suggestions" style="display:none;">
         <div class="aih-suggestions-label">${t('selToolbar.suggestedFollowups')}</div>
@@ -833,6 +836,9 @@ function showResultLoading(x, y) {
   const followupInput = resultPanelEl.querySelector('.aih-followup-input');
   if (followupInput) followupInput.value = '';
   
+  // 隐藏上一次的 Token 消耗
+  updateResultTokenUsage(null);
+  
   // 确保面板始终在 body 最末尾，处于最顶层
   appendToDoc(resultPanelEl);
   
@@ -853,6 +859,7 @@ function showResultError(x, y, errorMsg) {
   // 重置锁定状态
   isResultLocked = false;
   resultRawContent = '';
+  updateResultTokenUsage(null);
   updateLockButton();
   
   // 确保面板始终在 body 最末尾，处于最顶层
@@ -1006,6 +1013,36 @@ function renderStreamMarkdown(text) {
   const fenceCount = (text.match(/```/g) || []).length;
   const normalized = fenceCount % 2 === 1 ? text + '\n```' : text;
   return marked.parse(normalized);
+}
+
+// ==================== Token 消耗展示 ====================
+/** Token 数量紧凑格式化（与侧边栏 formatTokenCount 一致）：1200 → "1.2K" */
+function formatTokenCount(n) {
+  if (!n || n <= 0) return '0';
+  if (n < 1000) return String(n);
+  if (n < 10000) return (Math.round(n / 100) / 10) + 'K';
+  if (n < 1000000) return Math.round(n / 1000) + 'K';
+  return (Math.round(n / 100000) / 10) + 'M';
+}
+
+/** 在结果面板底部工具栏展示本次大模型调用的 Token 消耗，无数据时隐藏 */
+function updateResultTokenUsage(usage) {
+  if (!resultPanelEl) return;
+  const tokenEl = resultPanelEl.querySelector('.aih-result-token');
+  if (!tokenEl) return;
+  const total = usage && (usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)));
+  if (!total) {
+    tokenEl.style.display = 'none';
+    tokenEl.textContent = '';
+    tokenEl.removeAttribute('title');
+    return;
+  }
+  tokenEl.innerHTML = `<span class="aih-token-dot">⬤</span>${formatTokenCount(total)} tokens`;
+  tokenEl.title = t('selToolbar.tokenUsageTitle', {
+    input: formatTokenCount(usage.prompt_tokens || 0),
+    output: formatTokenCount(usage.completion_tokens || 0)
+  });
+  tokenEl.style.display = 'inline-flex';
 }
 
 // ==================== 显示/隐藏 ====================
@@ -1786,6 +1823,7 @@ if (isExtensionValid()) {
       ? marked.parse(answerContent)
       : escapeHtml(answerContent).replace(/\n/g, '<br>');
     showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
+    updateResultTokenUsage(message.usage);
     
     streamContent = '';
     return;
@@ -1795,6 +1833,7 @@ if (isExtensionValid()) {
   if (message.type === 'SELECTION_TOOLBAR_RESULT') {
     if (message.error) {
       resultRawContent = '';
+      updateResultTokenUsage(null);
       showResultError(lastPanelPos.x, lastPanelPos.y, message.error);
     } else {
       const rawContent = message.content || t('selToolbar.noResponse');
@@ -1820,6 +1859,7 @@ if (isExtensionValid()) {
         ? marked.parse(answerContent) 
         : escapeHtml(answerContent).replace(/\n/g, '<br>');
       showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
+      updateResultTokenUsage(message.usage);
     }
   }
 });

@@ -434,6 +434,25 @@ export function injectStyles() {
       display: flex;
       align-items: center;
     }
+    /* Token 消耗标签（底部工具栏右侧） */
+    #aih-selection-result .aih-result-token {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 0;
+      font-size: 11px;
+      color: #999;
+      white-space: nowrap;
+      cursor: default;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #aih-selection-result .aih-result-token .aih-token-dot {
+      color: #f59e0b;
+      font-size: 8px;
+      line-height: 1;
+    }
     /* 推荐追问 */
     #aih-selection-result .aih-result-suggestions {
       padding: 10px 14px;

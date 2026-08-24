@@ -997,7 +997,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (tabId) {
             chrome.tabs.sendMessage(tabId, {
               type: 'SELECTION_TOOLBAR_RESULT',
-              content: content
+              content: content,
+              usage: result.usage || null
             }, { frameId }).catch(() => {
               logger.warn('[Background] send SELECTION_TOOLBAR_RESULT  to  tab failed');
             });
