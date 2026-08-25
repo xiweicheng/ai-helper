@@ -1582,8 +1582,8 @@ function copyResultRichContent() {
   const html = typeof marked !== 'undefined'
     ? marked.parse(text)
     : escapeHtml(text).replace(/\n/g, '<br>');
-  // 包裹一层基础样式，保证粘贴到第三方编辑器时的基本可读性
-  const htmlDoc = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.6;">${html}</div>`;
+  // 包裹完整文档与内联样式，保证粘贴到第三方编辑器时列表等元素展示与面板一致
+  const htmlDoc = wrapResultHtmlWithStyles(html);
 
   if (navigator.clipboard && typeof ClipboardItem !== 'undefined') {
     try {
@@ -1603,6 +1603,52 @@ function copyResultRichContent() {
     }
   }
   fallbackRichCopy();
+}
+
+/** 为富文本复制包裹完整文档样式（与 Side Panel chat-copy.js 的 wrapHtmlWithStyles 保持一致） */
+function wrapResultHtmlWithStyles(html) {
+  const styles = `
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #24292f; }
+      h1 { font-size: 24px; font-weight: bold; margin: 16px 0 8px; }
+      h2 { font-size: 20px; font-weight: bold; margin: 14px 0 6px; }
+      h3 { font-size: 18px; font-weight: bold; margin: 12px 0 6px; }
+      h4 { font-size: 16px; font-weight: bold; margin: 10px 0 6px; }
+      p { margin: 6px 0; line-height: 1.6; }
+      ul, ol { margin: 8px 0; padding-left: 24px; }
+      li { margin: 4px 0; }
+      blockquote { border-left: 4px solid #ddd; padding-left: 12px; margin: 8px 0; color: #666; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
+      pre {
+        background: #f6f8fa;
+        border: 1px solid #e1e4e8;
+        border-radius: 6px;
+        padding: 14px 16px;
+        margin: 12px 0;
+        overflow-x: auto;
+        font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, Menlo, monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #24292f;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      pre code {
+        background: none;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+      }
+      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
+      th { background: #f9f9f9; font-weight: bold; }
+      strong { font-weight: bold; }
+      em { font-style: italic; }
+      a { color: #007bff; text-decoration: underline; }
+      img { max-width: 100%; }
+    </style>
+  `;
+  return `<!DOCTYPE html><html><head>${styles}</head><body>${html}</body></html>`;
 }
 
 /** 富文本复制兜底：选中已渲染内容区域后用 execCommand 复制，完成后恢复页面原选区 */
