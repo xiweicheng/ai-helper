@@ -3,7 +3,7 @@
     "message": "AI Helper - Web Smart Assistant"
   },
   "extDescription": {
-    "message": "Select text to trigger API calls and get intelligent results"
+    "message": "LLM-powered web assistant: side panel chat, selection Q&A, ReAct loop with 40+ tools and MCP extensions for browser automation"
   },
   "commandToggleSidepanel": {
     "message": "Toggle side panel"

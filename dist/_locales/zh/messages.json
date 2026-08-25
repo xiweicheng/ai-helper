@@ -3,7 +3,7 @@
     "message": "AI Helper - 网页智能助手"
   },
   "extDescription": {
-    "message": "选中文本内容直接发起API调用，获取智能结果展示"
+    "message": "基于大语言模型的网页智能助手：侧边栏对话问答、划词便捷提问、ReAct 推理循环驱动 40+ 内建工具与 MCP 扩展，支持网页内容理解与浏览器自动化操作"
   },
   "commandToggleSidepanel": {
     "message": "打开/关闭侧边栏"
