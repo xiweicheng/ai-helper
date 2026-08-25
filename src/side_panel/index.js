@@ -1821,44 +1821,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 检查是否有待处理的选中文本搜索（Side Panel 刚打开时）
-  const stored = await chrome.storage.session.get('pendingSelectionSearch');
-  if (stored.pendingSelectionSearch && stored.pendingSelectionSearch.selectedText) {
-    const { prompt, selectedText } = stored.pendingSelectionSearch;
-    logger.debug('[SidePanel] pending selected textsearch:', selectedText?.substring(0, 50));
-    setSelectedContext(selectedText);
-    // 延迟执行，确保 UI 已完全初始化
-    setTimeout(() => {
-      triggerSelectionSearch(prompt, selectedText);
-    }, 500);
-    await chrome.storage.session.remove('pendingSelectionSearch');
-  }
-
-  // 检查是否有待填充的追问文本（Side Panel 刚打开时）
-  const fillStored = await chrome.storage.session.get('pendingFillInput');
-  if (fillStored.pendingFillInput && fillStored.pendingFillInput.text) {
-    const { text } = fillStored.pendingFillInput;
-    logger.debug('[SidePanel] pending fill trackasktext:', text?.substring(0, 50));
-    setTimeout(() => {
-      fillSidePanelInput(text);
-    }, 500);
-    await chrome.storage.session.remove('pendingFillInput');
-  }
-  
-  // 检查是否有待直接发送的文本（Side Panel 刚打开时）
-  const sendStored = await chrome.storage.session.get('pendingDirectSend');
-  if (sendStored.pendingDirectSend && sendStored.pendingDirectSend.text) {
-    const { text, selectedText } = sendStored.pendingDirectSend;
-    logger.debug('[SidePanel] pending directsend text:', text?.substring(0, 50));
-    if (selectedText) {
-      setSelectedContext(selectedText);
-    }
-    setTimeout(() => {
-      directSend(text, selectedText || '');
-    }, 500);
-    await chrome.storage.session.remove('pendingDirectSend');
-  }
-
   // 监听 Tab 切换事件,更新当前 Tab ID
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     logger.debug('[SidePanel] Tab switch, new  Tab ID:', activeInfo.tabId);
@@ -2231,8 +2193,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 加载保存的对话历史
-  loadChatHistory();
+  // 加载保存的对话历史（必须 await：后续 pending 任务恢复依赖 activeSessionId 就绪，
+  // 否则 sendMessage/saveCurrentSession 在会话未加载时会静默失败，刷新即丢消息）
+  await loadChatHistory();
+
+  // 检查是否有待处理的选中文本搜索（Side Panel 刚打开时）
+  const stored = await chrome.storage.session.get('pendingSelectionSearch');
+  if (stored.pendingSelectionSearch && stored.pendingSelectionSearch.selectedText) {
+    const { prompt, selectedText } = stored.pendingSelectionSearch;
+    logger.debug('[SidePanel] pending selected textsearch:', selectedText?.substring(0, 50));
+    setSelectedContext(selectedText);
+    // 延迟执行，确保 UI 已完全初始化
+    setTimeout(() => {
+      triggerSelectionSearch(prompt, selectedText);
+    }, 500);
+    await chrome.storage.session.remove('pendingSelectionSearch');
+  }
+
+  // 检查是否有待填充的追问文本（Side Panel 刚打开时）
+  const fillStored = await chrome.storage.session.get('pendingFillInput');
+  if (fillStored.pendingFillInput && fillStored.pendingFillInput.text) {
+    const { text } = fillStored.pendingFillInput;
+    logger.debug('[SidePanel] pending fill trackasktext:', text?.substring(0, 50));
+    setTimeout(() => {
+      fillSidePanelInput(text);
+    }, 500);
+    await chrome.storage.session.remove('pendingFillInput');
+  }
+  
+  // 检查是否有待直接发送的文本（Side Panel 刚打开时）
+  const sendStored = await chrome.storage.session.get('pendingDirectSend');
+  if (sendStored.pendingDirectSend && sendStored.pendingDirectSend.text) {
+    const { text, selectedText } = sendStored.pendingDirectSend;
+    logger.debug('[SidePanel] pending directsend text:', text?.substring(0, 50));
+    if (selectedText) {
+      setSelectedContext(selectedText);
+    }
+    setTimeout(() => {
+      directSend(text, selectedText || '');
+    }, 500);
+    await chrome.storage.session.remove('pendingDirectSend');
+  }
 
   // 自动聚焦输入框
   const userInputEl = document.getElementById('userInput');

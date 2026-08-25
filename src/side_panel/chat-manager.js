@@ -307,7 +307,21 @@ export function clearSelectedContext() {
 // 聊天历史管理
 // ============================================================
 
+// 聊天历史加载完成信号：sendMessage/directSend 发送前 await 此 promise，
+// 确保 activeSessionId 已初始化，避免 saveCurrentSession 静默失败导致消息丢失
+let resolveChatHistoryReady;
+const chatHistoryReady = new Promise(resolve => { resolveChatHistoryReady = resolve; });
+
 export async function loadChatHistory() {
+  try {
+    await _loadChatHistoryImpl();
+  } finally {
+    // 无论成功或失败都 resolve，避免等待方（发送链路）永久阻塞
+    resolveChatHistoryReady();
+  }
+}
+
+async function _loadChatHistoryImpl() {
   const sessionsData = await loadSessions();
   
   if (sessionsData.activeSessionId && sessionsData.list.length > 0) {
@@ -524,6 +538,8 @@ export function hideModal() {
 // 已拆分到 chat-resume.js，顶部 import 引入
 
 export async function sendMessage() {
+  // 等待聊天历史加载完成，确保 activeSessionId 就绪，保存会话不会静默失败
+  await chatHistoryReady;
   const userInput = document.getElementById('userInput');
   const chatContainer = document.getElementById('chatContainer');
   
@@ -966,7 +982,10 @@ export function fillSidePanelInput(text) {
 }
 
 // 直接发送文本到侧边栏（填充输入框并自动发送，可选带上选中文本上下文）
-export function directSend(text, selectedText = '') {
+export async function directSend(text, selectedText = '') {
+  // 等待聊天历史加载完成再发送，避免 activeSessionId 未就绪时保存失败丢失消息；
+  // 与 pending 恢复路径竞争时由下方 isGenerating 检查防止重复发送
+  await chatHistoryReady;
   const userInput = document.getElementById('userInput');
   if (!userInput || !text || state.isGenerating) return;
   
