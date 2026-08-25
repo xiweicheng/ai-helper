@@ -1198,7 +1198,7 @@ function showToolbar(x, y) {
     toolbarEl.style.top = top + 'px';
     
     if (!isToolbarVisible) {
-      toolbarEl.classList.add('show');
+      toolbarEl.classList.add('aih-show');
       isToolbarVisible = true;
     }
   });
@@ -1219,7 +1219,7 @@ function hideToolbar() {
     }
   }
   
-  toolbarEl.classList.remove('show');
+  toolbarEl.classList.remove('aih-show');
   toolbarEl.style.display = 'none';
   isToolbarVisible = false;
 }

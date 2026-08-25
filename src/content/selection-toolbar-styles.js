@@ -34,7 +34,7 @@ export function injectStyles() {
       transform: translateY(2px);
       white-space: nowrap;
     }
-    #aih-selection-toolbar.show {
+    #aih-selection-toolbar.aih-show {
       opacity: 1;
       transform: translateY(0);
     }
