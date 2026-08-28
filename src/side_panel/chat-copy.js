@@ -273,7 +273,7 @@ export function wrapHtmlWithStyles(html) {
         border: none;
         border-radius: 0;
       }
-      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      table { border-collapse: collapse; width: auto; margin: 8px 0; }
       th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
       th { background: #f9f9f9; font-weight: bold; }
       strong { font-weight: bold; }

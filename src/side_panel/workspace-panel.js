@@ -3840,7 +3840,7 @@ function wrapExportHtmlWithStyles(html) {
       code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }
       pre { background: #f6f8fa; border: 1px solid #e1e4e8; border-radius: 6px; padding: 14px 16px; margin: 12px 0; overflow-x: auto; font-family: monospace; font-size: 13px; line-height: 1.6; color: #24292f; white-space: pre-wrap; word-break: break-word; }
       pre code { background: none; padding: 0; border: none; border-radius: 0; }
-      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      table { border-collapse: collapse; width: auto; margin: 8px 0; }
       th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
       th { background: #f9f9f9; font-weight: bold; }
       strong { font-weight: bold; }
