@@ -147,6 +147,7 @@ export default {
     tokenStats: 'Token Stats',
     auditLog: 'Command Audit',
     shortcuts: 'Shortcuts',
+    githubRepo: 'GitHub Repository',
     detachTitle: 'Detach to standalone window',
     attachTitle: 'Attach back to side panel',
   },

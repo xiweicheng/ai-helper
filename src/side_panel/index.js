@@ -3426,6 +3426,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // GitHub 仓库链接按钮（header 下拉菜单）
+  const githubRepoBtn = document.getElementById('githubRepoBtn');
+  if (githubRepoBtn) {
+    githubRepoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      chrome.tabs.create({ url: 'https://github.com/xiweicheng/ai-helper' });
+    });
+  }
+
   // ==================== 命令执行审计 ====================
   const auditLogBtn = document.getElementById('auditLogBtn');
   const auditLogOverlay = document.getElementById('auditLogOverlay');
