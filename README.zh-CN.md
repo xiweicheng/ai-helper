@@ -2,6 +2,8 @@
 
 # AI Helper - 网页智能助手
 
+**安装**: [Microsoft Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)
+
 > 基于大语言模型（LLM）的 Chrome 浏览器智能助手扩展。采用 ReAct（Reasoning + Acting）推理循环架构，支持自然语言对话、浏览器自动化操作、网页内容处理等 **40+ 项内建工具 + MCP 动态扩展**。可搭配本地代理服务实现文件系统操作、终端命令执行、Skill 技能系统和 MCP 协议扩展，同时具备多模态文件问答、图片识别与标注、长期记忆系统、任务断点续接恢复、Shadow DOM 深度穿透、会话导入/导出、工作目录管理、消息搜索与收藏、文件回收站、审计日志、后台守护进程、在线自动更新等高级能力。
 
 ## 为什么选择 AI Helper

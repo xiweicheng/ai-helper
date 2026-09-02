@@ -7,6 +7,8 @@
 ![Platform](icons/badges/platform.svg)
 ![PRs Welcome](icons/badges/prs-welcome.svg)
 
+**Install**: [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)
+
 > An LLM-powered browser smart assistant extension for Chrome and Edge.
 
 Built on a **ReAct (Reasoning + Acting)** inference loop architecture, AI Helper supports natural language conversations, browser automation, and web content processing with **40+ built-in tools + MCP dynamic extensions**. It pairs with an optional local agent service (Node.js) to unlock file system and terminal capabilities, a Skill system, and MCP protocol extensions.

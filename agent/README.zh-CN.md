@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper) 提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。
+AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper)（[Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)）提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。
 
 ## 安装
 

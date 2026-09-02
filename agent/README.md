@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) with local file read/write, system command execution, Skill system, and MCP protocol extension capabilities.
+AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) ([Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)) with local file read/write, system command execution, Skill system, and MCP protocol extension capabilities.
 
 ## Installation
 

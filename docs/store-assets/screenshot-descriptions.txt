@@ -1,0 +1,45 @@
+微软应用商店 - 截图描述文案
+================================
+
+【中文版】
+================================
+
+截图 1：对话生成静态页面 (screenshot1-1280x800.png)
+描述：通过自然语言对话即可生成精美的静态网页，支持多种模板和样式，所见即所得，零代码也能快速构建专业页面。
+
+截图 2：连接代理实现高级文件读写命令执行 (screenshot2-1280x800.png)
+描述：支持连接本地代理，实现高级文件读写与命令行执行能力，让 AI 助手直接操作你的工作环境，自动化处理复杂任务。
+
+截图 3：页面划词便捷AI问答 (screenshot3-1280x800.png)
+描述：在任意网页中划选文本，即可快速唤起 AI 助手进行问答、翻译、总结等操作，不打断阅读流程，高效获取信息。
+
+截图 4：多智能体助手自由切换 (screenshot4-1280x800.png)
+描述：内置多种专业智能体角色，支持自由切换和自定义配置，针对不同场景选择最合适的助手，提升任务完成质量。
+
+截图 5：大模型token耗费统计 (screenshot5-1280x800.png)
+描述：实时统计大模型 Token 消耗情况，清晰展示各模型用量与费用，帮助你合理控制成本，优化使用策略。
+
+截图 6：循环推理执行日志追踪 (screenshot6-1280x800.png)
+描述：完整记录 AI 循环推理过程与执行日志，每一步思考和操作都可追溯，深入理解决策链路，方便调试与复盘。
+
+
+【英文版】
+================================
+
+Screenshot 1: Generate Static Pages via Chat (screenshot1-1280x800.png)
+Description: Generate beautiful static web pages through natural language conversation. Supports multiple templates and styles with WYSIWYG results — build professional pages quickly with zero code.
+
+Screenshot 2: Agent-Powered File Operations & Command Execution (screenshot2-1280x800.png)
+Description: Connect to a local agent for advanced file read/write and command-line execution. Let the AI assistant directly operate in your workspace and automate complex tasks.
+
+Screenshot 3: In-Page Selection AI Q&A (screenshot3-1280x800.png)
+Description: Select text on any webpage to instantly summon the AI assistant for Q&A, translation, summarization and more — without interrupting your reading flow.
+
+Screenshot 4: Seamless Multi-Agent Switching (screenshot4-1280x800.png)
+Description: Built-in multiple specialized agent roles with free switching and custom configuration. Choose the best assistant for each scenario to boost task quality.
+
+Screenshot 5: LLM Token Usage Statistics (screenshot5-1280x800.png)
+Description: Real-time token consumption tracking across all models. Clearly visualize usage and costs per model to help you control expenses and optimize strategy.
+
+Screenshot 6: Loop Reasoning Execution Log & Trace (screenshot6-1280x800.png)
+Description: Complete recording of the AI loop reasoning process and execution logs. Every thought and action is traceable — understand the decision chain for debugging and review.
