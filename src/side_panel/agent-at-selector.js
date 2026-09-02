@@ -269,6 +269,21 @@ function getAtFilterText(value) {
 }
 
 /**
+ * 解析 Agent 展示名称：内置默认 Agent 使用 i18n 翻译，其余使用原始 name。
+ * 每次渲染实时查询，避免语言切换后仍显示旧语言（与 agent-manager.js 保持一致）。
+ */
+function getAgentDisplayName(agent) {
+  return agent.id === 'default' ? t('agentMgr.defaultAgentName') : agent.name;
+}
+
+/**
+ * 解析 Agent 展示描述：内置默认 Agent 使用 i18n 翻译，其余使用原始 description。
+ */
+function getAgentDisplayDesc(agent) {
+  return agent.id === 'default' ? t('agentMgr.defaultAgentDesc') : agent.description;
+}
+
+/**
  * 渲染 Agent 列表（单独 Tab）
  */
 async function renderAgentAtList(filterText = '') {
@@ -280,8 +295,10 @@ async function renderAgentAtList(filterText = '') {
 
   const filteredAgents = allAgents.filter(agent => {
     if (!filterText) return true;
-    return agent.name.toLowerCase().includes(filterLower) ||
-           (agent.description && agent.description.toLowerCase().includes(filterLower));
+    const name = getAgentDisplayName(agent);
+    const desc = getAgentDisplayDesc(agent);
+    return (name && name.toLowerCase().includes(filterLower)) ||
+           (desc && desc.toLowerCase().includes(filterLower));
   });
 
   if (filteredAgents.length === 0) {
@@ -296,13 +313,15 @@ async function renderAgentAtList(filterText = '') {
     const isActive = agent.id === state.activeAgentId || (!state.activeAgentId && agent.id === 'default');
     const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? null : 0);
     const toolLabel = toolCount === null ? t('promptSelector.inheritGlobal') : t('promptSelector.toolCount', { count: toolCount });
+    const displayName = getAgentDisplayName(agent);
+    const displayDesc = getAgentDisplayDesc(agent);
     return `
       <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isActive ? 'agent-at-active' : ''}"
            data-index="${index}" data-agent-id="${escapeHtml(agent.id)}">
         <span class="prompt-item-index">${index + 1}</span>
         <span class="agent-at-icon">${escapeHtml(agent.icon)}</span>
-        <span class="prompt-item-content">${escapeHtml(agent.name)}</span>
-        <span class="prompt-item-code">${escapeHtml(agent.description || toolLabel)}</span>
+        <span class="prompt-item-content">${escapeHtml(displayName)}</span>
+        <span class="prompt-item-code">${escapeHtml(displayDesc || toolLabel)}</span>
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
           <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.editAgentTitle')}">✎</span>
@@ -469,8 +488,10 @@ async function renderMergedAtList(filterText = '') {
   const [allAgents, allTabs, allProxies] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents()]);
 
   const filteredAgents = allAgents.filter(agent => {
-    return agent.name.toLowerCase().includes(filterLower) ||
-           (agent.description && agent.description.toLowerCase().includes(filterLower));
+    const name = getAgentDisplayName(agent);
+    const desc = getAgentDisplayDesc(agent);
+    return (name && name.toLowerCase().includes(filterLower)) ||
+           (desc && desc.toLowerCase().includes(filterLower));
   });
 
   const filteredTabs = allTabs.filter(tab => {
@@ -505,13 +526,15 @@ async function renderMergedAtList(filterText = '') {
     const isActive = agent.id === state.activeAgentId || (!state.activeAgentId && agent.id === 'default');
     const toolCount = agent.toolIds ? agent.toolIds.length : (agent.toolIds === null ? null : 0);
     const toolLabel = toolCount === null ? t('promptSelector.inheritGlobal') : t('promptSelector.toolCount', { count: toolCount });
+    const displayName = getAgentDisplayName(agent);
+    const displayDesc = getAgentDisplayDesc(agent);
     html += `
       <div class="prompt-item${globalIndex === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}"
            data-index="${globalIndex}" data-type="agent" data-agent-id="${escapeHtml(agent.id)}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         <span class="agent-at-icon">${escapeHtml(agent.icon)}</span>
-        <span class="prompt-item-content">${escapeHtml(agent.name)}</span>
-        <span class="prompt-item-code">${escapeHtml(agent.description || toolLabel)}</span>
+        <span class="prompt-item-content">${escapeHtml(displayName)}</span>
+        <span class="prompt-item-code">${escapeHtml(displayDesc || toolLabel)}</span>
         <span class="agent-item-actions">
           <span class="agent-active-mark" style="${isActive ? '' : 'display:none'}">✓</span>
           <span class="agent-edit-btn" data-agent-id="${escapeHtml(agent.id)}" title="${t('promptSelector.editAgentTitle')}">✎</span>

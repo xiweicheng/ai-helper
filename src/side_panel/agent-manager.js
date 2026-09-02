@@ -377,7 +377,7 @@ export async function switchAgent(agentId) {
   // 始终更新工具栏按钮（工具数量可能变化）
   updateToolsToggleState();
   
-  const agentName = agent ? agent.name : t('agentMgr.defaultAgentName');
+  const agentName = (agent && agent.id !== 'default') ? agent.name : t('agentMgr.defaultAgentName');
   showToast(t('agentMgr.switchedTo', { name: agentName }), 'info', 2000);
   
   logger.debug('[AgentMgr] switched Agent:', agentId, agentName);
