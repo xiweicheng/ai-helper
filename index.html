@@ -13,6 +13,7 @@
     --bg-card: #12121a;
     --bg-card-hover: #1a1a28;
     --border: #1e1e30;
+    --border-soft: rgba(148, 163, 184, 0.16);
     --text: #e4e4e7;
     --text-muted: #71717a;
     --accent: #667eea;
@@ -82,9 +83,11 @@
   /* ─── 导航 ─── */
   .nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    backdrop-filter: blur(12px);
-    background: rgba(9,9,11,0.8);
-    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    background: rgba(9,9,11,0.72);
+    border-bottom: 1px solid var(--border-soft);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.16);
   }
   .nav-inner {
     max-width: 1200px; margin: 0 auto;
@@ -97,11 +100,24 @@
     background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .nav-links { display: flex; gap: 24px; align-items: center; }
-  .nav-links a {
+  .nav-links a:not(.nav-cta) {
     color: var(--text-muted); text-decoration: none; font-size: 14px;
     transition: color .2s;
+    padding: 8px 2px; position: relative;
   }
-  .nav-links a:hover { color: var(--text); }
+  .nav-links a:not(.nav-cta):hover { color: var(--text); }
+  .nav-links a:not(.nav-cta)::after {
+    content: ""; position: absolute;
+    left: 0; right: 0; bottom: 1px;
+    height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    transform: scaleX(0); transform-origin: center;
+    transition: transform .2s ease;
+  }
+  .nav-links a:not(.nav-cta):hover::after,
+  .nav-links a:not(.nav-cta):focus-visible::after {
+    transform: scaleX(1);
+  }
   .nav-cta {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
     color: #fff; padding: 8px 18px; border-radius: 8px;
@@ -159,6 +175,7 @@
   .hero h1 {
     font-size: clamp(40px, 7vw, 72px); font-weight: 800;
     line-height: 1.1; letter-spacing: -2px; margin-bottom: 24px;
+    text-wrap: balance;
     animation: fadeInUp 0.8s ease-out 0.1s both;
   }
   .hero h1 span {
@@ -377,6 +394,7 @@
   .section {
     position: relative; z-index: 1;
     padding: 80px 24px; max-width: 1100px; margin: 0 auto;
+    scroll-margin-top: 76px;
   }
   .section-title {
     text-align: center; margin-bottom: 56px;
@@ -693,6 +711,24 @@
     .arch-arrow { transform: rotate(90deg); }
     .nav-links a:not(.nav-cta) { display: none; }
     .compare-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ─── 可访问性：键盘焦点可见 ─── */
+  a:focus-visible,
+  button:focus-visible,
+  .lang-toggle:focus-visible {
+    outline: 2px solid #a5b4fc;
+    outline-offset: 4px;
+  }
+
+  /* ─── 可访问性：尊重「减少动效」偏好 ─── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.001ms !important;
+    }
   }
 </style>
 </head>
