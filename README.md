@@ -1,3 +1,5 @@
+
+
 > [English](./README.md) | [中文](./README.zh-CN.md)
 
 # AI Helper — Web Intelligent Assistant
@@ -157,7 +159,7 @@ ai-helper/
 │   │   ├── executor.js                  # Command execution engine (stream/block)
 │   │   ├── security.js                  # Path sandbox + command security tiers
 │   │   ├── config.js                    # Agent config (disk persistence)
-│   │   ├── auth.js                      # Pairing auth (4-digit dynamic code)
+│   │   ├── auth.js                      # Pairing auth (6-character dynamic code)
 │   │   ├── search.js                    # File/content search (fd/rg acceleration)
 │   │   ├── logger.js                    # Structured logging
 │   │   ├── skill/                       # Skill System
@@ -793,7 +795,7 @@ The extension can optionally pair with a Node.js agent service, providing file s
 - **Rich CLI Commands**: Supports `start`/`stop`/`restart`/`status`/`paircode`/`config` commands, with `aha` quick alias
 - **Background Daemon Mode**: `start --background` / `-b` background startup mode, terminal returns immediately, non-blocking
 - **Process Management**: PID file management, graceful shutdown mechanism, prevents duplicate startup
-- **Pairing Auth**: 4-digit dynamic code + extensionId pairing, generates Bearer Token
+- **Pairing Auth**: 6-character dynamic code + extensionId pairing, generates Bearer Token
 - **Path Sandbox**: `realpathSync` resolves symlinks, prefix-matches whitelisted paths
 - **Command Security**: Environment variable whitelist (~40 vars), `TERM=dumb` disables interactivity
 - **Script Protection**: Written `.sh`/`.py`/`.js` etc. auto-strip execute permissions
@@ -1040,7 +1042,7 @@ Paste or drag files into the input area, supporting PDF/Word/Excel/Text. With Ag
 ```bash
 cd agent && npm install && npm start
 ```
-Then enter the 4-digit pairing code shown in the terminal on the extension options page "Agent" tab.
+Then enter the 6-character pairing code shown in the terminal on the extension options page "Agent" tab.
 
 **Q: How to add MCP tools?**
 Options → "Toolbox" tab → Add MCP Server → Fill in command and args → Connect. Tools auto-register into the system.
