@@ -26,7 +26,7 @@ ai-helper-agent start -b
 ai-helper-agent start --workdir /path/to/your/project --port 18911
 ```
 
-After startup, the terminal will display a 4-digit pairing code. Enter it in the "Agent" tab of the Chrome extension settings page to complete pairing.
+After startup, the terminal will display a 6-digit pairing code. Enter it in the "Agent" tab of the Chrome extension settings page to complete pairing.
 
 ## CLI Commands
 
@@ -107,7 +107,7 @@ All file operations are restricted to directories listed in the `allowedPaths` w
 
 ### Authentication
 
-Pairing is completed by entering the 4-digit pairing code displayed in the terminal into the extension. The pairing code rotates every 30 seconds. After successful pairing, an HMAC token is used for subsequent request authentication, stored in `~/.ai-helper-agent/pairings.json`.
+Pairing is completed by entering the 6-digit pairing code displayed in the terminal into the extension. The pairing code rotates every 30 seconds. After successful pairing, an HMAC token is used for subsequent request authentication, stored in `~/.ai-helper-agent/pairings.json`.
 
 ## Configuration
 

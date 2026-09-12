@@ -26,7 +26,7 @@ ai-helper-agent start -b
 ai-helper-agent start --workdir /path/to/your/project --port 18911
 ```
 
-启动后终端会显示 4 位配对码，在 Chrome 扩展设置页「代理」标签中填入即可完成配对。
+启动后终端会显示 6 位配对码，在 Chrome 扩展设置页「代理」标签中填入即可完成配对。
 
 ## CLI 命令
 
@@ -107,7 +107,7 @@ Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周
 
 ### 认证机制
 
-首次配对时用户在扩展中输入终端显示的 4 位配对码完成配对。配对码每 30 秒轮换。配对成功后使用 HMAC token 做后续请求认证，存储在 `~/.ai-helper-agent/pairings.json`。
+首次配对时用户在扩展中输入终端显示的 6 位配对码完成配对。配对码每 30 秒轮换。配对成功后使用 HMAC token 做后续请求认证，存储在 `~/.ai-helper-agent/pairings.json`。
 
 ## 配置
 

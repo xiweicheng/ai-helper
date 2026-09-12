@@ -141,7 +141,7 @@ ai-helper/
 │   │   ├── executor.js                  # 命令执行引擎（流式/阻塞）
 │   │   ├── security.js                  # 路径沙箱 + 命令安全分级
 │   │   ├── config.js                    # Agent 配置（磁盘持久化）
-│   │   ├── auth.js                      # 配对认证（4 位动态码）
+│   │   ├── auth.js                      # 配对认证（6 位动态码）
 │   │   ├── search.js                    # 文件/内容搜索（fd/rg 加速）
 │   │   ├── logger.js                    # 结构化日志
 │   │   ├── trash.js                     # 文件回收站（软删除 + 7 天自动清理）
@@ -817,7 +817,7 @@ Agent 命令执行三级安全：
 - **CLI 命令丰富**：支持 `start`/`stop`/`restart`/`status`/`paircode`/`config` 等命令，`aha` 快捷别名
 - **后台守护进程**：`start --background` / `-b` 后台启动模式，终端立即返回，不阻塞会话
 - **进程管理**：PID 文件管理，优雅关闭机制，防止重复启动
-- **配对认证**：4 位动态码 + extensionId 配对，生成 Bearer Token
+- **配对认证**：6 位动态码 + extensionId 配对，生成 Bearer Token
 - **路径沙箱**：`realpathSync` 解析符号链接，前缀匹配白名单路径
 - **命令安全**：环境变量白名单（约 40 个），`TERM=dumb` 禁用互动
 - **脚本保护**：写入 `.sh`/`.py`/`.js` 等自动去除执行权限
