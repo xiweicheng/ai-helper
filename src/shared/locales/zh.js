@@ -122,7 +122,7 @@ export default {
     // 完成反馈（声音 + 彩带）
     completionFeedbackTitle: '完成反馈',
     completionSound: '播放提示音（成功与失败音效不同）',
-    completionSoundHint: '成功时“叮-咚”升调，失败时“咚-叮”降调；用户主动取消不播放',
+    completionSoundHint: '成功时清脆三连音（Do-Mi-Sol 上扬），失败时低沉方波双音；用户主动取消不播放',
     completionConfetti: '播放彩带动画',
     completionConfettiHint: '仅在回答成功完成时播放；失败和取消不播放',
   },

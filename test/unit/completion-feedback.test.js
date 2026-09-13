@@ -8,6 +8,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
 let storageData = {};
 let audioContextCount = 0;
+let oscillatorCount = 0;
 let canvasGetContextCount = 0;
 let prefersReducedMotion = false;
 
@@ -43,6 +44,7 @@ class MockAudioContext {
     this.destination = {};
   }
   createOscillator() {
+    oscillatorCount++;
     return {
       type: '', frequency: { value: 0 },
       connect: () => {}, start: () => {}, stop: () => {},
@@ -99,6 +101,7 @@ let mod;
 beforeEach(async () => {
   storageData = {};
   audioContextCount = 0;
+  oscillatorCount = 0;
   canvasGetContextCount = 0;
   prefersReducedMotion = false;
   document.body.innerHTML = '';
@@ -285,5 +288,19 @@ describe('成功与失败反馈共享节流', () => {
     // 两次都触发音效（成功 + 失败），但彩带只成功时触发一次
     expect(audioContextCount).toBe(2);
     expect(canvasGetContextCount).toBe(1);
+  });
+});
+
+describe('音效音符数量验证（区分成功/失败音色设计）', () => {
+  test('成功音效播放 3 个音符（C5-E5-G5 大三和弦璁音）', async () => {
+    storageData = { completionSoundEnabled: true, completionConfettiEnabled: false };
+    await mod.playCompletionFeedback();
+    expect(oscillatorCount).toBe(3);
+  });
+
+  test('失败音效播放 2 个音符（A4-F4 降调双音）', async () => {
+    storageData = { completionSoundEnabled: true, completionConfettiEnabled: true };
+    await mod.playFailureFeedback();
+    expect(oscillatorCount).toBe(2);
   });
 });

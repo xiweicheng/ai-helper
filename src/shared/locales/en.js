@@ -122,7 +122,7 @@ export default {
     // Completion feedback (sound + confetti)
     completionFeedbackTitle: 'Completion Feedback',
     completionSound: 'Play sound (different tones for success and failure)',
-    completionSoundHint: 'Success: rising “ding-dong”; Failure: falling “dong-ding”; user-initiated cancellation is silent',
+    completionSoundHint: 'Success: bright rising triad (Do-Mi-Sol); Failure: low square-wave double tone; user cancellation is silent',
     completionConfetti: 'Play confetti animation',
     completionConfettiHint: 'Only plays on successful completion; not on failures or cancellations',
   },

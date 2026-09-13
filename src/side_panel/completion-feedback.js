@@ -9,19 +9,18 @@ import logger from '../shared/logger.js';
 let _lastPlayedAt = 0;
 const THROTTLE_MS = 500;
 
-// 成功音效：两段升调 sine 波，C5 → E5，营造"叮-咚"完成感
+// 成功音效：三连音大三和弦璁音 C5 → E5 → G5（Do-Mi-Sol），sine 波渐强，明亮愉悦
 const SUCCESS_SOUND_TONES = [
-  { frequency: 523.25, startTime: 0,    duration: 0.15 }, // C5
-  { frequency: 659.25, startTime: 0.15, duration: 0.25 }, // E5
+  { frequency: 523.25, startTime: 0,    duration: 0.12, type: 'sine', gain: 0.30 }, // C5
+  { frequency: 659.25, startTime: 0.09, duration: 0.12, type: 'sine', gain: 0.30 }, // E5
+  { frequency: 783.99, startTime: 0.18, duration: 0.22, type: 'sine', gain: 0.35 }, // G5
 ];
-const SUCCESS_SOUND_GAIN = 0.25;
 
-// 失败音效：两段降调 sine 波，A4 → F4，与成功升调形成对比，音量略低避免刺耳
+// 失败音效：降调双音 A4 → F4，square 波（方波音色“硬”有警示感），音量略低
 const FAILURE_SOUND_TONES = [
-  { frequency: 440.00, startTime: 0,    duration: 0.15 }, // A4
-  { frequency: 349.23, startTime: 0.15, duration: 0.25 }, // F4
+  { frequency: 440.00, startTime: 0,    duration: 0.16, type: 'square', gain: 0.22 }, // A4
+  { frequency: 349.23, startTime: 0.14, duration: 0.30, type: 'square', gain: 0.22 }, // F4
 ];
-const FAILURE_SOUND_GAIN = 0.2;
 
 // 彩带配置
 const CONFETTI_COLORS = [
@@ -70,10 +69,10 @@ function _readConfig() {
 
 /**
  * 播放一组音符（通用合成逻辑）
- * @param {Array<{frequency:number,startTime:number,duration:number}>} tones
- * @param {number} gain - 音量峰值（0-1）
+ * @param {Array<{frequency:number,startTime:number,duration:number,type?:string,gain:number}>} tones
+ *   每个音符自带波形 type 与峰值音量 gain，使成功/失败能在音色维度区分
  */
-function _playTones(tones, gain) {
+function _playTones(tones) {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) {
@@ -90,13 +89,13 @@ function _playTones(tones, gain) {
     for (const tone of tones) {
       const osc = ctx.createOscillator();
       const gainNode = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = tone.type || 'sine';
       osc.frequency.value = tone.frequency;
       const startAt = now + tone.startTime;
       const endAt = startAt + tone.duration;
-      // 音量包络：极短起音 + 指数衰减，避免爆音
+      // 音量包络：快速淡入 -> 指数淡出，避免爆音
       gainNode.gain.setValueAtTime(0.0001, startAt);
-      gainNode.gain.exponentialRampToValueAtTime(gain, startAt + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(tone.gain, startAt + 0.012);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, endAt);
       osc.connect(gainNode);
       gainNode.connect(ctx.destination);
@@ -115,19 +114,19 @@ function _playTones(tones, gain) {
 }
 
 /**
- * 播放成功音效：C5 → E5 升调"叮-咚"
+ * 播放成功音效：C5 → E5 → G5 大三和弦璁音，sine 波渐强，明亮愉悦
  * 独立 AudioContext，不复用 clarify-dialog.js 的 playNotificationSound
  */
 function _playCompletionSound() {
-  _playTones(SUCCESS_SOUND_TONES, SUCCESS_SOUND_GAIN);
+  _playTones(SUCCESS_SOUND_TONES);
   logger.debug('[CompletionFeedback] success sound played');
 }
 
 /**
- * 播放失败音效：A4 → F4 降调"咚-叮"，与成功音形成对比
+ * 播放失败音效：A4 → F4 降调，square 波，低沉警示，与成功音在音色/音符数/音高走向三重区分
  */
 function _playFailureSound() {
-  _playTones(FAILURE_SOUND_TONES, FAILURE_SOUND_GAIN);
+  _playTones(FAILURE_SOUND_TONES);
   logger.debug('[CompletionFeedback] failure sound played');
 }
 
