@@ -991,6 +991,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     enableExecutionLogLabel.textContent = enableExecutionLogEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
+  // 完成反馈：提示音开关（切换即写入 storage，无需点保存按钮）
+  const completionSoundEl = document.getElementById('completionSoundEnabled');
+  if (completionSoundEl) {
+    completionSoundEl.addEventListener('change', function() {
+      chrome.storage.local.set({ completionSoundEnabled: this.checked });
+    });
+  }
+
+  // 完成反馈：彩带动画开关（切换即写入 storage，无需点保存按钮）
+  const completionConfettiEl = document.getElementById('completionConfettiEnabled');
+  if (completionConfettiEl) {
+    completionConfettiEl.addEventListener('change', function() {
+      chrome.storage.local.set({ completionConfettiEnabled: this.checked });
+    });
+  }
+
   // ==================== Agent 配置 ====================
   initAgentConfig();
 

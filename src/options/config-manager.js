@@ -964,7 +964,8 @@ export function loadConfig() {
     'enableExecutionLog',
     'reflectionConfig',
     'streamEnabled',
-    'streamExpandTools'
+    'streamExpandTools',
+    'completionSoundEnabled', 'completionConfettiEnabled'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1097,6 +1098,12 @@ export function loadConfig() {
       updateModule('toolReflectionSection', 'toolReflectionEnabled');
       updateModule('subtaskReflectionSection', 'subtaskReflectionEnabled');
     }
+
+    // 加载完成反馈开关（默认开启，undefined 视为 true）
+    const completionSoundEl = document.getElementById('completionSoundEnabled');
+    const completionConfettiEl = document.getElementById('completionConfettiEnabled');
+    if (completionSoundEl) completionSoundEl.checked = result.completionSoundEnabled !== false;
+    if (completionConfettiEl) completionConfettiEl.checked = result.completionConfettiEnabled !== false;
     
     // 先加载自定义模型到下拉列表，再更新选中状态
     loadCustomModels(() => {
@@ -1147,6 +1154,10 @@ export function saveConfig() {
   // 获取流式输出配置
   const streamEnabled = document.getElementById('streamEnabled')?.checked !== false;
   const streamExpandTools = document.getElementById('streamExpandTools')?.checked === true;
+
+  // 获取完成反馈配置（默认开启）
+  const completionSoundEnabled = document.getElementById('completionSoundEnabled')?.checked !== false;
+  const completionConfettiEnabled = document.getElementById('completionConfettiEnabled')?.checked !== false;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
@@ -1223,7 +1234,10 @@ export function saveConfig() {
     reflectionConfig: reflectionConfig,
     // 流式输出配置
     streamEnabled: streamEnabled,
-    streamExpandTools: streamExpandTools
+    streamExpandTools: streamExpandTools,
+    // 完成反馈配置
+    completionSoundEnabled: completionSoundEnabled,
+    completionConfettiEnabled: completionConfettiEnabled
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast(`❌ ${t('settings.saveFailed', { message: chrome.runtime.lastError.message })}`, 'error');

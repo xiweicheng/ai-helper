@@ -119,6 +119,12 @@ export default {
     saveSuccess: 'Configuration saved successfully!',
     deleteModel: 'Delete this model',
     deleteApiBase: 'Delete this address',
+    // Completion feedback (sound + confetti)
+    completionFeedbackTitle: 'Completion Feedback',
+    completionSound: 'Play sound (different tones for success and failure)',
+    completionSoundHint: 'Success: rising “ding-dong”; Failure: falling “dong-ding”; user-initiated cancellation is silent',
+    completionConfetti: 'Play confetti animation',
+    completionConfettiHint: 'Only plays on successful completion; not on failures or cancellations',
   },
 
   // Header bar

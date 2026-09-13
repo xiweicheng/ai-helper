@@ -14,6 +14,7 @@ import { markSessionCompleted, restoreCompletedSessions } from './session-manage
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
+import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 
 registerTranslations('zh', {
   sidePanel: {
@@ -873,6 +874,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
         state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
         saveChatHistory();
       }
+      // 回答成功完成：触发用户配置的反馈（音效 / 彩带），错误路径已在 catch 中处理，不会到达此处
+      playCompletionFeedback();
       return;
     } catch (errorResult) {
       removeLoadingMessage(loadingId);
@@ -885,6 +888,11 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, messageId });
 
       saveChatHistory();
+
+      // 失败反馈：用户主动取消不播放失败音
+      if (errorResult.message !== t('chatMsg.errTaskStopped')) {
+        playFailureFeedback();
+      }
 
       throw errorResult;
     }

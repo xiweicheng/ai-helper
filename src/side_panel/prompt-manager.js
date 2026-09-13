@@ -9,6 +9,7 @@ import { clearPageSelection } from './page-selector.js';
 import { buildFileContentText, clearFiles } from './file-extract.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 
 registerTranslations('zh', {
   promptMgr: {
@@ -846,6 +847,11 @@ export async function sendPromptByCode(code) {
       // 保存历史
       saveChatHistory();
 
+      // 失败反馈：用户主动取消不播放失败音
+      if (errorResult.message !== t('chatMsg.errTaskStopped')) {
+        playFailureFeedback();
+      }
+
       throw errorResult; // 重新抛出以触发 finally 块
     }
 
@@ -872,6 +878,9 @@ export async function sendPromptByCode(code) {
 
     // 保存历史
     saveChatHistory();
+
+    // 回答成功完成：触发用户配置的反馈（音效 / 彩带），错误路径已在 catch 中提前 return，不会到达此处
+    playCompletionFeedback();
 
   } catch (error) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作

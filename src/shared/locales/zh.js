@@ -119,6 +119,12 @@ export default {
     saveSuccess: '配置已保存成功！',
     deleteModel: '删除此模型',
     deleteApiBase: '删除此地址',
+    // 完成反馈（声音 + 彩带）
+    completionFeedbackTitle: '完成反馈',
+    completionSound: '播放提示音（成功与失败音效不同）',
+    completionSoundHint: '成功时“叮-咚”升调，失败时“咚-叮”降调；用户主动取消不播放',
+    completionConfetti: '播放彩带动画',
+    completionConfettiHint: '仅在回答成功完成时播放；失败和取消不播放',
   },
 
   // 顶部栏

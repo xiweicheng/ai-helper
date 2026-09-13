@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="settings.docTitle">AI Helper - 配置</title>
-  <script type="module" crossorigin src="/assets/i18n-DNbnICGo.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-DMVZdXay.js"></script>
   <script type="module" crossorigin src="/assets/constants-DBNqocFG.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
@@ -195,6 +195,20 @@
       <p style="font-size: 12px; color: #999; margin-top: 5px;" data-i18n="settings.systemPromptTip">
         💡 提示：系统提示词用于定义 AI 助手的行为和角色。
       </p>
+    </div>
+
+    <div class="form-group">
+      <label data-i18n="settings.completionFeedbackTitle" style="font-weight:600;color:#333;margin-bottom:10px;">完成反馈</label>
+      <label class="toggle-label">
+        <input type="checkbox" id="completionSoundEnabled">
+        <span class="toggle-text" data-i18n="settings.completionSound">播放提示音（成功与失败音效不同）</span>
+      </label>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.completionSoundHint">成功时“叮-咚”升调，失败时“咚-叮”降调；用户主动取消不播放</span>
+      <label class="toggle-label" style="margin-top:10px;">
+        <input type="checkbox" id="completionConfettiEnabled">
+        <span class="toggle-text" data-i18n="settings.completionConfetti">播放彩带动画</span>
+      </label>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.completionConfettiHint">仅在回答成功完成时播放；失败和取消不播放</span>
     </div>
 
     </div><!-- /tab-basic -->

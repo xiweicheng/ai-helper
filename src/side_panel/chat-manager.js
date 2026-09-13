@@ -11,6 +11,7 @@ import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
+import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
@@ -842,6 +843,8 @@ export async function sendMessage() {
         const { messageId } = addMessage('assistant', t('chat.taskInterruptedSwRestart'), false, errorResult.executionLog || [], null, false, null, null, [], resumable);
         state.messageHistory.push({ role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], messageId, resumable });
         saveChatHistory();
+        // SW 重启视为失败：播放失败音效（用户主动取消已在上一分支处理）
+        playFailureFeedback();
         return;
       }
 
@@ -864,6 +867,8 @@ export async function sendMessage() {
 
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
 
+      // 一般错误（网络/超时/API 错误）：播放失败音效；用户主动取消已在前面分支 return，不会到达此处
+      playFailureFeedback();
       return;
     }
     
@@ -932,7 +937,10 @@ export async function sendMessage() {
     }
     
     state.messageHistory.push(msgEntry);
-    
+
+    // 回答成功完成：触发用户配置的反馈（音效 / 彩带），错误路径已在 catch 中提前 return，不会到达此处
+    playCompletionFeedback();
+
   } catch (error) {
     logger.error('[SidePanel] sendMessage exception:', error?.message || error);
   } finally {
