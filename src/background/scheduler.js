@@ -19,6 +19,11 @@ registerTranslations('zh', {
     success: '成功',
     failed: '失败',
     userMsgPrefix: '定时任务',
+    invalidCron: 'Cron 表达式无效',
+    invalidInterval: '间隔时间格式无效',
+    taskDisabled: '任务已停用，无法执行',
+    notifFailTitle: '定时任务执行失败',
+    notifFailMsg: '任务「{name}」执行失败：{error}',
   },
 });
 registerTranslations('en', {
@@ -29,6 +34,11 @@ registerTranslations('en', {
     success: 'Success',
     failed: 'Failed',
     userMsgPrefix: 'Scheduled task',
+    invalidCron: 'Invalid cron expression',
+    invalidInterval: 'Invalid interval value',
+    taskDisabled: 'Task is disabled',
+    notifFailTitle: 'Scheduled task failed',
+    notifFailMsg: 'Task "{name}" failed: {error}',
   },
 });
 
@@ -339,16 +349,19 @@ async function extractPageContext(url) {
 /**
  * 执行单个定时任务
  */
-export async function runTask(taskId) {
+export async function runTask(taskId, force = false) {
   if (RUNNING.has(taskId)) {
     logger.debug('[Scheduler] task already running, skip:', taskId);
-    return;
+    return false;
   }
   let task = await getScheduledTask(taskId);
-  if (!task || !task.enabled) return;
+  if (!task) return false;
+  if (!task.enabled && !force) return false;
 
   RUNNING.add(taskId);
+  const runStartedAt = Date.now();
   let createdTabId = null;
+  let ok = false;
 
   try {
     task = { ...task, lastStatus: 'running', lastRunAt: Date.now() };
@@ -377,10 +390,14 @@ export async function runTask(taskId) {
     let pageContext = '';
     let tabId = null;
     if (task.contextUrl) {
-      const pc = await extractPageContext(task.contextUrl);
-      pageContext = pc.text;
-      tabId = pc.tabId;
-      createdTabId = pc.createdTabId;
+      if (task.contextMode === 'url_only') {
+        pageContext = `[网页上下文]\nURL: ${task.contextUrl}\n`;
+      } else {
+        const pc = await extractPageContext(task.contextUrl);
+        pageContext = pc.text;
+        tabId = pc.tabId;
+        createdTabId = pc.createdTabId;
+      }
     }
 
     // 4. 构建消息
@@ -403,22 +420,48 @@ export async function runTask(taskId) {
     }
 
     const content = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-    await appendRunMessages(hostSession.id, task, content, result.executionLog);
+    await appendRunMessages(hostSession.id, task, messages[1].content, content, result.executionLog);
     task = { ...task, lastStatus: 'success', lastError: null, lastRunAt: Date.now() };
+    ok = true;
     logger.debug('[Scheduler] task completed:', taskId);
   } catch (e) {
     logger.error('[Scheduler] runTask failed:', taskId, e);
     const fresh = await getScheduledTask(taskId);
     task = { ...(fresh || task), lastStatus: 'failed', lastError: e?.message || String(e) };
+    const failMsg = e?.message || String(e);
     try {
       if (task.sessionId) {
-        await appendMessageToSession(task.sessionId, { role: 'assistant', content: t('sched.failed') + ': ' + (e?.message || String(e)) });
+        await appendMessageToSession(task.sessionId, { role: 'assistant', content: t('sched.failed') + ': ' + failMsg });
       }
     } catch { /* 写失败说明不影响主流程 */ }
+    // 失败通知：后台执行失败用户无感知，主动弹系统通知
+    try {
+      chrome.notifications.create('st_fail_' + taskId + '_' + Date.now(), {
+        type: 'basic',
+        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
+        title: t('sched.notifFailTitle'),
+        message: t('sched.notifFailMsg', { name: task.name || '', error: failMsg }),
+        priority: 2,
+      });
+    } catch { /* 通知失败忽略 */ }
   } finally {
     RUNNING.delete(taskId);
+    // 运行历史（最多保留 50 条）
+    const runHistory = Array.isArray(task.runHistory) ? task.runHistory : [];
+    runHistory.push({
+      id: 'run_' + runStartedAt.toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+      startedAt: runStartedAt,
+      finishedAt: Date.now(),
+      durationMs: Date.now() - runStartedAt,
+      status: task.lastStatus,
+      error: task.lastError || null,
+    });
+    task.runHistory = runHistory.slice(-50);
     // 一次性任务执行后停用
     if (task.schedule?.type === 'once') task.enabled = false;
+    // 结束条件：达到最大执行次数 / 超过截止时间
+    if (task.enabled && task.maxRuns != null && task.runHistory.length >= task.maxRuns) task.enabled = false;
+    if (task.enabled && task.endAt != null && Date.now() >= task.endAt) task.enabled = false;
     task.nextRunAt = task.enabled ? computeNextRun(task) : null;
     task.updatedAt = Date.now();
     await putScheduledTask(task);
@@ -431,6 +474,7 @@ export async function runTask(taskId) {
       chrome.runtime.sendMessage({ type: 'SCHEDULED_SESSION_UPDATED', sessionId: task.sessionId, taskId }).catch(() => {});
     }
   }
+  return ok;
 }
 
 function buildUserContent(task, pageContext) {
@@ -439,9 +483,9 @@ function buildUserContent(task, pageContext) {
   return content;
 }
 
-async function appendRunMessages(sessionId, task, content, executionLog) {
-  const prefix = `[${t('sched.userMsgPrefix')}]${task.contextUrl ? '（基于网页）' : ''}`;
-  await appendMessageToSession(sessionId, { role: 'user', content: prefix + ' ' + task.prompt });
+async function appendRunMessages(sessionId, task, userContent, content, executionLog) {
+  // 会话里记录的用户消息与真实发给模型的内容保持一致，便于回溯
+  await appendMessageToSession(sessionId, { role: 'user', content: userContent });
   await appendMessageToSession(sessionId, { role: 'assistant', content, executionLog: executionLog || [] });
 }
 
@@ -455,12 +499,15 @@ function normalizeTaskPayload(data) {
     schedule: data.schedule || null,
     enabled: data.enabled !== false,
     contextUrl: data.contextUrl || null,
+    contextMode: data.contextMode || 'fetch',
     sessionId: data.sessionId || null,
     model: data.model || null,
     agentId: data.agentId || null,
     useTools: data.useTools != null ? data.useTools : null,
     temperature: data.temperature != null ? data.temperature : null,
     topP: data.topP != null ? data.topP : null,
+    maxRuns: data.maxRuns != null ? (Number(data.maxRuns) || null) : null,
+    endAt: data.endAt != null ? (Number(data.endAt) || null) : null,
   };
 }
 
@@ -487,6 +534,20 @@ export function handleScheduledTaskCommand(message, sendResponse) {
         const data = normalizeTaskPayload(message.task || {});
         if (!data.name || !data.prompt || !data.schedule || !['once', 'interval', 'cron'].includes(data.schedule.type)) {
           sendResponse({ success: false, error: t('sched.missingFields') });
+          return;
+        }
+        // 定时规则校验：非法 cron/interval 会导致任务静默永不执行，保存时即拦截
+        const s = data.schedule;
+        if (s.type === 'cron' && !nextCronRun(s.value)) {
+          sendResponse({ success: false, error: t('sched.invalidCron') });
+          return;
+        }
+        if (s.type === 'interval' && !parseIntervalMinutes(s.value)) {
+          sendResponse({ success: false, error: t('sched.invalidInterval') });
+          return;
+        }
+        if (s.type === 'once' && s.onceMode === 'relative' && !parseIntervalMinutes(s.value)) {
+          sendResponse({ success: false, error: t('sched.invalidInterval') });
           return;
         }
         const now = Date.now();
@@ -544,9 +605,16 @@ export function handleScheduledTaskCommand(message, sendResponse) {
   }
 
   if (type === 'SCHEDULED_TASK_RUN_NOW') {
-    runTask(message.id).catch((e) => logger.error('[Scheduler] run now failed:', message.id, e));
-    sendResponse({ success: true });
-    return false;
+    (async () => {
+      try {
+        const task = await getScheduledTask(message.id);
+        if (!task) { sendResponse({ success: false, error: t('sched.notFound') }); return; }
+        // force=true：即使任务已停用也允许手动立即执行
+        const ok = await runTask(message.id, true);
+        sendResponse({ success: ok });
+      } catch (e) { sendResponse({ success: false, error: e.message }); }
+    })();
+    return true;
   }
 
   return false;

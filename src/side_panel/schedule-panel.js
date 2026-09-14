@@ -54,6 +54,14 @@ registerTranslations('zh', {
     promptRequired: '请填写任务指令',
     scheduleRequired: '请填写定时规则',
     loading: '加载中...',
+    contextModeLabel: '网页上下文方式',
+    contextModeFetch: '抓取网页正文',
+    contextModeUrlOnly: '仅使用 URL（不抓正文）',
+    maxRunsLabel: '最多执行次数（可选）',
+    endAtLabel: '截止时间（可选）',
+    runHistoryLabel: '运行历史',
+    runHistoryEmpty: '暂无运行记录',
+    runCountLabel: '运行历史 ({count})',
   },
 });
 
@@ -107,6 +115,14 @@ registerTranslations('en', {
     promptRequired: 'Prompt is required',
     scheduleRequired: 'Schedule is required',
     loading: 'Loading...',
+    contextModeLabel: 'Page context mode',
+    contextModeFetch: 'Fetch page content',
+    contextModeUrlOnly: 'URL only',
+    maxRunsLabel: 'Max runs (optional)',
+    endAtLabel: 'End time (optional)',
+    runHistoryLabel: 'Run history',
+    runHistoryEmpty: 'No runs yet',
+    runCountLabel: 'Run history ({count})',
   },
 });
 
@@ -118,6 +134,27 @@ function fmtTime(ts) {
   if (!ts) return '—';
   const d = new Date(ts);
   return d.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtDuration(ms) {
+  if (ms == null) return '';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1).replace(/\.0$/, '') + 's';
+  return (ms / 60000).toFixed(1).replace(/\.0$/, '') + 'min';
+}
+
+function statusText(status) {
+  if (status === 'success') return t('schedPanel.statusSuccess');
+  if (status === 'failed') return t('schedPanel.statusFailed');
+  if (status === 'running') return t('schedPanel.statusRunning');
+  return '';
+}
+
+function toDatetimeLocal(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function describeSchedule(task) {
@@ -145,7 +182,7 @@ export function initSchedulePanel() {
   container.id = 'schedulePanelContainer';
   container.innerHTML = `
     <style>
-      .schedule-panel-container { position: fixed; right: 0; top: calc(50% + 160px); transform: translateY(-50%); z-index: 10002; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 280px; background: transparent; }
+      .schedule-panel-container { position: fixed; right: 0; top: calc(50% + 200px); transform: translateY(-50%); z-index: 10002; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 280px; background: transparent; }
       .schedule-panel-toggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, rgba(39, 174, 96, 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: white; border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
       .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(39, 174, 96, 0.4); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
@@ -174,6 +211,16 @@ export function initSchedulePanel() {
       .sched-badge.running { background: #eef2ff; color: #4a6cf7; }
       .sched-badge.muted { background: #f0f1f3; color: #8a94a6; }
       .sched-empty { text-align: center; color: #8a94a6; font-size: 13px; padding: 24px 0; }
+      .sched-history { margin-top: 8px; border-top: 1px dashed #eee; padding-top: 6px; }
+      .sched-run { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #5b6b86; padding: 3px 0; }
+      .sched-run .time { color: #8a94a6; }
+      .sched-run .dur { color: #8a94a6; }
+      .sched-run .err { display: block; color: #c0392b; margin-left: 4px; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sched-run .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+      .sched-run .dot.success { background: #2e9e5b; }
+      .sched-run .dot.failed { background: #c0392b; }
+      .sched-run .dot.running { background: #4a6cf7; }
+      .sched-history-btn { border: none; background: transparent; color: #8a94a6; font-size: 11px; cursor: pointer; padding: 0; }
       .sched-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 10020; }
       .sched-modal-overlay.open { display: flex; }
       .sched-modal { width: 400px; max-width: 90vw; background: #fff; border-radius: 12px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -240,11 +287,21 @@ export function initSchedulePanel() {
           </select>
         </div>
         <div class="field"><label id="schedValueLabel">${t('schedPanel.valueLabelInterval')}</label><input type="text" id="schedFormValue" /></div>
+        <div class="row" id="schedEndWrap" style="display:none;">
+          <div class="field"><label>${t('schedPanel.maxRunsLabel')}</label><input type="number" id="schedFormMaxRuns" min="1" /></div>
+          <div class="field"><label>${t('schedPanel.endAtLabel')}</label><input type="datetime-local" id="schedFormEndAt" /></div>
+        </div>
         <div class="field"><label>${t('schedPanel.contextUrlLabel')}</label>
           <div class="sched-url-row">
             <input type="text" id="schedFormUrl" placeholder="https://" />
             <button type="button" class="sched-use-current" id="schedUseCurrentPage">${t('schedPanel.useCurrentPage')}</button>
           </div>
+        </div>
+        <div class="field"><label>${t('schedPanel.contextModeLabel')}</label>
+          <select id="schedFormContextMode">
+            <option value="fetch">${t('schedPanel.contextModeFetch')}</option>
+            <option value="url_only">${t('schedPanel.contextModeUrlOnly')}</option>
+          </select>
         </div>
         <div class="field"><label>${t('schedPanel.sessionLabel')}</label><select id="schedFormSession"></select></div>
       </div>
@@ -270,6 +327,7 @@ export function initSchedulePanel() {
   const onceModeSel = document.getElementById('schedFormOnceMode');
   const onceModeWrap = document.getElementById('schedOnceModeWrap');
   const valueLabel = document.getElementById('schedValueLabel');
+  const endWrap = document.getElementById('schedEndWrap');
 
   let editingTask = null;
 
@@ -277,6 +335,7 @@ export function initSchedulePanel() {
     const type = typeSel.value;
     const onceMode = onceModeSel.value;
     onceModeWrap.style.display = (type === 'once') ? '' : 'none';
+    endWrap.style.display = (type === 'interval') ? '' : 'none';
 
     if (type === 'once') {
       if (onceMode === 'relative') {
@@ -341,12 +400,31 @@ export function initSchedulePanel() {
     }
   }
 
+  function renderRunHistory(runs) {
+    if (!runs || !runs.length) return `<div class="sched-history"><div class="sched-run">${t('schedPanel.runHistoryEmpty')}</div></div>`;
+    const items = runs.slice().reverse().map((r) => `
+      <div class="sched-run">
+        <span class="dot ${escapeHtml(r.status || '')}"></span>
+        <span class="time">${escapeHtml(fmtTime(r.startedAt))}</span>
+        <span>${escapeHtml(statusText(r.status))}</span>
+        <span class="dur">${escapeHtml(fmtDuration(r.durationMs))}</span>
+        ${r.error ? `<span class="err" title="${escapeHtml(r.error)}">${escapeHtml(r.error)}</span>` : ''}
+      </div>
+    `).join('');
+    return `<div class="sched-history">${items}</div>`;
+  }
+
   function renderTasks(tasks) {
     if (!tasks.length) {
       listEl.innerHTML = `<div class="sched-empty">${t('schedPanel.empty')}</div>`;
       return;
     }
-    listEl.innerHTML = tasks.map((task) => `
+    listEl.innerHTML = tasks.map((task) => {
+      const runCount = task.runHistory?.length || 0;
+      const historyBtn = runCount > 0
+        ? `<button class="sched-history-btn" data-act="history">${t('schedPanel.runCountLabel', { count: runCount })}</button>`
+        : '';
+      return `
       <div class="sched-item" data-id="${escapeHtml(task.id)}">
         <div class="row1">
           <span class="name" title="${escapeHtml(task.name)}">${escapeHtml(task.name)}</span>
@@ -355,6 +433,8 @@ export function initSchedulePanel() {
         ${task.description ? `<div class="desc">${escapeHtml(task.description)}</div>` : ''}
         <div class="meta">${escapeHtml(describeSchedule(task))}</div>
         <div class="meta">${t('schedPanel.nextRun')}: ${escapeHtml(fmtTime(task.nextRunAt))}</div>
+        ${historyBtn}
+        <div class="sched-history" data-history style="display:none;">${renderRunHistory(task.runHistory)}</div>
         <div class="actions">
           <button data-act="toggle" class="${task.enabled ? 'danger' : 'primary'}">${task.enabled ? t('schedPanel.disable') : t('schedPanel.enable')}</button>
           <button data-act="run" class="primary">${t('schedPanel.runNow')}</button>
@@ -362,7 +442,7 @@ export function initSchedulePanel() {
           <button data-act="delete" class="danger">${t('schedPanel.delete')}</button>
         </div>
       </div>
-    `).join('');
+    `}).join('');
   }
 
   listEl.addEventListener('click', async (e) => {
@@ -380,9 +460,16 @@ export function initSchedulePanel() {
       await send({ type: 'SCHEDULED_TASK_TOGGLE', id, enabled: !task.enabled });
       refreshTaskList();
     } else if (act === 'run') {
-      await send({ type: 'SCHEDULED_TASK_RUN_NOW', id });
-      showToast(t('schedPanel.runNowToast'), 'success');
-      setTimeout(refreshTaskList, 1500);
+      const res = await send({ type: 'SCHEDULED_TASK_RUN_NOW', id });
+      if (res?.success) {
+        showToast(t('schedPanel.runNowToast'), 'success');
+        setTimeout(refreshTaskList, 1500);
+      } else {
+        showToast(res?.error || t('schedPanel.createFailed'), 'error');
+      }
+    } else if (act === 'history') {
+      const historyEl = item.querySelector('[data-history]');
+      if (historyEl) historyEl.style.display = historyEl.style.display === 'none' ? '' : 'none';
     } else if (act === 'edit') {
       const all = await loadTaskMap();
       openTaskForm(all[id]);
@@ -419,6 +506,9 @@ export function initSchedulePanel() {
     onceModeSel.value = task?.schedule?.onceMode || 'relative';
     updateScheduleInputs();
     valueInput.value = task?.schedule?.value || '';
+    document.getElementById('schedFormContextMode').value = task?.contextMode || 'fetch';
+    document.getElementById('schedFormMaxRuns').value = task?.maxRuns ?? '';
+    document.getElementById('schedFormEndAt').value = task?.endAt ? toDatetimeLocal(task.endAt) : '';
 
     // 会话选择器
     const sessionSel = document.getElementById('schedFormSession');
@@ -458,13 +548,23 @@ export function initSchedulePanel() {
     if (!prompt) { showToast(t('schedPanel.promptRequired'), 'warning'); return; }
     if (!value) { showToast(t('schedPanel.scheduleRequired'), 'warning'); return; }
 
+    // 最大执行次数 / 截止时间仅对「间隔」类型生效，其余类型清空
+    const maxRuns = type === 'interval'
+      ? (parseInt(document.getElementById('schedFormMaxRuns').value, 10) || null)
+      : null;
+    const endAtRaw = type === 'interval' ? document.getElementById('schedFormEndAt').value : '';
+    const endAt = endAtRaw ? new Date(endAtRaw).getTime() : null;
+
     const payload = {
       name,
       description: document.getElementById('schedFormDesc').value.trim(),
       prompt,
       schedule: type === 'once' ? { type, value, onceMode: onceModeSel.value } : { type, value },
       contextUrl: document.getElementById('schedFormUrl').value.trim() || null,
+      contextMode: document.getElementById('schedFormContextMode').value || 'fetch',
       sessionId: document.getElementById('schedFormSession').value || null,
+      maxRuns,
+      endAt,
       enabled: editingTask ? editingTask.enabled : true,
     };
 
@@ -484,6 +584,13 @@ export function initSchedulePanel() {
       showToast(e?.message || t('schedPanel.createFailed'), 'error');
     }
   }
+
+  // 后台定时任务执行完成（可能更新运行历史/状态/停用标记），面板打开时自动刷新列表
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SCHEDULED_SESSION_UPDATED' && panel.classList.contains('open')) {
+      refreshTaskList().catch(() => {});
+    }
+  });
 
   updateScheduleInputs();
   setPanelOpen(false);
