@@ -19,7 +19,7 @@ registerTranslations('en', {
 });
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 // ReAct Checkpoint TTL：7 天
 export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -81,6 +81,13 @@ function openDB() {
         const bookmarksStore = db.createObjectStore('bookmarks', { keyPath: 'id' });
         bookmarksStore.createIndex('sessionId', 'sessionId', { unique: false });
         bookmarksStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+
+      // 定时任务存储（keyPath: id）
+      if (!db.objectStoreNames.contains('scheduledTasks')) {
+        const tasksStore = db.createObjectStore('scheduledTasks', { keyPath: 'id' });
+        tasksStore.createIndex('nextRunAt', 'nextRunAt', { unique: false });
+        tasksStore.createIndex('enabled', 'enabled', { unique: false });
       }
     };
 
@@ -849,5 +856,51 @@ export function updateBookmarkPin(id, pinned) {
       putReq.onerror = () => resolve(false);
     };
     getReq.onerror = () => resolve(false);
+  });
+}
+
+// ==================== Scheduled Tasks CRUD ====================
+
+/**
+ * 获取单个定时任务
+ */
+export function getScheduledTask(id) {
+  return withStore('scheduledTasks', 'readonly', (store, resolve) => {
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+  });
+}
+
+/**
+ * 获取所有定时任务
+ */
+export function getAllScheduledTasks() {
+  return withStore('scheduledTasks', 'readonly', (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+}
+
+/**
+ * 保存/更新定时任务（put = insert or update）
+ */
+export function putScheduledTask(task) {
+  return withStore('scheduledTasks', 'readwrite', (store, resolve) => {
+    const request = store.put(task);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+  });
+}
+
+/**
+ * 删除定时任务
+ */
+export function deleteScheduledTask(id) {
+  return withStore('scheduledTasks', 'readwrite', (store, resolve) => {
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
   });
 }

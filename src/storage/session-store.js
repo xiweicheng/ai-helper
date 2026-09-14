@@ -15,6 +15,7 @@ registerTranslations('zh', {
     restoredSession: '恢复的会话',
     forkSuffix: '分叉',
     sourceNotFound: '源会话不存在',
+    scheduledSession: '定时任务',
   },
 });
 registerTranslations('en', {
@@ -25,6 +26,7 @@ registerTranslations('en', {
     restoredSession: 'Restored session',
     forkSuffix: 'Fork',
     sourceNotFound: 'Source session not found',
+    scheduledSession: 'Scheduled task',
   },
 });
 
@@ -607,5 +609,39 @@ export async function duplicateSession(sourceSessionId, upToMessageId = null) {
   await idb.putSession(newSession);
   await idb.setActiveSessionId(newSessionId);
 
+  return newSession;
+}
+
+/**
+ * 为定时任务创建专属宿主会话（当任务绑定的会话被删除时自愈使用）
+ * 与普通会话一致，仅额外标记 scheduledTaskId，便于识别 与 后续清理
+ * @param {Object} task - 定时任务对象
+ * @returns {Promise<Object>} 新会话对象
+ */
+export async function createScheduledSession(task) {
+  await init();
+  const sessionId = generateSessionId();
+  const newSession = {
+    id: sessionId,
+    title: task.name || t('session.scheduledSession'),
+    // 注意：定时任务自建会话不写入占位配置，null 表示"执行时继承全局"，
+    // 避免 SW 环境下的默认值（state 占位）覆盖真实全局配置
+    model: task.model || null,
+    useTools: task.useTools != null ? task.useTools : null,
+    enabledTools: null,
+    agentId: task.agentId || null,
+    temperature: task.temperature != null ? task.temperature : null,
+    topP: task.topP != null ? task.topP : null,
+    messageHistory: [],
+    scrollPosition: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    order: Date.now(),
+    isGenerating: false,
+    lastExecutionLog: [],
+    scheduledTaskId: task.id,
+  };
+
+  await idb.putSession(newSession);
   return newSession;
 }

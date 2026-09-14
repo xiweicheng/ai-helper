@@ -8,6 +8,7 @@ import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
+import { initSchedulePanel } from './schedule-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
@@ -1668,6 +1669,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SCHEDULED_SESSION_UPDATED') {
+      // 定时任务在后台执行完成（可能新建了专属会话并写入消息），刷新会话标签与内容展示
+      const sid = message.sessionId;
+      if (sid === state.activeSessionId) {
+        loadChatHistory().catch(() => {});
+      } else if (sid) {
+        markSessionCompleted(sid).catch(() => {});
+      }
+      return;
+    }
     if (message.type === 'CLOSE_SIDEPANEL') {
       // 来自全局快捷键 _toggle_sidepanel：关闭 Side Panel 自身
       logger.debug('[SidePanel] recei to  CLOSE_SIDEPANEL,closesidebar');
@@ -4137,6 +4148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadBookmarks();
   initBookmarkPanel();
   initSearchPanel();
+  initSchedulePanel();
   initAgentDropdown();
   initWorkspacePanel();
   // 收藏加载完成后刷新所有消息的收藏按钮状态（消息可能先于收藏加载渲染）

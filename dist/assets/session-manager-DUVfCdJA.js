@@ -1,0 +1,104 @@
+import{a as e,c as t,l as n}from"./i18n-D6z_TKYV.js";import{l as r}from"./constants-DBNqocFG.js";import{a as i,c as a,d as o,f as s,i as c,l,m as u,n as d,o as f,s as p,t as m,u as h}from"./session-store-B2UT9sJT.js";import{o as g}from"./agent-store-DtcO-nZt.js";e(`zh`,{util:{cmdHintPowerShell:"（请使用 PowerShell 语法，如 `Get-ChildItem`、`Set-Content`、`Remove-Item` 等）",cmdHintCmd:"（请使用 CMD 语法，如 `dir`、`echo`、`del` 等）",cmdHintGitBash:"（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等，路径使用正斜杠 `/`）",cmdHintPowerShellShort:`（请使用 PowerShell 语法）`,cmdHintUnix:"（请使用 Unix 命令，如 `ls`、`cat`、`rm` 等）",cmdExecEnvTitle:`## 命令执行环境`,cmdExecOsShell:`**操作系统/Shell**`,cmdExecWorkdir:`工作目录`,cmdExecWorkdirUnset:`未设置`,assistantTerm:`- **助手**：用户创建的 AI 智能体，每个助手有独立的系统提示词和工具权限，可独立工作或被其他助手调度执行子任务`,noDesc:`无描述`,subDispatchTitle:`## 子助手调度`,subDispatchDesc:`使用 dispatch_task(subAgentId, task) 分派子任务给其他助手执行，支持并行调用。`,subDispatchAvailable:`可用子助手：`,agentTerm:`- **代理**：远端执行服务，提供文件操作、命令执行等能力。可通过 manage_agent 工具查询或切换代理`,agentHostLabel:`- 代理主机地址：`,agentHostHint:`（访问代理端服务时请优先使用此地址）`,terminologyTitle:`## 术语定义`,taskPlanningTitle:`## 任务拆解`,taskPlanningDesc:`复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。`,memoryTitle:`## 记忆`,memoryRules:`- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)
+- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**
+- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit
+- manage: subAction=review审查价值，compact清理低价值
+- 存长期价值信息，加tags和importance(1-10)便于检索`,importanceLabel:`重要性`,tagsLabel:`标签`,permanentNotesTitle:`## 永久注意事项`,currentEnvTitle:`## 当前环境`,currentTimeLabel:`当前时间：`,browserLabel:`浏览器：Chrome 扩展 (Side Panel)`,defaultPromptIntro:`AI Helper：IT技术助手。`,capabilityTitle:`## 能力`,capabilityDesc:`编程开发与调试（Java/Python/JavaScript/Go/C++）、架构优化、性能调优、代码审查、文档编写、浏览器工具调用`,taskPlanningJoin:`、任务规划`,requirementTitle:`## 要求`,requirementDesc:`精准技术术语，代码示例可运行，Markdown格式，方案可落地，不生成安全违规代码`,envTitle:`## 环境`}}),e(`en`,{util:{cmdHintPowerShell:"(Use PowerShell syntax, e.g. `Get-ChildItem`, `Set-Content`, `Remove-Item`, etc.)",cmdHintCmd:"(Use CMD syntax, e.g. `dir`, `echo`, `del`, etc.)",cmdHintGitBash:"(Use Unix commands, e.g. `ls`, `cat`, `rm`, etc. Use forward slashes `/` for paths)",cmdHintPowerShellShort:`(Use PowerShell syntax)`,cmdHintUnix:"(Use Unix commands, e.g. `ls`, `cat`, `rm`, etc.)",cmdExecEnvTitle:`## Command Execution Environment`,cmdExecOsShell:`**OS/Shell**`,cmdExecWorkdir:`Working directory`,cmdExecWorkdirUnset:`not set`,assistantTerm:`- **Assistant**: An AI agent created by the user. Each assistant has its own system prompt and tool permissions, and can work independently or be dispatched by other assistants to perform subtasks`,noDesc:`No description`,subDispatchTitle:`## Sub-assistant Dispatch`,subDispatchDesc:`Use dispatch_task(subAgentId, task) to dispatch subtasks to other assistants. Parallel calls are supported.`,subDispatchAvailable:`Available sub-assistants:`,agentTerm:`- **Agent**: A remote execution service that provides file operations, command execution, and other capabilities. Use the manage_agent tool to query or switch agents`,agentHostLabel:`- Agent host: `,agentHostHint:`(Please use this address first when accessing agent services)`,terminologyTitle:`## Terminology`,taskPlanningTitle:`## Task Decomposition`,taskPlanningDesc:`Break down complex tasks (multi-step, with dependencies) into 2-5 subtasks; execute simple tasks directly. Use plan_task(taskDescription, subtasks) to submit the plan.`,memoryTitle:`## Memory`,memoryRules:`- Unified tool agent_memory, distinguished by action: store (add/update/delete) / recall (retrieve) / manage (review/cleanup)
+- store: subAction=add requires type+content, update requires memoryId+type, **delete only requires memoryId (no type)**. **Always recall first to find the id before deleting**
+- recall: use keywords for query (e.g. "exam"), not full sentences. Optional memoryType and limit
+- manage: subAction=review to assess value, compact to clean up low-value entries
+- Store long-term valuable information; add tags and importance (1-10) for easier retrieval`,importanceLabel:`Importance`,tagsLabel:`Tags`,permanentNotesTitle:`## Permanent Notes`,currentEnvTitle:`## Current Environment`,currentTimeLabel:`Current time: `,browserLabel:`Browser: Chrome Extension (Side Panel)`,defaultPromptIntro:`AI Helper: IT Technical Assistant.`,capabilityTitle:`## Capabilities`,capabilityDesc:`Programming & debugging (Java/Python/JavaScript/Go/C++), architecture optimization, performance tuning, code review, documentation, browser tool calls`,taskPlanningJoin:`, task planning`,requirementTitle:`## Requirements`,requirementDesc:`Precise technical terminology, runnable code examples, Markdown format, actionable solutions, no security-violating code`,envTitle:`## Environment`}});function _(e,t=`info`,n=3e3){let r=document.getElementById(`toastContainer`);if(!r)return;let i=document.createElement(`div`);i.className=`toast ${t}`,i.textContent=e,r.appendChild(i),requestAnimationFrame(()=>{i.classList.add(`toast-show`)}),setTimeout(()=>{i.classList.remove(`toast-show`),setTimeout(()=>{i.parentNode&&i.parentNode.removeChild(i)},300)},n)}function v(){let e=document.getElementById(`userInput`);if(!e||u.isScrolling)return;e.style.height=`auto`;let t=e.scrollHeight;t<=50?e.style.height=``:e.style.height=Math.min(t,100)+`px`,y()}function y(){let e=document.querySelector(`.input-wrapper`),t=document.querySelector(`.input-container`);if(!e||!t)return;let n=e.getBoundingClientRect(),r=t.getBoundingClientRect().bottom-n.top+8;t.style.setProperty(`--dropdown-bottom`,r+`px`)}function b(e){if(!e)return``;let t=document.createElement(`div`);return t.textContent=e,t.innerHTML}function x(e){return e?String(e).replace(/&/g,`&amp;`).replace(/"/g,`&quot;`).replace(/'/g,`&#39;`).replace(/</g,`&lt;`).replace(/>/g,`&gt;`):``}function S(e){return!e||e<0?`0ms`:e<1e3?`${Math.round(e)}ms`:e<6e4?`${C(e/1e3)}s`:e<36e5?`${C(e/6e4)}min`:`${C(e/36e5)}h`}function C(e){let t=Math.round(e*10)/10;return Number.isInteger(t)?String(t):t.toFixed(1)}function w(e){return!e||e<=0?`0`:e<1e3?String(e):e<1e4?Math.round(e/100)/10+`K`:e<1e6?Math.round(e/1e3)+`K`:Math.round(e/1e5)/10+`M`}function T(e){return!e&&e!==0?`0`:Number(e).toLocaleString(`en-US`)}function E(e){if(!e||!Array.isArray(e))return null;let t=0,n=0,r=0,i=!1;for(let a of e){let e=a.apiResponse?.tokenUsage;e&&(t+=e.prompt_tokens||0,n+=e.completion_tokens||0,r+=e.total_tokens||(e.prompt_tokens||0)+(e.completion_tokens||0),i=!0)}return i?{promptTokens:t,completionTokens:n,totalTokens:r}:null}e(`zh`,{tokenPopup:{title:`Token 消耗明细`,total:`总计`,input:`输入`,output:`输出`,inputUnit:`tokens`,outputUnit:`tokens`,percent:`{p}%`,balanceTitle:`账户余额`,balanceTotal:`总余额`,balanceGranted:`赠送余额`,balanceToppedUp:`充值余额`,balanceLoading:`查询中...`,balanceFailed:`查询失败`}}),e(`en`,{tokenPopup:{title:`Token Usage Details`,total:`Total`,input:`Input`,output:`Output`,inputUnit:`tokens`,outputUnit:`tokens`,percent:`{p}%`,balanceTitle:`Account Balance`,balanceTotal:`Total Balance`,balanceGranted:`Granted`,balanceToppedUp:`Topped Up`,balanceLoading:`Loading...`,balanceFailed:`Query Failed`}});function D(e,n){if(!e)return;let r=document.querySelector(`.token-detail-popup`);if(r&&(r.remove(),n._tokenPopupOpen)){n._tokenPopupOpen=!1;return}document.querySelectorAll(`[data-token-popup-open]`).forEach(e=>{e._tokenPopupOpen=!1,e.removeAttribute(`data-token-popup-open`)});let{promptTokens:i,completionTokens:a,totalTokens:o}=e,s=o>0?Math.round(i/o*100):0,c=o>0?Math.round(a/o*100):0,l=document.createElement(`div`);l.className=`token-detail-popup`,l.innerHTML=`
+    <div class="token-popup-header">
+      <span class="token-popup-title">${t(`tokenPopup.title`)}</span>
+      <button class="token-popup-close" aria-label="${t(`common.close`)}">×</button>
+    </div>
+    <div class="token-popup-body">
+      <div class="token-popup-row token-popup-total">
+        <span class="token-popup-label">${t(`tokenPopup.total`)}</span>
+        <span class="token-popup-value">${T(o)}</span>
+      </div>
+      <div class="token-popup-divider"></div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t(`tokenPopup.input`)}</span>
+        <div class="token-popup-right">
+          <span class="token-popup-value">${T(i)}</span>
+          <span class="token-popup-percent">${s}%</span>
+        </div>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t(`tokenPopup.output`)}</span>
+        <div class="token-popup-right">
+          <span class="token-popup-value">${T(a)}</span>
+          <span class="token-popup-percent">${c}%</span>
+        </div>
+      </div>
+      <div class="token-popup-balance-section" style="display:none;">
+        <div class="token-popup-divider"></div>
+        <div class="token-popup-balance-header">
+          <span class="token-popup-balance-title">${t(`tokenPopup.balanceTitle`)}</span>
+        </div>
+        <div class="token-popup-balance-content">
+          <span class="token-popup-balance-loading">${t(`tokenPopup.balanceLoading`)}</span>
+        </div>
+      </div>
+    </div>
+  `,document.body.appendChild(l);let u=n.getBoundingClientRect(),d=l.getBoundingClientRect(),f=window.innerHeight,p,m;p=u.top-d.height-8>0?u.top-d.height-8:u.bottom+8,m=u.left+u.width/2-d.width/2,m=Math.max(8,Math.min(m,window.innerWidth-d.width-8)),p+d.height>f-8&&(p=f-d.height-8),l.style.top=p+`px`,l.style.left=m+`px`,n._tokenPopupOpen=!0,n.setAttribute(`data-token-popup-open`,``),l.querySelector(`.token-popup-close`).addEventListener(`click`,e=>{e.stopPropagation(),l.remove(),n._tokenPopupOpen=!1,n.removeAttribute(`data-token-popup-open`)});let h=e=>{!l.contains(e.target)&&!n.contains(e.target)&&(l.remove(),n._tokenPopupOpen=!1,n.removeAttribute(`data-token-popup-open`),document.removeEventListener(`click`,h,!0))};setTimeout(()=>{document.addEventListener(`click`,h,!0)},0),O(l)}async function O(e){try{let n=await chrome.storage.local.get([`apiBase`,`apiKey`,`modelName`]);if(!(n.modelName||``).toLowerCase().includes(`deepseek`))return;let r=n.apiKey;if(!r)return;let i=e.querySelector(`.token-popup-balance-section`);if(!i)return;i.style.display=``;let a=n.apiBase||`https://api.deepseek.com`,o=await fetch(`${a.replace(/\/+$/,``)}/user/balance`,{method:`GET`,headers:{Authorization:`Bearer ${r}`}});if(!o.ok)throw Error(`HTTP ${o.status}`);let s=await o.json();if(!s.is_available||!s.balance_infos?.length){let e=i.querySelector(`.token-popup-balance-content`);e.innerHTML=`<span class="token-popup-balance-error">${t(`tokenPopup.balanceFailed`)}</span>`;return}let c=s.balance_infos[0],l=c.currency||`CNY`,u=i.querySelector(`.token-popup-balance-content`);u.innerHTML=`
+      <div class="token-popup-row token-popup-total">
+        <span class="token-popup-label">${t(`tokenPopup.balanceTotal`)}</span>
+        <span class="token-popup-value token-popup-balance-value">${c.total_balance} ${l}</span>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t(`tokenPopup.balanceToppedUp`)}</span>
+        <span class="token-popup-value token-popup-balance-sub">${c.topped_up_balance} ${l}</span>
+      </div>
+      <div class="token-popup-row">
+        <span class="token-popup-label">${t(`tokenPopup.balanceGranted`)}</span>
+        <span class="token-popup-value token-popup-balance-sub">${c.granted_balance} ${l}</span>
+      </div>
+    `}catch(n){console.warn(`[TokenPopup] Failed to fetch DeepSeek balance:`,n);let r=e.querySelector(`.token-popup-balance-section`);if(!r)return;r.style.display=``;let i=r.querySelector(`.token-popup-balance-content`);i.innerHTML=`<span class="token-popup-balance-error">${t(`tokenPopup.balanceFailed`)}</span>`}}function k(e,r){navigator.clipboard.writeText(e).then(()=>{let e=r.innerHTML;r.innerHTML=`<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+    </svg>`,r.classList.add(`copied`),setTimeout(()=>{r.innerHTML=e,r.classList.remove(`copied`)},2e3)}).catch(i=>{n.error(`[SidePanel] copy failed:`,i);let a=document.createElement(`textarea`);a.value=e,a.style.position=`fixed`,a.style.left=`-999999px`,document.body.appendChild(a),a.select();try{document.execCommand(`copy`);let e=r.innerHTML;r.innerHTML=`<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+      </svg>`,r.classList.add(`copied`),setTimeout(()=>{r.innerHTML=e,r.classList.remove(`copied`)},2e3)}catch{_(t(`common.copyFailed`),`error`)}document.body.removeChild(a)})}function A(){if(typeof navigator<`u`&&navigator.userAgent){let e=navigator.userAgent;if(e.includes(`Windows`))return`Windows`;if(e.includes(`Mac OS`)||e.includes(`Macintosh`))return`macOS`;if(e.includes(`Linux`)&&!e.includes(`Android`))return`Linux`}return`Unknown`}function j(e=null){if(!u.agentPlatform||!u.agentPlatform.connected||!(u.enabledTools&&u.enabledTools.includes(`agent_exec`))||e!=null&&Array.isArray(e)&&!e.includes(`agent_exec`))return null;let n=u.agentPlatform,r=`unknown`,i=n.shell||`/bin/sh`,a=``;return n.platformName&&(n.platformName.toLowerCase().includes(`windows`)?(r=`Windows`,i.toLowerCase().includes(`powershell`)?(i=`PowerShell`,a=t(`util.cmdHintPowerShell`)):i.toLowerCase().includes(`cmd`)||i.toLowerCase().includes(`command`)?(i=`CMD`,a=t(`util.cmdHintCmd`)):i.toLowerCase().includes(`bash`)||n.platformName.toLowerCase().includes(`git`)?(i=`Git Bash`,a=t(`util.cmdHintGitBash`)):(i=`PowerShell`,a=t(`util.cmdHintPowerShellShort`))):n.platformName.toLowerCase().includes(`mac`)||n.platformName.toLowerCase().includes(`darwin`)?(r=`macOS`,i=i.toLowerCase().includes(`zsh`)?`zsh`:i.toLowerCase().includes(`bash`)?`bash`:`zsh`,a=t(`util.cmdHintUnix`)):n.platformName.toLowerCase().includes(`linux`)&&(r=`Linux`,i=i.toLowerCase().includes(`bash`)?`bash`:i.toLowerCase().includes(`zsh`)?`zsh`:i.toLowerCase().includes(`fish`)?`fish`:`bash`,a=t(`util.cmdHintUnix`))),{osType:r,shellType:i,platformName:n.platformName,arch:n.arch,workdir:n.workdir||``,commandHint:a}}function M(e,t){return t==null||Array.isArray(t)&&t.includes(e)}async function N(e=null){let n=new Date().toLocaleString(`zh-CN`),r=A(),i=j(e?.toolIds),a=``;i&&(a=`
+
+${t(`util.cmdExecEnvTitle`)}
+- ${t(`util.cmdExecOsShell`)}: ${i.osType} (${i.arch}) / ${i.shellType}
+- ${t(`util.cmdExecWorkdir`)}: ${i.workdir||t(`util.cmdExecWorkdirUnset`)}
+- ${i.commandHint}`);let o=(await g()).filter(t=>t.allowSubDispatch&&t.id!==(e?.id||``)),s=o.length>0&&M(`dispatch_task`,e?.toolIds),c=!1,l=null;try{let e=await chrome.storage.local.get([`pairedAgents`,`activeAgentId`]),t=e.pairedAgents||[];if(c=t.length>0,c&&e.activeAgentId){let n=t.find(t=>t.id===e.activeAgentId);if(n?.url)try{l=new URL(n.url).hostname}catch{let e=n.url.replace(/^https?:\/\//,``).replace(/\/.*$/,``).split(`:`)[0];e&&(l=e)}}}catch{}let d=``;l&&(d=`\n${t(`util.agentHostLabel`)}${l}${t(`util.agentHostHint`)}`);let f=``,p=``,m=``;if(s){f=t(`util.assistantTerm`);let e=o.map(e=>`- **${e.id}** (${e.icon} ${e.name}): ${e.description||t(`util.noDesc`)}`).join(`
+`);m=`
+
+${t(`util.subDispatchTitle`)}
+${t(`util.subDispatchDesc`)}
+
+${t(`util.subDispatchAvailable`)}
+${e}`}c&&(p=t(`util.agentTerm`));let h=``;if(f||p){let e=[f,p].filter(Boolean).join(`
+`);h=`
+
+${t(`util.terminologyTitle`)}
+${e}`}let _=u.useTools&&M(`plan_task`,e?.toolIds)?`
+
+${t(`util.taskPlanningTitle`)}
+${t(`util.taskPlanningDesc`)}`:``,v=[`agent_memory`].some(t=>M(t,e?.toolIds)),y=u.useTools&&u.agentPlatform?.connected&&v?`
+
+${t(`util.memoryTitle`)}
+${t(`util.memoryRules`)}`:``,b=``;if(u.agentPlatform?.connected)try{let e=await F();if(e&&e.length>0){let n=e.map((e,n)=>`${n+1}. [${t(`util.importanceLabel`)}: ${e.importance||5}] ${e.content}${e.tags&&e.tags.length?` (${t(`util.tagsLabel`)}: ${e.tags.join(`, `)})`:``}`).join(`
+`);b=`
+
+${t(`util.permanentNotesTitle`)}
+${n}
+`}}catch{}let x;if(x=e&&e.systemPrompt&&e.systemPrompt.trim()?e.systemPrompt:u.systemPrompt&&u.systemPrompt.trim()?u.systemPrompt:null,x){let i=`${x}${h}${b}
+
+${t(`util.currentEnvTitle`)}
+- ${t(`util.currentTimeLabel`)}${n}
+- ${t(`util.browserLabel`)} / ${r}${d}${a}${_}${m}${y}
+`;try{let t=await P(e?.toolIds,e?.skillIds);t&&(i+=`\n${t}\n`)}catch{}return i}let S=`${t(`util.defaultPromptIntro`)}${h}${b}
+
+${t(`util.capabilityTitle`)}
+${t(`util.capabilityDesc`)}${u.useTools&&M(`plan_task`,e?.toolIds)?t(`util.taskPlanningJoin`):``}
+
+${t(`util.requirementTitle`)}
+${t(`util.requirementDesc`)}${_}${m}${y}
+
+${t(`util.envTitle`)}
+${n} | Chrome Side Panel / ${r}${d}${a}
+`;try{let t=await P(e?.toolIds,e?.skillIds);t&&(S+=`\n${t}\n`)}catch{}return S}async function P(e,t){return Array.isArray(t)&&t.length===0||!(t!=null&&Array.isArray(t)&&t.length>0)&&e!=null&&Array.isArray(e)&&!e.includes(`agent_skill`)?``:new Promise(e=>{try{chrome.storage.local.get([`skillsEnabled`],n=>{if(n.skillsEnabled===!1){e(``);return}let r={type:`GET_AGENT_SKILL_PROMPTS`};t!=null&&Array.isArray(t)&&t.length>0&&(r.skillNames=t),chrome.runtime.sendMessage(r,t=>{if(chrome.runtime.lastError){e(``);return}e(t?.prompts||``)})})}catch{e(``)}})}async function F(){return new Promise(e=>{try{chrome.runtime.sendMessage({type:`GET_PERMANENT_NOTES`},t=>{if(chrome.runtime.lastError||!t?.success){e([]);return}e(t.facts||[])})}catch{e([])}})}function I(){return Promise.resolve({temperature:parseFloat(u.temperature.toFixed(2)),top_p:parseFloat(u.topP.toFixed(2))})}function L(){return new Promise(e=>{chrome.runtime.sendMessage({type:`GET_CHAT_CONFIG`},t=>{t&&(u.chatConfig=t,n.debug(`[SidePanel] conversationconfiguration loaded:`,u.chatConfig)),e(t)})})}async function R(){return new Promise(e=>{chrome.runtime.sendMessage({type:`GET_CHAT_CONFIG`},t=>{t&&(u.chatConfig=t,n.debug(`[SidePanel] sync loadconversationconfiguration:`,u.chatConfig)),e()})})}async function z(){return new Promise(e=>{chrome.tabs.query({active:!0,currentWindow:!0},t=>{t&&t.length>0&&t[0].id?(u.currentTabId=t[0].id,n.debug(`[SidePanel] get current Tab ID:`,u.currentTabId,`URL:`,t[0].url),e(u.currentTabId)):(n.warn(`[SidePanel] did not getvalid  Tab ID`),e(null))})})}function B(){return new Promise(e=>{chrome.storage.local.get([`reactMaxIterations`,`reactApiTimeout`,`reactLoopTimeout`,`reactToolTimeout`,`reactClarifyTimeout`],t=>{e({maxIterations:t.reactMaxIterations||30,apiTimeout:t.reactApiTimeout||6e4,loopTimeout:t.reactLoopTimeout||72e5,toolTimeout:t.reactToolTimeout||3e4,clarifyTimeout:r.clarifyTimeout})})})}var V=`completedSessionIds`;async function H(){try{let e=(await chrome.storage.local.get([V]))[V]||[];u.completedSessionIds=new Set(e)}catch(e){n.warn(`[SessionManager] restore completedSessionIds failed:`,e)}}async function U(){try{await chrome.storage.local.set({[V]:Array.from(u.completedSessionIds)})}catch(e){n.warn(`[SessionManager] persist completedSessionIds failed:`,e)}}async function W(e){e&&e!==u.activeSessionId&&(u.completedSessionIds.has(e)||(u.completedSessionIds.add(e),await U(),document.dispatchEvent(new CustomEvent(`generating-state-changed`))))}async function G(e){e&&u.completedSessionIds.has(e)&&(u.completedSessionIds.delete(e),await U(),document.dispatchEvent(new CustomEvent(`generating-state-changed`)))}async function K(){return a()}async function q(){return o()}async function J(){return c()}async function Y(e){return s(e)}async function X(e){let t=await i(e);return u.completedSessionIds.has(e)&&(u.completedSessionIds.delete(e),await U()),t}async function Z(e,t){return l(e,t)}async function Q(e){return h(e)}async function $(){return d()}async function ee(e){return p(e)}async function te(e,t){return m(e,t)}async function ne(e,t=null){return f(e,t)}export{y as A,I as C,L as D,N as E,_ as O,w as S,B as T,k as _,X as a,b,K as c,Q as d,H as f,E as g,v as h,J as i,D as k,W as l,Y as m,$ as n,ne as o,q as p,G as r,ee as s,te as t,Z as u,R as v,z as w,S as x,x as y};
+//# sourceMappingURL=session-manager-DUVfCdJA.js.map
