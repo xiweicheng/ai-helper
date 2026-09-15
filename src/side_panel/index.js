@@ -228,7 +228,8 @@ import {
   rebindAllMessages, editAndResendMessage,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement,
-  _checkForAbandonedCheckpoint
+  _checkForAbandonedCheckpoint,
+  setMessageTimestampVisible
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -771,9 +772,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
   const userMessage = `[${t('sidePanel.selectedContentLabel')}${wasCompressed ? t('sidePanel.selectedContentSummary') : ''}]\n${compressedCtx}\n\n[${t('sidePanel.userQuestionLabel')}]\n${prompt.content}`;
 
-  const { messageId } = addMessage('user', prompt.content, true, [], null, false, userMessage);
+  const { messageId, timestamp } = addMessage('user', prompt.content, true, [], null, false, userMessage);
 
-  state.messageHistory.push({ role: 'user', content: userMessage, messageId });
+  state.messageHistory.push({ role: 'user', content: userMessage, messageId, timestamp });
 
   saveChatHistory();
 
@@ -2189,6 +2190,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (changes.enableExecutionLog) {
         state.chatConfig.enableExecutionLog = changes.enableExecutionLog.newValue;
       }
+      if (changes.showMessageTimestamp) {
+        const visible = changes.showMessageTimestamp.newValue !== false;
+        state.chatConfig.showMessageTimestamp = visible;
+        setMessageTimestampVisible(visible);
+      }
       if (changes.systemPrompt) {
         state.systemPrompt = changes.systemPrompt.newValue || '';
       }
@@ -2335,7 +2341,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (msg.htmlContent) {
           restoreMessageFromHtml(msg.htmlContent, msg.messageId, msg.resumable);
         } else {
-          addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised, null, msg.messageId);
+          addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised, null, msg.messageId, [], false, msg.timestamp ?? null);
         }
       });
       // 统一绑定事件委托（避免逐条消息重复绑定）
@@ -4184,8 +4190,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ==================== 模块初始化 ====================
 
-// 页面加载时获取配置，加载后刷新记忆限制标签
-loadChatConfig().then(() => updateMemoryLimitLabel());
+// 页面加载时获取配置，加载后刷新记忆限制标签、同步消息时间戳显隐
+loadChatConfig().then(() => {
+  updateMemoryLimitLabel();
+  setMessageTimestampVisible(state.chatConfig.showMessageTimestamp !== false);
+});
 
 // 初始化记忆限制标签点击事件
 document.addEventListener('DOMContentLoaded', () => {

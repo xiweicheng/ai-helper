@@ -705,10 +705,10 @@ export async function sendPromptByCode(code) {
   const userContent = buildUserContent(userMessage);
 
   // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复，文件标签由 attachedFilesSnapshot 渲染
-  const { messageId } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage, null, attachedFilesSnapshot);
+  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage, null, attachedFilesSnapshot);
 
   // 更新消息历史（附带上下文气泡信息，供刷新恢复）
-  state.messageHistory.push({ role: 'user', content: userContent, messageId, contextBubbles });
+  state.messageHistory.push({ role: 'user', content: userContent, messageId, timestamp, contextBubbles });
 
   // 保存历史
   saveChatHistory();

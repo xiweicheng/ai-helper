@@ -125,6 +125,8 @@ export default {
     completionSoundHint: '成功时清脆三连音（Do-Mi-Sol 上扬），失败时低沉方波双音；用户主动取消不播放',
     completionConfetti: '播放彩带动画',
     completionConfettiHint: '仅在回答成功完成时播放；失败和取消不播放',
+    showMessageTimestamp: '显示消息时间戳',
+    showMessageTimestampHint: '（在用户问题气泡下方显示发问时间，今天显示时分，非今天显示日期）',
   },
 
   // 顶部栏

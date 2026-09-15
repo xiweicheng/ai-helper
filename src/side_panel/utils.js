@@ -4,7 +4,7 @@ import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
 import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 import logger from '../shared/logger.js';
-import { t, registerTranslations } from '../shared/i18n.js';
+import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
 registerTranslations('zh', {
   util: {
@@ -192,6 +192,58 @@ export function formatDuration(ms) {
 function _oneDecimal(n) {
   const rounded = Math.round(n * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function _pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+/**
+ * 对话消息时间戳的智能短格式：
+ * - 今天：14:32
+ * - 今年内（中文）：9月12日 14:32 /（英文）：Sep 12, 14:32
+ * - 更早（中文）：2025/12/3 14:32 /（英文）：12/03/2025, 14:32
+ * 无法解析的时间返回空字符串
+ */
+export function formatChatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const hm = `${_pad2(d.getHours())}:${_pad2(d.getMinutes())}`;
+  const now = new Date();
+  const isZh = getLanguage() !== 'en';
+
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate();
+  if (sameDay) return hm;
+
+  if (isZh) {
+    if (d.getFullYear() === now.getFullYear()) {
+      return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+    }
+    return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  }
+
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.toLocaleString('en-US', { month: 'short' })} ${d.getDate()}, ${hm}`;
+  }
+  return `${d.getFullYear()}/${_pad2(d.getMonth() + 1)}/${_pad2(d.getDate())}, ${hm}`;
+}
+
+/**
+ * 对话消息时间戳的完整格式（用于 hover title）：
+ * 中文：2026年9月15日 14:32:08 / 英文：2026-09-15 14:32:08
+ */
+export function formatChatTimeFull(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const hms = `${_pad2(d.getHours())}:${_pad2(d.getMinutes())}:${_pad2(d.getSeconds())}`;
+  if (getLanguage() !== 'en') {
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hms}`;
+  }
+  return `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())} ${hms}`;
 }
 
 /**

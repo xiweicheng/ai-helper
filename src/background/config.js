@@ -57,13 +57,14 @@ export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
       'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels',
-      'streamExpandTools'
+      'streamExpandTools', 'showMessageTimestamp'
     ], (result) => {
       resolve({
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
         enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
         customModelMap: normalizeCustomModels(result.customModels || []),
-        streamExpandTools: result.streamExpandTools === true
+        streamExpandTools: result.streamExpandTools === true,
+        showMessageTimestamp: result.showMessageTimestamp !== false
       });
     });
   });

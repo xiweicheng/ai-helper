@@ -965,7 +965,8 @@ export function loadConfig() {
     'reflectionConfig',
     'streamEnabled',
     'streamExpandTools',
-    'completionSoundEnabled', 'completionConfettiEnabled'
+    'completionSoundEnabled', 'completionConfettiEnabled',
+    'showMessageTimestamp'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1104,6 +1105,10 @@ export function loadConfig() {
     const completionConfettiEl = document.getElementById('completionConfettiEnabled');
     if (completionSoundEl) completionSoundEl.checked = result.completionSoundEnabled !== false;
     if (completionConfettiEl) completionConfettiEl.checked = result.completionConfettiEnabled !== false;
+
+    // 加载消息时间戳开关（默认开启，undefined 视为 true）
+    const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
+    if (showMessageTimestampEl) showMessageTimestampEl.checked = result.showMessageTimestamp !== false;
     
     // 先加载自定义模型到下拉列表，再更新选中状态
     loadCustomModels(() => {
@@ -1158,6 +1163,7 @@ export function saveConfig() {
   // 获取完成反馈配置（默认开启）
   const completionSoundEnabled = document.getElementById('completionSoundEnabled')?.checked !== false;
   const completionConfettiEnabled = document.getElementById('completionConfettiEnabled')?.checked !== false;
+  const showMessageTimestamp = document.getElementById('showMessageTimestamp')?.checked !== false;
   
   // 获取图片识别配置
   const enableImageInput = document.getElementById('enableImageInput')?.checked || false;
@@ -1237,7 +1243,8 @@ export function saveConfig() {
     streamExpandTools: streamExpandTools,
     // 完成反馈配置
     completionSoundEnabled: completionSoundEnabled,
-    completionConfettiEnabled: completionConfettiEnabled
+    completionConfettiEnabled: completionConfettiEnabled,
+    showMessageTimestamp: showMessageTimestamp
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast(`❌ ${t('settings.saveFailed', { message: chrome.runtime.lastError.message })}`, 'error');

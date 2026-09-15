@@ -125,6 +125,8 @@ export default {
     completionSoundHint: 'Success: bright rising triad (Do-Mi-Sol); Failure: low square-wave double tone; user cancellation is silent',
     completionConfetti: 'Play confetti animation',
     completionConfettiHint: 'Only plays on successful completion; not on failures or cancellations',
+    showMessageTimestamp: 'Show message timestamps',
+    showMessageTimestampHint: '(Shows the asking time below each user question; time only for today, date included for other days)',
   },
 
   // Header bar

@@ -20,6 +20,8 @@ const EXPORT_KEYS = [
   'streamExpandTools',
   // 完成反馈（声音 + 彩带开关）
   'completionSoundEnabled', 'completionConfettiEnabled',
+  // 消息时间戳显示开关
+  'showMessageTimestamp',
   // 新增：助手、工具、LLM参数、UI开关等配置
   'customAgents', 'activeAgentId', 'activeAssistantId',
   'temperature', 'topP', 'selectedTempIndex',

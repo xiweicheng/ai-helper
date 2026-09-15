@@ -1007,6 +1007,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
+  // 消息时间戳开关（切换即写入 storage，无需点保存按钮）
+  const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
+  if (showMessageTimestampEl) {
+    showMessageTimestampEl.addEventListener('change', function() {
+      chrome.storage.local.set({ showMessageTimestamp: this.checked });
+    });
+  }
+
   // ==================== Agent 配置 ====================
   initAgentConfig();
 

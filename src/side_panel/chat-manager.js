@@ -2,7 +2,7 @@
 // 从 index.js 提取的聊天相关函数
 
 import state from './state.js';
-import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig } from './utils.js';
+import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig, formatChatTime, formatChatTimeFull } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
@@ -423,7 +423,7 @@ async function _loadChatHistoryImpl() {
           size: b.size || 0,
           type: b.fileType || ''
         }));
-        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId, attachedFiles, msg.resumable);
+        addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, wasRevised, null, msg.messageId, attachedFiles, msg.resumable, msg.timestamp ?? null);
       }
     });
 
@@ -642,10 +642,10 @@ export async function sendMessage() {
   // 显示用户消息（仅展示用户输入的文字+文件标签，上下文内容已通过上方独立气泡展示）
   // rawTextContent 参数传入完整上下文格式，供编辑时恢复
   // attachedFilesSnapshot 用于渲染文件标签
-  const { messageId: userMsgId } = addMessage('user', buildUserContent(text), true, [], null, false, finalText, null, attachedFilesSnapshot);
+  const { messageId: userMsgId, timestamp: userMsgTimestamp } = addMessage('user', buildUserContent(text), true, [], null, false, finalText, null, attachedFilesSnapshot);
   
   // 消息历史存储拼接后的完整上下文内容（附带上下文气泡信息）
-  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId, contextBubbles });
+  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId, timestamp: userMsgTimestamp, contextBubbles });
   
   saveChatHistory();
   
@@ -1070,13 +1070,16 @@ function stripSkillContext(text) {
     .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
 }
 
-export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false) {
+export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false, existingTimestamp = undefined) {
   const chatContainer = document.getElementById('chatContainer');
   const messageDiv = document.createElement('div');
   messageDiv.className = `message ${role}`;
   
-  const timestamp = new Date().toISOString();
-  messageDiv.dataset.timestamp = timestamp;
+  // 时间戳三态：undefined=新消息（生成当前时间）；字符串=恢复历史消息（原始发问时间）；null=改版前旧消息（无真实时间不显示）
+  const timestamp = existingTimestamp === undefined ? new Date().toISOString() : (existingTimestamp || null);
+  if (timestamp) {
+    messageDiv.dataset.timestamp = timestamp;
+  }
   const messageId = existingMessageId || 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
   messageDiv.dataset.messageId = messageId;
 
@@ -1620,6 +1623,17 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     toolbar.appendChild(deleteBtn);
     
     messageDiv.appendChild(toolbar);
+
+    // 发问时间戳：气泡下方常驻灰色小字（无真实时间的旧消息不显示）
+    if (timestamp) {
+      messageDiv.classList.add('has-time');
+      const timeEl = document.createElement('time');
+      timeEl.className = 'message-time';
+      timeEl.dateTime = timestamp;
+      timeEl.textContent = formatChatTime(timestamp);
+      timeEl.title = formatChatTimeFull(timestamp);
+      messageDiv.appendChild(timeEl);
+    }
   }
   
   chatContainer.appendChild(messageDiv);
@@ -1640,7 +1654,17 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     addCodeCopyButtons();
   }
   
-  return { element: messageDiv, messageId };
+  return { element: messageDiv, messageId, timestamp };
+}
+
+// ============================================================
+// 用户消息时间戳全局显隐（由基础配置"显示消息时间戳"控制）
+// 通过 chatContainer 容器类统一控制，切换即时生效，不影响消息数据
+// ============================================================
+export function setMessageTimestampVisible(visible) {
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+  chatContainer.classList.toggle('timestamps-hidden', visible === false);
 }
 
 // ============================================================

@@ -232,6 +232,8 @@ export async function importSessions(sessionsData) {
         reflectionScore: msg.reflectionScore,
         wasRevised: msg.wasRevised || false,
         htmlContent: msg.htmlContent || undefined,
+        messageId: msg.messageId || undefined,
+        timestamp: msg.timestamp || undefined,
       })),
       scrollPosition: 0,
       createdAt: sessionData.createdAt || new Date().toISOString(),
@@ -272,6 +274,8 @@ export async function appendMessageToSession(sessionId, message) {
     reflectionScore: message.reflectionScore,
     wasRevised: message.wasRevised || false,
     htmlContent: message.htmlContent || undefined,
+    messageId: message.messageId || undefined,
+    timestamp: message.timestamp || undefined,
   });
 
   session.updatedAt = new Date().toISOString();

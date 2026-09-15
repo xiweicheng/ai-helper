@@ -485,8 +485,10 @@ function buildUserContent(task, pageContext) {
 
 async function appendRunMessages(sessionId, task, userContent, content, executionLog) {
   // 会话里记录的用户消息与真实发给模型的内容保持一致，便于回溯
-  await appendMessageToSession(sessionId, { role: 'user', content: userContent });
-  await appendMessageToSession(sessionId, { role: 'assistant', content, executionLog: executionLog || [] });
+  // 用户消息记录真实执行时刻，供对话面板展示发问时间戳
+  const runTimestamp = new Date().toISOString();
+  await appendMessageToSession(sessionId, { role: 'user', content: userContent, timestamp: runTimestamp });
+  await appendMessageToSession(sessionId, { role: 'assistant', content, executionLog: executionLog || [], timestamp: runTimestamp });
 }
 
 // ==================== 消息命令处理（供 index.js 路由） ====================

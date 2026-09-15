@@ -2592,6 +2592,34 @@ body {
 .message.user .message-toolbar-btn.edit-btn:hover {
   color: #ffa502;
 }
+
+/* 用户消息发问时间戳：气泡下方常驻灰色小字，定位在气泡外部不随内容换行 */
+.message.user.has-time {
+  margin-bottom: 15px;
+}
+
+.message-time {
+  position: absolute;
+  top: 100%;
+  right: 4px;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.4;
+  color: #999;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* 基础配置关闭"显示消息时间戳"：隐藏时间行并收回占位间距 */
+.chat-container.timestamps-hidden .message.user.has-time {
+  margin-bottom: 0;
+}
+
+.chat-container.timestamps-hidden .message-time {
+  display: none;
+}
+
 .message.assistant {
   align-self: flex-start;
   background: white;

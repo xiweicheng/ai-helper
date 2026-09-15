@@ -180,6 +180,8 @@ export async function performExport() {
           htmlContent: msg.htmlContent || '',
           reflectionScore: msg.reflectionScore,
           wasRevised: msg.wasRevised || false,
+          messageId: msg.messageId || '',
+          timestamp: msg.timestamp || '',
         })),
       })),
     };
