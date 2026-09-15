@@ -293,6 +293,8 @@ export async function runTask(taskId, force = false) {
   try {
     task = { ...task, lastStatus: 'running', lastRunAt: Date.now() };
     await putScheduledTask(task);
+    // 通知侧边栏：任务开始执行（入口图标进入「运行中」动效）
+    chrome.runtime.sendMessage({ type: 'SCHEDULED_TASK_RUN_STATE', taskId, running: true }).catch(() => {});
 
     // 1. 解析宿主会话（删除则自愈新建）
     const { session: hostSession, created } = await resolveHostSession(task);
@@ -410,6 +412,8 @@ export async function runTask(taskId, force = false) {
     if (task.sessionId) {
       chrome.runtime.sendMessage({ type: 'SCHEDULED_SESSION_UPDATED', sessionId: task.sessionId, taskId }).catch(() => {});
     }
+    // 通知侧边栏：任务执行结束（入口图标停止「运行中」动效）
+    chrome.runtime.sendMessage({ type: 'SCHEDULED_TASK_RUN_STATE', taskId, running: false }).catch(() => {});
   }
   return ok;
 }

@@ -1677,6 +1677,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadChatHistory().catch(() => {});
       } else if (sid) {
         markSessionCompleted(sid).catch(() => {});
+        // 该会话此前被切走时可能已缓存旧 DOM，后台已写入新消息，
+        // 必须失效缓存，否则切回时命中旧缓存导致看不到执行结果
+        document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: sid } }));
       }
       return;
     }

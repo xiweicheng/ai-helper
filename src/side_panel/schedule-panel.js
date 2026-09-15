@@ -9,6 +9,7 @@ import { switchToSession } from './session-manager.js';
 registerTranslations('zh', {
   schedPanel: {
     toggleTitle: '定时任务',
+    toggleRunning: '执行中',
     title: '定时任务',
     newTask: '新建任务',
     close: '关闭',
@@ -70,6 +71,7 @@ registerTranslations('zh', {
 registerTranslations('en', {
   schedPanel: {
     toggleTitle: 'Scheduled tasks',
+    toggleRunning: 'Running',
     title: 'Scheduled tasks',
     newTask: 'New task',
     close: 'Close',
@@ -217,6 +219,10 @@ export function initSchedulePanel() {
       .schedule-panel-toggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, rgba(39, 174, 96, 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: white; border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
       .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(39, 174, 96, 0.4); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
+      .schedule-panel-toggle.running svg { animation: sched-icon-spin 1.4s linear infinite; transform-origin: center; transform-box: fill-box; }
+      .schedule-panel-toggle.running { animation: sched-btn-glow 1.4s ease-in-out infinite; }
+      @keyframes sched-icon-spin { to { transform: rotate(360deg); } }
+      @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); } 50% { box-shadow: -2px 2px 18px rgba(39, 174, 96, 0.85); } }
       .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(255,255,255,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; }
       .schedule-panel.open { display: flex; }
       .schedule-panel-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #eee; flex-shrink: 0; }
@@ -346,6 +352,16 @@ export function initSchedulePanel() {
 
   const toggle = document.getElementById('schedulePanelToggle');
   const panel = document.getElementById('schedulePanel');
+
+  // 正在执行的任务 ID 集合（可能有多个任务并发执行）
+  const runningTaskIds = new Set();
+  function syncToggleRunning() {
+    const running = runningTaskIds.size > 0;
+    toggle.classList.toggle('running', running);
+    toggle.title = running
+      ? `${t('schedPanel.toggleTitle')} · ${t('schedPanel.toggleRunning')}`
+      : t('schedPanel.toggleTitle');
+  }
   const closeBtn = document.getElementById('schedulePanelClose');
   const newBtn = document.getElementById('scheduleNewTask');
   const listEl = document.getElementById('schedulePanelList');
@@ -426,6 +442,10 @@ export function initSchedulePanel() {
       const countEl = document.getElementById('schedulePanelCount');
       if (countEl) countEl.textContent = tasks.length > 0 ? `(${tasks.length})` : '';
       renderTasks(tasks);
+      // 以任务列表中的运行状态为准同步入口图标（覆盖侧边栏晚于任务启动的场景）
+      runningTaskIds.clear();
+      tasks.forEach((task) => { if (task.lastStatus === 'running') runningTaskIds.add(task.id); });
+      syncToggleRunning();
     } catch (e) {
       listEl.innerHTML = `<div class="sched-empty">${escapeHtml(String(e?.message || e))}</div>`;
     }
@@ -617,6 +637,15 @@ export function initSchedulePanel() {
     }
   }
 
+  // 后台定时任务执行状态：开始/结束时切换入口图标「运行中」动效
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SCHEDULED_TASK_RUN_STATE' && message.taskId) {
+      if (message.running) runningTaskIds.add(message.taskId);
+      else runningTaskIds.delete(message.taskId);
+      syncToggleRunning();
+    }
+  });
+
   // 后台定时任务执行完成（可能更新运行历史/状态/停用标记），面板打开时自动刷新列表
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'SCHEDULED_SESSION_UPDATED') {
@@ -630,4 +659,6 @@ export function initSchedulePanel() {
 
   updateScheduleInputs();
   setPanelOpen(false);
+  // 初始同步一次：覆盖侧边栏在任务执行中（重新）加载、错过开始广播的场景
+  refreshTaskList().catch(() => {});
 }
