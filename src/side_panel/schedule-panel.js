@@ -3,6 +3,8 @@
 import { escapeHtml, showToast } from './utils.js';
 import { loadSessions } from '../storage/session-store.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import state from './state.js';
+import { switchToSession } from './session-manager.js';
 
 registerTranslations('zh', {
   schedPanel: {
@@ -174,6 +176,35 @@ function statusBadge(task) {
   if (task.lastStatus === 'failed') return `<span class="sched-badge failed">${t('schedPanel.statusFailed')}</span>`;
   if (task.lastStatus === 'success') return `<span class="sched-badge success">${t('schedPanel.statusSuccess')}</span>`;
   return '';
+}
+
+// 滚动到会话底部（等待/查看定时任务执行结果）
+function scrollChatToBottom() {
+  const chatContainer = document.getElementById('chatContainer');
+  if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// 立即执行后定位到宿主会话：切换到该会话并滚动到底部，等待执行结果
+async function navigateToScheduledSession(sessionId) {
+  if (!sessionId) return;
+  if (state.activeSessionId !== sessionId) {
+    const previousSessionId = state.activeSessionId;
+    try {
+      const switched = await switchToSession(sessionId);
+      if (switched === false || state.activeSessionId !== sessionId) return;
+    } catch (e) {
+      return;
+    }
+    document.dispatchEvent(new CustomEvent('session-switched', {
+      detail: { sessionId, previousSessionId, skipScrollRestore: true },
+    }));
+    try {
+      const { renderSessionTabs } = await import('./session-manager-ui.js');
+      renderSessionTabs();
+    } catch (e) { /* 忽略 */ }
+  }
+  // 等待会话 DOM 重建完成后滚动到底部
+  setTimeout(scrollChatToBottom, 500);
 }
 
 export function initSchedulePanel() {
@@ -463,6 +494,7 @@ export function initSchedulePanel() {
       const res = await send({ type: 'SCHEDULED_TASK_RUN_NOW', id });
       if (res?.success) {
         showToast(t('schedPanel.runNowToast'), 'success');
+        navigateToScheduledSession(res.sessionId);
         setTimeout(refreshTaskList, 1500);
       } else {
         showToast(res?.error || t('schedPanel.createFailed'), 'error');
@@ -587,8 +619,12 @@ export function initSchedulePanel() {
 
   // 后台定时任务执行完成（可能更新运行历史/状态/停用标记），面板打开时自动刷新列表
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'SCHEDULED_SESSION_UPDATED' && panel.classList.contains('open')) {
-      refreshTaskList().catch(() => {});
+    if (message.type === 'SCHEDULED_SESSION_UPDATED') {
+      if (panel.classList.contains('open')) refreshTaskList().catch(() => {});
+      // 结果已写入会话，滚动到底部让用户看到最新执行结果
+      if (message.sessionId && message.sessionId === state.activeSessionId) {
+        setTimeout(scrollChatToBottom, 600);
+      }
     }
   });
 

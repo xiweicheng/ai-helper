@@ -609,9 +609,19 @@ export function handleScheduledTaskCommand(message, sendResponse) {
       try {
         const task = await getScheduledTask(message.id);
         if (!task) { sendResponse({ success: false, error: t('sched.notFound') }); return; }
-        // force=true：即使任务已停用也允许手动立即执行
-        const ok = await runTask(message.id, true);
-        sendResponse({ success: ok });
+        // 先解析宿主会话（快），立即把 sessionId 返给侧边栏用于定位/滚动等待结果；
+        // 模型执行耗时长，异步进行，不阻塞响应（force=true 允许手动立即执行）
+        let sessionId = task.sessionId || null;
+        try {
+          const { session, created } = await resolveHostSession(task);
+          sessionId = session.id;
+          if (created) {
+            task.sessionId = session.id;
+            await putScheduledTask(task);
+          }
+        } catch { /* 会话解析失败交给 runTask 兜底 */ }
+        runTask(message.id, true).catch((e) => logger.error('[Scheduler] run now failed:', message.id, e));
+        sendResponse({ success: true, sessionId });
       } catch (e) { sendResponse({ success: false, error: e.message }); }
     })();
     return true;
