@@ -193,6 +193,9 @@ export default {
     quotedPrefix: '💬 已引用: {text}',
     navPrevTitle: '上一条消息 (Alt+↑)，Ctrl/Cmd+点击回到最顶端',
     navNextTitle: '下一条消息 (Alt+↓)，Ctrl/Cmd+点击跳到底端',
+    navQuestionTitle: '问题列表',
+    navEmptyLabel: '暂无问题',
+    navQuestionNoText: '(图片/附件消息)',
   },
 
   // 工具面板

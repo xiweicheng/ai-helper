@@ -19,6 +19,7 @@ Built on a **ReAct (Reasoning + Acting)** inference loop architecture, AI Helper
 - Multimodal input: image recognition & annotation, file Q&A (PDF/Word/Excel/50+ formats)
 - Long-term memory system · Task checkpoint resume · Shadow DOM deep penetration
 - Session import/export · Workspace management · Message search & bookmarks
+- Scheduled tasks (one-time / interval / cron) with web-page context & session binding
 - File trash bin · Audit logging · Background daemon mode · Online auto-update
 
 ## Why AI Helper
@@ -52,6 +53,8 @@ AI Helper is a **deeply browser-integrated** smart assistant. Compared to generi
 | File Trash Bin | Soft delete with 7-day retention, one-click restore |
 | Agent Daemon Mode | Background startup with PID management, stop/restart/status commands |
 | Audit Logging | Dual-channel (terminal + JSON file), 30-day retention, query API |
+| Scheduled Tasks | One-time / interval / Cron scheduling, web-page context, session binding, failure notifications & run history |
+| Question List | Hover to expand a question list in the chat sidebar for navigating historical questions |
 
 ## Feature Preview
 
@@ -424,6 +427,7 @@ Model Context Protocol (MCP) support for dynamically extending third-party tool 
 - **Prompt System**: Custom prompts CRUD, `/` quick select, drag-to-reorder
 - **Input History**: Arrow key recall, auto-dedup management
 - **System Prompt**: Auto-injects environment info (Chrome extension, OS, agent platform), enforces task planning rules
+- **Question List Navigation**: Hover the bottom message jump hotzone to expand a question list for quickly locating historical questions
 
 ### 12. Markdown & Mermaid Rendering
 
@@ -607,6 +611,20 @@ When conversation context tokens exceed budget, auto-generates summaries for old
 - **LLM Summary Generation**: Calls lightweight API to summarize tool calls into a one-sentence Chinese summary
 - **Fallback Strategy**: Falls back to deleting old messages directly if summary request fails
 - **Batch Processing**: Supports processing multiple rounds within one token excess period
+
+### 30. Scheduled Tasks
+
+Create scheduled tasks that automatically run preset prompts at a specified time and write results into a bound host session:
+
+- **Three Schedule Types**: One-time (after X minutes / at a specific time), interval (e.g. `30m` / `2h` / `1d`), and 5-field Cron expressions
+- **Web-page Context**: Optionally bind a page URL as context, with "fetch content" or "URL only" modes
+- **Host Session**: Results land in a bound host session; if that session is deleted, a dedicated session is auto-created on execution
+- **Scheduling Engine**: Built on Chrome Alarms with automatic re-hydration after Service Worker restarts
+- **Management Panel**: Create / edit / delete / enable / disable / run now
+- **Run History**: Records each run's status, duration, and error (up to 50 entries), expandable in the panel
+- **Failure Notifications**: System notification on background execution failure
+- **Termination Conditions**: Interval tasks support "max runs" and "end time"
+- **Run Now**: Triggers execution and auto-navigates to the host session, scrolling to the bottom to wait for the result
 
 ---
 

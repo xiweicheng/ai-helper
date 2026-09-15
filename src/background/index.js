@@ -7,6 +7,7 @@ import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
+import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
@@ -46,6 +47,9 @@ registerTranslations('en', {
 
 // 初始化国际化（读取语言偏好，供 local-agent-client 设置 Accept-Language 头）
 initI18n();
+
+// 启动时重建定时任务闹钟（SW 空闲被回收后由 chrome.alarms 唤醒，需从 DB 恢复）
+rehydrateAlarms();
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
 // 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）
@@ -1217,6 +1221,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true;
+  }
+  // 定时任务 CRUD / 立即执行
+  if (message.type?.startsWith('SCHEDULED_TASK_')) {
+    return handleScheduledTaskCommand(message, sendResponse);
   }
   // 查询审计日志
   if (message.type === 'QUERY_AUDIT_LOGS') {

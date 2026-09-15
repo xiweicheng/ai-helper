@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/rolldown-runtime-C0FnF6B9.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-D6z_TKYV.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-BP2skYuK.js"></script>
   <script type="module" crossorigin src="/assets/constants-DBNqocFG.js"></script>
-  <script type="module" crossorigin src="/assets/agent-defaults-lKz7C2T4.js"></script>
-  <script type="module" crossorigin src="/assets/state-B9PZN_fc.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-CuSvSSaz.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-CQfbYMAd.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-BK3o1aVU.js"></script>
+  <script type="module" crossorigin src="/assets/session-store-jBlacBQP.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-Co5epvVV.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-DuoOK5oV.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-C-SFJnsh.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -222,6 +221,9 @@
       </svg>
     </button>
   </div>
+
+  <!-- 用户问题列表：鼠标悬停消息跳转热区时右侧展开（半透明） -->
+  <div class="chat-nav-question-panel" id="chatNavQuestionPanel"></div>
 
   <!-- Toast 提示容器 -->
   <div class="toast-container" id="toastContainer"></div>

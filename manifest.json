@@ -19,7 +19,8 @@
     "offscreen",
     "clipboardRead",
     "clipboardWrite",
-    "commands"
+    "commands",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>",

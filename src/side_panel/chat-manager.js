@@ -372,6 +372,12 @@ async function _loadChatHistoryImpl() {
       }
     }
     
+    // 清空已渲染的消息与上下文气泡，避免历史重载（后台定时任务执行后触发）导致内容重复
+    const chatContainerEl = document.getElementById('chatContainer');
+    if (chatContainerEl) {
+      chatContainerEl.querySelectorAll('.message, .user-context-bubble').forEach(n => n.remove());
+    }
+
     state.messageHistory.forEach(msg => {
       // 从 executionLog 中检测是否有 revised 决策
       let wasRevised = msg.wasRevised;
@@ -1219,6 +1225,21 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     rightActionsContainer.style.alignItems = 'center';
     rightActionsContainer.style.gap = '8px';
 
+    // Token 消耗小标签（方案三：footer 快速概览）——置于最左，与流式渲染路径保持一致
+    const footerTokenSummary = aggregateTokenUsage(executionLog);
+    if (footerTokenSummary) {
+      const tokenTag = document.createElement('span');
+      tokenTag.className = 'token-usage-tag';
+      tokenTag.title = t('chatStream.tokenUsageTitle', { total: formatTokenCount(footerTokenSummary.totalTokens), prompt: formatTokenCount(footerTokenSummary.promptTokens), completion: formatTokenCount(footerTokenSummary.completionTokens) });
+      tokenTag.innerHTML = `<span class="token-tag-icon">⬤</span><span class="token-tag-value">${formatTokenCount(footerTokenSummary.totalTokens)}</span>`;
+      tokenTag.style.cursor = 'pointer';
+      tokenTag.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showTokenPopup(footerTokenSummary, tokenTag);
+      });
+      rightActionsContainer.appendChild(tokenTag);
+    }
+
     const hasExecutionLog = executionLog && executionLog.length > 0;
     const hasReflection = reflectionScore !== null && reflectionScore !== undefined;
     
@@ -1417,21 +1438,6 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     });
     rightActionsContainer.appendChild(deleteBtn);
 
-
-    // Token 消耗小标签（方案三：footer 快速概览）
-    const footerTokenSummary = aggregateTokenUsage(executionLog);
-    if (footerTokenSummary) {
-      const tokenTag = document.createElement('span');
-      tokenTag.className = 'token-usage-tag';
-      tokenTag.title = t('chatStream.tokenUsageTitle', { total: formatTokenCount(footerTokenSummary.totalTokens), prompt: formatTokenCount(footerTokenSummary.promptTokens), completion: formatTokenCount(footerTokenSummary.completionTokens) });
-      tokenTag.innerHTML = `<span class="token-tag-icon">⬤</span><span class="token-tag-value">${formatTokenCount(footerTokenSummary.totalTokens)}</span>`;
-      tokenTag.style.cursor = 'pointer';
-      tokenTag.addEventListener('click', (e) => {
-        e.stopPropagation();
-        showTokenPopup(footerTokenSummary, tokenTag);
-      });
-      rightActionsContainer.appendChild(tokenTag);
-    }
 
     footer.appendChild(rightActionsContainer);
 
