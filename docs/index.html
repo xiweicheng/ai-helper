@@ -3,12 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+  // 尽早应用主题，避免页面加载时主题闪烁
+  (function () {
+    try {
+      var t = localStorage.getItem('ai-helper-theme');
+      if (!t) t = 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <title data-i18n="page-title">AI Helper — Make Your Browser Think</title>
 <meta name="description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
 <meta name="keywords" content="AI Helper, Browser Assistant, Chrome Extension, LLM, ReAct, Multi-Agent, Skill, MCP, Automation, Open Source">
 <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB1klEQVQ4jaWSS0sbcRTFZz0zmVdmkjBqfMRYzaujY4xGm6RqoyaShRu3ui0UpaALRQUfKD6QgG6FfpripzrlXE1KWpFCF2e4nPM7d15/RVVddGToPhxzBK6VhmePI+ZkRJzpMYvofpenlG45wnIKnv0BiWgOvvsRfV4g4kyPGRmyPQt0PQHbGIZrjyERzaPPm0QyXkQ22RJxpseMDFl2ugtMox+OOYq4k4HvBUj5n1HL72Gj1BZxpseMDFl2ZIGmxWAZSbjWmDxumNnC6vwt1itttCoPaFUfZKbHjAxZdthVdC0O2xiUjzQzs4ulxWssL91h5UsbjfqjiDM9ZmTIssOuwgu3Ra00woXvWFi9RGXtFrXGPRabbRFneszIkGVHFmhaDGaE3yCFwqcdlNYuMNe8wnzzBtkfzyLO9JiRIcuOvIKquvJvLWMIudlvmF4+RbF+jlL9EpmnnyLO9JiRIds5DwovnaeYCL8iqJxgqnqKsHqGsHb+ouqZeMzIdO7ec5B0LYF0YRv5uUMUykcIyscIyievOhaPGRmyf51EVU5jPwaGG8iG+8gVD3pEjxmZN4+y2pUHy0xjaHQTE8GeiDM9Zn/ybyz4LSeaE73HvLvgX/TfC34BQ3B2TrlPmzgAAAAASUVORK5CYII=">
 <style>
-  :root {
+  :root, [data-theme="dark"] {
     --bg: #09090b;
     --bg-card: #12121a;
     --bg-card-hover: #1a1a28;
@@ -23,6 +35,51 @@
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
+    /* 半透明辅助变量 */
+    --nav-bg: rgba(9, 9, 11, 0.72);
+    --nav-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+    --glow-1: rgba(102, 126, 234, 0.08);
+    --glow-2: rgba(240, 147, 251, 0.06);
+    --glow-3: rgba(118, 75, 162, 0.04);
+    --badge-bg: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
+    --badge-border: rgba(102, 126, 234, 0.3);
+    --cta-glow-1: rgba(102, 126, 234, 0.1);
+    --cta-glow-2: rgba(118, 75, 162, 0.08);
+    --compare-after-bg: linear-gradient(135deg, rgba(102,126,234,0.05), rgba(118,75,162,0.05));
+    --highlight-bg: rgba(102, 126, 234, 0.05);
+    --tag-bg: rgba(102, 126, 234, 0.1);
+    --shadow-color: rgba(0, 0, 0, 0.16);
+  }
+
+  [data-theme="light"] {
+    --bg: #f7f7fa;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f1f5f9;
+    --border: #e4e4e7;
+    --border-soft: rgba(148, 163, 184, 0.3);
+    --text: #18181b;
+    --text-muted: #71717a;
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+    --accent3: #ec4899;
+    --accent-glow: rgba(99, 102, 241, 0.18);
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    /* 半透明辅助变量 */
+    --nav-bg: rgba(255, 255, 255, 0.78);
+    --nav-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    --glow-1: rgba(99, 102, 241, 0.12);
+    --glow-2: rgba(236, 72, 153, 0.10);
+    --glow-3: rgba(139, 92, 246, 0.08);
+    --badge-bg: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.08));
+    --badge-border: rgba(99, 102, 241, 0.3);
+    --cta-glow-1: rgba(99, 102, 241, 0.10);
+    --cta-glow-2: rgba(139, 92, 246, 0.08);
+    --compare-after-bg: linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.06));
+    --highlight-bg: rgba(99, 102, 241, 0.06);
+    --tag-bg: rgba(99, 102, 241, 0.1);
+    --shadow-color: rgba(15, 23, 42, 0.08);
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -47,21 +104,21 @@
   .glow-1 {
     top: -20%; left: -10%;
     width: 60vw; height: 60vw;
-    background: radial-gradient(circle, rgba(102,126,234,0.08) 0%, transparent 70%);
+    background: radial-gradient(circle, var(--glow-1) 0%, transparent 70%);
     filter: blur(80px);
     animation: float1 20s ease-in-out infinite;
   }
   .glow-2 {
     bottom: -20%; right: -10%;
     width: 50vw; height: 50vw;
-    background: radial-gradient(circle, rgba(240,147,251,0.06) 0%, transparent 70%);
+    background: radial-gradient(circle, var(--glow-2) 0%, transparent 70%);
     filter: blur(80px);
     animation: float2 25s ease-in-out infinite;
   }
   .glow-3 {
     top: 30%; left: 50%;
     width: 40vw; height: 40vw;
-    background: radial-gradient(circle, rgba(118,75,162,0.04) 0%, transparent 70%);
+    background: radial-gradient(circle, var(--glow-3) 0%, transparent 70%);
     filter: blur(60px);
     animation: float3 18s ease-in-out infinite;
   }
@@ -85,9 +142,9 @@
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
     backdrop-filter: blur(14px) saturate(160%);
     -webkit-backdrop-filter: blur(14px) saturate(160%);
-    background: rgba(9,9,11,0.72);
+    background: var(--nav-bg);
     border-bottom: 1px solid var(--border-soft);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.16);
+    box-shadow: var(--nav-shadow);
   }
   .nav-inner {
     max-width: 1200px; margin: 0 auto;
@@ -147,6 +204,28 @@
     background: linear-gradient(135deg, var(--accent), var(--accent2));
   }
 
+  /* ─── Theme Toggle ─── */
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 0;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px;
+    cursor: pointer; transition: all .2s;
+    user-select: none; margin-left: 8px;
+  }
+  .theme-toggle:hover { border-color: var(--accent); }
+  .theme-option {
+    padding: 4px 9px; border-radius: 16px;
+    font-size: 13px; line-height: 1;
+    color: var(--text-muted);
+    transition: all .25s; position: relative; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .theme-option.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 2px 8px var(--accent-glow);
+  }
+
   /* ─── Hero ─── */
   .hero {
     position: relative; z-index: 1;
@@ -155,8 +234,8 @@
   }
   .hero-badge {
     display: inline-flex; align-items: center; gap: 8px;
-    background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
-    border: 1px solid rgba(102,126,234,0.3);
+    background: var(--badge-bg);
+    border: 1px solid var(--badge-border);
     color: var(--accent); font-size: 13px; padding: 8px 20px;
     border-radius: 20px; margin-bottom: 28px;
     font-weight: 500;
@@ -513,7 +592,7 @@
     border-radius: 12px; padding: 24px 20px; text-align: center;
     flex: 1; min-width: 160px;
   }
-  .arch-box.highlight { border-color: var(--accent); background: rgba(102,126,234,0.05); }
+  .arch-box.highlight { border-color: var(--accent); background: var(--highlight-bg); }
   .arch-box .arch-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
   .arch-box .arch-desc { font-size: 12px; color: var(--text-muted); }
   .arch-arrow { font-size: 24px; color: var(--accent); flex-shrink: 0; }
@@ -559,8 +638,8 @@
     position: relative; z-index: 1;
     text-align: center; padding: 80px 24px;
     background: 
-      radial-gradient(ellipse at center top, rgba(102, 126, 234, 0.1) 0%, transparent 60%),
-      radial-gradient(ellipse at center bottom, rgba(118, 75, 162, 0.08) 0%, transparent 60%);
+      radial-gradient(ellipse at center top, var(--cta-glow-1) 0%, transparent 60%),
+      radial-gradient(ellipse at center bottom, var(--cta-glow-2) 0%, transparent 60%);
   }
   .cta-section h2 {
     font-size: 32px; font-weight: 700; margin-bottom: 16px;
@@ -606,7 +685,7 @@
   }
   .compare-card.after {
     border-color: rgba(102, 126, 234, 0.4);
-    background: linear-gradient(135deg, rgba(102,126,234,0.05), rgba(118,75,162,0.05));
+    background: var(--compare-after-bg);
   }
   .compare-card .compare-label {
     font-size: 12px; font-weight: 700;
@@ -692,7 +771,7 @@
     margin-top: 14px;
     padding: 4px 10px;
     font-size: 12px;
-    background: rgba(102,126,234,0.1);
+    background: var(--tag-bg);
     color: var(--accent);
     border-radius: 6px;
     font-weight: 500;
@@ -716,7 +795,8 @@
   /* ─── 可访问性：键盘焦点可见 ─── */
   a:focus-visible,
   button:focus-visible,
-  .lang-toggle:focus-visible {
+  .lang-toggle:focus-visible,
+  .theme-toggle:focus-visible {
     outline: 2px solid #a5b4fc;
     outline-offset: 4px;
   }
@@ -754,6 +834,10 @@
       <div class="lang-toggle" id="langToggle" title="Switch Language / 切换语言">
         <span class="lang-option active" data-lang="en">EN</span>
         <span class="lang-option" data-lang="zh">中文</span>
+      </div>
+      <div class="theme-toggle" id="themeToggle" title="Switch Theme / 切换主题" tabindex="0" role="button" aria-label="Switch theme">
+        <span class="theme-option" data-theme="dark" title="Dark / 深色">🌙</span>
+        <span class="theme-option" data-theme="light" title="Light / 浅色">☀️</span>
       </div>
     </div>
   </div>
@@ -1736,6 +1820,47 @@
 
   // Apply saved language on load
   applyLang(getLang());
+})();
+
+// --- Theme Switcher ---
+(function() {
+  var THEME_KEY = 'ai-helper-theme';
+
+  function getTheme() {
+    return localStorage.getItem(THEME_KEY) || 'dark';
+  }
+
+  function setTheme(theme) {
+    localStorage.setItem(THEME_KEY, theme);
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-option').forEach(function(opt) {
+      var active = opt.getAttribute('data-theme') === theme;
+      opt.classList.toggle('active', active);
+    });
+  }
+
+  // Theme toggle click handler
+  var themeToggle = document.getElementById('themeToggle');
+  themeToggle.addEventListener('click', function() {
+    var current = getTheme();
+    var next = current === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    applyTheme(next);
+  });
+
+  // Keyboard support (Enter / Space)
+  themeToggle.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      themeToggle.click();
+    }
+  });
+
+  // Sync toggle state with the theme applied by the head bootstrap script
+  applyTheme(getTheme());
 })();
 </script>
 
