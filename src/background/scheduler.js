@@ -285,32 +285,66 @@ function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
-async function readPageText(tabId) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function formatPageContext(d) {
+  return `[网页上下文]\n标题: ${d.title || ''}\nURL: ${d.url || ''}\n内容:\n${d.content || ''}`;
+}
+
+// scripting 兜底注入：函数会被序列化到页面内执行，必须完全自包含
+function injectedPageText(maxLength) {
   try {
-    let resp;
+    const root = document.body || document.documentElement;
+    const clone = root.cloneNode(true);
+    clone.querySelectorAll('script,style,noscript,template,svg,canvas').forEach((n) => n.remove());
+    let text = (clone.innerText || clone.textContent || '')
+      .replace(/[ \t ]+/g, ' ')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (text.length > maxLength) text = text.slice(0, maxLength);
+    return { success: true, data: { title: document.title || '', url: location.href, content: text } };
+  } catch (e) {
+    return { success: false, error: String(e) };
+  }
+}
+
+async function readPageText(tabId) {
+  // 1. content script 通道：短轮询，兼容新建 tab 时 content script 尚未就绪
+  for (let i = 0; i < 3; i++) {
     try {
-      resp = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_TEXT', maxLength: 12000 });
+      const resp = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_TEXT', maxLength: 12000 });
+      if (resp && resp.success && resp.data) return { text: formatPageContext(resp.data), title: resp.data.title || '' };
     } catch {
-      // content script 可能尚未就绪，等待后重试一次
-      await waitForTabComplete(tabId, 5000);
-      resp = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_TEXT', maxLength: 12000 });
+      // 通道未就绪（常见于扩展安装/更新前打开的旧 tab，content script 未注入）
     }
-    if (resp && resp.success && resp.data) {
-      const d = resp.data;
-      return `[网页上下文]\n标题: ${d.title || ''}\nURL: ${d.url || ''}\n内容:\n${d.content || ''}`;
-    }
-  } catch { /* 提取失败降级为仅 URL */ }
-  return '';
+    await sleep(400);
+  }
+  // 2. 通道不可用时，用 scripting API 直接注入提取函数读 DOM 兜底
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: injectedPageText,
+      args: [12000],
+    });
+    const r = results && results[0] && results[0].result;
+    if (r && r.success && r.data) return { text: formatPageContext(r.data), title: r.data.title || '' };
+  } catch (e) {
+    // chrome:// 等受限页面无法注入，降级为仅 URL
+    logger.warn('[Scheduler] scripting fallback failed:', e);
+  }
+  return { text: '', title: '' };
 }
 
 /**
  * 提取指定网页的上下文：优先复用已打开 tab，否则新建并读取后关闭
- * @returns {Promise<{text: string, tabId: number|null, createdTabId: number|null}>}
+ * @returns {Promise<{text: string, title: string, tabId: number|null, createdTabId: number|null}>}
  */
 async function extractPageContext(url) {
   let tabId = null;
   let createdTabId = null;
   let text = '';
+  let title = '';
   try {
     let target = null;
     try {
@@ -334,7 +368,9 @@ async function extractPageContext(url) {
     }
 
     if (tabId) {
-      text = await readPageText(tabId);
+      const r = await readPageText(tabId);
+      text = r.text;
+      title = r.title;
     }
     if (!text) {
       text = `[网页上下文]\nURL: ${url}\n`;
@@ -343,7 +379,7 @@ async function extractPageContext(url) {
     text = `[网页上下文]\nURL: ${url}\n`;
     logger.warn('[Scheduler] extractPageContext failed:', e);
   }
-  return { text, tabId, createdTabId };
+  return { text, title, tabId, createdTabId };
 }
 
 /**
@@ -389,14 +425,17 @@ export async function runTask(taskId, force = false) {
     // 3. 网页上下文（可选）
     let pageContext = '';
     let tabId = null;
+    let pageMeta = null;
     if (task.contextUrl) {
       if (task.contextMode === 'url_only') {
         pageContext = `[网页上下文]\nURL: ${task.contextUrl}\n`;
+        pageMeta = { url: task.contextUrl, title: '' };
       } else {
         const pc = await extractPageContext(task.contextUrl);
         pageContext = pc.text;
         tabId = pc.tabId;
         createdTabId = pc.createdTabId;
+        pageMeta = { url: task.contextUrl, title: pc.title || '' };
       }
     }
 
@@ -415,12 +454,22 @@ export async function runTask(taskId, force = false) {
       const r = await reactLoop(messages, model, tools, tabId, apiParams, hostSession.id, null, null, { value: 0 }, [], callId);
       result = { content: r.content !== undefined ? r.content : r, executionLog: r.executionLog || [] };
     } else {
+      // callApiNonStream 不返回 executionLog，token 用量在顶层 r.usage，
+      // 需包装成 api_call 日志节点，否则结果底部不显示 token 消耗
       const r = await callApiNonStream(messages, model, apiParams, hostSession.id, {}, callId);
-      result = { content: r.content !== undefined ? r.content : r, executionLog: r.executionLog || [] };
+      const executionLog = r.usage ? [{
+        id: 'st_api_' + Date.now().toString(36),
+        iteration: 1,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        nodeType: 'api_call',
+        apiResponse: { tokenUsage: r.usage },
+      }] : [];
+      result = { content: r.content !== undefined ? r.content : r, executionLog };
     }
 
     const content = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-    await appendRunMessages(hostSession.id, task, messages[1].content, content, result.executionLog);
+    await appendRunMessages(hostSession.id, task, content, result.executionLog, pageMeta);
     task = { ...task, lastStatus: 'success', lastError: null, lastRunAt: Date.now() };
     ok = true;
     logger.debug('[Scheduler] task completed:', taskId);
@@ -483,11 +532,20 @@ function buildUserContent(task, pageContext) {
   return content;
 }
 
-async function appendRunMessages(sessionId, task, userContent, content, executionLog) {
-  // 会话里记录的用户消息与真实发给模型的内容保持一致，便于回溯
+async function appendRunMessages(sessionId, task, content, executionLog, pageMeta) {
+  // 展示用用户消息只含任务指令；网页正文仅在本次模型调用的 messages 中传给模型，不铺进对话。
+  // 网页以「引用」气泡（contextBubbles: page）呈现在问题上方，与手动选择网页的效果一致。
   // 用户消息记录真实执行时刻，供对话面板展示发问时间戳
   const runTimestamp = new Date().toISOString();
-  await appendMessageToSession(sessionId, { role: 'user', content: userContent, timestamp: runTimestamp });
+  const userMessage = {
+    role: 'user',
+    content: buildUserContent(task, ''),
+    timestamp: runTimestamp,
+  };
+  if (pageMeta && pageMeta.url) {
+    userMessage.contextBubbles = [{ type: 'page', title: pageMeta.title || pageMeta.url, url: pageMeta.url }];
+  }
+  await appendMessageToSession(sessionId, userMessage);
   await appendMessageToSession(sessionId, { role: 'assistant', content, executionLog: executionLog || [], timestamp: runTimestamp });
 }
 

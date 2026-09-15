@@ -276,6 +276,7 @@ export async function appendMessageToSession(sessionId, message) {
     htmlContent: message.htmlContent || undefined,
     messageId: message.messageId || undefined,
     timestamp: message.timestamp || undefined,
+    contextBubbles: message.contextBubbles || undefined,
   });
 
   session.updatedAt = new Date().toISOString();
