@@ -182,11 +182,11 @@ export function initSchedulePanel() {
   container.id = 'schedulePanelContainer';
   container.innerHTML = `
     <style>
-      .schedule-panel-container { position: fixed; right: 0; top: calc(50% + 200px); transform: translateY(-50%); z-index: 10002; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 280px; background: transparent; }
+      .schedule-panel-container { position: fixed; right: 0; top: calc(50% + 160px); transform: translateY(-50%); z-index: 10002; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 280px; background: transparent; }
       .schedule-panel-toggle { position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: linear-gradient(135deg, rgba(39, 174, 96, 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: white; border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
       .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(39, 174, 96, 0.4); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
-      .schedule-panel { position: absolute; right: 26px; bottom: 0; width: 360px; max-height: 70vh; background: rgba(255,255,255,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; }
+      .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(255,255,255,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; }
       .schedule-panel.open { display: flex; }
       .schedule-panel-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #eee; flex-shrink: 0; }
       .schedule-panel-header .title { font-weight: 600; font-size: 14px; flex: 1; }

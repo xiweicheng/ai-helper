@@ -2607,22 +2607,71 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 消息跳转按钮展开/收起：默认收起为左侧窄条，鼠标移入展开
   const chatNavHotzone = document.getElementById('chatNavHotzone');
   const chatNavButtons = document.getElementById('chatNavButtons');
+  const chatNavQuestionPanel = document.getElementById('chatNavQuestionPanel');
+
+  // 构建用户问题列表：悬停热区时右侧展开，点击条目快速定位到对应问题
+  function buildQuestionList() {
+    if (!chatNavQuestionPanel) return false;
+    const userMessages = document.querySelectorAll('#chatContainer .message.user');
+    if (userMessages.length === 0) {
+      chatNavQuestionPanel.innerHTML = '';
+      return false;
+    }
+    const items = Array.from(userMessages).map((msg, index) => {
+      // 仅取直接文本节点，排除图片/文件等子元素
+      const text = Array.from(msg.childNodes)
+        .filter(n => n.nodeType === Node.TEXT_NODE)
+        .map(n => n.textContent)
+        .join('')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const displayText = text || t('chat.navQuestionNoText');
+      const truncated = displayText.length > 40 ? displayText.substring(0, 40) + '…' : displayText;
+      return `<button class="chat-nav-question-item" data-index="${index}" title="${escapeHtml(displayText)}"><span class="idx">${index + 1}</span>${escapeHtml(truncated)}</button>`;
+    }).join('');
+    chatNavQuestionPanel.innerHTML = `<div class="chat-nav-question-header"><span>${t('chat.navQuestionTitle')}</span><span class="count">${userMessages.length}</span></div>${items}`;
+
+    chatNavQuestionPanel.querySelectorAll('.chat-nav-question-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = userMessages[parseInt(btn.dataset.index, 10)];
+        if (target) {
+          target.scrollIntoView({ behavior: 'instant', block: 'start' });
+          target.classList.add('bookmark-highlight');
+          setTimeout(() => target.classList.remove('bookmark-highlight'), 2000);
+        }
+      });
+    });
+    return true;
+  }
+
   if (chatNavHotzone && chatNavButtons) {
     let navHideTimer = null;
     const showChatNav = () => {
       clearTimeout(navHideTimer);
       chatNavButtons.classList.add('expanded');
+      if (chatNavQuestionPanel) {
+        if (buildQuestionList()) {
+          chatNavQuestionPanel.classList.add('expanded');
+        } else {
+          chatNavQuestionPanel.classList.remove('expanded');
+        }
+      }
     };
     const hideChatNav = () => {
       clearTimeout(navHideTimer);
       navHideTimer = setTimeout(() => {
         chatNavButtons.classList.remove('expanded');
+        if (chatNavQuestionPanel) chatNavQuestionPanel.classList.remove('expanded');
       }, 200);
     };
     chatNavHotzone.addEventListener('mouseenter', showChatNav);
     chatNavHotzone.addEventListener('mouseleave', hideChatNav);
     chatNavButtons.addEventListener('mouseenter', showChatNav);
     chatNavButtons.addEventListener('mouseleave', hideChatNav);
+    if (chatNavQuestionPanel) {
+      chatNavQuestionPanel.addEventListener('mouseenter', showChatNav);
+      chatNavQuestionPanel.addEventListener('mouseleave', hideChatNav);
+    }
   }
 
   // 全局键盘快捷键

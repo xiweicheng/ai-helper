@@ -193,6 +193,9 @@ export default {
     quotedPrefix: '💬 Quoted: {text}',
     navPrevTitle: 'Previous message (Alt+↑), Ctrl/Cmd+click to go to top',
     navNextTitle: 'Next message (Alt+↓), Ctrl/Cmd+click to go to bottom',
+    navQuestionTitle: 'Questions',
+    navEmptyLabel: 'No questions',
+    navQuestionNoText: '(image/attachment message)',
   },
 
   // Tool panel

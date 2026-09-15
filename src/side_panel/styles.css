@@ -4050,6 +4050,85 @@ body {
 .chat-nav-btn:hover svg {
   color: #667eea;
 }
+/* ========== 用户问题列表（悬停消息跳转热区时右侧展开，半透明） ========== */
+.chat-nav-question-panel {
+  position: fixed;
+  left: 48px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-8px);
+  width: 280px;
+  max-width: calc(100vw - 64px);
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 8px;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
+  z-index: 39;
+}
+.chat-nav-question-panel.expanded {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+.chat-nav-question-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  margin-bottom: 6px;
+}
+.chat-nav-question-header .count {
+  margin-left: auto;
+  font-weight: normal;
+  color: #999;
+}
+.chat-nav-question-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.chat-nav-question-item:hover {
+  background: rgba(102, 126, 234, 0.14);
+  color: #4c5bd4;
+}
+.chat-nav-question-item .idx {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 11px;
+  color: #999;
+}
+.chat-nav-question-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: #aaa;
+  text-align: center;
+}
 /* 新内容指示器（小蓝点 badge） */
 .scroll-to-bottom-badge {
   position: absolute;
