@@ -2505,6 +2505,10 @@ body {
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
+  /* scrollIntoView({block:'start'}) 在带 padding 的滚动容器中可能对齐到 border edge，
+     导致消息顶部贴着容器顶部、视觉上像被遮挡。预留略大于 padding-top(11px) 的空间，
+     确保 AI 回答定位到顶部时上方有正常留白。 */
+  scroll-margin-top: 12px;
   word-wrap: break-word;
   animation: messageFadeIn 0.3s ease-out;
 }
