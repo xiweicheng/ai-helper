@@ -432,14 +432,28 @@ function applyNodeFilter(processHistory, filter) {
   processHistory.querySelectorAll('.thinking-process-stat[data-filter]').forEach(s => {
     s.classList.toggle('active', s.dataset.filter === filter);
   });
+  const matchFilter = (status) => filter === 'all' || status === filter;
   // 筛选 tool-call-item（preselect-card 始终保留，非工具节点不参与筛选）
   processContent.querySelectorAll('.tool-call-item').forEach(item => {
     if (item.classList.contains('preselect-card')) return;
-    if (filter === 'all') {
-      item.style.display = '';
-    } else {
-      item.style.display = (item.dataset.status === filter) ? '' : 'none';
+    item.style.display = matchFilter(item.dataset.status) ? '' : 'none';
+  });
+  // 思考结果块（badge + 跟随的思考内容）对应 api_call 节点，仅在调用成功时产生，
+  // 按 success 状态参与筛选（兼容旧缓存 HTML 无 status 标记：默认 success）
+  processContent.querySelectorAll('.thinking-badge').forEach(badge => {
+    const visible = matchFilter(badge.dataset.status || 'success');
+    badge.style.display = visible ? '' : 'none';
+    // 思考内容块与其 badge 同步显隐
+    const content = badge.nextElementSibling;
+    if (content && content.classList.contains('thinking-content')) {
+      content.style.display = visible ? '' : 'none';
     }
+  });
+  // 无 badge 跟随的孤立思考内容（历史数据）同样按 success 节点筛选
+  processContent.querySelectorAll('.thinking-content').forEach(content => {
+    const prev = content.previousElementSibling;
+    if (prev && prev.classList.contains('thinking-badge')) return;
+    content.style.display = matchFilter('success') ? '' : 'none';
   });
 }
 
@@ -725,6 +739,7 @@ export function reconnectStreamingElement(sessionId) {
       const prevSibling = indicator.previousElementSibling;
       const badge = document.createElement('span');
       badge.className = 'thinking-badge';
+      badge.dataset.status = 'success';
       badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>' + t('chatStream.thinkingResult');
       if (prevSibling && prevSibling.classList.contains('thinking-content')) {
         parent.insertBefore(badge, prevSibling);
@@ -863,6 +878,7 @@ export function appendToolCallItems(element, toolCalls) {
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
     badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    badge.dataset.status = 'success';
 
     if (contentDiv.contains(visibleThinking)) {
       // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
@@ -1309,6 +1325,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
     badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    badge.dataset.status = 'success';
     
     if (streamContent.contains(visibleThinking)) {
       // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
