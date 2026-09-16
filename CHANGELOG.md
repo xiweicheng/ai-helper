@@ -5,7 +5,7 @@
 ## 2026-09-16
 
 ### 新增
-- **页面调试工具 `debug_page`（第 8 组「调试开发」工具）**：基于 Chrome DevTools Protocol（`chrome.debugger`）的高级页面调试能力，供大模型在常规内容脚本工具无法满足时使用，单个工具通过 `action` 参数提供 7 项能力：
+- **页面调试工具 `debug_page`（「调试开发」工具）**：基于 Chrome DevTools Protocol（`chrome.debugger`）的高级页面调试能力，供大模型在常规内容脚本工具无法满足时使用，单个工具通过 `action` 参数提供 7 项能力：
   - `attach` / `detach`：显式开启 / 关闭调试会话（attach 需用户在确认弹窗中放行）
   - `evaluate`：在页面主世界执行任意 JS，支持 await Promise，自动捕获异常并截断超长返回
   - `input`：派发原生级鼠标 / 键盘事件（点击、输入文本、组合键、滚轮），可穿透 content script 无法触发的场景
