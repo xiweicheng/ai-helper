@@ -10,6 +10,7 @@ import {
   startNetworkCapture, collectNetwork, stopNetworkCapture,
   DebuggerNotAttachedError, RestrictedPageError,
 } from './debugger/debugger-session.js';
+import { parseKeySpec } from './debugger/debugger-rules.js';
 
 registerTranslations('zh', {
   toolDebugger: {
@@ -103,27 +104,7 @@ registerTranslations('en', {
 
 const EVAL_RESULT_LIMIT = 30000;
 
-// CDP 键盘修饰符位掩码
-const KEY_MODIFIERS = { Alt: 1, Control: 2, Ctrl: 2, Meta: 4, Command: 4, Cmd: 4, Shift: 8 };
-const SPECIAL_KEYS = {
-  Enter: { keyCode: 13, code: 'Enter' },
-  Tab: { keyCode: 9, code: 'Tab' },
-  Escape: { keyCode: 27, code: 'Escape' },
-  Esc: { keyCode: 27, code: 'Escape' },
-  Backspace: { keyCode: 8, code: 'Backspace' },
-  Delete: { keyCode: 46, code: 'Delete' },
-  Space: { keyCode: 32, code: 'Space' },
-  Home: { keyCode: 36, code: 'Home' },
-  End: { keyCode: 35, code: 'End' },
-  PageUp: { keyCode: 33, code: 'PageUp' },
-  PageDown: { keyCode: 34, code: 'PageDown' },
-  ArrowLeft: { keyCode: 37, code: 'ArrowLeft' },
-  ArrowUp: { keyCode: 38, code: 'ArrowUp' },
-  ArrowRight: { keyCode: 39, code: 'ArrowRight' },
-  ArrowDown: { keyCode: 40, code: 'ArrowDown' },
-  Insert: { keyCode: 45, code: 'Insert' },
-};
-for (let i = 1; i <= 12; i++) SPECIAL_KEYS[`F${i}`] = { keyCode: 111 + i, code: `F${i}` };
+// CDP 键盘按键规格解析（修饰符位掩码 / 特殊键码表）见 debugger-rules.js#parseKeySpec
 
 async function getActiveTabId() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -211,31 +192,6 @@ async function resolveClickPoint(tabId, args) {
     return { x: args.x, y: args.y };
   }
   return { error: t('toolDebugger.clickNeedTarget') };
-}
-
-function parseKeySpec(keySpec) {
-  const parts = String(keySpec).split('+').map(s => s.trim());
-  const main = parts.pop() || '';
-  let modifiers = 0;
-  for (const m of parts) {
-    const bit = KEY_MODIFIERS[m];
-    if (!bit) return null;
-    modifiers |= bit;
-  }
-  // 特殊键
-  const special = SPECIAL_KEYS[main];
-  if (special) return { key: main === 'Esc' ? 'Escape' : main, code: special.code, keyCode: special.keyCode, modifiers };
-  // 单字符
-  if (main.length === 1) {
-    const upper = main.toUpperCase();
-    const keyCode = upper.charCodeAt(0);
-    let code;
-    if (/[A-Z]/.test(upper)) code = `Key${upper}`;
-    else if (/[0-9]/.test(upper)) code = `Digit${upper}`;
-    else code = '';
-    return { key: main, code, keyCode, modifiers };
-  }
-  return null;
 }
 
 async function handleInput(args, tabId) {
@@ -467,6 +423,12 @@ export async function executeDebugPage(args, toolCallId) {
 
   if (!action) {
     return makeResult(false, t('toolDebugger.missingAction'), { tool_call_id: toolCallId });
+  }
+
+  // action 合法性优先校验（否则未附着时未知 action 会被误导为"会话不存在"）
+  const VALID_ACTIONS = new Set(['attach', 'detach', 'evaluate', 'input', 'network', 'screenshot', 'emulate']);
+  if (!VALID_ACTIONS.has(action)) {
+    return makeResult(false, t('toolDebugger.unknownAction', { action }), { tool_call_id: toolCallId });
   }
 
   // detach 允许在会话已失效时静默兜底，其余动作需要有效 tab

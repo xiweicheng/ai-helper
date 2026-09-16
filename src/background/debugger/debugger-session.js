@@ -9,20 +9,15 @@
 // 6. MV3 保活：有活动会话期间用 alarms 唤醒 SW，降低休眠导致会话丢失的概率
 
 import { logger } from '../../shared/logger.js';
+import {
+  isRestrictedUrl, truncate, serializeNetworkEntry as serializeEntry, decodeBase64Utf8,
+} from './debugger-rules.js';
 
 const DEBUGGER_VERSION = '1.3';
 const IDLE_DETACH_MS = 120000;        // 空闲 120s 自动脱离
 const KEEPALIVE_ALARM = 'debugger-keepalive';
 const MAX_NET_ENTRIES = 100;          // 每个会话最多缓存的网络条目
 const MAX_BODY_LENGTH = 20 * 1024;    // 单个响应体最多保留 20KB
-
-// 不可附着的页面前缀
-const RESTRICTED_PREFIXES = [
-  'chrome://', 'chrome-extension://', 'chrome-search://',
-  'edge://', 'about:', 'chrome-error://', 'view-source:',
-  'devtools://', 'https://chrome.google.com',
-  'https://chromewebstore.google.com',
-];
 
 // tabId -> SessionRecord
 // {
@@ -56,13 +51,7 @@ function getSession(tabId) {
   return sessions.get(tabId) || null;
 }
 
-/**
- * 判断 URL 是否为不可调试的受限页面
- */
-export function isRestrictedUrl(url) {
-  if (!url) return true;
-  return RESTRICTED_PREFIXES.some(prefix => url.startsWith(prefix));
-}
+export { isRestrictedUrl };
 
 /**
  * Promise 化的 chrome.debugger.sendCommand
@@ -357,30 +346,4 @@ export function stopNetworkCapture(tabId) {
   session.network = { recording: false, filter: '', entries: [], reqMap: new Map() };
   bumpIdleTimer(tabId);
   return entries;
-}
-
-function serializeEntry(e) {
-  return {
-    url: e.url,
-    method: e.method,
-    resourceType: e.resourceType,
-    status: e.status,
-    mimeType: e.mimeType,
-    postData: e.postData,
-    body: e.body,
-    bodyTruncated: e.bodyTruncated,
-  };
-}
-
-// ───────────────────────── 工具函数 ─────────────────────────
-
-function truncate(str, max) {
-  if (typeof str !== 'string' || str.length <= max) return str;
-  return str.slice(0, max) + `...[truncated ${str.length - max} chars]`;
-}
-
-function decodeBase64Utf8(base64) {
-  const binary = atob(base64);
-  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-  return new TextDecoder('utf-8').decode(bytes);
 }
