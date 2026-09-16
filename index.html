@@ -16,11 +16,12 @@
   })();
 </script>
 <title data-i18n="page-title">AI Helper — Make Your Browser Think</title>
-<meta name="description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
+<meta name="description" id="meta-description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
 <meta name="keywords" content="AI Helper, Browser Assistant, Chrome Extension, LLM, ReAct, Multi-Agent, Skill, MCP, Automation, Open Source">
 <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB1klEQVQ4jaWSS0sbcRTFZz0zmVdmkjBqfMRYzaujY4xGm6RqoyaShRu3ui0UpaALRQUfKD6QgG6FfpripzrlXE1KWpFCF2e4nPM7d15/RVVddGToPhxzBK6VhmePI+ZkRJzpMYvofpenlG45wnIKnv0BiWgOvvsRfV4g4kyPGRmyPQt0PQHbGIZrjyERzaPPm0QyXkQ22RJxpseMDFl2ugtMox+OOYq4k4HvBUj5n1HL72Gj1BZxpseMDFl2ZIGmxWAZSbjWmDxumNnC6vwt1itttCoPaFUfZKbHjAxZdthVdC0O2xiUjzQzs4ulxWssL91h5UsbjfqjiDM9ZmTIssOuwgu3Ra00woXvWFi9RGXtFrXGPRabbRFneszIkGVHFmhaDGaE3yCFwqcdlNYuMNe8wnzzBtkfzyLO9JiRIcuOvIKquvJvLWMIudlvmF4+RbF+jlL9EpmnnyLO9JiRIds5DwovnaeYCL8iqJxgqnqKsHqGsHb+ouqZeMzIdO7ec5B0LYF0YRv5uUMUykcIyscIyievOhaPGRmyf51EVU5jPwaGG8iG+8gVD3pEjxmZN4+y2pUHy0xjaHQTE8GeiDM9Zn/ybyz4LSeaE73HvLvgX/TfC34BQ3B2TrlPmzgAAAAASUVORK5CYII=">
 <style>
   :root, [data-theme="dark"] {
+    color-scheme: dark;
     --bg: #09090b;
     --bg-card: #12121a;
     --bg-card-hover: #1a1a28;
@@ -52,6 +53,7 @@
   }
 
   [data-theme="light"] {
+    color-scheme: light;
     --bg: #f7f7fa;
     --bg-card: #ffffff;
     --bg-card-hover: #f1f5f9;
@@ -162,6 +164,7 @@
     color: var(--text-muted); text-decoration: none; font-size: 14px;
     transition: color .2s;
     padding: 8px 2px; position: relative;
+    white-space: nowrap;
   }
   .nav-links a:not(.nav-cta):hover { color: var(--text); }
   .nav-links a:not(.nav-cta)::after {
@@ -199,7 +202,7 @@
   }
   .lang-toggle:hover { border-color: var(--accent); }
   .lang-option {
-    padding: 4px 10px; border-radius: 16px;
+    padding: 6px 10px; border-radius: 16px;
     font-size: 12px; font-weight: 600; color: var(--text-muted);
     transition: all .25s; position: relative; z-index: 1;
     line-height: 1;
@@ -219,7 +222,7 @@
   }
   .theme-toggle:hover { border-color: var(--accent); }
   .theme-option {
-    padding: 4px 9px; border-radius: 16px;
+    padding: 6px 9px; border-radius: 16px;
     font-size: 13px; line-height: 1;
     color: var(--text-muted);
     transition: all .25s; position: relative; z-index: 1;
@@ -415,6 +418,8 @@
     color: #fff;
     opacity: 0.6;
     transition: opacity .2s;
+    background: none; border: 0; padding: 0;
+    cursor: pointer; line-height: 1;
   }
   .lightbox-close:hover { opacity: 1; }
   .lightbox-arrow {
@@ -662,7 +667,10 @@
     color: var(--text-muted); font-size: 13px;
     border-top: 1px solid var(--border);
   }
-  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a {
+    color: var(--accent); text-decoration: none;
+    padding: 6px 0; display: inline-block;
+  }
   .footer a:hover { text-decoration: underline; }
 
   /* ─── 响应式 ─── */
@@ -782,6 +790,12 @@
     font-weight: 500;
   }
 
+  /* 中等屏（平板横屏、笔记本分屏、非最大化浏览器）：折叠导航文字链接，避免竖排/溢出 */
+  @media (max-width: 1024px) {
+    .nav-links a:not(.nav-cta) { display: none; }
+    .nav-links { gap: 16px; }
+  }
+
   @media (max-width: 768px) {
     .hero { padding: 120px 20px 60px; }
     .hero h1 { font-size: 36px; }
@@ -793,7 +807,6 @@
     }
     .arch-box { width: 100%; max-width: 300px; flex: none; }
     .arch-arrow { transform: rotate(90deg); }
-    .nav-links a:not(.nav-cta) { display: none; }
     .compare-grid { grid-template-columns: 1fr; }
 
     /* ─── 移动端导航紧凑化 ─── */
@@ -1196,7 +1209,7 @@
     <div class="tool-cat">
       <div class="cat-icon">🔧</div>
       <div class="cat-name" data-i18n="tool-debug">Debugging &amp; Dev</div>
-      <div class="cat-count">3</div>
+      <div class="cat-count">4</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">🤖</div>
@@ -1315,18 +1328,18 @@
 </section>
 
 <!-- 灯箱 -->
-<div class="lightbox" id="lightbox">
-  <span class="lightbox-close">&times;</span>
-  <span class="lightbox-arrow prev" id="lb-prev">&#8249;</span>
-  <span class="lightbox-arrow next" id="lb-next">&#8250;</span>
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="截图预览" aria-hidden="true">
+  <button type="button" class="lightbox-close" aria-label="关闭">&times;</button>
+  <span class="lightbox-arrow prev" id="lb-prev" role="button" tabindex="0" aria-label="上一张">&#8249;</span>
+  <span class="lightbox-arrow next" id="lb-next" role="button" tabindex="0" aria-label="下一张">&#8250;</span>
   <div class="lightbox-zoombar" id="lb-zoombar">
-    <button id="lb-zoom-out" title="缩小">−</button>
+    <button id="lb-zoom-out" title="缩小" aria-label="缩小">−</button>
     <span class="zoom-label" id="lb-zoom-label" data-i18n="lb-fit">Fit</span>
-    <button id="lb-zoom-in" title="放大">+</button>
-    <button id="lb-zoom-reset" title="重置" style="font-size:14px">↺</button>
+    <button id="lb-zoom-in" title="放大" aria-label="放大">+</button>
+    <button id="lb-zoom-reset" title="重置" aria-label="重置缩放" style="font-size:14px">↺</button>
   </div>
   <div class="lb-img-wrap" id="lb-img-wrap">
-    <img src="" alt="" id="lightbox-img">
+    <img alt="" id="lightbox-img">
   </div>
   <div class="lightbox-caption" id="lb-caption"></div>
   <div class="lightbox-counter" id="lb-counter"></div>
@@ -1457,9 +1470,15 @@
     <h2 data-i18n="contact-title">Contact &amp; Support</h2>
     <p data-i18n="contact-desc">Welcome feedback, suggestions, or business collaboration</p>
   </div>
-  <div style="display: inline-flex; align-items: center; gap: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 28px;">
-    <span style="font-size: 24px;">📧</span>
-    <a href="mailto:xiwc87@yeah.net" style="color: var(--accent); text-decoration: none; font-size: 18px; font-weight: 600;">xiwc87@yeah.net</a>
+  <div style="display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 16px;">
+    <div style="display: inline-flex; align-items: center; gap: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 28px;">
+      <span style="font-size: 24px;">📧</span>
+      <a href="mailto:xiwc87@yeah.net" style="color: var(--accent); text-decoration: none; font-size: 18px; font-weight: 600;">xiwc87@yeah.net</a>
+    </div>
+    <div style="display: inline-flex; align-items: center; gap: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 28px;">
+      <span style="font-size: 24px;">💬</span>
+      <a href="https://discord.gg/VPcqMBFGa" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 18px; font-weight: 600;" data-i18n="contact-discord">Join Discord Community</a>
+    </div>
   </div>
 </div>
 
@@ -1480,6 +1499,7 @@
   var lbCounter = document.getElementById('lb-counter');
   var lbZoomLabel = document.getElementById('lb-zoom-label');
   var currentIdx = -1;
+  var lastFocused = null;
   var zoomLevel = 0; // 0=fit, then % of natural size: 100, 150, 200, 300
   var zoomSteps = [0, 100, 150, 200, 300];
 
@@ -1530,32 +1550,59 @@
 
   function showImage(idx) {
     if (idx < 0 || idx >= images.length) return;
+    // 首次打开时记录触发元素，关闭后归还焦点
+    if (currentIdx === -1) {
+      lastFocused = document.activeElement;
+    }
     currentIdx = idx;
     lbImg.src = images[idx].src;
     lbImg.alt = images[idx].alt;
     lbCaption.textContent = captions[idx];
     lbCounter.textContent = (idx + 1) + ' / ' + images.length;
     lb.classList.add('active');
+    lb.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
     zoomLevel = 0;
     applyZoom();
+    // 焦点移入弹层，供键盘用户直接操作
+    var closeBtn = lb.querySelector('.lightbox-close');
+    if (closeBtn) closeBtn.focus();
   }
 
   function closeLightbox() {
     lb.classList.remove('active');
+    lb.setAttribute('aria-hidden', 'true');
     document.body.style.overflow = '';
     currentIdx = -1;
     zoomLevel = 0;
     applyZoom();
+    // 焦点归还触发卡片
+    if (lastFocused && typeof lastFocused.focus === 'function') {
+      lastFocused.focus();
+    }
+    lastFocused = null;
   }
 
   function showPrev() { if (currentIdx > 0) showImage(currentIdx - 1); }
   function showNext() { if (currentIdx < images.length - 1) showImage(currentIdx + 1); }
 
   cards.forEach(function(card, i) {
+    // 使卡片可键盘聚焦，保障 P2 焦点归还实际生效
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    if (!card.getAttribute('aria-label')) {
+      card.setAttribute('aria-label', captions[i] || ('截图 ' + (i + 1)));
+    }
     card.addEventListener('click', function(e) {
       e.stopPropagation();
       showImage(i);
+    });
+    card.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        showImage(i);
+      }
     });
   });
 
@@ -1633,6 +1680,30 @@
       case '+': case '=': e.preventDefault(); zoomIn(); break;
       case '-':           e.preventDefault(); zoomOut(); break;
       case '0':           e.preventDefault(); resetZoom(); break;
+      case 'Tab': {
+        // 焦点陷阱：Tab 循环限制在灯箱内可聚焦元素
+        var focusables = lb.querySelectorAll('button, [tabindex="0"]');
+        if (!focusables.length) return;
+        var list = Array.prototype.filter.call(focusables, function(el) {
+          return el.offsetParent !== null || el === document.activeElement;
+        });
+        if (!list.length) return;
+        var first = list[0];
+        var last = list[list.length - 1];
+        var active = document.activeElement;
+        if (e.shiftKey) {
+          if (active === first || !lb.contains(active)) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (active === last || !lb.contains(active)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+        break;
+      }
     }
   });
 })();
@@ -1802,7 +1873,9 @@
     'cta-docs':         { en: 'View Docs', zh: '查看文档' },
     'cta-edge':         { en: 'Install for Edge', zh: 'Edge 安装' },
     'contact-title':    { en: 'Contact & Support', zh: '合作与支持' },
-    'contact-desc':     { en: 'Welcome feedback, suggestions, or business collaboration', zh: '欢迎反馈、建议或商务合作' }
+    'contact-desc':     { en: 'Welcome feedback, suggestions, or business collaboration', zh: '欢迎反馈、建议或商务合作' },
+    'contact-discord':  { en: 'Join Discord Community', zh: '加入 Discord 讨论组' },
+    'meta-description': { en: 'AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.', zh: 'AI Helper 是一款开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、40+ 内置工具、长期记忆系统、多智能体协作、任务断点恢复、Skill 系统、MCP 协议扩展、工作目录管理、消息搜索与书签、文件回收站，基于 ReAct 推理循环架构。' }
   };
 
   function getUrlLang() {
@@ -1840,6 +1913,13 @@
 
     // Update page title
     document.title = translations['page-title'][lang];
+
+    // Sync <html lang> and meta description with current language (P3)
+    document.documentElement.lang = (lang === 'zh') ? 'zh-CN' : 'en';
+    var metaDesc = document.getElementById('meta-description');
+    if (metaDesc && translations['meta-description']) {
+      metaDesc.setAttribute('content', translations['meta-description'][lang]);
+    }
 
     // Update lightbox zoom label (dynamic element)
     var lbZoomLabel = document.getElementById('lb-zoom-label');
