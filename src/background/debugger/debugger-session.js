@@ -11,6 +11,7 @@
 import { logger } from '../../shared/logger.js';
 import {
   isRestrictedUrl, truncate, serializeNetworkEntry as serializeEntry, decodeBase64Utf8,
+  shouldFetchBody,
 } from './debugger-rules.js';
 
 const DEBUGGER_VERSION = '1.3';
@@ -23,7 +24,12 @@ const MAX_BODY_LENGTH = 20 * 1024;    // 单个响应体最多保留 20KB
 // {
 //   attached: boolean,
 //   idleTimer: number|null,
-//   network: { recording: boolean, filter: string, entries: Array, reqMap: Map },
+//   network: {
+//     recording: boolean,
+//     filter: string,
+//     entries: Array,          // 有序数组（保留时序 / 方便 drain）
+//     reqMap: Map<requestId, entry>, // O(1) 索引，与 entries 保持同步
+//   },
 // }
 const sessions = new Map();
 
@@ -117,8 +123,7 @@ function onDebuggerEvent(source, method, params) {
   if (method === 'Network.requestWillBeSent') {
     const req = params.request || {};
     if (net.filter && !String(req.url || '').includes(net.filter)) return;
-    net.reqMap.set(params.requestId, params.requestId);
-    net.entries.push({
+    const entry = {
       requestId: params.requestId,
       url: req.url || '',
       method: req.method || '',
@@ -131,7 +136,9 @@ function onDebuggerEvent(source, method, params) {
       body: null,
       bodyTruncated: false,
       startedAt: params.timestamp || null,
-    });
+    };
+    net.entries.push(entry);
+    net.reqMap.set(params.requestId, entry);
     if (net.entries.length > MAX_NET_ENTRIES) {
       const removed = net.entries.shift();
       if (removed) net.reqMap.delete(removed.requestId);
@@ -140,7 +147,7 @@ function onDebuggerEvent(source, method, params) {
   }
 
   if (method === 'Network.responseReceived') {
-    const entry = net.entries.find(e => e.requestId === params.requestId);
+    const entry = net.reqMap.get(params.requestId);
     if (!entry) return;
     const resp = params.response || {};
     entry.status = resp.status ?? null;
@@ -150,8 +157,10 @@ function onDebuggerEvent(source, method, params) {
   }
 
   if (method === 'Network.loadingFinished') {
-    const entry = net.entries.find(e => e.requestId === params.requestId);
+    const entry = net.reqMap.get(params.requestId);
     if (!entry) return;
+    // 二进制资源（图片/字体/媒体）直接跳过：拉回也没意义，只会白耗 SW 内存与 CDP 往返。
+    if (!shouldFetchBody(entry)) return;
     // 异步拉取响应体（失败属正常情况：来自缓存 / 重定向 / 数据流等均可能拿不到）
     sendCommand(tabId, 'Network.getResponseBody', { requestId: params.requestId })
       .then((res) => {
@@ -237,6 +246,28 @@ export async function attach(tabId) {
         resolve();
       }
     });
+  }).catch(async (err) => {
+    // SW 重启后会丢失内存中的 sessions Map，但 chrome.debugger 的附着可能仍然存在（"孤儿附着"）：
+    // 此时 attach 会报 "Another debugger is already attached"。先强制 detach 后重试一次，
+    // 给用户/模型一条自愈路径，否则只能手动关标签页。
+    const msg = String(err?.message || '');
+    if (!/already attached/i.test(msg)) throw err;
+    logger.debug(`[Debugger] stale attach detected on tab ${tabId}, forcing detach + retry`);
+    await new Promise((resolve) => {
+      chrome.debugger.detach({ tabId }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    });
+    await new Promise((resolve, reject) => {
+      chrome.debugger.attach({ tabId }, DEBUGGER_VERSION, () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else {
+          resolve();
+        }
+      });
+    });
   });
 
   sessions.set(tabId, {
@@ -269,19 +300,27 @@ export async function attach(tabId) {
  */
 export async function detach(tabId, reason = 'manual') {
   const session = getSession(tabId);
+  const hadSession = !!session;
   if (session) {
     clearIdleTimer(session);
     session.attached = false;
     session.network.recording = false;
     sessions.delete(tabId);
   }
-  // 还原模拟覆盖（失败不影响 detach）
-  await Promise.allSettled([
-    sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride'),
-    sendCommand(tabId, 'Emulation.clearGeolocationOverride'),
-    sendCommand(tabId, 'Network.setUserAgentOverride', { userAgent: '' }),
-    sendCommand(tabId, 'Emulation.setTimezoneOverride', { timezoneId: '' }),
-  ]);
+  // 仅在确实附着过时才下发还原命令，否则未附着 detach 会白发 6 条必然失败的 CDP
+  // （每条都会触发 chrome.runtime.lastError，虽然被 allSettled 吞掉但仍是无意义开销）
+  if (hadSession) {
+    // 与 tool-debugger.js 中 emulate reset 保持同步：需同时清 6 项覆盖，
+    // 否则 colorScheme 强制深色 / 触摸模拟等可能泄漏到 detach 之后。
+    await Promise.allSettled([
+      sendCommand(tabId, 'Emulation.clearDeviceMetricsOverride'),
+      sendCommand(tabId, 'Emulation.clearGeolocationOverride'),
+      sendCommand(tabId, 'Network.setUserAgentOverride', { userAgent: '' }),
+      sendCommand(tabId, 'Emulation.setTimezoneOverride', { timezoneId: '' }),
+      sendCommand(tabId, 'Emulation.setEmulatedMedia', { features: [] }),
+      sendCommand(tabId, 'Emulation.setTouchEmulationEnabled', { enabled: false }),
+    ]);
+  }
   await new Promise((resolve) => {
     chrome.debugger.detach({ tabId }, () => {
       void chrome.runtime.lastError; // 未附着等错误吞掉
@@ -294,6 +333,21 @@ export async function detach(tabId, reason = 'manual') {
 
 export function isAttached(tabId) {
   return !!getSession(tabId)?.attached;
+}
+
+/**
+ * 返回当前处于 attached 状态的 tabId 列表。
+ * 用于 tool-debugger 在缺省 tabId 时做"漂移兜底"：
+ * 当活动标签页并非已附着的那个时，若全局仅有一个已附着会话，则优先复用它，
+ * 避免用户切换标签页后 detach / evaluate 等动作打到错误的 tab。
+ * @returns {number[]}
+ */
+export function getAttachedTabIds() {
+  const ids = [];
+  for (const [tabId, session] of sessions.entries()) {
+    if (session?.attached) ids.push(tabId);
+  }
+  return ids;
 }
 
 /**
@@ -322,7 +376,10 @@ export async function cdp(tabId, method, params = {}) {
 export function startNetworkCapture(tabId, filter = '') {
   const session = getSession(tabId);
   if (!session?.attached) throw new DebuggerNotAttachedError();
-  session.network = { recording: true, filter: filter || '', entries: [], reqMap: new Map() };
+  // 重复 start 时保留已有 entries / reqMap，仅更新 filter 与 recording 标志。
+  // 避免模型不小心二次调用导致已录制的缓冲被静默丢弃；如需清空请先 collect 或 stop。
+  session.network.recording = true;
+  session.network.filter = filter || '';
   bumpIdleTimer(tabId);
 }
 

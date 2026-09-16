@@ -3,6 +3,7 @@
 import { describe, test, expect } from 'vitest';
 import {
   RESTRICTED_PREFIXES,
+  RESTRICTED_HOSTS,
   isRestrictedUrl,
   KEY_MODIFIERS,
   SPECIAL_KEYS,
@@ -10,6 +11,9 @@ import {
   truncate,
   serializeNetworkEntry,
   decodeBase64Utf8,
+  shouldFetchBody,
+  SKIP_BODY_RESOURCE_TYPES,
+  TEXT_BODY_MIME_PREFIXES,
 } from '../../src/background/debugger/debugger-rules.js';
 
 describe('isRestrictedUrl 受限页面判定', () => {
@@ -53,6 +57,33 @@ describe('isRestrictedUrl 受限页面判定', () => {
   test('RESTRICTED_PREFIXES 为非空字符串数组且无重复', () => {
     expect(RESTRICTED_PREFIXES.length).toBeGreaterThan(0);
     expect(new Set(RESTRICTED_PREFIXES).size).toBe(RESTRICTED_PREFIXES.length);
+  });
+
+  test('RESTRICTED_HOSTS 包含新旧两个商店域名', () => {
+    expect(RESTRICTED_HOSTS).toEqual(expect.arrayContaining([
+      'chrome.google.com', 'chromewebstore.google.com',
+    ]));
+  });
+
+  test.each([
+    'https://chrome.google.com/webstore',
+    'https://chrome.google.com/',
+    'https://chrome.google.com',
+    'https://chrome.google.com?foo=1',
+    'https://chrome.google.com#bar',
+    'https://chrome.google.com:443/webstore',
+    'https://chromewebstore.google.com/category/extensions',
+  ])('主机边界匹配：%s 仍被识别为受限', (url) => {
+    expect(isRestrictedUrl(url)).toBe(true);
+  });
+
+  test.each([
+    // 前缀相似但主机不同的阴黟域名不应被误拦
+    'https://chrome.google.com.evil.com/phish',
+    'https://chromewebstore.google.com.attacker.io/x',
+    'https://chrome.google.commercial.example/',
+  ])('主机边界匹配：形似但实际不同的域名 %s 不被误拦', (url) => {
+    expect(isRestrictedUrl(url)).toBe(false);
   });
 });
 
@@ -179,7 +210,7 @@ describe('truncate 字符串截断', () => {
 });
 
 describe('serializeNetworkEntry 网络条目序列化', () => {
-  test('只保留对外字段，剥离 requestId/startedAt/requestHeaders 等内部字段', () => {
+  test('保留 headers 与 startedAt（对调试场景有直接价值），仅剥离内部 requestId', () => {
     const out = serializeNetworkEntry({
       requestId: '1234',
       url: 'https://api.example.com/v1/data',
@@ -200,22 +231,60 @@ describe('serializeNetworkEntry 网络条目序列化', () => {
       resourceType: 'fetch',
       status: 200,
       mimeType: 'application/json',
+      requestHeaders: { Authorization: 'Bearer x' },
+      responseHeaders: { 'content-type': 'application/json' },
       postData: '{"a":1}',
       body: '{"ok":true}',
       bodyTruncated: false,
+      startedAt: 12345.6,
     });
     expect(out).not.toHaveProperty('requestId');
-    expect(out).not.toHaveProperty('requestHeaders');
-    expect(out).not.toHaveProperty('startedAt');
   });
 
   test('缺失字段为 undefined 时正常输出', () => {
     const out = serializeNetworkEntry({});
     expect(out).toEqual({
       url: undefined, method: undefined, resourceType: undefined,
-      status: undefined, mimeType: undefined, postData: undefined,
-      body: undefined, bodyTruncated: undefined,
+      status: undefined, mimeType: undefined,
+      requestHeaders: undefined, responseHeaders: undefined,
+      postData: undefined, body: undefined, bodyTruncated: undefined,
+      startedAt: undefined,
     });
+  });
+});
+
+describe('shouldFetchBody 响应体拉取过滤', () => {
+  test('二进制资源类型（Image/Font/Media）直接跳过', () => {
+    expect(shouldFetchBody({ resourceType: 'Image', mimeType: 'image/png' })).toBe(false);
+    expect(shouldFetchBody({ resourceType: 'Font', mimeType: 'font/woff2' })).toBe(false);
+    expect(shouldFetchBody({ resourceType: 'Media', mimeType: 'video/mp4' })).toBe(false);
+  });
+
+  test('文本类 mimeType（json/xml/javascript/text）允许拉取', () => {
+    expect(shouldFetchBody({ resourceType: 'XHR', mimeType: 'application/json' })).toBe(true);
+    expect(shouldFetchBody({ resourceType: 'Document', mimeType: 'text/html' })).toBe(true);
+    expect(shouldFetchBody({ resourceType: 'Script', mimeType: 'application/javascript' })).toBe(true);
+    expect(shouldFetchBody({ resourceType: 'XHR', mimeType: 'application/xml' })).toBe(true);
+  });
+
+  test('mimeType 未知时保守拉取（部分请求在 loadingFinished 时未回填）', () => {
+    expect(shouldFetchBody({ resourceType: 'XHR', mimeType: '' })).toBe(true);
+    expect(shouldFetchBody({ resourceType: 'Fetch' })).toBe(true);
+  });
+
+  test('非文本类 mimeType（如 application/octet-stream）不拉取', () => {
+    expect(shouldFetchBody({ resourceType: 'XHR', mimeType: 'application/octet-stream' })).toBe(false);
+    expect(shouldFetchBody({ resourceType: 'Document', mimeType: 'application/pdf' })).toBe(false);
+  });
+
+  test('null / undefined entry 不拉取', () => {
+    expect(shouldFetchBody(null)).toBe(false);
+    expect(shouldFetchBody(undefined)).toBe(false);
+  });
+
+  test('SKIP_BODY_RESOURCE_TYPES / TEXT_BODY_MIME_PREFIXES 导出为非空集合', () => {
+    expect(SKIP_BODY_RESOURCE_TYPES.size).toBeGreaterThan(0);
+    expect(TEXT_BODY_MIME_PREFIXES.length).toBeGreaterThan(0);
   });
 });
 

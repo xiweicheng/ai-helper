@@ -61,7 +61,7 @@ export const DEBUGGER_TOOLS = [
           text: { type: 'string', description: 'action=input type: text to insert into the focused/target element.' },
           key: {
             type: 'string',
-            description: 'action=input press: key name, e.g. "Enter", "Tab", "Escape", "Backspace", "Delete", "Space", "ArrowLeft/Up/Right/Down", "Home", "End", "PageUp", "PageDown", "F5", or a single character like "a" (prefix with "Control+"/"Shift+"/"Alt+" for modifiers).',
+            description: 'action=input press: key name, e.g. "Enter", "Tab", "Escape", "Backspace", "Delete", "Space", "ArrowLeft/Up/Right/Down", "Home", "End", "PageUp", "PageDown", "F5", or a single character like "a" (prefix with "Control+"/"Shift+"/"Alt+" for modifiers). Single printable characters are typed as text (Shift-aware); Ctrl/Alt/Meta combos are treated as shortcuts and do not insert characters. For multi-character input use inputType=type.',
           },
           deltaX: { type: 'number', description: 'action=input scroll: horizontal wheel delta (positive scrolls left). Default 0.' },
           deltaY: { type: 'number', description: 'action=input scroll: vertical wheel delta (positive scrolls down). Default 300.' },

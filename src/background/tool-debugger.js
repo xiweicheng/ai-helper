@@ -2,11 +2,11 @@
 // 统一入口 executeDebugPage，按 action 分发：
 // attach / detach / evaluate / input / network / screenshot / emulate
 
-import { makeResult } from './tool-helpers.js';
+import { makeResult, getActiveTabId } from './tool-helpers.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import {
-  attach as dbgAttach, detach as dbgDetach, cdp, isAttached,
+  attach as dbgAttach, detach as dbgDetach, cdp, isAttached, getAttachedTabIds,
   startNetworkCapture, collectNetwork, stopNetworkCapture,
   DebuggerNotAttachedError, RestrictedPageError,
 } from './debugger/debugger-session.js';
@@ -16,6 +16,9 @@ registerTranslations('zh', {
   toolDebugger: {
     missingAction: '缺少 action 参数',
     unknownAction: '不支持的 action: {action}',
+    unknownInputType: '不支持的 inputType: {inputType}（合法值：click/type/press/scroll）',
+    unknownNetworkMode: '不支持的 networkMode: {mode}（合法值：start/collect/stop）',
+    unknownEmulateTarget: '不支持的 emulateTarget: {target}（合法值：ua/viewport/geolocation/timezone/colorScheme/reset）',
     noTab: '未找到可调试的标签页',
     attachSuccess: '已附着到标签页 {tabId}，调试会话已开启。\n注意：该标签页顶部会显示"扩展程序正在调试此浏览器"提示条，调试结束后请调用 action=detach 关闭；空闲 2 分钟也会自动脱离。受限页面（chrome://、扩展商店等）无法调试。',
     attachReused: '标签页 {tabId} 的调试会话已存在，直接复用。',
@@ -37,11 +40,14 @@ registerTranslations('zh', {
     inputDone: '已派发原生 {kind} 事件到标签页 {tabId}。',
     networkMissingMode: 'action=network 需要 networkMode 参数（start/collect/stop）',
     networkStarted: '已开始录制网络请求{filter}。操作页面后调用 networkMode=collect 取回结果（含响应体，单条最多 20KB，最多 100 条）。',
+    networkFilterSuffix: '（过滤: {filter}）',
+    selectorInvisible: '元素存在但不可见（尺寸为零）: {selector}',
     networkEmpty: '缓冲区中没有新的网络请求。可先执行页面操作，再调用 collect。',
     networkCollected: '录制到 {count} 条网络请求（JSON）：\n{json}',
     networkStopped: '网络录制已停止，剩余 {count} 条请求（JSON）：\n{json}',
     networkStoppedEmpty: '网络录制已停止，缓冲区为空。',
     screenshotDone: '截图完成（{mode}，{size}，{format}，约 {sizeKB} KB），已下载到浏览器默认下载目录。',
+    screenshotClamped: '（页面过长，高度已截断至 {max}px 以适配 Chrome 纹理上限）',
     modeViewport: '可视区域',
     modeFullPage: '整页',
     modeElement: '指定元素',
@@ -61,6 +67,9 @@ registerTranslations('en', {
   toolDebugger: {
     missingAction: 'Missing action parameter',
     unknownAction: 'Unsupported action: {action}',
+    unknownInputType: 'Unsupported inputType: {inputType} (expected click/type/press/scroll)',
+    unknownNetworkMode: 'Unsupported networkMode: {mode} (expected start/collect/stop)',
+    unknownEmulateTarget: 'Unsupported emulateTarget: {target} (expected ua/viewport/geolocation/timezone/colorScheme/reset)',
     noTab: 'No debuggable tab found',
     attachSuccess: 'Attached to tab {tabId}, debugger session started.\nNote: a yellow "extension is debugging this browser" infobar appears on the tab until action=detach is called; it also auto-detaches after 2 minutes idle. Restricted pages (chrome://, extension stores, etc.) cannot be debugged.',
     attachReused: 'A debugger session for tab {tabId} already exists, reusing it.',
@@ -82,11 +91,14 @@ registerTranslations('en', {
     inputDone: 'Dispatched native {kind} event to tab {tabId}.',
     networkMissingMode: 'action=network requires networkMode (start/collect/stop)',
     networkStarted: 'Network recording started{filter}. Interact with the page, then call networkMode=collect to fetch results (includes response bodies, up to 20KB each and 100 entries).',
+    networkFilterSuffix: ' (filter: {filter})',
+    selectorInvisible: 'Element exists but is invisible (zero size): {selector}',
     networkEmpty: 'No new network requests buffered. Perform some page actions and call collect again.',
     networkCollected: 'Recorded {count} network requests (JSON):\n{json}',
     networkStopped: 'Network recording stopped; {count} remaining requests (JSON):\n{json}',
     networkStoppedEmpty: 'Network recording stopped; buffer was empty.',
     screenshotDone: 'Screenshot captured ({mode}, {size}, {format}, ~{sizeKB} KB) and downloaded to the browser default download directory.',
+    screenshotClamped: ' (page too tall; height clamped to {max}px to fit Chrome texture limit)',
     modeViewport: 'viewport',
     modeFullPage: 'full page',
     modeElement: 'element',
@@ -104,11 +116,34 @@ registerTranslations('en', {
 
 const EVAL_RESULT_LIMIT = 30000;
 
+// Chrome 截图纹理单边上限（经验值，超过后 Page.captureScreenshot 会直接失败）
+// 参考：Skia / ANGLE 普遍将最大纹理尺寸限定在 16384，预留一些余地取 16000。
+const SCREENSHOT_MAX_EDGE = 16000;
+
+// action 合法性集合（提到模块作用域，避免每次调用重新构造 Set）
+const VALID_ACTIONS = new Set(['attach', 'detach', 'evaluate', 'input', 'network', 'screenshot', 'emulate']);
+
+// CDP 键盘修饰符位掩码（与 debugger-rules.js#KEY_MODIFIERS 保持一致）
+const MOD_SHIFT = 8;
+const MOD_CTRL_ALT_META = 1 | 2 | 4; // Alt | Control | Meta
+
 // CDP 键盘按键规格解析（修饰符位掩码 / 特殊键码表）见 debugger-rules.js#parseKeySpec
 
-async function getActiveTabId() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs && tabs.length > 0 ? tabs[0].id : null;
+/**
+ * 解析目标 tabId：
+ * - 显式传入 args.tabId 时优先使用
+ * - 否则先取活动标签页；对需要会话的动作（非 attach），若活动标签未附着
+ *   而全局仅有一个已附着会话，则兜底到那个会话，避免用户切换标签后
+ *   detach / evaluate / input 等动作打到错误的 tab（#1 tabId 漂移问题）
+ */
+async function resolveTargetTabId(args, action) {
+  if (args.tabId) return Number(args.tabId);
+  const activeId = await getActiveTabId();
+  if (action === 'attach') return activeId;
+  if (activeId && isAttached(activeId)) return activeId;
+  const attached = getAttachedTabIds();
+  if (attached.length === 1) return attached[0];
+  return activeId;
 }
 
 /**
@@ -129,6 +164,29 @@ async function evaluateJson(tabId, expression) {
   }
   return res.result?.value;
 }
+
+/**
+ * 页内深查询 helper 源码：递归穿透 shadow root 查找 selector。
+ * 现代 Web Components 站点的目标元素常在 shadowRoot 内，直接用 document.querySelector 会找不到。
+ * 作为字符串拼接到具体表达式中，避免重复代码。
+ */
+const DEEP_QUERY_HELPER = `
+  function __aihDeepQuery(root, sel) {
+    if (!root) return null;
+    var direct = null;
+    try { direct = root.querySelector(sel); } catch (e) { return null; }
+    if (direct) return direct;
+    var all = root.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var sr = all[i].shadowRoot;
+      if (sr) {
+        var found = __aihDeepQuery(sr, sel);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+`;
 
 // ───────────────────────── action 实现 ─────────────────────────
 
@@ -176,17 +234,39 @@ async function handleEvaluate(args, tabId) {
 
 async function resolveClickPoint(tabId, args) {
   if (args.selector) {
+    // 先判断元素是否在视口内，不在则 scrollIntoView 居中后重取 rect。
+    // CDP Input.dispatchMouseEvent 使用视口 CSS 坐标，折叠线以下的元素直接派发会静默失败。
+    // 使用 __aihDeepQuery 递归穿透 shadow root，兼容 Web Components 站点。
     const expr = `(function(s){
-      var el = document.querySelector(s);
-      if (!el) return null;
+      ${DEEP_QUERY_HELPER}
+      var el = __aihDeepQuery(document, s);
+      if (!el) return { found: false };
+      var r0 = el.getBoundingClientRect();
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var offscreen = r0.width === 0 && r0.height === 0
+        ? false
+        : (r0.top < 0 || r0.bottom > vh || r0.left < 0 || r0.right > vw);
+      if (offscreen) {
+        try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch (_) {}
+      }
       var r = el.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+      return {
+        found: true,
+        scrolled: offscreen,
+        x: r.x + r.width / 2,
+        y: r.y + r.height / 2,
+        w: r.width,
+        h: r.height,
+      };
     })(${JSON.stringify(args.selector)})`;
-    const rect = await evaluateJson(tabId, expr);
-    if (!rect || rect.w === 0) {
+    const info = await evaluateJson(tabId, expr);
+    if (!info || !info.found) {
       return { error: t('toolDebugger.selectorNotFound', { selector: args.selector }) };
     }
-    return { x: rect.x, y: rect.y };
+    if (info.w === 0 && info.h === 0) {
+      return { error: t('toolDebugger.selectorInvisible', { selector: args.selector }) };
+    }
+    return { x: info.x, y: info.y };
   }
   if (typeof args.x === 'number' && typeof args.y === 'number') {
     return { x: args.x, y: args.y };
@@ -214,7 +294,12 @@ async function handleInput(args, tabId) {
       case 'type': {
         if (!args.text) return makeResult(false, t('toolDebugger.typeNeedText'), { tool_call_id: toolCallId });
         if (args.selector) {
-          await evaluateJson(tabId, `(function(s){ var el = document.querySelector(s); if (el) el.focus(); return !!el; })(${JSON.stringify(args.selector)})`);
+          await evaluateJson(tabId, `(function(s){
+            ${DEEP_QUERY_HELPER}
+            var el = __aihDeepQuery(document, s);
+            if (el) el.focus();
+            return !!el;
+          })(${JSON.stringify(args.selector)})`);
         }
         await cdp(tabId, 'Input.insertText', { text: String(args.text) });
         return makeResult(true, t('toolDebugger.inputDone', { kind: 'type', tabId }), { tool_call_id: toolCallId });
@@ -223,14 +308,25 @@ async function handleInput(args, tabId) {
         if (!args.key) return makeResult(false, t('toolDebugger.pressNeedKey'), { tool_call_id: toolCallId });
         const spec = parseKeySpec(args.key);
         if (!spec) return makeResult(false, t('toolDebugger.unknownKey', { key: args.key }), { tool_call_id: toolCallId });
+        // Shift + 字母：按浏览器惯例将 key/text 提升为大写
+        let effectiveKey = spec.key;
+        if (effectiveKey.length === 1 && (spec.modifiers & MOD_SHIFT) && /[a-z]/.test(effectiveKey)) {
+          effectiveKey = effectiveKey.toUpperCase();
+        }
         const base = {
-          key: spec.key,
+          key: effectiveKey,
           code: spec.code || undefined,
           windowsVirtualKeyCode: spec.keyCode,
           nativeVirtualKeyCode: spec.keyCode,
           modifiers: spec.modifiers,
         };
-        await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+        // 单字符可打印键（未同时按 Ctrl/Alt/Meta）：keyDown 携带 text 才能触发字符输入，
+        // 否则只会产生按键事件而不写入字符（与工具参数描述不符）。
+        const isPrintableChar = effectiveKey.length === 1 && (spec.modifiers & MOD_CTRL_ALT_META) === 0;
+        const keyDownParams = isPrintableChar
+          ? { type: 'keyDown', ...base, text: effectiveKey, unmodifiedText: effectiveKey }
+          : { type: 'keyDown', ...base };
+        await cdp(tabId, 'Input.dispatchKeyEvent', keyDownParams);
         await cdp(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base });
         return makeResult(true, t('toolDebugger.inputDone', { kind: `key:${args.key}`, tabId }), { tool_call_id: toolCallId });
       }
@@ -249,7 +345,7 @@ async function handleInput(args, tabId) {
         return makeResult(true, t('toolDebugger.inputDone', { kind: 'scroll', tabId }), { tool_call_id: toolCallId });
       }
       default:
-        return makeResult(false, t('toolDebugger.unknownAction', { action: inputType }), { tool_call_id: toolCallId });
+        return makeResult(false, t('toolDebugger.unknownInputType', { inputType }), { tool_call_id: toolCallId });
     }
   } catch (e) {
     if (e instanceof DebuggerNotAttachedError) {
@@ -266,7 +362,9 @@ async function handleNetwork(args, tabId) {
   try {
     if (mode === 'start') {
       startNetworkCapture(tabId, args.filterUrl || '');
-      const filter = args.filterUrl ? `（过滤: ${args.filterUrl}）` : '';
+      const filter = args.filterUrl
+        ? t('toolDebugger.networkFilterSuffix', { filter: args.filterUrl })
+        : '';
       return makeResult(true, t('toolDebugger.networkStarted', { filter }), { tool_call_id: toolCallId });
     }
     if (mode === 'collect') {
@@ -279,7 +377,7 @@ async function handleNetwork(args, tabId) {
       if (entries.length === 0) return makeResult(true, t('toolDebugger.networkStoppedEmpty'), { tool_call_id: toolCallId });
       return makeResult(true, t('toolDebugger.networkStopped', { count: entries.length, json: JSON.stringify(entries, null, 2) }), { tool_call_id: toolCallId });
     }
-    return makeResult(false, t('toolDebugger.unknownAction', { action: mode }), { tool_call_id: toolCallId });
+    return makeResult(false, t('toolDebugger.unknownNetworkMode', { mode }), { tool_call_id: toolCallId });
   } catch (e) {
     if (e instanceof DebuggerNotAttachedError) {
       return makeResult(false, t('toolDebugger.notAttached'), { tool_call_id: toolCallId });
@@ -291,14 +389,16 @@ async function handleNetwork(args, tabId) {
 async function handleScreenshot(args, tabId) {
   const toolCallId = args.__toolCallId;
   const format = args.imageFormat === 'jpeg' ? 'jpeg' : 'png';
+  let clampNote = '';
   try {
     let clip = null;
     let mode = 'viewport';
 
     if (args.selector) {
-      // 元素截图：取绝对布局坐标，支持视口外元素
+      // 元素截图：取绝对布局坐标，支持视口外元素；使用 __aihDeepQuery 穿透 shadow root
       const expr = `(function(s){
-        var el = document.querySelector(s);
+        ${DEEP_QUERY_HELPER}
+        var el = __aihDeepQuery(document, s);
         if (!el) return null;
         var r = el.getBoundingClientRect();
         return {
@@ -315,8 +415,17 @@ async function handleScreenshot(args, tabId) {
     } else if (args.fullPage) {
       const metrics = await cdp(tabId, 'Page.getLayoutMetrics');
       const cs = metrics.contentSize || {};
-      clip = { x: cs.x || 0, y: cs.y || 0, width: cs.width, height: cs.height, scale: 1 };
+      const rawH = Number(cs.height) || 0;
+      const rawW = Number(cs.width) || 0;
+      // 超长页面保护：Chrome 纹理单边上限 ~16384px，超过会直接报错。
+      // 对 height / width 做上限截断，并在返回提示中声明已截断。
+      const clampedH = Math.min(rawH, SCREENSHOT_MAX_EDGE);
+      const clampedW = Math.min(rawW, SCREENSHOT_MAX_EDGE);
+      clip = { x: cs.x || 0, y: cs.y || 0, width: clampedW, height: clampedH, scale: 1 };
       mode = 'fullPage';
+      if (rawH > clampedH || rawW > clampedW) {
+        clampNote = t('toolDebugger.screenshotClamped', { max: SCREENSHOT_MAX_EDGE });
+      }
     }
 
     const params = { format };
@@ -339,7 +448,7 @@ async function handleScreenshot(args, tabId) {
       size: sizeText,
       format,
       sizeKB: (shot.data.length / 1024).toFixed(1),
-    }), { tool_call_id: toolCallId });
+    }) + clampNote, { tool_call_id: toolCallId });
   } catch (e) {
     if (e instanceof DebuggerNotAttachedError) {
       return makeResult(false, t('toolDebugger.notAttached'), { tool_call_id: toolCallId });
@@ -363,12 +472,16 @@ async function handleEmulate(args, tabId) {
         if (!args.viewportWidth || !args.viewportHeight) {
           return makeResult(false, t('toolDebugger.emulateViewportNeedSize'), { tool_call_id: toolCallId });
         }
+        const mobile = !!args.mobile;
         await cdp(tabId, 'Emulation.setDeviceMetricsOverride', {
           width: args.viewportWidth,
           height: args.viewportHeight,
           deviceScaleFactor: typeof args.deviceScaleFactor === 'number' ? args.deviceScaleFactor : 1,
-          mobile: !!args.mobile,
+          mobile,
         });
+        // mobile: true 时必须同步开启触摸模拟，否则页面用 'ontouchstart' in window 判断时
+        // 仍会走桌面分支，导致移动端适配测试得到错误结论。
+        await cdp(tabId, 'Emulation.setTouchEmulationEnabled', { enabled: mobile });
         break;
       }
       case 'geolocation': {
@@ -399,11 +512,12 @@ async function handleEmulate(args, tabId) {
           cdp(tabId, 'Network.setUserAgentOverride', { userAgent: '' }),
           cdp(tabId, 'Emulation.setTimezoneOverride', { timezoneId: '' }),
           cdp(tabId, 'Emulation.setEmulatedMedia', { features: [] }),
+          cdp(tabId, 'Emulation.setTouchEmulationEnabled', { enabled: false }),
         ]);
         return makeResult(true, t('toolDebugger.emulateReset'), { tool_call_id: toolCallId });
       }
       default:
-        return makeResult(false, t('toolDebugger.unknownAction', { action: target }), { tool_call_id: toolCallId });
+        return makeResult(false, t('toolDebugger.unknownEmulateTarget', { target }), { tool_call_id: toolCallId });
     }
     return makeResult(true, t('toolDebugger.emulateApplied', { target }), { tool_call_id: toolCallId });
   } catch (e) {
@@ -426,13 +540,12 @@ export async function executeDebugPage(args, toolCallId) {
   }
 
   // action 合法性优先校验（否则未附着时未知 action 会被误导为"会话不存在"）
-  const VALID_ACTIONS = new Set(['attach', 'detach', 'evaluate', 'input', 'network', 'screenshot', 'emulate']);
   if (!VALID_ACTIONS.has(action)) {
     return makeResult(false, t('toolDebugger.unknownAction', { action }), { tool_call_id: toolCallId });
   }
 
-  // detach 允许在会话已失效时静默兜底，其余动作需要有效 tab
-  let tabId = args.tabId ? Number(args.tabId) : await getActiveTabId();
+  // tabId 解析：显式 > 活动标签 > 唯一已附着会话（兜底漂移）
+  const tabId = await resolveTargetTabId(args, action);
   if (!tabId) {
     return makeResult(false, t('toolDebugger.noTab'), { tool_call_id: toolCallId });
   }

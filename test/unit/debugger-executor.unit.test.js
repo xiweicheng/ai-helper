@@ -25,11 +25,12 @@ function createChromeMock(options = {}) {
         ? { result: { value: null } }
         : { result: { value: { x: 10, y: 20, width: 100, height: 40 } } };
     }
-    // 点击表达式返回元素中心点
+    // 点击表达式返回元素中心点（新结构含 found/scrolled 标志）
     if (expression.includes('getBoundingClientRect')) {
-      return options.rect === null
-        ? { result: { value: null } }
-        : { result: { value: { x: 60, y: 40, w: 100, h: 40 } } };
+      if (options.rect === null) return { result: { value: { found: false } } };
+      if (options.rectInvisible) return { result: { value: { found: true, scrolled: false, x: 0, y: 0, w: 0, h: 0 } } };
+      const scrolled = !!options.rectOffscreen;
+      return { result: { value: { found: true, scrolled, x: 60, y: 40, w: 100, h: 40 } } };
     }
     if (expression.includes('el.focus()')) return { result: { value: true } };
     if (expression.includes('/ 2')) return { result: { value: { x: 640, y: 360 } } };
@@ -210,7 +211,7 @@ describe('attach / detach 会话管理', () => {
     expect(again.content).toContain('调试会话不存在');
   });
 
-  test('detach 时下发 emulation 还原命令', async () => {
+  test('detach 后下发 emulation 还原命令（包含 setEmulatedMedia 与触摸模拟）', async () => {
     await attachTab();
     await run({ action: 'detach' });
     expect(harness.methods()).toEqual(expect.arrayContaining([
@@ -218,7 +219,81 @@ describe('attach / detach 会话管理', () => {
       'Emulation.clearGeolocationOverride',
       'Network.setUserAgentOverride',
       'Emulation.setTimezoneOverride',
+      'Emulation.setEmulatedMedia',
+      'Emulation.setTouchEmulationEnabled',
     ]));
+  });
+
+  test('未附着时 detach 不会白发 emulation 还原命令（避免 6 条必然失败的 CDP）', async () => {
+    // 直接调用 detach，未先 attach
+    const res = await run({ action: 'detach' });
+    expect(res.success).toBe(true);
+    // 不应下发任何 Emulation.* 命令
+    const emulationCmds = harness.methods().filter(m => m.startsWith('Emulation.'));
+    expect(emulationCmds).toEqual([]);
+    // 也不应下发 Network.setUserAgentOverride
+    expect(harness.methods()).not.toContain('Network.setUserAgentOverride');
+    // chrome.debugger.detach 仍应被调用（兼容孤儿附着场景）
+    expect(harness.detachCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('detach 同时清 setEmulatedMedia 与触摸模拟（与 emulate reset 保持一致）', async () => {
+    await attachTab();
+    await run({ action: 'detach' });
+    const media = harness.findCmds('Emulation.setEmulatedMedia')
+      .find(c => Array.isArray(c.params?.features) && c.params.features.length === 0);
+    expect(media).toBeDefined();
+    const touch = harness.findCmds('Emulation.setTouchEmulationEnabled')
+      .find(c => c.params?.enabled === false);
+    expect(touch).toBeDefined();
+  });
+
+  test('attach 遇到"already attached"时强制 detach 后重试一次（SW 重启孤儿附着自愈）', async () => {
+    // 首次 attach 报错，后续成功
+    let firstCall = true;
+    harness.chrome.debugger.attach = vi.fn((target, version, cb) => {
+      harness.attachCalls.push({ target, version });
+      if (firstCall) {
+        firstCall = false;
+        harness.chrome.runtime.lastError = { message: 'Another debugger is already attached to the tab' };
+        cb();
+        harness.chrome.runtime.lastError = null;
+        return;
+      }
+      cb();
+    });
+    const res = await run({ action: 'attach' });
+    expect(res.success).toBe(true);
+    expect(harness.attachCalls.length).toBe(2);
+    // 中间应调用过一次强制 detach
+    expect(harness.detachCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('tabId 漂移：在 tab1 附着后用户切到 tab2，不带 tabId 的 detach 仍作用于 tab1', async () => {
+    // 初始化：活动标签为 tab1
+    harness.setTabs([{ id: 1, url: 'https://example.com/a' }]);
+    await attachTab();
+    expect(harness.attachCalls[0].target.tabId).toBe(1);
+
+    // 用户切换到 tab2（未附着）
+    harness.setTabs([{ id: 2, url: 'https://example.com/b' }]);
+
+    // 不带 tabId 调 detach：应兜底到唯一已附着的 tab1，而不是活动 tab2
+    const res = await run({ action: 'detach' });
+    expect(res.success).toBe(true);
+    expect(res.content).toContain('已脱离标签页 1');
+    expect(harness.detachCalls.some(t => t.tabId === 1)).toBe(true);
+  });
+
+  test('tabId 漂移：在 tab1 附着后用户切到 tab2，evaluate 仍能兜底到 tab1', async () => {
+    harness.setTabs([{ id: 1, url: 'https://example.com/a' }]);
+    await attachTab();
+    harness.setTabs([{ id: 2, url: 'https://example.com/b' }]);
+    const res = await run({ action: 'evaluate', expression: 'document.title' });
+    // 不应返回"会话不存在"（证明兜底到了 tab1）
+    expect(res.success).toBe(true);
+    // 后续清理：显式 detach tab1
+    await run({ action: 'detach', tabId: 1 });
   });
 });
 
@@ -294,6 +369,14 @@ describe('evaluate 页面求值', () => {
 describe('input 原生输入事件', () => {
   beforeEach(attachTab);
 
+  test('input 非法 inputType 使用专属文案，不会误导为"不支持的 action"', async () => {
+    const res = await run({ action: 'input', inputType: 'drag' });
+    expect(res.success).toBe(false);
+    expect(res.content).toContain('不支持的 inputType');
+    expect(res.content).toContain('drag');
+    expect(res.content).not.toContain('不支持的 action');
+  });
+
   test('缺少 inputType 返回失败', async () => {
     const res = await run({ action: 'input' });
     expect(res.success).toBe(false);
@@ -336,6 +419,36 @@ describe('input 原生输入事件', () => {
     expect(pressed.params.y).toBe(40);
   });
 
+  test('click selector 命中零尺寸元素时返回"不可见"而非"未找到"', async () => {
+    const h = createChromeMock({ rectInvisible: true });
+    vi.stubGlobal('chrome', h.chrome);
+    await executeDebugPage({ action: 'attach' });
+    const res = await executeDebugPage({
+      action: 'input', inputType: 'click', selector: '.hidden',
+    });
+    expect(res.success).toBe(false);
+    expect(res.content).toContain('不可见');
+    await executeDebugPage({ action: 'detach' });
+  });
+
+  test('click 元素在视口外时表达式会执行 scrollIntoView 后重取 rect', async () => {
+    // 直接验证下发的表达式含 scrollIntoView 逻辑，确保不会静默失败
+    await run({ action: 'input', inputType: 'click', selector: '#far' });
+    const evalCmds = harness.findCmds('Runtime.evaluate');
+    const clickEval = evalCmds.find(c => c.params.expression.includes('getBoundingClientRect'));
+    expect(clickEval).toBeDefined();
+    expect(clickEval.params.expression).toContain('scrollIntoView');
+    expect(clickEval.params.expression).toContain('innerHeight');
+  });
+
+  test('click selector 表达式使用 __aihDeepQuery 穿透 shadow root', async () => {
+    await run({ action: 'input', inputType: 'click', selector: '#btn' });
+    const evalCmds = harness.findCmds('Runtime.evaluate');
+    const clickEval = evalCmds.find(c => c.params.expression.includes('getBoundingClientRect'));
+    expect(clickEval.params.expression).toContain('__aihDeepQuery');
+    expect(clickEval.params.expression).toContain('shadowRoot');
+  });
+
   test('type 缺 text 返回失败', async () => {
     const res = await run({ action: 'input', inputType: 'type', selector: '#i' });
     expect(res.success).toBe(false);
@@ -347,6 +460,10 @@ describe('input 原生输入事件', () => {
     expect(res.success).toBe(true);
     const cmd = harness.findCmd('Input.insertText');
     expect(cmd.params.text).toBe('你好abc');
+    // 聚焦表达式也应使用深查询以兼容 shadow DOM
+    const focusEval = harness.findCmds('Runtime.evaluate')
+      .find(c => c.params.expression.includes('el.focus()'));
+    expect(focusEval.params.expression).toContain('__aihDeepQuery');
   });
 
   test('press 缺 key / 非法 key 返回失败', async () => {
@@ -364,6 +481,25 @@ describe('input 原生输入事件', () => {
     expect(events[0].params).toMatchObject({
       key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2,
     });
+    // Ctrl 组合属于快捷键，不应携带 text（避免意外插入字符）
+    expect(events[0].params.text).toBeUndefined();
+  });
+
+  test('press 单字符可打印键（如 "a"）keyDown 携带 text，能实际写入字符', async () => {
+    const res = await run({ action: 'input', inputType: 'press', key: 'a' });
+    expect(res.success).toBe(true);
+    const events = harness.findCmds('Input.dispatchKeyEvent');
+    expect(events[0].params).toMatchObject({ type: 'keyDown', key: 'a', text: 'a', unmodifiedText: 'a' });
+    expect(events[1].params.type).toBe('keyUp');
+    expect(events[1].params.text).toBeUndefined();
+  });
+
+  test('press Shift+a：key 与 text 提升为大写 "A"，修饰符位包含 Shift(8)', async () => {
+    await run({ action: 'input', inputType: 'press', key: 'Shift+a' });
+    const down = harness.findCmds('Input.dispatchKeyEvent')[0].params;
+    expect(down.key).toBe('A');
+    expect(down.text).toBe('A');
+    expect(down.modifiers & 8).toBe(8);
   });
 
   test('press Enter 键码 13、无修饰符', async () => {
@@ -408,9 +544,59 @@ describe('network 网络录制', () => {
     });
   }
 
+  function emitFullRequest(id, url, resourceType, mimeType, reqHeaders = {}, respHeaders = {}) {
+    const listener = boundEventListeners[0];
+    listener({ tabId: 1 }, 'Network.requestWillBeSent', {
+      requestId: id,
+      request: { url, method: 'GET', headers: reqHeaders },
+      type: resourceType,
+      timestamp: 2000,
+    });
+    listener({ tabId: 1 }, 'Network.responseReceived', {
+      requestId: id,
+      response: { status: 200, mimeType, headers: respHeaders },
+    });
+    listener({ tabId: 1 }, 'Network.loadingFinished', { requestId: id });
+  }
+
   test('缺 networkMode 返回失败', async () => {
     const res = await run({ action: 'network' });
     expect(res.success).toBe(false);
+  });
+
+  test('network 非法 networkMode 使用专属文案', async () => {
+    const res = await run({ action: 'network', networkMode: 'restart' });
+    expect(res.success).toBe(false);
+    expect(res.content).toContain('不支持的 networkMode');
+    expect(res.content).toContain('restart');
+  });
+
+  test('emulate 非法 emulateTarget 使用专属文案', async () => {
+    const res = await run({ action: 'emulate', emulateTarget: 'bluetooth' });
+    expect(res.success).toBe(false);
+    expect(res.content).toContain('不支持的 emulateTarget');
+    expect(res.content).toContain('bluetooth');
+  });
+
+  test('重复 start 不会静默丢弃已录制的缓冲', async () => {
+    await run({ action: 'network', networkMode: 'start' });
+    emitRequestEvent('r1', 'https://api.example.com/a');
+    // 模型不小心二次调用 start：r1 应仍保留
+    await run({ action: 'network', networkMode: 'start' });
+    emitRequestEvent('r2', 'https://api.example.com/b');
+    const res = await run({ action: 'network', networkMode: 'collect' });
+    expect(res.content).toContain('/a');
+    expect(res.content).toContain('/b');
+  });
+
+  test('重复 start 可更新 filterUrl，后续请求按新过滤匹配', async () => {
+    await run({ action: 'network', networkMode: 'start', filterUrl: '/old/' });
+    await run({ action: 'network', networkMode: 'start', filterUrl: '/new/' });
+    emitRequestEvent('r1', 'https://example.com/old/x');
+    emitRequestEvent('r2', 'https://example.com/new/y');
+    const res = await run({ action: 'network', networkMode: 'collect' });
+    expect(res.content).not.toContain('/old/x');
+    expect(res.content).toContain('/new/y');
   });
 
   test('start 后未操作即 collect 返回空缓冲提示', async () => {
@@ -440,6 +626,56 @@ describe('network 网络录制', () => {
     expect(res.success).toBe(true);
     expect(res.content).toContain('/api/data');
     expect(res.content).not.toContain('app.js');
+  });
+
+  test('i18n：start 带 filterUrl 时中文提示不会出现中英混排', async () => {
+    // 默认 locale 为 zh：括号应为全角，内容为中文"过滤"
+    const res = await run({ action: 'network', networkMode: 'start', filterUrl: '/api/' });
+    expect(res.success).toBe(true);
+    expect(res.content).toContain('过滤: /api/');
+    // 不应存在未插值的 {filter} 占位符
+    expect(res.content).not.toContain('{filter}');
+  });
+
+  test('Image 资源不拉取响应体（避免浪费 SW 内存与 CDP 往返）', async () => {
+    await run({ action: 'network', networkMode: 'start' });
+    emitFullRequest('img1', 'https://example.com/a.png', 'Image', 'image/png');
+    await new Promise(r => setTimeout(r, 10));
+    // getResponseBody 不应为图片资源调用
+    const bodyCalls = harness.findCmds('Network.getResponseBody');
+    expect(bodyCalls.length).toBe(0);
+  });
+
+  test('Font / Media 资源同样不拉取响应体', async () => {
+    await run({ action: 'network', networkMode: 'start' });
+    emitFullRequest('f1', 'https://example.com/a.woff2', 'Font', 'font/woff2');
+    emitFullRequest('m1', 'https://example.com/a.mp4', 'Media', 'video/mp4');
+    await new Promise(r => setTimeout(r, 10));
+    expect(harness.findCmds('Network.getResponseBody').length).toBe(0);
+  });
+
+  test('XHR + application/json 仍然拉取响应体', async () => {
+    await run({ action: 'network', networkMode: 'start' });
+    emitFullRequest('x1', 'https://api.example.com/data', 'XHR', 'application/json');
+    await new Promise(r => setTimeout(r, 10));
+    const bodyCalls = harness.findCmds('Network.getResponseBody');
+    expect(bodyCalls.length).toBe(1);
+    expect(bodyCalls[0].params.requestId).toBe('x1');
+  });
+
+  test('序列化后的条目包含 requestHeaders / responseHeaders / startedAt（不丢弃已采集的调试信息）', async () => {
+    await run({ action: 'network', networkMode: 'start' });
+    emitFullRequest('h1', 'https://api.example.com/x', 'XHR', 'application/json',
+      { Authorization: 'Bearer token-abc' },
+      { 'content-type': 'application/json', 'x-trace-id': 'trace-xyz' });
+    await new Promise(r => setTimeout(r, 10));
+    const res = await run({ action: 'network', networkMode: 'collect' });
+    const parsed = JSON.parse(res.content.slice(res.content.indexOf('[')));
+    expect(parsed[0].requestHeaders).toEqual({ Authorization: 'Bearer token-abc' });
+    expect(parsed[0].responseHeaders).toEqual({ 'content-type': 'application/json', 'x-trace-id': 'trace-xyz' });
+    expect(parsed[0].startedAt).toBe(2000);
+    // requestId 仍不应暴露给模型
+    expect(parsed[0]).not.toHaveProperty('requestId');
   });
 
   test('loadingFinished 后异步拉取响应体', async () => {
@@ -510,6 +746,24 @@ describe('screenshot 截图', () => {
     expect(params.captureBeyondViewport).toBe(true);
   });
 
+  test('fullPage 超长页面（高度 20000）高度被截断到 16000且提示包含截断声明', async () => {
+    // 临时重写 Page.getLayoutMetrics 的返回，模拟一个 20000px 高的页面
+    const originalSend = harness.chrome.debugger.sendCommand;
+    harness.chrome.debugger.sendCommand = vi.fn((target, method, params, cb) => {
+      if (method === 'Page.getLayoutMetrics') {
+        return cb({ contentSize: { x: 0, y: 0, width: 1200, height: 20000 } });
+      }
+      return originalSend(target, method, params, cb);
+    });
+    const res = await run({ action: 'screenshot', fullPage: true });
+    expect(res.success).toBe(true);
+    const clip = harness.findCmd('Page.captureScreenshot').params.clip;
+    expect(clip.height).toBe(16000);
+    expect(clip.width).toBe(1200);
+    expect(res.content).toContain('截断');
+    expect(res.content).toContain('16000');
+  });
+
   test('selector 截图使用元素绝对坐标（含 scroll 偏移）', async () => {
     await run({ action: 'screenshot', selector: '.card' });
     const params = harness.findCmd('Page.captureScreenshot').params;
@@ -553,7 +807,7 @@ describe('emulate 环境模拟', () => {
       .toContain('iPhone');
   });
 
-  test('viewport 缺尺寸失败；完整参数下发 setDeviceMetricsOverride', async () => {
+  test('viewport 完整参数下发 setDeviceMetricsOverride 且 mobile:true 同步开启触摸模拟', async () => {
     expect((await run({
       action: 'emulate', emulateTarget: 'viewport', viewportWidth: 375,
     })).success).toBe(false);
@@ -566,13 +820,16 @@ describe('emulate 环境模拟', () => {
     expect(harness.findCmd('Emulation.setDeviceMetricsOverride').params).toMatchObject({
       width: 375, height: 812, deviceScaleFactor: 3, mobile: true,
     });
+    // mobile: true 必须同步开启触摸模拟
+    expect(harness.findCmd('Emulation.setTouchEmulationEnabled').params).toEqual({ enabled: true });
   });
 
-  test('viewport 省略 deviceScaleFactor/mobile 时使用默认值 1/false', async () => {
+  test('viewport mobile:false 时触摸模拟也随之关闭', async () => {
     await run({ action: 'emulate', emulateTarget: 'viewport', viewportWidth: 1024, viewportHeight: 768 });
     const params = harness.findCmd('Emulation.setDeviceMetricsOverride').params;
     expect(params.deviceScaleFactor).toBe(1);
     expect(params.mobile).toBe(false);
+    expect(harness.findCmd('Emulation.setTouchEmulationEnabled').params).toEqual({ enabled: false });
   });
 
   test('geolocation 缺经纬度失败；完整参数下发', async () => {
@@ -605,6 +862,7 @@ describe('emulate 环境模拟', () => {
       'Emulation.clearGeolocationOverride',
       'Emulation.setTimezoneOverride',
       'Emulation.setEmulatedMedia',
+      'Emulation.setTouchEmulationEnabled',
     ]));
   });
 });

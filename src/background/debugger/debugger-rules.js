@@ -7,13 +7,21 @@
 
 // ───────────────────────── 受限页面 ─────────────────────────
 
-// 不可附着的页面前缀
+// 不可附着的页面 scheme 前缀（包含冒号、属于伪协议或浏览器内部页，无需主机边界判定）
 export const RESTRICTED_PREFIXES = [
   'chrome://', 'chrome-extension://', 'chrome-search://',
-  'edge://', 'about:', 'chrome-error://', 'view-source:',
-  'devtools://', 'https://chrome.google.com',
-  'https://chromewebstore.google.com',
+  'edge://', 'about:', 'chrome-error://', 'view-source:', 'devtools://',
 ];
+
+// 需按主机边界匹配的受限站点（不能直接 startsWith，
+// 否则 `https://chrome.google.com.evil.com` 会被误判为受限）
+export const RESTRICTED_HOSTS = [
+  'chrome.google.com',
+  'chromewebstore.google.com',
+];
+
+// 主机后的合法边界字符：结束 / 路径 / 查询 / 片段 / 端口
+const HOST_BOUNDARY_CHARS = new Set(['', '/', '?', '#', ':']);
 
 /**
  * 判断 URL 是否为不可调试的受限页面
@@ -22,7 +30,14 @@ export const RESTRICTED_PREFIXES = [
  */
 export function isRestrictedUrl(url) {
   if (!url) return true;
-  return RESTRICTED_PREFIXES.some(prefix => url.startsWith(prefix));
+  if (RESTRICTED_PREFIXES.some(prefix => url.startsWith(prefix))) return true;
+  for (const host of RESTRICTED_HOSTS) {
+    const prefix = `https://${host}`;
+    if (url.startsWith(prefix) && HOST_BOUNDARY_CHARS.has(url.charAt(prefix.length))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ───────────────────────── 键盘按键解析 ─────────────────────────
@@ -108,7 +123,10 @@ export function truncate(str, max) {
 }
 
 /**
- * 网络录制条目序列化：只保留要返回给模型的字段，剥离内部字段（requestId 等）
+ * 网络录制条目序列化：返回给模型的字段集。
+ * 早期版本丢弃了 requestHeaders/responseHeaders/startedAt，但 headers 对调试场景
+ * （Authorization / Cookie / CORS）恰恰最有价值，且内存成本已付出——故完整暴露。
+ * requestId 仅供内部 Map 索引，不返回。
  */
 export function serializeNetworkEntry(e) {
   return {
@@ -117,10 +135,38 @@ export function serializeNetworkEntry(e) {
     resourceType: e.resourceType,
     status: e.status,
     mimeType: e.mimeType,
+    startedAt: e.startedAt,
+    requestHeaders: e.requestHeaders,
+    responseHeaders: e.responseHeaders,
     postData: e.postData,
     body: e.body,
     bodyTruncated: e.bodyTruncated,
   };
+}
+
+// 不需要拉取响应体的资源类型（图像/字体/媒体等二进制拉回也没意义，
+// 既浪费 SW 内存（最多 100 xd7 20KB = 2MB）又浪费 CDP 往返）
+export const SKIP_BODY_RESOURCE_TYPES = new Set(['Image', 'Font', 'Media', 'Manifest', 'Other']);
+
+// 仅对这些 mimeType 前缀拉取 body（双保险：resourceType 缺失时仍能过滤）
+export const TEXT_BODY_MIME_PREFIXES = [
+  'text/', 'application/json', 'application/xml', 'application/javascript',
+  'application/ecmascript', 'application/x-www-form-urlencoded',
+  'application/graphql', 'application/ld+json', 'application/manifest+json',
+  'image/svg+xml',
+];
+
+/**
+ * 判断一个网络条目是否应该拉取响应体。
+ * 默认不拉二进制资源；mimeType 已知时进一步限定为文本类。
+ */
+export function shouldFetchBody(entry) {
+  if (!entry) return false;
+  if (SKIP_BODY_RESOURCE_TYPES.has(entry.resourceType)) return false;
+  const mime = String(entry.mimeType || '').toLowerCase();
+  // mimeType 未知时（部分请求在 loadingFinished 时仍未回填）：保守拉取
+  if (!mime) return true;
+  return TEXT_BODY_MIME_PREFIXES.some(p => mime.startsWith(p));
 }
 
 /**
