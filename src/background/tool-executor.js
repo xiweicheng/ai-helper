@@ -8,6 +8,7 @@ import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
+import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab } from './state.js';
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
@@ -1697,6 +1698,7 @@ const TOOL_HANDLERS = {
   handle_dialog: executeHandleDialog,
   dispatch_task: executeDispatchSubAgent,
   agent_memory: async (args, toolCallId, sessionId) => executeAgentMemory(args, toolCallId, sessionId),
+  debug_page: executeDebugPage,
   // ── 合并后的工具 ──
   page_content: executeGetPageContent,
   extract_data: executeExtractData,

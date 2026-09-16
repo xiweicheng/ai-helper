@@ -20,7 +20,8 @@
     "clipboardRead",
     "clipboardWrite",
     "commands",
-    "alarms"
+    "alarms",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>",

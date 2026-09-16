@@ -44,6 +44,8 @@ export default {
     download_file: '下载文件',
     manage_tab: '标签页管理',
     agent_file: '文件操作',
+    debug_page: '页面调试（Debugger）',
+    debuggerAttachHint: '\n\n开启后该标签页顶部会显示"扩展程序正在调试此浏览器"提示条，结束后自动消失。',
     unknown: '未知操作',
     tabInfo: '\n\n标签页标题: {title}\n标签页 URL: {url}',
     tabInfoError: '\n\n（无法获取标签页信息: {error}）',
@@ -553,6 +555,7 @@ export default {
     manage_tab: '管理浏览器标签页（打开/切换/关闭/刷新/前进后退）',
     list_tabs: '获取已打开的标签页列表',
     search_browser_data: '搜索浏览器书签或访问历史',
+    debug_page: '高级页面调试（CDP）：原生输入事件、网络抓包、执行 JS、整页/元素截图、设备与 UA 模拟',
   },
 
   // options.html - 推理 tab

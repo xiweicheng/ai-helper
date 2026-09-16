@@ -72,6 +72,7 @@ import { MEDIA_TOOLS } from './tools/media-tools.js';
 import { AI_TOOLS } from './tools/ai-tools.js';
 import { AGENT_TOOLS } from './tools/agent-tools.js';
 import { MEMORY_TOOLS } from './tools/memory-tools.js';
+import { DEBUGGER_TOOLS } from './tools/debugger-tools.js';
 
 export const RAW_TOOLS = [
   ...BROWSER_TOOLS,
@@ -81,6 +82,7 @@ export const RAW_TOOLS = [
   ...AI_TOOLS,
   ...AGENT_TOOLS,
   ...MEMORY_TOOLS,
+  ...DEBUGGER_TOOLS,
 ];
 
 // ==================== 工具类别映射（单一数据源） ====================

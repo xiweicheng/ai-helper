@@ -93,6 +93,7 @@ const TOOL_DISPLAY_NAME_KEYS = {
   download_file: 'sensitiveTool.download_file',
   manage_tab: 'sensitiveTool.manage_tab',
   agent_file: 'sensitiveTool.agent_file',
+  debug_page: 'sensitiveTool.debug_page',
 };
 
 /**
@@ -115,6 +116,10 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
     } catch (e) {
       extraMessage = t('sensitiveTool.tabInfoError', { error: e.message });
     }
+  }
+  // debug_page(attach) 提示黄色调试条
+  if (toolName === 'debug_page' && toolArgs.action === 'attach') {
+    extraMessage = t('sensitiveTool.debuggerAttachHint');
   }
   
   return new Promise((resolve) => {

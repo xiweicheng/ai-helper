@@ -1,4 +1,4 @@
-// tool-definitions 单元测试：7 个工具定义文件的 schema 合规性校验（纯数据，node 环境）
+// tool-definitions 单元测试：8 个工具定义文件的 schema 合规性校验（纯数据，node 环境）
 import { describe, test, expect } from 'vitest';
 import { RAW_TOOLS } from '../../src/background/constants.js';
 import { BROWSER_TOOLS } from '../../src/background/tools/browser-tools.js';
@@ -8,15 +8,17 @@ import { MEDIA_TOOLS } from '../../src/background/tools/media-tools.js';
 import { AI_TOOLS } from '../../src/background/tools/ai-tools.js';
 import { AGENT_TOOLS } from '../../src/background/tools/agent-tools.js';
 import { MEMORY_TOOLS } from '../../src/background/tools/memory-tools.js';
+import { DEBUGGER_TOOLS } from '../../src/background/tools/debugger-tools.js';
 
 const VALID_EXECUTIONS = ['content_script', 'background'];
-const ALL_GROUPS = { BROWSER_TOOLS, TAB_TOOLS, STORAGE_TOOLS, MEDIA_TOOLS, AI_TOOLS, AGENT_TOOLS, MEMORY_TOOLS };
+const ALL_GROUPS = { BROWSER_TOOLS, TAB_TOOLS, STORAGE_TOOLS, MEDIA_TOOLS, AI_TOOLS, AGENT_TOOLS, MEMORY_TOOLS, DEBUGGER_TOOLS };
 
 describe('工具定义聚合 - RAW_TOOLS', () => {
-  test('RAW_TOOLS 非空且包含全部 7 组', () => {
+  test('RAW_TOOLS 非空且包含全部 8 组', () => {
     expect(RAW_TOOLS.length).toBeGreaterThan(0);
     const expected = BROWSER_TOOLS.length + TAB_TOOLS.length + STORAGE_TOOLS.length
-      + MEDIA_TOOLS.length + AI_TOOLS.length + AGENT_TOOLS.length + MEMORY_TOOLS.length;
+      + MEDIA_TOOLS.length + AI_TOOLS.length + AGENT_TOOLS.length + MEMORY_TOOLS.length
+      + DEBUGGER_TOOLS.length;
     expect(RAW_TOOLS.length).toBe(expected);
   });
 
@@ -100,5 +102,33 @@ describe('各分组工具定义非空', () => {
       expect(tools.length, `${group} 为空`).toBeGreaterThan(0);
       tools.forEach(t => expect(t.id).toBeTruthy());
     });
+  });
+});
+
+describe('debug_page 调试工具约定', () => {
+  const debugTool = RAW_TOOLS.find(t => t.id === 'debug_page');
+
+  test('debug_page 存在且为 background 执行', () => {
+    expect(debugTool).toBeDefined();
+    expect(debugTool.execution).toBe('background');
+    expect(debugTool.category).toBe('debug_dev');
+  });
+
+  test('attach 为 action 级确认，工具本身不整体确认', () => {
+    expect(debugTool.requiresConfirmation).toBe(false);
+    expect(debugTool.confirmationActions).toEqual(['attach']);
+  });
+
+  test('action 枚举覆盖全部调试能力', () => {
+    const actions = debugTool.function.parameters.properties.action.enum;
+    expect(actions).toEqual(['attach', 'detach', 'evaluate', 'input', 'network', 'screenshot', 'emulate']);
+  });
+
+  test('每个 action 相关参数均在 properties 中声明', () => {
+    const props = debugTool.function.parameters.properties;
+    ['expression', 'inputType', 'networkMode', 'fullPage', 'emulateTarget',
+     'selector', 'x', 'y', 'text', 'key', 'filterUrl', 'userAgent',
+     'viewportWidth', 'viewportHeight', 'latitude', 'longitude', 'timezoneId', 'colorScheme']
+      .forEach(field => expect(props[field], `缺少参数 ${field}`).toBeDefined());
   });
 });

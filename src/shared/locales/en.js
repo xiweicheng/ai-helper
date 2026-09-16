@@ -44,6 +44,8 @@ export default {
     download_file: 'Download File',
     manage_tab: 'Tab Management',
     agent_file: 'File Operations',
+    debug_page: 'Page Debugger',
+    debuggerAttachHint: '\n\nAfter enabling, a yellow "extension is debugging this browser" infobar appears on the tab until the session ends.',
     unknown: 'Unknown Operation',
     tabInfo: '\n\nTab title: {title}\nTab URL: {url}',
     tabInfoError: '\n\n(Unable to get tab info: {error})',
@@ -553,6 +555,7 @@ export default {
     manage_tab: 'Manage browser tabs (open/switch/close/reload/navigate)',
     list_tabs: 'Get list of open tabs',
     search_browser_data: 'Search browser bookmarks or history',
+    debug_page: 'Advanced page debugging via CDP: native input events, network capture, JS evaluation, full-page/element screenshots, device & UA emulation',
   },
 
   // options.html - react tab
