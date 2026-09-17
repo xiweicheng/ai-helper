@@ -897,6 +897,16 @@ textarea {
   color: #333;
 }
 
+/* 开关在当前模式下不适用时（如全局模式下的自动分组）置灰 */
+.toggle-label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.toggle-label input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
 /* 工具栏配置样式 */
 .toolbar-config {
   margin-top: 30px;

@@ -15,6 +15,7 @@
     "downloads",
     "notifications",
     "tabs",
+    "tabGroups",
     "cookies",
     "offscreen",
     "clipboardRead",
@@ -56,9 +57,6 @@
     "type": "module"
   },
   "options_page": "options.html",
-  "side_panel": {
-    "default_path": "side_panel.html"
-  },
   "commands": {
     "_toggle_sidepanel": {
       "suggested_key": {

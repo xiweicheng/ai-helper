@@ -129,6 +129,15 @@ export default {
     completionConfettiHint: '仅在回答成功完成时播放；失败和取消不播放',
     showMessageTimestamp: '显示消息时间戳',
     showMessageTimestampHint: '（在用户问题气泡下方显示发问时间，今天显示时分，非今天显示日期）',
+    // 侧边栏作用域
+    sidePanelScopeTitle: '侧边栏作用域',
+    sidePanelScopeGlobal: '全局模式',
+    sidePanelScopeTab: '标签页绑定模式',
+    sidePanelScopeGlobalHint: '同一窗口内所有标签页共享同一份侧边栏实例，切换标签页时始终可见',
+    sidePanelScopeTabHint: '侧边栏只在打开它的标签页显示；可在多个标签页各自打开，切走自动隐藏、切回自动恢复',
+    // 自动分组
+    autoGroupTabs: '标签页绑定模式下，把打开侧边栏的标签页归入分组',
+    autoGroupTabsHint: '仅标签页绑定模式生效；把这些标签页归入一个彩色标签组便于识别（标签页会被移动到分组所在位置），关闭某个标签页的侧边栏或切回全局模式时会移出分组',
   },
 
   // 顶部栏

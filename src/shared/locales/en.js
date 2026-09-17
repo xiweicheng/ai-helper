@@ -129,6 +129,15 @@ export default {
     completionConfettiHint: 'Only plays on successful completion; not on failures or cancellations',
     showMessageTimestamp: 'Show message timestamps',
     showMessageTimestampHint: '(Shows the asking time below each user question; time only for today, date included for other days)',
+    // Side panel scope
+    sidePanelScopeTitle: 'Side Panel Scope',
+    sidePanelScopeGlobal: 'Global mode',
+    sidePanelScopeTab: 'Tab-bound mode',
+    sidePanelScopeGlobalHint: 'All tabs in the same window share one side panel instance, and it stays visible when you switch tabs',
+    sidePanelScopeTabHint: 'Side panel shows only on the tabs where you opened it; you can open it on multiple tabs, auto-hides when switching away and restores when switching back',
+    // Auto tab grouping
+    autoGroupTabs: 'In Tab-bound mode, group tabs where the side panel is opened',
+    autoGroupTabsHint: 'Applies to Tab-bound mode only; puts those tabs into a colored tab group for easy identification (tabs move to the group position), and removes a tab when its side panel is closed or you switch back to Global mode',
   },
 
   // Header bar

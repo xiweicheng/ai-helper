@@ -184,6 +184,14 @@ function fixBuild() {
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
+  // 剥离 side_panel.default_path：源 manifest 保留该声明仅供 crxjs 识别 HTML 构建入口，
+  // 但运行时 manifest 默认值会覆盖 sidePanel.setOptions 的全局禁用，
+  // 导致标签页绑定模式失效；运行时 path 由 background 的 setOptions 提供
+  if (manifest.side_panel) {
+    delete manifest.side_panel;
+    console.log(`✅ Removed side_panel.default_path (runtime scope controlled by setOptions)`);
+  }
+
   if (manifest.content_scripts && manifest.content_scripts[0]) {
     const oldJs = JSON.stringify(manifest.content_scripts[0].js);
     const libsDir = path.join(distDir, 'libs');

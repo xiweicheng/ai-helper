@@ -147,6 +147,277 @@ chrome.runtime.onConnect.addListener(async (port) => {
  */
 chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
 
+// 侧边栏作用域模式：'global' | 'tab-specific'
+// 注：不再自建「绑定 tab」状态。Chrome 的侧边栏是 per-window 的，per-tab 的
+// 启用状态由 Chrome 自己按 tab 保存，一个全局 tabId 既表达不了多窗口也用不上。
+let _sidePanelScope = 'global';
+
+// 侧边栏打开状态镜像：快捷键 toggle 必须在用户手势的同步调用栈里判断“是否已打开”
+// （open() 之前不能 await），所以需要一份同步可读的状态。
+// Chrome 141+ 用 sidePanel.onOpened/onClosed 精确维护，粒度是 windowId → tabId：
+//   - null：该窗口打开的是全局面板（面板在窗口内所有 tab 可见）
+//   - 数字：该窗口打开的是 tab 专属面板（仅该 tab 可见）
+// 低版本没有这两个事件，退化为 SW 启动时的 getContexts 快照（best-effort）
+const _openPanelsByWindow = new Map();
+const _hasPanelOpenEvents = !!chrome.sidePanel?.onOpened;
+let _legacyPanelOpen = false;
+
+// SW 启动瞬间的面板快照。getContexts 的 IPC 在 onCommand 里的 open() 之前派发，
+// 因此这份快照表达的是「open() 之前」的状态，冷启动时快捷键靠它判断
+// “面板本来就开着”（见 toggleSidePanelColdStart）。
+// 注意：实测 getContexts 对 side panel 返回的 windowId/tabId 是 -1（无法归到具体窗口），
+// 所以它只能回答「有没有面板开着」，窗口归属只能靠 sidePanel.onOpened/onClosed。
+const _startupPanelProbe = chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] })
+  .then((contexts) => {
+    _legacyPanelOpen = contexts.length > 0;
+    return contexts;
+  })
+  .catch(() => []);
+chrome.sidePanel?.onOpened?.addListener((info) => {
+  if (info?.windowId == null) return;
+  logger.debug('[Background] sidePanel onOpened:', JSON.stringify(info));
+  _openPanelsByWindow.set(info.windowId, info.tabId ?? null);
+});
+chrome.sidePanel?.onClosed?.addListener((info) => {
+  if (info?.windowId == null) return;
+  logger.debug('[Background] sidePanel onClosed:', JSON.stringify(info));
+  const boundTabId = _openPanelsByWindow.get(info.windowId);
+  _openPanelsByWindow.delete(info.windowId);
+  // 关闭的是某个 tab 的面板 → 该 tab 不再绑定，移出 AI Helper 分组
+  // （info.tabId 仅在 tab 专属面板时提供，缺失时退回记录中的绑定 tab）
+  const closedTabId = info.tabId ?? (typeof boundTabId === 'number' ? boundTabId : null);
+  if (closedTabId != null) unbindTabFromAiHelperGroup(closedTabId);
+});
+
+// manifest 不再声明 side_panel.default_path（否则 manifest 默认值会覆盖运行时
+// 全局禁用，导致 tabId 绑定失效），因此启动时先同步设置默认 path，
+// 保证 storage 异步读取完成前 sidePanel.open() 可用
+chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
+
+// SW 启动时从 storage 恢复作用域模式（Chrome 自己保存 per-tab 启用状态，无需恢复）
+chrome.storage.local.get(['sidePanelScope']).then((result) => {
+  _sidePanelScope = normalizeSidePanelScope(result.sidePanelScope);
+  applySidePanelScope();
+}).catch(() => {});
+
+/**
+ * 作用域模式取值白名单（导入配置、手工改 storage 都可能写入非法值）
+ * @param {*} value
+ * @returns {'global'|'tab-specific'}
+ */
+function normalizeSidePanelScope(value) {
+  return value === 'tab-specific' ? 'tab-specific' : 'global';
+}
+
+/**
+ * 按当前作用域模式配置 sidePanel 默认启用状态。
+ *
+ * 采用 webbrain / Claude 官方扩展验证过的模型（避免“No active side panel”竞态）：
+ * 竞态只发生在把某 tab 从 enabled→disabled→enabled 反复翻转时。因此：
+ * - 全局模式：设全局默认 path+enabled，所有 tab 可用；
+ * - 标签页绑定模式：关闭全局默认（面板不泄露到未点击的 tab），
+ *   只在用户显式打开时对那个 tab 做 per-tab 启用，且绝不对任何 tab 调 enabled:false。
+ * Chrome 原生会跨切换保留每个 tab 的面板打开状态：未点过的 tab 无面板（隐藏），
+ * 点过的 tab 切走隐藏、切回自动重现，无需任何代码维护。
+ */
+function applySidePanelScope() {
+  if (_sidePanelScope === 'tab-specific') {
+    // 关闭全局默认：未显式启用的 tab 不显示面板（无 manifest default_path，此禁用生效）
+    chrome.sidePanel?.setOptions?.({ enabled: false });
+  } else {
+    // 全局模式：所有 tab 可用；分组只在绑定模式下有意义，切回来时解散已有分组
+    chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
+    _aiHelperGroupsReady?.then(() => dissolveAiHelperGroups()).catch(() => {});
+  }
+}
+
+/**
+ * 用户显式打开侧边栏时调用（紧跟着同步 open({tabId})）。
+ * tab-specific 模式：对该 tab 做 fire-and-forget 的 per-tab 启用（传 path 使其
+ * 成为 tab 专属面板，open({tabId}) 仅在该 tab 打开）；因为从不主动禁用任何 tab，
+ * setOptions+open 背靠背不会产生“新启用无法覆盖旧禁用”的竞态。
+ * group 默认开启，但只在标签页绑定模式下生效（全局模式所有 tab 都可用面板，
+ * 标记分组既无信息量又会打乱 tab 顺序）；设置变更等非用户主动行为传 { group: false }。
+ */
+function bindSidePanelToTab(tabId, { group = true } = {}) {
+  if (group && _sidePanelScope === 'tab-specific') ensureAiHelperGroupById(tabId);
+  if (_sidePanelScope !== 'tab-specific') return;
+  // per-tab 启用（fire-and-forget，不 await，保留随后的 open() 手势）；绝不禁用其他 tab
+  chrome.sidePanel?.setOptions?.({ tabId, path: 'side_panel.html', enabled: true }).catch(() => {});
+}
+
+// ==================== Tab 分组（仅标签页绑定模式，纯视觉整理，可选） ====================
+//
+// 把用户显式打开过侧边栏的 tab 归入一个每窗口一个的彩色分组，方便一眼看出哪些
+// tab 绑定了 AI 面板；tab 的面板被关闭（或切回全局模式）时移出分组。分组不影响
+// 面板可见性（关闭分组也不会禁用面板），由设置 autoGroupTabs（默认开）控制。
+// windowId -> tabGroups groupId。
+const _aiHelperGroupByWindow = new Map();
+const AI_HELPER_GROUPS_KEY = '_aiHelperGroupByWindow';
+const AI_HELPER_GROUP_TITLE = 'AI Helper';
+
+async function shouldAutoGroupTabs() {
+  try {
+    const stored = await chrome.storage.local.get('autoGroupTabs');
+    return stored?.autoGroupTabs !== false;
+  } catch {
+    return true;
+  }
+}
+
+async function loadAiHelperGroups() {
+  if (!chrome.tabGroups) return;
+  try {
+    const stored = await chrome.storage.session.get(AI_HELPER_GROUPS_KEY);
+    const arr = stored[AI_HELPER_GROUPS_KEY];
+    if (Array.isArray(arr)) {
+      // 重新接管前校验分组仍存在（用户可能手动取消分组，或 SW 重启后 ID 失效）
+      for (const [windowId, groupId] of arr) {
+        try {
+          await chrome.tabGroups.get(groupId);
+          _aiHelperGroupByWindow.set(windowId, groupId);
+        } catch { /* 分组已不存在，跳过 */ }
+      }
+    }
+  } catch { /* session storage 不可用 */ }
+}
+function saveAiHelperGroups() {
+  chrome.storage.session?.set({
+    [AI_HELPER_GROUPS_KEY]: Array.from(_aiHelperGroupByWindow.entries()),
+  }).catch(() => {});
+}
+// ensureAiHelperGroup 会 await 这个 Promise：避免冷启动后立刻打开面板时，
+// 「乐观建组」与 loadAiHelperGroups 内部 await 循环交错，导致映射被旧 groupId 覆盖
+const _aiHelperGroupsReady = loadAiHelperGroups();
+
+/**
+ * 确保 tab.windowId 有一个 AI Helper 分组且 tab 已在其中。
+ */
+async function ensureAiHelperGroup(tab) {
+  if (!chrome.tabGroups || !tab?.id || tab.windowId == null) return;
+  // 固定标签页无法归组（tabs.group 会抛错），直接跳过而不是静默失败
+  if (tab.pinned) return;
+  if (!await shouldAutoGroupTabs()) return;
+  await _aiHelperGroupsReady;
+  try {
+    let groupId = _aiHelperGroupByWindow.get(tab.windowId);
+    // 校验缓存的分组仍存在（用户可能手动取消分组，或 SW 重启后拿到陈旧 ID）
+    if (groupId != null) {
+      try {
+        await chrome.tabGroups.get(groupId);
+      } catch {
+        groupId = null;
+        _aiHelperGroupByWindow.delete(tab.windowId);
+        saveAiHelperGroups();
+      }
+    }
+    if (groupId == null) {
+      // session storage 不跨浏览器重启，而 tab 分组会持久化：先按标题复用已有分组，
+      // 避免重启后重复建出第二个 "AI Helper" 组
+      try {
+        const reused = await chrome.tabGroups.query({ windowId: tab.windowId, title: AI_HELPER_GROUP_TITLE });
+        if (reused.length > 0) groupId = reused[0].id;
+      } catch { /* query 失败则退回新建 */ }
+
+      if (groupId == null) {
+        // 为该窗口新建分组（不传 groupId → 把源 tab 归入新组）
+        groupId = await chrome.tabs.group({ tabIds: [tab.id] });
+        try {
+          await chrome.tabGroups.update(groupId, { title: AI_HELPER_GROUP_TITLE, color: 'blue', collapsed: false });
+        } catch { /* 忽略样式失败 */ }
+      } else if (tab.groupId !== groupId) {
+        // 复用已有同名分组：源 tab 不在其中则加入，不覆盖其标题/颜色
+        try {
+          await chrome.tabs.group({ groupId, tabIds: [tab.id] });
+        } catch { /* tab 可能正在移动，忽略 */ }
+      }
+      _aiHelperGroupByWindow.set(tab.windowId, groupId);
+      saveAiHelperGroups();
+    } else if (tab.groupId !== groupId) {
+      // 该窗口已有缓存分组但源 tab 不在其中，加入
+      try {
+        await chrome.tabs.group({ groupId, tabIds: [tab.id] });
+      } catch { /* tab 可能正在移动，忽略 */ }
+    }
+  } catch (e) {
+    logger.debug('[Background] ensureAiHelperGroup failed:', e?.message);
+  }
+}
+
+// open 入口只有 tabId，分组需要 windowId，故先取 tab 再归组（异步，不占手势）
+function ensureAiHelperGroupById(tabId) {
+  if (!chrome.tabGroups || tabId == null) return;
+  chrome.tabs.get(tabId).then((tab) => ensureAiHelperGroup(tab)).catch(() => {});
+}
+
+/**
+ * 该 tab 上不再有侧边栏（面板被关闭 / tab 已绑定失效）→ 从 AI Helper 分组移出。
+ * 只在绑定模式下执行；分组清空后 Chrome 会自动删除该分组，tabGroups.onRemoved 会清映射。
+ */
+async function unbindTabFromAiHelperGroup(tabId) {
+  if (_sidePanelScope !== 'tab-specific' || !chrome.tabGroups || !chrome.tabs?.ungroup) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    // 只有该 tab 仍是所在窗口的活动 tab 时才认定“用户真的关掉了这个 tab 的面板”：
+    // 切到别的 tab 导致面板隐藏时活动 tab 已经变人，借此避免误把只是隐藏的 tab 移出分组
+    const [activeTab] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+    if (activeTab?.id !== tab.id) return;
+    const groupId = _aiHelperGroupByWindow.get(tab.windowId);
+    if (groupId == null || tab.groupId !== groupId) return;
+    await chrome.tabs.ungroup([tab.id]);
+    logger.debug('[Background] tab unbound from AI Helper group:', tab.id);
+  } catch (e) {
+    logger.debug('[Background] unbindTabFromAiHelperGroup failed:', e?.message);
+  }
+}
+
+/**
+ * 解散本扩展建过的所有 AI Helper 分组（把其中的 tab 移出，不动 tab 本身）。
+ * 用于切回全局模式：全局模式下面板对所有 tab 可用，分组标记失去意义。
+ */
+async function dissolveAiHelperGroups() {
+  if (!chrome.tabGroups || !chrome.tabs?.ungroup) return;
+  const groupIds = [...new Set(_aiHelperGroupByWindow.values())];
+  if (groupIds.length === 0) return;
+  _aiHelperGroupByWindow.clear();
+  saveAiHelperGroups();
+  for (const groupId of groupIds) {
+    try {
+      const tabs = await chrome.tabs.query({ groupId });
+      if (tabs.length > 0) await chrome.tabs.ungroup(tabs.map((tab) => tab.id));
+    } catch { /* 分组可能已被用户删除 */ }
+  }
+  logger.debug('[Background] AI Helper groups dissolved (scope switched to global)');
+}
+
+// 监听配置变更，动态切换作用域模式
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.sidePanelScope) {
+    const newScope = normalizeSidePanelScope(changes.sidePanelScope.newValue);
+    if (newScope !== _sidePanelScope) {
+      _sidePanelScope = newScope;
+      if (newScope === 'tab-specific') {
+        // 切成 tab-specific 会对全局默认做 enabled:false，当前 tab 若没有 per-tab
+        // 启用（全局模式下不需要）面板会被关掉，因此这里必须补上 per-tab 启用，
+        // 让用户已打开的面板原地保留。设置变更非用户主动打开，故不参与自动分组。
+        chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] }).then((contexts) => {
+          if (contexts.length > 0) {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+              if (tabs[0]?.id) bindSidePanelToTab(tabs[0].id, { group: false });
+              applySidePanelScope();
+            });
+          } else {
+            applySidePanelScope();
+          }
+        }).catch(() => { applySidePanelScope(); });
+        return;
+      }
+      applySidePanelScope();
+      logger.debug('[Background] sidePanel scope changed to:', newScope);
+    }
+  }
+});
+
 // 手动处理插件图标点击：脱离窗口存在时跳过，否则打开侧边栏
 // 注意：sidePanel.open() 要求用户手势上下文，必须同步调用，不能 await
 chrome.action.onClicked.addListener((tab) => {
@@ -157,19 +428,25 @@ chrome.action.onClicked.addListener((tab) => {
         // 窗口已不存在，清理并打开侧边栏
         _detachWindowId = null;
         chrome.storage.local.remove('_detachWindowId').catch(() => {});
+        bindSidePanelToTab(tab.id);
         chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
       });
     } catch {
       _detachWindowId = null;
       chrome.storage.local.remove('_detachWindowId').catch(() => {});
+      bindSidePanelToTab(tab.id);
       chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
     }
     return;
   }
-  chrome.sidePanel?.open?.({ tabId: tab.id }).catch(() => {});
+  // tab-specific 模式下先绑定再打开
+  bindSidePanelToTab(tab.id);
+  chrome.sidePanel?.open?.({ tabId: tab.id }).catch((e) => {
+    logger.warn('[Background] open sidePanel failed:', e?.message);
+  });
 });
 
-// 监听脱离窗口被关闭（用户直接关闭窗口），清理 windowId
+// 窗口关闭（用户直接关闭窗口）：清理脱离窗口 windowId + 丢弃该窗口的分组映射
 // 注：windows.onRemoved 不在用户手势上下文中，无法调用 sidePanel.open()，
 // 因此不自动重开侧边栏，用户点击插件图标或快捷键即可重新打开
 chrome.windows.onRemoved.addListener((windowId) => {
@@ -178,26 +455,225 @@ chrome.windows.onRemoved.addListener((windowId) => {
     chrome.storage.local.remove('_detachWindowId').catch(() => {});
     logger.debug('[Background] detached window closed, cleaned up windowId:', windowId);
   }
+  if (_aiHelperGroupByWindow.has(windowId)) {
+    _aiHelperGroupByWindow.delete(windowId);
+    saveAiHelperGroups();
+  }
 });
 
-// 监听标签页变化，确保 Side Panel 可以正确打开
+// 监听标签页加载完成：仅全局模式下重申全局默认启用。
+// tab-specific 模式下不在此处 setOptions 全局 path，避免反复重设默认实例
+// 干扰绑定 tab 的原生“打开状态”记忆（影响切回自动重现）
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
-    chrome.sidePanel?.setOptions?.({
-      enabled: true
-    });
+    if (_sidePanelScope === 'global') {
+      chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
+    }
+  }
+});
+
+// 注：按 webbrain 模型，不在 onActivated/onCreated/onUpdated 里对单个 tab 做
+// enabled:false 或重申启用——那正是导致面板泄露到新 tab、以及 enable→disable→enable
+// 竞态（点不开）的根源。Chrome 已原生跨切换保留每个 tab 的面板状态，无需重申。
+
+// 分组清理：用户取消分组（或 Chrome 自动折叠删除）后，忘掉该窗口的映射，
+// 下次点击可重新建组而不是复用已失效的 groupId
+chrome.tabGroups?.onRemoved?.addListener?.((group) => {
+  for (const [windowId, gid] of _aiHelperGroupByWindow) {
+    if (gid === group.id) {
+      _aiHelperGroupByWindow.delete(windowId);
+      saveAiHelperGroups();
+      break;
+    }
   }
 });
 
 // ==================== 全局快捷键：切换 Side Panel ====================
 //
-// Chrome sidePanel API 只提供 open() 没有 close()/toggle()，这里通过
-// chrome.extension.getViews({ type: 'side_panel' }) 同步判断当前是否打开：
-//   - 已打开：发 CLOSE_SIDEPANEL 消息让 Side Panel 页面调用 window.close()
-//   - 未打开：直接调 chrome.sidePanel.open()
-// onCommand 事件本身是用户手势，满足 sidePanel.open() 的调用前提
+// sidePanel.open() 只在「用户手势的同步调用栈」里可用：哪怕只走一次 tabs.query
+// 回调，手势就失效并抛 "sidePanel.open() may only be called in response to a
+// user gesture"。所以判断与 open() 都必须在 onCommand 的同步栈内完成，靠三份同步
+// 可读的镜像替代 await：
+//   _lastFocusedWindowId / _activeTabByWindow → 目标 tab（窗口、tab 事件 + 启动补水）
+//   _openPanelsByWindow → 面板是否已打开（sidePanel.onOpened/onClosed）
+//   _startupPanelProbe → 冷启动镜像还空时，用启动瞬间的快照判断“本来就已打开”
+// 关闭方向不校验手势（close() 无此限制），因此“纠错”可以放到异步里；
+// 打开方向必须在同步栈里调用，冷启动只能对「当前窗口」下手（见 toggleSidePanelColdStart）。
+
+const TOGGLE_SIDEPANEL_COMMAND = '_toggle_sidepanel';
+
+// 目标 tab 的内存镜像：tabs/windows 事件维持
+const _activeTabByWindow = new Map();
+let _lastFocusedWindowId = null;
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  _activeTabByWindow.set(windowId, tabId);
+  _lastFocusedWindowId = windowId;
+});
+chrome.tabs.onRemoved.addListener((tabId, { windowId }) => {
+  if (_activeTabByWindow.get(windowId) === tabId) _activeTabByWindow.delete(windowId);
+});
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  _lastFocusedWindowId = windowId;
+});
+// 启动补水：SW 被任意事件唤醒后尽快把当前窗口的活跃 tab 放进镜像，
+// 下一次按键即可走同步路径
+chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
+  if (!tab?.id) return;
+  _activeTabByWindow.set(tab.windowId, tab.id);
+  if (_lastFocusedWindowId == null) _lastFocusedWindowId = tab.windowId;
+}).catch(() => {});
+
+// 快捷键是否真的被绑定（被其它扩展占用时 Chrome 会静默不绑，表现为“按了没反应”）
+chrome.commands?.getAll?.().then((commands) => {
+  const cmd = commands.find((c) => c.name === TOGGLE_SIDEPANEL_COMMAND);
+  if (!cmd) return;
+  if (cmd.shortcut) logger.debug('[Background] sidePanel shortcut:', cmd.shortcut);
+  else logger.warn('[Background] sidePanel shortcut is not bound, set it at chrome://extensions/shortcuts');
+}).catch(() => {});
+
+/**
+ * 当前活跃 tab id（同步，读内存镜像）。SW 刚被唤醒、镜像还没补水时返回 null。
+ * @returns {number|null}
+ */
+function getActiveTabId() {
+  if (_lastFocusedWindowId == null) return null;
+  return _activeTabByWindow.get(_lastFocusedWindowId) ?? null;
+}
+
+/**
+ * 当前 tab 上侧边栏是否可见（同步，供快捷键 toggle 使用）。
+ * @param {{id:number, windowId:number}} tab
+ */
+function isSidePanelOpenOnTab(tab) {
+  const entry = _openPanelsByWindow.get(tab.windowId);
+  if (entry !== undefined) {
+    // null = 全局面板（窗口内所有 tab 可见）；数字 = tab 专属面板（仅该 tab 可见）
+    return entry === null || entry === tab.id;
+  }
+  // 有事件能力但没有该窗口的记录 → 该窗口确实没打开面板
+  return !_hasPanelOpenEvents && _legacyPanelOpen;
+}
+
+/**
+ * 关闭 windowId 窗口上当前可见的侧边栏。
+ * Chrome 141+ 用 sidePanel.close()：不需要跨上下文消息，也不会连带关掉别的窗口；
+ * 旧版本退化为通知面板页 window.close()（会销毁面板实例，属兜底行为）。
+ * @param {number} windowId
+ * @param {number|null} tabId tab 专属面板才传；全局面板必须只传 windowId
+ */
+function closeSidePanelInWindow(windowId, tabId = null) {
+  /** 最后兜底：通知面板页自己 window.close()（旧版 Chrome 或 close() 双路径都失败） */
+  const notifySelfClose = (msg) => {
+    logger.warn('[Background] close sidePanel failed, fallback to panel self-close:', msg);
+    chrome.runtime.sendMessage({ type: 'CLOSE_SIDEPANEL' }).catch(() => {});
+  };
+  if (!chrome.sidePanel?.close) {
+    chrome.runtime.sendMessage({ type: 'CLOSE_SIDEPANEL' }).catch((e) => {
+      logger.warn('[Background] send CLOSE_SIDEPANEL failed:', e?.message);
+    });
+    return;
+  }
+  const options = typeof tabId === 'number' ? { tabId } : { windowId };
+  chrome.sidePanel.close(options).then(() => {
+    _openPanelsByWindow.delete(windowId);
+  }).catch((e) => {
+    if (typeof tabId !== 'number') return notifySelfClose(e?.message);
+    // Chrome 141-144：该窗口当前只有全局面板时 close({tabId}) 会 reject，
+    // 退回「按窗口关闭」——windowId 一定关得掉，否则就是只能开不能关
+    chrome.sidePanel.close({ windowId }).then(() => {
+      _openPanelsByWindow.delete(windowId);
+    }).catch((e2) => notifySelfClose(e2?.message));
+  });
+}
+
+/**
+ * 按键后异步校准面板状态镜像。getContexts 只能回答「有没有面板开着」（其 windowId
+ * 实测为 -1，无法归到具体窗口），所以：
+ * - 没有任何面板 → 清空镜像（面板已被用户手动关掉等）
+ * - 有面板 → 不动镜像（窗口归属以 onOpened/onClosed 与本次 open 的写值为准，
+ *   清空重建反而会把正确记录冲掉，导致下次按键误判为「未打开」而关不掉）
+ */
+function refreshPanelState() {
+  setTimeout(() => {
+    chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] }).then((contexts) => {
+      if (contexts.length === 0) _openPanelsByWindow.clear();
+    }).catch(() => {});
+  }, 300);
+}
+
+/**
+ * 在当前 tab 上打开或关闭侧边栏（必须在手势的同步栈内调用）。
+ * @param {{id:number, windowId:number}} tab
+ */
+function toggleSidePanelOnTab(tab) {
+  // 全局模式一律用 windowId 开/关：此时 open({tabId}) 打开的其实是全局面板，
+  // onOpened 可能不带 tabId，且 Chrome 141-144 对「仅有全局面板时 close({tabId})」
+  // 会 reject —— 这正是「能开不能关」的原因。
+  const byWindow = _sidePanelScope === 'global';
+  if (isSidePanelOpenOnTab(tab)) {
+    logger.debug('[Background] command: close sidePanel on tab', tab.id, tab.windowId);
+    const entry = _openPanelsByWindow.get(tab.windowId);
+    closeSidePanelInWindow(tab.windowId, byWindow || entry === null ? null : tab.id);
+    return;
+  }
+  logger.debug('[Background] command: open sidePanel on tab', tab.id, tab.windowId);
+  bindSidePanelToTab(tab.id);
+  const options = byWindow ? { windowId: tab.windowId } : { tabId: tab.id };
+  // 成功后同步镜像：不依赖 sidePanel.onOpened（Chrome <141 没有该事件），
+  // 否则下一次按键会把「已打开」误判为「未打开」，表现为关不掉
+  chrome.sidePanel?.open?.(options).then(() => {
+    _openPanelsByWindow.set(tab.windowId, byWindow ? null : tab.id);
+  }).catch((e) => {
+    logger.warn('[Background] open sidePanel failed:', e?.message);
+  });
+}
+
+/**
+ * 冷启动兜底：SW 刚被快捷键唤醒，镜像还没补水，同步拿不到 tabId。
+ * - 全局模式：可对「当前窗口」同步 open()（WINDOW_ID_CURRENT 由 Chrome 解析成具体
+ *   窗口，已打开时是 no-op），手势不丢；再用启动快照把“本来就已打开”的情况异步关掉。
+ * - 标签页绑定模式：open() 必须带 tabId 才是 tab 专属面板，只能异步取 tab —— 此时
+ *   手势大概率已失效（open 会报 user gesture 错误），仅把 tab 记进镜像让下次按键生效。
+ */
+function toggleSidePanelColdStart() {
+  if (_sidePanelScope === 'global') {
+    logger.debug('[Background] command: cold start, open sidePanel on current window');
+    chrome.sidePanel?.open?.({ windowId: chrome.windows.WINDOW_ID_CURRENT }).catch((e) => {
+      logger.warn('[Background] open sidePanel failed:', e?.message);
+    });
+    // 用启动快照（表达 open() 之前的状态）判断本次按键是「开」还是「关」。
+    // 快照的 windowId 是 -1，无法判断面板在哪个窗口，只能判断“有没有面板开着”：
+    // 有 → 说明本来就已经打开（本次 open 是 no-op），用户意图是关闭当前窗口的面板。
+    _startupPanelProbe.then((contexts) => {
+      const wasOpen = contexts?.length > 0;
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
+        if (!tab?.id) return;
+        _activeTabByWindow.set(tab.windowId, tab.id);
+        if (_lastFocusedWindowId == null) _lastFocusedWindowId = tab.windowId;
+        if (wasOpen) {
+          // 关闭不需要手势，可以放在异步里；开别的窗口的面板不动
+          closeSidePanelInWindow(tab.windowId, null);
+          return;
+        }
+        // 本来没打开 → 上面的同步 open() 已生效，把状态记进镜像，下次按键才能关
+        _openPanelsByWindow.set(tab.windowId, null);
+      }).catch(() => {});
+    }).catch(() => {});
+    return;
+  }
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab?.id) return;
+    _activeTabByWindow.set(tab.windowId, tab.id);
+    _lastFocusedWindowId = tab.windowId;
+    toggleSidePanelOnTab(tab);
+  });
+}
+
 chrome.commands?.onCommand?.addListener((command) => {
-  if (command !== '_toggle_sidepanel') return;
+  if (command !== TOGGLE_SIDEPANEL_COMMAND) return;
   try {
     // 脱离窗口存在时，快捷键聚焦到脱离窗口而非操作侧边栏
     if (_detachWindowId) {
@@ -212,22 +688,17 @@ chrome.commands?.onCommand?.addListener((command) => {
       }
       return;
     }
-    const views = chrome.extension.getViews({ type: 'side_panel' });
-    if (views.length > 0) {
-      // 已打开 → 通知 Side Panel 关闭自身
-      chrome.runtime.sendMessage({ type: 'CLOSE_SIDEPANEL' }).catch((e) => {
-        logger.warn('[Background] send CLOSE_SIDEPANEL failed:', e?.message);
-      });
+    // 同步路径：镜像里有目标 tab，判断与 open()/close() 全在手势栈内完成
+    const tabId = getActiveTabId();
+    logger.debug('[Background] toggle: scope=%s focusedWindow=%s tab=%s panels=%s events=%s close=%s',
+      _sidePanelScope, _lastFocusedWindowId, tabId, JSON.stringify([..._openPanelsByWindow]),
+      _hasPanelOpenEvents, !!chrome.sidePanel?.close);
+    if (tabId != null) {
+      toggleSidePanelOnTab({ id: tabId, windowId: _lastFocusedWindowId });
     } else {
-      // 未打开 → 获取当前活动标签页后打开（onCommand 事件即用户手势）
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]?.id) {
-          chrome.sidePanel?.open?.({ tabId: tabs[0].id }).catch((e) => {
-            logger.warn('[Background] open sidePanel failed:', e?.message);
-          });
-        }
-      });
+      toggleSidePanelColdStart();
     }
+    refreshPanelState();
   } catch (e) {
     logger.warn('[Background] toggle sidePanel exception:', e?.message);
   }
@@ -908,6 +1379,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // 获取当前活动标签页后打开侧边栏
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
+        bindSidePanelToTab(tabs[0].id);
         chrome.sidePanel?.open?.({ tabId: tabs[0].id }).catch(err => {
           logger.warn('[Background] open sidePanel after attach failed:', err?.message);
         });
@@ -928,10 +1400,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // AI搜索：打开侧边栏，在侧边栏中发起搜索
     if (action === 'ai-search') {
       // 检查脱离窗口是否存在，存在则不打开侧边栏（弹窗会接收消息）
-      const hasDetachWindow = chrome.extension.getViews().some(
-        v => v.location?.search?.includes('popup=1')
-      );
+      // 注：MV3 SW 中 chrome.extension.getViews 不可用，脱离窗口状态由 _detachWindowId 跟踪
+      const hasDetachWindow = _detachWindowId != null;
       if (!hasDetachWindow && tabId) {
+        bindSidePanelToTab(tabId);
         chrome.sidePanel.open({ tabId }).catch(err => {
           logger.warn('[Background] open Side Panel failed:', err?.message || err);
         });
@@ -1031,6 +1503,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // 打开侧边栏
     if (tabId) {
+      bindSidePanelToTab(tabId);
       chrome.sidePanel.open({ tabId }).catch(err => {
         logger.warn('[Background] open Side Panel failed:', err?.message || err);
       });
@@ -1064,6 +1537,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // 打开侧边栏
     if (tabId) {
+      bindSidePanelToTab(tabId);
       chrome.sidePanel.open({ tabId }).catch(err => {
         logger.warn('[Background] open Side Panel failed:', err?.message || err);
       });

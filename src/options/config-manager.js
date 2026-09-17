@@ -966,7 +966,7 @@ export function loadConfig() {
     'streamEnabled',
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
-    'showMessageTimestamp'
+    'showMessageTimestamp', 'sidePanelScope', 'autoGroupTabs'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1109,6 +1109,42 @@ export function loadConfig() {
     // 加载消息时间戳开关（默认开启，undefined 视为 true）
     const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
     if (showMessageTimestampEl) showMessageTimestampEl.checked = result.showMessageTimestamp !== false;
+
+    // 加载侧边栏作用域模式（默认 global）
+    const scopeValue = result.sidePanelScope === 'tab-specific' ? 'tab-specific' : 'global';
+    const scopeRadios = document.querySelectorAll('input[name="sidePanelScope"]');
+    scopeRadios.forEach(radio => { radio.checked = radio.value === scopeValue; });
+
+    // 侧边栏作用域切换立即生效：直接写 storage，background 监听 onChanged 动态应用
+    scopeRadios.forEach(radio => {
+      if (radio.dataset.scopeListenerBound) return;
+      radio.dataset.scopeListenerBound = '1';
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          chrome.storage.local.set({ sidePanelScope: radio.value });
+          syncAutoGroupTabsDisabled();
+        }
+      });
+    });
+
+    // 加载自动分组开关（默认开启，undefined 视为 true）
+    const autoGroupTabsEl = document.getElementById('autoGroupTabs');
+    if (autoGroupTabsEl) autoGroupTabsEl.checked = result.autoGroupTabs !== false;
+    // 自动分组只在标签页绑定模式下生效：全局模式下面板对所有 tab 可用，分组失去意义，
+    // 因此把开关置灰不可改（保留用户原有勾选值，切回绑定模式后继续生效）
+    function syncAutoGroupTabsDisabled() {
+      if (!autoGroupTabsEl) return;
+      const scope = document.querySelector('input[name="sidePanelScope"]:checked')?.value || 'global';
+      autoGroupTabsEl.disabled = scope !== 'tab-specific';
+    }
+    syncAutoGroupTabsDisabled();
+    // 分组开关切换立即生效：background 在归组时实时读取该设置
+    if (autoGroupTabsEl && !autoGroupTabsEl.dataset.groupListenerBound) {
+      autoGroupTabsEl.dataset.groupListenerBound = '1';
+      autoGroupTabsEl.addEventListener('change', () => {
+        chrome.storage.local.set({ autoGroupTabs: autoGroupTabsEl.checked });
+      });
+    }
     
     // 先加载自定义模型到下拉列表，再更新选中状态
     loadCustomModels(() => {
@@ -1244,7 +1280,11 @@ export function saveConfig() {
     // 完成反馈配置
     completionSoundEnabled: completionSoundEnabled,
     completionConfettiEnabled: completionConfettiEnabled,
-    showMessageTimestamp: showMessageTimestamp
+    showMessageTimestamp: showMessageTimestamp,
+    // 侧边栏作用域模式
+    sidePanelScope: document.querySelector('input[name="sidePanelScope"]:checked')?.value || 'global',
+    // 自动分组开关
+    autoGroupTabs: document.getElementById('autoGroupTabs')?.checked !== false
   }, async function() {
     if (chrome.runtime.lastError) {
       showToast(`❌ ${t('settings.saveFailed', { message: chrome.runtime.lastError.message })}`, 'error');

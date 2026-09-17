@@ -1684,7 +1684,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     if (message.type === 'CLOSE_SIDEPANEL') {
-      // 来自全局快捷键 _toggle_sidepanel：关闭 Side Panel 自身
+      // 来自全局快捷键 _toggle_sidepanel：关闭 Side Panel 自身。
+      // Chrome 141+ 由 background 直接调 chrome.sidePanel.close()，走不到这里；
+      // 这里是旧版本兜底（无 close() API），window.close() 会销毁面板实例
       logger.debug('[SidePanel] recei to  CLOSE_SIDEPANEL,closesidebar');
       try { window.close(); } catch (e) { /* 忽略 */ }
       return;
@@ -1844,9 +1846,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  /**
+   * 该 tab 上是否启用了侧边栏（tab-specific 模式下未启用的 tab 上面板不可见）
+   * 宽容判断：per-tab 查询返回的是「覆盖值」还是「合并后的值」两种语义都能正确工作
+   */
+  async function isPanelEnabledForTab(tabId) {
+    try {
+      const tabOpts = await chrome.sidePanel.getOptions({ tabId });
+      if (typeof tabOpts?.enabled === 'boolean') return tabOpts.enabled;
+      const globalOpts = await chrome.sidePanel.getOptions({});
+      return globalOpts?.enabled !== false;
+    } catch {
+      // 查询失败（如旧版本无该 API）时按可见处理，保持原有的跟随行为
+      return true;
+    }
+  }
+
   // 监听 Tab 切换事件,更新当前 Tab ID
+  // 注：tab-specific 模式下面板的「隐藏／恢复」由 Chrome 原生的 per-tab 启用决定
+  // （切到未启用 tab 时隐藏，切回已启用 tab 时自动重现），
+  // 面板页不能 window.close()，否则会销毁实例导致切回时无法自动重现
   chrome.tabs.onActivated.addListener(async (activeInfo) => {
     logger.debug('[SidePanel] Tab switch, new  Tab ID:', activeInfo.tabId);
+    // tab-specific 模式下面板只对已启用的 tab 可见：切到未启用的 tab 时面板是隐藏的，
+    // 此时不能把 currentTabId 跟过去，否则工具调用/截图/定时任务会作用到
+    // 「用户在看、但面板不在其上」的 tab
+    if (!await isPanelEnabledForTab(activeInfo.tabId)) {
+      logger.debug('[SidePanel] Tab 无侧边栏，保持 currentTabId:', state.currentTabId);
+      return;
+    }
     state.currentTabId = activeInfo.tabId;
   });
 

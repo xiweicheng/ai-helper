@@ -22,6 +22,10 @@ const EXPORT_KEYS = [
   'completionSoundEnabled', 'completionConfettiEnabled',
   // 消息时间戳显示开关
   'showMessageTimestamp',
+  // 侧边栏作用域模式
+  'sidePanelScope',
+  // 自动分组开关
+  'autoGroupTabs',
   // 新增：助手、工具、LLM参数、UI开关等配置
   'customAgents', 'activeAgentId', 'activeAssistantId',
   'temperature', 'topP', 'selectedTempIndex',

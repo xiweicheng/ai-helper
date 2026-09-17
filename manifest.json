@@ -15,6 +15,7 @@
     "downloads",
     "notifications",
     "tabs",
+    "tabGroups",
     "cookies",
     "offscreen",
     "clipboardRead",
