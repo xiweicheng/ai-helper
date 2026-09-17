@@ -3,6 +3,7 @@
 
 import { showToast } from './utils.js';
 import { formatMarkdown } from './markdown-render.js';
+import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -891,8 +892,7 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
   requestAnimationFrame(() => {
     requestAnimationFrame(async () => {
   try {
-    const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
-    const html2canvasFunc = window.html2canvas || null;
+    const { jsPDF, html2canvas: html2canvasFunc } = await loadPdfExportLibs();
 
     if (!jsPDF || !html2canvasFunc) {
       showToast(t('chatExport.pdfLibNotLoaded'), 'error');
@@ -1073,7 +1073,7 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
     requestAnimationFrame(async () => {
       let tempContainer = null;
       try {
-        const html2canvasFunc = window.html2canvas || null;
+        const html2canvasFunc = await loadHtml2Canvas();
 
         if (!html2canvasFunc) {
           showToast(t('chatExport.imageLibNotLoaded'), 'error');

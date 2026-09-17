@@ -2,6 +2,7 @@
 
 import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
+import { loadMermaid, loadHtml2Canvas } from './libs-loader.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -640,19 +641,21 @@ async function renderSingleMermaid(container, retries = MERMAID_RENDER_MAX_RETRI
 }
 
 export async function renderMermaidCharts() {
-  if (typeof mermaid === 'undefined') {
-    logger.warn('[SidePanel] Mermaid lib not loaded');
+  const mermaidElements = document.querySelectorAll('.mermaid');
+  if (mermaidElements.length === 0) {
+    return;
+  }
+
+  // 按需加载 mermaid 库（首次调用时加载 3.2MB 脚本，后续复用缓存）
+  try {
+    await loadMermaid();
+  } catch (e) {
+    logger.warn('[SidePanel] Mermaid lib failed to load:', e);
     return;
   }
   
   logger.debug('[SidePanel] ===== renderMermaidCharts start =====');
-  
-  const mermaidElements = document.querySelectorAll('.mermaid');
   logger.debug('[SidePanel] find to  mermaid element count:', mermaidElements.length);
-  
-  if (mermaidElements.length === 0) {
-    return;
-  }
   
   // 逐个渲染 mermaid 元素，避免单个失败影响其他图表
   for (let i = 0; i < mermaidElements.length; i++) {
@@ -1102,22 +1105,25 @@ export function toggleMermaidSourceView(container, sourceCode, svgWrapper, svgEl
 export async function renderMessageMermaid(messageDiv) {
   logger.debug('[SidePanel] ===== renderMessageMermaid start =====');
   
-  if (typeof mermaid === 'undefined') {
-    logger.warn('[SidePanel] Mermaid lib not loaded');
+  // 先检查是否有 mermaid 元素，没有则跳过加载 3.2MB 库
+  const mermaidElements = messageDiv.querySelectorAll('.mermaid');
+  if (mermaidElements.length === 0) {
+    logger.debug('[SidePanel] not found mermaid element');
+    return;
+  }
+
+  // 按需加载 mermaid 库
+  try {
+    await loadMermaid();
+  } catch (e) {
+    logger.warn('[SidePanel] Mermaid lib failed to load:', e);
     return;
   }
   
   // 等待 DOM 完全更新
   await new Promise(resolve => setTimeout(resolve, 300));
   
-  // 获取消息中所有的 mermaid 元素
-  const mermaidElements = messageDiv.querySelectorAll('.mermaid');
   logger.debug('[SidePanel] find to  mermaid element count:', mermaidElements.length);
-  
-  if (mermaidElements.length === 0) {
-    logger.debug('[SidePanel] not found mermaid element');
-    return;
-  }
   
   try {
     // 逐个渲染，避免批量模式下 DOM 引用失效导致工具栏添加失败
@@ -1436,7 +1442,7 @@ export function addTableToolbarEvents() {
       if (!tableWrapper) return;
 
       try {
-        const html2canvasFunc = window.html2canvas || null;
+        const html2canvasFunc = await loadHtml2Canvas();
         if (!html2canvasFunc) {
           showToast(t('markdown.imageExportLibMissing'), 'error');
           return;

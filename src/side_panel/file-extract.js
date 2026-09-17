@@ -2,9 +2,7 @@
 // 支持 PDF、Word(.docx)、Excel(.xlsx)、纯文本等文件类型
 
 import state from './state.js';
-import * as pdfjsLib from 'pdfjs-dist';
-import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
+// pdfjs-dist / mammoth / xlsx 已改为按需动态加载，避免首屏 bundle 过大
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -43,8 +41,7 @@ registerTranslations('en', {
   },
 });
 
-// 配置 PDF.js Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+// PDF.js Worker 配置已移至 extractPdfFile 内部按需设置
 
 // 文件类型映射
 const TEXT_EXTENSIONS = [
@@ -111,6 +108,8 @@ async function extractTextFile(file) {
  * 提取 PDF 文件内容（使用 PDF.js）
  */
 async function extractPdfFile(file) {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const textParts = [];
@@ -129,6 +128,7 @@ async function extractPdfFile(file) {
  * 提取 Word(.docx) 文件内容（使用 mammoth.js）
  */
 async function extractDocxFile(file) {
+  const mammoth = (await import('mammoth')).default;
   const arrayBuffer = await file.arrayBuffer();
   const result = await mammoth.extractRawText({ arrayBuffer });
   return result.value;
@@ -138,6 +138,7 @@ async function extractDocxFile(file) {
  * 提取 Excel(.xlsx/.xls) 文件内容（使用 SheetJS）
  */
 async function extractExcelFile(file) {
+  const XLSX = await import('xlsx');
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const textParts = [];

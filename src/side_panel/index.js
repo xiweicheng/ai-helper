@@ -1893,16 +1893,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     logger.debug('[SidePanel] Marked library loaded');
   }
 
-  // 初始化 mermaid
-  if (typeof mermaid !== 'undefined') {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'default',
-      securityLevel: 'loose',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    });
-    logger.debug('[SidePanel] Mermaid library loaded');
-  }
+  // mermaid 已改为按需懒加载（见 libs-loader.js），首次渲染图表时自动加载并初始化
 
   const userInput = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -2253,34 +2244,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 否则 sendMessage/saveCurrentSession 在会话未加载时会静默失败，刷新即丢消息）
   await loadChatHistory();
 
+  // 一次性读取所有待处理任务（合并 3 次 session.get 为 1 次，减少 IPC 开销）
+  const pendingTasks = await chrome.storage.session.get([
+    'pendingSelectionSearch', 'pendingFillInput', 'pendingDirectSend'
+  ]);
+  const keysToRemove = [];
+
   // 检查是否有待处理的选中文本搜索（Side Panel 刚打开时）
-  const stored = await chrome.storage.session.get('pendingSelectionSearch');
-  if (stored.pendingSelectionSearch && stored.pendingSelectionSearch.selectedText) {
-    const { prompt, selectedText } = stored.pendingSelectionSearch;
+  if (pendingTasks.pendingSelectionSearch && pendingTasks.pendingSelectionSearch.selectedText) {
+    const { prompt, selectedText } = pendingTasks.pendingSelectionSearch;
     logger.debug('[SidePanel] pending selected textsearch:', selectedText?.substring(0, 50));
     setSelectedContext(selectedText);
-    // 延迟执行，确保 UI 已完全初始化
     setTimeout(() => {
       triggerSelectionSearch(prompt, selectedText);
     }, 500);
-    await chrome.storage.session.remove('pendingSelectionSearch');
+    keysToRemove.push('pendingSelectionSearch');
   }
 
   // 检查是否有待填充的追问文本（Side Panel 刚打开时）
-  const fillStored = await chrome.storage.session.get('pendingFillInput');
-  if (fillStored.pendingFillInput && fillStored.pendingFillInput.text) {
-    const { text } = fillStored.pendingFillInput;
+  if (pendingTasks.pendingFillInput && pendingTasks.pendingFillInput.text) {
+    const { text } = pendingTasks.pendingFillInput;
     logger.debug('[SidePanel] pending fill trackasktext:', text?.substring(0, 50));
     setTimeout(() => {
       fillSidePanelInput(text);
     }, 500);
-    await chrome.storage.session.remove('pendingFillInput');
+    keysToRemove.push('pendingFillInput');
   }
-  
+
   // 检查是否有待直接发送的文本（Side Panel 刚打开时）
-  const sendStored = await chrome.storage.session.get('pendingDirectSend');
-  if (sendStored.pendingDirectSend && sendStored.pendingDirectSend.text) {
-    const { text, selectedText } = sendStored.pendingDirectSend;
+  if (pendingTasks.pendingDirectSend && pendingTasks.pendingDirectSend.text) {
+    const { text, selectedText } = pendingTasks.pendingDirectSend;
     logger.debug('[SidePanel] pending directsend text:', text?.substring(0, 50));
     if (selectedText) {
       setSelectedContext(selectedText);
@@ -2288,7 +2281,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       directSend(text, selectedText || '');
     }, 500);
-    await chrome.storage.session.remove('pendingDirectSend');
+    keysToRemove.push('pendingDirectSend');
+  }
+
+  // 批量清除已处理的待办任务
+  if (keysToRemove.length > 0) {
+    await chrome.storage.session.remove(keysToRemove);
   }
 
   // 自动聚焦输入框

@@ -18,15 +18,12 @@ import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
 import { renderMermaidInContainer, convertSvgsToImages } from './chat-export.js';
-import * as pdfjsLib from 'pdfjs-dist';
-import mammoth from 'mammoth';
-import { pptxToHtml } from '@jvmr/pptx-to-html';
+import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 
 import DOMPurify from 'dompurify';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
-// 配置 PDF.js Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
+// pdfjs-dist / mammoth / pptx-to-html 已改为按需动态加载，避免首屏加载重型库
 
 registerTranslations('zh', {
   workspace: {
@@ -2191,6 +2188,8 @@ let pdfZoomRenderTimer = null;
 let pdfRenderZoom = 1;   // canvas 渲染时的缩放因子
 
 async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
+  const pdfjsLib = await import('pdfjs-dist');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   currentPdfDoc = pdf;
   currentPdfPage = 1;
@@ -2420,6 +2419,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
 // ============================================================
 
 async function previewDocx(arrayBuffer, previewContent) {
+  const mammoth = (await import('mammoth')).default;
   const result = await mammoth.convertToHtml({ arrayBuffer }, {
     // 样式映射：将 Word 样式转为内联 style
     styleMap: [
@@ -2462,6 +2462,7 @@ let pptxDragPanStartX = 0, pptxDragPanStartY = 0;
 async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
   previewArea.dataset.previewType = 'pptx';
 
+  const { pptxToHtml } = await import('@jvmr/pptx-to-html');
   pptxSlidesHtml = await pptxToHtml(arrayBuffer, {
     width: 960,
     height: 540,
@@ -3559,8 +3560,7 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
 }
 
 async function exportWorkspacePdf(fileName) {
-  const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
-  const html2canvasFunc = window.html2canvas || null;
+  const { jsPDF, html2canvas: html2canvasFunc } = await loadPdfExportLibs();
 
   if (!jsPDF || !html2canvasFunc) {
     showToast(t('chatExport.pdfLibNotLoaded'), 'error');
@@ -3636,7 +3636,7 @@ async function exportWorkspacePdf(fileName) {
 }
 
 async function exportWorkspaceImage(fileName) {
-  const html2canvasFunc = window.html2canvas || null;
+  const html2canvasFunc = await loadHtml2Canvas();
   if (!html2canvasFunc) {
     showToast(t('chatExport.imageLibNotLoaded'), 'error');
     return;
