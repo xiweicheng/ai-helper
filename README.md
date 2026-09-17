@@ -24,6 +24,15 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 
 ---
 
+## Demo Videos
+
+**AI plugin fills batch forms automatically** (67s · narrated & subtitled): attach an Excel sheet and order in one sentence — the plugin opens the form page, reads rows one by one, fills every field and submits, ending with a split-screen check against the source data.
+
+<video src="docs/videos/form-autofill-demo-en.mp4" poster="docs/videos/cover-en.jpg" controls preload="metadata" width="100%"></video>
+
+- ▶️ English: [Watch online](https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-en.mp4) · in-repo [`docs/videos/form-autofill-demo-en.mp4`](docs/videos/form-autofill-demo-en.mp4)
+- ▶️ 中文版：[在线观看](https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-zh.mp4) · in-repo [`docs/videos/form-autofill-demo-zh.mp4`](docs/videos/form-autofill-demo-zh.mp4)
+
 ## What it can do for you
 
 - **Fill a complex form and upload attachments with one sentence** — AI locates the fields, types the values, and submits. Shadow DOM and React controlled components included.

@@ -19,3 +19,14 @@ Thumbs.db
 *.swo
 *~
 scripts/__pycache__/
+
+# Playwright e2e 产物
+test-results/
+playwright-report/
+
+# 演示视频构建中间产物（分段视频/抽帧/音频素材/定格帧等，保留构建脚本）
+demo/form-autofill/video-build/frames/
+demo/form-autofill/video-build/audio*/
+demo/form-autofill/video-build/*.mp4
+demo/form-autofill/video-build/*.png
+demo/form-autofill/video-build/list.txt

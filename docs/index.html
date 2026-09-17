@@ -865,6 +865,7 @@
       <a href="#features" data-i18n="nav-features">Features</a>
       <a href="#tools" data-i18n="nav-tools">Tools</a>
       <a href="#screenshots" data-i18n="nav-screenshots">Screenshots</a>
+      <a href="#demo-videos" data-i18n="nav-demo">Demo Videos</a>
       <a href="#arch" data-i18n="nav-arch">Architecture</a>
       <a href="#showcase" data-i18n="nav-showcase">Showcase</a>
       <a href="#start" data-i18n="nav-start">Quick Start</a>
@@ -1156,6 +1157,19 @@
       <p data-i18n="scenario-automation-desc">Hand repetitive operations to AI. Email processing, schedule management, form submission, file organization — free up your time for more valuable work.</p>
       <span class="scenario-tag" data-i18n="scenario-automation-tag">Productivity Tools</span>
     </div>
+  </div>
+</section>
+
+<!-- Demo Videos -->
+<section class="section" id="demo-videos">
+  <div class="section-title">
+    <h2 data-i18n="demo-title">Demo Videos</h2>
+    <p data-i18n="demo-desc">Full-process screen recording: one sentence makes the AI fill batch forms automatically</p>
+  </div>
+  <div style="max-width:960px;margin:0 auto;">
+    <video id="demoVideo" controls preload="metadata" width="100%" style="border-radius:12px;background:#000;display:block;" src="videos/form-autofill-demo-en.mp4" poster="videos/cover-en.jpg"></video>
+    <h3 style="margin:14px 0 6px;" data-i18n="demo-cap-title">Auto Batch Form Filling · English Narration</h3>
+    <p style="margin:0;opacity:.75;" data-i18n="demo-cap-desc">Attach an Excel data source and order in one sentence: the plugin opens the form page, reads rows one by one, fills and submits automatically, then verifies against the source in a split screen.</p>
   </div>
 </section>
 
@@ -1715,6 +1729,7 @@
     'nav-features':       { en: 'Features', zh: '特性' },
     'nav-tools':          { en: 'Tools', zh: '工具' },
     'nav-screenshots':    { en: 'Screenshots', zh: '截图' },
+    'nav-demo':           { en: 'Demo Videos', zh: '演示视频' },
     'nav-arch':           { en: 'Architecture', zh: '架构' },
     'nav-showcase':       { en: 'Showcase', zh: '创意成果' },
     'nav-start':          { en: 'Quick Start', zh: '快速开始' },
@@ -1824,6 +1839,10 @@
     'scenario-automation-title':{ en: 'Workflow Automation', zh: '工作流自动化' },
     'scenario-automation-desc': { en: 'Hand repetitive operations to AI. Email processing, schedule management, form submission, file organization — free up your time for more valuable work.', zh: '将重复性操作交给 AI。邮件处理、日程管理、表单提交、文件整理，释放你的时间做更有价值的事。' },
     'scenario-automation-tag':  { en: 'Productivity Tools', zh: '效率工具' },
+    'demo-title':               { en: 'Demo Videos', zh: '演示视频' },
+    'demo-desc':                { en: 'Full-process screen recording: one sentence makes the AI fill batch forms automatically', zh: '全流程录屏演示：一句话让 AI 自动批量录入表单' },
+    'demo-cap-title':           { en: 'Auto Batch Form Filling · English Narration', zh: '自动批量录入表单 · 中文旁白' },
+    'demo-cap-desc':            { en: 'Attach an Excel data source and order in one sentence: the plugin opens the form page, reads rows one by one, fills and submits automatically, then verifies against the source in a split screen.', zh: '附 Excel 数据源一句话下单：插件自动跳转表单页、逐行读取、自动填入并提交，结尾与源数据分屏核对。' },
     'tools-title':       { en: '40+ Built-in Tools', zh: '40+ 个内置工具' },
     'tools-desc':        { en: 'Covering full-scenario browser automation, extensible via Skill and MCP', zh: '覆盖浏览器自动化全场景，支持 Skill 和 MCP 扩展' },
     'tool-interaction':  { en: 'Page Interaction', zh: '页面交互' },
@@ -1925,6 +1944,17 @@
     var lbZoomLabel = document.getElementById('lb-zoom-label');
     if (lbZoomLabel) {
       lbZoomLabel.textContent = translations['lb-fit'][lang];
+    }
+
+    // Switch demo video source & cover poster to match interface language
+    var demoVideo = document.getElementById('demoVideo');
+    if (demoVideo) {
+      var videoSrc = 'videos/form-autofill-demo-' + lang + '.mp4';
+      if (demoVideo.getAttribute('src') !== videoSrc) {
+        demoVideo.src = videoSrc;
+        demoVideo.poster = 'videos/cover-' + lang + '.jpg';
+        demoVideo.load();
+      }
     }
   }
 
