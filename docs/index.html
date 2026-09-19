@@ -1167,7 +1167,7 @@
     <p data-i18n="demo-desc">Product introduction & real-world automation demos</p>
   </div>
   <div style="max-width:960px;margin:0 auto 40px;">
-    <video controls preload="metadata" width="100%" style="border-radius:12px;background:#000;display:block;" src="videos/ai-helper-intro-video.mp4"></video>
+    <video id="introVideo" controls preload="metadata" width="100%" style="border-radius:12px;background:#000;display:block;" src="videos/ai-helper-intro-video-en.mp4"></video>
     <h3 style="margin:14px 0 6px;" data-i18n="intro-cap-title">AI Helper Product Introduction</h3>
     <p style="margin:0;opacity:.75;" data-i18n="intro-cap-desc">Complete walkthrough of AI Helper: ReAct reasoning loop, 40+ built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.</p>
   </div>
@@ -1846,7 +1846,7 @@
     'scenario-automation-tag':  { en: 'Productivity Tools', zh: '效率工具' },
     'demo-title':               { en: 'Demo Videos', zh: '演示视频' },
     'demo-desc':                { en: 'Product introduction & real-world automation demos', zh: '产品介绍与真实自动化场景演示' },
-    'intro-cap-title':          { en: 'AI Helper Product Introduction', zh: 'AI Helper 产品介绍' },
+    'intro-cap-title':          { en: 'AI Helper Product Introduction · English Narration', zh: 'AI Helper 产品介绍 · 中文旁白' },
     'intro-cap-desc':           { en: 'Complete walkthrough of AI Helper: ReAct reasoning loop, 40+ built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.', zh: 'AI Helper 完整介绍：ReAct 推理循环、40+ 内置工具、多智能体协作、工作目录管理、Skill 系统与 MCP 协议扩展——一次看懂浏览器助手如何思考与执行。' },
     'demo-cap-title':           { en: 'Auto Batch Form Filling · English Narration', zh: '自动批量录入表单 · 中文旁白' },
     'demo-cap-desc':            { en: 'Attach an Excel data source and order in one sentence: the plugin opens the form page, reads rows one by one, fills and submits automatically, then verifies against the source in a split screen.', zh: '附 Excel 数据源一句话下单：插件自动跳转表单页、逐行读取、自动填入并提交，结尾与源数据分屏核对。' },
@@ -1961,6 +1961,16 @@
         demoVideo.src = videoSrc;
         demoVideo.poster = 'videos/cover-' + lang + '.jpg';
         demoVideo.load();
+      }
+    }
+
+    // Switch intro video source to match interface language
+    var introVideo = document.getElementById('introVideo');
+    if (introVideo) {
+      var introSrc = 'videos/ai-helper-intro-video-' + lang + '.mp4';
+      if (introVideo.getAttribute('src') !== introSrc) {
+        introVideo.src = introSrc;
+        introVideo.load();
       }
     }
   }

@@ -26,6 +26,13 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 
 ## Demo Videos
 
+**AI Helper product introduction** (~4 min · narrated): complete walkthrough of the ReAct reasoning loop, 40+ built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.
+
+<video src="docs/videos/ai-helper-intro-video-en.mp4" controls preload="metadata" width="100%"></video>
+
+- ▶️ English: [Watch online](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-en.mp4) · in-repo [`docs/videos/ai-helper-intro-video-en.mp4`](docs/videos/ai-helper-intro-video-en.mp4)
+- ▶️ 中文版：[在线观看](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-zh.mp4) · in-repo [`docs/videos/ai-helper-intro-video-zh.mp4`](docs/videos/ai-helper-intro-video-zh.mp4)
+
 **AI plugin fills batch forms automatically** (67s · narrated & subtitled): attach an Excel sheet and order in one sentence — the plugin opens the form page, reads rows one by one, fills every field and submits, ending with a split-screen check against the source data.
 
 <video src="docs/videos/form-autofill-demo-en.mp4" poster="docs/videos/cover-en.jpg" controls preload="metadata" width="100%"></video>

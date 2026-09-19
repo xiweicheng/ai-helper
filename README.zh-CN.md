@@ -26,6 +26,13 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 
 ## 演示视频
 
+**AI Helper 产品介绍**（约 4 分钟 · 带旁白）：完整讲解 ReAct 推理循环、40+ 内置工具、多智能体协作、工作目录管理、Skill 系统与 MCP 协议扩展——一次看懂浏览器助手如何思考与执行。
+
+<video src="docs/videos/ai-helper-intro-video-zh.mp4" controls preload="metadata" width="100%"></video>
+
+- ▶️ 中文版：[在线观看](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-zh.mp4) · 仓库内 [`docs/videos/ai-helper-intro-video-zh.mp4`](docs/videos/ai-helper-intro-video-zh.mp4)
+- ▶️ English：[Watch online](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-en.mp4) · 仓库内 [`docs/videos/ai-helper-intro-video-en.mp4`](docs/videos/ai-helper-intro-video-en.mp4)
+
 **AI 插件自动批量录入表单**（67 秒 · 带旁白与字幕）：附 Excel 数据源一句话下单，插件自动跳转表单页、逐行读取、自动填入并提交，结尾与源数据分屏核对。
 
 <video src="docs/videos/form-autofill-demo-zh.mp4" poster="docs/videos/cover-zh.jpg" controls preload="metadata" width="100%"></video>
