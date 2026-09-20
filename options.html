@@ -97,6 +97,7 @@
       </div>
       <div class="add-model-section">
         <button type="button" class="add-model-toggle-btn" id="addModelToggleBtn" data-i18n-title="settings.addModelTitle" title="添加自定义模型" data-i18n="settings.addModel">+ 添加模型</button>
+        <button type="button" class="add-model-toggle-btn fetch-models-btn" id="fetchModelsBtn" data-i18n-title="settings.fetchModelsTitle" title="从当前厂商 API 拉取可用模型列表" data-i18n="settings.fetchModels">⟳ 从 API 获取</button>
         <div class="add-model-form" id="addModelForm" style="display:none;">
           <input type="text" id="addModelName" data-i18n-placeholder="settings.modelNameInputPlaceholder" placeholder="模型名称（如 gpt-4o）">
           <input type="number" id="addModelContextWindow" data-i18n-placeholder="settings.contextWindowPlaceholder" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
@@ -164,6 +165,7 @@
       </div>
       <div class="add-model-section">
         <button type="button" class="add-model-toggle-btn" id="addImageModelToggleBtn" data-i18n-title="settings.addImageModelTitle" title="添加自定义图片识别模型" data-i18n="settings.addModel">+ 添加模型</button>
+        <button type="button" class="add-model-toggle-btn fetch-models-btn" id="fetchImageModelsBtn" data-i18n-title="settings.fetchModelsTitle" title="从当前厂商 API 拉取可用模型列表" data-i18n="settings.fetchModels">⟳ 从 API 获取</button>
         <div class="add-model-form" id="addImageModelForm" style="display:none;">
           <input type="text" id="addImageModelName" data-i18n-placeholder="settings.modelNameInputPlaceholder" placeholder="模型名称（如 gpt-4o）">
           <input type="number" id="addImageModelContextWindow" data-i18n-placeholder="settings.contextWindowPlaceholder" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
