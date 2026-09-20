@@ -739,9 +739,7 @@ textarea {
 
 /* ReAct 配置样式 */
 .react-config {
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 2px solid #e0e0e0;
+  margin-top: 0;
 }
 
 .react-config h2 {
@@ -923,9 +921,7 @@ textarea {
 
 /* 工具栏配置样式 */
 .toolbar-config {
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 2px solid #e0e0e0;
+  margin-top: 0;
 }
 
 .toolbar-config h2 {
@@ -1632,9 +1628,7 @@ textarea {
 }
 
 .reflection-config {
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 2px solid #e0e0e0;
+  margin-top: 0;
 }
 
 .reflection-config h2 {
