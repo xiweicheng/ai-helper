@@ -473,12 +473,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     clearTimeout(autoFetchTimer);
     autoFetchTimer = setTimeout(() => {
       lastAutoFetchKey = dedupeKey;
+      const btn = document.getElementById('fetchModelsBtn');
+      // 手动请求进行中则跳过，避免与按钮 loading 态争抢
+      if (btn && btn.disabled) return;
       runFetchModels({
         apiBaseEl: document.getElementById('apiBase'),
         apiKeyEl: document.getElementById('apiKey'),
         dropdownId: 'modelDropdown',
         addFn: addCustomModelToDropdown,
-        btn: document.getElementById('fetchModelsBtn'),
+        btn: null,
         silent: true,
       });
     }, 500);
