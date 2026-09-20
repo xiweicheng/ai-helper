@@ -5,6 +5,7 @@ import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown,
 import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
 import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
 import { getDefaultSystemPrompt } from './constants.js';
+import { fetchModelList } from './model-fetcher.js';
 import {
   loadToolbarTools,
   renderToolbarToolsList,
@@ -413,6 +414,106 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
+  // ==================== 从 API 获取模型列表 ====================
+
+  /**
+   * 拉取厂商模型并合并追加进指定下拉。
+   * @param {object} cfg
+   * @param {HTMLInputElement} cfg.apiBaseEl
+   * @param {HTMLInputElement} cfg.apiKeyEl
+   * @param {string} cfg.dropdownId 目标下拉容器 id
+   * @param {(name:string, ctx:number)=>void} cfg.addFn 写入函数
+   * @param {HTMLButtonElement|null} cfg.btn 触发按钮（用于 loading 态）
+   * @param {boolean} cfg.silent 静默模式（自动拉取用，不弹 toast）
+   */
+  async function runFetchModels({ apiBaseEl, apiKeyEl, dropdownId, addFn, btn, silent }) {
+    const apiBase = (apiBaseEl?.value || '').trim();
+    const apiKey = (apiKeyEl?.value || '').trim();
+    if (!apiBase || !apiKey) {
+      if (!silent) showToast('⚠️ ' + t('settings.fetchModelsNeedConfig'), 'error');
+      return;
+    }
+    const originalText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = t('settings.fetchModelsLoading'); }
+    try {
+      const models = await fetchModelList({ apiBase, apiKey });
+      let added = 0;
+      const dropdown = document.getElementById(dropdownId);
+      for (const name of models) {
+        const exists = dropdown && dropdown.querySelector(`.model-option[data-value="${CSS.escape(name)}"]`);
+        if (!exists) { addFn(name, 0); added++; }
+      }
+      if (!silent) {
+        showToast(t('settings.fetchModelsSuccess', { total: models.length, added }), 'success');
+      }
+    } catch (err) {
+      if (!silent) {
+        if (err && (err.status === 401 || err.status === 403)) {
+          showToast(t('settings.fetchModelsAuthFailed'), 'error');
+        } else if (err && err.reason === 'parse') {
+          showToast(t('settings.fetchModelsEmpty'), 'info');
+        } else {
+          showToast(t('settings.fetchModelsFailed'), 'error');
+        }
+      }
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText || t('settings.fetchModels'); }
+    }
+  }
+
+  // 选定厂商后自动拉取一次（防抖 + 去重，静默失败）
+  let lastAutoFetchKey = '';
+  let autoFetchTimer = null;
+  function maybeAutoFetchModels(apiBase, apiKey) {
+    const base = (apiBase || '').trim();
+    const key = (apiKey || '').trim();
+    if (!base || !key) return;
+    const dedupeKey = `${base}|${key}`;
+    if (dedupeKey === lastAutoFetchKey) return;
+    clearTimeout(autoFetchTimer);
+    autoFetchTimer = setTimeout(() => {
+      lastAutoFetchKey = dedupeKey;
+      runFetchModels({
+        apiBaseEl: document.getElementById('apiBase'),
+        apiKeyEl: document.getElementById('apiKey'),
+        dropdownId: 'modelDropdown',
+        addFn: addCustomModelToDropdown,
+        btn: document.getElementById('fetchModelsBtn'),
+        silent: true,
+      });
+    }, 500);
+  }
+
+  // 主模型区「从 API 获取」按钮
+  const fetchModelsBtn = document.getElementById('fetchModelsBtn');
+  if (fetchModelsBtn) {
+    fetchModelsBtn.addEventListener('click', () => {
+      runFetchModels({
+        apiBaseEl: document.getElementById('apiBase'),
+        apiKeyEl: document.getElementById('apiKey'),
+        dropdownId: 'modelDropdown',
+        addFn: addCustomModelToDropdown,
+        btn: fetchModelsBtn,
+        silent: false,
+      });
+    });
+  }
+
+  // 视觉模型区「从 API 获取」按钮
+  const fetchImageModelsBtn = document.getElementById('fetchImageModelsBtn');
+  if (fetchImageModelsBtn) {
+    fetchImageModelsBtn.addEventListener('click', () => {
+      runFetchModels({
+        apiBaseEl: document.getElementById('imageApiBase'),
+        apiKeyEl: document.getElementById('imageApiKey'),
+        dropdownId: 'imageModelDropdown',
+        addFn: addCustomImageModelToDropdown,
+        btn: fetchImageModelsBtn,
+        silent: false,
+      });
+    });
+  }
+
   // ==================== API Base URL 选择器事件 ====================
 
   const apiBaseInput = document.getElementById('apiBase');
@@ -447,6 +548,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // 自动保存
         chrome.storage.local.set({ apiBase: value });
         showToast('✅ ' + t('settings.apiBaseSwitched'), 'info');
+        maybeAutoFetchModels(value, (document.getElementById('apiKey')?.value || '').trim());
       }
     });
 
