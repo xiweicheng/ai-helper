@@ -31,3 +31,73 @@ export function parseModelsPayload(json) {
   }
   return result;
 }
+
+/** 拉取模型失败错误，保留 HTTP 状态码与失败原因 */
+export class FetchModelsError extends Error {
+  constructor(message, { status, reason } = {}) {
+    super(message);
+    this.name = 'FetchModelsError';
+    this.status = status;   // HTTP 状态码（若有）
+    this.reason = reason;   // 'timeout'|'network'|'http'|'parse'|'invalid-config'
+  }
+}
+
+function buildModelsUrl(apiBase) {
+  return `${String(apiBase).trim().replace(/\/+$/, '')}/models`;
+}
+
+function isAnthropic(apiBase) {
+  return /anthropic\.com/i.test(String(apiBase || ''));
+}
+
+/**
+ * 请求厂商 /models 接口并解析模型名列表。
+ * @param {{apiBase:string, apiKey:string, timeoutMs?:number}} opts
+ * @returns {Promise<string[]>}
+ * @throws {FetchModelsError}
+ */
+export async function fetchModelList({ apiBase, apiKey, timeoutMs = 15000 } = {}) {
+  const base = (apiBase || '').trim();
+  const key = (apiKey || '').trim();
+  if (!base || !key) {
+    throw new FetchModelsError('missing apiBase or apiKey', { reason: 'invalid-config' });
+  }
+
+  const headers = { 'Authorization': `Bearer ${key}` };
+  if (isAnthropic(base)) {
+    headers['x-api-key'] = key;
+    headers['anthropic-version'] = '2023-06-01';
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let resp;
+  try {
+    resp = await fetch(buildModelsUrl(base), { method: 'GET', headers, signal: controller.signal });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err && err.name === 'AbortError') {
+      throw new FetchModelsError('request timeout', { reason: 'timeout' });
+    }
+    throw new FetchModelsError((err && err.message) || 'network error', { reason: 'network' });
+  }
+  clearTimeout(timer);
+
+  if (!resp.ok) {
+    throw new FetchModelsError(`HTTP ${resp.status}`, { status: resp.status, reason: 'http' });
+  }
+
+  let json;
+  try {
+    json = await resp.json();
+  } catch (_e) {
+    throw new FetchModelsError('invalid JSON', { reason: 'parse' });
+  }
+
+  const models = parseModelsPayload(json);
+  if (!models.length) {
+    throw new FetchModelsError('no models parsed', { reason: 'parse' });
+  }
+  return models;
+}
