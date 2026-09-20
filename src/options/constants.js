@@ -55,16 +55,26 @@ export const PRESET_MODELS = [
 export const PRESET_IMAGE_MODELS = [];
 
 export const PRESET_API_BASES = [
-  'https://api.deepseek.com',
-  'https://api.openai.com/v1',
-  'https://api.anthropic.com/v1',
-  'https://api.moonshot.cn/v1',
-  'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  'https://api.baichuan-ai.com/v1',
-  'https://open.bigmodel.cn/api/paas/v4',
-  'https://api.siliconflow.cn/v1',
-  'https://api.lingyiwanwu.com/v1',
-  'https://ark.cn-beijing.volces.com/api/v3',
+  // 国内主流
+  'https://api.deepseek.com',                                  // DeepSeek
+  'https://api.hunyuan.cloud.tencent.com/v1',                 // 腾讯混元
+  'https://dashscope.aliyuncs.com/compatible-mode/v1',        // 阿里云百炼（通义千问）
+  'https://qianfan.baidubce.com/v2',                          // 百度千帆（文心）
+  'https://ark.cn-beijing.volces.com/api/v3',                 // 火山方舟（豆包）
+  'https://open.bigmodel.cn/api/paas/v4',                     // 智谱 GLM
+  'https://api.moonshot.cn/v1',                               // Moonshot（Kimi）
+  'https://api.stepfun.com/v1',                               // 阶跃星辰
+  'https://api.minimaxi.com/v1',                              // MiniMax
+  'https://spark-api-open.xf-yun.com/v1',                     // 讯飞星火
+  'https://api.baichuan-ai.com/v1',                           // 百川智能
+  'https://api.siliconflow.cn/v1',                            // 硅基流动
+  // 海外 & 聚合平台
+  'https://api.openai.com/v1',                                // OpenAI
+  'https://api.anthropic.com/v1',                             // Anthropic Claude
+  'https://generativelanguage.googleapis.com/v1beta/openai',  // Google Gemini
+  'https://openrouter.ai/api/v1',                             // OpenRouter（聚合）
+  'https://api.groq.com/openai/v1',                           // Groq
+  'https://api.mistral.ai/v1',                                // Mistral
 ];
 
 export const DEFAULT_SYSTEM_PROMPT = `AI Helper: IT Technical Assistant.
