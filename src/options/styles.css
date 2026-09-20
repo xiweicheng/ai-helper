@@ -524,6 +524,20 @@ textarea {
 }
 .add-model-section {
   margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.add-model-section > .add-model-toggle-btn {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.add-model-section > .add-model-form {
+  flex: 1 0 100%;
+}
+.fetch-models-btn {
+  white-space: nowrap;
 }
 .add-model-toggle-btn {
   background: none;
