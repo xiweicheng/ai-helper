@@ -1004,16 +1004,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   if (reflectionEnabled) {
-    reflectionEnabled.addEventListener('change', updateReflectionSectionVisibility);
+    reflectionEnabled.addEventListener('change', function() {
+      updateReflectionSectionVisibility();
+      // 立即持久化反思总开关状态，无需点保存
+      const enabled = this.checked;
+      chrome.storage.local.get(['reflectionConfig'], (result) => {
+        const config = result.reflectionConfig || { postReflection: {}, toolReflection: {}, subtaskReflection: {} };
+        config.enabled = enabled;
+        chrome.storage.local.set({ reflectionConfig: config });
+      });
+    });
     // 初始化反思总开关状态
     updateReflectionSectionVisibility();
   }
   
+  // 立即持久化反思子开关状态
+  function persistReflectionSubToggle(subKey, enabled) {
+    chrome.storage.local.get(['reflectionConfig'], (result) => {
+      const config = result.reflectionConfig || { postReflection: {}, toolReflection: {}, subtaskReflection: {} };
+      if (!config[subKey]) config[subKey] = {};
+      config[subKey].enabled = enabled;
+      chrome.storage.local.set({ reflectionConfig: config });
+    });
+  }
+
   // 后置反思开关控制
   const postReflectionEnabled = document.getElementById('postReflectionEnabled');
   if (postReflectionEnabled) {
     postReflectionEnabled.addEventListener('change', function() {
       updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
+      persistReflectionSubToggle('postReflection', this.checked);
     });
   }
   
@@ -1022,6 +1042,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (toolReflectionEnabled) {
     toolReflectionEnabled.addEventListener('change', function() {
       updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
+      persistReflectionSubToggle('toolReflection', this.checked);
     });
   }
   
@@ -1030,6 +1051,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (subtaskReflectionEnabled) {
     subtaskReflectionEnabled.addEventListener('change', function() {
       updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
+      persistReflectionSubToggle('subtaskReflection', this.checked);
     });
   }
   
