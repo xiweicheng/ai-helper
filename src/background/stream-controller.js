@@ -3,6 +3,11 @@ import logger from '../shared/logger.js';
 // background/stream-controller.js - 流式输出控制器
 // 负责 SSE 解析、chunk 节流发送、usage 提取、tool_calls 检测
 
+// 流式读取空闲超时：收到响应头后 apiTimeout 即失效（fetchWithTimeout 会 clearTimeout 并移除监听），
+// outerWatchdog 也在 readSSEStream 之前被清除，故空闲超时是"流式数据卡住"的唯一自动保护。
+// 每次收到数据块重置计时，仅当持续该时长无任何 SSE 事件才判定卡住并中断。
+export const STREAM_IDLE_TIMEOUT_MS = 120000;
+
 /**
  * SSE 数据块解析器
  * 支持 OpenAI 兼容格式的 SSE 流
@@ -258,40 +263,51 @@ export class StreamController {
  * 从 ReadableStream 读取 SSE 并逐行交给 StreamController
  * 返回 { content, usage, toolCalls }
  */
-export async function readSSEStream(reader, controller, abortSignal) {
+export async function readSSEStream(reader, controller, abortSignal, idleTimeoutMs = STREAM_IDLE_TIMEOUT_MS) {
   const decoder = new TextDecoder();
   let buffer = '';
 
   // 立即通知 Side Panel 流式输出开始，不等首帧内容
   controller.sendStart();
 
+  // 空闲超时计时器：每轮 reader.read() 前创建、返回后清除，实现"持续无数据才超时"。
+  // 正常流式（含 reasoning 增量）会持续收到 chunk 而不断重置，不会误触发。
+  let idleTimer = null;
+  const clearIdleTimer = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } };
+  const createIdleRacer = () => new Promise((_, reject) => {
+    idleTimer = setTimeout(() => {
+      const err = new Error(`Stream idle timeout: no SSE data received for ${idleTimeoutMs}ms`);
+      err.name = 'StreamIdleTimeout';
+      err.idleMs = idleTimeoutMs;
+      reject(err);
+    }, idleTimeoutMs);
+  });
+
   try {
     while (true) {
-      // 使用 Promise.race 确保 abort 能立即中断 reader.read()
+      // 使用 Promise.race 确保 abort / 空闲超时 能立即中断 reader.read()
       let readResult;
-      if (abortSignal) {
-        let cleanupAbortListener = () => {};
-        try {
-          readResult = await Promise.race([
-            reader.read(),
-            new Promise((_, reject) => {
-              if (abortSignal.aborted) {
-                reject(new DOMException('Aborted', 'AbortError'));
-                return;
-              }
-              const onAbort = () => {
-                reject(new DOMException('Aborted', 'AbortError'));
-              };
-              abortSignal.addEventListener('abort', onAbort, { once: true });
-              cleanupAbortListener = () => abortSignal.removeEventListener('abort', onAbort);
-            })
-          ]);
-        } finally {
-          // 确保 reader.read() 先完成时移除 abort 监听器，防止泄漏
-          cleanupAbortListener();
+      let cleanupAbortListener = () => {};
+      try {
+        const racers = [reader.read(), createIdleRacer()];
+        if (abortSignal) {
+          racers.push(new Promise((_, reject) => {
+            if (abortSignal.aborted) {
+              reject(new DOMException('Aborted', 'AbortError'));
+              return;
+            }
+            const onAbort = () => {
+              reject(new DOMException('Aborted', 'AbortError'));
+            };
+            abortSignal.addEventListener('abort', onAbort, { once: true });
+            cleanupAbortListener = () => abortSignal.removeEventListener('abort', onAbort);
+          }));
         }
-      } else {
-        readResult = await reader.read();
+        readResult = await Promise.race(racers);
+      } finally {
+        // 确保 reader.read() 先完成时移除 abort 监听器与空闲计时器，防止泄漏
+        clearIdleTimer();
+        cleanupAbortListener();
       }
 
       const { done, value } = readResult;
@@ -355,9 +371,16 @@ export async function readSSEStream(reader, controller, abortSignal) {
     controller.finish();
     return { status: 'done', ...controller.getResult() };
   } catch (error) {
+    clearIdleTimer();
     if (error.name === 'AbortError') {
       logger.debug('[StreamController] streamingread was already cancel');
       // 不发送 STREAM_DONE，避免残留消息被新任务处理
+      throw error;
+    } else if (error.name === 'StreamIdleTimeout') {
+      logger.warn(`[StreamController] streamingread idle timeout (${error.idleMs}ms no data),cancel reader`);
+      // 主动取消底层流释放连接，否则挂起的 reader.read() 不会结束
+      try { await reader.cancel(); } catch { /* ignore */ }
+      controller.finish();
       throw error;
     } else {
       logger.error('[StreamController] streamingread error:', error.message);

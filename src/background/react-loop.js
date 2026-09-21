@@ -6,7 +6,7 @@ import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
-import { StreamController, readSSEStream } from './stream-controller.js';
+import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -39,6 +39,7 @@ registerTranslations('zh', {
     toolTimeout: '工具执行超时 ({timeout}ms): {tool}',
     toolAborted: '工具执行已被用户终止: {tool}',
     jsonParseFailed: 'JSON 解析失败 (HTTP {status}): {error}。响应前100字符: {preview}',
+    streamIdleTimeout: '流式响应空闲超时（{seconds} 秒未收到任何数据），已自动中断。可能是网络或服务提供商暂时不稳定，请重试。',
   },
 });
 
@@ -68,6 +69,7 @@ registerTranslations('en', {
     toolTimeout: 'Tool execution timed out ({timeout}ms): {tool}',
     toolAborted: 'Tool execution was aborted by user: {tool}',
     jsonParseFailed: 'JSON parse failed (HTTP {status}): {error}. First 100 chars: {preview}',
+    streamIdleTimeout: 'Stream idle timeout (no data received for {seconds}s), automatically interrupted. This may be caused by an unstable network or provider, please retry.',
   },
 });
 import { summarizeRound } from './context-summarizer.js';
@@ -970,8 +972,13 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }
         
         // 使用带重试和超时的 fetch
-        // 外层超时保护：独立 setTimeout watchdog，防止 fetchWithRetry 因 AbortSignal bug 永久挂起
-        const outerTimeoutMs = Math.max(remainingTime - 30000, apiTimeout);
+        // 外层超时保护：独立 setTimeout watchdog，防止 fetchWithRetry 因 AbortSignal bug 永久挂起。
+        // 注意：此 watchdog 仅覆盖 fetchWithRetry（建立连接+重试）阶段——它在下方 fetchWithRetry
+        // 返回后即被 clearTimeout，不覆盖流式读取（流式卡住由 readSSEStream 的空闲超时保护）。
+        // 合理上限 = 单次超时 ×(重试次数+1)+ 退避缓冲，而非整个循环剩余时间
+        // （旧实现用 remainingTime-30s，任务初期兜底长达近 2 小时，形同虚设）。
+        const retrySpan = apiTimeout * (reactConfig.apiRetryCount + 1) + 30000;
+        const outerTimeoutMs = Math.max(apiTimeout, Math.min(retrySpan, remainingTime));
         outerWatchdog = setTimeout(() => {
           logger.warn(`[Background] ⚠️ API call outertimeoutprotection triggered (${Math.round(outerTimeoutMs / 1000)}s),force abort`);
           abortController?.abort();
@@ -1062,13 +1069,23 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }
       } catch (error) {
         clearTimeout(outerWatchdog);
-        // 区分用户取消（AbortError）和真正的 API 错误
+        // 区分用户取消（AbortError）、流式空闲超时（StreamIdleTimeout）和真正的 API 错误
         const isAborted = error.name === 'AbortError';
+        const isIdleTimeout = error.name === 'StreamIdleTimeout';
         if (isAborted) {
           logger.debug('[Background] API call with by usercancel');
+        } else if (isIdleTimeout) {
+          logger.warn('[Background] API stream idle timeout:', error.message);
         } else {
           logger.error('[Background] API call with failed:', error.message || error);
         }
+        
+        // 用户可见的错误信息（空闲超时走 i18n 本地化）
+        const userErrorMessage = isAborted
+          ? t('bg.requestCancelled')
+          : isIdleTimeout
+            ? t('reactLoop.streamIdleTimeout', { seconds: Math.round((error.idleMs || STREAM_IDLE_TIMEOUT_MS) / 1000) })
+            : error.message;
         
         // 更新 API 调用日志状态为失败
         const apiLogIndex = executionLog.findIndex(log => log.id === apiLogId);
@@ -1085,11 +1102,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               messageCount: filteredMessages.length,
               toolCount: apiTools.length
             },
-            error: isAborted ? t('reactLoop.userCancelled') : error.message
+            error: isAborted ? t('reactLoop.userCancelled') : userErrorMessage
           };
         }
         
-        throw createErrorWithLog(isAborted ? t('bg.requestCancelled') : error.message, executionLog);
+        throw createErrorWithLog(userErrorMessage, executionLog);
       }
       
       // 更新成功的 API 调用日志
@@ -1512,7 +1529,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
-                reactConfig.reflection, config, lastSentLogSnapshot, callId
+                reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal
               );
               
               // 子任务执行完毕后检查是否已被取消
@@ -1694,7 +1711,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             totalReflectionRounds++;
             const toolReflection = await reflectOnToolResult(
               ref.toolName, ref.toolResultStr, ref.toolCallParams,
-              config, model, reflectionConfig, executionLog, iteration, sessionId
+              config, model, reflectionConfig, executionLog, iteration, sessionId, abortSignal
             );
             
             if (toolReflection) {
@@ -1885,7 +1902,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         logger.debug('[Background] triggered post-reflection...');
         const reflectionResult = await reflectOnResult(
           currentMessages, content, executionLog, model, config,
-          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds
+          reflectionConfig, tabId, sendExecutionStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds, abortSignal
         );
 
         // 合并反思日志
@@ -1954,7 +1971,7 @@ const SUBTASK_CONFIG = {
  * 支持顺序执行、并行执行和条件执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null) {
+export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null, signal = null) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -2204,7 +2221,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
               tabId,
               subtask.name,
               parentExecutionLog,
-              sessionId
+              sessionId,
+              signal
             );
             
             // 如果反思有修订，使用修订后的结果
@@ -2244,6 +2262,10 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         };
         
       } catch (error) {
+        // 用户取消：直接传播 AbortError，不触发子任务重试
+        if (error.name === 'AbortError') {
+          throw error;
+        }
         lastError = error;
         logger.warn(`[Background] subtask ${subtask.name} attempt ${retry + 1} failed:`, error.message);
         
@@ -2386,7 +2408,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
   } else {
     // 未知策略，降级为顺序执行
     logger.warn(`[Background]  not knownexec strategy: ${strategy},downgraded to sequentialexec `);
-    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration, reflectionConfig, config, lastSentLogSnapshot, callId);
+    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration, reflectionConfig, config, lastSentLogSnapshot, callId, signal);
   }
   
   return results;

@@ -263,7 +263,7 @@ export function parseReflectionResult(rawContent) {
  *
  * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null, wasRevised: boolean }}
  */
-export async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds = 0) {
+export async function reflectOnResult(messages, answer, executionLog, model, config, reflectionConfig, tabId, sendStatusUpdate, globalIteration, taskContext, sessionId, totalReflectionRounds = 0, signal = null) {
   const postConfig = reflectionConfig.postReflection;
 
   if (!reflectionConfig?.enabled || !postConfig?.enabled || postConfig.maxRounds < 1) {
@@ -311,7 +311,8 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
           temperature: postConfig.temperature,
           max_tokens: postConfig.maxTokens,
           response_format: { type: 'json_object' }
-        })
+        }),
+        signal
       }, 30000, 1, 1000);
 
       if (!response.ok) {
@@ -434,6 +435,10 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     };
 
   } catch (error) {
+    // 用户取消：传播 AbortError，让主循环正确标记为取消（而非静默返回原答案）
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     logger.warn('[Background] reflection API call with failed:', error.message);
     const duration = Date.now() - startTime;
     reflectionLog.push({
@@ -454,7 +459,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
 /**
  * 工具级反思：对单个工具执行结果进行快速评估
  */
-export async function reflectOnToolResult(toolName, toolResultStr, toolCallParams, config, model, reflectionConfig, executionLog, iteration, sessionId) {
+export async function reflectOnToolResult(toolName, toolResultStr, toolCallParams, config, model, reflectionConfig, executionLog, iteration, sessionId, signal = null) {
   if (!reflectionConfig?.enabled) return null;
   const tc = reflectionConfig.toolReflection;
   if (!tc?.enabled) return null;
@@ -499,7 +504,8 @@ If the result is not helpful, set useful to false and provide a suggestion.`;
         temperature: 0.1,
         max_tokens: 512,
         response_format: { type: 'json_object' }
-      })
+      }),
+      signal
     }, 15000, 1, 1000);
 
     if (!response.ok) return null;
@@ -540,6 +546,10 @@ If the result is not helpful, set useful to false and provide a suggestion.`;
 
     return null;
   } catch (error) {
+    // 用户取消：传播 AbortError，让主循环正确标记为取消
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     logger.warn('[Background] toolreflection call failed:', error.message);
     return null;
   }
@@ -548,7 +558,7 @@ If the result is not helpful, set useful to false and provide a suggestion.`;
 /**
  * 子任务反思：对子任务执行结果进行质量评估
  */
-export async function reflectOnSubtask(messages, result, executionLog, model, config, subtaskReflectConfig, tabId, subtaskName, parentExecutionLog, sessionId) {
+export async function reflectOnSubtask(messages, result, executionLog, model, config, subtaskReflectConfig, tabId, subtaskName, parentExecutionLog, sessionId, signal = null) {
   const startTime = Date.now();
   const reflectionLog = [];
 
@@ -604,7 +614,8 @@ Output the evaluation result in JSON format (do not include markdown code blocks
         stream: false,
         temperature: subtaskReflectConfig.temperature || 0.3,
         max_tokens: subtaskReflectConfig.maxTokens || 1024
-      })
+      }),
+      signal
     }, 30000, 1, 1000);
 
     if (!response.ok) {
@@ -662,6 +673,10 @@ Output the evaluation result in JSON format (do not include markdown code blocks
     };
 
   } catch (error) {
+    // 用户取消：传播 AbortError，让子任务循环正确标记为取消（而非静默降级）
+    if (error.name === 'AbortError') {
+      throw error;
+    }
     logger.warn('[Background] subtask reflection failed:', error.message);
     const duration = Date.now() - startTime;
 
