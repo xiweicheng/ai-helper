@@ -8,6 +8,27 @@ import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 
 /**
+ * dispatch_task 子代理嵌套深度上限
+ * 0 = 主任务，1 = 一级子代理，2 = 二级子代理（到此为止，不能再 dispatch）
+ * 防止子代理内部又 dispatch_task 导致递归 ReAct，token/超时爆炸
+ */
+const MAX_DISPATCH_DEPTH = 2;
+
+/**
+ * 从 sessionId 推算当前 dispatch 深度
+ * 派生规则：`${parentSessionId}_sub_${subAgentId}`（见 executeDispatchSubAgent）
+ * 因此 sessionId 中 "_sub_" 出现的次数即为当前深度
+ *   "abc"                          → 0（主任务）
+ *   "abc_sub_agent1"               → 1（一级子代理）
+ *   "abc_sub_agent1_sub_agent2"    → 2（二级子代理）
+ */
+function getDispatchDepth(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return 0;
+  const matches = sessionId.match(/_sub_/g);
+  return matches ? matches.length : 0;
+}
+
+/**
  * 从浏览器存储中读取 Agent 定义
  * @param {string} agentId
  * @returns {Promise<Object|null>}
@@ -77,6 +98,17 @@ ${task}
  * @returns {Promise<Object>}
  */
 export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
+  // 嵌套深度检查：防止子代理内部又 dispatch_task 导致递归 ReAct 爆炸
+  const currentDepth = getDispatchDepth(sessionId);
+  if (currentDepth >= MAX_DISPATCH_DEPTH) {
+    logger.warn(`[AgentDispatcher] dispatch depth limit reached: depth=${currentDepth}, max=${MAX_DISPATCH_DEPTH}, sessionId=${sessionId}`);
+    return {
+      success: false,
+      error: `Sub-agent nesting depth limit reached (max ${MAX_DISPATCH_DEPTH}, current ${currentDepth}). Please complete the task directly using your own tools instead of dispatching to another sub-agent.`,
+      tool_call_id: toolCallId,
+    };
+  }
+
   // 兼容 AI 模型可能使用的不同参数名
   const subAgentId = args.subAgentId || args.agent_id || args.sub_agent_id;
   const task = args.task;

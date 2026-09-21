@@ -1520,7 +1520,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
               }
               
-              // 将所有子任务结果添加到消息历史（作为系统消息，而非工具消息）
+              // 将所有子任务结果添加到消息历史
+              // 使用 role: 'user' 而非 'system'，原因：
+              //   1. OpenAI 兼容 API 规范要求 system 消息在开头，中间插入 system 可能被某些提供商拒绝
+              //   2. trimMessages 的 systemMsg 提取逻辑（L502）只认第一条 system，中间的 system 会被当作普通消息裁剪
+              //   3. user 消息在中间插入是合法的对话流，表示"系统提供的上下文信息"
               // 每个子任务结果截断至合理大小，避免汇总消息过大
               const SUBTASK_RESULT_MAX_TOKENS = 3000;
               const subtaskSummary = subtaskResults.map((result, idx) => {
@@ -1532,8 +1536,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }).join('\n\n');
               
               currentMessages.push({
-                role: 'system',
-                content: `The following are the execution results of the decomposed subtasks. Please summarize them:\n\n${subtaskSummary}`
+                role: 'user',
+                content: `[System Context] The following are the execution results of the decomposed subtasks. Please summarize them and continue with the main task:\n\n${subtaskSummary}`
               });
               await trimMessages();
               
