@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Helper · 作品海报</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 1536px;
+    height: 1024px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .poster {
+    position: relative;
+    width: 1536px;
+    height: 1024px;
+    background:
+      radial-gradient(1200px 700px at 78% 18%, rgba(56, 130, 246, 0.30), transparent 60%),
+      radial-gradient(1000px 800px at 12% 88%, rgba(139, 92, 246, 0.32), transparent 60%),
+      linear-gradient(135deg, #060b1f 0%, #0b1136 40%, #131a4a 70%, #1a1145 100%);
+    overflow: hidden;
+    color: #fff;
+  }
+
+  /* glowing grid */
+  .grid {
+    position: absolute;
+    inset: -2px;
+    background-image:
+      linear-gradient(rgba(90, 160, 255, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(90, 160, 255, 0.08) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(circle at 50% 40%, #000 30%, transparent 85%);
+    -webkit-mask-image: radial-gradient(circle at 50% 40%, #000 30%, transparent 85%);
+  }
+
+  /* floating particles */
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(140, 200, 255, 0.85);
+    box-shadow: 0 0 12px 3px rgba(90, 170, 255, 0.7);
+  }
+
+  .content {
+    position: relative;
+    z-index: 3;
+    width: 100%;
+    height: 100%;
+    padding: 72px 84px 60px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* header */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .logo {
+    width: 58px; height: 58px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #38bdf8, #6366f1 60%, #a855f7);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 800; color: #fff;
+    box-shadow: 0 8px 30px rgba(99, 102, 241, 0.55);
+  }
+  .brand-name {
+    font-size: 30px; font-weight: 700; letter-spacing: 1px;
+    color: #eaf2ff;
+  }
+  .brand-name span { color: #7dd3fc; }
+  .badge-open {
+    margin-left: auto;
+    display: flex; gap: 10px;
+  }
+  .chip-top {
+    font-size: 15px; font-weight: 600;
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(150, 200, 255, 0.28);
+    color: #cfe4ff;
+    backdrop-filter: blur(6px);
+  }
+
+  /* hero */
+  .hero { margin-top: 40px; max-width: 820px; }
+  .hero h1 {
+    font-size: 78px;
+    font-weight: 900;
+    line-height: 1.04;
+    letter-spacing: 1px;
+    background: linear-gradient(92deg, #ffffff 10%, #bfe0ff 55%, #c4b5fd 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 44px rgba(120, 170, 255, 0.28);
+  }
+  .hero .sub {
+    margin-top: 22px;
+    font-size: 30px;
+    font-weight: 600;
+    color: #dbeafe;
+    line-height: 1.45;
+  }
+  .hero .sub b { color: #7dd3fc; font-weight: 800; }
+  .hero .desc {
+    margin-top: 16px;
+    font-size: 19px;
+    color: #a9c0e0;
+    line-height: 1.6;
+    max-width: 700px;
+  }
+
+  /* feature chips */
+  .features {
+    margin-top: 44px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    max-width: 760px;
+  }
+  .feat {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 20px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(140, 195, 255, 0.22);
+    backdrop-filter: blur(10px);
+    font-size: 19px; font-weight: 600; color: #e7f0ff;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  }
+  .feat .ic {
+    width: 26px; height: 26px; flex: none;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.9), rgba(99,102,241,0.9));
+    box-shadow: 0 0 14px rgba(80,150,255,0.5);
+  }
+
+  /* footer */
+  .footer {
+    margin-top: auto;
+    display: flex; align-items: center; gap: 16px;
+    font-size: 17px; color: #93a9c9;
+  }
+  .footer .dot { width: 6px; height: 6px; border-radius: 50%; background: #4b6a94; }
+  .footer b { color: #bcd6f5; font-weight: 700; }
+
+  /* mock browser side panel */
+  .mock {
+    position: absolute;
+    z-index: 2;
+    right: 84px;
+    top: 168px;
+    width: 560px;
+    height: 660px;
+    border-radius: 20px;
+    overflow: hidden;
+    background: rgba(10, 16, 40, 0.55);
+    border: 1px solid rgba(140, 195, 255, 0.25);
+    box-shadow: 0 40px 90px rgba(0,0,0,0.55), 0 0 60px rgba(70,120,255,0.18);
+    backdrop-filter: blur(4px);
+    transform: rotate(-2.5deg);
+  }
+  .mock-bar {
+    height: 42px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 16px;
+    background: rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .mock-bar .tld { width: 12px; height: 12px; border-radius: 50%; }
+  .mock-bar .url {
+    margin-left: 10px; flex: 1; height: 22px; border-radius: 8px;
+    background: rgba(255,255,255,0.07);
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 12px; color: #93a9c9;
+  }
+  .mock-body { display: flex; height: calc(100% - 42px); }
+  .mock-page {
+    flex: 1; padding: 22px; position: relative;
+    background: linear-gradient(160deg, rgba(30,41,80,0.35), rgba(15,20,45,0.35));
+  }
+  .mock-page .ph {
+    height: 14px; border-radius: 7px; background: rgba(255,255,255,0.10); margin-bottom: 12px;
+  }
+  .mock-page .field {
+    height: 40px; border-radius: 10px; margin-bottom: 14px;
+    border: 1px solid rgba(140,195,255,0.28);
+    background: rgba(255,255,255,0.04);
+    display: flex; align-items: center; padding: 0 14px;
+    font-size: 13px; color: #9fd0ff;
+  }
+  .mock-page .field.filled { border-color: rgba(74,222,128,0.6); color: #86efac; background: rgba(74,222,128,0.08); }
+  .mock-page .btn {
+    height: 42px; border-radius: 10px; width: 130px;
+    background: linear-gradient(135deg, #38bdf8, #6366f1);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #fff;
+    box-shadow: 0 0 22px rgba(80,150,255,0.5);
+    position: relative;
+  }
+  .cursor {
+    position: absolute; right: 100px; top: 268px;
+    width: 26px; height: 26px;
+    filter: drop-shadow(0 0 8px rgba(125,211,252,0.9));
+  }
+
+  .mock-panel {
+    width: 244px; flex: none;
+    border-left: 1px solid rgba(255,255,255,0.10);
+    background: rgba(8, 12, 32, 0.72);
+    padding: 18px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .panel-title { font-size: 13px; font-weight: 700; color: #7dd3fc; letter-spacing: 0.5px; display:flex; align-items:center; gap:8px;}
+  .panel-title .live { width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 10px #4ade80; }
+  .bubble {
+    font-size: 12.5px; line-height: 1.5;
+    padding: 10px 12px; border-radius: 12px;
+    color: #d7e6ff;
+  }
+  .bubble.ai { background: rgba(99,102,241,0.20); border: 1px solid rgba(129,140,248,0.35); border-bottom-left-radius: 4px; }
+  .bubble.user { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); align-self: flex-end; border-bottom-right-radius: 4px; max-width: 90%; }
+  .log {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11px; line-height: 1.75; color: #8fb4d9;
+    background: rgba(0,0,0,0.28); border-radius: 10px; padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .log .ok { color: #86efac; }
+  .log .tool { color: #7dd3fc; }
+  .panel-foot { margin-top: auto; }
+  .input-mock {
+    height: 40px; border-radius: 12px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(140,195,255,0.25);
+    display: flex; align-items: center; padding: 0 12px;
+    font-size: 12px; color: #7f97b8;
+  }
+</style>
+</head>
+<body>
+  <div class="poster">
+    <div class="grid"></div>
+
+    <!-- particles -->
+    <div class="particle" style="width:6px;height:6px;left:8%;top:22%;"></div>
+    <div class="particle" style="width:4px;height:4px;left:20%;top:70%;opacity:.7;"></div>
+    <div class="particle" style="width:8px;height:8px;left:44%;top:12%;opacity:.55;"></div>
+    <div class="particle" style="width:5px;height:5px;left:62%;top:82%;opacity:.8;"></div>
+    <div class="particle" style="width:4px;height:4px;left:90%;top:60%;opacity:.6;"></div>
+    <div class="particle" style="width:7px;height:7px;left:34%;top:88%;opacity:.5;"></div>
+
+    <div class="content">
+      <div class="brand">
+        <div class="logo">A</div>
+        <div class="brand-name">AI <span>Helper</span></div>
+        <div class="badge-open">
+          <div class="chip-top">开源 · MIT</div>
+          <div class="chip-top">Chrome / Edge MV3</div>
+        </div>
+      </div>
+
+      <div class="hero">
+        <h1>让大模型<br/>真正操作网页</h1>
+        <div class="sub">不只是聊天 —— 它会<b>点击、填表、拖拽、上传、执行命令</b></div>
+        <div class="desc">
+          基于 ReAct 推理循环的开源浏览器智能体扩展，内置 40+ 工具，支持多智能体协作、
+          定时任务与 MCP 协议扩展，把 AI 聊天玩具变成每天可靠的生产力助手。
+        </div>
+      </div>
+
+      <div class="features">
+        <div class="feat"><span class="ic">✍️</span>网页自动填表</div>
+        <div class="feat"><span class="ic">📎</span>文件上传</div>
+        <div class="feat"><span class="ic">⌨️</span>执行终端命令</div>
+        <div class="feat"><span class="ic">🤖</span>多智能体协作</div>
+        <div class="feat"><span class="ic">🔁</span>ReAct 推理循环</div>
+        <div class="feat"><span class="ic">⏰</span>定时任务</div>
+        <div class="feat"><span class="ic">🔌</span>MCP 协议扩展</div>
+        <div class="feat"><span class="ic">🧰</span>40+ 内置工具</div>
+      </div>
+
+      <div class="footer">
+        <b>个人作品展示</b>
+        <span class="dot"></span>
+        <span>浏览器 AI 智能体 · 全栈独立开发</span>
+        <span class="dot"></span>
+        <span>数据本地可控</span>
+      </div>
+    </div>
+
+    <!-- mock browser + side panel -->
+    <div class="mock">
+      <div class="mock-bar">
+        <span class="tld" style="background:#ff5f57;"></span>
+        <span class="tld" style="background:#febc2e;"></span>
+        <span class="tld" style="background:#28c840;"></span>
+        <div class="url">🔒 product-form.example.com/录入</div>
+      </div>
+      <div class="mock-body">
+        <div class="mock-page">
+          <div class="ph" style="width:60%;"></div>
+          <div class="ph" style="width:40%;opacity:.6;"></div>
+          <div style="height:18px;"></div>
+          <div class="field filled">商品名称：无线蓝牙耳机 Pro</div>
+          <div class="field filled">价格：¥ 299.00</div>
+          <div class="field filled">库存：1,200 件</div>
+          <div class="field">分类：数码配件 ▾</div>
+          <div style="height:20px;"></div>
+          <div class="btn">提交表单</div>
+          <svg class="cursor" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 3l14 8-6.5 1.5L16 19l-3 1.5-3.5-6.5L5 18V3z" fill="#eaf6ff" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="mock-panel">
+          <div class="panel-title"><span class="live"></span>AI Helper 侧边栏</div>
+          <div class="bubble user">把这个 Excel 里的 12 条商品，逐行填进表单并提交</div>
+          <div class="bubble ai">好的，我已读取表格，开始定位字段并自动填写…</div>
+          <div class="log">
+            <span class="tool">▶ read_file</span> 商品录入.xlsx<br/>
+            <span class="tool">▶ click</span> #product-name<br/>
+            <span class="tool">▶ type</span> "无线蓝牙耳机 Pro"<br/>
+            <span class="tool">▶ upload</span> 附件.png<br/>
+            <span class="tool">▶ click</span> 提交表单<br/>
+            <span class="ok">✓ 第 1/12 条已完成</span>
+          </div>
+          <div class="panel-foot">
+            <div class="input-mock">继续对话 / 输入指令…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
