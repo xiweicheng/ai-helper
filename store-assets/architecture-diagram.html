@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>AI Helper 五层架构</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 1400px;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: #ffffff;
+  }
+  .wrap { width: 1400px; padding: 40px 56px 48px; background: #ffffff; }
+  .title {
+    text-align: center; font-size: 34px; font-weight: 800; color: #1a365d;
+    margin-bottom: 6px; letter-spacing: 1px;
+  }
+  .subtitle { text-align: center; font-size: 17px; color: #718096; margin-bottom: 30px; }
+
+  .layer {
+    border-radius: 16px;
+    padding: 16px 22px 18px;
+    margin-bottom: 14px;
+    border: 2px solid;
+    position: relative;
+  }
+  .layer-head {
+    display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px;
+  }
+  .layer-name { font-size: 21px; font-weight: 800; }
+  .layer-mod { font-size: 14px; color: #4a5568; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip {
+    background: #ffffff; border-radius: 10px; padding: 8px 14px;
+    font-size: 14.5px; font-weight: 600; color: #2d3748;
+    border: 1px solid; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .arrow {
+    text-align: center; color: #a0aec0; font-size: 20px; line-height: 1;
+    margin: -6px 0 8px; letter-spacing: 2px;
+  }
+
+  /* layer colors */
+  .l1 { background: #ebf4ff; border-color: #bee3f8; }
+  .l1 .layer-name { color: #2b6cb0; } .l1 .chip { border-color: #bee3f8; }
+  .l2 { background: #fff9c4; border-color: #fff176; }
+  .l2 .layer-name { color: #975a16; } .l2 .chip { border-color: #f6e05e; }
+  .l3 { background: #f3e5f5; border-color: #ce93d8; }
+  .l3 .layer-name { color: #6b46c1; } .l3 .chip { border-color: #d6bcfa; }
+  .l4 { background: #e8f5e9; border-color: #a5d6a7; }
+  .l4 .layer-name { color: #276749; } .l4 .chip { border-color: #9ae6b4; }
+  .l5 { background: #ffebee; border-color: #ef9a9a; }
+  .l5 .layer-name { color: #c53030; } .l5 .chip { border-color: #feb2b2; }
+
+  .side-note {
+    position: absolute; right: 22px; top: 16px;
+    font-size: 12.5px; color: #718096; font-weight: 600;
+    background: rgba(255,255,255,0.7); border-radius: 8px; padding: 4px 10px;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">AI Helper 五层架构总览</div>
+    <div class="subtitle">Chrome Extension Manifest V3 · 层间通过 Extension API 消息通道通信</div>
+
+    <div class="layer l1">
+      <div class="side-note">side_panel.html + src/side_panel/</div>
+      <div class="layer-head"><span class="layer-name">UI 层</span><span class="layer-mod">Side Panel</span></div>
+      <div class="chips">
+        <span class="chip">对话面板 / Markdown 渲染</span>
+        <span class="chip">多会话管理</span>
+        <span class="chip">执行日志 / Token 统计</span>
+        <span class="chip">工作目录 / 文件预览</span>
+        <span class="chip">划词工具栏 / Agent 选择器</span>
+      </div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="layer l2">
+      <div class="side-note">src/background/ (Service Worker)</div>
+      <div class="layer-head"><span class="layer-name">核心逻辑层</span><span class="layer-mod">Background Service Worker</span></div>
+      <div class="chips">
+        <span class="chip">消息路由</span>
+        <span class="chip">ReAct 推理循环</span>
+        <span class="chip">三级反思系统</span>
+        <span class="chip">工具执行调度</span>
+        <span class="chip">工具预筛选</span>
+        <span class="chip">Agent 通信</span>
+        <span class="chip">流式控制</span>
+      </div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="layer l3">
+      <div class="side-note">src/content/ (注入用户页面)</div>
+      <div class="layer-head"><span class="layer-name">页面执行层</span><span class="layer-mod">Content Script</span></div>
+      <div class="chips">
+        <span class="chip">页面内容提取</span>
+        <span class="chip">页面交互操作</span>
+        <span class="chip">Shadow DOM 穿透</span>
+        <span class="chip">划词浮动工具栏</span>
+      </div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="layer l4">
+      <div class="side-note">agent/ (Node.js 独立进程)</div>
+      <div class="layer-head"><span class="layer-name">代理服务层</span><span class="layer-mod">Node.js Agent</span></div>
+      <div class="chips">
+        <span class="chip">文件系统 / 路径沙箱</span>
+        <span class="chip">命令执行 / 三级安全</span>
+        <span class="chip">Skill 系统</span>
+        <span class="chip">MCP 协议</span>
+        <span class="chip">审计日志 / 回收站</span>
+      </div>
+    </div>
+    <div class="arrow">▼</div>
+
+    <div class="layer l5">
+      <div class="side-note">src/storage/ + chrome.storage</div>
+      <div class="layer-head"><span class="layer-name">数据持久化层</span><span class="layer-mod">Storage</span></div>
+      <div class="chips">
+        <span class="chip">IndexedDB（会话 / 原型 / 统计 / 断点）</span>
+        <span class="chip">chrome.storage.local（配置）</span>
+        <span class="chip">chrome.storage.session（跨重启恢复）</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
