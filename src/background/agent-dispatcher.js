@@ -6,6 +6,19 @@ import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+
+// 注册 agentDispatcher 命名空间翻译
+registerTranslations('zh', {
+  agentDispatcher: {
+    depthLimitReached: '子代理嵌套层级已达上限（最多 {max} 层，当前 {current} 层）。请直接使用你自己的工具完成任务，不要再派发给其他子代理。',
+  },
+});
+registerTranslations('en', {
+  agentDispatcher: {
+    depthLimitReached: 'Sub-agent nesting depth limit reached (max {max}, current {current}). Please complete the task directly using your own tools instead of dispatching to another sub-agent.',
+  },
+});
 
 /**
  * dispatch_task 子代理嵌套深度上限
@@ -15,18 +28,20 @@ import logger from '../shared/logger.js';
 const MAX_DISPATCH_DEPTH = 2;
 
 /**
- * 从 sessionId 推算当前 dispatch 深度
- * 派生规则：`${parentSessionId}_sub_${subAgentId}`（见 executeDispatchSubAgent）
- * 因此 sessionId 中 "_sub_" 出现的次数即为当前深度
- *   "abc"                          → 0（主任务）
- *   "abc_sub_agent1"               → 1（一级子代理）
- *   "abc_sub_agent1_sub_agent2"    → 2（二级子代理）
+ * 记录每个派生 sessionId 对应的 dispatch 深度
+ *
+ * 为什么不从 sessionId 字符串解析深度？
+ *   子代理 sessionId 派生规则为 `${parent}_sub_${subAgentId}`，
+ *   但 subAgentId 来自 agent 定义（内置 generateAgentId 或用户导入的自定义配置），
+ *   理论上可能包含 "_sub_" 子串，字符串匹配会导致深度误判；
+ *   且 sessionId 为空时派生为 `sub_${subAgentId}`（前缀 sub_ 而非 _sub_），
+ *   字符串匹配会少算一层。
+ *   因此改用显式 Map 记录，派发时写入、执行结束后清理，不依赖 id 命名约定。
+ *
+ * 递归栈保证正确性：executeDispatchSubAgent 内 await reactLoop 是同步阻塞的，
+ * 外层派发在 await 期间不会执行 finally 清理，内层派发能查到自己的深度。
  */
-function getDispatchDepth(sessionId) {
-  if (!sessionId || typeof sessionId !== 'string') return 0;
-  const matches = sessionId.match(/_sub_/g);
-  return matches ? matches.length : 0;
-}
+const sessionDepthMap = new Map();
 
 /**
  * 从浏览器存储中读取 Agent 定义
@@ -99,12 +114,13 @@ ${task}
  */
 export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   // 嵌套深度检查：防止子代理内部又 dispatch_task 导致递归 ReAct 爆炸
-  const currentDepth = getDispatchDepth(sessionId);
+  // 主任务 sessionId 不在 Map 中，默认深度 0
+  const currentDepth = sessionDepthMap.get(sessionId) ?? 0;
   if (currentDepth >= MAX_DISPATCH_DEPTH) {
     logger.warn(`[AgentDispatcher] dispatch depth limit reached: depth=${currentDepth}, max=${MAX_DISPATCH_DEPTH}, sessionId=${sessionId}`);
     return {
       success: false,
-      error: `Sub-agent nesting depth limit reached (max ${MAX_DISPATCH_DEPTH}, current ${currentDepth}). Please complete the task directly using your own tools instead of dispatching to another sub-agent.`,
+      error: t('agentDispatcher.depthLimitReached', { max: MAX_DISPATCH_DEPTH, current: currentDepth }),
       tool_call_id: toolCallId,
     };
   }
@@ -148,6 +164,10 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
 
   // 5. 派生 sessionId：确保子 Agent 的所有信令与主 Agent 隔离
   const subSessionId = sessionId ? `${sessionId}_sub_${subAgentId}` : `sub_${subAgentId}`;
+
+  // 注册子代理深度 = 当前深度 + 1，供子代理内部再派发时查询
+  // 必须在 await reactLoop 之前写入；执行结束后在 finally 清理，避免 Map 泄漏
+  sessionDepthMap.set(subSessionId, currentDepth + 1);
 
   const apiParams = {
     temperature: agent.temperature !== null && agent.temperature !== undefined
@@ -202,5 +222,8 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
       error: `Sub-agent [${agent.name}] execution failed: ${error.message || error}`,
       tool_call_id: toolCallId,
     };
+  } finally {
+    // 子代理执行结束，清理深度记录，避免 Map 无限增长
+    sessionDepthMap.delete(subSessionId);
   }
 }
