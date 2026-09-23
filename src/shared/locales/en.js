@@ -67,7 +67,7 @@ export default {
     tabReflection: 'Reflection',
     tabToolbar: 'Selection',
     tabAgent: 'Agent',
-    tabToolbox: 'Toolbox',
+    tabToolbox: 'Extension',
     saveConfig: 'Save Settings',
     // Basic tab content
     apiBaseHint: '(Select from dropdown, or enter manually)',

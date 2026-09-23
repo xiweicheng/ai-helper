@@ -67,7 +67,7 @@ export default {
     tabReflection: '反思',
     tabToolbar: '划词',
     tabAgent: '代理',
-    tabToolbox: '工具',
+    tabToolbox: '扩展',
     saveConfig: '保存配置',
     // 基础 tab 内容
     apiBaseHint: '（从下拉列表选择，或手动输入）',
