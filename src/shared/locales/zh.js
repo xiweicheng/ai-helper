@@ -187,6 +187,7 @@ export default {
   // 会话管理
   session: {
     allSessions: '全部会话',
+    newSessionTitle: '新建会话 (Alt+N)',
     searchPlaceholder: '搜索会话...',
     closeAll: '关闭全部',
     renameTitle: '重命名会话',

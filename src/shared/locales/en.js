@@ -187,6 +187,7 @@ export default {
   // Session management
   session: {
     allSessions: 'All Sessions',
+    newSessionTitle: 'New Session (Alt+N)',
     searchPlaceholder: 'Search sessions...',
     closeAll: 'Close All',
     renameTitle: 'Rename Session',
