@@ -253,6 +253,17 @@ export default {
     globalStats: '全局统计',
     recentCalls: '近期调用',
     noData: '暂无统计数据',
+    // Tab 导航
+    tabTrend: '趋势',
+    tabDistribution: '分布',
+    tabGlobal: '全局',
+    // 时间范围切换
+    timeRangeToday: '今日',
+    timeRangeWeek: '本周',
+    timeRangeMonth: '本月',
+    timeRangeAll: '全部',
+    // 全局 sparkline
+    globalSparklineTitle: '最近 30 天趋势',
   },
 
   // 通用确认弹窗（window.showCustomConfirm）

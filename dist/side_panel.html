@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/rolldown-runtime-C0FnF6B9.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-CNlo5Aot.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-Bwltx_c3.js"></script>
   <script type="module" crossorigin src="/assets/constants-ToZzi3-r.js"></script>
-  <script type="module" crossorigin src="/assets/session-store-V57x0tva.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-CMXX7bax.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-CH4x8hgi.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-aBZp7rQs.js"></script>
+  <script type="module" crossorigin src="/assets/session-store-C9Kkg3gF.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-CkIMedxz.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-kY1QA1A8.js"></script>
+  <script type="module" crossorigin src="/assets/session-manager-ui-5Wn__Ouz.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -353,7 +353,7 @@
 
   <!-- Token 使用统计子弹窗 -->
   <div class="modal-overlay" id="tokenStatsOverlay" style="display: none;">
-    <div class="modal-container" style="max-width: 520px; width: 90%; max-height: 540px; display: flex; flex-direction: column;">
+    <div class="modal-container" style="max-width: 520px; width: 90%; height: 540px; max-height: 90vh; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="tokenStatsClose" data-i18n-title="common.close" title="关闭">×</button>
       <button id="tokenStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
       <div class="modal-title" data-i18n="tokenStatsPanel.title">🪙 Token 使用统计</div>
@@ -361,21 +361,59 @@
         <span style="font-size: 12px; color: #999;" data-i18n="tokenStatsPanel.subtitle">单次问答 ReAct 会话维度 & 总体维度</span>
         <button id="tokenStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
       </div>
+      
+      <!-- 顶部固定卡片：3 个核心数字（所有 Tab 都显示） -->
+      <div id="tokenStatsTopCards" style="display: none; margin-bottom: 12px;"></div>
+      
+      <!-- Tab 导航 -->
+      <div id="tokenStatsTabNav" style="display: none; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; gap: 4px;">
+        <button class="token-tab-btn active" data-tab="trend" data-i18n="tokenStatsPanel.tabTrend" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">趋势</button>
+        <button class="token-tab-btn" data-tab="distribution" data-i18n="tokenStatsPanel.tabDistribution" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">分布</button>
+        <button class="token-tab-btn" data-tab="global" data-i18n="tokenStatsPanel.tabGlobal" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">全局</button>
+      </div>
+      
       <div style="flex: 1; overflow-y: auto; padding-right: 12px;">
         <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
         <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="tokenStatsPanel.noData">暂无统计数据</div>
-        <div id="tokenStatsContent" style="display: none;">
-          <div style="margin-bottom: 14px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.currentSession">当前会话</div>
-            <div id="tokenSessionStats"></div>
+        <div id="tokenStatsContent" style="display: none; height: 100%;">
+          <!-- Tab 1: 趋势 -->
+          <div id="tokenTabTrend" class="token-tab-content">
+            <div style="margin-bottom: 14px;">
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.currentSession">当前会话</div>
+              <div id="tokenSessionStats"></div>
+            </div>
+            <div>
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;" data-i18n="tokenStatsPanel.recentCalls">近期调用</div>
+              <div id="tokenRecentCalls"></div>
+            </div>
           </div>
-          <div style="margin-bottom: 14px;">
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.globalStats">全局统计</div>
-            <div id="tokenOverallStats"></div>
+          
+          <!-- Tab 2: 分布（阶段二实施） -->
+          <div id="tokenTabDistribution" class="token-tab-content" style="display: none;">
+            <div id="tokenDistributionStats" style="text-align: center; padding: 40px; color: #999; font-size: 12px;">阶段二实施中...</div>
           </div>
-          <div>
-            <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;" data-i18n="tokenStatsPanel.recentCalls">近期调用</div>
-            <div id="tokenRecentCalls"></div>
+          
+          <!-- Tab 3: 全局 -->
+          <div id="tokenTabGlobal" class="token-tab-content" style="display: none; flex-direction: column; height: 100%;">
+            <!-- 时间范围切换 -->
+            <div style="margin-bottom: 12px; display: flex; gap: 6px;">
+              <button class="token-time-range-btn" data-range="today" data-i18n="tokenStatsPanel.timeRangeToday" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">今日</button>
+              <button class="token-time-range-btn" data-range="week" data-i18n="tokenStatsPanel.timeRangeWeek" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">本周</button>
+              <button class="token-time-range-btn active" data-range="month" data-i18n="tokenStatsPanel.timeRangeMonth" style="padding: 4px 10px; border: 1px solid #667eea; border-radius: 4px; background: #667eea; color: white; font-size: 11px; cursor: pointer;">本月</button>
+              <button class="token-time-range-btn" data-range="all" data-i18n="tokenStatsPanel.timeRangeAll" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">全部</button>
+            </div>
+            
+            <!-- 全局 sparkline（flex:1 自适应填满剩余高度） -->
+            <div style="margin-bottom: 14px; flex: 1; min-height: 0; display: flex; flex-direction: column;">
+              <div style="font-size: 11px; color: #888; margin-bottom: 6px;" data-i18n="tokenStatsPanel.globalSparklineTitle">最近 30 天趋势</div>
+              <div id="tokenGlobalSparkline" style="flex: 1; min-height: 0;"></div>
+            </div>
+            
+            <!-- 全局统计卡片 -->
+            <div style="margin-bottom: 14px;">
+              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.globalStats">全局统计</div>
+              <div id="tokenOverallStats"></div>
+            </div>
           </div>
         </div>
       </div>

@@ -253,6 +253,17 @@ export default {
     globalStats: 'Global Stats',
     recentCalls: 'Recent Calls',
     noData: 'No data available',
+    // Tab navigation
+    tabTrend: 'Trend',
+    tabDistribution: 'Distribution',
+    tabGlobal: 'Global',
+    // Time range switch
+    timeRangeToday: 'Today',
+    timeRangeWeek: 'Week',
+    timeRangeMonth: 'Month',
+    timeRangeAll: 'All',
+    // Global sparkline
+    globalSparklineTitle: 'Last 30 Days Trend',
   },
 
   // Generic confirm dialog (window.showCustomConfirm)
