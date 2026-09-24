@@ -21,7 +21,7 @@ import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from '.
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
-import { extractArtifactsFromExecutionLog, showArtifactsModal } from './artifacts-manager.js';
+import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { clearPageSelection } from './page-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
@@ -1260,6 +1260,8 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     // 0. 文件产物按钮：从 executionLog 提取写文件操作（放在执行日志按钮之前）
     const artifacts = extractArtifactsFromExecutionLog(executionLog);
+    // 同步预过滤已删除的产物，确保 badge 初始计数准确
+    preFilterDeletedArtifacts(artifacts);
     console.log('[addMessage] executionLog entries:', executionLog?.length, '| agent_file entries:', executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| artifacts:', artifacts.length);
     if (artifacts.length > 0) {
       const artifactsBtn = document.createElement('button');
@@ -1277,9 +1279,11 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       `;
       artifactsBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        showArtifactsModal(artifacts);
+        showArtifactsModal(artifacts, artifactsBtn);
       });
       rightActionsContainer.appendChild(artifactsBtn);
+      // 立即触发异步验证：过滤目录外和不存在的文件，更新 badge
+      validateArtifactsAsync(artifacts, artifactsBtn);
     }
 
     // 1. 执行日志按钮（独立的时钟图标）
@@ -1889,6 +1893,8 @@ function rebindArtifactsButton(messageEl) {
       } catch { return []; }
     })()
   );
+  // 同步预过滤已删除的产物
+  preFilterDeletedArtifacts(artifacts);
   if (artifacts.length === 0) return;
 
   let btn = messageEl.querySelector('.artifacts-btn');
@@ -1922,9 +1928,11 @@ function rebindArtifactsButton(messageEl) {
   if (btn._artifactsBound) return;
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    showArtifactsModal(artifacts);
+    showArtifactsModal(artifacts, btn);
   });
   btn._artifactsBound = true;
+  // 立即触发异步验证：过滤目录外和不存在的文件，更新 badge
+  validateArtifactsAsync(artifacts, btn);
 }
 
 /**

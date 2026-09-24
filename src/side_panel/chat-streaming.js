@@ -14,7 +14,7 @@ import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { handleDuplicateSession } from './session-manager-ui.js';
-import { extractArtifactsFromExecutionLog, showArtifactsModal } from './artifacts-manager.js';
+import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -1844,6 +1844,8 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
 
   // 文件产物按钮：从 executionLog 提取写文件操作
   const artifacts = extractArtifactsFromExecutionLog(executionLog);
+  // 同步预过滤已删除的产物，确保 badge 初始计数准确
+  preFilterDeletedArtifacts(artifacts);
   if (artifacts.length > 0) {
     const artifactsBtn = document.createElement('button');
     artifactsBtn.className = 'artifacts-btn';
@@ -1860,9 +1862,11 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     `;
     artifactsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      showArtifactsModal(artifacts);
+      showArtifactsModal(artifacts, artifactsBtn);
     });
     rightActionsContainer.appendChild(artifactsBtn);
+    // 立即触发异步验证：过滤目录外和不存在的文件，更新 badge
+    validateArtifactsAsync(artifacts, artifactsBtn);
   }
 
   // 执行日志按钮（如果启用且有日志）

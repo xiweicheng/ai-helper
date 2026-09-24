@@ -45,13 +45,6 @@ registerTranslations('zh', {
     dblClickHint: '双击文件名可预览',
     sortHint: '点击排序',
     serialCol: '序号',
-    deletedBadge: '已删除',
-    deletedFile: '文件已删除',
-    deletedCount: '{count} 个已删除',
-    outsideFile: '文件不在工作目录下',
-    outsideHint: '该文件位于工作目录之外，无法定位/预览/下载',
-    outsideToast: '该文件不在工作目录下，暂不支持此操作',
-    outsideCount: '{count} 个在工作目录外',
   },
 });
 
@@ -89,18 +82,8 @@ registerTranslations('en', {
     dblClickHint: 'Double-click to preview',
     sortHint: 'Click to sort',
     serialCol: '#',
-    deletedBadge: 'Deleted',
-    deletedFile: 'File deleted',
-    deletedCount: '{count} deleted',
-    outsideFile: 'File is outside the workspace',
-    outsideHint: 'This file is outside the workspace. Locate/preview/download are unavailable.',
-    outsideToast: 'This file is outside the workspace. This action is not supported.',
-    outsideCount: '{count} outside workspace',
   },
 });
-
-// 目录外标识图标：文件夹 + 斜线（琥珀色），悬停 title 展示完整说明
-const OUTSIDE_WORKSPACE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><line x1="4" y1="2" x2="22" y2="20"/></svg>';
 
 // ============================================================
 // 产物提取：从 executionLog 中解析写文件操作
@@ -1342,35 +1325,20 @@ function sortArtifacts(list) {
 
 /**
  * 生成单个产物行 HTML
+ * 只展示有效产物（工作目录内且实际存在），无需 deleted/outside 状态标记
  */
 function buildArtifactRowHtml(a, idx) {
   const icon = getFileIcon(a.fileName, a.type);
   const typeText = t(`artifacts.${a.action}`);
   const timeText = formatHHMMSS(a.timestamp);
-  const isOutside = !!a.outsideWorkspace;
-  const previewable = !a.deleted && !isOutside && canPreview(a.fileName);
-  const isDeleted = !!a.deleted;
-  // 已删除/目录外的产物均禁用操作按钮（定位/预览/下载依赖工作目录 fs API）
-  const actionDisabled = isDeleted || isOutside;
-  const disabledTitle = isDeleted ? t('artifacts.deletedFile') : (isOutside ? t('artifacts.outsideHint') : '');
-  const deletedBadgeHtml = isDeleted ? `<span class="artifact-deleted-badge" title="${t('artifacts.deletedFile')}">${t('artifacts.deletedBadge')}</span>` : '';
-  // 目录外标识：小图标 + 悬停说明（避免纯文字标签含义不明）
-  const outsideIconHtml = !isDeleted && isOutside ? `<span class="artifact-outside-icon" tabindex="0" aria-label="${t('artifacts.outsideFile')}" title="${t('artifacts.outsideHint')}">${OUTSIDE_WORKSPACE_ICON}</span>` : '';
-  const disabledAttr = actionDisabled ? 'disabled' : '';
-  const disabledClass = actionDisabled ? ' artifact-btn-disabled' : '';
-  const rowClass = isDeleted ? ' artifact-deleted-row' : '';
-  const nameTitle = isDeleted
-    ? `${escapeHtml(a.path)} · ${t('artifacts.deletedFile')}`
-    : isOutside
-      ? `${escapeHtml(a.path)} · ${t('artifacts.outsideFile')}`
-      : `${escapeHtml(a.path)} · ${t('artifacts.dblClickHint')}`;
+  const previewable = canPreview(a.fileName);
+  const nameTitle = `${escapeHtml(a.path)} · ${t('artifacts.dblClickHint')}`;
   return `
-    <tr class="artifacts-row${rowClass}" data-idx="${idx}" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.fileName)}">
+    <tr class="artifacts-row" data-idx="${idx}" data-path="${escapeHtml(a.path)}" data-name="${escapeHtml(a.fileName)}">
       <td class="col-index">${idx + 1}</td>
       <td class="col-file">
         <span class="artifact-icon">${icon}</span>
         <span class="artifact-name" title="${nameTitle}">${escapeHtml(a.fileName)}</span>
-        ${deletedBadgeHtml}${outsideIconHtml}
         <button class="artifact-copy-btn" title="${t('artifacts.copyFileName')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -1381,21 +1349,21 @@ function buildArtifactRowHtml(a, idx) {
       <td class="col-type">${typeText}</td>
       <td class="col-time">${timeText}</td>
       <td class="col-action">
-        <button class="artifact-action-btn download-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.download')}" ${disabledAttr}>
+        <button class="artifact-action-btn download-btn" title="${t('artifacts.download')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-        <button class="artifact-action-btn locate-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.locate')}" ${disabledAttr}>
+        <button class="artifact-action-btn locate-btn" title="${t('artifacts.locate')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
             <circle cx="12" cy="10" r="3"/>
           </svg>
         </button>
-        ${(previewable || actionDisabled) ? `
-        <button class="artifact-action-btn preview-btn${disabledClass}" title="${actionDisabled ? disabledTitle : t('artifacts.preview')}" ${disabledAttr}>
+        ${previewable ? `
+        <button class="artifact-action-btn preview-btn" title="${t('artifacts.preview')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
             <circle cx="12" cy="12" r="3"/>
@@ -1417,21 +1385,15 @@ function bindArtifactRowEvents(modal, sortedList) {
     const artifact = sortedList[idx];
     if (!artifact) return;
 
-    // 单击行：已删除文件不触发定位
+    // 单击行：定位文件
     // 防抖延迟：双击文件名会先触发单击事件，若立即定位会在预览前展开工作目录面板，
     // 等待 250ms 让 dblclick 有机会取消 pending 定位
     row.addEventListener('click', (e) => {
       // 点击按钮（操作/复制/下载）不重复触发
       if (e.target.closest('.artifact-action-btn') || e.target.closest('.artifact-copy-btn')) return;
-      if (artifact.deleted) return;
       clearTimeout(pendingLocateTimer);
       pendingLocateTimer = setTimeout(() => {
         pendingLocateTimer = null;
-        // 目录外产物：友好提示代替定位（工作目录面板无法展示目录外文件）
-        if (artifact.outsideWorkspace) {
-          showToast(t('artifacts.outsideToast'), 'info');
-          return;
-        }
         closeWorkspacePreview().catch(() => {});
         locateFileInWorkspace(artifact.path).catch(err => {
           logger.error('[Artifacts] locate failed:', err);
@@ -1439,21 +1401,15 @@ function bindArtifactRowEvents(modal, sortedList) {
       }, 250);
     });
 
-    // 双击文件名：已删除文件不触发预览
+    // 双击文件名：预览文件
     const nameEl = row.querySelector('.artifact-name');
     if (nameEl) {
       nameEl.addEventListener('dblclick', (e) => {
         e.stopPropagation();
         e.preventDefault(); // 阻止文本选中
-        if (artifact.deleted) return;
         // 取消 pending 的单击定位，避免双击预览时先展开工作目录定位文件
         clearTimeout(pendingLocateTimer);
         pendingLocateTimer = null;
-        // 目录外产物：友好提示代替预览
-        if (artifact.outsideWorkspace) {
-          showToast(t('artifacts.outsideToast'), 'info');
-          return;
-        }
         // 不可预览的文件：保留单击的定位行为
         if (!canPreview(artifact.fileName)) return;
         previewArtifactFile(artifact.path, artifact.fileName).catch(err => {
@@ -1479,31 +1435,28 @@ function bindArtifactRowEvents(modal, sortedList) {
       });
     }
 
-    // 下载按钮：已删除文件禁用
+    // 下载按钮
     const dlBtn = row.querySelector('.download-btn');
-    if (dlBtn && !dlBtn.disabled) {
+    if (dlBtn) {
       dlBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         handleArtifactDownload(artifact);
       });
     }
 
-    // 定位/预览按钮：已删除文件禁用（HTML 中已设 disabled，此处做兜底）
+    // 定位/预览按钮
     row.querySelectorAll('.locate-btn, .preview-btn').forEach(btn => {
-      if (btn.disabled) return;
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (btn.classList.contains('locate-btn')) {
           closeWorkspacePreview().catch(() => {});
           try {
-            // 定位完成后保持弹框打开，用户可继续操作
             await locateFileInWorkspace(artifact.path);
           } catch (err) {
             logger.error('[Artifacts] locate failed:', err);
           }
         } else if (btn.classList.contains('preview-btn')) {
           try {
-            // 预览完成后保持弹框打开，用户可继续操作
             await previewArtifactFile(artifact.path, artifact.fileName);
           } catch (err) {
             logger.error('[Artifacts] preview failed:', err);
@@ -1607,38 +1560,52 @@ function expandHomePath(path, homeDir) {
 }
 
 /**
- * 通过后端 Agent 批量检查文件是否存在，将不存在的文件标记为 deleted
- * 作为命令解析的补充：Agent 在线时以实际文件系统为准
- * @param {Array} artifacts - 产物列表（原地修改）
- * @returns {Promise<boolean>} 是否有产物被新标记为 deleted
+ * 刷新弹框头部的产物计数文案
  */
-export async function checkArtifactsFileExistence(artifacts) {
+function updateArtifactsModalCount(modal, artifacts) {
+  const countEl = modal.querySelector('.artifacts-modal-count');
+  if (!countEl) return;
+  countEl.textContent = t('artifacts.totalCount', { count: artifacts.length });
+}
+
+/**
+ * 异步验证并过滤无效产物：移除工作目录外的和文件系统中不存在的
+ * 直接原地修改 artifacts 数组（splice），使调用方持有的引用同步更新
+ * @param {Array} artifacts - 产物列表（原地修改）
+ * @returns {Promise<boolean>} 是否有产物被过滤移除
+ */
+async function filterInvalidArtifacts(artifacts) {
   if (!artifacts || artifacts.length === 0) return false;
 
-  // 工作目录外的产物（命令绕过工作目录限制创建）不发起存在性检查：
-  // Agent 安全策略会 403 拦截，且路径解析可能误映射到目录内同名文件，
-  // 直接保留命令解析的快照状态
   let rootNorm = null;
   try {
     const root = await getWorkspaceRoot();
     if (root) rootNorm = normalizePath(root);
-  } catch { /* 工作目录未知 → 不拦截 */ }
+  } catch { /* 工作目录未知 → 不过滤目录外（降级保留） */ }
 
-  // 展开 ~/ 路径为真实家目录（从 Agent 获取）：工作目录可能位于家目录下，
-  // 展开后才能正确判定位于工作目录内并发起检查；Agent 离线取不到时保持原样
-  // （isPathInsideWorkspace 视为目录外跳过检查，保留命令解析的快照状态）
   let homeDir = null;
   try { homeDir = await getHomeDir(); } catch { /* 家目录未知 → 不展开 */ }
 
-  // 只检查未被标记为 deleted、有路径且位于工作目录内的产物
-  const candidates = artifacts.filter(a => !a.deleted && a.path && isPathInsideWorkspace(expandHomePath(a.path, homeDir), rootNorm));
-  if (candidates.length === 0) return false;
+  let changed = false;
 
+  // 第一步：过滤工作目录外的产物（不需要 Agent 通信，同步判断）
+  if (rootNorm) {
+    for (let i = artifacts.length - 1; i >= 0; i--) {
+      const a = artifacts[i];
+      if (!isPathInsideWorkspace(expandHomePath(a.path, homeDir), rootNorm)) {
+        artifacts.splice(i, 1);
+        changed = true;
+      }
+    }
+  }
+
+  if (artifacts.length === 0) return changed;
+
+  // 第二步：通过 Agent 批量检查文件是否实际存在，不存在的过滤掉
+  // Agent 离线时跳过此步（降级保留所有目录内产物）
   try {
-    // 产物路径可能是远程/沙箱路径（如 /workspace/fix.js），
-    // 先解析为 Agent 工作目录的真实绝对路径，避免 stat 时路径不一致
     const pathMap = new Map();
-    await Promise.all(candidates.map(async (a) => {
+    await Promise.all(artifacts.map(async (a) => {
       let resolved = a.path;
       try {
         const abs = await resolveWorkspaceAbsolutePath(a.path);
@@ -1649,58 +1616,110 @@ export async function checkArtifactsFileExistence(artifacts) {
     }));
 
     const pathsToCheck = [...pathMap.keys()];
-    if (pathsToCheck.length === 0) return false;
+    if (pathsToCheck.length === 0) return changed;
 
     const response = await chrome.runtime.sendMessage({
       type: 'CHECK_FILES_EXIST',
       paths: pathsToCheck,
     });
 
-    if (!response || !response.success || !response.results) return false;
+    if (!response || !response.success || !response.results) return changed;
 
-    let changed = false;
-    // 将解析后路径的检查结果映射回原始产物路径
+    // 收集不存在的路径集合
+    const nonExistentPaths = new Set();
     for (const [resolved, originals] of pathMap) {
       if (response.results[resolved] === false) {
-        for (const original of originals) {
-          const artifact = artifacts.find(a => a.path === original);
-          if (artifact && !artifact.deleted) {
-            artifact.deleted = true;
-            changed = true;
-          }
+        for (const original of originals) nonExistentPaths.add(original);
+      }
+    }
+
+    // 原地移除不存在的产物
+    if (nonExistentPaths.size > 0) {
+      for (let i = artifacts.length - 1; i >= 0; i--) {
+        if (nonExistentPaths.has(artifacts[i].path)) {
+          artifacts.splice(i, 1);
+          changed = true;
         }
       }
     }
-    return changed;
-  } catch (err) {
-    // Agent 离线或通信失败 → 静默忽略，保留命令解析结果
-    return false;
+  } catch {
+    // Agent 离线或通信失败 → 降级保留所有目录内产物
+  }
+
+  return changed;
+}
+
+/**
+ * 更新产物按钮的 badge 计数（过滤后同步到消息气泡）
+ * 计数为 0 时隐藏按钮
+ */
+function updateArtifactsBadge(sourceBtn, count) {
+  if (!sourceBtn) return;
+  const countEl = sourceBtn.querySelector('.artifacts-btn-count');
+  if (count > 0) {
+    if (countEl) countEl.textContent = count;
+    sourceBtn.title = t('artifacts.btnTitle', { count });
+    sourceBtn.style.display = '';
+  } else {
+    // 所有产物均无效 → 隐藏按钮
+    sourceBtn.style.display = 'none';
   }
 }
 
 /**
- * 刷新弹框头部的产物计数文案（总数 + 已删除/目录外数量）
+ * 产物按钮创建时立即触发的提前验证：
+ * 1. 同步预过滤已标记 deleted 的产物（rm 命令追踪）
+ * 2. 异步过滤工作目录外的和文件系统中不存在的
+ * 3. 过滤完成后更新 badge 计数（全部无效则隐藏按钮）
+ *
+ * 调用方应在创建按钮前调用 preFilterDeletedArtifacts，
+ * 按钮创建后调用本函数触发异步验证。
+ * @param {Array} artifacts - 产物列表（原地修改）
+ * @param {HTMLElement} btn - 产物按钮元素
  */
-function updateArtifactsModalCount(modal, artifacts) {
-  const countEl = modal.querySelector('.artifacts-modal-count');
-  if (!countEl) return;
-  const deletedCount = artifacts.filter(a => a.deleted).length;
-  const outsideCount = artifacts.filter(a => a.outsideWorkspace).length;
-  let text = t('artifacts.totalCount', { count: artifacts.length });
-  if (deletedCount > 0) text += ` (${t('artifacts.deletedCount', { count: deletedCount })})`;
-  if (outsideCount > 0) text += ` (${t('artifacts.outsideCount', { count: outsideCount })})`;
-  countEl.textContent = text;
+export function validateArtifactsAsync(artifacts, btn) {
+  if (!artifacts || artifacts.length === 0 || !btn) return;
+  filterInvalidArtifacts(artifacts).then(changed => {
+    if (changed) updateArtifactsBadge(btn, artifacts.length);
+  }).catch(() => { /* Agent 离线等异常 → 降级保留当前 badge */ });
+}
+
+/**
+ * 同步预过滤：移除提取阶段已标记为 deleted 的产物
+ * 在创建按钮前调用，确保 badge 初始计数已排除已删除文件
+ * @param {Array} artifacts - 产物列表（原地修改）
+ * @returns {number} 过滤后的产物数量
+ */
+export function preFilterDeletedArtifacts(artifacts) {
+  if (!artifacts) return 0;
+  for (let i = artifacts.length - 1; i >= 0; i--) {
+    if (artifacts[i].deleted) artifacts.splice(i, 1);
+  }
+  return artifacts.length;
 }
 
 /**
  * 显示产物弹框
- * @param {Array} artifacts - 产物列表
+ * 只展示工作目录下、当前实际存在的有效文件产物。
+ * 已删除（rm 追踪）的在打开前即过滤；目录外和不存在的在异步验证后过滤。
+ * @param {Array} artifacts - 产物列表（会被原地过滤修改）
+ * @param {HTMLElement} [sourceBtn] - 触发弹框的按钮元素（用于更新 badge）
  */
-export function showArtifactsModal(artifacts) {
+export function showArtifactsModal(artifacts, sourceBtn) {
   // 如果已有弹框，先移除
   hideArtifactsModal();
 
-  if (!artifacts || artifacts.length === 0) return;
+  if (!artifacts) return;
+
+  // 预过滤：移除提取阶段已标记为 deleted 的产物（rm 命令追踪到的删除）
+  for (let i = artifacts.length - 1; i >= 0; i--) {
+    if (artifacts[i].deleted) artifacts.splice(i, 1);
+  }
+
+  if (artifacts.length === 0) {
+    updateArtifactsBadge(sourceBtn, 0);
+    return;
+  }
 
   // 重置排序状态
   artifactsSortKey = null;
@@ -1812,39 +1831,21 @@ export function showArtifactsModal(artifacts) {
   // 首次渲染行
   renderArtifactRows(modal, artifacts);
 
-  // 异步标记工作目录外的产物（命令绕过工作目录限制创建的文件）：
-  // 定位/预览/下载均依赖工作目录 fs API，目录外产物禁用操作按钮并在点击时提示
-  (async () => {
-    try {
-      const root = await getWorkspaceRoot();
-      if (!root || !modalOverlay) return;
-      const rootNorm = normalizePath(root);
-      // ~/ 产物先展开为真实家目录再判定（工作目录可能位于家目录下）
-      let homeDir = null;
-      try { homeDir = await getHomeDir(); } catch { /* 家目录未知 → 不展开 */ }
-      let changed = false;
-      for (const a of artifacts) {
-        if (!a.outsideWorkspace && !isPathInsideWorkspace(expandHomePath(a.path, homeDir), rootNorm)) {
-          a.outsideWorkspace = true;
-          changed = true;
-        }
-      }
-      if (changed && modalOverlay) {
-        updateArtifactsModalCount(modal, artifacts);
-        renderArtifactRows(modal, artifacts);
-      }
-    } catch { /* 静默失败 */ }
-  })();
-
-  // 异步检查文件实际存在性（Agent 在线时以文件系统为准）
-  checkArtifactsFileExistence(artifacts).then(changed => {
-    if (changed && modalOverlay) {
-      // 更新计数
+  // 异步验证：过滤工作目录外的和不存在的文件，只保留有效产物
+  filterInvalidArtifacts(artifacts).then(changed => {
+    if (!changed || !modalOverlay) return;
+    if (artifacts.length === 0) {
+      // 全部无效 → 展示空状态
+      const tbody = modal.querySelector('.artifacts-table tbody');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="artifacts-empty">${t('artifacts.emptyHint')}</td></tr>`;
       updateArtifactsModalCount(modal, artifacts);
-      // 重新渲染行（反映新的 deleted 状态）
+    } else {
+      updateArtifactsModalCount(modal, artifacts);
       renderArtifactRows(modal, artifacts);
     }
-  }).catch(() => { /* 静默失败 */ });
+    // 同步更新消息气泡上的 badge 计数
+    updateArtifactsBadge(sourceBtn, artifacts.length);
+  }).catch(() => { /* Agent 离线等异常 → 静默降级，保留当前展示 */ });
 }
 
 /**
