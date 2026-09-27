@@ -416,6 +416,13 @@ function showExecutionLog(executionLog) {
       content.classList.toggle('expanded');
     });
   });
+
+  // 任务组标题点击折叠/展开（替代内联 onclick，避免 MV3 CSP 拦截）
+  panel.querySelectorAll('.task-group-header').forEach(header => {
+    header.addEventListener('click', () => {
+      header.parentElement.classList.toggle('collapsed');
+    });
+  });
   
   const filterableItems = panel.querySelectorAll('.combo-stat');
   const timelineItems = panel.querySelectorAll('.timeline-item');

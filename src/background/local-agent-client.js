@@ -770,6 +770,33 @@ async function toggleMcpServer(serverId, enabled) {
   return agentRequest('/api/mcp/servers/toggle', { id: serverId, enabled }, 'PUT');
 }
 
+// ========== RAG 知识库相关 API ==========
+
+/**
+ * 获取所有知识库列表（含 documentCount/chunkCount 统计）
+ */
+async function ragListCollections() {
+  return agentGet('/api/rag/collections');
+}
+
+/**
+ * 检索知识库（collectionIds 为空时搜索全部）
+ * 首次调用可能触发 embedding 模型加载，超时放宽到 3 分钟
+ * @param {{query: string, collectionIds?: string[], topK?: number, threshold?: number}} params
+ */
+async function ragSearch(params) {
+  return agentRequest('/api/rag/search', params, 'POST', 180000);
+}
+
+/**
+ * 导入内容到知识库（解析 + 分块 + 向量化，耗时较长）
+ * @param {string} collectionId
+ * @param {object} params - 按 type 区分：text→{content,name}，file→{path}，url→{url}；通用 {metadata, chunkConfig}
+ */
+async function ragIngest(collectionId, params) {
+  return agentRequest(`/api/rag/collections/${encodeURIComponent(collectionId)}/ingest`, params, 'POST', 600000);
+}
+
 // ========== Skill 相关 API ==========
 
 /**
@@ -1069,6 +1096,10 @@ export {
   connectMcpServer,
   disconnectMcpServer,
   toggleMcpServer,
+  // RAG 知识库相关
+  ragListCollections,
+  ragSearch,
+  ragIngest,
   // Skill 相关
   getSkillList,
   getSkillDetail,

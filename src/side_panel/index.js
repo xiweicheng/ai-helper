@@ -253,7 +253,7 @@ import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
-  refreshToolPopupIfOpen
+  refreshToolPopupIfOpen, applyRagToolIntroduction, getRagToolIds
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
@@ -2798,15 +2798,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       const agentAtTabs = document.getElementById('agentAtTabs');
       const isMerged = agentAtTabs && agentAtTabs.classList.contains('merged-mode');
 
-      // Tab 键切换标签（仅在非合并模式下）
+      // Tab 键切换标签（仅在非合并模式下，跳过隐藏的 Tab）
       if (!isMerged && e.key === 'Tab') {
         e.preventDefault();
-        if (activeAtTab === 'pages') {
-          switchAtTab('agents');
-        } else if (activeAtTab === 'agents') {
-          switchAtTab('proxies');
-        } else {
-          switchAtTab('pages');
+        // 从 DOM 动态读取 Tab 顺序，与视觉顺序保持一致（避免两处顺序不同步）
+        const tabOrder = Array.from(document.querySelectorAll('#agentAtTabs .prompt-tab')).map(t => t.dataset.tab);
+        const isTabVisible = (tab) => {
+          const btn = document.querySelector(`#agentAtTabs .prompt-tab[data-tab="${tab}"]`);
+          return !!btn && btn.style.display !== 'none';
+        };
+        let orderIdx = tabOrder.indexOf(activeAtTab);
+        for (let i = 0; i < tabOrder.length; i++) {
+          orderIdx = (orderIdx + 1) % tabOrder.length;
+          if (isTabVisible(tabOrder[orderIdx])) {
+            switchAtTab(tabOrder[orderIdx]);
+            break;
+          }
         }
         return;
       }
@@ -2823,6 +2830,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (activeAtTab === 'proxies') {
         listContainer = document.getElementById('agentProxyList');
         selectedIndex = state.selectedProxyAtIndex;
+      } else if (activeAtTab === 'knowledge') {
+        listContainer = document.getElementById('agentKnowledgeList');
+        selectedIndex = state.selectedKnowledgeAtIndex;
       } else {
         listContainer = document.getElementById('agentAtList');
         selectedIndex = state.selectedAgentAtIndex;
@@ -2836,11 +2846,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleCount;
-        if (activeAtTab === 'proxies') {
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'proxies') {
           state.selectedProxyAtIndex = newIdx;
           updateAgentAtSelection(items);
-        } else if (isMerged) {
-          state.selectedAgentAtIndex = newIdx;
+        } else if (activeAtTab === 'knowledge') {
+          state.selectedKnowledgeAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {
           state.selectedPageIndex = newIdx;
@@ -2853,11 +2866,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? visibleCount - 1 : (selectedIndex === 0 ? visibleCount - 1 : selectedIndex - 1);
-        if (activeAtTab === 'proxies') {
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'proxies') {
           state.selectedProxyAtIndex = newIdx;
           updateAgentAtSelection(items);
-        } else if (isMerged) {
-          state.selectedAgentAtIndex = newIdx;
+        } else if (activeAtTab === 'knowledge') {
+          state.selectedKnowledgeAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {
           state.selectedPageIndex = newIdx;
@@ -3728,7 +3744,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 加载保存的状态（每个智能体独立的已启用工具列表）
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
-  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', 'mcpTools'], (result) => {
+  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', 'mcpTools', 'ragTools', 'ragToolsIntroduced'], (result) => {
     // 优先读取 agent-specific key，降级到旧的全局 enabledTools（兼容旧数据）
     if (result.isolateChat !== undefined) {
       state.isolateChat = result.isolateChat;
@@ -3748,30 +3764,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // 读取当前智能体的工具配置：优先 agent-specific key，降级到全局 enabledTools
+    const ragTools = result.ragTools || [];
     const savedAgentTools = result[agentToolsKey];
     const fallbackTools = result.enabledTools;
     if (savedAgentTools && savedAgentTools.length > 0) {
       // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
       const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
       const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
       state.enabledTools = [...savedTools, ...newMcpTools];
-      if (newMcpTools.length > 0) {
+      // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      if (ragIntro.migrated) {
+        chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+      } else if (newMcpTools.length > 0) {
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
     } else if (fallbackTools && fallbackTools.length > 0) {
       // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
       const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
       const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
       state.enabledTools = [...savedTools, ...newBuiltinTools, ...newMcpTools];
-      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      chrome.storage.local.set({
+        [agentToolsKey]: state.enabledTools,
+        ...(ragIntro.migrated ? { ragToolsIntroduced: true } : {})
+      });
     } else {
       const mcpTools = result.mcpTools || [];
       state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+      // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置，避免引入标记与启用列表漂移
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      if (ragIntro.migrated) {
+        chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+      }
     }
 
     if (state.enabledTools.length === 0) {
@@ -3812,7 +3846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.local.set({ enableTools: state.useTools });
 
       if (state.useTools && state.enabledTools.length === 0) {
-        state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
+        state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...getRagToolIds()];
         const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }

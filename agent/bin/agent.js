@@ -226,6 +226,7 @@ function printHelp() {
   console.log(t('cmdStatus'));
   console.log(t('cmdPaircode'));
   console.log(t('cmdConfig'));
+  console.log(t('cmdRag'));
   console.log(t('cmdHelp'));
   console.log('');
   console.log(t('startupOptions'));
@@ -242,6 +243,7 @@ function printHelp() {
   console.log('  ai-helper-agent stop');
   console.log('  ai-helper-agent restart -b');
   console.log('  ai-helper-agent status');
+  console.log('  ai-helper-agent rag install');
 }
 
 /**
@@ -664,6 +666,65 @@ if (command === 'start') {
   console.log(`[Agent] ${t('currentConfig')}`);
   console.log(JSON.stringify(config, null, 2));
   console.log(`[Agent] ${t('configFileLocation', { path: CONFIG_FILE })}`);
+
+// ==================== rag ====================
+} else if (command === 'rag') {
+  // 子命令：status（检测能力）/ install（一键安装可选依赖）
+  const sub = rawArgs[1];
+  const agentRoot = join(__dirname, '..');
+
+  // 同步 CLI 语言，保证 RAG 检测日志与命令行界面语言一致
+  const { setRagLang } = await import('../src/rag/detect.js');
+  setRagLang(lang);
+
+  if (sub === 'status') {
+    const { detectRagAvailable, isNodeVersionSupported } = await import('../src/rag/detect.js');
+    console.log(`[Agent] ${t('ragStatusTitle')}`);
+    console.log(`[Agent] ${t('ragNodeVersion', { version: process.version })}`);
+    if (!isNodeVersionSupported()) {
+      console.log(`[Agent] ${t('ragNodeLow', { version: process.version })}`);
+      process.exit(1);
+    }
+    const available = await detectRagAvailable();
+    console.log(`[Agent] ${available ? t('ragAvailable') : t('ragNotAvailable')}`);
+    process.exit(available ? 0 : 1);
+  }
+
+  if (sub === 'install') {
+    console.log(`[Agent] ${t('ragInstalling')}`);
+    // 与 API 一键安装保持一致：无包名参数（清单由包 optionalDependencies 声明）、--no-save 不污染包目录
+    const isWin = process.platform === 'win32';
+    const npm = spawn(isWin ? 'npm.cmd' : 'npm', ['install', '--no-save', '--no-audit', '--no-fund'], {
+      cwd: agentRoot,
+      shell: isWin,
+      stdio: 'inherit',
+      env: { ...process.env },
+      windowsHide: true
+    });
+    const code = await new Promise((resolvePromise) => {
+      npm.on('error', (err) => {
+        console.error(`[Agent] ${err.message}`);
+        resolvePromise(1);
+      });
+      npm.on('close', resolvePromise);
+    });
+    if (code !== 0) {
+      console.error(`[Agent] ${t('ragInstallFailed', { code })}`);
+      process.exit(1);
+    }
+    // 安装后验证（以实际加载结果为准）
+    const { detectRagAvailable } = await import('../src/rag/detect.js');
+    const available = await detectRagAvailable();
+    console.log(`[Agent] ${available ? t('ragInstallSuccess') : t('ragVerifyFailed')}`);
+    process.exit(available ? 0 : 1);
+  }
+
+  // 未知/缺失子命令：显示用法
+  if (sub) {
+    console.error(`[Agent] ${t('ragUnknownSub', { sub })}`);
+  }
+  console.log(t('ragHelpUsage'));
+  process.exit(1);
 
 // ==================== help ====================
 } else {

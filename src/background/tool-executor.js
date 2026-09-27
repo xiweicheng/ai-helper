@@ -12,6 +12,7 @@ import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab } from './state.js';
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
+import { RAG_TOOLS } from './tools/rag-tools.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -188,6 +189,21 @@ registerTranslations('zh', {
     dialogDismiss: '自动取消（dismiss）',
     dialogRestore: '恢复原生弹窗',
     dialogSet: '弹窗处理已设置: {mode}。后续 alert/confirm/prompt 将按此模式自动处理',
+    // RAG 知识库工具
+    knowledgeQueryRequired: '缺少 query 参数，请提供检索关键词',
+    knowledgeSearchFailed: '知识库检索失败: {error}',
+    knowledgeSearchNoResult: '未在知识库中找到与 "{query}" 相关的内容',
+    knowledgeSearchResult: '知识库检索到 {count} 条相关内容：\n\n{results}',
+    knowledgeResultHeader: '[{index}] 相关度 {score}{sourcePart}',
+    knowledgeSourcePart: '，来源: {source}',
+    knowledgeIngestParamsRequired: '缺少 collectionId/type/content 参数',
+    knowledgeIngestBadType: '不支持的导入类型: {type}，可选: text, file, url',
+    knowledgeIngestSuccess: '已导入「{name}」到知识库（{chunks} 个分块）',
+    knowledgeIngestFailed: '导入知识库失败: {error}',
+    knowledgeListEmpty: '暂无知识库。请提示用户在扩展设置页「知识库」标签创建知识库并导入文档。',
+    knowledgeListResult: '共 {count} 个知识库：\n{list}',
+    knowledgeListItem: '- {name} (id: {id})：{docs} 个文档 · {chunks} 个分块',
+    knowledgeListFailed: '获取知识库列表失败: {error}',
   },
 });
 registerTranslations('en', {
@@ -364,6 +380,21 @@ registerTranslations('en', {
     dialogDismiss: 'auto-dismiss',
     dialogRestore: 'restore native dialogs',
     dialogSet: 'Dialog handling set to: {mode}. Subsequent alert/confirm/prompt will be handled accordingly',
+    // RAG knowledge base tools
+    knowledgeQueryRequired: 'Missing query parameter. Please provide a search keyword.',
+    knowledgeSearchFailed: 'Knowledge search failed: {error}',
+    knowledgeSearchNoResult: 'No content related to "{query}" found in the knowledge bases.',
+    knowledgeSearchResult: 'Found {count} relevant entries in the knowledge bases:\n\n{results}',
+    knowledgeResultHeader: '[{index}] Relevance {score}{sourcePart}',
+    knowledgeSourcePart: ', Source: {source}',
+    knowledgeIngestParamsRequired: 'Missing collectionId/type/content parameter.',
+    knowledgeIngestBadType: 'Unsupported ingest type: {type}. Available: text, file, url',
+    knowledgeIngestSuccess: 'Ingested "{name}" into knowledge base ({chunks} chunks)',
+    knowledgeIngestFailed: 'Knowledge ingest failed: {error}',
+    knowledgeListEmpty: 'No knowledge bases yet. Ask the user to create one and import documents in the extension settings "Knowledge" tab.',
+    knowledgeListResult: '{count} knowledge base(s):\n{list}',
+    knowledgeListItem: '- {name} (id: {id}): {docs} documents · {chunks} chunks',
+    knowledgeListFailed: 'Failed to list knowledge bases: {error}',
   },
 });
 
@@ -629,6 +660,229 @@ function rebuildBgHandlers() {
   }
 }
 
+// ==================== RAG 知识库工具动态注册 ====================
+
+// 已动态注册的 RAG 工具 ID 集合（用于去重和清理）
+const ragToolIds = new Set();
+
+// 互斥锁：防止 loadRagTools / unloadRagTools 并发执行
+let ragLoadLock = null;
+
+/**
+ * knowledge_search - 检索知识库（指定 collectionId 时只搜该库，否则跨库检索）
+ */
+async function executeKnowledgeSearch(args, toolCallId) {
+  const { query, collectionId, topK } = args || {};
+  if (!query || !String(query).trim()) {
+    return makeResult(false, t('toolExec.knowledgeQueryRequired'), { tool_call_id: toolCallId });
+  }
+
+  const params = { query: String(query) };
+  if (collectionId) params.collectionIds = [collectionId];
+  if (topK) params.topK = topK;
+
+  const res = await AgentClient.ragSearch(params);
+  if (!res || res.success !== true) {
+    return makeResult(false, t('toolExec.knowledgeSearchFailed', { error: res?.error || t('toolExec.unknownError') }), { tool_call_id: toolCallId });
+  }
+
+  const results = Array.isArray(res.results) ? res.results : [];
+  if (results.length === 0) {
+    return makeResult(true, t('toolExec.knowledgeSearchNoResult', { query: String(query) }), { tool_call_id: toolCallId });
+  }
+
+  const lines = results.map((r, i) => {
+    const meta = r.metadata || {};
+    const source = meta.documentName || meta.source || '';
+    const sourcePart = source ? t('toolExec.knowledgeSourcePart', { source }) : '';
+    const score = typeof r.score === 'number' ? r.score.toFixed(3) : '-';
+    return `${t('toolExec.knowledgeResultHeader', { index: i + 1, score, sourcePart })}\n${r.content || ''}`;
+  });
+  return makeResult(true, t('toolExec.knowledgeSearchResult', { count: results.length, results: lines.join('\n\n') }), { tool_call_id: toolCallId });
+}
+
+/**
+ * knowledge_ingest - 导入内容到知识库（text/file/url）
+ */
+async function executeKnowledgeIngest(args, toolCallId) {
+  const { collectionId, type, content, name, metadata } = args || {};
+  if (!collectionId || !type || !content) {
+    return makeResult(false, t('toolExec.knowledgeIngestParamsRequired'), { tool_call_id: toolCallId });
+  }
+
+  // 按来源类型映射到 agent ingest 接口字段
+  let payload;
+  if (type === 'text') {
+    payload = { type, content, name, metadata };
+  } else if (type === 'file') {
+    payload = { type, path: content, metadata };
+  } else if (type === 'url') {
+    payload = { type, url: content, metadata };
+  } else {
+    return makeResult(false, t('toolExec.knowledgeIngestBadType', { type }), { tool_call_id: toolCallId });
+  }
+
+  const res = await AgentClient.ragIngest(collectionId, payload);
+  if (!res || res.success !== true) {
+    return makeResult(false, t('toolExec.knowledgeIngestFailed', { error: res?.error || t('toolExec.unknownError') }), { tool_call_id: toolCallId });
+  }
+
+  return makeResult(true, t('toolExec.knowledgeIngestSuccess', { name: res.name || name || '', chunks: res.chunkCount || 0 }), { tool_call_id: toolCallId });
+}
+
+/**
+ * knowledge_list - 列出知识库及文档数
+ */
+async function executeKnowledgeList(args, toolCallId) {
+  const res = await AgentClient.ragListCollections();
+  if (!res || res.success !== true) {
+    return makeResult(false, t('toolExec.knowledgeListFailed', { error: res?.error || t('toolExec.unknownError') }), { tool_call_id: toolCallId });
+  }
+
+  const collections = Array.isArray(res.collections) ? res.collections : [];
+  if (collections.length === 0) {
+    return makeResult(true, t('toolExec.knowledgeListEmpty'), { tool_call_id: toolCallId });
+  }
+
+  const lines = collections.map(c => t('toolExec.knowledgeListItem', {
+    name: c.name || c.id,
+    id: c.id,
+    docs: c.documentCount || 0,
+    chunks: c.chunkCount || 0
+  }));
+  return makeResult(true, t('toolExec.knowledgeListResult', { count: collections.length, list: lines.join('\n') }), { tool_call_id: toolCallId });
+}
+
+/**
+ * RAG 工具 handler 注册表（独立持有引用，unload 仅删除 TOOL_HANDLERS 中的登记，便于重新注册）
+ */
+const RAG_TOOL_HANDLERS = {
+  knowledge_search: executeKnowledgeSearch,
+  knowledge_ingest: executeKnowledgeIngest,
+  knowledge_list: executeKnowledgeList
+};
+
+/**
+ * 检测当前活跃 Agent 是否支持 RAG（GET /api/status 的 ragAvailable）
+ * /api/status 免认证；5 秒超时避免阻塞
+ */
+async function checkAgentRagAvailable() {
+  const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
+  const agents = result.pairedAgents || [];
+  const active = agents.find(a => a.id === result.activeAgentId);
+  if (!active) return false;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${active.url}/api/status`, { signal: controller.signal, cache: 'no-cache' });
+    clearTimeout(timeoutId);
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data?.ragAvailable === true;
+  } catch (err) {
+    logger.debug('[Background] RAG availability check failed:', err.message);
+    return false;
+  }
+}
+
+/**
+ * 加载并动态注册 RAG 工具（ragEnabled=true 且 Agent 支持 RAG 时）
+ * 与 MCP 工具注册模式一致：注入 RAW_TOOLS / BUILTIN_TOOLS / TOOL_EXECUTION_MAP / TOOL_HANDLERS
+ */
+export async function loadRagTools() {
+  const prevLock = ragLoadLock;
+  let releaseLock;
+  ragLoadLock = new Promise(resolve => { releaseLock = resolve; });
+  await prevLock;
+
+  try {
+    const { ragEnabled } = await chrome.storage.local.get(['ragEnabled']);
+    if (ragEnabled !== true) {
+      unloadRagToolsInternal();
+      logger.debug('[Background] RAG globaltoggleclosed,skip toolload');
+      return 0;
+    }
+
+    unloadRagToolsInternal();
+
+    const available = await checkAgentRagAvailable();
+    if (!available) {
+      logger.debug('[Background] Agent RAG not available, skip tool load');
+      return 0;
+    }
+
+    for (const tool of RAG_TOOLS) {
+      RAW_TOOLS.push(tool);
+      BUILTIN_TOOLS.push({ id: tool.id, type: tool.type, function: tool.function });
+      TOOL_EXECUTION_MAP[tool.id] = 'background';
+      TOOL_HANDLERS[tool.id] = RAG_TOOL_HANDLERS[tool.id];
+      ragToolIds.add(tool.id);
+    }
+
+    rebuildBgHandlers();
+    syncRagToolsToStorage();
+    logger.debug(`[Background] loaded ${ragToolIds.size} RAG tool`);
+    return ragToolIds.size;
+  } catch (err) {
+    logger.warn('[Background] load RAG tool failed:', err.message);
+    return 0;
+  } finally {
+    releaseLock();
+  }
+}
+
+/**
+ * 清理所有动态注册的 RAG 工具（内部版本，不加锁，由 loadRagTools 调用）
+ */
+function unloadRagToolsInternal() {
+  for (const toolId of ragToolIds) {
+    let idx = RAW_TOOLS.findIndex(t => t.id === toolId);
+    if (idx >= 0) RAW_TOOLS.splice(idx, 1);
+    idx = BUILTIN_TOOLS.findIndex(t => t.id === toolId);
+    if (idx >= 0) BUILTIN_TOOLS.splice(idx, 1);
+    delete TOOL_EXECUTION_MAP[toolId];
+    delete TOOL_HANDLERS[toolId];
+  }
+  ragToolIds.clear();
+  rebuildBgHandlers();
+  syncRagToolsToStorage();
+}
+
+/**
+ * 同步 RAG 工具注册状态到 storage（供侧边栏工具配置弹窗读取，与 mcpTools 模式一致）
+ */
+function syncRagToolsToStorage() {
+  const tools = RAG_TOOLS
+    .filter(t => ragToolIds.has(t.id))
+    .map(t => ({
+      id: t.id,
+      name: t.function?.name || t.id,
+      description: t.function?.description || '',
+      category: t.category || 'knowledge',
+      execution: t.execution || 'background',
+      parallelizable: t.parallelizable !== false,
+      requiresConfirmation: t.requiresConfirmation || false,
+      enabled: true
+    }));
+  chrome.storage.local.set({ ragTools: tools }).catch(() => {});
+}
+
+/**
+ * 清理所有动态注册的 RAG 工具（公开版本，带互斥锁）
+ */
+export async function unloadRagTools() {
+  const prevLock = ragLoadLock;
+  let releaseLock;
+  ragLoadLock = new Promise(resolve => { releaseLock = resolve; });
+  await prevLock;
+  try {
+    unloadRagToolsInternal();
+  } finally {
+    releaseLock();
+  }
+}
+
 // ==================== Sensitive Operation Audit Log ====================
 
 const AUDIT_LOG_KEY = 'sensitiveAuditLog';
@@ -771,6 +1025,18 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         }
       }
 
+      // RAG 知识库工具：首次向用户引入前自动加入；侧边栏完成引入（ragToolsIntroduced）后
+      // 完全跟随用户在工具配置弹窗中的勾选，取消勾选持久生效
+      if (ragToolIds.size > 0) {
+        const { ragToolsIntroduced } = await chrome.storage.local.get(['ragToolsIntroduced']);
+        if (ragToolsIntroduced !== true) {
+          for (const tid of ragToolIds) {
+            if (!finalToolIds.includes(tid)) finalToolIds.push(tid);
+          }
+          console.log(`[Background] auto-adding ${ragToolIds.size} RAG knowledge tools (not yet introduced)`);
+        }
+      }
+
       // 读取图片识别开关状态
       const visionEnabled = result.enableImageInput === true;
 
@@ -802,6 +1068,10 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           if (tool.id.startsWith('mcp_')) {
             if (mcpEnabled !== true || !agentConnected) return false;
             if (!mcpToolIds.has(tool.id)) return false;
+          }
+          // RAG 知识库工具：未动态注册（开关关闭 / Agent 不支持 RAG）或 Agent 未连通时过滤
+          if (tool.id.startsWith('knowledge_')) {
+            if (!ragToolIds.has(tool.id) || !agentConnected) return false;
           }
           return true;
         })
@@ -875,6 +1145,19 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.skillsEnabled) {
     // Skill 开关变更时，由侧边栏 fetchAgentSkillPrompts 自行判断，无需额外处理
     console.log('[Background] Skill global toggle changed:', changes.skillsEnabled.newValue !== false);
+  }
+  if (changes.ragEnabled) {
+    const enabled = changes.ragEnabled.newValue === true;
+    logger.debug('[Background] RAG globaltoggle changed:', enabled);
+    if (enabled) {
+      loadRagTools().then(count => {
+        logger.debug('[Background] RAG tools re-load:', count, '');
+      });
+    } else {
+      unloadRagTools().then(() => {
+        logger.debug('[Background] RAG all toolsunload');
+      });
+    }
   }
 });
 

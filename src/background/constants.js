@@ -101,6 +101,7 @@ export const CATEGORY_WEIGHT = {
   ai_collaboration: 10,
   local_agent: 11,
   mcp: 12,
+  knowledge: 13,
 };
 
 // 从 RAW_TOOLS 动态派生分类顺序列表（单一数据源，无需手动维护）

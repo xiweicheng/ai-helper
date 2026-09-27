@@ -398,7 +398,7 @@ export function showSkillRunResult(name, skillInfo, result) {
     <div class="modal-content" style="max-width:700px;max-height:85vh;">
       <div class="modal-header">
         <h2>${icon} ${t('toolbox.skillRunResultTitle', { name, status: statusText })}</h2>
-        <button class="modal-close-btn" onclick="this.closest('.modal-overlay').remove()">×</button>
+        <button class="modal-close-btn">×</button>
       </div>
       <div class="modal-body" style="max-height:calc(85vh - 120px);overflow-y:auto;">
         <div class="skill-run-summary">${escapeHtml(summaryText)}</div>

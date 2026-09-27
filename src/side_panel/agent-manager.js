@@ -6,7 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, applyRagToolIntroduction } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
@@ -341,14 +341,15 @@ export async function switchAgent(agentId) {
   await renderAgentSelector();
 
   // 加载当前智能体的工具启用/禁用状态
-  const mcpToolsResult = await chrome.storage.local.get(['mcpTools']);
+  const mcpToolsResult = await chrome.storage.local.get(['mcpTools', 'ragTools', 'ragToolsIntroduced']);
   const mcpTools = mcpToolsResult.mcpTools || [];
+  const ragTools = mcpToolsResult.ragTools || [];
   const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
   const saved = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
   const isAgentSpecific = !!saved[agentToolsKey]; // 是否命中 agent-specific key
   const savedTools = saved[agentToolsKey] || saved.enabledTools;
   if (savedTools && savedTools.length > 0) {
-    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
     const existing = savedTools.filter(id => validToolIds.has(id));
     if (isAgentSpecific) {
       // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
@@ -360,11 +361,23 @@ export async function switchAgent(agentId) {
       const newMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
       state.enabledTools = [...existing, ...newBuiltin, ...newMcp];
     }
+    // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+    const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
+    state.enabledTools = ragIntro.tools;
     if (state.enabledTools.length !== savedTools.length) {
-      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      chrome.storage.local.set({
+        [agentToolsKey]: state.enabledTools,
+        ...(ragIntro.migrated ? { ragToolsIntroduced: true } : {})
+      });
     }
   } else {
     state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+    // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置
+    const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
+    state.enabledTools = ragIntro.tools;
+    if (ragIntro.migrated) {
+      chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+    }
   }
   
   // 如果工具弹窗打开，联动刷新（Agent 限定范围变化）

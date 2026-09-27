@@ -31,6 +31,9 @@ registerTranslations('en', {
 // MCP 工具缓存（从 chrome.storage.local 读取）
 let mcpToolsCache = [];
 
+// RAG 知识库工具缓存（Background 注册/卸载时同步到 storage.local.ragTools）
+let ragToolsCache = [];
+
 /**
  * 获取工具的本地化描述
  * 内置工具走 i18n（t('tool.<id>')）；MCP 工具或缺失 key 时回退到原始 description
@@ -68,6 +71,19 @@ async function loadMcpToolsFromStorage() {
   }
 }
 
+/**
+ * 从 chrome.storage.local 加载 RAG 知识库工具（由 Background 在注册/卸载时同步）
+ */
+async function loadRagToolsFromStorage() {
+  try {
+    const result = await chrome.storage.local.get(['ragTools']);
+    ragToolsCache = result.ragTools || [];
+  } catch {
+    ragToolsCache = [];
+  }
+  return ragToolsCache;
+}
+
 // 监听 MCP 工具更新和全局开关变化，实时同步
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
@@ -76,6 +92,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.mcpTools) {
     mcpToolsCache = changes.mcpTools.newValue || [];
     logger.debug('[SidePanel] MCP toolcache updated:', mcpToolsCache.length, '');
+    needsRefresh = true;
+  }
+  if (changes.ragTools) {
+    ragToolsCache = changes.ragTools.newValue || [];
+    logger.debug('[SidePanel] RAG toolcache updated:', ragToolsCache.length);
     needsRefresh = true;
   }
   if (changes.mcpEnabled) {
@@ -102,6 +123,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // 模块初始化时预加载 MCP 工具缓存
 loadMcpToolsFromStorage();
+// 预加载 RAG 知识库工具缓存
+loadRagToolsFromStorage();
 
 // 全局开关状态（从 chrome.storage 加载，通过 onChanged 实时更新）
 let globalMcpEnabled = false;
@@ -122,7 +145,7 @@ chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
 function getAgentFilteredTools() {
   // 根据全局开关决定是否包含 MCP 工具
   const mcpTools = globalMcpEnabled ? mcpToolsCache : [];
-  const allTools = [...BUILTIN_TOOLS, ...mcpTools];
+  const allTools = [...BUILTIN_TOOLS, ...mcpTools, ...ragToolsCache];
   const toolIds = state.activeAgentToolIds;
   let filtered = allTools;
   if (toolIds !== null && toolIds !== undefined) {
@@ -133,10 +156,10 @@ function getAgentFilteredTools() {
   if (!globalSkillsEnabled) {
     filtered = filtered.filter(t => t.id !== 'agent_skill');
   }
-  // Agent 未连接时，隐藏所有 agent_* 和 mcp_* 工具（依赖代理服务的工具）
+  // Agent 未连接时，隐藏所有 agent_* / mcp_* / knowledge_* 工具（依赖代理服务的工具）
   const agentConnected = state.agentPlatform?.connected === true;
   if (!agentConnected) {
-    filtered = filtered.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_'));
+    filtered = filtered.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_') && !t.id.startsWith('knowledge_'));
   }
   return filtered;
 }
@@ -155,8 +178,9 @@ async function openToolsPopup() {
     searchInput.value = '';
   }
   
-  // 先从 storage 加载 MCP 工具
+  // 先从 storage 加载 MCP 工具与 RAG 知识库工具
   await loadMcpToolsFromStorage();
+  await loadRagToolsFromStorage();
   
   // 更新标签角标数字
   updateCategoryBadges();
@@ -387,10 +411,12 @@ function updateCategoryCount(category) {
   const countSpan = categoryHeader.querySelector('.category-count');
   if (!countSpan) return;
   
-  // MCP 分类需要额外统计 mcpToolsCache 中的工具
+  // MCP / 知识库分类需要额外统计动态工具缓存中的工具
   const categoryTools = category === 'mcp'
     ? [...BUILTIN_TOOLS.filter(t => t.category === category), ...mcpToolsCache.filter(t => t.category === category)]
-    : BUILTIN_TOOLS.filter(t => t.category === category);
+    : category === 'knowledge'
+      ? ragToolsCache
+      : BUILTIN_TOOLS.filter(t => t.category === category);
   const totalCount = categoryTools.length;
   
   let enabledCount = 0;
@@ -476,7 +502,7 @@ function updateToolsPopupTitle() {
 
 function saveToolsFromPopup() {
   const newEnabledTools = [];
-  const allTools = [...BUILTIN_TOOLS, ...mcpToolsCache];
+  const allTools = [...BUILTIN_TOOLS, ...mcpToolsCache, ...ragToolsCache];
   const validToolIds = new Set(allTools.map(t => t.id));
   
   allTools.forEach(tool => {
@@ -563,8 +589,37 @@ export {
   saveToolsFromPopup,
   updateToolsToggleState,
   getAgentFilteredTools,
-  refreshToolPopupIfOpen
+  refreshToolPopupIfOpen,
+  applyRagToolIntroduction,
+  getRagToolIds
 };
+
+/**
+ * RAG 工具一次性引入：首次（ragToolsIntroduced !== true）将已注册的知识库工具
+ * 默认并入启用列表并标记已引入；此后完全跟随用户勾选（取消勾选持久生效）
+ * @param {string[]} savedTools 已保存的启用工具 ID 列表
+ * @param {Array<{id: string}>} ragTools 已注册的 RAG 工具
+ * @param {boolean|undefined} introduced 是否已完成引入
+ * @returns {{tools: string[], migrated: boolean}} 合并后的列表与是否需要持久化引入标记
+ */
+function applyRagToolIntroduction(savedTools, ragTools, introduced) {
+  const base = Array.isArray(savedTools) ? savedTools : [];
+  if (introduced === true || !Array.isArray(ragTools) || ragTools.length === 0) {
+    return { tools: base, migrated: false };
+  }
+  const merged = [...base];
+  for (const t of ragTools) {
+    if (!merged.includes(t.id)) merged.push(t.id);
+  }
+  return { tools: merged, migrated: merged.length !== base.length };
+}
+
+/**
+ * 当前已注册的 RAG 知识库工具 ID 列表（供侧边栏默认启用逻辑使用）
+ */
+function getRagToolIds() {
+  return ragToolsCache.map(t => t.id);
+}
 
 /**
  * 如果工具弹窗当前打开，刷新列表、标签、标题和按钮状态

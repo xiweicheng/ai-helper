@@ -23,6 +23,7 @@ import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { clearPageSelection } from './page-selector.js';
+import { clearKnowledgeRefs, renderKnowledgeIndicator, fetchKnowledgeCollections } from './agent-at-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -407,6 +408,20 @@ async function _loadChatHistoryImpl() {
             case 'file':
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
               break;
+            case 'knowledge': {
+              const kbRefs = Array.isArray(bubble.refs) ? bubble.refs : [];
+              const kbTotal = kbRefs.reduce((sum, r) => sum + (r.hitCount || 0), 0);
+              if (kbRefs.length > 0) {
+                if (kbTotal === 0) {
+                  bubbleText = t('contextBubble.bubbleKnowledgeMiss', { name: kbRefs.map(r => r.name).join('、') });
+                } else {
+                  kbRefs.filter(r => (r.hitCount || 0) > 0).forEach(r => {
+                    addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false);
+                  });
+                }
+              }
+              break;
+            }
           }
           if (bubbleText && bubble.type !== 'file') {
             addContextBubble(bubble.type, bubbleText, false);
@@ -544,6 +559,86 @@ export function hideModal() {
 // _verifyCheckpointAndHideButton / _checkForAbandonedCheckpoint / resumeTask）
 // 已拆分到 chat-resume.js，顶部 import 引入
 
+// ============================================================
+// 知识库检索上下文
+// ============================================================
+
+/**
+ * 向 background 请求 RAG 检索并构建知识库上下文文本
+ * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
+ * @param {string} query 用户问题
+ * @param {Array<{id: string, name: string}>} refs 已引用知识库快照
+ * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number}>}|null>}
+ */
+async function buildKnowledgeContextText(query, refs) {
+  if (!refs || refs.length === 0) return null;
+  const searchResp = await new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'RAG_SEARCH',
+        params: { query, collectionIds: refs.map(r => r.id).filter(Boolean), topK: 5 }
+      }, (resp) => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(resp && resp.success ? resp : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+
+  const results = (searchResp && searchResp.results) || [];
+
+  // 按 collectionId 分组统计命中；展示名称优先取引用列表中的库名
+  const nameById = new Map(refs.filter(r => r.id).map(r => [r.id, r.name]));
+  const buckets = new Map(); // collectionId -> { id, name, hitCount, items }
+  results.forEach(item => {
+    const cid = item.collectionId || '';
+    let bucket = buckets.get(cid);
+    if (!bucket) {
+      bucket = { id: cid, name: nameById.get(cid) || cid || t('contextBubble.labelKnowledge'), hitCount: 0, items: [] };
+      buckets.set(cid, bucket);
+    }
+    bucket.items.push(item);
+    bucket.hitCount++;
+  });
+
+  const hitBuckets = Array.from(buckets.values());
+  const totalHits = results.length;
+
+  // 汇总每个引用库的命中数（含 0 命中，用于气泡展示）
+  const refStats = refs.map(r => ({
+    id: r.id,
+    name: r.name,
+    hitCount: r.id ? (buckets.get(r.id)?.hitCount || 0) : 0
+  }));
+  hitBuckets.forEach(b => {
+    if (!refStats.some(s => s.id && s.id === b.id)) {
+      refStats.push({ id: b.id, name: b.name, hitCount: b.hitCount });
+    }
+  });
+
+  // 构造注入文本（固定中文标记，与 [网页上下文] 一致）
+  const names = refs.map(r => r.name).join('、');
+  const lines = [`[知识库检索结果]（引用: ${names}）`];
+  if (totalHits === 0) {
+    lines.push('未找到与问题相关的内容。');
+  } else {
+    hitBuckets.forEach(b => {
+      lines.push('');
+      lines.push(`【${b.name}】`);
+      b.items.forEach(item => {
+        const score = typeof item.score === 'number' ? item.score.toFixed(3) : String(item.score ?? '');
+        lines.push(`· 相关度 ${score}`);
+        lines.push(String(item.content || '').trim().slice(0, 1500));
+        lines.push('');
+      });
+    });
+  }
+  lines.push('[/知识库检索结果]');
+
+  return { text: lines.join('\n') + '\n\n', refs: refStats };
+}
+
 export async function sendMessage() {
   // 等待聊天历史加载完成，确保 activeSessionId 就绪，保存会话不会静默失败
   await chatHistoryReady;
@@ -610,6 +705,36 @@ export async function sendMessage() {
     contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
     // 清除 MCP 指示器
     clearMcpService();
+  }
+
+  // 注入知识库检索上下文（如果已引用知识库）
+  if (state.knowledgeRefs.length > 0) {
+    const refsSnapshot = state.knowledgeRefs.slice();
+    // 检索期间锁定发送，防止重复提交
+    state.isGenerating = true;
+    const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), true);
+    let kbPayload = null;
+    try {
+      kbPayload = await buildKnowledgeContextText(text, refsSnapshot);
+    } catch (err) {
+      logger.warn('[SidePanel] knowledge search failed:', err);
+    }
+    if (searchingBubble && searchingBubble.parentNode) searchingBubble.remove();
+    if (kbPayload) {
+      finalText = kbPayload.text + finalText;
+      const totalHits = kbPayload.refs.reduce((sum, r) => sum + r.hitCount, 0);
+      if (totalHits === 0) {
+        addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
+      } else {
+        kbPayload.refs.forEach(r => {
+          if (r.hitCount > 0) {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false);
+          }
+        });
+      }
+      contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs });
+    }
+    clearKnowledgeRefs();
   }
 
   // 注入网页上下文（如果已选中网页）
@@ -1025,8 +1150,8 @@ export function addContextBubble(type, contextText, scroll = true) {
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : '📌'))));
-  const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : t('contextBubble.labelSelection')))));
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : (type === 'knowledge' ? '📚' : '📌')))));
+  const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : (type === 'knowledge' ? t('contextBubble.labelKnowledge') : t('contextBubble.labelSelection'))))));
 
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -1487,8 +1612,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   } else {
     let displayText = textContent;
     displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
-    displayText = stripSkillContext(displayText);
+    displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
     displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+    displayText = stripSkillContext(displayText);
     
     const quotedMatch = displayText.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const selectedMatch = displayText.match(/^\[选中内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -1527,8 +1653,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       // 技能上下文: [已选技能: xxx - xxx]\n（技能说明/提示）...处理以下问题...\n
       // MCP上下文: [已选MCP服务: xxx]\n请使用「xxx」MCP服务来处理以下问题：\n
       displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
-      displayText = stripSkillContext(displayText);
+      displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
       displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+      displayText = stripSkillContext(displayText);
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       displayText = displayText.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv.textContent = displayText;
@@ -3531,7 +3658,26 @@ export function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 3a. 恢复技能上下文（如果消息使用了技能）
+    // 3a. 恢复知识库引用（如果消息检索过知识库）
+    clearKnowledgeRefs();
+    const kbMatch = textContent_.match(/\[知识库检索结果\]（引用: ([^）]+)）/);
+    if (kbMatch) {
+      const kbNames = kbMatch[1].split('、').map(s => s.trim()).filter(Boolean);
+      if (kbNames.length > 0) {
+        state.knowledgeRefs = kbNames.map(name => ({ id: '', name }));
+        renderKnowledgeIndicator();
+        // 异步补全知识库 ID，便于重发时精确检索（失败则按全库检索）
+        fetchKnowledgeCollections().then(kbState => {
+          if (kbState && kbState.ok) {
+            const idByName = new Map((kbState.collections || []).map(c => [c.name, c.id]));
+            state.knowledgeRefs = state.knowledgeRefs.map(r => r.id ? r : { id: idByName.get(r.name) || '', name: r.name });
+            renderKnowledgeIndicator();
+          }
+        }).catch(() => {});
+      }
+    }
+
+    // 3b. 恢复技能上下文（如果消息使用了技能）
     clearSkillSelection();
     clearMcpService();
     const skillMatch = textContent_.match(/^\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/);
@@ -3546,7 +3692,7 @@ export function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 3b. 恢复 MCP 服务上下文
+    // 3c. 恢复 MCP 服务上下文
     const mcpMatch = textContent_.match(/^\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/);
     if (mcpMatch) {
       const mcpName = mcpMatch[1].split(' - ')[0].trim();
@@ -3559,10 +3705,13 @@ export function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 4. 从文本中去掉网页/技能/MCP前缀
+    // 4. 从文本中去掉网页/知识库/技能/MCP前缀
     let textContentClean = textContent_;
     if (pageMatch) {
       textContentClean = textContentClean.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+    }
+    if (kbMatch) {
+      textContentClean = textContentClean.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
     }
     if (mcpMatch) {
       textContentClean = textContentClean.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');

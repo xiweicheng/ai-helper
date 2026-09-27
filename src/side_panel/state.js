@@ -24,6 +24,8 @@ export let selectedMcpService = null;  // 当前选中的 MCP 服务 { serverId,
 export let selectedMcpServiceIndex = -1; // MCP 服务选择器当前选中索引
 export let selectedPage = null;  // 当前选中的网页 { id, title, url, favIconUrl }
 export let selectedPageIndex = -1; // 页面选择器当前选中索引
+export let knowledgeRefs = [];  // 已引用的知识库列表 [{ id, name }]
+export let selectedKnowledgeAtIndex = -1; // @ 知识库选择器当前选中索引
 export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
 export let lastActiveDropdownTab = 'prompts'; // 上次激活的 Tab（用于记忆）
 export let showMergedList = false;   // 是否显示合并列表（搜索模式）
@@ -192,6 +194,10 @@ export default {
   set selectedPage(v) { selectedPage = v; },
   get selectedPageIndex() { return selectedPageIndex; },
   set selectedPageIndex(v) { selectedPageIndex = v; },
+  get knowledgeRefs() { return knowledgeRefs; },
+  set knowledgeRefs(v) { knowledgeRefs = v; },
+  get selectedKnowledgeAtIndex() { return selectedKnowledgeAtIndex; },
+  set selectedKnowledgeAtIndex(v) { selectedKnowledgeAtIndex = v; },
   get activeDropdownTab() { return activeDropdownTab; },
   set activeDropdownTab(v) { activeDropdownTab = v; },
   get lastActiveDropdownTab() { return lastActiveDropdownTab; },

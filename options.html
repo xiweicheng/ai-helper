@@ -37,6 +37,7 @@
       <button class="tab-nav-btn" data-tab="toolbar" data-i18n="settings.tabToolbar">划词</button>
       <button class="tab-nav-btn" data-tab="agent" data-i18n="settings.tabAgent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox" data-i18n="settings.tabToolbox">扩展</button>
+      <button class="tab-nav-btn" data-tab="knowledge" data-i18n="knowledge.tabTitle">知识库</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -654,8 +655,52 @@
         </div>
       </div>
 
+      <!-- 知识库检索（RAG） -->
+      <div class="toolbox-section disabled-section" id="ragSection">
+        <div class="toolbox-section-header">
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title" data-i18n="toolbox.ragTitle">📚 知识库检索（RAG）</h2>
+            <label class="global-toggle">
+              <input type="checkbox" id="ragGlobalToggle">
+              <span class="global-toggle-slider"></span>
+              <span class="global-toggle-label" id="ragToggleLabel" data-i18n="toolbox.ragDisabled">已停用</span>
+            </label>
+          </div>
+          <span class="toolbox-section-desc" data-i18n="toolbox.ragDesc">在代理端本地构建知识库，对话时检索增强回答。需要安装额外的可选依赖（约 200-300MB），关闭后知识库内容不会发送到 AI 上下文。</span>
+        </div>
+        <div class="toolbox-section-content" id="ragSectionContent">
+          <div class="toolbox-empty">
+            <div class="toolbox-empty-icon">⏳</div>
+            <div class="toolbox-empty-title" data-i18n="toolbox.loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+
       <input type="file" id="importSkillFile" accept=".json" style="display:none;">
     </div><!-- /tab-toolbox -->
+
+    <!-- 知识库管理 -->
+    <div class="tab-panel" data-tab="knowledge">
+      <!-- 门控引导区（未连接 / 未启用 / 能力未就绪时显示） -->
+      <div id="knowledgeGate" style="display:none;"></div>
+
+      <!-- 知识库主体 -->
+      <div id="knowledgeMain" style="display:none;">
+        <div class="knowledge-header">
+          <div class="knowledge-title-row">
+            <h2 class="knowledge-title" data-i18n="knowledge.title">知识库</h2>
+            <span class="toolbox-tool-count" id="knowledgeCount" style="display:none;"></span>
+          </div>
+          <button class="toolbox-add-btn" id="createKbBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="knowledge.createBtn">+ 新建知识库</button>
+        </div>
+        <div class="knowledge-list" id="knowledgeList">
+          <div class="toolbox-empty" style="grid-column:1/-1;">
+            <div class="toolbox-empty-icon">⏳</div>
+            <div class="toolbox-empty-title" data-i18n="toolbox.loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-knowledge -->
 
     <!-- 全局保存按钮（所有 tab 可见） -->
     <div style="margin-top: 20px; padding: 0 24px 24px;">

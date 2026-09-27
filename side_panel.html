@@ -283,6 +283,10 @@
             <span data-i18n="toolCategory.mcp">🔌 MCP</span>
             <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
+          <button type="button" class="category-btn" data-category="knowledge" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+            <span data-i18n="toolCategory.knowledge">📚 知识库</span>
+            <span class="category-badge" id="badge-knowledge" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+          </button>
           </div>
         </div>
       </div>
@@ -527,6 +531,8 @@
       <span class="page-indicator-name" id="pageIndicatorName"></span>
       <button class="page-indicator-close" id="pageIndicatorClose" data-i18n-title="selection.clearPage" title="取消网页">✕</button>
     </div>
+    <!-- 知识库引用指示器（支持多库，chip 形式） -->
+    <div class="knowledge-indicator" id="knowledgeIndicator" style="display: none;"></div>
     <!-- MCP 服务选中指示器 -->
     <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
       <span class="mcp-indicator-label">🔌 MCP</span>
@@ -561,14 +567,16 @@
       <div class="prompt-dropdown" id="agentAtDropdown">
         <div class="prompt-dropdown-tabs" id="agentAtTabs">
           <button class="prompt-tab active" data-tab="pages" data-i18n="promptSelector.pages">网页</button>
+          <button class="prompt-tab" data-tab="knowledge" data-i18n="promptSelector.knowledge">知识库</button>
           <button class="prompt-tab" data-tab="agents" data-i18n="promptSelector.agents">助手</button>
           <button class="prompt-tab" data-tab="proxies" data-i18n="promptSelector.proxies">代理</button>
           <div class="prompt-merged-title" id="agentAtMergedTitle" data-i18n="promptSelector.mergedTitle">聚合搜索</div>
         </div>
-        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span></div>
+        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span><span class="agent-add-btn" id="knowledgeAddBtn" data-i18n-title="header.manageKnowledge" title="管理知识库" style="display:none;">✚</span></div>
         <div id="agentAtList"></div>
         <div id="agentPageList" style="display: none;"></div>
         <div id="agentProxyList" style="display: none;"></div>
+        <div id="agentKnowledgeList" style="display: none;"></div>
       </div>
     </div>
     <!-- $ 工作目录文件选择器 -->

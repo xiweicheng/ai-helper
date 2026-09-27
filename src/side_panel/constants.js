@@ -1,7 +1,8 @@
 import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../background/constants.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
-export const CATEGORY_ORDER = [...new Set([..._CATEGORY_ORDER, 'mcp'])];
+// 'mcp' 与 'knowledge' 为动态工具分类（BUILTIN_TOOLS_UI 快照中不含，需显式补充）
+export const CATEGORY_ORDER = [...new Set([..._CATEGORY_ORDER, 'mcp', 'knowledge'])];
 
 // 预设温度档位：labelKey/tipKey 对应 locales 中的 presetMode 模块
 export const PRESET_MODES = [
@@ -25,5 +26,6 @@ export const TOOL_CATEGORY_NAMES = {
     'debug_dev': 'debug_dev',
     'ai_collaboration': 'ai_collaboration',
     'local_agent': 'local_agent',
-    'mcp': 'mcp'
+    'mcp': 'mcp',
+    'knowledge': 'knowledge'
 };

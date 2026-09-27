@@ -33,7 +33,7 @@ const EXPORT_KEYS = [
   'pairedAgents', 'agentStreamEnabled',
   'enableTools', 'isolateChat', 'enableSelectionQuery',
   'deletedPresetModels',
-  'mcpEnabled', 'skillsEnabled',
+  'mcpEnabled', 'skillsEnabled', 'ragEnabled',
 ];
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）

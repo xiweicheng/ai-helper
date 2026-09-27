@@ -4,6 +4,7 @@
 //   toolbox-mcp.js / toolbox-skills.js / toolbox-shared.js
 
 import { state, showCustomConfirm, showAgentSkillViewer, agentApi, getAgentConnection, escapeHtml, showToast } from './toolbox-shared.js';
+import { refreshRagSection, initRagEvents } from './toolbox-rag.js';
 import {
   loadMcpServers, renderMcpServers, addMcpServer, removeMcpServer,
   connectMcpServer, disconnectMcpServer, toggleMcpServer,
@@ -132,6 +133,9 @@ export async function refreshToolbox() {
   if (addBtn) addBtn.disabled = disabled;
   if (importBtn) importBtn.disabled = disabled;
   if (reloadBtn) reloadBtn.disabled = disabled;
+
+  // 刷新 RAG 状态区（能力探测 + 安装引导/进度展示）
+  await refreshRagSection();
 }
 
 /**
@@ -239,8 +243,14 @@ async function saveMcpEdit() {
  * 更新全局开关的 UI 状态
  */
 function updateGlobalToggleUI(type, enabled) {
-  const label = document.getElementById(type === 'mcp' ? 'mcpToggleLabel' : 'skillToggleLabel');
-  const section = document.getElementById(type === 'mcp' ? 'mcpSection' : 'skillSection');
+  const idMap = {
+    mcp: ['mcpToggleLabel', 'mcpSection'],
+    skill: ['skillToggleLabel', 'skillSection'],
+    rag: ['ragToggleLabel', 'ragSection']
+  };
+  const [labelId, sectionId] = idMap[type] || idMap.mcp;
+  const label = document.getElementById(labelId);
+  const section = document.getElementById(sectionId);
   if (label) {
     label.textContent = enabled ? t('common.enabled') : t('common.disabled');
     label.style.color = enabled ? '#666' : '#999';
@@ -261,19 +271,23 @@ export function initToolbox() {
   // 全局开关：MCP 服务
   const mcpToggle = document.getElementById('mcpGlobalToggle');
   const skillToggle = document.getElementById('skillGlobalToggle');
+  const ragToggle = document.getElementById('ragGlobalToggle');
   const mcpToggleLabel = document.getElementById('mcpToggleLabel');
   const skillToggleLabel = document.getElementById('skillToggleLabel');
   const mcpSection = document.getElementById('mcpSection');
   const skillSection = document.getElementById('skillSection');
 
   // 加载全局开关状态
-  chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
+  chrome.storage.local.get(['mcpEnabled', 'skillsEnabled', 'ragEnabled'], (result) => {
     const mcpEnabled = result.mcpEnabled === true;
     const skillsEnabled = result.skillsEnabled !== false;
+    const ragEnabled = result.ragEnabled === true; // 默认关闭
     if (mcpToggle) mcpToggle.checked = mcpEnabled;
     if (skillToggle) skillToggle.checked = skillsEnabled;
+    if (ragToggle) ragToggle.checked = ragEnabled;
     updateGlobalToggleUI('mcp', mcpEnabled);
     updateGlobalToggleUI('skill', skillsEnabled);
+    updateGlobalToggleUI('rag', ragEnabled);
   });
 
   // MCP 全局开关
@@ -293,6 +307,19 @@ export function initToolbox() {
       chrome.storage.local.set({ skillsEnabled: enabled });
       updateGlobalToggleUI('skill', enabled);
       showToolboxToast(enabled ? t('toolbox.skillServiceEnabled') : t('toolbox.skillServiceDisabled'), 'info');
+    });
+  }
+
+  // RAG 全局开关（默认关闭；开启时刷新状态，未装依赖会展示安装引导）
+  if (ragToggle) {
+    ragToggle.addEventListener('change', async () => {
+      const enabled = ragToggle.checked;
+      chrome.storage.local.set({ ragEnabled: enabled });
+      updateGlobalToggleUI('rag', enabled);
+      showToolboxToast(enabled ? t('toolbox.ragServiceEnabled') : t('toolbox.ragServiceDisabled'), 'info');
+      if (enabled) {
+        await refreshRagSection();
+      }
     });
   }
 
@@ -568,6 +595,9 @@ export function initToolbox() {
   // 初始化搜索 + 筛选事件
   initMcpFilter();
   initSkillFilter();
+
+  // 初始化 RAG 状态区事件（一键安装/重新检测/复制命令）
+  initRagEvents();
 
   // 初始加载数据
   refreshToolbox();
