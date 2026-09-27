@@ -26,7 +26,7 @@
 | @ 选择器 | `file-at-selector.js`、`agent-at-selector.js` | 复用作 `@知识库` 选择器 |
 | 文件上传 | `agent/src/server.js` | 文档导入复用上传链路 |
 | IndexedDB 存储 | `src/storage/db.js` | 浏览器端缓存检索结果 |
-| **MCP 总开关机制** | `toolbox-config.js` + `chrome.storage.local` | RAG 总开关复用此模式 |
+| **全局开关机制** | `.global-toggle` 组件 + `chrome.storage.local` | RAG 总开关复用此模式（现位于「知识库」标签页面板头部） |
 | **可选能力检测先例** | `search.js` 的 `fd`/`rg` 检测 | RAG 依赖检测复用此模式 |
 | **Agent 状态接口** | `/api/status` + `/api/status/detail` | 返回 `ragAvailable` 字段 |
 
@@ -224,39 +224,47 @@ async checkAgentCapabilities() {
 }
 ```
 
-#### 总开关（复用 MCP 总开关模式）
+#### 总开关（位于「知识库」标签页面板头部，复用 MCP 总开关模式）
 
 ```js
 // chrome.storage.local 存储
 // ragEnabled: true/false  （默认 false）
 
-// src/options/toolbox-config.js（复用 MCP 总开关模式）
-chrome.storage.local.get(['mcpEnabled', 'ragEnabled'], (result) => {
-  const ragEnabled = result.ragEnabled === true;
-  const ragToggle = document.getElementById('rag-toggle');
-  if (ragToggle) ragToggle.checked = ragEnabled;
-  updateGlobalToggleUI('rag', ragEnabled);
+// src/options/knowledge-panel.js —— 开关与面板门控一体化（原在扩展 tab，后续迁移至知识库面板）
+chrome.storage.local.get('ragEnabled', (result) => {
+  const enabled = result.ragEnabled === true;
+  const ragToggle = document.getElementById('ragGlobalToggle');
+  if (ragToggle) ragToggle.checked = enabled;
 });
 
-// 总开关切换
-document.getElementById('rag-toggle').addEventListener('change', (e) => {
-  chrome.storage.local.set({ ragEnabled: e.target.checked });
-  // 通知所有标签页
-  chrome.runtime.sendMessage({ type: 'rag-toggle-changed', enabled: e.target.checked });
+// 总开关切换：写入 storage 后刷新面板门控（就绪则显示知识库列表）
+// 工具注册/注销由 background 监听 storage.onChanged 自动处理
+document.getElementById('ragGlobalToggle').addEventListener('change', () => {
+  chrome.storage.local.set({ ragEnabled: ragToggle.checked });
+  refreshKnowledgePanel();
 });
 ```
 
 #### RAG 功能入口的显示条件
 
+总开关（`ragEnabled`）是全部知识库入口的统一门控，各入口落点如下（组合条件已在各入口分别实现）：
+
+| 入口 | 总开关关闭 | 代理端不支持（`ragAvailable=false`） |
+|------|-----------|--------------------------------------|
+| 设置页「知识库」面板 | 显示「立即启用」门控 | 就地显示依赖安装引导 |
+| 侧边栏 @ 选择器「知识库」Tab | 隐藏（聚合搜索同步排除知识库） | 隐藏 |
+| 引用检索（发送前 `RAG_SEARCH`） | 跳过检索 | 请求失败静默跳过 |
+| LLM 工具动态注册（background） | 不注册 | 不注册 |
+
 ```js
-// RAG 功能入口显示 = 总开关开启 AND 代理端支持
-async function shouldShowRagFeatures(agentCapabilities) {
-  const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
-  return ragEnabled === true && agentCapabilities.ragAvailable === true;
-}
+// src/side_panel/agent-at-selector.js —— @ 选择器每次展开实时读取总开关（不走列表缓存）
+const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+if (ragEnabled !== true) return { ok: false, disabled: true, collections: [] };
 ```
 
 ### 3.7 依赖安装引导
+
+实现位置：「知识库」标签页门控区——总开关开启且 `ragAvailable=false` 时就地展示安装引导（不再跳转其他标签页）；安装成功/重新检测通过后自动切回知识库列表。
 
 当用户尝试启用 RAG 但代理端依赖未安装时：
 
@@ -836,6 +844,8 @@ export class VectraStore {
 
 > **BM25 混合检索的硬性约束（数据布局先定，功能后做）**：Vectra 0.15 的 `isBm25=true` 要求每个 item 的 metadata 含 `documentId/startPos/endPos`，且 index 需提供 `docReader(docId)` 能读取原始文档全文——即**原始文档必须落盘一份，chunk 记录在文档中的字符区间**。这与 5.2 计划的"documents/ 原始文档备份"一致：`upsertChunks` 同时写入 `text`（向量路径用）与 `startPos/endPos`（BM25 路径用），即可避免日后重构索引。另需注意其 BM25 分词器为 `wink-eng-lite-web-model`（英文模型），**中文分词效果有限**，中文混合检索需验证，必要时自建（见 Phase 3）。
 
+> **混合检索最终实现（实测后定案，未采用 isBm25，改为自建关键词通道）**：实测 Vectra 内置 BM25 在本项目场景不可用——① 分词器为 wink 英文模型，中英混排文本仅提取英文词（实测 `"…Redis 集群 + RocketMQ…"` → `["spring","cloud","netti","redi","rocketmq"]`，中文 token 全丢）；② BM25 原始分与余弦分数（[-1,1]）尺度不兼容，且结果 append 在向量结果之后，会被 Searcher 的 top-K 截断丢弃；③ 仅对"非向量 top 结果"建索引且在**每次查询**重建全量 BM25 文档。故自建轻量关键词通道（`searcher.js`）：`extractKeywords` 查询切段（以非字母数字汉字为界，≥ 2 字符，小写去重）→ 全量 chunk 子串命中检测（中英文通用）→ 命中者按 `min(0.99, max(向量分, 0.5) + 0.1 × min(命中词数, 3))` 重排，并将未入选向量候选的命中 chunk 一并纳入；高频词按 `df > max(2, 总数 × 50%)` 剔除（保留低频豁免，避免小库误伤），扫描上限 2 万 chunk。实测：查询 "RocketMQ" 相关 chunk 修复前排名 23/92、修复后 top1-3（本地小模型对短英文专有名词的语义区分度不足是根因）。
+
 ## 六、模式二：外接 RAG 服务
 
 ### 6.1 子模式 A：MCP 模式（零开发）
@@ -906,12 +916,15 @@ class RAGAdapter {
 |---|---|---|
 | `GET` | `/api/rag/collections` | 列出所有知识库 |
 | `POST` | `/api/rag/collections` | 创建知识库 `{ name, description, embeddingConfig }` |
+| `PUT` | `/api/rag/collections/{id}` | 更新知识库名称/描述 `{ name, description }` |
 | `DELETE` | `/api/rag/collections/{id}` | 删除知识库 |
 | `GET` | `/api/rag/collections/{id}/stats` | 文档数/分块数统计 |
 | `POST` | `/api/rag/collections/{id}/ingest` | 导入文档 `{ type, content/path/url, metadata }` |
+| `GET` | `/api/rag/collections/{id}/ingest/status` | 导入进度快照（供导入弹窗轮询） |
 | `GET` | `/api/rag/collections/{id}/documents` | 文档列表 |
 | `DELETE` | `/api/rag/collections/{id}/documents/{docId}` | 删除文档 |
 | `POST` | `/api/rag/collections/{id}/search` | 检索 `{ query, topK, threshold }` |
+| `POST` | `/api/rag/search` | 跨知识库检索 `{ collectionIds, query, topK, threshold }` |
 | `GET` | `/api/rag/status` | embedding 模型加载状态 |
 | `POST` | `/api/rag/install` | 安装 RAG 可选依赖（固定白名单、强制 Bearer 认证、异步返回 `started`） |
 | `GET` | `/api/rag/install/status` | 安装进度轮询 `{ running, done, success, phase, logTail }` |
@@ -1161,7 +1174,8 @@ async getAvailableTools() {
 | 安装接口接受任意包名/本机免认证触发 | 固定白名单 + 强制 Bearer 认证 + `shell: false` + 安装锁 |
 | onnxruntime-node ≥1.24 无 darwin/x64 导致 Intel Mac 加载 transformers 失败 | package.json `overrides` 固定 `~1.23.0`（实测 transformers 4.3.0 + onnxruntime-node 1.23.2 推理正常） |
 | huggingface.co 直连超时 + 默认模型缓存在 node_modules 内重装即丢 | 镜像 `env.remoteHost = 'https://hf-mirror.com/'`（可配置）+ `env.cacheDir` 指向用户目录 |
-| 中文混合检索分词不可用 | Vectra 内置 BM25 分词器为英文模型，中文效果需实测，必要时自建（Phase 3） |
+| 中文混合检索分词不可用 | Vectra 内置 BM25 分词器为英文模型（实测中文 token 全丢），已自建轻量关键词通道（`searcher.js` 子串命中 + 加分重排），不再依赖 Vectra isBm25 |
+| 本地小模型对短英文专有名词（如 RocketMQ）区分度不足，相关 chunk 被无关内容挤占 top-K | 关键词命中增强（混合检索）：精确子串命中抬分并纳入结果，长中文问句天然不受影响（整段不会命中） |
 | 检索未命中时 LLM 乱编 | hasContext=false 时提示"知识库未包含该问题答案"，不泛化 |
 | 链路不可观测 | stats 接口返回文档数/分块数；检索返回 hasContext 字段 |
 
@@ -1173,7 +1187,7 @@ async getAvailableTools() {
 2. `agent/src/rag/detect.js`：运行时能力检测（Node 22+ 版本检查 + 仿 `search.js` 的 `fd`/`rg` 模式）
 3. `agent/src/server.js`：启动时检测，`/api/status` 增加 `ragAvailable` 字段
 4. `agent/src/server.js`：RAG 路由按需加载（`dynamic import`），未安装时返回 503
-5. 前端：`ragEnabled` 总开关（复用 MCP 总开关模式）
+5. 前端：`ragEnabled` 总开关（位于「知识库」标签页面板头部，复用 MCP 总开关模式）
 6. 前端：能力探测 + 功能入口显示条件
 7. 前端：依赖安装引导弹窗 + 一键安装接口（固定白名单 + 强制认证 + 异步安装/状态轮询）
 8. 配置导入导出白名单加 `ragEnabled`
@@ -1197,7 +1211,7 @@ async getAvailableTools() {
 ### Phase 3：MCP 模式增强 + 高级功能（1-2 周）
 
 1. MCP RAG 工具自动识别（检测到 `search_vector` 等工具时标注为 RAG 工具）
-2. 混合检索（向量 + BM25）：优先复用 Vectra 内置 `isBm25=true`（需验证其中文分词效果与 `docReader` 接入方式；不满足则自建中文分词 BM25）
+2. 混合检索（向量 + 关键词命中）：**已实现**（`searcher.js` 自建关键词通道；实测 Vectra 内置 `isBm25` 的中文分词、分数尺度、索引重建与文档布局均不满足，详见 5.8 节说明）
 3. 文档增量更新（只重索引变更部分）
 4. 检索质量评估（recall@k 测试）
 
@@ -1215,6 +1229,6 @@ async getAvailableTools() {
 | 数据量超 Vectra 承载能力 | 10 万分块为分水岭，超过后引导用户迁移外接方案 |
 | 中途换 embedding 模型 | 检测模型变更，提示重新索引（清空重导）；改查询前缀无需重新索引 |
 | **安装接口被滥用（任意包安装/本机触发）** | 固定包白名单、强制 Bearer 认证、`shell: false`、异步安装 + 安装锁 |
-| **用户启用 RAG 但代理端未安装依赖** | 前端检测 `ragAvailable=false` 时显示安装引导弹窗，不显示功能入口 |
+| **用户启用 RAG 但代理端未安装依赖** | 前端检测 `ragAvailable=false` 时在知识库面板门控区就地显示安装引导，禁用功能入口 |
 | **Intel Mac（darwin-x64）无 onnxruntime 原生二进制** | `overrides` 固定 onnxruntime-node `~1.23.0`（实测推理正常）；全局安装场景 overrides 不生效，需安装脚本/文档指引 |
 | **模型下载端点不可达（huggingface.co 国内直连超时）** | 默认走 hf-mirror 镜像且开放配置；缓存目录独立于 node_modules（`env.cacheDir`） |
