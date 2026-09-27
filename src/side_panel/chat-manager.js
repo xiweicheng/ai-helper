@@ -568,10 +568,16 @@ export function hideModal() {
  * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
  * @param {string} query 用户问题
  * @param {Array<{id: string, name: string}>} refs 已引用知识库快照
- * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>}|null>}
+ * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>}|null>} 总开关关闭时返回 null（跳过检索）
  */
 export async function buildKnowledgeContextText(query, refs) {
   if (!refs || refs.length === 0) return null;
+  // 总开关关闭：跳过检索（与设置页面板门控、@ 选择器显隐保持一致）
+  const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+  if (ragEnabled !== true) {
+    logger.debug('[SidePanel] RAG global switch off, skip knowledge context');
+    return null;
+  }
   const searchResp = await new Promise((resolve) => {
     try {
       chrome.runtime.sendMessage({

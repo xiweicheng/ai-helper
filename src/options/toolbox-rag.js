@@ -16,6 +16,16 @@ const DEFAULT_RAG_PACKAGES = ['vectra', '@huggingface/transformers', 'pdf-parse'
 // 安装进度轮询定时器
 let installPollTimer = null;
 
+// 依赖就绪回调（知识库面板注册，安装成功 / 重新检测通过后自动刷新门控与列表）
+let availabilityChangeHandler = null;
+
+/**
+ * 注册「RAG 可用性变化」回调
+ */
+export function setRagAvailabilityChangeHandler(fn) {
+  availabilityChangeHandler = fn;
+}
+
 // ==================== 能力探测 ====================
 
 /**
@@ -247,7 +257,10 @@ function startInstallPolling() {
         install.success ? t('toolbox.ragInstallSuccess') : t('toolbox.ragInstallFailedToast'),
         install.success ? 'success' : 'error'
       );
-      if (install.success) notifyRagToolsChange();
+      if (install.success) {
+        notifyRagToolsChange();
+        await availabilityChangeHandler?.();
+      }
     }
   };
   installPollTimer = setTimeout(poll, INSTALL_POLL_INTERVAL_MS);
@@ -299,7 +312,10 @@ export async function redetectRag() {
     const res = await agentApi('POST', '/api/rag/detect');
     if (res && res.success) {
       showToast(res.available ? t('toolbox.ragRedetectReady') : t('toolbox.ragRedetectStillMissing'), res.available ? 'success' : 'info');
-      if (res.available) notifyRagToolsChange();
+      if (res.available) {
+        notifyRagToolsChange();
+        await availabilityChangeHandler?.();
+      }
     } else {
       showToast(t('toolbox.ragRedetectFailed', { error: (res && res.error) || 'unknown' }), 'error');
     }
@@ -327,7 +343,7 @@ async function copyRagCommand() {
 // ==================== 刷新与事件 ====================
 
 /**
- * 刷新 RAG 状态区（供 refreshToolbox 调用）
+ * 刷新 RAG 状态区（知识库面板门控调用；容器 #ragSectionContent 位于门控 HTML 内）
  */
 export async function refreshRagSection() {
   const status = await loadRagStatus();
@@ -348,11 +364,12 @@ export async function refreshRagSection() {
 }
 
 /**
- * 初始化 RAG section 事件（事件委托，渲染内容变化后仍有效）
+ * 初始化 RAG 状态区事件（事件委托 + 防重绑定；容器随门控重建后需重新调用）
  */
 export function initRagEvents() {
   const container = document.getElementById('ragSectionContent');
-  if (!container) return;
+  if (!container || container.dataset.ragEventsBound === '1') return;
+  container.dataset.ragEventsBound = '1';
   container.addEventListener('click', async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;

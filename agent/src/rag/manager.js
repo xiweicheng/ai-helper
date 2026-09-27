@@ -141,6 +141,28 @@ export class RagManager {
     return { deleted: true, id: collectionId };
   }
 
+  /**
+   * 更新知识库名称/描述（embedding/chunk 配置不在此修改——变更需重建索引，另行设计）
+   * @param {string} collectionId
+   * @param {{name?: string, description?: string}} input
+   */
+  async updateCollection(collectionId, input = {}) {
+    const collection = await this.getCollection(collectionId); // 校验存在性
+    const name = input.name !== undefined ? String(input.name).trim() : collection.name;
+    if (!name) throw new RagError('nameRequired');
+    const description = input.description !== undefined
+      ? String(input.description).slice(0, 500)
+      : collection.description;
+    const updated = await this._updateRegistry(reg => {
+      const target = reg.collections.find(c => c.id === collectionId);
+      if (!target) throw new RagError('collectionNotFound', { id: collectionId });
+      target.name = name.slice(0, 100);
+      target.description = description;
+      return reg;
+    });
+    return updated.collections.find(c => c.id === collectionId);
+  }
+
   // ==================== embedding provider ====================
 
   _getProvider(collection) {

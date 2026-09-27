@@ -252,7 +252,7 @@ function jsonResponse(res, status, data) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
   const allowedOrigin = getAllowedOrigin(res.req);
   if (allowedOrigin) {
@@ -440,7 +440,7 @@ export function startServer() {
     if (req.method === 'OPTIONS') {
       const optHeaders = {
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
       };
       const allowedOrigin = getAllowedOrigin(req);
       if (allowedOrigin) {

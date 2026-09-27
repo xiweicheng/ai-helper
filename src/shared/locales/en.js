@@ -1008,15 +1008,19 @@ export default {
     gateAgentOffTitle: 'Agent not connected',
     gateAgentOffDesc: 'Knowledge base is provided by the local agent. Connect an agent in the "Agent" tab first, then come back here.',
     gateRagOffTitle: 'Knowledge base feature is disabled',
-    gateRagOffDesc: 'Go to the "Extensions" tab and turn on the "Knowledge Retrieval (RAG)" master switch.',
+    gateRagOffDesc: 'Turn on the "Knowledge Retrieval" master switch above to create and manage knowledge bases.',
     gateRagUnavailableTitle: 'Agent capability not ready',
-    gateRagUnavailableDesc: 'RAG dependencies are not installed or the Node version is unsupported (Node 22+ required). See the install guide in the "Extensions" tab.',
+    gateRagUnavailableDesc: 'RAG dependencies are not installed or the Node version is unsupported (Node 22+ required). See the install guide below.',
     goToAgentTab: 'Go to "Agent" tab',
     goToToolboxTab: 'Go to "Extensions" tab',
+    enableNow: 'Enable Now',
 
     // List
     title: 'Knowledge Bases',
     createBtn: '+ New Knowledge Base',
+    searchPlaceholder: 'Search knowledge bases...',
+    countTotal: '{total} total',
+    countFiltered: '{matched} of {total}',
     emptyTitle: 'No knowledge base yet',
     emptyDesc: 'Click "New Knowledge Base" to create one, then import documents to get started.',
     loadFailed: 'Failed to load: {error}',
@@ -1025,6 +1029,7 @@ export default {
     modelPrefix: 'Model:',
 
     // Card actions
+    actionEdit: 'Edit',
     actionIngest: 'Import',
     actionSearch: 'Test Search',
     actionDocs: 'Docs',
@@ -1040,6 +1045,12 @@ export default {
     creating: 'Creating...',
     createSuccess: 'Knowledge base "{name}" created',
     nameRequired: 'Please enter a name',
+
+    // Edit knowledge base
+    editTitle: 'Edit Knowledge Base',
+    editConfirm: 'Save',
+    saving: 'Saving...',
+    editSuccess: 'Knowledge base updated',
 
     // Delete knowledge base
     deleteConfirmTitle: 'Delete Knowledge Base',

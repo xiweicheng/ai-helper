@@ -25,7 +25,8 @@ registerTranslations('zh', {
     confirmDeleteProxy: '确定要删除此代理吗？',
   },
   knowledgeSelector: {
-    notAvailable: '知识库不可用（请确认代理已连接、设置页已启用 RAG）',
+    disabled: '知识库检索已关闭（可在设置页「知识库」中开启）',
+    notAvailable: '知识库不可用（请确认代理已连接、检索依赖已安装）',
     noCollections: '暂无知识库（可在设置页「知识库」中创建）',
     docChunk: '{docs} 文档 · {chunks} 分块',
   },
@@ -47,7 +48,8 @@ registerTranslations('en', {
     confirmDeleteProxy: 'Are you sure you want to delete this proxy?',
   },
   knowledgeSelector: {
-    notAvailable: 'Knowledge base unavailable (check agent connection and RAG switch in settings)',
+    disabled: 'Knowledge retrieval is turned off (you can enable it in Settings - Knowledge)',
+    notAvailable: 'Knowledge base unavailable (check the agent connection and installed retrieval dependencies)',
     noCollections: 'No knowledge base yet (create one in Settings - Knowledge)',
     docChunk: '{docs} docs · {chunks} chunks',
   },
@@ -113,9 +115,13 @@ async function updateAtTabCounts() {
       proxiesTab.style.display = allProxies.length > 0 ? '' : 'none';
     }
     if (knowledgeTab) {
-      // RAG 不可用时隐藏知识库 Tab
+      // 总开关未开启或 RAG 不可用时隐藏知识库 Tab
       knowledgeTab.textContent = t('promptSelector.knowledgeCount', { count: kbState.collections.length });
       knowledgeTab.style.display = kbState.ok ? '' : 'none';
+      // 当前停留在已隐藏的知识库 Tab 时，回退到默认「网页」Tab（避免无 Tab 可依的悬空状态）
+      if (!kbState.ok && activeAtTab === 'knowledge') {
+        switchAtTab('pages');
+      }
     }
   } catch {
     // 获取失败则保持默认标题
@@ -845,11 +851,17 @@ const KNOWLEDGE_CACHE_TTL = 15000;
 
 /**
  * 获取知识库列表（经 background 转发 Agent RAG API）
+ * 总开关（ragEnabled）关闭或 RAG 不可用时 ok=false
  * @param {boolean} [force] 是否强制刷新缓存
- * @returns {Promise<{ok: boolean, collections: Array, ts: number}>} ok=false 表示 RAG 不可用
+ * @returns {Promise<{ok: boolean, disabled?: boolean, collections: Array, ts: number}>}
  */
 export async function fetchKnowledgeCollections(force = false) {
   const now = Date.now();
+  // 总开关关闭：实时读取（不走缓存），保证开关切换立即生效
+  const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+  if (ragEnabled !== true) {
+    return { ok: false, disabled: true, collections: [], ts: Date.now() };
+  }
   if (!force && knowledgeCache.ts && (now - knowledgeCache.ts) < KNOWLEDGE_CACHE_TTL) {
     return knowledgeCache;
   }
@@ -883,7 +895,9 @@ async function renderKnowledgeAtList(filterText = '') {
 
   const kbState = await fetchKnowledgeCollections();
   if (!kbState.ok) {
-    listEl.innerHTML = `<div class="prompt-empty">${t('knowledgeSelector.notAvailable')}</div>`;
+    // 总开关关闭与代理端不可用给出不同的引导文案
+    const msgKey = kbState.disabled ? 'knowledgeSelector.disabled' : 'knowledgeSelector.notAvailable';
+    listEl.innerHTML = `<div class="prompt-empty">${t(msgKey)}</div>`;
     state.selectedKnowledgeAtIndex = -1;
     return;
   }

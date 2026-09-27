@@ -1008,15 +1008,19 @@ export default {
     gateAgentOffTitle: '代理未连接',
     gateAgentOffDesc: '知识库功能由本地代理提供。请先在「代理」标签页完成代理连接，再回到这里管理知识库。',
     gateRagOffTitle: '知识库功能未启用',
-    gateRagOffDesc: '请前往「扩展」标签页，开启「知识库检索（RAG）」总开关后回到这里。',
+    gateRagOffDesc: '开启上方「知识库检索」总开关后，即可创建和管理知识库。',
     gateRagUnavailableTitle: '代理端能力未就绪',
-    gateRagUnavailableDesc: 'RAG 依赖尚未安装，或 Node 版本不满足要求（需 Node 22+）。请前往「扩展」标签页查看安装引导。',
+    gateRagUnavailableDesc: 'RAG 依赖尚未安装，或 Node 版本不满足要求（需 Node 22+）。请查看下方安装引导。',
     goToAgentTab: '前往「代理」标签页',
     goToToolboxTab: '前往「扩展」标签页',
+    enableNow: '立即启用',
 
     // 列表
     title: '知识库',
     createBtn: '+ 新建知识库',
+    searchPlaceholder: '搜索知识库...',
+    countTotal: '共 {total}',
+    countFiltered: '匹配 {matched} / 共 {total}',
     emptyTitle: '还没有知识库',
     emptyDesc: '点击「新建知识库」创建第一个知识库，然后导入文档开始使用。',
     loadFailed: '加载失败: {error}',
@@ -1025,6 +1029,7 @@ export default {
     modelPrefix: '模型:',
 
     // 卡片操作
+    actionEdit: '编辑',
     actionIngest: '导入',
     actionSearch: '检索测试',
     actionDocs: '文档',
@@ -1040,6 +1045,12 @@ export default {
     creating: '创建中...',
     createSuccess: '知识库「{name}」已创建',
     nameRequired: '请输入知识库名称',
+
+    // 编辑知识库
+    editTitle: '编辑知识库',
+    editConfirm: '保存',
+    saving: '保存中...',
+    editSuccess: '知识库信息已更新',
 
     // 删除知识库
     deleteConfirmTitle: '删除知识库',

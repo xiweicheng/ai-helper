@@ -5,7 +5,7 @@
 // 数据来源：Agent /api/rag/* 接口（agentApi）；门控状态复用 toolbox-rag.js 的 loadRagStatus()
 
 import { agentApi, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
-import { loadRagStatus } from './toolbox-rag.js';
+import { loadRagStatus, refreshRagSection, initRagEvents, setRagAvailabilityChangeHandler } from './toolbox-rag.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
 
@@ -23,6 +23,8 @@ const ACCEPT_EXTS = '.txt,.md,.markdown,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.h
 
 // 最近一次加载的知识库列表（供卡片操作查找）
 let cachedCollections = [];
+// 列表搜索过滤关键字（模块级，重渲染后保持；与 MCP/Skill 列表模式一致）
+let kbFilterText = '';
 let initialized = false;
 
 // ==================== 入口 ====================
@@ -39,19 +41,60 @@ export function initKnowledgePanel() {
     listEl.addEventListener('click', onListClick);
   }
 
+  // 搜索过滤（防抖 200ms，与 MCP / Skill 列表一致）
+  const searchInput = document.getElementById('kbSearchInput');
+  if (searchInput) {
+    let debounceTimer = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        kbFilterText = searchInput.value.trim();
+        renderList(cachedCollections);
+      }, 200);
+    });
+    const clearBtn = document.getElementById('kbSearchClear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        kbFilterText = '';
+        renderList(cachedCollections);
+        searchInput.focus();
+      });
+    }
+  }
+
   const createBtn = document.getElementById('createKbBtn');
   if (createBtn) {
     createBtn.addEventListener('click', () => showCreateDialog());
   }
 
-  // 门控引导区（「前往 XX 标签页」按钮）
+  // RAG 总开关（面板头部）：初始状态回填 + 切换写入 storage
+  const ragToggle = document.getElementById('ragGlobalToggle');
+  if (ragToggle) {
+    chrome.storage.local.get('ragEnabled', (result) => {
+      const enabled = result.ragEnabled === true;
+      ragToggle.checked = enabled;
+      updateRagToggleLabel(enabled);
+    });
+    ragToggle.addEventListener('change', () => onRagToggleChange(ragToggle.checked));
+  }
+
+  // 依赖安装成功 / 重新检测通过后，自动刷新面板（门控 → 列表）
+  setRagAvailabilityChangeHandler(() => refreshKnowledgePanel());
+
+  // 门控引导区（「前往 XX 标签页」/「立即启用」按钮）
   const gateEl = document.getElementById('knowledgeGate');
   if (gateEl) {
     gateEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-goto-tab]');
-      if (!btn) return;
-      const tabBtn = document.querySelector(`.tab-nav-btn[data-tab="${btn.dataset.gotoTab}"]`);
-      if (tabBtn) tabBtn.click();
+      const gotoBtn = e.target.closest('[data-goto-tab]');
+      if (gotoBtn) {
+        const tabBtn = document.querySelector(`.tab-nav-btn[data-tab="${gotoBtn.dataset.gotoTab}"]`);
+        if (tabBtn) tabBtn.click();
+        return;
+      }
+      if (e.target.closest('[data-action="enable-rag"]')) {
+        onRagToggleChange(true);
+      }
     });
   }
 
@@ -68,27 +111,60 @@ export async function refreshKnowledgePanel() {
 
   const status = await loadRagStatus();
   const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+  const createBtn = document.getElementById('createKbBtn');
 
   // 1) 代理未连接
   if (!status.connected) {
     renderGate('agentOff');
+    if (createBtn) createBtn.disabled = true;
     return;
   }
   // 2) 总开关未启用
   if (ragEnabled !== true) {
     renderGate('ragOff');
+    if (createBtn) createBtn.disabled = true;
     return;
   }
-  // 3) 代理端能力未就绪（依赖未装 / Node 版本不足 / 状态不可达）
+  // 3) 代理端能力未就绪（依赖未装 / Node 版本不足 / 状态不可达）→ 就地展示安装引导
   if (!status.ragAvailable) {
     renderGate('ragUnavailable');
+    if (createBtn) createBtn.disabled = true;
+    initRagEvents();
+    await refreshRagSection();
     return;
   }
 
   // 就绪：加载知识库列表
+  if (createBtn) createBtn.disabled = false;
   gateEl.style.display = 'none';
   mainEl.style.display = '';
   await loadAndRenderList();
+}
+
+// ==================== RAG 总开关 ====================
+
+/**
+ * 更新总开关标签文案（与工具箱开关样式一致）
+ */
+function updateRagToggleLabel(enabled) {
+  const label = document.getElementById('ragToggleLabel');
+  if (label) {
+    label.textContent = enabled ? t('common.enabled') : t('common.disabled');
+    label.style.color = enabled ? '#666' : '#999';
+  }
+}
+
+/**
+ * 总开关切换：写入 storage → 更新开关 UI → 刷新面板门控
+ * （工具注册/注销由 background 监听 storage.onChanged 自动处理）
+ */
+async function onRagToggleChange(enabled) {
+  await chrome.storage.local.set({ ragEnabled: enabled });
+  const ragToggle = document.getElementById('ragGlobalToggle');
+  if (ragToggle) ragToggle.checked = enabled;
+  updateRagToggleLabel(enabled);
+  showToast(enabled ? t('toolbox.ragServiceEnabled') : t('toolbox.ragServiceDisabled'), 'info');
+  await refreshKnowledgePanel();
 }
 
 // ==================== 门控引导 ====================
@@ -100,6 +176,12 @@ function renderGate(kind) {
 
   mainEl.style.display = 'none';
   gateEl.style.display = '';
+
+  // 依赖未就绪：就地渲染安装引导容器（内容由 toolbox-rag.js 的 refreshRagSection 填充）
+  if (kind === 'ragUnavailable') {
+    gateEl.innerHTML = `<div id="ragSectionContent">${renderLoading()}</div>`;
+    return;
+  }
 
   const cfg = {
     agentOff: {
@@ -113,17 +195,14 @@ function renderGate(kind) {
       icon: '📚',
       title: t('knowledge.gateRagOffTitle'),
       desc: t('knowledge.gateRagOffDesc'),
-      btn: t('knowledge.goToToolboxTab'),
-      tab: 'toolbox'
-    },
-    ragUnavailable: {
-      icon: '⚠️',
-      title: t('knowledge.gateRagUnavailableTitle'),
-      desc: t('knowledge.gateRagUnavailableDesc'),
-      btn: t('knowledge.goToToolboxTab'),
-      tab: 'toolbox'
+      btn: t('knowledge.enableNow'),
+      action: 'enable-rag'
     }
   }[kind];
+
+  const btnHtml = cfg.tab
+    ? `<button class="toolbox-add-btn" data-goto-tab="${cfg.tab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(cfg.btn)}</button>`
+    : `<button class="toolbox-add-btn" data-action="${cfg.action}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(cfg.btn)}</button>`;
 
   gateEl.innerHTML = `
     <div class="toolbox-empty" style="text-align:left; padding:24px 20px;">
@@ -131,7 +210,7 @@ function renderGate(kind) {
         <span style="font-size:22px;">${cfg.icon}</span><span>${escapeHtml(cfg.title)}</span>
       </div>
       <div style="margin-top:8px; line-height:1.7; color:#888; font-size:13px;">${escapeHtml(cfg.desc)}</div>
-      <button class="toolbox-add-btn" data-goto-tab="${cfg.tab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(cfg.btn)}</button>
+      ${btnHtml}
     </div>`;
 }
 
@@ -149,7 +228,7 @@ async function loadAndRenderList() {
     renderList(cachedCollections);
   } catch (err) {
     logger.warn('[Knowledge] Failed to load collections:', err.message);
-    updateCount(0);
+    updateCount(0, 0);
     listEl.innerHTML = `
       <div class="toolbox-empty" style="grid-column:1/-1;">
         <div class="toolbox-empty-icon">⚠️</div>
@@ -170,9 +249,10 @@ function renderLoading() {
 function renderList(collections) {
   const listEl = document.getElementById('knowledgeList');
   if (!listEl) return;
-  updateCount(collections.length);
 
+  // 无知识库（未创建）
   if (collections.length === 0) {
+    updateCount(0, 0);
     listEl.innerHTML = `
       <div class="toolbox-empty" style="grid-column:1/-1; padding:50px 20px;">
         <div class="toolbox-empty-icon">📚</div>
@@ -182,7 +262,27 @@ function renderList(collections) {
     return;
   }
 
-  listEl.innerHTML = collections.map(renderCard).join('');
+  // 应用搜索过滤（匹配名称 / 描述）
+  const filtered = kbFilterText
+    ? collections.filter(c => {
+        const haystack = [c.name, c.description].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(kbFilterText.toLowerCase());
+      })
+    : collections;
+
+  updateCount(filtered.length, collections.length);
+
+  // 过滤后无匹配
+  if (filtered.length === 0) {
+    listEl.innerHTML = `
+      <div class="toolbox-empty" style="grid-column:1/-1; padding:50px 20px;">
+        <div class="toolbox-empty-icon">🔍</div>
+        <div class="toolbox-empty-title">${escapeHtml(t('toolbox.noMatchResult'))}</div>
+      </div>`;
+    return;
+  }
+
+  listEl.innerHTML = filtered.map(renderCard).join('');
 }
 
 function renderCard(c) {
@@ -198,6 +298,7 @@ function renderCard(c) {
       <div class="kb-card-meta">${escapeHtml(t('knowledge.statsSummary', { docs: c.documentCount || 0, chunks: c.chunkCount || 0 }))}</div>
       ${model ? `<div class="kb-card-model">${escapeHtml(t('knowledge.modelPrefix'))} ${escapeHtml(model)}</div>` : ''}
       <div class="kb-card-actions">
+        <button class="kb-action-btn" type="button" data-action="edit">${escapeHtml(t('knowledge.actionEdit'))}</button>
         <button class="kb-action-btn" type="button" data-action="ingest">${escapeHtml(t('knowledge.actionIngest'))}</button>
         <button class="kb-action-btn" type="button" data-action="search">${escapeHtml(t('knowledge.actionSearch'))}</button>
         <button class="kb-action-btn" type="button" data-action="docs">${escapeHtml(t('knowledge.actionDocs'))}</button>
@@ -206,15 +307,18 @@ function renderCard(c) {
     </div>`;
 }
 
-function updateCount(count) {
+function updateCount(matched, total) {
   const el = document.getElementById('knowledgeCount');
   if (!el) return;
-  if (count > 0) {
-    el.textContent = t('toolbox.enabledCountTotal', { enabled: count, total: count });
-    el.style.display = '';
-  } else {
+  if (!total) {
     el.style.display = 'none';
+    return;
   }
+  // 过滤生效时展示"匹配 / 共"，否则仅展示总数
+  el.textContent = matched === total
+    ? t('knowledge.countTotal', { total })
+    : t('knowledge.countFiltered', { matched, total });
+  el.style.display = '';
 }
 
 // ==================== 卡片操作 ====================
@@ -236,6 +340,8 @@ async function onListClick(e) {
   const action = btn.dataset.action;
   if (action === 'ingest') {
     showIngestDialog(collection);
+  } else if (action === 'edit') {
+    showEditDialog(collection);
   } else if (action === 'search') {
     showSearchDialog(collection);
   } else if (action === 'docs') {
@@ -264,6 +370,47 @@ async function handleDeleteCollection(c) {
   } catch (err) {
     showToast(t('knowledge.opFailed', { error: err.message }), 'error');
   }
+}
+
+// ==================== 编辑知识库 ====================
+
+function showEditDialog(c) {
+  const modal = createModal({
+    title: t('knowledge.editTitle'),
+    bodyHtml: `
+      <div class="form-group">
+        <label>${escapeHtml(t('knowledge.nameLabel'))}</label>
+        <input type="text" id="kbEditName" maxlength="100" placeholder="${escapeHtml(t('knowledge.namePlaceholder'))}" value="${escapeHtml(c.name || '')}">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>${escapeHtml(t('knowledge.descLabel'))}</label>
+        <input type="text" id="kbEditDesc" maxlength="500" placeholder="${escapeHtml(t('knowledge.descPlaceholder'))}" value="${escapeHtml(c.description || '')}">
+      </div>`,
+    confirmText: t('knowledge.editConfirm'),
+    onConfirm: async ({ close, setBusy }) => {
+      const name = modal.overlay.querySelector('#kbEditName').value.trim();
+      const description = modal.overlay.querySelector('#kbEditDesc').value.trim();
+      if (!name) {
+        showToast(t('knowledge.nameRequired'), 'warning');
+        return;
+      }
+      setBusy(true, t('knowledge.saving'));
+      try {
+        const res = await agentApi('PUT', `/api/rag/collections/${encodeURIComponent(c.id)}`, { name, description });
+        if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+        close();
+        showToast(t('knowledge.editSuccess'), 'success');
+        await loadAndRenderList();
+      } catch (err) {
+        setBusy(false, t('knowledge.editConfirm'));
+        showToast(t('knowledge.opFailed', { error: err.message }), 'error');
+      }
+    }
+  });
+  // 预填名称：聚焦并全选，便于直接覆盖输入
+  const nameInput = modal.overlay.querySelector('#kbEditName');
+  nameInput?.focus();
+  nameInput?.select();
 }
 
 // ==================== 新建知识库 ====================

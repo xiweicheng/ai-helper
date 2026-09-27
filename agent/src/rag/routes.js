@@ -7,6 +7,7 @@
 //   GET    /api/rag/status                       能力与安装状态
 //   GET    /api/rag/collections                  列出知识库
 //   POST   /api/rag/collections                  创建知识库
+//   PUT    /api/rag/collections/{id}             更新知识库名称/描述
 //   DELETE /api/rag/collections/{id}             删除知识库
 //   GET    /api/rag/collections/{id}/stats       文档数/分块数统计
 //   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
@@ -42,7 +43,7 @@ function jsonResponse(res, status, data) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
   const allowedOrigin = getAllowedOrigin(res.req);
   if (allowedOrigin) {
@@ -129,6 +130,11 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
     // DELETE /api/rag/collections/{id} - 删除知识库
     if (method === 'DELETE' && !sub) {
       return handle(res, async () => manager.deleteCollection(collectionId));
+    }
+
+    // PUT /api/rag/collections/{id} - 更新知识库名称/描述
+    if (method === 'PUT' && !sub) {
+      return handle(res, async () => ({ collection: await manager.updateCollection(collectionId, payload) }));
     }
 
     // GET /api/rag/collections/{id}/stats
