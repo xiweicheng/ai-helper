@@ -1065,6 +1065,10 @@ export default {
     chunkOverlapLabel: '重叠（字符）',
     ingestConfirm: '开始导入',
     ingesting: '正在解析并向量化，首次导入可能需要下载模型，请稍候...',
+    progressParsing: '正在解析文档…',
+    progressChunking: '正在分块…',
+    progressEmbedding: '正在向量化 {current}/{total} 块…',
+    progressStoring: '正在写入索引…',
     ingestSuccess: '导入完成：{name}（{chunks} 个分块）',
     ingestFailed: '导入失败: {error}',
     fileRequired: '请先选择文件',
@@ -1114,6 +1118,7 @@ export default {
     bubbleKnowledge: '{name} 📚 · 命中 {count} 条',
     bubbleKnowledgeMiss: '{name} 📚 · 未命中',
     bubbleKnowledgeSearching: '正在检索知识库…',
+    kbHitToggle: '点击展开/收起全文',
   },
 
   // options.html - 导出/导入配置弹窗

@@ -33,6 +33,8 @@ export class RagManager {
     this._registryLock = Promise.resolve();
     // embedding provider 缓存（key: collectionId；本地 pipeline 单例在 embedding/local.js）
     this._providers = new Map();
+    // 导入进度快照（key: collectionId；供前端导入弹窗轮询展示分阶段进度）
+    this._ingestProgress = new Map();
   }
 
   // ==================== 注册表 ====================
@@ -152,20 +154,50 @@ export class RagManager {
   // ==================== 文档导入 ====================
 
   /**
+   * 获取指定知识库最近的导入进度快照（供前端轮询；无任务时返回 null）
+   */
+  getIngestProgress(collectionId) {
+    return this._ingestProgress.get(collectionId) || null;
+  }
+
+  /**
+   * 更新导入进度快照（浅合并；导入结束后保留，供最后一次轮询读取）
+   */
+  _reportProgress(collectionId, update) {
+    const prev = this._ingestProgress.get(collectionId) || {};
+    this._ingestProgress.set(collectionId, { ...prev, ...update, updatedAt: new Date().toISOString() });
+  }
+
+  /**
+   * 导入执行包装：统一捕获解析/向量化/存储任一步骤的错误并上报 error 阶段
+   * （成功路径的阶段上报由 _ingestText 内部完成）
+   */
+  async _runIngest(collectionId, fn) {
+    try {
+      return await fn();
+    } catch (err) {
+      this._reportProgress(collectionId, { phase: 'error', done: true, error: err.message });
+      throw err;
+    }
+  }
+
+  /**
    * 导入文本内容
    * @param {string} collectionId
    * @param {{content: string, name?: string, metadata?: object, chunkConfig?: object}} input
    * @returns {Promise<{documentId: string, name: string, chunkCount: number}>}
    */
   async ingestText(collectionId, input = {}) {
-    const content = String(input.content || '');
-    if (!content.trim()) throw new RagError('emptyContent');
-    return this._ingestText(collectionId, {
-      text: content,
-      name: input.name || `text_${new Date().toISOString().slice(0, 19)}`,
-      source: 'text',
-      metadata: input.metadata,
-      chunkConfig: input.chunkConfig,
+    return this._runIngest(collectionId, async () => {
+      const content = String(input.content || '');
+      if (!content.trim()) throw new RagError('emptyContent');
+      return this._ingestText(collectionId, {
+        text: content,
+        name: input.name || `text_${new Date().toISOString().slice(0, 19)}`,
+        source: 'text',
+        metadata: input.metadata,
+        chunkConfig: input.chunkConfig,
+      });
     });
   }
 
@@ -178,32 +210,36 @@ export class RagManager {
    * @param {{path?: string, fileName?: string, contentBase64?: string, metadata?: object, chunkConfig?: object}} input
    */
   async ingestFile(collectionId, input = {}) {
-    // 来源 1：agent 本地文件
-    if (input.path) {
-      const { text, fileName } = await loadDocument(input.path);
-      return this._ingestText(collectionId, {
-        text, name: fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
-      });
-    }
-
-    // 来源 2：上传内容（base64）
-    if (input.contentBase64) {
-      if (!input.fileName) throw new RagError('missingFileName');
-      const ext = extname(input.fileName).toLowerCase();
-      const tmpFile = join(tmpdir(), `rag-upload-${randomBytes(6).toString('hex')}${ext}`);
-      try {
-        await writeFile(tmpFile, Buffer.from(input.contentBase64, 'base64'));
-        const { text, fileName } = await loadDocument(tmpFile);
-        return await this._ingestText(collectionId, {
-          text, name: input.fileName || fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
+    return this._runIngest(collectionId, async () => {
+      // 来源 1：agent 本地文件
+      if (input.path) {
+        this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
+        const { text, fileName } = await loadDocument(input.path);
+        return this._ingestText(collectionId, {
+          text, name: fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
         });
-      } finally {
-        // 临时文件清理（Windows 上文件句柄未释放时忽略错误）
-        await unlink(tmpFile).catch(() => {});
       }
-    }
 
-    throw new RagError('missingFileSource');
+      // 来源 2：上传内容（base64）
+      if (input.contentBase64) {
+        if (!input.fileName) throw new RagError('missingFileName');
+        const ext = extname(input.fileName).toLowerCase();
+        const tmpFile = join(tmpdir(), `rag-upload-${randomBytes(6).toString('hex')}${ext}`);
+        this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
+        try {
+          await writeFile(tmpFile, Buffer.from(input.contentBase64, 'base64'));
+          const { text, fileName } = await loadDocument(tmpFile);
+          return await this._ingestText(collectionId, {
+            text, name: input.fileName || fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
+          });
+        } finally {
+          // 临时文件清理（Windows 上文件句柄未释放时忽略错误）
+          await unlink(tmpFile).catch(() => {});
+        }
+      }
+
+      throw new RagError('missingFileSource');
+    });
   }
 
   /**
@@ -212,88 +248,103 @@ export class RagManager {
    * @param {{url: string, metadata?: object, chunkConfig?: object}} input
    */
   async ingestUrl(collectionId, input = {}) {
-    const url = String(input.url || '').trim();
-    if (!/^https?:\/\//i.test(url)) throw new RagError('invalidUrl');
+    return this._runIngest(collectionId, async () => {
+      const url = String(input.url || '').trim();
+      if (!/^https?:\/\//i.test(url)) throw new RagError('invalidUrl');
 
-    const res = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(30000),
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Helper-RAG/1.0)' },
-    });
-    if (!res.ok) throw new RagError('urlFetchFailed', { status: res.status });
+      this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
+      const res = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000),
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Helper-RAG/1.0)' },
+      });
+      if (!res.ok) throw new RagError('urlFetchFailed', { status: res.status });
 
-    const contentType = (res.headers.get('content-type') || '').toLowerCase();
-    let text;
-    if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-      text = await htmlToText(await res.text());
-    } else if (contentType.includes('application/pdf')) {
-      const buf = Buffer.from(await res.arrayBuffer());
-      const tmpFile = join(tmpdir(), `rag-url-${randomBytes(6).toString('hex')}.pdf`);
-      try {
-        await writeFile(tmpFile, buf);
-        ({ text } = await loadDocument(tmpFile));
-      } finally {
-        await unlink(tmpFile).catch(() => {});
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      let text;
+      if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
+        text = await htmlToText(await res.text());
+      } else if (contentType.includes('application/pdf')) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        const tmpFile = join(tmpdir(), `rag-url-${randomBytes(6).toString('hex')}.pdf`);
+        try {
+          await writeFile(tmpFile, buf);
+          ({ text } = await loadDocument(tmpFile));
+        } finally {
+          await unlink(tmpFile).catch(() => {});
+        }
+      } else {
+        // text/*、application/json 等按文本处理
+        text = await res.text();
       }
-    } else {
-      // text/*、application/json 等按文本处理
-      text = await res.text();
-    }
 
-    // URL 名称：域名 + 路径尾部（截断）
-    const u = new URL(url);
-    const tail = u.pathname.split('/').filter(Boolean).pop() || '';
-    const name = `${u.hostname}${tail ? '/' + tail : ''}`.slice(0, 100);
+      // URL 名称：域名 + 路径尾部（截断）
+      const u = new URL(url);
+      const tail = u.pathname.split('/').filter(Boolean).pop() || '';
+      const name = `${u.hostname}${tail ? '/' + tail : ''}`.slice(0, 100);
 
-    return this._ingestText(collectionId, {
-      text, name, source: 'url', metadata: { ...(input.metadata || {}), url }, chunkConfig: input.chunkConfig,
+      return this._ingestText(collectionId, {
+        text, name, source: 'url', metadata: { ...(input.metadata || {}), url }, chunkConfig: input.chunkConfig,
+      });
     });
   }
 
   /**
    * 内部统一导入流程：分块 → 批量向量化 → 事务写入 → 原文备份 → 更新计数
+   * 全程上报进度快照（parsing/chunking/embedding/storing/done/error），供前端轮询展示
    */
   async _ingestText(collectionId, { text, name, source, metadata, chunkConfig }) {
-    const collection = await this.getCollection(collectionId);
-    const chunks = chunkText(text, { ...collection.chunkConfig, ...(chunkConfig || {}) });
-    if (chunks.length === 0) throw new RagError('emptyDocument');
+    try {
+      const collection = await this.getCollection(collectionId);
+      this._reportProgress(collectionId, { phase: 'chunking', current: 0, total: 0, done: false, error: null });
+      const chunks = chunkText(text, { ...collection.chunkConfig, ...(chunkConfig || {}) });
+      if (chunks.length === 0) throw new RagError('emptyDocument');
 
-    const provider = this._getProvider(collection);
-    const embeddings = [];
-    for (let i = 0; i < chunks.length; i += EMBED_BATCH_SIZE) {
-      const batch = chunks.slice(i, i + EMBED_BATCH_SIZE);
-      const vecs = await provider.embedDocuments(batch.map(c => c.text));
-      embeddings.push(...vecs);
-      console.log(`[RAG] embed ${name}: ${Math.min(i + EMBED_BATCH_SIZE, chunks.length)}/${chunks.length}`);
-    }
-
-    const documentId = `doc_${Date.now().toString(36)}${randomBytes(4).toString('hex')}`;
-    const createdAt = new Date().toISOString();
-
-    const store = new VectraStore(collectionId);
-    await store.upsertChunks(documentId, chunks, embeddings, {
-      documentName: name,
-      source,
-      createdAt,
-      ...(metadata || {}),
-    });
-
-    // 原文备份（BM25 docReader 依赖，见设计文档 5.8）
-    await this._saveDocumentBackup(collectionId, {
-      id: documentId, name, text, source, metadata: metadata || {}, chunkCount: chunks.length, createdAt,
-    });
-
-    // 更新注册表计数
-    await this._updateRegistry(reg => {
-      const target = reg.collections.find(c => c.id === collectionId);
-      if (target) {
-        target.documentCount = (target.documentCount || 0) + 1;
-        target.chunkCount = (target.chunkCount || 0) + chunks.length;
+      const provider = this._getProvider(collection);
+      const embeddings = [];
+      this._reportProgress(collectionId, { phase: 'embedding', current: 0, total: chunks.length });
+      for (let i = 0; i < chunks.length; i += EMBED_BATCH_SIZE) {
+        const batch = chunks.slice(i, i + EMBED_BATCH_SIZE);
+        const vecs = await provider.embedDocuments(batch.map(c => c.text));
+        embeddings.push(...vecs);
+        const embedded = Math.min(i + EMBED_BATCH_SIZE, chunks.length);
+        this._reportProgress(collectionId, { phase: 'embedding', current: embedded, total: chunks.length });
+        console.log(`[RAG] embed ${name}: ${embedded}/${chunks.length}`);
       }
-      return reg;
-    });
 
-    return { documentId, name, chunkCount: chunks.length };
+      const documentId = `doc_${Date.now().toString(36)}${randomBytes(4).toString('hex')}`;
+      const createdAt = new Date().toISOString();
+
+      this._reportProgress(collectionId, { phase: 'storing', current: chunks.length, total: chunks.length });
+      const store = new VectraStore(collectionId);
+      await store.upsertChunks(documentId, chunks, embeddings, {
+        documentName: name,
+        source,
+        createdAt,
+        ...(metadata || {}),
+      });
+
+      // 原文备份（BM25 docReader 依赖，见设计文档 5.8）
+      await this._saveDocumentBackup(collectionId, {
+        id: documentId, name, text, source, metadata: metadata || {}, chunkCount: chunks.length, createdAt,
+      });
+
+      // 更新注册表计数
+      await this._updateRegistry(reg => {
+        const target = reg.collections.find(c => c.id === collectionId);
+        if (target) {
+          target.documentCount = (target.documentCount || 0) + 1;
+          target.chunkCount = (target.chunkCount || 0) + chunks.length;
+        }
+        return reg;
+      });
+
+      this._reportProgress(collectionId, { phase: 'done', current: chunks.length, total: chunks.length, done: true });
+      return { documentId, name, chunkCount: chunks.length };
+    } catch (err) {
+      this._reportProgress(collectionId, { phase: 'error', done: true, error: err.message });
+      throw err;
+    }
   }
 
   async _saveDocumentBackup(collectionId, backup) {

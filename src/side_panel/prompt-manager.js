@@ -1,11 +1,12 @@
 import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml, escapeAttr, updateDropdownPosition } from './utils.js';
 import { addToInputHistory } from './input-history.js';
-import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid } from './chat-manager.js';
+import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
+import { clearKnowledgeRefs } from './agent-at-selector.js';
 import { buildFileContentText, clearFiles } from './file-extract.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -670,6 +671,34 @@ export async function sendPromptByCode(code) {
     addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
     contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
     clearMcpService();
+  }
+
+  // 注入知识库检索上下文（如果已引用知识库），与主发送链路保持对齐
+  if (state.knowledgeRefs.length > 0) {
+    const refsSnapshot = state.knowledgeRefs.slice();
+    const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), false);
+    let kbPayload = null;
+    try {
+      kbPayload = await buildKnowledgeContextText(prompt.content, refsSnapshot);
+    } catch (err) {
+      logger.warn('[SidePanel] knowledge search failed:', err);
+    }
+    if (searchingBubble && searchingBubble.parentNode) searchingBubble.remove();
+    if (kbPayload) {
+      userMessage = kbPayload.text + userMessage;
+      const totalHits = kbPayload.refs.reduce((sum, r) => sum + r.hitCount, 0);
+      if (totalHits === 0) {
+        addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
+      } else {
+        kbPayload.refs.forEach(r => {
+          if (r.hitCount > 0) {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+          }
+        });
+      }
+      contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs });
+    }
+    clearKnowledgeRefs();
   }
 
   // 注入网页上下文（如果已选中网页）

@@ -1065,6 +1065,10 @@ export default {
     chunkOverlapLabel: 'Overlap (chars)',
     ingestConfirm: 'Start Import',
     ingesting: 'Parsing and embedding. The first import may download the model, please wait...',
+    progressParsing: 'Parsing document…',
+    progressChunking: 'Splitting into chunks…',
+    progressEmbedding: 'Embedding chunks {current}/{total}…',
+    progressStoring: 'Writing to index…',
     ingestSuccess: 'Imported: {name} ({chunks} chunks)',
     ingestFailed: 'Import failed: {error}',
     fileRequired: 'Please choose a file first',
@@ -1114,6 +1118,7 @@ export default {
     bubbleKnowledge: '{name} 📚 · {count} hits',
     bubbleKnowledgeMiss: '{name} 📚 · no match',
     bubbleKnowledgeSearching: 'Searching knowledge base…',
+    kbHitToggle: 'Click to expand/collapse',
   },
 
   // options.html - Export/import config dialogs

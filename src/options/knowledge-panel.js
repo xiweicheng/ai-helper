@@ -306,6 +306,24 @@ function showCreateDialog() {
 
 // ==================== 导入文档 ====================
 
+/**
+ * 导入进度快照 → 状态文案（阶段 + 向量化进度；快照缺失时回退笼统文案）
+ */
+function formatIngestProgress(p) {
+  switch (p?.phase) {
+    case 'parsing':
+      return `⏳ ${t('knowledge.progressParsing')}`;
+    case 'chunking':
+      return `⏳ ${t('knowledge.progressChunking')}`;
+    case 'embedding':
+      return `⏳ ${t('knowledge.progressEmbedding', { current: p.current || 0, total: p.total || 0 })}`;
+    case 'storing':
+      return `⏳ ${t('knowledge.progressStoring')}`;
+    default:
+      return `⏳ ${t('knowledge.ingesting')}`;
+  }
+}
+
 function showIngestDialog(c) {
   const bodyHtml = `
     <div class="import-tabs" id="kbIngestTabs">
@@ -395,8 +413,21 @@ function showIngestDialog(c) {
 
       // 进行中状态（ingest 为同步接口：解析 + 向量化可能耗时较久，首次还含模型加载）
       const statusEl = overlay.querySelector('#kbIngestStatus');
-      if (statusEl) statusEl.style.display = '';
+      if (statusEl) {
+        statusEl.style.display = '';
+        statusEl.textContent = `⏳ ${t('knowledge.ingesting')}`;
+      }
       setBusy(true);
+
+      // 进度轮询：POST 阻塞期间经 /ingest/status 展示分阶段进度（解析 → 分块 → 向量化 x/y → 存储）
+      const pollTimer = setInterval(async () => {
+        try {
+          const s = await agentApi('GET', `/api/rag/collections/${encodeURIComponent(c.id)}/ingest/status`);
+          if (statusEl && s && s.success && s.progress) {
+            statusEl.textContent = formatIngestProgress(s.progress);
+          }
+        } catch {}
+      }, 800);
 
       try {
         const res = await agentApi('POST', `/api/rag/collections/${encodeURIComponent(c.id)}/ingest`, payload);
@@ -408,6 +439,8 @@ function showIngestDialog(c) {
         if (statusEl) statusEl.style.display = 'none';
         setBusy(false);
         showToast(t('knowledge.ingestFailed', { error: err.message }), 'error');
+      } finally {
+        clearInterval(pollTimer);
       }
     }
   });

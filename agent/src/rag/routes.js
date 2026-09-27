@@ -9,7 +9,8 @@
 //   POST   /api/rag/collections                  创建知识库
 //   DELETE /api/rag/collections/{id}             删除知识库
 //   GET    /api/rag/collections/{id}/stats       文档数/分块数统计
-//   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url）
+//   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
+//   GET    /api/rag/collections/{id}/ingest/status 导入进度快照（供导入弹窗轮询）
 //   GET    /api/rag/collections/{id}/documents   文档列表
 //   DELETE /api/rag/collections/{id}/documents/{docId}  删除文档
 //   POST   /api/rag/collections/{id}/search      检索
@@ -135,8 +136,8 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
       return handle(res, async () => ({ stats: await manager.getStats(collectionId) }));
     }
 
-    // POST /api/rag/collections/{id}/ingest - 导入文档
-    if (method === 'POST' && sub === 'ingest') {
+    // POST /api/rag/collections/{id}/ingest - 导入文档（同步执行；执行期间进度经 /ingest/status 旁路轮询）
+    if (method === 'POST' && sub === 'ingest' && !docId) {
       return handle(res, async () => {
         const { type } = payload;
         const common = { metadata: payload.metadata, chunkConfig: payload.chunkConfig };
@@ -156,6 +157,11 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
         }
         throw new RagError('unsupportedType', { type: String(type) });
       });
+    }
+
+    // GET /api/rag/collections/{id}/ingest/status - 导入进度快照（供导入弹窗轮询；无任务时 progress 为 null）
+    if (method === 'GET' && sub === 'ingest' && docId === 'status') {
+      return jsonResponse(res, 200, { success: true, progress: manager.getIngestProgress(collectionId) });
     }
 
     // GET /api/rag/collections/{id}/documents - 文档列表

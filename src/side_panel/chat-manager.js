@@ -416,7 +416,7 @@ async function _loadChatHistoryImpl() {
                   bubbleText = t('contextBubble.bubbleKnowledgeMiss', { name: kbRefs.map(r => r.name).join('、') });
                 } else {
                   kbRefs.filter(r => (r.hitCount || 0) > 0).forEach(r => {
-                    addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false);
+                    addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
                   });
                 }
               }
@@ -568,9 +568,9 @@ export function hideModal() {
  * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
  * @param {string} query 用户问题
  * @param {Array<{id: string, name: string}>} refs 已引用知识库快照
- * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number}>}|null>}
+ * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>}|null>}
  */
-async function buildKnowledgeContextText(query, refs) {
+export async function buildKnowledgeContextText(query, refs) {
   if (!refs || refs.length === 0) return null;
   const searchResp = await new Promise((resolve) => {
     try {
@@ -605,15 +605,22 @@ async function buildKnowledgeContextText(query, refs) {
   const hitBuckets = Array.from(buckets.values());
   const totalHits = results.length;
 
+  // 命中明细（供引用卡片展开查看）；与注入文本一致做 1500 字符截断
+  const toHits = (items) => items.map(it => ({
+    score: typeof it.score === 'number' ? it.score : (Number(it.score) || 0),
+    content: String(it.content || '').trim().slice(0, 1500)
+  }));
+
   // 汇总每个引用库的命中数（含 0 命中，用于气泡展示）
   const refStats = refs.map(r => ({
     id: r.id,
     name: r.name,
-    hitCount: r.id ? (buckets.get(r.id)?.hitCount || 0) : 0
+    hitCount: r.id ? (buckets.get(r.id)?.hitCount || 0) : 0,
+    hits: r.id ? toHits(buckets.get(r.id)?.items || []) : []
   }));
   hitBuckets.forEach(b => {
     if (!refStats.some(s => s.id && s.id === b.id)) {
-      refStats.push({ id: b.id, name: b.name, hitCount: b.hitCount });
+      refStats.push({ id: b.id, name: b.name, hitCount: b.hitCount, hits: toHits(b.items) });
     }
   });
 
@@ -728,7 +735,7 @@ export async function sendMessage() {
       } else {
         kbPayload.refs.forEach(r => {
           if (r.hitCount > 0) {
-            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false);
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
           }
         });
       }
@@ -1144,7 +1151,7 @@ export async function directSend(text, selectedText = '') {
 // 消息渲染
 // ============================================================
 
-export function addContextBubble(type, contextText, scroll = true) {
+export function addContextBubble(type, contextText, scroll = true, hits = null) {
   const chatContainer = document.getElementById('chatContainer');
   const bubbleDiv = document.createElement('div');
   bubbleDiv.className = 'user-context-bubble';
@@ -1153,13 +1160,25 @@ export function addContextBubble(type, contextText, scroll = true) {
   const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : (type === 'knowledge' ? '📚' : '📌')))));
   const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : (type === 'knowledge' ? t('contextBubble.labelKnowledge') : t('contextBubble.labelSelection'))))));
 
+  // 知识库气泡带命中明细时：展开区渲染条目列表（分数徽章 + 内容，单条可再展开全文）
+  // 模板须打平（不留缩进换行）：展开区为 pre-wrap，模板空白会被渲染成真实空行
+  let contentHtml = escapeHtml(contextText);
+  if (type === 'knowledge' && Array.isArray(hits) && hits.length > 0) {
+    const hitItems = hits.map(h => {
+      const scoreText = typeof h.score === 'number' ? h.score.toFixed(3) : '';
+      const scoreHtml = scoreText ? `<span class="kb-bubble-hit-score">${scoreText}</span>` : '';
+      return `<div class="kb-bubble-hit"><div class="kb-bubble-hit-text" title="${t('contextBubble.kbHitToggle')}">${scoreHtml}${escapeHtml(h.content || '')}</div></div>`;
+    }).join('');
+    contentHtml = `<div class="kb-bubble-summary">${escapeHtml(contextText)}</div>${hitItems}`;
+  }
+
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
       <div class="context-bubble-header" title="${t('contextBubble.clickToExpand')}">
         <span class="context-icon">${icon}</span>
         <span class="context-type">${label}</span>
       </div>
-      <div class="context-bubble-content">${escapeHtml(contextText)}</div>
+      <div class="context-bubble-content">${contentHtml}</div>
     </div>
   `;
   
@@ -1169,6 +1188,16 @@ export function addContextBubble(type, contextText, scroll = true) {
     e.stopPropagation();
     contentEl.classList.toggle('expanded');
   });
+
+  // 命中条目点击展开/收起全文（仅知识库卡片）
+  if (type === 'knowledge') {
+    bubbleDiv.querySelectorAll('.kb-bubble-hit-text').forEach(hitEl => {
+      hitEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hitEl.classList.toggle('expanded');
+      });
+    });
+  }
   
   chatContainer.appendChild(bubbleDiv);
   
