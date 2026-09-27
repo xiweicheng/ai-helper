@@ -286,8 +286,10 @@ function renderList(collections) {
 }
 
 function renderCard(c) {
-  const model = c.embeddingConfig?.modelName
-    || (c.embeddingConfig?.mode === 'openai-compat' ? 'OpenAI API' : '');
+  const modeLabel = c.embeddingConfig?.mode === 'openai-compat'
+    ? t('knowledge.modeRemote') : t('knowledge.modeLocal');
+  const model = c.embeddingConfig?.modelName || '';
+  const modelLine = model ? `${modeLabel} · ${model}` : modeLabel;
   return `
     <div class="kb-card" data-kb-id="${escapeHtml(c.id)}">
       <div class="kb-card-title">
@@ -296,7 +298,7 @@ function renderCard(c) {
       </div>
       ${c.description ? `<div class="kb-card-desc" title="${escapeHtml(c.description)}">${escapeHtml(c.description)}</div>` : ''}
       <div class="kb-card-meta">${escapeHtml(t('knowledge.statsSummary', { docs: c.documentCount || 0, chunks: c.chunkCount || 0 }))}</div>
-      ${model ? `<div class="kb-card-model">${escapeHtml(t('knowledge.modelPrefix'))} ${escapeHtml(model)}</div>` : ''}
+      <div class="kb-card-model">${escapeHtml(modelLine)}</div>
       <div class="kb-card-actions">
         <button class="kb-action-btn" type="button" data-action="edit">${escapeHtml(t('knowledge.actionEdit'))}</button>
         <button class="kb-action-btn" type="button" data-action="ingest">${escapeHtml(t('knowledge.actionIngest'))}</button>
@@ -372,6 +374,189 @@ async function handleDeleteCollection(c) {
   }
 }
 
+// ==================== 向量配置表单 ====================
+
+/**
+ * 向量配置表单（创建/编辑弹窗共用）
+ * @param {object} cfg 当前 embeddingConfig（编辑场景；创建时传空对象）
+ * @returns {string} HTML
+ */
+function renderVectorForm(cfg = {}) {
+  const remote = cfg.mode === 'openai-compat';
+  return `
+    <div class="form-group">
+      <label>${escapeHtml(t('knowledge.vectorSectionTitle'))}</label>
+      <div class="kb-radio-row">
+        <label class="kb-radio-inline">
+          <input type="radio" name="kbVecMode" value="local"${remote ? '' : ' checked'}>
+          ${escapeHtml(t('knowledge.vectorModeLocal'))}
+        </label>
+        <label class="kb-radio-inline">
+          <input type="radio" name="kbVecMode" value="openai-compat"${remote ? ' checked' : ''}>
+          ${escapeHtml(t('knowledge.vectorModeRemote'))}
+        </label>
+      </div>
+      <div class="kb-vec-hint" id="kbVecHint">${escapeHtml(remote ? t('knowledge.vectorModeRemoteHint') : t('knowledge.vectorModeLocalHint'))}</div>
+      <div id="kbVecRemoteFields"${remote ? '' : ' style="display:none"'}>
+        <div class="form-group" style="margin-top:10px;">
+          <label>${escapeHtml(t('knowledge.vectorEndpointLabel'))}</label>
+          <input type="text" id="kbVecEndpoint" placeholder="${escapeHtml(t('knowledge.vectorEndpointPlaceholder'))}" value="${escapeHtml(cfg.endpoint || '')}">
+        </div>
+        <div class="form-group">
+          <label>${escapeHtml(t('knowledge.vectorApiKeyLabel'))}</label>
+          <input type="password" id="kbVecApiKey" value="" placeholder="${escapeHtml(cfg.apiKey ? t('knowledge.vectorApiKeyKeep') : t('knowledge.vectorApiKeyPlaceholder'))}">
+        </div>
+        <div class="form-group">
+          <label>${escapeHtml(t('knowledge.vectorModelLabel'))}</label>
+          <input type="text" id="kbVecModel" placeholder="${escapeHtml(t('knowledge.vectorModelPlaceholder'))}" value="${escapeHtml(remote ? (cfg.modelName || '') : '')}">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+          <label>${escapeHtml(t('knowledge.vectorDimsLabel'))}</label>
+          <div class="kb-vec-test-row">
+            <input type="number" id="kbVecDims" min="1" max="8192" placeholder="${escapeHtml(t('knowledge.vectorDimsPlaceholder'))}" value="${remote && cfg.dimensions ? escapeHtml(String(cfg.dimensions)) : ''}">
+            <button class="kb-action-btn" type="button" id="kbVecTestBtn">${escapeHtml(t('knowledge.vectorTestBtn'))}</button>
+            <span class="kb-vec-test-result" id="kbVecTestResult"></span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/**
+ * 绑定向量表单交互（模式切换显隐 + 测试连通性自动探测维度）
+ * @param {HTMLElement} overlay 弹窗根元素
+ * @param {object|null} existing 已保存配置（编辑场景；用于 apiKey 沿用）
+ */
+function bindVectorFormEvents(overlay, existing) {
+  const remoteFields = overlay.querySelector('#kbVecRemoteFields');
+  const hintEl = overlay.querySelector('#kbVecHint');
+  const syncMode = () => {
+    const remote = overlay.querySelector('input[name="kbVecMode"]:checked')?.value === 'openai-compat';
+    if (remoteFields) remoteFields.style.display = remote ? '' : 'none';
+    if (hintEl) hintEl.textContent = remote ? t('knowledge.vectorModeRemoteHint') : t('knowledge.vectorModeLocalHint');
+  };
+  overlay.querySelectorAll('input[name="kbVecMode"]').forEach(r => r.addEventListener('change', syncMode));
+  syncMode();
+
+  const testBtn = overlay.querySelector('#kbVecTestBtn');
+  if (!testBtn) return;
+  const resultEl = overlay.querySelector('#kbVecTestResult');
+  const dimsInput = overlay.querySelector('#kbVecDims');
+  testBtn.addEventListener('click', async () => {
+    const endpoint = overlay.querySelector('#kbVecEndpoint').value.trim();
+    const modelName = overlay.querySelector('#kbVecModel').value.trim();
+    if (!endpoint) {
+      showToast(t('knowledge.vectorEndpointRequired'), 'warning');
+      return;
+    }
+    if (!modelName) {
+      showToast(t('knowledge.vectorModelRequired'), 'warning');
+      return;
+    }
+    // API Key 留空：编辑场景沿用已保存值
+    const typedKey = overlay.querySelector('#kbVecApiKey').value.trim();
+    const apiKey = typedKey || (existing?.mode === 'openai-compat' ? (existing.apiKey || '') : '');
+
+    testBtn.disabled = true;
+    const prevText = testBtn.textContent;
+    testBtn.textContent = t('knowledge.vectorTesting');
+    if (resultEl) {
+      resultEl.textContent = '';
+      resultEl.style.color = '';
+    }
+    try {
+      const res = await agentApi('POST', '/api/rag/test-embedding', {
+        mode: 'openai-compat', endpoint, apiKey, modelName,
+      });
+      if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+      if (resultEl) {
+        resultEl.textContent = `✓ ${t('knowledge.vectorTestOk', { model: res.model, dims: res.dimensions })}`;
+        resultEl.style.color = '#38a169';
+      }
+      // 自动填充/修正维度
+      if (dimsInput && res.dimensions) {
+        const prevDims = dimsInput.value.trim();
+        dimsInput.value = String(res.dimensions);
+        if (prevDims !== String(res.dimensions)) {
+          showToast(t('knowledge.vectorDimsFilled', { dims: res.dimensions }), 'info');
+        }
+      }
+    } catch (err) {
+      if (resultEl) {
+        resultEl.textContent = `✕ ${t('knowledge.vectorTestFailed', { error: err.message })}`;
+        resultEl.style.color = '#c0392b';
+      }
+    } finally {
+      testBtn.disabled = false;
+      testBtn.textContent = prevText || t('knowledge.vectorTestBtn');
+    }
+  });
+}
+
+/**
+ * 读取向量表单为提交体（local 仅模式；remote 含完整字段）
+ * @param {HTMLElement} overlay 弹窗根元素
+ * @param {object|null} existing 已保存配置（编辑场景）
+ * @returns {object} embeddingConfig
+ */
+function readVectorForm(overlay, existing) {
+  const remote = overlay.querySelector('input[name="kbVecMode"]:checked')?.value === 'openai-compat';
+  if (!remote) return { mode: 'local' };
+  const typedKey = overlay.querySelector('#kbVecApiKey').value.trim();
+  const dims = parseInt(overlay.querySelector('#kbVecDims').value.trim(), 10);
+  return {
+    mode: 'openai-compat',
+    endpoint: overlay.querySelector('#kbVecEndpoint').value.trim(),
+    apiKey: typedKey || (existing?.mode === 'openai-compat' ? (existing.apiKey || '') : ''),
+    modelName: overlay.querySelector('#kbVecModel').value.trim(),
+    ...(Number.isFinite(dims) && dims > 0 ? { dimensions: dims } : {}),
+  };
+}
+
+/**
+ * 判断向量配置变更是否影响向量空间（需重建索引；与 agent 端 needsIndexRebuild 对齐）
+ * 未提供的字段视为沿用已保存值（与后端 resolveEmbeddingConfig 语义一致）
+ */
+function isEmbeddingSpaceChanged(prev = {}, next = {}) {
+  const prevMode = prev.mode || 'local';
+  const nextMode = next.mode || 'local';
+  if (prevMode !== nextMode) return true;
+  if (nextMode === 'local') return false; // 本地模式无可选参数
+  return ['endpoint', 'modelName', 'dimensions'].some(k => {
+    if (next[k] === undefined) return false;
+    return String(prev[k] ?? '') !== String(next[k] ?? '');
+  });
+}
+
+/**
+ * 轮询索引重建进度直至完成/失败（编辑弹窗关闭后后台进行；上限 30 分钟）
+ * @returns {Promise<{phase: string, error?: string}>}
+ */
+function waitForRebuildDone(collectionId) {
+  const POLL_INTERVAL = 1000;
+  const TIMEOUT = 30 * 60 * 1000;
+  return new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const timer = setInterval(async () => {
+      if (Date.now() - startedAt > TIMEOUT) {
+        clearInterval(timer);
+        reject(new Error('rebuild polling timeout'));
+        return;
+      }
+      try {
+        const s = await agentApi('GET', `/api/rag/collections/${encodeURIComponent(collectionId)}/ingest/status`);
+        const p = s?.progress;
+        if (p && p.done) {
+          clearInterval(timer);
+          resolve(p);
+        }
+      } catch {
+        // 单次轮询失败忽略，等待下次重试
+      }
+    }, POLL_INTERVAL);
+  });
+}
+
 // ==================== 编辑知识库 ====================
 
 function showEditDialog(c) {
@@ -382,31 +567,71 @@ function showEditDialog(c) {
         <label>${escapeHtml(t('knowledge.nameLabel'))}</label>
         <input type="text" id="kbEditName" maxlength="100" placeholder="${escapeHtml(t('knowledge.namePlaceholder'))}" value="${escapeHtml(c.name || '')}">
       </div>
-      <div class="form-group" style="margin-bottom:0;">
+      <div class="form-group">
         <label>${escapeHtml(t('knowledge.descLabel'))}</label>
         <input type="text" id="kbEditDesc" maxlength="500" placeholder="${escapeHtml(t('knowledge.descPlaceholder'))}" value="${escapeHtml(c.description || '')}">
-      </div>`,
+      </div>
+      ${renderVectorForm(c.embeddingConfig || {})}`,
     confirmText: t('knowledge.editConfirm'),
+    closeOnOverlay: false,
     onConfirm: async ({ close, setBusy }) => {
-      const name = modal.overlay.querySelector('#kbEditName').value.trim();
-      const description = modal.overlay.querySelector('#kbEditDesc').value.trim();
+      const { overlay } = modal;
+      const name = overlay.querySelector('#kbEditName').value.trim();
+      const description = overlay.querySelector('#kbEditDesc').value.trim();
       if (!name) {
         showToast(t('knowledge.nameRequired'), 'warning');
         return;
       }
+
+      const embeddingConfig = readVectorForm(overlay, c.embeddingConfig);
+      if (embeddingConfig.mode === 'openai-compat') {
+        if (!embeddingConfig.endpoint) {
+          showToast(t('knowledge.vectorEndpointRequired'), 'warning');
+          return;
+        }
+        if (!embeddingConfig.modelName) {
+          showToast(t('knowledge.vectorModelRequired'), 'warning');
+          return;
+        }
+      }
+
+      // 向量空间变更 → 二次确认（提交后将触发索引重建）
+      if (isEmbeddingSpaceChanged(c.embeddingConfig || {}, embeddingConfig)) {
+        const ok = await showCustomConfirm(t('knowledge.rebuildConfirm'), t('knowledge.rebuildConfirmTitle'));
+        if (!ok) return;
+      }
+
       setBusy(true, t('knowledge.saving'));
       try {
-        const res = await agentApi('PUT', `/api/rag/collections/${encodeURIComponent(c.id)}`, { name, description });
+        const res = await agentApi('PUT', `/api/rag/collections/${encodeURIComponent(c.id)}`, { name, description, embeddingConfig });
         if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
         close();
-        showToast(t('knowledge.editSuccess'), 'success');
-        await loadAndRenderList();
+        if (res.collection?.rebuilding) {
+          // 后台重建中：先提示，轮询完成后自动刷新列表
+          showToast(t('knowledge.rebuildStarted'), 'info');
+          await loadAndRenderList();
+          waitForRebuildDone(c.id).then(p => {
+            if (p.phase === 'error') {
+              showToast(t('knowledge.rebuildFailed', { error: p.error || 'unknown error' }), 'error');
+            } else {
+              showToast(t('knowledge.rebuildDone'), 'success');
+            }
+            loadAndRenderList();
+          }).catch(err => {
+            showToast(t('knowledge.rebuildFailed', { error: err.message }), 'error');
+            loadAndRenderList();
+          });
+        } else {
+          showToast(t('knowledge.editSuccess'), 'success');
+          await loadAndRenderList();
+        }
       } catch (err) {
         setBusy(false, t('knowledge.editConfirm'));
         showToast(t('knowledge.opFailed', { error: err.message }), 'error');
       }
     }
   });
+  bindVectorFormEvents(modal.overlay, c.embeddingConfig || null);
   // 预填名称：聚焦并全选，便于直接覆盖输入
   const nameInput = modal.overlay.querySelector('#kbEditName');
   nameInput?.focus();
@@ -423,21 +648,37 @@ function showCreateDialog() {
         <label>${escapeHtml(t('knowledge.nameLabel'))}</label>
         <input type="text" id="kbCreateName" maxlength="100" placeholder="${escapeHtml(t('knowledge.namePlaceholder'))}">
       </div>
-      <div class="form-group" style="margin-bottom:0;">
+      <div class="form-group">
         <label>${escapeHtml(t('knowledge.descLabel'))}</label>
         <input type="text" id="kbCreateDesc" maxlength="500" placeholder="${escapeHtml(t('knowledge.descPlaceholder'))}">
-      </div>`,
+      </div>
+      ${renderVectorForm({})}`,
     confirmText: t('knowledge.createConfirm'),
+    closeOnOverlay: false,
     onConfirm: async ({ close, setBusy }) => {
-      const name = modal.overlay.querySelector('#kbCreateName').value.trim();
-      const description = modal.overlay.querySelector('#kbCreateDesc').value.trim();
+      const { overlay } = modal;
+      const name = overlay.querySelector('#kbCreateName').value.trim();
+      const description = overlay.querySelector('#kbCreateDesc').value.trim();
       if (!name) {
         showToast(t('knowledge.nameRequired'), 'warning');
         return;
       }
+
+      const embeddingConfig = readVectorForm(overlay, null);
+      if (embeddingConfig.mode === 'openai-compat') {
+        if (!embeddingConfig.endpoint) {
+          showToast(t('knowledge.vectorEndpointRequired'), 'warning');
+          return;
+        }
+        if (!embeddingConfig.modelName) {
+          showToast(t('knowledge.vectorModelRequired'), 'warning');
+          return;
+        }
+      }
+
       setBusy(true, t('knowledge.creating'));
       try {
-        const res = await agentApi('POST', '/api/rag/collections', { name, description });
+        const res = await agentApi('POST', '/api/rag/collections', { name, description, embeddingConfig });
         if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
         close();
         showToast(t('knowledge.createSuccess', { name: res.collection?.name || name }), 'success');
@@ -448,6 +689,7 @@ function showCreateDialog() {
       }
     }
   });
+  bindVectorFormEvents(modal.overlay, null);
   modal.overlay.querySelector('#kbCreateName')?.focus();
 }
 
@@ -466,6 +708,8 @@ function formatIngestProgress(p) {
       return `⏳ ${t('knowledge.progressEmbedding', { current: p.current || 0, total: p.total || 0 })}`;
     case 'storing':
       return `⏳ ${t('knowledge.progressStoring')}`;
+    case 'rebuilding':
+      return `⏳ ${t('knowledge.progressRebuilding', { current: p.current || 0, total: p.total || 0 })}`;
     default:
       return `⏳ ${t('knowledge.ingesting')}`;
   }
@@ -821,10 +1065,11 @@ function renderSearchResults(container, result) {
 
 /**
  * 创建弹窗（返回 { overlay, close }）
- * @param {{title: string, bodyHtml: string, confirmText?: string|null, cancelText?: string, onConfirm?: Function, wide?: boolean}} opts
+ * @param {{title: string, bodyHtml: string, confirmText?: string|null, cancelText?: string, onConfirm?: Function, wide?: boolean, closeOnOverlay?: boolean}} opts
  *        confirmText 为 null 时隐藏确认按钮（纯查看型弹窗）
+ *        closeOnOverlay 为 false 时点击遮罩空白区不关闭（默认 true；编辑/新建知识库传 false 防误触丢失表单）
  */
-function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide }) {
+function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide, closeOnOverlay = true }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -845,9 +1090,11 @@ function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide
   overlay.querySelector('.modal-close-btn').addEventListener('click', close);
   overlay.querySelector('[data-modal-cancel]').addEventListener('click', close);
   overlay.querySelector('[data-modal-confirm]')?.addEventListener('click', (e) => e.stopPropagation());
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) close();
-  });
+  if (closeOnOverlay) {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+  }
 
   const confirmBtn = overlay.querySelector('[data-modal-confirm]');
   if (confirmBtn && typeof onConfirm === 'function') {

@@ -107,7 +107,12 @@
     "err_invalidDocumentId": "Invalid document ID: {id}",
     "err_emptyQuery": "Search query is empty",
     "err_unsupportedFormat": "Unsupported file format: {ext}",
-    "err_unsupportedType": "Unsupported import type: {type}"
+    "err_unsupportedType": "Unsupported import type: {type}",
+    "err_operationInProgress": "Another import or index rebuild task is running for this knowledge base, please retry later",
+    "err_invalidEmbeddingMode": "Unsupported embedding mode: {mode}",
+    "err_invalidEmbeddingEndpoint": "Invalid remote embedding endpoint (must be an http/https base URL, e.g. https://api.siliconflow.cn/v1)",
+    "err_invalidEmbeddingDimensions": "Invalid embedding dimensions: {dimensions}",
+    "err_embeddingDimensionMismatch": "Embedding dimension mismatch: configured {expected}, got {actual}. Check the embedding model and dimension settings"
   },
   "message": {
     "shuttingDown": "Agent is shutting down...",

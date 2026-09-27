@@ -5,9 +5,10 @@
 //
 // 接口清单（见设计文档七）：
 //   GET    /api/rag/status                       能力与安装状态
+//   POST   /api/rag/test-embedding               测试远端向量服务连通性（返回实际维度）
 //   GET    /api/rag/collections                  列出知识库
 //   POST   /api/rag/collections                  创建知识库
-//   PUT    /api/rag/collections/{id}             更新知识库名称/描述
+//   PUT    /api/rag/collections/{id}             更新知识库名称/描述/向量配置（向量空间变更自动重建索引）
 //   DELETE /api/rag/collections/{id}             删除知识库
 //   GET    /api/rag/collections/{id}/stats       文档数/分块数统计
 //   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
@@ -19,7 +20,8 @@
 
 import { isRagAvailable } from './detect.js';
 import { getRagInstallStatus } from './install.js';
-import { RagManager } from './manager.js';
+import { RagManager, resolveEmbeddingConfig, validateEmbeddingConfig } from './manager.js';
+import { createEmbeddingProvider } from './embedding/index.js';
 import { RagError, translateRagError } from './errors.js';
 
 // 进程级单例（注册表锁与 provider 缓存复用）
@@ -94,6 +96,23 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
     });
   }
 
+  // POST /api/rag/test-embedding - 测试远端向量服务连通性（用配置真实调用一次接口探测维度）
+  if (method === 'POST' && pathname === '/api/rag/test-embedding') {
+    return handle(res, async () => {
+      const config = resolveEmbeddingConfig(payload, null);
+      if (config.mode !== 'openai-compat') {
+        throw new RagError('invalidEmbeddingMode', { mode: String(config.mode) });
+      }
+      validateEmbeddingConfig(config);
+      const provider = createEmbeddingProvider(config);
+      const [vec] = await provider.embedDocuments(['连接测试 connection test']);
+      if (!Array.isArray(vec) || vec.length === 0) {
+        throw new Error('Embedding endpoint returned empty vector');
+      }
+      return { mode: config.mode, model: config.modelName, dimensions: vec.length };
+    });
+  }
+
   // GET /api/rag/collections - 列出知识库
   if (method === 'GET' && pathname === '/api/rag/collections') {
     return handle(res, async () => ({ collections: await manager.listCollections() }));
@@ -132,7 +151,7 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
       return handle(res, async () => manager.deleteCollection(collectionId));
     }
 
-    // PUT /api/rag/collections/{id} - 更新知识库名称/描述
+    // PUT /api/rag/collections/{id} - 更新知识库名称/描述/向量配置（向量空间变更触发后台重建）
     if (method === 'PUT' && !sub) {
       return handle(res, async () => ({ collection: await manager.updateCollection(collectionId, payload) }));
     }

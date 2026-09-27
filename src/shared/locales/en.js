@@ -1026,7 +1026,8 @@ export default {
     loadFailed: 'Failed to load: {error}',
     retry: 'Retry',
     statsSummary: '{docs} docs · {chunks} chunks',
-    modelPrefix: 'Model:',
+    modeLocal: 'Local model',
+    modeRemote: 'Remote service',
 
     // Card actions
     actionEdit: 'Edit',
@@ -1051,6 +1052,37 @@ export default {
     editConfirm: 'Save',
     saving: 'Saving...',
     editSuccess: 'Knowledge base updated',
+
+    // Embedding model config (create/edit dialog)
+    vectorSectionTitle: 'Embedding model',
+    vectorModeLocal: 'Local model (bundled BGE Chinese model)',
+    vectorModeRemote: 'Remote service (OpenAI-compatible API)',
+    vectorModeLocalHint: 'Use the agent-bundled BGE Chinese model. No extra config needed; the model file downloads on first import.',
+    vectorModeRemoteHint: 'Call a remote OpenAI-compatible embedding service (SiliconFlow, Zhipu, OpenAI, etc.).',
+    vectorEndpointLabel: 'Endpoint (Base URL with version segment)',
+    vectorEndpointPlaceholder: 'e.g. https://api.siliconflow.cn/v1',
+    vectorApiKeyLabel: 'API Key',
+    vectorApiKeyPlaceholder: 'Paste API key',
+    vectorApiKeyKeep: 'Leave empty to keep the saved key',
+    vectorModelLabel: 'Model name',
+    vectorModelPlaceholder: 'e.g. BAAI/bge-m3',
+    vectorDimsLabel: 'Dimensions (optional, auto-detected on test)',
+    vectorDimsPlaceholder: 'Auto',
+    vectorTestBtn: 'Test Connection',
+    vectorTesting: 'Testing...',
+    vectorTestOk: 'Connected: {model} ({dims} dims)',
+    vectorDimsFilled: 'Dimensions auto-filled: {dims}',
+    vectorTestFailed: 'Test failed: {error}',
+    vectorEndpointRequired: 'Remote endpoint is required',
+    vectorModelRequired: 'Model name is required',
+
+    // Index rebuild (embedding/chunk config change)
+    rebuildConfirmTitle: 'Change Embedding Config',
+    rebuildConfirm: 'Changing the embedding model or chunk settings requires rebuilding the index (all documents will be re-embedded). The old index stays searchable during the rebuild and switches automatically when done. Continue?',
+    rebuildStarted: 'Index rebuild started, refreshing when complete...',
+    progressRebuilding: 'Rebuilding index {current}/{total} documents…',
+    rebuildDone: 'Index rebuild complete',
+    rebuildFailed: 'Index rebuild failed: {error}',
 
     // Delete knowledge base
     deleteConfirmTitle: 'Delete Knowledge Base',

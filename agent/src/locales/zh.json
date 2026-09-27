@@ -107,7 +107,12 @@
     "err_invalidDocumentId": "非法文档 ID: {id}",
     "err_emptyQuery": "检索词为空",
     "err_unsupportedFormat": "不支持的文件格式: {ext}",
-    "err_unsupportedType": "不支持的导入类型: {type}"
+    "err_unsupportedType": "不支持的导入类型: {type}",
+    "err_operationInProgress": "该知识库有导入或索引重建任务正在进行，请稍后重试",
+    "err_invalidEmbeddingMode": "不支持的向量模式: {mode}",
+    "err_invalidEmbeddingEndpoint": "远端向量服务地址无效（须为 http/https 的 Base URL，如 https://api.siliconflow.cn/v1）",
+    "err_invalidEmbeddingDimensions": "向量维度无效: {dimensions}",
+    "err_embeddingDimensionMismatch": "向量维度不匹配：配置 {expected} 维，实际返回 {actual} 维，请检查向量模型与维度设置"
   },
   "message": {
     "shuttingDown": "Agent 正在关闭...",

@@ -1026,7 +1026,8 @@ export default {
     loadFailed: '加载失败: {error}',
     retry: '重试',
     statsSummary: '{docs} 文档 · {chunks} 分块',
-    modelPrefix: '模型:',
+    modeLocal: '本地模型',
+    modeRemote: '远端服务',
 
     // 卡片操作
     actionEdit: '编辑',
@@ -1051,6 +1052,37 @@ export default {
     editConfirm: '保存',
     saving: '保存中...',
     editSuccess: '知识库信息已更新',
+
+    // 向量模型配置（创建/编辑弹窗）
+    vectorSectionTitle: '向量模型',
+    vectorModeLocal: '本地模型（内置 BGE 中文模型）',
+    vectorModeRemote: '远端服务（OpenAI 兼容接口）',
+    vectorModeLocalHint: '使用代理端内置 BGE 中文模型生成向量，无需额外配置；首次导入需下载模型文件。',
+    vectorModeRemoteHint: '调用远端 OpenAI 兼容的向量服务（如硅基流动、智谱、OpenAI 等）。',
+    vectorEndpointLabel: '接口地址（Base URL，含版本段）',
+    vectorEndpointPlaceholder: '例如 https://api.siliconflow.cn/v1',
+    vectorApiKeyLabel: 'API Key',
+    vectorApiKeyPlaceholder: '粘贴 API Key',
+    vectorApiKeyKeep: '留空则沿用已保存的 Key',
+    vectorModelLabel: '模型名称',
+    vectorModelPlaceholder: '例如 BAAI/bge-m3',
+    vectorDimsLabel: '向量维度（可留空，测试时自动探测）',
+    vectorDimsPlaceholder: '自动',
+    vectorTestBtn: '测试连通性',
+    vectorTesting: '测试中...',
+    vectorTestOk: '连接成功：{model}（{dims} 维）',
+    vectorDimsFilled: '已自动填充维度：{dims}',
+    vectorTestFailed: '测试失败: {error}',
+    vectorEndpointRequired: '请填写远端接口地址',
+    vectorModelRequired: '请填写模型名称',
+
+    // 重建索引（向量/分块配置变更）
+    rebuildConfirmTitle: '变更向量配置',
+    rebuildConfirm: '向量模型或分块参数变更后需要重建索引（重新向量化全部文档）。重建期间仍可检索旧索引，完成后自动切换。确定继续吗？',
+    rebuildStarted: '已开始重建索引，完成后将自动刷新...',
+    progressRebuilding: '正在重建索引 {current}/{total} 篇文档…',
+    rebuildDone: '索引重建完成',
+    rebuildFailed: '索引重建失败: {error}',
 
     // 删除知识库
     deleteConfirmTitle: '删除知识库',

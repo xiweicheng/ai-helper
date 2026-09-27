@@ -8,8 +8,8 @@
 import { join } from 'path';
 import { homedir } from 'os';
 
-// RAG 数据根目录
-export const RAG_ROOT = join(homedir(), '.ai-helper-agent', 'rag');
+// RAG 数据根目录（环境变量 AI_HELPER_RAG_ROOT 可覆盖：测试隔离 / 自定义数据目录）
+export const RAG_ROOT = process.env.AI_HELPER_RAG_ROOT || join(homedir(), '.ai-helper-agent', 'rag');
 
 // 知识库注册表文件
 export const COLLECTIONS_REGISTRY = join(RAG_ROOT, 'collections.json');
@@ -50,7 +50,8 @@ export const DEFAULT_SEARCH_CONFIG = {
 };
 
 // 单次 embedding 批大小（控制内存与进度回调粒度）
-export const EMBED_BATCH_SIZE = 16;
+// 固定 10：兼容阿里云百炼等单次批量上限为 10 条的平台（text-embedding-v3/v4）
+export const EMBED_BATCH_SIZE = 10;
 
 // 解析器扩展名路由表（见设计文档 5.6）
 export const PARSER_ROUTES = {

@@ -494,28 +494,46 @@ const docVecs = await extractor(chunks, { pooling: 'mean', normalize: true });
 
 #### 可选：远端模型
 
+远端配置随知识库快照持久化（`collections.json` 中每个知识库的 `embeddingConfig`；通过选项页创建/编辑弹窗填写，或先用 `POST /api/rag/test-embedding` 探测连通性与实际维度）：
+
 ```json
 {
-  "rag": {
-    "embedding": {
-      "mode": "openai-compat",
-      "endpoint": "https://api.openai.com/v1",
-      "apiKey": "sk-xxx",
-      "modelName": "text-embedding-3-small"
-    }
-  }
+  "mode": "openai-compat",
+  "endpoint": "https://api.siliconflow.cn/v1",
+  "apiKey": "sk-xxx",
+  "modelName": "BAAI/bge-m3",
+  "dimensions": 1024,
+  "queryPrefix": ""
 }
 ```
 
-> 约定：`endpoint` 为 Base URL，**须包含版本段**（如 `/v1`）；代码只在其后拼接 `/embeddings`，避免出现 `/v1/v1/embeddings` 双重版本段。
+> 约定：`endpoint` 为 Base URL，**须包含版本段**（如 `/v1`）；代码只在其后拼接 `/embeddings`，避免出现 `/v1/v1/embeddings` 双重版本段。远端模式为对称检索，`queryPrefix` 置空（跨模式切换时后端自动重置，见 `resolveEmbeddingConfig`）。
+>
+> 批量调用按每次 10 条切分（`EMBED_BATCH_SIZE`），兼容阿里云百炼（text-embedding-v3/v4 单次批量上限 10 条）等平台限制。
 
 #### 关键约束：链路一致性
 
-**导入文档和检索必须用同一个 embedding 模型**。中途换模型需要重新索引整个知识库。
+**导入文档和检索必须用同一个 embedding 模型**。中途换模型（或修改分块参数）需要重建整个知识库的索引。
 
 - 配置中记录 embedding 模型名称与查询前缀
-- 检测到模型变更时提示用户"需要重新索引"，实现上即清空重导（`deleteDocument` 后重新 ingest）
-- 查询前缀变更只影响检索侧，无需重新索引
+- 向量空间敏感字段（`mode`/`endpoint`/`modelName`/`dimensions`）或分块参数变更时，`PUT /api/rag/collections/{id}` 自动触发后台重建（见“索引重建流程”）
+- 查询前缀（`queryPrefix`）与 `apiKey` 变更只影响请求侧，无需重建
+
+#### 索引重建流程（向量/分块配置变更）
+
+重建采用“临时目录构建 → 原子换入 → 注册表后写”三步，保证任何时刻都存在可用索引：
+
+1. **重放文档备份**：读取 `kb_xxx/documents/*.json` 全文备份（所有导入来源均落备份，见 5.8），按新分块参数重新分块、用新模型向量化、写入临时索引目录 `.rebuild_kb_xxx/`
+2. **原子换入**（同文件系统 `rename`）：旧索引目录整体移出保命 → 新索引就位 → 失败时回滚旧索引；成功后清理旧目录
+3. **注册表后写**：换入成功后才把新 `embeddingConfig`/`chunkConfig` 与计数写入 `collections.json`，并清除 provider 缓存
+
+配套保障：
+- **并发保护**：同一知识库同一时刻只允许一个导入/重建任务（`_activeOps` 占位，冲突请求返回 `operationInProgress`）；重建期间删除该知识库同样被拒绝
+- **维度校验**：导入/重建/检索时校验模型实际输出维度与配置 `dimensions` 一致，不一致立即报 `embeddingDimensionMismatch`，避免污染索引
+- **进度上报**：复用导入进度通道（`/ingest/status` 轮询）：`phase: 'rebuilding'`（含 `current`/`total`）→ `done` / `error`
+- **失败清理**：构建阶段失败自动清理临时目录；若换入窗口内失败且旧索引目录缺失，保留临时目录（含 `index_backup`）供人工恢复
+
+> 前端交互：编辑弹窗中变更向量配置时二次确认；提交后后台轮询进度，完成/失败均有 toast 提示并自动刷新列表。
 
 #### EmbeddingProvider 实现
 
@@ -916,7 +934,7 @@ class RAGAdapter {
 |---|---|---|
 | `GET` | `/api/rag/collections` | 列出所有知识库 |
 | `POST` | `/api/rag/collections` | 创建知识库 `{ name, description, embeddingConfig }` |
-| `PUT` | `/api/rag/collections/{id}` | 更新知识库名称/描述 `{ name, description }` |
+| `PUT` | `/api/rag/collections/{id}` | 更新名称/描述/向量配置 `{ name, description, embeddingConfig, chunkConfig }`；向量空间或分块参数变更时自动触发后台重建（响应附 `rebuilding: true`，进度走 `/ingest/status`） |
 | `DELETE` | `/api/rag/collections/{id}` | 删除知识库 |
 | `GET` | `/api/rag/collections/{id}/stats` | 文档数/分块数统计 |
 | `POST` | `/api/rag/collections/{id}/ingest` | 导入文档 `{ type, content/path/url, metadata }` |
@@ -926,6 +944,7 @@ class RAGAdapter {
 | `POST` | `/api/rag/collections/{id}/search` | 检索 `{ query, topK, threshold }` |
 | `POST` | `/api/rag/search` | 跨知识库检索 `{ collectionIds, query, topK, threshold }` |
 | `GET` | `/api/rag/status` | embedding 模型加载状态 |
+| `POST` | `/api/rag/test-embedding` | 测试远端向量服务连通性 `{ mode, endpoint, apiKey, modelName }`，返回实际维度 `{ model, dimensions }`（供前端自动填充/修正维度） |
 | `POST` | `/api/rag/install` | 安装 RAG 可选依赖（固定白名单、强制 Bearer 认证、异步返回 `started`） |
 | `GET` | `/api/rag/install/status` | 安装进度轮询 `{ running, done, success, phase, logTail }` |
 | `POST` | `/api/rag/detect` | 重新检测 RAG 依赖可用性 |
@@ -1227,7 +1246,8 @@ async getAvailableTools() {
 | 检索质量不佳 | 提供 top-K、相似度阈值可调；确保 BGE 查询前缀生效；支持混合检索；支持用户测试检索效果 |
 | 隐私（本地 embedding vs 云端） | 内置模式数据完全本地；外接模式明确标注数据发送到对应服务 |
 | 数据量超 Vectra 承载能力 | 10 万分块为分水岭，超过后引导用户迁移外接方案 |
-| 中途换 embedding 模型 | 检测模型变更，提示重新索引（清空重导）；改查询前缀无需重新索引 |
+| 中途换 embedding 模型 | 检测向量空间变更（mode/endpoint/modelName/dimensions）自动后台重建索引（备份重放 → 临时目录 → 原子换入，失败回退旧索引）；改查询前缀/apiKey 无需重新索引 |
+| 远端向量服务不可用/配置错误 | 提交前校验（endpoint/维度）+ 连通性测试接口；导入/重建维度不匹配立即报错；重建失败不影响线上检索 |
 | **安装接口被滥用（任意包安装/本机触发）** | 固定包白名单、强制 Bearer 认证、`shell: false`、异步安装 + 安装锁 |
 | **用户启用 RAG 但代理端未安装依赖** | 前端检测 `ragAvailable=false` 时在知识库面板门控区就地显示安装引导，禁用功能入口 |
 | **Intel Mac（darwin-x64）无 onnxruntime 原生二进制** | `overrides` 固定 onnxruntime-node `~1.23.0`（实测推理正常）；全局安装场景 overrides 不生效，需安装脚本/文档指引 |

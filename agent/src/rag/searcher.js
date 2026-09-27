@@ -8,6 +8,7 @@
 //   - 过滤后为空时旁路探测（放宽阈值），区分"无数据"与"被过滤"
 
 import { DEFAULT_SEARCH_CONFIG } from './config.js';
+import { RagError } from './errors.js';
 
 // ---- 关键词通道参数 ----
 const KEYWORD_MIN_LEN = 2;          // 关键词最小长度（单字符匹配噪声过大）
@@ -62,6 +63,11 @@ export class Searcher {
     const threshold = options.threshold ?? this.threshold;
 
     const queryVec = await this.embedding.embedQuery(query);
+    // 维度校验：实际输出与配置维度不一致（模型/配置变更未重建索引）时立即报错，
+    // 避免 Vectra 对维度不匹配的向量给出无意义结果
+    if (this.embedding.dimensions && Array.isArray(queryVec) && queryVec.length !== this.embedding.dimensions) {
+      throw new RagError('embeddingDimensionMismatch', { expected: this.embedding.dimensions, actual: queryVec.length });
+    }
     const candidates = await this.store.search(queryVec, query, { topK: topK * 2 });
 
     // 关键词命中增强（只抬分不压分），合并后再统一做阈值过滤

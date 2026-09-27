@@ -13,9 +13,10 @@ import { RAG_ROOT } from '../config.js';
 export class VectraStore {
   /**
    * @param {string} collectionId - 知识库 ID（目录名）
+   * @param {string} [rootDir] - 数据根目录（默认 RAG_ROOT；重建索引时指向临时目录）
    */
-  constructor(collectionId) {
-    this.folderPath = join(RAG_ROOT, collectionId);
+  constructor(collectionId, rootDir = RAG_ROOT) {
+    this.folderPath = join(rootDir, collectionId);
     this.index = new LocalIndex(this.folderPath);
   }
 
