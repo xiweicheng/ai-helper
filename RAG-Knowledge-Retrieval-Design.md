@@ -509,6 +509,8 @@ const docVecs = await extractor(chunks, { pooling: 'mean', normalize: true });
 
 > 约定：`endpoint` 为 Base URL，**须包含版本段**（如 `/v1`）；代码只在其后拼接 `/embeddings`，避免出现 `/v1/v1/embeddings` 双重版本段。远端模式为对称检索，`queryPrefix` 置空（跨模式切换时后端自动重置，见 `resolveEmbeddingConfig`）。
 >
+> `dimensions` 语义：>0 时在请求中透传 `dimensions` 参数（支持降维的模型按指定维度返回，须与测试探测值一致）；0/未指定表示跟随平台默认维度（不传该参数）。平台对 `dimensions` 返回 400（参数无效，如硅基流动 BAAI/bge-m3 等固定维度模型）时自动降级重试一次不带该参数，实际维度以测试探测/导入校验为准。
+>
 > 批量调用按每次 10 条切分（`EMBED_BATCH_SIZE`），兼容阿里云百炼（text-embedding-v3/v4 单次批量上限 10 条）等平台限制。
 
 #### 关键约束：链路一致性
@@ -529,7 +531,7 @@ const docVecs = await extractor(chunks, { pooling: 'mean', normalize: true });
 
 配套保障：
 - **并发保护**：同一知识库同一时刻只允许一个导入/重建任务（`_activeOps` 占位，冲突请求返回 `operationInProgress`）；重建期间删除该知识库同样被拒绝
-- **维度校验**：导入/重建/检索时校验模型实际输出维度与配置 `dimensions` 一致，不一致立即报 `embeddingDimensionMismatch`，避免污染索引
+- **维度校验**：导入/重建/检索时校验模型实际输出维度与配置 `dimensions` 一致（未指定时不校验），不一致立即报 `embeddingDimensionMismatch`，避免污染索引
 - **进度上报**：复用导入进度通道（`/ingest/status` 轮询）：`phase: 'rebuilding'`（含 `current`/`total`）→ `done` / `error`
 - **失败清理**：构建阶段失败自动清理临时目录；若换入窗口内失败且旧索引目录缺失，保留临时目录（含 `index_backup`）供人工恢复
 
@@ -944,7 +946,7 @@ class RAGAdapter {
 | `POST` | `/api/rag/collections/{id}/search` | 检索 `{ query, topK, threshold }` |
 | `POST` | `/api/rag/search` | 跨知识库检索 `{ collectionIds, query, topK, threshold }` |
 | `GET` | `/api/rag/status` | embedding 模型加载状态 |
-| `POST` | `/api/rag/test-embedding` | 测试远端向量服务连通性 `{ mode, endpoint, apiKey, modelName }`，返回实际维度 `{ model, dimensions }`（供前端自动填充/修正维度） |
+| `POST` | `/api/rag/test-embedding` | 测试远端向量服务连通性 `{ mode, endpoint, apiKey, modelName, dimensions? }`（`dimensions` 可选，带值则透传探测），返回实际维度 `{ model, dimensions }`（供前端自动填充/修正维度） |
 | `POST` | `/api/rag/install` | 安装 RAG 可选依赖（固定白名单、强制 Bearer 认证、异步返回 `started`） |
 | `GET` | `/api/rag/install/status` | 安装进度轮询 `{ running, done, success, phase, logTail }` |
 | `POST` | `/api/rag/detect` | 重新检测 RAG 依赖可用性 |
