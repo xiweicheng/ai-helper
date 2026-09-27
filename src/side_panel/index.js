@@ -6,6 +6,7 @@ import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCur
 import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
+import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
 import { initSchedulePanel } from './schedule-panel.js';
@@ -4232,6 +4233,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', async () => {
+  // 入口轨道需先于各面板初始化：五个入口容器挂入轨道槽位
+  initSideRail();
   await loadBookmarks();
   initBookmarkPanel();
   initSearchPanel();

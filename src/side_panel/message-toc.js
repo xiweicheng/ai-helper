@@ -7,6 +7,8 @@
 
 import state from './state.js';
 import logger from '../shared/logger.js';
+import { clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { getSideRailSlot } from './side-rail.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -177,23 +179,11 @@ export function showMessageToc(messageDiv, headings) {
     </div>
   `;
   
-  // 添加到页面
-  document.body.appendChild(container);
+  // 添加到入口轨道的目录槽位（槽位常驻，避免目录创建/销毁时其他入口跳动）
+  getSideRailSlot('toc').appendChild(container);
   state.messageTocContainer = container;
 
-  // 动态调整容器位置：让容器左边界对齐消息的右边界，消除消息到目录之间的间隙
-  const messageRect = messageDiv.getBoundingClientRect();
-  // 容器默认 CSS 为 right: 0; width: 280px，其默认左边界 = viewportWidth - 280
-  const defaultContainerLeft = window.innerWidth - 280;
-
-  // 工作目录预览模式与对话消息模式使用相同的 fixed right 定位
-  // 不做特殊处理，复用对话消息 TOC 的定位逻辑
-  if (messageRect.right < defaultContainerLeft) {
-    container.style.left = messageRect.right + 'px';
-    container.style.right = '0';
-    // 移除固定宽度，改用 left/right 拉伸
-    container.style.width = 'auto';
-  }
+  // 容器已入轨，垂直位置由轨道均分；hover 桥接由 800ms 延迟隐藏 + 面板 mouseenter 保证
   
   // 绑定事件
   const toggle = container.querySelector('.message-toc-toggle');
@@ -202,11 +192,17 @@ export function showMessageToc(messageDiv, headings) {
   // 鼠标进入目录图标时展开
   toggle.addEventListener('mouseenter', () => {
     panel.classList.add('expanded');
+    clampPanelToViewport(panel);
   });
   
   // 点击切换展开/收起
   toggle.addEventListener('click', () => {
-    panel.classList.toggle('expanded');
+    const expanded = panel.classList.toggle('expanded');
+    if (expanded) {
+      clampPanelToViewport(panel);
+    } else {
+      releasePanelClamp(panel);
+    }
   });
   
   // 鼠标进入目录面板时保持展开

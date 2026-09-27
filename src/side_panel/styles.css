@@ -9672,28 +9672,20 @@ body {
 
 /* ========== 消息目录样式 ========== */
 .message-toc-container {
-  position: fixed;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 995;
+  /* 挂入入口轨道槽位：由 fixed 硬编码位置改为槽内相对定位 */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  /* 扩大容器区域，覆盖图标和面板之间的间隙 */
-  width: 280px;
-  /* 透明背景接收鼠标事件 */
-  background: rgba(0, 0, 0, 0.001);
+  width: 100%;
 }
 
 .message-toc-toggle {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   background: linear-gradient(135deg, rgba(102, 126, 234, 0.85) 0%, rgba(118, 75, 162, 0.85) 100%);
   color: white;
   border: none;
   border-radius: 8px 0 0 8px;
-  padding: 10px 6px;
+  padding: 8px 6px;
   cursor: pointer;
   font-size: 14px;
   box-shadow: -2px 2px 8px rgba(102, 126, 234, 0.3);
@@ -9713,7 +9705,8 @@ body {
   position: absolute;
   right: 26px;
   top: 50%;
-  transform: translateY(-50%) translateX(0);
+  /* --clamp-y 为打开时的视口夹取偏移（见 utils.js clampPanelToViewport） */
+  transform: translateY(calc(-50% + var(--clamp-y, 0px))) translateX(0);
   background: rgba(255, 255, 255, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -9733,7 +9726,7 @@ body {
 .message-toc-panel.expanded {
   opacity: 1;
   visibility: visible;
-  transform: translateY(-50%);
+  transform: translateY(calc(-50% + var(--clamp-y, 0px)));
 }
 
 .message-toc-header {
@@ -9843,15 +9836,7 @@ body {
   100% { background-color: transparent; }
 }
 
-/* 全屏模式下 TOC 的 z-index 需高于 overlay 的 9999 */
-.workspace-panel.preview-fullscreen .message-toc-container {
-  z-index: 10000 !important;
-}
-
-/* 工作目录预览模式下 TOC 也需要高 z-index */
-.message-toc-container {
-  z-index: 10000 !important;
-}
+/* 消息目录已统一挂入入口轨道（.side-rail），层级由轨道统一提供，见文件末尾轨道样式 */
 
 /* 窄栏模式：消息底部工具栏只显示图标，隐藏文字 */
 @media (max-width: 420px) {
@@ -10250,22 +10235,16 @@ body {
 
 /* ========== 收藏面板容器 ========== */
 .bookmark-panel-container {
-  position: fixed;
-  right: 0;
-  top: calc(50% - 80px);
-  transform: translateY(-50%);
-  z-index: 10001;
+  /* 挂入入口轨道槽位：由 fixed 硬编码位置改为槽内相对定位 */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  width: 280px;
-  background: rgba(0, 0, 0, 0.001);
+  width: 100%;
 }
 
 /* 收藏入口按钮 */
 .bookmark-panel-toggle {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   background: linear-gradient(135deg, rgba(240, 165, 0, 0.85) 0%, rgba(230, 126, 34, 0.85) 100%);
   color: white;
   border: none;
@@ -10314,7 +10293,8 @@ body {
   position: absolute;
   right: 26px;
   top: 50%;
-  transform: translateY(-50%) translateX(0);
+  /* --clamp-y 为打开时的视口夹取偏移（见 utils.js clampPanelToViewport） */
+  transform: translateY(calc(-50% + var(--clamp-y, 0px))) translateX(0);
   background: rgba(255, 255, 255, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -10334,7 +10314,7 @@ body {
 .bookmark-panel.expanded {
   opacity: 1;
   visibility: visible;
-  transform: translateY(-50%);
+  transform: translateY(calc(-50% + var(--clamp-y, 0px)));
 }
 
 .bookmark-panel-header {
@@ -10641,22 +10621,16 @@ body {
    ============================================ */
 
 .search-panel-container {
-  position: fixed;
-  right: 0;
-  top: calc(50% + 80px);
-  transform: translateY(-50%);
-  z-index: 10002;
+  /* 挂入入口轨道槽位：由 fixed 硬编码位置改为槽内相对定位 */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  width: 280px;
-  background: transparent;
+  width: 100%;
 }
 
 /* 搜索入口按钮 */
 .search-panel-toggle {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   background: linear-gradient(135deg, rgba(74, 144, 217, 0.85) 0%, rgba(56, 107, 166, 0.85) 100%);
   color: white;
   border: none;
@@ -10687,7 +10661,8 @@ body {
   position: absolute;
   right: 26px;
   top: 50%;
-  transform: translateY(-50%) translateX(0);
+  /* --clamp-y 为打开时的视口夹取偏移（见 utils.js clampPanelToViewport） */
+  transform: translateY(calc(-50% + var(--clamp-y, 0px))) translateX(0);
   background: rgba(255, 255, 255, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -10708,7 +10683,7 @@ body {
   opacity: 1;
   visibility: visible;
   top: calc(50% - 100px);
-  transform: translateY(-50%);
+  transform: translateY(calc(-50% + var(--clamp-y, 0px)));
 }
 
 .search-panel-header {
@@ -10985,21 +10960,17 @@ body {
    ============================================ */
 
 .workspace-panel-container {
-  position: fixed;
-  right: 0;
-  top: 150px;
-  z-index: 10000;
+  /* 浮窗模式挂入入口轨道槽位；嵌入模式由 .embedded 规则移回 mainRow 参与分栏 */
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  width: 28px;
+  width: 100%;
   background: transparent;
 }
 
 /* 入口按钮 */
 .workspace-panel-toggle {
-  position: fixed;
-  right: 0;
-  top: 150px;
-  z-index: 10001;
   background: linear-gradient(135deg, rgba(74, 144, 217, 0.85) 0%, rgba(52, 122, 189, 0.85) 100%);
   color: white;
   border: none;
@@ -11044,13 +11015,14 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transform: translateX(8px);
+  /* --clamp-y 为打开时的视口夹取偏移（见 utils.js clampPanelToViewport） */
+  transform: translateY(var(--clamp-y, 0px)) translateX(8px);
 }
 
 .workspace-panel.expanded {
   opacity: 1;
   visibility: visible;
-  transform: translateX(0);
+  transform: translateY(var(--clamp-y, 0px)) translateX(0);
 }
 
 .workspace-panel.preview-fullscreen {
@@ -13085,4 +13057,55 @@ body {
   font-size: 11px;
   line-height: 1.5;
   word-break: break-all;
+}
+
+/* ============================================
+   右侧功能入口轨道（side-rail）
+   工作目录/收藏/消息目录/搜索/定时任务五个入口的统一容器，
+   上下边界由 side-rail.js 与聊天区可视区实时对齐
+   ============================================ */
+.side-rail {
+  position: fixed;
+  right: 0;
+  top: 100px;
+  bottom: 160px;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  /* 等距分布：窗口高度变化时间距自动均分 */
+  justify-content: space-evenly;
+  /* 间距下限：空间不足时压缩到此值为止，入口按钮永不重叠 */
+  gap: 10px;
+  /* 高于会话列表面板（9999），与原入口层级一致 */
+  z-index: 10000;
+  /* 轨道与槽位不接收事件，避免遮挡聊天区点击 */
+  pointer-events: none;
+}
+
+.side-rail-slot {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  /* 固定槽高：目录槽为空（目录图标动态隐藏）时仍占位，
+     避免其他入口因重新均分而跳动；按钮拉伸填满槽高统一尺寸 */
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.side-rail-slot > * {
+  width: 100%;
+}
+
+/* 入口按钮与弹出面板接收事件（pointer-events 会继承给后代） */
+.side-rail .workspace-panel-toggle,
+.side-rail .bookmark-panel-toggle,
+.side-rail .message-toc-toggle,
+.side-rail .search-panel-toggle,
+.side-rail .schedule-panel-toggle,
+.side-rail .workspace-panel,
+.side-rail .bookmark-panel,
+.side-rail .message-toc-panel,
+.side-rail .search-panel,
+.side-rail .schedule-panel {
+  pointer-events: auto;
 }

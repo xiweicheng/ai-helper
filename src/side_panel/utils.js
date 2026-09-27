@@ -998,3 +998,36 @@ export async function getSelectedTextFromPage() {
     });
   });
 }
+
+/**
+ * 浮层面板视口夹取：面板打开后测量实际 rect，若上下溢出视口，
+ * 将偏移量写入 --clamp-y 自定义属性（面板 transform 引用该属性），
+ * 保证面板在视口内完整可见；入口轨道等距分布后面板锚点随按钮移动，
+ * 靠近顶/底边缘时靠此夹取避免出屏。
+ * @param {HTMLElement} panel - 浮层面板元素
+ */
+export function clampPanelToViewport(panel) {
+  if (!panel) return;
+  panel.style.removeProperty('--clamp-y');
+  requestAnimationFrame(() => {
+    const rect = panel.getBoundingClientRect();
+    if (!rect.height) return;
+    const margin = 8;
+    let dy = 0;
+    if (rect.bottom > window.innerHeight - margin) {
+      dy = window.innerHeight - margin - rect.bottom;
+    }
+    if (rect.top + dy < margin) {
+      dy = margin - rect.top;
+    }
+    if (dy) panel.style.setProperty('--clamp-y', `${Math.round(dy)}px`);
+  });
+}
+
+/**
+ * 清除视口夹取偏移（面板关闭时调用）
+ * @param {HTMLElement} panel - 浮层面板元素
+ */
+export function releasePanelClamp(panel) {
+  if (panel) panel.style.removeProperty('--clamp-y');
+}

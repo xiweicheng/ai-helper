@@ -2,7 +2,8 @@
 
 import state from './state.js';
 import { switchToSession } from './session-manager.js';
-import { escapeHtml, showToast } from './utils.js';
+import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { getSideRailSlot } from './side-rail.js';
 import { getAllSessions, getSession, deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -131,7 +132,7 @@ export function initSearchPanel() {
       </div>
     </div>
   `;
-  document.body.appendChild(container);
+  getSideRailSlot('search').appendChild(container);
 
   bindSearchPanelEvents();
   logger.debug('[SearchPanel] search panelinitializing');
@@ -290,6 +291,7 @@ function openPanel() {
   const panel = document.getElementById('searchPanel');
   const searchInput = document.getElementById('searchPanelInput');
   panel.classList.add('expanded');
+  clampPanelToViewport(panel);
   // 如果已有搜索词且结果为空，重新搜索
   if (searchInput.value.trim() && searchResults.length === 0) {
     performSearch(searchInput.value.trim());
@@ -303,6 +305,7 @@ function openPanel() {
 function closePanel() {
   const panel = document.getElementById('searchPanel');
   panel.classList.remove('expanded');
+  releasePanelClamp(panel);
   // 关闭时取消正在进行的搜索
   cancelSearch = true;
   isSearching = false;

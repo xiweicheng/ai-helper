@@ -3,7 +3,8 @@
 import state from './state.js';
 import { getSortedBookmarks, removeBookmarkById, removeBookmark, toggleBookmarkPin, isBookmarked } from './bookmark-manager.js';
 import { switchToSession } from './session-manager.js';
-import { escapeHtml, showToast } from './utils.js';
+import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { getSideRailSlot } from './side-rail.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -107,7 +108,7 @@ export function initBookmarkPanel() {
       </div>
     </div>
   `;
-  document.body.appendChild(container);
+  getSideRailSlot('bookmark').appendChild(container);
 
   // 绑定事件
   const toggle = document.getElementById('bookmarkPanelToggle');
@@ -147,15 +148,18 @@ export function initBookmarkPanel() {
     const isOpen = panel.classList.contains('expanded');
     if (isOpen) {
       panel.classList.remove('expanded');
+      releasePanelClamp(panel);
     } else {
       refreshBookmarkPanel(searchInput.value);
       panel.classList.add('expanded');
+      clampPanelToViewport(panel);
     }
   });
 
   // 关闭按钮
   closeBtn.addEventListener('click', () => {
     panel.classList.remove('expanded');
+    releasePanelClamp(panel);
   });
 
   // 搜索过滤

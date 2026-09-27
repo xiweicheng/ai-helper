@@ -12,7 +12,8 @@ import {
   switchWorkspace, removeAllowedPath
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
-import { showToast, copyToClipboard } from './utils.js';
+import { showToast, copyToClipboard, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { getSideRailSlot } from './side-rail.js';
 import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
@@ -722,9 +723,9 @@ export function initWorkspacePanel() {
       </div>
     </div>
   `;
-  // 挂载到主内容区（mainRow）右侧：浮窗模式脱离文档流不受影响，嵌入模式作为右列参与分栏
-  const mainRow = document.getElementById('mainRow') || document.body;
-  mainRow.appendChild(container);
+  // 浮窗模式挂入入口轨道的 workspace 槽位（垂直等距分布）；
+  // 嵌入模式由 applyEmbedMode 移回 mainRow 右侧参与分栏
+  getSideRailSlot('workspace').appendChild(container);
 
   bindEvents();
   loadSearchHistory();
@@ -1074,6 +1075,9 @@ function updateModeBtnIcon(embedded) {
 function applyEmbedMode() {
   const container = document.getElementById('workspacePanelContainer');
   if (!container) return;
+  // 嵌入模式作为 mainRow 右列参与左右分栏，需先移出入口轨道
+  const mainRow = document.getElementById('mainRow');
+  if (mainRow && container.parentElement !== mainRow) mainRow.appendChild(container);
   container.classList.add('embedded');
   container.style.setProperty('--ws-embed-width', `${embedWidth}px`);
   updateModeBtnIcon(true);
@@ -1081,7 +1085,11 @@ function applyEmbedMode() {
 
 function exitEmbedMode() {
   const container = document.getElementById('workspacePanelContainer');
-  if (container) container.classList.remove('embedded');
+  if (!container) return;
+  container.classList.remove('embedded');
+  // 回浮窗模式：放回入口轨道的 workspace 槽位
+  const slot = getSideRailSlot('workspace');
+  if (slot && container.parentElement !== slot) slot.appendChild(container);
   updateModeBtnIcon(false);
 }
 
@@ -1260,6 +1268,7 @@ async function openPanel() {
   const panel = document.getElementById('workspacePanel');
   if (panel.classList.contains('expanded')) return;
   panel.classList.add('expanded');
+  clampPanelToViewport(panel);
   // 记忆展开状态：重开插件后按上次状态恢复
   chrome.storage.local.set({ [STORAGE_PANEL_EXPANDED]: true }).catch(() => {});
   await updateWorkspaceAgentName();
@@ -5408,6 +5417,7 @@ export async function locateFileInWorkspace(filePath) {
 
   // 展开面板
   panel.classList.add('expanded');
+  clampPanelToViewport(panel);
   container.classList.add('click-opened');
 
   // 确保已获取 workspaceRoot
@@ -5487,6 +5497,7 @@ export async function previewArtifactFile(filePath, fileName) {
 
   // 展开面板
   panel.classList.add('expanded');
+  clampPanelToViewport(panel);
   container.classList.add('click-opened');
 
   // 确保已获取 workspaceRoot
@@ -5558,6 +5569,7 @@ async function closePanelInternal(force = false) {
   const container = document.getElementById('workspacePanelContainer');
   if (panel) {
     panel.classList.remove('expanded');
+    releasePanelClamp(panel);
     // 记忆收起状态：重开插件后保持收起，不自动展开；
     // Agent 断开的强制关闭除外（重连后仍按原流程恢复）
     if (!force) {
