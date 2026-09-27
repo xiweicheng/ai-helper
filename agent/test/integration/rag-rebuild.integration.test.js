@@ -20,6 +20,7 @@ const { RagManager } = await import('../../src/rag/manager.js');
 
 // ---- mock embeddings 服务器 ----
 const MOCK_DELAY_MS = 50; // 每次请求延迟，保证并发窗口稳定
+const capturedPayloads = []; // 捕获每次请求体（供 dimensions 透传断言）
 
 function createMockEmbeddingServer() {
   return http.createServer((req, res) => {
@@ -35,10 +36,17 @@ function createMockEmbeddingServer() {
           res.end(JSON.stringify({ error: 'bad json' }));
           return;
         }
+        capturedPayloads.push(payload);
         const model = String(payload.model || '');
         if (model === 'fail-model') {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'mock failure' }));
+          return;
+        }
+        // 模拟不支持 dimensions 参数的平台（如硅基流动 bge-m3）：带该参数 → 400 参数无效
+        if (model.includes('dims-strict') && 'dimensions' in payload) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 20015, message: 'The parameter is invalid. Please check again.', data: null }));
           return;
         }
         const dims = model.includes('16') ? 16 : 8;
@@ -204,8 +212,50 @@ test('配置校验：远端缺 endpoint / 非法维度被拒绝', async () => {
   await assert.rejects(
     () => manager.createCollection({
       name: 'invalid-2',
-      embeddingConfig: { mode: 'openai-compat', endpoint, modelName: 'm', dimensions: 0 },
+      embeddingConfig: { mode: 'openai-compat', endpoint, modelName: 'm', dimensions: -1 },
     }),
     (err) => err.code === 'invalidEmbeddingDimensions'
   );
+});
+
+test('dimensions 透传：显式指定时请求携带 dimensions，未指定时不携带', async () => {
+  const manager = new RagManager();
+
+  // 显式指定 8 维 → 请求体透传 dimensions: 8
+  const withDims = await manager.createCollection({
+    name: 'dims-explicit',
+    embeddingConfig: remoteConfig('model-dims', 8),
+  });
+  capturedPayloads.length = 0;
+  await manager.ingestText(withDims.id, { content: '显式维度透传测试文本。', name: 'd1' });
+  assert.ok(capturedPayloads.length > 0);
+  assert.equal(capturedPayloads[0].dimensions, 8);
+
+  // 未指定（0）→ 请求体不带 dimensions 字段（使用平台默认维度）
+  const noDims = await manager.createCollection({
+    name: 'dims-default',
+    embeddingConfig: { mode: 'openai-compat', endpoint, apiKey: 'test-key', modelName: 'model-dims' },
+  });
+  assert.equal(noDims.embeddingConfig.dimensions, 0); // 远端未指定 → 0（语义：跟随平台默认）
+  capturedPayloads.length = 0;
+  await manager.ingestText(noDims.id, { content: '默认维度测试文本。', name: 'd2' });
+  assert.ok(capturedPayloads.length > 0);
+  assert.ok(!('dimensions' in capturedPayloads[0]));
+});
+
+test('平台不支持 dimensions（400）：自动降级重试不带参数，导入成功', async () => {
+  const manager = new RagManager();
+  const created = await manager.createCollection({
+    name: 'dims-strict',
+    embeddingConfig: remoteConfig('dims-strict-model', 8),
+  });
+  capturedPayloads.length = 0;
+  await manager.ingestText(created.id, { content: '降级重试测试文本。', name: 'd1' });
+  // 第一次带 dimensions:8（被 400 拒绝），第二次自动降级不带 dimensions（成功）
+  assert.equal(capturedPayloads.length, 2);
+  assert.equal(capturedPayloads[0].dimensions, 8);
+  assert.ok(!('dimensions' in capturedPayloads[1]));
+  // mock 降级后返回 8 维，与配置一致 → 导入成功
+  const stats = await manager.getStats(created.id);
+  assert.equal(stats.documentCount, 1);
 });

@@ -16,7 +16,10 @@ export class EmbeddingProvider {
     // 显式判定模式，避免静默降级（设计文档：配置只从一个出口读）
     this.mode = resolved.mode || (resolved.apiKey ? 'openai-compat' : 'local');
     this.modelName = resolved.modelName || (this.mode === 'openai-compat' ? 'text-embedding-3-small' : 'Xenova/bge-small-zh-v1.5');
-    this.dimensions = resolved.dimensions || (this.mode === 'openai-compat' ? 1536 : 512);
+    // 0 表示未显式指定（远端跟随平台默认维度；检索侧维度校验随之跳过）
+    this.dimensions = Number(resolved.dimensions) > 0
+      ? Number(resolved.dimensions)
+      : (this.mode === 'openai-compat' ? 0 : 512);
     // BGE 中文模型默认查询前缀；非 BGE 模型 / 远端端点置空
     this.queryPrefix = resolved.queryPrefix ?? (this.mode === 'local' ? '为这个句子生成表示以用于检索相关文章：' : '');
 

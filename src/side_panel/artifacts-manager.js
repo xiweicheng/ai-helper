@@ -1574,7 +1574,7 @@ function updateArtifactsModalCount(modal, artifacts) {
  * @param {Array} artifacts - 产物列表（原地修改）
  * @returns {Promise<boolean>} 是否有产物被过滤移除
  */
-async function filterInvalidArtifacts(artifacts) {
+export async function filterInvalidArtifacts(artifacts) {
   if (!artifacts || artifacts.length === 0) return false;
 
   let rootNorm = null;

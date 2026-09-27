@@ -17,6 +17,9 @@ export class OpenAICompatEmbedding {
     this.endpoint = (config.endpoint || '').replace(/\/+$/, '');
     this.apiKey = config.apiKey || '';
     this.modelName = config.modelName || 'text-embedding-3-small';
+    // >0 时向服务端透传 dimensions（支持降维的模型按指定维度返回）；
+    // 0/未指定 → 不带该参数，使用平台默认维度（兼容不支持 dimensions 的固定维度模型）
+    this.dimensions = Number(config.dimensions) > 0 ? Number(config.dimensions) : 0;
   }
 
   /**
@@ -27,14 +30,25 @@ export class OpenAICompatEmbedding {
   async embed(texts) {
     if (!Array.isArray(texts) || texts.length === 0) return [];
 
-    const res = await fetch(`${this.endpoint}/embeddings`, {
+    const send = (includeDimensions) => fetch(`${this.endpoint}/embeddings`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ model: this.modelName, input: texts }),
+      body: JSON.stringify({
+        model: this.modelName,
+        input: texts,
+        ...(includeDimensions && this.dimensions > 0 ? { dimensions: this.dimensions } : {}),
+      }),
     });
+
+    let res = await send(true);
+    // 兼容不支持 dimensions 参数的固定维度模型（如硅基流动 BAAI/bge-m3 返回 400 参数无效）：
+    // 自动降级重试一次不带该参数（使用平台默认维度，实际维度由调用方校验/探测）
+    if (!res.ok && res.status === 400 && this.dimensions > 0) {
+      res = await send(false);
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');

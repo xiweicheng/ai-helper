@@ -2,7 +2,7 @@
 // artifacts-manager.extractArtifactsFromExecutionLog 单元测试
 import { describe, test, expect, beforeAll, vi } from 'vitest';
 
-// mock 工作目录根路径（checkArtifactsFileExistence 用于过滤目录外产物）
+// mock 工作目录根路径（filterInvalidArtifacts 用于过滤目录外产物）
 // 家目录通过 globalThis.__mockHomeDir 按用例控制（null 模拟 Agent 离线取不到）
 vi.mock('../../src/side_panel/workspace-manager.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -40,14 +40,14 @@ globalThis.chrome = {
 };
 
 let extractArtifactsFromExecutionLog;
-let checkArtifactsFileExistence;
+let filterInvalidArtifacts;
 let showArtifactsModal;
 let hideArtifactsModal;
 
 beforeAll(async () => {
   const mod = await import('../../src/side_panel/artifacts-manager.js');
   extractArtifactsFromExecutionLog = mod.extractArtifactsFromExecutionLog;
-  checkArtifactsFileExistence = mod.checkArtifactsFileExistence;
+  filterInvalidArtifacts = mod.filterInvalidArtifacts;
   showArtifactsModal = mod.showArtifactsModal;
   hideArtifactsModal = mod.hideArtifactsModal;
 });
@@ -853,7 +853,7 @@ describe('extractArtifactsFromExecutionLog', () => {
   });
 });
 
-describe('checkArtifactsFileExistence', () => {
+describe('filterInvalidArtifacts', () => {
   const WORKSPACE = '/Users/test/.ai-helper-agent/workspace';
 
   function makeArtifact(path, overrides = {}) {
@@ -870,7 +870,7 @@ describe('checkArtifactsFileExistence', () => {
     };
   }
 
-  test('工作目录外的产物不发起存在性检查，不被标记 deleted', async () => {
+  test('工作目录外的产物被过滤移除，不发起存在性检查', async () => {
     let capturedMsg = null;
     globalThis.chrome.runtime.sendMessage = (msg) => {
       capturedMsg = msg;
@@ -878,16 +878,16 @@ describe('checkArtifactsFileExistence', () => {
     };
     const outside = makeArtifact('/tmp/outside_task/report.txt');
     const artifacts = [outside];
-    const changed = await checkArtifactsFileExistence(artifacts);
-    // 目录外产物被过滤后无路径可查，不应发起 CHECK_FILES_EXIST 请求
-    expect(changed).toBe(false);
+    const changed = await filterInvalidArtifacts(artifacts);
+    // 目录外产物被移除后无路径可查，不应发起 CHECK_FILES_EXIST 请求
+    expect(changed).toBe(true);
+    expect(artifacts).toHaveLength(0);
     expect(capturedMsg).toBeNull();
-    expect(outside.deleted).toBeFalsy();
   });
 
-  test('工作目录内的产物正常检查，不存在的被标记 deleted', async () => {
+  test('工作目录内的产物正常检查：存在保留、不存在被过滤移除', async () => {
     const inside = makeArtifact(`${WORKSPACE}/task_a/keep.txt`);
-    const insideDeleted = makeArtifact(`${WORKSPACE}/task_a/gone.txt`);
+    const insideGone = makeArtifact(`${WORKSPACE}/task_a/gone.txt`);
     const outside = makeArtifact('/etc/hosts');
     globalThis.chrome.runtime.sendMessage = (msg) => {
       // 只应包含工作目录内的两个路径
@@ -901,13 +901,11 @@ describe('checkArtifactsFileExistence', () => {
       }
       return Promise.resolve({ success: true, results });
     };
-    const artifacts = [inside, insideDeleted, outside];
-    const changed = await checkArtifactsFileExistence(artifacts);
+    const artifacts = [inside, insideGone, outside];
+    const changed = await filterInvalidArtifacts(artifacts);
     expect(changed).toBe(true);
-    expect(inside.deleted).toBeFalsy();
-    expect(insideDeleted.deleted).toBe(true);
-    // 目录外产物保持原状态
-    expect(outside.deleted).toBeFalsy();
+    // 目录外的与不存在的均被移除，仅保留存在的目录内产物
+    expect(artifacts.map(a => a.path)).toEqual([inside.path]);
   });
 
   test('相对路径产物视为工作目录内，正常发起检查', async () => {
@@ -917,13 +915,13 @@ describe('checkArtifactsFileExistence', () => {
       return Promise.resolve({ success: true, results: {} });
     };
     const rel = makeArtifact('task_b/rel_file.txt');
-    const changed = await checkArtifactsFileExistence([rel]);
+    const changed = await filterInvalidArtifacts([rel]);
     expect(changed).toBe(false);
     expect(capturedMsg).toBeTruthy();
     expect(capturedMsg.paths.length).toBe(1);
   });
 
-  test('~ 前缀产物且家目录未知时视为目录外，不发起存在性检查不被误标 deleted', async () => {
+  test('~ 前缀产物且家目录未知时视为目录外，被过滤移除且不发起检查', async () => {
     let capturedMsg = null;
     globalThis.__mockHomeDir = null;
     globalThis.chrome.runtime.sendMessage = (msg) => {
@@ -931,14 +929,15 @@ describe('checkArtifactsFileExistence', () => {
       return Promise.resolve({ success: true, results: {} });
     };
     const home = makeArtifact('~/Movies/test-files/file1.txt');
-    const changed = await checkArtifactsFileExistence([home]);
-    // 旧 bug：~/ 被误映射为工作目录相对路径，stat 不存在的文件 → 误标已删除
-    expect(changed).toBe(false);
+    const artifacts = [home];
+    const changed = await filterInvalidArtifacts(artifacts);
+    // 旧 bug：~/ 被误映射为工作目录相对路径，stat 不存在的文件 → 误删有效产物
+    expect(changed).toBe(true);
+    expect(artifacts).toHaveLength(0);
     expect(capturedMsg).toBeNull();
-    expect(home.deleted).toBeFalsy();
   });
 
-  test('工作目录位于家目录下时，~/ 产物展开后正常检查不误标，真实不存在才标 deleted', async () => {
+  test('工作目录位于家目录下时，~/ 产物展开后正常检查：存在保留、不存在移除', async () => {
     globalThis.__mockHomeDir = '/Users/test';
     globalThis.chrome.runtime.sendMessage = (msg) => {
       expect(msg.type).toBe('CHECK_FILES_EXIST');
@@ -951,15 +950,15 @@ describe('checkArtifactsFileExistence', () => {
     };
     const inside = makeArtifact('~/.ai-helper-agent/workspace/task_a/keep.txt');
     const gone = makeArtifact('~/.ai-helper-agent/workspace/task_a/gone.txt');
-    const changed = await checkArtifactsFileExistence([inside, gone]);
+    const artifacts = [inside, gone];
+    const changed = await filterInvalidArtifacts(artifacts);
     expect(changed).toBe(true);
-    expect(inside.deleted).toBeFalsy();
-    expect(gone.deleted).toBe(true);
+    expect(artifacts.map(a => a.path)).toEqual([inside.path]);
     globalThis.__mockHomeDir = null;
   });
 });
 
-describe('showArtifactsModal 目录外产物交互', () => {
+describe('showArtifactsModal 目录外产物过滤', () => {
   const WORKSPACE = '/Users/test/.ai-helper-agent/workspace';
 
   function makeArtifact(path, overrides = {}) {
@@ -976,53 +975,34 @@ describe('showArtifactsModal 目录外产物交互', () => {
     };
   }
 
-  test('目录外产物操作按钮禁用、展示"目录外"图标及悬停说明，目录内产物不受影响', async () => {
+  test('目录外产物不渲染，目录内产物正常展示', async () => {
     globalThis.chrome.runtime.sendMessage = () => Promise.resolve({ success: true, results: {} });
     const outside = makeArtifact('/tmp/outside_task/report.txt');
     const inside = makeArtifact(`${WORKSPACE}/task_a/inside.txt`);
     showArtifactsModal([outside, inside]);
-    // 等待异步标记完成（getWorkspaceRoot 为异步）
+    // 等待异步过滤完成（getWorkspaceRoot 为异步）
     await new Promise(r => setTimeout(r, 50));
 
     const rows = [...document.querySelectorAll('.artifacts-row')];
-    expect(rows.length).toBe(2);
-
-    const outsideRow = rows.find(r => r.dataset.path === '/tmp/outside_task/report.txt');
-    const outsideIcon = outsideRow.querySelector('.artifact-outside-icon');
-    expect(outsideIcon).toBeTruthy();
-    // 悬停提示应说明"位于工作目录之外"
-    expect(outsideIcon.title).toContain('工作目录之外');
-    expect(outsideRow.querySelector('.download-btn').disabled).toBe(true);
-    expect(outsideRow.querySelector('.locate-btn').disabled).toBe(true);
-    // 目录外的预览按钮与下载/定位保持一致：展示但禁用
-    expect(outsideRow.querySelector('.preview-btn').disabled).toBe(true);
-
-    const insideRow = rows.find(r => r.dataset.path === `${WORKSPACE}/task_a/inside.txt`);
-    expect(insideRow.querySelector('.artifact-outside-icon')).toBeNull();
-    expect(insideRow.querySelector('.download-btn').disabled).toBe(false);
-    expect(insideRow.querySelector('.locate-btn').disabled).toBe(false);
+    expect(rows.length).toBe(1);
+    expect(rows[0].dataset.path).toBe(`${WORKSPACE}/task_a/inside.txt`);
+    expect(document.querySelector('.artifact-outside-icon')).toBeNull();
 
     hideArtifactsModal();
     expect(document.getElementById('artifactsModalOverlay')).toBeNull();
   });
 
-  test('双击目录外产物文件名弹提示而不预览', async () => {
+  test('产物全部在目录外 → 展示空状态提示', async () => {
     globalThis.chrome.runtime.sendMessage = () => Promise.resolve({ success: true, results: {} });
-    // toast 容器：utils.showToast 需要，缺失时静默跳过，这里补上以验证提示被触发
-    const toastContainer = document.createElement('div');
-    toastContainer.id = 'toastContainer';
-    document.body.appendChild(toastContainer);
-
     const outside = makeArtifact('/tmp/outside_task/report.txt');
     showArtifactsModal([outside]);
     await new Promise(r => setTimeout(r, 50));
 
-    const nameEl = document.querySelector('.artifacts-row .artifact-name');
-    nameEl.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
-    // toast 文案应为目录外提示
-    expect(toastContainer.textContent).toContain('不在工作目录下');
+    const rows = [...document.querySelectorAll('.artifacts-row')];
+    expect(rows.length).toBe(0);
+    expect(document.querySelector('.artifacts-empty')).toBeTruthy();
 
     hideArtifactsModal();
-    toastContainer.remove();
+    expect(document.getElementById('artifactsModalOverlay')).toBeNull();
   });
 });

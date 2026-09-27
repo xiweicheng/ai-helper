@@ -456,6 +456,8 @@ function bindVectorFormEvents(overlay, existing) {
     // API Key 留空：编辑场景沿用已保存值
     const typedKey = overlay.querySelector('#kbVecApiKey').value.trim();
     const apiKey = typedKey || (existing?.mode === 'openai-compat' ? (existing.apiKey || '') : '');
+    // 维度填了就透传（支持降维的模型按指定维度探测）；留空则用平台默认维度
+    const typedDims = parseInt(dimsInput?.value.trim() || '', 10);
 
     testBtn.disabled = true;
     const prevText = testBtn.textContent;
@@ -467,6 +469,7 @@ function bindVectorFormEvents(overlay, existing) {
     try {
       const res = await agentApi('POST', '/api/rag/test-embedding', {
         mode: 'openai-compat', endpoint, apiKey, modelName,
+        ...(Number.isFinite(typedDims) && typedDims > 0 ? { dimensions: typedDims } : {}),
       });
       if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
       if (resultEl) {

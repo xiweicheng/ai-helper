@@ -28,9 +28,10 @@ const COLLECTION_ID_RE = /^kb_[a-z0-9]+$/;
 const DOCUMENT_ID_RE = /^doc_[a-z0-9]+$/;
 
 // 远端（OpenAI 兼容）模式的字段默认值（与 embedding/index.js 的运行时兜底保持一致）
+// dimensions: 0 表示未显式指定 → 不向服务端透传 dimensions，使用平台默认维度
 const REMOTE_EMBEDDING_DEFAULTS = {
   modelName: 'text-embedding-3-small',
-  dimensions: 1536,
+  dimensions: 0,
   queryPrefix: '',
   endpoint: '',
   apiKey: '',
@@ -87,7 +88,8 @@ export function validateEmbeddingConfig(config = {}) {
   const dims = config.dimensions;
   if (dims !== undefined && dims !== null && dims !== '') {
     const n = Number(dims);
-    if (!Number.isInteger(n) || n <= 0 || n > 8192) {
+    // 0 表示未显式指定（使用平台默认维度）；>0 需为 1-8192 的整数
+    if (n !== 0 && (!Number.isInteger(n) || n <= 0 || n > 8192)) {
       throw new RagError('invalidEmbeddingDimensions', { dimensions: String(dims) });
     }
   }
