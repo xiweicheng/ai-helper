@@ -311,6 +311,7 @@ export async function runTask(taskId, force = false) {
     const agentId = task.agentId || hostSession.agentId || null;
     const agentToolIds = agent?.toolIds ?? null;
     const agentSkillIds = agent?.skillIds ?? null;
+    const agentMcpExcludedServerIds = agent?.mcpExcludedServerIds ?? null;
     const temperature = pick(task.temperature, pick(hostSession.temperature, config.temperature ?? 0.2));
     const topP = pick(task.topP, pick(hostSession.topP, config.topP ?? 1.0));
     const apiParams = { temperature, top_p: topP };
@@ -342,7 +343,7 @@ export async function runTask(taskId, force = false) {
     // 5. 执行
     const callId = 'st_' + taskId + '_' + Date.now().toString(36);
     let result;
-    const tools = useTools ? await getTools(agentToolIds, agentId, agentSkillIds) : [];
+    const tools = useTools ? await getTools(agentToolIds, agentId, agentSkillIds, null, agentMcpExcludedServerIds) : [];
     if (tools.length > 0) {
       const r = await reactLoop(messages, model, tools, tabId, apiParams, hostSession.id, null, null, { value: 0 }, [], callId);
       result = { content: r.content !== undefined ? r.content : r, executionLog: r.executionLog || [] };

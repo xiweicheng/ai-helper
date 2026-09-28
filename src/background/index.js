@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
@@ -1007,16 +1007,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     loadMcpTools().then(count => {
       const mcpTools = RAW_TOOLS
         .filter(t => t.id.startsWith('mcp_'))
-        .map(t => ({
-          id: t.id,
-          name: t.function?.name || t.id,
-          description: t.function?.description || '',
-          category: t.category || 'mcp',
-          execution: t.execution || 'background',
-          parallelizable: t.parallelizable !== false,
-          requiresConfirmation: t.requiresConfirmation || false,
-          enabled: true
-        }));
+        .map(t => {
+          const meta = getMcpToolMetaById(t.id);
+          return {
+            id: t.id,
+            name: meta?.toolName || t.function?.name || t.id,
+            description: t.function?.description || '',
+            category: t.category || 'mcp',
+            execution: t.execution || 'background',
+            parallelizable: t.parallelizable !== false,
+            requiresConfirmation: t.requiresConfirmation || false,
+            enabled: true,
+            serverId: meta?.serverId || '',
+            serverName: meta?.serverName || ''
+          };
+        });
       mcpToolsCache = { tools: mcpTools, loadedAt: Date.now() };
       logger.debug(`[Background] GET_MCP_TOOLS return ${mcpTools.length} tool ( reloads ${count} )`);
       sendResponse({ success: true, tools: mcpTools });
@@ -1126,7 +1131,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, agentSkillIds, callId } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, agentSkillIds, callId, forcedMcpServerIds, agentMcpExcludedServerIds } = message;
+
+    // 记录本会话强制下发的 MCP 服务（/ 触发器手动指定），
+    // 供澄清重筛、会话恢复等后续环节读取，避免强制工具被预筛选丢弃
+    setSessionForcedMcpServers(sessionId, forcedMcpServerIds);
 
     // 将图片识别独立配置合并到 apiParams 中
     if (imageApiBase) {
@@ -1163,7 +1172,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     const apiCall = useTools 
       ? (async () => {
-          const tools = await getTools(agentToolIds, agentId, agentSkillIds);
+          const tools = await getTools(agentToolIds, agentId, agentSkillIds, forcedMcpServerIds, agentMcpExcludedServerIds);
 
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
@@ -1218,7 +1227,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return { content: preselection.content, executionLog: preselection.executionLog };
           }
 
-          const { tools: selectedTools, executionLog: preselectLog } = preselection;
+          const { tools: selectedToolsRaw, executionLog: preselectLog } = preselection;
+          // 手动指定（/ 触发器）的 MCP 服务工具补回：预筛选可能将其丢弃
+          const selectedTools = mergeForcedMcpTools(selectedToolsRaw, tools, forcedMcpServerIds);
           logger.debug(`[Background] after pre-filter ${selectedTools.length} tool`);
           logger.debug('[Background] pre-filter executionlog:', JSON.stringify(preselectLog).substring(0, 500));
 

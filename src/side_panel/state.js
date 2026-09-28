@@ -40,6 +40,7 @@ export let inputHistoryIndex = -1;
 // 自定义 Agent 相关
 export let activeAgentId = null;   // 当前选中的 Agent ID
 export let activeAgentToolIds = null; // 当前 Agent 限定的工具列表（null=继承全局）
+export let activeAgentMcpExcludedServerIds = null; // 当前 Agent 排除的 MCP 服务 ID 列表（服务级；null=不限）
 export let activeAgentSkillIds = null; // 当前 Agent 绑定的技能名称列表（null=全部启用）
 export let customAgents = [];      // 用户自定义 Agent 列表缓存
 
@@ -70,8 +71,11 @@ export let selectedTempIndex = 0;
 export let currentCategory = 'all';
 export let currentSearch = '';
 
-// 当前启用的工具列表
+// 当前启用的工具列表（不含 MCP 工具，MCP 按服务级开关管理）
 export let enabledTools = [];
+
+// 当前智能体上下文中被用户关闭的 MCP 服务 ID 列表（deny-list：不在列表中 = 开放）
+export let mcpClosedServers = [];
 
 // 分类折叠状态
 export const collapsedCategories = {};
@@ -218,6 +222,8 @@ export default {
   set activeAgentId(v) { activeAgentId = v; },
   get activeAgentToolIds() { return activeAgentToolIds; },
   set activeAgentToolIds(v) { activeAgentToolIds = v; },
+  get activeAgentMcpExcludedServerIds() { return activeAgentMcpExcludedServerIds; },
+  set activeAgentMcpExcludedServerIds(v) { activeAgentMcpExcludedServerIds = v; },
   get activeAgentSkillIds() { return activeAgentSkillIds; },
   set activeAgentSkillIds(v) { activeAgentSkillIds = v; },
   get customAgents() { return customAgents; },
@@ -242,6 +248,8 @@ export default {
   set currentSearch(v) { currentSearch = v; },
   get enabledTools() { return enabledTools; },
   set enabledTools(v) { enabledTools = v; },
+  get mcpClosedServers() { return mcpClosedServers; },
+  set mcpClosedServers(v) { mcpClosedServers = v; },
   get collapsedCategories() { return collapsedCategories; },
   // collapsedCategories is const, no setter needed
   get sessionExecutionStatus() { return sessionExecutionStatus; },

@@ -349,6 +349,8 @@ async function _loadChatHistoryImpl() {
           const { getAgent } = await import('./agent-store.js');
           const agent = await getAgent(state.activeAgentId);
           if (agent) {
+            // 恢复助手级 MCP 服务排除列表（服务级 deny-list：不在列表中 = 开放）
+            state.activeAgentMcpExcludedServerIds = agent.mcpExcludedServerIds ?? null;
             if (agent.model) {
               state.currentModel = agent.model;
             }
@@ -360,8 +362,11 @@ async function _loadChatHistoryImpl() {
             document.dispatchEvent(new CustomEvent('agent-model-changed'));
           }
         } catch { /* Agent 加载失败，使用会话存储值 */ }
+        // 助手加载失败时清空排除列表，避免沿用上一个助手的配置
+        state.activeAgentMcpExcludedServerIds = null;
       } else {
         // 默认 Agent：从 chrome.storage.local 读取全局模型/温度（所有默认 Agent 会话共享）
+        state.activeAgentMcpExcludedServerIds = null;
         try {
           const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
           if (global.modelName) state.currentModel = global.modelName;
@@ -371,6 +376,11 @@ async function _loadChatHistoryImpl() {
         // 触发 UI 更新，确保弹窗 slider/输入框与图标一致
         document.dispatchEvent(new CustomEvent('agent-model-changed'));
       }
+
+      // 恢复 MCP 服务级关闭列表（deny-list，键随当前 Agent 切换；新服务默认开放）
+      const agentMcpClosedKey = `agentMcpClosedServers_${state.activeAgentId || 'default'}`;
+      const mcpClosedResult = await chrome.storage.local.get([agentMcpClosedKey]);
+      state.mcpClosedServers = mcpClosedResult[agentMcpClosedKey] || [];
     }
     
     // 清空已渲染的消息与上下文气泡，避免历史重载（后台定时任务执行后触发）导致内容重复
@@ -710,12 +720,15 @@ export async function sendMessage() {
   }
 
   // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
+  let forcedMcpServerIds = null;
   const mcpContext = getMcpContextText();
   if (mcpContext) {
+    forcedMcpServerIds = state.selectedMcpService.serverId ? [state.selectedMcpService.serverId] : null;
     finalText = mcpContext + finalText;
-    // 添加 MCP 上下文气泡
+    // 添加 MCP 上下文气泡（serverId 供重发时强制下发）
     addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
-    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
+    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName, serverId: state.selectedMcpService.serverId || '' });
     // 清除 MCP 指示器
     clearMcpService();
   }
@@ -829,6 +842,8 @@ export async function sendMessage() {
     const agentSkillIds = currentAgent?.skillIds ?? null;
     state.activeAgentToolIds = agentToolIds;
     state.activeAgentSkillIds = agentSkillIds;
+    // 同步当前助手的 MCP 服务排除列表（随请求下发给 background 做服务级过滤）
+    state.activeAgentMcpExcludedServerIds = currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null;
     
     logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - agent:', currentAgent ? currentAgent.name : 'default assistant');
@@ -926,7 +941,9 @@ export async function sendMessage() {
       logger.warn('[SidePanel] context pressure too high,maindynamictrimming...');
       // 使用实际系统提示词 + 工具定义 token，而非固定估算值
       const actualSysTokens = estimateTokens(messages[0]?.content || '');
-      const actualToolTokens = state.enabledTools.length * 200;
+      // MCP 已改为服务级下发：按「本次生效的 MCP 工具数」补充工具 token 预算
+      const openMcpToolCount = await countEffectiveMcpTools(forcedMcpServerIds);
+      const actualToolTokens = (state.enabledTools.length + openMcpToolCount) * 200;
       const budget = contextWindow - actualSysTokens - actualToolTokens - 4096 - 2000;
       const trimResult = trimMessagesByBudget(messages, Math.max(budget, 2000), { generateSummary: false });
       messages = trimResult.messages;
@@ -939,7 +956,7 @@ export async function sendMessage() {
     let streamingMsgId = null;
     
     try {
-      const result = await callApi(messages, model, state.useTools, apiParams);
+      const result = await callApi(messages, model, state.useTools, apiParams, { forcedMcpServerIds });
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -2938,13 +2955,37 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
   logger.debug(`[SidePanel] deletedmessage: ${role}, messageId: ${messageId}`);
 }
 
+/**
+ * 统计本次请求实际会下发的 MCP 工具数量（服务级口径，用于 token 估算）
+ * 生效服务 = 未被弹窗关闭 且 未被当前助手排除；forcedMcpServerIds 中的服务强制下发
+ * @param {string[]|null} forcedMcpServerIds - / 选择器手动指定的服务
+ * @returns {Promise<number>}
+ */
+async function countEffectiveMcpTools(forcedMcpServerIds = null) {
+  try {
+    const { mcpTools } = await chrome.storage.local.get(['mcpTools']);
+    const tools = mcpTools || [];
+    const closedSet = new Set(Array.isArray(state.mcpClosedServers) ? state.mcpClosedServers : []);
+    const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
+    const forcedSet = new Set(Array.isArray(forcedMcpServerIds) ? forcedMcpServerIds : []);
+    return tools.filter(t => {
+      const sid = t.serverId || 'unknown';
+      if (forcedSet.has(sid)) return true;
+      return !closedSet.has(sid) && !excludedSet.has(sid);
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}, options = {}) {
   // options.resumeFromCheckpoint: 是否为从 checkpoint 恢复任务
   //   - true 时忽略 messages/model/useTools，发送 RESUME_REACT 而非 CALL_API
   //   - 由 resumeTask 调用，复用 callApi 的流式输出基础设施
   // options.userGuidance: 恢复时用户追加的任务描述（可选）
   // options.loadingId: 外部传入的 loading 消息 ID（resumeTask 复用 callApi 时使用）
-  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null } = options;
+  // options.forcedMcpServerIds: 本次请求强制下发的 MCP 服务 ID 列表（/ 选择器选中，绕过关闭/排除列表）
+  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null } = options;
 
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -3598,6 +3639,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         agentId: state.activeAgentId,
         agentToolIds: state.activeAgentToolIds,
         agentSkillIds: state.activeAgentSkillIds,
+        // MCP 服务级下发控制：forced 为 / 选择器强制指定，excluded 为助手编辑器排除列表
+        forcedMcpServerIds: Array.isArray(forcedMcpServerIds) && forcedMcpServerIds.length > 0 ? forcedMcpServerIds : null,
+        agentMcpExcludedServerIds: state.activeAgentMcpExcludedServerIds ?? null,
         callId: myCallId,
         // 图片识别独立配置（仅当启用且有图片时传递）
         imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
@@ -3732,6 +3776,20 @@ export function editAndResendMessage(messageDiv) {
     if (mcpMatch) {
       const mcpName = mcpMatch[1].split(' - ')[0].trim();
       state.selectedMcpService = { serverId: '', serverName: mcpName, toolCount: 0 };
+      // 按服务名反查 serverId：重发时该服务会被强制下发（绕过关闭/排除列表）
+      chrome.storage.local.get(['mcpTools'], (result) => {
+        const tools = result.mcpTools || [];
+        const matched = tools.find(t => (t.serverName || '') === mcpName)
+          || tools.find(t => (t.serverName || '').startsWith(mcpName));
+        // 仅当用户未重新选择其他服务时回填，避免覆盖更新的选择
+        if (matched && state.selectedMcpService && state.selectedMcpService.serverName === mcpName) {
+          state.selectedMcpService = {
+            serverId: matched.serverId || '',
+            serverName: mcpName,
+            toolCount: tools.filter(t => t.serverId === matched.serverId).length
+          };
+        }
+      });
       const mcpIndicator = document.getElementById('mcpIndicator');
       const mcpNameEl = document.getElementById('mcpIndicatorName');
       if (mcpIndicator && mcpNameEl) {

@@ -863,6 +863,72 @@ body {
   margin: 0;
   flex-shrink: 0;
 }
+
+/* MCP 服务级行（助手编辑器）：checkbox = 开放/排除；展开查看只读工具列表 */
+.agent-mcp-expand-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #999;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  transition: background 0.15s, color 0.15s;
+}
+.agent-mcp-expand-btn:hover {
+  background: #eef0f4;
+  color: #667eea;
+}
+.agent-mcp-service-id {
+  flex-shrink: 0;
+  max-width: 130px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-mcp-tool-list {
+  margin: 0 8px 6px 30px;
+  padding-left: 10px;
+  border-left: 2px solid #eef0f4;
+  overflow: hidden;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+.agent-mcp-tool-list.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+}
+.agent-mcp-tool-row {
+  padding: 2px 0;
+}
+.agent-mcp-tool-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-mcp-tool-desc {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Emoji 选择器 */
 .emoji-picker {
   position: absolute;
@@ -1772,6 +1838,26 @@ body {
   color: #999;
   font-weight: normal;
 }
+
+/* 分类级全选/取消全选按钮（作用于该分类下当前可见项） */
+.category-select-all {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: normal;
+  color: #667eea;
+  background: transparent;
+  border: 1px solid #d4cfff;
+  border-radius: 8px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.category-select-all:hover {
+  background: #f3f1ff;
+}
 .popup-tool-category-group {
   margin-bottom: 4px;
 }
@@ -1803,6 +1889,92 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* MCP 服务级开关（弹窗）：服务行 + 可展开的只读工具列表 */
+.popup-mcp-service-block {
+  margin-bottom: 2px;
+}
+.popup-mcp-service-item {
+  cursor: pointer;
+}
+.popup-mcp-service-item input[type="checkbox"] {
+  accent-color: #1a73e8;
+}
+.popup-mcp-service-name {
+  margin-right: 6px;
+}
+.popup-mcp-service-count {
+  font-size: 11px;
+  color: #999;
+  font-weight: normal;
+}
+.popup-mcp-service-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.popup-mcp-service-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #999;
+}
+.popup-mcp-service-hint {
+  color: #b45309;
+}
+.popup-mcp-expand-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #999;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.popup-mcp-expand-btn:hover {
+  background: #eef0f4;
+  color: #667eea;
+}
+.popup-mcp-tool-list {
+  margin: 0 10px 6px 35px;
+  padding-left: 10px;
+  border-left: 2px solid #eef0f4;
+  overflow: hidden;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+.popup-mcp-tool-list.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+}
+.popup-mcp-tool-row {
+  padding: 2px 0;
+}
+.popup-mcp-tool-name {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popup-mcp-tool-desc {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 工具按钮样式 */
@@ -6537,6 +6709,18 @@ body {
   background: #d2e3fc;
   color: #1557b0;
 }
+/* 未开放的 MCP 服务（已关闭或被助手排除）：仍可选中，选中即强制下发 */
+.badge-mcp-inactive {
+  background: #fef3c7;
+  color: #b45309;
+}
+.merged-mcp-item.selected .badge-mcp-inactive {
+  background: #fde68a;
+  color: #92400e;
+}
+.merged-mcp-item-inactive .prompt-item-content {
+  color: #666;
+}
 
 /* MCP 服务指示器 */
 .mcp-indicator {
@@ -6649,6 +6833,18 @@ body {
 .mcp-list-item.selected .mcp-list-item-badge {
   background: #d2e3fc;
   color: #1557b0;
+}
+/* 未开放的 MCP 服务：排后面并附「未开放」角标（仍可选中，选中即强制下发） */
+.mcp-badge-inactive {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mcp-list-item.selected .mcp-badge-inactive {
+  background: #fde68a;
+  color: #92400e;
+}
+.mcp-list-item-inactive .mcp-list-item-name {
+  color: #666;
 }
 
 /* MCP 管理按钮：与 @ 选择器助手/代理的 ✚ 按钮样式保持一致 */

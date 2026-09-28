@@ -37,6 +37,8 @@ registerTranslations('zh', {
     selectedMcpContext: '[已选MCP服务: {name}]\n请使用「{name}」MCP服务来处理以下问题：\n',
     disabledBadge: '未启用',
     disabledTooltip: '未启用（不会自动注入 AI 提示词），仍可手动选择使用',
+    mcpInactiveBadge: '未开放',
+    mcpInactiveTooltip: '该服务当前未开放（已关闭或被当前助手排除），选中后将随本次请求强制启用',
     manualUseSuffix: '手动使用',
   },
 });
@@ -55,6 +57,8 @@ registerTranslations('en', {
     selectedMcpContext: '[Selected MCP service: {name}]\nPlease use the "{name}" MCP service to handle the following problem:\n',
     disabledBadge: 'Disabled',
     disabledTooltip: 'Not enabled (won\'t be auto-injected into the AI prompt), but you can still select and use it manually',
+    mcpInactiveBadge: 'Inactive',
+    mcpInactiveTooltip: 'This service is currently inactive (closed or excluded by the current agent). Selecting it will force-enable it for this request.',
     manualUseSuffix: 'Manual',
   },
 });
@@ -222,18 +226,19 @@ export function updateSkillSelection(items) {
 
 /**
  * 清除输入框中的 / 触发文本（保留触发符之前的内容）
- * 与 @ 选择器惯例对齐：从最后一个触发符处截断，恢复焦点与光标
+ * 与 @ 选择器惯例对齐：从最后一个触发符处截断，恢复焦点与光标；
+ * 无论触发符是否仍存在都无条件回焦输入框（保证可继续输入）
  */
 function clearSlashTriggerText() {
   const userInput = document.getElementById('userInput');
   if (!userInput) return;
   const value = userInput.value;
   const lastSlashIndex = value.lastIndexOf('/');
-  if (lastSlashIndex === -1) return;
-  const newValue = value.substring(0, lastSlashIndex);
-  userInput.value = newValue;
+  if (lastSlashIndex !== -1) {
+    userInput.value = value.substring(0, lastSlashIndex);
+  }
   userInput.focus();
-  userInput.selectionStart = userInput.selectionEnd = newValue.length;
+  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   adjustInputHeight();
 }
 
@@ -484,7 +489,7 @@ export async function getSkillContextText() {
 
 /**
  * 判断 MCP Tab 是否应该显示
- * 条件：Agent 已连接 且 MCP 全局开关开启 且存在当前会话实际可用的 MCP 服务
+ * 条件：Agent 已连接 且 MCP 全局开关开启 且存在已注册的 MCP 服务
  * @returns {Promise<boolean>}
  */
 export async function shouldShowMcpTab() {
@@ -499,38 +504,24 @@ export async function shouldShowMcpTab() {
     return false;
   }
 
-  // 与 MCP 列表口径一致：没有实际可用的 MCP 服务则不显示 Tab
+  // 与 MCP 列表口径一致：没有已注册的 MCP 服务则不显示 Tab
   const services = await getMcpServices();
   return services.length > 0;
 }
 
 /**
- * 从 chrome.storage 获取 MCP 服务列表（按 serverId 分组）
- * 只返回当前会话「实际会下发给大模型」的 MCP 工具所属的服务。
- * 原因：未生效的 MCP 工具不会随请求下发，模型无法识别调用，列出来没有意义。
- * 这与技能不同——技能是把内容注入消息，无需工具支撑，故不做此限制。
- *
- * 生效工具 = 子助手绑定范围(activeAgentToolIds) ∩ 用户勾选(enabledTools)，
- * 与 tool-panel.js 的口径保持一致：
- * - activeAgentToolIds 为 null/undefined 表示不限定（默认助手），只看勾选
- * - 子助手未绑定任何 MCP 工具时，交集为空，列表自然为空
- * @returns {Promise<Array<{serverId, serverName, toolCount}>>}
+ * 从 chrome.storage 获取全部 MCP 服务列表（按 serverId 分组）
+ * 全量化：列出所有已注册服务（不受关闭列表/当前助手排除限制）——
+ * 未开放的服务仍可被选中，选中即随本次请求强制下发（forcedMcpServerIds）。
+ * 开放的服务排前面，未开放的排后面并附「未开放」角标。
+ * @returns {Promise<Array<{serverId, serverName, toolCount, effectiveOpen}>>}
  */
 export async function getMcpServices() {
   return new Promise((resolve) => {
     chrome.storage.local.get(['mcpTools'], (result) => {
-      let tools = result.mcpTools || [];
-
-      // 1. 子助手绑定范围限定（null/undefined = 不限定）
-      const agentToolIds = state.activeAgentToolIds;
-      if (agentToolIds !== null && agentToolIds !== undefined) {
-        const agentSet = new Set(agentToolIds);
-        tools = tools.filter(t => agentSet.has(t.id));
-      }
-
-      // 2. 用户在工具设置里的勾选状态
-      const enabledSet = new Set(state.enabledTools || []);
-      tools = tools.filter(t => enabledSet.has(t.id));
+      const tools = result.mcpTools || [];
+      const closedSet = new Set(Array.isArray(state.mcpClosedServers) ? state.mcpClosedServers : []);
+      const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
 
       const serverMap = new Map();
       tools.forEach(t => {
@@ -539,12 +530,15 @@ export async function getMcpServices() {
           serverMap.set(sid, {
             serverId: sid,
             serverName: t.serverName || sid,
-            toolCount: 0
+            toolCount: 0,
+            effectiveOpen: !closedSet.has(sid) && !excludedSet.has(sid)
           });
         }
         serverMap.get(sid).toolCount++;
       });
-      resolve(Array.from(serverMap.values()));
+      const services = Array.from(serverMap.values());
+      // 未开放的服务排后面并附角标；组内保持原有顺序
+      resolve([...services.filter(s => s.effectiveOpen), ...services.filter(s => !s.effectiveOpen)]);
     });
   });
 }
@@ -574,17 +568,22 @@ export async function renderMcpList(filterText = '') {
 
   state.selectedMcpServiceIndex = 0;
 
-  mcpListEl.innerHTML = filteredServices.map((svc, index) => `
-    <div class="mcp-list-item ${index === 0 ? 'selected' : ''}" data-index="${index}" data-server-id="${escapeHtml(svc.serverId)}" data-server-name="${escapeHtml(svc.serverName)}">
+  mcpListEl.innerHTML = filteredServices.map((svc, index) => {
+    const inactive = svc.effectiveOpen === false;
+    const itemTitle = inactive ? `${svc.serverName}\n${t('skillSelector.mcpInactiveTooltip')}` : svc.serverName;
+    return `
+    <div class="mcp-list-item ${index === 0 ? 'selected' : ''} ${inactive ? 'mcp-list-item-inactive' : ''}" data-index="${index}" data-server-id="${escapeHtml(svc.serverId)}" data-server-name="${escapeHtml(svc.serverName)}" title="${escapeAttr(itemTitle)}">
       <span class="mcp-list-item-index">${index + 1}</span>
       <span class="mcp-list-item-icon">🔌</span>
       <div class="mcp-list-item-info">
         <div class="mcp-list-item-name">${escapeHtml(svc.serverName)}</div>
         <div class="mcp-list-item-desc">${escapeHtml(svc.serverId)}</div>
       </div>
+      ${inactive ? `<span class="mcp-list-item-badge mcp-badge-inactive">${t('skillSelector.mcpInactiveBadge')}</span>` : ''}
       <span class="mcp-list-item-badge">${t('promptSelector.toolCount', { count: svc.toolCount })}</span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   // 绑定点击事件
   mcpListEl.querySelectorAll('.mcp-list-item').forEach(item => {

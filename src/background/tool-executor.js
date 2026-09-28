@@ -413,6 +413,9 @@ const cancelledSessions = new Set();
 // 已动态注册的 MCP 工具 ID 集合（用于去重和清理）
 const mcpToolIds = new Set();
 
+// MCP 工具 ID → { serverId, serverName } 映射（服务级开关判定用，不依赖 toolId 字符串解析）
+const mcpToolMetaMap = new Map();
+
 // 互斥锁：防止 loadMcpTools / unloadMcpTools 并发执行
 let mcpLoadLock = null;
 
@@ -578,6 +581,7 @@ export async function loadMcpTools() {
         return { success: result.success, content: result.content || result.error || '', tool_call_id: toolCallId };
       };
       mcpToolIds.add(toolId);
+      mcpToolMetaMap.set(toolId, { serverId: tool.serverId, serverName: tool.serverName, toolName: tool.name });
       registered++;
     }
 
@@ -587,7 +591,7 @@ export async function loadMcpTools() {
       .filter(t => !disabledServerIds.has(t.serverId))
       .map(t => ({
         id: `mcp_${t.serverId}_${t.name}`,
-        name: `mcp_${t.serverId}_${t.name}`,
+        name: t.name,
         description: `[MCP:${t.serverName}] ${t.description || t.name}`,
         category: 'mcp',
         execution: 'background',
@@ -622,6 +626,7 @@ function unloadMcpToolsInternal() {
     delete TOOL_HANDLERS[toolId];
   }
   mcpToolIds.clear();
+  mcpToolMetaMap.clear();
   rebuildBgHandlers();
   chrome.storage.local.remove('mcpTools');
 }
@@ -639,6 +644,81 @@ export async function unloadMcpTools() {
   } finally {
     releaseLock();
   }
+}
+
+/**
+ * 获取 MCP 工具的注册元信息（serverId / serverName / 原始工具名），未注册时返回 null
+ * @param {string} toolId
+ * @returns {{serverId: string, serverName: string, toolName: string}|null}
+ */
+export function getMcpToolMetaById(toolId) {
+  return mcpToolMetaMap.get(toolId) || null;
+}
+
+/**
+ * 获取指定 MCP 服务下的全部已注册工具 ID（服务 → 工具集反查）
+ * @param {Iterable<string>|null} serverIds
+ * @returns {string[]}
+ */
+export function getMcpToolIdsForServers(serverIds) {
+  if (!serverIds) return [];
+  const idSet = serverIds instanceof Set ? serverIds : new Set(serverIds);
+  if (idSet.size === 0) return [];
+  const ids = [];
+  for (const [toolId, meta] of mcpToolMetaMap) {
+    if (idSet.has(meta.serverId)) ids.push(toolId);
+  }
+  return ids;
+}
+
+// ==================== 会话级强制 MCP 服务（/ 触发器手动指定） ====================
+// 用户通过 / 手动指定 MCP 服务后，该服务的全部工具随本次请求强制下发（绕过关闭/排除列表）。
+// 主请求由 background CALL_API 写入；同一会话内的澄清重筛（react-loop）读取，
+// 保证强制工具不会在预筛选/重筛环节被丢弃。不在请求完成时清除：
+// 会话恢复（RESUME_REACT）复用同一 sessionId，恢复时仍需感知强制服务；
+// 条目在下一次 CALL_API 未携带强制服务时被覆盖/移除。
+const sessionForcedMcpServers = new Map();
+
+/**
+ * 记录会话强制下发的 MCP 服务（传空值表示清除该会话的强制状态）
+ * @param {string} sessionId
+ * @param {string[]|null} serverIds
+ */
+export function setSessionForcedMcpServers(sessionId, serverIds) {
+  if (!sessionId) return;
+  if (Array.isArray(serverIds) && serverIds.length > 0) {
+    sessionForcedMcpServers.set(sessionId, [...serverIds]);
+  } else {
+    sessionForcedMcpServers.delete(sessionId);
+  }
+}
+
+/**
+ * 读取会话强制下发的 MCP 服务列表（无则返回 null）
+ * @param {string} sessionId
+ * @returns {string[]|null}
+ */
+export function getSessionForcedMcpServers(sessionId) {
+  return sessionId ? (sessionForcedMcpServers.get(sessionId) || null) : null;
+}
+
+/**
+ * 将「强制下发的 MCP 服务」工具补回工具集（预筛选可能将其丢弃）
+ * @param {Array} selectedTools - 预筛选后的工具列表
+ * @param {Array} fullTools - 预筛选前的全量工具列表
+ * @param {string[]|null} serverIds - 强制下发的 MCP 服务 ID 列表
+ * @returns {Array} 补回后的工具列表
+ */
+export function mergeForcedMcpTools(selectedTools, fullTools, serverIds) {
+  if (!Array.isArray(serverIds) || serverIds.length === 0) return selectedTools;
+  const forcedToolIds = new Set(getMcpToolIdsForServers(serverIds));
+  if (forcedToolIds.size === 0) return selectedTools;
+  const existing = new Set(selectedTools.map(t => t.id));
+  const merged = [...selectedTools];
+  for (const tool of fullTools) {
+    if (forcedToolIds.has(tool.id) && !existing.has(tool.id)) merged.push(tool);
+  }
+  return merged;
 }
 
 /**
@@ -958,14 +1038,19 @@ async function checkAgentConnectivity() {
 /**
  * 获取启用的工具列表
  * 会自动隐藏不可用的工具（如 Agent 未连通时隐藏 agent_* 工具）
+ * MCP 工具按「服务级开关」（deny-list）判定：不在关闭/排除列表中的服务整体开放；
+ * 用户通过 / 手动指定的服务（forcedMcpServerIds）强制下发，绕过两个列表
  * @param {string[]|null} agentToolIds - Agent 指定的工具 ID 列表，null = 使用全局 enabledTools
  * @param {string|null} agentId - Agent ID
  * @param {string[]|null} agentSkillIds - Agent 绑定的技能名称列表，非空时自动包含 skill 工具
+ * @param {string[]|null} forcedMcpServerIds - 手动指定（/ 触发器）强制下发的 MCP 服务 ID 列表
+ * @param {string[]|null} agentMcpExcludedServerIds - Agent 编辑器排除的 MCP 服务 ID 列表
  */
-export async function getTools(agentToolIds = null, agentId = null, agentSkillIds = null) {
+export async function getTools(agentToolIds = null, agentId = null, agentSkillIds = null, forcedMcpServerIds = null, agentMcpExcludedServerIds = null) {
   return new Promise((resolve) => {
     const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
-    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect'], async (result) => {
+    const agentMcpClosedKey = `agentMcpClosedServers_${agentId || 'default'}`;
+    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect', agentMcpClosedKey], async (result) => {
       // 优先读取 agent-specific key，降级到旧的全局 enabledTools
       let enabledTools = result[agentToolsKey] || result.enabledTools;
       
@@ -1055,8 +1140,20 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
       // 读取 MCP 全局开关和 Agent 连接状态
       const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
 
-      const tools = BUILTIN_TOOLS
-        .filter(tool => finalToolIds.includes(tool.id))
+      // MCP 服务级开关判定集（deny-list 模型）：
+      // - closed：用户在工具配置弹窗关闭的服务（agentMcpClosedServers_${agentId}）
+      // - excluded：助手编辑器排除的服务（agent.mcpExcludedServerIds 随消息传入）
+      // - forced：/ 触发器手动指定的服务，强制下发并绕过前两者
+      const closedMcpServerIds = new Set(Array.isArray(result[agentMcpClosedKey]) ? result[agentMcpClosedKey] : []);
+      const excludedMcpServerIds = new Set(Array.isArray(agentMcpExcludedServerIds) ? agentMcpExcludedServerIds : []);
+      const forcedMcpServerIdSet = new Set(Array.isArray(forcedMcpServerIds) ? forcedMcpServerIds : []);
+
+      const filteredTools = BUILTIN_TOOLS
+        .filter(tool => {
+          // MCP 工具按服务级开关判定，不再参与 enabledTools 勾选过滤
+          if (tool.id.startsWith('mcp_')) return true;
+          return finalToolIds.includes(tool.id);
+        })
         .filter(tool => {
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
@@ -1064,18 +1161,27 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           if (tool.id === 'manage_agent' && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 工具
           if (tool.id === 'agent_skill' && skillsEnabled === false) return false;
-          // MCP 工具：全局开关关闭 / Agent 未连通 / MCP Server 未连接时过滤
+          // MCP 工具：全局开关关闭 / Agent 未连通 / 未注册 / 服务被关闭或排除时过滤
           if (tool.id.startsWith('mcp_')) {
             if (mcpEnabled !== true || !agentConnected) return false;
             if (!mcpToolIds.has(tool.id)) return false;
+            const meta = mcpToolMetaMap.get(tool.id);
+            if (meta) {
+              // 手动指定（/ 触发器）的服务强制下发，绕过关闭/排除列表
+              if (forcedMcpServerIdSet.has(meta.serverId)) return true;
+              if (closedMcpServerIds.has(meta.serverId)) return false;
+              if (excludedMcpServerIds.has(meta.serverId)) return false;
+            }
+            return true;
           }
           // RAG 知识库工具：未动态注册（开关关闭 / Agent 不支持 RAG）或 Agent 未连通时过滤
           if (tool.id.startsWith('knowledge_')) {
             if (!ragToolIds.has(tool.id) || !agentConnected) return false;
           }
           return true;
-        })
-        .map(tool => {
+        });
+
+      const tools = filteredTools.map(tool => {
           // 深拷贝避免修改原始 BUILTIN_TOOLS
           const cloned = JSON.parse(JSON.stringify(tool));
 
@@ -1094,8 +1200,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
           // plan_task 工具：工具预筛选开关开启 且 工具数超过阈值时，动态添加 requiredTools 参数
           if (tool.id === 'plan_task') {
             const preselectMinToolCount = result.preselectMinToolCount || 10;
-            const shouldAddRequiredTools = enableToolPreselect && finalToolIds.length > preselectMinToolCount;
-            console.log('[Background] getTools - processing plan_task, enableToolPreselect:', enableToolPreselect, 'toolCount:', finalToolIds.length, 'threshold:', preselectMinToolCount, 'shouldAdd:', shouldAddRequiredTools);
+            const shouldAddRequiredTools = enableToolPreselect && filteredTools.length > preselectMinToolCount;
+            console.log('[Background] getTools - processing plan_task, enableToolPreselect:', enableToolPreselect, 'toolCount:', filteredTools.length, 'threshold:', preselectMinToolCount, 'shouldAdd:', shouldAddRequiredTools);
             if (shouldAddRequiredTools) {
               // 1. 修改 plan_task 描述，强引导大模型填写 requiredTools
               cloned.function.description = '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。';
@@ -1105,7 +1211,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
               subtaskItemProps.requiredTools = {
                 type: 'array',
                 items: { type: 'string' },
-                description: t('toolExec.requiredToolsDesc', { tools: finalToolIds.join(', ') })
+                description: t('toolExec.requiredToolsDesc', { tools: filteredTools.map(t => t.id).join(', ') })
               };
 
               // 3. 将 requiredTools 加入 required 数组，强制大模型必须填写

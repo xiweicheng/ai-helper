@@ -188,15 +188,17 @@ function selectPageByTabId(tabId) {
   const userInput = document.getElementById('userInput');
   const value = userInput ? userInput.value : '';
 
-  // 找到最后一个 @ 的位置
+  // 找到最后一个 @ 的位置；无论触发符是否仍在，选中后都要把焦点交还输入框
   const lastAtIndex = value.lastIndexOf('@');
 
   if (lastAtIndex !== -1) {
     // 移除 @ 及其后面的过滤文本
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
+    userInput.value = value.substring(0, lastAtIndex);
+  }
+
+  if (userInput) {
     userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
+    userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   }
 
   // 通过代理获取 tab 信息

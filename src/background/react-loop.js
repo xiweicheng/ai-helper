@@ -1,7 +1,7 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, executeTool, fetchWithTimeout, fetchWithRetry } from './tool-executor.js';
+import { getTools, executeTool, fetchWithTimeout, fetchWithRetry, getSessionForcedMcpServers, getMcpToolIdsForServers } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
 import { preselectTools } from './tool-preselector.js';
 import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
@@ -399,7 +399,9 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
   const result = await reactLoop(
     restoredMessages,
     checkpoint.model,
-    await getTools(),  // 重新获取工具列表（避免工具配置变化导致的不一致）
+    // 重新获取工具列表（避免工具配置变化导致的不一致）；
+    // 会话强制下发的 MCP 服务（/ 手动指定）仍需感知
+    await getTools(null, null, null, getSessionForcedMcpServers(sessionId)),
     checkpoint.tabId,
     checkpoint.apiParams || {},
     sessionId,
@@ -1354,12 +1356,14 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 澄清后重新预筛选工具：用户补充了新信息，工具集需要同步更新
               logger.debug('[Background] clarification complete,re-filteringtool...');
               try {
-                const fullTools = await getTools();
+                // 手动指定的 MCP 服务（/ 触发器）在重筛后仍需强制保留
+                const forcedServerIds = getSessionForcedMcpServers(sessionId);
+                const fullTools = await getTools(null, null, null, forcedServerIds);
                 const config = await getStoredConfig();
                 const enableToolPreselect = config.reactConfig.enableToolPreselect;
                 const preselectMinToolCount = config.reactConfig.preselectMinToolCount || 3;
                 if (enableToolPreselect && fullTools.length > preselectMinToolCount) {
-                  const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams);
+                  const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams, 1, getMcpToolIdsForServers(forcedServerIds));
                   if (reSelection.type === 'tools') {
                     tools = reSelection.tools;
                     reactTokenBudget = null; // 工具集变更，重置 Token 预算缓存

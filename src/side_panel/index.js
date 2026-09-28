@@ -253,6 +253,7 @@ import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
+  setVisibleMcpServicesOpen,
   refreshToolPopupIfOpen, applyRagToolIntroduction, getRagToolIds
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
@@ -3744,7 +3745,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 加载保存的状态（每个智能体独立的已启用工具列表）
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
-  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', 'mcpTools', 'ragTools', 'ragToolsIntroduced'], (result) => {
+  const agentMcpClosedKey = `agentMcpClosedServers_${state.activeAgentId || 'default'}`;
+  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', agentMcpClosedKey, 'mcpTools', 'mcpEnabled', 'ragTools', 'ragToolsIntroduced'], (result) => {
     // 优先读取 agent-specific key，降级到旧的全局 enabledTools（兼容旧数据）
     if (result.isolateChat !== undefined) {
       state.isolateChat = result.isolateChat;
@@ -3763,33 +3765,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.useTools = result.enableTools;
     }
 
+    // 当前助手的 MCP 服务排除列表（从助手配置读取，供工具弹窗与状态展示使用）
+    if (state.activeAgentId) {
+      import('./agent-store.js').then(({ getAgent }) => getAgent(state.activeAgentId)).then(agent => {
+        state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
+      }).catch(() => {});
+    }
+
+    // MCP 服务级关闭列表（deny-list：不在列表中 = 开放；新服务默认开放）
+    state.mcpClosedServers = result[agentMcpClosedKey] || [];
+
     // 读取当前智能体的工具配置：优先 agent-specific key，降级到全局 enabledTools
     const ragTools = result.ragTools || [];
     const savedAgentTools = result[agentToolsKey];
     const fallbackTools = result.enabledTools;
     if (savedAgentTools && savedAgentTools.length > 0) {
-      // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
-      const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
+      // Agent-specific：使用用户保存的列表（MCP 已改为服务级开关，不再参与工具级勾选）
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
-      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...savedTools, ...newMcpTools];
+      state.enabledTools = savedTools;
       // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
       const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
       state.enabledTools = ragIntro.tools;
       if (ragIntro.migrated) {
         chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
-      } else if (newMcpTools.length > 0) {
+      } else if (state.enabledTools.length !== savedAgentTools.length) {
+        // 顺带清理旧列表中残留的 MCP / 无效工具 ID
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
     } else if (fallbackTools && fallbackTools.length > 0) {
       // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
-      const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
-      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...savedTools, ...newBuiltinTools, ...newMcpTools];
+      state.enabledTools = [...savedTools, ...newBuiltinTools];
       // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
       const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
       state.enabledTools = ragIntro.tools;
@@ -3798,8 +3807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ...(ragIntro.migrated ? { ragToolsIntroduced: true } : {})
       });
     } else {
-      const mcpTools = result.mcpTools || [];
-      state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+      state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
       // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置，避免引入标记与启用列表漂移
       const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
       state.enabledTools = ragIntro.tools;
@@ -3809,7 +3817,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (state.enabledTools.length === 0) {
-      state.useTools = false;
+      // 常规工具全禁用时，若仍有开放的 MCP 服务则保持工具启用
+      const mcpCached = result.mcpTools || [];
+      const closedSet = new Set(state.mcpClosedServers || []);
+      const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
+      const hasOpenMcp = result.mcpEnabled === true && mcpCached.some(t => t.serverId && !closedSet.has(t.serverId) && !excludedSet.has(t.serverId));
+      if (!hasOpenMcp) state.useTools = false;
     }
 
     if (enableToolsBtn) {
@@ -3954,6 +3967,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           state.enabledTools.push(tool.id);
         }
       });
+      // MCP 服务级开关：与工具全选联动（被助手排除的服务自动跳过）
+      setVisibleMcpServicesOpen(true);
       updateAllCategoryCounts();
       updateCategoryBadges();
       updateToolsPopupTitle();
@@ -3971,6 +3986,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           state.enabledTools.splice(index, 1);
         }
       });
+      // MCP 服务级开关：与工具全不选联动（被助手排除的服务自动跳过）
+      setVisibleMcpServicesOpen(false);
       updateAllCategoryCounts();
       updateCategoryBadges();
       updateToolsPopupTitle();

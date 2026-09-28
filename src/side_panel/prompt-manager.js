@@ -463,10 +463,12 @@ async function renderMergedList(filterText = '') {
   }).join('');
 
   const mcpHtml = filteredMcpServices.map(s => {
+    const inactive = s.effectiveOpen === false;
     const html = `
-      <div class="prompt-item merged-mcp-item ${mergedIndex === 0 ? 'selected' : ''}" data-index="${mergedIndex}" data-type="mcp" data-server-id="${escapeHtml(s.serverId)}" data-server-name="${escapeHtml(s.serverName)}">
+      <div class="prompt-item merged-mcp-item ${mergedIndex === 0 ? 'selected' : ''} ${inactive ? 'merged-mcp-item-inactive' : ''}" data-index="${mergedIndex}" data-type="mcp" data-server-id="${escapeHtml(s.serverId)}" data-server-name="${escapeHtml(s.serverName)}">
         <span class="prompt-item-index">${mergedIndex + 1}</span>
         <span class="prompt-item-content">🔌 ${escapeHtml(s.serverName)}</span>
+        ${inactive ? `<span class="merged-item-badge badge-mcp-inactive">${t('skillSelector.mcpInactiveBadge')}</span>` : ''}
         <span class="merged-item-badge badge-mcp">MCP</span>
       </div>`;
     mergedIndex++;
@@ -665,11 +667,14 @@ export async function sendPromptByCode(code) {
   }
 
   // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
+  let forcedMcpServerIds = null;
   const mcpContext = getMcpContextText();
   if (mcpContext) {
+    forcedMcpServerIds = state.selectedMcpService.serverId ? [state.selectedMcpService.serverId] : null;
     userMessage = mcpContext + userMessage;
     addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
-    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
+    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName, serverId: state.selectedMcpService.serverId || '' });
     clearMcpService();
   }
 
@@ -852,7 +857,7 @@ export async function sendPromptByCode(code) {
     let streamingConnected = true, streamingMsgId = null;
 
     try {
-      const result = await callApi(messages, model, state.useTools, apiParams);
+      const result = await callApi(messages, model, state.useTools, apiParams, { forcedMcpServerIds });
       content = result.content;
       executionLog = result.executionLog || [];
       wasStreamed = result.wasStreamed || false;
@@ -1263,6 +1268,16 @@ export function initPromptEvents() {
     promptErrorModal.addEventListener('click', (e) => {
       if (e.target === promptErrorModal) {
         hidePromptErrorModal();
+      }
+    });
+  }
+
+  // 提示词下拉 mousedown 保焦：点击列表项/标签时焦点不离开输入框，选中后可直接继续输入
+  const promptDropdown = document.getElementById('promptDropdown');
+  if (promptDropdown) {
+    promptDropdown.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.prompt-item, .prompt-tab, .skill-list-item, .mcp-list-item')) {
+        e.preventDefault();
       }
     });
   }

@@ -6,7 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, applyRagToolIntroduction } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, getMcpToolDisplayDesc, applyRagToolIntroduction } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
@@ -311,6 +311,7 @@ export async function switchAgent(agentId) {
   const agent = agentId ? await getAgent(agentId) : null;
   state.activeAgentId = agentId;
   state.activeAgentToolIds = agent ? agent.toolIds : null;
+  state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
   await setActiveAgentId(agentId);
   // 立即保存当前会话，确保刷新后数据不丢失
   saveCurrentSession().catch(() => {});
@@ -341,25 +342,26 @@ export async function switchAgent(agentId) {
   await renderAgentSelector();
 
   // 加载当前智能体的工具启用/禁用状态
-  const mcpToolsResult = await chrome.storage.local.get(['mcpTools', 'ragTools', 'ragToolsIntroduced']);
-  const mcpTools = mcpToolsResult.mcpTools || [];
+  const agentMcpClosedKey = `agentMcpClosedServers_${agentId || 'default'}`;
+  const mcpToolsResult = await chrome.storage.local.get([agentMcpClosedKey, 'ragTools', 'ragToolsIntroduced']);
   const ragTools = mcpToolsResult.ragTools || [];
+  // MCP 服务级关闭列表（deny-list：不在列表中 = 开放；新服务默认开放）
+  state.mcpClosedServers = mcpToolsResult[agentMcpClosedKey] || [];
   const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
   const saved = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
   const isAgentSpecific = !!saved[agentToolsKey]; // 是否命中 agent-specific key
   const savedTools = saved[agentToolsKey] || saved.enabledTools;
   if (savedTools && savedTools.length > 0) {
-    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id), ...ragTools.map(t => t.id)]);
+    // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
+    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
     const existing = savedTools.filter(id => validToolIds.has(id));
     if (isAgentSpecific) {
-      // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
-      const newMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...existing, ...newMcp];
+      // Agent-specific：使用用户保存的列表
+      state.enabledTools = existing;
     } else {
       // 全局降级：保留自动添加新 builtin 工具的行为
       const newBuiltin = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
-      const newMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...existing, ...newBuiltin, ...newMcp];
+      state.enabledTools = [...existing, ...newBuiltin];
     }
     // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
     const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
@@ -371,7 +373,7 @@ export async function switchAgent(agentId) {
       });
     }
   } else {
-    state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+    state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
     // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置
     const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
     state.enabledTools = ragIntro.tools;
@@ -442,10 +444,25 @@ function initAgentModalEvents() {
     });
   }
 
-  // 工具分类标题点击：切换该分类全选/取消
+  // 工具分类标题点击：切换该分类全选/取消；MCP 服务行展开按钮：切换只读工具列表
   const toolList = document.getElementById('agentToolList');
   if (toolList) {
     toolList.addEventListener('click', (e) => {
+      const expandBtn = e.target.closest('.agent-mcp-expand-btn');
+      if (expandBtn) {
+        // 阻止 label 默认行为（避免点击展开按钮时切换服务的 checkbox）
+        e.preventDefault();
+        toggleMcpServiceToolList(expandBtn.dataset.serverId, expandBtn);
+        return;
+      }
+      // MCP 服务行：点击行内任意处（checkbox 除外）展开/收起该服务的工具列表
+      const svcItem = e.target.closest('.agent-mcp-service-item');
+      if (svcItem && !e.target.closest('input[type="checkbox"]')) {
+        // 阻止 label 默认行为（避免点击行文本时切换服务的 checkbox）
+        e.preventDefault();
+        toggleMcpServiceToolList(svcItem.dataset.mcpServerId, svcItem.querySelector('.agent-mcp-expand-btn'));
+        return;
+      }
       const catHeader = e.target.closest('.agent-tool-category-clickable');
       if (!catHeader) return;
       toggleCategorySelection(catHeader.dataset.category);
@@ -649,11 +666,14 @@ function updateAgentToolCounts() {
   container.querySelectorAll('.agent-tool-category-clickable').forEach(catEl => {
     const cat = catEl.dataset.category;
     const catItems = items.filter(item => item.dataset.category === cat);
-    const catTotal = catItems.length;
-    const catSelected = catItems.filter(item => {
+    let catTotal = 0;
+    let catSelected = 0;
+    // 每行按 1 计（MCP 服务按服务粒度：一个服务算一个，不按服务内工具数）
+    catTotal = catItems.length;
+    catItems.forEach(item => {
       const cb = item.querySelector('input[type="checkbox"]');
-      return cb && cb.checked;
-    }).length;
+      if (cb && cb.checked) catSelected += 1;
+    });
     totalCount += catTotal;
     totalSelected += catSelected;
     const countSpan = catEl.querySelector('.agent-tool-cat-count');
@@ -727,8 +747,8 @@ export async function openAgentEditor(agentId) {
     populateTempPresetDropdown(presetIdx);
     deleteBtn.style.display = 'block';
 
-    // 渲染工具选择
-    renderAgentToolSelector(agent.toolIds);
+    // 渲染工具选择（第 2 参数：MCP 服务排除列表）
+    renderAgentToolSelector(agent.toolIds, agent.mcpExcludedServerIds ?? []);
     // 渲染技能选择
     renderAgentSkillSelector(agent.skillIds);
   } else {
@@ -736,8 +756,8 @@ export async function openAgentEditor(agentId) {
     titleEl.textContent = t('agentEditor.createNew');
     deleteBtn.style.display = 'none';
     
-    // 渲染空工具选择
-    renderAgentToolSelector(null);
+    // 渲染空工具选择（新建：无 MCP 排除）
+    renderAgentToolSelector(null, []);
     // 渲染空技能选择
     renderAgentSkillSelector(null);
   }
@@ -839,8 +859,8 @@ function onTemplateSelect(e) {
   const presetIdx = findTempPresetIndex(template.temperature, template.topP);
   populateTempPresetDropdown(presetIdx);
   
-  // 渲染工具选择
-  renderAgentToolSelector(template.toolIds);
+  // 渲染工具选择（模板：无 MCP 排除）
+  renderAgentToolSelector(template.toolIds, []);
   // 渲染技能选择
   renderAgentSkillSelector(template.skillIds || null);
 
@@ -850,11 +870,11 @@ function onTemplateSelect(e) {
 /**
  * 渲染工具选择列表
  */
-async function renderAgentToolSelector(selectedToolIds) {
+async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   const container = document.getElementById('agentToolList');
   if (!container) return;
 
-  // 加载 MCP 工具
+  // 加载 MCP 工具（仅用于构建服务级行，不再作为工具级勾选项）
   let mcpTools = [];
   try {
     const result = await chrome.storage.local.get(['mcpTools']);
@@ -865,23 +885,37 @@ async function renderAgentToolSelector(selectedToolIds) {
   const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
   const agentConnected = state.agentPlatform?.connected === true;
 
-  let allTools = [...BUILTIN_TOOLS, ...mcpTools];
+  // 常规工具（不含 MCP：MCP 按服务级开关整体开放/关闭）
+  let allTools = [...BUILTIN_TOOLS];
 
-  // Agent 未连接时，隐藏所有 agent_* 和 mcp_* 工具
+  // Agent 未连接时，隐藏所有 agent_* 工具
   if (!agentConnected) {
-    allTools = allTools.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('mcp_'));
-  }
-  // MCP 全局开关关闭时，隐藏 MCP 工具
-  if (mcpEnabled !== true) {
-    allTools = allTools.filter(t => !t.id.startsWith('mcp_'));
+    allTools = allTools.filter(t => !t.id.startsWith('agent_'));
   }
   // Skill 全局开关关闭时，隐藏 Skill 相关工具
   if (skillsEnabled === false) {
     allTools = allTools.filter(t => t.id !== 'agent_skill');
   }
 
+  // MCP 服务（全局开关开启且 Agent 连通时展示；勾选 = 开放，取消勾选 = 排除）
+  let mcpServices = [];
+  if (mcpEnabled === true && agentConnected) {
+    const serverMap = new Map();
+    for (const tool of mcpTools) {
+      const sid = tool.serverId || 'unknown';
+      if (!serverMap.has(sid)) {
+        serverMap.set(sid, { serverId: sid, serverName: tool.serverName || sid, tools: [] });
+      }
+      serverMap.get(sid).tools.push(tool);
+    }
+    mcpServices = Array.from(serverMap.values());
+  }
+  const excludedSet = new Set(Array.isArray(excludedMcpServerIds) ? excludedMcpServerIds : []);
+
   const selectedSet = new Set(selectedToolIds || []);
-  const selectedCount = selectedToolIds ? selectedToolIds.length : allTools.length;
+  // 常规工具选中数 + MCP 开放服务数（MCP 按服务粒度计数：一个服务算一个）
+  const selectedToolCount = selectedToolIds ? selectedToolIds.length : allTools.length;
+  const openMcpServiceCount = mcpServices.filter(svc => !excludedSet.has(svc.serverId)).length;
 
   // 按类别分组
   const grouped = {};
@@ -890,8 +924,6 @@ async function renderAgentToolSelector(selectedToolIds) {
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(tool);
   }
-
-  const totalCount = allTools.length;
 
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {
@@ -911,13 +943,58 @@ async function renderAgentToolSelector(selectedToolIds) {
         </label>`;
     }
   }
+
+  // MCP 服务级行（固定排在最后；checkbox 勾选 = 开放，取消 = 排除该服务）
+  if (mcpServices.length > 0) {
+    const mcpCatName = t('toolCategory.mcp') !== 'toolCategory.mcp' ? t('toolCategory.mcp') : 'mcp';
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="mcp" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${mcpCatName} <span class="agent-tool-cat-count" style="font-weight:400;color:#999;">${openMcpServiceCount}/${mcpServices.length}</span></div>`;
+    for (const svc of mcpServices) {
+      const checked = excludedSet.has(svc.serverId) ? '' : 'checked';
+      const countText = t('toolPanel.mcpServiceToolCount', { count: svc.tools.length });
+      const names = svc.tools.map(tw => tw.name).join(', ');
+      const toolRows = svc.tools.map(tw => {
+        const toolName = tw.name || '';
+        const toolDesc = getMcpToolDisplayDesc(tw);
+        const rowTitle = toolDesc ? `${toolName}：${toolDesc}` : toolName;
+        return `<div class="agent-mcp-tool-row" title="${escapeAttr(rowTitle)}">`
+          + `<div class="agent-mcp-tool-name">${escapeHtml(toolName)}</div>`
+          + (toolDesc ? `<div class="agent-mcp-tool-desc">${escapeHtml(toolDesc)}</div>` : '')
+          + '</div>';
+      }).join('');
+      html += `
+        <label class="agent-tool-item agent-mcp-service-item" data-category="mcp" data-mcp-server-id="${escapeAttr(svc.serverId)}">
+          <input type="checkbox" ${checked} data-mcp-server-id="${escapeAttr(svc.serverId)}">
+          <span class="agent-tool-name" title="${escapeAttr(svc.serverName)}">${escapeHtml(svc.serverName)}</span>
+          <span class="agent-tool-desc" title="${escapeAttr(names)}">${escapeHtml(countText)}</span>
+          <span class="agent-mcp-service-id" title="ID: ${escapeAttr(svc.serverId)}">ID: ${escapeHtml(svc.serverId)}</span>
+          <button type="button" class="agent-mcp-expand-btn" data-server-id="${escapeAttr(svc.serverId)}" title="${escapeAttr(t('toolPanel.mcpServiceExpand'))}">▶</button>
+        </label>
+        <div class="agent-mcp-tool-list collapsed" data-server-id="${escapeAttr(svc.serverId)}">${toolRows}</div>`;
+    }
+  }
+
   container.innerHTML = html;
 
-  // 更新总工具数
+  // 更新总数（MCP 按服务粒度计数：一个服务算一个）
   const countEl = document.getElementById('agentToolCount');
   if (countEl) {
-    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedCount, total: totalCount });
+    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedToolCount + openMcpServiceCount, total: allTools.length + mcpServices.length });
   }
+}
+
+/**
+ * 切换某个 MCP 服务的只读工具列表展开/收起（同步 ▶/▼ 指示）
+ * @param {string} serverId
+ * @param {HTMLElement|null} [btn] 该服务的展开指示按钮
+ */
+function toggleMcpServiceToolList(serverId, btn) {
+  const container = document.getElementById('agentToolList');
+  if (!container || !serverId) return;
+  const list = Array.from(container.querySelectorAll('.agent-mcp-tool-list')).find(el => el.dataset.serverId === serverId);
+  if (!list) return;
+  const collapsed = list.classList.toggle('collapsed');
+  const button = btn || list.previousElementSibling?.querySelector('.agent-mcp-expand-btn');
+  if (button) button.textContent = collapsed ? '▶' : '▼';
 }
 
 /**
@@ -926,10 +1003,28 @@ async function renderAgentToolSelector(selectedToolIds) {
 function getSelectedToolIds() {
   const container = document.getElementById('agentToolList');
   if (!container) return null;
-  const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
+  // 仅常规工具（带 data-tool-id）；MCP 服务行由 getSelectedMcpExcludedServerIds 读取
+  const checkboxes = container.querySelectorAll('input[type="checkbox"][data-tool-id]:checked');
   const ids = [];
   checkboxes.forEach(cb => ids.push(cb.value));
   return ids.length > 0 ? ids : null;
+}
+
+/**
+ * 获取 MCP 服务排除列表（编辑器层 deny-list：未勾选 = 排除）
+ * @returns {string[]|undefined} 未渲染 MCP 服务行时返回 undefined（保持原值不变）
+ */
+function getSelectedMcpExcludedServerIds() {
+  const container = document.getElementById('agentToolList');
+  if (!container) return undefined;
+  const serviceItems = container.querySelectorAll('.agent-mcp-service-item');
+  if (serviceItems.length === 0) return undefined;
+  const excluded = [];
+  serviceItems.forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    if (cb && !cb.checked) excluded.push(item.dataset.mcpServerId);
+  });
+  return excluded;
 }
 
 /**
@@ -1085,6 +1180,7 @@ async function saveAgent() {
   const systemPrompt = modal.querySelector('#agentEditPrompt').value.trim();
   const allowSubDispatch = modal.querySelector('#agentEditAllowSub').checked;
   const toolIds = getSelectedToolIds();
+  const mcpExcludedServerIds = getSelectedMcpExcludedServerIds();
   const skillIds = getSelectedSkillNames();
   const modelVal = modal.querySelector('#agentEditModel').value.trim();
   const model = modelVal || null;
@@ -1096,10 +1192,16 @@ async function saveAgent() {
   }
 
   const data = { name, icon, description, systemPrompt, allowSubDispatch, toolIds, skillIds, model, temperature, topP };
+  // MCP 服务排除列表仅在渲染了服务行时更新（未渲染时保持原值，避免误清空）
+  if (mcpExcludedServerIds !== undefined) data.mcpExcludedServerIds = mcpExcludedServerIds;
 
   try {
     if (agentId) {
       await updateAgent(agentId, data);
+      // 若编辑的是当前选中的助手，同步更新 MCP 服务排除状态（工具弹窗联动）
+      if (agentId === state.activeAgentId && mcpExcludedServerIds !== undefined) {
+        state.activeAgentMcpExcludedServerIds = mcpExcludedServerIds;
+      }
       showToast(t('agentMgr.agentUpdated'), 'success');
     } else {
       const newAgent = await createAgent(data);

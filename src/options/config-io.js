@@ -50,9 +50,9 @@ async function collectConfig(includeSecrets) {
           config[key] = result[key];
         }
       }
-      // 收集所有智能体独立的工具配置 key
+      // 收集所有智能体独立的工具配置 key（常规工具勾选 + MCP 服务关闭列表）
       for (const key of Object.keys(result)) {
-        if (key.startsWith('agentEnabledTools_')) {
+        if (key.startsWith('agentEnabledTools_') || key.startsWith('agentMcpClosedServers_')) {
           config[key] = result[key];
         }
       }
@@ -190,7 +190,7 @@ function validateImportData(data) {
 
   // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）
   for (const key of Object.keys(config)) {
-    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_')) {
+    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_') && !key.startsWith('agentMcpClosedServers_')) {
       return { valid: false, error: t('configDialog.unknownConfigKey', { key }) };
     }
   }

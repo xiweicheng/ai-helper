@@ -151,6 +151,13 @@ function initAtEvents() {
   if (!dropdown || dropdown.dataset.initialized) return;
   dropdown.dataset.initialized = '1';
 
+  // 下拉层 mousedown 保焦：点击列表项/标签时焦点不离开输入框，选中后可直接继续输入
+  dropdown.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.prompt-item, .prompt-tab, .skill-list-item, .mcp-list-item')) {
+      e.preventDefault();
+    }
+  });
+
   // Tab 切换事件
   const tabsContainer = document.getElementById('agentAtTabs');
   if (tabsContainer) {
@@ -725,20 +732,26 @@ export function updateAgentAtSelection(items) {
 }
 
 /**
+ * 选中项后把焦点与光标交还输入框：移除 @ 触发文本（含过滤词）；
+ * @ 已不在时仅把光标定位到当前文本末尾（无条件回焦，保证可继续输入）
+ */
+function focusUserInputAfterSelect() {
+  const userInput = document.getElementById('userInput');
+  if (!userInput) return;
+  const value = userInput.value;
+  const lastAtIndex = value.lastIndexOf('@');
+  if (lastAtIndex !== -1) {
+    userInput.value = value.substring(0, lastAtIndex);
+  }
+  userInput.focus();
+  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+}
+
+/**
  * 通过 @ 选择 Agent
  */
 async function selectAgentByAt(agentId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput.value;
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
-
+  focusUserInputAfterSelect();
   hideAgentAtSelector();
   await switchAgent(agentId);
   adjustInputHeight();
@@ -748,16 +761,7 @@ async function selectAgentByAt(agentId) {
  * 通过 @ 选择网页
  */
 function selectPageByAt(tabId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput ? userInput.value : '';
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
+  focusUserInputAfterSelect();
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
@@ -778,17 +782,7 @@ function selectPageByAt(tabId) {
  * 通过 @ 选择/取消选择知识库（支持多选，再次选同一库为移除）
  */
 export function selectKnowledgeByAt(kb) {
-  const userInput = document.getElementById('userInput');
-  if (userInput) {
-    const value = userInput.value;
-    const lastAtIndex = value.lastIndexOf('@');
-    if (lastAtIndex !== -1) {
-      const newValue = value.substring(0, lastAtIndex);
-      userInput.value = newValue;
-      userInput.focus();
-      userInput.selectionStart = userInput.selectionEnd = newValue.length;
-    }
-  }
+  focusUserInputAfterSelect();
 
   const existsIndex = state.knowledgeRefs.findIndex(r => r.id === kb.id);
   if (existsIndex >= 0) {
@@ -945,16 +939,7 @@ async function renderKnowledgeAtList(filterText = '') {
  * 通过 @ 选择代理
  */
 async function selectProxyByAt(proxyId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput.value;
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
+  focusUserInputAfterSelect();
 
   hideAgentAtSelector();
 

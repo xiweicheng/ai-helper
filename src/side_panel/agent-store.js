@@ -78,6 +78,7 @@ export async function createAgent(agentData) {
     systemPrompt: agentData.systemPrompt || '',
     toolIds: agentData.toolIds || null,  // null = 继承全局
     skillIds: agentData.skillIds || null, // null = 继承全部启用技能
+    mcpExcludedServerIds: agentData.mcpExcludedServerIds ?? null, // MCP 服务排除列表（服务级 deny-list）
     isBuiltin: false,
     allowSubDispatch: agentData.allowSubDispatch !== undefined ? agentData.allowSubDispatch : false,
     model: agentData.model || null,
