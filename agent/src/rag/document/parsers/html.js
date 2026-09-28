@@ -16,7 +16,10 @@ export async function htmlToText(html) {
   const $ = cheerio.load(html || '');
 
   // 去除脚本/样式/头部等非正文内容
-  $('script, style, noscript, head, iframe, svg, canvas, form').remove();
+  // textarea/template 为 SSR 站点的「数据注入容器」（如百度把整站 CSS 以文本塞进隐藏
+  // textarea）：其内部 <style> 不构成 DOM 节点，`$('style')` 选不中，但 body.text() 会取出
+  // 其文本，导致正文被大量 CSS 污染，故整体移除（二者在 RAG 场景非正文语义）
+  $('script, style, noscript, head, iframe, svg, canvas, form, textarea, template').remove();
 
   // 块级元素后补换行（用 append 文本节点，避免 createElement 对 br 等空元素失效）
   $(BLOCK_SELECTOR).each((_, el) => {

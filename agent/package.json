@@ -30,7 +30,7 @@
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
-  "optionalDependencies": {
+  "ragDependencies": {
     "vectra": "^0.15.0",
     "@huggingface/transformers": "^4.0.0",
     "pdf-parse": "^1.1.1",

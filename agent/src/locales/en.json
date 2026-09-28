@@ -111,6 +111,7 @@
     "err_contentTooLarge": "Import content exceeds the size limit ({limit})",
     "err_fileTooLarge": "Uploaded file exceeds the size limit ({limit})",
     "err_emptyDocument": "No indexable content after parsing",
+    "err_urlNoContent": "No indexable content could be extracted from the linked content (common causes: anti-bot challenge pages, JS-rendered pages, textless PDFs)",
     "err_invalidDocumentId": "Invalid document ID: {id}",
     "err_emptyQuery": "Search query is empty",
     "err_unsupportedFormat": "Unsupported file format: {ext}",

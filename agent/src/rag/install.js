@@ -1,10 +1,11 @@
 // agent/src/rag/install.js - RAG 可选依赖一键安装
 //
-// 安全设计（见 docs/RAG-Knowledge-Retrieval-Design.md 3.7）：
+// 安全设计（见 docs/RAG-Knowledge-Retrieval-Design.md 3.2）：
 //   - 不接受调用方传入的包名（防止任意包注入）：安装清单是包自身 package.json 的
-//     optionalDependencies 声明（单一事实来源），npm 命令不带任何包名参数
-//   - 非 Windows 严格 shell: false；Windows 因 Node 修复 CVE-2024-27980 后不带 shell
-//     无法执行 npm.cmd，降级为 shell: true（参数为纯静态常量，无任何用户输入，无注入面）
+//     ragDependencies 字段声明（单一事实来源），安装命令显式携带该清单构建的 pkg@spec
+//   - 非 Windows 严格 shell: false；Windows 优先用当前 Node 直执行 npm-cli.js
+//     （shell: false，规避 cmd 把 pkg@^x.y.z 的 ^ 当转义符吞掉），探测不到时降级
+//     npm.cmd + shell: true 并对 spec 加双引号（参数为纯静态常量，无任何用户输入，无注入面）
 //   - 异步任务 + 安装锁（同一时刻仅允许一个安装任务），超时上限 10 分钟
 // 进程治理（R1/R3）：
 //   - 非 Windows 以 detached: true 启动 npm（进程组组长），终止走进程树组杀
@@ -17,20 +18,87 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resetRagDetection, detectRagAvailable } from './detect.js';
 import { stopProcessTree } from '../process-tree.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 
-// 安装清单（与 package.json 的 optionalDependencies 保持一致，供状态接口/前端展示）
-export const RAG_INSTALL_PACKAGES = [
-  'vectra',
-  '@huggingface/transformers',
-  'pdf-parse',
-  'mammoth',
-  'officeparser',
-  'cheerio',
-];
+// ---- 安装清单（单一事实来源：包自身 package.json 的 ragDependencies 字段） ----
+//
+// 不用 optionalDependencies：npm install -g 会随包自动安装，而全局安装不读包内
+// overrides（npm 11 实测），RAG 传递依赖 onnxruntime-node 会被装到无 darwin-x64
+// 二进制的高版本（Intel Mac 加载失败），形成「装了但不可用」的坏状态。
+// 改为自定义字段后，依赖仅在用户触发一键安装时于包目录内显式安装——此时包自身
+// 是安装根项目，overrides 生效，一次装对（R7 加固）。
+
+/**
+ * 读取包内 package.json 的 ragDependencies（读取失败/字段缺失返回空，由构建方拒绝安装）
+ * @returns {Array<[string, string]>} [name, spec] 二元组列表
+ */
+function readRagDependencies() {
+  try {
+    const raw = JSON.parse(readFileSync(join(getAgentRoot(), 'package.json'), 'utf-8'));
+    const deps = raw && typeof raw.ragDependencies === 'object' && raw.ragDependencies !== null
+      ? raw.ragDependencies
+      : {};
+    return Object.entries(deps).filter(([name, spec]) => name && typeof spec === 'string' && spec.trim());
+  } catch {
+    return [];
+  }
+}
+
+const RAG_DEPENDENCY_ENTRIES = readRagDependencies();
+
+// 包名清单（供状态接口/前端展示）
+export const RAG_INSTALL_PACKAGES = RAG_DEPENDENCY_ENTRIES.map(([name]) => name);
+
+/**
+ * 安装 spec 列表（name@version-range）：一键安装命令的显式参数
+ * @returns {string[]}
+ */
+export function getRagInstallSpecs() {
+  return RAG_DEPENDENCY_ENTRIES.map(([name, spec]) => `${name}@${spec}`);
+}
+
+/**
+ * Windows：定位与 node 同目录分布的 npm-cli.js（官方安装器 / nvm-windows 结构）
+ * @param {string} execPath
+ * @returns {string|null}
+ */
+function findWinNpmCli(execPath) {
+  const candidate = join(dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  return existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * 构建 RAG 依赖安装命令（API 一键安装与 CLI 共用；参数可注入供测试）
+ *
+ * 平台差异：
+ * - POSIX：直接执行 npm（shell: false；spec 中 `^` 无 shell 解析面）
+ * - Windows：Node 修复 CVE-2024-27980 后 shell: false 无法执行 npm.cmd，而 cmd 会把
+ *   `pkg@^x.y.z` 的 `^` 当转义符吞掉（退化为精确版本或直接装失败）。优先用当前
+ *   Node 直执行 npm-cli.js（shell: false，无转义面）；探测不到时回退 npm.cmd +
+ *   shell: true，对 spec 加双引号（cmd 双引号内 `^` 为字面量）
+ * @param {{ isWin?: boolean, execPath?: string, specs?: string[] }} [opts]
+ * @returns {{ command: string, args: string[], shell: boolean, cwd: string }}
+ */
+export function buildRagInstallCommand(opts = {}) {
+  const isWin = opts.isWin ?? process.platform === 'win32';
+  const execPath = opts.execPath ?? process.execPath;
+  const specs = opts.specs ?? getRagInstallSpecs();
+  if (specs.length === 0) {
+    // 包损坏/被裁剪：拒绝构建（无包名参数的 npm install 会按依赖树重算包目录，不可接受）
+    throw new Error('ragDependencies missing in package.json');
+  }
+  const baseArgs = ['install', '--no-save', '--no-audit', '--no-fund'];
+  const cwd = getAgentRoot();
+  if (isWin) {
+    const npmCli = findWinNpmCli(execPath);
+    if (npmCli) return { command: execPath, args: [npmCli, ...baseArgs, ...specs], shell: false, cwd };
+    return { command: 'npm.cmd', args: [...baseArgs, ...specs.map((s) => `"${s}"`)], shell: true, cwd };
+  }
+  return { command: 'npm', args: [...baseArgs, ...specs], shell: false, cwd };
+}
 
 // 单次安装超时上限（10 分钟；需下载约 200-300MB 原生依赖）
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -258,14 +326,21 @@ async function runInstall(task, t) {
 function runNpmInstall(task, t) {
   return new Promise((resolvePromise) => {
     const isWin = process.platform === 'win32';
-    // 无包名参数：基于包自身 package.json 的 optionalDependencies 安装缺失依赖（单一事实来源）；
-    // --no-save 保证不写回 package.json / package-lock.json，不污染已安装的包目录
-    const args = ['install', '--no-save', '--no-audit', '--no-fund'];
+    let cmd;
+    try {
+      cmd = buildRagInstallCommand();
+    } catch (err) {
+      // 清单缺失（包损坏/被裁剪）：明确失败，绝不退化为无包名安装
+      resolvePromise({ success: false, error: t('rag.installFailed', { message: err.message }) });
+      return;
+    }
 
-    const npm = spawn(isWin ? 'npm.cmd' : 'npm', args, {
-      shell: isWin,
+    // 显式包名 + 版本范围、包目录内安装（根项目 → 包内 overrides 生效，R7 加固）；
+    // --no-save 保证不写回 package.json / package-lock.json，不污染已安装的包目录
+    const npm = spawn(cmd.command, cmd.args, {
+      shell: cmd.shell,
       detached: !isWin, // POSIX：npm 作为进程组组长，终止时整树组杀（R1/R3）
-      cwd: getAgentRoot(),
+      cwd: cmd.cwd,
       env: { ...process.env },
       windowsHide: true,
     });

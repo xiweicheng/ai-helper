@@ -1,6 +1,7 @@
 // agent/src/trash.js - 文件回收站模块
 // 删除文件/目录时先移动到回收站，7天后自动清理
-import { mkdir, rename, readFile, writeFile, readdir, stat, unlink, rmdir } from 'fs/promises';
+// 跨设备场景（Windows 跨盘 / 外接卷）：rename 报 EXDEV 时回退为复制 + 删除源
+import { mkdir, rename, cp, rm, readFile, writeFile, readdir, stat, unlink } from 'fs/promises';
 import { join, basename } from 'path';
 import { homedir } from 'os';
 import { existsSync } from 'fs';
@@ -109,10 +110,10 @@ async function cleanExpiredTrash() {
   for (const entry of expired) {
     const trashPath = join(TRASH_DIR, entry.id);
     try {
-      // 目录用 rename 存入，需递归删除；文件用 unlink
+      // 目录需递归删除；文件用 unlink
       const s = await stat(trashPath);
       if (s.isDirectory()) {
-        await rmdir(trashPath, { recursive: true });
+        await rm(trashPath, { recursive: true, force: true });
       } else {
         await unlink(trashPath);
       }
@@ -126,7 +127,38 @@ async function cleanExpiredTrash() {
 }
 
 /**
- * 将文件/目录移动到回收站（使用 rename，同文件系统瞬时完成）
+ * 跨设备移动（rename 优先，EXDEV 回退复制 + 删除源）
+ *
+ * rename 仅在源与目标同文件系统时瞬时完成；回收站固定在用户主目录
+ * （~/.ai-helper-agent/.trash），而源文件可能位于其他盘符/卷
+ * （Windows 跨盘、macOS/Linux 外接卷），此时 rename 报 EXDEV。
+ * 回退路径先完整复制再删除源；复制失败时清理半成品目标，避免残留无主数据。
+ * @param {string} src - 源路径
+ * @param {string} dest - 目标路径
+ * @param {{ rename?: Function, cp?: Function, rm?: Function }} [ops] - 可注入的文件操作（单元测试用）
+ * @returns {Promise<void>}
+ */
+export async function movePathCrossDevice(src, dest, ops = {}) {
+  const renameFn = ops.rename ?? rename;
+  const cpFn = ops.cp ?? cp;
+  const rmFn = ops.rm ?? rm;
+  try {
+    await renameFn(src, dest);
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err;
+    try {
+      await cpFn(src, dest, { recursive: true });
+      await rmFn(src, { recursive: true, force: true });
+    } catch (copyErr) {
+      // 清理复制失败的半成品目标（尽力而为）
+      await rmFn(dest, { recursive: true, force: true }).catch(() => {});
+      throw copyErr;
+    }
+  }
+}
+
+/**
+ * 将文件/目录移动到回收站（同文件系统 rename 瞬时完成，跨设备自动回退复制）
  * @param {string} sourcePath - 源文件/目录的绝对路径
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {Promise<{success: boolean, trashId?: string, isDir?: boolean, error?: string}>}
@@ -147,8 +179,8 @@ export async function moveToTrash(sourcePath, tFn) {
     // 获取实际大小（目录需要递归计算）
     const size = isDir ? await getDirSize(sourcePath) : s.size;
 
-    // 移动到回收站（rename 是文件系统元数据操作，瞬时完成）
-    await rename(sourcePath, trashPath);
+    // 移动到回收站（rename 是文件系统元数据操作，瞬时完成；跨设备回退复制 + 删除源）
+    await movePathCrossDevice(sourcePath, trashPath);
 
     // 记录元数据
     const entries = await loadMetadata();
@@ -196,7 +228,7 @@ export async function restoreFromTrash(trashId, tFn) {
       return { success: false, error: tr('trash.originalPathOccupied', { path: entry.originalPath }, tFn) };
     }
 
-    await rename(trashPath, entry.originalPath);
+    await movePathCrossDevice(trashPath, entry.originalPath);
     entries.splice(idx, 1);
     await saveMetadata(entries);
 

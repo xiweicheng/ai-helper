@@ -3,7 +3,7 @@
 // Usage: ai-helper-agent <start|stop|restart|status|paircode|config> [options]
 import { join, dirname, resolve } from 'path';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { detectSystemLang } from '../src/sys-lang.js';
@@ -166,9 +166,19 @@ function removePidFile() {
 
 /**
  * Kill process by PID
+ * Windows：process.kill 只终止单个进程且跳过优雅信号，改用 taskkill /F /T 连子树一起终止，
+ * 避免回退路径残留运行中的命令 / MCP 子进程
  */
 function killByPid(pid) {
   if (!pid || typeof pid !== 'number' || pid <= 0) return false;
+  if (process.platform === 'win32') {
+    try {
+      const r = spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true, stdio: 'ignore' });
+      return r.status === 0;
+    } catch {
+      return false;
+    }
+  }
   try {
     process.kill(pid, 'SIGTERM');
     return true;
@@ -669,9 +679,8 @@ if (command === 'start') {
 
 // ==================== rag ====================
 } else if (command === 'rag') {
-  // 子命令：status（检测能力）/ install（一键安装可选依赖）
+  // 子命令：status（检测能力）/ install（一键安装 RAG 依赖）
   const sub = rawArgs[1];
-  const agentRoot = join(__dirname, '..');
 
   // 同步 CLI 语言，保证 RAG 检测日志与命令行界面语言一致
   const { setRagLang } = await import('../src/rag/detect.js');
@@ -692,11 +701,19 @@ if (command === 'start') {
 
   if (sub === 'install') {
     console.log(`[Agent] ${t('ragInstalling')}`);
-    // 与 API 一键安装保持一致：无包名参数（清单由包 optionalDependencies 声明）、--no-save 不污染包目录
-    const isWin = process.platform === 'win32';
-    const npm = spawn(isWin ? 'npm.cmd' : 'npm', ['install', '--no-save', '--no-audit', '--no-fund'], {
-      cwd: agentRoot,
-      shell: isWin,
+    // 与 API 一键安装共用同一命令构建：显式包名清单（ragDependencies）、
+    // 包目录内安装使 overrides 生效、--no-save 不污染包目录
+    const { buildRagInstallCommand } = await import('../src/rag/install.js');
+    let cmd;
+    try {
+      cmd = buildRagInstallCommand();
+    } catch (err) {
+      console.error(`[Agent] ${err.message}`);
+      process.exit(1);
+    }
+    const npm = spawn(cmd.command, cmd.args, {
+      cwd: cmd.cwd,
+      shell: cmd.shell,
       stdio: 'inherit',
       env: { ...process.env },
       windowsHide: true

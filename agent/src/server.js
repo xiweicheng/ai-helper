@@ -1584,7 +1584,11 @@ export function startServer() {
           spawnOpts = { detached: true, stdio: 'ignore' };
         }
 
-        spawn(cmd, args, spawnOpts).unref();
+        const opener = spawn(cmd, args, spawnOpts);
+        // 'error' 无监听会升级为 uncaughtException（如 Linux 无 xdg-open）：
+        // 打开失败不影响接口响应，记录日志即可
+        opener.on('error', (err) => logError('browser_open_failed', err.message));
+        opener.unref();
 
         logFs('browser_open', { path: check.resolved, platform });
         return jsonResponse(res, 200, { success: true, path: check.resolved, platform });

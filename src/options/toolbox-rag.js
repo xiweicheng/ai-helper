@@ -10,7 +10,7 @@ import logger from '../shared/logger.js';
 // 安装状态轮询间隔（毫秒）
 const INSTALL_POLL_INTERVAL_MS = 2000;
 
-// 兜底包清单（与 agent/package.json 的 optionalDependencies 一致；正常情况从安装状态接口获取）
+// 兜底包清单（与 agent/package.json 的 ragDependencies 一致；正常情况从安装状态接口获取）
 const DEFAULT_RAG_PACKAGES = ['vectra', '@huggingface/transformers', 'pdf-parse', 'mammoth', 'officeparser', 'cheerio'];
 
 // 安装进度轮询定时器

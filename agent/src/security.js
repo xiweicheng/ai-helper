@@ -114,7 +114,8 @@ async function checkPath(pathStr, tFn) {
   // 展开 ~ 到用户主目录（扩展端无法知道 Agent 所在机器的 home 路径）
   if (pathStr === '~') {
     pathStr = homedir();
-  } else if (pathStr.startsWith('~/')) {
+  } else if (pathStr.startsWith('~/') || pathStr.startsWith('~\\')) {
+    // Windows 用户可能输入 ~\dir 形式；反斜杠在后续 normalizePathFormat 统一处理
     pathStr = join(homedir(), pathStr.slice(2));
   }
 

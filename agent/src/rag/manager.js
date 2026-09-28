@@ -23,7 +23,7 @@ import { htmlToText } from './document/parsers/html.js';
 import { Searcher } from './searcher.js';
 import { RagError } from './errors.js';
 import { checkPath } from '../security.js';
-import { fetchUrlGuarded } from './url-guard.js';
+import { fetchUrlGuarded, decodeBytes } from './url-guard.js';
 import { loadConfig } from '../config.js';
 
 // 知识库 ID 格式校验（防路径穿越）
@@ -777,7 +777,7 @@ export class RagManager {
 
       let text;
       if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-        text = await htmlToText(bytes.toString('utf-8'));
+        text = await htmlToText(decodeBytes(bytes, contentType));
       } else if (contentType.includes('application/pdf')) {
         const tmpFile = join(tmpdir(), `rag-url-${randomBytes(6).toString('hex')}.pdf`);
         try {
@@ -787,9 +787,13 @@ export class RagManager {
           await unlink(tmpFile).catch(() => {});
         }
       } else {
-        // text/*、application/json 等按文本处理
-        text = bytes.toString('utf-8');
+        // text/*、application/json 等按文本处理（按 charset 解码，兼容 GBK 站点）
+        text = decodeBytes(bytes, contentType);
       }
+
+      // 空正文诊断（URL 链路专属）：反爬壳页、纯 JS 渲染页、无文本层 PDF 等场景比
+      // 通用 emptyDocument 更能提示原因；正常页面不会触发
+      if (!text || !text.trim()) throw new RagError('urlNoContent');
 
       // URL 名称：域名 + 路径尾部（截断）
       const u = new URL(url);

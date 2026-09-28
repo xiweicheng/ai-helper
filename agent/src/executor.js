@@ -1,5 +1,5 @@
 // agent/src/executor.js - 命令执行器（child_process + 流式输出）
-import { spawn, exec } from 'child_process';
+import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import crypto from 'crypto';
 import os from 'os';
@@ -17,51 +17,77 @@ export function setExecutorLang(lang) {
   if (lang) currentLang = lang;
 }
 
-function getShellForExec() {
-  const platform = os.platform();
-  const envShell = process.env.SHELL || process.env.COMSPEC || '';
+/**
+ * 选择命令执行用的 shell（纯函数：平台/环境/存在性检查均可注入，便于单元测试）
+ *
+ * 候选 shell 必须真实存在才可用：
+ * - Git Bash 下 SHELL 为 MSYS 风格 /usr/bin/bash，在 Windows 上不可直接执行
+ *   （spawn ENOENT），需跳过并回退到已知 Git 安装位置或 cmd
+ * - Linux 最小发行版（如 Alpine）无 bash，/bin/bash 兜底会 ENOENT，需探测 /bin/sh
+ * @param {string} platform - os.platform() 结果（'win32' | 'darwin' | 'linux' 等）
+ * @param {{ SHELL?: string, COMSPEC?: string, USERPROFILE?: string }} env
+ * @param {(p: string) => boolean} exists - 路径存在性检查（单元测试注入）
+ * @returns {{ shell: string, args: string[] }}
+ */
+function pickShell(platform, env, exists) {
+  const envShell = env.SHELL || env.COMSPEC || '';
+  const lower = envShell.toLowerCase();
 
   if (platform === 'win32') {
-    if (envShell.toLowerCase().includes('bash')) {
+    if (lower.includes('bash') && exists(envShell)) {
       return { shell: envShell, args: ['-c'] };
-    } else if (envShell.toLowerCase().includes('powershell')) {
-      return { shell: envShell, args: ['-Command'] };
-    } else if (envShell.toLowerCase().includes('cmd')) {
-      return { shell: envShell, args: ['/c'] };
-    } else {
-      const gitBashPaths = [
-        'C:\\Program Files\\Git\\bin\\bash.exe',
-        'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
-        `${process.env.USERPROFILE}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe`,
-      ];
-      for (const path of gitBashPaths) {
-        try {
-          if (existsSync(path)) {
-            return { shell: path, args: ['-c'] };
-          }
-        } catch {}
-      }
-      return { shell: 'cmd.exe', args: ['/c'] };
     }
+    if (lower.includes('powershell') && exists(envShell)) {
+      return { shell: envShell, args: ['-Command'] };
+    }
+    if (lower.includes('cmd') && exists(envShell)) {
+      return { shell: envShell, args: ['/c'] };
+    }
+    const gitBashPaths = [
+      'C:\\Program Files\\Git\\bin\\bash.exe',
+      'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+      ...(env.USERPROFILE ? [`${env.USERPROFILE}\\AppData\\Local\\Programs\\Git\\bin\\bash.exe`] : []),
+    ];
+    for (const path of gitBashPaths) {
+      if (exists(path)) {
+        return { shell: path, args: ['-c'] };
+      }
+    }
+    // SHELL 无效（如 Git Bash 的 MSYS 路径在 Windows 上不可执行）且未探测到 Git Bash 时，
+    // 回退 Windows 原生 COMSPEC（通常为 C:\Windows\System32\cmd.exe），最后才用 PATH 兜底
+    if (env.COMSPEC && exists(env.COMSPEC)) {
+      return { shell: env.COMSPEC, args: ['/c'] };
+    }
+    return { shell: 'cmd.exe', args: ['/c'] };
   }
 
   if (platform === 'darwin') {
-    if (envShell.toLowerCase().includes('zsh')) {
-      return { shell: envShell, args: ['-c'] };
-    } else if (envShell.toLowerCase().includes('bash')) {
+    if ((lower.includes('zsh') || lower.includes('bash')) && exists(envShell)) {
       return { shell: envShell, args: ['-c'] };
     }
     return { shell: '/bin/zsh', args: ['-c'] };
   }
 
-  if (envShell.toLowerCase().includes('bash')) {
-    return { shell: envShell, args: ['-c'] };
-  } else if (envShell.toLowerCase().includes('zsh')) {
-    return { shell: envShell, args: ['-c'] };
-  } else if (envShell.toLowerCase().includes('fish')) {
+  // Linux 及其他 POSIX
+  if ((lower.includes('bash') || lower.includes('zsh') || lower.includes('fish')) && exists(envShell)) {
     return { shell: envShell, args: ['-c'] };
   }
-  return { shell: '/bin/bash', args: ['-c'] };
+  for (const candidate of ['/bin/bash', '/usr/bin/bash', '/bin/sh']) {
+    if (exists(candidate)) {
+      return { shell: candidate, args: ['-c'] };
+    }
+  }
+  return { shell: '/bin/sh', args: ['-c'] };
+}
+
+function getShellForExec() {
+  return pickShell(
+    os.platform(),
+    { SHELL: process.env.SHELL, COMSPEC: process.env.COMSPEC, USERPROFILE: process.env.USERPROFILE },
+    (p) => {
+      try { return existsSync(p); } catch { return false; }
+    }
+  );
 }
 
 // 运行中的进程映射：execId → { process, wsClients: Set, timeoutId, forceKillId, stdoutBuf, stderrBuf }
@@ -460,4 +486,4 @@ function getRunningProcesses() {
   return list;
 }
 
-export { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses };
+export { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, pickShell };

@@ -111,6 +111,7 @@
     "err_contentTooLarge": "导入内容超过大小限制（{limit}）",
     "err_fileTooLarge": "上传文件超过大小限制（{limit}）",
     "err_emptyDocument": "文档解析后无可索引内容",
+    "err_urlNoContent": "未能从链接内容提取出可索引正文（常见原因：反爬验证页、纯 JS 渲染页面、无文本层 PDF）",
     "err_invalidDocumentId": "非法文档 ID: {id}",
     "err_emptyQuery": "检索词为空",
     "err_unsupportedFormat": "不支持的文件格式: {ext}",

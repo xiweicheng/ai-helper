@@ -17,6 +17,14 @@ export const URL_INGEST_MAX_REDIRECTS = 5;
 // 响应体大小上限（流式累计中断）
 export const URL_INGEST_MAX_BYTES = 10 * 1024 * 1024;
 
+// 浏览器化请求头：部分站点（如百度）对非常规 UA 返回反爬跳转壳页/挑战页（仅含 script/noscript，
+// 正文提取为空），表现为导入报「文档解析后无可索引内容」；伪装为常见浏览器可显著提升抓取成功率
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+};
+
 /**
  * 私网/保留地址判断（IPv4 + IPv6）
  */
@@ -119,7 +127,7 @@ export async function fetchUrlGuarded(urlStr, policy, opts = {}) {
     const res = await fetch(current, {
       redirect: 'manual',
       signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Helper-RAG/1.0)' },
+      headers: { ...BROWSER_HEADERS },
     });
 
     if (res.status >= 300 && res.status < 400) {
@@ -142,6 +150,33 @@ export async function fetchUrlGuarded(urlStr, policy, opts = {}) {
     return { bytes, contentType, finalUrl: current.toString() };
   }
   throw new RagError('urlTooManyRedirects', { max: maxRedirects });
+}
+
+/**
+ * 按 charset 解码响应体（GBK 系中文站点常见；此前统一按 utf-8 硬解会乱码）
+ * charset 来源：Content-Type 参数 → HTML meta 嗅探（前 2KB）→ 回退 utf-8。
+ * TextDecoder 经 Node 内置 ICU 支持 gbk/gb2312/gb18030/big5 等标签；未知标签安全回退。
+ * @param {Buffer} bytes
+ * @param {string} [contentType]
+ * @returns {string}
+ */
+export function decodeBytes(bytes, contentType = '') {
+  let label = '';
+  const m = /charset\s*=\s*["']?([\w-]+)/i.exec(contentType || '');
+  if (m) label = m[1].toLowerCase();
+  if (!label && /html|xml/i.test(contentType || '')) {
+    const head = bytes.subarray(0, 2048).toString('latin1');
+    const mm = /charset\s*=\s*["']?\s*([\w-]+)/i.exec(head);
+    if (mm) label = mm[1].toLowerCase();
+  }
+  if (label && label !== 'utf-8' && label !== 'utf8') {
+    try {
+      return new TextDecoder(label).decode(bytes);
+    } catch {
+      // 未知/不支持编码标签：回退 utf-8
+    }
+  }
+  return bytes.toString('utf-8');
 }
 
 /**
