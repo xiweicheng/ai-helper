@@ -511,6 +511,80 @@ textarea {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* ===== 厂商配置切换器 ===== */
+.profile-switcher-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.profile-switcher-row .profile-selector {
+  flex: 1;
+  min-width: 0;
+}
+.profile-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.profile-action-btn {
+  background: none;
+  border: 1px solid #e0e0e0;
+  color: #555;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.profile-action-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+  background: #f0f4ff;
+}
+.profile-action-danger:hover {
+  border-color: #e53e3e;
+  color: #e53e3e;
+  background: #fff5f5;
+}
+.profile-option {
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.profile-option:last-child {
+  border-bottom: none;
+}
+.profile-option:hover {
+  background: #f5f7fa;
+}
+.profile-option.selected {
+  color: #667eea;
+  font-weight: 500;
+  background: #f0f4ff;
+}
+.profile-option-left {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-option-right {
+  font-size: 11px;
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .selected-ctx-badge {
   position: absolute;
   right: 36px;

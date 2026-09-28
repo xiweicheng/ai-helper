@@ -129,6 +129,27 @@ export default {
     saveSuccess: 'Configuration saved successfully!',
     deleteModel: 'Delete this model',
     deleteApiBase: 'Delete this address',
+    // Provider profiles (multi-profile memory & quick switch)
+    providerConfig: 'Provider Profiles',
+    providerConfigHint: '(Takes effect immediately after switching; each profile remembers its own API base, key and model list)',
+    newProfile: '+ New',
+    newProfileTitle: 'Create an empty provider profile',
+    profileNameTitle: 'New Provider Profile',
+    saveAsProfile: 'Save As',
+    saveAsProfileTitle: 'Save current settings as a new provider profile',
+    renameProfile: 'Rename',
+    renameProfileTitle: 'Rename current profile',
+    deleteProfile: 'Delete',
+    deleteProfileTitle: 'Delete current profile',
+    profileNamePlaceholder: 'Profile name (e.g. DeepSeek Official, My Proxy)',
+    profileNameRequired: 'Please enter a profile name',
+    deleteProfileConfirm: 'Are you sure you want to delete provider profile “{name}”? This cannot be undone.',
+    atLeastOneProfile: 'At least one provider profile must be kept',
+    profileSwitched: 'Switched to {name}',
+    profileCreated: 'Profile {name} created',
+    profileRenamed: 'Renamed to {name}',
+    profileDeleted: 'Profile {name} deleted',
+    profileCopySuffix: 'Copy',
     // Completion feedback (sound + confetti)
     completionFeedbackTitle: 'Completion Feedback',
     completionSound: 'Play sound (different tones for success and failure)',
@@ -453,6 +474,12 @@ export default {
   model: {
     selectModel: 'Select model',
     temperature: 'Temperature',
+  },
+
+  // API provider quick switch (side panel model settings)
+  provider: {
+    label: 'API Provider',
+    manage: 'Manage profiles…',
   },
 
   // Prompt/Agent selector

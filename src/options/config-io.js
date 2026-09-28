@@ -4,6 +4,7 @@ import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
 import { t, getLanguage } from '../shared/i18n.js';
+import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -33,6 +34,8 @@ const EXPORT_KEYS = [
   'pairedAgents', 'agentStreamEnabled',
   'enableTools', 'isolateChat', 'enableSelectionQuery',
   'deletedPresetModels',
+  // 厂商配置（多配置记忆）与激活项
+  'modelProfiles', 'activeProfileId',
   'mcpEnabled', 'skillsEnabled', 'ragEnabled',
 ];
 
@@ -59,6 +62,10 @@ async function collectConfig(includeSecrets) {
       // 不包含密钥时，清除 pairedAgents 中的 token
       if (!includeSecrets && config.pairedAgents) {
         config.pairedAgents = config.pairedAgents.map(a => ({ ...a, token: '' }));
+      }
+      // 不包含密钥时，逐厂商配置剥离 apiKey
+      if (!includeSecrets && Array.isArray(config.modelProfiles)) {
+        config.modelProfiles = stripProfileSecrets(config.modelProfiles);
       }
       resolve(config);
     });
@@ -244,6 +251,20 @@ export async function confirmImport() {
       // 合并导入：逐项写入
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
+      });
+    }
+
+    // 厂商配置一致性处理：
+    // - 旧格式导入（无 modelProfiles）：用扁平键回写激活配置，避免数据分叉
+    // - 新格式导入：确保 activeProfileId 有效（导入文件可能缺失）
+    await ensureProfilesMigrated();
+    if (!Array.isArray(config.modelProfiles)) {
+      const flat = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName', 'customModels']);
+      await updateActiveProfile({
+        apiBase: flat.apiBase || DEFAULT_API_BASE,
+        apiKey: flat.apiKey || '',
+        modelName: flat.modelName || DEFAULT_MODEL_NAME,
+        models: normalizeModels(flat.customModels),
       });
     }
 

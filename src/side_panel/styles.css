@@ -1586,6 +1586,72 @@ body {
   font-weight: 500;
   user-select: none;
 }
+/* ===== API 厂商分区（模型设置弹窗顶部） ===== */
+.provider-section {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.provider-list {
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 2px;
+}
+.provider-option {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.provider-option:last-child {
+  border-bottom: none;
+}
+.provider-option:hover {
+  background: #f5f7fa;
+}
+.provider-option.selected {
+  color: #667eea;
+  font-weight: 500;
+  background: #f0f4ff;
+}
+.provider-option-check {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  color: #667eea;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.provider-option-left {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.provider-option-right {
+  font-size: 10px;
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.provider-manage {
+  padding: 4px 12px 2px;
+  font-size: 11px;
+  color: #667eea;
+  cursor: pointer;
+  user-select: none;
+}
+.provider-manage:hover {
+  text-decoration: underline;
+}
 .tool-toggle-container {
   display: flex;
   align-items: center;

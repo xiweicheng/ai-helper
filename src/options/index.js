@@ -20,6 +20,8 @@ import {
   removeBlockedDomain
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
+import { initProfileManager } from './profile-manager.js';
+import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
 import { showCustomConfirm } from './toolbox-shared.js';
@@ -182,7 +184,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   
+  // 厂商配置：先确保迁移就绪（同步扁平键），再加载配置并初始化切换器
+  await ensureProfilesMigrated();
   loadConfig();
+  initProfileManager();
   
   // 加载工具栏配置
   currentTools = await loadToolbarTools();

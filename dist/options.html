@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="settings.docTitle">AI Helper - 配置</title>
-  <script type="module" crossorigin src="/assets/i18n-DGPwdbCX.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-BQojogxD.js"></script>
   <script type="module" crossorigin src="/assets/constants-C6-BtNIC.js"></script>
+  <script type="module" crossorigin src="/assets/model-profiles-BWoiL6-a.js"></script>
   <script type="module" crossorigin src="/assets/options.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/options-CdxJ5P06.css">
+  <link rel="stylesheet" crossorigin href="/assets/options-ktuGC76t.css">
 </head>
 <body>
   <div class="container">
@@ -51,6 +52,22 @@
       <div class="model-selector">
         <input type="text" id="languageInput" readonly>
         <div class="model-dropdown" id="languageDropdown"></div>
+      </div>
+    </div>
+
+    <div class="form-group" id="profileGroup">
+      <label><span data-i18n="settings.providerConfig">厂商配置</span> <span class="hint" data-i18n="settings.providerConfigHint">（切换后立即生效；每个配置独立记忆地址、API Key、模型列表）</span></label>
+      <div class="profile-switcher-row">
+        <div class="model-selector profile-selector">
+          <input type="text" id="profileInput" readonly>
+          <div class="model-dropdown" id="profileDropdown"></div>
+        </div>
+        <div class="profile-actions">
+          <button type="button" class="profile-action-btn" id="profileNewBtn" data-i18n-title="settings.newProfileTitle" title="新建配置" data-i18n="settings.newProfile">+ 新建</button>
+          <button type="button" class="profile-action-btn" id="profileDupBtn" data-i18n-title="settings.saveAsProfileTitle" title="以当前配置另存为新的厂商配置" data-i18n="settings.saveAsProfile">另存为</button>
+          <button type="button" class="profile-action-btn" id="profileRenameBtn" data-i18n-title="settings.renameProfileTitle" title="重命名当前配置" data-i18n="settings.renameProfile">重命名</button>
+          <button type="button" class="profile-action-btn profile-action-danger" id="profileDeleteBtn" data-i18n-title="settings.deleteProfileTitle" title="删除当前配置" data-i18n="settings.deleteProfile">删除</button>
+        </div>
       </div>
     </div>
 
@@ -762,6 +779,24 @@
       <div class="modal-actions">
         <button class="btn btn-secondary" id="importConfigCancelBtn" data-i18n="common.cancel">取消</button>
         <button class="btn btn-primary" id="importConfigOkBtn" data-i18n="configDialog.confirmImport">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 厂商配置弹窗（名称输入 / 删除确认复用） -->
+  <div class="modal-overlay" id="profileModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="profileModalTitle" data-i18n="settings.profileNameTitle">新建厂商配置</h3>
+        <button class="modal-close-btn" id="profileModalCloseBtn" data-i18n-title="common.close" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <p id="profileModalMessage" style="display:none; font-size: 13px; color: #888; margin-bottom: 12px;"></p>
+        <input type="text" id="profileNameInput" data-i18n-placeholder="settings.profileNamePlaceholder" placeholder="配置名称（如 DeepSeek 官方、我的中转）" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="profileModalCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="btn btn-primary" id="profileModalOkBtn" data-i18n="common.confirm">确定</button>
       </div>
     </div>
   </div>

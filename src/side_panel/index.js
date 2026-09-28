@@ -17,6 +17,8 @@ import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
+import { initProviderSelector } from './provider-selector.js';
+import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
   sidePanel: {
@@ -392,8 +394,9 @@ async function saveModelToAgentOrGlobal(modelName) {
       await updateAgent(state.activeAgentId, { model: modelName });
     } catch { /* ignore */ }
   } else {
-    // 默认助手：保存到全局 storage
+    // 默认助手：保存到全局 storage，并同步为该厂商配置的选中模型
     chrome.storage.local.set({ modelName });
+    updateActiveProfileModelName(modelName);
   }
 }
 
@@ -501,123 +504,55 @@ function loadCustomModelsToDropdown(customModels, callback) {
     return;
   }
 
-  // 先加载已删除的预设模型列表并移除对应选项
-  chrome.storage.local.get(['deletedPresetModels'], (result) => {
-    const deletedPresetModels = result.deletedPresetModels || [];
-    deletedPresetModels.forEach(modelName => {
-      const option = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-      if (option) option.remove();
-    });
+  const modelSection = tempDropdown.querySelector('.model-section');
 
-    if (!customModels || customModels.length === 0) {
-      if (typeof callback === 'function') callback();
-      return;
+  // 向前兼容：旧格式为字符串，新格式为对象
+  const models = [];
+  (Array.isArray(customModels) ? customModels : []).forEach(item => {
+    if (typeof item === 'string') {
+      models.push({ name: item, contextWindow: 0 });
+    } else if (item && typeof item === 'object' && item.name) {
+      models.push({ name: item.name, contextWindow: item.contextWindow || 0 });
     }
+  });
 
-    const presetModels = ['deepseek-v4-pro', 'deepseek-v4-flash'];
-    let needsMigration = false;
-
-    customModels.forEach(item => {
-      // 向前兼容：旧格式为字符串，新格式为对象
-      let modelName, contextWindow = 0;
-      if (typeof item === 'string') {
-        modelName = item;
-        needsMigration = true;
-      } else if (item && typeof item === 'object' && item.name) {
-        modelName = item.name;
-        contextWindow = item.contextWindow || 0;
-      } else {
-        return;
-      }
-
-      if (presetModels.includes(modelName)) {
-        // 预设模型若有自定义上下文窗口配置，则在已有选项中显示标签
-        if (contextWindow && contextWindow > 0) {
-          const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-          if (existingOption) {
-            // 确保左侧包裹（仅迁移裸文本节点，避免带上勾选符号）
-            let leftSpan = existingOption.querySelector('.model-option-left');
-            if (!leftSpan) {
-              leftSpan = document.createElement('span');
-              leftSpan.className = 'model-option-left';
-              const textNodes = [...existingOption.childNodes].filter(n => n.nodeType === Node.TEXT_NODE);
-              textNodes.forEach(n => leftSpan.appendChild(n));
-              const checkSpan = existingOption.querySelector('.model-option-check');
-              if (checkSpan) {
-                checkSpan.insertAdjacentElement('afterend', leftSpan);
-              } else {
-                existingOption.insertBefore(leftSpan, existingOption.firstChild);
-              }
-            }
-
-            // 右侧容器（只有 badge，无删除按钮）
-            let rightSpan = existingOption.querySelector('.model-option-right');
-            if (!rightSpan) {
-              rightSpan = document.createElement('span');
-              rightSpan.className = 'model-option-right';
-              const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
-              if (oldBadge) rightSpan.appendChild(oldBadge);
-              existingOption.appendChild(rightSpan);
-            }
-
-            const badge = rightSpan.querySelector('.model-ctx-badge');
-            if (badge) {
-              badge.textContent = formatCtxWindow(contextWindow);
-            } else {
-              const ctxBadge = document.createElement('span');
-              ctxBadge.className = 'model-ctx-badge';
-              ctxBadge.textContent = formatCtxWindow(contextWindow);
-              rightSpan.appendChild(ctxBadge);
-            }
-          }
-        }
-        return;
-      }
-      const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-      if (existingOption) return;
-
+  // 全量重建（列表来源为当前厂商配置的完整模型列表，硬编码预设仅作首帧占位）
+  if (modelSection) {
+    modelSection.innerHTML = `<div class="model-section-title" data-i18n="model.selectModel">${t('model.selectModel')}</div>`;
+    for (const item of models) {
       const option = document.createElement('div');
       option.className = 'model-option';
-      option.dataset.value = modelName;
-      option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${modelName}</span>`;
+      option.dataset.value = item.name;
+      option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${escapeHtml(item.name)}</span>`;
 
       // 上下文窗口大小标签（放在右侧容器内）
-      if (contextWindow && contextWindow > 0) {
+      if (item.contextWindow && item.contextWindow > 0) {
         const rightSpan = document.createElement('span');
         rightSpan.className = 'model-option-right';
         const ctxBadge = document.createElement('span');
         ctxBadge.className = 'model-ctx-badge';
-        ctxBadge.textContent = formatCtxWindow(contextWindow);
+        ctxBadge.textContent = formatCtxWindow(item.contextWindow);
         rightSpan.appendChild(ctxBadge);
         option.appendChild(rightSpan);
       }
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
-        state.currentModel = modelName;
-        updateModelSelection(modelName);
-        saveModelToAgentOrGlobal(modelName);
+        state.currentModel = item.name;
+        updateModelSelection(item.name);
+        saveModelToAgentOrGlobal(item.name);
       });
 
-      tempDropdown.querySelector('.model-section').appendChild(option);
-    });
-
-    // 如果存在旧格式数据，自动迁移
-    if (needsMigration) {
-      const migrated = customModels.map(item => {
-        if (typeof item === 'string') return { name: item, contextWindow: 0 };
-        return item;
-      });
-      chrome.storage.local.set({ customModels: migrated });
+      modelSection.appendChild(option);
     }
+  }
 
-    // 构建运行时上下文窗口映射
-    state.customModelMap = normalizeCustomModels(customModels);
+  // 构建运行时上下文窗口映射
+  state.customModelMap = normalizeCustomModels(customModels);
 
-    if (typeof callback === 'function') {
-      callback();
-    }
-  });
+  if (typeof callback === 'function') {
+    callback();
+  }
 }
 
 // ==================== 选中内容上下文 ====================
@@ -2145,6 +2080,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // 厂商配置：确保迁移就绪（同步扁平键），并初始化模型设置弹窗顶部的厂商切换器
+  await ensureProfilesMigrated();
+  initProviderSelector();
+
   // 加载保存的模型选择和自定义模型
   chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform', 'enableImageInput', 'imageModelName', 'imageApiBase', 'imageApiKey', 'enableFileInput'], (result) => {
     const savedModelName = result.modelName;
@@ -2182,23 +2121,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听 storage 变化以更新自定义模型列表和模型选中状态
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
+      // 模型列表变化（增删/切换厂商）：全量重建后恢复选中标记
       if (changes.customModels) {
-        const newCustomModels = changes.customModels.newValue || [];
-        const modelSection = tempDropdown.querySelector('.model-section');
-        if (modelSection) {
-          const existingOptions = modelSection.querySelectorAll('.model-option');
-          existingOptions.forEach(opt => {
-            const value = opt.dataset.value;
-            if (value !== 'deepseek-v4-pro' && value !== 'deepseek-v4-flash') {
-              opt.remove();
-            }
-          });
-        }
-        loadCustomModelsToDropdown(newCustomModels);
+        loadCustomModelsToDropdown(changes.customModels.newValue || [], () => {
+          updateModelSelection(state.currentModel);
+        });
       }
       if (changes.modelName) {
         const newModelName = changes.modelName.newValue;
-        if (newModelName) {
+        // 仅默认助手跟随全局模型名；自定义助手使用自己的模型，避免切厂商时被覆盖
+        if (newModelName && (!state.activeAgentId || state.activeAgentId === 'default')) {
           state.currentModel = newModelName;
           updateModelSelection(newModelName);
         }
@@ -2230,14 +2162,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (changes.imageApiKey) {
         state.imageApiKey = changes.imageApiKey.newValue || '';
-      }
-      if (changes.deletedPresetModels) {
-        const deletedModels = changes.deletedPresetModels.newValue || [];
-        // 移除被删除的预设模型选项
-        deletedModels.forEach(modelName => {
-          const option = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-          if (option) option.remove();
-        });
       }
     }
   });

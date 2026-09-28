@@ -1086,14 +1086,10 @@ async function populateModelDatalist() {
   const datalist = document.getElementById('agentModelList');
   if (!datalist) return;
 
-  const presetModels = ['deepseek-v4-pro', 'deepseek-v4-flash'];
-
   return new Promise((resolve) => {
-    chrome.storage.local.get(['customModels', 'deletedPresetModels'], (result) => {
-      const deletedPresets = new Set(result.deletedPresetModels || []);
-      const options = presetModels.filter(m => !deletedPresets.has(m));
-
-      // 添加自定义模型
+    // 列表来源为当前厂商配置的完整模型列表（customModels 为激活配置的投影）
+    chrome.storage.local.get(['customModels'], (result) => {
+      const options = [];
       const customModels = result.customModels || [];
       customModels.forEach(item => {
         let modelName;

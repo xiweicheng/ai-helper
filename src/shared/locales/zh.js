@@ -129,6 +129,27 @@ export default {
     saveSuccess: '配置已保存成功！',
     deleteModel: '删除此模型',
     deleteApiBase: '删除此地址',
+    // 厂商配置（多配置记忆与快速切换）
+    providerConfig: '厂商配置',
+    providerConfigHint: '（切换后立即生效；每个配置独立记忆地址、API Key、模型列表）',
+    newProfile: '+ 新建',
+    newProfileTitle: '新建一个空的厂商配置',
+    profileNameTitle: '新建厂商配置',
+    saveAsProfile: '另存为',
+    saveAsProfileTitle: '以当前配置另存为新的厂商配置',
+    renameProfile: '重命名',
+    renameProfileTitle: '重命名当前配置',
+    deleteProfile: '删除',
+    deleteProfileTitle: '删除当前配置',
+    profileNamePlaceholder: '配置名称（如 DeepSeek 官方、我的中转）',
+    profileNameRequired: '请输入配置名称',
+    deleteProfileConfirm: '确定要删除厂商配置“{name}”吗？删除后不可恢复。',
+    atLeastOneProfile: '至少保留一个厂商配置',
+    profileSwitched: '已切换到 {name}',
+    profileCreated: '已创建配置 {name}',
+    profileRenamed: '已重命名为 {name}',
+    profileDeleted: '已删除配置 {name}',
+    profileCopySuffix: '副本',
     // 完成反馈（声音 + 彩带）
     completionFeedbackTitle: '完成反馈',
     completionSound: '播放提示音（成功与失败音效不同）',
@@ -453,6 +474,12 @@ export default {
   model: {
     selectModel: '选择模型',
     temperature: '温度',
+  },
+
+  // API 厂商快速切换（侧边栏模型设置）
+  provider: {
+    label: 'API 厂商',
+    manage: '管理配置…',
   },
 
   // 提示词/Agent 选择器
