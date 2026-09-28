@@ -37,7 +37,7 @@
 RAG 作为**高级功能**，不强制安装、不强制启用。全链路按需：
 
 ```
-npm 安装时不装 RAG 依赖（optionalDependencies）
+npm 安装时不装 RAG 依赖（ragDependencies 自定义字段）
      ↓
 Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
      ↓
@@ -50,7 +50,7 @@ Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
 启用时按需安装 RAG 依赖（动态 import）
 ```
 
-### 3.2 依赖管理：optionalDependencies
+### 3.2 依赖管理：ragDependencies 自定义字段 + 一键安装
 
 ```json
 // agent/package.json
@@ -62,20 +62,25 @@ Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
-  "optionalDependencies": {
+  "ragDependencies": {
     "vectra": "^0.15.0",
     "@huggingface/transformers": "^4.0.0",
     "pdf-parse": "^1.1.1",
     "mammoth": "^1.8.0",
     "officeparser": "^8.0.0",
     "cheerio": "^1.0.0"
+  },
+  "overrides": {
+    "onnxruntime-node": "~1.23.0"
   }
 }
 ```
 
-- `optionalDependencies` 中的包安装失败不会导致 `npm install` 失败
-- 用户通过 `npm install --omit=optional` 可以跳过所有可选依赖
+- `ragDependencies` 是**自定义字段**：npm 在任何安装场景（`-g` 全局、作为依赖）都不会自动安装它，不存在「装了但版本不对」的中间状态
+- RAG 依赖**仅在用户触发一键安装时**安装：`install.js` 读取该字段构建显式命令（`npm install --no-save pkg@spec ...`），在包目录内执行——包自身是安装根项目，`overrides` 生效，一次装对；清单缺失（包损坏/被裁剪）时拒绝安装，绝不退化为无包名安装
 - 核心功能（文件操作、MCP、命令执行）不受影响
+
+> 迭代说明（R7 实测）：初版曾用 `optionalDependencies`。实测 npm 11 下 `npm -g` 全局安装不读包内 overrides，optionalDependencies 被自动下载且 `onnxruntime-node` 落到无 darwin-x64 二进制的高版本（Intel Mac 加载失败），失败还是静默的；故改为自定义字段 + 显式一键安装。
 
 **Node 版本要求（RAG 前置条件）**：
 
@@ -98,7 +103,7 @@ Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
 
 - 实测（Intel Mac x64）：transformers 4.3.0 + onnxruntime-node 1.23.2 的 embedding 推理正常（输出 [1,384] 向量），数值与 4.0.1 + 1.23.0 组合完全一致
 - 平台矩阵：win32 x64/arm64、linux x64/arm64、darwin arm64 原生支持；darwin x64 依赖上述 overrides（统一固定到 1.23.x 不影响其他平台的核心推理功能）
-- **生效边界**：npm `overrides` 仅在"根项目"安装时生效——在 agent 目录直接 `npm install`（开发场景与一键安装 install.js 场景）有效；`npm install -g` 全局安装时包内 overrides 不生效，发布侧需另行处理（安装脚本或文档指引）
+- **生效边界（R7 实测 + 加固）**：npm `overrides` 仅在"根项目"安装时生效——在 agent 目录直接 `npm install`（开发场景）与一键安装（`install.js` 在包目录内显式安装）均有效；`npm install -g` 全局安装时包内 overrides 不生效。加固后 RAG 依赖不再随全局安装下载（见 3.2），只走 overrides 生效的一键安装路径
 
 > 说明：`officeparser` 覆盖 .docx/.pptx/.xlsx/.pdf/.rtf/.odt 等 Office 与 PDF 格式，作为完整解析能力引入；实施时按 5.6 的"格式覆盖矩阵"确定最终保留的解析器与依赖（xlsx 也可直接复用 agent 现有的核心依赖 `xlsx`，见 5.6）。
 
@@ -307,9 +312,9 @@ if (ragEnabled !== true) return { ok: false, disabled: true, collections: [] };
 ```js
 // Agent 新增安装接口
 // POST /api/rag/install
-//   - 不接受调用方传入的包名（防止任意包注入），安装清单为服务端常量白名单
+//   - 不接受调用方传入的包名（防止任意包注入），安装清单来自包内 package.json 的 ragDependencies 字段（单一事实来源）
 //   - 强制 Bearer 认证：不走"本机来源免认证"豁免，避免本机任意进程/网页触发安装
-//   - spawn('npm', args, { shell: false }) 执行，参数不含用户输入，杜绝命令注入
+//   - POSIX 严格 shell: false；Windows 优先以当前 node 直执行 npm-cli.js（规避 cmd 对 spec 中 ^ 的转义），探测不到时回退 npm.cmd + 双引号包装（参数为包内静态常量，无用户输入）
 //   - 异步任务 + 安装锁（并发请求直接返回进行中），立即返回 { started: true }
 //   - 同一时刻仅允许一个安装任务，超时上限 10 分钟
 
@@ -322,11 +327,11 @@ if (ragEnabled !== true) return { ok: false, disabled: true, collections: [] };
 ```
 
 ```js
-// agent/src/rag/install.js —— 白名单与 3.2 节 optionalDependencies 保持一致
-const RAG_INSTALL_PACKAGES = [
-  'vectra', '@huggingface/transformers',
-  'pdf-parse', 'mammoth', 'officeparser', 'cheerio',
-];
+// agent/src/rag/install.js —— 清单从 3.2 节 ragDependencies 字段读取（单一事实来源）
+// buildRagInstallCommand()：npm install --no-save --no-audit --no-fund \
+//   vectra@^0.15.0 @huggingface/transformers@^4.0.0 pdf-parse@^1.1.1 \
+//   mammoth@^1.8.0 officeparser@^8.0.0 cheerio@^1.0.0
+// （spec 由 ragDependencies 构建；cwd 为包目录，使包内 overrides 生效）
 ```
 
 ### 3.8 能力检测状态流转
@@ -387,7 +392,7 @@ const CONFIG_KEYS = [
 │  BGE embedding│       │  统一转换层  │     │  服务器          │
 │  可选依赖     │        └─────────────┘     └─────────────────┘
 └─────────────┘
-     ↑ optionalDependencies，不装不影响核心功能
+     ↑ ragDependencies（一键安装），不装不影响核心功能
 ```
 
 核心设计：
@@ -1160,7 +1165,7 @@ async getAvailableTools() {
 
 | 决策 | 做法 | 理由 |
 |---|---|---|
-| **依赖管理** | optionalDependencies + 运行时检测 | 不影响核心功能安装；用户按需安装 RAG 依赖 |
+| **依赖管理** | ragDependencies 自定义字段 + 显式一键安装（R7 加固） | 不被任何 npm 安装场景自动安装（避免 `-g` 全局装出 overrides 失效的坏版本）；一键安装在包目录内显式安装，overrides 生效 |
 | **Node 版本要求** | RAG 需 Node 22+（Vectra/officeparser 硬性要求），核心 agent 维持 `>=18` | 检测前置、明确提示；不影响未启用 RAG 的用户 |
 | **总开关** | `ragEnabled` 存储在 `chrome.storage.local` | 复用 MCP 总开关模式，默认关闭 |
 | **能力检测** | Agent 启动时检测（Node 版本 + 依赖），`/api/status` 返回 `ragAvailable` | 复用 `fd`/`rg` 检测模式，前端据此控制功能入口 |
@@ -1192,7 +1197,8 @@ async getAvailableTools() {
 | PDF/DOCX 当文本读导致乱码 | 按扩展名路由到专用 parser，统一输出纯文本再 chunk |
 | 临时文件用硬编码 `/tmp` 在 Windows 不可用 | 用 `os.tmpdir()` 或内存处理 |
 | 检索结果类型不统一 | 统一 `{ content, metadata, score }` + 空值兜底 + 保留原始 score（[-1,1]）不截断 |
-| 安装接口接受任意包名/本机免认证触发 | 固定白名单 + 强制 Bearer 认证 + `shell: false` + 安装锁 |
+| 安装接口接受任意包名/本机免认证触发 | 固定白名单（包内 ragDependencies 单一事实来源）+ 强制 Bearer 认证 + `shell: false` + 安装锁 |
+| 全局安装不读包内 overrides，optionalDependencies 装出「装了但不可用」的依赖 | 依赖声明改自定义字段（npm 不自动安装）+ 一键安装显式 spec 在包目录内执行（overrides 生效）；Windows 用 node 直执行 npm-cli.js 回避 cmd 对 `^` 的转义 |
 | onnxruntime-node ≥1.24 无 darwin/x64 导致 Intel Mac 加载 transformers 失败 | package.json `overrides` 固定 `~1.23.0`（实测 transformers 4.3.0 + onnxruntime-node 1.23.2 推理正常） |
 | huggingface.co 直连超时 + 默认模型缓存在 node_modules 内重装即丢 | 镜像 `env.remoteHost = 'https://hf-mirror.com/'`（可配置）+ `env.cacheDir` 指向用户目录 |
 | 中文混合检索分词不可用 | Vectra 内置 BM25 分词器为英文模型（实测中文 token 全丢），已自建轻量关键词通道（`searcher.js` 子串命中 + 加分重排），不再依赖 Vectra isBm25 |
@@ -1204,7 +1210,7 @@ async getAvailableTools() {
 
 ### Phase 0：可选依赖 + 能力检测 + 总开关（优先）
 
-1. `agent/package.json` 加 `optionalDependencies`（transformers v4、含 officeparser；核心 `engines` 维持 `>=18`，RAG 运行时要求 Node 22+）+ `overrides` 固定 `onnxruntime-node ~1.23.0`（Intel Mac 兼容，见 3.2）
+1. `agent/package.json` 加 `ragDependencies` 自定义字段（transformers v4、含 officeparser；核心 `engines` 维持 `>=18`，RAG 运行时要求 Node 22+）+ `overrides` 固定 `onnxruntime-node ~1.23.0`（Intel Mac 兼容，见 3.2）
 2. `agent/src/rag/detect.js`：运行时能力检测（Node 22+ 版本检查 + 仿 `search.js` 的 `fd`/`rg` 模式）
 3. `agent/src/server.js`：启动时检测，`/api/status` 增加 `ragAvailable` 字段
 4. `agent/src/server.js`：RAG 路由按需加载（`dynamic import`），未安装时返回 503
@@ -1241,7 +1247,7 @@ async getAvailableTools() {
 | 风险 | 应对 |
 |---|---|
 | **运行环境 Node < 22** | RAG 依赖链硬性要求 Node 22+；`detect.js` 前置检测并明确提示升级；核心 agent 功能不受影响 |
-| **RAG 依赖包下载失败/下载慢** | optionalDependencies 不影响核心安装；提供一键安装接口和手动命令；支持代理/镜像源；依赖含 onnxruntime 原生库（200-300MB），引导弹窗如实告知体积 |
+| **RAG 依赖包下载失败/下载慢** | RAG 依赖为自定义字段，不影响核心安装；提供一键安装接口和手动命令；支持代理/镜像源；依赖含 onnxruntime 原生库（200-300MB），引导弹窗如实告知体积 |
 | transformers.js 模型首次下载较慢（95MB） | 显示下载进度条；支持用户配置 OpenAI embedding 端点跳过本地模型 |
 | 大文档索引耗时 | 异步索引 + 进度回调 + 后台处理，不阻塞 UI |
 | 外接适配器 API 碎片化 | 统一 `RAGAdapter` 接口，每个适配器独立文件 |
