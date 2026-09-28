@@ -585,6 +585,39 @@ textarea {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* ===== 厂商配置从属分组（缩进 + 左侧渐变竖线） ===== */
+#profileGroup {
+  margin-bottom: 12px;
+}
+.profile-scope {
+  position: relative;
+  margin: 0 0 20px 0px;
+  padding: 12px 14px 0 18px;
+  background: #f8f9fe;
+  border-radius: 0 10px 10px 0;
+}
+.profile-scope::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, #667eea, #764ba2);
+  border-radius: 3px;
+}
+.profile-scope-hint {
+  font-size: 12px;
+  color: #8888aa;
+  margin-bottom: 12px;
+  user-select: none;
+}
+.profile-scope > .form-group {
+  margin-bottom: 16px;
+}
+.profile-scope > .form-group:last-child {
+  margin-bottom: 14px;
+}
 .selected-ctx-badge {
   position: absolute;
   right: 36px;

@@ -4,7 +4,7 @@ import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
 import { t, getLanguage } from '../shared/i18n.js';
-import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
+import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, mergeProfiles, getState, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -242,13 +242,32 @@ export async function confirmImport() {
     const config = importData.config || importData;
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';
 
+    // 合并导入 + 新格式文件：厂商配置按 ID 对齐合并
+    // （新 ID 追加；同 ID 以 updatedAt 较新的为准，老的忽略），
+    // 之后统一重投影扁平键，保证“扁平键 = 激活配置”一致
+    if (strategy === 'merge' && Array.isArray(config.modelProfiles)) {
+      const local = await getState();
+      config.modelProfiles = mergeProfiles(local.profiles, config.modelProfiles);
+      const fileActive = config.activeProfileId;
+      config.activeProfileId = config.modelProfiles.some(p => p.id === fileActive)
+        ? fileActive
+        : local.activeProfileId;
+      const activeProfile = config.modelProfiles.find(p => p.id === config.activeProfileId) || config.modelProfiles[0];
+      if (activeProfile) {
+        config.apiBase = activeProfile.apiBase || DEFAULT_API_BASE;
+        config.apiKey = activeProfile.apiKey || '';
+        config.modelName = activeProfile.modelName || DEFAULT_MODEL_NAME;
+        config.customModels = normalizeModels(activeProfile.models);
+      }
+    }
+
     if (strategy === 'replace') {
       // 完全替换：直接写入所有配置
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
       });
     } else {
-      // 合并导入：逐项写入
+      // 合并导入：逐项写入（modelProfiles 已按 ID 对齐）
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
       });
@@ -256,7 +275,7 @@ export async function confirmImport() {
 
     // 厂商配置一致性处理：
     // - 旧格式导入（无 modelProfiles）：用扁平键回写激活配置，避免数据分叉
-    // - 新格式导入：确保 activeProfileId 有效（导入文件可能缺失）
+    // - 其余情况：确保 activeProfileId 有效（导入文件可能缺失）
     await ensureProfilesMigrated();
     if (!Array.isArray(config.modelProfiles)) {
       const flat = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName', 'customModels']);

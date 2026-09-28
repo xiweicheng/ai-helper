@@ -24,7 +24,7 @@ import {
   updateSelectedCtxBadge,
   showToast,
 } from './config-manager.js';
-import { t } from '../shared/i18n.js';
+import { t, subscribe } from '../shared/i18n.js';
 
 let modalMode = null; // 'name' | 'confirm'
 let modalResolve = null;
@@ -39,6 +39,10 @@ let modalResolve = null;
 export async function initProfileManager() {
   bindProfileEvents();
   watchProfileStorage();
+  // 语言切换时刷新动态文案（从属分组的联动提示行）
+  subscribe(() => {
+    refreshProfileDropdown();
+  });
   await refreshProfileDropdown();
 }
 
@@ -76,6 +80,16 @@ async function refreshProfileDropdown() {
   }
 
   input.value = active ? active.name : '';
+  applyProfileScopeHint(active);
+}
+
+/**
+ * 更新从属分组的联动提示行（实时显示当前配置名）
+ */
+function applyProfileScopeHint(active) {
+  const el = document.getElementById('profileScopeHint');
+  if (!el) return;
+  el.textContent = active ? t('settings.profileScopeHint', { name: active.name }) : '';
 }
 
 function bindProfileEvents() {

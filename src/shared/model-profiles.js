@@ -338,6 +338,50 @@ export async function deleteProfile(id) {
 }
 
 /**
+ * 判断是否为“空白默认配置”（自动迁移生成、从未被用户配置过）
+ */
+function isPristineDefault(p) {
+  return !!p
+    && !p.apiKey
+    && (!p.apiBase || p.apiBase === DEFAULT_API_BASE)
+    && (!p.modelName || p.modelName === DEFAULT_MODEL_NAME);
+}
+
+/**
+ * 导入合并用：按 id 对齐合并厂商配置
+ * - 新 id：追加
+ * - 同 id：文件条目 updatedAt 较新则覆盖，否则忽略（保留本机）；
+ *   例外：本机条目为空白默认配置时不阻挡同 id 导入（新环境迁移场景）
+ * - 无 id 的条目：无法对齐，跳过
+ * @param {Array} localProfiles - 本机现有配置
+ * @param {Array} incomingProfiles - 导入文件中的配置
+ * @returns {Array} 合并后的配置列表（不修改原数组）
+ */
+export function mergeProfiles(localProfiles, incomingProfiles) {
+  const merged = Array.isArray(localProfiles) ? localProfiles.map(p => ({ ...p })) : [];
+  if (!Array.isArray(incomingProfiles)) return merged;
+
+  for (const inc of incomingProfiles) {
+    if (!inc || !inc.id) continue;
+    const idx = merged.findIndex(p => p.id === inc.id);
+    if (idx === -1) {
+      merged.push({ ...inc });
+      continue;
+    }
+    const fileTs = Number(inc.updatedAt) || 0;
+    const localTs = Number(merged[idx].updatedAt) || 0;
+    if (fileTs > localTs || isPristineDefault(merged[idx])) {
+      const next = { ...inc };
+      // 不含密钥导出时文件 apiKey 为空：继承本机密钥，避免误清
+      if (!next.apiKey && merged[idx].apiKey) next.apiKey = merged[idx].apiKey;
+      merged[idx] = next;
+    }
+    // 文件条目不更新（老文件）：忽略，保留本机
+  }
+  return merged;
+}
+
+/**
  * 导出用：剥离配置中的密钥
  * @param {Array} profiles
  * @returns {Array}

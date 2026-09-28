@@ -132,6 +132,7 @@ export default {
     // 厂商配置（多配置记忆与快速切换）
     providerConfig: '厂商配置',
     providerConfigHint: '（切换后立即生效；每个配置独立记忆地址、API Key、模型列表）',
+    profileScopeHint: '以下设置保存到厂商配置“{name}”，切换厂商时自动联动',
     newProfile: '+ 新建',
     newProfileTitle: '新建一个空的厂商配置',
     profileNameTitle: '新建厂商配置',
@@ -479,7 +480,7 @@ export default {
   // API 厂商快速切换（侧边栏模型设置）
   provider: {
     label: 'API 厂商',
-    manage: '管理配置…',
+    manage: '管理厂商配置',
   },
 
   // 提示词/Agent 选择器

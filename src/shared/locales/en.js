@@ -132,6 +132,7 @@ export default {
     // Provider profiles (multi-profile memory & quick switch)
     providerConfig: 'Provider Profiles',
     providerConfigHint: '(Takes effect immediately after switching; each profile remembers its own API base, key and model list)',
+    profileScopeHint: 'The settings below are saved to provider profile “{name}” and follow profile switching',
     newProfile: '+ New',
     newProfileTitle: 'Create an empty provider profile',
     profileNameTitle: 'New Provider Profile',
@@ -479,7 +480,7 @@ export default {
   // API provider quick switch (side panel model settings)
   provider: {
     label: 'API Provider',
-    manage: 'Manage profiles…',
+    manage: 'Manage provider profiles',
   },
 
   // Prompt/Agent selector

@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/rolldown-runtime-C0FnF6B9.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-BQojogxD.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-tNh5vOPi.js"></script>
   <script type="module" crossorigin src="/assets/constants-C6-BtNIC.js"></script>
-  <script type="module" crossorigin src="/assets/session-store-DDWheK9I.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-BrBTP__I.js"></script>
-  <script type="module" crossorigin src="/assets/model-profiles-BWoiL6-a.js"></script>
+  <script type="module" crossorigin src="/assets/session-store--skrS7Of.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-CTKwXO-l.js"></script>
+  <script type="module" crossorigin src="/assets/model-profiles-Cx0-W0mY.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -513,15 +513,32 @@
           </div>
           <div class="temp-dropdown" id="tempDropdown">
             <div class="temp-dropdown-title" data-i18n="toggle.modelSettings">模型设置</div>
-                        <div class="provider-section" id="providerSection">
-                          <div class="model-section-title" data-i18n="provider.label">API 厂商</div>
-                          <div class="provider-list" id="providerList"></div>
-                          <div class="provider-manage" id="providerManageBtn" data-i18n="provider.manage">管理配置…</div>
-                        </div>
+            <div class="provider-section" id="providerSection">
+              <div class="model-section-title-row">
+                <div class="model-section-title" data-i18n="provider.label">API 厂商</div>
+                <button type="button" class="provider-add-btn" id="providerManageBtn" data-i18n-title="provider.manage" title="管理厂商配置">+</button>
+              </div>
+              <div class="section-select" id="providerSelect">
+                <div class="section-select-row" id="providerSelectRow">
+                  <span class="section-select-value" id="providerSelectValue"></span>
+                  <span class="section-select-host" id="providerSelectHost"></span>
+                  <span class="section-select-caret"></span>
+                </div>
+                <div class="section-select-list" id="providerList"></div>
+              </div>
+            </div>
             <div class="model-section" id="modelSection">
               <div class="model-section-title" data-i18n="model.selectModel">选择模型</div>
-              <div class="model-option" data-value="deepseek-v4-pro"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-pro</span></div>
-              <div class="model-option" data-value="deepseek-v4-flash"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-flash</span></div>
+              <div class="section-select" id="modelSelect">
+                <div class="section-select-row" id="modelSelectRow">
+                  <span class="section-select-value" id="modelSelectValue">deepseek-v4-pro</span>
+                  <span class="section-select-caret"></span>
+                </div>
+                <div class="section-select-list" id="modelSelectList">
+                  <div class="model-option" data-value="deepseek-v4-pro"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-pro</span></div>
+                  <div class="model-option" data-value="deepseek-v4-flash"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-flash</span></div>
+                </div>
+              </div>
             </div>
             <div class="temp-preset-list" id="tempPresetList"></div>
             <div class="temp-slider-section">

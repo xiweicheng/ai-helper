@@ -12,6 +12,7 @@ import {
   renameProfile,
   deleteProfile,
   stripProfileSecrets,
+  mergeProfiles,
   deriveProfileName,
   getHostFromApiBase,
   normalizeModels,
@@ -268,6 +269,50 @@ describe('stripProfileSecrets', () => {
     expect(stripped[1].apiKey).toBe('');
     expect(profiles[0].apiKey).toBe('sk-1');
     expect(stripProfileSecrets(null)).toEqual([]);
+  });
+});
+
+describe('mergeProfiles（导入合并）', () => {
+  const local = [
+    { id: 'a', name: 'A', apiKey: 'sk-local-a', updatedAt: 100 },
+    { id: 'b', name: 'B', apiKey: 'sk-local-b', updatedAt: 200 },
+  ];
+
+  test('新 id 追加；同 id 较新覆盖；较旧忽略', () => {
+    const merged = mergeProfiles(local, [
+      { id: 'b', name: 'B-new', apiKey: 'sk-file-b', updatedAt: 300 },
+      { id: 'a', name: 'A-old', apiKey: 'sk-file-a', updatedAt: 50 },
+      { id: 'c', name: 'C', apiKey: 'sk-file-c', updatedAt: 10 },
+    ]);
+
+    expect(merged.map(p => p.name)).toEqual(['A', 'B-new', 'C']);
+    expect(merged.find(p => p.id === 'a').name).toBe('A');
+  });
+
+  test('同 id 覆盖时文件 apiKey 为空则继承本机密钥（不含密钥导出）', () => {
+    const merged = mergeProfiles(local, [
+      { id: 'b', name: 'B-new', apiKey: '', updatedAt: 300 },
+    ]);
+
+    expect(merged.find(p => p.id === 'b').apiKey).toBe('sk-local-b');
+  });
+
+  test('本机为空白默认配置时不阻挡同 id 导入（新环境迁移场景）', () => {
+    const merged = mergeProfiles(
+      [{ id: LEGACY_ID, name: 'DeepSeek', apiBase: DEFAULT_API_BASE, apiKey: '', modelName: DEFAULT_MODEL_NAME, updatedAt: 999 }],
+      [{ id: LEGACY_ID, name: '我的中转', apiBase: 'https://my.proxy.com/v1', apiKey: 'sk-x', modelName: 'gpt-4o', updatedAt: 10 }],
+    );
+
+    expect(merged[0].name).toBe('我的中转');
+    expect(merged[0].apiBase).toBe('https://my.proxy.com/v1');
+  });
+
+  test('无 id 条目跳过；空/非法输入容错；不修改原数组', () => {
+    const merged = mergeProfiles(local, [{ name: 'no-id' }, null]);
+
+    expect(merged).toHaveLength(2);
+    expect(mergeProfiles(null, null)).toEqual([]);
+    expect(local[0].name).toBe('A');
   });
 });
 

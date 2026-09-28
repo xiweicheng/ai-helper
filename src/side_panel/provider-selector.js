@@ -2,13 +2,14 @@
 //
 // 数据与同步逻辑统一在 shared/model-profiles.js：切换配置即把地址/Key/模型名
 // 写回扁平键（触发 index.js 中 customModels/modelName 的 storage 监听完成模型列表刷新）。
-// 本模块只负责渲染厂商列表、激活标记与管理入口。
+// 本模块负责渲染厂商选择行（当前项）+ 浮层列表、激活标记；"+"按钮为管理配置入口。
 //
 // 注意：行使用 .provider-option 独立类名，避免与全局 .model-option 选择器
 // （updateModelSelection / 点击绑定）冲突；区块使用 .provider-section 类名，
 // 避免 tempDropdown.querySelector('.model-section') 误选中。
 
 import { getState, applyProfile, getHostFromApiBase } from '../shared/model-profiles.js';
+import { closeAllSectionSelects } from './section-select.js';
 import logger from '../shared/logger.js';
 
 let bound = false;
@@ -30,14 +31,21 @@ export async function initProviderSelector() {
 }
 
 /**
- * 渲染厂商列表（名称 + 激活勾选，右侧显示地址 host）
+ * 渲染厂商选择行（当前配置名 + host）与浮层列表（名称 + 激活勾选 + host）
  */
 async function renderProviderList() {
   const list = document.getElementById('providerList');
+  const valueEl = document.getElementById('providerSelectValue');
+  const hostEl = document.getElementById('providerSelectHost');
   if (!list) return;
 
   const state = await getState();
   const active = state.profiles.find(p => p.id === state.activeProfileId) || state.profiles[0];
+
+  // 选择行显示当前配置
+  if (valueEl) valueEl.textContent = active ? active.name : '';
+  if (hostEl) hostEl.textContent = active ? getHostFromApiBase(active.apiBase) : '';
+
   list.innerHTML = '';
 
   for (const profile of state.profiles) {
@@ -67,6 +75,7 @@ async function renderProviderList() {
 
     option.addEventListener('click', (e) => {
       e.stopPropagation();
+      closeAllSectionSelects();
       handleSwitch(profile.id);
     });
 
@@ -89,7 +98,7 @@ async function handleSwitch(id) {
 }
 
 /**
- * "管理配置…"：打开/聚焦配置页基础 tab（沿用 headerAgentIndicator 的既有模式）
+ * "+"按钮（管理厂商配置）：打开/聚焦配置页基础 tab（沿用 headerAgentIndicator 的既有模式）
  */
 function bindManageButton() {
   const btn = document.getElementById('providerManageBtn');

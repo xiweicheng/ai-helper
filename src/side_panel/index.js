@@ -18,6 +18,7 @@ import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { initProviderSelector } from './provider-selector.js';
+import { closeAllSectionSelects } from './section-select.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
@@ -495,6 +496,10 @@ function updateModelSelection(selectedValue) {
       option.querySelector('.model-option-check').textContent = '';
     }
   });
+
+  // 模型选择行同步显示当前模型名
+  const selectValue = document.getElementById('modelSelectValue');
+  if (selectValue && selectedValue) selectValue.textContent = selectedValue;
 }
 
 function loadCustomModelsToDropdown(customModels, callback) {
@@ -517,8 +522,18 @@ function loadCustomModelsToDropdown(customModels, callback) {
   });
 
   // 全量重建（列表来源为当前厂商配置的完整模型列表，硬编码预设仅作首帧占位）
+  // 结构：标题 + 选择行 + 浮层列表（浮层不占文档流，弹窗高度恒定）
   if (modelSection) {
-    modelSection.innerHTML = `<div class="model-section-title" data-i18n="model.selectModel">${t('model.selectModel')}</div>`;
+    modelSection.innerHTML = `
+      <div class="model-section-title" data-i18n="model.selectModel">${t('model.selectModel')}</div>
+      <div class="section-select" id="modelSelect">
+        <div class="section-select-row" id="modelSelectRow">
+          <span class="section-select-value" id="modelSelectValue">${escapeHtml(state.currentModel || '')}</span>
+          <span class="section-select-caret"></span>
+        </div>
+        <div class="section-select-list" id="modelSelectList"></div>
+      </div>`;
+    const listEl = modelSection.querySelector('#modelSelectList');
     for (const item of models) {
       const option = document.createElement('div');
       option.className = 'model-option';
@@ -538,12 +553,13 @@ function loadCustomModelsToDropdown(customModels, callback) {
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
+        closeAllSectionSelects();
         state.currentModel = item.name;
         updateModelSelection(item.name);
         saveModelToAgentOrGlobal(item.name);
       });
 
-      modelSection.appendChild(option);
+      listEl.appendChild(option);
     }
   }
 
