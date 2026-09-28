@@ -425,8 +425,13 @@ async function _loadChatHistoryImpl() {
                 if (kbTotal === 0) {
                   bubbleText = t('contextBubble.bubbleKnowledgeMiss', { name: kbRefs.map(r => r.name).join('、') });
                 } else {
-                  kbRefs.filter(r => (r.hitCount || 0) > 0).forEach(r => {
-                    addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+                  // 逐库展示（与发送链路一致）：命中库显示条目，未命中库显示未命中
+                  kbRefs.forEach(r => {
+                    if ((r.hitCount || 0) > 0) {
+                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+                    } else {
+                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
+                    }
                   });
                 }
               }
@@ -573,6 +578,9 @@ export function hideModal() {
 // 知识库检索上下文
 // ============================================================
 
+// 单条命中内容送入大模型前的最大字符数（气泡明细截断与此一致，供界面截断提示使用）
+const KB_HIT_MAX_CHARS = 1500;
+
 /**
  * 向 background 请求 RAG 检索并构建知识库上下文文本
  * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
@@ -621,11 +629,17 @@ export async function buildKnowledgeContextText(query, refs) {
   const hitBuckets = Array.from(buckets.values());
   const totalHits = results.length;
 
-  // 命中明细（供引用卡片展开查看）；与注入文本一致做 1500 字符截断
-  const toHits = (items) => items.map(it => ({
-    score: typeof it.score === 'number' ? it.score : (Number(it.score) || 0),
-    content: String(it.content || '').trim().slice(0, 1500)
-  }));
+  // 命中明细（供引用卡片展开查看）；与注入文本一致做 KB_HIT_MAX_CHARS 字符截断
+  // truncated/fullLength 供界面展示截断提示（与注入给模型的截断版本严格对应）
+  const toHits = (items) => items.map(it => {
+    const full = String(it.content || '').trim();
+    return {
+      score: typeof it.score === 'number' ? it.score : (Number(it.score) || 0),
+      content: full.slice(0, KB_HIT_MAX_CHARS),
+      truncated: full.length > KB_HIT_MAX_CHARS,
+      fullLength: full.length
+    };
+  });
 
   // 汇总每个引用库的命中数（含 0 命中，用于气泡展示）
   const refStats = refs.map(r => ({
@@ -652,7 +666,7 @@ export async function buildKnowledgeContextText(query, refs) {
       b.items.forEach(item => {
         const score = typeof item.score === 'number' ? item.score.toFixed(3) : String(item.score ?? '');
         lines.push(`· 相关度 ${score}`);
-        lines.push(String(item.content || '').trim().slice(0, 1500));
+        lines.push(String(item.content || '').trim().slice(0, KB_HIT_MAX_CHARS));
         lines.push('');
       });
     });
@@ -752,9 +766,12 @@ export async function sendMessage() {
       if (totalHits === 0) {
         addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
       } else {
+        // 逐库展示：命中库显示命中条目，未命中库也明确展示，避免多选时静默丢失
         kbPayload.refs.forEach(r => {
           if (r.hitCount > 0) {
             addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+          } else {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
           }
         });
       }
@@ -1190,9 +1207,17 @@ export function addContextBubble(type, contextText, scroll = true, hits = null) 
     const hitItems = hits.map(h => {
       const scoreText = typeof h.score === 'number' ? h.score.toFixed(3) : '';
       const scoreHtml = scoreText ? `<span class="kb-bubble-hit-score">${scoreText}</span>` : '';
-      return `<div class="kb-bubble-hit"><div class="kb-bubble-hit-text" title="${t('contextBubble.kbHitToggle')}">${scoreHtml}${escapeHtml(h.content || '')}</div></div>`;
+      // 截断提示：与注入给模型的 KB_HIT_MAX_CHARS 截断严格对应，展示模型实际收到的版本
+      const truncatedHtml = h.truncated
+        ? `<span class="kb-bubble-hit-truncated" title="${t('contextBubble.kbHitTruncatedTitle')}">${t('contextBubble.kbHitTruncated', { total: h.fullLength || 0, kept: KB_HIT_MAX_CHARS })}</span>`
+        : '';
+      return `<div class="kb-bubble-hit"><div class="kb-bubble-hit-text" title="${t('contextBubble.kbHitToggle')}">${scoreHtml}${escapeHtml(h.content || '')}</div>${truncatedHtml}</div>`;
     }).join('');
-    contentHtml = `<div class="kb-bubble-summary">${escapeHtml(contextText)}</div>${hitItems}`;
+    const truncatedCount = hits.filter(h => h.truncated).length;
+    const truncatedBadge = truncatedCount > 0
+      ? `<span class="kb-bubble-truncated-badge">${t('contextBubble.kbHitTruncatedBadge', { count: truncatedCount })}</span>`
+      : '';
+    contentHtml = `<div class="kb-bubble-summary">${escapeHtml(contextText)}${truncatedBadge}</div>${hitItems}`;
   }
 
   bubbleDiv.innerHTML = `

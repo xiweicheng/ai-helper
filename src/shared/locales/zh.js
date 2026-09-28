@@ -1162,6 +1162,9 @@ export default {
     bubbleKnowledgeMiss: '{name} 📚 · 未命中',
     bubbleKnowledgeSearching: '正在检索知识库…',
     kbHitToggle: '点击展开/收起全文',
+    kbHitTruncated: '✂ 已截断 · 原文 {total} 字，前 {kept} 字已发送',
+    kbHitTruncatedTitle: '为控制上下文体积，内容截断后再发送给模型；此处显示的即模型实际收到的版本',
+    kbHitTruncatedBadge: '✂ {count} 条已截断',
   },
 
   // options.html - 导出/导入配置弹窗

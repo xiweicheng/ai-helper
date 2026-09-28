@@ -2794,6 +2794,31 @@ body {
   white-space: pre-wrap;
 }
 
+/* 截断提示：条目级徽章 + 摘要行计数徽章（暖橙色，区别于紫色分数徽章） */
+.kb-bubble-hit-truncated {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fdf1e3;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+}
+.kb-bubble-truncated-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fdf1e3;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+
 .message.user .message-toolbar {
   top: -16px;
   right: 8px;

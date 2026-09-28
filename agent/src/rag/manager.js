@@ -767,6 +767,8 @@ export class RagManager {
 
   /**
    * 跨知识库检索（@知识库多选 / LLM 未指定 collectionId 时）
+   * topK 作为总量预算按引用库数均分（至少 1 条/库）：保证每个被引用的库都有配额进入结果，
+   * 避免全局截断被高得分库垄断导致其他库 0 命中（前端表现为"只引用了一个库"）
    * @param {string[]} collectionIds
    * @param {string} query
    * @param {{topK?: number, threshold?: number}} [options]
@@ -774,9 +776,12 @@ export class RagManager {
   async searchMulti(collectionIds, query, options = {}) {
     const all = [];
     const errors = [];
+    const globalTopK = options.topK || 5;
+    const n = Math.max(collectionIds.length, 1);
+    const perQuota = Math.max(1, Math.ceil(globalTopK / n));
     for (const id of collectionIds) {
       try {
-        const result = await this.search(id, query, options);
+        const result = await this.search(id, query, { ...options, topK: perQuota });
         for (const r of result.results) {
           all.push({ ...r, collectionId: id });
         }
@@ -784,14 +789,13 @@ export class RagManager {
         errors.push({ collectionId: id, error: err.message });
       }
     }
-    // 合并后按 score 排序取 topK
+    // 合并后按 score 排序；每库配额已在检索阶段生效，不再做全局 topK 截断
     all.sort((a, b) => b.score - a.score);
-    const topK = options.topK || 5;
     return {
       query,
       total: all.length,
       hasContext: all.length > 0,
-      results: all.slice(0, topK),
+      results: all,
       errors: errors.length > 0 ? errors : undefined,
     };
   }

@@ -695,9 +695,12 @@ export async function sendPromptByCode(code) {
       if (totalHits === 0) {
         addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
       } else {
+        // 逐库展示：命中库显示命中条目，未命中库也明确展示，避免多选时静默丢失
         kbPayload.refs.forEach(r => {
           if (r.hitCount > 0) {
             addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+          } else {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
           }
         });
       }

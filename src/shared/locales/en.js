@@ -1162,6 +1162,9 @@ export default {
     bubbleKnowledgeMiss: '{name} 📚 · no match',
     bubbleKnowledgeSearching: 'Searching knowledge base…',
     kbHitToggle: 'Click to expand/collapse',
+    kbHitTruncated: '✂ Truncated · {total} chars total, first {kept} sent',
+    kbHitTruncatedTitle: 'Truncated to fit the context window; what is shown here is exactly what the model received',
+    kbHitTruncatedBadge: '✂ {count} truncated',
   },
 
   // options.html - Export/import config dialogs

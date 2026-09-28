@@ -944,7 +944,7 @@ class RAGAdapter {
 | `GET` | `/api/rag/collections/{id}/documents` | 文档列表 |
 | `DELETE` | `/api/rag/collections/{id}/documents/{docId}` | 删除文档 |
 | `POST` | `/api/rag/collections/{id}/search` | 检索 `{ query, topK, threshold }` |
-| `POST` | `/api/rag/search` | 跨知识库检索 `{ collectionIds, query, topK, threshold }` |
+| `POST` | `/api/rag/search` | 跨知识库检索 `{ collectionIds, query, topK, threshold }`；多库时 `topK` 为总量预算并按库数均分（每库至少 1 条），保证每个被引用的库都有结果（避免全局截断被高得分库垄断） |
 | `GET` | `/api/rag/status` | embedding 模型加载状态 |
 | `POST` | `/api/rag/test-embedding` | 测试远端向量服务连通性 `{ mode, endpoint, apiKey, modelName, dimensions? }`（`dimensions` 可选，带值则透传探测），返回实际维度 `{ model, dimensions }`（供前端自动填充/修正维度） |
 | `POST` | `/api/rag/install` | 安装 RAG 可选依赖（固定白名单、强制 Bearer 认证、异步返回 `started`） |
