@@ -22,6 +22,9 @@ import { loadDocument } from './document/loader.js';
 import { htmlToText } from './document/parsers/html.js';
 import { Searcher } from './searcher.js';
 import { RagError } from './errors.js';
+import { checkPath } from '../security.js';
+import { fetchUrlGuarded } from './url-guard.js';
+import { loadConfig } from '../config.js';
 
 // 知识库 ID 格式校验（防路径穿越）
 const COLLECTION_ID_RE = /^kb_[a-z0-9]+$/;
@@ -105,7 +108,7 @@ function needsIndexRebuild(prevCfg = {}, nextCfg = {}) {
 }
 
 export class RagManager {
-  constructor() {
+  constructor(options = {}) {
     // 注册表写互斥锁（Promise 链）
     this._registryLock = Promise.resolve();
     // embedding provider 缓存（key: collectionId；本地 pipeline 单例在 embedding/local.js）
@@ -114,6 +117,8 @@ export class RagManager {
     this._ingestProgress = new Map();
     // 进行中的长任务（key: collectionId；导入/重建互斥，防同库并发写索引）
     this._activeOps = new Set();
+    // URL 导入内网放行策略覆盖（仅测试注入；缺省 null 时读取 config.ragUrlIngest）
+    this._urlIngestPolicyOverride = options.urlIngestPolicy || null;
   }
 
   // ==================== 注册表 ====================
@@ -494,7 +499,7 @@ export class RagManager {
   /**
    * 导入文件
    * 支持两种来源：
-   *   - path：agent 本地文件路径（直接解析）
+   *   - path：agent 本地文件路径（沙箱校验后解析，受 allowedPaths 白名单与硬阻止清单约束）
    *   - contentBase64 + fileName：前端上传内容（落临时文件解析后清理）
    * @param {string} collectionId
    * @param {{path?: string, fileName?: string, contentBase64?: string, metadata?: object, chunkConfig?: object}} input
@@ -503,8 +508,14 @@ export class RagManager {
     return this._runIngest(collectionId, async () => {
       // 来源 1：agent 本地文件
       if (input.path) {
+        // 文件沙箱：与 /api/fs/read 同一套规则（allowedPaths 白名单 + 硬阻止清单），
+        // 防止经 RAG 导入绕过沙箱读取宿主任意文件（如代理自身敏感文件）
+        const check = await checkPath(input.path);
+        if (!check.allowed) {
+          throw new RagError('pathNotAllowed', { reason: check.reason });
+        }
         this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
-        const { text, fileName } = await loadDocument(input.path);
+        const { text, fileName } = await loadDocument(check.resolved || input.path);
         return this._ingestText(collectionId, {
           text, name: fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
         });
@@ -533,7 +544,16 @@ export class RagManager {
   }
 
   /**
+   * URL 导入内网放行策略（config.ragUrlIngest；构造参数可注入覆盖，供测试）
+   */
+  _urlIngestPolicy() {
+    if (this._urlIngestPolicyOverride) return this._urlIngestPolicyOverride;
+    return loadConfig().ragUrlIngest;
+  }
+
+  /**
    * 导入 URL 内容（HTML 提取正文 / 文本直取 / PDF 下载解析）
+   * 安全：逐跳重定向校验 + 私网拦截（白名单优先/总开关，见 url-guard.js）+ 响应体大小上限
    * @param {string} collectionId
    * @param {{url: string, metadata?: object, chunkConfig?: object}} input
    */
@@ -543,29 +563,22 @@ export class RagManager {
       if (!/^https?:\/\//i.test(url)) throw new RagError('invalidUrl');
 
       this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
-      const res = await fetch(url, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(30000),
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AI-Helper-RAG/1.0)' },
-      });
-      if (!res.ok) throw new RagError('urlFetchFailed', { status: res.status });
+      const { bytes, contentType } = await fetchUrlGuarded(url, this._urlIngestPolicy());
 
-      const contentType = (res.headers.get('content-type') || '').toLowerCase();
       let text;
       if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-        text = await htmlToText(await res.text());
+        text = await htmlToText(bytes.toString('utf-8'));
       } else if (contentType.includes('application/pdf')) {
-        const buf = Buffer.from(await res.arrayBuffer());
         const tmpFile = join(tmpdir(), `rag-url-${randomBytes(6).toString('hex')}.pdf`);
         try {
-          await writeFile(tmpFile, buf);
+          await writeFile(tmpFile, bytes);
           ({ text } = await loadDocument(tmpFile));
         } finally {
           await unlink(tmpFile).catch(() => {});
         }
       } else {
         // text/*、application/json 等按文本处理
-        text = await res.text();
+        text = bytes.toString('utf-8');
       }
 
       // URL 名称：域名 + 路径尾部（截断）

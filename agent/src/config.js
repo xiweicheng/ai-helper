@@ -18,7 +18,10 @@ const DEFAULTS = {
   allowedPaths: [WORKSPACE_DIR],
   pairCodeTTL: 30,
   commandTimeout: 300000,
-  fileMaxSize: 50 * 1024 * 1024
+  fileMaxSize: 50 * 1024 * 1024,
+  // RAG URL 导入内网访问策略：allowedPrivateHosts 非空时仅放行白名单命中（总开关不生效）；
+  // 为空时由 allowPrivateNetwork 决定；缺省均关闭（默认拒绝内网），公网访问不受影响
+  ragUrlIngest: { allowPrivateNetwork: false, allowedPrivateHosts: [] }
 };
 
 const VALID_CONFIG_KEYS = Object.keys(DEFAULTS);
