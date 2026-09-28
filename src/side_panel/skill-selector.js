@@ -3,6 +3,9 @@ import state from './state.js';
 import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+// 注：prompt-manager.js 反向依赖本模块（selectSkill/selectMcpService 等），构成循环 import；
+// 此处引用的 hidePromptSelector 为函数声明（hoisted），仅运行时调用，ESM 循环依赖安全
+import { hidePromptSelector } from './prompt-manager.js';
 
 registerTranslations('zh', {
   promptSelector: {
@@ -203,11 +206,16 @@ export async function renderSkillList(filterText = '') {
 
   // 绑定点击事件
   skillListEl.querySelectorAll('.skill-list-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
       const skillName = item.dataset.skillName;
       selectSkill(skillName, skills);
+      // Ctrl/Cmd+点击：选中后关闭下拉框（多选场景的单选快捷方式）
+      if (e.ctrlKey || e.metaKey) hidePromptSelector();
     });
   });
+
+  // 渲染后刷新已选标记（多选状态）
+  refreshSkillPickedState();
 }
 
 /**
@@ -243,7 +251,8 @@ function clearSlashTriggerText() {
 }
 
 /**
- * 选中技能 - 显示技能指示器
+ * 选中/取消技能 - 多选（再次选择同一技能为移除），更新指示器 chips
+ * 多选时保持下拉框打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  * @param {string} skillName - 技能名称
  * @param {Array} skills - 技能列表（用于查找完整信息）
  */
@@ -251,59 +260,90 @@ export function selectSkill(skillName, skills) {
   const skill = skills.find(s => s.name === skillName);
   if (!skill) return;
 
-  state.selectedSkill = {
-    name: skill.name,
-    description: skill.description || '',
-    type: skill.type || 'agent',
-    stepCount: skill.stepCount || 0,
-    parameters: skill.parameters || {},
-    enabled: skill.enabled !== false
-  };
-
-  // 显示技能指示器
-  const indicator = document.getElementById('skillIndicator');
-  const nameEl = document.getElementById('skillIndicatorName');
-  if (indicator && nameEl) {
-    const isDisabled = skill.enabled === false;
-    nameEl.textContent = isDisabled
-      ? `${skill.name} (${t('skillSelector.manualUseSuffix')})`
-      : skill.name;
-    indicator.classList.toggle('skill-indicator-manual', isDisabled);
-    indicator.title = isDisabled ? t('skillSelector.disabledTooltip') : '';
-    indicator.style.display = 'flex';
+  const existsIndex = state.selectedSkills.findIndex(s => s.name === skillName);
+  if (existsIndex >= 0) {
+    state.selectedSkills.splice(existsIndex, 1);
+  } else {
+    state.selectedSkills.push({
+      name: skill.name,
+      description: skill.description || '',
+      type: skill.type || 'agent',
+      stepCount: skill.stepCount || 0,
+      parameters: skill.parameters || {},
+      enabled: skill.enabled !== false
+    });
   }
+
+  // 更新列表已选标记 + 指示器 chips
+  refreshSkillPickedState();
+  renderSkillIndicator();
 
   // 清除输入框中的 / 触发文本（含过滤关键字）
   clearSlashTriggerText();
 
-  // 隐藏下拉框（直接操作 DOM，避免循环依赖）
-  const promptSelector = document.getElementById('promptSelector');
-  const promptDropdown = document.getElementById('promptDropdown');
-  if (promptSelector) promptSelector.style.display = 'none';
-  if (promptDropdown) promptDropdown.classList.remove('show');
-
-  logger.debug('[SidePanel] skill selected:', skill.name);
+  logger.debug('[SidePanel] skill toggled:', skill.name, 'count:', state.selectedSkills.length);
 }
 
 /**
- * 清除技能选择
+ * 清除全部技能选择
  */
 export function clearSkillSelection() {
-  state.selectedSkill = null;
+  state.selectedSkills = [];
   state.selectedSkillIndex = -1;
-
-  const indicator = document.getElementById('skillIndicator');
-  if (indicator) {
-    indicator.style.display = 'none';
-    indicator.classList.remove('skill-indicator-manual');
-    indicator.title = '';
-  }
+  renderSkillIndicator();
+  refreshSkillPickedState();
 
   logger.debug('[SidePanel] skill clearedselect');
 }
 
 /**
+ * 渲染技能指示器（多技能 chips 形式，每个 chip 可单独移除）
+ */
+export function renderSkillIndicator() {
+  const indicator = document.getElementById('skillIndicator');
+  if (!indicator) return;
+  if (state.selectedSkills.length === 0) {
+    indicator.style.display = 'none';
+    indicator.innerHTML = '';
+    return;
+  }
+  indicator.innerHTML = state.selectedSkills.map(skill => {
+    const isDisabled = skill.enabled === false;
+    const label = isDisabled
+      ? `${skill.name} (${t('skillSelector.manualUseSuffix')})`
+      : skill.name;
+    const title = isDisabled ? t('skillSelector.disabledTooltip') : skill.name;
+    return `
+      <span class="ref-chip skill-ref-chip${isDisabled ? ' skill-ref-chip-manual' : ''}">
+        <span class="ref-chip-name" title="${escapeAttr(title)}">🧩 ${escapeHtml(label)}</span>
+        <button class="ref-chip-close" data-skill-name="${escapeAttr(skill.name)}" title="${t('common.delete')}">✕</button>
+      </span>
+    `;
+  }).join('');
+  indicator.querySelectorAll('.ref-chip-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.selectedSkills = state.selectedSkills.filter(s => s.name !== btn.dataset.skillName);
+      renderSkillIndicator();
+      refreshSkillPickedState();
+    });
+  });
+  indicator.style.display = 'flex';
+}
+
+/**
+ * 更新技能列表（Tab 视图与合并视图）中已选技能的标记
+ */
+export function refreshSkillPickedState() {
+  const picked = new Set(state.selectedSkills.map(s => s.name));
+  document.querySelectorAll('.skill-list-item, .merged-skill-item').forEach(item => {
+    item.classList.toggle('picked', picked.has(item.dataset.skillName));
+  });
+}
+
+/**
  * 初始化技能指示器关闭按钮事件
+ * （指示器 chips 化后由 renderSkillIndicator 绑定各自 ✕，此处保留兼容旧 DOM 结构）
  */
 export function initSkillIndicatorEvents() {
   const closeBtn = document.getElementById('skillIndicatorClose');
@@ -423,64 +463,68 @@ export function initSkillTabEvents() {
 }
 
 /**
- * 获取当前选中技能的系统提示文本（用于注入到用户消息中）
+ * 获取当前选中技能的系统提示文本（用于注入到用户消息中，支持多技能）
  * Agent Skill：直接加载完整 SKILL.md 内容拼接到用户消息，避免模型再走一次工具加载。
  * 这样解决了截图问答等场景下图片消息在工具调用期间被清除导致无法处理的问题。
  * Workflow Skill：仍通过 agent_skill (action=run) 执行（需要按步骤编排，无法直接注入）。
+ * 多技能时各段以空行连接（顺序与选择顺序一致）。
  * @returns {Promise<string>}
  */
 export async function getSkillContextText() {
-  if (!state.selectedSkill) return '';
+  if (state.selectedSkills.length === 0) return '';
 
-  const skill = state.selectedSkill;
-  const isAgent = skill.type === 'agent';
+  const parts = [];
+  for (const skill of state.selectedSkills) {
+    const isAgent = skill.type === 'agent';
 
-  let text = t('skillSelector.selectedSkillStart', { name: skill.name });
-  if (skill.description) {
-    text += ` - ${skill.description}`;
-  }
-  text += `]\n`;
+    let text = t('skillSelector.selectedSkillStart', { name: skill.name });
+    if (skill.description) {
+      text += ` - ${skill.description}`;
+    }
+    text += `]\n`;
 
-  if (isAgent) {
-    // Agent Skill：直接加载完整说明并拼接到用户消息，避免模型再走一次工具加载
-    try {
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPT', name: skill.name }, (resp) => {
-          if (chrome.runtime.lastError || !resp?.success) {
-            resolve(null);
-            return;
-          }
-          resolve(resp);
+    if (isAgent) {
+      // Agent Skill：直接加载完整说明并拼接到用户消息，避免模型再走一次工具加载
+      try {
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'GET_AGENT_SKILL_PROMPT', name: skill.name }, (resp) => {
+            if (chrome.runtime.lastError || !resp?.success) {
+              resolve(null);
+              return;
+            }
+            resolve(resp);
+          });
         });
-      });
-      if (response && response.prompt) {
-        text += `${response.prompt}\n\n${t('skillSelector.useSkillToolsHint')}`;
-      } else {
+        if (response && response.prompt) {
+          text += `${response.prompt}\n\n${t('skillSelector.useSkillToolsHint')}`;
+        } else {
+          // 降级：加载失败时仍提示使用工具加载
+          text += t('skillSelector.loadSkillHint', { name: skill.name });
+        }
+      } catch {
         // 降级：加载失败时仍提示使用工具加载
         text += t('skillSelector.loadSkillHint', { name: skill.name });
       }
-    } catch {
-      // 降级：加载失败时仍提示使用工具加载
-      text += t('skillSelector.loadSkillHint', { name: skill.name });
+    } else {
+      // Workflow Skill：提示 AI 使用 agent_skill (action=run) 执行，并附上参数定义
+      text += t('skillSelector.runSkillHint', { name: skill.name });
+      const params = skill.parameters;
+      if (params && params.properties && Object.keys(params.properties).length > 0) {
+        const required = params.required || [];
+        const paramList = Object.entries(params.properties)
+          .map(([key, def]) => t('skillSelector.paramItem', {
+            flag: required.includes(key) ? t('skillSelector.requiredParam') : t('skillSelector.optionalParam'),
+            type: def.type || 'string',
+            desc: def.description || '',
+          }))
+          .join(t('skillSelector.paramJoin'));
+        text += t('skillSelector.callParamsPrefix') + paramList;
+      }
+      text += t('skillSelector.sentenceEnd');
     }
-  } else {
-    // Workflow Skill：提示 AI 使用 agent_skill (action=run) 执行，并附上参数定义
-    text += t('skillSelector.runSkillHint', { name: skill.name });
-    const params = skill.parameters;
-    if (params && params.properties && Object.keys(params.properties).length > 0) {
-      const required = params.required || [];
-      const paramList = Object.entries(params.properties)
-        .map(([key, def]) => t('skillSelector.paramItem', {
-          flag: required.includes(key) ? t('skillSelector.requiredParam') : t('skillSelector.optionalParam'),
-          type: def.type || 'string',
-          desc: def.description || '',
-        }))
-        .join(t('skillSelector.paramJoin'));
-      text += t('skillSelector.callParamsPrefix') + paramList;
-    }
-    text += t('skillSelector.sentenceEnd');
+    parts.push(text);
   }
-  return text;
+  return parts.join('\n\n');
 }
 
 // ============================================================
@@ -587,12 +631,17 @@ export async function renderMcpList(filterText = '') {
 
   // 绑定点击事件
   mcpListEl.querySelectorAll('.mcp-list-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
       const serverId = item.dataset.serverId;
       const serverName = item.dataset.serverName;
       selectMcpService(serverId, serverName, services);
+      // Ctrl/Cmd+点击：选中后关闭下拉框（多选场景的单选快捷方式）
+      if (e.ctrlKey || e.metaKey) hidePromptSelector();
     });
   });
+
+  // 渲染后刷新已选标记（多选状态）
+  refreshMcpPickedState();
 }
 
 /**
@@ -610,66 +659,101 @@ export function updateMcpSelection(items) {
 }
 
 /**
- * 选中 MCP 服务 - 显示 MCP 指示器
+ * 选中/取消 MCP 服务 - 多选（再次选择同一服务为移除），更新指示器 chips
+ * 多选时保持下拉框打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  */
 export function selectMcpService(serverId, serverName, services) {
   const svc = services?.find(s => s.serverId === serverId);
   const toolCount = svc?.toolCount || 0;
+  const name = serverName || serverId;
 
-  state.selectedMcpService = {
-    serverId,
-    serverName: serverName || serverId,
-    toolCount
-  };
-
-  // 显示 MCP 指示器
-  const indicator = document.getElementById('mcpIndicator');
-  const nameEl = document.getElementById('mcpIndicatorName');
-  if (indicator && nameEl) {
-    nameEl.textContent = serverName || serverId;
-    indicator.style.display = 'flex';
+  const existsIndex = state.selectedMcpServices.findIndex(s => s.serverName === name);
+  if (existsIndex >= 0) {
+    state.selectedMcpServices.splice(existsIndex, 1);
+  } else {
+    state.selectedMcpServices.push({
+      serverId,
+      serverName: name,
+      toolCount
+    });
   }
+
+  // 更新列表已选标记 + 指示器 chips
+  refreshMcpPickedState();
+  renderMcpIndicator();
 
   // 清除输入框中的 / 触发文本（含过滤关键字）
   clearSlashTriggerText();
 
-  // 隐藏下拉框
-  const promptSelector = document.getElementById('promptSelector');
-  const promptDropdown = document.getElementById('promptDropdown');
-  if (promptSelector) promptSelector.style.display = 'none';
-  if (promptDropdown) promptDropdown.classList.remove('show');
-
-  logger.debug('[SidePanel] selected MCP service:', serverName);
+  logger.debug('[SidePanel] MCP service toggled:', name, 'count:', state.selectedMcpServices.length);
 }
 
 /**
- * 清除 MCP 服务选择
+ * 清除全部 MCP 服务选择
  */
 export function clearMcpService() {
-  state.selectedMcpService = null;
+  state.selectedMcpServices = [];
   state.selectedMcpServiceIndex = -1;
-
-  const indicator = document.getElementById('mcpIndicator');
-  if (indicator) {
-    indicator.style.display = 'none';
-  }
+  renderMcpIndicator();
+  refreshMcpPickedState();
 
   logger.debug('[SidePanel] cleared MCP serviceselect');
 }
 
 /**
- * 获取 MCP 服务上下文文本（注入到用户消息中）
+ * 获取 MCP 服务上下文文本（注入到用户消息中，支持多服务连续注入）
  * @returns {string}
  */
 export function getMcpContextText() {
-  if (!state.selectedMcpService) return '';
+  if (state.selectedMcpServices.length === 0) return '';
 
-  const svc = state.selectedMcpService;
-  return t('skillSelector.selectedMcpContext', { name: svc.serverName });
+  // 多服务各注入一段（段间空行），逐服务提示模型使用对应 MCP 服务
+  return state.selectedMcpServices
+    .map(svc => t('skillSelector.selectedMcpContext', { name: svc.serverName }))
+    .join('\n');
+}
+
+/**
+ * 渲染 MCP 服务指示器（多服务 chips 形式，每个 chip 可单独移除）
+ */
+export function renderMcpIndicator() {
+  const indicator = document.getElementById('mcpIndicator');
+  if (!indicator) return;
+  if (state.selectedMcpServices.length === 0) {
+    indicator.style.display = 'none';
+    indicator.innerHTML = '';
+    return;
+  }
+  indicator.innerHTML = state.selectedMcpServices.map(svc => `
+    <span class="ref-chip mcp-ref-chip">
+      <span class="ref-chip-name" title="${escapeAttr(svc.serverName)}">🔌 ${escapeHtml(svc.serverName)}</span>
+      <button class="ref-chip-close" data-server-name="${escapeAttr(svc.serverName)}" title="${t('common.delete')}">✕</button>
+    </span>
+  `).join('');
+  indicator.querySelectorAll('.ref-chip-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.selectedMcpServices = state.selectedMcpServices.filter(s => s.serverName !== btn.dataset.serverName);
+      renderMcpIndicator();
+      refreshMcpPickedState();
+    });
+  });
+  indicator.style.display = 'flex';
+}
+
+/**
+ * 更新 MCP 列表（Tab 视图与合并视图）中已选服务的标记
+ */
+export function refreshMcpPickedState() {
+  const picked = new Set(state.selectedMcpServices.map(s => s.serverName));
+  document.querySelectorAll('.mcp-list-item, .merged-mcp-item').forEach(item => {
+    item.classList.toggle('picked', picked.has(item.dataset.serverName));
+  });
 }
 
 /**
  * 初始化 MCP 指示器关闭按钮事件
+ * （指示器 chips 化后由 renderMcpIndicator 绑定各自 ✕，此处保留兼容旧 DOM 结构）
  */
 export function initMcpIndicatorEvents() {
   const closeBtn = document.getElementById('mcpIndicatorClose');

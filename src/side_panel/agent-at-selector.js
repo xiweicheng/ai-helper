@@ -627,15 +627,12 @@ async function renderMergedAtList(filterText = '') {
     const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
 
     html += `
-      <div class="prompt-item${isRef ? ' agent-at-active' : ''} prompt-item-knowledge"
+      <div class="prompt-item${isRef ? ' agent-at-active picked' : ''} prompt-item-knowledge"
            data-index="${globalIndex}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
         <span class="prompt-item-code">${escapeHtml(stats)}</span>
-        <span class="agent-item-actions">
-          <span class="agent-active-mark" style="${isRef ? '' : 'display:none'}">✓</span>
-        </span>
       </div>`;
     globalIndex++;
   });
@@ -700,6 +697,8 @@ async function renderMergedAtList(filterText = '') {
         selectPageByAt(parseInt(item.dataset.tabId));
       } else if (type === 'knowledge') {
         selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+        // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
+        if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
       } else if (type === 'proxy') {
         await selectProxyByAt(item.dataset.proxyId);
       }
@@ -779,7 +778,21 @@ function selectPageByAt(tabId) {
 }
 
 /**
+ * 更新知识库列表（合并视图与单独 Tab 视图）中已选知识库的标记
+ * 多选时弹窗保持打开，选择后需手动刷新列表项标记（.picked 紫条+✓ 与 .agent-at-active 高亮）
+ */
+function refreshKnowledgePickedState() {
+  const refIds = new Set(state.knowledgeRefs.map(r => r.id));
+  document.querySelectorAll('.prompt-item-knowledge').forEach(item => {
+    const isRef = refIds.has(item.dataset.kbId);
+    item.classList.toggle('agent-at-active', isRef);
+    item.classList.toggle('picked', isRef);
+  });
+}
+
+/**
  * 通过 @ 选择/取消选择知识库（支持多选，再次选同一库为移除）
+ * 多选时保持弹窗打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  */
 export function selectKnowledgeByAt(kb) {
   focusUserInputAfterSelect();
@@ -791,7 +804,8 @@ export function selectKnowledgeByAt(kb) {
     state.knowledgeRefs.push({ id: kb.id, name: kb.name || kb.id });
   }
 
-  hideAgentAtSelector();
+  // 保持弹窗打开（与技能/MCP 多选一致），仅刷新列表标记与 chips 指示器
+  refreshKnowledgePickedState();
   renderKnowledgeIndicator();
   adjustInputHeight();
 }
@@ -801,6 +815,7 @@ export function selectKnowledgeByAt(kb) {
  */
 export function removeKnowledgeRef(id) {
   state.knowledgeRefs = state.knowledgeRefs.filter(r => r.id !== id);
+  refreshKnowledgePickedState();
   renderKnowledgeIndicator();
 }
 
@@ -809,6 +824,7 @@ export function removeKnowledgeRef(id) {
  */
 export function clearKnowledgeRefs() {
   state.knowledgeRefs = [];
+  refreshKnowledgePickedState();
   renderKnowledgeIndicator();
 }
 
@@ -915,22 +931,21 @@ async function renderKnowledgeAtList(filterText = '') {
     const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
     const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
     return `
-      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active' : ''} prompt-item-knowledge"
+      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active picked' : ''} prompt-item-knowledge"
            data-index="${index}" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
         <span class="prompt-item-index">${index + 1}</span>
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
         <span class="prompt-item-code">${escapeHtml(stats)}</span>
-        <span class="agent-item-actions">
-          <span class="agent-active-mark" style="${isRef ? '' : 'display:none'}">✓</span>
-        </span>
       </div>
     `;
   }).join('');
 
   listEl.querySelectorAll('.prompt-item').forEach(item => {
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
       selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+      // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
+      if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
     });
   });
 }

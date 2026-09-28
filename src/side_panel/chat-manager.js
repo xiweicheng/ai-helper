@@ -18,7 +18,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
-import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
@@ -722,27 +722,32 @@ export async function sendMessage() {
     state.selectedContextText = '';
   }
 
-  // 注入技能上下文（如果已选中技能）
+  // 注入技能上下文（如果已选中技能，支持多技能）
   const skillContext = await getSkillContextText();
   if (skillContext) {
     finalText = skillContext + finalText;
-    // 添加技能上下文气泡（用户可见）
-    addContextBubble('skill', t('contextBubble.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
-    contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
+    // 添加技能上下文气泡（用户可见，每个技能一个气泡）
+    for (const skill of state.selectedSkills) {
+      addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
+      contextBubbles.push({ type: 'skill', name: skill.name, description: skill.description || '' });
+    }
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
   }
 
-  // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  // 注入 MCP 服务上下文（如果已选中 MCP 服务，支持多服务）
   // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
   let forcedMcpServerIds = null;
   const mcpContext = getMcpContextText();
   if (mcpContext) {
-    forcedMcpServerIds = state.selectedMcpService.serverId ? [state.selectedMcpService.serverId] : null;
+    const forcedIds = state.selectedMcpServices.map(s => s.serverId).filter(Boolean);
+    forcedMcpServerIds = forcedIds.length > 0 ? forcedIds : null;
     finalText = mcpContext + finalText;
-    // 添加 MCP 上下文气泡（serverId 供重发时强制下发）
-    addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
-    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName, serverId: state.selectedMcpService.serverId || '' });
+    // 添加 MCP 上下文气泡（每个服务一个气泡，serverId 供重发时强制下发）
+    for (const svc of state.selectedMcpServices) {
+      addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
+      contextBubbles.push({ type: 'mcp', serverName: svc.serverName, serverId: svc.serverId || '' });
+    }
     // 清除 MCP 指示器
     clearMcpService();
   }
@@ -1264,12 +1269,31 @@ export function addContextBubble(type, contextText, scroll = true, hits = null) 
 //   Workflow Skill:    ...\n请使用 `agent_skill`（action=run）...处理以下问题[，调用参数：...]。\n
 //                    / ...\nPlease use `agent_skill` (action=run) ... handle the following problem[, parameters: ...].\n
 function stripSkillContext(text) {
-  return text
-    // Agent Skill 成功：完整说明直到锚定句结束（中/英）
-    // 锚定句中间内容可能跨行，使用 [\s\S]*? 非贪婪匹配
-    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[\s\S]*?处理以下问题[：:]|Please use the relevant tools[\s\S]*?handle the following problem[.:])\s*\n/, '')
-    // Agent 降级 / Workflow：单行提示句（中/英）
-    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
+  // 多技能时循环剥离串首的每个技能段，直到无残留（与注入顺序配合）
+  let out = text;
+  let prev;
+  do {
+    prev = out;
+    out = out
+      // Agent Skill 成功：完整说明直到锚定句结束（中/英）
+      // 锚定句中间内容可能跨行，使用 [\s\S]*? 非贪婪匹配
+      .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[\s\S]*?处理以下问题[：:]|Please use the relevant tools[\s\S]*?handle the following problem[.:])\s*\n/, '')
+      // Agent 降级 / Workflow：单行提示句（中/英）
+      .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
+  } while (out !== prev);
+  return out;
+}
+
+// 剥离用户消息中注入的 MCP 服务上下文（仅显示用，messageHistory 保留完整内容）
+// 多服务时循环剥离串首的每个 MCP 段（格式见 skill-selector 的 selectedMcpContext）
+function stripMcpContext(text) {
+  let out = text;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/^\[(?:已选MCP服务|Selected MCP service):\s*[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+  } while (out !== prev);
+  return out;
 }
 
 export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false, existingTimestamp = undefined) {
@@ -1690,7 +1714,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     let displayText = textContent;
     displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
     displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
-    displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+    displayText = stripMcpContext(displayText);
     displayText = stripSkillContext(displayText);
     
     const quotedMatch = displayText.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -1710,8 +1734,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       }
       // 去除上下文前缀（仅显示用）
       userQuestion = userQuestion.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+      // 剥离顺序须与注入顺序一致（MCP 段在技能段之前），否则技能段残留
+      userQuestion = stripMcpContext(userQuestion);
       userQuestion = stripSkillContext(userQuestion);
-      userQuestion = userQuestion.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       userQuestion = userQuestion.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv._pendingContext = { type, contextText, userQuestion };
@@ -1731,7 +1756,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       // MCP上下文: [已选MCP服务: xxx]\n请使用「xxx」MCP服务来处理以下问题：\n
       displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
       displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
-      displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+      displayText = stripMcpContext(displayText);
       displayText = stripSkillContext(displayText);
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       displayText = displayText.replace(/\[工作目录文件: [^\]]+\]/g, '');
@@ -3781,46 +3806,35 @@ export function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 3b. 恢复技能上下文（如果消息使用了技能）
+    // 3b. 恢复技能上下文（如果消息使用了技能，支持多个）
     clearSkillSelection();
     clearMcpService();
-    const skillMatch = textContent_.match(/^\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/);
-    if (skillMatch) {
-      const skillName = skillMatch[1].split(' - ')[0].trim();
-      state.selectedSkill = { name: skillName, description: '', type: 'agent' };
-      const skillIndicator = document.getElementById('skillIndicator');
-      const skillNameEl = document.getElementById('skillIndicatorName');
-      if (skillIndicator && skillNameEl) {
-        skillNameEl.textContent = skillName;
-        skillIndicator.style.display = 'flex';
-      }
+    const skillNames = Array.from(new Set([...textContent_.matchAll(/\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/g)].map(m => m[1].split(' - ')[0].trim()).filter(Boolean)));
+    if (skillNames.length > 0) {
+      state.selectedSkills = skillNames.map(name => ({ name, description: '', type: 'agent' }));
+      renderSkillIndicator();
     }
 
-    // 3c. 恢复 MCP 服务上下文
-    const mcpMatch = textContent_.match(/^\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/);
-    if (mcpMatch) {
-      const mcpName = mcpMatch[1].split(' - ')[0].trim();
-      state.selectedMcpService = { serverId: '', serverName: mcpName, toolCount: 0 };
-      // 按服务名反查 serverId：重发时该服务会被强制下发（绕过关闭/排除列表）
+    // 3c. 恢复 MCP 服务上下文（支持多个）
+    const mcpNames = Array.from(new Set([...textContent_.matchAll(/\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/g)].map(m => m[1].split(' - ')[0].trim()).filter(Boolean)));
+    if (mcpNames.length > 0) {
+      state.selectedMcpServices = mcpNames.map(name => ({ serverId: '', serverName: name, toolCount: 0 }));
+      renderMcpIndicator();
+      // 按服务名反查 serverId：重发时这些服务会被强制下发（绕过关闭/排除列表）
       chrome.storage.local.get(['mcpTools'], (result) => {
         const tools = result.mcpTools || [];
-        const matched = tools.find(t => (t.serverName || '') === mcpName)
-          || tools.find(t => (t.serverName || '').startsWith(mcpName));
-        // 仅当用户未重新选择其他服务时回填，避免覆盖更新的选择
-        if (matched && state.selectedMcpService && state.selectedMcpService.serverName === mcpName) {
-          state.selectedMcpService = {
-            serverId: matched.serverId || '',
-            serverName: mcpName,
-            toolCount: tools.filter(t => t.serverId === matched.serverId).length
-          };
-        }
+        mcpNames.forEach(name => {
+          const cur = state.selectedMcpServices.find(s => s.serverName === name);
+          if (!cur || cur.serverId) return; // 已被用户移除或已回填
+          const matched = tools.find(t => (t.serverName || '') === name)
+            || tools.find(t => (t.serverName || '').startsWith(name));
+          if (matched) {
+            cur.serverId = matched.serverId || '';
+            cur.toolCount = tools.filter(t => t.serverId === matched.serverId).length;
+          }
+        });
+        renderMcpIndicator();
       });
-      const mcpIndicator = document.getElementById('mcpIndicator');
-      const mcpNameEl = document.getElementById('mcpIndicatorName');
-      if (mcpIndicator && mcpNameEl) {
-        mcpNameEl.textContent = mcpName;
-        mcpIndicator.style.display = 'flex';
-      }
     }
 
     // 4. 从文本中去掉网页/知识库/技能/MCP前缀
@@ -3831,10 +3845,10 @@ export function editAndResendMessage(messageDiv) {
     if (kbMatch) {
       textContentClean = textContentClean.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
     }
-    if (mcpMatch) {
-      textContentClean = textContentClean.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+    if (mcpNames.length > 0) {
+      textContentClean = stripMcpContext(textContentClean);
     }
-    if (skillMatch) {
+    if (skillNames.length > 0) {
       textContentClean = stripSkillContext(textContentClean);
     }
 

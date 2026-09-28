@@ -4,7 +4,7 @@ import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
 import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
-import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs } from './agent-at-selector.js';
 import { buildFileContentText, clearFiles } from './file-extract.js';
@@ -18,7 +18,7 @@ registerTranslations('zh', {
     skillsTabCount: '技能 ({count})',
     mcpTabCount: 'MCP ({count})',
     noMatchPrompt: '暂无匹配的提示词',
-    mergedHeaderHint: '方向键切换 · Enter发送/选中 · Ctrl+Enter带入 · Esc取消',
+    mergedHeaderHint: '方向键切换 · Enter发送/选择 · Ctrl+Enter带入/选中并关闭 · Esc取消',
     noMatchResult: '暂无匹配结果',
     requestFailed: '❌ 请求失败：{message}',
     emptyPromptHint: '暂无提示词，请添加',
@@ -36,7 +36,7 @@ registerTranslations('en', {
     skillsTabCount: 'Skills ({count})',
     mcpTabCount: 'MCP ({count})',
     noMatchPrompt: 'No matching prompts',
-    mergedHeaderHint: 'Arrow keys to switch · Enter to send/select · Ctrl+Enter to insert · Esc to cancel',
+    mergedHeaderHint: 'Arrow keys to switch · Enter to send/select · Ctrl+Enter to insert/select & close · Esc to cancel',
     noMatchResult: 'No matching results',
     requestFailed: '❌ Request failed: {message}',
     emptyPromptHint: 'No prompts yet, please add one',
@@ -484,16 +484,18 @@ async function renderMergedList(filterText = '') {
       if (type === 'skill') {
         const skillName = item.dataset.skillName;
         const skills = await getVisibleSkills();
-        // selectSkill 内部会清除 / 触发文本并隐藏下拉框
+        // 多选：selectSkill 内部清除 / 触发文本并刷新标记，保持下拉框打开便于连续勾选
         selectSkill(skillName, skills);
-        hidePromptSelector();
+        // Ctrl/Cmd+点击：选中后关闭下拉框（多选场景的单选快捷方式）
+        if (e.ctrlKey || e.metaKey) hidePromptSelector();
       } else if (type === 'mcp') {
         const serverId = item.dataset.serverId;
         const serverName = item.dataset.serverName;
         const mcpServices = await getMcpServices();
-        // selectMcpService 内部会清除 / 触发文本并隐藏下拉框
+        // 多选：selectMcpService 内部清除 / 触发文本并刷新标记，保持下拉框打开便于连续勾选
         selectMcpService(serverId, serverName, mcpServices);
-        hidePromptSelector();
+        // Ctrl/Cmd+点击：选中后关闭下拉框（多选场景的单选快捷方式）
+        if (e.ctrlKey || e.metaKey) hidePromptSelector();
       } else {
         const code = item.dataset.code;
         if (e.ctrlKey || e.metaKey) {
@@ -504,6 +506,10 @@ async function renderMergedList(filterText = '') {
       }
     });
   });
+
+  // 刷新技能/MCP 已选标记（多选状态）
+  refreshSkillPickedState();
+  refreshMcpPickedState();
 }
 
 /**
@@ -657,24 +663,29 @@ export async function sendPromptByCode(code) {
     state.selectedContextText = '';
   }
 
-  // 注入技能上下文（如果已选中技能），与主发送链路保持对齐
+  // 注入技能上下文（如果已选中技能，支持多技能），与主发送链路保持对齐
   const skillContext = await getSkillContextText();
   if (skillContext) {
     userMessage = skillContext + userMessage;
-    addContextBubble('skill', t('contextBubble.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
-    contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
+    for (const skill of state.selectedSkills) {
+      addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
+      contextBubbles.push({ type: 'skill', name: skill.name, description: skill.description || '' });
+    }
     clearSkillSelection();
   }
 
-  // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  // 注入 MCP 服务上下文（如果已选中 MCP 服务，支持多服务）
   // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
   let forcedMcpServerIds = null;
   const mcpContext = getMcpContextText();
   if (mcpContext) {
-    forcedMcpServerIds = state.selectedMcpService.serverId ? [state.selectedMcpService.serverId] : null;
+    const forcedIds = state.selectedMcpServices.map(s => s.serverId).filter(Boolean);
+    forcedMcpServerIds = forcedIds.length > 0 ? forcedIds : null;
     userMessage = mcpContext + userMessage;
-    addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
-    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName, serverId: state.selectedMcpService.serverId || '' });
+    for (const svc of state.selectedMcpServices) {
+      addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
+      contextBubbles.push({ type: 'mcp', serverName: svc.serverName, serverId: svc.serverId || '' });
+    }
     clearMcpService();
   }
 

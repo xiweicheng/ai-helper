@@ -19,8 +19,8 @@ export let quotedContextText = '';
 export let customPrompts = [];
 export let selectedPromptIndex = -1;
 export let selectedSkillIndex = -1;   // 技能选择器当前选中索引
-export let selectedSkill = null;      // 当前选中的技能 { name, description, type }
-export let selectedMcpService = null;  // 当前选中的 MCP 服务 { serverId, serverName, toolCount }
+export let selectedSkills = [];       // 当前选中的技能列表（支持多选）[{ name, description, type }]
+export let selectedMcpServices = [];  // 当前选中的 MCP 服务列表（支持多选）[{ serverId, serverName, toolCount }]
 export let selectedMcpServiceIndex = -1; // MCP 服务选择器当前选中索引
 export let selectedPage = null;  // 当前选中的网页 { id, title, url, favIconUrl }
 export let selectedPageIndex = -1; // 页面选择器当前选中索引
@@ -188,10 +188,10 @@ export default {
   set selectedPromptIndex(v) { selectedPromptIndex = v; },
   get selectedSkillIndex() { return selectedSkillIndex; },
   set selectedSkillIndex(v) { selectedSkillIndex = v; },
-  get selectedSkill() { return selectedSkill; },
-  set selectedSkill(v) { selectedSkill = v; },
-  get selectedMcpService() { return selectedMcpService; },
-  set selectedMcpService(v) { selectedMcpService = v; },
+  get selectedSkills() { return selectedSkills; },
+  set selectedSkills(v) { selectedSkills = v; },
+  get selectedMcpServices() { return selectedMcpServices; },
+  set selectedMcpServices(v) { selectedMcpServices = v; },
   get selectedMcpServiceIndex() { return selectedMcpServiceIndex; },
   set selectedMcpServiceIndex(v) { selectedMcpServiceIndex = v; },
   get selectedPage() { return selectedPage; },

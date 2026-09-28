@@ -5,12 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title data-i18n="header.docTitle">AI Helper - 模型问答</title>
   <script type="module" crossorigin src="/assets/rolldown-runtime-C0FnF6B9.js"></script>
-  <script type="module" crossorigin src="/assets/i18n-BSfbg_gu.js"></script>
+  <script type="module" crossorigin src="/assets/i18n-DGPwdbCX.js"></script>
   <script type="module" crossorigin src="/assets/constants-C6-BtNIC.js"></script>
-  <script type="module" crossorigin src="/assets/session-store-BbO-FPhO.js"></script>
-  <script type="module" crossorigin src="/assets/agent-store-Br8N48LY.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ByQZMOvR.js"></script>
-  <script type="module" crossorigin src="/assets/session-manager-ui-k-1SVs5a.js"></script>
+  <script type="module" crossorigin src="/assets/session-store-CHZyLbwm.js"></script>
+  <script type="module" crossorigin src="/assets/agent-store-BR7tAJhB.js"></script>
   <script type="module" crossorigin src="/assets/side_panel.js"></script>
   <script type="module" crossorigin src="/assets/modulepreload-polyfill-P2Xu9kJm.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/side_panel.css">
@@ -543,18 +541,10 @@
     </div>
     <!-- 知识库引用指示器（支持多库，chip 形式） -->
     <div class="knowledge-indicator" id="knowledgeIndicator" style="display: none;"></div>
-    <!-- MCP 服务选中指示器 -->
-    <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
-      <span class="mcp-indicator-label">🔌 MCP</span>
-      <span class="mcp-indicator-name" id="mcpIndicatorName"></span>
-      <button class="mcp-indicator-close" id="mcpIndicatorClose" data-i18n-title="selection.clearMcp" title="取消MCP服务">✕</button>
-    </div>
-    <!-- 技能选中指示器 -->
-    <div class="skill-indicator" id="skillIndicator" style="display: none;">
-      <span class="skill-indicator-label" data-i18n="selection.skill">🧩 技能</span>
-      <span class="skill-indicator-name" id="skillIndicatorName"></span>
-      <button class="skill-indicator-close" id="skillIndicatorClose" data-i18n-title="selection.clearSkill" title="取消技能">✕</button>
-    </div>
+    <!-- MCP 服务选中指示器（支持多服务，chip 形式，由 renderMcpIndicator 渲染） -->
+    <div class="mcp-indicator" id="mcpIndicator" style="display: none;"></div>
+    <!-- 技能选中指示器（支持多技能，chip 形式，由 renderSkillIndicator 渲染） -->
+    <div class="skill-indicator" id="skillIndicator" style="display: none;"></div>
     <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
     <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
     <!-- 提示词选择器 -->
@@ -582,7 +572,7 @@
           <button class="prompt-tab" data-tab="proxies" data-i18n="promptSelector.proxies">代理</button>
           <div class="prompt-merged-title" id="agentAtMergedTitle" data-i18n="promptSelector.mergedTitle">聚合搜索</div>
         </div>
-        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span><span class="agent-add-btn" id="knowledgeAddBtn" data-i18n-title="header.manageKnowledge" title="管理知识库" style="display:none;">✚</span></div>
+        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Ctrl+Enter选中并关闭 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span><span class="agent-add-btn" id="knowledgeAddBtn" data-i18n-title="header.manageKnowledge" title="管理知识库" style="display:none;">✚</span></div>
         <div id="agentAtList"></div>
         <div id="agentPageList" style="display: none;"></div>
         <div id="agentProxyList" style="display: none;"></div>

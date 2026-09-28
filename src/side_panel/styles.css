@@ -6484,47 +6484,13 @@ body {
   display: none !important;
 }
 
-/* 技能指示器 */
+/* 技能选中指示器（多技能 chip 容器） */
 .skill-indicator {
-  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   animation: slideDown 0.2s ease-out;
-  font-size: 13px;
-}
-.skill-indicator-label {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.skill-indicator-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.skill-indicator-close {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.skill-indicator-close:hover {
-  background: rgba(255, 255, 255, 0.35);
 }
 
 /* 网页指示器 */
@@ -6617,6 +6583,73 @@ body {
 .knowledge-chip-close:hover {
   background: rgba(255, 255, 255, 0.4);
 }
+/* 通用引用 chip（技能/MCP 多选指示器复用，结构对齐 knowledge-chip） */
+.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  color: white;
+  font-size: 12px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 12px;
+}
+.ref-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.ref-chip-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.ref-chip-close:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+.skill-ref-chip {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+}
+/* 未启用技能：橙色提示“手动使用” */
+.skill-ref-chip-manual {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+}
+.mcp-ref-chip {
+  background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
+}
+
+/* 多选已选标记（列表项，与键盘高亮 .selected 独立共存；知识库项同用） */
+.skill-list-item.picked,
+.merged-skill-item.picked,
+.mcp-list-item.picked,
+.merged-mcp-item.picked,
+.prompt-item-knowledge.picked {
+  box-shadow: inset 2px 0 0 0 #805ad5;
+}
+.skill-list-item.picked::after,
+.merged-skill-item.picked::after,
+.mcp-list-item.picked::after,
+.merged-mcp-item.picked::after,
+.prompt-item-knowledge.picked::after {
+  content: '✓';
+  margin-left: auto;
+  color: #805ad5;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 
 /* 技能列表项 */
 .skill-list-item {
@@ -6705,10 +6738,7 @@ body {
 .merged-skill-item-disabled .prompt-item-content {
   color: #666;
 }
-/* 选中未启用技能时，指示器显示手动使用模式（橙色） */
-.skill-indicator-manual {
-  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-}
+/* 未启用技能的手动使用模式：chip 橙色（.skill-ref-chip-manual） */
 
 /* 合并列表中的技能标识 */
 .merged-item-badge {
@@ -6747,47 +6777,13 @@ body {
   color: #666;
 }
 
-/* MCP 服务指示器 */
+/* MCP 服务选中指示器（多服务 chip 容器） */
 .mcp-indicator {
-  background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   animation: slideDown 0.2s ease-out;
-  font-size: 13px;
-}
-.mcp-indicator-label {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.mcp-indicator-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mcp-indicator-close {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.mcp-indicator-close:hover {
-  background: rgba(255, 255, 255, 0.35);
 }
 
 /* MCP 服务列表项 */

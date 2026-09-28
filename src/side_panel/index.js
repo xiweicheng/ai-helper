@@ -2887,6 +2887,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'Enter' && selectedIndex >= 0) {
         e.preventDefault();
         items[selectedIndex].click();
+        // Ctrl/Cmd+Enter：选中后关闭弹窗（知识库等多选场景的单选快捷方式；其余类型本就关闭）
+        if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
         return;
       } else if (e.key === 'Escape') {
         hideAgentAtSelector();
@@ -2963,11 +2965,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           e.preventDefault();
           const selected = mergedItems[state.selectedPromptIndex];
           if (selected.dataset.type === 'skill') {
-            // 技能：触发点击选中
+            // 技能：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
             selected.click();
+            if (e.ctrlKey || e.metaKey) hidePromptSelector();
           } else if (selected.dataset.type === 'mcp') {
-            // MCP 服务：触发点击选中
+            // MCP 服务：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
             selected.click();
+            if (e.ctrlKey || e.metaKey) hidePromptSelector();
           } else if (e.ctrlKey || e.metaKey) {
             insertPromptToInputByCode(selected.dataset.code);
           } else {
@@ -3015,6 +3019,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter' && state.selectedSkillIndex >= 0) {
           e.preventDefault();
           skillItems[state.selectedSkillIndex].click();
+          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
+          if (e.ctrlKey || e.metaKey) hidePromptSelector();
           return;
         }
 
@@ -3069,6 +3075,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter' && state.selectedMcpServiceIndex >= 0) {
           e.preventDefault();
           mcpItems[state.selectedMcpServiceIndex].click();
+          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
+          if (e.ctrlKey || e.metaKey) hidePromptSelector();
           return;
         }
 
