@@ -30,6 +30,30 @@ import { loadConfig } from '../config.js';
 const COLLECTION_ID_RE = /^kb_[a-z0-9]+$/;
 const DOCUMENT_ID_RE = /^doc_[a-z0-9]+$/;
 
+// 重建清单文件名（位于索引目录内）：构建完成、换入前写入，注册表提交成功后删除；
+// 崩溃恢复时借它判定「换入已完成但注册表未提交」的半完成状态（R4）
+const REBUILD_MANIFEST = 'rebuild_manifest.json';
+
+// 检索参数上界（S4a）：单次检索 topK 上限——候选集按 topK*2 进入排序与关键词扫描，
+// 不设界时 1e9 之类的入参会放大 CPU/内存占用
+export const SEARCH_TOPK_MAX = 50;
+
+// 导入体积上限（P3）：文本与上传两条链路过去无限制，超大内容会在分块/向量化前
+// 全量驻留内存（OOM）；文本与 URL 导入上限（10MB）对齐，上传放宽到 50MB（与 fileMaxSize 默认一致）
+export const INGEST_MAX_TEXT_BYTES = 10 * 1024 * 1024;
+export const INGEST_MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * 人类可读的字节上限（错误消息插值用）
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatBytes(bytes) {
+  return bytes >= 1024 * 1024
+    ? `${Math.round(bytes / (1024 * 1024))}MB`
+    : `${Math.round(bytes / 1024)}KB`;
+}
+
 // 远端（OpenAI 兼容）模式的字段默认值（与 embedding/index.js 的运行时兜底保持一致）
 // dimensions: 0 表示未显式指定 → 不向服务端透传 dimensions，使用平台默认维度
 const REMOTE_EMBEDDING_DEFAULTS = {
@@ -116,6 +140,32 @@ function dropBlankApiKey(input) {
   if (input.apiKey === undefined || String(input.apiKey).trim() !== '') return input;
   const { apiKey, ...rest } = input;
   return rest;
+}
+
+/**
+ * 过滤非法数值入参：未提供/空值/非有限数字返回 undefined（由调用方回退默认）
+ */
+function toFiniteNumberOrUndefined(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * 归一化检索参数（S4a）：topK 截断取整并钳制到 [1, SEARCH_TOPK_MAX]，
+ * threshold 钳制到余弦相似度范围 [-1, 1]；非法/缺失值不设置（由 Searcher 使用默认配置）。
+ * 防止超大 topK 放大候选集与非法阈值导致检索恒空/全量返回
+ * @param {{topK?: unknown, threshold?: unknown}} [options]
+ * @returns {{topK?: number, threshold?: number}}
+ */
+export function normalizeSearchOptions(options = {}) {
+  const src = options || {};
+  const out = {};
+  const topK = toFiniteNumberOrUndefined(src.topK);
+  if (topK !== undefined) out.topK = Math.min(Math.max(Math.trunc(topK), 1), SEARCH_TOPK_MAX);
+  const threshold = toFiniteNumberOrUndefined(src.threshold);
+  if (threshold !== undefined) out.threshold = Math.min(Math.max(threshold, -1), 1);
+  return out;
 }
 
 export class RagManager {
@@ -350,6 +400,9 @@ export class RagManager {
     const docsDir = join(finalDir, 'documents');
     const tmpRoot = join(RAG_ROOT, `.rebuild_${collectionId}`);
 
+    // 0. 先收敛上次被中断的重建：finalDir 缺失时 tmpRoot 可能是唯一数据源（R4）
+    await this._recoverInterruptedRebuild(collectionId);
+
     // 1. 读取全部文档备份（所有导入来源均有全文备份，见 _saveDocumentBackup）
     let backups = [];
     try {
@@ -369,6 +422,7 @@ export class RagManager {
 
     try {
       // 2. 临时目录构建新索引（不影响线上索引）
+      //    此时 tmpRoot 不含唯一数据：中断现场已由步骤 0 收敛
       await rm(tmpRoot, { recursive: true, force: true });
       const provider = createEmbeddingProvider(embeddingConfig);
       const store = new VectraStore(collectionId, tmpRoot);
@@ -385,11 +439,12 @@ export class RagManager {
         const chunks = text.trim() ? chunkText(text, chunkConfigForBuild) : [];
         if (chunks.length > 0) {
           const embeddings = await this._embedChunks(provider, chunks, embeddingConfig);
+          // 用户 metadata 先展开、系统业务键最后（S4b）：重建同样不可被备份中的历史 metadata 覆盖
           await store.upsertChunks(doc.id, chunks, embeddings, {
+            ...(doc.metadata || {}),
             documentName: doc.name,
             source: doc.source,
             createdAt: doc.createdAt,
-            ...(doc.metadata || {}),
           });
           chunkCount += chunks.length;
         }
@@ -404,6 +459,17 @@ export class RagManager {
         await writeFile(join(newDocsDir, `${backup.id}.json`), JSON.stringify(backup), 'utf-8');
       }
 
+      // 重建清单：随索引一并换入；若换入后进程被杀，恢复时据此补提交注册表（R4）
+      const documentCount = newBackups.filter(b => (b.chunkCount || 0) > 0).length;
+      await writeFile(join(tmpRoot, collectionId, REBUILD_MANIFEST), JSON.stringify({
+        version: 1,
+        targetEmbeddingConfig: embeddingConfig,
+        targetChunkConfig: chunkConfigForBuild,
+        documentCount,
+        chunkCount,
+        startedAt: new Date().toISOString(),
+      }, null, 2), 'utf-8');
+
       // 3. 原子换入（同设备 rename）：旧索引先整体移出保命 → 新索引就位 → 失败回滚旧索引
       const oldIndexKeep = join(tmpRoot, 'index_backup');
       await rename(finalDir, oldIndexKeep);
@@ -413,11 +479,8 @@ export class RagManager {
         await rename(oldIndexKeep, finalDir).catch(() => {}); // 回滚（尽力而为）
         throw err;
       }
-      await rm(oldIndexKeep, { recursive: true, force: true }).catch(() => {});
-      await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 
-      // 4. 换入成功后写入注册表新配置与计数
-      const documentCount = newBackups.filter(b => (b.chunkCount || 0) > 0).length;
+      // 4. 先提交注册表，再清理备份（任一环节被杀，恢复逻辑都能据此判定并收敛）
       await this._updateRegistry(reg => {
         const target = reg.collections.find(c => c.id === collectionId);
         if (target) {
@@ -430,11 +493,16 @@ export class RagManager {
       });
       this._providers.delete(collectionId); // 配置已换，缓存失效
 
+      // 5. 提交完成：删清单 → 清理旧索引备份与临时根（失败仅残留，由恢复逻辑兜底）
+      await unlink(join(finalDir, REBUILD_MANIFEST)).catch(() => {});
+      await rm(oldIndexKeep, { recursive: true, force: true }).catch(() => {});
+      await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+
       console.log(`[RAG] rebuild done: ${collectionId}, ${documentCount} docs / ${chunkCount} chunks`);
       return { chunkCount, documentCount };
     } catch (err) {
-      // 失败清理：旧索引仍在（finalDir 存在）时临时目录可安全删除；
-      // 否则保留临时目录（含 index_backup）供登记恢复，不自动清理
+      // 失败清理：finalDir 仍在时临时目录可安全删除；否则保留现场（可能含唯一数据），
+      // 由 _recoverInterruptedRebuild（重建入口/重启扫描）收敛，绝不删除
       const finalDirExists = await stat(finalDir).then(() => true).catch(() => false);
       if (finalDirExists) {
         await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
@@ -443,6 +511,126 @@ export class RagManager {
       }
       throw err;
     }
+  }
+
+  /**
+   * 收敛被中断的重建（R4；幂等，调用方需已持有该库的 _activeOps 占位或保证无并发）
+   * 按磁盘形态判定：
+   *   - finalDir 缺失 + tmpRoot/<id> 含清单：新索引已构建完整但未换入 → 完成换入并补提交
+   *   - finalDir 缺失 + tmpRoot/index_backup：换入空窗（旧索引已移出）被杀 → 回滚旧索引
+   *   - finalDir 存在 + 清单存在：换入完成但注册表未提交被杀 → 用清单补提交并清理
+   *   - finalDir 正常 + 仅残留 tmpRoot：上次已完成或已回滚 → 安全清理
+   * @returns {Promise<'none'|'rolled-back'|'committed'|'cleaned'>}
+   */
+  async _recoverInterruptedRebuild(collectionId) {
+    const finalDir = join(RAG_ROOT, collectionId);
+    const tmpRoot = join(RAG_ROOT, `.rebuild_${collectionId}`);
+    const tmpExists = await stat(tmpRoot).then(() => true).catch(() => false);
+    const finalExists = await stat(finalDir).then(() => true).catch(() => false);
+    if (!finalExists && !tmpExists) return 'none';
+
+    if (!finalExists) {
+      const newIndexDir = join(tmpRoot, collectionId);
+      const newIndexReady = await stat(join(newIndexDir, REBUILD_MANIFEST)).then(() => true).catch(() => false);
+      if (newIndexReady) {
+        // 新索引构建完整（清单是构建的最后一步）但换入未发生：直接完成换入 + 补提交
+        await rename(newIndexDir, finalDir);
+        const ok = await this._commitRebuildManifest(collectionId, finalDir, tmpRoot);
+        console.warn(`[RAG] rebuild recovery: committed pending index for ${collectionId}`);
+        return ok ? 'committed' : 'none';
+      }
+      const oldIndexKeep = join(tmpRoot, 'index_backup');
+      const backupExists = await stat(oldIndexKeep).then(() => true).catch(() => false);
+      if (backupExists) {
+        // 换入空窗被杀：index_backup 是唯一数据源 → 回滚，恢复重建前状态
+        await rename(oldIndexKeep, finalDir);
+        await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+        console.warn(`[RAG] rebuild recovery: rolled back interrupted swap for ${collectionId}`);
+        return 'rolled-back';
+      }
+      // finalDir 与任何备份均缺失（非重建中断可产生）：保留现场，仅告警
+      console.error(`[RAG] rebuild recovery: ${collectionId} final dir missing without backup, manual check needed`);
+      return 'none';
+    }
+
+    // finalDir 正常
+    const pendingManifest = await stat(join(finalDir, REBUILD_MANIFEST)).then(() => true).catch(() => false);
+    if (pendingManifest) {
+      // 换入已完成但注册表未提交被杀：用清单补提交（幂等）
+      const ok = await this._commitRebuildManifest(collectionId, finalDir, tmpRoot);
+      if (ok) console.warn(`[RAG] rebuild recovery: committed pending registry for ${collectionId}`);
+      return ok ? 'committed' : 'none';
+    }
+    if (tmpExists) {
+      // 旧索引备份/构建残留：线上目录与注册表已一致，可安全清理
+      await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+      console.warn(`[RAG] rebuild recovery: cleaned stale temp dir for ${collectionId}`);
+      return 'cleaned';
+    }
+    return 'none';
+  }
+
+  /**
+   * 依据重建清单补提交注册表配置与计数（幂等；成功后删除清单并清理临时目录）
+   * @returns {Promise<boolean>} 清单有效且提交成功
+   */
+  async _commitRebuildManifest(collectionId, finalDir, tmpRoot) {
+    let manifest = null;
+    try {
+      manifest = JSON.parse(await readFile(join(finalDir, REBUILD_MANIFEST), 'utf-8'));
+    } catch {
+      manifest = null;
+    }
+    if (!manifest || !manifest.targetEmbeddingConfig) {
+      // 清单损坏：无法判定目标配置 → 删清单防反复触发，保留现场供人工检查
+      await unlink(join(finalDir, REBUILD_MANIFEST)).catch(() => {});
+      console.error(`[RAG] rebuild recovery: invalid manifest for ${collectionId}, keep ${tmpRoot} for manual check`);
+      return false;
+    }
+    await this._updateRegistry(reg => {
+      const target = reg.collections.find(c => c.id === collectionId);
+      if (target) {
+        target.embeddingConfig = manifest.targetEmbeddingConfig;
+        target.chunkConfig = manifest.targetChunkConfig;
+        if (Number.isFinite(manifest.documentCount)) target.documentCount = manifest.documentCount;
+        if (Number.isFinite(manifest.chunkCount)) target.chunkCount = manifest.chunkCount;
+      }
+      return reg;
+    });
+    this._providers.delete(collectionId); // 配置已换，缓存失效
+    await unlink(join(finalDir, REBUILD_MANIFEST)).catch(() => {});
+    await rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
+    return true;
+  }
+
+  /**
+   * 扫描并恢复全部被中断的重建（进程重启后由 RAG 路由加载触发；幂等可重复执行）
+   * @returns {Promise<Array<{collectionId: string, action: string}>>}
+   */
+  async recoverInterruptedRebuilds() {
+    let entries = [];
+    try {
+      entries = await readdir(RAG_ROOT);
+    } catch {
+      return []; // 数据根目录不存在：无待恢复项
+    }
+    const results = [];
+    for (const name of entries) {
+      if (!name.startsWith('.rebuild_')) continue;
+      const collectionId = name.slice('.rebuild_'.length);
+      if (!COLLECTION_ID_RE.test(collectionId)) continue;
+      if (this._activeOps.has(collectionId)) continue; // 该库有任务进行中：不动
+      this._activeOps.add(collectionId);
+      try {
+        const action = await this._recoverInterruptedRebuild(collectionId);
+        if (action !== 'none') results.push({ collectionId, action });
+      } catch (err) {
+        console.error(`[RAG] rebuild recovery failed for ${collectionId}:`, err);
+      } finally {
+        this._activeOps.delete(collectionId);
+      }
+    }
+    return results;
   }
 
   // ==================== embedding provider ====================
@@ -499,6 +687,10 @@ export class RagManager {
   async ingestText(collectionId, input = {}) {
     return this._runIngest(collectionId, async () => {
       const content = String(input.content || '');
+      // 大小预检（P3）：在解析/分块/向量化前快速失败
+      if (Buffer.byteLength(content, 'utf8') > INGEST_MAX_TEXT_BYTES) {
+        throw new RagError('contentTooLarge', { limit: formatBytes(INGEST_MAX_TEXT_BYTES) });
+      }
       if (!content.trim()) throw new RagError('emptyContent');
       return this._ingestText(collectionId, {
         text: content,
@@ -538,6 +730,10 @@ export class RagManager {
       // 来源 2：上传内容（base64）
       if (input.contentBase64) {
         if (!input.fileName) throw new RagError('missingFileName');
+        // 体积预检（P3）：按 base64 长度换算近似解码尺寸，避免先分配超大 Buffer 再拒绝
+        if (Math.floor(input.contentBase64.length * 3 / 4) > INGEST_MAX_FILE_BYTES) {
+          throw new RagError('fileTooLarge', { limit: formatBytes(INGEST_MAX_FILE_BYTES) });
+        }
         const ext = extname(input.fileName).toLowerCase();
         const tmpFile = join(tmpdir(), `rag-upload-${randomBytes(6).toString('hex')}${ext}`);
         this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
@@ -629,11 +825,12 @@ export class RagManager {
 
       this._reportProgress(collectionId, { phase: 'storing', current: chunks.length, total: chunks.length });
       const store = new VectraStore(collectionId);
+      // 用户 metadata 先展开、系统业务键最后（S4b）：documentName/source/createdAt 不可被覆盖
       await store.upsertChunks(documentId, chunks, embeddings, {
+        ...(metadata || {}),
         documentName: name,
         source,
         createdAt,
-        ...(metadata || {}),
       });
 
       // 原文备份（BM25 docReader 依赖，见设计文档 5.8）
@@ -789,6 +986,7 @@ export class RagManager {
    * @param {{topK?: number, threshold?: number}} [options]
    */
   async search(collectionId, query, options = {}) {
+    options = normalizeSearchOptions(options);
     const collection = await this.getCollection(collectionId);
     if (!query || !String(query).trim()) throw new RagError('emptyQuery');
 
@@ -807,6 +1005,7 @@ export class RagManager {
    * @param {{topK?: number, threshold?: number}} [options]
    */
   async searchMulti(collectionIds, query, options = {}) {
+    options = normalizeSearchOptions(options);
     const all = [];
     const errors = [];
     const globalTopK = options.topK || 5;

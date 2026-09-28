@@ -34,7 +34,7 @@ export class VectraStore {
    * @param {string} documentId
    * @param {Array<{text: string, startPos: number, endPos: number}>} chunks
    * @param {number[][]} embeddings - 与 chunks 一一对应
-   * @param {object} metadata - 附加到每个分块的元数据（documentName 等）
+   * @param {object} metadata - 附加到每个分块的元数据（documentName 等；不可覆盖系统保留键）
    */
   async upsertChunks(documentId, chunks, embeddings, metadata = {}) {
     await this.ensureCreated();
@@ -45,13 +45,15 @@ export class VectraStore {
           id: `${documentId}_chunk_${i}`,
           vector: embeddings[i],
           metadata: {
+            // 用户 metadata 先展开、系统保留键最后（S4b）：即使入参携带同名键也以系统值为准，
+            // 防止 documentId 等被篡改导致分块无法按文档检索/删除（孤儿分块）
+            ...metadata,
             documentId,
             chunkIndex: i,
             totalChunks: chunks.length,
             text: chunks[i].text,
             startPos: chunks[i].startPos,
             endPos: chunks[i].endPos,
-            ...metadata,
           },
         });
       }

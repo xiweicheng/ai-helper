@@ -18,7 +18,8 @@ import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, ki
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang } from './rag/detect.js';
-import { startRagInstall, getRagInstallStatus } from './rag/install.js';
+import { startRagInstall, getRagInstallStatus, stopRagInstall } from './rag/install.js';
+import { stopProcessTree } from './process-tree.js';
 import {
   initializeMcpRegistry,
   shutdownMcpRegistry,
@@ -600,6 +601,10 @@ export function startServer() {
       if (agentOperationInProgress) {
         return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
       }
+      // 与 RAG 依赖安装互斥（R2）：两者并发写 node_modules 会互相破坏
+      if (getRagInstallStatus().running) {
+        return jsonResponse(res, 409, { success: false, error: t('error.ragInstallInProgress') });
+      }
       if (Date.now() - lastOperationTime < OPERATION_COOLDOWN_MS) {
         const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
         return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
@@ -624,25 +629,37 @@ export function startServer() {
           // npm install -g ai-helper-agent@latest
           // 不指定 --registry，继承用户环境配置（公司内网/外网自适应）
           const result = await new Promise((resolvePromise) => {
-            const npm = spawn('npm', ['install', '-g', 'ai-helper-agent@latest', '--no-audit', '--no-fund'], {
-              shell: true,
+            const isWin = process.platform === 'win32';
+            // 非 Windows 直接执行 npm（shell: false）并以 detached 成为进程组组长，
+            // 超时/退出可整树组杀，避免 SIGTERM 只杀 /bin/sh 留下孤儿 npm（R1）
+            const npm = spawn(isWin ? 'npm.cmd' : 'npm', ['install', '-g', 'ai-helper-agent@latest', '--no-audit', '--no-fund'], {
+              shell: isWin,
+              detached: !isWin,
               env: { ...process.env },
               windowsHide: true
             });
             npm.stdout.on('data', d => npmOutput.push(d.toString().trim()));
             npm.stderr.on('data', d => npmOutput.push(d.toString().trim()));
-            npm.on('error', (err) => resolvePromise({ success: false, error: err.message }));
 
-            // 超时保护（90s），防止 npm 卡住导致前端长等待
-            const timer = setTimeout(() => {
-              try { npm.kill('SIGTERM'); } catch {}
-              resolvePromise({ success: false, error: t('error.npmInstallTimeout') });
+            let settled = false;
+            let timer = null;
+            const finish = (result) => {
+              if (settled) return;
+              settled = true;
+              if (timer) clearTimeout(timer);
+              resolvePromise(result);
+            };
+            npm.on('error', (err) => finish({ success: false, error: err.message }));
+
+            // 超时保护（90s），防止 npm 卡住导致前端长等待；终止整棵进程树防孤儿（R1）
+            timer = setTimeout(() => {
+              finish({ success: false, error: t('error.npmInstallTimeout') });
+              stopProcessTree(npm, { graceMs: 5000 }).catch(() => {});
             }, 90000);
             timer.unref();
 
             npm.on('close', (code) => {
-              clearTimeout(timer);
-              resolvePromise({ success: code === 0, code });
+              finish({ success: code === 0, code });
             });
           });
           npmSuccess = result.success;
@@ -1989,6 +2006,10 @@ export function startServer() {
 
     // RAG 依赖安装（固定白名单 + 异步任务；位于认证区，强制 Bearer，不走本机来源免认证豁免）
     if (req.method === 'POST' && pathname === '/api/rag/install') {
+      // 更新操作进行中时拒绝（R2）：与 /api/agent/update 双向互斥
+      if (agentOperationInProgress) {
+        return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
+      }
       const result = startRagInstall(t);
       if (result.started) {
         logSystem('rag_install', { reason: 'api_request', extId });
@@ -2186,6 +2207,9 @@ export function startServer() {
 
     stopPairCodeRotation();
     stopPeriodicCleanup();
+
+    // 中止 RAG 依赖安装并回收 npm 进程树（R1/R3）：不留孤儿 npm 继续写 node_modules
+    try { await stopRagInstall(); } catch {}
 
     // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {

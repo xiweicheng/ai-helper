@@ -27,6 +27,11 @@ import { RagError, translateRagError } from './errors.js';
 // 进程级单例（注册表锁与 provider 缓存复用）
 const manager = new RagManager();
 
+// 进程重启后收敛被中断的索引重建（R4；幂等，后台执行不阻塞请求）
+manager.recoverInterruptedRebuilds().catch((err) => {
+  console.error('[RAG] rebuild recovery scan failed:', err);
+});
+
 /**
  * 判断请求来源是否允许跨域读取响应（与 server.js 的 getAllowedOrigin 行为一致）
  */
@@ -69,6 +74,20 @@ async function handleWithT(res, t, fn) {
     }
     const { error, code } = translateRagError(err, t);
     return jsonResponse(res, 400, { success: false, error, code });
+  }
+}
+
+/**
+ * 安全解码路径段（S4c）：畸形 % 编码（如 %zz / 不完整多字节序列）返回 null，
+ * 由调用方按业务语义返回 400，避免 URIError 冒泡到 server 兜底成 500
+ * @param {string} value
+ * @returns {string|null}
+ */
+function safeDecodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
   }
 }
 
@@ -171,9 +190,23 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
   );
 
   if (collectionMatch) {
-    const collectionId = decodeURIComponent(collectionMatch[1]);
+    const collectionId = safeDecodePathSegment(collectionMatch[1]);
+    if (collectionId === null) {
+      return jsonResponse(res, 400, {
+        success: false,
+        error: t('rag.err_invalidCollectionId', { id: collectionMatch[1] }),
+        code: 'invalidCollectionId',
+      });
+    }
     const sub = collectionMatch[2];
-    const docId = collectionMatch[3] ? decodeURIComponent(collectionMatch[3]) : undefined;
+    const docId = collectionMatch[3] ? safeDecodePathSegment(collectionMatch[3]) : undefined;
+    if (docId === null) {
+      return jsonResponse(res, 400, {
+        success: false,
+        error: t('rag.err_invalidDocumentId', { id: collectionMatch[3] }),
+        code: 'invalidDocumentId',
+      });
+    }
 
     // DELETE /api/rag/collections/{id} - 删除知识库
     if (method === 'DELETE' && !sub) {
