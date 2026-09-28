@@ -16,7 +16,7 @@
   })();
 </script>
 <title data-i18n="page-title">AI Helper — Make Your Browser Think</title>
-<meta name="description" id="meta-description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
+<meta name="description" id="meta-description" content="AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.">
 <meta name="keywords" content="AI Helper, Browser Assistant, Chrome Extension, LLM, ReAct, Multi-Agent, Skill, MCP, Automation, Open Source">
 <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB1klEQVQ4jaWSS0sbcRTFZz0zmVdmkjBqfMRYzaujY4xGm6RqoyaShRu3ui0UpaALRQUfKD6QgG6FfpripzrlXE1KWpFCF2e4nPM7d15/RVVddGToPhxzBK6VhmePI+ZkRJzpMYvofpenlG45wnIKnv0BiWgOvvsRfV4g4kyPGRmyPQt0PQHbGIZrjyERzaPPm0QyXkQ22RJxpseMDFl2ugtMox+OOYq4k4HvBUj5n1HL72Gj1BZxpseMDFl2ZIGmxWAZSbjWmDxumNnC6vwt1itttCoPaFUfZKbHjAxZdthVdC0O2xiUjzQzs4ulxWssL91h5UsbjfqjiDM9ZmTIssOuwgu3Ra00woXvWFi9RGXtFrXGPRabbRFneszIkGVHFmhaDGaE3yCFwqcdlNYuMNe8wnzzBtkfzyLO9JiRIcuOvIKquvJvLWMIudlvmF4+RbF+jlL9EpmnnyLO9JiRIds5DwovnaeYCL8iqJxgqnqKsHqGsHb+ouqZeMzIdO7ec5B0LYF0YRv5uUMUykcIyscIyievOhaPGRmyf51EVU5jPwaGG8iG+8gVD3pEjxmZN4+y2pUHy0xjaHQTE8GeiDM9Zn/ybyz4LSeaE73HvLvgX/TfC34BQ3B2TrlPmzgAAAAASUVORK5CYII=">
 <style>
@@ -894,7 +894,7 @@
   <div class="hero-badge"><span class="dot"></span><span data-i18n="hero-badge">v1.0 Released · Open Source · MIT License</span></div>
   <h1><span data-i18n="hero-title-1">Make Your Browser</span><br><span data-i18n="hero-title-2">Think &amp; Act</span></h1>
   <div class="hero-subhead" data-i18n="hero-subhead">More Than Chat — A Real Action-Taking AI Assistant</div>
-  <p data-i18n="hero-desc">A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.</p>
+  <p data-i18n="hero-desc">A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.</p>
   <div class="hero-actions">
     <a class="btn btn-primary" href="https://github.com/xiweicheng/ai-helper" target="_blank">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -997,6 +997,11 @@
       <p data-i18n="feat-memory-desc">Automatically stores user preferences, knowledge, and decision records. Supports fact storage and conversation summary memory types, intelligent history retrieval, auto compression and eviction of low-value memories — the more you use it, the better it understands you.</p>
     </div>
     <div class="card">
+      <div class="card-icon">📚</div>
+      <h3 data-i18n="feat-rag-title">Local Knowledge Base (RAG)</h3>
+      <p data-i18n="feat-rag-desc">Import PDF / Word / Excel / PPT / Markdown / HTML / CSV into local knowledge bases and get retrieval-augmented answers with clickable citations. Hybrid vector + keyword retrieval, multi-base management and cross-base search — fully local via the optional Agent.</p>
+    </div>
+    <div class="card">
       <div class="card-icon">🖥️</div>
       <h3 data-i18n="feat-agent-title">Agent Local Operations</h3>
       <p data-i18n="feat-agent-desc">Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.</p>
@@ -1004,12 +1009,12 @@
     <div class="card">
       <div class="card-icon">🎯</div>
       <h3 data-i18n="feat-skill-title">Skill System</h3>
-      <p data-i18n="feat-skill-desc">Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill for one-click reusable workflow creation.</p>
+      <p data-i18n="feat-skill-desc">Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill; select multiple skills per conversation from the / picker.</p>
     </div>
     <div class="card">
       <div class="card-icon">🔌</div>
       <h3 data-i18n="feat-mcp-title">MCP Protocol Extension</h3>
-      <p data-i18n="feat-mcp-desc">Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, infinitely expand capability boundaries.</p>
+      <p data-i18n="feat-mcp-desc">Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, per-service toggles and exclusion lists, infinitely expand capability boundaries.</p>
     </div>
     <div class="card">
       <div class="card-icon">📊</div>
@@ -1030,6 +1035,11 @@
       <div class="card-icon">👁️</div>
       <h3 data-i18n="feat-vision-title">Vision Model Image Analysis</h3>
       <p data-i18n="feat-vision-desc">Connects to vision language models, supports screenshot-based image Q&A. Independent API configuration, automatic image compression to reduce Token consumption.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔀</div>
+      <h3 data-i18n="feat-provider-title">Multi-Provider Profiles</h3>
+      <p data-i18n="feat-provider-desc">Save multiple OpenAI-compatible provider configurations (endpoint / API key / model list) and switch anytime. Pick the provider first, then the model, right in the chat panel; config import/export merges profiles by ID.</p>
     </div>
     <div class="card">
       <div class="card-icon">💡</div>
@@ -1188,7 +1198,7 @@
     <div class="tool-cat">
       <div class="cat-icon">🖱️</div>
       <div class="cat-name" data-i18n="tool-interaction">Page Interaction</div>
-      <div class="cat-count">5</div>
+      <div class="cat-count">6</div>
     </div>
     <div class="tool-cat">
       <div class="cat-icon">📝</div>
@@ -1244,6 +1254,11 @@
       <div class="cat-icon">🧠</div>
       <div class="cat-name" data-i18n="tool-memory">Long-Term Memory</div>
       <div class="cat-count">1</div>
+    </div>
+    <div class="tool-cat">
+      <div class="cat-icon">📚</div>
+      <div class="cat-name" data-i18n="tool-knowledge">Knowledge Base</div>
+      <div class="cat-count">3</div>
     </div>
   </div>
 </section>
@@ -1394,7 +1409,7 @@
       <div class="arch-arrow">→</div>
       <div class="arch-box highlight">
         <div class="arch-title">Agent Service</div>
-        <div class="arch-desc" data-i18n="arch-agent">File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension</div>
+        <div class="arch-desc" data-i18n="arch-agent">File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension<br>Knowledge Base (RAG)</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-box">
@@ -1743,7 +1758,7 @@
     'hero-title-1': { en: 'Make Your Browser', zh: '让你的浏览器' },
     'hero-title-2': { en: 'Think & Act', zh: '会思考、能行动' },
     'hero-subhead': { en: 'More Than Chat — A Real Action-Taking AI Assistant', zh: '不止是对话，更是能真正动手做事的 AI 助手' },
-    'hero-desc':    { en: 'A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.', zh: '基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。' },
+    'hero-desc':    { en: 'A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.', zh: '基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、本地知识库（RAG）、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。' },
     'hero-btn-exp':  { en: 'Try It Now', zh: '立即体验' },
     'hero-btn-edge': { en: 'Edge Add-ons', zh: 'Edge 扩展商店' },
     'hero-btn-learn': { en: 'Learn More', zh: '了解更多' },
@@ -1778,12 +1793,14 @@
     'feat-content-desc':     { en: 'Plain text, HTML, tables, links, forms, images, metadata. Supports Markdown/JSON formatted output, scrolling collection of long content. Cross-tab extraction via tabId without switching tabs.', zh: '纯文本、HTML、表格、链接、表单、图片、元数据。支持 Markdown/JSON 格式化输出，滚动收集长内容。支持指定 tabId 跨标签页提取，无需切换标签页。' },
     'feat-memory-title':     { en: 'Long-Term Memory System', zh: '长期记忆系统' },
     'feat-memory-desc':      { en: 'Automatically stores user preferences, knowledge, and decision records. Supports fact storage and conversation summary memory types, intelligent history retrieval, auto compression and eviction of low-value memories — the more you use it, the better it understands you.', zh: '自动存储用户偏好、知识和决策记录。支持事实存储和对话摘要两种记忆类型，智能检索历史记忆，自动压缩与淘汰低价值记忆，让 AI 越用越懂你。' },
+    'feat-rag-title':        { en: 'Local Knowledge Base (RAG)', zh: '本地知识库（RAG）' },
+    'feat-rag-desc':         { en: 'Import PDF / Word / Excel / PPT / Markdown / HTML / CSV into local knowledge bases and get retrieval-augmented answers with clickable citations. Hybrid vector + keyword retrieval, multi-base management and cross-base search — fully local via the optional Agent.', zh: '将 PDF / Word / Excel / PPT / Markdown / HTML / CSV 导入本地知识库，检索增强回答附带可点击的引用来源。向量 + 关键词混合检索，支持多库管理与跨库检索，数据全程本地（经可选 Agent 实现）。' },
     'feat-agent-title':      { en: 'Agent Local Operations', zh: '代理本地操作' },
     'feat-agent-desc':       { en: 'Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.', zh: '读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。' },
     'feat-skill-title':      { en: 'Skill System', zh: 'Skill 技能系统' },
-    'feat-skill-desc':       { en: 'Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill for one-click reusable workflow creation.', zh: 'Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能，一键创建可复用工作流。' },
+    'feat-skill-desc':       { en: 'Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill; select multiple skills per conversation from the / picker.', zh: 'Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能；`/` 选择器支持对话内多选技能。' },
     'feat-mcp-title':        { en: 'MCP Protocol Extension', zh: 'MCP 协议扩展' },
-    'feat-mcp-desc':         { en: 'Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, infinitely expand capability boundaries.', zh: '支持 Model Context Protocol，连接第三方 MCP Server。自动发现工具、多 Server 并行，无限扩展能力边界。' },
+    'feat-mcp-desc':         { en: 'Supports Model Context Protocol, connecting third-party MCP Servers. Auto-discover tools, multi-server parallelism, per-service toggles and exclusion lists, infinitely expand capability boundaries.', zh: '支持 Model Context Protocol，连接第三方 MCP Server。自动发现工具、多 Server 并行、服务级开关与按服务排除，无限扩展能力边界。' },
     'feat-markdown-title':   { en: 'Markdown & Charts', zh: 'Markdown & 图表' },
     'feat-markdown-desc':    { en: 'Code highlighting, Mermaid flowcharts/sequence diagrams, table export to Excel. Supports chart zoom, PNG download, source code copy.', zh: '代码高亮、Mermaid 流程图/时序图、表格导出 Excel。支持图表缩放、下载 PNG、复制源码。' },
     'feat-file-title':       { en: 'Multimodal File Q&A', zh: '多模态文件问答' },
@@ -1792,6 +1809,8 @@
     'feat-annotate-desc':    { en: 'Built-in 6 annotation tools: pen, rectangle, ellipse, arrow, eraser. Supports color/thickness adjustment and Ctrl+Z undo, send edited images directly.', zh: '内建画笔、矩形、椭圆、箭头、橡皮擦 6 种标注工具。支持颜色/粗细调节和 Ctrl+Z 撤销，编辑后直接发送。' },
     'feat-vision-title':     { en: 'Vision Model Image Analysis', zh: '视觉模型识图' },
     'feat-vision-desc':      { en: 'Connects to vision language models, supports screenshot-based image Q&A. Independent API configuration, automatic image compression to reduce Token consumption.', zh: '对接视觉语言模型，支持截图识图对话。独立 API 配置，自动图片压缩减少 Token 消耗。' },
+    'feat-provider-title':   { en: 'Multi-Provider Profiles', zh: '多厂商配置切换' },
+    'feat-provider-desc':    { en: 'Save multiple OpenAI-compatible provider configurations (endpoint / API key / model list) and switch anytime. Pick the provider first, then the model, right in the chat panel; config import/export merges profiles by ID.', zh: '保存多套 OpenAI 兼容厂商配置（API 地址 / Key / 模型列表），随时一键切换。侧边栏先选厂商再选模型；配置导入导出时厂商配置按 ID 智能合并。' },
     'feat-compress-title':   { en: 'Smart Context Compression', zh: '上下文智能压缩' },
     'feat-compress-desc':    { en: 'Auto-summary compression of long referenced content, intelligent truncation by Token count. Three-level pressure monitoring to prevent irrelevant information from permanently occupying context space.', zh: '长引用内容自动摘要压缩，按 Token 数智能截断。三级压力监测，避免无关信息永久占据上下文空间。' },
     'feat-token-title':      { en: 'Token Statistics Panel', zh: 'Token 统计面板' },
@@ -1864,6 +1883,7 @@
     'tool-ai':           { en: 'AI Collaboration', zh: 'AI 协作' },
     'tool-agent':        { en: 'Agent Proxy', zh: 'Agent 代理' },
     'tool-memory':       { en: 'Long-Term Memory', zh: '长期记忆' },
+    'tool-knowledge':    { en: 'Knowledge Base', zh: '知识库' },
     'screenshots-title': { en: 'System Preview', zh: '系统预览' },
     'screenshots-desc':  { en: 'Real running screenshots, a sneak peek', zh: '实际运行截图，一睹为快' },
     'lb-fit':            { en: 'Fit', zh: '适应' },
@@ -1873,7 +1893,7 @@
     'arch-bg-worker':    { en: 'Message Routing<br>ReAct Reasoning Engine<br>Context Incremental Summary<br>Checkpoint Management<br>Tool Dispatch & Token Mgmt', zh: '消息路由<br>ReAct 推理引擎<br>上下文增量摘要<br>Checkpoint 断点管理<br>工具调度 & Token 管理' },
     'arch-content':      { en: 'DOM Operations<br>Page Injection<br>40+ Page Tools', zh: 'DOM 操作<br>页面注入<br>40+ 页面工具' },
     'arch-offscreen':    { en: 'Clipboard Operations<br>MV3 Compatibility Bridge', zh: '剪贴板操作<br>MV3 兼容桥接' },
-    'arch-agent':        { en: 'File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension', zh: '文件读写<br>命令执行<br>回收站/在线更新<br>Skill/MCP 扩展' },
+    'arch-agent':        { en: 'File I/O<br>Command Execution<br>Recycle Bin/Online Update<br>Skill/MCP Extension<br>Knowledge Base (RAG)', zh: '文件读写<br>命令执行<br>回收站/在线更新<br>Skill/MCP 扩展<br>知识库（RAG）' },
     'arch-storage':      { en: 'IndexedDB Sessions<br>Checkpoint Persistence<br>chrome.storage Config<br>Token Stats Persistence', zh: 'IndexedDB 会话<br>Checkpoint 断点持久化<br>chrome.storage 配置<br>Token 统计持久化' },
     'start-title':       { en: 'Quick Start in 30 Seconds', zh: '30 秒快速开始' },
     'start-desc':        { en: 'Three steps to install and configure, start using immediately', zh: '三步完成安装配置，即刻开始使用' },
@@ -1901,7 +1921,7 @@
     'contact-title':    { en: 'Contact & Support', zh: '合作与支持' },
     'contact-desc':     { en: 'Welcome feedback, suggestions, or business collaboration', zh: '欢迎反馈、建议或商务合作' },
     'contact-discord':  { en: 'Join Discord Community', zh: '加入 Discord 讨论组' },
-    'meta-description': { en: 'AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.', zh: 'AI Helper 是一款开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、40+ 内置工具、长期记忆系统、多智能体协作、任务断点恢复、Skill 系统、MCP 协议扩展、工作目录管理、消息搜索与书签、文件回收站，基于 ReAct 推理循环架构。' }
+    'meta-description': { en: 'AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.', zh: 'AI Helper 是一款开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、40+ 内置工具、长期记忆系统、本地知识库（RAG）、多智能体协作、任务断点恢复、Skill 系统、MCP 协议扩展、工作目录管理、消息搜索与书签、文件回收站，基于 ReAct 推理循环架构。' }
   };
 
   function getUrlLang() {
