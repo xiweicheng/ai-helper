@@ -404,7 +404,7 @@ function renderVectorForm(cfg = {}) {
         </div>
         <div class="form-group">
           <label>${escapeHtml(t('knowledge.vectorApiKeyLabel'))}</label>
-          <input type="password" id="kbVecApiKey" value="" placeholder="${escapeHtml(cfg.apiKey ? t('knowledge.vectorApiKeyKeep') : t('knowledge.vectorApiKeyPlaceholder'))}">
+          <input type="password" id="kbVecApiKey" value="" placeholder="${escapeHtml(cfg.apiKey || cfg.hasApiKey ? t('knowledge.vectorApiKeyKeep') : t('knowledge.vectorApiKeyPlaceholder'))}">
         </div>
         <div class="form-group">
           <label>${escapeHtml(t('knowledge.vectorModelLabel'))}</label>
@@ -425,9 +425,9 @@ function renderVectorForm(cfg = {}) {
 /**
  * 绑定向量表单交互（模式切换显隐 + 测试连通性自动探测维度）
  * @param {HTMLElement} overlay 弹窗根元素
- * @param {object|null} existing 已保存配置（编辑场景；用于 apiKey 沿用）
+ * @param {string|null} [collectionId] 编辑场景的知识库 ID（测试连通性时空密钥复用已保存密钥）
  */
-function bindVectorFormEvents(overlay, existing) {
+function bindVectorFormEvents(overlay, collectionId = null) {
   const remoteFields = overlay.querySelector('#kbVecRemoteFields');
   const hintEl = overlay.querySelector('#kbVecHint');
   const syncMode = () => {
@@ -453,9 +453,8 @@ function bindVectorFormEvents(overlay, existing) {
       showToast(t('knowledge.vectorModelRequired'), 'warning');
       return;
     }
-    // API Key 留空：编辑场景沿用已保存值
-    const typedKey = overlay.querySelector('#kbVecApiKey').value.trim();
-    const apiKey = typedKey || (existing?.mode === 'openai-compat' ? (existing.apiKey || '') : '');
+    // API Key 留空：编辑场景由代理端经 collectionId 复用已保存密钥（不回传明文）
+    const apiKey = overlay.querySelector('#kbVecApiKey').value.trim();
     // 维度填了就透传（支持降维的模型按指定维度探测）；留空则用平台默认维度
     const typedDims = parseInt(dimsInput?.value.trim() || '', 10);
 
@@ -469,6 +468,7 @@ function bindVectorFormEvents(overlay, existing) {
     try {
       const res = await agentApi('POST', '/api/rag/test-embedding', {
         mode: 'openai-compat', endpoint, apiKey, modelName,
+        ...(collectionId ? { collectionId } : {}),
         ...(Number.isFinite(typedDims) && typedDims > 0 ? { dimensions: typedDims } : {}),
       });
       if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
@@ -499,18 +499,17 @@ function bindVectorFormEvents(overlay, existing) {
 /**
  * 读取向量表单为提交体（local 仅模式；remote 含完整字段）
  * @param {HTMLElement} overlay 弹窗根元素
- * @param {object|null} existing 已保存配置（编辑场景）
  * @returns {object} embeddingConfig
  */
-function readVectorForm(overlay, existing) {
+function readVectorForm(overlay) {
   const remote = overlay.querySelector('input[name="kbVecMode"]:checked')?.value === 'openai-compat';
   if (!remote) return { mode: 'local' };
-  const typedKey = overlay.querySelector('#kbVecApiKey').value.trim();
   const dims = parseInt(overlay.querySelector('#kbVecDims').value.trim(), 10);
   return {
     mode: 'openai-compat',
     endpoint: overlay.querySelector('#kbVecEndpoint').value.trim(),
-    apiKey: typedKey || (existing?.mode === 'openai-compat' ? (existing.apiKey || '') : ''),
+    // 留空沿用已保存密钥（代理端在更新时保留原值，见 updateCollection 的空值继承）
+    apiKey: overlay.querySelector('#kbVecApiKey').value.trim(),
     modelName: overlay.querySelector('#kbVecModel').value.trim(),
     ...(Number.isFinite(dims) && dims > 0 ? { dimensions: dims } : {}),
   };
@@ -586,7 +585,7 @@ function showEditDialog(c) {
         return;
       }
 
-      const embeddingConfig = readVectorForm(overlay, c.embeddingConfig);
+      const embeddingConfig = readVectorForm(overlay);
       if (embeddingConfig.mode === 'openai-compat') {
         if (!embeddingConfig.endpoint) {
           showToast(t('knowledge.vectorEndpointRequired'), 'warning');
@@ -634,7 +633,7 @@ function showEditDialog(c) {
       }
     }
   });
-  bindVectorFormEvents(modal.overlay, c.embeddingConfig || null);
+  bindVectorFormEvents(modal.overlay, c.id);
   // 预填名称：聚焦并全选，便于直接覆盖输入
   const nameInput = modal.overlay.querySelector('#kbEditName');
   nameInput?.focus();
@@ -667,7 +666,7 @@ function showCreateDialog() {
         return;
       }
 
-      const embeddingConfig = readVectorForm(overlay, null);
+      const embeddingConfig = readVectorForm(overlay);
       if (embeddingConfig.mode === 'openai-compat') {
         if (!embeddingConfig.endpoint) {
           showToast(t('knowledge.vectorEndpointRequired'), 'warning');
@@ -692,7 +691,7 @@ function showCreateDialog() {
       }
     }
   });
-  bindVectorFormEvents(modal.overlay, null);
+  bindVectorFormEvents(modal.overlay);
   modal.overlay.querySelector('#kbCreateName')?.focus();
 }
 

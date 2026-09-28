@@ -9,7 +9,7 @@
 
 import { join, extname } from 'path';
 import { tmpdir } from 'os';
-import { mkdir, readFile, writeFile, rm, unlink, readdir, rename, stat } from 'fs/promises';
+import { mkdir, readFile, writeFile, rm, unlink, readdir, rename, stat, chmod } from 'fs/promises';
 import { randomBytes } from 'crypto';
 import {
   RAG_ROOT, COLLECTIONS_REGISTRY, COLLECTION_ID_PREFIX,
@@ -107,6 +107,17 @@ function needsIndexRebuild(prevCfg = {}, nextCfg = {}) {
     .some(k => String(prevCfg[k] ?? '') !== String(nextCfg[k] ?? ''));
 }
 
+/**
+ * 剔除空 apiKey：响应层不回显密钥明文，前端提交空值时视为「未修改」，
+ * 交由 resolveEmbeddingConfig 的「未提供字段继承」逻辑沿用已保存值
+ */
+function dropBlankApiKey(input) {
+  if (!input || typeof input !== 'object') return input;
+  if (input.apiKey === undefined || String(input.apiKey).trim() !== '') return input;
+  const { apiKey, ...rest } = input;
+  return rest;
+}
+
 export class RagManager {
   constructor(options = {}) {
     // 注册表写互斥锁（Promise 链）
@@ -143,7 +154,9 @@ export class RagManager {
       const reg = await this._loadRegistry();
       const out = mutator(reg) || reg;
       await mkdir(RAG_ROOT, { recursive: true });
-      await writeFile(COLLECTIONS_REGISTRY, JSON.stringify(out, null, 2), 'utf-8');
+      // 注册表含远端向量服务密钥：创建即 0600，并对历史遗留的宽松权限文件显式收紧
+      await writeFile(COLLECTIONS_REGISTRY, JSON.stringify(out, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      await chmod(COLLECTIONS_REGISTRY, 0o600).catch(() => {}); // Windows 无 POSIX 权限位，忽略
       return out;
     });
     this._registryLock = run.catch(() => {});
@@ -261,8 +274,9 @@ export class RagManager {
         : collection.description;
 
       // 解析待生效配置（未提交则沿用当前快照）
+      // 空 apiKey（响应脱敏后前端不回显）视为未修改，由 resolveEmbeddingConfig 沿用已保存值
       const nextEmbedding = input.embeddingConfig !== undefined
-        ? resolveEmbeddingConfig(input.embeddingConfig, collection.embeddingConfig)
+        ? resolveEmbeddingConfig(dropBlankApiKey(input.embeddingConfig), collection.embeddingConfig)
         : collection.embeddingConfig;
       const nextChunk = input.chunkConfig !== undefined
         ? { ...DEFAULT_CHUNK_CONFIG, ...(collection.chunkConfig || {}), ...(input.chunkConfig || {}) }
@@ -714,22 +728,28 @@ export class RagManager {
   async deleteDocument(collectionId, documentId) {
     await this.getCollection(collectionId);
     if (!DOCUMENT_ID_RE.test(documentId)) throw new RagError('invalidDocumentId', { id: documentId });
+    this._assertIdle(collectionId);
+    // 删除同样是索引写操作：占位防与导入/重建并发交错写坏索引
+    this._activeOps.add(collectionId);
+    try {
+      const store = new VectraStore(collectionId);
+      const removed = await store.removeDocument(documentId);
 
-    const store = new VectraStore(collectionId);
-    const removed = await store.removeDocument(documentId);
+      await unlink(join(RAG_ROOT, collectionId, 'documents', `${documentId}.json`)).catch(() => {});
 
-    await unlink(join(RAG_ROOT, collectionId, 'documents', `${documentId}.json`)).catch(() => {});
+      await this._updateRegistry(reg => {
+        const target = reg.collections.find(c => c.id === collectionId);
+        if (target) {
+          target.documentCount = Math.max(0, (target.documentCount || 0) - 1);
+          target.chunkCount = Math.max(0, (target.chunkCount || 0) - removed);
+        }
+        return reg;
+      });
 
-    await this._updateRegistry(reg => {
-      const target = reg.collections.find(c => c.id === collectionId);
-      if (target) {
-        target.documentCount = Math.max(0, (target.documentCount || 0) - 1);
-        target.chunkCount = Math.max(0, (target.chunkCount || 0) - removed);
-      }
-      return reg;
-    });
-
-    return { deleted: true, documentId, removedChunks: removed };
+      return { deleted: true, documentId, removedChunks: removed };
+    } finally {
+      this._activeOps.delete(collectionId);
+    }
   }
 
   /**

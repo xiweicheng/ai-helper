@@ -73,6 +73,35 @@ async function handleWithT(res, t, fn) {
 }
 
 /**
+ * 响应脱敏：隐藏 embeddingConfig.apiKey 明文（前端不回显），附 hasApiKey 标记供「已配置」提示；
+ * 仅响应层脱敏，manager 内部逻辑仍读取原对象真实密钥
+ */
+export function sanitizeCollection(collection) {
+  if (!collection || typeof collection !== 'object') return collection;
+  const cfg = collection.embeddingConfig && typeof collection.embeddingConfig === 'object'
+    ? collection.embeddingConfig
+    : {};
+  const { apiKey, ...rest } = cfg;
+  return { ...collection, embeddingConfig: { ...rest, apiKey: '', hasApiKey: Boolean(apiKey) } };
+}
+
+/**
+ * 解析 test-embedding 请求体：apiKey 留空（响应脱敏后前端不回显明文）时，
+ * 编辑场景经 collectionId 复用该库已保存的密钥；collectionId 不混入向量配置
+ * @param {object} payload - 请求体
+ * @returns {Promise<object>} 可交给 resolveEmbeddingConfig 的配置
+ */
+export async function resolveTestEmbeddingInput(payload = {}) {
+  const { collectionId, ...rest } = payload;
+  let apiKey = rest.apiKey;
+  if ((apiKey === undefined || String(apiKey).trim() === '') && collectionId) {
+    const saved = await manager.getCollection(String(collectionId));
+    apiKey = saved.embeddingConfig?.apiKey || '';
+  }
+  return { ...rest, apiKey };
+}
+
+/**
  * RAG 路由入口（由 server.js 动态 import 后调用；此时已通过认证与依赖可用性检查）
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
@@ -99,7 +128,7 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
   // POST /api/rag/test-embedding - 测试远端向量服务连通性（用配置真实调用一次接口探测维度）
   if (method === 'POST' && pathname === '/api/rag/test-embedding') {
     return handle(res, async () => {
-      const config = resolveEmbeddingConfig(payload, null);
+      const config = resolveEmbeddingConfig(await resolveTestEmbeddingInput(payload), null);
       if (config.mode !== 'openai-compat') {
         throw new RagError('invalidEmbeddingMode', { mode: String(config.mode) });
       }
@@ -115,12 +144,12 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
 
   // GET /api/rag/collections - 列出知识库
   if (method === 'GET' && pathname === '/api/rag/collections') {
-    return handle(res, async () => ({ collections: await manager.listCollections() }));
+    return handle(res, async () => ({ collections: (await manager.listCollections()).map(sanitizeCollection) }));
   }
 
   // POST /api/rag/collections - 创建知识库
   if (method === 'POST' && pathname === '/api/rag/collections') {
-    return handle(res, async () => ({ collection: await manager.createCollection(payload) }));
+    return handle(res, async () => ({ collection: sanitizeCollection(await manager.createCollection(payload)) }));
   }
 
   // POST /api/rag/search - 跨知识库检索
@@ -153,7 +182,7 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
 
     // PUT /api/rag/collections/{id} - 更新知识库名称/描述/向量配置（向量空间变更触发后台重建）
     if (method === 'PUT' && !sub) {
-      return handle(res, async () => ({ collection: await manager.updateCollection(collectionId, payload) }));
+      return handle(res, async () => ({ collection: sanitizeCollection(await manager.updateCollection(collectionId, payload)) }));
     }
 
     // GET /api/rag/collections/{id}/stats
