@@ -24,6 +24,12 @@ registerTranslations('zh', {
     deleteProxyTitle: '删除此代理',
     confirmDeleteProxy: '确定要删除此代理吗？',
   },
+  knowledgeSelector: {
+    disabled: '知识库检索已关闭（可在设置页「知识库」中开启）',
+    notAvailable: '知识库不可用（请确认代理已连接、检索依赖已安装）',
+    noCollections: '暂无知识库（可在设置页「知识库」中创建）',
+    docChunk: '{docs} 文档 · {chunks} 分块',
+  },
 });
 registerTranslations('en', {
   promptSelector: {
@@ -41,9 +47,15 @@ registerTranslations('en', {
     deleteProxyTitle: 'Delete this proxy',
     confirmDeleteProxy: 'Are you sure you want to delete this proxy?',
   },
+  knowledgeSelector: {
+    disabled: 'Knowledge retrieval is turned off (you can enable it in Settings - Knowledge)',
+    notAvailable: 'Knowledge base unavailable (check the agent connection and installed retrieval dependencies)',
+    noCollections: 'No knowledge base yet (create one in Settings - Knowledge)',
+    docChunk: '{docs} docs · {chunks} chunks',
+  },
 });
 
-// 当前 @ 弹出框激活的 Tab：'pages' | 'agents' | 'proxies'
+// 当前 @ 弹出框激活的 Tab：'pages' | 'knowledge' | 'agents' | 'proxies'
 export let activeAtTab = 'pages';
 
 async function getPairedAgents() {
@@ -91,15 +103,25 @@ export async function showAgentAtSelector(filterText = '') {
  */
 async function updateAtTabCounts() {
   try {
-    const [allAgents, allTabs, allProxies] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents()]);
+    const [allAgents, allTabs, allProxies, kbState] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents(), fetchKnowledgeCollections()]);
     const agentsTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="agents"]');
     const pagesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="pages"]');
     const proxiesTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="proxies"]');
+    const knowledgeTab = document.querySelector('#agentAtTabs .prompt-tab[data-tab="knowledge"]');
     if (agentsTab) agentsTab.textContent = t('promptSelector.agentsCount', { count: allAgents.length });
     if (pagesTab) pagesTab.textContent = t('promptSelector.pagesCount', { count: allTabs.length });
     if (proxiesTab) {
       proxiesTab.textContent = t('promptSelector.proxiesCount', { count: allProxies.length });
       proxiesTab.style.display = allProxies.length > 0 ? '' : 'none';
+    }
+    if (knowledgeTab) {
+      // 总开关未开启或 RAG 不可用时隐藏知识库 Tab
+      knowledgeTab.textContent = t('promptSelector.knowledgeCount', { count: kbState.collections.length });
+      knowledgeTab.style.display = kbState.ok ? '' : 'none';
+      // 当前停留在已隐藏的知识库 Tab 时，回退到默认「网页」Tab（避免无 Tab 可依的悬空状态）
+      if (!kbState.ok && activeAtTab === 'knowledge') {
+        switchAtTab('pages');
+      }
     }
   } catch {
     // 获取失败则保持默认标题
@@ -118,6 +140,7 @@ export function hideAgentAtSelector() {
   state.selectedAgentAtIndex = -1;
   state.selectedPageIndex = -1;
   state.selectedProxyAtIndex = -1;
+  state.selectedKnowledgeAtIndex = -1;
 }
 
 /**
@@ -127,6 +150,13 @@ function initAtEvents() {
   const dropdown = document.getElementById('agentAtDropdown');
   if (!dropdown || dropdown.dataset.initialized) return;
   dropdown.dataset.initialized = '1';
+
+  // 下拉层 mousedown 保焦：点击列表项/标签时焦点不离开输入框，选中后可直接继续输入
+  dropdown.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.prompt-item, .prompt-tab, .skill-list-item, .mcp-list-item')) {
+      e.preventDefault();
+    }
+  });
 
   // Tab 切换事件
   const tabsContainer = document.getElementById('agentAtTabs');
@@ -153,6 +183,15 @@ function initAtEvents() {
       e.stopPropagation();
       hideAgentAtSelector();
       chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'agent' });
+      return;
+    }
+
+    const knowledgeAddBtn = e.target.closest('#knowledgeAddBtn');
+    if (knowledgeAddBtn) {
+      e.stopPropagation();
+      hideAgentAtSelector();
+      // 跳转到设置页「知识库」Tab（新建/管理知识库）
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'knowledge' });
       return;
     }
 
@@ -196,11 +235,13 @@ export async function switchAtTab(tab) {
   const agentAtList = document.getElementById('agentAtList');
   const agentPageList = document.getElementById('agentPageList');
   const agentProxyList = document.getElementById('agentProxyList');
+  const agentKnowledgeList = document.getElementById('agentKnowledgeList');
   if (agentAtList) agentAtList.style.display = tab === 'agents' ? '' : 'none';
   if (agentPageList) agentPageList.style.display = tab === 'pages' ? '' : 'none';
   if (agentProxyList) agentProxyList.style.display = tab === 'proxies' ? '' : 'none';
+  if (agentKnowledgeList) agentKnowledgeList.style.display = tab === 'knowledge' ? '' : 'none';
 
-  // 通过 CSS 类控制 ✚ 按钮显示（仅在助手 Tab 显示）
+  // 通过 CSS 类控制 ✚ 按钮显示（各 Tab 显示对应的 ✚ 按钮）
   const dropdown = document.getElementById('agentAtDropdown');
   if (dropdown) dropdown.setAttribute('data-active-tab', tab);
 
@@ -220,6 +261,7 @@ async function renderActiveAtList(filterText = '') {
   const agentPageList = document.getElementById('agentPageList');
   const agentAtList = document.getElementById('agentAtList');
   const agentProxyList = document.getElementById('agentProxyList');
+  const agentKnowledgeList = document.getElementById('agentKnowledgeList');
 
   if (filterText) {
     // 搜索模式：隐藏 Tab 按钮（显示聚合搜索标题），合并展示
@@ -227,6 +269,7 @@ async function renderActiveAtList(filterText = '') {
     if (tabsContainer) tabsContainer.classList.add('merged-mode');
     if (agentPageList) agentPageList.style.display = 'none';
     if (agentProxyList) agentProxyList.style.display = 'none';
+    if (agentKnowledgeList) agentKnowledgeList.style.display = 'none';
     if (agentAtList) agentAtList.style.display = '';
     await renderMergedAtList(filterText);
     // ✚ 按钮在搜索模式下也隐藏
@@ -245,6 +288,7 @@ async function renderActiveAtList(filterText = '') {
     if (agentPageList) agentPageList.style.display = activeAtTab === 'pages' ? '' : 'none';
     if (agentAtList) agentAtList.style.display = activeAtTab === 'agents' ? '' : 'none';
     if (agentProxyList) agentProxyList.style.display = activeAtTab === 'proxies' ? '' : 'none';
+    if (agentKnowledgeList) agentKnowledgeList.style.display = activeAtTab === 'knowledge' ? '' : 'none';
 
     const dropdown = document.getElementById('agentAtDropdown');
     if (dropdown) dropdown.setAttribute('data-active-tab', activeAtTab);
@@ -253,6 +297,8 @@ async function renderActiveAtList(filterText = '') {
       await renderPageList('');
     } else if (activeAtTab === 'proxies') {
       await renderProxyAtList('');
+    } else if (activeAtTab === 'knowledge') {
+      await renderKnowledgeAtList('');
     } else {
       await renderAgentAtList('');
     }
@@ -477,7 +523,7 @@ async function renderProxyAtList(filterText = '') {
 }
 
 /**
- * 渲染合并列表（助手 + 网页 + 代理，搜索模式下使用）
+ * 渲染合并列表（助手 + 网页 + 代理 + 知识库，搜索模式下使用）
  */
 async function renderMergedAtList(filterText = '') {
   const agentAtList = document.getElementById('agentAtList');
@@ -485,7 +531,7 @@ async function renderMergedAtList(filterText = '') {
 
   const filterLower = filterText.toLowerCase();
 
-  const [allAgents, allTabs, allProxies] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents()]);
+  const [allAgents, allTabs, allProxies, kbState] = await Promise.all([getAllAgents(), getOpenTabs(), getPairedAgents(), fetchKnowledgeCollections()]);
 
   const filteredAgents = allAgents.filter(agent => {
     const name = getAgentDisplayName(agent);
@@ -506,7 +552,12 @@ async function renderMergedAtList(filterText = '') {
            (proxy.url && proxy.url.toLowerCase().includes(filterLower));
   });
 
-  const totalCount = filteredAgents.length + filteredTabs.length + filteredProxies.length;
+  const filteredKbs = kbState.ok ? kbState.collections.filter(kb => {
+    return (kb.name && kb.name.toLowerCase().includes(filterLower)) ||
+           (kb.description && kb.description.toLowerCase().includes(filterLower));
+  }) : [];
+
+  const totalCount = filteredAgents.length + filteredTabs.length + filteredProxies.length + filteredKbs.length;
   // 更新聚合搜索标题，附上结果数量
   const mergedTitle = document.getElementById('agentAtMergedTitle');
   if (mergedTitle) mergedTitle.textContent = t('promptSelector.mergedTitleCount', { count: totalCount });
@@ -550,7 +601,7 @@ async function renderMergedAtList(filterText = '') {
     const title = tab.title || t('promptSelector.noTitle');
     const url = tab.url || '';
     const favIcon = tab.favIconUrl
-      ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" onerror="this.style.display='none'">`
+      ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" class="favicon-img">`
       : '<span style="font-size:14px;flex-shrink:0;">🌐</span>';
     const isPageSelected = tab.id === currentSelectedPageId;
 
@@ -571,6 +622,21 @@ async function renderMergedAtList(filterText = '') {
     globalIndex++;
   });
 
+  filteredKbs.forEach((kb) => {
+    const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
+    const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
+
+    html += `
+      <div class="prompt-item${isRef ? ' agent-at-active picked' : ''} prompt-item-knowledge"
+           data-index="${globalIndex}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
+        <span class="prompt-item-index">${globalIndex + 1}</span>
+        <span class="agent-at-icon">📚</span>
+        <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
+        <span class="prompt-item-code">${escapeHtml(stats)}</span>
+      </div>`;
+    globalIndex++;
+  });
+
   filteredProxies.forEach((proxy) => {
     const isActive = proxy.isActive;
     const isDisabled = proxy.isDisabled;
@@ -581,7 +647,7 @@ async function renderMergedAtList(filterText = '') {
     const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
     html += `
-      <div class="prompt-item${globalIndex === 0 && filteredAgents.length === 0 && filteredTabs.length === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
+      <div class="prompt-item${globalIndex === 0 && filteredAgents.length === 0 && filteredTabs.length === 0 && filteredKbs.length === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
            data-index="${globalIndex}" data-type="proxy" data-proxy-id="${escapeHtml(proxy.id)}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         <span class="agent-at-dot agent-at-dot-${dotClass}"></span>
@@ -598,6 +664,11 @@ async function renderMergedAtList(filterText = '') {
   });
 
   agentAtList.innerHTML = html;
+
+  // favicon 加载失败时隐藏（替代内联 onerror，避免 MV3 CSP 拦截）
+  agentAtList.querySelectorAll('img.favicon-img').forEach(img => {
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+  });
 
   // 异步刷新代理在线状态，完成后仅更新圆点
   filteredProxies.forEach(proxy => refreshProxyStatus(proxy));
@@ -624,6 +695,10 @@ async function renderMergedAtList(filterText = '') {
         await selectAgentByAt(item.dataset.agentId);
       } else if (type === 'page') {
         selectPageByAt(parseInt(item.dataset.tabId));
+      } else if (type === 'knowledge') {
+        selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+        // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
+        if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
       } else if (type === 'proxy') {
         await selectProxyByAt(item.dataset.proxyId);
       }
@@ -636,8 +711,12 @@ async function renderMergedAtList(filterText = '') {
  */
 export function updateAgentAtSelection(items) {
   let selectedIndex;
-  if (activeAtTab === 'proxies') {
+  if (isMergedMode) {
+    selectedIndex = state.selectedAgentAtIndex;
+  } else if (activeAtTab === 'proxies') {
     selectedIndex = state.selectedProxyAtIndex;
+  } else if (activeAtTab === 'knowledge') {
+    selectedIndex = state.selectedKnowledgeAtIndex;
   } else {
     selectedIndex = state.selectedAgentAtIndex;
   }
@@ -652,20 +731,26 @@ export function updateAgentAtSelection(items) {
 }
 
 /**
+ * 选中项后把焦点与光标交还输入框：移除 @ 触发文本（含过滤词）；
+ * @ 已不在时仅把光标定位到当前文本末尾（无条件回焦，保证可继续输入）
+ */
+function focusUserInputAfterSelect() {
+  const userInput = document.getElementById('userInput');
+  if (!userInput) return;
+  const value = userInput.value;
+  const lastAtIndex = value.lastIndexOf('@');
+  if (lastAtIndex !== -1) {
+    userInput.value = value.substring(0, lastAtIndex);
+  }
+  userInput.focus();
+  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+}
+
+/**
  * 通过 @ 选择 Agent
  */
 async function selectAgentByAt(agentId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput.value;
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
-
+  focusUserInputAfterSelect();
   hideAgentAtSelector();
   await switchAgent(agentId);
   adjustInputHeight();
@@ -675,16 +760,7 @@ async function selectAgentByAt(agentId) {
  * 通过 @ 选择网页
  */
 function selectPageByAt(tabId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput ? userInput.value : '';
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
+  focusUserInputAfterSelect();
 
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab) {
@@ -702,19 +778,183 @@ function selectPageByAt(tabId) {
 }
 
 /**
+ * 更新知识库列表（合并视图与单独 Tab 视图）中已选知识库的标记
+ * 多选时弹窗保持打开，选择后需手动刷新列表项标记（.picked 紫条+✓ 与 .agent-at-active 高亮）
+ */
+function refreshKnowledgePickedState() {
+  const refIds = new Set(state.knowledgeRefs.map(r => r.id));
+  document.querySelectorAll('.prompt-item-knowledge').forEach(item => {
+    const isRef = refIds.has(item.dataset.kbId);
+    item.classList.toggle('agent-at-active', isRef);
+    item.classList.toggle('picked', isRef);
+  });
+}
+
+/**
+ * 通过 @ 选择/取消选择知识库（支持多选，再次选同一库为移除）
+ * 多选时保持弹窗打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
+ */
+export function selectKnowledgeByAt(kb) {
+  focusUserInputAfterSelect();
+
+  const existsIndex = state.knowledgeRefs.findIndex(r => r.id === kb.id);
+  if (existsIndex >= 0) {
+    state.knowledgeRefs.splice(existsIndex, 1);
+  } else {
+    state.knowledgeRefs.push({ id: kb.id, name: kb.name || kb.id });
+  }
+
+  // 保持弹窗打开（与技能/MCP 多选一致），仅刷新列表标记与 chips 指示器
+  refreshKnowledgePickedState();
+  renderKnowledgeIndicator();
+  adjustInputHeight();
+}
+
+/**
+ * 移除一个知识库引用
+ */
+export function removeKnowledgeRef(id) {
+  state.knowledgeRefs = state.knowledgeRefs.filter(r => r.id !== id);
+  refreshKnowledgePickedState();
+  renderKnowledgeIndicator();
+}
+
+/**
+ * 清空所有知识库引用
+ */
+export function clearKnowledgeRefs() {
+  state.knowledgeRefs = [];
+  refreshKnowledgePickedState();
+  renderKnowledgeIndicator();
+}
+
+/**
+ * 渲染知识库引用指示器（多库 chips）
+ */
+export function renderKnowledgeIndicator() {
+  const indicator = document.getElementById('knowledgeIndicator');
+  if (!indicator) return;
+  if (state.knowledgeRefs.length === 0) {
+    indicator.style.display = 'none';
+    indicator.innerHTML = '';
+    return;
+  }
+  indicator.innerHTML = state.knowledgeRefs.map(ref => `
+    <span class="knowledge-chip">
+      <span class="knowledge-chip-name" title="${escapeHtml(ref.name)}">📚 ${escapeHtml(ref.name)}</span>
+      <button class="knowledge-chip-close" data-kb-id="${escapeHtml(ref.id)}" title="${t('common.delete')}">✕</button>
+    </span>
+  `).join('');
+  indicator.querySelectorAll('.knowledge-chip-close').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeKnowledgeRef(btn.dataset.kbId);
+    });
+  });
+  indicator.style.display = 'flex';
+}
+
+// 知识库列表缓存：避免每次打开 @ 面板都请求 background（TTL 内复用；force=true 强制刷新）
+let knowledgeCache = { ok: false, collections: [], ts: 0 };
+let knowledgeFetchPromise = null;
+const KNOWLEDGE_CACHE_TTL = 15000;
+
+/**
+ * 获取知识库列表（经 background 转发 Agent RAG API）
+ * 总开关（ragEnabled）关闭或 RAG 不可用时 ok=false
+ * @param {boolean} [force] 是否强制刷新缓存
+ * @returns {Promise<{ok: boolean, disabled?: boolean, collections: Array, ts: number}>}
+ */
+export async function fetchKnowledgeCollections(force = false) {
+  const now = Date.now();
+  // 总开关关闭：实时读取（不走缓存），保证开关切换立即生效
+  const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+  if (ragEnabled !== true) {
+    return { ok: false, disabled: true, collections: [], ts: Date.now() };
+  }
+  if (!force && knowledgeCache.ts && (now - knowledgeCache.ts) < KNOWLEDGE_CACHE_TTL) {
+    return knowledgeCache;
+  }
+  if (knowledgeFetchPromise) return knowledgeFetchPromise;
+  knowledgeFetchPromise = new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'RAG_LIST_COLLECTIONS' }, (resp) => {
+        if (chrome.runtime.lastError || !resp || !resp.success) {
+          knowledgeCache = { ok: false, collections: [], ts: Date.now() };
+        } else {
+          knowledgeCache = { ok: true, collections: resp.collections || [], ts: Date.now() };
+        }
+        resolve(knowledgeCache);
+      });
+    } catch {
+      knowledgeCache = { ok: false, collections: [], ts: Date.now() };
+      resolve(knowledgeCache);
+    }
+  }).finally(() => {
+    knowledgeFetchPromise = null;
+  });
+  return knowledgeFetchPromise;
+}
+
+/**
+ * 渲染知识库列表（单独 Tab）
+ */
+async function renderKnowledgeAtList(filterText = '') {
+  const listEl = document.getElementById('agentKnowledgeList');
+  if (!listEl) return;
+
+  const kbState = await fetchKnowledgeCollections();
+  if (!kbState.ok) {
+    // 总开关关闭与代理端不可用给出不同的引导文案
+    const msgKey = kbState.disabled ? 'knowledgeSelector.disabled' : 'knowledgeSelector.notAvailable';
+    listEl.innerHTML = `<div class="prompt-empty">${t(msgKey)}</div>`;
+    state.selectedKnowledgeAtIndex = -1;
+    return;
+  }
+
+  const filterLower = (filterText || '').toLowerCase();
+  const collections = kbState.collections.filter(kb => {
+    if (!filterText) return true;
+    return (kb.name && kb.name.toLowerCase().includes(filterLower)) ||
+           (kb.description && kb.description.toLowerCase().includes(filterLower));
+  });
+
+  if (collections.length === 0) {
+    listEl.innerHTML = `<div class="prompt-empty">${t('knowledgeSelector.noCollections')}</div>`;
+    state.selectedKnowledgeAtIndex = -1;
+    return;
+  }
+
+  state.selectedKnowledgeAtIndex = 0;
+
+  listEl.innerHTML = collections.map((kb, index) => {
+    const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
+    const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
+    return `
+      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active picked' : ''} prompt-item-knowledge"
+           data-index="${index}" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
+        <span class="prompt-item-index">${index + 1}</span>
+        <span class="agent-at-icon">📚</span>
+        <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
+        <span class="prompt-item-code">${escapeHtml(stats)}</span>
+      </div>
+    `;
+  }).join('');
+
+  listEl.querySelectorAll('.prompt-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+      // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
+      if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
+    });
+  });
+}
+
+/**
  * 通过 @ 选择代理
  */
 async function selectProxyByAt(proxyId) {
-  const userInput = document.getElementById('userInput');
-  const value = userInput.value;
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
-    userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
-  }
+  focusUserInputAfterSelect();
 
   hideAgentAtSelector();
 

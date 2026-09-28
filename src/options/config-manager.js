@@ -3,6 +3,7 @@
 import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
+import { normalizeModels, syncActiveProfileModels, updateActiveProfile } from '../shared/model-profiles.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -16,45 +17,7 @@ let currentImageModel = '';
 export { currentImageModel };
 export function setCurrentImageModel(value) { currentImageModel = value; }
 
-// 已被用户删除的预设模型列表（跨页面持久化）
-let deletedPresetModels = [];
-
-/**
- * 加载已删除的预设模型列表
- */
-function loadDeletedPresetModels(callback) {
-  chrome.storage.local.get(['deletedPresetModels'], (result) => {
-    deletedPresetModels = result.deletedPresetModels || [];
-    if (typeof callback === 'function') callback();
-  });
-}
-
-/**
- * 保存已删除的预设模型列表
- */
-function saveDeletedPresetModels() {
-  chrome.storage.local.set({ deletedPresetModels });
-}
-
-/**
- * 为所有模型选项（含预设）添加删除按钮
- */
-function ensureModelDeleteButtons() {
-  const modelDropdown = document.getElementById('modelDropdown');
-  if (!modelDropdown) return;
-  modelDropdown.querySelectorAll('.model-option:not([data-is-custom="true"])').forEach(option => {
-    // 跳过已添加删除按钮的
-    if (option.querySelector('.delete-model-btn')) return;
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'delete-model-btn';
-    deleteBtn.title = t('settings.deleteModel');
-    deleteBtn.innerHTML = '×';
-    deleteBtn.style.display = 'inline-block';
-    option.appendChild(deleteBtn);
-  });
-}
-
+// 说明：模型列表统一由"当前厂商配置"的 models 字段管理（见 shared/model-profiles.js）
 // 添加模型到下拉列表（支持重新加回已删除的预设模型）
 // modelName: 模型名称
 // contextWindow: 可选的上下文窗口大小，0 或不传表示使用内置映射自动推断
@@ -128,12 +91,19 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
     return;
   }
   
-  // 如果是之前被删除的预设模型，从删除列表中移除
-  if (PRESET_MODELS.includes(modelName) && deletedPresetModels.includes(modelName)) {
-    deletedPresetModels = deletedPresetModels.filter(m => m !== modelName);
-    saveDeletedPresetModels();
-  }
-  
+  modelDropdown.appendChild(buildModelOption(modelName, contextWindow || 0));
+
+  // 保存模型列表到存储（并同步到当前厂商配置）
+  saveCustomModels();
+}
+
+/**
+ * 构建单个模型选项 DOM（名称 + 上下文窗口 badge + 删除按钮）
+ * @param {string} modelName
+ * @param {number} [contextWindow]
+ * @returns {HTMLDivElement}
+ */
+export function buildModelOption(modelName, contextWindow = 0) {
   const option = document.createElement('div');
   option.className = 'model-option';
   option.dataset.value = modelName;
@@ -170,39 +140,28 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
    rightSpan.appendChild(deleteBtn);
    option.appendChild(rightSpan);
 
-  modelDropdown.appendChild(option);
-
-  // 保存自定义模型到存储
-  saveCustomModels();
+  return option;
 }
 
-// 从下拉列表移除模型（包括预设和自定义）
+// 从下拉列表移除模型（删除后立即同步存储与当前厂商配置）
 export function removeCustomModel(modelName) {
   const modelDropdown = document.getElementById('modelDropdown');
-  // 移除所有匹配的选项（不再区分预设/自定义）
   const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (option) {
     option.remove();
   }
 
-  // 如果是预设模型，记录到已删除列表
-  if (PRESET_MODELS.includes(modelName) && !deletedPresetModels.includes(modelName)) {
-    deletedPresetModels.push(modelName);
-    saveDeletedPresetModels();
-  }
-  
-  // 如果当前选中的是被删除的模型，恢复为第一个可用预设或空
+  // 如果当前选中的是被删除的模型，回退为第一个剩余模型或空
   if (currentModel === modelName) {
-    // 找到第一个未被删除的预设模型作为回退
-    const fallback = PRESET_MODELS.find(m => !deletedPresetModels.includes(m));
-    const newModel = fallback || '';
+    const firstOption = modelDropdown.querySelector('.model-option');
+    const newModel = firstOption ? firstOption.dataset.value : '';
     setCurrentModel(newModel);
     const modelInput = document.getElementById('modelInput');
     if (modelInput) modelInput.value = newModel;
     updateModelSelection(newModel);
   }
-  
-  // 更新存储
+
+  // 更新存储（并同步到当前厂商配置）
   saveCustomModels();
 }
 
@@ -219,154 +178,51 @@ function formatContextWindow(tokens) {
   return String(tokens);
 }
 
-// 保存自定义模型到存储（新格式：对象数组）
-export function saveCustomModels() {
+// 快照当前模型下拉中的完整模型列表
+export function collectModelsFromDropdown() {
   const modelDropdown = document.getElementById('modelDropdown');
   const customModels = [];
-  modelDropdown.querySelectorAll('.model-option[data-is-custom="true"]').forEach(option => {
+  modelDropdown?.querySelectorAll('.model-option').forEach(option => {
     customModels.push({
       name: option.dataset.value,
       contextWindow: parseInt(option.dataset.contextWindow) || 0
     });
   });
-  chrome.storage.local.set({ customModels, deletedPresetModels }, () => {
-    logger.debug('[Options] custommodel saved:', customModels, 'deletedpreset:', deletedPresetModels);
+  return customModels;
+}
+
+// 保存模型列表到存储（快照整个下拉，并同步到当前厂商配置）
+export function saveCustomModels() {
+  const customModels = collectModelsFromDropdown();
+  chrome.storage.local.set({ customModels }, () => {
+    logger.debug('[Options] customModel list saved:', customModels);
+    syncActiveProfileModels(customModels);
   });
 }
 
-// 加载自定义模型到下拉列表
+// 加载模型列表到下拉列表（全量重建：列表来源为当前厂商配置的完整模型列表）
 export function loadCustomModels(callback) {
-  loadDeletedPresetModels(() => {
-    // 先移除已被用户删除的预设模型
-    const modelDropdown = document.getElementById('modelDropdown');
-    if (modelDropdown) {
-      deletedPresetModels.forEach(modelName => {
-        const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-        if (option) option.remove();
-      });
-      // 为剩余预设模型添加删除按钮
-      ensureModelDeleteButtons();
-    }
+  chrome.storage.local.get(['customModels'], (result) => {
+    renderModelDropdownFromList(normalizeModels(result.customModels));
+    if (typeof callback === 'function') callback();
+  });
+}
 
-    chrome.storage.local.get(['customModels'], (result) => {
-      const customModels = result.customModels || [];
-      let needsMigration = false;
-      
-      customModels.forEach(item => {
-        // 向前兼容：旧格式为字符串，新格式为对象
-        let modelName, contextWindow = 0;
-        if (typeof item === 'string') {
-          modelName = item;
-          needsMigration = true;
-        } else if (item && typeof item === 'object' && item.name) {
-          modelName = item.name;
-          contextWindow = item.contextWindow || 0;
-        } else {
-          return;
-        }
-        
-        // 检查是否已存在
-        const existingOption = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-        if (existingOption) {
-          // 已存在的预设模型，应用其上下文窗口标签
-          if (contextWindow && contextWindow > 0) {
-            existingOption.dataset.contextWindow = contextWindow;
-            existingOption.dataset.isCustom = 'true';
-
-            let leftSpan = existingOption.querySelector('.model-option-left');
-            if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
-
-            // 右侧容器（badge + 删除按钮）
-            let rightSpan = existingOption.querySelector('.model-option-right');
-            if (!rightSpan) {
-              rightSpan = document.createElement('span');
-              rightSpan.className = 'model-option-right';
-              const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
-              if (oldBadge) rightSpan.appendChild(oldBadge);
-              const oldDelete = existingOption.querySelector(':scope > .delete-model-btn');
-              if (oldDelete) rightSpan.appendChild(oldDelete);
-              else {
-                const deleteBtn = document.createElement('button');
-                deleteBtn.type = 'button';
-                deleteBtn.className = 'delete-model-btn';
-                deleteBtn.title = t('settings.deleteModel');
-                deleteBtn.innerHTML = '×';
-                deleteBtn.style.display = 'inline-block';
-                rightSpan.appendChild(deleteBtn);
-              }
-              existingOption.appendChild(rightSpan);
-            }
-
-            const badge = rightSpan.querySelector('.model-ctx-badge');
-            if (badge) {
-              badge.textContent = formatContextWindow(contextWindow);
-            } else {
-              const ctxBadge = document.createElement('span');
-              ctxBadge.className = 'model-ctx-badge';
-              ctxBadge.textContent = formatContextWindow(contextWindow);
-              rightSpan.insertBefore(ctxBadge, rightSpan.firstChild);
-            }
-
-            // 确保有删除按钮
-            if (!rightSpan.querySelector('.delete-model-btn')) {
-              const deleteBtn = document.createElement('button');
-              deleteBtn.type = 'button';
-              deleteBtn.className = 'delete-model-btn';
-              deleteBtn.title = t('settings.deleteModel');
-              deleteBtn.innerHTML = '×';
-              deleteBtn.style.display = 'inline-block';
-              rightSpan.appendChild(deleteBtn);
-            }
-          }
-          return;
-        }
-        
-        const option = document.createElement('div');
-        option.className = 'model-option';
-        option.dataset.value = modelName;
-        option.dataset.isCustom = 'true';
-        if (contextWindow && contextWindow > 0) {
-          option.dataset.contextWindow = contextWindow;
-        }
-
-        // 模型名称（左侧）
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'model-option-left';
-        nameSpan.textContent = modelName;
-        option.appendChild(nameSpan);
-
-        // 右侧容器：badge + 删除按钮
-        const rightSpan = document.createElement('span');
-        rightSpan.className = 'model-option-right';
-        if (contextWindow && contextWindow > 0) {
-          const ctxBadge = document.createElement('span');
-          ctxBadge.className = 'model-ctx-badge';
-          ctxBadge.textContent = formatContextWindow(contextWindow);
-          rightSpan.appendChild(ctxBadge);
-        }
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'delete-model-btn';
-        deleteBtn.title = t('settings.deleteModel');
-        deleteBtn.innerHTML = '×';
-        deleteBtn.style.display = 'inline-block';
-        rightSpan.appendChild(deleteBtn);
-        option.appendChild(rightSpan);
-
-        modelDropdown.appendChild(option);
-      });
-      
-      // 如果存在旧格式数据，自动迁移为新格式
-      if (needsMigration) {
-        saveCustomModels();
-        logger.debug('[Options] custommodelauto-migratedisnewformat');
-      }
-      
-      // 调用回调函数
-      if (typeof callback === 'function') {
-        callback();
-      }
-    });
+/**
+ * 全量重建模型下拉列表（清空后按列表渲染）
+ * @param {Array<{name:string, contextWindow:number}>} models
+ * @param {string} [selectedValue] - 需要标记为选中的模型名（默认取 currentModel）
+ */
+export function renderModelDropdownFromList(models, selectedValue) {
+  const modelDropdown = document.getElementById('modelDropdown');
+  if (!modelDropdown) return;
+  modelDropdown.innerHTML = '';
+  for (const item of models) {
+    modelDropdown.appendChild(buildModelOption(item.name, item.contextWindow || 0));
+  }
+  const selected = selectedValue !== undefined ? selectedValue : currentModel;
+  modelDropdown.querySelectorAll('.model-option').forEach(option => {
+    option.classList.toggle('selected', option.dataset.value === selected);
   });
 }
 
@@ -1289,6 +1145,13 @@ export function saveConfig() {
     if (chrome.runtime.lastError) {
       showToast(`❌ ${t('settings.saveFailed', { message: chrome.runtime.lastError.message })}`, 'error');
     } else {
+      // 同步当前厂商配置（地址/Key/选中模型/模型列表）
+      updateActiveProfile({
+        apiBase: apiBase,
+        apiKey: apiKey,
+        modelName: currentModel || 'deepseek-v4-pro',
+        models: collectModelsFromDropdown()
+      });
       showToast(`✅ ${t('settings.saveSuccess')}`, 'success');
       const status = document.getElementById('status');
       status.style.display = 'none';

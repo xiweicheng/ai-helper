@@ -359,6 +359,40 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 4. Tool call requests are forwarded to MCP servers via the agent
 5. Tool results are returned to the extension
 
+## Knowledge Base (RAG)
+
+Optional local retrieval-augmented generation. Turn documents into searchable knowledge bases so the extension can answer with cited sources. The RAG stack ships as optional dependencies — the agent detects availability at startup and reports it via `/api/rag/status`; when dependencies are missing, RAG requests return `503` and the extension offers one-click installation (whitelisted packages, progress polled from `/api/rag/install/status`).
+
+- **Data location** — knowledge bases are stored under `~/.ai-helper-agent/rag/` (override with the `AI_HELPER_RAG_ROOT` environment variable)
+- **Multiple knowledge bases** — create / update / delete collections, each keeping its own embedding config and statistics
+- **Multi-format ingestion** — `.txt` `.md` `.json` `.csv` `.html` / PDF / Word (`mammoth`) / PPT (`officeparser`) / Excel; ingest by raw text, file (base64), or URL, with staged parsing → chunking → embedding → storage progress
+- **Hybrid retrieval** — vector similarity with keyword-hit boosting; searching multiple bases splits the `topK` quota across them
+- **Pluggable embeddings** — local model (`Xenova/bge-small-zh-v1.5`, 512-dim, runs locally via `@huggingface/transformers`) by default, or any OpenAI-compatible embedding endpoint (with a connectivity test returning actual dimensions)
+- **Index rebuild** — changing a collection's embedding space rebuilds its index in the background (temporary-directory replay → atomic swap)
+
+### RAG API
+
+Endpoints are registered inside the authenticated region (Bearer token required) and loaded on demand — only when the RAG dependencies are available.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/rag/install` | Start whitelisted RAG dependency installation |
+| GET | `/api/rag/install/status` | Installation progress |
+| POST | `/api/rag/detect` | Re-detect RAG dependency availability |
+| GET | `/api/rag/status` | Capability & install status |
+| POST | `/api/rag/test-embedding` | Test remote embedding endpoint connectivity (returns actual dimensions) |
+| GET | `/api/rag/collections` | List knowledge bases |
+| POST | `/api/rag/collections` | Create a knowledge base |
+| PUT | `/api/rag/collections/{id}` | Update name / description / embedding config (rebuilds index on embedding-space change) |
+| DELETE | `/api/rag/collections/{id}` | Delete a knowledge base |
+| GET | `/api/rag/collections/{id}/stats` | Document / chunk statistics |
+| POST | `/api/rag/collections/{id}/ingest` | Ingest text / file / URL (synchronous) |
+| GET | `/api/rag/collections/{id}/ingest/status` | Ingestion progress snapshot (for polling) |
+| GET | `/api/rag/collections/{id}/documents` | Document list |
+| DELETE | `/api/rag/collections/{id}/documents/{docId}` | Delete a document |
+| POST | `/api/rag/collections/{id}/search` | Search a single knowledge base |
+| POST | `/api/rag/search` | Cross-knowledge-base search |
+
 ## Tech Stack
 
 - Node.js >= 18
@@ -366,6 +400,7 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 - `ws` library (WebSocket server)
 - Zero external framework dependencies
 - Optional dependencies: `fd`, `rg` (ripgrep) — for accelerated file search
+- Optional dependencies for the knowledge base (RAG): `vectra` (vector store), `@huggingface/transformers` (local embeddings), `pdf-parse` / `mammoth` / `officeparser` / `cheerio` (document parsers)
 
 ## License
 

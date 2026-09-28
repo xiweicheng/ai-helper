@@ -239,8 +239,13 @@ async function saveMcpEdit() {
  * 更新全局开关的 UI 状态
  */
 function updateGlobalToggleUI(type, enabled) {
-  const label = document.getElementById(type === 'mcp' ? 'mcpToggleLabel' : 'skillToggleLabel');
-  const section = document.getElementById(type === 'mcp' ? 'mcpSection' : 'skillSection');
+  const idMap = {
+    mcp: ['mcpToggleLabel', 'mcpSection'],
+    skill: ['skillToggleLabel', 'skillSection']
+  };
+  const [labelId, sectionId] = idMap[type] || idMap.mcp;
+  const label = document.getElementById(labelId);
+  const section = document.getElementById(sectionId);
   if (label) {
     label.textContent = enabled ? t('common.enabled') : t('common.disabled');
     label.style.color = enabled ? '#666' : '#999';

@@ -19,11 +19,13 @@ export let quotedContextText = '';
 export let customPrompts = [];
 export let selectedPromptIndex = -1;
 export let selectedSkillIndex = -1;   // 技能选择器当前选中索引
-export let selectedSkill = null;      // 当前选中的技能 { name, description, type }
-export let selectedMcpService = null;  // 当前选中的 MCP 服务 { serverId, serverName, toolCount }
+export let selectedSkills = [];       // 当前选中的技能列表（支持多选）[{ name, description, type }]
+export let selectedMcpServices = [];  // 当前选中的 MCP 服务列表（支持多选）[{ serverId, serverName, toolCount }]
 export let selectedMcpServiceIndex = -1; // MCP 服务选择器当前选中索引
 export let selectedPage = null;  // 当前选中的网页 { id, title, url, favIconUrl }
 export let selectedPageIndex = -1; // 页面选择器当前选中索引
+export let knowledgeRefs = [];  // 已引用的知识库列表 [{ id, name }]
+export let selectedKnowledgeAtIndex = -1; // @ 知识库选择器当前选中索引
 export let activeDropdownTab = 'prompts'; // 下拉框当前激活的 Tab
 export let lastActiveDropdownTab = 'prompts'; // 上次激活的 Tab（用于记忆）
 export let showMergedList = false;   // 是否显示合并列表（搜索模式）
@@ -38,6 +40,7 @@ export let inputHistoryIndex = -1;
 // 自定义 Agent 相关
 export let activeAgentId = null;   // 当前选中的 Agent ID
 export let activeAgentToolIds = null; // 当前 Agent 限定的工具列表（null=继承全局）
+export let activeAgentMcpExcludedServerIds = null; // 当前 Agent 排除的 MCP 服务 ID 列表（服务级；null=不限）
 export let activeAgentSkillIds = null; // 当前 Agent 绑定的技能名称列表（null=全部启用）
 export let customAgents = [];      // 用户自定义 Agent 列表缓存
 
@@ -68,8 +71,11 @@ export let selectedTempIndex = 0;
 export let currentCategory = 'all';
 export let currentSearch = '';
 
-// 当前启用的工具列表
+// 当前启用的工具列表（不含 MCP 工具，MCP 按服务级开关管理）
 export let enabledTools = [];
+
+// 当前智能体上下文中被用户关闭的 MCP 服务 ID 列表（deny-list：不在列表中 = 开放）
+export let mcpClosedServers = [];
 
 // 分类折叠状态
 export const collapsedCategories = {};
@@ -182,16 +188,20 @@ export default {
   set selectedPromptIndex(v) { selectedPromptIndex = v; },
   get selectedSkillIndex() { return selectedSkillIndex; },
   set selectedSkillIndex(v) { selectedSkillIndex = v; },
-  get selectedSkill() { return selectedSkill; },
-  set selectedSkill(v) { selectedSkill = v; },
-  get selectedMcpService() { return selectedMcpService; },
-  set selectedMcpService(v) { selectedMcpService = v; },
+  get selectedSkills() { return selectedSkills; },
+  set selectedSkills(v) { selectedSkills = v; },
+  get selectedMcpServices() { return selectedMcpServices; },
+  set selectedMcpServices(v) { selectedMcpServices = v; },
   get selectedMcpServiceIndex() { return selectedMcpServiceIndex; },
   set selectedMcpServiceIndex(v) { selectedMcpServiceIndex = v; },
   get selectedPage() { return selectedPage; },
   set selectedPage(v) { selectedPage = v; },
   get selectedPageIndex() { return selectedPageIndex; },
   set selectedPageIndex(v) { selectedPageIndex = v; },
+  get knowledgeRefs() { return knowledgeRefs; },
+  set knowledgeRefs(v) { knowledgeRefs = v; },
+  get selectedKnowledgeAtIndex() { return selectedKnowledgeAtIndex; },
+  set selectedKnowledgeAtIndex(v) { selectedKnowledgeAtIndex = v; },
   get activeDropdownTab() { return activeDropdownTab; },
   set activeDropdownTab(v) { activeDropdownTab = v; },
   get lastActiveDropdownTab() { return lastActiveDropdownTab; },
@@ -212,6 +222,8 @@ export default {
   set activeAgentId(v) { activeAgentId = v; },
   get activeAgentToolIds() { return activeAgentToolIds; },
   set activeAgentToolIds(v) { activeAgentToolIds = v; },
+  get activeAgentMcpExcludedServerIds() { return activeAgentMcpExcludedServerIds; },
+  set activeAgentMcpExcludedServerIds(v) { activeAgentMcpExcludedServerIds = v; },
   get activeAgentSkillIds() { return activeAgentSkillIds; },
   set activeAgentSkillIds(v) { activeAgentSkillIds = v; },
   get customAgents() { return customAgents; },
@@ -236,6 +248,8 @@ export default {
   set currentSearch(v) { currentSearch = v; },
   get enabledTools() { return enabledTools; },
   set enabledTools(v) { enabledTools = v; },
+  get mcpClosedServers() { return mcpClosedServers; },
+  set mcpClosedServers(v) { mcpClosedServers = v; },
   get collapsedCategories() { return collapsedCategories; },
   // collapsedCategories is const, no setter needed
   get sessionExecutionStatus() { return sessionExecutionStatus; },

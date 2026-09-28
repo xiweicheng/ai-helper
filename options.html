@@ -37,6 +37,7 @@
       <button class="tab-nav-btn" data-tab="toolbar" data-i18n="settings.tabToolbar">划词</button>
       <button class="tab-nav-btn" data-tab="agent" data-i18n="settings.tabAgent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox" data-i18n="settings.tabToolbox">扩展</button>
+      <button class="tab-nav-btn" data-tab="knowledge" data-i18n="knowledge.tabTitle">知识库</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -47,6 +48,26 @@
         <div class="model-dropdown" id="languageDropdown"></div>
       </div>
     </div>
+
+    <div class="form-group" id="profileGroup">
+      <label><span data-i18n="settings.providerConfig">厂商配置</span> <span class="hint" data-i18n="settings.providerConfigHint">（切换后立即生效；每个配置独立记忆地址、API Key、模型列表）</span></label>
+      <div class="profile-switcher-row">
+        <div class="model-selector profile-selector">
+          <input type="text" id="profileInput" readonly>
+          <div class="model-dropdown" id="profileDropdown"></div>
+        </div>
+        <div class="profile-actions">
+          <button type="button" class="profile-action-btn" id="profileNewBtn" data-i18n-title="settings.newProfileTitle" title="新建配置" data-i18n="settings.newProfile">+ 新建</button>
+          <button type="button" class="profile-action-btn" id="profileDupBtn" data-i18n-title="settings.saveAsProfileTitle" title="以当前配置另存为新的厂商配置" data-i18n="settings.saveAsProfile">另存为</button>
+          <button type="button" class="profile-action-btn" id="profileRenameBtn" data-i18n-title="settings.renameProfileTitle" title="重命名当前配置" data-i18n="settings.renameProfile">重命名</button>
+          <button type="button" class="profile-action-btn profile-action-danger" id="profileDeleteBtn" data-i18n-title="settings.deleteProfileTitle" title="删除当前配置" data-i18n="settings.deleteProfile">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 厂商配置从属分组：以下三项随顶部厂商配置保存与联动 -->
+    <div class="profile-scope" id="profileScope">
+      <div class="profile-scope-hint" id="profileScopeHint"></div>
 
     <div class="form-group">
       <label>API Base URL <span class="hint" data-i18n="settings.apiBaseHint">（从下拉列表选择，或手动输入）</span></label>
@@ -109,6 +130,8 @@
         </div>
       </div>
     </div>
+    </div>
+    <!-- /厂商配置从属分组 -->
 
     <div class="form-group">
       <label class="toggle-label">
@@ -657,6 +680,44 @@
       <input type="file" id="importSkillFile" accept=".json" style="display:none;">
     </div><!-- /tab-toolbox -->
 
+    <!-- 知识库管理 -->
+    <div class="tab-panel" data-tab="knowledge">
+      <!-- 面板头部：标题 + RAG 总开关 + 新建（常驻可见，未就绪时开关与可用性联动） -->
+      <div class="knowledge-header">
+        <div class="knowledge-title-row">
+          <h2 class="knowledge-title" data-i18n="knowledge.title">知识库</h2>
+          <span class="toolbox-tool-count" id="knowledgeCount" style="display:none;"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:16px; flex-shrink:0;">
+          <label class="global-toggle">
+            <input type="checkbox" id="ragGlobalToggle">
+            <span class="global-toggle-slider"></span>
+            <span class="global-toggle-label" id="ragToggleLabel" data-i18n="toolbox.ragDisabled">已停用</span>
+          </label>
+          <button class="toolbox-add-btn" id="createKbBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="knowledge.createBtn" disabled>+ 新建知识库</button>
+        </div>
+      </div>
+
+      <!-- 门控引导区（未连接 / 未启用 / 依赖未就绪时显示，含就地安装引导） -->
+      <div id="knowledgeGate" style="display:none;"></div>
+
+      <!-- 知识库列表 -->
+      <div id="knowledgeMain" style="display:none;">
+        <div class="toolbox-filter-bar">
+          <div class="toolbox-search-wrapper">
+            <input type="text" class="toolbox-search-input" id="kbSearchInput" placeholder="搜索知识库..." data-i18n-placeholder="knowledge.searchPlaceholder">
+            <button class="toolbox-search-clear" id="kbSearchClear" type="button" title="清除">✕</button>
+          </div>
+        </div>
+        <div class="knowledge-list" id="knowledgeList">
+          <div class="toolbox-empty" style="grid-column:1/-1;">
+            <div class="toolbox-empty-icon">⏳</div>
+            <div class="toolbox-empty-title" data-i18n="toolbox.loading">加载中...</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-knowledge -->
+
     <!-- 全局保存按钮（所有 tab 可见） -->
     <div style="margin-top: 20px; padding: 0 24px 24px;">
       <button class="btn btn-save" id="saveBtn">
@@ -718,6 +779,24 @@
       <div class="modal-actions">
         <button class="btn btn-secondary" id="importConfigCancelBtn" data-i18n="common.cancel">取消</button>
         <button class="btn btn-primary" id="importConfigOkBtn" data-i18n="configDialog.confirmImport">确认导入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 厂商配置弹窗（名称输入 / 删除确认复用） -->
+  <div class="modal-overlay" id="profileModal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="profileModalTitle" data-i18n="settings.profileNameTitle">新建厂商配置</h3>
+        <button class="modal-close-btn" id="profileModalCloseBtn" data-i18n-title="common.close" title="关闭">✕</button>
+      </div>
+      <div style="padding: 8px 0;">
+        <p id="profileModalMessage" style="display:none; font-size: 13px; color: #888; margin-bottom: 12px;"></p>
+        <input type="text" id="profileNameInput" data-i18n-placeholder="settings.profileNamePlaceholder" placeholder="配置名称（如 DeepSeek 官方、我的中转）" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="profileModalCancelBtn" data-i18n="common.cancel">取消</button>
+        <button class="btn btn-primary" id="profileModalOkBtn" data-i18n="common.confirm">确定</button>
       </div>
     </div>
   </div>

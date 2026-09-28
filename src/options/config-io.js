@@ -4,6 +4,7 @@ import { loadConfig } from './config-manager.js';
 import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
 import { t, getLanguage } from '../shared/i18n.js';
+import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, mergeProfiles, getState, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -33,7 +34,9 @@ const EXPORT_KEYS = [
   'pairedAgents', 'agentStreamEnabled',
   'enableTools', 'isolateChat', 'enableSelectionQuery',
   'deletedPresetModels',
-  'mcpEnabled', 'skillsEnabled',
+  // 厂商配置（多配置记忆）与激活项
+  'modelProfiles', 'activeProfileId',
+  'mcpEnabled', 'skillsEnabled', 'ragEnabled',
 ];
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
@@ -50,15 +53,19 @@ async function collectConfig(includeSecrets) {
           config[key] = result[key];
         }
       }
-      // 收集所有智能体独立的工具配置 key
+      // 收集所有智能体独立的工具配置 key（常规工具勾选 + MCP 服务关闭列表）
       for (const key of Object.keys(result)) {
-        if (key.startsWith('agentEnabledTools_')) {
+        if (key.startsWith('agentEnabledTools_') || key.startsWith('agentMcpClosedServers_')) {
           config[key] = result[key];
         }
       }
       // 不包含密钥时，清除 pairedAgents 中的 token
       if (!includeSecrets && config.pairedAgents) {
         config.pairedAgents = config.pairedAgents.map(a => ({ ...a, token: '' }));
+      }
+      // 不包含密钥时，逐厂商配置剥离 apiKey
+      if (!includeSecrets && Array.isArray(config.modelProfiles)) {
+        config.modelProfiles = stripProfileSecrets(config.modelProfiles);
       }
       resolve(config);
     });
@@ -190,7 +197,7 @@ function validateImportData(data) {
 
   // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）
   for (const key of Object.keys(config)) {
-    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_')) {
+    if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_') && !key.startsWith('agentMcpClosedServers_')) {
       return { valid: false, error: t('configDialog.unknownConfigKey', { key }) };
     }
   }
@@ -235,15 +242,48 @@ export async function confirmImport() {
     const config = importData.config || importData;
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';
 
+    // 合并导入 + 新格式文件：厂商配置按 ID 对齐合并
+    // （新 ID 追加；同 ID 以 updatedAt 较新的为准，老的忽略），
+    // 之后统一重投影扁平键，保证“扁平键 = 激活配置”一致
+    if (strategy === 'merge' && Array.isArray(config.modelProfiles)) {
+      const local = await getState();
+      config.modelProfiles = mergeProfiles(local.profiles, config.modelProfiles);
+      const fileActive = config.activeProfileId;
+      config.activeProfileId = config.modelProfiles.some(p => p.id === fileActive)
+        ? fileActive
+        : local.activeProfileId;
+      const activeProfile = config.modelProfiles.find(p => p.id === config.activeProfileId) || config.modelProfiles[0];
+      if (activeProfile) {
+        config.apiBase = activeProfile.apiBase || DEFAULT_API_BASE;
+        config.apiKey = activeProfile.apiKey || '';
+        config.modelName = activeProfile.modelName || DEFAULT_MODEL_NAME;
+        config.customModels = normalizeModels(activeProfile.models);
+      }
+    }
+
     if (strategy === 'replace') {
       // 完全替换：直接写入所有配置
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
       });
     } else {
-      // 合并导入：逐项写入
+      // 合并导入：逐项写入（modelProfiles 已按 ID 对齐）
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
+      });
+    }
+
+    // 厂商配置一致性处理：
+    // - 旧格式导入（无 modelProfiles）：用扁平键回写激活配置，避免数据分叉
+    // - 其余情况：确保 activeProfileId 有效（导入文件可能缺失）
+    await ensureProfilesMigrated();
+    if (!Array.isArray(config.modelProfiles)) {
+      const flat = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName', 'customModels']);
+      await updateActiveProfile({
+        apiBase: flat.apiBase || DEFAULT_API_BASE,
+        apiKey: flat.apiKey || '',
+        modelName: flat.modelName || DEFAULT_MODEL_NAME,
+        models: normalizeModels(flat.customModels),
       });
     }
 

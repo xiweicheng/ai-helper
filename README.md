@@ -46,6 +46,8 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 - **Summarize any open tab (Bilibili / YouTube / PDF / long article) and export to Word or PDF** — type `@`, pick the tab, ask for a summary, click export.
 - **Watch a page on a schedule** — Cron / interval / one-off tasks re-run your prompt against a bound URL and write results into a chosen session.
 - **Let AI touch your local files and terminal** — optional Agent service, with three-tier command safety and a 7-day trash bin as a safety net.
+- **Ask your own documents** — build a local knowledge base from PDF / Word / Excel / PPT / Markdown / HTML / CSV, then get retrieval-augmented answers with clickable citations; multiple bases can be searched together.
+- **Bring any provider, switch in two clicks** — save multiple OpenAI-compatible provider profiles (endpoint / key / model list); pick provider first, then model, right in the chat panel.
 
 ## How it compares
 
@@ -56,6 +58,7 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 | Actually clicks / fills / uploads | Partial | Yes | No | **Yes** |
 | Local file read-write + terminal commands | No | DIY | No | **Yes (optional Agent)** |
 | MCP protocol extension | Few | DIY | No | **Yes** |
+| Built-in knowledge base (RAG) with citations | Partial | DIY | No | **Yes (optional Agent)** |
 | Multi-agent collaboration / sub-task dispatch | No | DIY | No | **Yes** |
 | Tool preselection + token-budget savings | No | DIY | No | **Yes** |
 | Three-tier reflection quality assurance | No | DIY | No | **Yes** |
@@ -68,10 +71,11 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 - **Tool preselection saves tokens.** 40+ tool definitions would blow up every call. A lightweight API pre-pass narrows them down to the 5–10 that actually matter before the main model runs.
 - **Token-budget management.** Truncation is by token count, not message count, so `tool_calls` / `tool` message pairs never get split apart.
 - **Long-quote auto-compression.** Big page selections are summarized instead of squatting in your context forever.
+- **Built-in knowledge base (RAG).** Import your own documents and get hybrid-retrieval answers with source citations — the index lives on your machine and the files never leave it.
 - **Checkpoint resume + Service Worker restart recovery.** Long tasks survive SW silent restarts and can be resumed with one click after any interruption.
 - **Scheduled tasks + long-term memory + file trash bin + audit logs.** The unglamorous pieces that turn an AI chat toy into something you can actually rely on day after day.
 
-## Three starter scenarios
+## Starter scenarios
 
 **A. Auto-fill a complex form + upload a file.** Attach the file, tell the AI what to fill, watch it locate the fields, type values, and submit — Shadow DOM and React controlled components included. [Details →](docs/en/DOCUMENTATION.md#22-shadow-dom-deep-penetration)
 
@@ -79,12 +83,14 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 
 **C. Scheduled page-watch.** Every day at 9am, re-run a prompt against a bound URL and drop the result into a chosen session. Cron / interval / one-off all supported, with run history and failure notifications. [Details →](docs/en/DOCUMENTATION.md#30-scheduled-tasks)
 
+**D. Ask your own knowledge base.** Start the Agent, import documents into a knowledge base from Options → Knowledge Base, then ask away in the side panel — answers come back with citation bubbles pointing at the exact source chunks. [Technical details →](agent/README.md#knowledge-base-rag)
+
 ## 30-second quickstart
 
 1. **Install** — one click from the [Microsoft Edge Add-ons store](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl), or run `npm install && npm run build` and load the `dist/` folder from `chrome://extensions/` in developer mode.
 2. **Open the side panel** — press `Ctrl+Shift+Y` / `Cmd+Shift+Y`, or click the extension icon.
-3. **Add your API key** — Options → Basic Settings. Any OpenAI-compatible endpoint works; DeepSeek presets ship by default.
-4. **(Optional) Unlock local files, terminal commands, MCP, and Skills** — run `npm install -g ai-helper-agent && aha start -b`, then paste the 6-digit pairing code into Options → Agent.
+3. **Add your API key** — Options → Basic Settings. Any OpenAI-compatible endpoint works; DeepSeek presets ship by default. Save several providers as profiles and switch anytime.
+4. **(Optional) Unlock local files, terminal commands, MCP, Skills, and the local knowledge base** — run `npm install -g ai-helper-agent && aha start -b`, then paste the 6-digit pairing code into Options → Agent.
 
 Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 

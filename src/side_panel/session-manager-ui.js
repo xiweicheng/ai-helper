@@ -5,7 +5,7 @@ import state from './state.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, applyRagToolIntroduction } from './tool-panel.js';
 import { showToast } from './utils.js';
 import {
   createSession,
@@ -883,9 +883,10 @@ async function handleSessionSwitch(sessionId) {
 
   // 并行化：loadSessions + chrome.storage.local 读取 + getAgent 彼此独立
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
+  const agentMcpClosedKey = `agentMcpClosedServers_${state.activeAgentId || 'default'}`;
   const [sessionsData, mcpToolsResult, savedResult, agent] = await Promise.all([
     loadSessions(),
-    chrome.storage.local.get(['mcpTools']),
+    chrome.storage.local.get([agentMcpClosedKey, 'ragTools', 'ragToolsIntroduced']),
     chrome.storage.local.get([agentToolsKey, 'enabledTools']),
     state.activeAgentId ? getAgent(state.activeAgentId) : Promise.resolve(null),
   ]);
@@ -895,29 +896,43 @@ async function handleSessionSwitch(sessionId) {
 
   // switchToSession 已设置 messageHistory/model/useTools/temperature/topP/activeAgentId
   // 此处只需处理 enabledTools（依赖 chrome.storage）
-  const mcpTools = mcpToolsResult.mcpTools || [];
+  const ragTools = mcpToolsResult.ragTools || [];
+  // MCP 服务级关闭列表（deny-list：不在列表中 = 开放；新服务默认开放）
+  state.mcpClosedServers = mcpToolsResult[agentMcpClosedKey] || [];
   const isAgentSpecific = !!savedResult[agentToolsKey];
   const savedTools = savedResult[agentToolsKey] || savedResult.enabledTools;
   if (savedTools && savedTools.length > 0) {
-    const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+    // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
+    const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
     const existing = savedTools.filter(id => validIds.has(id));
     if (isAgentSpecific) {
-      const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...existing, ...addedMcp];
+      state.enabledTools = existing;
     } else {
       const added = BUILTIN_TOOLS.filter(t => t.enabled && !existing.includes(t.id)).map(t => t.id);
-      const addedMcp = mcpTools.filter(t => !existing.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...existing, ...added, ...addedMcp];
+      state.enabledTools = [...existing, ...added];
     }
+    // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+    const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
+    state.enabledTools = ragIntro.tools;
     if (state.enabledTools.length !== savedTools.length) {
-      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      chrome.storage.local.set({
+        [agentToolsKey]: state.enabledTools,
+        ...(ragIntro.migrated ? { ragToolsIntroduced: true } : {})
+      });
     }
   } else {
-    state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+    state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
+    // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置
+    const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, mcpToolsResult.ragToolsIntroduced);
+    state.enabledTools = ragIntro.tools;
+    if (ragIntro.migrated) {
+      chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+    }
   }
 
-  // 恢复当前 Agent 的工具限定列表
+  // 恢复当前 Agent 的工具限定列表与 MCP 服务排除列表
   state.activeAgentToolIds = agent ? agent.toolIds : null;
+  state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
 
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId, previousSessionId }
@@ -1203,8 +1218,10 @@ async function reloadAfterDelete() {
   if (state.activeAgentId) {
     const agent = await getAgent(state.activeAgentId);
     state.activeAgentToolIds = agent ? agent.toolIds : null;
+    state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
   } else {
     state.activeAgentToolIds = null;
+    state.activeAgentMcpExcludedServerIds = null;
   }
 
   document.dispatchEvent(new CustomEvent('session-switched', {

@@ -151,8 +151,8 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
 
   logger.debug('[AgentDispatcher] sub Agent:', agent.name);
 
-  // 2. 获取子 Agent 的工具列表
-  const agentTools = await getTools(agent.toolIds, agent.id, agent.skillIds);
+  // 2. 获取子 Agent 的工具列表（MCP 服务级：传入子 Agent 的排除列表）
+  const agentTools = await getTools(agent.toolIds, agent.id, agent.skillIds, null, agent.mcpExcludedServerIds ?? null);
   logger.debug('[AgentDispatcher] sub Agent tool count :', agentTools.length);
 
   // 3. 构建子 Agent 消息

@@ -17,6 +17,9 @@ import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
+import { initProviderSelector } from './provider-selector.js';
+import { closeAllSectionSelects } from './section-select.js';
+import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
   sidePanel: {
@@ -253,7 +256,8 @@ import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
-  refreshToolPopupIfOpen
+  setVisibleMcpServicesOpen,
+  refreshToolPopupIfOpen, applyRagToolIntroduction, getRagToolIds
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
@@ -391,8 +395,9 @@ async function saveModelToAgentOrGlobal(modelName) {
       await updateAgent(state.activeAgentId, { model: modelName });
     } catch { /* ignore */ }
   } else {
-    // 默认助手：保存到全局 storage
+    // 默认助手：保存到全局 storage，并同步为该厂商配置的选中模型
     chrome.storage.local.set({ modelName });
+    updateActiveProfileModelName(modelName);
   }
 }
 
@@ -491,6 +496,10 @@ function updateModelSelection(selectedValue) {
       option.querySelector('.model-option-check').textContent = '';
     }
   });
+
+  // 模型选择行同步显示当前模型名
+  const selectValue = document.getElementById('modelSelectValue');
+  if (selectValue && selectedValue) selectValue.textContent = selectedValue;
 }
 
 function loadCustomModelsToDropdown(customModels, callback) {
@@ -500,123 +509,66 @@ function loadCustomModelsToDropdown(customModels, callback) {
     return;
   }
 
-  // 先加载已删除的预设模型列表并移除对应选项
-  chrome.storage.local.get(['deletedPresetModels'], (result) => {
-    const deletedPresetModels = result.deletedPresetModels || [];
-    deletedPresetModels.forEach(modelName => {
-      const option = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-      if (option) option.remove();
-    });
+  const modelSection = tempDropdown.querySelector('.model-section');
 
-    if (!customModels || customModels.length === 0) {
-      if (typeof callback === 'function') callback();
-      return;
+  // 向前兼容：旧格式为字符串，新格式为对象
+  const models = [];
+  (Array.isArray(customModels) ? customModels : []).forEach(item => {
+    if (typeof item === 'string') {
+      models.push({ name: item, contextWindow: 0 });
+    } else if (item && typeof item === 'object' && item.name) {
+      models.push({ name: item.name, contextWindow: item.contextWindow || 0 });
     }
+  });
 
-    const presetModels = ['deepseek-v4-pro', 'deepseek-v4-flash'];
-    let needsMigration = false;
-
-    customModels.forEach(item => {
-      // 向前兼容：旧格式为字符串，新格式为对象
-      let modelName, contextWindow = 0;
-      if (typeof item === 'string') {
-        modelName = item;
-        needsMigration = true;
-      } else if (item && typeof item === 'object' && item.name) {
-        modelName = item.name;
-        contextWindow = item.contextWindow || 0;
-      } else {
-        return;
-      }
-
-      if (presetModels.includes(modelName)) {
-        // 预设模型若有自定义上下文窗口配置，则在已有选项中显示标签
-        if (contextWindow && contextWindow > 0) {
-          const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-          if (existingOption) {
-            // 确保左侧包裹（仅迁移裸文本节点，避免带上勾选符号）
-            let leftSpan = existingOption.querySelector('.model-option-left');
-            if (!leftSpan) {
-              leftSpan = document.createElement('span');
-              leftSpan.className = 'model-option-left';
-              const textNodes = [...existingOption.childNodes].filter(n => n.nodeType === Node.TEXT_NODE);
-              textNodes.forEach(n => leftSpan.appendChild(n));
-              const checkSpan = existingOption.querySelector('.model-option-check');
-              if (checkSpan) {
-                checkSpan.insertAdjacentElement('afterend', leftSpan);
-              } else {
-                existingOption.insertBefore(leftSpan, existingOption.firstChild);
-              }
-            }
-
-            // 右侧容器（只有 badge，无删除按钮）
-            let rightSpan = existingOption.querySelector('.model-option-right');
-            if (!rightSpan) {
-              rightSpan = document.createElement('span');
-              rightSpan.className = 'model-option-right';
-              const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
-              if (oldBadge) rightSpan.appendChild(oldBadge);
-              existingOption.appendChild(rightSpan);
-            }
-
-            const badge = rightSpan.querySelector('.model-ctx-badge');
-            if (badge) {
-              badge.textContent = formatCtxWindow(contextWindow);
-            } else {
-              const ctxBadge = document.createElement('span');
-              ctxBadge.className = 'model-ctx-badge';
-              ctxBadge.textContent = formatCtxWindow(contextWindow);
-              rightSpan.appendChild(ctxBadge);
-            }
-          }
-        }
-        return;
-      }
-      const existingOption = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-      if (existingOption) return;
-
+  // 全量重建（列表来源为当前厂商配置的完整模型列表，硬编码预设仅作首帧占位）
+  // 结构：标题 + 选择行 + 浮层列表（浮层不占文档流，弹窗高度恒定）
+  if (modelSection) {
+    modelSection.innerHTML = `
+      <div class="model-section-title" data-i18n="model.selectModel">${t('model.selectModel')}</div>
+      <div class="section-select" id="modelSelect">
+        <div class="section-select-row" id="modelSelectRow">
+          <span class="section-select-value" id="modelSelectValue">${escapeHtml(state.currentModel || '')}</span>
+          <span class="section-select-caret"></span>
+        </div>
+        <div class="section-select-list" id="modelSelectList"></div>
+      </div>`;
+    const listEl = modelSection.querySelector('#modelSelectList');
+    for (const item of models) {
       const option = document.createElement('div');
       option.className = 'model-option';
-      option.dataset.value = modelName;
-      option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${modelName}</span>`;
+      option.dataset.value = item.name;
+      option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${escapeHtml(item.name)}</span>`;
 
       // 上下文窗口大小标签（放在右侧容器内）
-      if (contextWindow && contextWindow > 0) {
+      if (item.contextWindow && item.contextWindow > 0) {
         const rightSpan = document.createElement('span');
         rightSpan.className = 'model-option-right';
         const ctxBadge = document.createElement('span');
         ctxBadge.className = 'model-ctx-badge';
-        ctxBadge.textContent = formatCtxWindow(contextWindow);
+        ctxBadge.textContent = formatCtxWindow(item.contextWindow);
         rightSpan.appendChild(ctxBadge);
         option.appendChild(rightSpan);
       }
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();
-        state.currentModel = modelName;
-        updateModelSelection(modelName);
-        saveModelToAgentOrGlobal(modelName);
+        closeAllSectionSelects();
+        state.currentModel = item.name;
+        updateModelSelection(item.name);
+        saveModelToAgentOrGlobal(item.name);
       });
 
-      tempDropdown.querySelector('.model-section').appendChild(option);
-    });
-
-    // 如果存在旧格式数据，自动迁移
-    if (needsMigration) {
-      const migrated = customModels.map(item => {
-        if (typeof item === 'string') return { name: item, contextWindow: 0 };
-        return item;
-      });
-      chrome.storage.local.set({ customModels: migrated });
+      listEl.appendChild(option);
     }
+  }
 
-    // 构建运行时上下文窗口映射
-    state.customModelMap = normalizeCustomModels(customModels);
+  // 构建运行时上下文窗口映射
+  state.customModelMap = normalizeCustomModels(customModels);
 
-    if (typeof callback === 'function') {
-      callback();
-    }
-  });
+  if (typeof callback === 'function') {
+    callback();
+  }
 }
 
 // ==================== 选中内容上下文 ====================
@@ -2144,6 +2096,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // 厂商配置：确保迁移就绪（同步扁平键），并初始化模型设置弹窗顶部的厂商切换器
+  await ensureProfilesMigrated();
+  initProviderSelector();
+
   // 加载保存的模型选择和自定义模型
   chrome.storage.local.get(['modelName', 'customModels', 'customPrompts', 'systemPrompt', 'inputHistory', 'agentPlatform', 'enableImageInput', 'imageModelName', 'imageApiBase', 'imageApiKey', 'enableFileInput'], (result) => {
     const savedModelName = result.modelName;
@@ -2181,23 +2137,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听 storage 变化以更新自定义模型列表和模型选中状态
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
+      // 模型列表变化（增删/切换厂商）：全量重建后恢复选中标记
       if (changes.customModels) {
-        const newCustomModels = changes.customModels.newValue || [];
-        const modelSection = tempDropdown.querySelector('.model-section');
-        if (modelSection) {
-          const existingOptions = modelSection.querySelectorAll('.model-option');
-          existingOptions.forEach(opt => {
-            const value = opt.dataset.value;
-            if (value !== 'deepseek-v4-pro' && value !== 'deepseek-v4-flash') {
-              opt.remove();
-            }
-          });
-        }
-        loadCustomModelsToDropdown(newCustomModels);
+        loadCustomModelsToDropdown(changes.customModels.newValue || [], () => {
+          updateModelSelection(state.currentModel);
+        });
       }
       if (changes.modelName) {
         const newModelName = changes.modelName.newValue;
-        if (newModelName) {
+        // 仅默认助手跟随全局模型名；自定义助手使用自己的模型，避免切厂商时被覆盖
+        if (newModelName && (!state.activeAgentId || state.activeAgentId === 'default')) {
           state.currentModel = newModelName;
           updateModelSelection(newModelName);
         }
@@ -2229,14 +2178,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (changes.imageApiKey) {
         state.imageApiKey = changes.imageApiKey.newValue || '';
-      }
-      if (changes.deletedPresetModels) {
-        const deletedModels = changes.deletedPresetModels.newValue || [];
-        // 移除被删除的预设模型选项
-        deletedModels.forEach(modelName => {
-          const option = tempDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
-          if (option) option.remove();
-        });
       }
     }
   });
@@ -2798,15 +2739,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       const agentAtTabs = document.getElementById('agentAtTabs');
       const isMerged = agentAtTabs && agentAtTabs.classList.contains('merged-mode');
 
-      // Tab 键切换标签（仅在非合并模式下）
+      // Tab 键切换标签（仅在非合并模式下，跳过隐藏的 Tab）
       if (!isMerged && e.key === 'Tab') {
         e.preventDefault();
-        if (activeAtTab === 'pages') {
-          switchAtTab('agents');
-        } else if (activeAtTab === 'agents') {
-          switchAtTab('proxies');
-        } else {
-          switchAtTab('pages');
+        // 从 DOM 动态读取 Tab 顺序，与视觉顺序保持一致（避免两处顺序不同步）
+        const tabOrder = Array.from(document.querySelectorAll('#agentAtTabs .prompt-tab')).map(t => t.dataset.tab);
+        const isTabVisible = (tab) => {
+          const btn = document.querySelector(`#agentAtTabs .prompt-tab[data-tab="${tab}"]`);
+          return !!btn && btn.style.display !== 'none';
+        };
+        let orderIdx = tabOrder.indexOf(activeAtTab);
+        for (let i = 0; i < tabOrder.length; i++) {
+          orderIdx = (orderIdx + 1) % tabOrder.length;
+          if (isTabVisible(tabOrder[orderIdx])) {
+            switchAtTab(tabOrder[orderIdx]);
+            break;
+          }
         }
         return;
       }
@@ -2823,6 +2771,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (activeAtTab === 'proxies') {
         listContainer = document.getElementById('agentProxyList');
         selectedIndex = state.selectedProxyAtIndex;
+      } else if (activeAtTab === 'knowledge') {
+        listContainer = document.getElementById('agentKnowledgeList');
+        selectedIndex = state.selectedKnowledgeAtIndex;
       } else {
         listContainer = document.getElementById('agentAtList');
         selectedIndex = state.selectedAgentAtIndex;
@@ -2836,11 +2787,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? 0 : (selectedIndex + 1) % visibleCount;
-        if (activeAtTab === 'proxies') {
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'proxies') {
           state.selectedProxyAtIndex = newIdx;
           updateAgentAtSelection(items);
-        } else if (isMerged) {
-          state.selectedAgentAtIndex = newIdx;
+        } else if (activeAtTab === 'knowledge') {
+          state.selectedKnowledgeAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {
           state.selectedPageIndex = newIdx;
@@ -2853,11 +2807,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         const newIdx = selectedIndex < 0 ? visibleCount - 1 : (selectedIndex === 0 ? visibleCount - 1 : selectedIndex - 1);
-        if (activeAtTab === 'proxies') {
+        if (isMerged) {
+          state.selectedAgentAtIndex = newIdx;
+          updateAgentAtSelection(items);
+        } else if (activeAtTab === 'proxies') {
           state.selectedProxyAtIndex = newIdx;
           updateAgentAtSelection(items);
-        } else if (isMerged) {
-          state.selectedAgentAtIndex = newIdx;
+        } else if (activeAtTab === 'knowledge') {
+          state.selectedKnowledgeAtIndex = newIdx;
           updateAgentAtSelection(items);
         } else if (activeAtTab === 'pages') {
           state.selectedPageIndex = newIdx;
@@ -2870,6 +2827,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else if (e.key === 'Enter' && selectedIndex >= 0) {
         e.preventDefault();
         items[selectedIndex].click();
+        // Ctrl/Cmd+Enter：选中后关闭弹窗（知识库等多选场景的单选快捷方式；其余类型本就关闭）
+        if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
         return;
       } else if (e.key === 'Escape') {
         hideAgentAtSelector();
@@ -2946,11 +2905,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           e.preventDefault();
           const selected = mergedItems[state.selectedPromptIndex];
           if (selected.dataset.type === 'skill') {
-            // 技能：触发点击选中
+            // 技能：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
             selected.click();
+            if (e.ctrlKey || e.metaKey) hidePromptSelector();
           } else if (selected.dataset.type === 'mcp') {
-            // MCP 服务：触发点击选中
+            // MCP 服务：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
             selected.click();
+            if (e.ctrlKey || e.metaKey) hidePromptSelector();
           } else if (e.ctrlKey || e.metaKey) {
             insertPromptToInputByCode(selected.dataset.code);
           } else {
@@ -2998,6 +2959,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter' && state.selectedSkillIndex >= 0) {
           e.preventDefault();
           skillItems[state.selectedSkillIndex].click();
+          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
+          if (e.ctrlKey || e.metaKey) hidePromptSelector();
           return;
         }
 
@@ -3052,6 +3015,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter' && state.selectedMcpServiceIndex >= 0) {
           e.preventDefault();
           mcpItems[state.selectedMcpServiceIndex].click();
+          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
+          if (e.ctrlKey || e.metaKey) hidePromptSelector();
           return;
         }
 
@@ -3728,7 +3693,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 加载保存的状态（每个智能体独立的已启用工具列表）
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
-  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', 'mcpTools'], (result) => {
+  const agentMcpClosedKey = `agentMcpClosedServers_${state.activeAgentId || 'default'}`;
+  chrome.storage.local.get([agentToolsKey, 'enabledTools', 'isolateChat', 'enableSelectionQuery', 'enableTools', agentMcpClosedKey, 'mcpTools', 'mcpEnabled', 'ragTools', 'ragToolsIntroduced'], (result) => {
     // 优先读取 agent-specific key，降级到旧的全局 enabledTools（兼容旧数据）
     if (result.isolateChat !== undefined) {
       state.isolateChat = result.isolateChat;
@@ -3747,35 +3713,64 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.useTools = result.enableTools;
     }
 
+    // 当前助手的 MCP 服务排除列表（从助手配置读取，供工具弹窗与状态展示使用）
+    if (state.activeAgentId) {
+      import('./agent-store.js').then(({ getAgent }) => getAgent(state.activeAgentId)).then(agent => {
+        state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
+      }).catch(() => {});
+    }
+
+    // MCP 服务级关闭列表（deny-list：不在列表中 = 开放；新服务默认开放）
+    state.mcpClosedServers = result[agentMcpClosedKey] || [];
+
     // 读取当前智能体的工具配置：优先 agent-specific key，降级到全局 enabledTools
+    const ragTools = result.ragTools || [];
     const savedAgentTools = result[agentToolsKey];
     const fallbackTools = result.enabledTools;
     if (savedAgentTools && savedAgentTools.length > 0) {
-      // Agent-specific：使用用户保存的列表，仅自动添加新的 MCP 工具
-      const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      // Agent-specific：使用用户保存的列表（MCP 已改为服务级开关，不再参与工具级勾选）
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
-      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...savedTools, ...newMcpTools];
-      if (newMcpTools.length > 0) {
+      state.enabledTools = savedTools;
+      // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      if (ragIntro.migrated) {
+        chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+      } else if (state.enabledTools.length !== savedAgentTools.length) {
+        // 顺带清理旧列表中残留的 MCP / 无效工具 ID
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
     } else if (fallbackTools && fallbackTools.length > 0) {
       // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
-      const mcpTools = result.mcpTools || [];
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...mcpTools.map(t => t.id)]);
+      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
-      const newMcpTools = mcpTools.filter(t => !savedTools.includes(t.id)).map(t => t.id);
-      state.enabledTools = [...savedTools, ...newBuiltinTools, ...newMcpTools];
-      chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
+      state.enabledTools = [...savedTools, ...newBuiltinTools];
+      // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      chrome.storage.local.set({
+        [agentToolsKey]: state.enabledTools,
+        ...(ragIntro.migrated ? { ragToolsIntroduced: true } : {})
+      });
     } else {
-      const mcpTools = result.mcpTools || [];
-      state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...mcpTools.map(t => t.id)];
+      state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
+      // RAG 知识库工具（若已注册且未引入）：默认并入并固化配置，避免引入标记与启用列表漂移
+      const ragIntro = applyRagToolIntroduction(state.enabledTools, ragTools, result.ragToolsIntroduced);
+      state.enabledTools = ragIntro.tools;
+      if (ragIntro.migrated) {
+        chrome.storage.local.set({ ragToolsIntroduced: true, [agentToolsKey]: state.enabledTools });
+      }
     }
 
     if (state.enabledTools.length === 0) {
-      state.useTools = false;
+      // 常规工具全禁用时，若仍有开放的 MCP 服务则保持工具启用
+      const mcpCached = result.mcpTools || [];
+      const closedSet = new Set(state.mcpClosedServers || []);
+      const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
+      const hasOpenMcp = result.mcpEnabled === true && mcpCached.some(t => t.serverId && !closedSet.has(t.serverId) && !excludedSet.has(t.serverId));
+      if (!hasOpenMcp) state.useTools = false;
     }
 
     if (enableToolsBtn) {
@@ -3812,7 +3807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       chrome.storage.local.set({ enableTools: state.useTools });
 
       if (state.useTools && state.enabledTools.length === 0) {
-        state.enabledTools = BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id);
+        state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...getRagToolIds()];
         const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
         chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
       }
@@ -3920,6 +3915,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           state.enabledTools.push(tool.id);
         }
       });
+      // MCP 服务级开关：与工具全选联动（被助手排除的服务自动跳过）
+      setVisibleMcpServicesOpen(true);
       updateAllCategoryCounts();
       updateCategoryBadges();
       updateToolsPopupTitle();
@@ -3937,6 +3934,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           state.enabledTools.splice(index, 1);
         }
       });
+      // MCP 服务级开关：与工具全不选联动（被助手排除的服务自动跳过）
+      setVisibleMcpServicesOpen(false);
       updateAllCategoryCounts();
       updateCategoryBadges();
       updateToolsPopupTitle();

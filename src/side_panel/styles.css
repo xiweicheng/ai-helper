@@ -863,6 +863,72 @@ body {
   margin: 0;
   flex-shrink: 0;
 }
+
+/* MCP 服务级行（助手编辑器）：checkbox = 开放/排除；展开查看只读工具列表 */
+.agent-mcp-expand-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #999;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+  transition: background 0.15s, color 0.15s;
+}
+.agent-mcp-expand-btn:hover {
+  background: #eef0f4;
+  color: #667eea;
+}
+.agent-mcp-service-id {
+  flex-shrink: 0;
+  max-width: 130px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-mcp-tool-list {
+  margin: 0 8px 6px 30px;
+  padding-left: 10px;
+  border-left: 2px solid #eef0f4;
+  overflow: hidden;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+.agent-mcp-tool-list.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+}
+.agent-mcp-tool-row {
+  padding: 2px 0;
+}
+.agent-mcp-tool-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-mcp-tool-desc {
+  font-size: 11px;
+  color: #999;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Emoji 选择器 */
 .emoji-picker {
   position: absolute;
@@ -1520,6 +1586,156 @@ body {
   font-weight: 500;
   user-select: none;
 }
+/* ===== API 厂商分区（模型设置弹窗顶部） ===== */
+.provider-section {
+  padding-bottom: 12px;
+}
+.model-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.model-section-title-row .model-section-title {
+  padding-bottom: 0;
+}
+.provider-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 5px;
+  background: #fff;
+  color: #667eea;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.provider-add-btn:hover {
+  background: #f0f4ff;
+  border-color: #667eea;
+}
+.provider-option {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.provider-option:last-child {
+  border-bottom: none;
+}
+.provider-option:hover {
+  background: #f5f7fa;
+}
+.provider-option.selected {
+  color: #667eea;
+  font-weight: 500;
+  background: #f0f4ff;
+}
+.provider-option-check {
+  display: inline-block;
+  width: 16px;
+  margin-right: 4px;
+  color: #667eea;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+.provider-option-left {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.provider-option-right {
+  font-size: 10px;
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* ===== 内嵌下拉（选择行 + 浮层列表）：浮层不占文档流，弹窗高度恒定 ===== */
+.section-select {
+  position: relative;
+}
+.section-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  color: #333;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.section-select-row:hover {
+  border-color: #c9d4f5;
+}
+.section-select-row.open {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+.section-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.section-select-host {
+  font-size: 10px;
+  color: #999;
+  font-family: 'Consolas', 'Monaco', monospace;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.section-select-caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #999;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.section-select-row.open .section-select-caret {
+  transform: rotate(180deg);
+}
+.section-select-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  display: none;
+  max-height: 168px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.section-select-list.open {
+  display: block;
+  animation: dropdownFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .tool-toggle-container {
   display: flex;
   align-items: center;
@@ -1772,6 +1988,26 @@ body {
   color: #999;
   font-weight: normal;
 }
+
+/* 分类级全选/取消全选按钮（作用于该分类下当前可见项） */
+.category-select-all {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: normal;
+  color: #667eea;
+  background: transparent;
+  border: 1px solid #d4cfff;
+  border-radius: 8px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.category-select-all:hover {
+  background: #f3f1ff;
+}
 .popup-tool-category-group {
   margin-bottom: 4px;
 }
@@ -1803,6 +2039,92 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* MCP 服务级开关（弹窗）：服务行 + 可展开的只读工具列表 */
+.popup-mcp-service-block {
+  margin-bottom: 2px;
+}
+.popup-mcp-service-item {
+  cursor: pointer;
+}
+.popup-mcp-service-item input[type="checkbox"] {
+  accent-color: #1a73e8;
+}
+.popup-mcp-service-name {
+  margin-right: 6px;
+}
+.popup-mcp-service-count {
+  font-size: 11px;
+  color: #999;
+  font-weight: normal;
+}
+.popup-mcp-service-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.popup-mcp-service-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #999;
+}
+.popup-mcp-service-hint {
+  color: #b45309;
+}
+.popup-mcp-expand-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: #999;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.popup-mcp-expand-btn:hover {
+  background: #eef0f4;
+  color: #667eea;
+}
+.popup-mcp-tool-list {
+  margin: 0 10px 6px 35px;
+  padding-left: 10px;
+  border-left: 2px solid #eef0f4;
+  overflow: hidden;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+.popup-mcp-tool-list.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+}
+.popup-mcp-tool-row {
+  padding: 2px 0;
+}
+.popup-mcp-tool-name {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popup-mcp-tool-desc {
+  display: block;
+  font-size: 11px;
+  color: #999;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 工具按钮样式 */
@@ -2573,6 +2895,78 @@ body {
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* 知识库引用卡片：展开气泡后显示命中条目（分数徽章 + 内容），单条可再展开全文 */
+/* 注意：white-space 需重置为 normal——展开区为 pre-wrap，内容换行会被渲染成真实空行 */
+.context-bubble-content .kb-bubble-summary {
+  margin-bottom: 0;
+  white-space: normal;
+}
+.kb-bubble-hit {
+  display: none;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(102, 126, 234, 0.07);
+  white-space: normal;
+}
+.context-bubble-content.expanded .kb-bubble-hit {
+  display: block;
+}
+.kb-bubble-hit-score {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #e2e8fb;
+  color: #667eea;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  vertical-align: 1px;
+}
+.kb-bubble-hit-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12px;
+  color: #4a5165;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: normal;
+  cursor: pointer;
+}
+.kb-bubble-hit-text.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  white-space: pre-wrap;
+}
+
+/* 截断提示：条目级徽章 + 摘要行计数徽章（暖橙色，区别于紫色分数徽章） */
+.kb-bubble-hit-truncated {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fdf1e3;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+}
+.kb-bubble-truncated-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fdf1e3;
+  color: #b26a00;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  vertical-align: 1px;
 }
 
 .message.user .message-toolbar {
@@ -6228,47 +6622,25 @@ body {
   display: none !important;
 }
 
-/* 技能指示器 */
+/* 知识库 Tab 下显示知识库 ✚ 按钮（点击跳转设置页知识库管理），隐藏助手 ✚ 按钮 */
+#agentAtDropdown[data-active-tab="knowledge"] #agentAddBtn {
+  display: none !important;
+}
+#agentAtDropdown[data-active-tab="knowledge"] #knowledgeAddBtn {
+  display: inline-flex !important;
+}
+/* 非知识库 Tab 下隐藏知识库 ✚ 按钮 */
+#agentAtDropdown:not([data-active-tab="knowledge"]) #knowledgeAddBtn {
+  display: none !important;
+}
+
+/* 技能选中指示器（多技能 chip 容器） */
 .skill-indicator {
-  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   animation: slideDown 0.2s ease-out;
-  font-size: 13px;
-}
-.skill-indicator-label {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.skill-indicator-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.skill-indicator-close {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.skill-indicator-close:hover {
-  background: rgba(255, 255, 255, 0.35);
 }
 
 /* 网页指示器 */
@@ -6312,6 +6684,121 @@ body {
 }
 .page-indicator-close:hover {
   background: rgba(255, 255, 255, 0.35);
+}
+
+/* 知识库引用指示器（多库 chip 容器） */
+/* 注：容器级不能加上下 padding——input-container 已有 gap: 12px 统一间距，
+   额外 padding 会让 chip 的上下余白比网页/技能等指示器多出不协调的空白 */
+.knowledge-indicator {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+  animation: slideDown 0.2s ease-out;
+}
+.knowledge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  background: linear-gradient(135deg, #805ad5 0%, #6b46c1 100%);
+  color: white;
+  font-size: 12px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 12px;
+}
+.knowledge-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.knowledge-chip-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.knowledge-chip-close:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+/* 通用引用 chip（技能/MCP 多选指示器复用，结构对齐 knowledge-chip） */
+.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  color: white;
+  font-size: 12px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 12px;
+}
+.ref-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.ref-chip-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.ref-chip-close:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+.skill-ref-chip {
+  background: linear-gradient(135deg, #38a169 0%, #2f855a 100%);
+}
+/* 未启用技能：橙色提示“手动使用” */
+.skill-ref-chip-manual {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+}
+.mcp-ref-chip {
+  background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
+}
+
+/* 多选已选标记（列表项，与键盘高亮 .selected 独立共存；知识库项同用） */
+.skill-list-item.picked,
+.merged-skill-item.picked,
+.mcp-list-item.picked,
+.merged-mcp-item.picked,
+.prompt-item-knowledge.picked {
+  box-shadow: inset 2px 0 0 0 #805ad5;
+}
+.skill-list-item.picked::after,
+.merged-skill-item.picked::after,
+.mcp-list-item.picked::after,
+.merged-mcp-item.picked::after,
+.prompt-item-knowledge.picked::after {
+  content: '✓';
+  margin-left: auto;
+  color: #805ad5;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 /* 技能列表项 */
@@ -6401,10 +6888,7 @@ body {
 .merged-skill-item-disabled .prompt-item-content {
   color: #666;
 }
-/* 选中未启用技能时，指示器显示手动使用模式（橙色） */
-.skill-indicator-manual {
-  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-}
+/* 未启用技能的手动使用模式：chip 橙色（.skill-ref-chip-manual） */
 
 /* 合并列表中的技能标识 */
 .merged-item-badge {
@@ -6430,48 +6914,26 @@ body {
   background: #d2e3fc;
   color: #1557b0;
 }
+/* 未开放的 MCP 服务（已关闭或被助手排除）：仍可选中，选中即强制下发 */
+.badge-mcp-inactive {
+  background: #fef3c7;
+  color: #b45309;
+}
+.merged-mcp-item.selected .badge-mcp-inactive {
+  background: #fde68a;
+  color: #92400e;
+}
+.merged-mcp-item-inactive .prompt-item-content {
+  color: #666;
+}
 
-/* MCP 服务指示器 */
+/* MCP 服务选中指示器（多服务 chip 容器） */
 .mcp-indicator {
-  background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
-  color: white;
-  padding: 8px 12px;
-  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   animation: slideDown 0.2s ease-out;
-  font-size: 13px;
-}
-.mcp-indicator-label {
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.mcp-indicator-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mcp-indicator-close {
-  background: rgba(255, 255, 255, 0.2);
-  border: none;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: background 0.2s;
-  flex-shrink: 0;
-}
-.mcp-indicator-close:hover {
-  background: rgba(255, 255, 255, 0.35);
 }
 
 /* MCP 服务列表项 */
@@ -6542,6 +7004,18 @@ body {
 .mcp-list-item.selected .mcp-list-item-badge {
   background: #d2e3fc;
   color: #1557b0;
+}
+/* 未开放的 MCP 服务：排后面并附「未开放」角标（仍可选中，选中即强制下发） */
+.mcp-badge-inactive {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mcp-list-item.selected .mcp-badge-inactive {
+  background: #fde68a;
+  color: #92400e;
+}
+.mcp-list-item-inactive .mcp-list-item-name {
+  color: #666;
 }
 
 /* MCP 管理按钮：与 @ 选择器助手/代理的 ✚ 按钮样式保持一致 */

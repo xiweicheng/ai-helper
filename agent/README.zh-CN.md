@@ -359,6 +359,40 @@ enabled: true
 4. 工具调用请求通过 Agent 转发到 MCP Server
 5. 工具结果返回给扩展
 
+## 知识库（RAG）
+
+可选的本地检索增强生成（RAG）能力：将文档索引为可检索的知识库，让插件回答时附带引用来源。RAG 依赖为可选安装 —— Agent 启动时自动检测可用性，并通过 `/api/rag/status` 对外暴露；依赖缺失时 RAG 请求返回 `503`，插件端提供一键安装（白名单依赖，进度可经 `/api/rag/install/status` 轮询）。
+
+- **数据位置** —— 知识库存储于 `~/.ai-helper-agent/rag/`（可用环境变量 `AI_HELPER_RAG_ROOT` 覆盖）
+- **多知识库管理** —— 创建 / 更新 / 删除知识库，各自维护向量配置与统计信息
+- **多格式导入** —— `.txt` `.md` `.json` `.csv` `.html` / PDF / Word（`mammoth`）/ PPT（`officeparser`）/ Excel；支持文本、文件（base64）、URL 三种导入方式，解析 → 分块 → 向量化 → 存储分阶段进度可查
+- **混合检索** —— 向量相似度 + 关键词命中抬分；跨库检索时 `topK` 配额按库均分
+- **可插拔向量化** —— 默认本地模型（`Xenova/bge-small-zh-v1.5`，512 维，经 `@huggingface/transformers` 本地运行），也可接入任意 OpenAI 兼容向量服务（支持连通性测试并返回实际维度）
+- **索引重建** —— 知识库向量空间变更时后台自动重建（临时目录重放 → 原子换入）
+
+### RAG API
+
+以下接口注册在认证区内（需 Bearer Token），且仅在 RAG 依赖可用时按需加载。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/rag/install` | 触发白名单 RAG 依赖安装 |
+| GET | `/api/rag/install/status` | 安装进度 |
+| POST | `/api/rag/detect` | 重新检测 RAG 依赖可用性 |
+| GET | `/api/rag/status` | 能力与安装状态 |
+| POST | `/api/rag/test-embedding` | 测试远端向量服务连通性（返回实际维度） |
+| GET | `/api/rag/collections` | 列出知识库 |
+| POST | `/api/rag/collections` | 创建知识库 |
+| PUT | `/api/rag/collections/{id}` | 更新名称 / 描述 / 向量配置（向量空间变更自动重建索引） |
+| DELETE | `/api/rag/collections/{id}` | 删除知识库 |
+| GET | `/api/rag/collections/{id}/stats` | 文档数 / 分块数统计 |
+| POST | `/api/rag/collections/{id}/ingest` | 导入文本 / 文件 / URL（同步执行） |
+| GET | `/api/rag/collections/{id}/ingest/status` | 导入进度快照（供轮询） |
+| GET | `/api/rag/collections/{id}/documents` | 文档列表 |
+| DELETE | `/api/rag/collections/{id}/documents/{docId}` | 删除文档 |
+| POST | `/api/rag/collections/{id}/search` | 单库检索 |
+| POST | `/api/rag/search` | 跨知识库检索 |
+
 ## 技术栈
 
 - Node.js >= 18
@@ -366,6 +400,7 @@ enabled: true
 - `ws` 库（WebSocket 服务）
 - 零外部框架依赖
 - 可选依赖：`fd`、`rg`（ripgrep）— 用于加速文件搜索
+- 知识库（RAG）可选依赖：`vectra`（向量存储）、`@huggingface/transformers`（本地向量化）、`pdf-parse` / `mammoth` / `officeparser` / `cheerio`（文档解析）
 
 ## License
 

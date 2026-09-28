@@ -18,11 +18,12 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
-import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService } from './skill-selector.js';
+import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { clearPageSelection } from './page-selector.js';
+import { clearKnowledgeRefs, renderKnowledgeIndicator, fetchKnowledgeCollections } from './agent-at-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -348,6 +349,8 @@ async function _loadChatHistoryImpl() {
           const { getAgent } = await import('./agent-store.js');
           const agent = await getAgent(state.activeAgentId);
           if (agent) {
+            // 恢复助手级 MCP 服务排除列表（服务级 deny-list：不在列表中 = 开放）
+            state.activeAgentMcpExcludedServerIds = agent.mcpExcludedServerIds ?? null;
             if (agent.model) {
               state.currentModel = agent.model;
             }
@@ -359,8 +362,11 @@ async function _loadChatHistoryImpl() {
             document.dispatchEvent(new CustomEvent('agent-model-changed'));
           }
         } catch { /* Agent 加载失败，使用会话存储值 */ }
+        // 助手加载失败时清空排除列表，避免沿用上一个助手的配置
+        state.activeAgentMcpExcludedServerIds = null;
       } else {
         // 默认 Agent：从 chrome.storage.local 读取全局模型/温度（所有默认 Agent 会话共享）
+        state.activeAgentMcpExcludedServerIds = null;
         try {
           const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
           if (global.modelName) state.currentModel = global.modelName;
@@ -370,6 +376,11 @@ async function _loadChatHistoryImpl() {
         // 触发 UI 更新，确保弹窗 slider/输入框与图标一致
         document.dispatchEvent(new CustomEvent('agent-model-changed'));
       }
+
+      // 恢复 MCP 服务级关闭列表（deny-list，键随当前 Agent 切换；新服务默认开放）
+      const agentMcpClosedKey = `agentMcpClosedServers_${state.activeAgentId || 'default'}`;
+      const mcpClosedResult = await chrome.storage.local.get([agentMcpClosedKey]);
+      state.mcpClosedServers = mcpClosedResult[agentMcpClosedKey] || [];
     }
     
     // 清空已渲染的消息与上下文气泡，避免历史重载（后台定时任务执行后触发）导致内容重复
@@ -407,6 +418,25 @@ async function _loadChatHistoryImpl() {
             case 'file':
               bubbleText = `${bubble.name} (${formatFileSize(bubble.size || 0)})`;
               break;
+            case 'knowledge': {
+              const kbRefs = Array.isArray(bubble.refs) ? bubble.refs : [];
+              const kbTotal = kbRefs.reduce((sum, r) => sum + (r.hitCount || 0), 0);
+              if (kbRefs.length > 0) {
+                if (kbTotal === 0) {
+                  bubbleText = t('contextBubble.bubbleKnowledgeMiss', { name: kbRefs.map(r => r.name).join('、') });
+                } else {
+                  // 逐库展示（与发送链路一致）：命中库显示条目，未命中库显示未命中
+                  kbRefs.forEach(r => {
+                    if ((r.hitCount || 0) > 0) {
+                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+                    } else {
+                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
+                    }
+                  });
+                }
+              }
+              break;
+            }
           }
           if (bubbleText && bubble.type !== 'file') {
             addContextBubble(bubble.type, bubbleText, false);
@@ -544,6 +574,108 @@ export function hideModal() {
 // _verifyCheckpointAndHideButton / _checkForAbandonedCheckpoint / resumeTask）
 // 已拆分到 chat-resume.js，顶部 import 引入
 
+// ============================================================
+// 知识库检索上下文
+// ============================================================
+
+// 单条命中内容送入大模型前的最大字符数（气泡明细截断与此一致，供界面截断提示使用）
+const KB_HIT_MAX_CHARS = 1500;
+
+/**
+ * 向 background 请求 RAG 检索并构建知识库上下文文本
+ * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
+ * @param {string} query 用户问题
+ * @param {Array<{id: string, name: string}>} refs 已引用知识库快照
+ * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>}|null>} 总开关关闭时返回 null（跳过检索）
+ */
+export async function buildKnowledgeContextText(query, refs) {
+  if (!refs || refs.length === 0) return null;
+  // 总开关关闭：跳过检索（与设置页面板门控、@ 选择器显隐保持一致）
+  const { ragEnabled } = await chrome.storage.local.get('ragEnabled');
+  if (ragEnabled !== true) {
+    logger.debug('[SidePanel] RAG global switch off, skip knowledge context');
+    return null;
+  }
+  const searchResp = await new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'RAG_SEARCH',
+        params: { query, collectionIds: refs.map(r => r.id).filter(Boolean), topK: 5 }
+      }, (resp) => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(resp && resp.success ? resp : null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+
+  const results = (searchResp && searchResp.results) || [];
+
+  // 按 collectionId 分组统计命中；展示名称优先取引用列表中的库名
+  const nameById = new Map(refs.filter(r => r.id).map(r => [r.id, r.name]));
+  const buckets = new Map(); // collectionId -> { id, name, hitCount, items }
+  results.forEach(item => {
+    const cid = item.collectionId || '';
+    let bucket = buckets.get(cid);
+    if (!bucket) {
+      bucket = { id: cid, name: nameById.get(cid) || cid || t('contextBubble.labelKnowledge'), hitCount: 0, items: [] };
+      buckets.set(cid, bucket);
+    }
+    bucket.items.push(item);
+    bucket.hitCount++;
+  });
+
+  const hitBuckets = Array.from(buckets.values());
+  const totalHits = results.length;
+
+  // 命中明细（供引用卡片展开查看）；与注入文本一致做 KB_HIT_MAX_CHARS 字符截断
+  // truncated/fullLength 供界面展示截断提示（与注入给模型的截断版本严格对应）
+  const toHits = (items) => items.map(it => {
+    const full = String(it.content || '').trim();
+    return {
+      score: typeof it.score === 'number' ? it.score : (Number(it.score) || 0),
+      content: full.slice(0, KB_HIT_MAX_CHARS),
+      truncated: full.length > KB_HIT_MAX_CHARS,
+      fullLength: full.length
+    };
+  });
+
+  // 汇总每个引用库的命中数（含 0 命中，用于气泡展示）
+  const refStats = refs.map(r => ({
+    id: r.id,
+    name: r.name,
+    hitCount: r.id ? (buckets.get(r.id)?.hitCount || 0) : 0,
+    hits: r.id ? toHits(buckets.get(r.id)?.items || []) : []
+  }));
+  hitBuckets.forEach(b => {
+    if (!refStats.some(s => s.id && s.id === b.id)) {
+      refStats.push({ id: b.id, name: b.name, hitCount: b.hitCount, hits: toHits(b.items) });
+    }
+  });
+
+  // 构造注入文本（固定中文标记，与 [网页上下文] 一致）
+  const names = refs.map(r => r.name).join('、');
+  const lines = [`[知识库检索结果]（引用: ${names}）`];
+  if (totalHits === 0) {
+    lines.push('未找到与问题相关的内容。');
+  } else {
+    hitBuckets.forEach(b => {
+      lines.push('');
+      lines.push(`【${b.name}】`);
+      b.items.forEach(item => {
+        const score = typeof item.score === 'number' ? item.score.toFixed(3) : String(item.score ?? '');
+        lines.push(`· 相关度 ${score}`);
+        lines.push(String(item.content || '').trim().slice(0, KB_HIT_MAX_CHARS));
+        lines.push('');
+      });
+    });
+  }
+  lines.push('[/知识库检索结果]');
+
+  return { text: lines.join('\n') + '\n\n', refs: refStats };
+}
+
 export async function sendMessage() {
   // 等待聊天历史加载完成，确保 activeSessionId 就绪，保存会话不会静默失败
   await chatHistoryReady;
@@ -590,26 +722,67 @@ export async function sendMessage() {
     state.selectedContextText = '';
   }
 
-  // 注入技能上下文（如果已选中技能）
+  // 注入技能上下文（如果已选中技能，支持多技能）
   const skillContext = await getSkillContextText();
   if (skillContext) {
     finalText = skillContext + finalText;
-    // 添加技能上下文气泡（用户可见）
-    addContextBubble('skill', t('contextBubble.bubbleSkill', { name: state.selectedSkill.name, desc: state.selectedSkill.description ? '：' + state.selectedSkill.description : '' }), false);
-    contextBubbles.push({ type: 'skill', name: state.selectedSkill.name, description: state.selectedSkill.description || '' });
+    // 添加技能上下文气泡（用户可见，每个技能一个气泡）
+    for (const skill of state.selectedSkills) {
+      addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
+      contextBubbles.push({ type: 'skill', name: skill.name, description: skill.description || '' });
+    }
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
     clearSkillSelection();
   }
 
-  // 注入 MCP 服务上下文（如果已选中 MCP 服务）
+  // 注入 MCP 服务上下文（如果已选中 MCP 服务，支持多服务）
+  // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
+  let forcedMcpServerIds = null;
   const mcpContext = getMcpContextText();
   if (mcpContext) {
+    const forcedIds = state.selectedMcpServices.map(s => s.serverId).filter(Boolean);
+    forcedMcpServerIds = forcedIds.length > 0 ? forcedIds : null;
     finalText = mcpContext + finalText;
-    // 添加 MCP 上下文气泡
-    addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: state.selectedMcpService.serverName }), false);
-    contextBubbles.push({ type: 'mcp', serverName: state.selectedMcpService.serverName });
+    // 添加 MCP 上下文气泡（每个服务一个气泡，serverId 供重发时强制下发）
+    for (const svc of state.selectedMcpServices) {
+      addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
+      contextBubbles.push({ type: 'mcp', serverName: svc.serverName, serverId: svc.serverId || '' });
+    }
     // 清除 MCP 指示器
     clearMcpService();
+  }
+
+  // 注入知识库检索上下文（如果已引用知识库）
+  if (state.knowledgeRefs.length > 0) {
+    const refsSnapshot = state.knowledgeRefs.slice();
+    // 检索期间锁定发送，防止重复提交
+    state.isGenerating = true;
+    const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), true);
+    let kbPayload = null;
+    try {
+      kbPayload = await buildKnowledgeContextText(text, refsSnapshot);
+    } catch (err) {
+      logger.warn('[SidePanel] knowledge search failed:', err);
+    }
+    if (searchingBubble && searchingBubble.parentNode) searchingBubble.remove();
+    if (kbPayload) {
+      finalText = kbPayload.text + finalText;
+      const totalHits = kbPayload.refs.reduce((sum, r) => sum + r.hitCount, 0);
+      if (totalHits === 0) {
+        addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
+      } else {
+        // 逐库展示：命中库显示命中条目，未命中库也明确展示，避免多选时静默丢失
+        kbPayload.refs.forEach(r => {
+          if (r.hitCount > 0) {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+          } else {
+            addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
+          }
+        });
+      }
+      contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs });
+    }
+    clearKnowledgeRefs();
   }
 
   // 注入网页上下文（如果已选中网页）
@@ -691,6 +864,8 @@ export async function sendMessage() {
     const agentSkillIds = currentAgent?.skillIds ?? null;
     state.activeAgentToolIds = agentToolIds;
     state.activeAgentSkillIds = agentSkillIds;
+    // 同步当前助手的 MCP 服务排除列表（随请求下发给 background 做服务级过滤）
+    state.activeAgentMcpExcludedServerIds = currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null;
     
     logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - agent:', currentAgent ? currentAgent.name : 'default assistant');
@@ -788,7 +963,9 @@ export async function sendMessage() {
       logger.warn('[SidePanel] context pressure too high,maindynamictrimming...');
       // 使用实际系统提示词 + 工具定义 token，而非固定估算值
       const actualSysTokens = estimateTokens(messages[0]?.content || '');
-      const actualToolTokens = state.enabledTools.length * 200;
+      // MCP 已改为服务级下发：按「本次生效的 MCP 工具数」补充工具 token 预算
+      const openMcpToolCount = await countEffectiveMcpTools(forcedMcpServerIds);
+      const actualToolTokens = (state.enabledTools.length + openMcpToolCount) * 200;
       const budget = contextWindow - actualSysTokens - actualToolTokens - 4096 - 2000;
       const trimResult = trimMessagesByBudget(messages, Math.max(budget, 2000), { generateSummary: false });
       messages = trimResult.messages;
@@ -801,7 +978,7 @@ export async function sendMessage() {
     let streamingMsgId = null;
     
     try {
-      const result = await callApi(messages, model, state.useTools, apiParams);
+      const result = await callApi(messages, model, state.useTools, apiParams, { forcedMcpServerIds });
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -1019,14 +1196,34 @@ export async function directSend(text, selectedText = '') {
 // 消息渲染
 // ============================================================
 
-export function addContextBubble(type, contextText, scroll = true) {
+export function addContextBubble(type, contextText, scroll = true, hits = null) {
   const chatContainer = document.getElementById('chatContainer');
   const bubbleDiv = document.createElement('div');
   bubbleDiv.className = 'user-context-bubble';
   bubbleDiv.dataset.role = 'context';
   
-  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : '📌'))));
-  const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : t('contextBubble.labelSelection')))));
+  const icon = type === 'quoted' ? '💬' : (type === 'skill' ? '🧩' : (type === 'mcp' ? '🔌' : (type === 'page' ? '🌐' : (type === 'file' ? '📎' : (type === 'knowledge' ? '📚' : '📌')))));
+  const label = type === 'quoted' ? t('contextBubble.labelQuoted') : (type === 'skill' ? t('contextBubble.labelSkill') : (type === 'mcp' ? t('contextBubble.labelMcp') : (type === 'page' ? t('contextBubble.labelPage') : (type === 'file' ? t('contextBubble.labelFile') : (type === 'knowledge' ? t('contextBubble.labelKnowledge') : t('contextBubble.labelSelection'))))));
+
+  // 知识库气泡带命中明细时：展开区渲染条目列表（分数徽章 + 内容，单条可再展开全文）
+  // 模板须打平（不留缩进换行）：展开区为 pre-wrap，模板空白会被渲染成真实空行
+  let contentHtml = escapeHtml(contextText);
+  if (type === 'knowledge' && Array.isArray(hits) && hits.length > 0) {
+    const hitItems = hits.map(h => {
+      const scoreText = typeof h.score === 'number' ? h.score.toFixed(3) : '';
+      const scoreHtml = scoreText ? `<span class="kb-bubble-hit-score">${scoreText}</span>` : '';
+      // 截断提示：与注入给模型的 KB_HIT_MAX_CHARS 截断严格对应，展示模型实际收到的版本
+      const truncatedHtml = h.truncated
+        ? `<span class="kb-bubble-hit-truncated" title="${t('contextBubble.kbHitTruncatedTitle')}">${t('contextBubble.kbHitTruncated', { total: h.fullLength || 0, kept: KB_HIT_MAX_CHARS })}</span>`
+        : '';
+      return `<div class="kb-bubble-hit"><div class="kb-bubble-hit-text" title="${t('contextBubble.kbHitToggle')}">${scoreHtml}${escapeHtml(h.content || '')}</div>${truncatedHtml}</div>`;
+    }).join('');
+    const truncatedCount = hits.filter(h => h.truncated).length;
+    const truncatedBadge = truncatedCount > 0
+      ? `<span class="kb-bubble-truncated-badge">${t('contextBubble.kbHitTruncatedBadge', { count: truncatedCount })}</span>`
+      : '';
+    contentHtml = `<div class="kb-bubble-summary">${escapeHtml(contextText)}${truncatedBadge}</div>${hitItems}`;
+  }
 
   bubbleDiv.innerHTML = `
     <div class="context-bubble-inner">
@@ -1034,7 +1231,7 @@ export function addContextBubble(type, contextText, scroll = true) {
         <span class="context-icon">${icon}</span>
         <span class="context-type">${label}</span>
       </div>
-      <div class="context-bubble-content">${escapeHtml(contextText)}</div>
+      <div class="context-bubble-content">${contentHtml}</div>
     </div>
   `;
   
@@ -1044,6 +1241,16 @@ export function addContextBubble(type, contextText, scroll = true) {
     e.stopPropagation();
     contentEl.classList.toggle('expanded');
   });
+
+  // 命中条目点击展开/收起全文（仅知识库卡片）
+  if (type === 'knowledge') {
+    bubbleDiv.querySelectorAll('.kb-bubble-hit-text').forEach(hitEl => {
+      hitEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hitEl.classList.toggle('expanded');
+      });
+    });
+  }
   
   chatContainer.appendChild(bubbleDiv);
   
@@ -1062,12 +1269,31 @@ export function addContextBubble(type, contextText, scroll = true) {
 //   Workflow Skill:    ...\n请使用 `agent_skill`（action=run）...处理以下问题[，调用参数：...]。\n
 //                    / ...\nPlease use `agent_skill` (action=run) ... handle the following problem[, parameters: ...].\n
 function stripSkillContext(text) {
-  return text
-    // Agent Skill 成功：完整说明直到锚定句结束（中/英）
-    // 锚定句中间内容可能跨行，使用 [\s\S]*? 非贪婪匹配
-    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[\s\S]*?处理以下问题[：:]|Please use the relevant tools[\s\S]*?handle the following problem[.:])\s*\n/, '')
-    // Agent 降级 / Workflow：单行提示句（中/英）
-    .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
+  // 多技能时循环剥离串首的每个技能段，直到无残留（与注入顺序配合）
+  let out = text;
+  let prev;
+  do {
+    prev = out;
+    out = out
+      // Agent Skill 成功：完整说明直到锚定句结束（中/英）
+      // 锚定句中间内容可能跨行，使用 [\s\S]*? 非贪婪匹配
+      .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n[\s\S]*?(?:请根据上述技能说明[\s\S]*?处理以下问题[：:]|Please use the relevant tools[\s\S]*?handle the following problem[.:])\s*\n/, '')
+      // Agent 降级 / Workflow：单行提示句（中/英）
+      .replace(/^\[(?:已选技能|Selected skill): [^\]]+\]\n(?:请|Please)[^\n]*(?:处理以下问题|handle the following problem)[^。\n]*。?\s*\n/, '');
+  } while (out !== prev);
+  return out;
+}
+
+// 剥离用户消息中注入的 MCP 服务上下文（仅显示用，messageHistory 保留完整内容）
+// 多服务时循环剥离串首的每个 MCP 段（格式见 skill-selector 的 selectedMcpContext）
+function stripMcpContext(text) {
+  let out = text;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/^\[(?:已选MCP服务|Selected MCP service):\s*[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+  } while (out !== prev);
+  return out;
 }
 
 export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false, existingTimestamp = undefined) {
@@ -1487,8 +1713,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   } else {
     let displayText = textContent;
     displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+    displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
+    displayText = stripMcpContext(displayText);
     displayText = stripSkillContext(displayText);
-    displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
     
     const quotedMatch = displayText.match(/^\[引用内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
     const selectedMatch = displayText.match(/^\[选中内容(?:摘要)?\]\n([\s\S]+?)\n\n\[用户问题\]\n([\s\S]*)$/);
@@ -1507,8 +1734,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       }
       // 去除上下文前缀（仅显示用）
       userQuestion = userQuestion.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+      // 剥离顺序须与注入顺序一致（MCP 段在技能段之前），否则技能段残留
+      userQuestion = stripMcpContext(userQuestion);
       userQuestion = stripSkillContext(userQuestion);
-      userQuestion = userQuestion.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       userQuestion = userQuestion.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv._pendingContext = { type, contextText, userQuestion };
@@ -1527,8 +1755,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       // 技能上下文: [已选技能: xxx - xxx]\n（技能说明/提示）...处理以下问题...\n
       // MCP上下文: [已选MCP服务: xxx]\n请使用「xxx」MCP服务来处理以下问题：\n
       displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
+      displayText = displayText.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
+      displayText = stripMcpContext(displayText);
       displayText = stripSkillContext(displayText);
-      displayText = displayText.replace(/^\[(?:已选MCP服务|Selected MCP service): [^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
       // 去除内嵌的文件引用（如 [工作目录文件: xxx]）
       displayText = displayText.replace(/\[工作目录文件: [^\]]+\]/g, '');
       messageDiv.textContent = displayText;
@@ -2776,13 +3005,37 @@ export async function deleteMessage(messageElement, skipConfirm = false) {
   logger.debug(`[SidePanel] deletedmessage: ${role}, messageId: ${messageId}`);
 }
 
+/**
+ * 统计本次请求实际会下发的 MCP 工具数量（服务级口径，用于 token 估算）
+ * 生效服务 = 未被弹窗关闭 且 未被当前助手排除；forcedMcpServerIds 中的服务强制下发
+ * @param {string[]|null} forcedMcpServerIds - / 选择器手动指定的服务
+ * @returns {Promise<number>}
+ */
+async function countEffectiveMcpTools(forcedMcpServerIds = null) {
+  try {
+    const { mcpTools } = await chrome.storage.local.get(['mcpTools']);
+    const tools = mcpTools || [];
+    const closedSet = new Set(Array.isArray(state.mcpClosedServers) ? state.mcpClosedServers : []);
+    const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
+    const forcedSet = new Set(Array.isArray(forcedMcpServerIds) ? forcedMcpServerIds : []);
+    return tools.filter(t => {
+      const sid = t.serverId || 'unknown';
+      if (forcedSet.has(sid)) return true;
+      return !closedSet.has(sid) && !excludedSet.has(sid);
+    }).length;
+  } catch {
+    return 0;
+  }
+}
+
 export async function callApi(messages, model, useTools = false, apiParams = {}, options = {}) {
   // options.resumeFromCheckpoint: 是否为从 checkpoint 恢复任务
   //   - true 时忽略 messages/model/useTools，发送 RESUME_REACT 而非 CALL_API
   //   - 由 resumeTask 调用，复用 callApi 的流式输出基础设施
   // options.userGuidance: 恢复时用户追加的任务描述（可选）
   // options.loadingId: 外部传入的 loading 消息 ID（resumeTask 复用 callApi 时使用）
-  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null } = options;
+  // options.forcedMcpServerIds: 本次请求强制下发的 MCP 服务 ID 列表（/ 选择器选中，绕过关闭/排除列表）
+  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null } = options;
 
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -3436,6 +3689,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         agentId: state.activeAgentId,
         agentToolIds: state.activeAgentToolIds,
         agentSkillIds: state.activeAgentSkillIds,
+        // MCP 服务级下发控制：forced 为 / 选择器强制指定，excluded 为助手编辑器排除列表
+        forcedMcpServerIds: Array.isArray(forcedMcpServerIds) && forcedMcpServerIds.length > 0 ? forcedMcpServerIds : null,
+        agentMcpExcludedServerIds: state.activeAgentMcpExcludedServerIds ?? null,
         callId: myCallId,
         // 图片识别独立配置（仅当启用且有图片时传递）
         imageApiBase: state.enableImageInput && state.attachedImages.length > 0 ? (state.imageApiBase || '') : '',
@@ -3531,43 +3787,68 @@ export function editAndResendMessage(messageDiv) {
       }
     }
 
-    // 3a. 恢复技能上下文（如果消息使用了技能）
+    // 3a. 恢复知识库引用（如果消息检索过知识库）
+    clearKnowledgeRefs();
+    const kbMatch = textContent_.match(/\[知识库检索结果\]（引用: ([^）]+)）/);
+    if (kbMatch) {
+      const kbNames = kbMatch[1].split('、').map(s => s.trim()).filter(Boolean);
+      if (kbNames.length > 0) {
+        state.knowledgeRefs = kbNames.map(name => ({ id: '', name }));
+        renderKnowledgeIndicator();
+        // 异步补全知识库 ID，便于重发时精确检索（失败则按全库检索）
+        fetchKnowledgeCollections().then(kbState => {
+          if (kbState && kbState.ok) {
+            const idByName = new Map((kbState.collections || []).map(c => [c.name, c.id]));
+            state.knowledgeRefs = state.knowledgeRefs.map(r => r.id ? r : { id: idByName.get(r.name) || '', name: r.name });
+            renderKnowledgeIndicator();
+          }
+        }).catch(() => {});
+      }
+    }
+
+    // 3b. 恢复技能上下文（如果消息使用了技能，支持多个）
     clearSkillSelection();
     clearMcpService();
-    const skillMatch = textContent_.match(/^\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/);
-    if (skillMatch) {
-      const skillName = skillMatch[1].split(' - ')[0].trim();
-      state.selectedSkill = { name: skillName, description: '', type: 'agent' };
-      const skillIndicator = document.getElementById('skillIndicator');
-      const skillNameEl = document.getElementById('skillIndicatorName');
-      if (skillIndicator && skillNameEl) {
-        skillNameEl.textContent = skillName;
-        skillIndicator.style.display = 'flex';
-      }
+    const skillNames = Array.from(new Set([...textContent_.matchAll(/\[(?:已选技能|Selected skill):\s*([^\n\]]+)\]/g)].map(m => m[1].split(' - ')[0].trim()).filter(Boolean)));
+    if (skillNames.length > 0) {
+      state.selectedSkills = skillNames.map(name => ({ name, description: '', type: 'agent' }));
+      renderSkillIndicator();
     }
 
-    // 3b. 恢复 MCP 服务上下文
-    const mcpMatch = textContent_.match(/^\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/);
-    if (mcpMatch) {
-      const mcpName = mcpMatch[1].split(' - ')[0].trim();
-      state.selectedMcpService = { serverId: '', serverName: mcpName, toolCount: 0 };
-      const mcpIndicator = document.getElementById('mcpIndicator');
-      const mcpNameEl = document.getElementById('mcpIndicatorName');
-      if (mcpIndicator && mcpNameEl) {
-        mcpNameEl.textContent = mcpName;
-        mcpIndicator.style.display = 'flex';
-      }
+    // 3c. 恢复 MCP 服务上下文（支持多个）
+    const mcpNames = Array.from(new Set([...textContent_.matchAll(/\[(?:已选MCP服务|Selected MCP service):\s*([^\n\]]+)\]/g)].map(m => m[1].split(' - ')[0].trim()).filter(Boolean)));
+    if (mcpNames.length > 0) {
+      state.selectedMcpServices = mcpNames.map(name => ({ serverId: '', serverName: name, toolCount: 0 }));
+      renderMcpIndicator();
+      // 按服务名反查 serverId：重发时这些服务会被强制下发（绕过关闭/排除列表）
+      chrome.storage.local.get(['mcpTools'], (result) => {
+        const tools = result.mcpTools || [];
+        mcpNames.forEach(name => {
+          const cur = state.selectedMcpServices.find(s => s.serverName === name);
+          if (!cur || cur.serverId) return; // 已被用户移除或已回填
+          const matched = tools.find(t => (t.serverName || '') === name)
+            || tools.find(t => (t.serverName || '').startsWith(name));
+          if (matched) {
+            cur.serverId = matched.serverId || '';
+            cur.toolCount = tools.filter(t => t.serverId === matched.serverId).length;
+          }
+        });
+        renderMcpIndicator();
+      });
     }
 
-    // 4. 从文本中去掉网页/技能/MCP前缀
+    // 4. 从文本中去掉网页/知识库/技能/MCP前缀
     let textContentClean = textContent_;
     if (pageMatch) {
       textContentClean = textContentClean.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
     }
-    if (mcpMatch) {
-      textContentClean = textContentClean.replace(/^\[(?:已选MCP服务|Selected MCP service):[^\]]+\]\n(?:请使用「[^」]+」MCP服务来处理以下问题：|Please use the "[^"]+" MCP service to handle the following problem:)\s*\n/, '');
+    if (kbMatch) {
+      textContentClean = textContentClean.replace(/\[知识库检索结果\][^\n]*\n[\s\S]*?\[\/知识库检索结果\]\n\n?/, '');
     }
-    if (skillMatch) {
+    if (mcpNames.length > 0) {
+      textContentClean = stripMcpContext(textContentClean);
+    }
+    if (skillNames.length > 0) {
       textContentClean = stripSkillContext(textContentClean);
     }
 

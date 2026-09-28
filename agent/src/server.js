@@ -17,6 +17,8 @@ import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPer
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, setExecutorLang } from './executor.js';
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
+import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang } from './rag/detect.js';
+import { startRagInstall, getRagInstallStatus } from './rag/install.js';
 import {
   initializeMcpRegistry,
   shutdownMcpRegistry,
@@ -250,7 +252,7 @@ function jsonResponse(res, status, data) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
   const allowedOrigin = getAllowedOrigin(res.req);
   if (allowedOrigin) {
@@ -394,6 +396,11 @@ export function startServer() {
   let searchTools = { fd: false, rg: false };
   initSearchTools().then(result => { searchTools = result; });
 
+  // 异步初始化 RAG 能力检测（Node 22+ 前置检查 + 可选依赖 import；结果缓存，不阻塞启动）
+  // 先同步启动日志语言，确保检测完成早于 listen 回调时日志语言也正确
+  setRagLang(serverLang);
+  detectRagAvailable();
+
   // 防止 shutdown 并发执行
   let shuttingDown = false;
   // restart/update/shutdown 防重入 + 频率限制
@@ -423,6 +430,7 @@ export function startServer() {
     setTrashLang(lang);
     setExecutorLang(lang);
     setSearchLang(lang);
+    setRagLang(lang);
     setSkillExecutorLang(lang);
     setSkillLoaderLang(lang);
     setMarkdownLoaderLang(lang);
@@ -432,7 +440,7 @@ export function startServer() {
     if (req.method === 'OPTIONS') {
       const optHeaders = {
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
       };
       const allowedOrigin = getAllowedOrigin(req);
       if (allowedOrigin) {
@@ -481,7 +489,8 @@ export function startServer() {
         platformName: PLATFORM_INFO.platformName,
         arch: PLATFORM_INFO.arch,
         nodeVersion: PLATFORM_INFO.nodeVersion,
-        searchTools: getSearchToolsAvailable()
+        searchTools: getSearchToolsAvailable(),
+        ragAvailable: isRagAvailable()
       });
     }
 
@@ -711,7 +720,8 @@ export function startServer() {
           cpuSystem: process.cpuUsage().system
         },
         ...PLATFORM_INFO,
-        searchTools: getSearchToolsAvailable()
+        searchTools: getSearchToolsAvailable(),
+        ragAvailable: isRagAvailable()
       });
     }
 
@@ -828,10 +838,13 @@ export function startServer() {
       }
     }
 
+    // RAG 业务接口的 body 透传（RAG 路由分发位于本块作用域之外，见文件末尾）
+    let requestBody = null;
     if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
       let body;
       try { body = await parseBody(req); }
       catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
+      requestBody = body;
 
       // === 工作目录切换（需认证） ===
       if (pathname === '/api/config/workdir' && req.method === 'POST') {
@@ -1972,6 +1985,39 @@ export function startServer() {
       return jsonResponse(res, 200, getMcpTools(serverId));
     }
 
+    // ========== RAG 知识库检索接口（可选依赖，按需加载） ==========
+
+    // RAG 依赖安装（固定白名单 + 异步任务；位于认证区，强制 Bearer，不走本机来源免认证豁免）
+    if (req.method === 'POST' && pathname === '/api/rag/install') {
+      const result = startRagInstall(t);
+      if (result.started) {
+        logSystem('rag_install', { reason: 'api_request', extId });
+      }
+      return jsonResponse(res, result.started ? 200 : 409, result);
+    }
+
+    // RAG 安装进度轮询（前端每隔数秒查询一次）
+    if (req.method === 'GET' && pathname === '/api/rag/install/status') {
+      return jsonResponse(res, 200, getRagInstallStatus());
+    }
+
+    // 重新检测 RAG 依赖可用性（手动安装依赖后调用）
+    if (req.method === 'POST' && pathname === '/api/rag/detect') {
+      resetRagDetection();
+      const available = await detectRagAvailable();
+      return jsonResponse(res, 200, { success: true, available });
+    }
+
+    // 其余 RAG 接口：依赖不可用时直接 503（不加载路由模块）
+    if (pathname.startsWith('/api/rag/')) {
+      if (!isRagAvailable()) {
+        return jsonResponse(res, 503, { success: false, error: t('error.ragNotAvailable') });
+      }
+      // 动态 import：仅在依赖可用且真实收到请求时加载 RAG 路由模块
+      const { ragRouter } = await import('./rag/routes.js');
+      return ragRouter(req, res, pathname, url, t, requestBody);
+    }
+
     // 404
     jsonResponse(res, 404, { success: false, error: t('error.unknownApiPath') });
   }
@@ -2063,6 +2109,7 @@ export function startServer() {
     setExecutorLang(serverLang);
     setSecurityLang(serverLang);
     setSearchLang(serverLang);
+    setRagLang(serverLang);
     setSkillLoaderLang(serverLang);
     setSkillRegistryLang(serverLang);
     setSkillExecutorLang(serverLang);

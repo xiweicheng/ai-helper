@@ -494,7 +494,7 @@ export function renderExecutionLogForPanel(executionLog) {
     
     result += `
       <div class="task-group-container" data-group-id="${groupId}">
-        <div class="task-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        <div class="task-group-header">
           <div class="task-group-line"></div>
           <div class="task-group-dot ${statusClass}">
             ${statusIcon}

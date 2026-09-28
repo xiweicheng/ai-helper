@@ -60,6 +60,16 @@ export async function showFileAtSelector(filterText = '') {
   const fileAtDropdown = document.getElementById('fileAtDropdown');
   if (!fileAtSelector || !fileAtDropdown) return;
 
+  // 下拉层 mousedown 保焦：点击列表项时焦点不离开输入框，选中后可直接继续输入
+  if (!fileAtDropdown.dataset.focusGuard) {
+    fileAtDropdown.dataset.focusGuard = '1';
+    fileAtDropdown.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.prompt-item')) {
+        e.preventDefault();
+      }
+    });
+  }
+
   // 动态计算下拉框位置，确保紧贴在输入框上方
   updateDropdownPosition();
 
@@ -237,10 +247,13 @@ function selectFileByAt(entry) {
 
   // 去掉输入框中的 $ 及后面的匹配文本（与 @ 选择器行为一致）
   if (lastDollarIndex !== -1) {
-    const newValue = value.substring(0, lastDollarIndex);
-    userInput.value = newValue;
+    userInput.value = value.substring(0, lastDollarIndex);
+  }
+
+  // 无论触发符是否仍在输入框中，选中后焦点都必须回到输入框
+  if (userInput) {
     userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
+    userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   }
 
   hideFileAtSelector();

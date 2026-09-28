@@ -2,7 +2,7 @@
 
 import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, cancelRunningAgentCommands, clearSkillLoadCache } from './tool-executor.js';
+import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
 import { preselectTools } from './tool-preselector.js';
@@ -713,6 +713,9 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | CANCEL_REACT                  | side_panel  | 取消 ReAct 循环             | 否   |
 // | TERMINATE_COMMAND             | side_panel  | 终止命令（不取消 ReAct）     | 否   |
 // | RELOAD_MCP_TOOLS              | side_panel  | 强制重载 MCP 工具列表        | 是   |
+// | RELOAD_RAG_TOOLS              | options     | 强制重载 RAG 知识库工具      | 是   |
+// | RAG_LIST_COLLECTIONS          | side_panel  | 获取知识库列表（@选择器）    | 是   |
+// | RAG_SEARCH                    | side_panel  | 知识库检索（@引用发送）      | 是   |
 // | GET_MCP_TOOLS                 | side_panel  | 获取 MCP 工具（30s 缓存）    | 是   |
 // | GET_AGENT_SKILL_PROMPTS       | side_panel  | 获取 Skill Prompt（60s 缓存）| 是   |
 // | GET_SKILL_LIST                | side_panel  | 获取 Skill 列表             | 是   |
@@ -954,7 +957,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'RELOAD_RAG_TOOLS') {
+    loadRagTools().then(count => {
+      sendResponse({ success: true, count });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'RAG_LIST_COLLECTIONS') {
+    // 侧边栏 @ 知识库选择器：获取知识库列表（含 documentCount/chunkCount 统计）
+    AgentClient.ragListCollections().then(res => {
+      if (res && res.success) {
+        sendResponse({ success: true, collections: res.collections || [] });
+      } else {
+        sendResponse({ success: false, error: (res && res.error) || 'rag unavailable' });
+      }
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'RAG_SEARCH') {
+    // 侧边栏 @ 知识库引用：发送消息前检索知识库
+    AgentClient.ragSearch(message.params || {}).then(res => {
+      if (res && res.success) {
+        sendResponse({ success: true, results: res.results || [], hasContext: !!res.hasContext });
+      } else {
+        sendResponse({ success: false, error: (res && res.error) || 'rag unavailable' });
+      }
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+
   if (message.type === 'GET_MCP_TOOLS') {
+    // 侧边栏加载动态工具时顺带刷新 RAG 工具（无需等待，失败静默）
+    loadRagTools().catch(() => {});
     // 带缓存的重载：30 秒内复用上次结果，避免每次查询都向 Agent 发网络请求
     const now = Date.now();
     if (mcpToolsCache && (now - mcpToolsCache.loadedAt) < 30000) {
@@ -965,16 +1007,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     loadMcpTools().then(count => {
       const mcpTools = RAW_TOOLS
         .filter(t => t.id.startsWith('mcp_'))
-        .map(t => ({
-          id: t.id,
-          name: t.function?.name || t.id,
-          description: t.function?.description || '',
-          category: t.category || 'mcp',
-          execution: t.execution || 'background',
-          parallelizable: t.parallelizable !== false,
-          requiresConfirmation: t.requiresConfirmation || false,
-          enabled: true
-        }));
+        .map(t => {
+          const meta = getMcpToolMetaById(t.id);
+          return {
+            id: t.id,
+            name: meta?.toolName || t.function?.name || t.id,
+            description: t.function?.description || '',
+            category: t.category || 'mcp',
+            execution: t.execution || 'background',
+            parallelizable: t.parallelizable !== false,
+            requiresConfirmation: t.requiresConfirmation || false,
+            enabled: true,
+            serverId: meta?.serverId || '',
+            serverName: meta?.serverName || ''
+          };
+        });
       mcpToolsCache = { tools: mcpTools, loadedAt: Date.now() };
       logger.debug(`[Background] GET_MCP_TOOLS return ${mcpTools.length} tool ( reloads ${count} )`);
       sendResponse({ success: true, tools: mcpTools });
@@ -1084,7 +1131,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'CALL_API') {
-    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, agentSkillIds, callId } = message;
+    const { messages, model, useTools, tabId, apiParams, sessionId, imageApiBase, imageApiKey, agentId, agentToolIds, agentSkillIds, callId, forcedMcpServerIds, agentMcpExcludedServerIds } = message;
+
+    // 记录本会话强制下发的 MCP 服务（/ 触发器手动指定），
+    // 供澄清重筛、会话恢复等后续环节读取，避免强制工具被预筛选丢弃
+    setSessionForcedMcpServers(sessionId, forcedMcpServerIds);
 
     // 将图片识别独立配置合并到 apiParams 中
     if (imageApiBase) {
@@ -1121,7 +1172,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     const apiCall = useTools 
       ? (async () => {
-          const tools = await getTools(agentToolIds, agentId, agentSkillIds);
+          const tools = await getTools(agentToolIds, agentId, agentSkillIds, forcedMcpServerIds, agentMcpExcludedServerIds);
 
           // 工具开关打开但实际没有可用工具，跳过预筛选，直接普通对话
           if (tools.length === 0) {
@@ -1176,7 +1227,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return { content: preselection.content, executionLog: preselection.executionLog };
           }
 
-          const { tools: selectedTools, executionLog: preselectLog } = preselection;
+          const { tools: selectedToolsRaw, executionLog: preselectLog } = preselection;
+          // 手动指定（/ 触发器）的 MCP 服务工具补回：预筛选可能将其丢弃
+          const selectedTools = mergeForcedMcpTools(selectedToolsRaw, tools, forcedMcpServerIds);
           logger.debug(`[Background] after pre-filter ${selectedTools.length} tool`);
           logger.debug('[Background] pre-filter executionlog:', JSON.stringify(preselectLog).substring(0, 500));
 
@@ -1600,9 +1653,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       AgentClient.setAgentReachable(message.agentId, true);
       _stopAllAutoReconnect();
 
-      // 4. 加载新代理的 MCP 工具
+      // 4. 加载新代理的 MCP 工具 + RAG 工具
       loadMcpTools().then(count => {
         if (count > 0) logger.debug(`[Background] switchagent after loaded: ${count}  MCP tool`);
+      }).catch(() => {});
+      loadRagTools().then(count => {
+        if (count > 0) logger.debug(`[Background] switchagent after loaded: ${count}  RAG tool`);
       }).catch(() => {});
 
       // 5. 延迟验证连通性
@@ -1838,8 +1894,12 @@ async function performAgentHealthCheck() {
           loadMcpTools().then(count => {
             if (count > 0) logger.debug(`[Background] Agent after reconnect loaded: ${count}  MCP tool`);
           }).catch(() => {});
+          loadRagTools().then(count => {
+            if (count > 0) logger.debug(`[Background] Agent after reconnect loaded: ${count}  RAG tool`);
+          }).catch(() => {});
         } else {
           await unloadMcpTools();
+          await unloadRagTools();
           mcpToolsCache = null;
           logger.debug('[Background] Agent disconnect,cleaned MCP tool');
           // 启动自动重连
@@ -1893,6 +1953,9 @@ function _startAutoReconnect(agent) {
         loadMcpTools().then(count => {
           if (count > 0) logger.debug(`[Background] Agent ${agent.name} reconnect successful,loaded: ${count}  MCP tool`);
         }).catch(() => {});
+        loadRagTools().then(count => {
+          if (count > 0) logger.debug(`[Background] Agent ${agent.name} reconnect successful,loaded: ${count}  RAG tool`);
+        }).catch(() => {});
         logger.debug(`[Background] agent ${agent.name} auto reconnect successful`);
       } else {
         // 继续重试
@@ -1936,6 +1999,9 @@ async function _refreshActiveAgentState(agentId) {
     if (activeAgent && activeAgent.id === agentId) {
       loadMcpTools().then(count => {
         if (count > 0) logger.debug(`[Background] active agentafter reconnect loaded: ${count}  MCP tool`);
+      }).catch(() => {});
+      loadRagTools().then(count => {
+        if (count > 0) logger.debug(`[Background] active agentafter reconnect loaded: ${count}  RAG tool`);
       }).catch(() => {});
     }
   } catch (e) {

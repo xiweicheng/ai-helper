@@ -3099,7 +3099,7 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
   if (isVideo) {
     previewContent.innerHTML = `
       <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;">
-        <video controls autoplay style="max-width:100%;max-height:calc(100% - 24px);border-radius:8px;background:#000;" onerror="this.style.display='none';document.getElementById('mediaUnsupportedHint').style.display='block';">
+        <video controls autoplay style="max-width:100%;max-height:calc(100% - 24px);border-radius:8px;background:#000;">
           <source src="${url}" type="${escapeHtml(mimeType)}">
         </video>
         <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
@@ -3116,11 +3116,24 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
     previewContent.innerHTML = `
       <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;gap:16px;">
         <div style="font-size:14px;color:#555;">🎵 ${escapeHtml(fileName)}</div>
-        <audio controls autoplay style="width:100%;max-width:560px;" onerror="this.style.display='none';document.getElementById('mediaUnsupportedHint').style.display='block';">
+        <audio controls autoplay style="width:100%;max-width:560px;">
           <source src="${url}" type="${escapeHtml(mimeType)}">
         </audio>
         <div id="mediaUnsupportedHint" style="display:none;">${unsupportedHint}</div>
       </div>`;
+  }
+
+  // 媒体加载/解码失败时隐藏播放器并显示提示（替代内联 onerror，避免 MV3 CSP 拦截）
+  const mediaEl = previewContent.querySelector('video, audio');
+  const mediaHintEl = previewContent.querySelector('#mediaUnsupportedHint');
+  if (mediaEl) {
+    const onMediaError = () => {
+      mediaEl.style.display = 'none';
+      if (mediaHintEl) mediaHintEl.style.display = 'block';
+    };
+    mediaEl.addEventListener('error', onMediaError);
+    // <source> 加载失败在 source 元素上触发 error（不冒泡），单独绑定
+    previewContent.querySelectorAll('source').forEach(s => s.addEventListener('error', onMediaError));
   }
 }
 

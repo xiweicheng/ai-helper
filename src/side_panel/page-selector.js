@@ -83,7 +83,7 @@ export async function renderPageList(filterText = '') {
     const title = tab.title || t('pageSelector.noTitle');
     const url = tab.url || '';
     const favIcon = tab.favIconUrl
-      ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" onerror="this.style.display='none'">`
+      ? `<img src="${escapeHtml(tab.favIconUrl)}" width="16" height="16" style="flex-shrink:0;" class="favicon-img">`
       : '<span style="font-size:14px;flex-shrink:0;">🌐</span>';
     const isActiveBadge = tab.active ? `<span class="current-tab-badge">${t('pageSelector.currentTab')}</span>` : '';
     const isPageSelected = tab.id === currentSelectedPageId;
@@ -105,6 +105,11 @@ export async function renderPageList(filterText = '') {
       </div>
     `;
   }).join('');
+
+  // favicon 加载失败时隐藏（替代内联 onerror，避免 MV3 CSP 拦截）
+  pageList.querySelectorAll('img.favicon-img').forEach(img => {
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+  });
 
   // 绑定点击事件
   pageList.querySelectorAll('.prompt-item').forEach(item => {
@@ -183,15 +188,17 @@ function selectPageByTabId(tabId) {
   const userInput = document.getElementById('userInput');
   const value = userInput ? userInput.value : '';
 
-  // 找到最后一个 @ 的位置
+  // 找到最后一个 @ 的位置；无论触发符是否仍在，选中后都要把焦点交还输入框
   const lastAtIndex = value.lastIndexOf('@');
 
   if (lastAtIndex !== -1) {
     // 移除 @ 及其后面的过滤文本
-    const newValue = value.substring(0, lastAtIndex);
-    userInput.value = newValue;
+    userInput.value = value.substring(0, lastAtIndex);
+  }
+
+  if (userInput) {
     userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = newValue.length;
+    userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   }
 
   // 通过代理获取 tab 信息

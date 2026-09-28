@@ -283,6 +283,10 @@
             <span data-i18n="toolCategory.mcp">🔌 MCP</span>
             <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
           </button>
+          <button type="button" class="category-btn" data-category="knowledge" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+            <span data-i18n="toolCategory.knowledge">📚 知识库</span>
+            <span class="category-badge" id="badge-knowledge" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+          </button>
           </div>
         </div>
       </div>
@@ -500,10 +504,32 @@
           </div>
           <div class="temp-dropdown" id="tempDropdown">
             <div class="temp-dropdown-title" data-i18n="toggle.modelSettings">模型设置</div>
+            <div class="provider-section" id="providerSection">
+              <div class="model-section-title-row">
+                <div class="model-section-title" data-i18n="provider.label">API 厂商</div>
+                <button type="button" class="provider-add-btn" id="providerManageBtn" data-i18n-title="provider.manage" title="管理厂商配置">+</button>
+              </div>
+              <div class="section-select" id="providerSelect">
+                <div class="section-select-row" id="providerSelectRow">
+                  <span class="section-select-value" id="providerSelectValue"></span>
+                  <span class="section-select-host" id="providerSelectHost"></span>
+                  <span class="section-select-caret"></span>
+                </div>
+                <div class="section-select-list" id="providerList"></div>
+              </div>
+            </div>
             <div class="model-section" id="modelSection">
               <div class="model-section-title" data-i18n="model.selectModel">选择模型</div>
-              <div class="model-option" data-value="deepseek-v4-pro"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-pro</span></div>
-              <div class="model-option" data-value="deepseek-v4-flash"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-flash</span></div>
+              <div class="section-select" id="modelSelect">
+                <div class="section-select-row" id="modelSelectRow">
+                  <span class="section-select-value" id="modelSelectValue">deepseek-v4-pro</span>
+                  <span class="section-select-caret"></span>
+                </div>
+                <div class="section-select-list" id="modelSelectList">
+                  <div class="model-option" data-value="deepseek-v4-pro"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-pro</span></div>
+                  <div class="model-option" data-value="deepseek-v4-flash"><span class="model-option-check"></span><span class="model-option-left">deepseek-v4-flash</span></div>
+                </div>
+              </div>
             </div>
             <div class="temp-preset-list" id="tempPresetList"></div>
             <div class="temp-slider-section">
@@ -527,18 +553,12 @@
       <span class="page-indicator-name" id="pageIndicatorName"></span>
       <button class="page-indicator-close" id="pageIndicatorClose" data-i18n-title="selection.clearPage" title="取消网页">✕</button>
     </div>
-    <!-- MCP 服务选中指示器 -->
-    <div class="mcp-indicator" id="mcpIndicator" style="display: none;">
-      <span class="mcp-indicator-label">🔌 MCP</span>
-      <span class="mcp-indicator-name" id="mcpIndicatorName"></span>
-      <button class="mcp-indicator-close" id="mcpIndicatorClose" data-i18n-title="selection.clearMcp" title="取消MCP服务">✕</button>
-    </div>
-    <!-- 技能选中指示器 -->
-    <div class="skill-indicator" id="skillIndicator" style="display: none;">
-      <span class="skill-indicator-label" data-i18n="selection.skill">🧩 技能</span>
-      <span class="skill-indicator-name" id="skillIndicatorName"></span>
-      <button class="skill-indicator-close" id="skillIndicatorClose" data-i18n-title="selection.clearSkill" title="取消技能">✕</button>
-    </div>
+    <!-- 知识库引用指示器（支持多库，chip 形式） -->
+    <div class="knowledge-indicator" id="knowledgeIndicator" style="display: none;"></div>
+    <!-- MCP 服务选中指示器（支持多服务，chip 形式，由 renderMcpIndicator 渲染） -->
+    <div class="mcp-indicator" id="mcpIndicator" style="display: none;"></div>
+    <!-- 技能选中指示器（支持多技能，chip 形式，由 renderSkillIndicator 渲染） -->
+    <div class="skill-indicator" id="skillIndicator" style="display: none;"></div>
     <div class="image-preview-bar" id="imagePreviewBar" style="display:none;"></div>
     <div class="file-preview-bar" id="filePreviewBar" style="display:none;"></div>
     <!-- 提示词选择器 -->
@@ -561,14 +581,16 @@
       <div class="prompt-dropdown" id="agentAtDropdown">
         <div class="prompt-dropdown-tabs" id="agentAtTabs">
           <button class="prompt-tab active" data-tab="pages" data-i18n="promptSelector.pages">网页</button>
+          <button class="prompt-tab" data-tab="knowledge" data-i18n="promptSelector.knowledge">知识库</button>
           <button class="prompt-tab" data-tab="agents" data-i18n="promptSelector.agents">助手</button>
           <button class="prompt-tab" data-tab="proxies" data-i18n="promptSelector.proxies">代理</button>
           <div class="prompt-merged-title" id="agentAtMergedTitle" data-i18n="promptSelector.mergedTitle">聚合搜索</div>
         </div>
-        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span></div>
+        <div class="prompt-dropdown-header"><span data-i18n="promptSelector.switchHintSelect">方向键切换 · Enter选择 · Ctrl+Enter选中并关闭 · Esc取消</span><span class="agent-add-btn" id="agentAddBtn" data-i18n-title="header.addEditAssistant" title="新增/编辑助手">✚</span><span class="agent-add-btn" id="proxyAddBtn" data-i18n-title="header.addEditAgent" title="新增/编辑代理" style="display:none;">✚</span><span class="agent-add-btn" id="knowledgeAddBtn" data-i18n-title="header.manageKnowledge" title="管理知识库" style="display:none;">✚</span></div>
         <div id="agentAtList"></div>
         <div id="agentPageList" style="display: none;"></div>
         <div id="agentProxyList" style="display: none;"></div>
+        <div id="agentKnowledgeList" style="display: none;"></div>
       </div>
     </div>
     <!-- $ 工作目录文件选择器 -->

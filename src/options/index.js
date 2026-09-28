@@ -20,7 +20,10 @@ import {
   removeBlockedDomain
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
+import { initProfileManager } from './profile-manager.js';
+import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
+import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
@@ -46,7 +49,7 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -181,7 +184,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   
+  // 厂商配置：先确保迁移就绪（同步扁平键），再加载配置并初始化切换器
+  await ensureProfilesMigrated();
   loadConfig();
+  initProfileManager();
   
   // 加载工具栏配置
   currentTools = await loadToolbarTools();
@@ -1161,6 +1167,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 切换到工具箱 Tab 时刷新数据（因为 Agent 可能在其他 Tab 连接后变可用）
   document.querySelector('[data-tab="toolbox"]')?.addEventListener('click', () => {
     refreshToolbox();
+  });
+
+  // 初始化知识库 Tab（门控引导 + 列表加载）
+  initKnowledgePanel();
+
+  // 切换到知识库 Tab 时刷新（Agent 连接状态 / RAG 总开关可能已变化）
+  document.querySelector('[data-tab="knowledge"]')?.addEventListener('click', () => {
+    refreshKnowledgePanel();
   });
 });
 

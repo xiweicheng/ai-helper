@@ -265,9 +265,11 @@ function tryParseJson(jsonStr) {
  * @param {string} model - 模型名称
  * @param {Array} tools - 全量工具列表
  * @param {Object} apiParams - API 参数（temperature 等）
+ * @param {number} callCount - 当前对话轮次（用于阈值判定）
+ * @param {string[]|null} mustKeepToolIds - 必须保留的工具 ID 列表（如 / 手动指定的 MCP 服务工具），预筛选不得丢弃
  * @returns {Promise<{type: 'answer', content: string, executionLog: Array}|{type: 'tools', tools: Array, executionLog: Array}>}
  */
-export async function preselectTools(messages, model, tools, apiParams = {}, callCount = 1) {
+export async function preselectTools(messages, model, tools, apiParams = {}, callCount = 1, mustKeepToolIds = null) {
   const totalCount = tools.length;
   const preselectId = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -380,6 +382,17 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
               selectedTools.push(tool);
               logger.debug(`[ToolPreselector] fallback appendprototypetool: ${toolName}`);
             }
+          }
+        }
+      }
+
+      // 强制保留工具（如用户通过 / 手动指定的 MCP 服务）：预筛选不得丢弃
+      if (Array.isArray(mustKeepToolIds) && mustKeepToolIds.length > 0) {
+        const keepSet = new Set(mustKeepToolIds);
+        for (const tool of tools) {
+          if (keepSet.has(tool.function.name) && !selectedTools.some(st => st.function.name === tool.function.name)) {
+            selectedTools.push(tool);
+            logger.debug(`[ToolPreselector] 强制保留工具: ${tool.function.name}`);
           }
         }
       }
