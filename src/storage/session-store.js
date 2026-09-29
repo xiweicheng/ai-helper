@@ -299,9 +299,15 @@ function generateSessionId() {
  */
 export async function switchToSession(sessionId) {
   if (sessionId === state.activeSessionId) return;
-  await saveCurrentSession();
 
-  const targetSession = await idb.getSession(sessionId);
+  // 并发化：保存当前会话与读取目标会话互相独立，同时发起。
+  // 红线保留：saveCurrentSession 仍是第一个动作（读旧 state 保存），
+  // 且所有 state 赋值都在 Promise.all 完成后执行；默认 Agent 的全局模型
+  // 配置读取也无副作用，一并提前发起（结果仍在后文分支中应用）。
+  const savePromise = saveCurrentSession();
+  const globalConfigPromise = chrome.storage.local.get(['modelName', 'temperature', 'topP']).catch(() => ({}));
+
+  const [targetSession] = await Promise.all([idb.getSession(sessionId), savePromise]);
   if (!targetSession) {
     logger.error('[SessionStore] find not  to session:', sessionId);
     return false;
@@ -346,12 +352,11 @@ export async function switchToSession(sessionId) {
     } catch { /* Agent 加载失败，使用会话存储值 */ }
   } else {
     // 默认 Agent：从 chrome.storage.local 读取全局模型/温度（所有默认 Agent 会话共享）
-    try {
-      const global = await chrome.storage.local.get(['modelName', 'temperature', 'topP']);
-      if (global.modelName) state.currentModel = global.modelName;
-      if (global.temperature !== undefined) state.temperature = global.temperature;
-      if (global.topP !== undefined) state.topP = global.topP;
-    } catch { /* 读取失败，使用会话存储值 */ }
+    // 注：该读取已随切换流程并行发起（见函数开头），此处仅应用结果
+    const global = await globalConfigPromise;
+    if (global.modelName) state.currentModel = global.modelName;
+    if (global.temperature !== undefined) state.temperature = global.temperature;
+    if (global.topP !== undefined) state.topP = global.topP;
     // 触发 UI 更新，确保弹窗 slider/输入框与图标一致
     document.dispatchEvent(new CustomEvent('agent-model-changed'));
   }

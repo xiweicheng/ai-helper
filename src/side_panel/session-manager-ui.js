@@ -156,9 +156,11 @@ function getTimeGroupKey(isoString) {
 
 /**
  * 渲染会话标签栏（纯标签栏，不涉及消息区域）
+ * @param {Object} [prefetchedData] - 已预取的 loadSessions() 结果（{list, activeSessionId}），
+ *   传入时跳过内部全量读（热路径去重复读）；不传时行为与原来一致
  */
-export async function renderSessionTabs() {
-  const sessionsData = await loadSessions();
+export async function renderSessionTabs(prefetchedData = null) {
+  const sessionsData = prefetchedData || await loadSessions();
   state.sessions = sessionsData.list;
   state.activeSessionId = sessionsData.activeSessionId;
 
@@ -225,7 +227,21 @@ export async function renderSessionTabs() {
     tab.addEventListener('click', async (e) => {
       e.preventDefault();
       if (session.id === state.activeSessionId) return;
-      await handleSessionSwitch(session.id);
+      // 切换进行中忽略连点：避免并发 switchToSession 竞态
+      if (isSwitching) return;
+      isSwitching = true;
+      // 乐观高亮：点击立即反馈（<1 帧），renderSessionTabs 重建后自然纠正
+      scrollContainer.querySelectorAll('.session-tab.active').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      try {
+        await handleSessionSwitch(session.id);
+      } finally {
+        isSwitching = false;
+        if (state.activeSessionId !== session.id) {
+          // 切换失败/异常（如目标会话不存在）：用内存数据恢复高亮，避免错误高亮残留
+          renderSessionTabs({ list: state.sessions, activeSessionId: state.activeSessionId });
+        }
+      }
     });
 
     tab.addEventListener('contextmenu', (e) => {
@@ -872,6 +888,9 @@ function showCustomConfirm(message, title) {
 
 // ==================== 会话切换 ====================
 
+// 切换进行中标志：防止快速连点并发执行 switchToSession（乐观高亮的配套防护）
+let isSwitching = false;
+
 /**
  * 处理会话切换
  */
@@ -941,7 +960,8 @@ async function handleSessionSwitch(sessionId) {
   // 用户已切回该会话查看，清除"完成待查看"标记
   clearSessionCompleted(sessionId);
 
-  renderSessionTabs();
+  // 复用上方 Promise.all 已取的 sessionsData，避免 renderSessionTabs 内部重复全量读库
+  renderSessionTabs(sessionsData);
   updateUIControls();
   renderAgentSelector();
   

@@ -469,6 +469,16 @@ async function _loadChatHistoryImpl() {
     renderMermaidCharts();
     addCodeCopyButtons();
     
+    // 标签栏优先渲染：复用上面已读取的 sessionsData，不再重复全量读库；
+    // 提前到 checkpoint 检查之前，避免被 Service Worker 往返阻塞标签栏显示。
+    // 若快照读取后 activeSessionId 已变化（期间用户切换了会话等），
+    // 回退为实时读取，避免用过期快照覆盖最新状态
+    if (sessionsData.activeSessionId === state.activeSessionId) {
+      renderSessionTabs(sessionsData);
+    } else {
+      renderSessionTabs();
+    }
+    
     // 检查是否存在未清理的 checkpoint（页面关闭/刷新导致任务中断，没有创建恢复入口卡片）
     // 如果存在，自动添加一个"继续执行"提示卡片
     await _checkForAbandonedCheckpoint();
@@ -482,8 +492,6 @@ async function _loadChatHistoryImpl() {
         }, 100);
       }
     });
-    
-    renderSessionTabs();
   } else {
     // 首次打开：自动创建默认会话并渲染标签栏
     await createSession();
@@ -494,7 +502,7 @@ async function _loadChatHistoryImpl() {
       state.sessions = refreshedData.list;
     }
     
-    renderSessionTabs();
+    renderSessionTabs(refreshedData);
   }
 }
 

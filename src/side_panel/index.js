@@ -1602,24 +1602,54 @@ async function initAgentDropdown() {
 
 // 会话 DOM 缓存：切会话时缓存静态 DOM，避免全量重建
 // key: sessionId, value: innerHTML 字符串
+// LRU 上限：单个会话 innerHTML 可达数百 KB，无上限会导致内存长期驻留；
+// 淘汰只影响性能（未命中走全量重建，该路径本就存在），不影响正确性
 const sessionDOMCache = new Map();
+const SESSION_DOM_CACHE_MAX = 8;
+
+/** 写入缓存（已存在视为最新；超限淘汰最旧） */
+function cacheSessionDOM(sessionId, html) {
+  if (sessionDOMCache.has(sessionId)) sessionDOMCache.delete(sessionId);
+  sessionDOMCache.set(sessionId, html);
+  while (sessionDOMCache.size > SESSION_DOM_CACHE_MAX) {
+    sessionDOMCache.delete(sessionDOMCache.keys().next().value);
+  }
+}
+
+/** 读取缓存（命中时刷新为最新，实现真 LRU） */
+function getCachedSessionDOM(sessionId) {
+  const html = sessionDOMCache.get(sessionId);
+  if (html === undefined) return undefined;
+  sessionDOMCache.delete(sessionId);
+  sessionDOMCache.set(sessionId, html);
+  return html;
+}
+
+/** 失效缓存（后台任务写入新消息后必须删除，避免命中旧内容） */
+function invalidateSessionDOM(sessionId) {
+  sessionDOMCache.delete(sessionId);
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // 初始化国际化（读取语言偏好 + 跨环境同步监听）
-  await initI18n();
-  applyI18n();
-  subscribe(() => applyI18n());
+  // 启动初始化：以下四个步骤互相独立，并行执行以缩短启动耗时。
+  // applyI18n/subscribe 仍严格跟随 initI18n 完成（.then），时序与原串行链一致；
+  // allSettled：单个步骤失败不中断整条启动链（原实现任一失败会中断后续初始化）
+  await Promise.allSettled([
+    // 初始化国际化（读取语言偏好 + 跨环境同步监听）
+    initI18n().then(() => {
+      applyI18n();
+      subscribe(() => applyI18n());
+    }),
+    // 获取当前激活的 Tab ID
+    getCurrentActiveTabId(),
+    // 恢复持久化的 pendingCallApiSessionIds（Side Panel 重开后不丢失后台任务状态）
+    restorePendingSessionsFromStorage(),
+    // 恢复"任务已完成待查看"的会话标记，刷新后仍能提示用户
+    restoreCompletedSessions(),
+  ]);
 
   // 存储表格数据供工具栏按钮使用
   window.__tableBlocks = [];
-
-  // 获取当前激活的 Tab ID
-  await getCurrentActiveTabId();
-
-  // 恢复持久化的 pendingCallApiSessionIds（Side Panel 重开后不丢失后台任务状态）
-  await restorePendingSessionsFromStorage();
-  // 恢复"任务已完成待查看"的会话标记，刷新后仍能提示用户
-  await restoreCompletedSessions();
 
   // 监听选中文本 AI 搜索消息（来自 background）
   chrome.runtime.onMessage.addListener((message) => {
@@ -2246,7 +2276,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 如果当前会话有 resumable 消息（恢复卡片），不缓存（避免缓存中包含不完整的恢复卡片）
     const hasResumable = previousSessionId && state.messageHistory?.some(msg => msg.resumable);
     if (previousSessionId && !state.pendingCallApiSessionIds.has(previousSessionId) && !hasResumable) {
-      sessionDOMCache.set(previousSessionId, chatContainerEl.innerHTML);
+      cacheSessionDOM(previousSessionId, chatContainerEl.innerHTML);
     }
 
     // 如果图片已被上一会话消费（预览栏已隐藏），切换会话时清空图片附件
@@ -2266,7 +2296,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (userInput) userInput.focus();
 
     const hasPendingTask = state.pendingCallApiSessionIds.has(sessionId) && !!state.pendingCancelApi;
-    const cachedHTML = sessionDOMCache.get(sessionId);
+    const cachedHTML = getCachedSessionDOM(sessionId);
     const hasMessages = state.messageHistory && state.messageHistory.length > 0;
 
     // 缓存命中：无流式任务且有消息 → 直接从缓存恢复（跳过全量 DOM 重建）
@@ -2324,7 +2354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 初次构建后缓存当前会话 DOM
       const isStreamingSession = state.pendingCallApiSessionIds.has(sessionId);
       if (!isStreamingSession) {
-        sessionDOMCache.set(sessionId, chatContainerEl.innerHTML);
+        cacheSessionDOM(sessionId, chatContainerEl.innerHTML);
       }
 
       // 检查被遗弃的 checkpoint（页面关闭/刷新导致任务中断）
@@ -2359,7 +2389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('session-cache-invalidate', (e) => {
     const { sessionId } = e.detail || {};
     if (sessionId) {
-      sessionDOMCache.delete(sessionId);
+      invalidateSessionDOM(sessionId);
     }
   });
 
