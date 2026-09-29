@@ -110,6 +110,16 @@ Everything below the quickstart lives in the full technical reference:
 - Every issue gets a reply within 24 hours.
 - PRs welcome — read the [Architecture Overview](docs/en/DOCUMENTATION.md#architecture-overview) before you start.
 
+## Sponsors & Partners
+
+Thanks to the following sponsors for supporting this project with token credits, compute, cloud resources, or services. In return, the project provides ongoing exposure via this README and the docs site. More mutual-benefit partnerships are welcome.
+
+| Sponsor | Support | Links |
+|---|---|---|
+| **SiCore TokenWorks** (硅碳相变 Token工厂) · 北京硅碳相变智能技术有限公司<br><sub>OpenAI-compatible AI model API aggregator — one API key for Pangu / DeepSeek / Qwen / ERNIE / Doubao / GPT / Claude / Gemini and more</sub> | LLM token credits | <https://www.token8341.com> |
+
+Interested in sponsoring or partnering? Reach out via [Discord](https://discord.gg/VPcqMBFGa) or [Issues](https://github.com/xiweicheng/ai-helper/issues).
+
 <div align="center">
 
 [![Star History Chart](https://api.star-history.com/svg?repos=xiweicheng/ai-helper&type=Date)](https://star-history.com/#xiweicheng/ai-helper&Date)

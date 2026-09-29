@@ -110,6 +110,16 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 - 每个 Issue 24 小时内回复。
 - 欢迎 PR —— 动手前建议先看 [架构总览](docs/zh/DOCUMENTATION.md#架构总览)。
 
+## 赞助与合作伙伴
+
+感谢以下赞助方以 Token 额度、算力、云资源或服务等方式支持本项目。作为回馈，项目通过 README、文档站等渠道为赞助方提供持续曝光与引流，欢迎更多互利合作。
+
+| 赞助方 | 支持内容 | 链接 |
+|---|---|---|
+| **硅碳相变 Token工厂**（SiCore TokenWorks）· 北京硅碳相变智能技术有限公司<br><sub>OpenAI 兼容的 AI 大模型 API 聚合平台，一个密钥调用盘古 / DeepSeek / 通义千问 / 文心一言 / 豆包 / GPT / Claude / Gemini 等主流模型</sub> | 大模型 Token 额度赞助 | <https://www.token8341.com> |
+
+有意赞助或合作？欢迎通过 [Discord](https://discord.gg/VPcqMBFGa) 或 [Issues](https://github.com/xiweicheng/ai-helper/issues) 与我们联系。
+
 <div align="center">
 
 [![Star History Chart](https://api.star-history.com/svg?repos=xiweicheng/ai-helper&type=Date)](https://star-history.com/#xiweicheng/ai-helper&Date)
