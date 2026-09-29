@@ -3209,6 +3209,21 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 停用知识库：卡片弱化 + 状态徽标（与技能卡片停用态一致） */
+.kb-card.kb-card-disabled {
+  opacity: 0.6;
+  background: #fafafa;
+}
+.kb-card-disabled .kb-card-name {
+  color: #999;
+}
+.kb-card-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
 .kb-card-actions {
   display: flex;
   flex-wrap: wrap;

@@ -10,6 +10,7 @@
 //   POST   /api/rag/collections                  创建知识库
 //   PUT    /api/rag/collections/{id}             更新知识库名称/描述/向量配置（向量空间变更自动重建索引）
 //   DELETE /api/rag/collections/{id}             删除知识库
+//   POST   /api/rag/collections/{id}/toggle      切换启用/停用（停用：LLM 自主检索/导入排除，@ 手动引用仍可用）
 //   GET    /api/rag/collections/{id}/stats       文档数/分块数统计
 //   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
 //   GET    /api/rag/collections/{id}/ingest/status 导入进度快照（供导入弹窗轮询）
@@ -177,16 +178,17 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
       const ids = Array.isArray(payload.collectionIds) ? payload.collectionIds : [];
       const query = payload.query;
       const options = { topK: payload.topK, threshold: payload.threshold };
+      // 显式 IDs（@ 手动引用链路）：原样放行——用户在 @ 里主动引用的停用库必须可检索（禁止过滤）
       if (ids.length > 0) return manager.searchMulti(ids, query, options);
-      // 未指定则搜索全部
+      // 未指定则搜索全部启用库（停用库不参与 LLM 自主跨库检索；过滤仅作用于本分支）
       const all = await manager.listCollections();
-      return manager.searchMulti(all.map(c => c.id), query, options);
+      return manager.searchMulti(all.filter(c => c.enabled !== false).map(c => c.id), query, options);
     });
   }
 
   // /api/rag/collections/{id}[/{sub}[/{docId}]]
   const collectionMatch = pathname.match(
-    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search)(?:\/([^/]+))?)?$/
+    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search|toggle)(?:\/([^/]+))?)?$/
   );
 
   if (collectionMatch) {
@@ -216,6 +218,11 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
     // PUT /api/rag/collections/{id} - 更新知识库名称/描述/向量配置（向量空间变更触发后台重建）
     if (method === 'PUT' && !sub) {
       return handle(res, async () => ({ collection: sanitizeCollection(await manager.updateCollection(collectionId, payload)) }));
+    }
+
+    // POST /api/rag/collections/{id}/toggle - 切换启用/停用（仅注册表字段，不触发重建）
+    if (method === 'POST' && sub === 'toggle' && !docId) {
+      return handle(res, async () => manager.toggleCollection(collectionId));
     }
 
     // GET /api/rag/collections/{id}/stats

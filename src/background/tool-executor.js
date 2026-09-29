@@ -204,6 +204,8 @@ registerTranslations('zh', {
     knowledgeListResult: '共 {count} 个知识库：\n{list}',
     knowledgeListItem: '- {name} (id: {id})：{docs} 个文档 · {chunks} 个分块',
     knowledgeListFailed: '获取知识库列表失败: {error}',
+    knowledgeSearchDisabled: '该知识库已停用，无法检索。如需使用，请让用户在扩展设置页「知识库」标签启用后重试。',
+    knowledgeIngestDisabled: '该知识库已停用，无法导入。如需使用，请让用户在扩展设置页「知识库」标签启用后重试。',
   },
 });
 registerTranslations('en', {
@@ -395,6 +397,8 @@ registerTranslations('en', {
     knowledgeListResult: '{count} knowledge base(s):\n{list}',
     knowledgeListItem: '- {name} (id: {id}): {docs} documents · {chunks} chunks',
     knowledgeListFailed: 'Failed to list knowledge bases: {error}',
+    knowledgeSearchDisabled: 'This knowledge base is disabled and cannot be searched. Ask the user to enable it in the extension settings "Knowledge" tab and retry.',
+    knowledgeIngestDisabled: 'This knowledge base is disabled; ingest is not allowed. Ask the user to enable it in the extension settings "Knowledge" tab and retry.',
   },
 });
 
@@ -758,7 +762,14 @@ async function executeKnowledgeSearch(args, toolCallId) {
   }
 
   const params = { query: String(query) };
-  if (collectionId) params.collectionIds = [collectionId];
+  if (collectionId) {
+    // 停用库对 LLM 不可见：knowledge_list 不展示，指名调用（历史上下文/注入夹带 ID）直接拒绝
+    const disabledMsg = await getDisabledCollectionMessage(collectionId, 'toolExec.knowledgeSearchDisabled');
+    if (disabledMsg) {
+      return makeResult(false, disabledMsg, { tool_call_id: toolCallId });
+    }
+    params.collectionIds = [collectionId];
+  }
   if (topK) params.topK = topK;
 
   const res = await AgentClient.ragSearch(params);
@@ -782,12 +793,37 @@ async function executeKnowledgeSearch(args, toolCallId) {
 }
 
 /**
+ * 停用库检查（LLM 工具侧过滤，指名 collectionId 时使用）
+ * fail-open：列表拉取失败（代理不可用等）时放行，由后续调用自然报错，避免状态查询抖动误伤检索
+ * @param {string} collectionId
+ * @param {string} messageKey - 命中停用库时的 i18n 拒绝文案 key
+ * @returns {Promise<string|null>} 停用时返回拒绝文案，否则 null
+ */
+async function getDisabledCollectionMessage(collectionId, messageKey) {
+  try {
+    const res = await AgentClient.ragListCollections();
+    if (!res || res.success !== true) return null;
+    const target = (Array.isArray(res.collections) ? res.collections : []).find(c => c.id === collectionId);
+    if (target && target.enabled === false) return t(messageKey);
+  } catch {
+    // fail-open：状态查询失败不阻断后续调用
+  }
+  return null;
+}
+
+/**
  * knowledge_ingest - 导入内容到知识库（text/file/url）
  */
 async function executeKnowledgeIngest(args, toolCallId) {
   const { collectionId, type, content, name, metadata } = args || {};
   if (!collectionId || !type || !content) {
     return makeResult(false, t('toolExec.knowledgeIngestParamsRequired'), { tool_call_id: toolCallId });
+  }
+
+  // 停用库禁止 LLM 导入（与检索同一可见性语义；用户可在设置页「知识库」手动导入）
+  const disabledMsg = await getDisabledCollectionMessage(collectionId, 'toolExec.knowledgeIngestDisabled');
+  if (disabledMsg) {
+    return makeResult(false, disabledMsg, { tool_call_id: toolCallId });
   }
 
   // 按来源类型映射到 agent ingest 接口字段
@@ -819,7 +855,8 @@ async function executeKnowledgeList(args, toolCallId) {
     return makeResult(false, t('toolExec.knowledgeListFailed', { error: res?.error || t('toolExec.unknownError') }), { tool_call_id: toolCallId });
   }
 
-  const collections = Array.isArray(res.collections) ? res.collections : [];
+  // 停用库不展示给模型（对模型完全不可见；用户仍可在 @ 选择器中手动引用）
+  const collections = (Array.isArray(res.collections) ? res.collections : []).filter(c => c.enabled !== false);
   if (collections.length === 0) {
     return makeResult(true, t('toolExec.knowledgeListEmpty'), { tool_call_id: toolCallId });
   }
@@ -835,8 +872,9 @@ async function executeKnowledgeList(args, toolCallId) {
 
 /**
  * RAG 工具 handler 注册表（独立持有引用，unload 仅删除 TOOL_HANDLERS 中的登记，便于重新注册）
+ * 导出供单测直接调用（test/unit/knowledge-disabled-tools.unit.test.js）
  */
-const RAG_TOOL_HANDLERS = {
+export const RAG_TOOL_HANDLERS = {
   knowledge_search: executeKnowledgeSearch,
   knowledge_ingest: executeKnowledgeIngest,
   knowledge_list: executeKnowledgeList

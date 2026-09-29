@@ -1051,8 +1051,6 @@ export default {
     title: 'Knowledge Bases',
     createBtn: '+ New Knowledge Base',
     searchPlaceholder: 'Search knowledge bases...',
-    countTotal: '{total} total',
-    countFiltered: '{matched} of {total}',
     emptyTitle: 'No knowledge base yet',
     emptyDesc: 'Click "New Knowledge Base" to create one, then import documents to get started.',
     loadFailed: 'Failed to load: {error}',
@@ -1067,6 +1065,11 @@ export default {
     actionSearch: 'Test Search',
     actionDocs: 'Docs',
     actionDelete: 'Delete',
+    actionEnable: 'Enable',
+    actionDisable: 'Disable',
+    badgeDisabled: 'Disabled',
+    enableSuccess: 'Knowledge base "{name}" enabled',
+    disableSuccess: 'Knowledge base "{name}" disabled',
 
     // Create dialog
     createTitle: 'New Knowledge Base',
@@ -1192,6 +1195,7 @@ export default {
     bubblePage: '{title} 🌐',
     bubbleKnowledge: '{name} 📚 · {count} hits',
     bubbleKnowledgeMiss: '{name} 📚 · no match',
+    bubbleKnowledgeFailed: '{name} 📚 · retrieval failed',
     bubbleKnowledgeSearching: 'Searching knowledge base…',
     kbHitToggle: 'Click to expand/collapse',
     kbHitTruncated: '✂ Truncated · {total} chars total, first {kept} sent',

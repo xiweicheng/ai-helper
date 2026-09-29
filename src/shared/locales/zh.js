@@ -1051,8 +1051,6 @@ export default {
     title: '知识库',
     createBtn: '+ 新建知识库',
     searchPlaceholder: '搜索知识库...',
-    countTotal: '共 {total}',
-    countFiltered: '匹配 {matched} / 共 {total}',
     emptyTitle: '还没有知识库',
     emptyDesc: '点击「新建知识库」创建第一个知识库，然后导入文档开始使用。',
     loadFailed: '加载失败: {error}',
@@ -1067,6 +1065,11 @@ export default {
     actionSearch: '检索测试',
     actionDocs: '文档',
     actionDelete: '删除',
+    actionEnable: '启用',
+    actionDisable: '停用',
+    badgeDisabled: '已停用',
+    enableSuccess: '知识库「{name}」已启用',
+    disableSuccess: '知识库「{name}」已停用',
 
     // 新建弹窗
     createTitle: '新建知识库',
@@ -1192,6 +1195,7 @@ export default {
     bubblePage: '{title} 🌐',
     bubbleKnowledge: '{name} 📚 · 命中 {count} 条',
     bubbleKnowledgeMiss: '{name} 📚 · 未命中',
+    bubbleKnowledgeFailed: '{name} 📚 · 检索失败',
     bubbleKnowledgeSearching: '正在检索知识库…',
     kbHitToggle: '点击展开/收起全文',
     kbHitTruncated: '✂ 已截断 · 原文 {total} 字，前 {kept} 字已发送',

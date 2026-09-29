@@ -25,6 +25,8 @@ const ACCEPT_EXTS = '.txt,.md,.markdown,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.h
 let cachedCollections = [];
 // 列表搜索过滤关键字（模块级，重渲染后保持；与 MCP/Skill 列表模式一致）
 let kbFilterText = '';
+// 状态筛选（模块级，重渲染后保持）：'all' | 'enabled' | 'disabled'
+let kbFilterStatus = 'all';
 let initialized = false;
 
 // ==================== 入口 ====================
@@ -62,6 +64,17 @@ export function initKnowledgePanel() {
       });
     }
   }
+
+  // 状态筛选标签（全部 / 已启用 / 已停用，与 MCP / Skill 列表一致）
+  const filterTabs = document.querySelectorAll('.toolbox-filter-tab[data-target="kb"]');
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      kbFilterStatus = tab.dataset.filter;
+      renderList(cachedCollections);
+    });
+  });
 
   const createBtn = document.getElementById('createKbBtn');
   if (createBtn) {
@@ -228,7 +241,7 @@ async function loadAndRenderList() {
     renderList(cachedCollections);
   } catch (err) {
     logger.warn('[Knowledge] Failed to load collections:', err.message);
-    updateCount(0, 0);
+    updateCount([]);
     listEl.innerHTML = `
       <div class="toolbox-empty" style="grid-column:1/-1;">
         <div class="toolbox-empty-icon">⚠️</div>
@@ -252,7 +265,7 @@ function renderList(collections) {
 
   // 无知识库（未创建）
   if (collections.length === 0) {
-    updateCount(0, 0);
+    updateCount(collections);
     listEl.innerHTML = `
       <div class="toolbox-empty" style="grid-column:1/-1; padding:50px 20px;">
         <div class="toolbox-empty-icon">📚</div>
@@ -262,15 +275,17 @@ function renderList(collections) {
     return;
   }
 
-  // 应用搜索过滤（匹配名称 / 描述）
-  const filtered = kbFilterText
-    ? collections.filter(c => {
-        const haystack = [c.name, c.description].filter(Boolean).join(' ').toLowerCase();
-        return haystack.includes(kbFilterText.toLowerCase());
-      })
-    : collections;
+  // 应用状态筛选（启用状态）+ 搜索过滤（匹配名称 / 描述）
+  const filtered = collections.filter(c => {
+    if (kbFilterStatus === 'enabled' && c.enabled === false) return false;
+    if (kbFilterStatus === 'disabled' && c.enabled !== false) return false;
+    if (!kbFilterText) return true;
+    const haystack = [c.name, c.description].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(kbFilterText.toLowerCase());
+  });
 
-  updateCount(filtered.length, collections.length);
+  // 计数始终基于全量（与 MCP / 技能一致），不随筛选 / 搜索变化
+  updateCount(collections);
 
   // 过滤后无匹配
   if (filtered.length === 0) {
@@ -286,15 +301,18 @@ function renderList(collections) {
 }
 
 function renderCard(c) {
+  // 停用库：卡片弱化 + 徽标 + 启停按钮（与技能卡片停用态一致）
+  const disabled = c.enabled === false;
   const modeLabel = c.embeddingConfig?.mode === 'openai-compat'
     ? t('knowledge.modeRemote') : t('knowledge.modeLocal');
   const model = c.embeddingConfig?.modelName || '';
   const modelLine = model ? `${modeLabel} · ${model}` : modeLabel;
   return `
-    <div class="kb-card" data-kb-id="${escapeHtml(c.id)}">
+    <div class="kb-card${disabled ? ' kb-card-disabled' : ''}" data-kb-id="${escapeHtml(c.id)}">
       <div class="kb-card-title">
         <span>📚</span>
         <span class="kb-card-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
+        ${disabled ? `<span class="kb-card-badge badge-disabled">${escapeHtml(t('knowledge.badgeDisabled'))}</span>` : ''}
       </div>
       ${c.description ? `<div class="kb-card-desc" title="${escapeHtml(c.description)}">${escapeHtml(c.description)}</div>` : ''}
       <div class="kb-card-meta">${escapeHtml(t('knowledge.statsSummary', { docs: c.documentCount || 0, chunks: c.chunkCount || 0 }))}</div>
@@ -304,22 +322,23 @@ function renderCard(c) {
         <button class="kb-action-btn" type="button" data-action="ingest">${escapeHtml(t('knowledge.actionIngest'))}</button>
         <button class="kb-action-btn" type="button" data-action="search">${escapeHtml(t('knowledge.actionSearch'))}</button>
         <button class="kb-action-btn" type="button" data-action="docs">${escapeHtml(t('knowledge.actionDocs'))}</button>
+        <button class="kb-action-btn" type="button" data-action="toggle">${escapeHtml(disabled ? t('knowledge.actionEnable') : t('knowledge.actionDisable'))}</button>
         <button class="kb-action-btn kb-action-danger" type="button" data-action="delete">${escapeHtml(t('knowledge.actionDelete'))}</button>
       </div>
     </div>`;
 }
 
-function updateCount(matched, total) {
+function updateCount(collections) {
   const el = document.getElementById('knowledgeCount');
   if (!el) return;
-  if (!total) {
+  const total = collections.length;
+  if (total === 0) {
     el.style.display = 'none';
     return;
   }
-  // 过滤生效时展示"匹配 / 共"，否则仅展示总数
-  el.textContent = matched === total
-    ? t('knowledge.countTotal', { total })
-    : t('knowledge.countFiltered', { matched, total });
+  // 与 MCP / 技能一致：展示「已启用 X / 共 Y」
+  const enabled = collections.filter(c => c.enabled !== false).length;
+  el.textContent = t('toolbox.enabledCountTotal', { enabled, total });
   el.style.display = '';
 }
 
@@ -348,6 +367,8 @@ async function onListClick(e) {
     showSearchDialog(collection);
   } else if (action === 'docs') {
     showDocsDialog(collection);
+  } else if (action === 'toggle') {
+    await handleToggleCollection(collection);
   } else if (action === 'delete') {
     await handleDeleteCollection(collection);
   }
@@ -368,6 +389,25 @@ async function handleDeleteCollection(c) {
     const res = await agentApi('DELETE', `/api/rag/collections/${encodeURIComponent(c.id)}`);
     if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
     showToast(t('knowledge.deleteSuccess'), 'success');
+    await loadAndRenderList();
+  } catch (err) {
+    showToast(t('knowledge.opFailed', { error: err.message }), 'error');
+  }
+}
+
+/**
+ * 启停知识库：停用后大模型自主检索/导入不再使用该库；用户仍可在侧边栏 @ 手动引用
+ */
+async function handleToggleCollection(c) {
+  try {
+    const res = await agentApi('POST', `/api/rag/collections/${encodeURIComponent(c.id)}/toggle`);
+    if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+    showToast(
+      res.enabled === false
+        ? t('knowledge.disableSuccess', { name: c.name })
+        : t('knowledge.enableSuccess', { name: c.name }),
+      'success'
+    );
     await loadAndRenderList();
   } catch (err) {
     showToast(t('knowledge.opFailed', { error: err.message }), 'error');

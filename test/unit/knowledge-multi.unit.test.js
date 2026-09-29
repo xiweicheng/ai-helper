@@ -32,7 +32,9 @@ globalThis.chrome = {
       if (msg && msg.type === 'RAG_LIST_COLLECTIONS' && typeof cb === 'function') {
         cb({
           success: true,
+          // 刻意乱序：停用库在接口返回时排最前，验证展示层会将其稳定排到末尾
           collections: [
+            { id: 'kb-3', name: '知识库三', documentCount: 1, chunkCount: 3, enabled: false },
             { id: 'kb-1', name: '知识库一', documentCount: 2, chunkCount: 10 },
             { id: 'kb-2', name: '知识库二', documentCount: 1, chunkCount: 5 },
           ],
@@ -181,5 +183,47 @@ describe('Ctrl/Cmd+点击单选并关闭（知识库）', () => {
     item.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }));
     expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-2']);
     expect(document.getElementById('agentAtSelector').style.display).toBe('none');
+  });
+});
+
+describe('停用知识库：@ 选择器展示与手动引用', () => {
+  test('停用库在列表中带"已停用"徽标，仍可正常选中引用', async () => {
+    await selector.switchAtTab('knowledge');
+    const item = document.querySelector('#agentKnowledgeList .prompt-item-knowledge[data-kb-id="kb-3"]');
+    expect(item).toBeTruthy();
+    expect(item.querySelector('.badge-disabled')).toBeTruthy();
+
+    item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-3']);
+  });
+
+  test('停用库引用后 chip 显示"手动引用"后缀与橙色样式类', () => {
+    selector.selectKnowledgeByAt({ id: 'kb-3', name: '知识库三', enabled: false });
+    const chip = document.querySelector('#knowledgeIndicator .knowledge-chip');
+    expect(chip).toBeTruthy();
+    expect(chip.textContent).toContain('手动引用');
+    expect(chip.classList.contains('knowledge-chip-manual')).toBe(true);
+  });
+
+  test('启用库引用后 chip 无"手动引用"后缀', () => {
+    selector.selectKnowledgeByAt({ id: 'kb-1', name: '知识库一' });
+    const chip = document.querySelector('#knowledgeIndicator .knowledge-chip');
+    expect(chip).toBeTruthy();
+    expect(chip.textContent).not.toContain('手动引用');
+    expect(chip.classList.contains('knowledge-chip-manual')).toBe(false);
+  });
+});
+
+describe('@ 选择器知识库列表：启用在前、停用在后', () => {
+  test('fetchKnowledgeCollections 返回顺序：启用库在前、停用库在后（组内保持原顺序）', async () => {
+    const kbState = await selector.fetchKnowledgeCollections(true);
+    expect(kbState.ok).toBe(true);
+    expect(kbState.collections.map(c => c.id)).toEqual(['kb-1', 'kb-2', 'kb-3']);
+  });
+
+  test('知识库 Tab 列表渲染顺序：启用在前、停用在后', async () => {
+    await selector.switchAtTab('knowledge');
+    const ids = [...document.querySelectorAll('#agentKnowledgeList .prompt-item-knowledge')].map(el => el.dataset.kbId);
+    expect(ids).toEqual(['kb-1', 'kb-2', 'kb-3']);
   });
 });

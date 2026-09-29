@@ -29,6 +29,9 @@ registerTranslations('zh', {
     notAvailable: '知识库不可用（请确认代理已连接、检索依赖已安装）',
     noCollections: '暂无知识库（可在设置页「知识库」中创建）',
     docChunk: '{docs} 文档 · {chunks} 分块',
+    disabledBadge: '已停用',
+    disabledTooltip: '已停用（大模型不会自主检索该库），仍可手动 @ 引用',
+    manualSuffix: '手动引用',
   },
 });
 registerTranslations('en', {
@@ -52,6 +55,9 @@ registerTranslations('en', {
     notAvailable: 'Knowledge base unavailable (check the agent connection and installed retrieval dependencies)',
     noCollections: 'No knowledge base yet (create one in Settings - Knowledge)',
     docChunk: '{docs} docs · {chunks} chunks',
+    disabledBadge: 'Disabled',
+    disabledTooltip: 'Disabled (the model won\'t search this knowledge base autonomously); you can still reference it manually via @',
+    manualSuffix: 'manual',
   },
 });
 
@@ -625,13 +631,17 @@ async function renderMergedAtList(filterText = '') {
   filteredKbs.forEach((kb) => {
     const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
     const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
+    // 停用库：仅提示"已停用"，仍可手动 @ 引用（与技能"未启用仍可手动使用"一致）
+    const isDisabled = kb.enabled === false;
 
     html += `
-      <div class="prompt-item${isRef ? ' agent-at-active picked' : ''} prompt-item-knowledge"
-           data-index="${globalIndex}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
+      <div class="prompt-item${isRef ? ' agent-at-active picked' : ''}${isDisabled ? ' knowledge-item-disabled' : ''} prompt-item-knowledge"
+           data-index="${globalIndex}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}"
+           data-kb-disabled="${isDisabled ? '1' : '0'}"${isDisabled ? ` title="${escapeHtml(t('knowledgeSelector.disabledTooltip'))}"` : ''}>
         <span class="prompt-item-index">${globalIndex + 1}</span>
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
+        ${isDisabled ? `<span class="knowledge-item-badge badge-disabled">${t('knowledgeSelector.disabledBadge')}</span>` : ''}
         <span class="prompt-item-code">${escapeHtml(stats)}</span>
       </div>`;
     globalIndex++;
@@ -696,7 +706,7 @@ async function renderMergedAtList(filterText = '') {
       } else if (type === 'page') {
         selectPageByAt(parseInt(item.dataset.tabId));
       } else if (type === 'knowledge') {
-        selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+        selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName, enabled: item.dataset.kbDisabled !== '1' });
         // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
         if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
       } else if (type === 'proxy') {
@@ -801,7 +811,8 @@ export function selectKnowledgeByAt(kb) {
   if (existsIndex >= 0) {
     state.knowledgeRefs.splice(existsIndex, 1);
   } else {
-    state.knowledgeRefs.push({ id: kb.id, name: kb.name || kb.id });
+    // 记录选择时的启用状态快照：停用库引用在 chip 上以"手动引用"提示（与技能快照一致）
+    state.knowledgeRefs.push({ id: kb.id, name: kb.name || kb.id, enabled: kb.enabled !== false });
   }
 
   // 保持弹窗打开（与技能/MCP 多选一致），仅刷新列表标记与 chips 指示器
@@ -839,12 +850,19 @@ export function renderKnowledgeIndicator() {
     indicator.innerHTML = '';
     return;
   }
-  indicator.innerHTML = state.knowledgeRefs.map(ref => `
-    <span class="knowledge-chip">
-      <span class="knowledge-chip-name" title="${escapeHtml(ref.name)}">📚 ${escapeHtml(ref.name)}</span>
+  // 停用库引用：chip 橙色 + "手动引用"后缀（与技能"手动使用"一致）
+  indicator.innerHTML = state.knowledgeRefs.map(ref => {
+    const isManual = ref.enabled === false;
+    const label = isManual
+      ? `${ref.name} (${t('knowledgeSelector.manualSuffix')})`
+      : ref.name;
+    return `
+    <span class="knowledge-chip${isManual ? ' knowledge-chip-manual' : ''}">
+      <span class="knowledge-chip-name" title="${escapeHtml(isManual ? t('knowledgeSelector.disabledTooltip') : ref.name)}">📚 ${escapeHtml(label)}</span>
       <button class="knowledge-chip-close" data-kb-id="${escapeHtml(ref.id)}" title="${t('common.delete')}">✕</button>
     </span>
-  `).join('');
+  `;
+  }).join('');
   indicator.querySelectorAll('.knowledge-chip-close').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -882,7 +900,9 @@ export async function fetchKnowledgeCollections(force = false) {
         if (chrome.runtime.lastError || !resp || !resp.success) {
           knowledgeCache = { ok: false, collections: [], ts: Date.now() };
         } else {
-          knowledgeCache = { ok: true, collections: resp.collections || [], ts: Date.now() };
+          // @ 列表展示序：启用库在前、停用库在后（稳定排序，组内保持接口原顺序）
+          const sorted = [...(resp.collections || [])].sort((a, b) => (a.enabled === false ? 1 : 0) - (b.enabled === false ? 1 : 0));
+          knowledgeCache = { ok: true, collections: sorted, ts: Date.now() };
         }
         resolve(knowledgeCache);
       });
@@ -930,12 +950,16 @@ async function renderKnowledgeAtList(filterText = '') {
   listEl.innerHTML = collections.map((kb, index) => {
     const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
     const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
+    // 停用库：仅提示"已停用"，仍可手动 @ 引用（与技能"未启用仍可手动使用"一致）
+    const isDisabled = kb.enabled === false;
     return `
-      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active picked' : ''} prompt-item-knowledge"
-           data-index="${index}" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}">
+      <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active picked' : ''} ${isDisabled ? 'knowledge-item-disabled' : ''} prompt-item-knowledge"
+           data-index="${index}" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}"
+           data-kb-disabled="${isDisabled ? '1' : '0'}"${isDisabled ? ` title="${escapeHtml(t('knowledgeSelector.disabledTooltip'))}"` : ''}>
         <span class="prompt-item-index">${index + 1}</span>
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
+        ${isDisabled ? `<span class="knowledge-item-badge badge-disabled">${t('knowledgeSelector.disabledBadge')}</span>` : ''}
         <span class="prompt-item-code">${escapeHtml(stats)}</span>
       </div>
     `;
@@ -943,7 +967,7 @@ async function renderKnowledgeAtList(filterText = '') {
 
   listEl.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', (e) => {
-      selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName });
+      selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName, enabled: item.dataset.kbDisabled !== '1' });
       // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
       if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
     });

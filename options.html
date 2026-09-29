@@ -708,6 +708,11 @@
             <input type="text" class="toolbox-search-input" id="kbSearchInput" placeholder="搜索知识库..." data-i18n-placeholder="knowledge.searchPlaceholder">
             <button class="toolbox-search-clear" id="kbSearchClear" type="button" title="清除">✕</button>
           </div>
+          <div class="toolbox-filter-tabs">
+            <button class="toolbox-filter-tab active" data-filter="all" data-target="kb" data-i18n="toolbox.filterAll">全部</button>
+            <button class="toolbox-filter-tab" data-filter="enabled" data-target="kb" data-i18n="toolbox.filterEnabled">已启用</button>
+            <button class="toolbox-filter-tab" data-filter="disabled" data-target="kb" data-i18n="toolbox.filterDisabled">已停用</button>
+          </div>
         </div>
         <div class="knowledge-list" id="knowledgeList">
           <div class="toolbox-empty" style="grid-column:1/-1;">

@@ -420,20 +420,8 @@ async function _loadChatHistoryImpl() {
               break;
             case 'knowledge': {
               const kbRefs = Array.isArray(bubble.refs) ? bubble.refs : [];
-              const kbTotal = kbRefs.reduce((sum, r) => sum + (r.hitCount || 0), 0);
               if (kbRefs.length > 0) {
-                if (kbTotal === 0) {
-                  bubbleText = t('contextBubble.bubbleKnowledgeMiss', { name: kbRefs.map(r => r.name).join('、') });
-                } else {
-                  // 逐库展示（与发送链路一致）：命中库显示条目，未命中库显示未命中
-                  kbRefs.forEach(r => {
-                    if ((r.hitCount || 0) > 0) {
-                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
-                    } else {
-                      addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
-                    }
-                  });
-                }
+                renderKnowledgeContextBubbles(kbRefs, bubble.failed === true);
               }
               break;
             }
@@ -594,7 +582,7 @@ const KB_HIT_MAX_CHARS = 1500;
  * 注入文本采用固定中文标记（与 [网页上下文] 一致），便于跨语言编辑恢复时稳定剥离
  * @param {string} query 用户问题
  * @param {Array<{id: string, name: string}>} refs 已引用知识库快照
- * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>}|null>} 总开关关闭时返回 null（跳过检索）
+ * @returns {Promise<{text: string, refs: Array<{id: string, name: string, hitCount: number, hits: Array<{score: number, content: string}>}>, failed: boolean}|null>} 总开关关闭时返回 null（跳过检索）；failed=true 表示检索失败（区别于 0 命中）
  */
 export async function buildKnowledgeContextText(query, refs) {
   if (!refs || refs.length === 0) return null;
@@ -618,6 +606,8 @@ export async function buildKnowledgeContextText(query, refs) {
     }
   });
 
+  // 请求失败判定：searchResp 为 null 表示 RAG_SEARCH 未成功（lastError/异常/success:false）
+  const failed = !searchResp;
   const results = (searchResp && searchResp.results) || [];
 
   // 按 collectionId 分组统计命中；展示名称优先取引用列表中的库名
@@ -665,7 +655,10 @@ export async function buildKnowledgeContextText(query, refs) {
   // 构造注入文本（固定中文标记，与 [网页上下文] 一致）
   const names = refs.map(r => r.name).join('、');
   const lines = [`[知识库检索结果]（引用: ${names}）`];
-  if (totalHits === 0) {
+  if (failed) {
+    // 检索失败（代理不可达/超时/报错）：明确告知服务故障，避免模型误判为"知识库没内容"而重复检索
+    lines.push('知识库检索失败：检索服务暂时不可用（这不代表知识库中没有相关内容）。');
+  } else if (totalHits === 0) {
     lines.push('未找到与问题相关的内容。');
   } else {
     hitBuckets.forEach(b => {
@@ -681,7 +674,34 @@ export async function buildKnowledgeContextText(query, refs) {
   }
   lines.push('[/知识库检索结果]');
 
-  return { text: lines.join('\n') + '\n\n', refs: refStats };
+  return { text: lines.join('\n') + '\n\n', refs: refStats, failed };
+}
+
+/**
+ * 按知识库检索结果渲染上下文气泡（三条链路共用：sendMessage / sendPromptByCode / 历史恢复）
+ * failed=true 显示"检索失败"（与"未命中"区分：服务故障 ≠ 库内无内容）
+ * @param {Array<{name: string, hitCount: number, hits?: Array}>} refs
+ * @param {boolean} [failed]
+ */
+export function renderKnowledgeContextBubbles(refs, failed = false) {
+  if (!Array.isArray(refs) || refs.length === 0) return;
+  const totalHits = refs.reduce((sum, r) => sum + (r.hitCount || 0), 0);
+  if (failed) {
+    addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeFailed', { name: refs.map(r => r.name).join('、') }), false);
+    return;
+  }
+  if (totalHits === 0) {
+    addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: refs.map(r => r.name).join('、') }), false);
+    return;
+  }
+  // 逐库展示：命中库显示命中条目，未命中库也明确展示，避免多选时静默丢失
+  refs.forEach(r => {
+    if ((r.hitCount || 0) > 0) {
+      addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
+    } else {
+      addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
+    }
+  });
 }
 
 export async function sendMessage() {
@@ -775,20 +795,8 @@ export async function sendMessage() {
     if (searchingBubble && searchingBubble.parentNode) searchingBubble.remove();
     if (kbPayload) {
       finalText = kbPayload.text + finalText;
-      const totalHits = kbPayload.refs.reduce((sum, r) => sum + r.hitCount, 0);
-      if (totalHits === 0) {
-        addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: kbPayload.refs.map(r => r.name).join('、') }), false);
-      } else {
-        // 逐库展示：命中库显示命中条目，未命中库也明确展示，避免多选时静默丢失
-        kbPayload.refs.forEach(r => {
-          if (r.hitCount > 0) {
-            addContextBubble('knowledge', t('contextBubble.bubbleKnowledge', { name: r.name, count: r.hitCount }), false, Array.isArray(r.hits) ? r.hits : null);
-          } else {
-            addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeMiss', { name: r.name }), false);
-          }
-        });
-      }
-      contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs });
+      renderKnowledgeContextBubbles(kbPayload.refs, kbPayload.failed === true);
+      contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs, failed: kbPayload.failed || undefined });
     }
     clearKnowledgeRefs();
   }
@@ -3806,8 +3814,13 @@ export function editAndResendMessage(messageDiv) {
         // 异步补全知识库 ID，便于重发时精确检索（失败则按全库检索）
         fetchKnowledgeCollections().then(kbState => {
           if (kbState && kbState.ok) {
-            const idByName = new Map((kbState.collections || []).map(c => [c.name, c.id]));
-            state.knowledgeRefs = state.knowledgeRefs.map(r => r.id ? r : { id: idByName.get(r.name) || '', name: r.name });
+            // 补全 ID 时携带当前启用状态快照：停用库引用在 chip 上以"手动引用"提示（与 @ 选择一致）
+            const byName = new Map((kbState.collections || []).map(c => [c.name, c]));
+            state.knowledgeRefs = state.knowledgeRefs.map(r => {
+              if (r.id) return r;
+              const matched = byName.get(r.name);
+              return { id: matched?.id || '', name: r.name, enabled: matched ? matched.enabled !== false : true };
+            });
             renderKnowledgeIndicator();
           }
         }).catch(() => {});

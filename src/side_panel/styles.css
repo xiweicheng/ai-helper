@@ -6733,6 +6733,10 @@ body {
 .knowledge-chip-close:hover {
   background: rgba(255, 255, 255, 0.4);
 }
+/* 停用知识库的手动引用模式：chip 橙色（与技能 .skill-ref-chip-manual 一致） */
+.knowledge-chip-manual {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+}
 /* 通用引用 chip（技能/MCP 多选指示器复用，结构对齐 knowledge-chip） */
 .ref-chip {
   display: inline-flex;
@@ -6799,6 +6803,17 @@ body {
   color: #805ad5;
   font-weight: 700;
   flex-shrink: 0;
+}
+/* 停用知识库列表项（合并视图与单独 Tab 视图共用）：仅提示"已停用"，仍可手动 @ 引用 */
+.knowledge-item-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+.knowledge-item-disabled .prompt-item-content {
+  color: #666;
 }
 
 /* 技能列表项 */

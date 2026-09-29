@@ -302,6 +302,27 @@ export class RagManager {
   }
 
   /**
+   * 切换知识库启用/停用状态（与 /api/skill/toggle 语义一致：缺省/undefined 视为启用）
+   * 仅改注册表字段，不触碰索引（无需 _assertIdle）；_updateRegistry 读改写串行化，
+   * 与重建收尾的注册表提交并发时不会互相覆盖
+   * 停用语义：不参与 LLM 自主检索/导入（agent 全库检索过滤 + 工具侧拒绝），@ 手动引用（显式 IDs）照常
+   * @param {string} collectionId
+   * @returns {Promise<{enabled: boolean}>} 切换后的启用状态
+   */
+  async toggleCollection(collectionId) {
+    await this.getCollection(collectionId); // 校验存在性与 ID 格式
+    let enabled;
+    await this._updateRegistry(reg => {
+      const target = reg.collections.find(c => c.id === collectionId);
+      if (!target) throw new RagError('collectionNotFound', { id: collectionId });
+      enabled = target.enabled === false; // 停用→启用；启用（含缺省）→停用
+      target.enabled = enabled;
+      return reg;
+    });
+    return { enabled };
+  }
+
+  /**
    * 更新知识库（名称/描述 / embedding / chunk 配置）
    * embedding 或 chunk 配置发生向量空间级变更时自动重建索引：
    *   - 重建期间新配置不写入注册表（防新旧不一致），完成后一次性生效
