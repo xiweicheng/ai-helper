@@ -66,6 +66,7 @@
     "ragInstallFailed": "RAG 依赖安装失败（退出码 {code}）",
     "ragInstallSuccess": "✅ RAG 依赖安装成功，功能已就绪",
     "ragVerifyFailed": "npm 安装完成，但依赖验证未通过",
+    "ragRestartAdvice": "提示：若多次安装失败，可尝试重启代理服务（aha restart）后再重试。",
     "ragUnknownSub": "未知的 rag 子命令: {sub}",
     "ragHelpUsage": "用法: aha rag <status|install>",
     "restartHelper": {
@@ -145,6 +146,7 @@
     "ragInstallFailed": "RAG dependency installation failed (exit code {code})",
     "ragInstallSuccess": "✅ RAG dependencies installed successfully, features ready",
     "ragVerifyFailed": "npm install completed, but dependency verification failed",
+    "ragRestartAdvice": "Tip: if installation keeps failing, try restarting the agent (aha restart) and retry.",
     "ragUnknownSub": "Unknown rag subcommand: {sub}",
     "ragHelpUsage": "Usage: aha rag <status|install>",
     "restartHelper": {

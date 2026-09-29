@@ -97,6 +97,7 @@
     "installAborted": "RAG 依赖安装已中止（Agent 关闭或进程退出）",
     "installFailed": "RAG 依赖安装失败: {message}",
     "verifyFailed": "npm 安装完成，但依赖验证未通过",
+    "autoRestoreStarted": "检测到已安装过知识库依赖（代理更新后缺失），正在自动恢复…",
     "err_collectionNotFound": "知识库不存在: {id}",
     "err_invalidCollectionId": "非法知识库 ID: {id}",
     "err_nameRequired": "知识库名称不能为空",

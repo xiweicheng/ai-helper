@@ -97,6 +97,7 @@
     "installAborted": "RAG dependency installation was aborted (Agent shut down or process exited)",
     "installFailed": "RAG dependency installation failed: {message}",
     "verifyFailed": "npm install completed, but dependency verification failed",
+    "autoRestoreStarted": "Previously installed RAG dependencies are missing (cleared by agent update) - auto-restoring...",
     "err_collectionNotFound": "Knowledge base not found: {id}",
     "err_invalidCollectionId": "Invalid knowledge base ID: {id}",
     "err_nameRequired": "Knowledge base name is required",

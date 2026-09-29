@@ -727,6 +727,7 @@ if (command === 'start') {
     });
     if (code !== 0) {
       console.error(`[Agent] ${t('ragInstallFailed', { code })}`);
+      console.error(`[Agent] ${t('ragRestartAdvice')}`);
       process.exit(1);
     }
     // 安装后验证（以实际加载结果为准；探测在全新子进程执行，见 detect.js R8 说明）
@@ -735,9 +736,10 @@ if (command === 'start') {
     if (available) {
       console.log(`[Agent] ${t('ragInstallSuccess')}`);
     } else {
-      // 附上子进程探测到的真实原因（便于定位）
+      // 附上子进程探测到的真实原因（便于定位）；失败时提示可尝试重启代理
       const reason = getLastRagProbeError();
       console.log(`[Agent] ${t('ragVerifyFailed')}${reason ? ` - ${reason}` : ''}`);
+      console.log(`[Agent] ${t('ragRestartAdvice')}`);
     }
     process.exit(available ? 0 : 1);
   }

@@ -13,14 +13,19 @@
 //   - 任务状态持久化到 ~/.ai-helper-agent/rag-install-state.json：stopRagInstall（停服/重启）
 //     与进程被杀后的重启加载都会把「运行中」收敛为「已中止」，状态不再只存在于内存
 //   - 安装完成后自动重新检测依赖可用性（防止"装上但加载失败"的假成功）
+// 自动恢复（2026-09-29）：
+//   - npm -g 更新代理会清空包目录内手动安装的依赖（实测 npm 对 extraneous 的 prune
+//     行为），曾成功安装过（everSucceeded）的用户在启动检测失败时自动重新安装，
+//     无需任何手动操作
 
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { resetRagDetection, detectRagAvailable, getLastRagProbeError } from './detect.js';
+import { resetRagDetection, detectRagAvailable, getLastRagProbeError, isNodeVersionSupported } from './detect.js';
 import { stopProcessTree } from '../process-tree.js';
+import { logSystem } from '../logger.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 
 // ---- 安装清单（单一事实来源：包自身 package.json 的 ragDependencies 字段） ----
@@ -109,8 +114,8 @@ const LOG_TAIL_LIMIT = 50;
 // 任务状态持久化文件（重启后判定「上次安装是否被中断」，R3）
 const STATE_FILE = join(homedir(), '.ai-helper-agent', 'rag-install-state.json');
 
-// 模块级语言：无请求上下文的场景（停服中止、重启恢复收敛）消息用
-const moduleT = (key) => translate(parseAcceptLanguage(), key);
+// 模块级语言：无请求上下文的场景（停服中止、重启恢复收敛、启动自动恢复）消息用
+const moduleT = (key, params) => translate(parseAcceptLanguage(), key, params);
 
 // 安装任务状态（null = 从未安装）
 let installTask = null;
@@ -126,6 +131,8 @@ let npmChild = null;
 //   startedAt: number|null,  // 开始时间戳
 //   finishedAt: number|null, // 完成时间戳
 //   error: string | null,    // 失败原因
+//   trigger: 'manual'|'auto',// 触发来源（auto = 启动时自动恢复）
+//   everSucceeded: boolean,  // 是否曾成功安装过（只增不减；自动恢复的判定依据）
 // }
 
 /**
@@ -146,6 +153,7 @@ function sanitizePersistedState(raw) {
     running: raw.running === true,
     done: raw.done === true,
     success: raw.success === true,
+    everSucceeded: raw.everSucceeded === true,
     phase: typeof raw.phase === 'string' ? raw.phase : null,
     logTail: Array.isArray(raw.logTail) ? raw.logTail.filter((l) => typeof l === 'string').slice(-LOG_TAIL_LIMIT) : [],
     startedAt: typeof raw.startedAt === 'number' ? raw.startedAt : null,
@@ -165,6 +173,7 @@ function savePersistedState() {
       running: installTask.running,
       done: installTask.done,
       success: installTask.success,
+      everSucceeded: installTask.everSucceeded === true,
       phase: installTask.phase,
       logTail: installTask.logTail.slice(-LOG_TAIL_LIMIT),
       startedAt: installTask.startedAt,
@@ -174,6 +183,18 @@ function savePersistedState() {
   } catch (err) {
     console.warn(`[RAG] persist install state failed: ${err.message}`);
   }
+}
+
+/**
+ * 日志尾部是否含 npm 正常完成安装的输出（"added 174 packages in 11s"、进度复跑时的
+ * "up to date in 820ms"、"changed/removed N packages"）——用于兼容判定「npm 实质
+ * 完成过安装」的失败记录（R8 修复前进程内验证误报，用户依赖其实装好过）
+ * @param {{ logTail?: string[] }} task
+ * @returns {boolean}
+ */
+function npmCompletedSuccessfully(task) {
+  return Array.isArray(task.logTail)
+    && task.logTail.some((line) => /^(added|changed|removed|up to date)\b/.test(line));
 }
 
 // 模块加载时恢复上次任务状态：若上次标记「运行中」（进程在安装中被杀），收敛为
@@ -187,7 +208,15 @@ function savePersistedState() {
   }
   if (!persisted) return;
   installTask = { ...persisted };
-  if (!persisted.running) return;
+  // 兼容升级（自动恢复的判定依据）：旧版本在「npm 安装完成但验证误报」（R8）时记录
+  // success=false，但日志里能看到 npm 实质完成——用户实际装好过，保留自动恢复资格
+  if (!installTask.everSucceeded && npmCompletedSuccessfully(installTask)) {
+    installTask.everSucceeded = true;
+  }
+  if (!persisted.running) {
+    if (installTask.everSucceeded !== persisted.everSucceeded) savePersistedState();
+    return;
+  }
   installTask.running = false;
   installTask.done = true;
   installTask.success = false;
@@ -200,9 +229,10 @@ function savePersistedState() {
 /**
  * 启动 RAG 依赖安装（异步任务，立即返回）
  * @param {Function} t - 请求级翻译函数
+ * @param {{ trigger?: 'manual'|'auto' }} [opts] 触发来源（auto = 启动自动恢复，前端据此展示文案）
  * @returns {{ started: boolean, error?: string }}
  */
-export function startRagInstall(t) {
+export function startRagInstall(t, opts = {}) {
   if (installTask && installTask.running) {
     return { started: false, error: t('error.ragInstallInProgress') };
   }
@@ -216,6 +246,9 @@ export function startRagInstall(t) {
     startedAt: Date.now(),
     finishedAt: null,
     error: null,
+    trigger: opts.trigger === 'auto' ? 'auto' : 'manual',
+    // 「曾成功安装过」只增不减：新任务继承历史标记（启动自动恢复的判定依据）
+    everSucceeded: Boolean(installTask && installTask.everSucceeded === true),
   };
   installTask = task;
   savePersistedState(); // 启动即持久化 running（R3：重启后可判定被中断）
@@ -253,6 +286,32 @@ export function getRagInstallStatus() {
     };
   }
   return { ...installTask, packages: RAG_INSTALL_PACKAGES };
+}
+
+/**
+ * 启动时自动恢复 RAG 依赖（server.js 在启动检测到依赖不可用时调用）
+ *
+ * 背景：npm -g 更新代理会清空包目录内手动安装的 RAG 依赖（实测 npm 对 extraneous
+ * 依赖的 prune 行为），依赖曾装好但更新后消失时用户需手动重装。本函数让「曾成功
+ * 安装过」的用户在任意方式更新/重启后自动恢复，无需手动操作。
+ *
+ * 触发条件（全部满足）：
+ *   - 曾成功安装过（everSucceeded，含旧格式失败记录兼容判定）
+ *   - 当前无运行中的安装任务（安装锁）
+ *   - Node 版本满足要求（版本不足时安装也无法使用，避免无谓下载）
+ * @returns {{ started: boolean, reason?: string }}
+ */
+export function maybeAutoRestoreRagDeps() {
+  if (!isNodeVersionSupported()) return { started: false, reason: 'node-version' };
+  if (!installTask || installTask.everSucceeded !== true) return { started: false, reason: 'no-history' };
+  if (installTask.running) return { started: false, reason: 'running' };
+
+  const result = startRagInstall(moduleT, { trigger: 'auto' });
+  if (result.started) {
+    console.log(`[RAG] ${moduleT('rag.autoRestoreStarted')}`);
+    logSystem('rag_auto_restore', { reason: 'startup_deps_missing' });
+  }
+  return result;
 }
 
 /**
@@ -312,6 +371,7 @@ async function runInstall(task, t) {
   task.running = false;
   task.done = true;
   task.success = available;
+  if (available) task.everSucceeded = true; // 只增不减：成功过的用户持续具备自动恢复资格
   task.phase = 'done';
   task.finishedAt = Date.now();
   if (!available) {

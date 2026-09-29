@@ -18,7 +18,7 @@ import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, ki
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
-import { startRagInstall, getRagInstallStatus, stopRagInstall } from './rag/install.js';
+import { startRagInstall, getRagInstallStatus, stopRagInstall, maybeAutoRestoreRagDeps } from './rag/install.js';
 import { stopProcessTree } from './process-tree.js';
 import {
   initializeMcpRegistry,
@@ -400,7 +400,10 @@ export function startServer() {
   // 异步初始化 RAG 能力检测（Node 22+ 前置检查 + 子进程探测可选依赖；结果缓存，不阻塞启动）
   // 先同步启动日志语言，确保检测完成早于 listen 回调时日志语言也正确
   setRagLang(serverLang);
-  detectRagAvailable();
+  // 检测失败且曾成功安装过依赖时自动恢复（npm -g 更新会清空包目录内依赖，用户零操作）
+  detectRagAvailable().then((available) => {
+    if (!available) maybeAutoRestoreRagDeps();
+  });
 
   // 防止 shutdown 并发执行
   let shuttingDown = false;
