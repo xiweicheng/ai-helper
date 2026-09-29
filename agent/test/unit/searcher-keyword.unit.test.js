@@ -134,3 +134,74 @@ describe('search - 关键词命中增强', () => {
     assert.equal(r.results[0].score, 0.8);
   });
 });
+
+// ==================== 中文最长片段 / 英文词边界命中（方案 A：本地匹配策略升级） ====================
+
+describe('search - 中文最长片段与英文词边界命中', () => {
+  test('长中文查询：目标词以最长片段命中（整段失配问题修复）', async () => {
+    const candidates = [{ id: 'B', content: 'y', metadata: {}, score: 0.35 }];
+    const all = [item('A', '消息队列的核心概念与消费模型'), item('B', '今天天气不错')];
+    const s = new Searcher(makeStore(candidates, all), mockEmbedding);
+    const r = await s.search('帮我查一下消息队列的知识', { topK: 5 });
+    const a = r.results.find(x => x.id === 'A');
+    assert.ok(a, 'A 应通过中文片段命中被召回');
+    // 最长命中片段「消息队列」(L=4) → 计分单元 min(4-1, 3) = 3：max(0, 0.5) + 0.1×3
+    assert.equal(a.score, 0.8);
+    assert.equal(r.results[0].id, 'A');
+  });
+
+  test('命中片段越长加分越多（L=4 顶格 3 单元，L=2 为 1 单元）', async () => {
+    const all = [item('L4', '消息队列是核心组件'), item('L2', '这是优化建议文档')];
+    const s = new Searcher(makeStore([], all), mockEmbedding);
+    const r = await s.search('消息队列优化', { topK: 5 });
+    const l4 = r.results.find(x => x.id === 'L4');
+    const l2 = r.results.find(x => x.id === 'L2');
+    assert.ok(l4 && l2, 'L4/L2 均应被片段命中召回');
+    assert.equal(l4.score, 0.8);
+    assert.equal(l2.score, 0.6);
+    assert.equal(r.results[0].id, 'L4');
+  });
+
+  test('英文按词边界匹配：storage 中的子串 rag 不再误命中', async () => {
+    const all = [
+      item('F', 'storage 层设计说明'),
+      item('T', 'RAG 检索流程'),
+      item('M', '采用RAG检索引擎'),
+    ];
+    const s = new Searcher(makeStore([], all), mockEmbedding);
+    const r = await s.search('RAG 是什么', { topK: 5 });
+    assert.equal(r.results.find(x => x.id === 'F'), undefined, 'storage 中的 rag 是子串非独立词，不应命中');
+    const t = r.results.find(x => x.id === 'T');
+    const m = r.results.find(x => x.id === 'M');
+    assert.ok(t && m, 'T/M 均应被词边界命中召回');
+    assert.equal(t.score, 0.6);
+    assert.equal(m.score, 0.6, 'CJK 相邻视为词边界');
+  });
+
+  test('中文高频片段按 df 剔除；低频片段照常加分', async () => {
+    const candidates = [{ id: 'C1', content: 'c1', metadata: {}, score: 0.55 }];
+    const all = [
+      item('C1', '知识 体系'),
+      item('C2', '知识 内容'),
+      item('C3', '知识 文档'),
+      item('C4', '管理 规范'),
+    ];
+    const s = new Searcher(makeStore(candidates, all), mockEmbedding);
+    const r = await s.search('知识管理', { topK: 5 });
+    const c1 = r.results.find(x => x.id === 'C1');
+    const c4 = r.results.find(x => x.id === 'C4');
+    assert.ok(c4, 'C4 应被低频片段「管理」命中召回');
+    assert.equal(c4.score, 0.6);
+    assert.equal(c1.score, 0.55, 'C1 的「知识」命中 3/4 chunk 被 df 剔除，保持原分');
+    assert.equal(r.results.find(x => x.id === 'C2'), undefined);
+    assert.equal(r.results.find(x => x.id === 'C3'), undefined);
+  });
+
+  test('无分隔符的中英混排段拆分为独立命中单元', async () => {
+    const all = [item('MIX', 'RocketMQ集群部署实践')];
+    const s = new Searcher(makeStore([], all), mockEmbedding);
+    const r = await s.search('RocketMQ集群', { topK: 5 });
+    // 「rocketmq」1 单元 + 「集群」(L=2) 1 单元 → max(0, 0.5) + 0.1×2 = 0.7
+    assert.equal(r.results[0].score, 0.7);
+  });
+});
