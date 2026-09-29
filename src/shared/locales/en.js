@@ -865,6 +865,7 @@ export default {
     ragInstallLogLabel: 'Installation log (recent output):',
     ragRedetectReady: 'Re-detection finished: RAG capability is ready',
     ragRedetectStillMissing: 'Re-detection finished: RAG dependencies still missing',
+    ragRedetectStillMissingDetail: 'RAG dependencies still missing - {error}',
     ragRedetectFailed: 'Re-detection failed: {error}',
     importSkill: '+ Import Skill',
     reloadSkills: '🔄 Reload',

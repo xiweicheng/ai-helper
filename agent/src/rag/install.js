@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { resetRagDetection, detectRagAvailable } from './detect.js';
+import { resetRagDetection, detectRagAvailable, getLastRagProbeError } from './detect.js';
 import { stopProcessTree } from '../process-tree.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 
@@ -304,6 +304,7 @@ async function runInstall(task, t) {
   }
 
   // npm 退出码 0 → 重新检测依赖可用性（以 detect 结果为准，避免假成功）
+  // 探测在全新子进程执行：反映磁盘真实状态，避免长驻进程内 import 失败被永久缓存（R8）
   task.phase = 'verifying';
   resetRagDetection();
   const available = await detectRagAvailable();
@@ -314,7 +315,13 @@ async function runInstall(task, t) {
   task.phase = 'done';
   task.finishedAt = Date.now();
   if (!available) {
-    task.error = t('rag.verifyFailed');
+    // 附上子进程探测到的真实原因（此前只报「验证未通过」，用户与开发者都无法定位）
+    const reason = getLastRagProbeError();
+    task.error = reason ? `${t('rag.verifyFailed')} - ${reason}` : t('rag.verifyFailed');
+    if (reason) {
+      task.logTail.push(`[verify] ${reason}`);
+      if (task.logTail.length > LOG_TAIL_LIMIT) task.logTail = task.logTail.slice(-LOG_TAIL_LIMIT);
+    }
   }
   savePersistedState();
 }

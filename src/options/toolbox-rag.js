@@ -311,10 +311,15 @@ export async function redetectRag() {
   try {
     const res = await agentApi('POST', '/api/rag/detect');
     if (res && res.success) {
-      showToast(res.available ? t('toolbox.ragRedetectReady') : t('toolbox.ragRedetectStillMissing'), res.available ? 'success' : 'info');
       if (res.available) {
+        showToast(t('toolbox.ragRedetectReady'), 'success');
         notifyRagToolsChange();
         await availabilityChangeHandler?.();
+      } else if (res.error) {
+        // 展示代理端子进程探测到的真实原因（此前只有「仍缺失」，无法定位失败原因）
+        showToast(t('toolbox.ragRedetectStillMissingDetail', { error: res.error }), 'error');
+      } else {
+        showToast(t('toolbox.ragRedetectStillMissing'), 'info');
       }
     } else {
       showToast(t('toolbox.ragRedetectFailed', { error: (res && res.error) || 'unknown' }), 'error');

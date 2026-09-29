@@ -65,7 +65,7 @@
     "ragInstalling": "正在安装 RAG 依赖（约 200-300MB，可能需要几分钟）...",
     "ragInstallFailed": "RAG 依赖安装失败（退出码 {code}）",
     "ragInstallSuccess": "✅ RAG 依赖安装成功，功能已就绪",
-    "ragVerifyFailed": "npm 安装完成，但依赖验证未通过，请检查 Node 版本（需 22+）与网络",
+    "ragVerifyFailed": "npm 安装完成，但依赖验证未通过",
     "ragUnknownSub": "未知的 rag 子命令: {sub}",
     "ragHelpUsage": "用法: aha rag <status|install>",
     "restartHelper": {
@@ -144,7 +144,7 @@
     "ragInstalling": "Installing RAG dependencies (about 200-300MB, may take several minutes)...",
     "ragInstallFailed": "RAG dependency installation failed (exit code {code})",
     "ragInstallSuccess": "✅ RAG dependencies installed successfully, features ready",
-    "ragVerifyFailed": "npm install completed, but dependency verification failed. Please check your Node version (22+ required) and network",
+    "ragVerifyFailed": "npm install completed, but dependency verification failed",
     "ragUnknownSub": "Unknown rag subcommand: {sub}",
     "ragHelpUsage": "Usage: aha rag <status|install>",
     "restartHelper": {

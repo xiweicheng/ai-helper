@@ -865,6 +865,7 @@ export default {
     ragInstallLogLabel: '安装日志（最近输出）：',
     ragRedetectReady: '重新检测完成：RAG 能力已就绪',
     ragRedetectStillMissing: '重新检测完成：仍未检测到 RAG 依赖',
+    ragRedetectStillMissingDetail: '仍未检测到 RAG 依赖 - {error}',
     ragRedetectFailed: '重新检测失败: {error}',
     importSkill: '+ 导入技能',
     reloadSkills: '🔄 重新加载',

@@ -729,10 +729,16 @@ if (command === 'start') {
       console.error(`[Agent] ${t('ragInstallFailed', { code })}`);
       process.exit(1);
     }
-    // 安装后验证（以实际加载结果为准）
-    const { detectRagAvailable } = await import('../src/rag/detect.js');
+    // 安装后验证（以实际加载结果为准；探测在全新子进程执行，见 detect.js R8 说明）
+    const { detectRagAvailable, getLastRagProbeError } = await import('../src/rag/detect.js');
     const available = await detectRagAvailable();
-    console.log(`[Agent] ${available ? t('ragInstallSuccess') : t('ragVerifyFailed')}`);
+    if (available) {
+      console.log(`[Agent] ${t('ragInstallSuccess')}`);
+    } else {
+      // 附上子进程探测到的真实原因（便于定位）
+      const reason = getLastRagProbeError();
+      console.log(`[Agent] ${t('ragVerifyFailed')}${reason ? ` - ${reason}` : ''}`);
+    }
     process.exit(available ? 0 : 1);
   }
 

@@ -86,7 +86,8 @@
     "commandTimeout": "Command timed out",
     "stderrTruncated": "stderr output exceeded 5MB limit, truncated",
     "ragNotAvailable": "RAG dependencies are not installed or the environment does not meet the requirements. Please install RAG dependencies on the agent side first",
-    "ragInstallInProgress": "RAG dependency installation is in progress, please try again later"
+    "ragInstallInProgress": "RAG dependency installation is in progress, please try again later",
+    "ragLoadFailed": "Failed to load knowledge base module: {message} (try restarting the agent and retry)"
   },
   "rag": {
     "nodeVersionLow": "Node.js 22+ is required (current {version}), RAG features are unavailable",
@@ -95,7 +96,7 @@
     "installTimeout": "RAG dependency installation timed out (10 minutes), please check your network and retry",
     "installAborted": "RAG dependency installation was aborted (Agent shut down or process exited)",
     "installFailed": "RAG dependency installation failed: {message}",
-    "verifyFailed": "npm install completed, but dependency verification failed. Please check your Node version (22+ required) and network, then retry",
+    "verifyFailed": "npm install completed, but dependency verification failed",
     "err_collectionNotFound": "Knowledge base not found: {id}",
     "err_invalidCollectionId": "Invalid knowledge base ID: {id}",
     "err_nameRequired": "Knowledge base name is required",

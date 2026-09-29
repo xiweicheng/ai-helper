@@ -86,7 +86,8 @@
     "commandTimeout": "命令执行超时",
     "stderrTruncated": "stderr 输出超过 5MB 上限，已截断",
     "ragNotAvailable": "RAG 功能依赖未安装或运行环境不满足要求，请先在代理端安装 RAG 依赖",
-    "ragInstallInProgress": "RAG 依赖安装正在进行中，请稍后再试"
+    "ragInstallInProgress": "RAG 依赖安装正在进行中，请稍后再试",
+    "ragLoadFailed": "知识库模块加载失败: {message}（可尝试重启代理端后重试）"
   },
   "rag": {
     "nodeVersionLow": "需要 Node.js 22+（当前 {version}），RAG 功能不可用",
@@ -95,7 +96,7 @@
     "installTimeout": "RAG 依赖安装超时（10 分钟），请检查网络后重试",
     "installAborted": "RAG 依赖安装已中止（Agent 关闭或进程退出）",
     "installFailed": "RAG 依赖安装失败: {message}",
-    "verifyFailed": "npm 安装完成，但依赖验证未通过，请检查 Node 版本（需 22+）与网络后重试",
+    "verifyFailed": "npm 安装完成，但依赖验证未通过",
     "err_collectionNotFound": "知识库不存在: {id}",
     "err_invalidCollectionId": "非法知识库 ID: {id}",
     "err_nameRequired": "知识库名称不能为空",

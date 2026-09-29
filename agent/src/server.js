@@ -17,7 +17,7 @@ import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPer
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, setExecutorLang } from './executor.js';
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
-import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang } from './rag/detect.js';
+import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
 import { startRagInstall, getRagInstallStatus, stopRagInstall } from './rag/install.js';
 import { stopProcessTree } from './process-tree.js';
 import {
@@ -397,7 +397,7 @@ export function startServer() {
   let searchTools = { fd: false, rg: false };
   initSearchTools().then(result => { searchTools = result; });
 
-  // 异步初始化 RAG 能力检测（Node 22+ 前置检查 + 可选依赖 import；结果缓存，不阻塞启动）
+  // 异步初始化 RAG 能力检测（Node 22+ 前置检查 + 子进程探测可选依赖；结果缓存，不阻塞启动）
   // 先同步启动日志语言，确保检测完成早于 listen 回调时日志语言也正确
   setRagLang(serverLang);
   detectRagAvailable();
@@ -2026,11 +2026,12 @@ export function startServer() {
       return jsonResponse(res, 200, getRagInstallStatus());
     }
 
-    // 重新检测 RAG 依赖可用性（手动安装依赖后调用）
+    // 重新检测 RAG 依赖可用性（手动安装依赖后调用；探测在子进程执行，失败时附带真实原因）
     if (req.method === 'POST' && pathname === '/api/rag/detect') {
       resetRagDetection();
       const available = await detectRagAvailable();
-      return jsonResponse(res, 200, { success: true, available });
+      const error = available ? null : getLastRagProbeError();
+      return jsonResponse(res, 200, { success: true, available, error });
     }
 
     // 其余 RAG 接口：依赖不可用时直接 503（不加载路由模块）
@@ -2039,7 +2040,15 @@ export function startServer() {
         return jsonResponse(res, 503, { success: false, error: t('error.ragNotAvailable') });
       }
       // 动态 import：仅在依赖可用且真实收到请求时加载 RAG 路由模块
-      const { ragRouter } = await import('./rag/routes.js');
+      let ragRouter;
+      try {
+        ({ ragRouter } = await import('./rag/routes.js'));
+      } catch (err) {
+        // 长驻进程内模块求值失败会被 Node 永久缓存（重启代理端才能恢复，见 detect.js R8）：
+        // 给出明确指引与真实错误，避免停留在不可诊断的 500
+        logError('system', 'rag_route_load_failed', { error: err.message });
+        return jsonResponse(res, 500, { success: false, error: t('error.ragLoadFailed', { message: err.message }) });
+      }
       return ragRouter(req, res, pathname, url, t, requestBody);
     }
 
