@@ -528,45 +528,6 @@
   .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
   .card p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
 
-  /* ─── 创意成果展示区卡片 ─── */
-  .showcase-card {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 16px; padding: 28px;
-    display: flex; gap: 20px; align-items: center;
-    transition: all .3s;
-    text-decoration: none; color: inherit;
-    cursor: pointer;
-  }
-  .showcase-card:hover {
-    border-color: var(--accent);
-    background: var(--bg-card-hover);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px var(--accent-glow);
-  }
-  .showcase-thumb {
-    width: 72px; height: 72px;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 16px;
-    font-size: 36px;
-    flex-shrink: 0;
-  }
-  .showcase-info { flex: 1; min-width: 0; }
-  .showcase-info h3 {
-    font-size: 18px; font-weight: 600; margin-bottom: 6px;
-  }
-  .showcase-info p {
-    font-size: 13px; color: var(--text-muted); line-height: 1.6;
-    margin-bottom: 10px;
-  }
-  .showcase-link {
-    font-size: 13px; font-weight: 600;
-    color: var(--accent);
-    transition: gap .2s;
-    display: inline-flex; align-items: center; gap: 4px;
-  }
-  .showcase-card:hover .showcase-link { gap: 8px; }
-
   /* ─── 工具分类 ─── */
   .tools-grid {
     display: grid;
@@ -660,6 +621,42 @@
     color: var(--text-muted); margin-bottom: 32px;
     font-size: 17px;
   }
+
+  /* ─── 赞助与合作伙伴 ─── */
+.sponsor-card {
+    display: flex; gap: 20px; align-items: center;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    max-width: 720px; margin: 0 auto;
+    text-decoration: none; color: inherit;
+    transition: all .3s;
+  }
+.sponsor-card:hover {
+    border-color: var(--accent);
+    background: var(--bg-card-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px var(--accent-glow);
+  }
+.sponsor-logo {
+    width: 72px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;
+    border-radius: 16px; flex-shrink: 0;
+  }
+.sponsor-info { flex: 1; min-width: 0; }
+.sponsor-info h3 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.sponsor-company { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-top: 4px; }
+.sponsor-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
+.sponsor-support {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 3px 12px;
+  }
+.sponsor-link { font-size: 14px; font-weight: 600; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+.sponsors-contact { text-align: center; color: var(--text-muted); font-size: 14px; margin-top: 24px; }
+.sponsors-contact a { color: var(--accent); text-decoration: none; }
+.sponsors-contact a:hover { text-decoration: underline; }
 
   /* ─── Footer ─── */
   .footer {
@@ -808,6 +805,8 @@
     .arch-box { width: 100%; max-width: 300px; flex: none; }
     .arch-arrow { transform: rotate(90deg); }
     .compare-grid { grid-template-columns: 1fr; }
+    .sponsor-card { flex-direction: column; text-align: center; padding: 24px 20px; }
+    .sponsor-link { white-space: normal; }
 
     /* ─── 移动端导航紧凑化 ─── */
     .nav-inner { padding: 10px 14px; }
@@ -867,7 +866,6 @@
       <a href="#screenshots" data-i18n="nav-screenshots">Screenshots</a>
       <a href="#demo-videos" data-i18n="nav-demo">Demo Videos</a>
       <a href="#arch" data-i18n="nav-arch">Architecture</a>
-      <a href="#showcase" data-i18n="nav-showcase">Showcase</a>
       <a href="#start" data-i18n="nav-start">Quick Start</a>
       <a class="nav-cta" href="https://github.com/xiweicheng/ai-helper" target="_blank" title="GitHub" aria-label="GitHub">
         <svg class="nav-cta-svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 21.795 24 17.295 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -1449,32 +1447,6 @@
   </div>
 </section>
 
-<!-- Showcase -->
-<section class="section" id="showcase">
-  <div class="section-title">
-    <h2 data-i18n="showcase-title">Creative Showcase</h2>
-    <p data-i18n="showcase-desc">AI Helper-powered creative projects, click to experience</p>
-  </div>
-  <div class="cards">
-    <a class="showcase-card" href="fruit-slash-3d.html" target="_blank">
-      <div class="showcase-thumb">🍉</div>
-      <div class="showcase-info">
-        <h3 data-i18n="showcase-fruit-title">3D Fruit Slash</h3>
-        <p data-i18n="showcase-fruit-desc">A Three.js 3D fruit-slashing mini-game, swing your mouse to slice colorful fruits and challenge high scores.</p>
-        <span class="showcase-link" data-i18n="showcase-open">Open →</span>
-      </div>
-    </a>
-    <a class="showcase-card" href="creative-product.html" target="_blank">
-      <div class="showcase-thumb">🎨</div>
-      <div class="showcase-info">
-        <h3 data-i18n="showcase-product-title">Creative Product Showcase</h3>
-        <p data-i18n="showcase-product-desc">AI Helper product capability showcase — presenting the core features and use cases of the intelligent assistant.</p>
-        <span class="showcase-link" data-i18n="showcase-open2">Open →</span>
-      </div>
-    </a>
-  </div>
-</section>
-
 <!-- CTA -->
 <div class="cta-section">
   <h2 data-i18n="cta-title">Ready to Get Started?</h2>
@@ -1514,6 +1486,24 @@
       <a href="https://discord.gg/VPcqMBFGa" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-size: 18px; font-weight: 600;" data-i18n="contact-discord">Join Discord Community</a>
     </div>
   </div>
+</div>
+
+<!-- Sponsors -->
+<div class="section" id="sponsors" style="padding-top: 0;">
+  <div class="section-title" style="margin-bottom: 32px;">
+    <h2 data-i18n="sponsors-title">Sponsors &amp; Partners</h2>
+    <p data-i18n="sponsors-desc">Thanks to the following sponsors for supporting this project with token credits, compute, cloud resources, or services.</p>
+  </div>
+  <a class="sponsor-card" href="https://www.token8341.com" target="_blank" rel="noopener">
+    <div class="sponsor-logo">Si</div>
+    <div class="sponsor-info">
+      <h3><span data-i18n="sponsor-sicore-name">SiCore TokenWorks · 硅碳相变 Token工厂</span><span class="sponsor-company" data-i18n="sponsor-sicore-company">北京硅碳相变智能技术有限公司</span></h3>
+      <p class="sponsor-desc" data-i18n="sponsor-sicore-desc">OpenAI-compatible AI model API aggregator — one API key for Pangu / DeepSeek / Qwen / ERNIE / Doubao / GPT / Claude / Gemini and more</p>
+      <span class="sponsor-support" data-i18n="sponsor-sicore-support">LLM token credits</span>
+    </div>
+    <span class="sponsor-link">token8341.com →</span>
+  </a>
+  <p class="sponsors-contact" data-i18n="sponsors-contact">Interested in sponsoring or partnering? Contact us via <a href="mailto:xiwc87@yeah.net">email</a> or <a href="https://discord.gg/VPcqMBFGa" target="_blank" rel="noopener">Discord</a> — the project offers ongoing exposure in return.</p>
 </div>
 
 <!-- Footer -->
@@ -1751,7 +1741,6 @@
     'nav-screenshots':    { en: 'Screenshots', zh: '截图' },
     'nav-demo':           { en: 'Demo Videos', zh: '演示视频' },
     'nav-arch':           { en: 'Architecture', zh: '架构' },
-    'nav-showcase':       { en: 'Showcase', zh: '创意成果' },
     'nav-start':          { en: 'Quick Start', zh: '快速开始' },
     'page-title':         { en: 'AI Helper — Make Your Browser Think', zh: 'AI Helper — 让你的浏览器会思考' },
     'hero-badge':   { en: 'v1.0 Released \u00b7 Open Source \u00b7 MIT License', zh: 'v1.0 正式发布 \u00b7 开源免费 \u00b7 MIT 协议' },
@@ -1906,14 +1895,6 @@
     'start-2-code':      { en: 'API Key → Enter → Save', zh: 'API Key → 填入 → 保存' },
     'start-3-title':     { en: 'Install Agent (Optional)', zh: '安装代理（可选）' },
     'start-3-desc':      { en: 'For local file read/write and command execution, install the agent service globally and start it. Copy the pairing code from terminal output into the extension\'s Agent settings to connect.', zh: '如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。' },
-    'showcase-title':          { en: 'Creative Showcase', zh: '创意成果展示区' },
-    'showcase-desc':           { en: 'AI Helper-powered creative projects, click to experience', zh: 'AI Helper 驱动的创意项目，点击即可体验' },
-    'showcase-fruit-title':    { en: '3D Fruit Slash', zh: '3D 切水果' },
-    'showcase-fruit-desc':     { en: 'A Three.js 3D fruit-slashing mini-game, swing your mouse to slice colorful fruits and challenge high scores.', zh: '基于 Three.js 的 3D 切水果小游戏，挥动鼠标切开缤纷水果，连击得分挑战高分。' },
-    'showcase-product-title':  { en: 'Creative Product Showcase', zh: '创意产品展示' },
-    'showcase-product-desc':   { en: 'AI Helper product capability showcase — presenting the core features and use cases of the intelligent assistant.', zh: 'AI Helper 产品能力展示页，全方位呈现智能助手的核心功能与使用场景。' },
-    'showcase-open':    { en: 'Open →', zh: '打开体验 →' },
-    'showcase-open2':   { en: 'Open →', zh: '打开体验 →' },
     'cta-title':        { en: 'Ready to Get Started?', zh: '准备好了吗？' },
     'cta-desc':         { en: 'Open source & free, MIT License, welcome Star & PR', zh: '开源免费，MIT 协议，欢迎 Star & PR' },
     'cta-docs':         { en: 'View Docs', zh: '查看文档' },
@@ -1921,6 +1902,13 @@
     'contact-title':    { en: 'Contact & Support', zh: '合作与支持' },
     'contact-desc':     { en: 'Welcome feedback, suggestions, or business collaboration', zh: '欢迎反馈、建议或商务合作' },
     'contact-discord':  { en: 'Join Discord Community', zh: '加入 Discord 讨论组' },
+    'sponsors-title':   { en: 'Sponsors & Partners', zh: '赞助与合作伙伴' },
+    'sponsors-desc':    { en: 'Thanks to the following sponsors for supporting this project with token credits, compute, cloud resources, or services.', zh: '感谢以下赞助方以 Token 额度、算力、云资源或服务等方式支持本项目，欢迎更多互利合作。' },
+    'sponsor-sicore-name':    { en: 'SiCore TokenWorks · 硅碳相变 Token工厂', zh: '硅碳相变 Token工厂 · SiCore TokenWorks' },
+    'sponsor-sicore-company': { en: '北京硅碳相变智能技术有限公司', zh: '北京硅碳相变智能技术有限公司' },
+    'sponsor-sicore-desc':    { en: 'OpenAI-compatible AI model API aggregator — one API key for Pangu / DeepSeek / Qwen / ERNIE / Doubao / GPT / Claude / Gemini and more', zh: 'OpenAI 兼容的 AI 大模型 API 聚合平台，一个密钥调用盘古 / DeepSeek / 通义千问 / 文心一言 / 豆包 / GPT / Claude / Gemini 等主流模型' },
+    'sponsor-sicore-support': { en: 'LLM token credits', zh: '大模型 Token 额度赞助' },
+    'sponsors-contact': { en: 'Interested in sponsoring or partnering? Contact us via <a href="mailto:xiwc87@yeah.net">email</a> or <a href="https://discord.gg/VPcqMBFGa" target="_blank" rel="noopener">Discord</a> — the project offers ongoing exposure in return.', zh: '有意赞助或合作？欢迎通过 <a href="mailto:xiwc87@yeah.net">邮箱</a> 或 <a href="https://discord.gg/VPcqMBFGa" target="_blank" rel="noopener">Discord</a> 联系我们，项目将以持续曝光与引流作为回馈。' },
     'meta-description': { en: 'AI Helper is an open-source Chrome browser intelligent assistant extension, supporting natural language conversations, 40+ built-in tools, long-term memory system, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, MCP protocol extension, workspace management, message search & bookmark, file recycle bin, based on ReAct reasoning loop architecture.', zh: 'AI Helper 是一款开源的 Chrome 浏览器智能助手扩展，支持自然语言对话、40+ 内置工具、长期记忆系统、本地知识库（RAG）、多智能体协作、任务断点恢复、Skill 系统、MCP 协议扩展、工作目录管理、消息搜索与书签、文件回收站，基于 ReAct 推理循环架构。' }
   };
 
