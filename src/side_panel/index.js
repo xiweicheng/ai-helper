@@ -516,12 +516,27 @@ function adaptInputToolbar() {
   const toolbar = document.querySelector('.input-toolbar');
   const container = toolbar?.closest('.input-container') || null;
   if (!toolbar || !container) return;
+
+  // 浮层下拉（助手选择器 / 模型设置等）是绝对定位的临时覆盖层，允许探出工具栏边界
+  // （仅受面板边界约束）；若计入 scrollWidth，打开下拉会被误判为布局空间不足而折叠文案。
+  // 测量前同步隐藏、测完立即恢复，同一帧内完成不会闪烁（style 变更不被 MutationObserver 观察，不会循环触发）。
+  const overlays = [];
+  toolbar.querySelectorAll('*').forEach((el) => {
+    if (getComputedStyle(el).position === 'absolute' && el.getClientRects().length > 0) {
+      overlays.push(el);
+    }
+  });
+  const overlayDisplays = overlays.map((el) => el.style.display);
+  overlays.forEach((el) => { el.style.display = 'none'; });
+  const restoreOverlays = () => overlays.forEach((el, i) => { el.style.display = overlayDisplays[i]; });
+
   // 先恢复完整状态再测量，保证空间恢复时能还原
   container.classList.remove('temp-collapsed', 'agent-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) return;
+  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
   container.classList.add('temp-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) return;
+  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
   container.classList.add('agent-collapsed');
+  restoreOverlays();
 }
 
 let toolbarAdaptRafId = 0;
