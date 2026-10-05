@@ -182,12 +182,46 @@ export function fixArrayObjectMismatch(str) {
 }
 
 /**
+ * 位置引导修复：模型偶发多写转义反斜杠（如 "write\" 本应为 "write"），
+ * 利用 JSON.parse 报错位置回溯定位"后接 JSON 结构符"的多余 \" 并删除反斜杠；
+ * 每轮删一处后重新解析（最多 4 轮），返回修复后的串（可能仍不可解析，由调用方继续传统修复）
+ */
+function repairByParsePosition(str) {
+  let s = str;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let errPos;
+    try {
+      JSON.parse(s);
+      return s;
+    } catch (e) {
+      const m = /position\s+(\d+)/.exec(e.message);
+      if (!m) return s;
+      errPos = Number(m[1]);
+    }
+    // 在报错位置前 40 字符窗口内找最后一个候选：\" 后接 , ] } 或下一个 "key":
+    // 候选前一位不能是反斜杠（保护合法 \\\" 序列）；找不到候选则停止
+    const winStart = Math.max(0, errPos - 40);
+    const win = s.slice(winStart, errPos + 2);
+    const re = /(?<!\\)\\"(?=\s*(?:[,}\]]|"(?:[^"\\]|\\.)*"\s*:))/g;
+    let rel = -1;
+    let mm;
+    while ((mm = re.exec(win)) !== null) rel = mm.index;
+    if (rel < 0) return s;
+    const abs = winStart + rel;
+    s = s.slice(0, abs) + '"' + s.slice(abs + 2);
+  }
+  return s;
+}
+
+/**
  * 两阶段解析工具参数：
  * 1. 先尝试标准 JSON.parse
  * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
  * 返回 null 表示所有解析尝试均失败
  */
 export function tryParseToolArgs(argsStr) {
+  // 如果已经是对象，直接返回（部分模型/SDK 已解析参数）
+  if (argsStr && typeof argsStr === 'object') return argsStr;
   if (!argsStr || typeof argsStr !== 'string') return null;
 
   const trimmed = argsStr.trim();
@@ -208,6 +242,17 @@ export function tryParseToolArgs(argsStr) {
 
   // 阶段 2: 修复常见问题后重试
   let fixed = trimmed;
+
+  // 2g. 位置引导修复：模型偶发多写转义反斜杠（如 "write\" 本应为 "write"），
+  // 利用 JSON.parse 报错位置精准删除多余反斜杠（带解析验证，修好立即返回）
+  fixed = repairByParsePosition(fixed);
+  try {
+    const guided = JSON.parse(fixed);
+    logger.debug('[Background] tool parameterposition-guidedrepair successful:', guided);
+    return guided;
+  } catch {
+    // 未完全修复，继续下面的传统修复流程
+  }
 
   // 2a. 移除尾随逗号（对象和数组）
   fixed = fixed.replace(/,\s*([}\]])/g, '$1');

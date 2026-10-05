@@ -6,7 +6,7 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
-import { autoCompleteJson, fixArrayObjectMismatch } from './tool-helpers.js';
+import { tryParseToolArgs } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab } from './state.js';
@@ -1612,91 +1612,6 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
   }
 
   return fullContent;
-}
-
-/**
- * 两阶段解析工具参数：
- * 1. 先尝试标准 JSON.parse
- * 2. 失败后尝试修复常见问题：尾随逗号、未加引号的字符串值、嵌套对象
- * 返回 null 表示所有解析尝试均失败
- */
-function tryParseToolArgs(argsStr) {
-  if (!argsStr) return null;
-  
-  // 如果已经是对象，直接返回
-  if (typeof argsStr === 'object') {
-    return argsStr;
-  }
-  
-  if (typeof argsStr !== 'string') return null;
-  
-  const trimmed = argsStr.trim();
-  if (!trimmed) return null;
-  
-  // 阶段 1: 标准 JSON 解析
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    console.warn('[Background] tool parameterdirectparse failed,attemptrepair...');
-  }
-  
-  // 阶段 2: 修复常见问题后重试
-  let fixed = trimmed;
-  
-  // 2a. 移除尾随逗号（对象和数组）
-  fixed = fixed.replace(/,\s*([}\]])/g, '$1');
-  
-  // 2b. 修复未加引号的字符串值
-  // 匹配模式: "key": value 其中 value 是未加引号的中文/英文/数字组合
-  // 支持包含空格、特殊字符的值，直到遇到 , 或 } 或换行符
-  fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
-    const trimmedValue = value.trim();
-    // 跳过已经是数字、布尔值、null 的值
-    if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
-      return match;
-    }
-    // 转义值内部的双引号
-    const escapedValue = trimmedValue.replace(/"/g, '\\"');
-    return `"${key}": "${escapedValue}"${delimiter}`;
-  });
-  
-  // 2c. 递归修复嵌套对象中的未加引号字符串值
-  // 使用深度优先策略：从内层向外层修复
-  let prevFixed;
-  do {
-    prevFixed = fixed;
-    fixed = fixed.replace(/"([^"]+)":\s*([^",\{\}\[\]]+?)(\s*[,}\]])/g, (match, key, value, delimiter) => {
-      const trimmedValue = value.trim();
-      if (/^(true|false|null|-?\d+(\.\d+)?)$/.test(trimmedValue)) {
-        return match;
-      }
-      // 转义值内部的双引号
-      const escapedValue = trimmedValue.replace(/"/g, '\\"');
-      return `"${key}": "${escapedValue}"${delimiter}`;
-    });
-  } while (fixed !== prevFixed);
-  
-  // 2d. 修复已加引号但内部双引号未转义的情况
-  // 匹配模式: "key": "value" 其中 value 内部包含未转义的双引号
-  fixed = fixed.replace(/"([^"]+)":\s*"([^"]*)(")([^"]*)"/g, (match, key, part1, unescapedQuote, part2) => {
-    return `"${key}": "${part1}\\"${part2}"`;
-  });
-  
-  // 2e. 自动补全缺失的闭合引号和括号（处理 LLM 截断输出）
-  fixed = autoCompleteJson(fixed);
-  
-  // 2f. 清除数组中混入的对象键值对（LLM 有时把 "key": value 错误放进数组）
-  fixed = fixArrayObjectMismatch(fixed);
-  
-  // 阶段 2 最终尝试
-  try {
-    const result = JSON.parse(fixed);
-    console.log('[Background] tool parameterrepairparse successful:', result);
-    return result;
-  } catch (e) {
-    console.error('[Background] tool parameterrepairparse also failed:', e, 'after repaircharsstring:', fixed.substring(0, 200));
-    return null;
-  }
 }
 
 /**

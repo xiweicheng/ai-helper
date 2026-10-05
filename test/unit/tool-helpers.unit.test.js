@@ -119,6 +119,21 @@ describe('tryParseToolArgs - 工具参数解析', () => {
     expect(tryParseToolArgs(undefined)).toBeNull();
     expect(tryParseToolArgs(123)).toBeNull();
   });
+
+  test('对象输入直通', () => {
+    const o = { a: 1 };
+    expect(tryParseToolArgs(o)).toBe(o);
+  });
+
+  test('闭合引号被多余转义被位置引导修复（action 无尾部反斜杠）', () => {
+    const bad = '{"action": "write\\", "content": "hello", "path": "a.md"}';
+    expect(tryParseToolArgs(bad)).toEqual({ action: 'write', content: 'hello', path: 'a.md' });
+  });
+
+  test('误转义修复不破坏合法 \\\\" 序列（值以反斜杠结尾）', () => {
+    // "b" 缺值导致解析失败；合法值 C:\\App\\ 不应被误改，整体仍返回 null
+    expect(tryParseToolArgs('{"path": "C:\\\\App\\\\", "b": }')).toBeNull();
+  });
 });
 
 // ==================== makeResult ====================
