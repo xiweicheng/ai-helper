@@ -115,6 +115,12 @@
             </svg>
             <span data-i18n="header.githubRepo">GitHub 仓库</span>
           </button>
+          <button class="header-dropdown-item" id="giteeRepoBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/>
+            </svg>
+            <span data-i18n="header.giteeRepo">Gitee 仓库</span>
+          </button>
         </div>
       </div>
       <button class="detach-btn" id="detachBtn" data-i18n-title="header.detachTitle" title="脱离为独立窗口" style="display:none;">
@@ -523,6 +529,7 @@
               <div class="section-select" id="modelSelect">
                 <div class="section-select-row" id="modelSelectRow">
                   <span class="section-select-value" id="modelSelectValue">deepseek-v4-pro</span>
+                  <span class="model-ctx-badge" id="modelSelectCtxBadge" style="display:none;"></span>
                   <span class="section-select-caret"></span>
                 </div>
                 <div class="section-select-list" id="modelSelectList">

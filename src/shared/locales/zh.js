@@ -198,6 +198,7 @@ export default {
     auditLog: '命令执行审计',
     shortcuts: '查看快捷键',
     githubRepo: 'GitHub 仓库',
+    giteeRepo: 'Gitee 仓库',
     detachTitle: '脱离为独立窗口',
     attachTitle: '回归侧边栏',
   },

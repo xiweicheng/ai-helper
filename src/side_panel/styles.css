@@ -1563,7 +1563,8 @@ body {
   color: #667eea;
   font-weight: bold;
 }
-.model-option .model-ctx-badge {
+.model-option .model-ctx-badge,
+.section-select-row .model-ctx-badge {
   background: #e8f0fe;
   color: #667eea;
   font-size: 10px;
@@ -4801,16 +4802,86 @@ body {
 .context-usage-btn.primary:hover { background: #3d7fc4; }
 .context-usage-btn.danger-ghost { background: none; color: #d9534f; padding: 2px 0; text-align: left; }
 .context-usage-btn.danger-ghost:hover { text-decoration: underline; }
-.context-usage-summary-modal { max-width: 420px; }
-.context-usage-summary-body {
-  max-height: 50vh;
-  overflow-y: auto;
+/* 上下文摘要弹窗：宽度随侧边栏自适应（两侧各留 20px）；头部（标题+预览/源码切换）与底部操作区固定，内容区独立滚动。
+   注意：需用双类提高特异性覆盖 .modal-container 基础规则（其 width:90%/max-width:320px 定义在文件更后面） */
+.modal-container.context-usage-summary-modal {
+  width: calc(100% - 40px);
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+.context-usage-summary-modal .modal-title {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+  padding: 0 28px; /* 两侧对称留白，右侧避开右上角 × 关闭图标 */
+}
+/* 右上角 × 关闭图标：与底部「关闭」按钮等价（绝对定位；容器 .modal-container 已设 relative） */
+.context-usage-summary-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: #999;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.context-usage-summary-close:hover {
+  color: #333;
+  background: #f0f1f3;
+}
+.context-usage-summary-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: fit-content;
+  margin: 0 auto 12px;
+  padding: 3px;
+  background: #f0f1f3;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.context-usage-summary-tab {
+  border: none;
+  background: none;
+  padding: 4px 16px;
+  border-radius: 6px;
   font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  color: #666;
+  cursor: pointer;
+}
+.context-usage-summary-tab.active {
+  background: #fff;
+  color: #333;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.context-usage-summary-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   word-break: break-word;
   color: #444;
-  padding: 4px 0 12px;
+}
+/* 预览模式：复用消息区 .markdown-body 渲染样式（字号略小适配弹窗） */
+.context-usage-summary-body.markdown-body {
+  font-size: 13px;
+  line-height: 1.65;
+}
+/* 源码模式：原文等宽字体展示 */
+.context-usage-summary-body:not(.markdown-body) {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
 }
 /* 压缩进行中的模态加载框（不可关闭；转圈动画提示后台正在生成摘要） */
 .context-usage-compacting-modal {

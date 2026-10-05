@@ -7,6 +7,7 @@ import { getSystemPrompt, formatTokenCount, formatTokenFull, showToast } from '.
 import { getCurrentAgentPrompt } from './agent-manager.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
+import { formatMarkdown, addCodeCopyButtons } from './markdown-render.js';
 
 registerTranslations('zh', {
   contextUsage: {
@@ -50,6 +51,8 @@ registerTranslations('zh', {
     btnUndoCompact: '撤销压缩',
     undoExpiredToast: '已发送新消息，无法再撤销压缩（可再次压缩合并更新）',
     summaryTitle: '上下文摘要（压缩 {count} 条历史）',
+    summaryTabPreview: '预览',
+    summaryTabSource: '源码',
   },
 });
 registerTranslations('en', {
@@ -94,6 +97,8 @@ registerTranslations('en', {
     btnUndoCompact: 'Undo Compaction',
     undoExpiredToast: 'New messages have been sent; compaction can no longer be undone (you can compact again)',
     summaryTitle: 'Context Summary ({count} messages compacted)',
+    summaryTabPreview: 'Preview',
+    summaryTabSource: 'Source',
   },
 });
 
@@ -536,7 +541,7 @@ export function showContextUsagePopup() {
   setTimeout(() => document.addEventListener('click', popupDocClickHandler), 0);
 }
 
-/** 分隔条"查看"：展示当前摘要全文 */
+/** 分隔条"查看"：展示当前摘要全文（预览/源码双模式；宽度随侧边栏自适应） */
 export function showCompactionSummaryPopup(compaction = state.activeCompaction) {
   if (!compaction?.summary) return;
   const overlay = document.createElement('div');
@@ -545,16 +550,36 @@ export function showCompactionSummaryPopup(compaction = state.activeCompaction) 
   overlay.style.zIndex = '10200';
   overlay.innerHTML = `
     <div class="modal-container context-usage-summary-modal">
+      <button type="button" class="context-usage-summary-close" title="${t('common.close')}">×</button>
       <div class="modal-title">${t('contextUsage.summaryTitle', { count: compaction.compressedCount })}
       </div>
-      <div class="context-usage-summary-body"></div>
-      <div class="modal-actions">
-        <button class="modal-btn cancel">${t('common.close')}</button>
+      <div class="context-usage-summary-tabs">
+        <button class="context-usage-summary-tab active" data-mode="preview">${t('contextUsage.summaryTabPreview')}</button>
+        <button class="context-usage-summary-tab" data-mode="source">${t('contextUsage.summaryTabSource')}</button>
       </div>
+      <div class="context-usage-summary-body"></div>
     </div>
   `;
-  overlay.querySelector('.context-usage-summary-body').textContent = compaction.summary;
   document.body.appendChild(overlay);
-  overlay.querySelector('.modal-btn.cancel').addEventListener('click', () => overlay.remove());
+
+  const bodyEl = overlay.querySelector('.context-usage-summary-body');
+  const tabs = overlay.querySelectorAll('.context-usage-summary-tab');
+
+  /** 视图切换：预览 = Markdown 渲染（复用消息区渲染管线），源码 = 原文（等宽字体） */
+  const setMode = (mode) => {
+    tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.mode === mode));
+    if (mode === 'preview') {
+      bodyEl.classList.add('markdown-body');
+      bodyEl.innerHTML = formatMarkdown(compaction.summary);
+      addCodeCopyButtons(); // 摘要中如有代码块，复制按钮随渲染即时绑定
+    } else {
+      bodyEl.classList.remove('markdown-body');
+      bodyEl.textContent = compaction.summary;
+    }
+  };
+  tabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+  setMode('preview');
+
+  overlay.querySelector('.context-usage-summary-close').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }

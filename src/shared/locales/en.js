@@ -198,6 +198,7 @@ export default {
     auditLog: 'Command Audit',
     shortcuts: 'Shortcuts',
     githubRepo: 'GitHub Repository',
+    giteeRepo: 'Gitee Repository',
     detachTitle: 'Detach to standalone window',
     attachTitle: 'Attach back to side panel',
   },

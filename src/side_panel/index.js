@@ -546,10 +546,12 @@ function initToolbarAdaptive() {
 }
 
 function updateModelSelection(selectedValue) {
+  let selectedCtxWindow = 0;
   document.querySelectorAll('.model-option').forEach(option => {
     if (option.dataset.value === selectedValue) {
       option.classList.add('selected');
       option.querySelector('.model-option-check').textContent = '✓';
+      selectedCtxWindow = parseInt(option.dataset.contextWindow, 10) || 0;
     } else {
       option.classList.remove('selected');
       option.querySelector('.model-option-check').textContent = '';
@@ -559,6 +561,17 @@ function updateModelSelection(selectedValue) {
   // 模型选择行同步显示当前模型名
   const selectValue = document.getElementById('modelSelectValue');
   if (selectValue && selectedValue) selectValue.textContent = selectedValue;
+
+  // 模型选择行同步显示上下文窗口徽标（与列表中选中项保持一致）
+  const ctxBadge = document.getElementById('modelSelectCtxBadge');
+  if (ctxBadge) {
+    if (selectedCtxWindow > 0) {
+      ctxBadge.textContent = formatCtxWindow(selectedCtxWindow);
+      ctxBadge.style.display = '';
+    } else {
+      ctxBadge.style.display = 'none';
+    }
+  }
 
   // 输入区右下角模型名指示同步
   updateCurrentModelTag();
@@ -591,6 +604,7 @@ function loadCustomModelsToDropdown(customModels, callback) {
       <div class="section-select" id="modelSelect">
         <div class="section-select-row" id="modelSelectRow">
           <span class="section-select-value" id="modelSelectValue">${escapeHtml(state.currentModel || '')}</span>
+          <span class="model-ctx-badge" id="modelSelectCtxBadge" style="display:none;"></span>
           <span class="section-select-caret"></span>
         </div>
         <div class="section-select-list" id="modelSelectList"></div>
@@ -600,6 +614,9 @@ function loadCustomModelsToDropdown(customModels, callback) {
       const option = document.createElement('div');
       option.className = 'model-option';
       option.dataset.value = item.name;
+      if (item.contextWindow && item.contextWindow > 0) {
+        option.dataset.contextWindow = item.contextWindow;
+      }
       option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${escapeHtml(item.name)}</span>`;
 
       // 上下文窗口大小标签（放在右侧容器内）
@@ -3581,6 +3598,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
       headerMoreDropdown.classList.remove('show');
       chrome.tabs.create({ url: 'https://github.com/xiweicheng/ai-helper' });
+    });
+  }
+
+  // Gitee 仓库链接按钮（header 下拉菜单）
+  const giteeRepoBtn = document.getElementById('giteeRepoBtn');
+  if (giteeRepoBtn) {
+    giteeRepoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      headerMoreDropdown.classList.remove('show');
+      chrome.tabs.create({ url: 'https://gitee.com/xiweicheng/ai-helper' });
     });
   }
 
