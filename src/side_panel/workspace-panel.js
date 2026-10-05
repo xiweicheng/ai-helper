@@ -18,7 +18,7 @@ import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
-import { renderMermaidInContainer, convertSvgsToImages } from './chat-export.js';
+import { renderMermaidInContainer, convertSvgsToImages, createTextRuns } from './chat-export.js';
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 
 import DOMPurify from 'dompurify';
@@ -937,6 +937,9 @@ function bindEvents() {
     if (scrollRafId) cancelAnimationFrame(scrollRafId);
     scrollRafId = requestAnimationFrame(() => {
       scrollRafId = null;
+      // 滚动位置与最近一次渲染相同（程序化滚动/重渲染引发的伴随事件）：跳过重建，
+      // 避免 DOM 重建丢失刚应用的定位高亮等瞬态类
+      if (document.getElementById('workspacePanelContent').scrollTop === lastVirtualScrollTop) return;
       renderVirtualScroll();
     });
   });
@@ -1398,6 +1401,9 @@ const VIRTUAL_ITEM_HEIGHT = 32;  // 初始估算行高（padding 7+7 + 内容 ~1
 const VIRTUAL_BUFFER = 5;        // 可视区域上下各多渲染的缓冲行数
 // 虚拟滚动状态：{ sorted, itemHeight } —— 非 null 时表示当前处于虚拟滚动模式
 let virtualScrollState = null;
+// 最近一次虚拟渲染使用的 scrollTop：scroll 事件里用于去重，
+// 跳过重渲染/程序化滚动引发的伴随事件，避免无意义重建 DOM（会丢失定位高亮等瞬态类）
+let lastVirtualScrollTop = 0;
 // 当前排序后的完整列表（虚拟滚动滚动时复用，避免重复排序）
 let sortedEntriesCache = [];
 
@@ -1485,6 +1491,8 @@ function renderVirtualScroll() {
   updateFocusVisual();
   // 恢复行内进度条（虚拟滚动重渲染后 DOM 被重建，需要恢复活跃的进度条）
   restoreInlineProgress();
+  // 记录本次渲染的滚动位置（scroll 事件去重基准）
+  lastVirtualScrollTop = content.scrollTop;
 }
 
 /**
@@ -3360,9 +3368,9 @@ async function exportWorkspaceDocx(fileName) {
     styles: {
       default: {
         document: { run: { font: 'Calibri', size: 22 } },
-        heading1: { run: { size: 36, bold: true }, paragraph: { spacing: { before: 320, after: 160 } } },
-        heading2: { run: { size: 30, bold: true }, paragraph: { spacing: { before: 280, after: 120 } } },
-        heading3: { run: { size: 26, bold: true }, paragraph: { spacing: { before: 240, after: 100 } } },
+        heading1: { run: { size: 40, bold: true, color: '333333' }, paragraph: { spacing: { before: 320, after: 160 } } },
+        heading2: { run: { size: 30, bold: true, color: '333333' }, paragraph: { spacing: { before: 280, after: 120 } } },
+        heading3: { run: { size: 26, bold: true, color: '333333' }, paragraph: { spacing: { before: 240, after: 100 } } },
       }
     },
     sections: [{
@@ -3421,14 +3429,14 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     let remaining = text;
     while (remaining.length > 0) {
       const match = remaining.match(tokenRegex);
-      if (!match) { result.push(new TextRun({ text: remaining })); break; }
+      if (!match) { result.push(...createTextRuns(remaining)); break; }
       const idx = match.index;
-      if (idx > 0) result.push(new TextRun({ text: remaining.slice(0, idx) }));
+      if (idx > 0) result.push(...createTextRuns(remaining.slice(0, idx)));
       const fullMatch = match[1];
-      if (match[2] !== undefined) result.push(new TextRun({ text: match[2], bold: true }));
-      else if (match[3] !== undefined) result.push(new TextRun({ text: match[3], italics: true }));
-      else if (match[4] !== undefined) result.push(new TextRun({ text: match[4], bold: true }));
-      else if (match[5] !== undefined) result.push(new TextRun({ text: match[5], italics: true }));
+      if (match[2] !== undefined) result.push(...createTextRuns(match[2], { bold: true }));
+      else if (match[3] !== undefined) result.push(...createTextRuns(match[3], { italics: true }));
+      else if (match[4] !== undefined) result.push(...createTextRuns(match[4], { bold: true }));
+      else if (match[5] !== undefined) result.push(...createTextRuns(match[5], { italics: true }));
       else if (match[6] !== undefined) result.push(new TextRun({ text: match[6], font: 'Consolas', size: 20 }));
       else if (match[7] !== undefined) result.push(new ExternalHyperlink({ children: [new TextRun({ text: match[7], style: 'Hyperlink' })], link: match[8] }));
       else if (match[9] !== undefined) {
@@ -3543,7 +3551,17 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)/);
     if (headingMatch) {
       const levelMap = { 1: HeadingLevel.HEADING_1, 2: HeadingLevel.HEADING_2, 3: HeadingLevel.HEADING_3, 4: HeadingLevel.HEADING_4, 5: HeadingLevel.HEADING_5, 6: HeadingLevel.HEADING_6 };
-      children.push(new Paragraph({ children: parseInline(headingMatch[2]), heading: levelMap[headingMatch[1].length] || HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph({
+        children: parseInline(headingMatch[2]),
+        heading: levelMap[headingMatch[1].length] || HeadingLevel.HEADING_1,
+        // 与页面 .markdown-body h1~h3 一致：标题下方浅灰细线
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'EAECEF' } }
+      }));
+      // 标题行后紧贴内容（单换行、无空行分隔）时输出为独立段落，避免内容被静默丢弃
+      const headingRest = trimmed.slice(headingMatch[0].length).replace(/^\n+/, '').trim();
+      if (headingRest) {
+        children.push(new Paragraph({ children: parseInline(headingRest), spacing: { before: 60, after: 60 } }));
+      }
       continue;
     }
 
@@ -3575,7 +3593,7 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     }
 
     const inlineChildren = parseInline(trimmed);
-    children.push(new Paragraph({ children: inlineChildren.length > 0 ? inlineChildren : [new TextRun({ text: trimmed })], spacing: { before: 60, after: 60 } }));
+    children.push(new Paragraph({ children: inlineChildren.length > 0 ? inlineChildren : createTextRuns(trimmed), spacing: { before: 60, after: 60 } }));
   }
 
   return children;
@@ -5462,13 +5480,28 @@ export async function locateFileInWorkspace(filePath) {
   // 导航到目录（带搜索高亮）
   await navigateToPath(dirPath);
 
-  // 在已渲染的文件项中查找目标
+  // 在已渲染的文件项中查找目标。
+  // 虚拟滚动目录（>200 项）只渲染可视区域，目标文件可能不在 DOM 中：
+  // 先在数据模型（virtualScrollState.sorted）中定位索引，滚动到目标位置重新
+  // 渲染后再取 DOM（与 scrollToNewFile 同模式），避免误报"未找到该文件"
   const findTargetItem = (name) => {
-    let targetItem = null;
-    document.querySelectorAll('.workspace-file-item').forEach(item => {
-      if (item.dataset.name === name) targetItem = item;
-    });
-    return targetItem;
+    const searchRendered = () => {
+      let found = null;
+      document.querySelectorAll('.workspace-file-item').forEach(item => {
+        if (item.dataset.name === name) found = item;
+      });
+      return found;
+    };
+    const targetItem = searchRendered();
+    if (targetItem || !virtualScrollState) return targetItem;
+    const idx = virtualScrollState.sorted.findIndex(e => e.name === name);
+    if (idx < 0) return null;
+    const content = document.getElementById('workspacePanelContent');
+    if (!content) return null;
+    const { itemHeight } = virtualScrollState;
+    content.scrollTop = Math.max(0, idx * itemHeight - content.clientHeight / 2 + itemHeight / 2);
+    renderVirtualScroll();
+    return searchRendered();
   };
 
   // 高亮目标文件项

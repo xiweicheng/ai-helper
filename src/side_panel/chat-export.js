@@ -40,13 +40,53 @@ let exportInProgressMap = new Map();
 
 // ====== Markdown → DOCX 解析器 ======
 
+// Word/WPS 的默认正文字体（Calibri 等）不含 emoji 字形，emoji 直接混在普通
+// run 中会显示为豆腐块或黑白符号。这里将 emoji 单独拆为独立 run 并指定系统
+// emoji 字体，保证导出的 Word 与页面渲染效果一致。
+
+/** 当前系统可用的 emoji 字体（macOS 用 Apple Color Emoji，Windows 用 Segoe UI Emoji） */
+const EMOJI_FONT_NAME = /Mac|iPhone|iPad|iPod/i.test(
+  typeof navigator !== 'undefined' ? navigator.userAgent : ''
+) ? 'Apple Color Emoji' : 'Segoe UI Emoji';
+
+/** emoji 字符序列：默认 emoji 呈现字符，或带变体选择符（FE0F）的图形字符；含 ZWJ 组合与肤色修饰符 */
+const EMOJI_SEQUENCE_REGEX = new RegExp(
+  '(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)'
+  + '(?:[\\u{1F3FB}-\\u{1F3FF}]|\\u200D(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F))*',
+  'gu'
+);
+
+/**
+ * 将纯文本转换为 TextRun 数组；emoji 段单独成 run 并指定 emoji 字体，
+ * 避免在 Word/WPS 中因正文字体缺少 emoji 字形而渲染异常
+ * @param {string} text - 纯文本（不含块级元素）
+ * @param {object} [options] - TextRun 选项（bold/italics 等）
+ * @returns {Array<TextRun>}
+ */
+export function createTextRuns(text, options = {}) {
+  if (!text) return [];
+  const runs = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(EMOJI_SEQUENCE_REGEX)) {
+    if (match.index > lastIndex) {
+      runs.push(new TextRun({ ...options, text: text.slice(lastIndex, match.index) }));
+    }
+    runs.push(new TextRun({ ...options, text: match[0], font: { name: EMOJI_FONT_NAME } }));
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    runs.push(new TextRun({ ...options, text: text.slice(lastIndex) }));
+  }
+  return runs;
+}
+
 /**
  * 解析行内 Markdown 格式为 TextRun 数组
  * 支持 **bold**, *italic*, `code`, [link](url), ![image](url)
  * @param {string} text - 行内文本（不含块级元素）
  * @returns {Array<TextRun|ExternalHyperlink|ImageRun>}
  */
-function parseInlineMarkdown(text) {
+export function parseInlineMarkdown(text) {
   if (!text) return [];
 
   // 正则匹配所有行内格式：粗体、斜体、行内代码、链接、图片
@@ -58,29 +98,29 @@ function parseInlineMarkdown(text) {
     const match = remaining.match(tokenRegex);
     if (!match) {
       // 剩余全是纯文本
-      result.push(new TextRun({ text: remaining }));
+      result.push(...createTextRuns(remaining));
       break;
     }
 
     const idx = match.index;
     // 匹配前的纯文本
     if (idx > 0) {
-      result.push(new TextRun({ text: remaining.slice(0, idx) }));
+      result.push(...createTextRuns(remaining.slice(0, idx)));
     }
 
     const fullMatch = match[1];
     if (match[2] !== undefined) {
       // **bold**
-      result.push(new TextRun({ text: match[2], bold: true }));
+      result.push(...createTextRuns(match[2], { bold: true }));
     } else if (match[3] !== undefined) {
       // *italic*
-      result.push(new TextRun({ text: match[3], italics: true }));
+      result.push(...createTextRuns(match[3], { italics: true }));
     } else if (match[4] !== undefined) {
       // __bold__
-      result.push(new TextRun({ text: match[4], bold: true }));
+      result.push(...createTextRuns(match[4], { bold: true }));
     } else if (match[5] !== undefined) {
       // _italic_
-      result.push(new TextRun({ text: match[5], italics: true }));
+      result.push(...createTextRuns(match[5], { italics: true }));
     } else if (match[6] !== undefined) {
       // `code`
       result.push(new TextRun({ text: match[6], font: 'Consolas', size: 20 }));
@@ -189,7 +229,7 @@ function getImagePxDimensions(bytes, type) {
  * @param {string} markdown - 原始 Markdown 内容
  * @returns {Promise<Array>} DOCX children 数组
  */
-async function parseMarkdownToDocxChildren(markdown) {
+export async function parseMarkdownToDocxChildren(markdown) {
   if (!markdown || !markdown.trim()) {
     return [new Paragraph({ children: [new TextRun({ text: '' })] })];
   }
@@ -285,8 +325,18 @@ async function parseMarkdownToDocxChildren(markdown) {
       };
       children.push(new Paragraph({
         children: parseInlineMarkdown(headingText),
-        heading: headingLevelMap[level] || HeadingLevel.HEADING_1
+        heading: headingLevelMap[level] || HeadingLevel.HEADING_1,
+        // 与页面 .markdown-body h1~h3 一致：标题下方浅灰细线
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'EAECEF' } }
       }));
+      // 标题行后紧贴内容（单换行、无空行分隔）时输出为独立段落，避免内容被静默丢弃
+      const headingRest = trimmed.slice(headingMatch[0].length).replace(/^\n+/, '').trim();
+      if (headingRest) {
+        children.push(new Paragraph({
+          children: parseInlineMarkdown(headingRest),
+          spacing: { before: 60, after: 60 }
+        }));
+      }
       continue;
     }
 
@@ -340,18 +390,10 @@ async function parseMarkdownToDocxChildren(markdown) {
       continue;
     }
 
-    // 普通段落
+    // 普通段落（每个 block 独立成段：不做跨段合并，保持与页面一致的段落结构）
     const inlineChildren = parseInlineMarkdown(trimmed);
-    if (children.length > 0) {
-      const lastChild = children[children.length - 1];
-      if (lastChild instanceof Paragraph && !lastChild.heading && !lastChild.bullet) {
-        // 与前一段落合并（连续文本段）
-        lastChild.root.push(...(inlineChildren.length > 0 ? inlineChildren : [new TextRun({ text: trimmed })]));
-        continue;
-      }
-    }
     children.push(new Paragraph({
-      children: inlineChildren.length > 0 ? inlineChildren : [new TextRun({ text: trimmed })],
+      children: inlineChildren.length > 0 ? inlineChildren : createTextRuns(trimmed),
       spacing: { before: 60, after: 60 }
     }));
   }
@@ -832,15 +874,15 @@ export async function exportAssistantMessageToDocx(messageDiv, exportBtn, export
             }
           },
           heading1: {
-            run: { size: 36, bold: true },
+            run: { size: 40, bold: true, color: '333333' },
             paragraph: { spacing: { before: 320, after: 160 } }
           },
           heading2: {
-            run: { size: 30, bold: true },
+            run: { size: 30, bold: true, color: '333333' },
             paragraph: { spacing: { before: 280, after: 120 } }
           },
           heading3: {
-            run: { size: 26, bold: true },
+            run: { size: 26, bold: true, color: '333333' },
             paragraph: { spacing: { before: 240, after: 100 } }
           }
         }
