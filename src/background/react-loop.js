@@ -1004,8 +1004,17 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           },
           body: JSON.stringify(requestBody),
           signal: abortSignal
-        }, apiTimeout, reactConfig.apiRetryCount, reactConfig.apiRetryBaseDelay, (retryAttempt, retryError) => {
-          logger.warn(`[Background] API retry ${retryAttempt}  times after :`, retryError.message);
+        }, apiTimeout, reactConfig.apiRetryCount, reactConfig.apiRetryBaseDelay, (retryAttempt, retryError, delay) => {
+          logger.warn(`[Background] API retry (${retryAttempt}/${reactConfig.apiRetryCount}) scheduled in ${delay}ms:`, retryError.message);
+          // 通知前端显示重试状态（"思考中"状态行就地更新为"重试中"）
+          chrome.runtime.sendMessage({
+            type: 'API_RETRYING',
+            sessionId: sessionId,
+            callId: callId,
+            attempt: retryAttempt,
+            maxRetries: reactConfig.apiRetryCount,
+            delay: delay
+          }).catch(() => {});
         });
         clearTimeout(outerWatchdog);
 
@@ -2628,7 +2637,20 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       },
       body: JSON.stringify(requestBody),
       signal: abortSignal
-    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay)
+    }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay, (retryAttempt, retryError, delay) => {
+      logger.warn(`[Background] API retry (${retryAttempt}/${config.reactConfig.apiRetryCount}) scheduled in ${delay}ms:`, retryError.message);
+      // 通知前端显示重试状态（仅带 sessionId 的场景，避免无会话信令误更新侧边栏 UI）
+      if (sessionId) {
+        chrome.runtime.sendMessage({
+          type: 'API_RETRYING',
+          sessionId: sessionId,
+          callId: callId,
+          attempt: retryAttempt,
+          maxRetries: config.reactConfig.apiRetryCount,
+          delay: delay
+        }).catch(() => {});
+      }
+    })
     .then(async response => {
       if (!response.ok) {
         const responseText = await response.text();

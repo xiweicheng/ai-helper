@@ -119,6 +119,7 @@ registerTranslations('zh', {
     viewExecutionLog: '查看执行日志',
     preparing: '准备中...',
     stopping: '停止中...',
+    retrying: '连接异常，正在重试 ({attempt}/{max})...',
     copyCode: '复制代码',
     aborting: '正在终止...',
     terminateCommandTitle: '终止命令执行',
@@ -184,6 +185,7 @@ registerTranslations('en', {
     viewExecutionLog: 'View execution log',
     preparing: 'Preparing...',
     stopping: 'Stopping...',
+    retrying: 'Connection unstable, retrying ({attempt}/{max})...',
     copyCode: 'Copy code',
     aborting: 'Aborting...',
     terminateCommandTitle: 'Terminate Command Execution',
@@ -712,6 +714,26 @@ export function renderKnowledgeContextBubbles(refs, failed = false) {
   });
 }
 
+/**
+ * 将 API 调用错误消息映射为用户友好的本地化文案。
+ * 浏览器 fetch 网络失败的标准文案各不相同，需统一映射为"网络错误"提示：
+ *   Chrome: "Failed to fetch" / Safari: "Load failed" / Firefox: "NetworkError when attempting to fetch resource."
+ * 超时错误保留原始信息；其余错误按"请求失败"包装。
+ * @param {string} [errMsg] - 原始错误消息（如 errorResult.message）
+ * @returns {string} 用户可见文案
+ */
+export function mapApiErrorToUserMessage(errMsg) {
+  const msg = errMsg || t('chatResume.unknownError');
+  const lower = msg.toLowerCase();
+  if (lower.includes('network') || lower.includes('failed to fetch') || lower.includes('load failed')) {
+    return t('chat.networkError');
+  }
+  if (lower.includes('timeout') || msg.includes('超时')) {
+    return t('chat.timeoutError', { message: msg });
+  }
+  return t('chat.requestFailed', { message: msg });
+}
+
 export async function sendMessage() {
   // 等待聊天历史加载完成，确保 activeSessionId 就绪，保存会话不会静默失败
   await chatHistoryReady;
@@ -998,7 +1020,7 @@ export async function sendMessage() {
         } else if (errorResult.swRestarted) {
           appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], resumable });
         } else {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.requestFailed', { message: errorResult.message || t('chatResume.unknownError') }), executionLog: errorResult.executionLog || [], resumable });
+          appendMessageToSession(mySessionId, { role: 'assistant', content: mapApiErrorToUserMessage(errorResult.message), executionLog: errorResult.executionLog || [], resumable });
         }
         // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
@@ -1033,15 +1055,8 @@ export async function sendMessage() {
       removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
 
-      // 网络错误给用户更友好的提示
-      const errMsg = errorResult.message || t('chatResume.unknownError');
-      if (errMsg.includes('network') || errMsg.includes('Network')) {
-        content = t('chat.networkError');
-      } else if (errMsg.includes('timeout') || errMsg.includes('超时')) {
-        content = t('chat.timeoutError', { message: errMsg });
-      } else {
-        content = t('chat.requestFailed', { message: errMsg });
-      }
+      // 网络/超时错误给用户更友好的提示（覆盖 Chrome "Failed to fetch" 等浏览器网络错误文案）
+      content = mapApiErrorToUserMessage(errorResult.message);
       executionLog = errorResult.executionLog || [];
 
       // 普通错误也可能存在 checkpoint（reactLoop catch 块会保存）
@@ -3448,6 +3463,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         return false;
       }
       
+      if (message.type === 'API_RETRYING') {
+        // 请求重试提示：就地更新"思考中"状态行（流式阶段）或 loading 文本（等待阶段），
+        // 首个数据块到达后由 updateStreamingMessage 自动恢复为"输出中..."（dataset.retrying 标记）
+        const retryText = t('chatMsg.retrying', { attempt: message.attempt, max: message.maxRetries });
+        const se = _se();
+        if (se) {
+          const label = se.querySelector('.thinking-indicator:not(.hidden) .thinking-label');
+          if (label) {
+            label.textContent = retryText;
+            label.dataset.retrying = '1';
+          }
+        } else {
+          const loadingText = document.querySelector('.loading-message .loading-text');
+          if (loadingText) loadingText.textContent = retryText;
+        }
+        return false;
+      }
+
       if (message.type === 'STREAM_START') {
         logger.debug('[SidePanel] streamingoutput start');
         // 移除 loading 消息（通过 _loadingId 精确定位当前会话的 loading）

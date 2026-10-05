@@ -2768,7 +2768,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
         const errorText = await response.text().catch(() => '');
         lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
         const delay = baseDelay * Math.pow(2, attempt);
-        console.log(`[Background] API return ${response.status},${delay}ms  after retry (${attempt + 1}/${maxRetries})`);
+        console.log(`[Background] API returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
         if (onRetry) onRetry(attempt + 1, lastError, delay);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
@@ -2786,7 +2786,7 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
       }
 
       const delay = baseDelay * Math.pow(2, attempt);
-      console.log(`[Background] API call with failed,${delay}ms  after retry (${attempt + 1}/${maxRetries}):`, error.message);
+      console.log(`[Background] API call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, error.message);
       if (onRetry) onRetry(attempt + 1, error, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
     }

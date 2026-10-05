@@ -773,8 +773,9 @@ export function updateStreamingMessage(element, fullContent) {
   if (visibleThinking) {
     // 当前正在思考中：检查是否是第一次收到内容，如果是，将"思考中"改为"输出中"
     const thinkingLabel = visibleThinking.querySelector('.thinking-label');
-    if (thinkingLabel && thinkingLabel.textContent === t('chatStream.thinking')) {
+    if (thinkingLabel && (thinkingLabel.textContent === t('chatStream.thinking') || thinkingLabel.dataset.retrying === '1')) {
       thinkingLabel.textContent = t('chatStream.outputting');
+      delete thinkingLabel.dataset.retrying;
     }
     
     // 当前正在思考中/输出中
