@@ -12,6 +12,8 @@ export let activeSessionId = null;   // 当前活跃会话 ID
 export let sessions = [];             // 所有会话列表缓存
 export let useTools = true;
 export let isolateChat = true;
+// 当前会话的上下文压缩记录（会话级，随会话持久化；null 表示未压缩）
+export let activeCompaction = null;
 export let enableSelectionQuery = false;
 export let currentTabId = null;
 export let selectedContextText = '';
@@ -174,6 +176,8 @@ export default {
   set useTools(v) { useTools = v; },
   get isolateChat() { return isolateChat; },
   set isolateChat(v) { isolateChat = v; },
+  get activeCompaction() { return activeCompaction; },
+  set activeCompaction(v) { activeCompaction = v; },
   get enableSelectionQuery() { return enableSelectionQuery; },
   set enableSelectionQuery(v) { enableSelectionQuery = v; },
   get currentTabId() { return currentTabId; },

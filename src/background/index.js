@@ -11,6 +11,7 @@ import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
+import { generateCompactionSummary } from './context-compactor.js';
 import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
 
@@ -738,6 +739,7 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | OPTIONS_PAGE_CLOSED           | options     | 配置页面已关闭，仅维护活跃代理 | 否   |
 // | OPEN_LOCAL_PROTOTYPE          | side_panel  | 本地浏览器打开原型文件        | 是   |
 // | DELETE_LOCAL_PROTOTYPE        | side_panel  | 删除本地原型文件             | 是   |
+// | COMPACT_CONTEXT_SUMMARY       | side_panel  | 手动压缩上下文摘要生成       | 是   |
 //
 // ==================== 消息监听 ====================
 
@@ -781,6 +783,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       cancelReactLoop(tabId);
     }
     return false;
+  }
+
+  // 生成会话上下文压缩摘要（用户手动触发"压缩上下文"）
+  if (message.type === 'COMPACT_CONTEXT_SUMMARY') {
+    const { material, model, sessionId } = message;
+    generateCompactionSummary({ material, model, sessionId })
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(err => {
+        logger.warn('[Background] COMPACT_CONTEXT_SUMMARY failed:', err);
+        sendResponse({ success: false, error: err?.message || 'unknown' });
+      });
+    return true;  // 异步响应
   }
 
   // 查询指定会话是否存在可恢复的 ReAct checkpoint

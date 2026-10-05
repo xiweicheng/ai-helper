@@ -226,9 +226,9 @@ export function initSchedulePanel() {
       @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); } 50% { box-shadow: -2px 2px 18px rgba(39, 174, 96, 0.85); } }
       .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(255,255,255,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
       .schedule-panel.open { display: flex; }
-      .schedule-panel-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #eee; flex-shrink: 0; }
-      .schedule-panel-header .title { font-weight: 600; font-size: 14px; flex: 1; }
-      .schedule-panel-count { font-size: 12px; color: #8a94a6; }
+      .schedule-panel-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
+      .schedule-panel-header .title { font-weight: 600; font-size: 13px; color: #333; flex: 1; }
+      .schedule-panel-count { font-weight: normal; font-size: 11px; color: #999; }
       .schedule-panel-header button { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
       .schedule-panel-header .new-btn { color: #fff; background: #4a6cf7; }
       .schedule-panel-header .close-btn { color: #8a94a6; }
@@ -288,6 +288,9 @@ export function initSchedulePanel() {
     </button>
     <div class="schedule-panel" id="schedulePanel">
       <div class="schedule-panel-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#27ae60;">
+          <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+        </svg>
         <span class="title">${t('schedPanel.title')}</span>
         <span class="schedule-panel-count" id="schedulePanelCount"></span>
         <button class="new-btn" id="scheduleNewTask">${t('schedPanel.newTask')}</button>

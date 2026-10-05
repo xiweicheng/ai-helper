@@ -3,7 +3,8 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText, renderKnowledgeContextBubbles } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
-import { estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary, getMessageBudget } from '../shared/token-counter.js';
+import { compressQuotedContext, getMessageBudget } from '../shared/token-counter.js';
+import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs } from './agent-at-selector.js';
@@ -801,49 +802,34 @@ export async function sendPromptByCode(code) {
 
     // 如果记忆对话，则发送历史对话；否则只发送当前最新消息
     if (state.isolateChat) {
-      let historyToSend = state.messageHistory;
-      // Token 预算驱动：根据模型上下文窗口动态裁剪
+      // Token 预算驱动：根据模型上下文窗口动态裁剪（沿用本路径原有口径）
       const configuredWindow = 0;
       const toolCount = state.enabledTools.length || 50;
       const messageBudget = getMessageBudget(model, toolCount, configuredWindow, state.customModelMap);
       const historyBudget = Math.floor(messageBudget * 0.7);
-      
-      // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）
-      let historyWithoutCurrent = state.messageHistory.slice(0, -1);
-      const maxMemory = state.chatConfig.maxMemoryMessages;
-      if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
-        historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
+
+      // 记忆层 / 窗口层 / 压缩层 / 预算层统一由共享函数处理（与指示器预览同源）
+      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
+      const selection = selectHistoryForSend(state.messageHistory.slice(0, -1), {
+        isolateChat: true,
+        maxMemoryMessages: state.chatConfig.maxMemoryMessages,
+        compaction: state.activeCompaction,
+        historyBudget,
+        currentMessage: currentMsg,
+      });
+
+      // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
+      if (selection.compactionApplied) {
+        messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, state.activeCompaction) };
+      } else if (state.activeCompaction) {
+        logger.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
+      }
+      // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
+      if (selection.historySummaryText) {
+        messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };
       }
 
-      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
-      
-      const keptHistory = [];
-      let keptTokens = estimateMessagesTokens([currentMsg]);
-      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
-        const msg = historyWithoutCurrent[i];
-        // 剥离图片后估算，避免图片 token 导致过度裁剪
-        const strippedMsg = { ...msg, content: stripImagesFromContent(msg.content) };
-        const msgTokens = estimateMessagesTokens([strippedMsg]);
-        if (keptTokens + msgTokens <= historyBudget) {
-          keptHistory.unshift(msg);
-          keptTokens += msgTokens;
-        } else {
-          break;
-        }
-      }
-      
-      if (keptHistory.length < historyWithoutCurrent.length) {
-        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
-        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
-        const summary = generateMessagesSummary(trimmedMsgs);
-        if (summary) {
-          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
-        }
-      }
-      
-      historyToSend = [...keptHistory, currentMsg];
-      messages = [...messages, ...historyToSend];
+      messages = [...messages, ...selection.messages];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
       for (let i = 0; i < messages.length - 1; i++) {
         messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };

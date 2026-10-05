@@ -10,7 +10,9 @@ import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession,
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
-import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext, generateMessagesSummary } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext } from '../shared/token-counter.js';
+import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
+import { renderCompactionDivider } from './context-indicator.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 
 // 从提取的子模块导入
@@ -333,6 +335,8 @@ async function _loadChatHistoryImpl() {
     const activeSession = sessionsData.list.find(s => s.id === sessionsData.activeSessionId);
     if (activeSession) {
       state.messageHistory = activeSession.messageHistory || [];
+      // 恢复会话级上下文压缩记录（无则置 null）
+      state.activeCompaction = activeSession.contextCompaction || null;
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
       // enabledTools 由智能体独立 key 管理，不再从会话恢复（此处可能导致竞态条件覆盖正确值）
@@ -456,6 +460,8 @@ async function _loadChatHistoryImpl() {
     
     renderMermaidCharts();
     addCodeCopyButtons();
+    // 渲染压缩分隔条（恢复渲染后）
+    renderCompactionDivider();
     
     // 标签栏优先渲染：复用上面已读取的 sessionsData，不再重复全量读库；
     // 提前到 checkpoint 检查之前，避免被 Service Worker 往返阻塞标签栏显示。
@@ -516,6 +522,8 @@ export function clearChatHistory() {
   if (state.messageHistory && state.messageHistory.length > 0) {
     archiveCurrentSession().then(() => {
       state.messageHistory = [];
+      // 清空聊天同时清除上下文压缩记录
+      state.activeCompaction = null;
       const chatContainer = document.getElementById('chatContainer');
       if (chatContainer) {
         chatContainer.innerHTML = '';
@@ -898,7 +906,6 @@ export async function sendMessage() {
     ];
     
     if (state.isolateChat) {
-      let historyToSend = state.messageHistory;
       // Token 预算驱动：使用实际系统提示词 token 数而非固定估算值
       const configuredWindow = 0;
       const actualSystemTokens = estimateTokens(messages[0]?.content || '');
@@ -907,54 +914,30 @@ export async function sendMessage() {
       const messageBudget = contextWindow - actualSystemTokens - 4096 - 2000;
       // 历史消息占用预算的 70%（预留给工具结果和模型输出）
       const historyBudget = Math.floor(messageBudget * 0.7);
-      
-      // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）
-      let historyWithoutCurrent = state.messageHistory.slice(0, -1);
-      const maxMemory = state.chatConfig.maxMemoryMessages;
-      if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
-        historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
-      }
 
+      // 记忆层 / 窗口层 / 压缩层 / 预算层统一由共享函数处理（与指示器预览同源）
       const currentMsg = state.messageHistory[state.messageHistory.length - 1];
-      
-      // 从后往前保留历史消息，直到 token 量在预算内
-      let keptHistory = [];
-      let keptTokens = estimateMessagesTokens([currentMsg]);
-      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
-        const msg = historyWithoutCurrent[i];
-        // 剥离图片后估算，避免图片 token 导致过度裁剪
-        const strippedMsg = { ...msg, content: stripImagesFromContent(msg.content) };
-        const msgTokens = estimateMessagesTokens([strippedMsg]);
-        if (keptTokens + msgTokens <= historyBudget) {
-          keptHistory.unshift(msg);
-          keptTokens += msgTokens;
-        } else {
-          break;
-        }
-      }
-      
-      // 如果有被裁剪的历史消息，生成摘要注入 system prompt
-      if (keptHistory.length < historyWithoutCurrent.length) {
-        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
-        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
-        const summary = generateMessagesSummary(trimmedMsgs);
-        if (summary) {
-          // 控制摘要长度不超过 SYSTEM_PROMPT_BUDGET 的 50%，避免 system prompt 膨胀
-          const SUMMARY_MAX_TOKENS = 1000;
-          const summaryTokens = estimateTokens(summary);
-          const truncatedSummary = summaryTokens > SUMMARY_MAX_TOKENS
-            ? summary.substring(0, SUMMARY_MAX_TOKENS * 4) + '\n...[历史摘要已截断]'
-            : summary;
-          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + truncatedSummary };
-        }
-        logger.debug(`[SidePanel] Token budget trimming: keep ${keptHistory.length} historymessage, trimming ${trimmedCount}  (budget: ${historyBudget} tokens)`);
-      } else {
-        logger.debug(`[SidePanel] Token budgetinternal: ${keptHistory.length} historymessage (budget: ${historyBudget} tokens)`);
-      }
+      const selection = selectHistoryForSend(state.messageHistory.slice(0, -1), {
+        isolateChat: true,
+        maxMemoryMessages: state.chatConfig.maxMemoryMessages,
+        compaction: state.activeCompaction,
+        historyBudget,
+        currentMessage: currentMsg,
+      });
 
-      historyToSend = [...keptHistory, currentMsg];
-      messages = [...messages, ...historyToSend];
+      // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
+      if (selection.compactionApplied) {
+        messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, state.activeCompaction) };
+      } else if (state.activeCompaction) {
+        logger.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
+      }
+      // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
+      if (selection.historySummaryText) {
+        messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };
+      }
+      logger.debug(`[SidePanel] history selection: keep ${selection.keptHistory.length}/${state.messageHistory.length - 1}, trimmed ${selection.trimmedCount}, compactionApplied: ${selection.compactionApplied}`);
+
+      messages = [...messages, ...selection.messages];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
       for (let i = 0; i < messages.length - 1; i++) {
         messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };
@@ -2521,6 +2504,8 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
   });
   
   chatContainer.appendChild(messageEl);
+  // 渲染压缩分隔条（恢复渲染后）
+  renderCompactionDivider();
 }
 
 /**
@@ -2818,6 +2803,8 @@ export function rebindAllMessages(container) {
   // 重新绑定事件委托
   bindExecutionLogDelegate();
   bindReflectionBadgeDelegate();
+  // 渲染压缩分隔条（恢复渲染后）
+  renderCompactionDivider();
 }
 
 // reconnectStreamingElement 已拆分到 chat-streaming.js

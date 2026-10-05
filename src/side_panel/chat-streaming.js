@@ -926,7 +926,9 @@ export function appendToolCallItems(element, toolCalls) {
     preview_ui:            { metaType: 'web', action: t('chatStream.toolActionPreview') },
   };
   
-  toolCalls.forEach(tc => {
+  // 防御：消息经 chrome.runtime.sendMessage 的 JSON 序列化后，上游稀疏数组的空洞会变成 null
+  // （服务商 tool_calls index 跳号场景），过滤无效元素避免读取 tc.function 抛 TypeError
+  toolCalls.filter(tc => tc && typeof tc === 'object').forEach(tc => {
     const toolName = tc.function?.name || 'unknown';
     const meta = toolMeta[toolName] || { metaType: 'other' };
     let args;

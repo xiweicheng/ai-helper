@@ -3,9 +3,11 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
-import { estimateMessagesTokens, estimateTokens, getMessageBudget, getContextWindow, compressQuotedContext, generateMessagesSummary, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
+import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
+import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
+import { initContextIndicator } from './context-indicator.js';
 import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
@@ -486,6 +488,63 @@ async function saveTempToAgentOrGlobal(temperature, topP, selectedTempIndex) {
   }
 }
 
+/** 输入区右下角：刷新当前模型名展示（点击可打开模型设置浮层） */
+function updateCurrentModelTag() {
+  const el = document.getElementById('currentModelTag');
+  if (!el) return;
+  const name = state.currentModel || '';
+  el.textContent = name;
+  el.title = name;
+  el.style.display = name ? '' : 'none';
+}
+
+/** 初始化模型名指示：绑定点击（打开模型设置）并首次刷新 */
+function initCurrentModelTag() {
+  const el = document.getElementById('currentModelTag');
+  if (el) {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('tempDisplay')?.click();
+    });
+  }
+  updateCurrentModelTag();
+}
+
+/** 输入工具栏溢出探测：空间不足时逐级降级以避免元素被裁剪
+    （① 隐藏温度数字 ② 折叠助手名称为 emoji；固定断点无法适配英文文案 / 自定义长名的多语言场景） */
+function adaptInputToolbar() {
+  const toolbar = document.querySelector('.input-toolbar');
+  const container = toolbar?.closest('.input-container') || null;
+  if (!toolbar || !container) return;
+  // 先恢复完整状态再测量，保证空间恢复时能还原
+  container.classList.remove('temp-collapsed', 'agent-collapsed');
+  if (toolbar.scrollWidth <= toolbar.clientWidth) return;
+  container.classList.add('temp-collapsed');
+  if (toolbar.scrollWidth <= toolbar.clientWidth) return;
+  container.classList.add('agent-collapsed');
+}
+
+let toolbarAdaptRafId = 0;
+
+/** rAF 节流：合并 resize 拖动与 DOM 批量变更期间的高频触发 */
+function scheduleToolbarAdapt() {
+  if (toolbarAdaptRafId) return;
+  toolbarAdaptRafId = requestAnimationFrame(() => {
+    toolbarAdaptRafId = 0;
+    adaptInputToolbar();
+  });
+}
+
+/** 初始化工具栏自适应：窗口缩放 / 工具栏内文字变化（语言切换、助手名与记忆标签更新）后重测 */
+function initToolbarAdaptive() {
+  adaptInputToolbar();
+  window.addEventListener('resize', scheduleToolbarAdapt);
+  const toolbar = document.querySelector('.input-toolbar');
+  if (toolbar && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(scheduleToolbarAdapt).observe(toolbar, { subtree: true, childList: true, characterData: true });
+  }
+}
+
 function updateModelSelection(selectedValue) {
   document.querySelectorAll('.model-option').forEach(option => {
     if (option.dataset.value === selectedValue) {
@@ -500,6 +559,9 @@ function updateModelSelection(selectedValue) {
   // 模型选择行同步显示当前模型名
   const selectValue = document.getElementById('modelSelectValue');
   if (selectValue && selectedValue) selectValue.textContent = selectedValue;
+
+  // 输入区右下角模型名指示同步
+  updateCurrentModelTag();
 }
 
 function loadCustomModelsToDropdown(customModels, callback) {
@@ -756,7 +818,6 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     ];
 
     if (state.isolateChat) {
-      let historyToSend = state.messageHistory;
       // Token 预算驱动：使用实际系统提示词 token 数而非固定估算值
       const configuredWindow = 0;
       const actualSystemTokens = estimateTokens(messages[0]?.content || '');
@@ -765,41 +826,29 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       // 非工具模式下不发送工具定义，故工具开销为 0
       const messageBudget = contextWindow - actualSystemTokens - 4096 - 2000;
       const historyBudget = Math.floor(messageBudget * 0.7);
-      
-      // 应用用户设置的记忆条数限制（不包含当前消息，仅限制历史消息条数）
-      let historyWithoutCurrent = state.messageHistory.slice(0, -1);
-      const maxMemory = state.chatConfig.maxMemoryMessages;
-      if (maxMemory && maxMemory > 0 && historyWithoutCurrent.length > maxMemory) {
-        historyWithoutCurrent = historyWithoutCurrent.slice(historyWithoutCurrent.length - maxMemory);
-        logger.debug(`[SidePanel] memory count limit: ${state.messageHistory.length - 1} → ${maxMemory} historymessage`);
+
+      // 记忆层 / 窗口层 / 压缩层 / 预算层统一由共享函数处理（与指示器预览同源）
+      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
+      const selection = selectHistoryForSend(state.messageHistory.slice(0, -1), {
+        isolateChat: true,
+        maxMemoryMessages: state.chatConfig.maxMemoryMessages,
+        compaction: state.activeCompaction,
+        historyBudget,
+        currentMessage: currentMsg,
+      });
+
+      // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
+      if (selection.compactionApplied) {
+        messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, state.activeCompaction) };
+      } else if (state.activeCompaction) {
+        logger.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
+      }
+      // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
+      if (selection.historySummaryText) {
+        messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };
       }
 
-      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
-      
-      const keptHistory = [];
-      let keptTokens = estimateMessagesTokens([currentMsg]);
-      for (let i = historyWithoutCurrent.length - 1; i >= 0; i--) {
-        const msg = historyWithoutCurrent[i];
-        const msgTokens = estimateMessagesTokens([msg]);
-        if (keptTokens + msgTokens <= historyBudget) {
-          keptHistory.unshift(msg);
-          keptTokens += msgTokens;
-        } else {
-          break;
-        }
-      }
-      
-      if (keptHistory.length < historyWithoutCurrent.length) {
-        const trimmedCount = historyWithoutCurrent.length - keptHistory.length;
-        const trimmedMsgs = historyWithoutCurrent.slice(0, trimmedCount);
-        const summary = generateMessagesSummary(trimmedMsgs);
-        if (summary) {
-          messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + summary };
-        }
-      }
-      
-      historyToSend = [...keptHistory, currentMsg];
-      messages = [...messages, ...historyToSend];
+      messages = [...messages, ...selection.messages];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
       for (let i = 0; i < messages.length - 1; i++) {
         messages[i] = { ...messages[i], content: stripImagesFromContent(messages[i].content) };
@@ -4261,6 +4310,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 document.addEventListener('DOMContentLoaded', initMessageToc);
+document.addEventListener('DOMContentLoaded', initContextIndicator);
+document.addEventListener('DOMContentLoaded', initCurrentModelTag);
+document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', async () => {
   // 入口轨道需先于各面板初始化：五个入口容器挂入轨道槽位
   initSideRail();

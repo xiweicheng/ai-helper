@@ -9,6 +9,24 @@ import logger from '../shared/logger.js';
 export const STREAM_IDLE_TIMEOUT_MS = 120000;
 
 /**
+ * 归一化 tool_calls 数组：过滤稀疏数组空洞与无效元素，并补齐缺失的 id。
+ * 服务商 SSE 的 tool_calls index 可能跳号（如直接从 1 开始），controller.toolCalls 会形成
+ * 稀疏数组；稀疏数组经 chrome.runtime.sendMessage 的 JSON 序列化后空洞会变成 null，
+ * 导致侧边栏渲染工具卡片时读取 tc.function 抛 TypeError。
+ * @param {Array} toolCalls
+ * @returns {Array} 稠密数组（新数组，元素为新对象）
+ */
+export function normalizeToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls)) return [];
+  return toolCalls
+    .filter(tc => tc && typeof tc === 'object')
+    .map(tc => ({
+      ...tc,
+      id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
+    }));
+}
+
+/**
  * SSE 数据块解析器
  * 支持 OpenAI 兼容格式的 SSE 流
  *
@@ -205,6 +223,8 @@ export class StreamController {
     this._flushChunk(); // 发送剩余缓冲区
     this.isStreaming = false;
 
+    const normalizedToolCalls = normalizeToolCalls(this.toolCalls);
+
     this._sendFn({
       type: this._typePrefix + 'STREAM_DONE',
       sessionId: this.sessionId,
@@ -212,7 +232,7 @@ export class StreamController {
       finalContent: this.fullContent,
       reasoningContent: this.reasoningContent || null,
       usage: this.usage,
-      toolCalls: this.toolCalls.length > 0 ? this.toolCalls : null
+      toolCalls: normalizedToolCalls.length > 0 ? normalizedToolCalls : null
     });
   }
 
@@ -250,11 +270,12 @@ export class StreamController {
    * 获取最终结果（兼容现有返回格式）
    */
   getResult() {
+    const normalizedToolCalls = normalizeToolCalls(this.toolCalls);
     return {
       content: this.fullContent,
       reasoningContent: this.reasoningContent || null,
       usage: this.usage,
-      toolCalls: this.toolCalls.length > 0 ? this.toolCalls : null
+      toolCalls: normalizedToolCalls.length > 0 ? normalizedToolCalls : null
     };
   }
 }
@@ -326,10 +347,7 @@ export async function readSSEStream(reader, controller, abortSignal, idleTimeout
         } else if (result.type === 'tool_calls') {
           // 检测到 tool_calls，立即发送 STREAM_TOOL_CALL 通知前端
           // 这样前端能更早地显示工具执行状态，避免极快工具（如 7ms）的执行中状态不可见
-          const normalizedToolCalls = controller.toolCalls.map(tc => ({
-            ...tc,
-            id: tc.id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`
-          }));
+          const normalizedToolCalls = normalizeToolCalls(controller.toolCalls);
           
           // 将规范化后的 IDs 写回，确保 react-loop.js 后续获取的结果使用相同的 ID
           controller.toolCalls = normalizedToolCalls;

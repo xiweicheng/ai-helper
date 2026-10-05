@@ -142,6 +142,8 @@ export async function saveCurrentSession() {
   currentSession.agentId = state.activeAgentId || null;
   currentSession.temperature = state.temperature;
   currentSession.topP = state.topP;
+  // 上下文压缩记录（会话级；undefined 时 JSON 序列化自动省略字段）
+  currentSession.contextCompaction = state.activeCompaction || undefined;
 
   currentSession.messageHistory = state.messageHistory.map((msg) => ({
     role: msg.role,
@@ -317,6 +319,8 @@ export async function switchToSession(sessionId) {
 
   state.activeSessionId = sessionId;
   state.messageHistory = targetSession.messageHistory || [];
+  // 恢复会话级上下文压缩记录（无则置 null）
+  state.activeCompaction = targetSession.contextCompaction || null;
   // 会话切换时从会话恢复 model/temperature
   // 如果会话绑定了 Agent，优先使用 Agent 配置；否则使用会话存储的值
   state.currentModel = targetSession.model || state.currentModel;
