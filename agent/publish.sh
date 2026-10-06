@@ -117,8 +117,9 @@ else
     esac
 fi
 
-# ─── 5-7. 升级 + 确认 + 发布（支持重试）───
+# ─── 5-7. 升级 + 确认 + 写入版本信息 + 构建 + 发布（支持重试）───
 FIRST_BUMP="$BUMP_TYPE"
+VERSION_JSON_PATH="../src/config/version.json"
 while true; do
     echo ""
     log_info "正在升级版本号 (${BUMP_TYPE})..."
@@ -129,11 +130,37 @@ while true; do
     echo ""
     read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        log_warn "已取消发布，回滚 package.json 和 package-lock.json..."
-        git checkout package.json package-lock.json
+        log_warn "已取消发布，回滚 package.json、package-lock.json 和版本信息..."
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
         log_info "版本已回滚到 v${CURRENT_VERSION}"
         exit 0
     fi
+
+    # 写入扩展端版本信息（侧边栏「版本信息」弹窗数据源）。
+    # 必须在 npm publish 之前：npm publish 触发的 prepublishOnly 会把根目录
+    # dist/ 复制进 NPM 包上传，故顺序必须为 写 JSON → 重新构建 → publish。
+    # commitId 取写入瞬间的 HEAD，即发布提交的父提交——本 JSON 所在提交将被打 tag，
+    # 无法引用自身 hash；记录父提交后，git diff <commitId>..v<version> 仅含版本号变更。
+    COMMIT_ID=$(git rev-parse HEAD)
+    VERSION_JSON_PATH="$VERSION_JSON_PATH" NEW_VERSION="$NEW_VERSION" COMMIT_ID="$COMMIT_ID" node -e '
+const fs = require("fs");
+const meta = {
+  version: process.env.NEW_VERSION,
+  tag: "v" + process.env.NEW_VERSION,
+  commitId: process.env.COMMIT_ID,
+  publishedAt: new Date().toISOString(),
+};
+fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + "\n");
+'
+    log_ok "版本信息已写入 ${VERSION_JSON_PATH#../}"
+
+    log_info "重新构建扩展产物 dist/（NPM 包的 dist/ 由此复制）..."
+    if ! (cd .. && npm run build:silent); then
+        log_error "构建失败，回滚版本号与版本信息..."
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
+        exit 1
+    fi
+    log_ok "扩展构建完成"
 
     echo ""
     log_info "正在发布到 npm..."
@@ -158,9 +185,9 @@ while true; do
 
     read -r -p "是否重试其他版本号? [Y/n] " retry
     if [[ "$retry" =~ ^[Nn]$ ]]; then
-        log_warn "回滚 package.json 和 package-lock.json..."
-        git checkout package.json package-lock.json
-        log_info "版本已回滚到 v${CURRENT_VERSION}"
+        log_warn "回滚 package.json、package-lock.json 和版本信息..."
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
+        log_info "版本已回滚到 v${CURRENT_VERSION}（dist/ 为构建产物，留待下次构建覆盖）"
         exit 1
     fi
 
@@ -179,27 +206,10 @@ else
     log_warn "npm 上最新版本为 v${PUBLISHED_VERSION}，预期 v${NEW_VERSION}（可能镜像同步延迟）"
 fi
 
-# ─── 9. Git 提交并打 tag ───
+# ─── 9. Git 提交并打 tag（version.json 已在发布前写入工作区）───
 echo ""
 read -r -p "是否提交版本号变更并推送 git tag? [Y/n] " git_confirm
 if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
-    # 写入扩展端版本信息（侧边栏「版本信息」弹窗数据源，随本次提交打包进扩展构建）。
-    # commitId 取写入瞬间的 HEAD，即发布提交的父提交——本 JSON 所在提交将被打 tag，
-    # 无法引用自身 hash；记录父提交后，git diff <commitId>..v<version> 仅含版本号变更。
-    COMMIT_ID=$(git rev-parse HEAD)
-    VERSION_JSON_PATH="../src/config/version.json"
-    VERSION_JSON_PATH="$VERSION_JSON_PATH" NEW_VERSION="$NEW_VERSION" COMMIT_ID="$COMMIT_ID" node -e '
-const fs = require("fs");
-const meta = {
-  version: process.env.NEW_VERSION,
-  tag: "v" + process.env.NEW_VERSION,
-  commitId: process.env.COMMIT_ID,
-  publishedAt: new Date().toISOString(),
-};
-fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + "\n");
-'
-    log_ok "版本信息已写入 ${VERSION_JSON_PATH#../}"
-
     git add package.json package-lock.json "$VERSION_JSON_PATH"
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
@@ -228,7 +238,7 @@ fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + 
         log_warn "可稍后手动重试: git push <remote> && git push <remote> v${NEW_VERSION}"
     fi
 else
-    log_info "跳过 git 提交，版本号变更仅保留在本地 package.json 中"
+    log_info "跳过 git 提交，版本号变更与版本信息仅保留在本地"
 fi
 
 echo ""
