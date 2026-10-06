@@ -41,6 +41,9 @@ echo -e "${CYAN}========================================${NC}"
 echo ""
 
 # ─── 1. 检查 git 工作区是否干净（仅检查 agent/ 目录，忽略父目录 dist/ 构建产物）───
+# 先刷新 index 的 stat 缓存再判断：diff-index 是底层命令不会自动刷新缓存，
+# 文件被 touch/编辑器重写（内容未变）时会误报"已提交的文件有未提交的更改"
+git update-index -q --refresh >/dev/null 2>&1 || true
 if ! git diff-index --quiet HEAD -- . 2>/dev/null; then
     log_error "agent/ 目录有未提交的更改，请先提交或暂存"
     git diff-index --name-only HEAD -- . 2>/dev/null
