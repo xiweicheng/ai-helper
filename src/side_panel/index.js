@@ -27,7 +27,7 @@ import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/
 registerTranslations('zh', {
   sidePanel: {
     confirmAction: '确认操作',
-    memoryLimitAll: '(全)',
+    memoryLimitAll: '全',
     memoryLimitTitle: '点击设置记忆历史限制条数',
     configUpdated: '✅ 配置已更新',
     selectedPrefix: '📌 已选中',
@@ -98,7 +98,7 @@ registerTranslations('zh', {
 registerTranslations('en', {
   sidePanel: {
     confirmAction: 'Confirm Action',
-    memoryLimitAll: '(All)',
+    memoryLimitAll: 'All',
     memoryLimitTitle: 'Click to set memory history limit',
     configUpdated: '✅ Configuration updated',
     selectedPrefix: '📌 Selected',
@@ -289,12 +289,11 @@ function updateMemoryLimitLabel() {
   const label = document.getElementById('memoryLimitLabel');
   if (label) {
     if (state.chatConfig.maxMemoryMessages !== null && state.chatConfig.maxMemoryMessages !== undefined && state.chatConfig.maxMemoryMessages > 0) {
-      label.textContent = `(${state.chatConfig.maxMemoryMessages})`;
+      label.textContent = state.chatConfig.maxMemoryMessages;
     } else {
       label.textContent = t('sidePanel.memoryLimitAll');
     }
-    label.style.display = 'inline';
-    label.style.cursor = 'pointer';
+    // 徽标样式统一由 styles.css 控制，避免内联样式覆盖 flex 布局
     label.title = t('sidePanel.memoryLimitTitle');
   }
 }

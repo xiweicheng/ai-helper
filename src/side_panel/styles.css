@@ -1850,14 +1850,29 @@ body {
   color: #667eea;
   font-weight: 500;
 }
-/* 记忆条数标签 */
+/* 记忆条数徽标：与工具配置按钮 (.tool-config-btn) 风格保持一致 */
 .memory-limit-label {
-  font-size: 11px;
-  color: #aaa;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 2px;
+  border-radius: 4px;
   cursor: pointer;
-  margin-left: 0;
+  color: #bbb;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: all 0.2s;
 }
-#isolateChatBtn:checked ~ .memory-limit-label {
+.memory-limit-label:hover {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+/* 记忆总开关开启时高亮；关闭时置灰（与工具按钮 .active 逻辑一致） */
+#memoryGroup:has(#isolateChatBtn:checked) .memory-limit-label {
   color: #667eea;
 }
 /* 包裹容器，内部没有 gap */
@@ -2194,6 +2209,7 @@ body {
   background: transparent;
   cursor: pointer;
   color: #bbb;
+  font-family: inherit; /* 按钮默认不继承页面字体，显式继承以与记忆徽标字体一致 */
   transition: all 0.2s;
 }
 .tool-config-btn:hover {
@@ -2202,7 +2218,7 @@ body {
 }
 /* 按钮内数字：显示已启用工具数（点击仍打开工具配置弹窗） */
 .tool-config-btn .tools-config-count {
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
   min-width: 12px;
