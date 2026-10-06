@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商品录入 · Product Entry</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f3f4f6; color: #1f2937; min-height: 100vh; padding: 32px 16px 64px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+
+  /* ── 页头 ── */
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .page-title {
+    font-size: 26px; font-weight: 700;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  #lang-toggle {
+    padding: 8px 18px; border: 1px solid #d1d5db; border-radius: 999px; background: #fff;
+    font-size: 14px; font-weight: 600; color: #4b5563; cursor: pointer; transition: all .2s;
+  }
+  #lang-toggle:hover { border-color: #6366f1; color: #6366f1; }
+
+  /* ── 卡片 ── */
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); padding: 28px 32px; margin-bottom: 24px; }
+
+  /* ── 步骤条 ── */
+  .stepper { display: flex; justify-content: space-between; margin-bottom: 32px; position: relative; }
+  .stepper::before { content: ""; position: absolute; top: 18px; left: 10%; right: 10%; height: 2px; background: #e5e7eb; z-index: 0; }
+  .step-item { display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 1; flex: 1; }
+  .step-circle {
+    width: 36px; height: 36px; border-radius: 50%; background: #e5e7eb; color: #9ca3af;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; transition: all .25s;
+  }
+  .step-label { font-size: 13px; color: #9ca3af; transition: color .25s; }
+  .step-item.active .step-circle { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,.4); }
+  .step-item.active .step-label { color: #6366f1; font-weight: 600; }
+  .step-item.done .step-circle { background: #6366f1; color: #fff; }
+  .step-item.done .step-label { color: #4b5563; }
+
+  /* ── 表单 ── */
+  .step-panel { display: none; }
+  .step-panel.active { display: block; animation: fadeIn .25s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .panel-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+  .field { margin-bottom: 18px; }
+  .field > label.field-label { display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+  .required::after { content: " *"; color: #ef4444; }
+  input[type="text"], input[type="number"], select, textarea {
+    width: 100%; min-height: 42px; padding: 9px 12px; border: 1.5px solid #d1d5db; border-radius: 8px;
+    font-size: 15px; color: #1f2937; background: #fff; transition: border-color .2s, box-shadow .2s; outline: none;
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+  input.invalid, select.invalid, textarea.invalid { border-color: #ef4444; background: #fef2f2; }
+  .field-error { font-size: 13px; color: #ef4444; margin-top: 5px; min-height: 0; }
+  .field-row { display: flex; gap: 16px; }
+  .field-row .field { flex: 1; }
+
+  /* radio / checkbox 组 */
+  .choice-group { display: flex; flex-wrap: wrap; gap: 10px; }
+  .choice-item {
+    display: flex; align-items: center; gap: 8px; padding: 10px 16px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all .2s; user-select: none;
+  }
+  .choice-item:hover { border-color: #a5b4fc; }
+  .choice-item input { width: 17px; height: 17px; accent-color: #6366f1; cursor: pointer; }
+  .choice-item:has(input:checked) { border-color: #6366f1; background: #eef2ff; color: #4338ca; font-weight: 600; }
+
+  /* ── 按钮 ── */
+  .nav-buttons { display: flex; justify-content: space-between; margin-top: 28px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
+  .btn {
+    padding: 11px 28px; border-radius: 8px; border: none; font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s;
+  }
+  .btn-secondary { background: #fff; border: 1.5px solid #d1d5db; color: #4b5563; }
+  .btn-secondary:hover { border-color: #9ca3af; background: #f9fafb; }
+  .btn-primary { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; box-shadow: 0 4px 12px rgba(99,102,241,.35); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(99,102,241,.45); }
+  .btn-primary:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn[hidden] { display: none; }
+
+  /* ── Step4 汇总 ── */
+  .summary-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 18px 20px; }
+  .summary-row { display: flex; padding: 7px 0; font-size: 14px; border-bottom: 1px dashed #e5e7eb; }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-key { width: 130px; color: #6b7280; flex-shrink: 0; }
+  .summary-val { color: #111827; font-weight: 500; word-break: break-all; }
+
+  /* ── 模态框 ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100;
+    align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-card {
+    background: #fff; border-radius: 14px; width: 100%; max-width: 520px; max-height: 88vh; overflow-y: auto;
+    padding: 26px 28px; animation: modalIn .25s ease; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+  @keyframes modalIn { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
+  .terms-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; user-select: none; }
+  .terms-label input { width: 17px; height: 17px; accent-color: #6366f1; cursor: pointer; }
+  .terms-link { color: #6366f1; font-weight: 600; }
+
+  /* ── toast ── */
+  #toast {
+    position: fixed; top: 28px; left: 50%; transform: translateX(-50%) translateY(-8px); z-index: 200;
+    background: #059669; color: #fff; padding: 12px 26px; border-radius: 10px; font-size: 15px; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(5,150,105,.35); opacity: 0; pointer-events: none; transition: all .3s ease;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── 已录入列表 ── */
+  .records-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .records-title { font-size: 17px; font-weight: 700; }
+  .records-count { display: inline-block; margin-left: 8px; background: #eef2ff; color: #6366f1; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+  #clear-records { padding: 7px 16px; font-size: 13px; border-radius: 7px; }
+  #recorded-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  #recorded-table th {
+    text-align: left; padding: 10px 12px; background: #f9fafb; color: #6b7280; font-weight: 600;
+    border-bottom: 2px solid #e5e7eb; white-space: nowrap;
+  }
+  #recorded-table td { padding: 11px 12px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+  #recorded-tbody tr:hover td { background: #fafaff; }
+  .empty-cell { text-align: center; color: #9ca3af; padding: 28px 0 !important; }
+  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .status-instant { background: #d1fae5; color: #047857; }
+  .status-pending { background: #f3f4f6; color: #6b7280; }
+  .status-presale { background: #fef3c7; color: #b45309; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 页头 -->
+  <header class="page-header">
+    <h1 class="page-title" data-i18n="pageTitle">商品录入</h1>
+    <button id="lang-toggle" type="button">EN</button>
+  </header>
+
+  <!-- 向导卡片 -->
+  <div class="card">
+    <!-- 步骤条 -->
+    <div class="stepper" id="stepper">
+      <div class="step-item" data-step-item="1"><div class="step-circle">1</div><div class="step-label" data-i18n="step1">基本信息</div></div>
+      <div class="step-item" data-step-item="2"><div class="step-circle">2</div><div class="step-label" data-i18n="step2">价格库存</div></div>
+      <div class="step-item" data-step-item="3"><div class="step-circle">3</div><div class="step-label" data-i18n="step3">商品详情</div></div>
+      <div class="step-item" data-step-item="4"><div class="step-circle">4</div><div class="step-label" data-i18n="step4">提交确认</div></div>
+    </div>
+
+    <form id="product-form" novalidate>
+      <!-- Step 1 基本信息 -->
+      <section class="step-panel" data-step="1">
+        <h2 class="panel-title" data-i18n="step1Title">基本信息</h2>
+        <div class="field">
+          <label class="field-label required" for="product-name" data-i18n="fName">商品名称</label>
+          <input type="text" id="product-name" data-i18n-placeholder="phName" placeholder="请输入商品名称">
+          <div class="field-error" data-error-for="product-name"></div>
+        </div>
+        <div class="field">
+          <label class="field-label required" for="product-sku" data-i18n="fSku">SKU 编码</label>
+          <input type="text" id="product-sku" data-i18n-placeholder="phSku" placeholder="如 SKU-EAR-001">
+          <div class="field-error" data-error-for="product-sku"></div>
+        </div>
+        <div class="field">
+          <label class="field-label required" for="product-category" data-i18n="fCategory">商品分类</label>
+          <select id="product-category">
+            <option value="" data-i18n="optPleaseSelect">请选择</option>
+            <option value="electronics" data-i18n="cat.electronics">电子产品</option>
+            <option value="clothing" data-i18n="cat.clothing">服装鞋帽</option>
+            <option value="food" data-i18n="cat.food">食品饮料</option>
+            <option value="home" data-i18n="cat.home">家居用品</option>
+            <option value="books" data-i18n="cat.books">图书文具</option>
+          </select>
+          <div class="field-error" data-error-for="product-category"></div>
+        </div>
+      </section>
+
+      <!-- Step 2 价格库存 -->
+      <section class="step-panel" data-step="2">
+        <h2 class="panel-title" data-i18n="step2Title">价格与库存</h2>
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label required" for="product-price" data-i18n="fPrice">售价（元）</label>
+            <input type="number" id="product-price" min="0.01" step="0.01" data-i18n-placeholder="phPrice" placeholder="0.00">
+            <div class="field-error" data-error-for="product-price"></div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="product-original-price" data-i18n="fOriginalPrice">原价（元）</label>
+            <input type="number" id="product-original-price" min="0" step="0.01" data-i18n-placeholder="phPrice" placeholder="0.00">
+            <div class="field-error" data-error-for="product-original-price"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label required" for="product-stock" data-i18n="fStock">库存数量</label>
+          <input type="number" id="product-stock" min="0" step="1" data-i18n-placeholder="phStock" placeholder="0">
+          <div class="field-error" data-error-for="product-stock"></div>
+        </div>
+        <div class="field">
+          <span class="field-label required" data-i18n="fStatus">上架状态</span>
+          <div class="choice-group">
+            <label class="choice-item"><input type="radio" name="listing-status" value="instant" id="status-instant"><span data-i18n="status.instant">立即上架</span></label>
+            <label class="choice-item"><input type="radio" name="listing-status" value="pending" id="status-pending"><span data-i18n="status.pending">暂不上架</span></label>
+            <label class="choice-item"><input type="radio" name="listing-status" value="presale" id="status-presale"><span data-i18n="status.presale">预售</span></label>
+          </div>
+          <div class="field-error" data-error-for="listing-status"></div>
+        </div>
+      </section>
+
+      <!-- Step 3 商品详情 -->
+      <section class="step-panel" data-step="3">
+        <h2 class="panel-title" data-i18n="step3Title">商品详情</h2>
+        <div class="field">
+          <span class="field-label" data-i18n="fTags">商品标签</span>
+          <div class="choice-group">
+            <label class="choice-item"><input type="checkbox" id="tag-hot" value="hot"><span data-i18n="tag.hot">热卖</span></label>
+            <label class="choice-item"><input type="checkbox" id="tag-new" value="new"><span data-i18n="tag.new">新品</span></label>
+            <label class="choice-item"><input type="checkbox" id="tag-free-shipping" value="free-shipping"><span data-i18n="tag.freeShipping">包邮</span></label>
+            <label class="choice-item"><input type="checkbox" id="tag-discount" value="discount"><span data-i18n="tag.discount">限时折扣</span></label>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="product-warranty" data-i18n="fWarranty">保修期</label>
+          <select id="product-warranty">
+            <option value="" data-i18n="optPleaseSelect">请选择</option>
+            <option value="none" data-i18n="war.none">无保修</option>
+            <option value="6m" data-i18n="war.6m">6 个月</option>
+            <option value="1y" data-i18n="war.1y">1 年</option>
+            <option value="2y" data-i18n="war.2y">2 年</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="product-description" data-i18n="fDescription">商品描述</label>
+          <textarea id="product-description" data-i18n-placeholder="phDescription" placeholder="请输入商品描述"></textarea>
+        </div>
+      </section>
+
+      <!-- Step 4 提交确认 -->
+      <section class="step-panel" data-step="4">
+        <h2 class="panel-title" data-i18n="step4Title">确认信息</h2>
+        <div class="summary-box" id="step4-summary"></div>
+      </section>
+
+      <!-- 导航按钮 -->
+      <div class="nav-buttons">
+        <button type="button" class="btn btn-secondary" id="btn-prev" data-i18n="btnPrev" hidden>上一步</button>
+        <span></span>
+        <button type="button" class="btn btn-primary" id="btn-next" data-i18n="btnNext">下一步</button>
+        <button type="button" class="btn btn-primary" id="open-confirm-modal" data-i18n="btnSubmit" hidden>提交</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 已录入商品列表 -->
+  <div class="card">
+    <div class="records-header">
+      <div class="records-title"><span data-i18n="recordsTitle">已录入商品</span><span class="records-count" id="records-count">0</span></div>
+      <button type="button" class="btn btn-secondary" id="clear-records" data-i18n="btnClear">清空列表</button>
+    </div>
+    <table id="recorded-table">
+      <thead id="recorded-thead">
+        <tr>
+          <th data-i18n="colName">商品名称</th>
+          <th data-i18n="colSku">SKU</th>
+          <th data-i18n="colCategory">分类</th>
+          <th data-i18n="colPrice">售价</th>
+          <th data-i18n="colStock">库存</th>
+          <th data-i18n="colStatus">上架状态</th>
+          <th data-i18n="colTime">录入时间</th>
+        </tr>
+      </thead>
+      <tbody id="recorded-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 确认模态框 -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-card">
+    <h3 class="modal-title" data-i18n="modalTitle">确认提交</h3>
+    <div class="summary-box" id="modal-summary"></div>
+    <div class="field" style="margin-top:18px;">
+      <label class="field-label" for="order-remark" data-i18n="fRemark">备注</label>
+      <input type="text" id="order-remark" data-i18n-placeholder="phRemark" placeholder="选填备注">
+    </div>
+    <label class="terms-label">
+      <input type="checkbox" id="agree-terms">
+      <span><span data-i18n="fAgree">我已阅读并同意</span> <span class="terms-link" data-i18n="termsLink">《服务条款》</span></span>
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" id="modal-cancel" data-i18n="btnBackEdit">返回修改</button>
+      <button type="button" class="btn btn-primary" id="modal-confirm" data-i18n="btnConfirm" disabled>确认提交</button>
+    </div>
+  </div>
+</div>
+
+<!-- toast -->
+<div id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ══════════ i18n 字典 ══════════ */
+  var I18N = {
+    zh: {
+      pageTitle: '商品录入',
+      step1: '基本信息', step2: '价格库存', step3: '商品详情', step4: '提交确认',
+      step1Title: '基本信息', step2Title: '价格与库存', step3Title: '商品详情', step4Title: '确认信息',
+      fName: '商品名称', fSku: 'SKU 编码', fCategory: '商品分类',
+      fPrice: '售价（元）', fOriginalPrice: '原价（元）', fStock: '库存数量', fStatus: '上架状态',
+      fTags: '商品标签', fWarranty: '保修期', fDescription: '商品描述',
+      fRemark: '备注', fAgree: '我已阅读并同意', termsLink: '《服务条款》',
+      phName: '请输入商品名称', phSku: '如 SKU-EAR-001', phPrice: '0.00', phStock: '0',
+      phDescription: '请输入商品描述', phRemark: '选填备注',
+      optPleaseSelect: '请选择',
+      'cat.electronics': '电子产品', 'cat.clothing': '服装鞋帽', 'cat.food': '食品饮料', 'cat.home': '家居用品', 'cat.books': '图书文具',
+      'status.instant': '立即上架', 'status.pending': '暂不上架', 'status.presale': '预售',
+      'tag.hot': '热卖', 'tag.new': '新品', 'tag.freeShipping': '包邮', 'tag.discount': '限时折扣',
+      'war.none': '无保修', 'war.6m': '6 个月', 'war.1y': '1 年', 'war.2y': '2 年',
+      btnPrev: '上一步', btnNext: '下一步', btnSubmit: '提交', btnConfirm: '确认提交', btnBackEdit: '返回修改', btnClear: '清空列表',
+      modalTitle: '确认提交',
+      recordsTitle: '已录入商品',
+      colName: '商品名称', colSku: 'SKU', colCategory: '分类', colPrice: '售价', colStock: '库存', colStatus: '上架状态', colTime: '录入时间',
+      emptyRecords: '暂无数据',
+      errRequired: '此项为必填项', errCategory: '请选择商品分类', errPrice: '请输入大于 0 的售价',
+      errStock: '库存须为不小于 0 的整数', errStatus: '请选择上架状态',
+      toastSubmitted: '提交成功：{name}',
+      summaryEmpty: '（未填写）',
+      langToggleText: 'EN',
+    },
+    en: {
+      pageTitle: 'Product Entry',
+      step1: 'Basic Info', step2: 'Pricing & Stock', step3: 'Details', step4: 'Confirm',
+      step1Title: 'Basic Information', step2Title: 'Pricing & Stock', step3Title: 'Product Details', step4Title: 'Confirm Information',
+      fName: 'Product Name', fSku: 'SKU Code', fCategory: 'Category',
+      fPrice: 'Price (¥)', fOriginalPrice: 'Original Price (¥)', fStock: 'Stock Quantity', fStatus: 'Listing Status',
+      fTags: 'Product Tags', fWarranty: 'Warranty', fDescription: 'Description',
+      fRemark: 'Remark', fAgree: 'I have read and agree to the', termsLink: 'Terms of Service',
+      phName: 'Enter product name', phSku: 'e.g. SKU-EAR-001', phPrice: '0.00', phStock: '0',
+      phDescription: 'Enter product description', phRemark: 'Optional remark',
+      optPleaseSelect: 'Please select',
+      'cat.electronics': 'Electronics', 'cat.clothing': 'Clothing', 'cat.food': 'Food & Beverage', 'cat.home': 'Home & Living', 'cat.books': 'Books & Stationery',
+      'status.instant': 'Instant Listing', 'status.pending': 'Unlisted', 'status.presale': 'Pre-sale',
+      'tag.hot': 'Hot', 'tag.new': 'New', 'tag.freeShipping': 'Free Shipping', 'tag.discount': 'Limited Discount',
+      'war.none': 'None', 'war.6m': '6 Months', 'war.1y': '1 Year', 'war.2y': '2 Years',
+      btnPrev: 'Previous', btnNext: 'Next', btnSubmit: 'Submit', btnConfirm: 'Confirm', btnBackEdit: 'Back to Edit', btnClear: 'Clear List',
+      modalTitle: 'Confirm Submission',
+      recordsTitle: 'Recorded Products',
+      colName: 'Product', colSku: 'SKU', colCategory: 'Category', colPrice: 'Price', colStock: 'Stock', colStatus: 'Status', colTime: 'Time',
+      emptyRecords: 'No records',
+      errRequired: 'This field is required', errCategory: 'Please select a category', errPrice: 'Price must be greater than 0',
+      errStock: 'Stock must be an integer ≥ 0', errStatus: 'Please select a listing status',
+      toastSubmitted: 'Submitted: {name}',
+      summaryEmpty: '(empty)',
+      langToggleText: '中文',
+    },
+  };
+
+  /* 汇总字段顺序：label key + 取值函数（value 语言无关，渲染时转文案） */
+  var SUMMARY_FIELDS = [
+    { key: 'fName', get: function (d) { return d.name; } },
+    { key: 'fSku', get: function (d) { return d.sku; } },
+    { key: 'fCategory', get: function (d) { return label('cat.' + d.category); } },
+    { key: 'fPrice', get: function (d) { return d.price === '' ? '' : '¥' + d.price; } },
+    { key: 'fOriginalPrice', get: function (d) { return d.originalPrice === '' ? '' : '¥' + d.originalPrice; } },
+    { key: 'fStock', get: function (d) { return d.stock; } },
+    { key: 'fStatus', get: function (d) { return label('status.' + d.status); } },
+    { key: 'fTags', get: function (d) { return d.tags.map(function (t) { return label('tag.' + TAG_LABEL_KEY[t]); }).join('、'); } },
+    { key: 'fWarranty', get: function (d) { return label('war.' + d.warranty); } },
+    { key: 'fDescription', get: function (d) { return d.description; } },
+  ];
+  var TAG_LABEL_KEY = { hot: 'hot', 'new': 'new', 'free-shipping': 'freeShipping', discount: 'discount' };
+
+  /* ══════════ 状态 ══════════ */
+  var currentLang = 'zh';
+  try { currentLang = localStorage.getItem('demo-lang') || 'zh'; } catch (e) { /* 隐私模式忽略 */ }
+  var currentStep = 1;
+  var records = [];
+
+  /* ══════════ DOM 引用 ══════════ */
+  var $ = function (sel) { return document.querySelector(sel); };
+  var $$ = function (sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); };
+  var panels = $$('.step-panel');
+  var btnPrev = $('#btn-prev'), btnNext = $('#btn-next'), btnSubmit = $('#open-confirm-modal');
+  var modal = $('#confirm-modal'), modalConfirm = $('#modal-confirm');
+  var toastEl = $('#toast'), toastTimer = null;
+
+  function label(key) {
+    var dict = I18N[currentLang];
+    return dict[key] !== undefined ? dict[key] : key;
+  }
+
+  /* ══════════ 语言切换 ══════════ */
+  function applyLang() {
+    var dict = I18N[currentLang];
+    $$('[data-i18n]').forEach(function (el) {
+      var key = el.getAttribute('data-i18n');
+      if (dict[key] !== undefined) el.textContent = dict[key];
+    });
+    $$('[data-i18n-placeholder]').forEach(function (el) {
+      var key = el.getAttribute('data-i18n-placeholder');
+      if (dict[key] !== undefined) el.placeholder = dict[key];
+    });
+    document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
+    document.title = currentLang === 'zh' ? '商品录入 · Product Entry' : 'Product Entry · 商品录入';
+    $('#lang-toggle').textContent = dict.langToggleText;
+    renderStep4Summary();
+    renderRecords();
+  }
+
+  $('#lang-toggle').addEventListener('click', function () {
+    currentLang = currentLang === 'zh' ? 'en' : 'zh';
+    try { localStorage.setItem('demo-lang', currentLang); } catch (e) { /* 忽略 */ }
+    applyLang();
+  });
+
+  /* ══════════ 表单数据收集 ══════════ */
+  function collectData() {
+    var statusRadio = document.querySelector('input[name="listing-status"]:checked');
+    return {
+      name: $('#product-name').value.trim(),
+      sku: $('#product-sku').value.trim(),
+      category: $('#product-category').value,
+      price: $('#product-price').value,
+      originalPrice: $('#product-original-price').value,
+      stock: $('#product-stock').value,
+      status: statusRadio ? statusRadio.value : '',
+      tags: $$('.choice-group input[type="checkbox"]:checked').map(function (cb) { return cb.value; }),
+      warranty: $('#product-warranty').value,
+      description: $('#product-description').value.trim(),
+      remark: $('#order-remark').value.trim(),
+    };
+  }
+
+  /* ══════════ 校验 ══════════ */
+  function setFieldError(id, msg) {
+    var errEl = document.querySelector('[data-error-for="' + id + '"]');
+    var input = id === 'listing-status'
+      ? null
+      : document.getElementById(id);
+    if (input) input.classList.toggle('invalid', !!msg);
+    if (errEl) errEl.textContent = msg || '';
+  }
+
+  function validateStep(step) {
+    var ok = true;
+    if (step === 1) {
+      [['product-name', label('errRequired')], ['product-sku', label('errRequired')]].forEach(function (pair) {
+        var empty = !document.getElementById(pair[0]).value.trim();
+        setFieldError(pair[0], empty ? pair[1] : '');
+        if (empty) ok = false;
+      });
+      var catEmpty = !$('#product-category').value;
+      setFieldError('product-category', catEmpty ? label('errCategory') : '');
+      if (catEmpty) ok = false;
+    } else if (step === 2) {
+      var price = parseFloat($('#product-price').value);
+      var priceBad = !(price > 0);
+      setFieldError('product-price', priceBad ? label('errPrice') : '');
+      if (priceBad) ok = false;
+
+      var stockRaw = $('#product-stock').value;
+      var stock = Number(stockRaw);
+      var stockBad = stockRaw === '' || !Number.isInteger(stock) || stock < 0;
+      setFieldError('product-stock', stockBad ? label('errStock') : '');
+      if (stockBad) ok = false;
+
+      var statusBad = !document.querySelector('input[name="listing-status"]:checked');
+      setFieldError('listing-status', statusBad ? label('errStatus') : '');
+      if (statusBad) ok = false;
+    }
+    return ok;
+  }
+
+  function validateAll() {
+    var ok1 = validateStep(1);
+    if (!ok1) goStep(1);
+    var ok2 = validateStep(2);
+    if (ok1 && !ok2) goStep(2);
+    return ok1 && ok2;
+  }
+
+  /* 输入即时清除错误态 */
+  ['product-name', 'product-sku', 'product-category', 'product-price', 'product-stock'].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener('input', function () { setFieldError(id, ''); });
+    el.addEventListener('change', function () { setFieldError(id, ''); });
+  });
+  $$('input[name="listing-status"]').forEach(function (r) {
+    r.addEventListener('change', function () { setFieldError('listing-status', ''); });
+  });
+
+  /* ══════════ 步骤切换 ══════════ */
+  function goStep(n) {
+    currentStep = n;
+    panels.forEach(function (p) {
+      p.classList.toggle('active', Number(p.getAttribute('data-step')) === n);
+    });
+    $$('.step-item').forEach(function (item) {
+      var s = Number(item.getAttribute('data-step-item'));
+      item.classList.toggle('active', s === n);
+      item.classList.toggle('done', s < n);
+      var circle = item.querySelector('.step-circle');
+      circle.textContent = s < n ? '✓' : String(s);
+    });
+    btnPrev.hidden = n === 1;
+    btnNext.hidden = n === 4;
+    btnSubmit.hidden = n !== 4;
+    if (n === 4) renderStep4Summary();
+  }
+
+  btnNext.addEventListener('click', function () {
+    if (!validateStep(currentStep)) return;
+    goStep(currentStep + 1);
+  });
+  btnPrev.addEventListener('click', function () {
+    goStep(currentStep - 1);
+  });
+
+  /* ══════════ 汇总渲染 ══════════ */
+  /* 汇总值用 textContent 填充，防 HTML 注入 */
+  function renderSummaryInto(container, data) {
+    container.innerHTML = '';
+    SUMMARY_FIELDS.forEach(function (f) {
+      var val = f.get(data);
+      var display = val === '' || val === undefined || val === null ? label('summaryEmpty') : String(val);
+      var row = document.createElement('div');
+      row.className = 'summary-row';
+      var key = document.createElement('span');
+      key.className = 'summary-key';
+      key.textContent = label(f.key);
+      var value = document.createElement('span');
+      value.className = 'summary-val';
+      value.textContent = display;
+      row.appendChild(key);
+      row.appendChild(value);
+      container.appendChild(row);
+    });
+  }
+
+  function renderStep4Summary() {
+    renderSummaryInto($('#step4-summary'), collectData());
+  }
+
+  /* ══════════ 模态框 ══════════ */
+  btnSubmit.addEventListener('click', function () {
+    if (!validateAll()) return;
+    renderSummaryInto($('#modal-summary'), collectData());
+    modal.classList.add('open');
+  });
+
+  $('#modal-cancel').addEventListener('click', function () {
+    modal.classList.remove('open');
+  });
+  modal.addEventListener('click', function (e) {
+    if (e.target === modal) modal.classList.remove('open');
+  });
+
+  $('#agree-terms').addEventListener('change', function () {
+    modalConfirm.disabled = !this.checked;
+  });
+
+  modalConfirm.addEventListener('click', function () {
+    if (!$('#agree-terms').checked) return;
+    var data = collectData();
+    data.time = new Date();
+    records.push(data);
+    modal.classList.remove('open');
+    showToast(label('toastSubmitted').replace('{name}', data.name));
+    renderRecords();
+    resetForm();
+    goStep(1);
+  });
+
+  /* ══════════ toast ══════════ */
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2500);
+  }
+
+  /* ══════════ 已录入列表 ══════════ */
+  function renderRecords() {
+    var tbody = $('#recorded-tbody');
+    tbody.innerHTML = '';
+    $('#records-count').textContent = String(records.length);
+    if (records.length === 0) {
+      var tr = document.createElement('tr');
+      var td = document.createElement('td');
+      td.colSpan = 7;
+      td.className = 'empty-cell';
+      td.textContent = label('emptyRecords');
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      return;
+    }
+    records.forEach(function (r) {
+      var tr = document.createElement('tr');
+      var cells = [
+        r.name,
+        r.sku,
+        label('cat.' + r.category),
+        '¥' + r.price,
+        r.stock,
+      ];
+      cells.forEach(function (text) {
+        var td = document.createElement('td');
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+      // 状态徽章
+      var tdStatus = document.createElement('td');
+      var badge = document.createElement('span');
+      badge.className = 'status-badge status-' + r.status;
+      badge.textContent = label('status.' + r.status);
+      tdStatus.appendChild(badge);
+      tr.appendChild(tdStatus);
+      // 时间
+      var tdTime = document.createElement('td');
+      tdTime.textContent = formatTime(r.time);
+      tr.appendChild(tdTime);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function formatTime(d) {
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+      ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  $('#clear-records').addEventListener('click', function () {
+    records = [];
+    renderRecords();
+  });
+
+  /* ══════════ 重置 ══════════ */
+  function resetForm() {
+    $('#product-form').reset();
+    $('#order-remark').value = '';
+    $('#agree-terms').checked = false;
+    modalConfirm.disabled = true;
+    ['product-name', 'product-sku', 'product-category', 'product-price', 'product-stock', 'listing-status']
+      .forEach(function (id) { setFieldError(id, ''); });
+  }
+
+  /* ══════════ 初始化 ══════════ */
+  applyLang();
+  goStep(1);
+})();
+</script>
+</body>
+</html>
