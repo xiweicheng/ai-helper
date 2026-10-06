@@ -7,7 +7,9 @@ name: Release
 # 前置配置：
 #   在 GitHub 仓库 Settings → Secrets and variables → Actions 添加
 #     GITEE_TOKEN = Gitee 私人令牌（权限勾选 projects 即可）
-#   未配置时，Gitee 同步步骤会自动跳过并给出 warning，不影响 GitHub 发布。
+#   未配置时，Gitee 同步步骤会自动跳过并给出 warning。
+#   Gitee 两步位于 GitHub Release 之后：失败不会影响已发布的 GitHub 产物，
+#   但会把本次 run 标记为失败以提醒人工处理。
 #
 # 说明：Gitee 的自动构建（Gitee Go）是收费增值服务，本流程不使用它。
 #      构建在 GitHub 免费 Runner 上完成，产物通过 Gitee 免费 OpenAPI 推送。
@@ -98,6 +100,7 @@ jobs:
           path: ${{ steps.package.outputs.zip }}
           if-no-files-found: error
           retention-days: 30
+          overwrite: true          # v4 同名构件不可重复创建：显式覆盖，保证重跑可用
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -122,7 +125,8 @@ jobs:
       # 实测要点：
       #   1) Gitee 仓库为私有，匿名 ls-remote 会失败 → 探测前必须先装好凭证
       #   2) /releases/tags/<tag> 对不存在的 tag 返回 HTTP 200 + null（非 404）
-      #      → 判断是否存在必须看 id 字段是否为空，不能看状态码
+      #      → 判断是否存在必须看 id 字段是否为空，不能看状态码；
+      #        状态码仅用于识别异常响应（401/403/5xx 等）并直接报错
       - name: Sync tag to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -136,10 +140,11 @@ jobs:
           REMOTE="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
 
           # 安装凭证（用 credential store，避免令牌出现在命令行/日志）
+          # 先注册清理 trap 再写凭证文件，中途失败也能保证被清理
+          trap 'rm -f ~/.git-credentials' EXIT
           git config --local credential.helper store
           echo "https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com" > ~/.git-credentials
           chmod 600 ~/.git-credentials
-          trap 'rm -f ~/.git-credentials' EXIT
 
           if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q .; then
             echo "Gitee 已存在 tag ${TAG}，无需推送"
@@ -164,9 +169,15 @@ jobs:
           fi
 
           # 1) 查询该 tag 是否已有发行版
-          #    注意：tag 不存在时 Gitee 返回 HTTP 200 + body "null"，故只能判 id
-          curl -sS -m 30 -o /tmp/gitee_rel.json \
-            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" || echo "null" > /tmp/gitee_rel.json
+          #    注意：tag 不存在时 Gitee 返回 HTTP 200 + body "null"，故只能判 id；
+          #    非 200 视为网络/权限异常，直接报错，避免误走创建分支掩盖真实原因
+          HTTP_CODE=$(curl -sS -m 30 -o /tmp/gitee_rel.json -w '%{http_code}' \
+            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::查询 Gitee 发行版失败（HTTP ${HTTP_CODE}），请检查网络、仓库名与令牌权限（需勾选 projects）"
+            echo "响应: $(head -c 300 /tmp/gitee_rel.json 2>/dev/null || true)"
+            exit 1
+          fi
 
           RID=$(jq -r 'if type=="object" then (.id // empty) else empty end' /tmp/gitee_rel.json 2>/dev/null || true)
           if [ -n "$RID" ]; then
@@ -186,33 +197,44 @@ jobs:
 
           > 由 GitHub Actions 构建（GitHub 免费 Runner），产物为 `dist/` 目录打包。
           EOF
-            CREATE_RESP=$(curl -sS -m 60 -X POST "${API}/releases" \
+            HTTP_CODE=$(curl -sS -m 60 -o /tmp/gitee_create.json -w '%{http_code}' -X POST "${API}/releases" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
               --data-urlencode "tag_name=${TAG}" \
               --data-urlencode "name=${TAG}" \
               --data-urlencode "target_commitish=${GITEE_BRANCH}" \
-              --data-urlencode "body@/tmp/gitee_body.md")
-            echo "创建响应: $(echo "$CREATE_RESP" | head -c 300)"
+              --data-urlencode "body@/tmp/gitee_body.md" || echo "000")
+            CREATE_RESP=$(cat /tmp/gitee_create.json 2>/dev/null || true)
+            echo "创建响应(${HTTP_CODE}): $(echo "$CREATE_RESP" | head -c 300)"
             RID=$(echo "$CREATE_RESP" | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
             if [ -z "$RID" ]; then
-              echo "::error::创建 Gitee 发行版失败，请检查令牌权限（需勾选 projects）与 tag 是否存在"
+              echo "::error::创建 Gitee 发行版失败（HTTP ${HTTP_CODE}），请检查令牌权限（需勾选 projects）与 tag 是否存在"
               exit 1
             fi
             echo "已创建 Gitee 发行版 ${TAG} (id=${RID})"
           fi
 
-          # 3) 上传附件（同名附件已存在则跳过，避免重复）
+          # 3) 以 RID 刷新发行版详情（含附件列表），附件去重必须基于最新快照
+          #    注：/releases/tags 查询响应与创建响应都可能不含附件信息
+          HTTP_CODE=$(curl -sS -m 30 -o /tmp/gitee_rel.json -w '%{http_code}' \
+            "${API}/releases/${RID}?access_token=${GITEE_TOKEN}" || echo "000")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::刷新发行版详情失败（HTTP ${HTTP_CODE}），附件去重判断将不准确"
+            echo "null" > /tmp/gitee_rel.json
+          fi
+
+          # 4) 上传附件（同名附件已存在则跳过，避免重复）
           CNT=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel.json 2>/dev/null || echo 0)
           if [ "${CNT:-0}" -gt 0 ]; then
             echo "附件 ${ZIP} 已存在，跳过上传"
           else
-            RESP=$(curl -sS -m 120 -X POST "${API}/releases/${RID}/attach_files" \
+            HTTP_CODE=$(curl -sS -m 120 -o /tmp/gitee_attach.json -w '%{http_code}' -X POST "${API}/releases/${RID}/attach_files" \
               -F "access_token=${GITEE_TOKEN}" \
-              -F "file=@${ZIP}")
+              -F "file=@${ZIP}" || echo "000")
+            RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
             if echo "$RESP" | jq -e 'if type=="object" then (.browser_download_url // .name // empty) else empty end' >/dev/null 2>&1; then
               echo "附件上传成功：$(echo "$RESP" | jq -r '.browser_download_url // .name')"
             else
-              echo "::error::附件上传失败"
+              echo "::error::附件上传失败（HTTP ${HTTP_CODE}）"
               echo "$RESP" | head -c 500
               exit 1
             fi
