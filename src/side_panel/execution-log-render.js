@@ -5,6 +5,7 @@ import state from './state.js';
 import { escapeHtml, escapeAttr, formatDuration } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { scheduleLogSummaryAdapt } from './log-summary-adaptive.js';
 
 // ============================================================
 // 执行日志渲染
@@ -1057,6 +1058,9 @@ export function updateRealtimeExecutionLogPanel(status) {
     ? renderExecutionTimeline(executionLog)
     : `<div class="realtime-waiting-message">${t('execLog.waitingExecution')}</div>`;
   
+  // 统计数字更新后重测（数字长度变化影响统计区可用宽度）
+  scheduleLogSummaryAdapt(panel);
+  
   // 自动滚动到底部
   timeline.scrollTop = timeline.scrollHeight;
 }
@@ -1135,6 +1139,8 @@ export function showRealtimeExecutionLogPanel(loadingId) {
   `;
   
   document.body.appendChild(panel);
+  // 统计区自适应降级：宽度不足时逐级折叠文案，悬停 tooltip 保留完整信息
+  scheduleLogSummaryAdapt(panel);
   
   // 关闭按钮
   const closeBtn = panel.querySelector('.log-close');

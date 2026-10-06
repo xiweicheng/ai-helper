@@ -9792,12 +9792,14 @@ body {
 .execution-log-panel .summary-combo .combo-main .combo-label {
   font-size: 12px;
   color: #666;
+  white-space: nowrap;
 }
 
 .execution-log-panel .summary-combo .combo-main .combo-value {
   font-size: 12px;
   font-weight: 600;
   color: #333;
+  white-space: nowrap;
 }
 
 .execution-log-panel .summary-combo .combo-stats {
@@ -9841,26 +9843,35 @@ body {
 .execution-log-panel .summary-combo .combo-stat .stat-label {
   font-size: 11px;
   color: #888;
+  white-space: nowrap;
 }
 
 .execution-log-panel .summary-combo .combo-stat .stat-value {
   font-size: 12px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 统计区自适应降级（由 log-summary-adaptive.js 测量后添加）：
+   宽度不足时逐级折叠文案——① 组合块文案 → ② 总耗时/Token 文案 → ③ 整块换行兜底；
+   悬停 tooltip 保留完整信息，适配中英文文案与数字长度差异 */
+.execution-log-panel .log-summary.combo-collapsed .combo-label,
+.execution-log-panel .log-summary.combo-collapsed .stat-label {
+  display: none;
+}
+
+.execution-log-panel .log-summary.summary-collapsed .summary-label {
+  display: none;
+}
+
+.execution-log-panel .log-summary.summary-wrapped {
+  flex-wrap: wrap;
 }
 
 @media (max-width: 480px) {
-  .execution-log-panel .summary-combo .combo-stat .stat-label {
-    display: none;
-  }
-  
   .execution-log-panel .summary-combo .combo-stat {
     gap: 2px;
     padding: 2px 4px;
-  }
-  
-  .execution-log-panel .summary-item .summary-label,
-  .execution-log-panel .summary-combo .combo-label {
-    display: none;
   }
 }
 

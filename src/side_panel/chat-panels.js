@@ -3,6 +3,7 @@
 
 import { escapeHtml, formatDuration, formatTokenCount, aggregateTokenUsage } from './utils.js';
 import { renderExecutionLogForPanel } from './execution-log-render.js';
+import { scheduleLogSummaryAdapt } from './log-summary-adaptive.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 // 注册 chatPanels 命名空间翻译
@@ -373,6 +374,8 @@ function showExecutionLog(executionLog) {
   `;
   
   document.body.appendChild(panel);
+  // 统计区自适应降级：宽度不足时逐级折叠文案，悬停 tooltip 保留完整信息
+  scheduleLogSummaryAdapt(panel);
   
   panel.addEventListener('click', (e) => {
     if (e.target === panel) {
