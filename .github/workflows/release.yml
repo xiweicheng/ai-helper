@@ -1,8 +1,16 @@
 name: Release
 
 # 触发方式：
-#   1) 推送 v* 标签（例如 v1.0.0）→ 自动构建并发布
+#   1) 推送 v* 标签（例如 v1.0.0）→ 自动构建并发布到 GitHub + Gitee
 #   2) 手动触发（Actions → Release → Run workflow），可指定版本号
+#
+# 前置配置：
+#   在 GitHub 仓库 Settings → Secrets and variables → Actions 添加
+#     GITEE_TOKEN = Gitee 私人令牌（权限勾选 projects 即可）
+#   未配置时，Gitee 同步步骤会自动跳过并给出 warning，不影响 GitHub 发布。
+#
+# 说明：Gitee 的自动构建（Gitee Go）是收费增值服务，本流程不使用它。
+#      构建在 GitHub 免费 Runner 上完成，产物通过 Gitee 免费 OpenAPI 推送。
 on:
   push:
     tags:
@@ -22,9 +30,17 @@ jobs:
     name: Build & Release Chrome Extension
     runs-on: ubuntu-latest
 
+    env:
+      GITEE_OWNER: xiweicheng
+      GITEE_REPO: ai-helper
+      GITEE_BRANCH: main
+      GIT_TERMINAL_PROMPT: 0     # 禁止 git 交互式索要密码，避免 CI 卡死
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # 需要完整历史，才能把 tag 同步推送到 Gitee
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -64,13 +80,24 @@ jobs:
           echo "Release tag: $TAG"
 
       - name: Package extension as zip
+        id: package
         env:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
+          ZIP="ai-helper-${TAG}.zip"
           cd dist
-          zip -r "../ai-helper-${TAG}.zip" .
+          zip -r "../${ZIP}" .
           cd ..
-          ls -lh ai-helper-*.zip
+          ls -lh "$ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.tag }}-zip
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -90,3 +117,105 @@ jobs:
           files: ai-helper-*.zip
           generate_release_notes: true
           draft: false
+
+      # ==================== 同步发布到 Gitee ====================
+      # 实测要点：
+      #   1) Gitee 仓库为私有，匿名 ls-remote 会失败 → 探测前必须先装好凭证
+      #   2) /releases/tags/<tag> 对不存在的 tag 返回 HTTP 200 + null（非 404）
+      #      → 判断是否存在必须看 id 字段是否为空，不能看状态码
+      - name: Sync tag to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "::warning::未配置 GITEE_TOKEN，跳过 Gitee tag 同步"
+            exit 0
+          fi
+
+          REMOTE="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
+
+          # 安装凭证（用 credential store，避免令牌出现在命令行/日志）
+          git config --local credential.helper store
+          echo "https://${GITEE_OWNER}:${GITEE_TOKEN}@gitee.com" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+          trap 'rm -f ~/.git-credentials' EXIT
+
+          if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q .; then
+            echo "Gitee 已存在 tag ${TAG}，无需推送"
+          elif git push "$REMOTE" "refs/tags/${TAG}"; then
+            echo "tag ${TAG} 已推送到 Gitee"
+          else
+            echo "::warning::tag 推送失败，将改用 target_commitish=${GITEE_BRANCH} 创建发行版"
+          fi
+
+      - name: Publish to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+
+          if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "::warning title=跳过 Gitee 发布::未配置 GITEE_TOKEN secret。请在 GitHub 仓库 Settings → Secrets and variables → Actions 中添加 GITEE_TOKEN（Gitee 私人令牌，权限勾选 projects）。"
+            exit 0
+          fi
+
+          # 1) 查询该 tag 是否已有发行版
+          #    注意：tag 不存在时 Gitee 返回 HTTP 200 + body "null"，故只能判 id
+          curl -sS -m 30 -o /tmp/gitee_rel.json \
+            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" || echo "null" > /tmp/gitee_rel.json
+
+          RID=$(jq -r 'if type=="object" then (.id // empty) else empty end' /tmp/gitee_rel.json 2>/dev/null || true)
+          if [ -n "$RID" ]; then
+            echo "已存在发行版 ${TAG} (id=${RID})，将复用并补充附件"
+          fi
+
+          # 2) 不存在则创建
+          if [ -z "$RID" ]; then
+            cat > /tmp/gitee_body.md <<'EOF'
+          ## AI Helper 发布包
+
+          ### 安装方式
+          1. 下载下方 `ai-helper-*.zip` 并解压
+          2. 打开 Chrome，访问 `chrome://extensions/`
+          3. 打开右上角「开发者模式」
+          4. 点击「加载已解压的扩展程序」，选择解压后的文件夹
+
+          > 由 GitHub Actions 构建（GitHub 免费 Runner），产物为 `dist/` 目录打包。
+          EOF
+            CREATE_RESP=$(curl -sS -m 60 -X POST "${API}/releases" \
+              --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "tag_name=${TAG}" \
+              --data-urlencode "name=${TAG}" \
+              --data-urlencode "target_commitish=${GITEE_BRANCH}" \
+              --data-urlencode "body@/tmp/gitee_body.md")
+            echo "创建响应: $(echo "$CREATE_RESP" | head -c 300)"
+            RID=$(echo "$CREATE_RESP" | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
+            if [ -z "$RID" ]; then
+              echo "::error::创建 Gitee 发行版失败，请检查令牌权限（需勾选 projects）与 tag 是否存在"
+              exit 1
+            fi
+            echo "已创建 Gitee 发行版 ${TAG} (id=${RID})"
+          fi
+
+          # 3) 上传附件（同名附件已存在则跳过，避免重复）
+          CNT=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel.json 2>/dev/null || echo 0)
+          if [ "${CNT:-0}" -gt 0 ]; then
+            echo "附件 ${ZIP} 已存在，跳过上传"
+          else
+            RESP=$(curl -sS -m 120 -X POST "${API}/releases/${RID}/attach_files" \
+              -F "access_token=${GITEE_TOKEN}" \
+              -F "file=@${ZIP}")
+            if echo "$RESP" | jq -e 'if type=="object" then (.browser_download_url // .name // empty) else empty end' >/dev/null 2>&1; then
+              echo "附件上传成功：$(echo "$RESP" | jq -r '.browser_download_url // .name')"
+            else
+              echo "::error::附件上传失败"
+              echo "$RESP" | head -c 500
+              exit 1
+            fi
+          fi
+
+          echo "✅ Gitee 发布完成：https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${TAG}"
