@@ -130,8 +130,8 @@ jobs:
       #      → 判断是否存在必须看 id 字段是否为空，不能看状态码；
       #        状态码仅用于识别异常响应（401/403/5xx 等）并直接报错
       #   3) 发行版说明可用 PATCH /releases/{id} 更新（复用已存在发行版时用它把
-      #      旧说明刷新为含 GitHub Releases 下载链接的新说明；接口已实测存在，
-      #      匿名调用返回 401 而非 404）
+      #      旧说明刷新为含 GitHub Releases 下载链接的新说明）；实测注意：即使只改
+      #      body 也必须同时携带 tag_name 与 name，否则报 400 "tag_name/name is missing"
       - name: Sync tag to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -230,12 +230,15 @@ jobs:
             echo "已创建 Gitee 发行版 ${TAG} (id=${RID})"
           else
             # 3b) 已存在则刷新发布说明（把历史版本的旧说明统一更新为含 GitHub Releases 下载链接的新版）
+            #     实测：Gitee 更新接口即使只改 body，也强制要求携带 tag_name 与 name，缺失报 400
             HTTP_CODE=$(curl -sS -m 60 -o /tmp/gitee_update.json -w '%{http_code}' -X PATCH "${API}/releases/${RID}" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "tag_name=${TAG}" \
+              --data-urlencode "name=${TAG}" \
               --data-urlencode "body@/tmp/gitee_body_final.md") || HTTP_CODE="000"
             UPDATE_RESP=$(cat /tmp/gitee_update.json 2>/dev/null || true)
             if [ "$HTTP_CODE" != "200" ]; then
-              echo "::error::更新 Gitee 发行版说明失败（HTTP ${HTTP_CODE}），请检查令牌权限（需勾选 projects）"
+              echo "::error::更新 Gitee 发行版说明失败（HTTP ${HTTP_CODE}）"
               echo "$UPDATE_RESP" | head -c 300
               exit 1
             fi
