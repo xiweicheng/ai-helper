@@ -12,7 +12,9 @@ name: Release
 #   但会把本次 run 标记为失败以提醒人工处理。
 #
 # 说明：Gitee 的自动构建（Gitee Go）是收费增值服务，本流程不使用它。
-#      构建在 GitHub 免费 Runner 上完成，产物通过 Gitee 免费 OpenAPI 推送。
+#      构建在 GitHub 免费 Runner 上完成。Gitee 端只同步发行版与发布说明，
+#      不上传构建产物附件（海外 Runner 上传大文件到 Gitee 易超时/被限速），
+#      发布说明中提供指向 GitHub Releases 的下载链接。
 on:
   push:
     tags:
@@ -127,9 +129,9 @@ jobs:
       #   2) /releases/tags/<tag> 对不存在的 tag 返回 HTTP 200 + null（非 404）
       #      → 判断是否存在必须看 id 字段是否为空，不能看状态码；
       #        状态码仅用于识别异常响应（401/403/5xx 等）并直接报错
-      #   3) /releases/tags/<tag> 与 /releases/{id} 均返回 assets 数组（含自动生成的
-      #      源码归档 <tag>.zip/.tar.gz 与手动附件，字段 name/browser_download_url），
-      #      附件去重按完整文件名精确匹配即可，自动源码归档不会误判
+      #   3) 发行版说明可用 PATCH /releases/{id} 更新（复用已存在发行版时用它把
+      #      旧说明刷新为含 GitHub Releases 下载链接的新说明；接口已实测存在，
+      #      匿名调用返回 401 而非 404）
       - name: Sync tag to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -161,7 +163,6 @@ jobs:
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
-          ZIP: ${{ steps.package.outputs.zip }}
         run: |
           set -euo pipefail
           API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
@@ -184,28 +185,36 @@ jobs:
 
           RID=$(jq -r 'if type=="object" then (.id // empty) else empty end' /tmp/gitee_rel.json 2>/dev/null || true)
           if [ -n "$RID" ]; then
-            echo "已存在发行版 ${TAG} (id=${RID})，将复用并补充附件"
+            echo "已存在发行版 ${TAG} (id=${RID})，将更新发布说明"
           fi
 
-          # 2) 不存在则创建
-          if [ -z "$RID" ]; then
-            cat > /tmp/gitee_body.md <<'EOF'
-          ## AI Helper 发布包
+          # 2) 生成发布说明（统一指向 GitHub Releases 下载；Gitee 端不再上传附件）
+          GH_RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+          cat > /tmp/gitee_body.md <<'EOF'
+          ## AI Helper __TAG__ 发布包
+
+          ### 下载
+          构建产物（`ai-helper-__TAG__.zip`）请前往 GitHub Releases 下载：
+          __URL__
 
           ### 安装方式
-          1. 下载下方 `ai-helper-*.zip` 并解压
+          1. 下载 `ai-helper-__TAG__.zip` 并解压
           2. 打开 Chrome，访问 `chrome://extensions/`
           3. 打开右上角「开发者模式」
           4. 点击「加载已解压的扩展程序」，选择解压后的文件夹
 
-          > 由 GitHub Actions 构建（GitHub 免费 Runner），产物为 `dist/` 目录打包。
+          > 受网络环境所限，Gitee 端仅同步发行版与发布说明，构建产物统一由 GitHub Actions 构建并发布在 GitHub Releases。
           EOF
+          sed "s|__TAG__|${TAG}|g; s|__URL__|${GH_RELEASE_URL}|g" /tmp/gitee_body.md > /tmp/gitee_body_final.md
+
+          if [ -z "$RID" ]; then
+            # 3a) 不存在则创建
             HTTP_CODE=$(curl -sS -m 60 -o /tmp/gitee_create.json -w '%{http_code}' -X POST "${API}/releases" \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
               --data-urlencode "tag_name=${TAG}" \
               --data-urlencode "name=${TAG}" \
               --data-urlencode "target_commitish=${GITEE_BRANCH}" \
-              --data-urlencode "body@/tmp/gitee_body.md") || HTTP_CODE="000"
+              --data-urlencode "body@/tmp/gitee_body_final.md") || HTTP_CODE="000"
             CREATE_RESP=$(cat /tmp/gitee_create.json 2>/dev/null || true)
             echo "创建响应(${HTTP_CODE}): $(echo "$CREATE_RESP" | head -c 300)"
             RID=$(echo "$CREATE_RESP" | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
@@ -219,50 +228,18 @@ jobs:
               exit 1
             fi
             echo "已创建 Gitee 发行版 ${TAG} (id=${RID})"
-          fi
-
-          # 3) 以 RID 刷新发行版详情（含附件列表），附件去重必须基于最新快照
-          #    注：/releases/tags 查询响应与创建响应都可能不含附件信息
-          HTTP_CODE=$(curl -sS -m 30 -o /tmp/gitee_rel.json -w '%{http_code}' \
-            "${API}/releases/${RID}?access_token=${GITEE_TOKEN}") || HTTP_CODE="000"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::warning::刷新发行版详情失败（HTTP ${HTTP_CODE}），附件去重判断将不准确"
-            echo "null" > /tmp/gitee_rel.json
-          fi
-
-          # 4) 上传附件（同名附件已存在则跳过，避免重复）
-          #    实测：GitHub 海外 Runner 上传大文件到 gitee.com 易停滞/超时，
-          #    故关闭 Expect 握手 + 对停滞连接快速中断 + 自动重试
-          CNT=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel.json 2>/dev/null || echo 0)
-          if [ "${CNT:-0}" -gt 0 ]; then
-            echo "附件 ${ZIP} 已存在，跳过上传"
           else
-            HTTP_CODE=$(curl -sS -m 300 \
-              --connect-timeout 15 \
-              --speed-limit 10240 --speed-time 60 \
-              --retry 3 --retry-delay 10 \
-              -H "Expect:" \
-              -o /tmp/gitee_attach.json -w '%{http_code}' \
-              -X POST "${API}/releases/${RID}/attach_files" \
-              -F "access_token=${GITEE_TOKEN}" \
-              -F "file=@${ZIP}") || HTTP_CODE="000"
-            RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
-            if echo "$RESP" | jq -e 'if type=="object" then (.browser_download_url // .name // empty) else empty end' >/dev/null 2>&1; then
-              echo "附件上传成功：$(echo "$RESP" | jq -r '.browser_download_url // .name')"
-            else
-              # 超时/断连时服务端可能已实际收到文件：复查一次附件列表再下结论
-              sleep 5
-              curl -sS -m 30 -o /tmp/gitee_rel_verify.json \
-                "${API}/releases/${RID}?access_token=${GITEE_TOKEN}" || true
-              CNT2=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel_verify.json 2>/dev/null || echo 0)
-              if [ "${CNT2:-0}" -gt 0 ]; then
-                echo "::warning::上传请求报错（HTTP ${HTTP_CODE}），但复查发现附件 ${ZIP} 已存在，视为成功"
-              else
-                echo "::error::附件上传失败（HTTP ${HTTP_CODE}）：如为超时，多为海外 Runner 访问 Gitee 上传大文件被限速，可重跑该 job 补传附件"
-                echo "$RESP" | head -c 500
-                exit 1
-              fi
+            # 3b) 已存在则刷新发布说明（把历史版本的旧说明统一更新为含 GitHub Releases 下载链接的新版）
+            HTTP_CODE=$(curl -sS -m 60 -o /tmp/gitee_update.json -w '%{http_code}' -X PATCH "${API}/releases/${RID}" \
+              --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "body@/tmp/gitee_body_final.md") || HTTP_CODE="000"
+            UPDATE_RESP=$(cat /tmp/gitee_update.json 2>/dev/null || true)
+            if [ "$HTTP_CODE" != "200" ]; then
+              echo "::error::更新 Gitee 发行版说明失败（HTTP ${HTTP_CODE}），请检查令牌权限（需勾选 projects）"
+              echo "$UPDATE_RESP" | head -c 300
+              exit 1
             fi
+            echo "已更新 Gitee 发行版说明 ${TAG} (id=${RID})"
           fi
 
           echo "✅ Gitee 发布完成：https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${TAG}"
