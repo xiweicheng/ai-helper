@@ -116,8 +116,8 @@ export async function rehydrateAlarms() {
   }
 }
 
-// 顶层同步注册闹钟监听（MV3 唤醒依赖）
-chrome.alarms.onAlarm.addListener((alarm) => {
+// 顶层同步注册闹钟监听（MV3 唤醒依赖；SW 终止竞态下 alarms 可能被剥离，可选链保护）
+chrome.alarms?.onAlarm?.addListener?.((alarm) => {
   if (!alarm.name.startsWith(ALARM_PREFIX)) return;
   const taskId = alarm.name.slice(ALARM_PREFIX.length);
   runTask(taskId).catch((e) => logger.error('[Scheduler] onAlarm runTask failed:', taskId, e));

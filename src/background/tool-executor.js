@@ -1271,8 +1271,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
   });
 }
 
-// 监听全局 MCP 开关变化
-chrome.storage.onChanged.addListener((changes) => {
+// 监听全局 MCP 开关变化（SW 终止竞态下 storage 可能被剥离：可选链保护）
+chrome.storage?.onChanged?.addListener?.((changes) => {
   if (changes.mcpEnabled) {
     const enabled = changes.mcpEnabled.newValue === true;
     logger.debug('[Background] MCP globaltoggle changed:', enabled);

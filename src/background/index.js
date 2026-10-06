@@ -8,6 +8,7 @@ import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheck
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
+import { restoreDetachWindowId } from './detach-window.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
@@ -85,18 +86,16 @@ const keepalivePorts = new Map(); // sessionId -> Port
 let _detachWindowId = null;
 
 // SW 启动时从 storage 恢复脱离窗口状态
-chrome.storage.local.get('_detachWindowId', (result) => {
-  _detachWindowId = result._detachWindowId || null;
-  // 验证窗口是否仍然存在
-  if (_detachWindowId) {
-    chrome.windows.get(_detachWindowId).catch(() => {
-      _detachWindowId = null;
-      chrome.storage.local.remove('_detachWindowId').catch(() => {});
-    });
-  }
+// （扩展重载/SW 终止竞态下 storage 可能失败：按无脱离窗口静默降级，见 detach-window.js）
+restoreDetachWindowId().then((windowId) => {
+  _detachWindowId = windowId;
 });
 
-chrome.runtime.onConnect.addListener(async (port) => {
+// 【SW 终止竞态防护】扩展重载/终止瞬间 chrome API 可能已被剥离为 undefined，
+// 模块顶层直接访问（如 chrome.storage.onChanged）会抛 TypeError 并整体中断
+// SW 启动（表现为 "No SW"、Unchecked runtime.lastError 等报错）。因此顶层 API
+// 访问统一用可选链保护：进程将死时跳过注册/读取是可接受的降级。
+chrome.runtime?.onConnect?.addListener?.(async (port) => {
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
     // 判断是否为重连（SW 重启后的重连），而非首次连接
@@ -146,7 +145,7 @@ chrome.runtime.onConnect.addListener(async (port) => {
  * 不使用 openPanelOnActionClick，改为手动控制：
  * 当脱离窗口存在时，点击插件图标不再打开侧边栏，避免多窗口并行
  */
-chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false });
+chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }).catch(() => {});
 
 // 侧边栏作用域模式：'global' | 'tab-specific'
 // 注：不再自建「绑定 tab」状态。Chrome 的侧边栏是 per-window 的，per-tab 的
@@ -168,12 +167,16 @@ let _legacyPanelOpen = false;
 // “面板本来就开着”（见 toggleSidePanelColdStart）。
 // 注意：实测 getContexts 对 side panel 返回的 windowId/tabId 是 -1（无法归到具体窗口），
 // 所以它只能回答「有没有面板开着」，窗口归属只能靠 sidePanel.onOpened/onClosed。
-const _startupPanelProbe = chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] })
-  .then((contexts) => {
+// （SW 终止/重载竞态下 getContexts 可能不可用：静默降级为空快照）
+const _startupPanelProbe = (async () => {
+  try {
+    const contexts = await chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
     _legacyPanelOpen = contexts.length > 0;
     return contexts;
-  })
-  .catch(() => []);
+  } catch {
+    return [];
+  }
+})();
 chrome.sidePanel?.onOpened?.addListener((info) => {
   if (info?.windowId == null) return;
   logger.debug('[Background] sidePanel onOpened:', JSON.stringify(info));
@@ -193,13 +196,19 @@ chrome.sidePanel?.onClosed?.addListener((info) => {
 // manifest 不再声明 side_panel.default_path（否则 manifest 默认值会覆盖运行时
 // 全局禁用，导致 tabId 绑定失效），因此启动时先同步设置默认 path，
 // 保证 storage 异步读取完成前 sidePanel.open() 可用
-chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
+chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true }).catch(() => {});
 
 // SW 启动时从 storage 恢复作用域模式（Chrome 自己保存 per-tab 启用状态，无需恢复）
-chrome.storage.local.get(['sidePanelScope']).then((result) => {
-  _sidePanelScope = normalizeSidePanelScope(result.sidePanelScope);
-  applySidePanelScope();
-}).catch(() => {});
+// （SW 终止/重载竞态下 storage 可能不可用：保持默认作用域模式）
+(async () => {
+  try {
+    const result = await chrome.storage.local.get(['sidePanelScope']);
+    _sidePanelScope = normalizeSidePanelScope(result.sidePanelScope);
+    applySidePanelScope();
+  } catch {
+    /* 静默降级 */
+  }
+})();
 
 /**
  * 作用域模式取值白名单（导入配置、手工改 storage 都可能写入非法值）
@@ -224,10 +233,10 @@ function normalizeSidePanelScope(value) {
 function applySidePanelScope() {
   if (_sidePanelScope === 'tab-specific') {
     // 关闭全局默认：未显式启用的 tab 不显示面板（无 manifest default_path，此禁用生效）
-    chrome.sidePanel?.setOptions?.({ enabled: false });
+    chrome.sidePanel?.setOptions?.({ enabled: false }).catch(() => {});
   } else {
     // 全局模式：所有 tab 可用；分组只在绑定模式下有意义，切回来时解散已有分组
-    chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
+    chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true }).catch(() => {});
     _aiHelperGroupsReady?.then(() => dissolveAiHelperGroups()).catch(() => {});
   }
 }
@@ -392,7 +401,7 @@ async function dissolveAiHelperGroups() {
 }
 
 // 监听配置变更，动态切换作用域模式
-chrome.storage.onChanged.addListener((changes, area) => {
+chrome.storage?.onChanged?.addListener?.((changes, area) => {
   if (area === 'local' && changes.sidePanelScope) {
     const newScope = normalizeSidePanelScope(changes.sidePanelScope.newValue);
     if (newScope !== _sidePanelScope) {
@@ -421,7 +430,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // 手动处理插件图标点击：脱离窗口存在时跳过，否则打开侧边栏
 // 注意：sidePanel.open() 要求用户手势上下文，必须同步调用，不能 await
-chrome.action.onClicked.addListener((tab) => {
+chrome.action?.onClicked?.addListener?.((tab) => {
   if (_detachWindowId) {
     // 脱离窗口仍存在，尝试聚焦到该窗口
     try {
@@ -450,7 +459,7 @@ chrome.action.onClicked.addListener((tab) => {
 // 窗口关闭（用户直接关闭窗口）：清理脱离窗口 windowId + 丢弃该窗口的分组映射
 // 注：windows.onRemoved 不在用户手势上下文中，无法调用 sidePanel.open()，
 // 因此不自动重开侧边栏，用户点击插件图标或快捷键即可重新打开
-chrome.windows.onRemoved.addListener((windowId) => {
+chrome.windows?.onRemoved?.addListener?.((windowId) => {
   if (_detachWindowId === windowId) {
     _detachWindowId = null;
     chrome.storage.local.remove('_detachWindowId').catch(() => {});
@@ -465,7 +474,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 // 监听标签页加载完成：仅全局模式下重申全局默认启用。
 // tab-specific 模式下不在此处 setOptions 全局 path，避免反复重设默认实例
 // 干扰绑定 tab 的原生“打开状态”记忆（影响切回自动重现）
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs?.onUpdated?.addListener?.((tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' && tab.url?.startsWith('http')) {
     if (_sidePanelScope === 'global') {
       chrome.sidePanel?.setOptions?.({ path: 'side_panel.html', enabled: true });
@@ -507,24 +516,30 @@ const TOGGLE_SIDEPANEL_COMMAND = '_toggle_sidepanel';
 const _activeTabByWindow = new Map();
 let _lastFocusedWindowId = null;
 
-chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+chrome.tabs?.onActivated?.addListener?.(({ tabId, windowId }) => {
   _activeTabByWindow.set(windowId, tabId);
   _lastFocusedWindowId = windowId;
 });
-chrome.tabs.onRemoved.addListener((tabId, { windowId }) => {
+chrome.tabs?.onRemoved?.addListener?.((tabId, { windowId }) => {
   if (_activeTabByWindow.get(windowId) === tabId) _activeTabByWindow.delete(windowId);
 });
-chrome.windows.onFocusChanged.addListener((windowId) => {
+chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   _lastFocusedWindowId = windowId;
 });
 // 启动补水：SW 被任意事件唤醒后尽快把当前窗口的活跃 tab 放进镜像，
 // 下一次按键即可走同步路径
-chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
-  if (!tab?.id) return;
-  _activeTabByWindow.set(tab.windowId, tab.id);
-  if (_lastFocusedWindowId == null) _lastFocusedWindowId = tab.windowId;
-}).catch(() => {});
+// （SW 终止/重载竞态下 tabs.query 可能不可用：跳过本次镜像补水）
+(async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab?.id) return;
+    _activeTabByWindow.set(tab.windowId, tab.id);
+    if (_lastFocusedWindowId == null) _lastFocusedWindowId = tab.windowId;
+  } catch {
+    /* 静默降级 */
+  }
+})();
 
 // 快捷键是否真的被绑定（被其它扩展占用时 Chrome 会静默不绑，表现为“按了没反应”）
 chrome.commands?.getAll?.().then((commands) => {
@@ -743,7 +758,7 @@ chrome.commands?.onCommand?.addListener((command) => {
 //
 // ==================== 消息监听 ====================
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   if (message.type === 'IFRAME_SELECTION') {
     const tabId = sender.tab?.id;
     if (tabId) {
