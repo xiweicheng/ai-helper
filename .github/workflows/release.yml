@@ -206,7 +206,8 @@ jobs:
           3. 打开右上角「开发者模式」
           4. 点击「加载已解压的扩展程序」，选择解压后的文件夹
 
-          > 受网络环境所限，Gitee 端仅同步发行版与发布说明，构建产物统一由 GitHub Actions 构建并发布在 GitHub Releases。
+          > 本附件由 GitHub Actions 免费 Runner 自动构建并上传至 Gitee 发行版；
+          > 未使用 Gitee Go（收费增值服务），构建与发布全程零成本。
           EOF
           sed "s|__TAG__|${TAG}|g; s|__URL__|${GH_RELEASE_URL}|g" /tmp/gitee_body.md > /tmp/gitee_body_final.md
 
