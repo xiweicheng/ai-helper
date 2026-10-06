@@ -877,6 +877,10 @@ npm start
 
 ## 快速开始
 
+### 安装（推荐）
+
+从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的最新扩展包 `ai-helper-*.zip`，解压后打开 `chrome://extensions/` 开启「开发者模式」，点击「加载已解压的扩展程序」选择解压后的文件夹。（也可从 Microsoft Edge 扩展商店一键安装。）
+
 ### 开发模式
 
 ```bash
@@ -1040,7 +1044,7 @@ import { messageHistory } from './state.js'; // 直接解构
 ## 常见问题
 
 **Q: 扩展加载后图标不显示？**
-确保 `chrome://extensions/` 中「开发者模式」已开启，选择了正确的 `dist` 目录。
+确保 `chrome://extensions/` 中「开发者模式」已开启，并选择了正确的扩展目录。
 
 **Q: 侧边栏打不开？**
 Chrome 版本需 >= 114，低版本不支持 Side Panel API。

@@ -836,6 +836,10 @@ Enter the pairing code shown in the terminal on the extension options page's "Ag
 
 ## Getting Started
 
+### Install (Recommended)
+
+Download the latest auto-built package `ai-helper-*.zip` from [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest), extract it, then open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder. (Alternatively, install from the Microsoft Edge Add-ons store.)
+
 ### Development Mode
 
 ```bash
@@ -999,7 +1003,7 @@ Supports automatic transaction failure recovery and legacy `chrome.storage.local
 ## FAQ
 
 **Q: Extension icon not showing after loading?**
-Ensure Developer mode is enabled on `chrome://extensions/` and the correct `dist` directory is selected.
+Ensure Developer mode is enabled on `chrome://extensions/` and the correct extension directory is selected.
 
 **Q: Side panel won't open?**
 Chrome version must be ≥ 114. Older versions don't support the Side Panel API.

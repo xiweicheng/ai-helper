@@ -143,8 +143,8 @@ AI 不是完美的，AI Helper 内置了三级质量检查：
 
 ## 立即开始
 
-1. 克隆项目，`npm install && npm run build`
-2. Chrome 打开 `chrome://extensions/`，加载 `dist` 目录
+1. 从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的扩展包（`ai-helper-*.zip`）并解压
+2. Chrome 打开 `chrome://extensions/`，开启开发者模式，点击「加载已解压的扩展程序」选择解压后的文件夹
 3. 配置 API Key，选择模型，开始使用
 
 ---
