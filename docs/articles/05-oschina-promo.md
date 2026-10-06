@@ -233,22 +233,19 @@ AI Helper + 代理服务：
 ## 如何开始
 
 ```bash
-# 1. 克隆项目
-git clone https://gitee.com/xiweicheng/ai-helper.git
-或者
-git clone https://github.com/xiweicheng/ai-helper.git
-cd ai-helper
+# 1. 下载自动构建的扩展包（推荐）
+# 打开 https://github.com/xiweicheng/ai-helper/releases/latest
+# 下载 ai-helper-*.zip 并解压
 
-# 2. 安装依赖 & 构建（可选，仓库根目录已经存在打包好的dist目录）
-npm install && npm run build
+# （开发者）也可从源码构建：git clone 后 npm install && npm run build，加载 dist 目录
 
-# 3. Chrome 加载扩展
-# 打开 chrome://extensions/ → 开启开发者模式 → 加载已解压的扩展程序 → 选择 dist 目录
+# 2. Chrome 加载扩展
+# 打开 chrome://extensions/ → 开启开发者模式 → 加载已解压的扩展程序 → 选择解压后的文件夹
 
-# 4. 配置 API Key（填写自己已购买模型平台申请的api key）
+# 3. 配置 API Key（填写自己已购买模型平台申请的api key）
 # 右键扩展图标 → 选项 → 填入 API Key → 选择模型
 
-# 5.（可选）启动本地代理服务
+# 4.（可选）启动本地代理服务
 cd agent && npm install && npm start
 或者
 npm install -g ai-helper-agent && aha start

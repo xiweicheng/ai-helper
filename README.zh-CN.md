@@ -87,7 +87,7 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 
 ## 30 秒上手
 
-1. **安装** —— [Microsoft Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) 一键装；或者 `npm install && npm run build`，在 `chrome://extensions/` 开启开发者模式后加载 `dist/` 目录。
+1. **安装** —— [Microsoft Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) 一键装；或从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的扩展包（`ai-helper-*.zip`），解压后在 `chrome://extensions/` 开启开发者模式，点击「加载已解压的扩展程序」选择解压后的文件夹。开发者可从源码构建：`npm install && npm run build` 后加载 `dist/` 目录。
 2. **打开侧边栏** —— 按 `Ctrl+Shift+Y` / `Cmd+Shift+Y`，或点击扩展图标。
 3. **填入 API Key** —— 选项页 → 基础设置。任何 OpenAI 兼容端点都行，默认预置 DeepSeek；可保存多套厂商配置随时切换。
 4. **（可选）解锁本地文件 / 命令 / MCP / Skill / 知识库** —— 执行 `npm install -g ai-helper-agent && aha start -b`，把终端里的 6 位配对码填到选项页 → Agent。

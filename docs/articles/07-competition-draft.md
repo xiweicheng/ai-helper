@@ -81,11 +81,10 @@ TRAE 还帮我跨过了一个原本以为搞不定的坎——**MCP协议扩展*
 GitHub 项目地址：待补充（请将实际仓库链接填写在此处）
 
 **安装方式：**
-1. 克隆项目：`git clone <实际仓库地址>`
-2. 构建：`npm install && npm run build`
-3. Chrome 打开 `chrome://extensions/`，开启开发者模式
-4. 点击"加载已解压的扩展程序"，选择 `dist` 文件夹
-5. 在选项页配置API Key，即可开始使用
+1. 从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的扩展包（`ai-helper-*.zip`）并解压
+2. Chrome 打开 `chrome://extensions/`，开启开发者模式
+3. 点击"加载已解压的扩展程序"，选择解压后的文件夹
+4. 在选项页配置API Key，即可开始使用
 
 ---
 

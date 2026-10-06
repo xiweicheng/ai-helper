@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/fix-build.js",
     "build:silent": "node scripts/silent-build.js",
+    "release:agent": "bash agent/publish.sh",
     "preview": "vite",
     "lint": "eslint src/",
     "test": "npm run test:unit && npm run test:e2e",

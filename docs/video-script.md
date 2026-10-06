@@ -14,7 +14,7 @@
 ## 二、录制准备清单
 
 ### 环境准备
-- [ ] Chrome 浏览器已安装 AI Helper 扩展（dist 目录加载）
+- [ ] Chrome 浏览器已安装 AI Helper 扩展（构建产物解压目录加载）
 - [ ] 已配置 API Key（DeepSeek 或其他 OpenAI 兼容 API）
 - [ ] 已连接本地 Agent 服务（`aha start -b`）
 - [ ] 准备好演示用网页（如一个包含表格的页面、一个需要填写的表单）

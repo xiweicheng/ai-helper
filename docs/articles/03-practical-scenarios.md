@@ -117,7 +117,7 @@ AI Helper 可以通过代理服务：
 
 ## 如何开始？
 
-1. **安装**：从 GitHub 下载，`npm install && npm run build`，Chrome 加载 `dist` 目录
+1. **安装**：从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的扩展包（`ai-helper-*.zip`）并解压，Chrome 开启开发者模式后加载解压后的文件夹（或从 Edge 扩展商店一键安装）
 2. **配置**：填入你的 API Key（支持 DeepSeek、OpenAI、通义千问等）
 3. **使用**：`Ctrl+Shift+Y` 打开侧边栏，开始对话
 

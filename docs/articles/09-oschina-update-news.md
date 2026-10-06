@@ -65,11 +65,10 @@ AI Helper 是一个采用 MIT 许可证开源的浏览器智能助手扩展，�
 AI Helper 无需付费订阅、无需注册账号，API 费用直接支付给所选模型厂商（兼容 OpenAI Chat Completions 协议，支持 DeepSeek / 通义千问 / GPT / Claude 等 30+ 模型）。
 
 ```bash
-# 克隆项目（仓库内已附带打包好的 dist 目录，可直接加载）
-git clone https://gitee.com/xiweicheng/ai-helper.git
-# 或 git clone https://github.com/xiweicheng/ai-helper.git
+# 从 GitHub Releases 下载自动构建的扩展包（由 GitHub Actions 打包）
+# https://github.com/xiweicheng/ai-helper/releases/latest
 
-# Chrome 打开 chrome://extensions/ → 开发者模式 → 加载已解压的扩展程序 → 选择 dist 目录
+# 解压后打开 chrome://extensions/ → 开发者模式 → 加载已解压的扩展程序 → 选择解压后的文件夹
 
 # （可选）启动本地代理服务，解锁文件读写 / 命令执行 / Skill / MCP
 npm install -g ai-helper-agent && aha start

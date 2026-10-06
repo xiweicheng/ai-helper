@@ -8,6 +8,10 @@
 #   ./publish.sh minor        # 小版本升级 (1.6.2 → 1.7.0)
 #   ./publish.sh major        # 大版本升级 (1.6.2 → 2.0.0)
 #   ./publish.sh 2.0.0        # 指定版本号
+#
+# 也可在仓库根目录直接执行（无需 cd 到 agent/）:
+#   npm run release:agent            # 交互式选择版本升级类型
+#   npm run release:agent -- patch   # 透传版本参数（patch / minor / major / 2.0.0）
 
 set -euo pipefail
 
@@ -16,6 +20,7 @@ cd "$SCRIPT_DIR"
 
 NPM_REGISTRY="https://registry.npmjs.org/"
 PACKAGE_NAME="ai-helper-agent"
+GIT_REMOTES="origin gitee atomgit"  # 版本 tag 推送的 git 远端列表
 
 # 颜色
 RED='\033[0;31m'
@@ -178,11 +183,30 @@ if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
     git add package.json package-lock.json
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
-    log_info "推送 tag v${NEW_VERSION}..."
-    for remote in origin gitee; do
-        git push "$remote" "$(git branch --show-current)" && git push "$remote" "v${NEW_VERSION}"
+    log_info "推送分支与 tag v${NEW_VERSION}..."
+    PUSHED_REMOTES=""
+    FAILED_REMOTES=""
+    for remote in $GIT_REMOTES; do
+        if ! git remote get-url "$remote" &>/dev/null; then
+            log_warn "远端 '${remote}' 未配置，跳过"
+            FAILED_REMOTES="${FAILED_REMOTES}${remote}(未配置) "
+            continue
+        fi
+        log_info "推送到 ${remote}..."
+        if git push "$remote" "$(git branch --show-current)" && git push "$remote" "v${NEW_VERSION}"; then
+            PUSHED_REMOTES="${PUSHED_REMOTES}${remote} "
+        else
+            log_warn "推送到 ${remote} 失败，继续推送其余远端"
+            FAILED_REMOTES="${FAILED_REMOTES}${remote}(失败) "
+        fi
     done
-    log_ok "Git tag v${NEW_VERSION} 已推送到 origin 和 gitee"
+    if [ -n "$PUSHED_REMOTES" ]; then
+        log_ok "Git tag v${NEW_VERSION} 已推送到: ${PUSHED_REMOTES}"
+    fi
+    if [ -n "$FAILED_REMOTES" ]; then
+        log_warn "以下远端推送未完成: ${FAILED_REMOTES}"
+        log_warn "可稍后手动重试: git push <remote> && git push <remote> v${NEW_VERSION}"
+    fi
 else
     log_info "跳过 git 提交，版本号变更仅保留在本地 package.json 中"
 fi
