@@ -5741,6 +5741,104 @@ body {
   height: 8px;
 }
 
+/* 版本信息弹窗 */
+.version-info-container {
+  max-width: 400px !important;
+  width: 90%;
+}
+
+.version-info-list {
+  margin-top: 12px;
+}
+
+.version-info-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.version-info-row:last-child {
+  border-bottom: none;
+}
+
+.version-info-label {
+  color: #888;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.version-info-value {
+  color: #333;
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-all;
+}
+
+.version-info-value.mono {
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+}
+
+.version-info-links {
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.version-info-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.version-info-link:hover {
+  background: #f5f7fa;
+}
+
+.version-info-link-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: #555;
+}
+
+.version-info-link-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-info-link-arrow {
+  flex-shrink: 0;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.version-info-copy-btn {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px 0;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: #f5f7fa;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.version-info-copy-btn:hover {
+  background: #eaeef4;
+}
+
 /* 工具调用状态样式 */
 .tool-call-status {
   align-self: flex-start;

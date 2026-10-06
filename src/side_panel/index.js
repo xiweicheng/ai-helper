@@ -16,6 +16,7 @@ import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWork
 import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
+import { initVersionInfo } from './version-info.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
@@ -3606,26 +3607,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // GitHub 仓库链接按钮（header 下拉菜单）
-  const githubRepoBtn = document.getElementById('githubRepoBtn');
-  if (githubRepoBtn) {
-    githubRepoBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
-      chrome.tabs.create({ url: 'https://github.com/xiweicheng/ai-helper' });
-    });
-  }
-
-  // Gitee 仓库链接按钮（header 下拉菜单）
-  const giteeRepoBtn = document.getElementById('giteeRepoBtn');
-  if (giteeRepoBtn) {
-    giteeRepoBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
-      chrome.tabs.create({ url: 'https://gitee.com/xiweicheng/ai-helper' });
-    });
-  }
-
   // ==================== 命令执行审计 ====================
   const auditLogBtn = document.getElementById('auditLogBtn');
   const auditLogOverlay = document.getElementById('auditLogOverlay');
@@ -4364,6 +4345,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSchedulePanel();
   initAgentDropdown();
   initWorkspacePanel();
+  initVersionInfo();
   // 收藏加载完成后刷新所有消息的收藏按钮状态（消息可能先于收藏加载渲染）
   const { updateBookmarkButtons, updateBookmarkBadge } = await import('./bookmark-panel.js');
   updateBookmarkButtons();

@@ -109,17 +109,13 @@
             </svg>
             <span data-i18n="header.shortcuts">查看快捷键</span>
           </button>
-          <button class="header-dropdown-item" id="githubRepoBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 .5C5.73.5.5 5.73.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.72-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 012.9-.39c.98 0 1.97.13 2.9.39 2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.51 11.51 0 0023.5 12C23.5 5.73 18.27.5 12 .5z"/>
+          <button class="header-dropdown-item" id="versionInfoBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="16" x2="12" y2="12"/>
+              <line x1="12" y1="8" x2="12.01" y2="8"/>
             </svg>
-            <span data-i18n="header.githubRepo">GitHub 仓库</span>
-          </button>
-          <button class="header-dropdown-item" id="giteeRepoBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M11.984 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 01-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.982 0 1.778-.796 1.778-1.778v-.296a.593.593 0 00-.592-.593h-4.15a.592.592 0 01-.592-.592v-1.482a.593.593 0 01.593-.592h6.815c.327 0 .593.265.593.592v3.408a4 4 0 01-4 4H8.444a3.556 3.556 0 01-3.555-3.556V8.89a3.556 3.556 0 013.555-3.556h9.63z"/>
-            </svg>
-            <span data-i18n="header.giteeRepo">Gitee 仓库</span>
+            <span data-i18n="header.versionInfo">版本信息</span>
           </button>
         </div>
       </div>
@@ -883,6 +879,17 @@
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- 版本信息弹窗 -->
+  <div class="modal-overlay" id="versionInfoModal" style="z-index: 4000;">
+    <div class="modal-container version-info-container">
+      <button class="prompt-modal-close" id="versionInfoCloseBtn" data-i18n-title="common.close" title="关闭">×</button>
+      <div class="modal-title" data-i18n="versionInfo.title">ℹ️ 版本信息</div>
+      <div class="version-info-list" id="versionInfoList"></div>
+      <div class="version-info-links" id="versionInfoLinks"></div>
+      <button class="version-info-copy-btn" id="versionInfoCopyBtn" data-i18n="versionInfo.copy">复制信息</button>
     </div>
   </div>
 

@@ -183,7 +183,24 @@ fi
 echo ""
 read -r -p "是否提交版本号变更并推送 git tag? [Y/n] " git_confirm
 if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
-    git add package.json package-lock.json
+    # 写入扩展端版本信息（侧边栏「版本信息」弹窗数据源，随本次提交打包进扩展构建）。
+    # commitId 取写入瞬间的 HEAD，即发布提交的父提交——本 JSON 所在提交将被打 tag，
+    # 无法引用自身 hash；记录父提交后，git diff <commitId>..v<version> 仅含版本号变更。
+    COMMIT_ID=$(git rev-parse HEAD)
+    VERSION_JSON_PATH="../src/config/version.json"
+    VERSION_JSON_PATH="$VERSION_JSON_PATH" NEW_VERSION="$NEW_VERSION" COMMIT_ID="$COMMIT_ID" node -e '
+const fs = require("fs");
+const meta = {
+  version: process.env.NEW_VERSION,
+  tag: "v" + process.env.NEW_VERSION,
+  commitId: process.env.COMMIT_ID,
+  publishedAt: new Date().toISOString(),
+};
+fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + "\n");
+'
+    log_ok "版本信息已写入 ${VERSION_JSON_PATH#../}"
+
+    git add package.json package-lock.json "$VERSION_JSON_PATH"
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
     log_info "推送分支与 tag v${NEW_VERSION}..."

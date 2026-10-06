@@ -197,8 +197,7 @@ export default {
     tokenStats: 'Token Stats',
     auditLog: 'Command Audit',
     shortcuts: 'Shortcuts',
-    githubRepo: 'GitHub Repository',
-    giteeRepo: 'Gitee Repository',
+    versionInfo: 'Version Info',
     detachTitle: 'Detach to standalone window',
     attachTitle: 'Attach back to side panel',
   },
@@ -371,6 +370,18 @@ export default {
     closeSession: 'Close current session',
     closeCurrentSession: 'Close current session',
     editLastMessage: 'Edit last user message',
+  },
+
+  // Version info modal
+  versionInfo: {
+    title: 'ℹ️ Version Info',
+    version: 'Version',
+    tag: 'Git Tag',
+    commit: 'Git Commit',
+    publishedAt: 'Published At',
+    githubRepo: 'GitHub Repository',
+    giteeRepo: 'Gitee Repository',
+    copy: 'Copy Info',
   },
 
   // Image editor

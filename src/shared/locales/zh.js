@@ -197,8 +197,7 @@ export default {
     tokenStats: 'Token 统计',
     auditLog: '命令执行审计',
     shortcuts: '查看快捷键',
-    githubRepo: 'GitHub 仓库',
-    giteeRepo: 'Gitee 仓库',
+    versionInfo: '版本信息',
     detachTitle: '脱离为独立窗口',
     attachTitle: '回归侧边栏',
   },
@@ -371,6 +370,18 @@ export default {
     closeSession: '关闭当前会话',
     closeCurrentSession: '关闭当前会话',
     editLastMessage: '编辑最近一条用户消息',
+  },
+
+  // 版本信息弹窗
+  versionInfo: {
+    title: 'ℹ️ 版本信息',
+    version: '版本号',
+    tag: 'Git Tag',
+    commit: 'Git 提交',
+    publishedAt: '发布时间',
+    githubRepo: 'GitHub 仓库',
+    giteeRepo: 'Gitee 仓库',
+    copy: '复制信息',
   },
 
   // 图片编辑器
