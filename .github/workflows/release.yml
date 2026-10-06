@@ -1,0 +1,92 @@
+name: Release
+
+# 触发方式：
+#   1) 推送 v* 标签（例如 v1.0.0）→ 自动构建并发布
+#   2) 手动触发（Actions → Release → Run workflow），可指定版本号
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号，例如 v1.0.0（留空则使用 package.json 中的 version）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release Chrome Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -f dist/manifest.json ]; then
+            echo "::error::dist/manifest.json not found, build failed"
+            exit 1
+          fi
+          du -sh dist
+
+      - name: Resolve release tag
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="$INPUT_VERSION"
+          elif [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="v$(node -p "require('./package.json').version")"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Package extension as zip
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          cd dist
+          zip -r "../ai-helper-${TAG}.zip" .
+          cd ..
+          ls -lh ai-helper-*.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: |
+            ## AI Helper ${{ steps.version.outputs.tag }}
+
+            ### 安装方式
+            1. 下载下方 `ai-helper-*.zip` 并解压
+            2. 打开 Chrome，访问 `chrome://extensions/`
+            3. 打开右上角「开发者模式」
+            4. 点击「加载已解压的扩展程序」，选择解压后的文件夹
+
+            > 由 GitHub Actions 自动构建，构建产物为 `dist/` 目录打包。
+          files: ai-helper-*.zip
+          generate_release_notes: true
+          draft: false
