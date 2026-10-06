@@ -127,6 +127,9 @@ jobs:
       #   2) /releases/tags/<tag> 对不存在的 tag 返回 HTTP 200 + null（非 404）
       #      → 判断是否存在必须看 id 字段是否为空，不能看状态码；
       #        状态码仅用于识别异常响应（401/403/5xx 等）并直接报错
+      #   3) /releases/tags/<tag> 与 /releases/{id} 均返回 assets 数组（含自动生成的
+      #      源码归档 <tag>.zip/.tar.gz 与手动附件，字段 name/browser_download_url），
+      #      附件去重按完整文件名精确匹配即可，自动源码归档不会误判
       - name: Sync tag to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -172,7 +175,7 @@ jobs:
           #    注意：tag 不存在时 Gitee 返回 HTTP 200 + body "null"，故只能判 id；
           #    非 200 视为网络/权限异常，直接报错，避免误走创建分支掩盖真实原因
           HTTP_CODE=$(curl -sS -m 30 -o /tmp/gitee_rel.json -w '%{http_code}' \
-            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" || echo "000")
+            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}") || HTTP_CODE="000"
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::error::查询 Gitee 发行版失败（HTTP ${HTTP_CODE}），请检查网络、仓库名与令牌权限（需勾选 projects）"
             echo "响应: $(head -c 300 /tmp/gitee_rel.json 2>/dev/null || true)"
@@ -202,10 +205,15 @@ jobs:
               --data-urlencode "tag_name=${TAG}" \
               --data-urlencode "name=${TAG}" \
               --data-urlencode "target_commitish=${GITEE_BRANCH}" \
-              --data-urlencode "body@/tmp/gitee_body.md" || echo "000")
+              --data-urlencode "body@/tmp/gitee_body.md") || HTTP_CODE="000"
             CREATE_RESP=$(cat /tmp/gitee_create.json 2>/dev/null || true)
             echo "创建响应(${HTTP_CODE}): $(echo "$CREATE_RESP" | head -c 300)"
             RID=$(echo "$CREATE_RESP" | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
+            if [ -z "$RID" ]; then
+              # 响应丢失但服务端可能已建成功：复查一次再判定失败
+              RID=$(curl -sS -m 30 "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" 2>/dev/null \
+                | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
+            fi
             if [ -z "$RID" ]; then
               echo "::error::创建 Gitee 发行版失败（HTTP ${HTTP_CODE}），请检查令牌权限（需勾选 projects）与 tag 是否存在"
               exit 1
@@ -216,27 +224,44 @@ jobs:
           # 3) 以 RID 刷新发行版详情（含附件列表），附件去重必须基于最新快照
           #    注：/releases/tags 查询响应与创建响应都可能不含附件信息
           HTTP_CODE=$(curl -sS -m 30 -o /tmp/gitee_rel.json -w '%{http_code}' \
-            "${API}/releases/${RID}?access_token=${GITEE_TOKEN}" || echo "000")
+            "${API}/releases/${RID}?access_token=${GITEE_TOKEN}") || HTTP_CODE="000"
           if [ "$HTTP_CODE" != "200" ]; then
             echo "::warning::刷新发行版详情失败（HTTP ${HTTP_CODE}），附件去重判断将不准确"
             echo "null" > /tmp/gitee_rel.json
           fi
 
           # 4) 上传附件（同名附件已存在则跳过，避免重复）
+          #    实测：GitHub 海外 Runner 上传大文件到 gitee.com 易停滞/超时，
+          #    故关闭 Expect 握手 + 对停滞连接快速中断 + 自动重试
           CNT=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel.json 2>/dev/null || echo 0)
           if [ "${CNT:-0}" -gt 0 ]; then
             echo "附件 ${ZIP} 已存在，跳过上传"
           else
-            HTTP_CODE=$(curl -sS -m 120 -o /tmp/gitee_attach.json -w '%{http_code}' -X POST "${API}/releases/${RID}/attach_files" \
+            HTTP_CODE=$(curl -sS -m 300 \
+              --connect-timeout 15 \
+              --speed-limit 10240 --speed-time 60 \
+              --retry 3 --retry-delay 10 \
+              -H "Expect:" \
+              -o /tmp/gitee_attach.json -w '%{http_code}' \
+              -X POST "${API}/releases/${RID}/attach_files" \
               -F "access_token=${GITEE_TOKEN}" \
-              -F "file=@${ZIP}" || echo "000")
+              -F "file=@${ZIP}") || HTTP_CODE="000"
             RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
             if echo "$RESP" | jq -e 'if type=="object" then (.browser_download_url // .name // empty) else empty end' >/dev/null 2>&1; then
               echo "附件上传成功：$(echo "$RESP" | jq -r '.browser_download_url // .name')"
             else
-              echo "::error::附件上传失败（HTTP ${HTTP_CODE}）"
-              echo "$RESP" | head -c 500
-              exit 1
+              # 超时/断连时服务端可能已实际收到文件：复查一次附件列表再下结论
+              sleep 5
+              curl -sS -m 30 -o /tmp/gitee_rel_verify.json \
+                "${API}/releases/${RID}?access_token=${GITEE_TOKEN}" || true
+              CNT2=$(jq -r --arg n "$ZIP" '[.. | objects | select(.name? == $n)] | length' /tmp/gitee_rel_verify.json 2>/dev/null || echo 0)
+              if [ "${CNT2:-0}" -gt 0 ]; then
+                echo "::warning::上传请求报错（HTTP ${HTTP_CODE}），但复查发现附件 ${ZIP} 已存在，视为成功"
+              else
+                echo "::error::附件上传失败（HTTP ${HTTP_CODE}）：如为超时，多为海外 Runner 访问 Gitee 上传大文件被限速，可重跑该 job 补传附件"
+                echo "$RESP" | head -c 500
+                exit 1
+              fi
             fi
           fi
 
