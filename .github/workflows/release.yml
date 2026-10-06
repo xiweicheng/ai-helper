@@ -12,9 +12,9 @@ name: Release
 #   但会把本次 run 标记为失败以提醒人工处理。
 #
 # 说明：Gitee 的自动构建（Gitee Go）是收费增值服务，本流程不使用它。
-#      构建在 GitHub 免费 Runner 上完成。Gitee 端只同步发行版与发布说明，
-#      不上传构建产物附件（海外 Runner 上传大文件到 Gitee 易超时/被限速），
-#      发布说明中提供指向 GitHub Releases 的下载链接。
+#      构建在 GitHub 免费 Runner 上完成；Gitee 端通过免费 OpenAPI 同步
+#      发行版与发布说明，并把构建产物 zip 作为发行版附件上传。
+#      发布说明中同时保留指向 GitHub Releases 的备用下载链接。
 on:
   push:
     tags:
@@ -120,6 +120,7 @@ jobs:
 
             > 由 GitHub Actions 自动构建，构建产物为 `dist/` 目录打包。
           files: ai-helper-*.zip
+          overwrite_files: true      # 重跑时同名资产直接覆盖，否则报 already_exists 会中断后续 Gitee 步骤
           generate_release_notes: true
           draft: false
 
@@ -194,7 +195,9 @@ jobs:
           ## AI Helper __TAG__ 发布包
 
           ### 下载
-          构建产物（`ai-helper-__TAG__.zip`）请前往 GitHub Releases 下载：
+          构建产物 `ai-helper-__TAG__.zip` 已作为本发行版附件提供，可直接在下方 Assets 区下载。
+
+          GitHub Releases 备用地址：
           __URL__
 
           ### 安装方式
@@ -246,3 +249,65 @@ jobs:
           fi
 
           echo "✅ Gitee 发布完成：https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${TAG}"
+
+      - name: Attach zip to Gitee release
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ZIP: ${{ steps.package.outputs.zip }}
+        run: |
+          set -euo pipefail
+          API="https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}"
+
+          if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "::warning::未配置 GITEE_TOKEN，跳过 Gitee 附件上传"
+            exit 0
+          fi
+
+          if [ ! -f "${ZIP}" ]; then
+            echo "::error::未找到构建产物 ${ZIP}，无法上传"
+            exit 1
+          fi
+
+          # 1) 取发行版 id（写接口必须带 token）
+          RID=$(curl -sS -m 30 "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" \
+            | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
+          if [ -z "$RID" ]; then
+            echo "::error::未找到 Gitee 发行版 ${TAG}，请确认上一步已成功创建"
+            exit 1
+          fi
+          echo "release_id=${RID}"
+
+          # 2) 幂等处理：Gitee 的 attach_files 是「追加」语义，重跑会产生同名重复附件，
+          #    故先查出同名附件并按 id 删除，避免同名堆积
+          EXISTING=$(curl -sS -m 30 "${API}/releases/${RID}/attach_files?access_token=${GITEE_TOKEN}" || echo '[]')
+          echo "现有附件: $(echo "$EXISTING" | head -c 300)"
+          echo "$EXISTING" \
+            | jq -r --arg n "${ZIP}" '.[]? | select(.name==$n) | .id' 2>/dev/null \
+            | while read -r AID; do
+                [ -n "$AID" ] || continue
+                curl -sS -m 30 -X DELETE \
+                  "${API}/releases/${RID}/attach_files/${AID}?access_token=${GITEE_TOKEN}" >/dev/null 2>&1 \
+                  && echo "已删除同名旧附件 id=${AID}" \
+                  || echo "::warning::删除旧附件 ${AID} 失败（忽略）"
+              done || true
+
+          # 3) 上传构建产物
+          #    官方端点：POST /repos/{owner}/{repo}/releases/{release_id}/attach_files
+          #    表单字段名固定为 file（multipart/form-data）
+          echo "开始上传 ${ZIP}（$(du -h "${ZIP}" | cut -f1)）..."
+          HTTP_CODE=$(curl -sS -m 600 -o /tmp/gitee_attach.json -w '%{http_code}' \
+            -X POST "${API}/releases/${RID}/attach_files" \
+            -F "access_token=${GITEE_TOKEN}" \
+            -F "file=@${ZIP}") || HTTP_CODE="000"
+
+          RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ 附件上传成功：$(echo "$RESP" | head -c 400)"
+          else
+            echo "::error::Gitee 附件上传失败（HTTP ${HTTP_CODE}）"
+            echo "$RESP" | head -c 500
+            exit 1
+          fi
+
+          echo "✅ Gitee 发行版：https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${TAG}"
