@@ -32,3 +32,4 @@ demo/form-autofill/video-build/*.png
 demo/form-autofill/video-build/list.txt
 .trae/
 test-results-probes/
+dist/
