@@ -205,9 +205,6 @@ jobs:
           2. 打开 Chrome，访问 `chrome://extensions/`
           3. 打开右上角「开发者模式」
           4. 点击「加载已解压的扩展程序」，选择解压后的文件夹
-
-          > 本附件由 GitHub Actions 免费 Runner 自动构建并上传至 Gitee 发行版；
-          > 未使用 Gitee Go（收费增值服务），构建与发布全程零成本。
           EOF
           sed "s|__TAG__|${TAG}|g; s|__URL__|${GH_RELEASE_URL}|g" /tmp/gitee_body.md > /tmp/gitee_body_final.md
 
