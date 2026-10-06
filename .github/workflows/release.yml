@@ -270,6 +270,8 @@ jobs:
             exit 1
           fi
 
+          LOCAL_SIZE=$(wc -c < "${ZIP}" | tr -d ' ')
+
           # 1) 取发行版 id（写接口必须带 token）
           RID=$(curl -sS -m 30 "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" \
             | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
@@ -277,38 +279,59 @@ jobs:
             echo "::error::未找到 Gitee 发行版 ${TAG}，请确认上一步已成功创建"
             exit 1
           fi
-          echo "release_id=${RID}"
+          echo "release_id=${RID}  本地文件大小=${LOCAL_SIZE} bytes"
 
-          # 2) 幂等处理：Gitee 的 attach_files 是「追加」语义，重跑会产生同名重复附件，
-          #    故先查出同名附件并按 id 删除，避免同名堆积
+          # 2) 取现有附件列表
           EXISTING=$(curl -sS -m 30 "${API}/releases/${RID}/attach_files?access_token=${GITEE_TOKEN}" || echo '[]')
           echo "现有附件: $(echo "$EXISTING" | head -c 300)"
-          echo "$EXISTING" \
-            | jq -r --arg n "${ZIP}" '.[]? | select(.name==$n) | .id' 2>/dev/null \
-            | while read -r AID; do
-                [ -n "$AID" ] || continue
-                curl -sS -m 30 -X DELETE \
-                  "${API}/releases/${RID}/attach_files/${AID}?access_token=${GITEE_TOKEN}" >/dev/null 2>&1 \
-                  && echo "已删除同名旧附件 id=${AID}" \
-                  || echo "::warning::删除旧附件 ${AID} 失败（忽略）"
-              done || true
 
-          # 3) 上传构建产物
-          #    官方端点：POST /repos/{owner}/{repo}/releases/{release_id}/attach_files
-          #    表单字段名固定为 file（multipart/form-data）
-          echo "开始上传 ${ZIP}（$(du -h "${ZIP}" | cut -f1)）..."
-          HTTP_CODE=$(curl -sS -m 600 -o /tmp/gitee_attach.json -w '%{http_code}' \
-            -X POST "${API}/releases/${RID}/attach_files" \
-            -F "access_token=${GITEE_TOKEN}" \
-            -F "file=@${ZIP}") || HTTP_CODE="000"
+          # 3) 已存在「同名且同大小」附件 → 直接跳过，避免无谓的删除与重传
+          KEEP_ID=$(echo "$EXISTING" | jq -r --arg n "${ZIP}" --argjson s "${LOCAL_SIZE}" \
+            '.[]? | select(.name==$n and .size==$s) | .id' 2>/dev/null | head -1 || true)
 
-          RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
-          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
-            echo "✅ 附件上传成功：$(echo "$RESP" | head -c 400)"
+          if [ -n "$KEEP_ID" ]; then
+            echo "✅ 已存在同名同大小附件（id=${KEEP_ID}），无需重复上传"
           else
-            echo "::error::Gitee 附件上传失败（HTTP ${HTTP_CODE}）"
-            echo "$RESP" | head -c 500
-            exit 1
+            # 4) 先上传，成功后再清理旧同名附件
+            #    ⚠️ 顺序至关重要：绝不能「先删后传」。实测 Gitee 跨境上传易失败
+            #    （curl 18 / 502 Bad Gateway，4.7MB 约需 5 分钟），若先删则会导致附件丢失。
+            NEW_ID=""
+            OK=0
+            for ATTEMPT in 1 2 3; do
+              echo "上传尝试 ${ATTEMPT}/3：${ZIP}（$(du -h "${ZIP}" | cut -f1)）..."
+              HTTP_CODE=$(curl -sS -m 420 -o /tmp/gitee_attach.json -w '%{http_code}' \
+                -X POST "${API}/releases/${RID}/attach_files" \
+                -F "access_token=${GITEE_TOKEN}" \
+                -F "file=@${ZIP}") || HTTP_CODE="000"
+              RESP=$(cat /tmp/gitee_attach.json 2>/dev/null || true)
+              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+                NEW_ID=$(echo "$RESP" | jq -r 'if type=="object" then (.id // empty) else empty end' 2>/dev/null || true)
+                echo "✅ 第 ${ATTEMPT} 次上传成功：id=${NEW_ID}"
+                OK=1
+                break
+              fi
+              echo "::warning::第 ${ATTEMPT} 次上传失败（HTTP ${HTTP_CODE}）：$(echo "$RESP" | head -c 200)"
+              if [ "$ATTEMPT" != "3" ]; then
+                sleep $((ATTEMPT * 20))
+              fi
+            done
+
+            if [ "$OK" != "1" ]; then
+              echo "::error::Gitee 附件上传连续 3 次失败（跨境网络不稳定），请重跑本 workflow"
+              exit 1
+            fi
+
+            # 5) 清理旧同名附件（保留刚上传的 NEW_ID）——放在上传成功之后
+            echo "$EXISTING" \
+              | jq -r --arg n "${ZIP}" '.[]? | select(.name==$n) | .id' 2>/dev/null \
+              | while read -r AID; do
+                  [ -n "$AID" ] || continue
+                  if [ -n "${NEW_ID}" ] && [ "$AID" = "${NEW_ID}" ]; then continue; fi
+                  curl -sS -m 30 -X DELETE \
+                    "${API}/releases/${RID}/attach_files/${AID}?access_token=${GITEE_TOKEN}" >/dev/null 2>&1 \
+                    && echo "已清理旧同名附件 id=${AID}" \
+                    || echo "::warning::清理旧附件 ${AID} 失败（忽略）"
+                done || true
           fi
 
           echo "✅ Gitee 发行版：https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/releases/tag/${TAG}"
