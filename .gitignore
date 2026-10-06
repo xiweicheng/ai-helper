@@ -25,11 +25,11 @@ test-results/
 playwright-report/
 
 # 演示视频构建中间产物（分段视频/抽帧/音频素材/定格帧等，保留构建脚本）
-demo/form-autofill/video-build/frames/
-demo/form-autofill/video-build/audio*/
-demo/form-autofill/video-build/*.mp4
-demo/form-autofill/video-build/*.png
-demo/form-autofill/video-build/list.txt
+docs/demo/form-autofill/video-build/frames/
+docs/demo/form-autofill/video-build/audio*/
+docs/demo/form-autofill/video-build/*.mp4
+docs/demo/form-autofill/video-build/*.png
+docs/demo/form-autofill/video-build/list.txt
 .trae/
 test-results-probes/
 dist/
