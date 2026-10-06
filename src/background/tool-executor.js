@@ -1090,12 +1090,14 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
     const agentMcpClosedKey = `agentMcpClosedServers_${agentId || 'default'}`;
     chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect', agentMcpClosedKey], async (result) => {
       // 优先读取 agent-specific key，降级到旧的全局 enabledTools
-      let enabledTools = result[agentToolsKey] || result.enabledTools;
+      let enabledTools = result[agentToolsKey];
+      if (!Array.isArray(enabledTools)) enabledTools = result.enabledTools;
       
-      // 如果没有保存的配置，使用默认值（全部启用）
-      if (!enabledTools || !Array.isArray(enabledTools) || enabledTools.length === 0) {
+      // 配置缺失（从未保存过）或数据非法时，使用默认值（全部启用）；
+      // 空数组是用户显式保存的「全部禁用」，必须尊重，不能回落为全启用
+      if (!Array.isArray(enabledTools)) {
         enabledTools = BUILTIN_TOOLS.map(t => t.id);
-        console.log('[Background] not foundtool configuration,using default value (all enabled)');
+        console.log('[Background] tool configuration not found, using default value (all enabled)');
       }
 
       // 旧工具名迁移：合并前的工具名映射到合并后的新工具名

@@ -164,13 +164,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
       updateToolsPopupTitle();
       renderToolsPopupList();
     }
+    // 弹窗未打开时也刷新工具栏按钮数字（MCP/RAG 缓存或全局开关变化）
+    updateToolsToggleState();
   }
 });
 
-// 模块初始化时预加载 MCP 工具缓存
-loadMcpToolsFromStorage();
-// 预加载 RAG 知识库工具缓存
-loadRagToolsFromStorage();
+// 模块初始化时预加载 MCP 工具缓存（加载完成后刷新工具栏按钮数字）
+loadMcpToolsFromStorage().then(() => updateToolsToggleState());
+// 预加载 RAG 知识库工具缓存（同上）
+loadRagToolsFromStorage().then(() => updateToolsToggleState());
 
 // 全局开关状态（从 chrome.storage 加载，通过 onChanged 实时更新）
 let globalMcpEnabled = false;
@@ -180,6 +182,7 @@ let globalSkillsEnabled = true;
 chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
   globalMcpEnabled = result.mcpEnabled === true;
   globalSkillsEnabled = result.skillsEnabled !== false;
+  updateToolsToggleState();
 });
 
 /**
@@ -811,7 +814,7 @@ function saveToolsFromPopup() {
   const services = getMcpServicesForUI();
   const visibleServerIds = new Set(services.map(svc => svc.serverId));
   const newClosedServers = (state.mcpClosedServers || []).filter(id => !visibleServerIds.has(id));
-  // MCP 按服务粒度计数：一个服务算一个（用于 useTools 判定与提示数量）
+  // MCP 按服务粒度计数：一个服务算一个（用于保存提示数量）
   let openServiceCount = 0;
   services.forEach(svc => {
     if (isMcpServiceExcludedByAgent(svc.serverId)) {
@@ -827,7 +830,7 @@ function saveToolsFromPopup() {
     }
   });
   state.mcpClosedServers = newClosedServers;
-  state.useTools = state.enabledTools.length > 0 || openServiceCount > 0;
+  // 工具勾选与总开关（useTools）各自独立：保存选择不改写总开关状态
   
   // 保存到当前智能体独立的 storage key（工具勾选 + MCP 服务关闭列表）
   const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
@@ -856,7 +859,7 @@ function saveToolsFromPopup() {
   const filteredTools = getAgentFilteredTools();
   const filteredIds = new Set(filteredTools.map(t => t.id));
   const effectiveCount = state.enabledTools.filter(id => filteredIds.has(id)).length + openServiceCount;
-  showToast(state.useTools ? t('toolPanel.toolsEnabled', { count: effectiveCount }) : t('toolPanel.allToolsDisabled'), 'success');
+  showToast(effectiveCount > 0 ? t('toolPanel.toolsEnabled', { count: effectiveCount }) : t('toolPanel.allToolsDisabled'), 'success');
 }
 
 /**
@@ -902,6 +905,17 @@ function updateToolsToggleState() {
     } else {
       toolsBadge.style.display = 'none';
     }
+  }
+
+  // 工具栏工具配置按钮：动态数字显示已启用工具数（点击仍打开配置弹窗）
+  const toolsConfigCount = document.getElementById('toolsConfigCount');
+  if (toolsConfigCount) {
+    toolsConfigCount.textContent = effectiveEnabledCount;
+  }
+  const toolsConfigBtn = document.getElementById('toolsConfigBtn');
+  if (toolsConfigBtn) {
+    // 总开关关闭或数量为 0 时置灰（表示当前未生效）
+    toolsConfigBtn.classList.toggle('active', state.useTools && effectiveEnabledCount > 0);
   }
 }
 
@@ -960,7 +974,8 @@ function refreshToolPopupIfOpen() {
   if (overlay?.classList.contains('show')) {
     updateCategoryBadges();
     updateToolsPopupTitle();
-    updateToolsToggleState();
     renderToolsPopupList();
   }
+  // 工具栏按钮数字始终刷新（Agent 连接状态变化会影响 MCP 服务可见性）
+  updateToolsToggleState();
 }

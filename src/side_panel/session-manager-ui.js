@@ -922,7 +922,8 @@ async function handleSessionSwitch(sessionId) {
   state.mcpClosedServers = mcpToolsResult[agentMcpClosedKey] || [];
   const isAgentSpecific = !!savedResult[agentToolsKey];
   const savedTools = savedResult[agentToolsKey] || savedResult.enabledTools;
-  if (savedTools && savedTools.length > 0) {
+  // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
+  if (isAgentSpecific || (savedTools && savedTools.length > 0)) {
     // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
     const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
     const existing = savedTools.filter(id => validIds.has(id));

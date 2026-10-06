@@ -2186,9 +2186,9 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
+  min-width: 18px;
   height: 18px;
-  padding: 0;
+  padding: 0 2px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -2200,7 +2200,17 @@ body {
   color: #667eea;
   background: rgba(102, 126, 234, 0.1);
 }
-.tool-toggle-wrapper .check-toggle input:checked ~ .tool-config-btn {
+/* 按钮内数字：显示已启用工具数（点击仍打开工具配置弹窗） */
+.tool-config-btn .tools-config-count {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 工具总开关开启且存在启用工具时高亮；关闭或为 0 时保持置灰 */
+.tool-config-btn.active {
   color: #667eea;
 }
 .chat-container {

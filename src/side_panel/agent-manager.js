@@ -351,7 +351,8 @@ export async function switchAgent(agentId) {
   const saved = await chrome.storage.local.get([agentToolsKey, 'enabledTools']);
   const isAgentSpecific = !!saved[agentToolsKey]; // 是否命中 agent-specific key
   const savedTools = saved[agentToolsKey] || saved.enabledTools;
-  if (savedTools && savedTools.length > 0) {
+  // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
+  if (isAgentSpecific || (savedTools && savedTools.length > 0)) {
     // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
     const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
     const existing = savedTools.filter(id => validToolIds.has(id));
@@ -1208,6 +1209,8 @@ async function saveAgent() {
     await loadAgentState();
     await renderAgentSelector();
     closeAgentEditor();
+    // 当前助手保存后工具限定/排除列表可能变化，刷新工具栏按钮数字
+    updateToolsToggleState();
   } catch (err) {
     logger.error('[AgentMgr] save Agent failed:', err);
     showToast(t('agentMgr.saveFailed', { message: err.message }), 'error');

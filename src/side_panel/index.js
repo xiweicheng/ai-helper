@@ -260,7 +260,7 @@ import {
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
   setVisibleMcpServicesOpen,
-  refreshToolPopupIfOpen, applyRagToolIntroduction, getRagToolIds
+  refreshToolPopupIfOpen, applyRagToolIntroduction
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
@@ -3819,6 +3819,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.activeAgentId) {
       import('./agent-store.js').then(({ getAgent }) => getAgent(state.activeAgentId)).then(agent => {
         state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
+        updateToolsToggleState();
       }).catch(() => {});
     }
 
@@ -3829,7 +3830,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ragTools = result.ragTools || [];
     const savedAgentTools = result[agentToolsKey];
     const fallbackTools = result.enabledTools;
-    if (savedAgentTools && savedAgentTools.length > 0) {
+    // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
+    if (Array.isArray(savedAgentTools)) {
       // Agent-specific：使用用户保存的列表（MCP 已改为服务级开关，不再参与工具级勾选）
       const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
@@ -3866,18 +3868,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    if (state.enabledTools.length === 0) {
-      // 常规工具全禁用时，若仍有开放的 MCP 服务则保持工具启用
-      const mcpCached = result.mcpTools || [];
-      const closedSet = new Set(state.mcpClosedServers || []);
-      const excludedSet = new Set(Array.isArray(state.activeAgentMcpExcludedServerIds) ? state.activeAgentMcpExcludedServerIds : []);
-      const hasOpenMcp = result.mcpEnabled === true && mcpCached.some(t => t.serverId && !closedSet.has(t.serverId) && !excludedSet.has(t.serverId));
-      if (!hasOpenMcp) state.useTools = false;
-    }
+    // 工具勾选与总开关各自独立：加载时不因工具数为 0 而改写总开关（只跟随 enableTools 存储值）
 
     if (enableToolsBtn) {
       enableToolsBtn.checked = state.useTools;
     }
+
+    // 刷新工具栏工具配置按钮上的已启用数量数字
+    updateToolsToggleState();
 
     refreshSelectionInterval();
   });
@@ -3902,19 +3900,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 工具总开关 - 勾选/取消勾选时直接启用/禁用所有工具
+  // 工具总开关 - 仅控制总开关本身，不联动工具勾选状态（两状态各自独立）
   if (enableToolsBtn) {
     enableToolsBtn.addEventListener('change', () => {
       state.useTools = enableToolsBtn.checked;
       chrome.storage.local.set({ enableTools: state.useTools });
 
-      if (state.useTools && state.enabledTools.length === 0) {
-        state.enabledTools = [...BUILTIN_TOOLS.filter(t => t.enabled).map(t => t.id), ...getRagToolIds()];
-        const agentToolsKey = `agentEnabledTools_${state.activeAgentId || 'default'}`;
-        chrome.storage.local.set({ [agentToolsKey]: state.enabledTools });
-      }
-
       logger.debug('[SidePanel] tool master switch:', state.useTools ? 'enabled' : 'disabled');
+      // 刷新工具栏工具按钮数字的高亮/置灰状态
+      updateToolsToggleState();
     });
   }
 
