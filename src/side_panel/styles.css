@@ -1299,7 +1299,7 @@ body {
   font-weight: 500;
   min-width: 28px;
 }
-/* 输入工具栏溢出探测降级（由 index.js 的 adaptInputToolbar 动态测量后添加）：
+/* 输入工具栏溢出探测降级（由 toolbar-adapt.js 的 adaptInputToolbar 动态测量后添加）：
    空间不足时逐级降级——① 隐藏温度数字仅留图标 ② 折叠助手名称为 emoji；
    适配英文文案更长 / 自定义助手名过长的场景（固定断点无法按语言校准） */
 .input-container.temp-collapsed .temp-icon-value { display: none; }

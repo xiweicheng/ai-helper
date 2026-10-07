@@ -338,7 +338,7 @@ export const MODEL_CONTEXT_WINDOWS = {
   'claude-3-opus': 200000,
   'claude-3-haiku': 200000,
   'claude-3-sonnet': 200000,
-  default: 64000
+  default: 256000
 };
 
 /**
@@ -490,10 +490,10 @@ export function generateMessagesSummary(trimmedMessages) {
           ? msg.content.filter(c => c.type === 'text').map(c => c.text).join('')
           : '');
       if (text && text.trim()) {
-        const question = text.replace(/\[选中内容\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
-          .replace(/\[引用内容\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
-          .replace(/\[选中内容摘要\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
-          .replace(/\[引用内容摘要\]\n[\s\S]*?\n\n\[用户问题\]\n/, '')
+        const question = text.replace(/\[选中内容\]\u000a[\s\S]*?\u000a\u000a\[用户问题\]\u000a/, '')
+          .replace(/\[引用内容\]\u000a[\s\S]*?\u000a\u000a\[用户问题\]\u000a/, '')
+          .replace(/\[选中内容摘要\]\u000a[\s\S]*?\u000a\u000a\[用户问题\]\u000a/, '')
+          .replace(/\[引用内容摘要\]\u000a[\s\S]*?\u000a\u000a\[用户问题\]\u000a/, '')
           .trim()
           .substring(0, 80);
         if (question) userQuestions.push(question);

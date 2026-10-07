@@ -22,6 +22,7 @@ import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shar
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { initProviderSelector } from './provider-selector.js';
 import { closeAllSectionSelects } from './section-select.js';
+import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
@@ -508,56 +509,6 @@ function initCurrentModelTag() {
     });
   }
   updateCurrentModelTag();
-}
-
-/** 输入工具栏溢出探测：空间不足时逐级降级以避免元素被裁剪
-    （① 隐藏温度数字 ② 折叠助手名称为 emoji；固定断点无法适配英文文案 / 自定义长名的多语言场景） */
-function adaptInputToolbar() {
-  const toolbar = document.querySelector('.input-toolbar');
-  const container = toolbar?.closest('.input-container') || null;
-  if (!toolbar || !container) return;
-
-  // 浮层下拉（助手选择器 / 模型设置等）是绝对定位的临时覆盖层，允许探出工具栏边界
-  // （仅受面板边界约束）；若计入 scrollWidth，打开下拉会被误判为布局空间不足而折叠文案。
-  // 测量前同步隐藏、测完立即恢复，同一帧内完成不会闪烁（style 变更不被 MutationObserver 观察，不会循环触发）。
-  const overlays = [];
-  toolbar.querySelectorAll('*').forEach((el) => {
-    if (getComputedStyle(el).position === 'absolute' && el.getClientRects().length > 0) {
-      overlays.push(el);
-    }
-  });
-  const overlayDisplays = overlays.map((el) => el.style.display);
-  overlays.forEach((el) => { el.style.display = 'none'; });
-  const restoreOverlays = () => overlays.forEach((el, i) => { el.style.display = overlayDisplays[i]; });
-
-  // 先恢复完整状态再测量，保证空间恢复时能还原
-  container.classList.remove('temp-collapsed', 'agent-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
-  container.classList.add('temp-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
-  container.classList.add('agent-collapsed');
-  restoreOverlays();
-}
-
-let toolbarAdaptRafId = 0;
-
-/** rAF 节流：合并 resize 拖动与 DOM 批量变更期间的高频触发 */
-function scheduleToolbarAdapt() {
-  if (toolbarAdaptRafId) return;
-  toolbarAdaptRafId = requestAnimationFrame(() => {
-    toolbarAdaptRafId = 0;
-    adaptInputToolbar();
-  });
-}
-
-/** 初始化工具栏自适应：窗口缩放 / 工具栏内文字变化（语言切换、助手名与记忆标签更新）后重测 */
-function initToolbarAdaptive() {
-  adaptInputToolbar();
-  window.addEventListener('resize', scheduleToolbarAdapt);
-  const toolbar = document.querySelector('.input-toolbar');
-  if (toolbar && typeof MutationObserver !== 'undefined') {
-    new MutationObserver(scheduleToolbarAdapt).observe(toolbar, { subtree: true, childList: true, characterData: true });
-  }
 }
 
 function updateModelSelection(selectedValue) {

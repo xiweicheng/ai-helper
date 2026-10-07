@@ -30,7 +30,7 @@ export function recordTokenCall(record) {
     promptTokens: record.promptTokens || 0,
     completionTokens: record.completionTokens || 0,
     totalTokens: record.totalTokens || 0,
-    contextWindow: record.contextWindow || 128000,
+    contextWindow: record.contextWindow || 256000,
     contextUsageRate: record.contextWindow > 0
       ? ((record.promptTokens || 0) / record.contextWindow)
       : 0,
