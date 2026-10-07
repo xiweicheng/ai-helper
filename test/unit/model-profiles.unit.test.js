@@ -16,6 +16,7 @@ import {
   deriveProfileName,
   getHostFromApiBase,
   normalizeModels,
+  compareByName,
   DEFAULT_API_BASE,
   DEFAULT_MODEL_NAME,
 } from '../../src/shared/model-profiles.js';
@@ -336,5 +337,22 @@ describe('工具函数', () => {
       { name: 'b', contextWindow: 5 },
     ]);
     expect(normalizeModels('not-array')).toEqual([]);
+  });
+
+  test('compareByName：不区分大小写字母序，中文按拼音（排在英文前后均按拼音校准）', () => {
+    const list = ['openai', 'DeepSeek', '阿里云百炼', 'deepseek-v4-pro', 'GLM-5'];
+    expect([...list].sort(compareByName)).toEqual([
+      '阿里云百炼',
+      'DeepSeek',
+      'deepseek-v4-pro',
+      'GLM-5',
+      'openai',
+    ]);
+  });
+
+  test('compareByName：大小写混排与前缀短名优先，非法输入容错', () => {
+    expect(['b-model', 'A-Model', 'a-model-x'].sort(compareByName)).toEqual(['A-Model', 'a-model-x', 'b-model']);
+    expect(compareByName(undefined, 'x')).toBeLessThan(0);
+    expect(compareByName('x', null)).toBeGreaterThan(0);
   });
 });

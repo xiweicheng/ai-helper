@@ -8,8 +8,8 @@
 // （updateModelSelection / 点击绑定）冲突；区块使用 .provider-section 类名，
 // 避免 tempDropdown.querySelector('.model-section') 误选中。
 
-import { getState, applyProfile, getHostFromApiBase } from '../shared/model-profiles.js';
-import { closeAllSectionSelects } from './section-select.js';
+import { getState, applyProfile, getHostFromApiBase, compareByName } from '../shared/model-profiles.js';
+import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import logger from '../shared/logger.js';
 
 let bound = false;
@@ -46,9 +46,11 @@ async function renderProviderList() {
   if (valueEl) valueEl.textContent = active ? active.name : '';
   if (hostEl) hostEl.textContent = active ? getHostFromApiBase(active.apiBase) : '';
 
-  list.innerHTML = '';
+  // 过滤搜索框（吸顶）+ 选项按名称排序渲染（仅影响展示顺序，不改变存储顺序）
+  list.innerHTML = sectionSelectSearchHtml();
 
-  for (const profile of state.profiles) {
+  const sortedProfiles = [...state.profiles].sort((a, b) => compareByName(a.name, b.name));
+  for (const profile of sortedProfiles) {
     const isActive = !!active && profile.id === active.id;
 
     const option = document.createElement('div');

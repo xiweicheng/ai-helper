@@ -489,6 +489,12 @@ export default {
     temperature: '温度',
   },
 
+  // 内嵌下拉（厂商 / 模型列表）的过滤搜索
+  sectionSelect: {
+    searchPlaceholder: '输入关键字过滤…',
+    noMatch: '无匹配项',
+  },
+
   // API 厂商快速切换（侧边栏模型设置）
   provider: {
     label: 'API 厂商',

@@ -489,6 +489,12 @@ export default {
     temperature: 'Temperature',
   },
 
+  // Filter search for inline selects (provider / model lists)
+  sectionSelect: {
+    searchPlaceholder: 'Type to filter…',
+    noMatch: 'No matches',
+  },
+
   // API provider quick switch (side panel model settings)
   provider: {
     label: 'API Provider',

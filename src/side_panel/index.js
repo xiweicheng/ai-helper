@@ -21,9 +21,9 @@ import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { initProviderSelector } from './provider-selector.js';
-import { closeAllSectionSelects } from './section-select.js';
+import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import { initToolbarAdaptive } from './toolbar-adapt.js';
-import { ensureProfilesMigrated, updateActiveProfileModelName } from '../shared/model-profiles.js';
+import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
   sidePanel: {
@@ -576,7 +576,10 @@ function loadCustomModelsToDropdown(customModels, callback) {
         <div class="section-select-list" id="modelSelectList"></div>
       </div>`;
     const listEl = modelSection.querySelector('#modelSelectList');
-    for (const item of models) {
+    // 过滤搜索框（吸顶）+ 选项按名称排序渲染（仅影响展示顺序，不改变存储顺序）
+    listEl.innerHTML = sectionSelectSearchHtml();
+    const sortedModels = [...models].sort((a, b) => compareByName(a.name, b.name));
+    for (const item of sortedModels) {
       const option = document.createElement('div');
       option.className = 'model-option';
       option.dataset.value = item.name;

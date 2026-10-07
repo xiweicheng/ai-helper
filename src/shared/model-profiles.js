@@ -97,6 +97,18 @@ export function normalizeModels(list) {
 }
 
 /**
+ * 名称排序比较器：不区分大小写（固定 zh 排序规则，Node 与 Chrome 的 ICU 行为一致）；
+ * 汉字组整体排在拉丁字母前、组内按拼音，拉丁字母按字母序。
+ * 用于厂商 / 模型下拉列表的展示排序，仅影响渲染顺序，不改变配置存储顺序
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+export function compareByName(a, b) {
+  return String(a || '').toLowerCase().localeCompare(String(b || '').toLowerCase(), 'zh');
+}
+
+/**
  * 读取完整配置状态
  * @returns {Promise<{profiles: Array, activeProfileId: string}>}
  */

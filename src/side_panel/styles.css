@@ -1294,7 +1294,7 @@ body {
   color: #667eea;
 }
 .temp-icon-value {
-  font-size: 11px;
+  font-size: 10px;
   color: #667eea;
   font-weight: 500;
   min-width: 28px;
@@ -1680,6 +1680,10 @@ body {
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
   flex-shrink: 0;
+  /* 长 host（如 api.hunyuan.cloud.tencent.com）不挤压左侧名称 */
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* ===== 内嵌下拉（选择行 + 浮层列表）：浮层不占文档流，弹窗高度恒定 ===== */
 .section-select {
@@ -1751,6 +1755,31 @@ body {
 .section-select-list.open {
   display: block;
   animation: dropdownFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* 浮层顶部过滤搜索框（吸顶不随选项滚动）与无匹配空态 */
+.section-select-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  outline: none;
+  background: #fff;
+  font-size: 12px;
+  color: #333;
+}
+.section-select-search::placeholder {
+  color: #bbb;
+}
+.section-select-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
 }
 .tool-toggle-container {
   display: flex;
