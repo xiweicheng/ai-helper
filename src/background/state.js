@@ -218,6 +218,39 @@ export function hasKeepalivePort(sessionId) {
   return sessionId ? keepalivePorts.has(sessionId) : false;
 }
 
+// ========== Side Panel 实例身份（发起实例的窗口与宿主 tab） ==========
+//
+// 桌面通知可见性判定（“发起任务的实例面板是否被用户看到”）的数据源：侧边栏建立
+// keepalive 连接时上报 {windowId, hostTabId}；查询失败上报 null（保留“查询过但
+// 失败”语义）；缺失或陈旧时判定方一律保守按“不可见”处理。
+const keepaliveIdentities = new Map(); // sessionId → {windowId, hostTabId} | null
+
+/**
+ * 记录 keepalive 连接上报的实例身份
+ * @param {string} sessionId
+ * @param {{windowId:number, hostTabId:number|null}|null} identity
+ */
+export function setKeepaliveIdentity(sessionId, identity) {
+  if (!sessionId) return;
+  if (identity && typeof identity.windowId === 'number') {
+    keepaliveIdentities.set(sessionId, {
+      windowId: identity.windowId,
+      hostTabId: typeof identity.hostTabId === 'number' ? identity.hostTabId : null,
+    });
+  } else {
+    keepaliveIdentities.set(sessionId, null);
+  }
+}
+
+/**
+ * 读取 keepalive 连接上报的实例身份
+ * @param {string} sessionId
+ * @returns {{windowId:number, hostTabId:number|null}|null}
+ */
+export function getKeepaliveIdentity(sessionId) {
+  return sessionId ? (keepaliveIdentities.get(sessionId) || null) : null;
+}
+
 /**
  * 注销 keepalive port
  * @param {string} sessionId
@@ -229,6 +262,7 @@ export function unregisterKeepalivePort(sessionId, port) {
   if (!sessionId) return;
   if (port && keepalivePorts.get(sessionId) !== port) return;
   keepalivePorts.delete(sessionId);
+  keepaliveIdentities.delete(sessionId);
 }
 
 // ========== 工具级终止等待（不取消 ReAct 循环） ==========

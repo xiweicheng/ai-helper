@@ -21,6 +21,8 @@ const EXPORT_KEYS = [
   'streamExpandTools',
   // 完成反馈（声音 + 彩带开关）
   'completionSoundEnabled', 'completionConfettiEnabled',
+  // 桌面通知开关（任务完成/失败、定时任务、交互提醒）
+  'completionNotificationEnabled', 'scheduledNotificationEnabled', 'interactionNotificationEnabled',
   // 消息时间戳显示开关
   'showMessageTimestamp',
   // 侧边栏作用域模式

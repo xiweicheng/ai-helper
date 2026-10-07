@@ -1049,8 +1049,8 @@ export async function sendMessage() {
         const { messageId } = addMessage('assistant', t('chat.taskInterruptedSwRestart'), false, errorResult.executionLog || [], null, false, null, null, [], resumable);
         state.messageHistory.push({ role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], messageId, resumable });
         saveChatHistory();
-        // SW 重启视为失败：播放失败音效（用户主动取消已在上一分支处理）
-        playFailureFeedback();
+        // SW 重启视为失败：播放失败音效 + 桌面通知（用户主动取消已在上一分支处理）
+        playFailureFeedback(mySessionId, t('chat.taskInterruptedSwRestart'));
         return;
       }
 
@@ -1066,8 +1066,8 @@ export async function sendMessage() {
 
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
 
-      // 一般错误（网络/超时/API 错误）：播放失败音效；用户主动取消已在前面分支 return，不会到达此处
-      playFailureFeedback();
+      // 一般错误（网络/超时/API 错误）：播放失败音效 + 桌面通知；用户主动取消已在前面分支 return，不会到达此处
+      playFailureFeedback(mySessionId, content);
       return;
     }
     
@@ -1137,8 +1137,8 @@ export async function sendMessage() {
     
     state.messageHistory.push(msgEntry);
 
-    // 回答成功完成：触发用户配置的反馈（音效 / 彩带），错误路径已在 catch 中提前 return，不会到达此处
-    playCompletionFeedback();
+    // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
+    playCompletionFeedback(mySessionId);
 
   } catch (error) {
     logger.error('[SidePanel] sendMessage exception:', error?.message || error);
@@ -3103,6 +3103,28 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
   logger.debug('[SidePanel] keepalive portconnected, sessionId:', mySessionId);
+
+  // 上报实例身份（窗口 + 宿主 tab）：供 background 按“发起实例”判定面板是否可见，
+  // 决定任务完成/失败与确认/澄清提醒是否弹桌面通知（多实例下互不误判）。
+  // 查询失败上报 null，background 一律保守按“不可见”处理（宁可多弹不漏弹）。
+  (async () => {
+    let identity = null;
+    try {
+      const win = await chrome.windows?.getCurrent?.();
+      const tabs = (await chrome.tabs?.query?.({ active: true, currentWindow: true })) || [];
+      if (win?.id != null) {
+        identity = { windowId: win.id, hostTabId: tabs[0]?.id ?? null };
+      }
+    } catch (err) {
+      logger.debug('[SidePanel] query keepalive identity failed:', err?.message);
+    }
+    try {
+      keepalivePort.postMessage({ type: 'KEEPALIVE_IDENTITY', identity });
+    } catch (err) {
+      /* port 已断开（页面卸载竞态）：静默忽略 */
+    }
+  })();
+
 
   // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor

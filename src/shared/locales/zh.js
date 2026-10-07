@@ -158,6 +158,14 @@ export default {
     completionSoundHint: '成功时清脆三连音（Do-Mi-Sol 上扬），失败时低沉方波双音；用户主动取消不播放',
     completionConfetti: '播放彩带动画',
     completionConfettiHint: '仅在回答成功完成时播放；失败和取消不播放',
+    // 桌面通知
+    completionNotification: '任务完成或失败时弹出桌面通知',
+    completionNotificationHint: '仅在看不到侧边栏时弹出；成功自动消失，失败停留至手动关闭；点击通知打开侧边栏',
+    scheduledNotification: '定时任务完成或失败时弹出桌面通知',
+    scheduledNotificationHint: '定时任务在后台执行、无声音等其他提醒渠道，开关开启时总是弹出；默认开启，可手动关闭',
+    // 交互提醒
+    interactionNotification: 'AI 需要你确认或澄清时提醒我',
+    interactionNotificationHint: '推理循环等待你操作时弹桌面提醒；仅在看得到侧边栏时不打扰，点击通知打开侧边栏',
     showMessageTimestamp: '显示消息时间戳',
     showMessageTimestampHint: '（在用户问题气泡下方显示发问时间，今天显示时分，非今天显示日期）',
     // 侧边栏作用域

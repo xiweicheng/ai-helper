@@ -872,6 +872,7 @@ export function loadConfig() {
     'streamEnabled',
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
+    'completionNotificationEnabled', 'scheduledNotificationEnabled', 'interactionNotificationEnabled',
     'showMessageTimestamp', 'sidePanelScope', 'autoGroupTabs'
   ], function(result) {
     if (result.apiBase) {
@@ -1012,6 +1013,14 @@ export function loadConfig() {
     if (completionSoundEl) completionSoundEl.checked = result.completionSoundEnabled !== false;
     if (completionConfettiEl) completionConfettiEl.checked = result.completionConfettiEnabled !== false;
 
+    // 加载桌面通知开关（默认开启，undefined 视为 true）
+    const completionNotificationEl = document.getElementById('completionNotificationEnabled');
+    const scheduledNotificationEl = document.getElementById('scheduledNotificationEnabled');
+    const interactionNotificationEl = document.getElementById('interactionNotificationEnabled');
+    if (completionNotificationEl) completionNotificationEl.checked = result.completionNotificationEnabled !== false;
+    if (scheduledNotificationEl) scheduledNotificationEl.checked = result.scheduledNotificationEnabled !== false;
+    if (interactionNotificationEl) interactionNotificationEl.checked = result.interactionNotificationEnabled !== false;
+
     // 加载消息时间戳开关（默认开启，undefined 视为 true）
     const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
     if (showMessageTimestampEl) showMessageTimestampEl.checked = result.showMessageTimestamp !== false;
@@ -1105,6 +1114,10 @@ export function saveConfig() {
   // 获取完成反馈配置（默认开启）
   const completionSoundEnabled = document.getElementById('completionSoundEnabled')?.checked !== false;
   const completionConfettiEnabled = document.getElementById('completionConfettiEnabled')?.checked !== false;
+  // 获取桌面通知配置（默认开启）
+  const completionNotificationEnabled = document.getElementById('completionNotificationEnabled')?.checked !== false;
+  const scheduledNotificationEnabled = document.getElementById('scheduledNotificationEnabled')?.checked !== false;
+  const interactionNotificationEnabled = document.getElementById('interactionNotificationEnabled')?.checked !== false;
   const showMessageTimestamp = document.getElementById('showMessageTimestamp')?.checked !== false;
   
   // 获取图片识别配置
@@ -1186,6 +1199,10 @@ export function saveConfig() {
     // 完成反馈配置
     completionSoundEnabled: completionSoundEnabled,
     completionConfettiEnabled: completionConfettiEnabled,
+    // 桌面通知配置（默认开启）
+    completionNotificationEnabled: completionNotificationEnabled,
+    scheduledNotificationEnabled: scheduledNotificationEnabled,
+    interactionNotificationEnabled: interactionNotificationEnabled,
     showMessageTimestamp: showMessageTimestamp,
     // 侧边栏作用域模式
     sidePanelScope: document.querySelector('input[name="sidePanelScope"]:checked')?.value || 'global',

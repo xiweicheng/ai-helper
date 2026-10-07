@@ -158,6 +158,14 @@ export default {
     completionSoundHint: 'Success: bright rising triad (Do-Mi-Sol); Failure: low square-wave double tone; user cancellation is silent',
     completionConfetti: 'Play confetti animation',
     completionConfettiHint: 'Only plays on successful completion; not on failures or cancellations',
+    // Desktop notifications
+    completionNotification: 'Show a desktop notification when a task completes or fails',
+    completionNotificationHint: 'Only shown when the side panel is out of view; success auto-dismisses, failures stay until dismissed; click the notification to open the side panel',
+    scheduledNotification: 'Show a desktop notification when a scheduled task completes or fails',
+    scheduledNotificationHint: 'Scheduled tasks run in the background with no sound or other alerts, so notifications always appear when enabled; on by default, can be turned off',
+    // Interaction reminders
+    interactionNotification: 'Remind me when AI needs confirmation or clarification',
+    interactionNotificationHint: 'Shows a desktop reminder while the reasoning loop waits for your action; stays quiet when the side panel is in view; click the notification to open the side panel',
     showMessageTimestamp: 'Show message timestamps',
     showMessageTimestampHint: '(Shows the asking time below each user question; time only for today, date included for other days)',
     // Side panel scope

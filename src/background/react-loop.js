@@ -10,6 +10,7 @@ import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './strea
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -129,6 +130,8 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
       if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolName) {
         chrome.runtime.onMessage.removeListener(handler);
         clearTimeout(timeoutId);
+        // 用户已响应（确认或拒绝）→ 清除交互提醒（未创建时为无操作）
+        clearInteractionNotification(sessionId);
         logger.debug(`[Background] userconfirmresult: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
         if (message.confirmed && message.scope === 'loop') {
           // 当前任务放行：后续工具调用自动通过
@@ -143,6 +146,8 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
     
     const timeoutId = setTimeout(() => {
       chrome.runtime.onMessage.removeListener(handler);
+      // 超时默认拒绝 → 清除交互提醒
+      clearInteractionNotification(sessionId);
       logger.debug(`[Background] confirmtimeout,defaultdeny: ${toolName}`);
       resolve(false); // 超时默认拒绝
     }, confirmTimeout);
@@ -173,8 +178,14 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
         logger.debug('[Background] confirm port postMessage failed, fallback to broadcast:', e?.message);
       }
     }
-    if (!portSent) {
-      chrome.runtime.sendMessage(confirmDialogMsg).catch(err => {
+    if (portSent) {
+      // 弹窗已送达发起实例；看不到面板时由通知中心弹桌面提醒（可见性判定在 notifier 内）
+      notifyInteractionRequired({ kind: 'confirm', sessionId, detail: toolLabel }).catch(() => {});
+    } else {
+      chrome.runtime.sendMessage(confirmDialogMsg).then(() => {
+        // 广播送达兜底（无 port 场景）：同样在看不到面板时补桌面提醒
+        notifyInteractionRequired({ kind: 'confirm', sessionId, detail: toolLabel }).catch(() => {});
+      }).catch(err => {
         logger.debug('[Background] sendconfirm dialogmessage failed:', err.message);
         // 发送失败，直接放行
         chrome.runtime.onMessage.removeListener(handler);

@@ -18,6 +18,7 @@ import {
   shouldDisableAfterRun,
   normalizeTaskPayload,
 } from './scheduler-rules.js';
+import { notifyTaskFeedback } from './notifier.js';
 
 // 兼容外部可能的具名导入
 export { nextCronRun, parseIntervalMinutes, computeNextRun, shouldDisableAfterRun, normalizeTaskPayload };
@@ -33,8 +34,6 @@ registerTranslations('zh', {
     invalidCron: 'Cron 表达式无效',
     invalidInterval: '间隔时间格式无效',
     taskDisabled: '任务已停用，无法执行',
-    notifFailTitle: '定时任务执行失败',
-    notifFailMsg: '任务「{name}」执行失败：{error}',
   },
 });
 registerTranslations('en', {
@@ -48,8 +47,6 @@ registerTranslations('en', {
     invalidCron: 'Invalid cron expression',
     invalidInterval: 'Invalid interval value',
     taskDisabled: 'Task is disabled',
-    notifFailTitle: 'Scheduled task failed',
-    notifFailMsg: 'Task "{name}" failed: {error}',
   },
 });
 
@@ -364,6 +361,8 @@ export async function runTask(taskId, force = false) {
 
     const content = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
     await appendRunMessages(hostSession.id, task, content, result.executionLog, pageMeta);
+    // 成功通知（受 scheduledNotificationEnabled 开关控制；定时任务无面板实例，不做可见性抑制）
+    notifyTaskFeedback({ success: true, sessionId: task.sessionId, name: task.name, source: 'scheduled' }).catch(() => {});
     task = { ...task, lastStatus: 'success', lastError: null, lastRunAt: Date.now() };
     ok = true;
     logger.debug('[Scheduler] task completed:', taskId);
@@ -377,16 +376,8 @@ export async function runTask(taskId, force = false) {
         await appendMessageToSession(task.sessionId, { role: 'assistant', content: t('sched.failed') + ': ' + failMsg });
       }
     } catch { /* 写失败说明不影响主流程 */ }
-    // 失败通知：后台执行失败用户无感知，主动弹系统通知
-    try {
-      chrome.notifications.create('st_fail_' + taskId + '_' + Date.now(), {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('icons/icon128.png'),
-        title: t('sched.notifFailTitle'),
-        message: t('sched.notifFailMsg', { name: task.name || '', error: failMsg }),
-        priority: 2,
-      });
-    } catch { /* 通知失败忽略 */ }
+    // 失败通知：后台执行失败用户无感知，主动弹系统通知（受 scheduledNotificationEnabled 开关控制）
+    notifyTaskFeedback({ success: false, sessionId: task.sessionId, name: task.name, error: failMsg, source: 'scheduled' }).catch(() => {});
   } finally {
     RUNNING.delete(taskId);
     // 运行历史（最多保留 50 条）

@@ -869,9 +869,9 @@ export async function sendPromptByCode(code) {
       // 保存历史
       saveChatHistory();
 
-      // 失败反馈：用户主动取消不播放失败音
+      // 失败反馈：用户主动取消不播放失败音；失败通知附带错误文本
       if (errorResult.message !== t('chatMsg.errTaskStopped')) {
-        playFailureFeedback();
+        playFailureFeedback(mySessionId, content);
       }
 
       throw errorResult; // 重新抛出以触发 finally 块
@@ -901,8 +901,8 @@ export async function sendPromptByCode(code) {
     // 保存历史
     saveChatHistory();
 
-    // 回答成功完成：触发用户配置的反馈（音效 / 彩带），错误路径已在 catch 中提前 return，不会到达此处
-    playCompletionFeedback();
+    // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
+    playCompletionFeedback(mySessionId);
 
   } catch (error) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作

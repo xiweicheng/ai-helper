@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort } from './state.js';
+import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -9,6 +9,8 @@ import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import { restoreDetachWindowId } from './detach-window.js';
+import { initNotifier, notifyTaskFeedback } from './notifier.js';
+import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
@@ -102,6 +104,15 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     const isReconnection = hasKeepalivePort(sessionId);
     registerKeepalivePort(sessionId, port);
     logger.debug('[Background] keepalive portconnected, sessionId:', sessionId, isReconnection ? '(reconnect)' : '(first times)');
+
+    // 接收实例身份上报（窗口 + 宿主 tab）：供桌面通知按“发起实例”判定面板是否可见。
+    // 上报缺失（查询失败/旧版本面板）按不可见保守处理（宁可多弹不漏弹）。
+    port.onMessage.addListener((msg) => {
+      if (msg?.type === 'KEEPALIVE_IDENTITY') {
+        setKeepaliveIdentity(sessionId, msg.identity || null);
+        logger.debug('[Background] keepalive identity reported, sessionId:', sessionId, JSON.stringify(msg.identity || null));
+      }
+    });
 
     // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
     if (isReconnection && !activeReactLoops.has(sessionId)) {
@@ -527,6 +538,13 @@ chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   _lastFocusedWindowId = windowId;
 });
+
+// 浏览器是否处于 OS 焦点（失焦 = WINDOW_ID_NONE）。独立监听、不改动上面的镜像逻辑：
+// 快捷键镜像刻意忽略失焦事件，而通知可见性判定需要区分“浏览器失焦 → 面板看不到”。
+let _chromeWindowFocused = true;
+chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
+  _chromeWindowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
+});
 // 启动补水：SW 被任意事件唤醒后尽快把当前窗口的活跃 tab 放进镜像，
 // 下一次按键即可走同步路径
 // （SW 终止/重载竞态下 tabs.query 可能不可用：跳过本次镜像补水）
@@ -687,6 +705,58 @@ function toggleSidePanelColdStart() {
     toggleSidePanelOnTab(tab);
   });
 }
+
+/**
+ * 点击通知后打开/聚焦侧边栏（chrome.notifications.onClicked 用户手势上下文内调用）。
+ * 复用快捷键的同步镜像 + 同一条 open 路径：能做多少做多少，失败静默降级为仅聚焦窗口。
+ */
+function ensureSidePanelVisibleFromGesture() {
+  const focusWindow = (windowId) => {
+    if (typeof windowId !== 'number') return;
+    chrome.windows?.update?.(windowId, { focused: true })?.catch?.(() => {});
+  };
+  const windowId = _lastFocusedWindowId;
+  if (windowId == null) {
+    // 冷启动（镜像未补水）：只能对“当前窗口”尽力 open；失败即静默降级
+    chrome.sidePanel?.open?.({ windowId: chrome.windows.WINDOW_ID_CURRENT })?.catch?.(() => {});
+    chrome.windows?.getLastFocused?.()?.then?.((w) => focusWindow(w?.id))?.catch?.(() => {});
+    return;
+  }
+  const entry = _openPanelsByWindow.get(windowId);
+  if (entry !== undefined) {
+    // 镜像热：该窗口记录过面板 → 聚焦窗口；tab 专属面板还需激活其宿主 tab 让面板重新可见
+    focusWindow(windowId);
+    if (typeof entry === 'number' && entry !== _activeTabByWindow.get(windowId)) {
+      chrome.tabs?.update?.(entry, { active: true })?.catch?.(() => {});
+    }
+    return;
+  }
+  // 该窗口没有面板记录：按当前作用域在同一条同步栈内 open（保留手势），失败仅聚焦
+  const byWindow = _sidePanelScope === 'global';
+  const activeTabId = _activeTabByWindow.get(windowId) ?? null;
+  if (byWindow || activeTabId == null) {
+    chrome.sidePanel?.open?.({ windowId })?.then?.(() => {
+      _openPanelsByWindow.set(windowId, byWindow ? null : activeTabId);
+    })?.catch?.(() => focusWindow(windowId));
+    return;
+  }
+  bindSidePanelToTab(activeTabId, { group: false });
+  chrome.sidePanel?.open?.({ tabId: activeTabId })?.then?.(() => {
+    _openPanelsByWindow.set(windowId, activeTabId);
+  })?.catch?.(() => focusWindow(windowId));
+}
+
+// 桌面通知接线：可见性判定（按发起实例身份）+ 通知中心（创建 / 点击 / 清理）
+initPanelVisibility({
+  isBrowserFocused: () => _chromeWindowFocused,
+  getFocusedWindowId: () => _lastFocusedWindowId,
+  getActiveTabId: (windowId) => _activeTabByWindow.get(windowId) ?? null,
+  getScope: () => _sidePanelScope,
+});
+initNotifier({
+  isPanelVisible: isPanelVisibleToUser,
+  revealPanel: ensureSidePanelVisibleFromGesture,
+});
 
 chrome.commands?.onCommand?.addListener((command) => {
   if (command !== TOGGLE_SIDEPANEL_COMMAND) return;
@@ -1782,6 +1852,16 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       }
     })();
     return true;
+  }
+  // 侧边栏实例上报的聊天任务完成/失败 → 桌面通知（唯一处理点：多实例只创建一次）
+  if (message.type === 'TASK_FEEDBACK_NOTIFY') {
+    notifyTaskFeedback({
+      success: !!message.success,
+      sessionId: message.sessionId || null,
+      error: message.error || '',
+      source: 'chat',
+    }).catch(() => {});
+    return false;
   }
   // 定时任务 CRUD / 立即执行
   if (message.type?.startsWith('SCHEDULED_TASK_')) {

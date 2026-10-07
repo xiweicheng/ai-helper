@@ -13,6 +13,7 @@ import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './stat
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
+import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -1513,6 +1514,7 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
     }
 
     let analysis;
+    let rawResponse; // 仅非流式模式赋值：空结果时输出原始响应片段用于诊断
 
     if (useStream) {
       // 流式模式：SSE 逐块读取，实时推送到 side panel
@@ -1520,11 +1522,18 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
     } else {
       // 非流式模式：JSON 一次性返回
       const data = await response.json();
+      rawResponse = data;
       analysis = data.choices?.[0]?.message?.content;
     }
 
     if (!analysis) {
-      console.error('[Background] image recognition API result is empty');
+      if (useStream) {
+        console.error('[Background] image recognition API result is empty (streaming), model:', model,
+          'check vision API SSE/streaming compatibility if this persists');
+      } else {
+        console.error('[Background] image recognition API result is empty (non-streaming), model:', model,
+          'raw response:', JSON.stringify(rawResponse)?.substring(0, 300));
+      }
       return `页面截图已获取。\n\n- 页面标题: ${pageTitle}\n- 页面地址: ${pageUrl}\n\n图片识别返回结果为空，请重试。`;
     }
 
@@ -1544,7 +1553,7 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
 /**
  * 流式读取视觉 API 的 SSE 响应，逐块推送到 side panel 实时展示，完成后返回完整文本
  */
-async function readVisionSSEStream(response, abortController, sessionId = null) {
+export async function readVisionSSEStream(response, abortController, sessionId = null) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -1570,9 +1579,13 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
       }
 
       const { done, value } = readResult;
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: false });
+      if (done) {
+        // 流结束：末行数据可能未以换行结尾（部分网关如此），直接丢弃会导致内容丢失甚至结果为空；
+        // 补一个换行符（charCode 10）使其走下方统一的按行解析逻辑
+        buffer += String.fromCharCode(10);
+      } else {
+        buffer += decoder.decode(value, { stream: false });
+      }
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -1608,6 +1621,8 @@ async function readVisionSSEStream(response, abortController, sessionId = null) 
           console.warn('[Background] image recognition SSE parse failed,raw data:', data.substring(0, 200), 'error:', err.message);
         }
       }
+
+      if (done) break;
     }
   } finally {
     reader.releaseLock();
@@ -2528,6 +2543,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     const handleResponse = (msg) => {
       if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
         cleanup();
+        // 用户已响应 → 清除交互提醒（未创建时为无操作）
+        clearInteractionNotification(sessionId);
         
         console.log('[Background] received clarificationresponse:', msg);
         
@@ -2585,6 +2602,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
       timeoutId = setTimeout(() => {
         console.error('[Background] clarification dialogtimeout');
         cleanup(); // 确保清理
+        // 澄清等待超时 → 清除交互提醒
+        clearInteractionNotification(sessionId);
 
         // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）
         sendToInitiator({
@@ -2610,6 +2629,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           if (!contexts || contexts.length === 0) {
             console.warn('[Background] Side Panel closed,early terminateclarificationwaiting');
             cleanup();
+            // 面板已关闭、无人处理 → 清除交互提醒
+            clearInteractionNotification(sessionId);
             sendToInitiator({
               type: 'CLARIFY_TIMEOUT',
               toolCallId: toolCallId,
@@ -2640,6 +2661,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     // 无 port（定时任务发起、实例已关闭/刷新）或 port 失效时回退广播兜底。
     const initMsg = { type: 'SHOW_CLARIFY_DIALOG', sessionId, data: clarifyData };
     if (trySendViaPort(initMsg)) {
+      // 弹窗已送达发起实例；看不到面板时由通知中心补桌面提醒（可见性判定在 notifier 内）
+      notifyInteractionRequired({ kind: 'clarify', sessionId, detail: question }).catch(() => {});
       startWaiting();
     } else {
       chrome.runtime.sendMessage(initMsg, (response) => {
@@ -2654,6 +2677,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           return;
         }
         console.log('[Background] clarification dialogsent to  Side Panel,timeout:', clarifyTimeout, 'ms');
+        // 广播送达兜底（无 port 场景）：同样在看不到面板时补桌面提醒
+        notifyInteractionRequired({ kind: 'clarify', sessionId, detail: question }).catch(() => {});
         startWaiting();
       });
     }

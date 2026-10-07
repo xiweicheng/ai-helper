@@ -1176,6 +1176,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
+  // 桌面通知：任务完成/失败通知开关（切换即写入 storage，无需点保存按钮）
+  const completionNotificationEl = document.getElementById('completionNotificationEnabled');
+  if (completionNotificationEl) {
+    completionNotificationEl.addEventListener('change', function() {
+      chrome.storage.local.set({ completionNotificationEnabled: this.checked });
+    });
+  }
+
+  // 桌面通知：定时任务通知开关（切换即写入 storage，无需点保存按钮）
+  const scheduledNotificationEl = document.getElementById('scheduledNotificationEnabled');
+  if (scheduledNotificationEl) {
+    scheduledNotificationEl.addEventListener('change', function() {
+      chrome.storage.local.set({ scheduledNotificationEnabled: this.checked });
+    });
+  }
+
+  // 桌面通知：交互提醒开关（切换即写入 storage，无需点保存按钮）
+  const interactionNotificationEl = document.getElementById('interactionNotificationEnabled');
+  if (interactionNotificationEl) {
+    interactionNotificationEl.addEventListener('change', function() {
+      chrome.storage.local.set({ interactionNotificationEnabled: this.checked });
+    });
+  }
+
   // 消息时间戳开关（切换即写入 storage，无需点保存按钮）
   const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
   if (showMessageTimestampEl) {

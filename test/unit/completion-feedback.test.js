@@ -12,6 +12,9 @@ let oscillatorCount = 0;
 let canvasGetContextCount = 0;
 let prefersReducedMotion = false;
 
+// 桌面通知上报 spy：验证 TASK_FEEDBACK_NOTIFY 的发送（不真正投递）
+const sendMessageMock = vi.fn(() => Promise.resolve({}));
+
 // Mock chrome.storage.local
 globalThis.chrome = {
   storage: {
@@ -32,7 +35,7 @@ globalThis.chrome = {
     },
     onChanged: { addListener: () => {} },
   },
-  runtime: { lastError: null, getURL: (p) => p, sendMessage: () => Promise.resolve({}) },
+  runtime: { lastError: null, getURL: (p) => p, sendMessage: sendMessageMock },
 };
 
 // Mock AudioContext：只记录构造次数，返回可用的 stub
@@ -105,6 +108,7 @@ beforeEach(async () => {
   canvasGetContextCount = 0;
   prefersReducedMotion = false;
   document.body.innerHTML = '';
+  sendMessageMock.mockClear();
   // 每次重新导入以获得干净的模块级 _lastPlayedAt
   vi.resetModules();
   mod = await import('../../src/side_panel/completion-feedback.js');
@@ -302,5 +306,54 @@ describe('音效音符数量验证（区分成功/失败音色设计）', () => 
     storageData = { completionSoundEnabled: true, completionConfettiEnabled: true };
     await mod.playFailureFeedback();
     expect(oscillatorCount).toBe(2);
+  });
+});
+
+describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
+  test('成功反馈：上报 success=true + sessionId，error 为空', async () => {
+    storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
+    await mod.playCompletionFeedback('sess-1');
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      type: 'TASK_FEEDBACK_NOTIFY',
+      success: true,
+      sessionId: 'sess-1',
+      error: '',
+    });
+  });
+
+  test('失败反馈：上报 success=false + sessionId + 错误文本', async () => {
+    storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
+    await mod.playFailureFeedback('sess-2', 'connection timeout');
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      type: 'TASK_FEEDBACK_NOTIFY',
+      success: false,
+      sessionId: 'sess-2',
+      error: 'connection timeout',
+    });
+  });
+
+  test('不传 sessionId：上报 null（background 按不可见处理）', async () => {
+    storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
+    await mod.playCompletionFeedback();
+    expect(sendMessageMock).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
+  });
+
+  test('节流跳过的调用不发送上报', async () => {
+    storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
+    await mod.playCompletionFeedback('sess-3');
+    await mod.playCompletionFeedback('sess-3');
+    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('sendMessage 抛异常不影响主流程（音效彩带照常）', async () => {
+    storageData = { completionSoundEnabled: true, completionConfettiEnabled: true };
+    const original = chrome.runtime.sendMessage;
+    chrome.runtime.sendMessage = () => { throw new Error('send boom'); };
+    await expect(mod.playCompletionFeedback('sess-4')).resolves.toBeUndefined();
+    chrome.runtime.sendMessage = original;
+    expect(audioContextCount).toBe(1);
+    expect(canvasGetContextCount).toBe(1);
   });
 });
