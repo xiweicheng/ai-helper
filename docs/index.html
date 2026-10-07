@@ -152,6 +152,7 @@
     max-width: 1200px; margin: 0 auto;
     padding: 14px 24px;
     display: flex; align-items: center; justify-content: space-between;
+    gap: 24px;
   }
   .nav-logo {
     font-size: 18px; font-weight: 700;
@@ -159,7 +160,7 @@
     background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     white-space: nowrap; flex-shrink: 0;
   }
-  .nav-links { display: flex; gap: 24px; align-items: center; flex-wrap: nowrap; }
+  .nav-links { display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; }
   .nav-links a:not(.nav-cta) {
     color: var(--text-muted); text-decoration: none; font-size: 14px;
     transition: color .2s;
@@ -181,7 +182,7 @@
   }
   .nav-cta {
     background: linear-gradient(135deg, var(--accent), var(--accent2));
-    color: #fff; padding: 8px 18px; border-radius: 8px;
+    color: #fff; padding: 8px 15px; border-radius: 8px;
     text-decoration: none; font-size: 14px; font-weight: 700;
     text-shadow: 0 1px 3px rgba(0,0,0,0.35);
     transition: opacity .2s;
@@ -198,7 +199,7 @@
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 20px; padding: 3px;
     cursor: pointer; transition: all .2s;
-    user-select: none; margin-left: 8px;
+    user-select: none;
   }
   .lang-toggle:hover { border-color: var(--accent); }
   .lang-option {
@@ -218,7 +219,7 @@
     background: var(--bg-card); border: 1px solid var(--border);
     border-radius: 20px; padding: 3px;
     cursor: pointer; transition: all .2s;
-    user-select: none; margin-left: 8px;
+    user-select: none;
   }
   .theme-toggle:hover { border-color: var(--accent); }
   .theme-option {
@@ -787,10 +788,10 @@
     font-weight: 500;
   }
 
-  /* 中等屏（平板横屏、笔记本分屏、非最大化浏览器）：折叠导航文字链接，避免竖排/溢出 */
-  @media (max-width: 1024px) {
+  /* 中等屏（平板横屏、笔记本分屏、非最大化浏览器）：折叠导航文字链接，避免竖排/溢出
+     全量文字链接（英文最长）约需 1150px 以上视口宽，更窄时收起 */
+  @media (max-width: 1150px) {
     .nav-links a:not(.nav-cta) { display: none; }
-    .nav-links { gap: 16px; }
   }
 
   @media (max-width: 768px) {
@@ -815,9 +816,7 @@
     .nav-cta { padding: 6px; }
     .nav-cta-label { display: none; }
     .nav-cta-svg { width: 16px; height: 16px; }
-    .lang-toggle { margin-left: 4px; }
     .lang-option { padding: 3px 8px; font-size: 11px; }
-    .theme-toggle { margin-left: 4px; }
     .theme-option { padding: 3px 7px; font-size: 12px; }
   }
 
