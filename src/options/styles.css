@@ -437,6 +437,13 @@ textarea {
 .model-dropdown.show {
   display: block;
 }
+/* 过滤无匹配时的空态提示 */
+.model-dropdown-empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #999;
+  text-align: center;
+}
 .model-option {
   padding: 10px 12px;
   font-size: 14px;
@@ -587,6 +594,10 @@ textarea {
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
   flex-shrink: 0;
+  /* 长域名不许吞掉左侧名称：限制宽度并截断省略号 */
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* ===== 厂商配置从属分组（缩进 + 左侧渐变竖线） ===== */
 #profileGroup {

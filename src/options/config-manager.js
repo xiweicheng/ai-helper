@@ -3,7 +3,7 @@
 import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
-import { normalizeModels, syncActiveProfileModels, updateActiveProfile } from '../shared/model-profiles.js';
+import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -91,7 +91,7 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
     return;
   }
   
-  modelDropdown.appendChild(buildModelOption(modelName, contextWindow || 0));
+  insertModelOptionSorted(modelDropdown, buildModelOption(modelName, contextWindow || 0), modelName);
 
   // 保存模型列表到存储（并同步到当前厂商配置）
   saveCustomModels();
@@ -141,6 +141,52 @@ export function buildModelOption(modelName, contextWindow = 0) {
    option.appendChild(rightSpan);
 
   return option;
+}
+
+/**
+ * 按名称顺序插入模型选项，保持下拉列表始终有序
+ * （排序规则与 renderModelDropdownFromList 一致）
+ * @param {HTMLElement} dropdown 目标下拉容器
+ * @param {HTMLElement} option 已构建的选项元素
+ * @param {string} modelName 新模型名（用于定位排序位置）
+ */
+function insertModelOptionSorted(dropdown, option, modelName) {
+  const next = [...dropdown.querySelectorAll('.model-option')]
+    .find(o => compareByName(o.dataset.value, modelName) > 0);
+  if (next) {
+    dropdown.insertBefore(option, next);
+  } else {
+    dropdown.appendChild(option);
+  }
+}
+
+/**
+ * 过滤指定下拉中的模型选项（输入框即搜索框）。
+ * 不区分大小写、包含匹配整项文本（模型名 + 上下文徽标）；
+ * 无匹配时创建"无匹配项"空态，空查询恢复全部选项。
+ * @param {HTMLElement|null} dropdown 下拉容器（#modelDropdown / #imageModelDropdown）
+ * @param {string} query 搜索关键字
+ */
+export function filterModelDropdown(dropdown, query) {
+  if (!dropdown) return;
+  const q = String(query || '').trim().toLowerCase();
+  let visible = 0;
+  dropdown.querySelectorAll('.model-option').forEach(option => {
+    const hit = !q || option.textContent.toLowerCase().includes(q);
+    option.style.display = hit ? '' : 'none';
+    if (hit) visible += 1;
+  });
+  let empty = dropdown.querySelector('.model-dropdown-empty');
+  if (q && visible === 0) {
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.className = 'model-dropdown-empty';
+      dropdown.appendChild(empty);
+    }
+    empty.textContent = t('settings.noMatch');
+  } else if (empty) {
+    empty.remove();
+  }
 }
 
 // 从下拉列表移除模型（删除后立即同步存储与当前厂商配置）
@@ -217,7 +263,9 @@ export function renderModelDropdownFromList(models, selectedValue) {
   const modelDropdown = document.getElementById('modelDropdown');
   if (!modelDropdown) return;
   modelDropdown.innerHTML = '';
-  for (const item of models) {
+  // 展示副本按名称排序（不影响存储顺序）
+  const sorted = [...(models || [])].sort((a, b) => compareByName(a?.name, b?.name));
+  for (const item of sorted) {
     modelDropdown.appendChild(buildModelOption(item.name, item.contextWindow || 0));
   }
   const selected = selectedValue !== undefined ? selectedValue : currentModel;
@@ -345,7 +393,7 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   rightSpan.appendChild(deleteBtn);
   option.appendChild(rightSpan);
 
-  modelDropdown.appendChild(option);
+  insertModelOptionSorted(modelDropdown, option, modelName);
   saveImageModels();
 }
 
@@ -401,7 +449,9 @@ export function loadImageModels(callback) {
     // 清空现有选项
     modelDropdown.innerHTML = '';
 
-    imageModels.forEach(item => {
+    // 渲染前按名称排序（兼容字符串旧格式与对象格式）
+    const itemName = (item) => (typeof item === 'string' ? item : (item && item.name) || '');
+    [...imageModels].sort((a, b) => compareByName(itemName(a), itemName(b))).forEach(item => {
       // 向前兼容：旧格式为字符串，新格式为对象
       let modelName, contextWindow = 0;
       if (typeof item === 'string') {

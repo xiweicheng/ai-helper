@@ -83,6 +83,7 @@ export default {
     modelName: 'Model name',
     modelNameHint: '(Select from dropdown, or click the button below to add a new model)',
     selectModelPlaceholder: 'Select a model below',
+    noMatch: 'No matches',
     addModelTitle: 'Add custom model',
     addModel: '+ Add model',
     fetchModels: '⟳ Fetch from API',

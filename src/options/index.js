@@ -1,6 +1,6 @@
 // options/index.js - 选项页面入口
 
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, showStatus, showToast } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, filterModelDropdown, showStatus, showToast } from './config-manager.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
 import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
 import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
@@ -217,7 +217,25 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   modelInput.addEventListener('click', function(e) {
     e.stopPropagation();
+    if (!modelDropdown.classList.contains('show')) {
+      // 打开时重置过滤状态、高亮当前选中项，并全选文本方便直接打字搜索
+      filterModelDropdown(modelDropdown, '');
+      updateModelSelection(currentModel);
+      modelInput.select();
+    }
     modelDropdown.classList.toggle('show');
+  });
+
+  // 输入时实时过滤下拉选项（输入框即搜索框）
+  modelInput.addEventListener('input', function() {
+    modelDropdown.classList.add('show');
+    filterModelDropdown(modelDropdown, this.value);
+  });
+
+  // 失焦时恢复显示当前选中模型，避免残留搜索词
+  modelInput.addEventListener('blur', function() {
+    modelInput.value = currentModel;
+    updateModelSelection(currentModel);
   });
   
   modelDropdown.addEventListener('click', function(e) {
@@ -331,7 +349,25 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (imageModelInput && imageModelDropdown) {
     imageModelInput.addEventListener('click', function(e) {
       e.stopPropagation();
+      if (!imageModelDropdown.classList.contains('show')) {
+        // 打开时重置过滤状态、高亮当前选中项，并全选文本方便直接打字搜索
+        filterModelDropdown(imageModelDropdown, '');
+        updateImageModelSelection(currentImageModel);
+        imageModelInput.select();
+      }
       imageModelDropdown.classList.toggle('show');
+    });
+
+    // 输入时实时过滤下拉选项（输入框即搜索框）
+    imageModelInput.addEventListener('input', function() {
+      imageModelDropdown.classList.add('show');
+      filterModelDropdown(imageModelDropdown, this.value);
+    });
+
+    // 失焦时恢复显示当前选中模型，避免残留搜索词
+    imageModelInput.addEventListener('blur', function() {
+      imageModelInput.value = currentImageModel;
+      updateImageModelSelection(currentImageModel);
     });
 
     imageModelDropdown.addEventListener('click', function(e) {

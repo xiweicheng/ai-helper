@@ -83,6 +83,7 @@ export default {
     modelName: '模型名称',
     modelNameHint: '（从下拉列表选择，或点击下方按钮添加新模型）',
     selectModelPlaceholder: '请从下方选择模型',
+    noMatch: '无匹配项',
     addModelTitle: '添加自定义模型',
     addModel: '+ 添加模型',
     fetchModels: '⟳ 从 API 获取',
