@@ -2,6 +2,38 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-07
+
+### 优化
+- **工具栏自适应逻辑抽离独立模块**：将输入工具栏自适应功能从 `index.js` 拆分为独立模块 `src/side_panel/toolbar-adapt.js`；修复浮层动画重播导致的闪帧问题；改进 MutationObserver 逻辑，避免不必要的重测触发；新增 `toolbar-adapt.unit.test.js` 单元测试。
+- **默认上下文窗口 64K 提升至 256K**：`token-counter.js` / `token-store.js` 默认上下文窗口大小由 64,000 调整为 256,000，适配主流模型更长的上下文能力；同步优化正则表达式中换行符的处理方式。
+- **厂商 / 模型选择下拉支持过滤搜索与名称排序**：新增 `compareByName`（中文拼音与英文混合排序）、`sectionSelectSearchHtml`（搜索框组件）、`filterSectionSelectList`（关键字过滤）等能力，厂商与模型选择列表集成排序与搜索——搜索框吸顶显示、选项区独立滚动；补充中英文案；新增 `section-select` / `provider-selector` / `model-profiles` 单元测试共 250+ 行。
+
+### 修复
+- **配置页下拉菜单溢出修复**：`src/options/styles.css` 为下拉菜单补充最大高度限制与垂直自动滚动（保留水平溢出隐藏），修复选项较多时下拉过度展开、遮挡或撑开页面其他元素的问题。
+
+## 2026-10-06
+
+### 新增
+- **版本信息弹窗**：侧边栏头部下拉菜单移除 GitHub / Gitee 仓库链接按钮，替换为版本信息弹窗——展示版本号、Git 标签、提交 ID 与发布时间，支持一键复制版本信息，底部保留仓库链接入口；发布脚本自动生成 `src/config/version.json` 并提交，弹窗数据无需手工维护；配套中英文案与 `version-info` 数据 / DOM 两套单元测试。
+- **工具配置按钮计数显示**：工具配置按钮新增已启用工具数量计数器；工具勾选状态与工具总开关保持完全独立的状态管理；MCP 服务按服务粒度计数；修复空数组配置被误判为「未配置」的问题。
+
+### 优化
+- **执行日志统计区自适应降级**：新增 `src/side_panel/log-summary-adaptive.js`（静态弹窗与实时模式共用）——宽度不足时由 `adaptLogSummary` 测量 `scrollWidth / clientWidth` 逐级降级：① 折叠组合块文案（执行节点 / 成功 / 失败…）② 再折叠总耗时 / Token 文案 ③ 极窄时整块换行兜底（防止右侧展开按钮被裁剪）；rAF 节流合并面板创建、统计数字更新与窗口 resize 触发的高频重测，空间恢复自动还原；悬停 tooltip 保留完整信息，自动适配中英文与数字长度差异；配套 `log-summary-adaptive` 单元测试。
+- **记忆条数徽标样式统一**：记忆条数徽标从内联样式迁移至 CSS 统一控制，与工具配置按钮风格保持一致（悬停效果、激活态配色、数字字号对齐），修复按钮字体继承问题并统一显示格式。
+
+### 修复
+- **Service Worker 终止竞态防护**：扩展重载 / SW 终止瞬间 `chrome` API 可能被剥离为 `undefined`，模块顶层直接访问（如 `chrome.storage.onChanged`）会抛 `TypeError` 并整体中断 SW 启动（表现为 "No SW"、Unchecked runtime.lastError 告警）。background `index.js` / `scheduler.js` / `tool-executor.js` 顶层 API 访问统一改为可选链保护，顶层异步调用（getContexts / tabs.query / storage.get 等）改为 try/catch 静默降级；新增 `detach-window.js` 模块承接脱离窗口状态恢复——storage / windows 调用失败时按「无脱离窗口」降级（不再抛 TypeError 与告警），窗口已销毁时清理残留记录；配套 `detach-window-restore` 回归测试。
+
+### CI / 发布
+- **GitHub Release 自动构建发布**：推送 `v*` 标签或手动触发时自动执行 `npm ci` + `npm run build`，将 `dist/` 打包为 `ai-helper-<tag>.zip` 并创建 GitHub Release（`overwrite_files` 避免重跑时资产同名冲突）；`dist/` 构建产物退出 Git 版本控制（移除已提交打包文件并加入 `.gitignore`）。
+- **Gitee 同步发布**：Release 工作流新增 Gitee 同步——tag 同步 + OpenAPI 创建发行版 + 附件上传；构建在 GitHub 免费 Runner 完成、Gitee 端仅同步发行版（未使用收费 Gitee Go）；附件上传采用「先传后删 + 失败重试（3 次，间隔 20s / 40s，单次超时 420s）」策略，解决跨境上传超时 / 502 导致附件被清空丢失的问题，同名同大小附件直接跳过；未配置 `GITEE_TOKEN` 时仅告警跳过；发行版说明同步与 HTTP 状态码校验等错误处理增强。
+- **发布脚本（publish.sh）增强**：支持多远端推送（origin / gitee / atomgit）与交互式版本选择；git 工作区检查前刷新 index stat 缓存，修复文件被 touch 或编辑器重写时的清洁度误报；扩展发布流程重构为「写入 version.json → 重新构建 → 发布 npm」，构建失败时回滚 `package.json` 与 `version.json`；新增 `publish-script-order` 单元测试；`package.json` 新增 `release:agent` 命令；代理端版本连续迭代至 v1.17.5。
+
+### 文档
+- **安装指南全面更新**：README / DOCUMENTATION（中英）与官网页面（`docs/index.html`）、宣传文章统一改为推荐从 GitHub Releases 下载构建包安装，并补充下载链接与版本说明。
+- **演示资源目录迁移**：`demo/form-autofill` 演示工程（表单页面 / 构建脚本 / 视频工程 / 数据文件）整体迁移至 `docs/demo/form-autofill`，`OPTIMIZATION_PLAN.md` 移入 `docs/` 目录，`.gitignore` 相关路径同步更新。
+
 ## 2026-10-05
 
 ### 新增
@@ -19,9 +51,12 @@
 - **压缩进行中模态进度提示**：点击「开始压缩」到摘要生成完成之间原先无任何反馈（仅完成/失败后弹 toast），新增不可关闭的进行中模态——转圈动画 + 「正在调用模型生成摘要，请稍候…」提示，遮罩挡住界面防止误操作；完成/失败后由 `try/finally` 自动关闭（异常路径同样保证关闭）并显示结果提示。Playwright 探针实测（stub 延迟 800ms 模拟生成耗时）：进行中 `display:flex` 420×900 可见、spinner 动画生效、误点遮罩不关闭；完成后模态自动关闭，分隔条 + toast「压缩完成，节约约 527 tokens」正常。
 - **压缩后无法再次压缩修复 + 撤销窗口规则**：详情弹窗压缩状态区原为互斥三分支（有压缩时只渲染「撤销」），压缩后无论是否发送新消息都无法再次压缩，与设计（覆盖式二次压缩：旧摘要+新消息合并浓缩为单摘要）不符——底层 `assembleCompactionMaterial`/`triggerCompaction` 的合并能力本就就绪，仅 UI 入口被吞掉。修复：发送新消息后弹窗显示「再次压缩」（点击走同一确认/合并流程）；撤销窗口规则明确为「发送新消息前可撤销」——发新消息后弹窗与分隔条不再显示撤销按钮，`undoCompaction` 增加守卫（窗口外调用提示），确认框文案同步改为「发送新消息前可撤销」。Playwright 探针实测：压缩①（6 条）→ 追加 2 条消息后弹窗显示「再次压缩」/无撤销、分隔条撤销按钮消失 → 再次压缩确认框提示「含已有摘要，将合并为新摘要」（素材 2 条 ≈ 55 tokens）→ 完成 `compressedCount` 6→8、分隔条「上方 8 条消息已压缩为摘要」、撤销按钮随新窗口回归。
 - **工具参数解析修复增强（模型偶发多余转义引号）**：模型输出工具参数时偶发把值的闭合引号多写一个反斜杠（如 `{"action": "write\", ...}`，实测 JSON.parse 报 `Expected ',' or '}' after property value ... at position 22`），现有 6 个修复 pass 无法处理——轻则修复失败（args 退化为空对象、工具以空参执行），重则被 pass2d 误修为错误数据（action 值尾部残留 `\`）。新增「位置引导修复」：利用 JSON.parse 报错位置回溯 40 字符窗口，定位“后接 JSON 结构符（`, ] }` 或下一个 `"key":`）”的多余 `\"` 并删除反斜杠，每轮删除后重新解析验证（最多 4 轮），修好立即返回、修不动则照旧走传统修复流程；候选检测带后顾保护，不触碰合法 `\\"` 序列（值以反斜杠结尾）。同步删除 `tool-executor.js` 中重复的内联解析函数（此前 `tool-helpers.js` 的导出版无人调用），解析逻辑统一收敛到 `tool-helpers.js` 一处维护。探针实测：线上样本正确还原 `action: "write"`；变体（字段乱序 / 中文 key / 中段误转义 / 长文本值）均修复成功；合法串与 `\\"` 保护负例无误伤。
+- **子任务反射功能 API 调用错误修复**：修复子任务反射 API 调用的错误处理逻辑，改进 API 响应解析与错误状态检查，优化反射结果的数据结构处理；修复 token 使用统计与上报，改进超时与异常情况下的资源清理；补充更准确的错误消息与调试日志（`chat-manager` / `chat-streaming` 配套调整），新增 `chat-manager-error-msg` 与 `chat-retry-hint` 回归测试。
+- **工具栏下拉浮层导致布局误判修复**：下拉浮层（绝对定位元素）展开时参与工具栏宽度测量，空间充足却误判为不足、工具栏错误折叠；测量前临时隐藏绝对定位浮层、测量完成后立即恢复显示状态，并确保样式变更不触发循环观察回调。
 
 ### 优化
 - **上下文摘要弹窗重新设计（响应式宽度 + Markdown 预览 / 源码切换）**：摘要弹窗宽度原被 `.modal-container` 基础规则（`width:90%` + `max-width:320px`，定义于文件更后处、同特异性后者胜出）钳制为固定窄宽，侧边栏加宽时弹窗不跟随；底部「关闭」按钮与内容零间距；摘要为 Markdown 却只能阅读原文。重设计：宽度随侧边栏自适应（`calc(100% - 40px)` 两侧各留 20px、`max-width:none`，双类 `.modal-container.context-usage-summary-modal` 提高特异性覆盖基础规则）；改为 flex 纵向布局（`max-height: calc(100vh - 48px)`），标题与「预览 / 源码」分段切换固定、内容区独立滚动；右上角新增 × 关闭图标（标题两侧对称留白避让不重叠；原底部「关闭」按钮因功能重复已移除，纯展示弹窗仅保留 × 与点击遮罩两种关闭方式）；新增双视图切换——预览模式复用消息区 `formatMarkdown` 渲染管线（代码块复制按钮同步绑定、`.markdown-body` 样式适配），源码模式以等宽字体展示原文；i18n 补充中英文「预览 / 源码」文案。Playwright 探针实测：视口 420px → 弹窗 380px、800px → 弹窗 760px 双向跟随；底部间距 14px；预览模式 h2 渲染 2 个、切至源码后 h2 归零且原文可见；右上角 × 与点击遮罩均可正常关闭。
+- **Word 导出 emoji 字体与段落结构改进**：emoji 单独拆分为独立 TextRun 并指定系统 emoji 字体（跨平台自动检测：macOS 使用 `Apple Color Emoji`、Windows 使用 `Segoe UI Emoji`），避免 Word 中显示异常；修复标题后紧跟内容被静默丢弃的问题，确保内容独立成段；统一导出标题样式为与页面一致的浅灰底边框设计；工作目录面板虚拟滚动定位逻辑改进，支持大目录下文件高亮定位；新增 `docx-export` 与 `workspace-locate` 单元测试。
 
 ### 工程质量
 - 新增 `context-usage.unit.test.js`（22 用例）与 `compaction-prompt.unit.test.js`（6 用例），覆盖历史选择四层流水线、占用计算、摘要注入、压缩素材组装；`tool-helpers.unit.test.js` 补充误转义引号修复回归 3 用例（对象直通 / 位置引导修复 / `\\"` 保护）；全量 560 个单测通过。
