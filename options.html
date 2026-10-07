@@ -741,8 +741,8 @@
       </div>
     </div><!-- /tab-knowledge -->
 
-    <!-- 全局保存按钮（所有 tab 可见） -->
-    <div style="margin-top: 20px; padding: 0 24px 24px;">
+    <!-- 全局保存按钮（所有 tab 可见；内容超出一屏时吸附在视口底部，保证按钮始终可见） -->
+    <div class="save-bar" id="saveBar">
       <button class="btn btn-save" id="saveBtn">
         <svg class="save-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>

@@ -24,6 +24,7 @@ import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
+import { initSaveBarSticky } from './save-bar.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
@@ -210,6 +211,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // 保存按钮事件
   document.getElementById('saveBtn').addEventListener('click', saveConfig);
+
+  // 保存按钮栏：内容超出一屏时吸附视口底部（保证保存按钮始终可见）
+  initSaveBarSticky();
   
   // 模型选择器事件
   const modelInput = document.getElementById('modelInput');
