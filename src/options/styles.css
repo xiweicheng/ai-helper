@@ -429,7 +429,10 @@ textarea {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   display: none;
-  overflow: hidden;
+  /* 选项过多时限制高度并垂直滚动，避免整片铺开遮挡 / 撑开下方内容 */
+  max-height: 240px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .model-dropdown.show {
   display: block;
