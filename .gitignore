@@ -33,3 +33,5 @@ docs/demo/form-autofill/video-build/list.txt
 .trae/
 test-results-probes/
 dist/
+# Wiki 构建中转目录（正式内容在独立 wiki 仓库）
+.wiki-tmp/
