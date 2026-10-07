@@ -129,6 +129,20 @@ export async function getActiveProfile(state) {
 }
 
 /**
+ * 校验模型名是否属于指定配置的可用模型（选中的模型名或模型列表内）
+ * 用于「历史模型名 + 当前厂商连接」错配场景的运行时一致性校验（如定时任务
+ * 执行时宿主会话/Agent 携带的可能仍是旧厂商的模型名）。
+ * @param {string} modelName
+ * @param {object|null} profile
+ * @returns {boolean}
+ */
+export function isModelInProfile(modelName, profile) {
+  if (!modelName || !profile) return false;
+  if (modelName === profile.modelName) return true;
+  return normalizeModels(profile.models).some((m) => m.name === modelName);
+}
+
+/**
  * 迁移旧数据并确保配置状态就绪（幂等，可在多个页面并发调用）
  * @param {{fallbackName?: string}} [opts]
  * @returns {Promise<{profiles: Array, activeProfileId: string, migrated: boolean}>}

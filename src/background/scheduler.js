@@ -19,6 +19,7 @@ import {
   normalizeTaskPayload,
 } from './scheduler-rules.js';
 import { notifyTaskFeedback } from './notifier.js';
+import { getActiveProfile, isModelInProfile } from '../shared/model-profiles.js';
 
 // 兼容外部可能的具名导入
 export { nextCronRun, parseIntervalMinutes, computeNextRun, shouldDisableAfterRun, normalizeTaskPayload };
@@ -34,6 +35,7 @@ registerTranslations('zh', {
     invalidCron: 'Cron 表达式无效',
     invalidInterval: '间隔时间格式无效',
     taskDisabled: '任务已停用，无法执行',
+    modelFallback: '原模型 {from} 在当前厂商（{vendor}）不可用，本次已改用 {to} 执行。',
   },
 });
 registerTranslations('en', {
@@ -47,6 +49,7 @@ registerTranslations('en', {
     invalidCron: 'Invalid cron expression',
     invalidInterval: 'Invalid interval value',
     taskDisabled: 'Task is disabled',
+    modelFallback: 'Model {from} is unavailable for the current vendor ({vendor}); this run used {to} instead.',
   },
 });
 
@@ -286,6 +289,8 @@ export async function runTask(taskId, force = false) {
   const runStartedAt = Date.now();
   let createdTabId = null;
   let ok = false;
+  // 模型被自动回退时填充（成功/失败分支都要在结果中提示）
+  let modelFallbackNote = '';
 
   try {
     task = { ...task, lastStatus: 'running', lastRunAt: Date.now() };
@@ -303,7 +308,20 @@ export async function runTask(taskId, force = false) {
     // 2. 解析执行配置：任务覆盖 > 宿主会话 > 全局默认
     const agent = await loadAgent(task.agentId || hostSession.agentId);
     const config = await getStoredConfig();
-    const model = task.model || hostSession.model || agent?.model || config.modelName;
+    let model = task.model || hostSession.model || agent?.model || config.modelName;
+    // 一致性校验：候选模型可能来自创建时的历史配置（宿主会话/Agent 绑定），
+    // 用户切换厂商后连接（apiBase/apiKey）已指向新厂商，历史模型名与其错配
+    // 会触发 model_not_found。不属于当前激活厂商时回退到当前厂商的默认模型。
+    if (model !== config.modelName) {
+      try {
+        const activeProfile = await getActiveProfile();
+        if (activeProfile && !isModelInProfile(model, activeProfile)) {
+          logger.warn(`[Scheduler] model "${model}" not in active profile "${activeProfile.name}", fallback to "${config.modelName}"`);
+          modelFallbackNote = t('sched.modelFallback', { from: model, to: config.modelName, vendor: activeProfile.name });
+          model = config.modelName;
+        }
+      } catch { /* 校验异常不阻塞执行：保持原模型，由调用阶段报错 */ }
+    }
     const useTools = pick(task.useTools, pick(hostSession.useTools, true));
     const agentId = task.agentId || hostSession.agentId || null;
     const agentToolIds = agent?.toolIds ?? null;
@@ -360,7 +378,9 @@ export async function runTask(taskId, force = false) {
     }
 
     const content = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
-    await appendRunMessages(hostSession.id, task, content, result.executionLog, pageMeta);
+    // 模型被自动回退时在结果开头注明（charCode 10 为换行符，空行分隔提示与正文）
+    const finalContent = modelFallbackNote ? modelFallbackNote + String.fromCharCode(10, 10) + content : content;
+    await appendRunMessages(hostSession.id, task, finalContent, result.executionLog, pageMeta);
     // 成功通知（受 scheduledNotificationEnabled 开关控制；定时任务无面板实例，不做可见性抑制）
     notifyTaskFeedback({ success: true, sessionId: task.sessionId, name: task.name, source: 'scheduled' }).catch(() => {});
     task = { ...task, lastStatus: 'success', lastError: null, lastRunAt: Date.now() };
@@ -373,7 +393,9 @@ export async function runTask(taskId, force = false) {
     const failMsg = e?.message || String(e);
     try {
       if (task.sessionId) {
-        await appendMessageToSession(task.sessionId, { role: 'assistant', content: t('sched.failed') + ': ' + failMsg });
+        const failContent = t('sched.failed') + ': ' + failMsg
+          + (modelFallbackNote ? String.fromCharCode(10, 10) + modelFallbackNote : '');
+        await appendMessageToSession(task.sessionId, { role: 'assistant', content: failContent });
       }
     } catch { /* 写失败说明不影响主流程 */ }
     // 失败通知：后台执行失败用户无感知，主动弹系统通知（受 scheduledNotificationEnabled 开关控制）

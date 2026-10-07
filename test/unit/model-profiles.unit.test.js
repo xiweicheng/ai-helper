@@ -3,6 +3,7 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   getState,
   getActiveProfile,
+  isModelInProfile,
   ensureProfilesMigrated,
   applyProfile,
   updateActiveProfile,
@@ -354,5 +355,35 @@ describe('工具函数', () => {
     expect(['b-model', 'A-Model', 'a-model-x'].sort(compareByName)).toEqual(['A-Model', 'a-model-x', 'b-model']);
     expect(compareByName(undefined, 'x')).toBeLessThan(0);
     expect(compareByName('x', null)).toBeGreaterThan(0);
+  });
+});
+
+describe('isModelInProfile（模型与配置一致性校验）', () => {
+  const profile = {
+    id: 'p1',
+    name: 'A',
+    modelName: 'm-default',
+    models: [{ name: 'm-a', contextWindow: 0 }, { name: 'm-b', contextWindow: 8 }],
+  };
+
+  test('命中选择的模型名或列表内模型均通过', () => {
+    expect(isModelInProfile('m-default', profile)).toBe(true);
+    expect(isModelInProfile('m-a', profile)).toBe(true);
+    expect(isModelInProfile('m-b', profile)).toBe(true);
+  });
+
+  test('不在配置内（如旧厂商的历史模型名）返回 false', () => {
+    expect(isModelInProfile('deepseek-flash', profile)).toBe(false);
+  });
+
+  test('兼容字符串格式模型列表（旧数据）', () => {
+    expect(isModelInProfile('legacy', { modelName: 'x', models: ['legacy'] })).toBe(true);
+  });
+
+  test('空输入安全返回 false', () => {
+    expect(isModelInProfile(null, profile)).toBe(false);
+    expect(isModelInProfile('m-a', null)).toBe(false);
+    expect(isModelInProfile('m-a', {})).toBe(false);
+    expect(isModelInProfile('m-a', undefined)).toBe(false);
   });
 });
