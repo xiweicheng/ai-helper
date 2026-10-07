@@ -303,7 +303,6 @@ registerTranslations('zh', {
     balanceGranted: '赠送余额',
     balanceToppedUp: '充值余额',
     balanceLoading: '查询中...',
-    balanceFailed: '查询失败',
   }
 });
 registerTranslations('en', {
@@ -320,7 +319,6 @@ registerTranslations('en', {
     balanceGranted: 'Granted',
     balanceToppedUp: 'Topped Up',
     balanceLoading: 'Loading...',
-    balanceFailed: 'Query Failed',
   }
 });
 
@@ -444,29 +442,35 @@ export function showTokenPopup(tokenSummary, anchorEl) {
     document.addEventListener('click', outsideHandler, true);
   }, 0);
 
-  // DeepSeek 模型时异步查询账户余额
+  // 官方 DeepSeek 模型时异步查询账户余额（第三方厂商或查询失败时自动隐藏）
   _fetchDeepSeekBalance(popup);
 }
 
 /**
  * 查询 DeepSeek 账户余额并更新弹窗 UI
- * 仅当当前模型名称包含 'deepseek' 时才发起查询
+ * 仅当模型名称包含 'deepseek' 且 API 地址为 DeepSeek 官方域名时发起查询
+ * （/user/balance 是 DeepSeek 私有接口，第三方厂商的 deepseek 模型不支持）；查询失败时隐藏余额区块
  */
 async function _fetchDeepSeekBalance(popup) {
+  const balanceSection = popup.querySelector('.token-popup-balance-section');
+  if (!balanceSection) return;
+  // 失败即隐藏：余额区块仅在官方接口查询成功且有数据时展示
+  const hideSection = () => {
+    balanceSection.style.display = 'none';
+  };
+
   try {
     const config = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName']);
     const model = (config.modelName || '').toLowerCase();
-    // 仅 DeepSeek 模型展示余额
-    if (!model.includes('deepseek')) return;
+    const apiBase = (config.apiBase || 'https://api.deepseek.com').replace(/\/+$/, '');
+    // 严格判定：模型名含 deepseek 且地址为官方域名才查询，避免第三方厂商误触发私有接口
+    if (!model.includes('deepseek') || !apiBase.includes('deepseek.com')) return;
     const apiKey = config.apiKey;
     if (!apiKey) return;
 
-    const balanceSection = popup.querySelector('.token-popup-balance-section');
-    if (!balanceSection) return;
     balanceSection.style.display = '';
 
-    const apiBase = config.apiBase || 'https://api.deepseek.com';
-    const resp = await fetch(`${apiBase.replace(/\/+$/, '')}/user/balance`, {
+    const resp = await fetch(`${apiBase}/user/balance`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${apiKey}` }
     });
@@ -475,8 +479,7 @@ async function _fetchDeepSeekBalance(popup) {
     const data = await resp.json();
 
     if (!data.is_available || !data.balance_infos?.length) {
-      const content = balanceSection.querySelector('.token-popup-balance-content');
-      content.innerHTML = `<span class="token-popup-balance-error">${t('tokenPopup.balanceFailed')}</span>`;
+      hideSection();
       return;
     }
 
@@ -499,11 +502,7 @@ async function _fetchDeepSeekBalance(popup) {
     `;
   } catch (e) {
     console.warn('[TokenPopup] Failed to fetch DeepSeek balance:', e);
-    const balanceSection = popup.querySelector('.token-popup-balance-section');
-    if (!balanceSection) return;
-    balanceSection.style.display = '';
-    const content = balanceSection.querySelector('.token-popup-balance-content');
-    content.innerHTML = `<span class="token-popup-balance-error">${t('tokenPopup.balanceFailed')}</span>`;
+    hideSection();
   }
 }
 

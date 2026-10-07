@@ -4190,14 +4190,10 @@ body {
   font-weight: 600;
   color: #667eea;
 }
-.token-popup-balance-loading,
-.token-popup-balance-error {
+.token-popup-balance-loading {
   font-size: 11px;
   color: #9ca3af;
   padding: 4px 0;
-}
-.token-popup-balance-error {
-  color: #ef4444;
 }
 .token-popup-balance-value {
   color: #059669 !important;
