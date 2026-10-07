@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithTimeout, fetchWithRetry, getSessionForcedMcpServers, getMcpToolIdsForServers } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
@@ -102,7 +102,7 @@ const TOOL_DISPLAY_NAME_KEYS = {
  * 请求用户确认敏感操作
  * 发送消息到 Side Panel 显示确认对话框，等待用户响应
  */
-async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
+export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
   const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
   const confirmTimeout = 300000; // 5分钟确认超时
@@ -147,8 +147,11 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
       resolve(false); // 超时默认拒绝
     }, confirmTimeout);
     
-    // 发送显示确认对话框的消息
-    chrome.runtime.sendMessage({
+    // 发送显示确认对话框的消息：
+    // 定向优先（keepalive port 点对点）——本实例发起的确认只弹在发起实例上，
+    // 避免 chrome.runtime.sendMessage 广播导致所有 Tab 的侧边栏都弹框；
+    // 无 port（定时任务发起、实例已关闭/刷新）或 port 失效时回退广播兜底。
+    const confirmDialogMsg = {
       type: 'SHOW_CONFIRM_DIALOG',
       data: {
         toolName,
@@ -159,13 +162,26 @@ async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
         timeout: confirmTimeout,
         message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined
       }
-    }).catch(err => {
-      logger.debug('[Background] sendconfirm dialogmessage failed:', err.message);
-      // 发送失败，直接放行
-      chrome.runtime.onMessage.removeListener(handler);
-      clearTimeout(timeoutId);
-      resolve(true);
-    });
+    };
+    let portSent = false;
+    const port = sessionId ? getKeepalivePort(sessionId) : null;
+    if (port) {
+      try {
+        port.postMessage(confirmDialogMsg);
+        portSent = true;
+      } catch (e) {
+        logger.debug('[Background] confirm port postMessage failed, fallback to broadcast:', e?.message);
+      }
+    }
+    if (!portSent) {
+      chrome.runtime.sendMessage(confirmDialogMsg).catch(err => {
+        logger.debug('[Background] sendconfirm dialogmessage failed:', err.message);
+        // 发送失败，直接放行
+        chrome.runtime.onMessage.removeListener(handler);
+        clearTimeout(timeoutId);
+        resolve(true);
+      });
+    }
   });
 }
 

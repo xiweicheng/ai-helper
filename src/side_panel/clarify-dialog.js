@@ -345,6 +345,31 @@ export function cancelClarify() {
   hideClarifyDialog();
 }
 
+/**
+ * 处理澄清超时通知（runtime 广播消息与 keepalive port 定向消息共用）
+ * - 广播路径（无发起实例的兜底场景）：按当前显示的澄清会话过滤，避免误响铃
+ * - port 定向路径：只有发起实例能收到，直接处理
+ */
+export function handleClarifyTimeout(message) {
+  logger.debug('[SidePanel] received clarificationtimeoutnotification:', message);
+  
+  // 只处理当前显示的澄清会话的超时
+  if (message.sessionId && state.currentClarifySessionId && message.sessionId !== state.currentClarifySessionId) {
+    logger.debug('[SidePanel] clarificationtimeoutfrom othersession,ignore');
+    return;
+  }
+  
+  // 更新倒计时显示为超时状态
+  const timerElement = document.getElementById('clarifyTimer');
+  const timerTextElement = document.getElementById('clarifyTimerText');
+  if (timerElement && timerTextElement) {
+    timerElement.classList.remove('warning');
+    timerElement.classList.add('critical');
+    timerTextElement.textContent = t('clarify.timedOut');
+  }
+  playNotificationSound('error');
+}
+
 export function initClarifyEvents() {
   // 确认按钮
   const confirmBtn = document.getElementById('clarifyConfirmBtn');
@@ -373,23 +398,7 @@ export function initClarifyEvents() {
       playNotificationSound(message.soundType);
       sendResponse({ success: true });
     } else if (message.type === 'CLARIFY_TIMEOUT') {
-      logger.debug('[SidePanel] received clarificationtimeoutnotification:', message);
-      
-      // 只处理当前显示的澄清会话的超时
-      if (message.sessionId && state.currentClarifySessionId && message.sessionId !== state.currentClarifySessionId) {
-        logger.debug('[SidePanel] clarificationtimeoutfrom othersession,ignore');
-        return;
-      }
-      
-      // 更新倒计时显示为超时状态
-      const timerElement = document.getElementById('clarifyTimer');
-      const timerTextElement = document.getElementById('clarifyTimerText');
-      if (timerElement && timerTextElement) {
-        timerElement.classList.remove('warning');
-        timerElement.classList.add('critical');
-        timerTextElement.textContent = t('clarify.timedOut');
-      }
-      playNotificationSound('error');
+      handleClarifyTimeout(message);
     }
   });
   

@@ -9,7 +9,7 @@ import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
 import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
-import { setLastOperatedTab, getLastOperatedTab } from './state.js';
+import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './state.js';
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
@@ -2550,37 +2550,49 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
       }
     };
     
-    // 发送消息到 Side Panel 显示澄清弹窗
-    chrome.runtime.sendMessage({
-      type: 'SHOW_CLARIFY_DIALOG',
-      sessionId,
-      data: clarifyData
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Background] send clarificationmessage failed:', chrome.runtime.lastError.message);
-        cleanup(); // 确保清理
-        resolve({ 
-          success: false, 
-          error: t('toolExec.clarifyDialogFailed', { error: chrome.runtime.lastError.message }),
-          tool_call_id: toolCallId 
-        });
-        return;
+    /**
+     * 尝试向发起实例定向发送（keepalive port 点对点送达，只有发起实例能收到）
+     * @returns {boolean} port 存在且发送成功
+     */
+    const trySendViaPort = (msg) => {
+      const port = getKeepalivePort(sessionId);
+      if (!port) return false;
+      try {
+        port.postMessage(msg);
+        return true;
+      } catch (e) {
+        logger.debug('[Background] clarify port postMessage failed, fallback to broadcast:', e?.message);
+        return false;
       }
-      
-      console.log('[Background] clarification dialogsent to  Side Panel,timeout:', clarifyTimeout, 'ms');
-      
+    };
+
+    /**
+     * 发送通知类澄清消息（如 CLARIFY_TIMEOUT）：port 定向优先，无 port 回退广播
+     */
+    const sendToInitiator = (msg) => {
+      if (!trySendViaPort(msg)) {
+        chrome.runtime.sendMessage(msg).catch(() => {});
+      }
+    };
+
+    /**
+     * 启动等待：超时计时 + Side Panel 存活性轮询 + 用户响应监听
+     */
+    const startWaiting = () => {
+      console.log('[Background] clarification dialogsent, timeout:', clarifyTimeout, 'ms');
+
       // 设置超时处理（使用配置的澄清超时时间）
       timeoutId = setTimeout(() => {
         console.error('[Background] clarification dialogtimeout');
         cleanup(); // 确保清理
-        
-        // 通知前端倒计时结束
-        chrome.runtime.sendMessage({
+
+        // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）
+        sendToInitiator({
           type: 'CLARIFY_TIMEOUT',
           toolCallId: toolCallId,
           sessionId
-        }).catch(() => {});
-        
+        });
+
         resolve({ 
           success: false, 
           error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
@@ -2598,11 +2610,11 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           if (!contexts || contexts.length === 0) {
             console.warn('[Background] Side Panel closed,early terminateclarificationwaiting');
             cleanup();
-            chrome.runtime.sendMessage({
+            sendToInitiator({
               type: 'CLARIFY_TIMEOUT',
               toolCallId: toolCallId,
               sessionId
-            }).catch(() => {});
+            });
             resolve({
               success: false,
               error: t('toolExec.clarifyPanelClosed'),
@@ -2613,14 +2625,38 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           // getContexts 不可用时静默忽略（回退到超时机制）
         }
       }, 5000);
-      
+
       // 监听用户的澄清响应
       clarifyResponseHandler = (msg, sender, sendResponse) => {
         handleResponse(msg);
       };
-      
+
       chrome.runtime.onMessage.addListener(clarifyResponseHandler);
-    });
+    };
+
+    // 发送澄清请求到 Side Panel 显示澄清弹窗：
+    // 定向优先（keepalive port 点对点）——本实例发起的澄清只弹在发起实例上，
+    // 避免 chrome.runtime.sendMessage 广播导致所有 Tab 的侧边栏都弹框；
+    // 无 port（定时任务发起、实例已关闭/刷新）或 port 失效时回退广播兜底。
+    const initMsg = { type: 'SHOW_CLARIFY_DIALOG', sessionId, data: clarifyData };
+    if (trySendViaPort(initMsg)) {
+      startWaiting();
+    } else {
+      chrome.runtime.sendMessage(initMsg, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Background] send clarificationmessage failed:', chrome.runtime.lastError.message);
+          cleanup(); // 确保清理
+          resolve({ 
+            success: false, 
+            error: t('toolExec.clarifyDialogFailed', { error: chrome.runtime.lastError.message }),
+            tool_call_id: toolCallId 
+          });
+          return;
+        }
+        console.log('[Background] clarification dialogsent to  Side Panel,timeout:', clarifyTimeout, 'ms');
+        startWaiting();
+      });
+    }
   });
 }
 

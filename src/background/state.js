@@ -197,6 +197,40 @@ export function clearLastOperatedTab(sessionId) {
   if (sessionId) lastOperatedTabBySession.delete(sessionId);
 }
 
+// ========== Side Panel keepalive 长连接注册表（实例级定向消息路由） ==========
+//
+// side panel 实例发起 CALL_API 时建立 keepalive-<sessionId> 长连接，本表按 sessionId
+// 记录该连接，供「只发给发起请求的那个实例」的定向消息使用。典型场景：澄清弹框、
+// 敏感工具确认弹框——chrome.runtime.sendMessage 会广播到所有 Tab 的侧边栏（多 Tab
+// 绑定模式下每个 Tab 一个实例），必须走 port 点对点发送才能只弹在发起实例上。
+// port 断开（页面刷新/关闭）时由 onDisconnect 清理。
+const keepalivePorts = new Map(); // sessionId → Port
+
+export function registerKeepalivePort(sessionId, port) {
+  if (sessionId && port) keepalivePorts.set(sessionId, port);
+}
+
+export function getKeepalivePort(sessionId) {
+  return sessionId ? (keepalivePorts.get(sessionId) || null) : null;
+}
+
+export function hasKeepalivePort(sessionId) {
+  return sessionId ? keepalivePorts.has(sessionId) : false;
+}
+
+/**
+ * 注销 keepalive port
+ * @param {string} sessionId
+ * @param {Object} [port] - 断开连接的 port；传入时仅当注册表当前正是该 port 才删除，
+ *   防止「旧连接的 onDisconnect 迟到」误删同会话后来建立的新连接（如连续调用、
+ *   同会话多实例重连场景）
+ */
+export function unregisterKeepalivePort(sessionId, port) {
+  if (!sessionId) return;
+  if (port && keepalivePorts.get(sessionId) !== port) return;
+  keepalivePorts.delete(sessionId);
+}
+
 // ========== 工具级终止等待（不取消 ReAct 循环） ==========
 
 /**

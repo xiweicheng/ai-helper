@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool } from './state.js';
+import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -77,8 +77,8 @@ let mcpToolsCache = null;
 let skillPromptsCache = null;
 
 // SW 存活保持：side panel 通过 chrome.runtime.connect 建立长连接，
-// 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死
-const keepalivePorts = new Map(); // sessionId -> Port
+// 防止 API 调用期间 Chrome 判定 SW 空闲而将其杀死。
+// 连接注册表统一维护在 state.js（供澄清弹框等「只发给发起实例」的定向消息复用）
 
 // 脱离窗口的 windowId（全局变量，同步访问）
 // chrome.sidePanel.open() 要求用户手势上下文，不能在 await 之后调用，
@@ -99,8 +99,8 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
     // 判断是否为重连（SW 重启后的重连），而非首次连接
-    const isReconnection = keepalivePorts.has(sessionId);
-    keepalivePorts.set(sessionId, port);
+    const isReconnection = hasKeepalivePort(sessionId);
+    registerKeepalivePort(sessionId, port);
     logger.debug('[Background] keepalive portconnected, sessionId:', sessionId, isReconnection ? '(reconnect)' : '(first times)');
 
     // SW 静默重启检测：仅在重连时检测，避免首次连接时 activeReactLoops 尚未初始化导致的误报
@@ -131,7 +131,7 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     }
 
     port.onDisconnect.addListener(() => {
-      keepalivePorts.delete(sessionId);
+      unregisterKeepalivePort(sessionId, port);
       logger.debug('[Background] keepalive port disconnected, sessionId:', sessionId);
     });
   }

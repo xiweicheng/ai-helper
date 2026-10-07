@@ -2,6 +2,8 @@
 // 从 index.js 提取的聊天相关函数
 
 import state from './state.js';
+import { showClarifyDialog, handleClarifyTimeout } from './clarify-dialog.js';
+import { showConfirmDialog } from './confirm-dialog.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig, formatChatTime, formatChatTimeFull } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
@@ -3120,6 +3122,16 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           swRestarted: true,
         });
       }
+    }
+    // 澄清/确认弹框与超时：background 优先通过本 port 定向送达发起实例，
+    // 避免广播到所有 Tab 的侧边栏；无 port 场景回退广播，
+    // 由 clarify-dialog.js / confirm-dialog.js 的 runtime.onMessage 处理
+    if (msg.type === 'SHOW_CLARIFY_DIALOG') {
+      showClarifyDialog(msg.data);
+    } else if (msg.type === 'CLARIFY_TIMEOUT') {
+      handleClarifyTimeout(msg);
+    } else if (msg.type === 'SHOW_CONFIRM_DIALOG') {
+      showConfirmDialog(msg.data);
     }
   });
 
