@@ -8,7 +8,7 @@
 
 不只是聊天 —— 真的会点击、填表、拖拽、上传文件、跑终端命令，还能通过 MCP 动态扩展工具。
 
-[![Microsoft Edge](https://img.shields.io/badge/Microsoft_Edge-%E5%B7%B2%E4%B8%8A%E6%9E%B6-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) [![Discord](https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5-5865F2?logo=discord&logoColor=white)](https://discord.gg/VPcqMBFGa) [![License](icons/badges/license-MIT.svg)](./LICENSE) [![Version](icons/badges/version.svg)](./package.json) ![Platform](icons/badges/platform.svg) ![PRs Welcome](icons/badges/prs-welcome.svg) [![English Docs](https://img.shields.io/badge/Docs-English-blue)](./README.md)
+[![Microsoft Edge](https://img.shields.io/badge/Microsoft_Edge-%E5%B7%B2%E4%B8%8A%E6%9E%B6-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) [![讨论组](https://img.shields.io/badge/%E8%AE%A8%E8%AE%BA%E7%BB%84-%E5%8A%A0%E5%85%A5-181717?logo=github&logoColor=white)](https://github.com/xiweicheng/ai-helper/discussions) [![License](icons/badges/license-MIT.svg)](./LICENSE) [![Version](icons/badges/version.svg)](./package.json) ![Platform](icons/badges/platform.svg) ![PRs Welcome](icons/badges/prs-welcome.svg) [![English Docs](https://img.shields.io/badge/Docs-English-blue)](./README.md)
 
 ### [安装到 Microsoft Edge →](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)
 
@@ -105,7 +105,7 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 
 ## 社区与贡献
 
-- **Discord** —— <https://discord.gg/VPcqMBFGa>
+- **GitHub 讨论组** —— <https://github.com/xiweicheng/ai-helper/discussions>
 - **Issues** —— <https://github.com/xiweicheng/ai-helper/issues> · [`good first issue`](https://github.com/xiweicheng/ai-helper/labels/good%20first%20issue)
 - 每个 Issue 24 小时内回复。
 - 欢迎 PR —— 动手前建议先看 [架构总览](docs/zh/DOCUMENTATION.md#架构总览)。
@@ -118,7 +118,7 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 |---|---|---|
 | **硅碳相变 Token工厂**（SiCore TokenWorks）· 北京硅碳相变智能技术有限公司<br><sub>OpenAI 兼容的 AI 大模型 API 聚合平台，一个密钥调用盘古 / DeepSeek / 通义千问 / 文心一言 / 豆包 / GPT / Claude / Gemini 等主流模型</sub> | 大模型 Token 额度赞助 | <https://www.token8341.com> |
 
-有意赞助或合作？欢迎通过 [Discord](https://discord.gg/VPcqMBFGa) 或 [Issues](https://github.com/xiweicheng/ai-helper/issues) 与我们联系。
+有意赞助或合作？欢迎通过 [GitHub 讨论组](https://github.com/xiweicheng/ai-helper/discussions) 或 [Issues](https://github.com/xiweicheng/ai-helper/issues) 与我们联系。
 
 <div align="center">
 

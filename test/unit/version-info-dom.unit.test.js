@@ -1,12 +1,30 @@
 // @vitest-environment jsdom
 // version-info-dom.unit.test.js - 「版本信息」弹窗的 DOM 行为冒烟测试
 //
-// 覆盖 HTML(id 契约) 与 JS 接线：点击菜单项 → 渲染四行信息 + 仓库链接行并显示弹窗；
+// 覆盖 HTML(id 契约) 与 JS 接线：点击菜单项 → 渲染四行信息 + 5 行链接（官网/讨论/上报/仓库）并显示弹窗；
 // 关闭按钮 / 遮罩点击 / Esc → 隐藏弹窗。若 HTML id 与 JS 引用不一致，
 // initVersionInfo 会静默 return，这些断言将失败。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initVersionInfo } from '../../src/side_panel/version-info.js';
+import { t } from '../../src/shared/i18n.js';
 import versionMeta from '../../src/config/version.json';
+
+// 链接区期望顺序：官网 → 讨论频道 → 上报问题 → GitHub → Gitee
+const LINK_URLS = [
+  'https://xiweicheng.github.io/ai-helper/',
+  'https://github.com/xiweicheng/ai-helper/discussions',
+  'https://github.com/xiweicheng/ai-helper/issues/new',
+  'https://github.com/xiweicheng/ai-helper',
+  'https://gitee.com/xiweicheng/ai-helper',
+];
+
+const LINK_LABEL_KEYS = [
+  'versionInfo.website',
+  'versionInfo.discussions',
+  'versionInfo.reportIssue',
+  'versionInfo.githubRepo',
+  'versionInfo.giteeRepo',
+];
 
 function setupDom() {
   document.body.innerHTML = `
@@ -35,27 +53,29 @@ describe('initVersionInfo DOM 冒烟', () => {
     expect(document.getElementById('headerMoreDropdown').classList.contains('show')).toBe(false);
   });
 
-  it('渲染 GitHub/Gitee 仓库链接行（整行可点，title 为完整 URL）', () => {
+  it('渲染官网/讨论/上报/GitHub/Gitee 链接行（整行可点，title 为完整 URL）', () => {
     document.getElementById('versionInfoBtn').click();
     const links = document.querySelectorAll('.version-info-link');
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(LINK_URLS.length);
+    LINK_URLS.forEach((url, i) => expect(links[i].title).toBe(url));
     const text = document.getElementById('versionInfoLinks').textContent;
-    expect(text).toContain('GitHub');
-    expect(text).toContain('Gitee');
-    expect(links[0].title).toBe('https://github.com/xiweicheng/ai-helper');
-    expect(links[1].title).toBe('https://gitee.com/xiweicheng/ai-helper');
+    for (const key of LINK_LABEL_KEYS) {
+      const label = t(key);
+      expect(label).not.toBe(key); // 未注册的 i18n key 会返回 key 原文
+      expect(text).toContain(label);
+    }
   });
 
-  it('点击仓库链接 → chrome.tabs.create 以对应 URL 新标签页打开', () => {
+  it('点击链接行 → chrome.tabs.create 以对应 URL 新标签页打开', () => {
     const createSpy = vi.fn();
     globalThis.chrome.tabs.create = createSpy;
     document.getElementById('versionInfoBtn').click();
     const links = document.querySelectorAll('.version-info-link');
-    links[0].click();
-    expect(createSpy).toHaveBeenCalledWith({ url: 'https://github.com/xiweicheng/ai-helper' });
-    links[1].click();
-    expect(createSpy).toHaveBeenCalledTimes(2);
-    expect(createSpy).toHaveBeenLastCalledWith({ url: 'https://gitee.com/xiweicheng/ai-helper' });
+    LINK_URLS.forEach((url, i) => {
+      links[i].click();
+      expect(createSpy).toHaveBeenLastCalledWith({ url });
+    });
+    expect(createSpy).toHaveBeenCalledTimes(LINK_URLS.length);
   });
 
   it('渲染内容包含发布版本号；commit 行为短哈希且 title 为完整 hash', () => {

@@ -8,7 +8,7 @@
 
 Not just chat — it clicks, fills forms, drags, uploads files, runs terminal commands, and extends via MCP.
 
-[![Microsoft Edge](https://img.shields.io/badge/Microsoft_Edge-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/VPcqMBFGa) [![License](icons/badges/license-MIT.svg)](./LICENSE) [![Version](icons/badges/version.svg)](./package.json) ![Platform](icons/badges/platform.svg) ![PRs Welcome](icons/badges/prs-welcome.svg) [![中文文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-%E4%B8%AD%E6%96%87-blue)](./README.zh-CN.md)
+[![Microsoft Edge](https://img.shields.io/badge/Microsoft_Edge-Available-0078D7?logo=microsoftedge&logoColor=white)](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) [![Discussions](https://img.shields.io/badge/Discussions-Join-181717?logo=github&logoColor=white)](https://github.com/xiweicheng/ai-helper/discussions) [![License](icons/badges/license-MIT.svg)](./LICENSE) [![Version](icons/badges/version.svg)](./package.json) ![Platform](icons/badges/platform.svg) ![PRs Welcome](icons/badges/prs-welcome.svg) [![中文文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-%E4%B8%AD%E6%96%87-blue)](./README.zh-CN.md)
 
 ### [Install on Microsoft Edge →](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)
 
@@ -105,7 +105,7 @@ Everything below the quickstart lives in the full technical reference:
 
 ## Community & contributing
 
-- **Discord** — <https://discord.gg/VPcqMBFGa>
+- **GitHub Discussions** — <https://github.com/xiweicheng/ai-helper/discussions>
 - **Issues** — <https://github.com/xiweicheng/ai-helper/issues> · [`good first issue`](https://github.com/xiweicheng/ai-helper/labels/good%20first%20issue)
 - Every issue gets a reply within 24 hours.
 - PRs welcome — read the [Architecture Overview](docs/en/DOCUMENTATION.md#architecture-overview) before you start.
@@ -118,7 +118,7 @@ Thanks to the following sponsors for supporting this project with token credits,
 |---|---|---|
 | **SiCore TokenWorks** (硅碳相变 Token工厂) · 北京硅碳相变智能技术有限公司<br><sub>OpenAI-compatible AI model API aggregator — one API key for Pangu / DeepSeek / Qwen / ERNIE / Doubao / GPT / Claude / Gemini and more</sub> | LLM token credits | <https://www.token8341.com> |
 
-Interested in sponsoring or partnering? Reach out via [Discord](https://discord.gg/VPcqMBFGa) or [Issues](https://github.com/xiweicheng/ai-helper/issues).
+Interested in sponsoring or partnering? Reach out via [GitHub Discussions](https://github.com/xiweicheng/ai-helper/discussions) or [Issues](https://github.com/xiweicheng/ai-helper/issues).
 
 <div align="center">
 

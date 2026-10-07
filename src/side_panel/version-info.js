@@ -7,15 +7,30 @@
 //   commitId    发布瞬间 HEAD 的完整 commit id（即发布提交的父提交）
 //   publishedAt 发布时间（ISO 8601）
 //
-// 弹窗底部附带仓库链接（GitHub/Gitee，原「更多菜单」项合并至此）
+// 弹窗底部附带 5 行快捷链接（官网/讨论频道/上报问题/GitHub/Gitee）
 import versionMeta from '../config/version.json';
 import { t } from '../shared/i18n.js';
 import { showToast } from './utils.js';
 
 const PLACEHOLDER = '—';
 
-// 仓库链接（原「更多菜单」中的 GitHub/Gitee 项合并至此展示）
-const REPO_LINKS = [
+// 快捷链接（GitHub/Gitee 两项由原「更多菜单」合并至此；官网/讨论/上报为社区与反馈入口）
+const LINK_ITEMS = [
+  {
+    labelKey: 'versionInfo.website',
+    url: 'https://xiweicheng.github.io/ai-helper/',
+    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>',
+  },
+  {
+    labelKey: 'versionInfo.discussions',
+    url: 'https://github.com/xiweicheng/ai-helper/discussions',
+    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>',
+  },
+  {
+    labelKey: 'versionInfo.reportIssue',
+    url: 'https://github.com/xiweicheng/ai-helper/issues/new',
+    icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M20 8h-2.81c-.45-.78-1.07-1.45-1.82-1.96L17 4.41 15.59 3l-2.17 2.17C12.96 5.06 12.49 5 12 5c-.49 0-.96.06-1.41.17L8.41 3 7 4.41l1.62 1.63C7.88 6.55 7.26 7.22 6.81 8H4v2h2.09c-.05.33-.09.66-.09 1v1H4v2h2v1c0 .34.04.67.09 1H4v2h2.81c1.04 1.79 2.97 3 5.19 3s4.15-1.21 5.19-3H20v-2h-2.09c.05-.33.09-.66.09-1v-1h2v-2h-2v-1c0-.34-.04-.67-.09-1H20V8zm-6 8h-4v-2h4v2zm0-4h-4v-2h4v2z"/></svg>',
+  },
   {
     labelKey: 'versionInfo.githubRepo',
     url: 'https://github.com/xiweicheng/ai-helper',
@@ -90,12 +105,12 @@ function renderVersionInfoRows(listEl) {
 }
 
 /**
- * 渲染仓库链接行（整行可点击，点击后新标签页打开）
+ * 渲染快捷链接行（整行可点击，点击后新标签页打开）
  * @param {HTMLElement} linksEl
  */
-function renderRepoLinks(linksEl) {
+function renderLinks(linksEl) {
   linksEl.textContent = '';
-  for (const link of REPO_LINKS) {
+  for (const link of LINK_ITEMS) {
     const rowEl = document.createElement('div');
     rowEl.className = 'version-info-link';
     rowEl.title = link.url;
@@ -157,7 +172,7 @@ export function initVersionInfo() {
     const dropdown = document.getElementById('headerMoreDropdown');
     if (dropdown) dropdown.classList.remove('show');
     renderVersionInfoRows(listEl);
-    if (linksEl) renderRepoLinks(linksEl);
+    if (linksEl) renderLinks(linksEl);
     modal.style.display = 'flex';
   });
 
