@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) ([Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)) with local file read/write, system command execution, Skill system, and MCP protocol extension capabilities.
+AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) ([Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)) with local file read/write, system command execution, Skill system, MCP protocol extension, and an optional local knowledge base (RAG) capability.
 
 ## Installation
 
@@ -39,6 +39,7 @@ After startup, the terminal will display a 6-digit pairing code. Enter it in the
 | `status` | Check running status |
 | `paircode` | Show pairing code |
 | `config` | View current configuration |
+| `rag status` / `rag install` | Check RAG dependency availability / one-click install |
 | `help` | Show help information |
 | `--version` / `-v` | Show version number |
 
@@ -74,6 +75,8 @@ The agent manages process lifecycle via a PID file (`~/.ai-helper-agent/agent.pi
 - Automatically writes PID file on startup
 - `stop` command prefers graceful shutdown via API, falls back to killing process via PID file
 - Automatically cleans up PID file on normal shutdown
+
+Command termination targets the **entire process tree** — grandchild processes spawned by `npm` etc. (download / build subtasks) are cleaned up together, so stopping a command (`/api/exec/stop`) or timing out never leaves orphan processes writing to disk; POSIX signals the process group, Windows uses `taskkill /T`.
 
 ## Security
 
@@ -361,12 +364,12 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 
 ## Knowledge Base (RAG)
 
-Optional local retrieval-augmented generation. Turn documents into searchable knowledge bases so the extension can answer with cited sources. The RAG stack ships as optional dependencies — the agent detects availability at startup and reports it via `/api/rag/status`; when dependencies are missing, RAG requests return `503` and the extension offers one-click installation (whitelisted packages, progress polled from `/api/rag/install/status`).
+Optional local retrieval-augmented generation. Turn documents into searchable knowledge bases so the extension can answer with cited sources. The RAG stack ships as optional dependencies — the agent detects availability at startup and reports it via `/api/rag/status`; when dependencies are missing, RAG requests return `503` and the extension offers one-click installation (whitelisted packages, progress polled from `/api/rag/install/status`). Installation is also available from the CLI: `ai-helper-agent rag status` / `ai-helper-agent rag install`. Users who have installed the dependencies successfully before get **automatic recovery on startup**: `npm -g` upgrades prune manually-installed packages inside the package directory, so the agent re-installs them automatically (marked `trigger=auto`) — no manual action needed; users who never installed successfully are not prompted.
 
 - **Data location** — knowledge bases are stored under `~/.ai-helper-agent/rag/` (override with the `AI_HELPER_RAG_ROOT` environment variable)
-- **Multiple knowledge bases** — create / update / delete collections, each keeping its own embedding config and statistics
+- **Multiple knowledge bases** — create / update / delete / enable / disable collections, each keeping its own embedding config and statistics
 - **Multi-format ingestion** — `.txt` `.md` `.json` `.csv` `.html` / PDF / Word (`mammoth`) / PPT (`officeparser`) / Excel; ingest by raw text, file (base64), or URL, with staged parsing → chunking → embedding → storage progress
-- **Hybrid retrieval** — vector similarity with keyword-hit boosting; searching multiple bases splits the `topK` quota across them
+- **Hybrid retrieval** — vector similarity with keyword-hit boosting (mixed Chinese/English keyword extraction); searching multiple bases splits the `topK` quota across them
 - **Pluggable embeddings** — local model (`Xenova/bge-small-zh-v1.5`, 512-dim, runs locally via `@huggingface/transformers`) by default, or any OpenAI-compatible embedding endpoint (with a connectivity test returning actual dimensions)
 - **Index rebuild** — changing a collection's embedding space rebuilds its index in the background (temporary-directory replay → atomic swap)
 
@@ -385,6 +388,7 @@ Endpoints are registered inside the authenticated region (Bearer token required)
 | POST | `/api/rag/collections` | Create a knowledge base |
 | PUT | `/api/rag/collections/{id}` | Update name / description / embedding config (rebuilds index on embedding-space change) |
 | DELETE | `/api/rag/collections/{id}` | Delete a knowledge base |
+| POST | `/api/rag/collections/{id}/toggle` | Enable / disable a knowledge base |
 | GET | `/api/rag/collections/{id}/stats` | Document / chunk statistics |
 | POST | `/api/rag/collections/{id}/ingest` | Ingest text / file / URL (synchronous) |
 | GET | `/api/rag/collections/{id}/ingest/status` | Ingestion progress snapshot (for polling) |

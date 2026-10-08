@@ -177,7 +177,7 @@ registerTranslations('zh', {
     additionalParamsDesc: '其他 {count} 个参数已省略: {names}',
     captureDownloadAction: '操作模式：download=下载截图',
     captureDownloadDesc: '页面截图并下载到本地',
-    planTaskDesc: '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。',
+    planTaskDesc: '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。调用 plan_task 时必须单独调用，同一轮不要同时调用其他工具；其他想执行的动作请编入子任务描述。',
     requiredToolsDesc: '该子任务所需的工具ID列表（必填）。可用工具: {tools}。根据子任务描述选择所需工具，填 [] 表示继承全部工具。',
     screenshotBasicInfo: '页面截图已获取。\n\n- 页面标题: {title}\n- 页面地址: {url}\n\n请根据页面 URL 和标题信息进行分析。如需启用图片识别分析，请在设置页面配置图片识别 API。',
     visionPrompt: '请详细描述这张网页截图的内容，包括：\n1. 页面整体布局和主要区块\n2. 可见的文本内容（标题、段落、按钮文字等）\n3. UI 元素（导航栏、按钮、输入框、表格、图片等）\n4. 页面的视觉状态和风格\n5. 如有明显错误、异常或问题，请指出\n\n截图来源: {title} ({url})',
@@ -370,7 +370,7 @@ registerTranslations('en', {
     additionalParamsDesc: '{count} additional parameters omitted: {names}',
     captureDownloadAction: 'Action mode: download=download screenshot',
     captureDownloadDesc: 'Take a page screenshot and download it locally',
-    planTaskDesc: 'Plan and decompose complex tasks into subtasks. Important: you MUST specify the tool ID list for the requiredTools field of every subtask; subtasks only inherit the tools specified here.',
+    planTaskDesc: 'Plan and decompose complex tasks into subtasks. Important: you MUST specify the tool ID list for the requiredTools field of every subtask; subtasks only inherit the tools specified here. Call plan_task alone: do not combine it with other tool calls in the same turn; put other intended actions into the subtask descriptions.',
     requiredToolsDesc: 'Tool ID list required for this subtask (required). Available tools: {tools}. Select tools based on the subtask description, use [] to inherit all tools.',
     screenshotBasicInfo: 'Page screenshot captured.\n\n- Page title: {title}\n- Page URL: {url}\n\nPlease analyze based on the page URL and title. To enable image recognition analysis, configure the image recognition API in the settings page.',
     visionPrompt: 'Please describe this webpage screenshot in detail, including:\n1. Overall page layout and main sections\n2. Visible text content (headings, paragraphs, button text, etc.)\n3. UI elements (navigation bar, buttons, input fields, tables, images, etc.)\n4. Visual state and style of the page\n5. Point out any obvious errors, anomalies, or issues\n\nScreenshot source: {title} ({url})',
@@ -1245,7 +1245,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
             console.log('[Background] getTools - processing plan_task, enableToolPreselect:', enableToolPreselect, 'toolCount:', filteredTools.length, 'threshold:', preselectMinToolCount, 'shouldAdd:', shouldAddRequiredTools);
             if (shouldAddRequiredTools) {
               // 1. 修改 plan_task 描述，强引导大模型填写 requiredTools
-              cloned.function.description = '任务规划与拆解，将复杂任务分解为子任务。重要：必须为每个子任务的 requiredTools 字段指定所需工具ID列表，子任务仅继承此处指定的工具。';
+              cloned.function.description = t('toolExec.planTaskDesc');
 
               // 2. 添加 requiredTools 参数，并在描述中列出可用工具ID帮助选择
               const subtaskItemProps = cloned.function.parameters.properties.subtasks.items.properties;

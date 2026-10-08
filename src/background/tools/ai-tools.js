@@ -53,7 +53,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'plan_task',
-      description: 'Plan and decompose a complex task into subtasks for structured execution',
+      description: 'Plan and decompose a complex task into subtasks for structured execution. Call this tool alone: do not combine it with other tool calls in the same turn; put other intended actions into the subtask descriptions',
       parameters: {
         type: 'object',
         properties: {
