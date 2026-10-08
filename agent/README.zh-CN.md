@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper)（[Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)）提供本地文件读写、系统命令执行、Skill 技能系统和 MCP 协议扩展能力。
+AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper)（[Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)）提供本地文件读写、系统命令执行、Skill 技能系统、MCP 协议扩展与可选本地知识库（RAG）能力。
 
 ## 安装
 
@@ -39,6 +39,7 @@ ai-helper-agent start --workdir /path/to/your/project --port 18911
 | `status` | 查看运行状态 |
 | `paircode` | 查看配对码提示 |
 | `config` | 查看当前配置 |
+| `rag status` / `rag install` | 检测 RAG 依赖可用性 / 一键安装 RAG 依赖 |
 | `help` | 显示帮助信息 |
 | `--version` / `-v` | 显示版本号 |
 
@@ -74,6 +75,8 @@ Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周
 - 启动时自动写入 PID 文件
 - `stop` 命令优先通过 API 优雅关闭，失败则通过 PID 文件 kill 进程
 - 正常关闭时自动清理 PID 文件
+
+命令终止按**整棵进程树**清理 —— `npm` 等派生出的孙进程（下载 / 编译子任务）一并终止，停止命令（`/api/exec/stop`）或超时终止后不会留下孤儿进程继续写磁盘；POSIX 对进程组发信号，Windows 使用 `taskkill /T`。
 
 ## 安全机制
 
@@ -361,12 +364,12 @@ enabled: true
 
 ## 知识库（RAG）
 
-可选的本地检索增强生成（RAG）能力：将文档索引为可检索的知识库，让插件回答时附带引用来源。RAG 依赖为可选安装 —— Agent 启动时自动检测可用性，并通过 `/api/rag/status` 对外暴露；依赖缺失时 RAG 请求返回 `503`，插件端提供一键安装（白名单依赖，进度可经 `/api/rag/install/status` 轮询）。
+可选的本地检索增强生成（RAG）能力：将文档索引为可检索的知识库，让插件回答时附带引用来源。RAG 依赖为可选安装 —— Agent 启动时自动检测可用性，并通过 `/api/rag/status` 对外暴露；依赖缺失时 RAG 请求返回 `503`，插件端提供一键安装（白名单依赖，进度可经 `/api/rag/install/status` 轮询）。也可通过 CLI 安装：`ai-helper-agent rag status` / `ai-helper-agent rag install`。曾成功安装过依赖的用户享受**启动自动恢复**：`npm -g` 更新代理会清理包目录内手动安装的依赖，Agent 启动检测到缺失时自动重新安装（标记 `trigger=auto`），用户零操作；从未安装成功过的用户不触发。
 
 - **数据位置** —— 知识库存储于 `~/.ai-helper-agent/rag/`（可用环境变量 `AI_HELPER_RAG_ROOT` 覆盖）
-- **多知识库管理** —— 创建 / 更新 / 删除知识库，各自维护向量配置与统计信息
+- **多知识库管理** —— 创建 / 更新 / 删除 / 启用 / 停用知识库，各自维护向量配置与统计信息
 - **多格式导入** —— `.txt` `.md` `.json` `.csv` `.html` / PDF / Word（`mammoth`）/ PPT（`officeparser`）/ Excel；支持文本、文件（base64）、URL 三种导入方式，解析 → 分块 → 向量化 → 存储分阶段进度可查
-- **混合检索** —— 向量相似度 + 关键词命中抬分；跨库检索时 `topK` 配额按库均分
+- **混合检索** —— 向量相似度 + 关键词命中抬分（中英文混合关键词提取）；跨库检索时 `topK` 配额按库均分
 - **可插拔向量化** —— 默认本地模型（`Xenova/bge-small-zh-v1.5`，512 维，经 `@huggingface/transformers` 本地运行），也可接入任意 OpenAI 兼容向量服务（支持连通性测试并返回实际维度）
 - **索引重建** —— 知识库向量空间变更时后台自动重建（临时目录重放 → 原子换入）
 
@@ -385,6 +388,7 @@ enabled: true
 | POST | `/api/rag/collections` | 创建知识库 |
 | PUT | `/api/rag/collections/{id}` | 更新名称 / 描述 / 向量配置（向量空间变更自动重建索引） |
 | DELETE | `/api/rag/collections/{id}` | 删除知识库 |
+| POST | `/api/rag/collections/{id}/toggle` | 启用 / 停用知识库 |
 | GET | `/api/rag/collections/{id}/stats` | 文档数 / 分块数统计 |
 | POST | `/api/rag/collections/{id}/ingest` | 导入文本 / 文件 / URL（同步执行） |
 | GET | `/api/rag/collections/{id}/ingest/status` | 导入进度快照（供轮询） |
