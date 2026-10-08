@@ -12,6 +12,10 @@
 # 也可在仓库根目录直接执行（无需 cd 到 agent/）:
 #   npm run release:agent            # 交互式选择版本升级类型
 #   npm run release:agent -- patch   # 透传版本参数（patch / minor / major / 2.0.0）
+#
+# 版本号同步（单一版本流）：发布时统一更新 agent/package.json、根目录 package.json /
+# package-lock.json、manifest.json（扩展版本号）与 src/config/version.json，
+# 最终以同一版本号提交并打 tag v<version>。
 
 set -euo pipefail
 
@@ -40,13 +44,20 @@ echo -e "${CYAN}  ai-helper-agent NPM 发布脚本${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-# ─── 1. 检查 git 工作区是否干净（仅检查 agent/ 目录，忽略父目录 dist/ 构建产物）───
+# ─── 1. 检查 git 工作区是否干净（agent/ 目录 + 根目录版本文件，不检查其余构建产物）───
 # 先刷新 index 的 stat 缓存再判断：diff-index 是底层命令不会自动刷新缓存，
 # 文件被 touch/编辑器重写（内容未变）时会误报"已提交的文件有未提交的更改"
 git update-index -q --refresh >/dev/null 2>&1 || true
 if ! git diff-index --quiet HEAD -- . 2>/dev/null; then
     log_error "agent/ 目录有未提交的更改，请先提交或暂存"
     git diff-index --name-only HEAD -- . 2>/dev/null
+    exit 1
+fi
+# 根目录版本文件也须干净：发布中会改写它们，回滚时以 HEAD 内容恢复，
+# 未提交的本地改动会被覆盖
+if ! git diff-index --quiet HEAD -- ../package.json ../package-lock.json ../manifest.json 2>/dev/null; then
+    log_error "根目录 package.json / package-lock.json / manifest.json 有未提交的更改，请先提交或暂存"
+    git diff-index --name-only HEAD -- ../package.json ../package-lock.json ../manifest.json 2>/dev/null
     exit 1
 fi
 
@@ -125,13 +136,29 @@ while true; do
     log_info "正在升级版本号 (${BUMP_TYPE})..."
     npm version "$BUMP_TYPE" --no-git-tag-version
     NEW_VERSION=$(node -e "const p=require('./package.json'); process.stdout.write(p.version)")
-    log_ok "版本已更新: v${CURRENT_VERSION} → v${NEW_VERSION}"
+
+    # 同步根目录版本号（单一版本流）：package.json / package-lock.json 由 npm version
+    # 一并更新；manifest.json（扩展版本号）做最小替换写入，保持原文件格式不变。
+    # 必须在重新构建之前完成——dist/manifest.json 由 vite/crxjs 从根 manifest.json 生成。
+    (cd .. && npm version "$NEW_VERSION" --no-git-tag-version) >/dev/null
+    NEW_VERSION="$NEW_VERSION" node -e '
+const fs = require("fs");
+const raw = fs.readFileSync("../manifest.json", "utf8");
+const next = raw.replace(/("version"\s*:\s*")[^"]+(")/, "$1" + process.env.NEW_VERSION + "$2");
+if (JSON.parse(next).version !== process.env.NEW_VERSION) {
+  console.error("manifest.json 版本同步失败");
+  process.exit(1);
+}
+fs.writeFileSync("../manifest.json", next);
+'
+    log_ok "版本已更新: v${CURRENT_VERSION} → v${NEW_VERSION}（根目录 package.json / manifest.json 已同步）"
 
     echo ""
     read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        log_warn "已取消发布，回滚 package.json、package-lock.json 和版本信息..."
-        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
+        log_warn "已取消发布，回滚 agent/ 与根目录版本文件..."
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH" \
+            ../package.json ../package-lock.json ../manifest.json
         log_info "版本已回滚到 v${CURRENT_VERSION}"
         exit 0
     fi
@@ -157,7 +184,8 @@ fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + 
     log_info "重新构建扩展产物 dist/（NPM 包的 dist/ 由此复制）..."
     if ! (cd .. && npm run build:silent); then
         log_error "构建失败，回滚版本号与版本信息..."
-        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH" \
+            ../package.json ../package-lock.json ../manifest.json
         exit 1
     fi
     log_ok "扩展构建完成"
@@ -185,8 +213,9 @@ fs.writeFileSync(process.env.VERSION_JSON_PATH, JSON.stringify(meta, null, 2) + 
 
     read -r -p "是否重试其他版本号? [Y/n] " retry
     if [[ "$retry" =~ ^[Nn]$ ]]; then
-        log_warn "回滚 package.json、package-lock.json 和版本信息..."
-        git checkout package.json package-lock.json "$VERSION_JSON_PATH"
+        log_warn "回滚 agent/ 与根目录版本文件..."
+        git checkout package.json package-lock.json "$VERSION_JSON_PATH" \
+            ../package.json ../package-lock.json ../manifest.json
         log_info "版本已回滚到 v${CURRENT_VERSION}（dist/ 为构建产物，留待下次构建覆盖）"
         exit 1
     fi
@@ -210,7 +239,8 @@ fi
 echo ""
 read -r -p "是否提交版本号变更并推送 git tag? [Y/n] " git_confirm
 if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
-    git add package.json package-lock.json "$VERSION_JSON_PATH"
+    git add package.json package-lock.json "$VERSION_JSON_PATH" \
+        ../package.json ../package-lock.json ../manifest.json
     git commit -m "chore(agent): bump version to v${NEW_VERSION}"
     git tag "v${NEW_VERSION}"
     log_info "推送分支与 tag v${NEW_VERSION}..."
