@@ -5645,15 +5645,39 @@ body {
   justify-content: flex-end;
 }
 
-/* 工具预筛选弹窗内开关 */
+/* 工具配置弹窗底部：允许窄宽度下换行（仅限该弹窗，不影响其他弹窗） */
+#toolsPopupOverlay .modal-actions {
+  flex-wrap: wrap;
+}
+
+/* 工具配置弹窗底部开关组：宽度足够时与按钮同行，不足时整组换到上一行 */
+.tool-toggles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: auto;
+}
+
+/* 工具配置弹窗内的开关（工具预筛选 / 敏感操作确认） */
 .tool-preselect-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
   user-select: none;
-  margin-right: auto;
+  min-width: 0;
 }
+
+/* 工具配置弹窗底部按钮组：取消/保存整体换行，避免被拆到两行 */
+.modal-btns {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .tool-preselect-toggle .toggle-switch {
   position: relative;
   width: 36px;

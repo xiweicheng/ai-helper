@@ -4007,6 +4007,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 敏感操作确认开关变化时自动保存
+  const toolConfirmToggle = document.getElementById('toolConfirmToggle');
+  if (toolConfirmToggle) {
+    toolConfirmToggle.addEventListener('change', () => {
+      chrome.storage.local.set({ toolConfirmationEnabled: toolConfirmToggle.checked }, () => {
+        logger.debug('[SidePanel] sensitive-operation confirmation toggle updated:', toolConfirmToggle.checked);
+      });
+    });
+  }
+
   // 工具弹窗取消按钮
   const toolsPopupCancel = document.getElementById('toolsPopupCancel');
   if (toolsPopupCancel) {

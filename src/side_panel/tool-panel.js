@@ -304,12 +304,17 @@ async function openToolsPopup() {
   // 更新标题中的启用工具数
   updateToolsPopupTitle();
   
-  // 加载工具预筛选开关状态
-  chrome.storage.local.get(['enableToolPreselect'], (result) => {
+  // 加载工具预筛选 / 敏感操作确认开关状态
+  chrome.storage.local.get(['enableToolPreselect', 'toolConfirmationEnabled'], (result) => {
     const toggle = document.getElementById('toolsPreselectToggle');
     if (toggle) {
       const enabled = result.enableToolPreselect !== undefined ? result.enableToolPreselect : false;
       toggle.checked = enabled;
+    }
+    const confirmToggle = document.getElementById('toolConfirmToggle');
+    if (confirmToggle) {
+      const confirmEnabled = result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : true;
+      confirmToggle.checked = confirmEnabled;
     }
   });
   
@@ -850,6 +855,14 @@ function saveToolsFromPopup() {
   if (preselectToggle) {
     chrome.storage.local.set({ enableToolPreselect: preselectToggle.checked }, () => {
       logger.debug('[SidePanel] toolpre-filter toggle saved:', preselectToggle.checked);
+    });
+  }
+
+  // 保存敏感操作确认开关状态
+  const confirmToggle = document.getElementById('toolConfirmToggle');
+  if (confirmToggle) {
+    chrome.storage.local.set({ toolConfirmationEnabled: confirmToggle.checked }, () => {
+      logger.debug('[SidePanel] sensitive-operation confirmation toggle saved:', confirmToggle.checked);
     });
   }
   

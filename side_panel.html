@@ -300,13 +300,22 @@
         <!-- 工具列表由 JS 动态生成 -->
       </div>
       <div class="modal-actions">
-        <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" data-i18n-title="toolPanel.preselectHint" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token">
-          <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
-          <span class="toggle-switch"></span>
-          <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;" data-i18n="toolPanel.preselect">工具预筛选</span>
-        </label>
-        <button class="modal-btn cancel" id="toolsPopupCancel" data-i18n="common.cancel">取消</button>
-        <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;" data-i18n="common.save">保存</button>
+        <div class="tool-toggles">
+          <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" data-i18n-title="toolPanel.preselectHint" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token">
+            <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
+            <span class="toggle-switch"></span>
+            <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;" data-i18n="toolPanel.preselect">工具预筛选</span>
+          </label>
+          <label class="tool-preselect-toggle" id="toolConfirmToggleLabel" data-i18n-title="toolPanel.confirmHint" title="启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。&#10;关闭后，所有操作将直接放行执行，无需确认。">
+            <input type="checkbox" id="toolConfirmToggle" checked style="display: none;">
+            <span class="toggle-switch"></span>
+            <span id="toolConfirmToggleText" style="font-size: 12px; color: #666;" data-i18n="react.toolConfirmation">敏感操作确认</span>
+          </label>
+        </div>
+        <div class="modal-btns">
+          <button class="modal-btn cancel" id="toolsPopupCancel" data-i18n="common.cancel">取消</button>
+          <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;" data-i18n="common.save">保存</button>
+        </div>
       </div>
     </div>
   </div>

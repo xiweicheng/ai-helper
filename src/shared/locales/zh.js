@@ -264,6 +264,7 @@ export default {
     categoryAll: '全部',
     preselect: '工具预筛选',
     preselectHint: '开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好\n关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token',
+    confirmHint: '启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。\n关闭后，所有操作将直接放行执行，无需确认。',
     clearSearch: '清除搜索',
     configBtnTitle: '点击打开工具详细配置',
   },

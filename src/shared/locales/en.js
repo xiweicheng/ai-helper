@@ -264,6 +264,7 @@ export default {
     categoryAll: 'All',
     preselect: 'Tool Pre-filter',
     preselectHint: 'On: The AI first decides which tools might be useful and only sends relevant ones. Saves tokens, but if it misjudges and misses a key tool, the task may fail.\nOff: All enabled tools are sent at once. No judgment overhead, faster start, but too many tools waste tokens.',
+    confirmHint: 'When enabled, the model will show a confirmation dialog for sensitive operations (tool calls, command execution, etc.) and wait for user approval.\nWhen disabled, all operations will be executed directly without confirmation.',
     clearSearch: 'Clear search',
     configBtnTitle: 'Click to open detailed tool settings',
   },
