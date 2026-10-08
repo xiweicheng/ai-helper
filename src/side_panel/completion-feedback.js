@@ -3,6 +3,7 @@
 // 用户主动取消不播放；两个开关独立控制声音/彩带，默认全开；尊重 prefers-reduced-motion。
 
 import logger from '../shared/logger.js';
+import { getFeedbackSnapshot } from './panel-context.js';
 
 // 模块级节流时间戳：防止异常路径重入（500ms 内跳过重复触发）
 // 成功与失败共用一个节流位：一次请求的结果二选一，不会同时触发
@@ -278,6 +279,9 @@ function _notifyDesktop(success, sessionId, errorMessage) {
       success,
       sessionId: sessionId || null,
       error: errorMessage || '',
+      // 可见性快照：随消息携带发起时刻的实例数据（窗口 id / 宿主 tab / 作用域 / 面板是否隐藏），
+      // background 判定不再依赖 keepalive 身份存活（端口先断、身份先删的跨通道竞速不影响结果）
+      panel: getFeedbackSnapshot(sessionId),
     })?.catch?.(() => {});
   } catch (err) {
     logger.debug('[CompletionFeedback] desktop notify failed:', err?.message);

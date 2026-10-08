@@ -53,6 +53,12 @@ beforeEach(async () => {
   sessionTitle = '测试会话标题';
   createMock.mockReset();
   clearMock.mockReset();
+  // _create 先 clear 再 create：clear 以 callback 形式调用（真机回调异步、mock 同步），
+  // 每次 mockReset 后重新接线，保持确定性时序（顺序断言才能成立）
+  clearMock.mockImplementation((id, cb) => {
+    if (typeof cb === 'function') cb();
+    return Promise.resolve(true);
+  });
   onClickedListeners = [];
   vi.resetModules();
   notifier = await import('../../src/background/notifier.js');
@@ -127,6 +133,23 @@ describe('可见性抑制', () => {
     await notifier.notifyInteractionRequired({ kind: 'clarify', sessionId: 's1', detail: 'q' });
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  test('panelSnapshot 透传给 isPanelVisible（第二参数）', async () => {
+    const isVisible = vi.fn(() => false);
+    notifier.initNotifier({ isPanelVisible: isVisible, revealPanel: () => {} });
+    const snapshot = { windowId: 3, hostTabId: 7, scope: 'tab-specific', panelHidden: false };
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 's1', panelSnapshot: snapshot });
+    expect(isVisible).toHaveBeenCalledWith('s1', snapshot);
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('无 panelSnapshot：透传 null（判定回退身份路径）', async () => {
+    const isVisible = vi.fn(() => true);
+    notifier.initNotifier({ isPanelVisible: isVisible, revealPanel: () => {} });
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 's1' });
+    expect(isVisible).toHaveBeenCalledWith('s1', null);
+    expect(createMock).not.toHaveBeenCalled();
+  });
 });
 
 // ============ 通知 id：固定 + 覆盖非叠加 ============
@@ -154,6 +177,40 @@ describe('通知 id 与防重复', () => {
     await notifier.notifyInteractionRequired({ kind: 'clarify', sessionId: 's2' });
     expect(createMock.mock.calls[0][0]).toBe('aih|interaction|confirm|s2');
     expect(createMock.mock.calls[1][0]).toBe('aih|interaction|clarify|s2');
+  });
+});
+
+// ============ 同 id 重新弹出（先 clear 再 create） ============
+
+describe('创建前先清同 id（保证重新弹横幅）', () => {
+  test('任务反馈：先 clear 同 id 再 create（旧通知挂在通知中心时不重弹的根因修复）', async () => {
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 'sess-A' });
+    expect(clearMock).toHaveBeenCalledWith('aih|feedback|ok|sess-A', expect.any(Function));
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(clearMock.mock.invocationCallOrder[0]).toBeLessThan(createMock.mock.invocationCallOrder[0]);
+  });
+
+  test('交互提醒：同样先清同 id 再创建', async () => {
+    await notifier.notifyInteractionRequired({ kind: 'clarify', sessionId: 's2', detail: 'q' });
+    expect(clearMock).toHaveBeenCalledWith('aih|interaction|clarify|s2', expect.any(Function));
+    expect(clearMock.mock.invocationCallOrder[0]).toBeLessThan(createMock.mock.invocationCallOrder[0]);
+  });
+
+  test('notifications.clear 缺失：兜底直接创建，不漏通知', async () => {
+    const saved = chrome.notifications.clear;
+    delete chrome.notifications.clear;
+    try {
+      await notifier.notifyTaskFeedback({ success: true, sessionId: 's1' });
+      expect(createMock).toHaveBeenCalledTimes(1);
+    } finally {
+      chrome.notifications.clear = saved;
+    }
+  });
+
+  test('clear 抛异常：兜底直接创建，不漏通知', async () => {
+    clearMock.mockImplementationOnce(() => { throw new Error('clear boom'); });
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 's1' });
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -4,8 +4,11 @@
 // “当前有没有任意面板可见”：否则用户看着 tab A 的面板时，tab B 实例发起的
 // 确认/完成任务提醒会被误静默。
 //
-// 判定数据 = ① 实例身份（state.js，keepalive 连接建立时上报 {windowId, hostTabId}）
-//           ② index.js 的三份同步内存镜像（浏览器焦点 / 聚焦窗口 / 各窗口活跃 tab / 作用域）
+// 判定数据优先级：
+//   ① 快照 snapshot：随 TASK_FEEDBACK_NOTIFY 消息携带，面板发起时刻同步生成
+//   ② 实例身份 identity：state.js keepalive 上报，快照缺失时兜底
+// 快照使判定与 keepalive 身份生命周期解耦：任务完成时端口先断、身份先删，而通知
+// 消息后发（跨通道 IPC 无顺序保证）——只依赖身份会让同一操作“有时弹有时不弹”。
 // 信息缺失、陈旧或未接线时一律按“不可见”处理（宁可多弹不漏弹）。
 import { getKeepaliveIdentity } from './state.js';
 
@@ -25,20 +28,28 @@ export function initPanelVisibility(deps = {}) {
 /**
  * 发起会话的侧边栏实例当前是否对用户可见（同步，读内存镜像）
  * @param {string|null} sessionId
+ * @param {{windowId?: number|null, hostTabId?: number|null, scope?: string, panelHidden?: boolean|null}|null} [snapshot]
+ *        面板发起时刻同步生成的可见性快照；提供时优先于 keepalive 身份
  * @returns {boolean}
  */
-export function isPanelVisibleToUser(sessionId) {
+export function isPanelVisibleToUser(sessionId, snapshot = null) {
   // 未接线（单测/异常场景）→ 保守按不可见
   if (!_isBrowserFocused || !_getFocusedWindowId || !_getActiveTabId || !_getScope) return false;
-  // 无身份记录（定时任务无面板连接、SW 重启竞态、上报失败）→ 不可见
-  const identity = sessionId ? getKeepaliveIdentity(sessionId) : null;
-  if (!identity || identity.windowId == null) return false;
+  // 数据源：快照优先（与身份删除竞速解耦）；无快照回退 keepalive 身份；两者皆无 → 不可见
+  const data = snapshot && typeof snapshot === 'object'
+    ? snapshot
+    : (sessionId ? getKeepaliveIdentity(sessionId) : null);
+  if (!data || data.windowId == null) return false;
   // 浏览器未处于 OS 焦点（用户在别的应用），或实例窗口不是当前聚焦窗口 → 不可见
   if (!_isBrowserFocused()) return false;
-  if (identity.windowId !== _getFocusedWindowId()) return false;
+  if (data.windowId !== _getFocusedWindowId()) return false;
+  // 面板自身报告已隐藏（document.hidden）→ 镜像推算的“可见”不足为凭，保守弹
+  if (data.panelHidden === true) return false;
+  // 作用域以快照携带值为准（发起时刻语义）；非法/缺失值回退实时镜像
+  const scope = data.scope === 'global' || data.scope === 'tab-specific' ? data.scope : _getScope();
   // 全局模式：窗口聚焦 → 全局面板在窗口内处处可见
-  if (_getScope() === 'global') return true;
+  if (scope === 'global') return true;
   // tab 绑定模式：实例宿主 tab 必须仍是该窗口的活跃 tab（切到别的 tab 后面板被隐藏）
-  const hostTabId = identity.hostTabId;
-  return hostTabId != null && hostTabId === _getActiveTabId(identity.windowId);
+  const hostTabId = data.hostTabId;
+  return hostTabId != null && hostTabId === _getActiveTabId(data.windowId);
 }

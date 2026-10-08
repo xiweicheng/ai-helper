@@ -16,6 +16,7 @@ import { estimateTokens, estimateMessagesTokens, assessContextPressure, getConte
 import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
 import { renderCompactionDivider } from './context-indicator.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
+import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
@@ -3104,32 +3105,38 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
   logger.debug('[SidePanel] keepalive portconnected, sessionId:', mySessionId);
 
-  // 上报实例身份（窗口 + 宿主 tab）：供 background 按“发起实例”判定面板是否可见，
-  // 决定任务完成/失败与确认/澄清提醒是否弹桌面通知（多实例下互不误判）。
-  // 查询失败上报 null，background 一律保守按“不可见”处理（宁可多弹不漏弹）。
-  (async () => {
-    let identity = null;
-    try {
-      const win = await chrome.windows?.getCurrent?.();
-      const tabs = (await chrome.tabs?.query?.({ active: true, currentWindow: true })) || [];
-      if (win?.id != null) {
-        identity = { windowId: win.id, hostTabId: tabs[0]?.id ?? null };
-      }
-    } catch (err) {
-      logger.debug('[SidePanel] query keepalive identity failed:', err?.message);
-    }
-    try {
-      keepalivePort.postMessage({ type: 'KEEPALIVE_IDENTITY', identity });
-    } catch (err) {
-      /* port 已断开（页面卸载竞态）：静默忽略 */
-    }
-  })();
+  // 捕获发起时刻的宿主 tab（= 此刻活跃 tab）作为本地乐观值：tab 绑定模式下面板
+  // 仅在宿主 tab 活跃时可见，用户能操作面板即说明宿主 tab 活跃，同步读镜像即为
+  // 宿主 tab。关键：不能异步查询（chrome.tabs.query 的回调执行时用户可能已切走
+  // tab，会把切过去的 tab 误记为宿主 tab，导致任务完成时误判“面板可见”而静默通知）。
+  markSessionHostTab(mySessionId);
+
+  // 上报实例身份（窗口）：供 background 按“发起实例”判定面板是否可见，决定任务
+  // 完成/失败与确认/澄清提醒是否弹桌面通知（多实例下互不误判）。宿主 tab 不再随
+  // 身份上报（面板镜像存在滞后边缘场景），由 background 用其权威活跃 tab 镜像解析
+  // 后经 HOST_TAB_RESOLVED 回传覆盖乐观值；窗口未知时上报 null，background 一律
+  // 保守按“不可见”处理（宁可多弹不漏弹）。
+  try {
+    const windowId = getPanelWindowId();
+    keepalivePort.postMessage({
+      type: 'KEEPALIVE_IDENTITY',
+      identity: windowId != null ? { windowId } : null,
+    });
+  } catch (err) {
+    /* port 已断开（页面卸载竞态）：静默忽略 */
+  }
 
 
   // 监听 SW 静默重启通知：如果后台检测到 SW 曾崩溃重启，会通过 port 发送 SW_RESTARTED
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
   const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null, checkpoint: null };
   keepalivePort.onMessage.addListener((msg) => {
+    // background 权威解析的宿主 tab 回传：覆盖本地乐观值（任务完成时随快照携带）；
+    // null 也覆盖（权威源暂无值 → 删除乐观值 → 判定方保守弹，多弹不漏弹）
+    if (msg.type === 'HOST_TAB_RESOLVED' && msg.sessionId === mySessionId) {
+      setSessionHostTab(mySessionId, msg.hostTabId);
+      return;
+    }
     if (msg.type === 'SW_RESTARTED' && msg.sessionId === mySessionId) {
       logger.warn('[SidePanel] ⚠️ recei to  SW_RESTARTED notification,background re started,API call lost');
       _swRestartCtx.restarted = true;

@@ -17,6 +17,7 @@ import { loadBookmarks } from './bookmark-manager.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import { initVersionInfo } from './version-info.js';
+import { initPanelContext } from './panel-context.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
@@ -1666,6 +1667,9 @@ function invalidateSessionDOM(sessionId) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 面板实例上下文镜像（窗口 id / 作用域 / 会话宿主 tab）：
+  // 同步注册监听，不阻塞启动链；任务反馈随消息携带快照用于桌面通知可见性判定
+  initPanelContext();
   // 启动初始化：以下四个步骤互相独立，并行执行以缩短启动耗时。
   // applyI18n/subscribe 仍严格跟随 initI18n 完成（.then），时序与原串行链一致；
   // allSettled：单个步骤失败不中断整条启动链（原实现任一失败会中断后续初始化）

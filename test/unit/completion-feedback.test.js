@@ -319,6 +319,8 @@ describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
       success: true,
       sessionId: 'sess-1',
       error: '',
+      // 可见性快照：未 init 面板上下文 → 窗口/宿主 tab 为 null、作用域默认 global；jsdom 下 document.hidden=false
+      panel: { windowId: null, hostTabId: null, scope: 'global', panelHidden: false },
     });
   });
 
@@ -331,6 +333,7 @@ describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
       success: false,
       sessionId: 'sess-2',
       error: 'connection timeout',
+      panel: { windowId: null, hostTabId: null, scope: 'global', panelHidden: false },
     });
   });
 
@@ -355,5 +358,17 @@ describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
     chrome.runtime.sendMessage = original;
     expect(audioContextCount).toBe(1);
     expect(canvasGetContextCount).toBe(1);
+  });
+
+  test('快照携带会话宿主 tab（发起时刻记录后随消息上报）', async () => {
+    const pc = await import('../../src/side_panel/panel-context.js');
+    const stateMod = await import('../../src/side_panel/state.js');
+    stateMod.default.currentTabId = 42;
+    pc.markSessionHostTab('sess-9');
+    storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
+    await mod.playCompletionFeedback('sess-9');
+    expect(sendMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      panel: expect.objectContaining({ hostTabId: 42 }),
+    }));
   });
 });

@@ -96,3 +96,67 @@ describe('isPanelVisibleToUser', () => {
     expect(pv.isPanelVisibleToUser('s1')).toBe(false);
   });
 });
+
+describe('isPanelVisibleToUser 快照路径（与 keepalive 身份删除竞速解耦）', () => {
+  test('身份已删（端口先断）但快照存在：按快照判定（修复的核心竞速场景）', () => {
+    init({ getScope: () => 'tab-specific', getActiveTabId: () => 99 });
+    identity = null; // cleanupCallApi 已删除身份，notification 消息后到
+    const snap = { windowId: 1, hostTabId: 10, scope: 'tab-specific', panelHidden: false };
+    // 用户已切到 tab 99 → 面板不可见 → false（弹通知）
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(false);
+  });
+
+  test('身份已删 + 快照宿主 tab 仍活跃：可见（不打扰）', () => {
+    init({ getScope: () => 'tab-specific', getActiveTabId: () => 10 });
+    identity = null;
+    const snap = { windowId: 1, hostTabId: 10, scope: 'tab-specific', panelHidden: false };
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(true);
+  });
+
+  test('身份在/不在：同一快照判定结果一致（消除“有时弹有时不弹”）', () => {
+    init({ getScope: () => 'tab-specific', getActiveTabId: () => 99 });
+    const snap = { windowId: 1, hostTabId: 10, scope: 'tab-specific', panelHidden: false };
+    identity = null;
+    const whenDeleted = pv.isPanelVisibleToUser('s1', snap);
+    identity = { windowId: 1, hostTabId: 10 };
+    const whenAlive = pv.isPanelVisibleToUser('s1', snap);
+    expect(whenDeleted).toBe(whenAlive);
+    expect(whenDeleted).toBe(false);
+  });
+
+  test('快照 panelHidden=true：强制不可见（保守弹）', () => {
+    init(); // 默认全域可见镜像
+    const snap = { windowId: 1, hostTabId: 10, scope: 'global', panelHidden: true };
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(false);
+  });
+
+  test('快照 scope 优先于实时镜像（发起时刻语义）', () => {
+    // 实时镜像为 tab-specific 且活跃 tab 不匹配；快照说发起时是 global → 按 global 判可见
+    init({ getScope: () => 'tab-specific', getActiveTabId: () => 99 });
+    const snap = { windowId: 1, hostTabId: 10, scope: 'global', panelHidden: false };
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(true);
+  });
+
+  test('快照 scope 非法值：回退实时镜像', () => {
+    init({ getScope: () => 'tab-specific', getActiveTabId: () => 99 });
+    const snap = { windowId: 1, hostTabId: 10, scope: 'bogus', panelHidden: false };
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(false); // tab-specific：host 10 != 99
+  });
+
+  test('快照 windowId 缺失：不可见（保守弹）', () => {
+    init();
+    expect(pv.isPanelVisibleToUser('s1', { hostTabId: 10, scope: 'global' })).toBe(false);
+  });
+
+  test('快照与身份都缺：不可见', () => {
+    init();
+    identity = null;
+    expect(pv.isPanelVisibleToUser('s1', null)).toBe(false);
+  });
+
+  test('快照窗口 != 聚焦窗口：不可见（多窗口互不误判）', () => {
+    init({ getFocusedWindowId: () => 2 });
+    const snap = { windowId: 1, hostTabId: 10, scope: 'global', panelHidden: false };
+    expect(pv.isPanelVisibleToUser('s1', snap)).toBe(false);
+  });
+});

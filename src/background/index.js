@@ -105,12 +105,27 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     registerKeepalivePort(sessionId, port);
     logger.debug('[Background] keepalive portconnected, sessionId:', sessionId, isReconnection ? '(reconnect)' : '(first times)');
 
-    // 接收实例身份上报（窗口 + 宿主 tab）：供桌面通知按“发起实例”判定面板是否可见。
+    // 接收实例身份上报（窗口）：供桌面通知按“发起实例”判定面板是否可见。
     // 上报缺失（查询失败/旧版本面板）按不可见保守处理（宁可多弹不漏弹）。
     port.onMessage.addListener((msg) => {
       if (msg?.type === 'KEEPALIVE_IDENTITY') {
-        setKeepaliveIdentity(sessionId, msg.identity || null);
-        logger.debug('[Background] keepalive identity reported, sessionId:', sessionId, JSON.stringify(msg.identity || null));
+        // 宿主 tab 权威解析：面板页的活跃 tab 镜像受 isPanelEnabledForTab 异步判断与
+        // “切到无面板 tab 不跟随”逻辑影响，极端时序下可能滞后；本 SW 的
+        // _activeTabByWindow 由 tabs.onActivated 无条件维护（含启动补水），是权威源。
+        // KEEPALIVE_IDENTITY 在发起任务的同步栈内上报（此刻用户正在面板上操作），
+        // 因此该窗口的活跃 tab 即宿主 tab。窗口未知 → 身份为 null（保守按不可见）。
+        const windowId = msg.identity?.windowId != null ? msg.identity.windowId : null;
+        const hostTabId = windowId != null ? (_activeTabByWindow.get(windowId) ?? null) : null;
+        const identity = windowId != null ? { windowId, hostTabId } : null;
+        setKeepaliveIdentity(sessionId, identity);
+        logger.debug('[Background] keepalive identity reported, sessionId:', sessionId, JSON.stringify(identity));
+        // 权威值回传面板：覆盖本地乐观值（任务完成时随 TASK_FEEDBACK_NOTIFY 快照携带）；
+        // port 已断开（页面卸载竞态）时忽略，面板保留乐观值
+        try {
+          port.postMessage({ type: 'HOST_TAB_RESOLVED', sessionId, hostTabId });
+        } catch (err) {
+          logger.debug('[Background] send HOST_TAB_RESOLVED failed:', err.message);
+        }
       }
     });
 
@@ -541,10 +556,16 @@ chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
 
 // 浏览器是否处于 OS 焦点（失焦 = WINDOW_ID_NONE）。独立监听、不改动上面的镜像逻辑：
 // 快捷键镜像刻意忽略失焦事件，而通知可见性判定需要区分“浏览器失焦 → 面板看不到”。
-let _chromeWindowFocused = true;
+// 三态语义：null = SW 冷启动后焦点未知（尚未收到 onFocusChanged）。未知期间任务完成
+// 通知必须保守按“未聚焦”处理（多弹不漏弹），避免误静默；冷启动查询补水见下方。
+let _chromeWindowFocused = null;
 chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
   _chromeWindowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
 });
+// 冷启动补水：仅在未知时写入，避免覆盖已被事件更新的值；查询失败保持 null（保守弹）
+chrome.windows?.getLastFocused?.()?.then?.((win) => {
+  if (_chromeWindowFocused === null) _chromeWindowFocused = win?.focused === true;
+})?.catch?.(() => {});
 // 启动补水：SW 被任意事件唤醒后尽快把当前窗口的活跃 tab 放进镜像，
 // 下一次按键即可走同步路径
 // （SW 终止/重载竞态下 tabs.query 可能不可用：跳过本次镜像补水）
@@ -748,7 +769,8 @@ function ensureSidePanelVisibleFromGesture() {
 
 // 桌面通知接线：可见性判定（按发起实例身份）+ 通知中心（创建 / 点击 / 清理）
 initPanelVisibility({
-  isBrowserFocused: () => _chromeWindowFocused,
+  // 三态焦点：null（未知）按未聚焦处理 → 可见性判定保守弹通知（宁可多弹不漏弹）
+  isBrowserFocused: () => _chromeWindowFocused === true,
   getFocusedWindowId: () => _lastFocusedWindowId,
   getActiveTabId: (windowId) => _activeTabByWindow.get(windowId) ?? null,
   getScope: () => _sidePanelScope,
@@ -1860,6 +1882,8 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       sessionId: message.sessionId || null,
       error: message.error || '',
       source: 'chat',
+      // 可见性快照：面板发送时附带（快照存在时判定不再依赖 keepalive 身份存活）
+      panelSnapshot: message.panel && typeof message.panel === 'object' ? message.panel : null,
     }).catch(() => {});
     return false;
   }

@@ -87,13 +87,43 @@ function _readEnabled(key) {
   });
 }
 
-/** 创建通知；chrome.notifications 访问全走可选链，create 返回非 Promise（测试 mock）时不崩 */
+/**
+ * 创建通知：先 clear 同 id 再 create。
+ * 关键：旧通知仍挂在通知中心时，同 id create 在 macOS/Windows 上只会静默替换
+ * 内容、不重弹横幅（“第一次弹、之后再也不弹”的根因）——先 clear 移除旧通知，
+ * 再 create 才会作为全新通知重新弹出。clear 回调是异步的，create 必须放在回调
+ * 里保证顺序；回调内消费 lastError（通知不存在时避免 Unchecked runtime.lastError
+ * 噪音）。chrome.notifications 访问全走可选链，create 返回非 Promise（测试 mock）
+ * 时不崩。
+ */
 function _create(id, options) {
+  let done = false;
+  const doCreate = () => {
+    if (done) return;
+    done = true;
+    try {
+      const p = chrome.notifications?.create?.(id, options);
+      p?.catch?.(() => {});
+    } catch (err) {
+      logger.debug('[Notifier] create notification failed:', err?.message);
+    }
+  };
   try {
-    const p = chrome.notifications?.create?.(id, options);
-    p?.catch?.(() => {});
+    const clearFn = chrome.notifications?.clear;
+    if (typeof clearFn !== 'function') {
+      // clear 不可用（异常环境）：直接创建，保证不漏
+      doCreate();
+      return;
+    }
+    clearFn.call(chrome.notifications, id, () => {
+      if (chrome.runtime?.lastError) {
+        logger.debug('[Notifier] clear before create, no existing notification:', chrome.runtime.lastError.message);
+      }
+      doCreate();
+    });
   } catch (err) {
-    logger.debug('[Notifier] create notification failed:', err?.message);
+    logger.debug('[Notifier] clear before create failed:', err?.message);
+    doCreate();
   }
 }
 
@@ -130,14 +160,15 @@ function _iconUrl() {
  * @param {string} [opts.name] 显示名（优先于会话 title）
  * @param {string} [opts.error] 失败原因（失败时展示，截断）
  * @param {'chat'|'scheduled'} [opts.source] chat：看不到发起实例面板时才弹；scheduled：不受可见性抑制
+ * @param {Object|null} [opts.panelSnapshot] 发起面板随消息携带的可见性快照（优先于 keepalive 身份，判定不依赖身份存活）
  */
-export async function notifyTaskFeedback({ success, sessionId = null, name = '', error = '', source = 'chat' } = {}) {
+export async function notifyTaskFeedback({ success, sessionId = null, name = '', error = '', source = 'chat', panelSnapshot = null } = {}) {
   try {
     const enabledKey = source === 'scheduled' ? 'scheduledNotificationEnabled' : 'completionNotificationEnabled';
     if (!(await _readEnabled(enabledKey))) return;
     // 聊天任务：只在“看不到发起实例的面板”时弹（按发起实例身份判定，多实例互不误判）；
     // 定时任务：后台执行无面板实例、无音效等其他提醒渠道 → 不做可见性抑制
-    if (source === 'chat' && sessionId && _isPanelVisible && _isPanelVisible(sessionId)) return;
+    if (source === 'chat' && sessionId && _isPanelVisible && _isPanelVisible(sessionId, panelSnapshot)) return;
 
     let displayName = name;
     if (!displayName && sessionId) {
