@@ -92,6 +92,12 @@ AI Helper is an AI-powered browser assistant with a single purpose: letting user
 
 **English:** Required to manage tabs on user request (open/switch/close/reload), locate the active tab to inject the assistant, and capture page screenshots for multimodal Q&A.
 
+### tabGroups
+
+**中文：** 为"标签页绑定模式"提供视觉标记：当用户选择将 AI 助手侧边栏绑定到特定标签页时，扩展会将启用助手的标签页归入一个名为 "AI Helper" 的标签组，让用户直观看到哪些标签页正在使用助手，并可整体折叠、移动或关闭。该权限仅用于创建、查询、更新扩展自己的标签组及增减成员，且用户可在设置中关闭自动分组。
+
+**English:** Provides visual grouping for the optional "tab-specific" mode: when the user binds the AI assistant to specific tabs, the extension groups those tabs under an "AI Helper" tab group so users can see and manage which tabs have the assistant enabled at a glance. It is used only to create, query, update and add/remove members of the extension's own group, and auto-grouping can be turned off by the user in settings.
+
 ### cookies
 
 **中文：** 提供用户主动调用的工具，当用户明确要求时（例如排查登录问题），让 AI 查看和管理当前站点的 Cookie。
@@ -121,6 +127,18 @@ AI Helper is an AI-powered browser assistant with a single purpose: letting user
 **中文：** 注册键盘快捷键（Ctrl/Cmd+Shift+Y），方便用户快速打开或关闭 AI 助手侧边栏。
 
 **English:** Registers a keyboard shortcut (Ctrl/Cmd+Shift+Y) so users can quickly open or close the AI assistant side panel.
+
+### alarms
+
+**中文：** 用于两项后台定时能力：（1）用户创建的定时任务——按周期或指定时间自动运行 AI 任务，MV3 后台 Service Worker 空闲时会被回收，必须通过 alarms 定时唤醒才能按时触发；（2）在用户使用页面调试功能期间周期性唤醒后台，维持调试会话。不用于任何数据采集。
+
+**English:** Used for two background timing capabilities: (1) user-created scheduled tasks that run AI tasks periodically or at specified times — the MV3 background service worker is terminated when idle, so alarms are required to wake it and trigger the tasks on time; (2) keeping the service worker alive while the user is using the page debugging feature. Not used for any data collection.
+
+### debugger
+
+**中文：** 用于用户主动调用的高级页面调试工具：当用户在对话中明确要求排查网页问题时，扩展可附着到当前标签页，录制网络请求/响应（含请求头与响应体）以帮助分析接口问题，并支持页面截图、模拟输入和设备模拟。附着期间标签页顶部会显示"扩展程序正在调试此浏览器"提示条，用户可随时取消，空闲 2 分钟自动脱离，浏览器内部页面（chrome://、扩展商店等）无法调试。日常页面操作（点击、填表、读取内容）不使用此权限。
+
+**English:** Used for the user-invoked advanced page debugging tool: when the user explicitly asks (in chat) to troubleshoot a web page, the extension can attach to the current tab to record network requests/responses (including headers and bodies) for analyzing API issues, and to support page screenshots, input emulation and device emulation. While attached, the browser shows a visible "debugging this browser" infobar and the user can cancel at any time; the session detaches automatically after 2 minutes idle; browser-internal pages (chrome://, extension store, etc.) cannot be debugged. Everyday page actions (clicking, form filling, content reading) do not use this permission.
 
 ### 主机权限（`<all_urls>`）
 
