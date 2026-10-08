@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 30 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 31 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -40,6 +40,7 @@ The project uses a **five-layer architecture**, communicating via Chrome Extensi
 │  Chat Export (Word/PDF) | Checkpoint Resume | Message Copy    │
 │  Workspace Management | File Preview | Message Search         │
 │  Message Bookmarks | @ Web Page Selector                      │
+│  Context Usage Indicator | Completion Feedback | Notifications│
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
                ▼                               ▼
@@ -47,29 +48,36 @@ The project uses a **five-layer architecture**, communicating via Chrome Extensi
 │  Background Service       │    │    Options Page (Config)      │
 │  Worker (Core Logic)      │    │  options.html + src/options/  │
 │                          │    │  API Key/Model/Tools/ReAct    │
-│  src/background/          │    │  Reflection/Chat/Toolbar      │
+│  src/background/          │    │  Reflection/Toolbar/Knowledge │
 │  ├── index.js (router)    │    │  Agent Pairing Management     │
 │  ├── react-loop.js (ReAct)│    │  Toolbox (MCP + Skill Mgmt)  │
-│  ├── tool-executor.js     │    └──────────────────────────────┘
-│  ├── tool-preselector.js  │
-│  ├── local-agent-client.js│    ┌──────────────────────────────┐
-│  ├── config.js            │    │    Agent Service (Optional)    │
-│  ├── state.js             │    │  agent/ (Node.js Process)     │
-│  ├── agent-dispatcher.js  │    │  HTTP REST + WebSocket        │
-│  ├── stream-controller.js │    │  File Read/Write | Cmd Exec   │
-│  ├── token-recorder.js    │    │  Search | Skill System        │
-│  └── constants.js         │    │  MCP Protocol Extensions      │
-└──────────────┬─────────────┘    │  Path Sandbox | Security     │
-               │                   │  File Upload API             │
-               │  chrome.tabs.sendMessage                      │
-               ▼                   └──────────────────────────────┘
+│  ├── react-reflection.js  │    └──────────────────────────────┘
+│  ├── context-summarizer.js│
+│  ├── context-compactor.js │    ┌──────────────────────────────┐
+│  ├── tool-executor.js     │    │    Agent Service (Optional)    │
+│  ├── tool-preselector.js  │    │  agent/ (Node.js Process)     │
+│  ├── notifier.js          │    │  HTTP REST + WebSocket        │
+│  ├── scheduler.js         │    │  File R/W | Cmd Exec | Search │
+│  ├── local-agent-client.js│    │  Skill System                 │
+│  ├── config.js            │    │  MCP Protocol Extensions      │
+│  ├── state.js             │    │  Local RAG Knowledge Base     │
+│  ├── agent-dispatcher.js  │    │  Path Sandbox | Security      │
+│  ├── stream-controller.js │    │  File Upload API              │
+│  ├── token-recorder.js    │    └──────────────────────────────┘
+│  └── constants.js         │
+└──────────────┬─────────────┘
+               │
+               │  chrome.tabs.sendMessage
+               ▼
 ┌──────────────────────────────────────────────────────────────┐
 │           Content Script (Page Tool Execution)                │
 │  src/content/*.js (injected into web pages)                   │
 │  ├── index.js (message routing, page tools)                   │
 │  ├── page-tools.js (content extraction, a11y tree, Markdown)  │
+│  ├── page-interaction.js (interactive element query)          │
 │  ├── interaction-tools.js (interaction, TTS, eyedropper)      │
 │  ├── advanced-tools.js (video, perf audit, Shadow DOM, screenshot)│
+│  ├── shadow-dom-utils.js (Shadow DOM + iframe penetration)    │
 │  └── selection-toolbar.js (selection floating toolbar)        │
 └──────────────────────────────────────────────────────────────┘
                │
@@ -96,7 +104,7 @@ User Input → Side Panel (Agent Selection, optional image/file, optional Skill/
   → chrome.runtime.sendMessage('CALL_API')
     → Background: MCP Tool Injection → Tool Preselection → ReAct Loop
       → Token Budget Management → Context Pressure Monitoring → Token Stats
-      → LLM API Call (OpenAI Compatible, retry & exponential backoff, streaming)
+      → LLM API Call (OpenAI Compatible, retry & exponential backoff, streaming + DeepSeek thinking)
         → If tool needed: Confirmation Check (sensitive ops) → Execute Tool
           ├── Background (Tab management, bookmarks, etc.)
           ├── Content Script (Page interaction, content extraction, etc.)
@@ -107,6 +115,7 @@ User Input → Side Panel (Agent Selection, optional image/file, optional Skill/
       → Post Reflection: Multi-dimensional Quality Assessment → Pass/Revise/Retry
     → chrome.runtime.sendMessage('API_COMPLETE')
   → Side Panel: Markdown, Mermaid, Quality Display, Token Stats Update
+  → Desktop Notification (when the side panel is not visible) + completion sound/confetti
 ```
 
 ---
@@ -117,14 +126,27 @@ User Input → Side Panel (Agent Selection, optional image/file, optional Skill/
 ai-helper/
 ├── agent/                               # Agent Service (Node.js Standalone)
 │   ├── bin/agent.js                     # CLI startup script
+│   ├── publish.sh                        # NPM publish script
+│   ├── PUBLISH.md                        # Publishing docs
 │   ├── src/
 │   │   ├── server.js                    # HTTP + WebSocket server
 │   │   ├── executor.js                  # Command execution engine (stream/block)
+│   │   ├── process-tree.js              # Process tree management (full-chain cleanup)
 │   │   ├── security.js                  # Path sandbox + command security tiers
 │   │   ├── config.js                    # Agent config (disk persistence)
 │   │   ├── auth.js                      # Pairing auth (6-digit dynamic code)
 │   │   ├── search.js                    # File/content search (fd/rg acceleration)
 │   │   ├── logger.js                    # Structured logging
+│   │   ├── trash.js                     # File trash bin (soft delete + 7-day cleanup)
+│   │   ├── i18n.js / sys-lang.js        # Agent i18n & system language detection
+│   │   ├── locales/                     # Agent-localized messages
+│   │   ├── rag/                         # Local knowledge base (RAG)
+│   │   │   ├── routes.js               # RAG API routes
+│   │   │   ├── manager.js              # Collection CRUD & enable/disable
+│   │   │   ├── install.js              # Dependency check/install/auto-recovery
+│   │   │   ├── searcher.js             # Vector + keyword hybrid search
+│   │   │   ├── document/ / embedding/ / store/  # Parsing / Embedding / Storage
+│   │   │   └── url-guard.js / errors.js / probe-child.mjs
 │   │   ├── skill/                       # Skill System
 │   │   │   ├── loader.js               # Skill loader (JSON/YAML/SKILL.md)
 │   │   │   ├── registry.js             # Skill registry
@@ -145,20 +167,39 @@ ai-helper/
 │   ├── mermaid.min.js                   # Mermaid diagram engine
 │   ├── qrcode.min.js                    # QR code generation
 │   ├── pdf.worker.min.js               # PDF.js Worker (PDF extraction)
+│   ├── html2canvas.min.js              # HTML canvas capture (PDF export)
+│   ├── jspdf.min.js                     # jsPDF generation
 │   └── github-markdown-light.min.css    # GitHub-style Markdown CSS
-├── scripts/                             # Build tool scripts
+├── scripts/                             # Build & tooling scripts
 │   ├── fix-build.js                     # Fix @crxjs/vite-plugin build artifacts
 │   ├── silent-build.js                  # Silent build (CI-friendly, only outputs on failure)
 │   ├── generate-icons.js                # Icon generation script
-│   └── deploy-pages.sh                  # Pages deployment script
+│   ├── deploy-pages.sh                  # Pages deployment script
+│   ├── push-all.sh                      # One-click push to all remotes
+│   ├── sync-wiki-to-gitee.sh            # Sync GitHub Wiki to Gitee
+│   ├── auto-record.py                   # Demo video auto-recording
+│   ├── gen-competition-pdf.py           # Competition doc PDF generation
+│   └── gen-portfolio-pdf.py             # Portfolio PDF generation
 ├── styles/
 │   └── styles.css                       # Content Script floating box styles
 ├── src/                                 # Extension source code
 │   ├── background/                      # Background Service Worker
 │   │   ├── index.js                     # Entry: message routing, session mgmt, agent health
-│   │   ├── react-loop.js               # ReAct inference loop (core, 3-tier reflection)
+│   │   ├── react-loop.js               # ReAct inference loop (core, with 3-tier reflection)
+│   │   ├── react-reflection.js         # 3-tier reflection (post / tool-level / sub-task)
+│   │   ├── context-summarizer.js       # Incremental context summarization (long chats)
+│   │   ├── context-compactor.js        # Manual context compaction (history digest)
 │   │   ├── tool-executor.js            # Tool registration, execution dispatch, MCP injection
 │   │   ├── tool-preselector.js         # Tool preselection (lightweight API pre-filter)
+│   │   ├── tool-helpers.js             # Shared tool helpers (download, screenshot, etc.)
+│   │   ├── tool-debugger.js            # CDP debug bridge (debug_page executor)
+│   │   ├── tool-memory.js              # Long-term memory tool handler
+│   │   ├── tool-screenshot.js          # Screenshot tool handler
+│   │   ├── notifier.js                 # Desktop notification center (multi-instance dedup)
+│   │   ├── panel-visibility.js         # Panel visibility decision for notifications
+│   │   ├── scheduler.js                # Scheduled task engine (Cron / interval / one-time)
+│   │   ├── scheduler-rules.js          # Schedule rule parsing & next-run calculation
+│   │   ├── detach-window.js            # Detached window (popup) state restore
 │   │   ├── local-agent-client.js       # Agent HTTP/WebSocket communication
 │   │   ├── agent-dispatcher.js         # Sub-task dispatch for agents
 │   │   ├── stream-controller.js        # Stream response controller
@@ -173,25 +214,38 @@ ai-helper/
 │   │       ├── media-tools.js          │ Media output + Debug/Dev (7)
 │   │       ├── ai-tools.js             │ AI Collaboration + Debug/Dev (6)
 │   │       ├── agent-tools.js          │ Local Agent + AI Collaboration (7)
+│   │       ├── debugger-tools.js       │ CDP debug tool definitions (debug_page)
+│   │       ├── rag-tools.js            │ Knowledge base tools (knowledge_*)
 │   │       └── memory-tools.js         │ Long-term Memory (1)
 │   ├── content/                         │ Page-injected scripts
 │   │   ├── index.js                     # Entry: message routing dispatch
 │   │   ├── page-tools.js               # Page content tools (extraction, search, a11y tree)
+│   │   ├── page-extract.js             # Page extraction toolkit (8 exported functions)
+│   │   ├── page-interaction.js         # Interactive element query (query_interactive_elements)
+│   │   ├── page-utils.js               # Page utility functions
 │   │   ├── interaction-tools.js        # Interaction tools (click, fill, TTS, etc.)
 │   │   ├── advanced-tools.js           # Advanced tools (video, perf, Shadow DOM, etc.)
-│   │   └── selection-toolbar.js        # Selection floating toolbar
+│   │   ├── shadow-dom-utils.js         # Shadow DOM recursive penetration + same-origin iframe
+│   │   ├── selection-toolbar.js        # Selection floating toolbar
+│   │   └── selection-toolbar-styles.js # Selection floating toolbar styles
 │   ├── offscreen/                       # Offscreen Document (clipboard ops)
 │   │   ├── offscreen.html              # Offscreen page
 │   │   └── offscreen.js                # Clipboard API bridge
 │   ├── side_panel/                      # Side Panel UI
 │   │   ├── index.js                     # Entry: event binding, config, keyboard shortcuts
 │   │   ├── chat-manager.js             # Chat management (send/receive, logs, export/import)
+│   │   ├── chat-streaming.js           # Streaming output (STREAM_START/CHUNK/DONE)
+│   │   ├── chat-panels.js              # Execution log panel + reflection display
+│   │   ├── chat-resume.js              # Checkpoint resume
+│   │   ├── chat-export.js              # Chat export (Word/PDF/image)
+│   │   ├── chat-copy.js                # Message copy
 │   │   ├── markdown-render.js          # Markdown/Mermaid rendering & interaction
 │   │   ├── tool-panel.js               # Tool selection popup (category filter, search)
 │   │   ├── prompt-manager.js           # Prompt management (CRUD, quick select, drag sort)
 │   │   ├── agent-manager.js            # Multi-agent management UI
 │   │   ├── agent-store.js              # Agent data persistence
-│   │   ├── agent-at-selector.js        # Agent @ selector
+│   │   ├── agent-at-selector.js        # Agent @ selector (agent tab + page tab)
+│   │   ├── page-selector.js            # @ page selector (inject current tab context)
 │   │   ├── token-stats-panel.js        # Token statistics panel
 │   │   ├── session-manager.js          # Multi-session storage API
 │   │   ├── session-manager-ui.js       # Session tabs UI (switch, rename, archive)
@@ -201,10 +255,23 @@ ai-helper/
 │   │   ├── message-toc.js              # Message table of contents (auto-nav)
 │   │   ├── input-history.js            # Input history (arrow key recall)
 │   │   ├── image-preview.js            # Image preview, compression, multi-switch, annotation
+│   │   ├── image-helpers.js            # Image visibility detection, thumbnails, screenshot btn
 │   │   ├── file-extract.js             # File extraction (PDF/Word/Excel/Text), Agent upload
 │   │   ├── skill-selector.js           # Skill/MCP service quick selector
 │   │   ├── export-import.js            # Session export/import (batch select, format validate)
 │   │   ├── execution-log-render.js     # Execution log rendering (task groups, real-time)
+│   │   ├── log-summary-adaptive.js     # Log summary area adaptive degradation
+│   │   ├── workspace-manager.js        # Workspace data mgmt (cache, icons, formatting)
+│   │   ├── workspace-panel.js          # Workspace UI panel (tree, preview, upload)
+│   │   ├── bookmark-manager.js         # Bookmark data mgmt (IndexedDB)
+│   │   ├── bookmark-panel.js           # Bookmark UI panel (search, grouped view)
+│   │   ├── search-panel.js             # Message search UI (full-text, dual-mode)
+│   │   ├── schedule-panel.js           # Scheduled task panel (create/edit/history)
+│   │   ├── version-info.js             # Version info dialog (version/tag/commit)
+│   │   ├── context-indicator.js        # Context usage indicator + manual compaction entry
+│   │   ├── completion-feedback.js      # Completion feedback (sound/confetti/notification)
+│   │   ├── provider-selector.js        # Provider/model selector (search filter + sort)
+│   │   ├── toolbar-adapt.js            # Input toolbar adaptive degradation
 │   │   ├── icons.js                     # Shared SVG icon constants
 │   │   ├── state.js                     # Global state management (Proxy dual-export)
 │   │   ├── utils.js                     # Utilities (Toast, system prompt builder, etc.)
@@ -213,8 +280,16 @@ ai-helper/
 │   │   ├── index.js                     # Entry: tab switching, form events, agent pairing
 │   │   ├── config-manager.js           # Config R/W management
 │   │   ├── config-io.js                # Config import/export
+│   │   ├── save-bar.js                 # Save bar (sticky at bottom on overflow)
+│   │   ├── profile-manager.js          # Provider profiles (new/copy/rename/switch)
+│   │   ├── model-fetcher.js            # Model list auto-fetch
+│   │   ├── knowledge-panel.js          # Knowledge base panel (create/import/disable)
 │   │   ├── toolbar-config.js           # Toolbar config (drag sort, domain blocklist)
-│   │   ├── toolbox-config.js           # Toolbox config (MCP servers + Skill management)
+│   │   ├── toolbox-config.js           # Toolbox config entry
+│   │   ├── toolbox-shared.js           # Toolbox shared state & helpers
+│   │   ├── toolbox-mcp.js              # MCP server management (CRUD, connect, env vars)
+│   │   ├── toolbox-skills.js           # Skill management (categories, import, editor)
+│   │   ├── toolbox-rag.js              # Knowledge base dependency install & status
 │   │   └── constants.js                # Default system prompts and config constants
 │   ├── storage/                         # IndexedDB persistence layer
 │   │   ├── db.js                        # IndexedDB wrapper (transaction retry, auto-migration)
@@ -224,8 +299,13 @@ ai-helper/
 │   │   └── constants.js                # Storage keys, message types, etc.
 │   └── shared/                          # Shared modules
 │       ├── tools.js                     # Tool categories, temperature presets
-│       ├── utils.js                     # Shared utility functions
+│       ├── utils.js                     # Shared utility functions (makeResult, etc.)
 │       ├── token-counter.js            # Token counting, budget mgmt, context compression, summaries
+│       ├── context-usage.js            # Context usage calc (same source as actual sending)
+│       ├── compaction-prompt.js        # Manual compaction summary prompt template
+│       ├── model-profiles.js           # Provider profiles data model & migration
+│       ├── i18n.js                     # Lightweight i18n (zh/en)
+│       ├── logger.js                    # Unified logging module
 │       └── agent-defaults.js           # Built-in agent definitions and templates
 ├── manifest.json                        # Chrome extension config
 ├── side_panel.html                      # Side panel HTML
@@ -282,7 +362,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 - **Custom Agents**: Create specialized agents with custom icons, names, system prompts, models, temperatures, and tool permissions
 - **Agent Selector**: Quick switching at the top of the side panel, with `@AgentName` quick-switch syntax
 - **Tool Filtering**: Each agent can have its own toolset to avoid context bloat
-- **Sub-task Dispatch**: `dispatch_sub_agent` supports parallel dispatch, sub-agents execute independently and return results
+- **Sub-task Dispatch**: `dispatch_task` supports parallel dispatch, sub-agents execute independently and return results
 - **Agent Persistence**: Based on `chrome.storage.local`, persists across restarts
 
 ### 3. ReAct Inference Loop
@@ -290,7 +370,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
 1. **MCP Tool Dynamic Injection**: Before each inference cycle, automatically pulls the latest MCP tool list from Agent and injects it into RAW_TOOLS
-2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 40+ built-in tools to 5-10 relevant ones, significantly cutting token usage
+2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 40+ built-in tools to 5-10 relevant ones, significantly cutting token usage. Simple questions can be answered directly, skipping the inference loop
 3. **Inference Loop**: LLM thinks → decides to call tools → executes tools → results fed back → continues reasoning
 4. **Token Budget Management**: Dynamically calculates available token budget per model context window (80%), truncates by token count, retains tool_calls/tool message pairing integrity
 5. **Context Pressure Monitoring**: Three-level monitoring (safe/warning/critical), auto-triggers summary compression
@@ -298,12 +378,13 @@ The project uses the ReAct (Reasoning + Acting) pattern as its core inference en
 7. **Tool Result Cache**: Parallel tool results are auto-cached (30 entry limit)
 8. **Parallel Tool Execution**: Tools marked as parallel in the same round are executed concurrently via `Promise.all`
 9. **Task Decomposition**: `plan_task` supports sequential, parallel, and conditional execution strategies with retry/rollback/continue on failure
-10. **Sub-task Dispatch**: `dispatch_sub_agent` delegates subtasks to other agents for parallel execution
-11. **Streaming Response**: OpenAI streaming support with configurable inter-character delay (simulated typing effect)
+10. **Sub-task Dispatch**: `dispatch_task` delegates subtasks to other agents for parallel execution
+11. **Streaming Response**: OpenAI streaming (SSE) with DeepSeek thinking support; replies render token-by-token in real time. Agent command output streams live as well
 12. **Clarification Mechanism**: When info is incomplete, a clarification dialog pops up with auto-paused loop timer and suggested options
 13. **Multi-Level Timeout Control**: API timeout 5min, tool timeout 10min, overall loop timeout 30min
 14. **Cancel Control**: Users can cancel the inference loop at any time, isolated per session
 15. **SW Restart Recovery**: Keepalive ports monitor Service Worker silent restarts, auto-notifying Side Panel to recover. Background task state persisted to `chrome.storage.session`
+16. **Checkpoint**: A checkpoint is auto-saved after each inference round, supporting resume after interruption
 
 ### 4. Reflection System (Multi-Tier Quality Assurance)
 
@@ -317,16 +398,17 @@ Post-reflection scoring dimensions: Completeness, Accuracy, Relevance, Tool Usag
 
 ### 5. Context Compression & Token Budget Management
 
-Smart context management strategy introduced since v1.0:
+Smart context management strategy:
 
+- **Context Usage Indicator**: Shows usage percentage below the input box in real time (ring progress + safe/warning/critical coloring); click for a breakdown of system prompt, tool definitions, message history, and current input
+- **Manual Context Compaction**: One-click compaction of history into an AI-structured summary (session-persisted, undoable before sending; a later compaction merges the old summary with new messages)
 - **Adaptive Token Estimation**: Chinese ~1.5 chars/token, English ~4 chars/token
-- **Auto Context Window Detection**: Infers context window from model name (supports custom mappings)
+- **Auto Context Window Detection**: Infers context window from model name (custom mappings supported, 256K by default)
 - **Message Budget = Context Window - System Prompt - Tool Definitions - Output Reserve**
 - **Three-Level Context Pressure**: safe / warning / critical
-- **Message Summaries**: When pressure reaches critical, early messages are auto-summarized
+- **Message Summaries**: When pressure reaches critical, early messages are auto-summarized, replacing original content
 - **Quote Compression**: Long quoted/selected content auto-compressed to summaries
 - **Token-Level Truncation**: 70% beginning + 30% end + truncation marker
-- **Streaming Output Config**: Configurable inter-character render delay (0=instant)
 
 ### 6. Token Statistics Panel
 
@@ -582,9 +664,20 @@ Create scheduled tasks that automatically run preset prompts at a specified time
 - **Scheduling Engine**: Built on Chrome Alarms with automatic re-hydration after Service Worker restarts
 - **Management Panel**: Create / edit / delete / enable / disable / run now
 - **Run History**: Records each run's status, duration, and error (up to 50 entries), expandable in the panel
-- **Failure Notifications**: System notification on background execution failure
+- **Desktop Notifications**: Runs in the background with no sound or other alert channels; per the "Scheduled Task Notification" toggle (on by default), pops a desktop notification on completion/failure; click the notification to open the side panel
 - **Termination Conditions**: Interval tasks support "max runs" and "end time"
 - **Run Now**: Triggers execution and auto-navigates to the host session, scrolling to the bottom to wait for the result
+
+### 31. Desktop Notifications & Completion Feedback
+
+Stay informed even when tasks run in the background (managed in Options → Basic → "Completion Feedback"):
+
+- **Three Independent Toggles**: Task completion/failure notifications, scheduled task notifications, and interaction reminders (when AI needs confirmation or clarification) — all toggleable anytime in Options with immediate effect
+- **Completion/Failure Notifications**: Only pop when the side panel is not visible (no interruption when visible); success notifications auto-dismiss, failure notifications stay until manually closed; click to open the side panel at the corresponding session
+- **Scheduled Task Notifications**: Scheduled tasks run in the background with no other alert channels, so they always pop when the toggle is on (default on)
+- **Interaction Reminders**: Pop a desktop reminder when the inference loop waits for sensitive-operation confirmation / clarification, preventing tasks from being stuck in a dialog unnoticed; no interruption when the side panel is visible
+- **Multi-instance Dedup**: Tab-specific scope allows multiple side panel instances; notification creation is centralized in the Background (globally unique) and visibility is judged per "task-originating instance", never showing duplicates
+- **Completion Sound & Confetti**: Distinct success/failure sounds and a success confetti animation, each independently toggleable
 
 ---
 
@@ -600,7 +693,7 @@ Create scheduled tasks that automatically run preset prompts at a specified time
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
 
-### Page Interaction (5)
+### Page Interaction (6)
 | Tool | Description |
 |------|-------------|
 | `interact_element` | Page element interaction (click/hover, supports ref/text/selector positioning, ref preferred) |
@@ -608,6 +701,7 @@ Create scheduled tasks that automatically run preset prompts at a specified time
 | `scroll_to` | Scroll to position/element/text (with alignment options) |
 | `wait_element` | Wait for element appear/disappear (strict visibility check) |
 | `wait_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
+| `handle_dialog` | Handle page dialogs (alert/confirm/prompt); pre-arm accept/dismiss before triggering an action |
 
 ### Form & Input (4)
 | Tool | Description |
@@ -649,12 +743,13 @@ Create scheduled tasks that automatically run preset prompts at a specified time
 | `download_file` | Download files (requires confirmation) |
 | `notify` | Desktop notifications |
 
-### Debug & Dev (3)
+### Debug & Dev (4)
 | Tool | Description |
 |------|-------------|
 | `inject_css` | Inject CSS styles (global/scoped/inline) |
 | `browser_info` | Get browser environment info |
 | `highlight_text` | Highlight text on page |
+| `debug_page` | Advanced page debugging over Chrome DevTools Protocol (attach → operate → detach): native input events, XHR/fetch interception, page-context evaluation, full-page screenshots, device emulation |
 
 ### AI Collaboration (7)
 | Tool | Description |
@@ -680,6 +775,15 @@ Create scheduled tasks that automatically run preset prompts at a specified time
 | Tool | Description |
 |------|-------------|
 | `agent_memory` | Unified memory management. store=CRUD, recall=keyword search, manage=review & compact, distinguished by action parameter |
+
+### Knowledge Base RAG (3) — Requires Agent Service with RAG enabled
+> Dynamically registered only when the knowledge base is enabled in Options and the Agent-side RAG dependencies are available.
+
+| Tool | Description |
+|------|-------------|
+| `knowledge_search` | Search knowledge base content (optionally scoped to a collectionId, or cross-collection; disabled collections are excluded from autonomous search) |
+| `knowledge_ingest` | Ingest text / local files / URLs into a knowledge base (with metadata) |
+| `knowledge_list` | List available knowledge bases and their document counts |
 
 ### MCP Tools (Dynamic Extension)
 When connected to third-party MCP servers, tools are automatically registered. Quantity depends on connected MCP Servers.
@@ -708,10 +812,12 @@ Agent command execution three-tier security:
 | Side Panel API | Chrome 114+ side panel |
 | Content Script | Page injection, DOM operations |
 | Offscreen Document | MV3 clipboard operations compatibility layer |
-| IndexedDB | Session/prototype/token stats persistence |
+| IndexedDB | Session/prototype/token stats/scheduled task persistence |
 | chrome.storage.local | Config storage, agent definitions |
 | chrome.storage.session | Cross-restart message recovery, background task persistence |
-| chrome.debugger API | CDP screenshot/PDF export |
+| chrome.notifications API | Desktop notifications (completion / scheduled / interaction) |
+| chrome.alarms API | Scheduled task scheduling (auto re-hydration after SW restarts) |
+| chrome.debugger API | CDP screenshot/PDF export/page debugging (debug_page) |
 | OpenAI Compatible API | LLM calls (with Vision), default DeepSeek V4, streaming support |
 | marked.js | Markdown rendering engine |
 | mermaid.js | Diagram rendering engine |
@@ -753,7 +859,8 @@ The extension can optionally pair with a Node.js agent service, providing file s
 │   │   ├── /api/logs (Log Query)   │
 │   │   ├── /api/shutdown (Graceful)│
 │   │   ├── /api/skill/* (Skills)   │
-│   │   └── /api/mcp/* (MCP Mgmt)   │
+│   │   ├── /api/mcp/* (MCP Mgmt)   │
+│   │   └── /api/rag/* (Knowledge)  │
 │   ├── WebSocket (Cmd Output Stream)│
 │   ├── Skill System                  │
 │   │   ├── Workflow Skill Executor   │
@@ -761,6 +868,9 @@ The extension can optionally pair with a Node.js agent service, providing file s
 │   ├── MCP Protocol Extensions      │
 │   │   ├── MCP Client Management    │
 │   │   └── JSON-RPC 2.0             │
+│   ├── Local RAG Knowledge Base     │
+│   │   ├── Vector + Keyword Search  │
+│   │   └── Dependency Auto-recovery │
 │   └── Security Layer               │
 │       ├── Bearer Token Auth         │
 │       ├── Path Sandbox (realpath)   │
@@ -772,7 +882,7 @@ The extension can optionally pair with a Node.js agent service, providing file s
 
 - **Rich CLI Commands**: Supports `start`/`stop`/`restart`/`status`/`paircode`/`config` commands, with `aha` quick alias
 - **Background Daemon Mode**: `start --background` / `-b` background startup mode, terminal returns immediately, non-blocking
-- **Process Management**: PID file management, graceful shutdown mechanism, prevents duplicate startup
+- **Process Management**: PID file management, process-tree tracking & retrieval (full-chain cleanup for commands), graceful shutdown, prevents duplicate startup
 - **Pairing Auth**: 6-digit dynamic code + extensionId pairing, generates Bearer Token
 - **Path Sandbox**: `realpathSync` resolves symlinks, prefix-matches whitelisted paths
 - **Command Security**: Environment variable whitelist (~40 vars), `TERM=dumb` disables interactivity
@@ -784,6 +894,7 @@ The extension can optionally pair with a Node.js agent service, providing file s
 - **Audit Logging**: Dual-channel output (terminal formatted + file JSON Lines), named by date, auto-cleanup 30 days
 - **Multi-level Robustness Protection**: Request-level exception capture, URL parsing protection, global fallback, file I/O protection, process management protection
 - **Fast Search**: fd (filename) + ripgrep (content) native acceleration, auto-falls back to Node.js implementation when unavailable
+- **Local RAG Knowledge Base**: Dependency auto-check/install & startup auto-recovery; vector + keyword hybrid search (mixed Chinese/English keywords supported); disabled collections are excluded from autonomous search but remain available for @ manual reference
 - **Concurrency Safety**: Disk write mutex, graceful shutdown prevents double-close
 - **Config Caching**: mtime detection, avoids redundant disk reads
 
@@ -866,93 +977,86 @@ Build output in `dist/`. `scripts/fix-build.js` auto-fixes path issues and renam
 
 ### Configuration
 
+The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, and Knowledge Base.
+
 1. Right-click extension icon → **Options**
-2. "Basic Settings": Enter API Key, API Base URL, Model
-3. "Image Recognition": Configure independent Vision API (optional, falls back to main config)
-4. "ReAct": Adjust inference loop parameters
-5. "Reflection": Configure three-tier reflection strategy
-6. "Chat": Set history and memory limits
-7. "Agent": Pair with local agent service
-8. "Toolbar": Manage selection floating toolbar
-9. "Toolbox": Manage MCP servers and Skills
-10. Start chatting in the side panel
+2. **Basic**: Pick UI language and provider profile, enter API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
+3. **ReAct**: Adjust inference loop parameters and streaming output
+4. **Reflection**: Configure the three-tier reflection strategy
+5. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
+6. **Agent**: Pair with the local agent service
+7. **Toolbox**: Manage MCP servers and Skills
+8. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies)
+9. Start chatting in the side panel
 
 ---
 
 ## Configuration Reference
 
-### Basic Settings
+The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, and Knowledge Base.
+
+### Basic Settings (Basic tab)
 
 | Parameter | Description |
 |-----------|-------------|
-| API Key | OpenAI-compatible API key |
-| API Base | API endpoint URL |
-| Model Name | Presets (DeepSeek V4 Pro/Flash) + custom models |
+| UI Language | Switch between Chinese / English instantly |
+| Provider Profile | Multiple profiles with independent API Base / API Key / model lists; new, save-as, rename, delete; switching takes effect immediately |
+| API Base URL | API endpoint URL (pick from dropdown or type; custom addresses supported) |
+| API Key | OpenAI-compatible API key (required) |
+| Model Name | Dropdown selection + "Fetch from API" to pull the provider's model list; add custom models with context window |
+| Image Recognition | Global toggle; independent Vision API Base / Key / Model (empty = reuse main config) |
 | System Prompt | Custom system prompt (with reset button) |
-| Default Temperature | 0.2-0.9 four presets |
+| Completion Feedback | Sound (distinct success/failure effects), confetti (success only), completion/failure desktop notifications, scheduled task desktop notifications |
+| Interaction Reminder | Desktop reminder when AI needs confirmation or clarification |
+| Message Timestamp | Show the ask time below user message bubbles |
+| Side Panel Scope | Global mode (shared across the window) or tab-specific mode (follows the tab) |
+| Tab Grouping | In tab-specific mode, group tabs that opened the side panel into a colored tab group |
 
-### Image Recognition Settings
-
-| Parameter | Description |
-|-----------|-------------|
-| Image Recognition Toggle | Global enable/disable image input |
-| Image Recognition Model | Vision model name, empty = use main model |
-| Image Recognition API Base | Separate API address, empty = use main config |
-| Image Recognition API Key | Separate API token, empty = use main config |
-
-### ReAct Settings
+### ReAct Settings (ReAct tab)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Max Iterations | 100 | ReAct loop limit (1-100) |
-| API Timeout | 300s | Single API call timeout (10-600s) |
-| Loop Timeout | 30min | Overall inference loop timeout (1-60min) |
-| Tool Timeout | 600s | Single tool execution timeout (5-600s) |
-| Clarify Timeout | 3min | Clarification dialog wait timeout (1-10min) |
-| API Retry Count | 3 | Retry on failure (0-10), exponential backoff |
-| Retry Delay | 1s | Base delay (0.5-30s) |
-| Tool Preselection | Off | Auto-filter relevant tools, reduces token consumption |
-| Preselection Threshold | 10 | Trigger preselection when tools exceed this count |
-| Tool Safety Confirm | On | Confirmation dialog for sensitive ops |
+| Max Iterations | 100 | Inference-action loop limit (10-1000) |
+| API Timeout | 5min | Single API call max wait (1-10min) |
+| Loop Timeout | 30min | Overall loop max execution time (1-120min) |
+| Tool Timeout | 10min | Single tool execution max wait (1-30min) |
+| Sensitive Op Confirmation | On | Confirmation dialog for sensitive operations (tool calls, command execution); disabled = auto-allow |
+| Execution Log | On | Show the "Execution Log" button under messages for API/tool details |
+| Streaming Output | On | Token-by-token rendering + live Agent command output; disable as fallback for compatibility issues |
+| Expand Tool Cards in Stream | Off | Tool cards expand by default when enabled |
 
-### Reflection Settings
+Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection are built-in strategies — no configuration needed.
+
+### Reflection Settings (Reflection tab)
 
 | Level | Default | Description |
 |-------|---------|-------------|
-| Reflection Master Switch | Off | Disable all reflection globally |
-| Post-Reflection | On | Final answer quality assessment |
-| Quality Threshold | 7 | 1-10, retry if below |
-| Revision Threshold | 5 | Directly revise if below |
-| Sub-task Reflection | Off | Sub-task result assessment |
-| Tool-Level Reflection | On | 3 consecutive failures trigger, max 2 per round |
+| Reflection Master Switch | On | Globally controls all reflection |
+| Post-Reflection | On | Assesses final result quality after the loop; auto-revise or re-execute below threshold |
+| Tool-Level Reflection | On | Checks tool results after each call, adjusts strategy on errors/exceptions |
+| Sub-task Reflection | Off | Independent assessment of decomposed sub-tasks (advanced feature) |
 
-### Streaming Output Settings
+### Chat Settings (in the side panel)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| LLM Streaming | On | OpenAI stream mode |
-| Character Render Delay | 30ms | Side Panel inter-character delay, 0=instant |
-| Agent Streaming | On | Real-time command output streaming |
-
-### Chat Settings
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| Max History Rounds | 50 | Conversation record retention (10-200) |
-| Max Input History | 20 | Input history entries (10-100) |
-| Max Message Length | 100000 | Max characters per message |
-| Memory Limit | 20 messages | Max history messages sent to LLM |
-| Context Window | Auto | 0=auto-infer from model name, supports custom mapping |
+| Memory Limit | Unlimited | Dropdown next to the "Memory" toggle: Unlimited / last 200 / 100 / 50 / 20 / 10 / 5 / 2 / custom 1-400 messages |
+| Context Window | Auto | Inferred from model name (detects up to 256K by default); customizable when adding a model |
 
 ### Keyboard Shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+T` / `Cmd+T` | Open tool selection panel |
+| `Ctrl+T` / `Cmd+T` | Open/close tool selection panel |
 | `Alt+/` | Show shortcuts panel |
-| `Alt+↑/↓` | Switch message focus |
-| `Alt+Shift+↑/↓` | Jump to first/last message |
-| `Esc` | Close panel / Clear input |
+| `Alt+S` | Full-page screenshot |
+| `Alt+Shift+S` | Region screenshot |
+| `Alt+N` | New session |
+| `Alt+W` | Close current session |
+| `Alt+E` | Edit the latest user message |
+| `Alt+↑/↓` | Switch message focus (previous / next) |
+| `Alt+Ctrl/Cmd+↑/↓` | Jump to top / bottom |
+| `Esc` | Close shortcuts panel / clear input |
 | `Ctrl+Shift+Y` / `Cmd+Shift+Y` | Global shortcut to open side panel |
 
 ---
@@ -984,7 +1088,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 
 ### IndexedDB Database Design
 
-`ai-helper-db` (v4), seven object stores:
+`ai-helper-db` (v6), eight object stores:
 
 | Store | Purpose |
 |-------|---------|
@@ -995,6 +1099,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 | `tokenStats` | Token usage stats (index: timestamp, sessionId) |
 | `reactCheckpoints` | ReAct Checkpoints (7-day TTL auto-expiry) |
 | `bookmarks` | Message bookmarks (index: sessionId, pinned, createdAt) |
+| `scheduledTasks` | Scheduled tasks (index: nextRunAt, enabled) |
 
 Supports automatic transaction failure recovery and legacy `chrome.storage.local` auto-migration.
 
@@ -1015,13 +1120,16 @@ Check if tools are enabled on the options page. Some tools require specific webs
 `scripts/fix-build.js` automatically renames hashed filenames to stable names — no reload needed.
 
 **Q: How to enable image recognition?**
-In the options page "Image Recognition" tab, enable the global toggle. Optionally configure an independent Vision API Base/Key/Model.
+In the Options page "Basic" tab, turn on "Enable Image Recognition". Optionally configure an independent Vision API Base/Key/Model.
 
 **Q: How to upload files for Q&A?**
 Paste or drag files into the input area, supporting PDF/Word/Excel/Text. With Agent connected, files are uploaded to the working directory for deeper manipulation.
 
 **Q: How to connect the local Agent?**
 ```bash
+# Global install (recommended)
+npm install -g ai-helper-agent && ai-helper-agent start
+# Or start locally
 cd agent && npm install && npm start
 ```
 Then enter the 6-digit pairing code shown in the terminal on the extension options page "Agent" tab.

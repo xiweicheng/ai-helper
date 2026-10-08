@@ -2,7 +2,7 @@
 
 # AI Helper 完整文档
 
-AI Helper 的完整技术参考：架构总览、30 项核心功能、40+ 内建工具、可选代理服务、配置说明、状态管理设计、常见问题。
+AI Helper 的完整技术参考：架构总览、31 项核心功能、40+ 内建工具、可选代理服务、配置说明、状态管理设计、常见问题。
 
 想快速了解 AI Helper 能做什么、怎么安装，请回到 [README](../../README.zh-CN.md)。
 
@@ -84,7 +84,7 @@ AI Helper 的完整技术参考：架构总览、30 项核心功能、40+ 内建
 ┌──────────────────────────────────────────────────────────────┐
 │                   Storage (数据持久化层)                        │
 │  src/storage/                                                 │
-│  ├── db.js (IndexedDB 封装，事务重试、自动迁移、v4 多连接管理)│
+│  ├── db.js (IndexedDB 封装，事务重试、自动迁移、v6 多连接管理)│
 │  ├── session-store.js (会话存储适配器)                         │
 │  └── token-store.js (Token 统计存储)                          │
 └──────────────────────────────────────────────────────────────┘
@@ -123,12 +123,22 @@ ai-helper/
 │   ├── src/
 │   │   ├── server.js                    # HTTP + WebSocket 服务端
 │   │   ├── executor.js                  # 命令执行引擎（流式/阻塞）
+│   │   ├── process-tree.js              # 进程树管理与检索（命令全链路清理）
 │   │   ├── security.js                  # 路径沙箱 + 命令安全分级
 │   │   ├── config.js                    # Agent 配置（磁盘持久化）
 │   │   ├── auth.js                      # 配对认证（6 位动态码）
 │   │   ├── search.js                    # 文件/内容搜索（fd/rg 加速）
 │   │   ├── logger.js                    # 结构化日志
 │   │   ├── trash.js                     # 文件回收站（软删除 + 7 天自动清理）
+│   │   ├── i18n.js / sys-lang.js        # 代理端国际化与系统语言检测
+│   │   ├── locales/                     # 代理端多语言文案
+│   │   ├── rag/                         # 本地知识库（RAG）
+│   │   │   ├── routes.js               # RAG API 路由
+│   │   │   ├── manager.js              # 知识库 CRUD 与启用/停用
+│   │   │   ├── install.js              # 依赖检测/安装/启动自动恢复
+│   │   │   ├── searcher.js             # 向量 + 关键词混合检索
+│   │   │   ├── document/ / embedding/ / store/  # 文档解析 / 嵌入 / 存储层
+│   │   │   └── url-guard.js / errors.js / probe-child.mjs
 │   │   ├── skill/                       # Skill 系统
 │   │   │   ├── loader.js               # Skill 加载器（JSON/YAML/SKILL.md）
 │   │   │   ├── registry.js             # Skill 注册表
@@ -152,12 +162,16 @@ ai-helper/
 │   ├── html2canvas.min.js              # HTML Canvas 截图库（PDF 导出）
 │   ├── jspdf.min.js                     # jsPDF PDF 生成库
 │   └── github-markdown-light.min.css    # GitHub 风格 Markdown 样式
-├── scripts/                             # 构建工具脚本
+├── scripts/                             # 构建与运维脚本
 │   ├── fix-build.js                     # 修复 @crxjs/vite-plugin 打包产物
 │   ├── silent-build.js                  # 静默构建（CI 友好，仅失败输出）
 │   ├── generate-icons.js                # 图标生成脚本
-│   ├── deploy-pages.sh                  # Pages 部署脚本
-│   └── split-tools.cjs                  # 工具定义拆分脚本
+│   ├── deploy-pages.sh                  # GitHub Pages 部署脚本
+│   ├── push-all.sh                      # 一键推送到全部远端（含 Pages 部署）
+│   ├── sync-wiki-to-gitee.sh            # GitHub Wiki 自动同步至 Gitee
+│   ├── auto-record.py                   # 演示视频自动录制脚本
+│   ├── gen-competition-pdf.py           # 参赛作品文档 PDF 生成
+│   └── gen-portfolio-pdf.py             # 作品集 PDF 生成
 ├── styles/
 │   └── styles.css                       # Content Script 浮框样式
 ├── src/                                 # 扩展源码
@@ -166,27 +180,35 @@ ai-helper/
 │   │   ├── react-loop.js               # ReAct 推理循环（核心引擎，含三级反思系统）
 │   │   ├── react-reflection.js         # 三级反思系统（后置反思、工具级反思、子任务反思）
 │   │   ├── context-summarizer.js       # 上下文增量摘要（长对话关键信息提取）
+│   │   ├── context-compactor.js        # 手动压缩上下文（会话历史摘要生成）
 │   │   ├── tool-executor.js            # 工具定义注册、执行调度、MCP 动态注入
 │   │   ├── tool-preselector.js         # 工具预筛选（轻量 API 提前过滤）
 │   │   ├── tool-helpers.js             # 工具辅助函数（下载、截图等共享逻辑）
+│   │   ├── tool-debugger.js            # CDP 调试桥（debug_page 工具执行器）
+│   │   ├── tool-memory.js              # 长期记忆工具 handler
+│   │   ├── tool-screenshot.js          # 截图工具 handler
+│   │   ├── notifier.js                 # 桌面通知中心（完成 / 定时 / 交互提醒，多实例防重）
+│   │   ├── panel-visibility.js         # 发起任务的侧边栏实例可见性判定（通知防误静默）
+│   │   ├── scheduler.js                # 定时任务调度引擎（Cron / 间隔 / 一次性）
+│   │   ├── scheduler-rules.js          # 调度规则解析与 next-run 计算
+│   │   ├── detach-window.js            # 脱离窗口（独立弹窗）状态恢复
 │   │   ├── local-agent-client.js       # 本地 Agent HTTP/WebSocket 通信
 │   │   ├── agent-dispatcher.js         # Agent 子任务分发器
 │   │   ├── stream-controller.js        # 流式响应控制器（SSE 解析 + DeepSeek thinking）
 │   │   ├── token-recorder.js           # Token 使用统计记录器
-│   │   ├── config.js                    # 配置读写
-│   │   └── constants.js                # 默认配置、40+ 个内建工具定义、分类映射
+│   │   ├── config.js                   # 配置读写
+│   │   ├── constants.js                # 默认配置、40+ 个内建工具定义、分类映射
 │   │   ├── state.js                    # 多会话取消控制、API 计数器
-│   │   └── tools/                       # 工具定义分目录
+│   │   └── tools/                      # 工具定义分目录
 │   │       ├── browser-tools.js        # 页面交互 + 表单操作 + 内容提取 (15)
 │   │       ├── tab-tools.js            # 标签页管理 + 书签历史 (3)
 │   │       ├── storage-tools.js        # 存储管理 + 网络请求 (4)
 │   │       ├── media-tools.js          # 媒体输出 + 调试开发 (7)
 │   │       ├── ai-tools.js             # AI 协作 + 调试开发 (6)
 │   │       ├── agent-tools.js          # 本地代理 + AI 协作 (7)
-│   │       ├── memory-tools.js         # 长期记忆 (1)
-│   │       ├── tool-memory.js          # 长期记忆工具 handler
-│   │       ├── tool-network.js         # fetchWithTimeout + fetchWithRetry
-│   │       └── tool-screenshot.js      # 截图工具 handler
+│   │       ├── debugger-tools.js       # CDP 调试工具定义（debug_page）
+│   │       ├── rag-tools.js            # 知识库检索工具（knowledge_*）
+│   │       └── memory-tools.js         # 长期记忆 (1)
 │   ├── content/                         # 页面注入脚本
 │   │   ├── index.js                     # 入口：消息路由分发
 │   │   ├── page-tools.js               # 页面内容工具（提取、搜索、无障碍树等）
@@ -230,11 +252,18 @@ ai-helper/
 │   │   ├── skill-selector.js           # 技能/MCP 服务快捷选择器
 │   │   ├── export-import.js            # 会话导出/导入（批量选择、格式校验）
 │   │   ├── execution-log-render.js     # 执行日志渲染（任务组、实时模式）
+│   │   ├── log-summary-adaptive.js     # 执行日志统计区自适应降级
 │   │   ├── workspace-manager.js        # 工作目录数据管理（缓存、图标、格式化）
 │   │   ├── workspace-panel.js          # 工作目录 UI 面板（目录树、预览、上传）
 │   │   ├── bookmark-manager.js         # 消息收藏数据管理（IndexedDB 持久化）
 │   │   ├── bookmark-panel.js           # 消息收藏 UI 面板（搜索、分组展示）
 │   │   ├── search-panel.js             # 消息搜索 UI 面板（全文搜索、双模式）
+│   │   ├── schedule-panel.js           # 定时任务管理面板（创建/编辑/运行历史）
+│   │   ├── version-info.js             # 版本信息弹窗（版本号/标签/提交 ID）
+│   │   ├── context-indicator.js        # 上下文占用指示器 + 手动压缩入口
+│   │   ├── completion-feedback.js      # 完成反馈（音效/彩带/桌面通知上报）
+│   │   ├── provider-selector.js        # 厂商/模型选择器（搜索过滤 + 排序）
+│   │   ├── toolbar-adapt.js            # 输入工具栏自适应降级
 │   │   ├── icons.js                     # 共享 SVG 图标常量
 │   │   ├── state.js                     # 全局状态管理（Proxy 双导出模式）
 │   │   ├── utils.js                     # 工具函数（Toast、系统提示词构建等）
@@ -243,11 +272,16 @@ ai-helper/
 │   │   ├── index.js                     # 入口：标签页切换、表单事件、Agent 配对
 │   │   ├── config-manager.js           # 配置读写管理
 │   │   ├── config-io.js                # 配置导入/导出
+│   │   ├── save-bar.js                 # 保存按钮栏吸附（内容超屏时吸底）
+│   │   ├── profile-manager.js          # 厂商配置管理（新建/复制/重命名/切换）
+│   │   ├── model-fetcher.js            # 模型列表自动拉取
+│   │   ├── knowledge-panel.js          # 知识库管理面板（创建/导入/停用）
 │   │   ├── toolbar-config.js           # 工具栏配置（拖拽排序、域名屏蔽）
 │   │   ├── toolbox-config.js           # 工具箱配置入口
 │   │   ├── toolbox-shared.js           # 工具箱共享状态与辅助函数
 │   │   ├── toolbox-mcp.js              # MCP 服务器管理（增删改查、连接、环境变量）
 │   │   ├── toolbox-skills.js           # Skill 管理（分类展示、导入、编辑器）
+│   │   ├── toolbox-rag.js              # 知识库依赖安装与状态
 │   │   └── constants.js                # 默认系统提示词与配置常量
 │   ├── storage/                         # IndexedDB 持久化层
 │   │   ├── db.js                        # IndexedDB 封装（事务重试、自动迁移）
@@ -259,6 +293,10 @@ ai-helper/
 │       ├── tools.js                     # 工具分类、温度预设
 │       ├── utils.js                     # 通用工具函数（makeResult 标准化等）
 │       ├── token-counter.js            # Token 计数、预算管理、上下文压缩、消息摘要
+│       ├── context-usage.js            # 上下文占用计算（与实际发送口径同源）
+│       ├── compaction-prompt.js        # 手动压缩摘要提示词模板
+│       ├── model-profiles.js           # 厂商多配置数据模型与迁移
+│       ├── i18n.js                     # 轻量国际化（中/英）
 │       ├── logger.js                    # 统一日志模块
 │       └── agent-defaults.js           # 内置 Agent 定义和模板
 ├── manifest.json                        # Chrome 扩展配置
@@ -331,7 +369,7 @@ ai-helper/
 8. **并行工具执行**：同一轮中标记为可并行的工具通过 `Promise.all` 并发执行
 9. **任务拆解**：`plan_task` 支持顺序、并行、条件三种执行策略，子任务失败支持重试/回滚/继续
 10. **子任务分发**：`dispatch_task` 支持将子任务委派给其他 Agent 并行执行
-11. **流式响应**：支持 OpenAI 流式响应，可配置字符间延迟（模拟打字效果）
+11. **流式响应**：支持 OpenAI 流式响应（SSE）与 DeepSeek thinking，回复实时逐字显示；Agent 命令输出也实时流式呈现
 12. **澄清机制**：信息不完整时弹出澄清对话框，循环计时自动暂停，支持推荐选项
 13. **多级超时控制**：API 超时 5min、工具超时 10min、整体循环超时 30min
 14. **取消控制**：用户可随时取消推理循环，按会话隔离
@@ -350,16 +388,17 @@ ai-helper/
 
 ### 5. 上下文压缩与 Token 预算管理
 
-从 v1.0 开始引入的智能上下文管理策略：
+智能上下文管理策略：
 
+- **上下文占用指示器**：输入框下方实时显示占用百分比（环形进度 + 安全/警告/危险三档配色），点击可查看系统提示词、工具定义、历史消息、当前输入四项明细
+- **手动压缩上下文**：一键将历史消息压缩为 AI 结构化摘要（会话级持久化，发送新消息前可撤销；再次压缩时旧摘要与新消息合并）
 - **自适应 Token 估算**：中文字符 ~1.5 chars/token，英文 ~4 chars/token
-- **上下文窗口自动检测**：根据模型名自动推断上下文窗口（支持自定义映射）
+- **上下文窗口自动检测**：根据模型名自动推断上下文窗口（支持按模型自定义映射，默认 256K）
 - **消息预算 = 上下文窗口 - 系统提示词 - 工具定义 - 输出预留**
 - **上下文压力三级监测**：safe / warning / critical
 - **消息摘要**：压力达到 critical 时自动对早期消息生成摘要，替代原始内容
 - **引用压缩**：长引用/选中内容自动压缩为摘要，避免永久占据上下文
 - **Token 级别截断**：70% 开头 + 30% 结尾 + 截断标记
-- **流式输出配置**：可配置字符间渲染延迟（0=瞬间，适合高网速场景）
 
 ### 6. Token 统计面板
 
@@ -616,9 +655,20 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 - **调度引擎**：基于 Chrome Alarms 调度，Service Worker 重启后自动重建闹钟
 - **管理与控制**：管理面板支持创建 / 编辑 / 删除 / 启用 / 停用 / 立即执行
 - **运行历史**：记录每次执行的状态、耗时与错误（最多 50 条），面板内可展开查看
-- **失败通知**：后台执行失败时弹出系统通知
+- **桌面通知**：任务完成 / 失败时按「定时任务通知」开关弹出桌面提醒（默认开启，无声音等其他提醒渠道时尤为重要）；点击通知打开侧边栏
 - **结束条件**：间隔任务支持「最多执行次数」与「截止时间」自动停用
 - **手动立即执行**：触发后自动切换到宿主会话并滚动到底部等待结果
+
+### 31. 桌面通知与完成反馈
+
+任务在后台执行时也能及时获知结果（选项页「基础」→「完成反馈」区域统一管理）：
+
+- **三个独立开关**：任务完成 / 失败通知、定时任务通知、交互提醒（AI 需要确认或澄清时）——均可在选项页随时开关、实时生效
+- **任务完成 / 失败通知**：仅在看不到侧边栏时弹出（可见时不打扰）；成功通知自动消失，失败通知停留至手动关闭；点击通知打开侧边栏并定位到对应会话
+- **定时任务通知**：定时任务在后台执行，无声音等其他提醒渠道，开关开启时总是弹出（默认开启）
+- **交互提醒**：推理循环因敏感操作确认 / 需求澄清而等待用户时弹出桌面提醒，避免任务卡在弹窗而用户不知情；仅在看得到侧边栏时不打扰
+- **多实例防重**：标签页绑定模式可同时打开多个侧边栏实例，通知创建权统一收敛在 Background（全局唯一），并按「发起任务的实例」精确判定可见性，绝不重复弹窗
+- **完成反馈音效与彩带**：成功 / 失败不同音效、成功彩带动画，均独立开关控制
 
 ---
 
@@ -634,7 +684,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_collect` | 滚动收集长内容（去重聚合） |
 
-### 页面交互（5 个）
+### 页面交互（6 个）
 | 工具 | 说明 |
 |------|------|
 | `interact_element` | 页面元素交互（click/hover，支持 ref/text/selector 三种定位，优先 ref） |
@@ -642,6 +692,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `scroll_to` | 滚动到指定位置/元素/文本（支持对齐方式） |
 | `wait_element` | 等待元素出现/消失（严格可见性检测） |
 | `wait_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
+| `handle_dialog` | 处理页面弹窗（alert/confirm/prompt），可在触发动作前预设 accept/dismiss |
 
 ### 表单与输入（4 个）
 | 工具 | 说明 |
@@ -683,12 +734,13 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `download_file` | 下载文件（需确认） |
 | `notify` | 桌面通知 |
 
-### 调试与开发（3 个）
+### 调试与开发（4 个）
 | 工具 | 说明 |
 |------|------|
 | `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
 | `browser_info` | 获取浏览器环境信息 |
 | `highlight_text` | 高亮页面文本 |
+| `debug_page` | 通过 Chrome DevTools Protocol 高级调试页面（attach → 操作 → detach）：原生输入事件、XHR/fetch 抓包、页面上下文求值、全页截图、设备模拟等 |
 
 ### AI 协作（7 个）
 | 工具 | 说明 |
@@ -714,6 +766,15 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | 工具 | 说明 |
 |------|------|
 | `agent_memory` | 统一记忆管理。store 增删改、recall 关键词检索、manage 审查清理，通过 action 参数区分 |
+
+### 知识库 RAG（3 个）—— 需安装代理服务并启用 RAG
+> 仅当选项页启用知识库且 Agent 端 RAG 依赖可用时动态注册。
+
+| 工具 | 说明 |
+|------|------|
+| `knowledge_search` | 检索知识库相关内容（可指定 collectionId，或跨库检索；停用的知识库不参与自主检索） |
+| `knowledge_ingest` | 将文本 / 本地文件 / URL 导入知识库（支持 metadata） |
+| `knowledge_list` | 列出可用知识库及其文档数量 |
 
 ### MCP 工具（动态扩展）
 通过 MCP 协议连接第三方工具服务器后，工具会自动注册到系统中。数量取决于连接的 MCP Server。
@@ -742,10 +803,12 @@ Agent 命令执行三级安全：
 | Side Panel API | Chrome 114+ 侧边栏 |
 | Content Script | 页面注入，DOM 操作 |
 | Offscreen Document | MV3 剪贴板操作兼容层 |
-| IndexedDB | 会话/原型/Token 统计持久化 |
+| IndexedDB | 会话/原型/Token 统计/定时任务持久化 |
 | chrome.storage.local | 配置存储、Agent 定义存储 |
 | chrome.storage.session | 跨重启消息恢复、后台任务持久化 |
-| chrome.debugger API | CDP 截图/PDF 导出 |
+| chrome.notifications API | 桌面通知（任务完成 / 定时任务 / 交互提醒） |
+| chrome.alarms API | 定时任务调度（SW 重启自动重建闹钟） |
+| chrome.debugger API | CDP 截图/PDF 导出/页面调试（debug_page） |
 | OpenAI Compatible API | LLM 调用（含 Vision），默认 DeepSeek V4，支持流式响应 |
 | marked.js | Markdown 渲染引擎 |
 | mermaid.js | 图表渲染引擎 |
@@ -796,7 +859,8 @@ Agent 命令执行三级安全：
 │   │   ├── /api/trash/* (回收站)     │
 │   │   ├── /api/browser/open        │
 │   │   ├── /api/skill/* (技能管理)   │
-│   │   └── /api/mcp/* (MCP 管理)     │
+│   │   ├── /api/mcp/* (MCP 管理)     │
+│   │   └── /api/rag/* (知识库检索)   │
 │   ├── WebSocket (命令输出流)      │
 │   ├── Skill 系统                  │
 │   │   ├── Workflow Skill 执行器   │
@@ -804,6 +868,9 @@ Agent 命令执行三级安全：
 │   ├── MCP 协议扩展               │
 │   │   ├── MCP Client 管理        │
 │   │   └── JSON-RPC 2.0 通信      │
+│   ├── 本地知识库 (RAG)            │
+│   │   ├── 向量 + 关键词混合检索    │
+│   │   └── 依赖自动恢复            │
 │   └── 安全层                      │
 │       ├── Bearer Token 认证       │
 │       ├── 路径沙箱（realpath）    │
@@ -815,7 +882,7 @@ Agent 命令执行三级安全：
 
 - **CLI 命令丰富**：支持 `start`/`stop`/`restart`/`status`/`paircode`/`config` 等命令，`aha` 快捷别名
 - **后台守护进程**：`start --background` / `-b` 后台启动模式，终端立即返回，不阻塞会话
-- **进程管理**：PID 文件管理，优雅关闭机制，防止重复启动
+- **进程管理**：PID 文件管理 + 进程树追踪与检索（命令全链路清理），优雅关闭机制，防止重复启动
 - **配对认证**：6 位动态码 + extensionId 配对，生成 Bearer Token
 - **路径沙箱**：`realpathSync` 解析符号链接，前缀匹配白名单路径
 - **命令安全**：环境变量白名单（约 40 个），`TERM=dumb` 禁用互动
@@ -827,6 +894,7 @@ Agent 命令执行三级安全：
 - **审计日志**：双通道输出（终端格式化 + 文件 JSON Lines），按日命名，自动清理 30 天
 - **多级健壮性保护**：请求级异常捕获、URL 解析保护、全局兜底、文件 I/O 保护、进程管理保护
 - **快速搜索**：fd（文件名）+ ripgrep（内容）原生加速，不可用时自动回退 Node.js 实现
+- **本地知识库 (RAG)**：依赖自动检测/安装与启动自动恢复；向量 + 关键词混合检索（支持中英混合关键词）；停用的知识库不参与自主检索，但 @ 手动引用仍可用
 
 ### Skill 系统（Agent 端）
 
@@ -907,93 +975,86 @@ npm run build:silent
 
 ### 配置使用
 
+选项页共 7 个标签页：「基础」「推理」「反思」「划词」「代理」「扩展」「知识库」。
+
 1. 右键扩展图标 →「选项」
-2. 「基础设置」：填入 API Key、API 地址、模型
-3. 「图片识别」：配置独立的 Vision API（可选，不配则使用主配置）
-4. 「推理」：调整 ReAct 循环参数
-5. 「反思」：配置三级反思策略
-6. 「对话」：设置历史限制和记忆限制
-7. 「代理」：配对本地 Agent 服务
-8. 「工具栏」：管理划词浮动工具栏
-9. 「工具箱」：管理 MCP 服务器和 Skill
-10. 侧边栏中开始对话
+2. 「基础」：选择界面语言与厂商配置，填入 API Key / API 地址 / 模型；按需开启图片识别、完成反馈与桌面通知
+3. 「推理」：调整 ReAct 循环参数与流式输出
+4. 「反思」：配置三级反思策略
+5. 「划词」：管理划词浮动工具栏（工具列表、排序、域名屏蔽）
+6. 「代理」：配对本地 Agent 服务
+7. 「扩展」：管理 MCP 服务器和 Skill
+8. 「知识库」：创建 / 导入知识库（需 Agent 端 RAG 依赖就绪）
+9. 侧边栏中开始对话
 
 ---
 
 ## 配置说明
 
-### 基础设置
+选项页共 7 个标签页：「基础」「推理」「反思」「划词」「代理」「扩展」「知识库」。
+
+### 基础设置（「基础」Tab）
 
 | 参数 | 说明 |
 |------|------|
-| API Key | OpenAI 兼容 API 密钥 |
-| API 地址 | API 端点 URL |
-| 模型名称 | 预设（DeepSeek V4 Pro/Flash）+ 自定义模型 |
+| 界面语言 | 中文 / English 实时切换 |
+| 厂商配置 | 多套配置独立记忆（地址 / API Key / 模型列表），支持新建、另存为、重命名、删除，切换后立即生效 |
+| API 地址 | API 端点 URL（下拉选择或手动输入，支持添加自定义地址） |
+| API Key | OpenAI 兼容 API 密钥（必填） |
+| 模型名称 | 下拉选择 +「从 API 获取」自动拉取厂商模型列表；可添加自定义模型与上下文窗口 |
+| 图片识别 | 全局开关；独立 Vision API 地址 / Key / 模型（留空则复用主配置） |
 | 系统提示词 | 自定义系统提示词（含重置按钮） |
-| 默认温度 | 0.2-0.9 四档预设 |
+| 完成反馈 | 提示音（成功 / 失败音效不同）、彩带（仅成功）、任务完成 / 失败桌面通知、定时任务桌面通知 |
+| 交互提醒 | AI 需要确认或澄清时弹出桌面提醒 |
+| 消息时间戳 | 在用户问题气泡下方显示发问时间 |
+| 侧边栏作用域 | 全局模式（整个窗口共享）或标签页绑定模式（跟随标签页显隐） |
+| 标签页分组 | 标签页绑定模式下，自动将打开侧边栏的标签页归入彩色分组 |
 
-### 图片识别设置
-
-| 参数 | 说明 |
-|------|------|
-| 图片识别开关 | 全局开启/关闭图片输入 |
-| 图片识别模型 | Vision 模型名，为空则使用主模型 |
-| 图片识别 API Base | 独立 API 地址，为空则使用主配置 |
-| 图片识别 API Key | 独立 API Token，为空则使用主配置 |
-
-### ReAct 配置
+### ReAct 推理配置（「推理」Tab）
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| 最大迭代次数 | 100 | ReAct 循环上限 (1-100) |
-| API 超时 | 300s | 单次 API 调用超时 (10-600s) |
-| 循环超时 | 30min | 整体推理循环超时 (1-60min) |
-| 工具超时 | 600s | 单个工具执行超时 (5-600s) |
-| 澄清超时 | 3min | 澄清对话框等待超时 (1-10min) |
-| API 重试次数 | 3 | 失败重试次数 (0-10)，指数退避 |
-| 重试延迟 | 1s | 基础延迟 (0.5-30s) |
-| 工具预筛选 | 关闭 | 自动筛选相关工具，减少 Token 消耗 |
-| 预筛选阈值 | 10 | 工具数超过此值才启动预筛选 |
-| 工具安全确认 | 开启 | 敏感操作弹出确认框 |
+| 最大循环次数 | 100 | 推理-行动循环上限 (10-1000) |
+| API 请求超时 | 5min | 单次 API 调用最长等待 (1-10min) |
+| 整体循环超时 | 30min | 整个推理循环最长执行时间 (1-120min) |
+| 工具执行超时 | 10min | 单个工具执行最长等待 (1-30min) |
+| 敏感操作确认 | 开启 | 敏感操作（工具调用、命令执行等）弹窗确认后再执行；关闭后直接放行 |
+| 启用执行日志 | 开启 | 消息底部显示「执行日志」按钮，可查看 API 调用与工具执行详情 |
+| 流式输出 | 开启 | 实时逐字显示 + Agent 命令实时输出；兼容性问题时可关闭回退 |
+| 流式工具卡片默认展开 | 关闭 | 开启后工具卡片默认展开显示详情 |
 
-### 反思配置
+说明：用户澄清等待时间不计入整体循环超时（自动暂停计时）；API 重试（3 次指数退避）、工具预筛选为内建策略，无需配置。
+
+### 反思配置（「反思」Tab）
 
 | 级别 | 默认值 | 说明 |
 |------|--------|------|
-| 反思总开关 | 关闭 | 整体关闭所有反思 |
-| 后置反思 | 开启 | 最终答案质量评估 |
-| 质量阈值 | 7 | 1-10，低于此值重试 |
-| 修订阈值 | 5 | 低于此值直接修订 |
-| 子任务反思 | 关闭 | 子任务结果评估 |
-| 工具级反思 | 开启 | 连续 3 次失败触发，每轮最多 2 次 |
+| 反思总开关 | 开启 | 整体控制所有反思 |
+| 后置反思 | 开启 | 推理结束后对最终结果质量评估，低于阈值自动修订或重新执行 |
+| 工具级反思 | 开启 | 每次工具调用后检查结果，遇到错误或异常时调整策略 |
+| 子任务反思 | 关闭 | 对复杂任务拆解后的子任务单独评估（高级功能） |
 
-### 流式输出配置
+### 对话配置（侧边栏内）
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| LLM 流式输出 | 开启 | OpenAI stream 模式 |
-| 字符渲染延迟 | 30ms | Side Panel 字符间延迟，0=瞬间 |
-| Agent 流式输出 | 开启 | 命令执行实时流式输出 |
-
-### 对话配置
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| 最大历史轮数 | 50 | 对话记录保留上限 (10-200) |
-| 最大输入历史 | 20 | 输入历史保存条数 (10-100) |
-| 单条消息限制 | 100000 | 单条消息最大字符数 |
-| 记忆限制 | 20 条 | 发送给 LLM 的历史消息条数上限 |
-| 上下文窗口 | 自动 | 0=根据模型名自动推断，支持自定义映射 |
+| 记忆限制 | 不限制 | 「记忆」开关旁下拉框：不限制 / 最近200条 / 最近100条 / 最近50条 / 最近20条 / 最近10条 / 最近5条 / 最近2条 / 自定义 1-400 条 |
+| 上下文窗口 | 自动 | 按模型名自动推断（默认识别至 256K），添加模型时可自定义 |
 
 ### 键盘快捷键
 
 | 快捷键 | 功能 |
 |--------|------|
-| `Ctrl+T` / `Cmd+T` | 打开工具选择面板 |
+| `Ctrl+T` / `Cmd+T` | 打开/关闭工具选择面板 |
 | `Alt+/` | 显示快捷键面板 |
-| `Alt+↑/↓` | 切换消息焦点 |
-| `Alt+Shift+↑/↓` | 跳到首/末条消息 |
-| `Esc` | 关闭面板 / 清空输入 |
+| `Alt+S` | 全页面截图 |
+| `Alt+Shift+S` | 区域截图 |
+| `Alt+N` | 新建会话 |
+| `Alt+W` | 关闭当前会话 |
+| `Alt+E` | 编辑最近一条用户消息 |
+| `Alt+↑/↓` | 切换消息焦点（上一条 / 下一条） |
+| `Alt+Ctrl/Cmd+↑/↓` | 快速回到顶部 / 底部 |
+| `Esc` | 关闭快捷键面板 / 清空输入 |
 | `Ctrl+Shift+Y` / `Cmd+Shift+Y` | 全局快捷键打开侧边栏 |
 
 ---
@@ -1025,7 +1086,7 @@ import { messageHistory } from './state.js'; // 直接解构
 
 ### IndexedDB 数据库设计
 
-`ai-helper-db` (v4)，七个对象存储：
+`ai-helper-db` (v6)，八个对象存储：
 
 | Store | 用途 |
 |-------|------|
@@ -1036,6 +1097,7 @@ import { messageHistory } from './state.js'; // 直接解构
 | `tokenStats` | Token 使用统计（索引：timestamp, sessionId） |
 | `reactCheckpoints` | ReAct Checkpoint 断点（7 天 TTL 自动过期） |
 | `bookmarks` | 消息收藏（索引：sessionId, pinned, createdAt） |
+| `scheduledTasks` | 定时任务（索引：nextRunAt, enabled） |
 
 支持自动从事务失败恢复及旧版 `chrome.storage.local` 自动迁移。
 
@@ -1056,7 +1118,7 @@ Chrome 版本需 >= 114，低版本不支持 Side Panel API。
 `scripts/fix-build.js` 会自动将 hash 文件名重命名为固定文件名，无需重新加载。
 
 **Q: 如何开启图片识别？**
-在选项页「图片识别」Tab 中开启全局开关，可选配独立的 Vision API Base/Key/Model。
+在选项页「基础」Tab 中开启「启用图片识别功能」开关，可选配独立的 Vision API Base/Key/Model。
 
 **Q: 如何上传文件进行问答？**
 直接粘贴或拖拽文件到输入区域，支持 PDF/Word/Excel/文本等格式。有 Agent 时优先上传至工作目录。
