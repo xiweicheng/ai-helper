@@ -3,7 +3,7 @@
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
-import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent } from '../shared/token-counter.js';
+import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent, formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
 import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
@@ -211,16 +211,6 @@ window.showCustomConfirm = function(message, title = t('sidePanel.confirmAction'
   });
 };
 
-/** 格式化上下文窗口大小：>=1M 显示 "1.2M"，>=1K 显示 "128K" */
-function formatCtxWindow(tokens) {
-  if (tokens >= 1000000) {
-    return Math.round(tokens / 1000000 * 10) / 10 + 'M';
-  }
-  if (tokens >= 1000) {
-    return Math.round(tokens / 1000) + 'K';
-  }
-  return String(tokens);
-}
 import { initClarifyEvents } from './clarify-dialog.js';
 import { initConfirmEvents } from './confirm-dialog.js';
 import { initPrototypeEvents, showPrototypeLibrary } from './ui-prototype.js';
@@ -533,7 +523,7 @@ function updateModelSelection(selectedValue) {
   const ctxBadge = document.getElementById('modelSelectCtxBadge');
   if (ctxBadge) {
     if (selectedCtxWindow > 0) {
-      ctxBadge.textContent = formatCtxWindow(selectedCtxWindow);
+      ctxBadge.textContent = formatContextWindow(selectedCtxWindow);
       ctxBadge.style.display = '';
     } else {
       ctxBadge.style.display = 'none';
@@ -589,16 +579,19 @@ function loadCustomModelsToDropdown(customModels, callback) {
       }
       option.innerHTML = `<span class="model-option-check"></span><span class="model-option-left">${escapeHtml(item.name)}</span>`;
 
-      // 上下文窗口大小标签（放在右侧容器内）
-      if (item.contextWindow && item.contextWindow > 0) {
-        const rightSpan = document.createElement('span');
-        rightSpan.className = 'model-option-right';
-        const ctxBadge = document.createElement('span');
-        ctxBadge.className = 'model-ctx-badge';
-        ctxBadge.textContent = formatCtxWindow(item.contextWindow);
-        rightSpan.appendChild(ctxBadge);
-        option.appendChild(rightSpan);
+      // 上下文窗口大小标签（放在右侧容器内；自动态显示内置推断值 + 灰色虚线样式，与 options 页口径一致）
+      const rightSpan = document.createElement('span');
+      rightSpan.className = 'model-option-right';
+      const ctxBadge = document.createElement('span');
+      ctxBadge.className = 'model-ctx-badge';
+      const hasExplicitWindow = item.contextWindow && item.contextWindow > 0;
+      ctxBadge.textContent = formatContextWindow(hasExplicitWindow ? item.contextWindow : inferContextWindow(item.name));
+      if (!hasExplicitWindow) {
+        ctxBadge.classList.add('is-auto');
+        ctxBadge.title = t('settings.ctxBadgeAutoTip');
       }
+      rightSpan.appendChild(ctxBadge);
+      option.appendChild(rightSpan);
 
       option.addEventListener('click', (e) => {
         e.stopPropagation();

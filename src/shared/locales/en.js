@@ -129,6 +129,11 @@ export default {
     saveFailed: 'Save failed: {message}',
     saveSuccess: 'Configuration saved successfully!',
     deleteModel: 'Delete this model',
+    ctxSliderIconTitle: 'Set context window for this model',
+    ctxSliderAuto: 'Auto',
+    ctxSliderAutoTitle: 'Reset to auto-detect',
+    ctxBadgeAutoTip: 'Auto-inferred (not set manually)',
+    ctxSliderResetAuto: 'Reset to auto',
     deleteApiBase: 'Delete this address',
     // Provider profiles (multi-profile memory & quick switch)
     providerConfig: 'Provider Profiles',

@@ -1574,6 +1574,13 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* 自动态徽标：灰色虚线弱化，与显式值的蓝色实底区分（padding 与 1px 边框合计保持与实底同尺寸） */
+.model-option .model-ctx-badge.is-auto {
+  background: #f2f3f5;
+  border: 1px dashed #c0c4cc;
+  color: #999;
+  padding: 0 4px;
+}
 .model-option-right {
   display: flex;
   align-items: center;

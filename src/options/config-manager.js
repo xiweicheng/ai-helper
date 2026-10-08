@@ -4,6 +4,8 @@ import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PR
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
 import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
+import { formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
+import { closeCtxPopover } from './ctx-popover.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -16,6 +18,49 @@ export function setCurrentModel(value) { currentModel = value; }
 let currentImageModel = '';
 export { currentImageModel };
 export function setCurrentImageModel(value) { currentImageModel = value; }
+
+// 上下文窗口设置图标（滑杆图形，14x14）
+const CTX_SET_ICON_SVG = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><g stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"><path d="M1.2 4h3.1M9.7 4h3.1M1.2 10h4.6M11.2 10h1.6"/><circle cx="7" cy="4" r="1.6"/><circle cx="8.5" cy="10" r="1.6"/></g></svg>';
+
+/**
+ * 构建上下文窗口设置按钮（选项行右侧入口，点击弹出滑杆浮层）
+ */
+function buildCtxSetButton() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ctx-set-btn';
+  btn.title = t('settings.ctxSliderIconTitle');
+  btn.setAttribute('aria-label', t('settings.ctxSliderIconTitle'));
+  btn.innerHTML = CTX_SET_ICON_SVG;
+  return btn;
+}
+
+/**
+ * 同步选项行上下文徽标（行内徽标唯一渲染入口）：
+ * 显式值 = 蓝色实底；自动态（0）= 灰色虚线（is-auto）+ 内置推断值 + tooltip
+ * @param {HTMLElement} optionEl 需已含 .model-option-right
+ * @param {number} tokens 0 表示自动推断
+ */
+function syncCtxBadge(optionEl, tokens) {
+  const rightSpan = optionEl.querySelector('.model-option-right');
+  if (!rightSpan) return;
+  const value = Number(tokens) || 0;
+  let badge = rightSpan.querySelector('.model-ctx-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'model-ctx-badge';
+    rightSpan.insertBefore(badge, rightSpan.firstChild);
+  }
+  if (value > 0) {
+    badge.classList.remove('is-auto');
+    badge.textContent = formatContextWindow(value);
+    badge.removeAttribute('title');
+  } else {
+    badge.classList.add('is-auto');
+    badge.textContent = formatContextWindow(inferContextWindow(optionEl.dataset.value));
+    badge.title = t('settings.ctxBadgeAutoTip');
+  }
+}
 
 // 说明：模型列表统一由"当前厂商配置"的 models 字段管理（见 shared/model-profiles.js）
 // 添加模型到下拉列表（支持重新加回已删除的预设模型）
@@ -54,7 +99,7 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
       let leftSpan = existingOption.querySelector('.model-option-left');
       if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
 
-      // 确保有右侧容器（badge + 可选删除按钮）
+      // 确保有右侧容器（badge + 上下文滑杆按钮 + 可选删除按钮）
       let rightSpan = existingOption.querySelector('.model-option-right');
       if (!rightSpan) {
         rightSpan = document.createElement('span');
@@ -62,6 +107,7 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
         // 把旧结构中散落的 badge 移入右侧容器
         const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
         if (oldBadge) rightSpan.appendChild(oldBadge);
+        rightSpan.appendChild(buildCtxSetButton());
         let deleteBtn = existingOption.querySelector(':scope > .delete-model-btn');
         if (!deleteBtn) {
           deleteBtn = document.createElement('button');
@@ -73,18 +119,15 @@ export function addCustomModelToDropdown(modelName, contextWindow) {
         deleteBtn.style.display = 'inline-block';
         rightSpan.appendChild(deleteBtn);
         existingOption.appendChild(rightSpan);
+      } else if (!rightSpan.querySelector('.ctx-set-btn')) {
+        // 旧结构补齐：滑杆按钮插入在删除按钮之前
+        const deleteBtn = rightSpan.querySelector('.delete-model-btn');
+        if (deleteBtn) rightSpan.insertBefore(buildCtxSetButton(), deleteBtn);
+        else rightSpan.appendChild(buildCtxSetButton());
       }
 
-      // 更新 badge
-      const badge = rightSpan.querySelector('.model-ctx-badge');
-      if (badge) {
-        badge.textContent = formatContextWindow(contextWindow);
-      } else {
-        const newBadge = document.createElement('span');
-        newBadge.className = 'model-ctx-badge';
-        newBadge.textContent = formatContextWindow(contextWindow);
-        rightSpan.insertBefore(newBadge, rightSpan.firstChild);
-      }
+      // 更新 badge（统一入口：自动态/显式态样式口径一致）
+      syncCtxBadge(existingOption, contextWindow);
 
       saveCustomModels();
     }
@@ -122,23 +165,19 @@ export function buildModelOption(modelName, contextWindow = 0) {
   nameSpan.textContent = modelName;
   option.appendChild(nameSpan);
 
-  // 右侧容器：badge + 删除按钮
-   const rightSpan = document.createElement('span');
-   rightSpan.className = 'model-option-right';
-   if (contextWindow && contextWindow > 0) {
-     const ctxBadge = document.createElement('span');
-     ctxBadge.className = 'model-ctx-badge';
-     ctxBadge.textContent = formatContextWindow(contextWindow);
-     rightSpan.appendChild(ctxBadge);
-   }
-   const deleteBtn = document.createElement('button');
-   deleteBtn.type = 'button';
-   deleteBtn.className = 'delete-model-btn';
-   deleteBtn.title = t('settings.deleteModel');
-   deleteBtn.innerHTML = '×';
-   deleteBtn.style.display = 'inline-block';
-   rightSpan.appendChild(deleteBtn);
-   option.appendChild(rightSpan);
+  // 右侧容器：badge + 上下文滑杆按钮 + 删除按钮（badge 始终存在，自动态为灰色虚线推断值）
+  const rightSpan = document.createElement('span');
+  rightSpan.className = 'model-option-right';
+  rightSpan.appendChild(buildCtxSetButton());
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'delete-model-btn';
+  deleteBtn.title = t('settings.deleteModel');
+  deleteBtn.innerHTML = '×';
+  deleteBtn.style.display = 'inline-block';
+  rightSpan.appendChild(deleteBtn);
+  option.appendChild(rightSpan);
+  syncCtxBadge(option, contextWindow || 0);
 
   return option;
 }
@@ -191,6 +230,7 @@ export function filterModelDropdown(dropdown, query) {
 
 // 从下拉列表移除模型（删除后立即同步存储与当前厂商配置）
 export function removeCustomModel(modelName) {
+  closeCtxPopover();
   const modelDropdown = document.getElementById('modelDropdown');
   const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
   if (option) {
@@ -209,19 +249,6 @@ export function removeCustomModel(modelName) {
 
   // 更新存储（并同步到当前厂商配置）
   saveCustomModels();
-}
-
-/**
- * 格式化上下文窗口大小显示（如 128000 → "128K"）
- */
-function formatContextWindow(tokens) {
-  if (tokens >= 1000000) {
-    return Math.round(tokens / 1000000 * 10) / 10 + 'M';
-  }
-  if (tokens >= 1000) {
-    return Math.round(tokens / 1000) + 'K';
-  }
-  return String(tokens);
 }
 
 // 快照当前模型下拉中的完整模型列表
@@ -262,6 +289,8 @@ export function loadCustomModels(callback) {
 export function renderModelDropdownFromList(models, selectedValue) {
   const modelDropdown = document.getElementById('modelDropdown');
   if (!modelDropdown) return;
+  // 列表重建后原锚点失效，防御性关闭浮层
+  closeCtxPopover();
   modelDropdown.innerHTML = '';
   // 展示副本按名称排序（不影响存储顺序）
   const sorted = [...(models || [])].sort((a, b) => compareByName(a?.name, b?.name));
@@ -317,6 +346,40 @@ export function updateSelectedCtxBadge(inputId, badgeId, dropdownId) {
   }
 }
 
+/**
+ * 应用上下文窗口到指定模型选项（仅更新 DOM 与 dataset，不持久化）
+ * tokens = 0 时恢复自动推断：徽标切回灰色虚线推断值，清除 dataset（预设模型同时清除 isCustom 标记）
+ * @param {HTMLElement} optionEl
+ * @param {number} tokens
+ */
+export function applyModelContextWindow(optionEl, tokens) {
+  if (!optionEl) return;
+  const rightSpan = optionEl.querySelector('.model-option-right');
+  if (!rightSpan) return;
+  const value = Number(tokens) || 0;
+  const isPreset = PRESET_MODELS.includes(optionEl.dataset.value);
+
+  if (value > 0) {
+    optionEl.dataset.contextWindow = String(value);
+    if (isPreset) optionEl.dataset.isCustom = 'true';
+  } else {
+    delete optionEl.dataset.contextWindow;
+    if (isPreset) delete optionEl.dataset.isCustom;
+  }
+  syncCtxBadge(optionEl, value);
+}
+
+/**
+ * 提交上下文窗口变更：更新 DOM + 立即持久化（与增删模型一致），并刷新选中徽标
+ * @param {HTMLElement} optionEl
+ * @param {number} tokens
+ */
+export function commitModelContextWindow(optionEl, tokens) {
+  applyModelContextWindow(optionEl, tokens);
+  saveCustomModels();
+  updateSelectedCtxBadge('modelInput', 'modelSelectedCtxBadge', 'modelDropdown');
+}
+
 // ============================================================
 // 图片识别模型管理（所有模型均可删除，包括预设）
 // ============================================================
@@ -336,28 +399,29 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
       let leftSpan = existingOption.querySelector('.model-option-left');
       if (!leftSpan) { migrateOptionLeft(existingOption); leftSpan = existingOption.querySelector('.model-option-left'); }
 
-      // 右侧容器
+      // 右侧容器（badge + 上下文滑杆按钮 + 删除按钮）
       let rightSpan = existingOption.querySelector('.model-option-right');
       if (!rightSpan) {
         rightSpan = document.createElement('span');
         rightSpan.className = 'model-option-right';
         const oldBadge = existingOption.querySelector(':scope > .model-ctx-badge');
         if (oldBadge) rightSpan.appendChild(oldBadge);
+        rightSpan.appendChild(buildCtxSetButton());
         // 图片模型都是自定义，保留已有删除按钮
         const oldDelete = existingOption.querySelector(':scope > .delete-model-btn');
         if (oldDelete) rightSpan.appendChild(oldDelete);
         existingOption.appendChild(rightSpan);
+      } else if (!rightSpan.querySelector('.ctx-set-btn')) {
+        // 旧结构补齐：滑杆按钮插入在删除按钮之前
+        const deleteBtn = rightSpan.querySelector('.delete-model-btn');
+        if (deleteBtn) rightSpan.insertBefore(buildCtxSetButton(), deleteBtn);
+        else rightSpan.appendChild(buildCtxSetButton());
       }
 
-      const badge = rightSpan.querySelector('.model-ctx-badge');
-      if (badge) {
-        badge.textContent = formatContextWindow(contextWindow);
-      } else {
-        const newBadge = document.createElement('span');
-        newBadge.className = 'model-ctx-badge';
-        newBadge.textContent = formatContextWindow(contextWindow);
-        rightSpan.insertBefore(newBadge, rightSpan.firstChild);
-      }
+      // 更新 badge（统一入口：自动态/显式态样式口径一致）
+      syncCtxBadge(existingOption, contextWindow);
+      // 持久化更新（与主模型 addCustomModelToDropdown 行为对齐）
+      saveImageModels();
     }
     return;
   }
@@ -374,15 +438,10 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   nameSpan.textContent = modelName;
   option.appendChild(nameSpan);
 
-  // 右侧容器：badge + 删除按钮
+  // 右侧容器：badge + 上下文滑杆按钮 + 删除按钮（badge 始终存在，自动态为灰色虚线推断值）
   const rightSpan = document.createElement('span');
   rightSpan.className = 'model-option-right';
-  if (contextWindow && contextWindow > 0) {
-    const ctxBadge = document.createElement('span');
-    ctxBadge.className = 'model-ctx-badge';
-    ctxBadge.textContent = formatContextWindow(contextWindow);
-    rightSpan.appendChild(ctxBadge);
-  }
+  rightSpan.appendChild(buildCtxSetButton());
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
   deleteBtn.className = 'delete-model-btn';
@@ -392,6 +451,7 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
   deleteBtn.style.display = 'inline-block';
   rightSpan.appendChild(deleteBtn);
   option.appendChild(rightSpan);
+  syncCtxBadge(option, contextWindow || 0);
 
   insertModelOptionSorted(modelDropdown, option, modelName);
   saveImageModels();
@@ -399,6 +459,8 @@ export function addCustomImageModelToDropdown(modelName, contextWindow) {
 
 // 从下拉列表移除图片识别模型（包括预设）
 export function removeImageModel(modelName) {
+  // 删除后原锚点失效，防御性关闭浮层
+  closeCtxPopover();
   const modelDropdown = document.getElementById('imageModelDropdown');
   if (!modelDropdown) return;
   const option = modelDropdown.querySelector(`.model-option[data-value="${modelName}"]`);
@@ -435,6 +497,17 @@ export function saveImageModels() {
   });
 }
 
+/**
+ * 提交图片模型上下文窗口变更：更新 DOM + 立即持久化（与增删图片模型一致），并刷新选中徽标
+ * @param {HTMLElement} optionEl
+ * @param {number} tokens
+ */
+export function commitImageModelContextWindow(optionEl, tokens) {
+  applyModelContextWindow(optionEl, tokens);
+  saveImageModels();
+  updateSelectedCtxBadge('imageModelInput', 'imageModelSelectedCtxBadge', 'imageModelDropdown');
+}
+
 // 从存储加载图片识别模型到下拉列表
 export function loadImageModels(callback) {
   chrome.storage.local.get(['imageModels'], (result) => {
@@ -446,6 +519,8 @@ export function loadImageModels(callback) {
     const imageModels = result.imageModels || [];
     let needsMigration = false;
 
+    // 列表重建后原锚点失效，防御性关闭浮层
+    closeCtxPopover();
     // 清空现有选项
     modelDropdown.innerHTML = '';
 
@@ -477,15 +552,10 @@ export function loadImageModels(callback) {
       nameSpan.textContent = modelName;
       option.appendChild(nameSpan);
 
-      // 右侧容器：badge + 删除按钮
+      // 右侧容器：badge + 上下文滑杆按钮 + 删除按钮（badge 始终存在，自动态为灰色虚线推断值）
       const rightSpan = document.createElement('span');
       rightSpan.className = 'model-option-right';
-      if (contextWindow && contextWindow > 0) {
-        const ctxBadge = document.createElement('span');
-        ctxBadge.className = 'model-ctx-badge';
-        ctxBadge.textContent = formatContextWindow(contextWindow);
-        rightSpan.appendChild(ctxBadge);
-      }
+      rightSpan.appendChild(buildCtxSetButton());
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'delete-model-btn';
@@ -494,6 +564,7 @@ export function loadImageModels(callback) {
       deleteBtn.style.display = 'inline-block';
       rightSpan.appendChild(deleteBtn);
       option.appendChild(rightSpan);
+      syncCtxBadge(option, contextWindow || 0);
 
       modelDropdown.appendChild(option);
     });

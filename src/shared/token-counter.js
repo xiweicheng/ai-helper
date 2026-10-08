@@ -342,6 +342,31 @@ export const MODEL_CONTEXT_WINDOWS = {
 };
 
 /**
+ * 推断模型的内置上下文窗口（自动态，= getContextWindow 第 3 优先级）：
+ * 查内置映射，未收录回退 default；供滑杆浮层与下拉徽标共用，保证口径一致
+ * @param {string} modelName
+ * @returns {number}
+ */
+export function inferContextWindow(modelName) {
+  return MODEL_CONTEXT_WINDOWS[modelName] || MODEL_CONTEXT_WINDOWS.default;
+}
+
+/**
+ * 格式化上下文窗口大小显示（如 128000 → "128K"、1000000 → "1M"）
+ * @param {number} tokens
+ * @returns {string}
+ */
+export function formatContextWindow(tokens) {
+  if (tokens >= 1000000) {
+    return Math.round(tokens / 1000000 * 10) / 10 + 'M';
+  }
+  if (tokens >= 1000) {
+    return Math.round(tokens / 1000) + 'K';
+  }
+  return String(tokens);
+}
+
+/**
  * 标准化自定义模型配置数组，向前兼容旧格式（string[] → object[]）
  * @param {Array<string|{name: string, contextWindow?: number}>} customModels
  * @returns {Map<string, number>} modelName → contextWindow 的映射

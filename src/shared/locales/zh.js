@@ -129,6 +129,11 @@ export default {
     saveFailed: '保存失败：{message}',
     saveSuccess: '配置已保存成功！',
     deleteModel: '删除此模型',
+    ctxSliderIconTitle: '设置该模型的上下文窗口',
+    ctxSliderAuto: '自动',
+    ctxSliderAutoTitle: '恢复自动推断',
+    ctxBadgeAutoTip: '自动推断（未手动设置）',
+    ctxSliderResetAuto: '恢复自动',
     deleteApiBase: '删除此地址',
     // 厂商配置（多配置记忆与快速切换）
     providerConfig: '厂商配置',

@@ -1,7 +1,8 @@
 // options/index.js - 选项页面入口
 
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, filterModelDropdown, showStatus, showToast } from './config-manager.js';
-import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast } from './config-manager.js';
+import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
+import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection, commitImageModelContextWindow } from './config-manager.js';
 import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
 import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
 import { getDefaultSystemPrompt } from './constants.js';
@@ -232,6 +233,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // 输入时实时过滤下拉选项（输入框即搜索框）
   modelInput.addEventListener('input', function() {
+    closeCtxPopover();
     modelDropdown.classList.add('show');
     filterModelDropdown(modelDropdown, this.value);
   });
@@ -250,9 +252,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       removeCustomModel(value);
       return;
     }
+    // 上下文窗口滑杆入口：弹出浮层（不触发模型选中）
+    const ctxBtn = e.target.closest('.ctx-set-btn');
+    if (ctxBtn) {
+      e.stopPropagation();
+      const option = e.target.closest('.model-option');
+      if (option) {
+        openCtxPopover(ctxBtn, option, {
+          onPreview: (tokens) => {
+            applyModelContextWindow(option, tokens);
+            updateSelectedCtxBadge('modelInput', 'modelSelectedCtxBadge', 'modelDropdown');
+          },
+          onCommit: (tokens) => commitModelContextWindow(option, tokens),
+          onReset: () => commitModelContextWindow(option, 0),
+        });
+      }
+      return;
+    }
     const option = e.target.closest('.model-option');
     if (option) {
       e.stopPropagation();
+      closeCtxPopover();
       const value = option.dataset.value;
       setCurrentModel(value);
       modelInput.value = value;
@@ -262,7 +282,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   
   document.addEventListener('click', function(e) {
-    if (!modelDropdown.contains(e.target) && e.target !== modelInput) {
+    if (!modelDropdown.contains(e.target) && e.target !== modelInput && !containsCtxPopoverEl(e.target)) {
       modelDropdown.classList.remove('show');
     }
   });
@@ -364,6 +384,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // 输入时实时过滤下拉选项（输入框即搜索框）
     imageModelInput.addEventListener('input', function() {
+      closeCtxPopover();
       imageModelDropdown.classList.add('show');
       filterModelDropdown(imageModelDropdown, this.value);
     });
@@ -382,9 +403,27 @@ document.addEventListener('DOMContentLoaded', async function() {
         removeImageModel(value);
         return;
       }
+      // 上下文窗口滑杆入口：弹出浮层（不触发模型选中）
+      const ctxBtn = e.target.closest('.ctx-set-btn');
+      if (ctxBtn) {
+        e.stopPropagation();
+        const option = e.target.closest('.model-option');
+        if (option) {
+          openCtxPopover(ctxBtn, option, {
+            onPreview: (tokens) => {
+              applyModelContextWindow(option, tokens);
+              updateSelectedCtxBadge('imageModelInput', 'imageModelSelectedCtxBadge', 'imageModelDropdown');
+            },
+            onCommit: (tokens) => commitImageModelContextWindow(option, tokens),
+            onReset: () => commitImageModelContextWindow(option, 0),
+          });
+        }
+        return;
+      }
       const option = e.target.closest('.model-option');
       if (option) {
         e.stopPropagation();
+        closeCtxPopover();
         const value = option.dataset.value;
         setCurrentImageModel(value);
         imageModelInput.value = value;
@@ -394,7 +433,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     document.addEventListener('click', function(e) {
-      if (!imageModelDropdown.contains(e.target) && e.target !== imageModelInput) {
+      if (!imageModelDropdown.contains(e.target) && e.target !== imageModelInput && !containsCtxPopoverEl(e.target)) {
         imageModelDropdown.classList.remove('show');
       }
     });

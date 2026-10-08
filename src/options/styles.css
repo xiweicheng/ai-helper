@@ -514,11 +514,174 @@ textarea {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* 自动态徽标：灰色虚线弱化，与显式值的蓝色实底区分（padding 与 1px 边框合计保持与实底同尺寸） */
+.model-option .model-ctx-badge.is-auto {
+  background: #f2f3f5;
+  border: 1px dashed #c0c4cc;
+  color: #999;
+  padding: 0 5px;
+}
 .model-option-right {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+/* 上下文窗口设置按钮（选项行右侧，位于徽标与删除按钮之间） */
+.model-option .ctx-set-btn {
+  background: none;
+  border: none;
+  color: #9aa3b2;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.75;
+  transition: opacity 0.2s, color 0.2s;
+}
+.model-option .ctx-set-btn svg {
+  display: block;
+  pointer-events: none;
+}
+.model-option .ctx-set-btn:hover {
+  opacity: 1;
+  color: #667eea;
+}
+.model-option .ctx-set-btn:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* 上下文窗口滑杆浮层（挂 body + fixed 定位，避免被下拉容器 overflow 裁切） */
+.ctx-popover {
+  position: fixed;
+  z-index: 1200;
+  width: 240px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.ctx-popover-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ctx-popover-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #666;
+}
+.ctx-popover-auto-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+.ctx-popover-auto-btn:hover {
+  background: #f0f4ff;
+}
+.ctx-popover-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.ctx-popover-value {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: #667eea;
+}
+.ctx-popover-value.is-auto {
+  color: #999;
+}
+.ctx-popover-auto-tag {
+  font-size: 11px;
+  color: #999;
+  background: #f2f3f5;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.ctx-popover-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  --ctx-fill: 0%;
+}
+.ctx-popover-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, #667eea 0%, #667eea var(--ctx-fill), #e8f0fe var(--ctx-fill), #e8f0fe 100%);
+}
+.ctx-popover-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #667eea;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+}
+.ctx-popover-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+.ctx-popover-slider:focus-visible {
+  outline: 2px solid rgba(102, 126, 234, 0.4);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+/* 刻度点行：margin 内缩 = thumb 半径 7px − 点半径 1.5px，使点中心与 thumb 中心轨迹严格对齐 */
+.ctx-popover-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 6px;
+  margin: 2px 5.5px 0;
+  pointer-events: none;
+}
+.ctx-popover-scale-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #d3d8e4;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.ctx-popover-scale-dot.is-active {
+  background: #667eea;
+  transform: scale(1.6);
+}
+.ctx-popover-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: #9aa3b2;
+  pointer-events: none;
 }
 .model-option-right .model-ctx-badge {
   margin-left: 0;
