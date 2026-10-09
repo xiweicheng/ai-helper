@@ -165,6 +165,30 @@ let _homeDir = null;
 let _agentConfig = null;
 
 /**
+ * 代理不可达判定：浏览器 fetch 网络失败文案跨浏览器不同
+ * （Chrome "Failed to fetch" / Safari "Load failed" / Firefox "NetworkError..."）
+ */
+function isAgentUnreachableError(err) {
+  if (err instanceof TypeError) return true;
+  const lower = String((err && err.message) || '').toLowerCase();
+  return lower.includes('failed to fetch') || lower.includes('load failed') || lower.includes('networkerror');
+}
+
+/**
+ * 探测型请求（工作目录/家目录/状态详情）失败处理：
+ * 代理未连接/不可达属可预期状态（加号菜单可见性、@选择器等会高频探测触发），
+ * 降为 debug 避免控制台噪音；其他异常（如响应解析错误）保留 warn 便于诊断。
+ */
+function logProbeFailure(scope, err) {
+  const detail = err && err.message;
+  if (isAgentUnreachableError(err)) {
+    logger.debug(`[WorkspaceManager] ${scope} skipped (agent unreachable):`, detail);
+  } else {
+    logger.warn(`[WorkspaceManager] ${scope} failed:`, detail);
+  }
+}
+
+/**
  * 获取 Agent 连接配置
  */
 export async function getAgentConfig() {
@@ -203,7 +227,7 @@ export async function getWorkspaceRoot() {
       }
     }
   } catch (err) {
-    logger.warn('[WorkspaceManager] get workingdirectory failed:', err.message);
+    logProbeFailure('get workingdirectory', err);
   }
   return null;
 }
@@ -228,7 +252,7 @@ export async function getHomeDir() {
       }
     }
   } catch (err) {
-    logger.warn('[WorkspaceManager] get homedir failed:', err.message);
+    logProbeFailure('get homedir', err);
   }
   return null;
 }
@@ -259,7 +283,7 @@ export async function getAgentStatusDetail() {
       if (data.success) return data;
     }
   } catch (err) {
-    logger.warn('[WorkspaceManager] get statusdetailcase failed:', err.message);
+    logProbeFailure('get statusdetailcase', err);
   }
   return null;
 }
