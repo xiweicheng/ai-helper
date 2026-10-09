@@ -507,7 +507,6 @@ export default {
     addMenuScreenshotRegion: 'Area capture',
     addMenuScreenshotRegionDesc: 'Drag to select an area on the page',
     addMenuFile: 'Attachment',
-    addMenuPromptHint: 'Ctrl+click → Pages',
     addMenuSwitches: 'Toggles',
   },
 

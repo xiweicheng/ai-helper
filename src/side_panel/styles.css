@@ -1144,7 +1144,8 @@ body {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
-  min-width: 210px;
+  /* 紧凑宽度：内容最长项为「工作目录」≈130px，160px 留弹性不再随内容变宽 */
+  min-width: 160px;
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 12px;
@@ -1172,12 +1173,6 @@ body {
 }
 .input-add-item svg {
   flex-shrink: 0;
-}
-.input-add-item .add-item-hint {
-  margin-left: auto;
-  font-size: 10px;
-  color: #999;
-  white-space: nowrap;
 }
 .input-add-divider {
   height: 1px;

@@ -8,6 +8,7 @@
 //      工作目录仅列根目录一层（本地过滤），深层递归搜索仍走点击一级项打开的 $ 弹窗通道；
 //   2) 搜索过滤：本地即时过滤（code/content、name/description、serverName/serverId、title/url、
 //      知识库 name/description、助手名/描述、代理名/url、文件/目录名）；
+//      截图动作类无搜索需求（仅两个固定动作），该类别下隐藏搜索框；
 //      搜索框内置一键清除按钮（清空 + 恢复全量 + 回焦搜索框）；搜索框右侧为管理入口「＋」
 //      （对齐旧弹窗 ✚ 惯例：提示词打开管理模态框、技能/MCP 跳设置页 toolbox、知识库跳
 //      knowledge、助手打开新建/编辑、代理跳 agent；网页与工作目录无管理页则隐藏入口；
@@ -64,6 +65,7 @@ registerTranslations('en', {
 let panelEl = null;
 let searchEl = null;
 let clearEl = null;
+let searchWrapEl = null;
 let manageEl = null;
 let listEl = null;
 let activeCategory = null;
@@ -76,6 +78,8 @@ const SCREENSHOT_ACTIONS = [
   { action: 'full', icon: '📷', nameKey: 'input.addMenuScreenshotFull', descKey: 'input.addMenuScreenshotFullDesc' },
   { action: 'region', icon: '✂️', nameKey: 'input.addMenuScreenshotRegion', descKey: 'input.addMenuScreenshotRegionDesc' },
 ];
+// 无搜索需求的类别：截图动作类仅两个固定动作，隐藏搜索框
+const SEARCHLESS_CATEGORIES = new Set(['screenshot']);
 
 // 面板管理入口：对齐旧弹窗 ✚ 惯例的动作映射（网页/工作目录无管理页 → 隐藏入口）
 const MANAGE_ACTIONS = {
@@ -105,12 +109,19 @@ function syncManageButton() {
   manageEl.style.display = 'flex';
 }
 
+// 搜索框可见性：无搜索需求的类别（截图动作类）隐藏搜索框
+function syncSearchVisibility() {
+  if (!searchWrapEl) return;
+  searchWrapEl.style.display = SEARCHLESS_CATEGORIES.has(activeCategory) ? 'none' : '';
+}
+
 export function initInputAddPanel(options = {}) {
   onRequestClose = typeof options.onRequestClose === 'function' ? options.onRequestClose : () => {};
   panelEl = document.getElementById('inputAddPanel');
   searchEl = document.getElementById('inputAddPanelSearch');
   clearEl = document.getElementById('inputAddPanelSearchClear');
   manageEl = document.getElementById('inputAddPanelManage');
+  searchWrapEl = document.getElementById('inputAddPanelSearchWrap');
   listEl = document.getElementById('inputAddPanelList');
   if (!panelEl || !searchEl || !listEl) return;
   if (manageEl) {
@@ -162,6 +173,7 @@ export async function openCategoryPanel(category) {
 
   activeCategory = category;
   syncManageButton();
+  syncSearchVisibility();
   if (searchEl) {
     searchEl.value = '';
     searchEl.placeholder = t('input.addMenuPanelSearchPlaceholder');
@@ -187,6 +199,7 @@ export async function openCategoryPanel(category) {
 export function closeCategoryPanel() {
   activeCategory = null;
   syncManageButton(); // 收起时隐藏管理入口
+  syncSearchVisibility(); // 恢复搜索框默认显示
   dataset = [];
   loadSeq++; // 作废在途请求
   if (searchEl) {

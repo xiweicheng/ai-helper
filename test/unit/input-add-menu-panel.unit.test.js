@@ -148,7 +148,7 @@ function setupDom() {
   document.body.innerHTML = `
     <textarea id="userInput"></textarea>
     <div class="input-add-panel" id="inputAddPanel" style="display:none;">
-      <div class="input-add-panel-search-wrap">
+      <div class="input-add-panel-search-wrap" id="inputAddPanelSearchWrap">
         <input id="inputAddPanelSearch" type="text">
         <button class="input-add-panel-search-clear" id="inputAddPanelSearchClear" type="button" style="display:none;"></button>
         <button class="input-add-panel-manage" id="inputAddPanelManage" type="button" style="display:none;"></button>
@@ -159,6 +159,7 @@ function setupDom() {
   initInputAddPanel({ onRequestClose: closeSpy });
   return {
     panel: document.getElementById('inputAddPanel'),
+    searchWrap: document.getElementById('inputAddPanelSearchWrap'),
     search: document.getElementById('inputAddPanelSearch'),
     clear: document.getElementById('inputAddPanelSearchClear'),
     manage: document.getElementById('inputAddPanelManage'),
@@ -675,5 +676,18 @@ describe('截图面板（整页/区域）', () => {
   it('无管理界面：搜索框右侧管理 ＋ 隐藏', async () => {
     await openCategoryPanel('screenshot');
     expect(dom.manage.style.display).toBe('none');
+  });
+
+  it('无搜索需求：该类别隐藏搜索框，切到其他类别/收起后恢复', async () => {
+    await openCategoryPanel('screenshot');
+    expect(dom.searchWrap.style.display).toBe('none');
+
+    await openCategoryPanel('skills');
+    expect(dom.searchWrap.style.display).toBe('');
+
+    await openCategoryPanel('screenshot');
+    expect(dom.searchWrap.style.display).toBe('none');
+    closeCategoryPanel();
+    expect(dom.searchWrap.style.display).toBe('');
   });
 });

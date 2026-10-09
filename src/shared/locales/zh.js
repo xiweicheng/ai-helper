@@ -507,7 +507,6 @@ export default {
     addMenuScreenshotRegion: '区域截图',
     addMenuScreenshotRegionDesc: '拖拽框选页面区域',
     addMenuFile: '附件',
-    addMenuPromptHint: 'Ctrl+单击 → 网页',
     addMenuSwitches: '开关',
   },
 
