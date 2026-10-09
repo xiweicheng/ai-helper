@@ -255,8 +255,9 @@ function clearSlashTriggerText() {
  * 多选时保持下拉框打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  * @param {string} skillName - 技能名称
  * @param {Array} skills - 技能列表（用于查找完整信息）
+ * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
  */
-export function selectSkill(skillName, skills) {
+export function selectSkill(skillName, skills, { clearTrigger = true } = {}) {
   const skill = skills.find(s => s.name === skillName);
   if (!skill) return;
 
@@ -278,8 +279,18 @@ export function selectSkill(skillName, skills) {
   refreshSkillPickedState();
   renderSkillIndicator();
 
-  // 清除输入框中的 / 触发文本（含过滤关键字）
-  clearSlashTriggerText();
+  if (clearTrigger) {
+    // 弹窗场景：清除输入框中的 / 触发文本（含过滤关键字）
+    clearSlashTriggerText();
+  } else {
+    // 菜单面板场景：输入框中的 "/" 可能属于正文，不截断，仅保持回焦习惯
+    const userInput = document.getElementById('userInput');
+    if (userInput) {
+      userInput.focus();
+      userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+    }
+    adjustInputHeight();
+  }
 
   logger.debug('[SidePanel] skill toggled:', skill.name, 'count:', state.selectedSkills.length);
 }
@@ -661,8 +672,12 @@ export function updateMcpSelection(items) {
 /**
  * 选中/取消 MCP 服务 - 多选（再次选择同一服务为移除），更新指示器 chips
  * 多选时保持下拉框打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
+ * @param {string} serverId - 服务 ID
+ * @param {string} serverName - 服务名称
+ * @param {Array} services - 服务列表（用于查找 toolCount）
+ * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
  */
-export function selectMcpService(serverId, serverName, services) {
+export function selectMcpService(serverId, serverName, services, { clearTrigger = true } = {}) {
   const svc = services?.find(s => s.serverId === serverId);
   const toolCount = svc?.toolCount || 0;
   const name = serverName || serverId;
@@ -682,8 +697,18 @@ export function selectMcpService(serverId, serverName, services) {
   refreshMcpPickedState();
   renderMcpIndicator();
 
-  // 清除输入框中的 / 触发文本（含过滤关键字）
-  clearSlashTriggerText();
+  if (clearTrigger) {
+    // 弹窗场景：清除输入框中的 / 触发文本（含过滤关键字）
+    clearSlashTriggerText();
+  } else {
+    // 菜单面板场景：输入框中的 "/" 可能属于正文，不截断，仅保持回焦习惯
+    const userInput = document.getElementById('userInput');
+    if (userInput) {
+      userInput.focus();
+      userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+    }
+    adjustInputHeight();
+  }
 
   logger.debug('[SidePanel] MCP service toggled:', name, 'count:', state.selectedMcpServices.length);
 }

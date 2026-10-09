@@ -567,8 +567,10 @@ export function selectPromptByCode(code) {
 
 /**
  * 通过编码插入提示词到输入框（Ctrl+Enter）
+ * @param {string} code - 提示词编码
+ * @param {{skipTriggerStrip?: boolean}} [options] - skipTriggerStrip=true 时保留输入框全文（菜单面板场景，不按 / 截断）
  */
-export function insertPromptToInputByCode(code) {
+export function insertPromptToInputByCode(code, { skipTriggerStrip = false } = {}) {
   const prompt = state.customPrompts.find(p => p.code === code);
   if (!prompt) return;
 
@@ -579,7 +581,7 @@ export function insertPromptToInputByCode(code) {
   const lastSlashIndex = value.lastIndexOf('/');
 
   let baseContent = value;
-  if (lastSlashIndex !== -1) {
+  if (!skipTriggerStrip && lastSlashIndex !== -1) {
     // 找到 / 前面的最后一个换行符的位置
     let lineStart = -1;
     for (let i = lastSlashIndex - 1; i >= 0; i--) {

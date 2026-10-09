@@ -167,6 +167,14 @@ describe('selectSkill 多选 toggle 与 chips 指示器', () => {
     selector.selectSkill('技能B', SKILLS);
     expect(document.querySelector('.merged-skill-item[data-skill-name="技能B"]').classList.contains('picked')).toBe(true);
   });
+
+  test('clearTrigger:false 时不截断输入框中的 "/" 正文，仅回焦', () => {
+    const input = document.getElementById('userInput');
+    input.value = '看这个 https://a.com/b 页面';
+    selector.selectSkill('技能A', SKILLS, { clearTrigger: false });
+    expect(input.value).toBe('看这个 https://a.com/b 页面'); // 未被截断
+    expect(document.activeElement).toBe(input); // 仍回焦
+  });
 });
 
 describe('selectMcpService 多选 toggle 与 chips 指示器', () => {
@@ -200,6 +208,14 @@ describe('selectMcpService 多选 toggle 与 chips 指示器', () => {
     selector.selectMcpService('srv-y', '服务Y', SERVICES);
     expect(document.querySelector('.merged-mcp-item[data-server-name="服务Y"]').classList.contains('picked')).toBe(true);
     expect(document.querySelector('.mcp-list-item[data-server-name="服务X"]').classList.contains('picked')).toBe(false);
+  });
+
+  test('clearTrigger:false 时不截断输入框中的 "/" 正文，仅回焦', () => {
+    const input = document.getElementById('userInput');
+    input.value = '路径 src/side_panel 分析';
+    selector.selectMcpService('srv-x', '服务X', SERVICES, { clearTrigger: false });
+    expect(input.value).toBe('路径 src/side_panel 分析');
+    expect(document.activeElement).toBe(input);
   });
 });
 
@@ -316,5 +332,14 @@ describe('Ctrl/Cmd+点击单选并关闭（技能/MCP）', () => {
     item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(state.selectedMcpServices.map(s => s.serverName)).toEqual(['服务Y']);
     expect(document.getElementById('promptSelector').style.display).not.toBe('none');
+  });
+});
+
+describe('默认行为回归（弹窗侧不受签名扩展影响）', () => {
+  test('selectSkill 默认仍截断最后一个 "/" 之后文本', () => {
+    const input = document.getElementById('userInput');
+    input.value = '前缀/过滤词';
+    selector.selectSkill('技能A', SKILLS);
+    expect(input.value).toBe('前缀');
   });
 });
