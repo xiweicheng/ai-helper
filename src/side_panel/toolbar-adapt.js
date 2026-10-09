@@ -1,34 +1,41 @@
-// side_panel/toolbar-adapt.js - 输入工具栏溢出探测自适应
+// side_panel/toolbar-adapt.js - 输入底行溢出探测自适应
 //
-// 空间不足时逐级降级以避免元素被裁剪：① 隐藏温度数字 ② 折叠助手名称为 emoji
-// （固定断点无法适配英文文案 / 自定义长名的多语言场景）。
+// 空间不足时逐级降级以避免元素被裁剪：
+//   ① temp-collapsed    温度数字隐藏（仅留图标）
+//   ② agent-collapsed   助手名折叠为 emoji
+//   ③ switches-icon     记忆/工具/划词 图标化
+//   ④ selection-in-menu 划词开关整组移入 "+" 菜单（兜底）
+// 采用实测而非固定断点，适配英文文案 / 自定义长名的多语言场景。
 //
-// 两个关键约束：
-//   1) 测量必须排除打开的绝对定位浮层（助手选择器 / 模型设置等）——浮层按设计可
-//      探出工具栏边界，计入 scrollWidth 会被误判为布局空间不足而误折叠文案；
-//   2) 临时隐藏再恢复浮层会让其 CSS 关键帧入场动画（dropdownFadeIn）从头重播：
-//      读取 scrollWidth 强制样式重算时 display:none 已生效（动画被取消），
-//      恢复后动画从第 0 帧重新计时，下一帧渲染出近全透明状态（弹框"闪一下"）。
-//      因此恢复显示后立即把重播动画快进到终态，同一帧内消化，用户不可见。
+// 三个关键约束：
+//   1) 测量必须排除打开的绝对定位浮层（助手选择器 / 模型设置 / "+" 菜单等）——
+//      浮层按设计可探出底行边界，计入 scrollWidth 会被误判为空间不足而误折叠；
+//   2) 临时隐藏再恢复浮层会让其 CSS 关键帧入场动画（dropdownFadeIn）从头
+//      重播：读取 scrollWidth 强制样式重算时 display:none 已生效（动画被取消），
+//      恢复后动画从第 0 帧重新计时，下一帧渲染出近全透明状态（弹框“闪一下”）。
+//      因此恢复显示后立即把重播动画快进到终态，同一帧内消化，用户不可见；
+//   3) ④ 级把划词开关组真实移入 "+" 菜单（DOM 移动）会触发 MutationObserver——
+//      必须过滤“划词组自身被移动”的 mutation，否则每次移动都触发重测 → 再移动，
+//      形成死循环。事件监听绑定在元素自身（id 不变），DOM 移动不会丢失监听。
 
 let toolbarAdaptRafId = 0;
 
 /**
- * 判定节点是否位于工具栏内的绝对定位浮层中
- * （自身或任一祖先 computed position 为 absolute；toolbar 自身不算浮层）
+ * 判定节点是否位于底行内的绝对定位浮层中
+ * （自身或任一祖先 computed position 为 absolute；底行自身不算浮层）
  */
-export function isInsideOverlay(node, toolbar) {
+export function isInsideOverlay(node, bar) {
   const start = node && node.nodeType === 1 ? node : (node ? node.parentElement : null);
-  for (let el = start; el && el !== toolbar; el = el.parentElement) {
+  for (let el = start; el && el !== bar; el = el.parentElement) {
     if (getComputedStyle(el).position === 'absolute') return true;
   }
   return false;
 }
 
-/** 收集工具栏内可见的绝对定位浮层（测量前临时隐藏，恢复后需快进重播动画） */
-function collectOverlays(toolbar) {
+/** 收集底行内可见的绝对定位浮层（测量前临时隐藏，恢复后需快进重播动画） */
+function collectOverlays(bar) {
   const overlays = [];
-  toolbar.querySelectorAll('*').forEach((el) => {
+  bar.querySelectorAll('*').forEach((el) => {
     if (getComputedStyle(el).position === 'absolute' && el.getClientRects().length > 0) {
       overlays.push(el);
     }
@@ -54,13 +61,27 @@ function scheduleToolbarAdapt() {
   });
 }
 
-/** 输入工具栏溢出探测：空间不足时逐级降级以避免元素被裁剪 */
-export function adaptInputToolbar() {
-  const toolbar = document.querySelector('.input-toolbar');
-  const container = toolbar?.closest('.input-container') || null;
-  if (!toolbar || !container) return;
+/** ④ 级兜底：划词组移入 "+" 菜单开关区 */
+function moveSelectionGroupToMenu() {
+  const group = document.getElementById('selectionToggleGroup');
+  const target = document.getElementById('inputAddMenuSwitches');
+  if (group && target && group.parentElement !== target) target.appendChild(group);
+}
 
-  const overlays = collectOverlays(toolbar);
+/** 恢复完整布局：划词组归位底行左组（appendChild 到末尾与原始顺序一致） */
+function restoreSelectionGroup() {
+  const group = document.getElementById('selectionToggleGroup');
+  const left = document.querySelector('.input-bottom-left');
+  if (group && left && group.parentElement !== left) left.appendChild(group);
+}
+
+/** 输入底行溢出探测：空间不足时逐级降级以避免元素被裁剪 */
+export function adaptInputToolbar() {
+  const bar = document.querySelector('.input-bottom-row');
+  const container = bar?.closest('.input-container') || null;
+  if (!bar || !container) return;
+
+  const overlays = collectOverlays(bar);
   const overlayDisplays = overlays.map((el) => el.style.display);
   overlays.forEach((el) => { el.style.display = 'none'; });
   const restoreOverlays = () => {
@@ -69,27 +90,38 @@ export function adaptInputToolbar() {
   };
 
   // 先恢复完整状态再测量，保证空间恢复时能还原
-  container.classList.remove('temp-collapsed', 'agent-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
+  container.classList.remove('temp-collapsed', 'agent-collapsed', 'switches-icon', 'selection-in-menu');
+  restoreSelectionGroup();
+  if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
   container.classList.add('temp-collapsed');
-  if (toolbar.scrollWidth <= toolbar.clientWidth) { restoreOverlays(); return; }
+  if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
   container.classList.add('agent-collapsed');
+  if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
+  container.classList.add('switches-icon');
+  if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
+  container.classList.add('selection-in-menu');
+  moveSelectionGroupToMenu();
   restoreOverlays();
 }
 
-/** 初始化工具栏自适应：窗口缩放 / 工具栏内可见文字变化（语言切换、助手名与记忆标签更新）后重测 */
+/** 初始化底行自适应：窗口缩放 / 底行内可见文字变化（语言切换、助手名与记忆标签更新）后重测 */
 export function initToolbarAdaptive() {
   adaptInputToolbar();
   window.addEventListener('resize', scheduleToolbarAdapt);
-  const toolbar = document.querySelector('.input-toolbar');
-  if (toolbar && typeof MutationObserver !== 'undefined') {
+  const bar = document.querySelector('.input-bottom-row');
+  if (bar && typeof MutationObserver !== 'undefined') {
     new MutationObserver((mutations) => {
-      // 浮层内部变更不影响工具栏宽度（浮层为绝对定位覆盖层），且重测的隐藏-恢复
+      // 浮层内部变更不影响底行宽度（浮层为绝对定位覆盖层），且重测的隐藏-恢复
       // 会打断浮层动画（切厂商/模型更新列表文本即此场景），故直接跳过；
-      // 仅工具栏可见布局元素的变化才触发重测。
-      if (mutations.some((m) => !isInsideOverlay(m.target, toolbar))) {
+      // ④ 级移动划词组是适配器自身的职责（移动后随即重新测量），同样跳过；
+      // 仅底行可见布局元素的变化才触发重测。
+      const selectionGroup = document.getElementById('selectionToggleGroup');
+      const isSelectionGroupMove = (m) =>
+        !!selectionGroup
+        && ([...m.addedNodes, ...m.removedNodes].includes(selectionGroup));
+      if (mutations.some((m) => !isInsideOverlay(m.target, bar) && !isSelectionGroupMove(m))) {
         scheduleToolbarAdapt();
       }
-    }).observe(toolbar, { subtree: true, childList: true, characterData: true });
+    }).observe(bar, { subtree: true, childList: true, characterData: true });
   }
 }
