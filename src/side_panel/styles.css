@@ -1693,15 +1693,17 @@ body {
 .toggle-icon { display: none; }
 .input-container.switches-icon .input-bottom-left .check-toggle .tool-toggle-label { display: none; }
 .input-container.switches-icon .input-bottom-left .check-toggle .toggle-icon { display: inline; font-size: 13px; line-height: 1; }
-.input-container.switches-icon .tool-toggle-wrapper { padding: 0; border-radius: 8px; }
-.input-container.switches-icon .tool-toggle-wrapper .check-toggle { padding: 2px 7px; }
+.input-container.switches-icon .tool-toggle-wrapper { padding: 0; }
+/* 圆角继承基础 6px，与记忆/划词组保持一致，勿单独加大 */
+.input-container.switches-icon .tool-toggle-wrapper .check-toggle { padding: 2px 3px 2px 7px; }
 /* 图标态高度与记忆/划词组对齐（实测三组均 19px）：check-toggle 上下 padding 2px +
    config-btn 高度 17px，任一超出都会把工具组撑高，三组高度不齐 */
 .input-container.switches-icon .tool-toggle-wrapper .tool-config-btn {
   border-left: 1px solid rgba(102, 126, 234, 0.25);
   border-radius: 0;
   height: 17px;
-  padding: 0 6px;
+  /* 左 3px 配合 check-toggle 右 3px，收紧图标与数字间距（原左右各 6/7px，间隔 18px → 11px） */
+  padding: 0 6px 0 3px;
 }
 .input-container.switches-icon .memory-limit-label {
   position: absolute;
