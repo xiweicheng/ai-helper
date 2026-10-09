@@ -499,6 +499,13 @@ export default {
     screenshot: '截取当前页面（Ctrl/Shift+点击可区域截图）',
     uploadFile: '上传文件（PDF/Word/Excel/文本）',
     aiDisclaimer: '内容由 AI 生成，仅供参考',
+    addMenuTitle: '添加内容',
+    addMenuPrompt: '提示词',
+    addMenuScreenshot: '截图',
+    addMenuFile: '附件',
+    addMenuPromptHint: 'Ctrl+单击 → 网页',
+    addMenuScreenshotHint: 'Ctrl+单击 → 区域截图',
+    addMenuSwitches: '开关',
   },
 
   // 模型选择下拉

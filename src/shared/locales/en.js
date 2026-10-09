@@ -499,6 +499,13 @@ export default {
     screenshot: 'Capture current page (Ctrl/Shift+click for area screenshot)',
     uploadFile: 'Upload file (PDF/Word/Excel/Text)',
     aiDisclaimer: 'AI-generated content, for reference only.',
+    addMenuTitle: 'Add content',
+    addMenuPrompt: 'Prompts',
+    addMenuScreenshot: 'Screenshot',
+    addMenuFile: 'Attachment',
+    addMenuPromptHint: 'Ctrl+click → Pages',
+    addMenuScreenshotHint: 'Ctrl+click → Area capture',
+    addMenuSwitches: 'Toggles',
   },
 
   // Model selector dropdown
