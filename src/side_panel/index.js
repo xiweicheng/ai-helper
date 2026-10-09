@@ -24,6 +24,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { initProviderSelector } from './provider-selector.js';
 import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import { initToolbarAdaptive } from './toolbar-adapt.js';
+import { initInputAddMenu } from './input-add-menu.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 
 registerTranslations('zh', {
@@ -4295,6 +4296,7 @@ document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initContextIndicator);
 document.addEventListener('DOMContentLoaded', initCurrentModelTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
+document.addEventListener('DOMContentLoaded', initInputAddMenu);
 document.addEventListener('DOMContentLoaded', async () => {
   // 入口轨道需先于各面板初始化：五个入口容器挂入轨道槽位
   initSideRail();
