@@ -8,6 +8,7 @@ import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
   fileSelector: {
+    workspaceTitle: '工作目录',
     switchHint: '方向键切换 · Enter添加到文件问答 · Esc取消',
     searching: '搜索中...',
     noMatch: '没有匹配的文件或目录',
@@ -18,6 +19,7 @@ registerTranslations('zh', {
 });
 registerTranslations('en', {
   fileSelector: {
+    workspaceTitle: 'Workspace',
     switchHint: '↑↓ navigate · Enter attach · Esc cancel',
     searching: 'Searching...',
     noMatch: 'No matching file or directory',
@@ -40,6 +42,17 @@ let currentItems = []; // 当前展示的匹配条目，选中时连同元数据
 
 function normalizePath(p) {
   return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+/**
+ * 更新标题行的工作目录路径（无工作目录时清空，悬停 title 展示全路径）
+ */
+function updateTitlePath(root) {
+  const el = document.getElementById('fileAtTitlePath');
+  if (!el) return;
+  const p = root ? normalizePath(root) : '';
+  el.textContent = p;
+  el.title = p;
 }
 
 /**
@@ -112,6 +125,8 @@ function renderFileAtList(filterText = '') {
     try {
       const root = await getWorkspaceRoot();
       if (seq !== searchSeq) return;
+      // 标题行展示当前工作目录路径（无目录时清空）
+      updateTitlePath(root);
       if (!root) {
         list.innerHTML = `<div class="prompt-empty">${t('fileSelector.noWorkspace')}</div>`;
         state.selectedFileAtIndex = -1;

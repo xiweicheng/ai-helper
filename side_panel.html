@@ -484,6 +484,10 @@
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
               <span class="add-item-label" data-i18n="promptSelector.proxies">代理</span>
             </button>
+            <button class="input-add-item" id="addMenuWorkspaceBtn" type="button" style="display:none;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span class="add-item-label" data-i18n="fileSelector.workspaceTitle">工作目录</span>
+            </button>
             <div class="input-add-divider" role="separator"></div>
             <button class="input-add-item" id="screenshotBtn" type="button" style="display:none;">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -670,6 +674,10 @@
     <!-- $ 工作目录文件选择器 -->
     <div class="prompt-selector" id="fileAtSelector" style="display: none;">
       <div class="prompt-dropdown" id="fileAtDropdown">
+        <div class="file-at-title">
+          <span class="file-at-title-label" data-i18n="fileSelector.workspaceTitle">工作目录</span>
+          <span class="file-at-title-path" id="fileAtTitlePath"></span>
+        </div>
         <div class="prompt-dropdown-header"><span class="prompt-dropdown-header-text" data-i18n="fileSelector.switchHint">方向键切换 · Enter添加到文件问答 · Esc取消</span></div>
         <div id="fileAtList"></div>
       </div>

@@ -6754,6 +6754,11 @@ body {
   justify-content: space-between;
   align-items: center;
 }
+/* 文件选择器无 Tab 栏：sticky 吸附位置回到容器顶部（top:34px 为 Tab 栏下方设计，
+   在无 Tab 栏的下拉中会下推头部 34px 与列表首项重叠、滚动后留出穿插空档） */
+#fileAtSelector .prompt-dropdown-header {
+  top: 0;
+}
 .prompt-item {
   padding: 8px 12px;
   cursor: pointer;
@@ -6862,6 +6867,26 @@ body {
 }
 #fileAtDropdown .prompt-item.selected .file-at-path {
   color: #8899cc;
+}
+.file-at-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  user-select: none;
+}
+.file-at-title-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .file-at-truncated {
   padding: 6px 12px;

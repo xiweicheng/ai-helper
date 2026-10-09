@@ -10,8 +10,9 @@ import {
   getPairedAgents,
   fetchKnowledgeCollections,
 } from '../../src/side_panel/agent-at-selector.js';
-import { hideFileAtSelector } from '../../src/side_panel/file-at-selector.js';
+import { hideFileAtSelector, showFileAtSelector } from '../../src/side_panel/file-at-selector.js';
 import { shouldShowSkillsTab, shouldShowMcpTab } from '../../src/side_panel/skill-selector.js';
+import { getWorkspaceRoot } from '../../src/side_panel/workspace-manager.js';
 
 vi.mock('../../src/side_panel/prompt-manager.js', () => ({
   showPromptSelector: vi.fn(async () => {}),
@@ -25,6 +26,10 @@ vi.mock('../../src/side_panel/agent-at-selector.js', () => ({
 }));
 vi.mock('../../src/side_panel/file-at-selector.js', () => ({
   hideFileAtSelector: vi.fn(),
+  showFileAtSelector: vi.fn(async () => {}),
+}));
+vi.mock('../../src/side_panel/workspace-manager.js', () => ({
+  getWorkspaceRoot: vi.fn(async () => '/ws'),
 }));
 vi.mock('../../src/side_panel/skill-selector.js', () => ({
   shouldShowSkillsTab: vi.fn(async () => true),
@@ -46,6 +51,7 @@ function setupDom() {
             <button class="input-add-item" id="addMenuKnowledgeBtn">知识库</button>
             <button class="input-add-item" id="addMenuAgentBtn">助手</button>
             <button class="input-add-item" id="addMenuProxyBtn">代理</button>
+            <button class="input-add-item" id="addMenuWorkspaceBtn" style="display:none;">工作目录</button>
             <div class="input-add-divider"></div>
             <button class="input-add-item" id="screenshotBtn">截图</button>
             <button class="input-add-item" id="fileAttachBtn">附件</button>
@@ -83,6 +89,8 @@ describe('input-add-menu', () => {
     vi.mocked(shouldShowMcpTab).mockReset().mockResolvedValue(true);
     vi.mocked(fetchKnowledgeCollections).mockReset().mockResolvedValue({ ok: true, collections: [] });
     vi.mocked(getPairedAgents).mockReset().mockResolvedValue([]);
+    vi.mocked(getWorkspaceRoot).mockReset().mockResolvedValue('/ws');
+    vi.mocked(showFileAtSelector).mockClear();
     dom = setupDom();
   });
 
@@ -128,7 +136,7 @@ describe('input-add-menu', () => {
     expect(dom.btn.classList.contains('has-active-switch')).toBe(false);
   });
 
-  it('7 个选择器项均已接线：点击各自打开对应弹窗与目标 tab，且菜单收起', async () => {
+  it('8 个选择器项均已接线：点击各自打开对应弹窗与目标 tab，且菜单收起', async () => {
     const cases = [
       ['promptTriggerBtn', showPromptSelector, ['', 'prompts']],
       ['addMenuSkillBtn', showPromptSelector, ['', 'skills']],
@@ -137,6 +145,7 @@ describe('input-add-menu', () => {
       ['addMenuKnowledgeBtn', showAgentAtSelector, ['', 'knowledge']],
       ['addMenuAgentBtn', showAgentAtSelector, ['', 'agents']],
       ['addMenuProxyBtn', showAgentAtSelector, ['', 'proxies']],
+      ['addMenuWorkspaceBtn', showFileAtSelector, ['']],
     ];
     for (const [id, spy, args] of cases) {
       spy.mockClear();
@@ -188,17 +197,34 @@ describe('input-add-menu', () => {
     vi.mocked(shouldShowSkillsTab).mockResolvedValue(false); // 技能不可用
     vi.mocked(fetchKnowledgeCollections).mockResolvedValue({ ok: false, collections: [] }); // 知识库不可用
     vi.mocked(getPairedAgents).mockResolvedValue([]); // 无配对代理
+    vi.mocked(getWorkspaceRoot).mockResolvedValue(null); // 无工作目录
     dom.btn.click();
     await tick();
     await tick();
     expect(document.getElementById('addMenuSkillBtn').style.display).toBe('none');
     expect(document.getElementById('addMenuKnowledgeBtn').style.display).toBe('none');
     expect(document.getElementById('addMenuProxyBtn').style.display).toBe('none');
+    expect(document.getElementById('addMenuWorkspaceBtn').style.display).toBe('none');
     // 可用项恢复显示；恒显项（提示词/网页/助手/MCP）不受影响
     expect(document.getElementById('addMenuMcpBtn').style.display).not.toBe('none');
     expect(dom.item.style.display).not.toBe('none');
     expect(document.getElementById('addMenuPageBtn').style.display).not.toBe('none');
     expect(document.getElementById('addMenuAgentBtn').style.display).not.toBe('none');
+  });
+
+  it('工作目录项可见性随 getWorkspaceRoot 变化（无目录隐藏，有目录显示）', async () => {
+    vi.mocked(getWorkspaceRoot).mockResolvedValue(null);
+    dom.btn.click();
+    await tick();
+    await tick();
+    expect(document.getElementById('addMenuWorkspaceBtn').style.display).toBe('none');
+
+    vi.mocked(getWorkspaceRoot).mockResolvedValue('/ws');
+    dom.btn.click(); // 关闭菜单
+    dom.btn.click(); // 重新打开 → 再次刷新可见性
+    await tick();
+    await tick();
+    expect(document.getElementById('addMenuWorkspaceBtn').style.display).not.toBe('none');
   });
 
   it('选择器打开失败时不崩溃，菜单照常收起', async () => {

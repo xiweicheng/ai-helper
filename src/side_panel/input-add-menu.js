@@ -3,8 +3,9 @@
 // 职责：
 //   1) 开合菜单：点击 "+" 切换；点击菜单项或菜单外部关闭；
 //   2) "+" 蓝点：菜单开关区内存在已激活开关时显示（划词 ④ 级降级移入的场景）；
-//   3) 选择器直达：7 个菜单项打开对应弹窗并定位到目标 Tab（/ 与 @ 弹窗各 Tab 的统一入口），
-//      每次打开菜单刷新可见性——不可用项自动隐藏（与弹窗内 Tab 的可见性判定一致）。
+//   3) 选择器直达：8 个菜单项打开对应弹窗并定位到目标 Tab/视图（/、@ 弹窗各 Tab
+//      与 $ 文件选择器的统一入口），每次打开菜单刷新可见性——不可用项自动隐藏
+//      （与弹窗内 Tab 的可见性判定一致）。
 //
 // 选择器项 handler 会 stopPropagation，避免刚打开的弹窗被 document 冒泡层的“点击外部关闭”
 // 逻辑立即关闭；因此菜单收起使用 capture 阶段监听（先于 stopPropagation 执行）。截图/附件
@@ -15,16 +16,18 @@ import {
   showAgentAtSelector, hideAgentAtSelector,
   getPairedAgents, fetchKnowledgeCollections
 } from './agent-at-selector.js';
-import { hideFileAtSelector } from './file-at-selector.js';
+import { showFileAtSelector, hideFileAtSelector } from './file-at-selector.js';
 import { shouldShowSkillsTab, shouldShowMcpTab } from './skill-selector.js';
+import { getWorkspaceRoot } from './workspace-manager.js';
 
 // 可见性刷新序号：快速重复开合菜单时只应用最后一次刷新的结果
 let visibilitySeq = 0;
 
 /**
  * 菜单打开时刷新选择器项可见性（与弹窗 Tab 可见性判定一致）：
- * 技能/MCP 依赖连接与开关状态、知识库依赖 RAG 可用性、代理依赖配对列表；
- * 判定失败的项保持显示（宁可显示后打开为空，也不误藏可用入口）。
+ * 技能/MCP 依赖连接与开关状态、知识库依赖 RAG 可用性、代理依赖配对列表、
+ * 工作目录依赖已连接 Agent 的工作目录；判定失败的项保持显示（宁可显示后
+ * 打开为空，也不误藏可用入口）。
  */
 async function refreshSelectorVisibility() {
   const checks = [
@@ -32,6 +35,7 @@ async function refreshSelectorVisibility() {
     { id: 'addMenuMcpBtn', available: () => shouldShowMcpTab() },
     { id: 'addMenuKnowledgeBtn', available: async () => (await fetchKnowledgeCollections()).ok },
     { id: 'addMenuProxyBtn', available: async () => (await getPairedAgents()).length > 0 },
+    { id: 'addMenuWorkspaceBtn', available: async () => !!(await getWorkspaceRoot()) },
   ];
   const seq = ++visibilitySeq;
   await Promise.all(checks.map(async ({ id, available }) => {
@@ -88,6 +92,7 @@ export function initInputAddMenu() {
     { id: 'addMenuKnowledgeBtn', open: () => showAgentAtSelector('', 'knowledge') },
     { id: 'addMenuAgentBtn', open: () => showAgentAtSelector('', 'agents') },
     { id: 'addMenuProxyBtn', open: () => showAgentAtSelector('', 'proxies') },
+    { id: 'addMenuWorkspaceBtn', open: () => showFileAtSelector('') },
   ];
   selectorItems.forEach(({ id, open }) => {
     const btn = document.getElementById(id);
