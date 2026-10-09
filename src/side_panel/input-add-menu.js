@@ -7,7 +7,7 @@
 //   3) 选择器直达：8 个菜单项打开对应弹窗并定位到目标 Tab/视图（/、@ 弹窗各 Tab
 //      与 $ 文件选择器的统一入口），每次打开菜单刷新可见性——不可用项自动隐藏
 //      （与弹窗内 Tab 的可见性判定一致）；
-//   4) 悬停二级面板：悬停八个选择器项时在菜单右侧展开独立浮层卡片
+//   4) 悬停二级面板：悬停九类菜单项（八个选择器项 + 截图动作）时在菜单右侧展开独立浮层卡片
 //      「搜索 + 列表」（防误触 200ms），可直接选择触发；鼠标移出菜单 150ms 后收起，
 //      窄屏越界由 clampPanelPosition 收敛到视口内。与“点击打开弹窗”双通道并存
 //      （面板逻辑见 input-add-menu-panel.js）。
@@ -44,6 +44,7 @@ const PANEL_ITEMS = {
   addMenuAgentBtn: 'agents',
   addMenuProxyBtn: 'proxies',
   addMenuWorkspaceBtn: 'workspace',
+  screenshotBtn: 'screenshot',
 };
 
 /**

@@ -1,5 +1,6 @@
 // 侧边栏 "+" 菜单二级面板：悬停类别项时在菜单右侧展开「搜索框 + 列表」，
-// 数据与选择动作完全复用各模块现有函数（提示词/技能/MCP/网页/知识库/助手/代理/工作目录 8 类）。
+// 数据与选择动作完全复用各模块现有函数（提示词/技能/MCP/网页/知识库/助手/代理/工作目录 8 类
+// + 截图动作类：整页截图 / 区域截图）。
 //
 // 职责：
 //   1) openCategoryPanel(category)：加载该类数据并渲染（技能强制刷新，与弹窗一致）；
@@ -36,6 +37,7 @@ import { getAllAgents } from './agent-store.js';
 import { openAgentEditor } from './agent-manager.js';
 import { getWorkspaceRoot, listDirectory, getFileIcon, formatFileSize } from './workspace-manager.js';
 import { attachFilesForQuestion } from './workspace-panel.js';
+import { captureFullPageScreenshot, captureRegionScreenshot } from './image-helpers.js';
 import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
@@ -68,6 +70,12 @@ let activeCategory = null;
 let dataset = [];   // 当前类别完整数据（渲染按搜索词过滤，选择动作传全量）
 let loadSeq = 0;    // 请求序号：连续切换类别时只应用最后一次响应
 let onRequestClose = () => {};
+
+// 截图面板：动作项本地静态数据（名称/描述经 i18n 渲染，搜索按名称/描述过滤）
+const SCREENSHOT_ACTIONS = [
+  { action: 'full', icon: '📷', nameKey: 'input.addMenuScreenshotFull', descKey: 'input.addMenuScreenshotFullDesc' },
+  { action: 'region', icon: '✂️', nameKey: 'input.addMenuScreenshotRegion', descKey: 'input.addMenuScreenshotRegionDesc' },
+];
 
 // 面板管理入口：对齐旧弹窗 ✚ 惯例的动作映射（网页/工作目录无管理页 → 隐藏入口）
 const MANAGE_ACTIONS = {
@@ -200,6 +208,7 @@ function fetchCategoryData(category) {
     case 'agents': return getAllAgents();
     case 'proxies': return getPairedAgents();
     case 'workspace': return fetchWorkspaceEntries();
+    case 'screenshot': return Promise.resolve(SCREENSHOT_ACTIONS);
     default: return Promise.resolve([]);
   }
 }
@@ -262,6 +271,9 @@ function filterDataset(query) {
           || String(item.url || '').toLowerCase().includes(q);
       case 'workspace':
         return String(item.name || '').toLowerCase().includes(q);
+      case 'screenshot':
+        return t(item.nameKey).toLowerCase().includes(q)
+          || t(item.descKey).toLowerCase().includes(q);
       default:
         return true;
     }
@@ -368,6 +380,12 @@ function renderItem(item) {
         ${!isDir && item.size != null ? `<span class="input-add-panel-item-sub">${escapeHtml(formatFileSize(item.size))}</span>` : ''}
       </div>`;
     }
+    case 'screenshot': {
+      return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-shot-action="${item.action}">
+        <span class="input-add-panel-item-title">${item.icon} ${escapeHtml(t(item.nameKey))}</span>
+        <span class="input-add-panel-item-sub">${escapeHtml(t(item.descKey))}</span>
+      </div>`;
+    }
     default:
       return '';
   }
@@ -429,6 +447,13 @@ async function handleItemClick(e, el) {
         adjustInputHeight();
       }
       onRequestClose();
+      break;
+    }
+    case 'screenshot': {
+      // 先收起菜单再执行（区域截图需切到页面拖拽框选，菜单不应悬留）
+      onRequestClose();
+      const capture = el.dataset.shotAction === 'region' ? captureRegionScreenshot : captureFullPageScreenshot;
+      await capture();
       break;
     }
     default:

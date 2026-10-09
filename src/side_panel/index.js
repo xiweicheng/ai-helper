@@ -3341,21 +3341,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 截图按钮
+  // 截图按钮：点击直达整页截图（区域截图改由 "+" 菜单的二级面板进入）
   const screenshotBtn = document.getElementById('screenshotBtn');
   if (screenshotBtn) {
-    screenshotBtn.addEventListener('click', async (e) => {
+    screenshotBtn.addEventListener('click', async () => {
       if (!state.enableImageInput) return;
-
-      // Ctrl/Shift/Meta + 点击 → 区域截图
-      const isRegionMode = e.ctrlKey || e.shiftKey || e.metaKey;
-
       try {
-        if (isRegionMode) {
-          await captureRegionScreenshot();
-        } else {
-          await captureFullPageScreenshot();
-        }
+        await captureFullPageScreenshot();
       } catch (err) {
         logger.error('[SidePanel] screenshot failed:', err);
         showToast(t('sidePanel.screenshotFailed'));

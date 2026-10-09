@@ -53,6 +53,10 @@ vi.mock('../../src/side_panel/workspace-manager.js', () => ({
 vi.mock('../../src/side_panel/workspace-panel.js', () => ({
   attachFilesForQuestion: vi.fn(async () => {}),
 }));
+vi.mock('../../src/side_panel/image-helpers.js', () => ({
+  captureFullPageScreenshot: vi.fn(async () => {}),
+  captureRegionScreenshot: vi.fn(async () => {}),
+}));
 
 import {
   initInputAddPanel, openCategoryPanel, closeCategoryPanel,
@@ -73,6 +77,7 @@ import {
 import { getAllAgents } from '../../src/side_panel/agent-store.js';
 import { getWorkspaceRoot, listDirectory } from '../../src/side_panel/workspace-manager.js';
 import { attachFilesForQuestion } from '../../src/side_panel/workspace-panel.js';
+import { captureFullPageScreenshot, captureRegionScreenshot } from '../../src/side_panel/image-helpers.js';
 import state from '../../src/side_panel/state.js';
 import { registerTranslations } from '../../src/shared/i18n.js';
 
@@ -620,6 +625,55 @@ describe('管理入口（搜索框右侧 ＋）', () => {
     expect(dom.manage.style.display).toBe('flex');
 
     closeCategoryPanel();
+    expect(dom.manage.style.display).toBe('none');
+  });
+});
+
+describe('截图面板（整页/区域）', () => {
+  it('渲染两个动作项（图标+名称+描述 + data-shot-action）', async () => {
+    await openCategoryPanel('screenshot');
+    const items = dom.list.querySelectorAll('.input-add-panel-item');
+    expect(items).toHaveLength(2);
+    expect(items[0].dataset.shotAction).toBe('full');
+    expect(items[0].textContent).toContain('整页截图');
+    expect(items[0].textContent).toContain('截取当前可见页面');
+    expect(items[1].dataset.shotAction).toBe('region');
+    expect(items[1].textContent).toContain('区域截图');
+    expect(items[1].textContent).toContain('拖拽框选页面区域');
+  });
+
+  it('搜索按名称/描述过滤（「区域」→ 仅剩区域项）', async () => {
+    await openCategoryPanel('screenshot');
+    fireSearch('区域');
+    const items = dom.list.querySelectorAll('.input-add-panel-item');
+    expect(items).toHaveLength(1);
+    expect(items[0].dataset.shotAction).toBe('region');
+  });
+
+  it('点击「整页截图」：先收起菜单再执行 captureFullPageScreenshot', async () => {
+    await openCategoryPanel('screenshot');
+    clickItem(dom.list.querySelectorAll('.input-add-panel-item')[0]);
+    await tick();
+    expect(captureFullPageScreenshot).toHaveBeenCalledTimes(1);
+    expect(captureRegionScreenshot).not.toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy.mock.invocationCallOrder[0])
+      .toBeLessThan(captureFullPageScreenshot.mock.invocationCallOrder[0]);
+  });
+
+  it('点击「区域截图」：先收起菜单再执行 captureRegionScreenshot', async () => {
+    await openCategoryPanel('screenshot');
+    clickItem(dom.list.querySelectorAll('.input-add-panel-item')[1]);
+    await tick();
+    expect(captureRegionScreenshot).toHaveBeenCalledTimes(1);
+    expect(captureFullPageScreenshot).not.toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy.mock.invocationCallOrder[0])
+      .toBeLessThan(captureRegionScreenshot.mock.invocationCallOrder[0]);
+  });
+
+  it('无管理界面：搜索框右侧管理 ＋ 隐藏', async () => {
+    await openCategoryPanel('screenshot');
     expect(dom.manage.style.display).toBe('none');
   });
 });

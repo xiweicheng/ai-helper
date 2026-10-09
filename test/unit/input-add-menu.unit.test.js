@@ -309,7 +309,7 @@ describe('hover 二级面板状态机', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('hover 新增四类项（知识库/助手/代理/工作目录）→ 展开对应类别面板', async () => {
+  it('hover 各类项（知识库/助手/代理/工作目录/截图）→ 展开对应类别面板', async () => {
     vi.useFakeTimers();
     try {
       dom.btn.click(); // 打开菜单；后续 hover 不关闭菜单
@@ -318,6 +318,7 @@ describe('hover 二级面板状态机', () => {
         ['addMenuAgentBtn', 'agents'],
         ['addMenuProxyBtn', 'proxies'],
         ['addMenuWorkspaceBtn', 'workspace'],
+        ['screenshotBtn', 'screenshot'],
       ];
       for (const [id, category] of cases) {
         vi.mocked(openCategoryPanel).mockClear();
@@ -328,12 +329,12 @@ describe('hover 二级面板状态机', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('hover 非面板项（截图）150ms 后收起面板', async () => {
+  it('hover 非面板项（附件）150ms 后收起面板', async () => {
     vi.useFakeTimers();
     try {
       dom.btn.click();
       vi.mocked(closeCategoryPanel).mockClear(); // 排除 setOpen(true) 的重置调用
-      fire(document.getElementById('screenshotBtn'), 'mouseover');
+      fire(document.getElementById('fileAttachBtn'), 'mouseover');
       await vi.advanceTimersByTimeAsync(149);
       expect(closeCategoryPanel).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
