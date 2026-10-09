@@ -1213,12 +1213,13 @@ body {
 .input-add-item.panel-active {
   background: rgba(102, 126, 234, 0.08);
 }
-/* 二级面板：独立卡片浮层（贴一级菜单右侧 +8px、底边对齐），与一级菜单视觉分离；
-   窄屏越界时由 JS clamp 到视口内（clampPanelPosition，input-add-menu.js） */
+/* 二级面板：独立卡片浮层（贴一级菜单右侧 +8px），与一级菜单视觉分离；
+   垂直默认顶对齐菜单顶，JS 按 hover 项顶部精确对齐（clampPanelPosition）；
+   窄屏水平越界时由 JS clamp 到视口内 */
 .input-add-panel {
   display: none; /* JS 展开时置为 flex */
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: calc(100% + 8px);
   flex-direction: column;
   width: 260px;

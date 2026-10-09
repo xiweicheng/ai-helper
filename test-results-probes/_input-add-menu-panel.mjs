@@ -4,7 +4,8 @@
 // 3) 搜索过滤：本地即时过滤与清空恢复
 // 4) 选择接线：普通点击技能 = 多选切换且面板保持；Cmd/Ctrl+点击 = 选中并收起
 // 5) 面板内鼠标移动不收起；移出菜单 150ms 后收起（仅收面板，菜单保持）
-// 6) 几何：560px 并排（+8px 间隙）/ 430/280px clamp 到视口内；面板宽 260px
+// 6) 几何：560px 并排（+8px 间隙）/ 430/280px clamp 到视口内；面板宽 260px；
+//    面板顶与 hover 项顶对齐（超出菜单底时上移，不越菜单底边）
 // 7) 回归：菜单外点击全关；重开菜单面板收起
 // 用法：node test-results-probes/_input-add-menu-panel.mjs
 //
@@ -211,6 +212,7 @@ const promptsPanel = await page.evaluate(() => {
   const list = document.getElementById('inputAddPanelList');
   const mr = menu.getBoundingClientRect();
   const pr = panel.getBoundingClientRect();
+  const ar = document.getElementById('promptTriggerBtn').getBoundingClientRect();
   return {
     visible: panel.getClientRects().length > 0,
     hasSearch: !!search && search.getClientRects().length > 0,
@@ -219,12 +221,15 @@ const promptsPanel = await page.evaluate(() => {
     sideGap: +(pr.left - mr.right).toFixed(1),
     panelW: +pr.width.toFixed(1),
     activeItem: document.querySelector('.input-add-item.panel-active')?.id,
+    itemTopGap: +(pr.top - ar.top).toFixed(1), // 面板顶 - hover 项顶，应对齐（±2px）
+    bottomOk: pr.bottom <= mr.bottom + 1, // 底边不越菜单底
   };
 });
-check('hover 提示词项：独立浮层展开（+8px 并排）+ 搜索框可见 + 项高亮',
+check('hover 提示词项：独立浮层展开（+8px 并排 + 与项顶对齐）+ 搜索框可见 + 项高亮',
   promptsPanel.visible && promptsPanel.hasSearch && promptsPanel.listExists
   && promptsPanel.position === 'absolute' && promptsPanel.sideGap >= 6 && promptsPanel.panelW >= 240
-  && promptsPanel.activeItem === 'promptTriggerBtn',
+  && promptsPanel.activeItem === 'promptTriggerBtn'
+  && Math.abs(promptsPanel.itemTopGap) <= 2 && promptsPanel.bottomOk,
   JSON.stringify(promptsPanel));
 await page.screenshot({ path: path.join(__dirname, '_input-add-panel-prompts.png') });
 
@@ -349,22 +354,31 @@ for (const w of [560, 430, 280]) {
   const geo = await page.evaluate(() => {
     const menu = document.getElementById('inputAddMenu');
     const panel = document.getElementById('inputAddPanel');
+    const item = document.querySelector('.input-add-item.panel-active');
     const mr = menu.getBoundingClientRect();
     const pr = panel.getBoundingClientRect();
+    const ar = item.getBoundingClientRect();
     return {
       menuRight: +mr.right.toFixed(1),
       menuLeft: +mr.left.toFixed(1),
+      menuBottom: +mr.bottom.toFixed(1),
       viewport: window.innerWidth,
       panelLeft: +pr.left.toFixed(1),
       panelRight: +pr.right.toFixed(1),
+      panelTop: +pr.top.toFixed(1),
+      panelBottom: +pr.bottom.toFixed(1),
+      itemTop: +ar.top.toFixed(1),
       panelW: +pr.width.toFixed(1),
       panelVisible: panel.getClientRects().length > 0,
     };
   });
   const inViewport = geo.panelVisible && geo.panelLeft >= 7 && geo.panelRight <= geo.viewport - 7;
   const sideBySide = w === 560 ? geo.panelLeft >= geo.menuRight + 6 : true;
-  check(`w=${w} 独立浮层：视口内${w === 560 ? ' + 与菜单并排（+8px）' : '（clamp 覆盖菜单）'} 且面板宽 260px`,
-    inViewport && sideBySide && geo.panelW >= 240,
+  // 垂直：顶对齐 hover 项（±2px）；若因底边约束上移则 panelTop < itemTop 且底边不越菜单底
+  const vAligned = Math.abs(geo.panelTop - geo.itemTop) <= 2
+    || (geo.panelTop < geo.itemTop && geo.panelBottom <= geo.menuBottom + 1);
+  check(`w=${w} 独立浮层：视口内${w === 560 ? ' + 与菜单并排（+8px）' : '（clamp 覆盖菜单）'} + 与 hover 项顶对齐 且面板宽 260px`,
+    inViewport && sideBySide && vAligned && geo.panelW >= 240 && geo.panelBottom <= geo.menuBottom + 1,
     JSON.stringify(geo));
   if (w === 280) await page.screenshot({ path: path.join(__dirname, '_input-add-panel-280.png') });
   await page.mouse.move(8, 8);
@@ -387,21 +401,27 @@ const reopened = await page.evaluate(() => ({
 }));
 check('回归：重新打开菜单 → 面板收起（单栏）', reopened.panel === 'none', JSON.stringify(reopened));
 
-// —— 10) hover MCP 项：服务列表（用户截图场景回归） ——
+// —— 10) hover MCP 项：服务列表（用户截图场景回归；560 宽屏下与 MCP 项顶对齐展开） ——
+await page.setViewportSize({ width: 560, height: 900 });
+await page.waitForTimeout(150);
 await ensureMenuOpen();
 await page.hover('#addMenuMcpBtn');
 await page.waitForTimeout(420);
 const mcpPanel = await page.evaluate(() => {
   const items = [...document.querySelectorAll('#inputAddPanelList .mcp-list-item')];
+  const item = document.getElementById('addMenuMcpBtn');
+  const pr = document.getElementById('inputAddPanel').getBoundingClientRect();
+  const ar = item.getBoundingClientRect();
   return {
     count: items.length,
     names: items.map((el) => el.dataset.serverName),
     activeItem: document.querySelector('.input-add-item.panel-active')?.id,
+    itemTopGap: +(pr.top - ar.top).toFixed(1), // 面板顶与 MCP 项顶对齐（用户反馈场景）
   };
 });
-check('hover MCP 项：独立浮层 2 项（服务X/服务Y）+ 项高亮',
+check('hover MCP 项：独立浮层 2 项（服务X/服务Y）+ 项高亮 + 与 MCP 项顶对齐',
   mcpPanel.count === 2 && mcpPanel.names.includes('服务X') && mcpPanel.names.includes('服务Y')
-  && mcpPanel.activeItem === 'addMenuMcpBtn',
+  && mcpPanel.activeItem === 'addMenuMcpBtn' && Math.abs(mcpPanel.itemTopGap) <= 2,
   JSON.stringify(mcpPanel));
 await page.screenshot({ path: path.join(__dirname, '_input-add-panel-mcp.png') });
 

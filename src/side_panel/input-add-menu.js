@@ -88,8 +88,9 @@ export function initInputAddMenu() {
     });
   };
 
-  // 面板默认贴菜单右侧 +8px（CSS），超出视口右缘时 clamp 到视口内（右缘留 8px）
-  const clampPanelPosition = () => {
+  // 面板定位：水平贴菜单右侧 +8px（越视口右缘时 clamp）；
+  // 垂直与展开项顶部对齐（常规二级菜单惯例），超出菜单底部时整体上移
+  const clampPanelPosition = (anchorEl) => {
     const panel = document.getElementById('inputAddPanel');
     if (!panel || panel.style.display === 'none') return;
     panel.style.left = ''; // 先复位到 CSS 默认位置再测量
@@ -102,6 +103,13 @@ export function initInputAddMenu() {
     }
     if (left < gap) left = gap;
     panel.style.left = `${Math.round(left - menuRect.left)}px`;
+
+    const item = anchorEl || menu.querySelector('.input-add-item.panel-active');
+    const itemRect = item ? item.getBoundingClientRect() : menuRect;
+    let top = itemRect.top;
+    if (top + panelRect.height > menuRect.bottom) top = menuRect.bottom - panelRect.height;
+    if (top < gap) top = gap;
+    panel.style.top = `${Math.round(top - menuRect.top - menu.clientTop)}px`;
   };
 
   const setOpen = (open) => {
@@ -174,12 +182,13 @@ export function initInputAddMenu() {
       showTimer = setTimeout(async () => {
         showTimer = null;
         const loading = openCategoryPanel(category);
-        clampPanelPosition(); // display:flex 已置位（openCategoryPanel 同步段），先收敛位置再等数据
+        clampPanelPosition(item); // display:flex 已置位（openCategoryPanel 同步段），先对齐一次
         try {
           await loading;
         } catch {
           // 面板内部已兜底（失败显示空态），此处仅防意外未处理拒绝
         }
+        clampPanelPosition(item); // 数据渲染后高度变化 → 重新垂直对齐
         syncPanelActive();
       }, SHOW_DELAY);
     });
