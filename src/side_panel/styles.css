@@ -1694,27 +1694,29 @@ body {
 .input-container.switches-icon .input-bottom-left .check-toggle .tool-toggle-label { display: none; }
 .input-container.switches-icon .input-bottom-left .check-toggle .toggle-icon { display: inline; font-size: 13px; line-height: 1; }
 .input-container.switches-icon .tool-toggle-wrapper { padding: 0; border-radius: 8px; }
-.input-container.switches-icon .tool-toggle-wrapper .check-toggle { padding: 3px 7px; }
+.input-container.switches-icon .tool-toggle-wrapper .check-toggle { padding: 2px 7px; }
+/* 图标态高度与记忆/划词组对齐（实测三组均 19px）：check-toggle 上下 padding 2px +
+   config-btn 高度 17px，任一超出都会把工具组撑高，三组高度不齐 */
 .input-container.switches-icon .tool-toggle-wrapper .tool-config-btn {
   border-left: 1px solid rgba(102, 126, 234, 0.25);
   border-radius: 0;
-  height: 26px;
+  height: 17px;
   padding: 0 6px;
 }
 .input-container.switches-icon .memory-limit-label {
   position: absolute;
-  top: -5px;
-  right: -6px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  font-size: 9px;
-  line-height: 14px;
+  top: -4px;
+  right: -5px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  font-size: 8px;
+  line-height: 13px;
   text-align: center;
   background: #667eea;
   color: #fff;
   border-radius: 7px;
-  border: 1.5px solid #fff;
+  border: 1px solid #fff;
 }
 .temp-dropdown {
   position: absolute;
