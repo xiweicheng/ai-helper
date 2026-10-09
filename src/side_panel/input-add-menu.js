@@ -1,7 +1,8 @@
 // side_panel/input-add-menu.js - 底行 "+" 添加菜单
 //
 // 职责：
-//   1) 开合菜单：点击 "+" 切换；点击菜单项或菜单外部关闭；
+//   1) 开合菜单：点击 "+" 切换；点击菜单项或菜单外部关闭；打开时互斥收起
+//      已打开的选择器弹窗（/ @ $ 三弹窗，避免浮层遮挡菜单）；
 //   2) "+" 蓝点：菜单开关区内存在已激活开关时显示（划词 ④ 级降级移入的场景）；
 //   3) 选择器直达：8 个菜单项打开对应弹窗并定位到目标 Tab/视图（/、@ 弹窗各 Tab
 //      与 $ 文件选择器的统一入口），每次打开菜单刷新可见性——不可用项自动隐藏
@@ -64,10 +65,17 @@ export function initInputAddMenu() {
   };
   const isOpen = () => menu.style.display !== 'none';
 
-  // 点击 "+" 切换开合
+  // 点击 "+" 切换开合；打开时互斥收起已打开的选择器弹窗
+  // （弹窗浮层 z-index 高于菜单，不收起会遮挡新打开的菜单）
   addBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    setOpen(!isOpen());
+    const opening = !isOpen();
+    if (opening) {
+      hidePromptSelector();
+      hideAgentAtSelector();
+      hideFileAtSelector();
+    }
+    setOpen(opening);
   });
 
   // 点击菜单项后自动关闭：capture 阶段先于按钮自身的 handler（其会

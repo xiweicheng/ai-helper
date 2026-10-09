@@ -4846,6 +4846,18 @@ body {
   border-color: rgba(102, 126, 234, 0.4);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
 }
+/* 输入区上方引用/附件区紧凑化：多个引用条目（上下文/网页/知识库/MCP/技能/
+   图片/文件）间原间距 = 容器 gap 12px + 各自 margin-bottom（4/8px）叠加 ≈ 16~20px；
+   -6px 抵消后实际视觉间距 = 6px（保留 textarea 与底行的 12px 不变） */
+.input-container > .selection-indicator,
+.input-container > .page-indicator,
+.input-container > .knowledge-indicator,
+.input-container > .mcp-indicator,
+.input-container > .skill-indicator,
+.input-container > .image-preview-bar,
+.input-container > .file-preview-bar {
+  margin-bottom: -6px;
+}
 /* 自适应测量期间（toolbar-adapt.js 临时添加）：禁用过渡，保证同步测量读到终值布局 */
 .input-container.measuring,
 .input-container.measuring * {
@@ -6754,10 +6766,10 @@ body {
   justify-content: space-between;
   align-items: center;
 }
-/* 文件选择器无 Tab 栏：sticky 吸附位置回到容器顶部（top:34px 为 Tab 栏下方设计，
-   在无 Tab 栏的下拉中会下推头部 34px 与列表首项重叠、滚动后留出穿插空档） */
+/* 文件选择器无 Tab 栏：头部吸附在标题行下方
+   （33px = 标题行高度 10+17+6，参照 / @ 弹窗「Tab 栏 sticky 0 / 提示行 sticky 34」两段式） */
 #fileAtSelector .prompt-dropdown-header {
-  top: 0;
+  top: 33px;
 }
 .prompt-item {
   padding: 8px 12px;
@@ -6869,10 +6881,15 @@ body {
   color: #8899cc;
 }
 .file-at-title {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #fff;
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding: 10px 12px 6px;
+  line-height: 17px; /* 固定行高：总高恒为 10+17+6=33px（与提示行 sticky top 对应） */
   font-size: 12px;
   font-weight: 600;
   color: #333;

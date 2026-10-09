@@ -178,6 +178,25 @@ describe('input-add-menu', () => {
     }
   });
 
+  it('点击 "+" 打开菜单时收起已打开的选择器弹窗（互斥，避免菜单被弹窗浮层遮挡）', () => {
+    dom.btn.click(); // 打开菜单
+    expect(dom.menu.style.display).not.toBe('none');
+    expect(hidePromptSelector).toHaveBeenCalled();
+    expect(hideAgentAtSelector).toHaveBeenCalled();
+    expect(hideFileAtSelector).toHaveBeenCalled();
+  });
+
+  it('关闭 "+" 菜单时不触发收起（互斥仅发生在打开动作）', () => {
+    dom.btn.click(); // 打开
+    hidePromptSelector.mockClear();
+    hideAgentAtSelector.mockClear();
+    hideFileAtSelector.mockClear();
+    dom.btn.click(); // 关闭
+    expect(hidePromptSelector).not.toHaveBeenCalled();
+    expect(hideAgentAtSelector).not.toHaveBeenCalled();
+    expect(hideFileAtSelector).not.toHaveBeenCalled();
+  });
+
   it('「提示词」项 Ctrl+单击等同单击（复合行为已移除，统一直达 prompts tab）', async () => {
     dom.btn.click();
     dom.item.click();

@@ -4,6 +4,8 @@
 // 3) 选择器直达：8 个菜单项打开对应弹窗并定位目标 Tab/视图、不可用项自动隐藏、
 //    Ctrl+单击提示词的复合行为已移除（回归）
 // 4) 场景二（mock 已连接 Agent）：工作目录项可见、$ 弹窗标题路径、头部 sticky 修复几何
+// 5) $ 弹窗两段式 sticky（标题行 0 / 提示行 33，mock 20 条造滚动）、"+" 互斥收起旧弹窗、
+//    引用/附件区实际间距 6px（gap 12 + margin-bottom -6）
 // 用法：node test-results-probes/_input-bar-tiers.mjs
 //
 // （文件头部 http server + openPanel 的 addInitScript mock 从 _tools-popup-footer.mjs 复制）
@@ -34,8 +36,15 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (p === '/api/fs/list') {
+    // 20 条文件：超过 .prompt-dropdown max-height 300px，制造垂直滚动（两段式 sticky 验证用）
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ entries: [{ name: 'README.md', type: 'file', size: 1024, mtime: Date.now() }] }));
+    const entries = Array.from({ length: 20 }, (_, i) => ({
+      name: `file-${String(i + 1).padStart(2, '0')}.md`,
+      type: 'file',
+      size: 1024 * (i + 1),
+      mtime: Date.now(),
+    }));
+    res.end(JSON.stringify({ entries }));
     return;
   }
   if (p === '/') p = '/side_panel.html';
@@ -345,11 +354,76 @@ const wsState = await page2.evaluate(() => {
 });
 check('场景二：点击「工作目录」项 → $ 弹窗打开', wsState.open);
 check('场景二：标题路径显示工作目录（/probe/ws）', wsState.titlePath === '/probe/ws', String(wsState.titlePath));
-check('场景二：头部 sticky 吸附位置为 0（无 Tab 栏修复生效）', wsState.headerStickyTop === '0px', wsState.headerStickyTop);
+check('场景二：头部 sticky 吸附位置为 33px（标题行下方，两段式）', wsState.headerStickyTop === '33px', wsState.headerStickyTop);
 check('场景二：头部与列表首项无重叠（防回归几何断言）',
   wsState.firstItemTop !== null && wsState.headerBottom <= wsState.firstItemTop + 1,
   `headerBottom=${wsState.headerBottom} firstItemTop=${wsState.firstItemTop}`);
 await page2.screenshot({ path: path.join(__dirname, '_input-bar-workspace-dropdown.png') });
+
+// —— 5a) 滚动两段式 sticky：标题行固定容器顶、提示行紧贴标题下方 ——
+const scrollState = await page2.evaluate(() => {
+  const dd = document.getElementById('fileAtDropdown');
+  const title = dd.querySelector('.file-at-title');
+  const header = dd.querySelector('.prompt-dropdown-header');
+  const scrollable = dd.scrollHeight > dd.clientHeight + 4;
+  dd.scrollTop = 150; // 同步触发 reflow，sticky 位置即时可读
+  const ddRect = dd.getBoundingClientRect();
+  const tRect = title.getBoundingClientRect();
+  const hRect = header.getBoundingClientRect();
+  return {
+    scrollable,
+    scrolled: dd.scrollTop,
+    titlePinned: Math.abs(tRect.top - ddRect.top) <= 1,
+    titleH: +tRect.height.toFixed(1),
+    headerPinned: Math.abs(hRect.top - tRect.bottom) <= 1,
+  };
+});
+check('场景二：列表产生垂直滚动（mock 20 条 > max-height 300px）', scrollState.scrollable, `scrolled=${scrollState.scrolled}`);
+check('场景二：滚动后标题行吸附容器顶部（sticky top:0）', scrollState.titlePinned, JSON.stringify(scrollState));
+check('场景二：标题行总高恒为 33px（与提示行吸附位对应）', Math.abs(scrollState.titleH - 33) <= 0.6, String(scrollState.titleH));
+check('场景二：滚动后提示行紧贴标题行下方（无穿插遮挡）', scrollState.headerPinned, `titleH=${scrollState.titleH}`);
+await page2.screenshot({ path: path.join(__dirname, '_input-bar-workspace-scrolled.png') });
+
+// —— 5b) "+" 打开菜单时互斥收起已打开的 $ 弹窗（防浮层遮挡） ——
+await page2.click('#inputAddBtn');
+await page2.waitForTimeout(250);
+const plusState = await page2.evaluate(() => ({
+  fileOpen: document.getElementById('fileAtSelector').style.display !== 'none',
+  menuOpen: document.getElementById('inputAddMenu').style.display !== 'none',
+}));
+check('场景二：$ 弹窗打开时点击 "+" → 旧弹窗收起（互斥）', !plusState.fileOpen, JSON.stringify(plusState));
+check('场景二：点击 "+" 后菜单正常打开', plusState.menuOpen, JSON.stringify(plusState));
+await page2.screenshot({ path: path.join(__dirname, '_input-bar-menu-over-popup.png') });
+
+// —— 5c) 引用/附件区紧凑化：相邻元素实际间距 6px（gap 12 + margin-bottom -6） ——
+await page2.click('#inputAddBtn'); // 收起菜单（互斥仅发生在打开动作），避免遮挡截图
+await page2.evaluate(() => {
+  const sel = document.getElementById('selectionIndicator');
+  document.getElementById('selectionText').textContent = '已引用: 探针';
+  sel.classList.add('show');
+  const fileBar = document.getElementById('filePreviewBar');
+  fileBar.innerHTML =
+    '<div class="file-preview-item"><span class="file-preview-name">a.md</span>' +
+    '<span class="file-preview-status done">✓</span><span class="file-preview-remove">×</span></div>';
+  fileBar.style.display = 'block';
+});
+// 等 slideDown 入场动画（0.2s）结束：动画期间 translateY(-10px) 会使 rect 偏移，误读间距
+await page2.waitForTimeout(250);
+const spacingState = await page2.evaluate(() => {
+  const sel = document.getElementById('selectionIndicator');
+  const fileBar = document.getElementById('filePreviewBar');
+  const r1 = sel.getBoundingClientRect();
+  const r2 = fileBar.getBoundingClientRect();
+  const ids = ['selectionIndicator', 'pageIndicator', 'knowledgeIndicator', 'mcpIndicator', 'skillIndicator', 'imagePreviewBar', 'filePreviewBar'];
+  const margins = {};
+  for (const id of ids) margins[id] = getComputedStyle(document.getElementById(id)).marginBottom;
+  return { gapPx: +(r2.top - r1.bottom).toFixed(1), margins };
+});
+check('场景二：引用/附件区相邻元素实际间距 ≈6px', Math.abs(spacingState.gapPx - 6) <= 1, `gap=${spacingState.gapPx}px`);
+check('场景二：7 个引用/附件元素 margin-bottom 均为 -6px',
+  Object.values(spacingState.margins).every((m) => m === '-6px'), JSON.stringify(spacingState.margins));
+await page2.screenshot({ path: path.join(__dirname, '_input-bar-compact-spacing.png') });
+
 check('场景二：页面无 JS 错误', second.errors.length === 0, second.errors.slice(0, 3).join(' | '));
 
 // —— 页面错误 ——
