@@ -36,3 +36,5 @@ dist/
 # Wiki 构建中转目录（正式内容在独立 wiki 仓库）
 .wiki-tmp/
 .wiki-check/
+# Brainstorm 视觉伴侣过程产物（mockup 会话目录）
+.superpowers/
