@@ -187,8 +187,10 @@ export function addPromptManageButton() {
 
 /**
  * 显示提示词选择器
+ * @param {string} filterText - 预填过滤文本
+ * @param {string|null} targetTab - 指定打开的 Tab（菜单直达）；null 时保持“记忆上次 Tab”行为
  */
-export async function showPromptSelector(filterText = '') {
+export async function showPromptSelector(filterText = '', targetTab = null) {
   const promptSelector = document.getElementById('promptSelector');
   const promptDropdown = document.getElementById('promptDropdown');
 
@@ -217,24 +219,24 @@ export async function showPromptSelector(filterText = '') {
     // 有搜索内容：合并显示提示词和技能
     await renderMergedList(filterText);
   } else {
-    // 无搜索内容：Tab 模式，恢复到上次记忆的 Tab
-    const lastTab = state.lastActiveDropdownTab || 'prompts';
-    const lastTabEl = document.querySelector(`#promptDropdownTabs .prompt-tab[data-tab="${lastTab}"]`);
-    // 如果上次的 Tab 不存在或不可见，回退到第一个可见 Tab
-    let targetTab = 'prompts';
-    if (lastTabEl && lastTabEl.style.display !== 'none') {
-      targetTab = lastTab;
+    // 无搜索内容：Tab 模式；菜单直达的 targetTab 优先于上次记忆的 Tab
+    const preferred = targetTab || state.lastActiveDropdownTab || 'prompts';
+    const preferredEl = document.querySelector(`#promptDropdownTabs .prompt-tab[data-tab="${preferred}"]`);
+    // 如果目标 Tab 不存在或不可见，回退到第一个可见 Tab
+    let resolvedTab = 'prompts';
+    if (preferredEl && preferredEl.style.display !== 'none') {
+      resolvedTab = preferred;
     } else {
       // 找第一个可见的 Tab
       const tabs = document.querySelectorAll('#promptDropdownTabs .prompt-tab');
       for (const t of tabs) {
         if (t.style.display !== 'none') {
-          targetTab = t.dataset.tab;
+          resolvedTab = t.dataset.tab;
           break;
         }
       }
     }
-    await switchDropdownTab(targetTab);
+    await switchDropdownTab(resolvedTab);
     renderPromptList(filterText);
   }
 }

@@ -233,7 +233,7 @@ import {
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
-  togglePromptSelector, updatePromptList, sendPromptByCode,
+  updatePromptList, sendPromptByCode,
   insertPromptToInputByCode, updatePromptSelection, initPromptEvents
 } from './prompt-manager.js';
 import {
@@ -2524,25 +2524,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听生成状态变化，自动切换按钮
   document.addEventListener('generating-state-changed', updateSendBtnState);
 
-  // 提示词触发按钮点击事件 - 切换显示/隐藏提示词选择器
-  const promptTriggerBtn = document.getElementById('promptTriggerBtn');
-  if (promptTriggerBtn) {
-    promptTriggerBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      promptTriggerBtn.blur();
-      if (e.ctrlKey || e.metaKey) {
-        const input = document.getElementById('userInput');
-        if (input) input.focus();
-        hidePromptSelector();
-        hideFileAtSelector();
-        showAgentAtSelector('');
-      } else {
-        hideAgentAtSelector();
-        hideFileAtSelector();
-        togglePromptSelector();
-      }
-    });
-  }
+  // 提示词菜单项（promptTriggerBtn）的点击行为已迁移至 input-add-menu.js——
+  // 与其余选择器菜单项统一处理：打开弹窗并直达对应 Tab
 
   // 快捷键查看按钮
   const shortcutsBtn = document.getElementById('shortcutsBtn');

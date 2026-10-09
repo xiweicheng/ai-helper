@@ -2,11 +2,51 @@
 //
 // 职责：
 //   1) 开合菜单：点击 "+" 切换；点击菜单项或菜单外部关闭；
-//   2) "+" 蓝点：菜单开关区内存在已激活开关时显示（划词 ④ 级降级移入的场景）。
+//   2) "+" 蓝点：菜单开关区内存在已激活开关时显示（划词 ④ 级降级移入的场景）；
+//   3) 选择器直达：7 个菜单项打开对应弹窗并定位到目标 Tab（/ 与 @ 弹窗各 Tab 的统一入口），
+//      每次打开菜单刷新可见性——不可用项自动隐藏（与弹窗内 Tab 的可见性判定一致）。
 //
-// 菜单项按钮（提示词/截图/附件）的业务事件监听分别绑定在 index.js / 各模块
-// （id 不变），本模块不重复绑定业务行为；菜单项 handler 会 stopPropagation，
-// 因此菜单项点击关闭使用 capture 阶段监听。
+// 选择器项 handler 会 stopPropagation，避免刚打开的弹窗被 document 冒泡层的“点击外部关闭”
+// 逻辑立即关闭；因此菜单收起使用 capture 阶段监听（先于 stopPropagation 执行）。截图/附件
+// 项的业务监听仍由各模块在 index.js 绑定（id 不变），本模块不重复绑定。
+
+import { showPromptSelector, hidePromptSelector } from './prompt-manager.js';
+import {
+  showAgentAtSelector, hideAgentAtSelector,
+  getPairedAgents, fetchKnowledgeCollections
+} from './agent-at-selector.js';
+import { hideFileAtSelector } from './file-at-selector.js';
+import { shouldShowSkillsTab, shouldShowMcpTab } from './skill-selector.js';
+
+// 可见性刷新序号：快速重复开合菜单时只应用最后一次刷新的结果
+let visibilitySeq = 0;
+
+/**
+ * 菜单打开时刷新选择器项可见性（与弹窗 Tab 可见性判定一致）：
+ * 技能/MCP 依赖连接与开关状态、知识库依赖 RAG 可用性、代理依赖配对列表；
+ * 判定失败的项保持显示（宁可显示后打开为空，也不误藏可用入口）。
+ */
+async function refreshSelectorVisibility() {
+  const checks = [
+    { id: 'addMenuSkillBtn', available: () => shouldShowSkillsTab() },
+    { id: 'addMenuMcpBtn', available: () => shouldShowMcpTab() },
+    { id: 'addMenuKnowledgeBtn', available: async () => (await fetchKnowledgeCollections()).ok },
+    { id: 'addMenuProxyBtn', available: async () => (await getPairedAgents()).length > 0 },
+  ];
+  const seq = ++visibilitySeq;
+  await Promise.all(checks.map(async ({ id, available }) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    let visible = true;
+    try {
+      visible = await available();
+    } catch {
+      visible = true;
+    }
+    if (seq !== visibilitySeq) return; // 已有更新的刷新进行中，丢弃过期结果
+    btn.style.display = visible ? '' : 'none';
+  }));
+}
 
 export function initInputAddMenu() {
   const addBtn = document.getElementById('inputAddBtn');
@@ -16,6 +56,7 @@ export function initInputAddMenu() {
 
   const setOpen = (open) => {
     menu.style.display = open ? '' : 'none';
+    if (open) refreshSelectorVisibility();
   };
   const isOpen = () => menu.style.display !== 'none';
 
@@ -36,6 +77,35 @@ export function initInputAddMenu() {
     if (!isOpen()) return;
     if (wrapper && wrapper.contains(e.target)) return;
     setOpen(false);
+  });
+
+  // 选择器直达项：点击打开对应弹窗并定位目标 Tab（先互斥收起其他弹窗）
+  const selectorItems = [
+    { id: 'promptTriggerBtn', open: () => showPromptSelector('', 'prompts') },
+    { id: 'addMenuSkillBtn', open: () => showPromptSelector('', 'skills') },
+    { id: 'addMenuMcpBtn', open: () => showPromptSelector('', 'mcp') },
+    { id: 'addMenuPageBtn', open: () => showAgentAtSelector('', 'pages') },
+    { id: 'addMenuKnowledgeBtn', open: () => showAgentAtSelector('', 'knowledge') },
+    { id: 'addMenuAgentBtn', open: () => showAgentAtSelector('', 'agents') },
+    { id: 'addMenuProxyBtn', open: () => showAgentAtSelector('', 'proxies') },
+  ];
+  selectorItems.forEach(({ id, open }) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // 事件不冒泡到 document 外部关闭层，避免刚打开的弹窗被误关
+      btn.blur();
+      hidePromptSelector();
+      hideAgentAtSelector();
+      hideFileAtSelector();
+      try {
+        await open();
+      } catch {
+        // 打开失败（数据获取异常等）不阻塞输入
+      }
+      const input = document.getElementById('userInput');
+      if (input) input.focus();
+    });
   });
 
   // "+" 蓝点：开关区内有开启的开关时显示（当前仅划词会移入）

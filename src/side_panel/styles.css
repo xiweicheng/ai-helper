@@ -1169,6 +1169,11 @@ body {
   color: #999;
   white-space: nowrap;
 }
+.input-add-divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin: 4px 6px;
+}
 .input-add-menu-switches {
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   margin-top: 4px;

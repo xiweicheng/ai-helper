@@ -64,7 +64,7 @@ registerTranslations('en', {
 // 当前 @ 弹出框激活的 Tab：'pages' | 'knowledge' | 'agents' | 'proxies'
 export let activeAtTab = 'pages';
 
-async function getPairedAgents() {
+export async function getPairedAgents() {
   try {
     const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
     const agents = result.pairedAgents || [];
@@ -83,8 +83,10 @@ let isMergedMode = false;
 
 /**
  * 显示 Agent/网页 @选择器
+ * @param {string} filterText - 预填过滤文本
+ * @param {string|null} targetTab - 指定打开的 Tab（菜单直达）；null 时保持原有渲染行为
  */
-export async function showAgentAtSelector(filterText = '') {
+export async function showAgentAtSelector(filterText = '', targetTab = null) {
   const agentAtSelector = document.getElementById('agentAtSelector');
   const agentAtDropdown = document.getElementById('agentAtDropdown');
 
@@ -97,8 +99,13 @@ export async function showAgentAtSelector(filterText = '') {
   // 初始化事件（Tab 切换 + ✚ 按钮 + 编辑按钮）
   initAtEvents();
 
-  // 根据是否有过滤文本决定展示模式
-  await renderActiveAtList(filterText);
+  if (targetTab) {
+    // 菜单直达指定 Tab：switchAtTab 内部完成高亮/列表切换/渲染与回焦
+    await switchAtTab(targetTab);
+  } else {
+    // 根据是否有过滤文本决定展示模式
+    await renderActiveAtList(filterText);
+  }
 
   // 异步更新 Tab 标题的选项数量（不阻塞弹窗显示）
   updateAtTabCounts();
