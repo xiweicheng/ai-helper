@@ -624,7 +624,7 @@ async function renderMergedAtList(filterText = '') {
     const isPageSelected = tab.id === currentSelectedPageId;
 
     html += `
-      <div class="prompt-item prompt-item-page"
+      <div class="prompt-item${globalIndex === 0 ? ' selected' : ''} prompt-item-page"
            data-index="${globalIndex}" data-type="page" data-tab-id="${tab.id}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         ${favIcon}
@@ -647,7 +647,7 @@ async function renderMergedAtList(filterText = '') {
     const isDisabled = kb.enabled === false;
 
     html += `
-      <div class="prompt-item${isRef ? ' agent-at-active picked' : ''}${isDisabled ? ' knowledge-item-disabled' : ''} prompt-item-knowledge"
+      <div class="prompt-item${globalIndex === 0 ? ' selected' : ''}${isRef ? ' agent-at-active picked' : ''}${isDisabled ? ' knowledge-item-disabled' : ''} prompt-item-knowledge"
            data-index="${globalIndex}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}"
            data-kb-disabled="${isDisabled ? '1' : '0'}"${isDisabled ? ` title="${escapeHtml(t('knowledgeSelector.disabledTooltip'))}"` : ''}>
         <span class="prompt-item-index">${globalIndex + 1}</span>
@@ -669,7 +669,7 @@ async function renderMergedAtList(filterText = '') {
     const displayName = proxy.name || t('promptSelector.unnamedProxy');
 
     html += `
-      <div class="prompt-item${globalIndex === 0 && filteredAgents.length === 0 && filteredTabs.length === 0 && filteredKbs.length === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
+      <div class="prompt-item${globalIndex === 0 ? ' selected' : ''}${isActive ? ' agent-at-active' : ''}${isDisabled ? ' agent-disabled' : ''} prompt-item-proxy"
            data-index="${globalIndex}" data-type="proxy" data-proxy-id="${escapeHtml(proxy.id)}">
         <span class="prompt-item-index">${globalIndex + 1}</span>
         <span class="agent-at-dot agent-at-dot-${dotClass}"></span>
