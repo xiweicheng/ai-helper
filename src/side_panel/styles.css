@@ -1350,7 +1350,7 @@ body {
   text-overflow: ellipsis;
   text-align: right;
 }
-/* 双行项（提示词/网页/知识库/助手/代理）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
+/* 双行项（提示词/网页/技能/知识库/助手/代理）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
 .input-add-panel-list .input-add-panel-item.input-add-panel-item-two-line {
   flex-direction: column;
   align-items: stretch;
@@ -1411,6 +1411,15 @@ body {
 /* 面板内知识库停用项：标题同步降调（全局 .knowledge-item-disabled 只覆盖弹窗 .prompt-item-content） */
 .input-add-panel-list .knowledge-item-disabled .input-add-panel-item-title {
   color: #666;
+}
+/* 面板内未启用技能：标题同步降调（全局 .skill-list-item-disabled 只覆盖弹窗 .skill-list-item-name） */
+.input-add-panel-list .skill-list-item-disabled .input-add-panel-item-title {
+  color: #666;
+}
+/* 面板内技能/MCP 项：去掉弹窗列表分隔线（面板统一为圆角 hover 卡片） */
+.input-add-panel-list .skill-list-item,
+.input-add-panel-list .mcp-list-item {
+  border-bottom: none;
 }
 .memory-limit-dropdown {
   position: absolute;

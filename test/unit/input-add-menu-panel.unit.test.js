@@ -178,13 +178,28 @@ describe('渲染', () => {
     expect(dom.panel.style.display).not.toBe('none');
   });
 
-  it('skills：渲染技能项，禁用项带灰显 class，已选标记被刷新', async () => {
+  it('skills：渲染技能项（名称+描述双行），禁用项带灰显 class，已选标记被刷新', async () => {
     await openCategoryPanel('skills');
     const items = dom.list.querySelectorAll('.skill-list-item.input-add-panel-item');
     expect(items).toHaveLength(2);
     expect(items[0].dataset.skillName).toBe('技能A');
+    expect(items[0].classList.contains('input-add-panel-item-two-line')).toBe(true);
+    expect(items[0].textContent).toContain('技能A');
+    expect(items[0].textContent).toContain('A描述');
+    expect(items[0].querySelector('.input-add-panel-item-sub').title).toBe('A描述');
     expect(items[1].classList.contains('skill-list-item-disabled')).toBe(true);
+    expect(items[1].textContent).toContain('技能B');
+    expect(items[1].textContent).toContain('B描述');
     expect(refreshSkillPickedState).toHaveBeenCalled();
+  });
+
+  it('skills：无描述技能不渲染副文本行', async () => {
+    vi.mocked(getVisibleSkills).mockResolvedValue([{ name: '无描述技能', enabled: true }]);
+    await openCategoryPanel('skills');
+    const items = dom.list.querySelectorAll('.input-add-panel-item');
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toContain('无描述技能');
+    expect(items[0].querySelector('.input-add-panel-item-sub')).toBeNull();
   });
 
   it('mcp：未开放服务带「未开放」徽标', async () => {
@@ -204,8 +219,10 @@ describe('渲染', () => {
     expect(items[1].querySelector('.page-selected-mark')).toBeTruthy();
   });
 
-  it('prompts/pages 项带 two-line 类（标题整行 + 网址第二行，不被长副文本挤压）', async () => {
+  it('prompts/skills/pages 项带 two-line 类（标题整行 + 副文本第二行，不被长副文本挤压）', async () => {
     await openCategoryPanel('prompts');
+    expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
+    await openCategoryPanel('skills');
     expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
     await openCategoryPanel('pages');
     expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);

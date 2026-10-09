@@ -251,9 +251,10 @@ function renderItem(item) {
     case 'skills': {
       const disabled = item.enabled === false;
       const title = disabled ? `${item.name}\n${t('skillSelector.disabledTooltip')}` : item.name;
-      return `<div class="skill-list-item input-add-panel-item${disabled ? ' skill-list-item-disabled' : ''}" data-skill-name="${escapeHtml(item.name)}" title="${escapeAttr(title)}">
-        <span class="input-add-panel-item-icon">🧩</span>
-        <span class="input-add-panel-item-title">${escapeHtml(item.name)}</span>
+      const desc = item.description || '';
+      return `<div class="skill-list-item input-add-panel-item input-add-panel-item-two-line${disabled ? ' skill-list-item-disabled' : ''}" data-skill-name="${escapeHtml(item.name)}" title="${escapeAttr(title)}">
+        <span class="input-add-panel-item-title">🧩 ${escapeHtml(item.name)}</span>
+        ${desc ? `<span class="input-add-panel-item-sub" title="${escapeAttr(desc)}">${escapeHtml(desc)}</span>` : ''}
       </div>`;
     }
     case 'mcp': {
