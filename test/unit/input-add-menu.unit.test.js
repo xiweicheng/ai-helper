@@ -13,6 +13,10 @@ import {
 import { hideFileAtSelector, showFileAtSelector } from '../../src/side_panel/file-at-selector.js';
 import { shouldShowSkillsTab, shouldShowMcpTab } from '../../src/side_panel/skill-selector.js';
 import { getWorkspaceRoot } from '../../src/side_panel/workspace-manager.js';
+import {
+  initInputAddPanel, openCategoryPanel, closeCategoryPanel,
+  isCategoryPanelOpen, getPanelCategory, isPanelSearchFocused,
+} from '../../src/side_panel/input-add-menu-panel.js';
 
 vi.mock('../../src/side_panel/prompt-manager.js', () => ({
   showPromptSelector: vi.fn(async () => {}),
@@ -34,6 +38,14 @@ vi.mock('../../src/side_panel/workspace-manager.js', () => ({
 vi.mock('../../src/side_panel/skill-selector.js', () => ({
   shouldShowSkillsTab: vi.fn(async () => true),
   shouldShowMcpTab: vi.fn(async () => true),
+}));
+vi.mock('../../src/side_panel/input-add-menu-panel.js', () => ({
+  initInputAddPanel: vi.fn(),
+  openCategoryPanel: vi.fn(async () => {}),
+  closeCategoryPanel: vi.fn(),
+  isCategoryPanelOpen: vi.fn(() => false),
+  getPanelCategory: vi.fn(() => null),
+  isPanelSearchFocused: vi.fn(() => false),
 }));
 
 function setupDom() {
@@ -84,23 +96,36 @@ function setupDom() {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-describe('input-add-menu', () => {
-  let dom;
+const panelState = { open: false, category: null };
+const fire = (el, type) => el.dispatchEvent(new MouseEvent(type, { bubbles: true }));
 
-  beforeEach(() => {
-    vi.mocked(showPromptSelector).mockClear();
-    vi.mocked(showAgentAtSelector).mockClear();
-    vi.mocked(hidePromptSelector).mockClear();
-    vi.mocked(hideAgentAtSelector).mockClear();
-    vi.mocked(hideFileAtSelector).mockClear();
-    vi.mocked(shouldShowSkillsTab).mockReset().mockResolvedValue(true);
-    vi.mocked(shouldShowMcpTab).mockReset().mockResolvedValue(true);
-    vi.mocked(fetchKnowledgeCollections).mockReset().mockResolvedValue({ ok: true, collections: [] });
-    vi.mocked(getPairedAgents).mockReset().mockResolvedValue([]);
-    vi.mocked(getWorkspaceRoot).mockReset().mockResolvedValue('/ws');
-    vi.mocked(showFileAtSelector).mockClear();
-    dom = setupDom();
-  });
+// dom 与重置逻辑提升到顶层：两个 describe（基础交互 / hover 状态机）共享
+let dom;
+
+beforeEach(() => {
+  vi.mocked(showPromptSelector).mockClear();
+  vi.mocked(showAgentAtSelector).mockClear();
+  vi.mocked(hidePromptSelector).mockClear();
+  vi.mocked(hideAgentAtSelector).mockClear();
+  vi.mocked(hideFileAtSelector).mockClear();
+  vi.mocked(shouldShowSkillsTab).mockReset().mockResolvedValue(true);
+  vi.mocked(shouldShowMcpTab).mockReset().mockResolvedValue(true);
+  vi.mocked(fetchKnowledgeCollections).mockReset().mockResolvedValue({ ok: true, collections: [] });
+  vi.mocked(getPairedAgents).mockReset().mockResolvedValue([]);
+  vi.mocked(getWorkspaceRoot).mockReset().mockResolvedValue('/ws');
+  vi.mocked(showFileAtSelector).mockClear();
+  vi.mocked(initInputAddPanel).mockClear();
+  vi.mocked(openCategoryPanel).mockClear().mockResolvedValue(undefined);
+  vi.mocked(closeCategoryPanel).mockClear();
+  panelState.open = false;
+  panelState.category = null;
+  vi.mocked(isCategoryPanelOpen).mockImplementation(() => panelState.open);
+  vi.mocked(getPanelCategory).mockImplementation(() => panelState.category);
+  vi.mocked(isPanelSearchFocused).mockReturnValue(false);
+  dom = setupDom();
+});
+
+describe('input-add-menu', () => {
 
   it('点击 "+" 切换开合', () => {
     expect(dom.menu.style.display).toBe('none');
@@ -260,5 +285,87 @@ describe('input-add-menu', () => {
     dom.item.click();
     await tick();
     expect(dom.menu.style.display).toBe('none');
+  });
+});
+
+describe('hover 二级面板状态机', () => {
+  it('hover 面板项 200ms 后展开对应类别（防误触延迟）', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click();
+      fire(document.getElementById('addMenuSkillBtn'), 'mouseover');
+      await vi.advanceTimersByTimeAsync(199);
+      expect(openCategoryPanel).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(openCategoryPanel).toHaveBeenCalledWith('skills');
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('hover 非面板项 150ms 后收起面板', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click();
+      vi.mocked(closeCategoryPanel).mockClear(); // 排除 setOpen(true) 的重置调用
+      fire(document.getElementById('addMenuKnowledgeBtn'), 'mouseover');
+      await vi.advanceTimersByTimeAsync(149);
+      expect(closeCategoryPanel).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(closeCategoryPanel).toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('鼠标移出菜单容器 150ms 后收起；移回取消', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click();
+      vi.mocked(closeCategoryPanel).mockClear(); // 排除 setOpen(true) 的重置调用
+      fire(dom.menu, 'mouseenter');
+      fire(dom.menu, 'mouseleave');
+      await vi.advanceTimersByTimeAsync(100);
+      fire(dom.menu, 'mouseenter'); // 移回
+      await vi.advanceTimersByTimeAsync(200);
+      expect(closeCategoryPanel).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('搜索框聚焦时 hideTimer 到期不收起', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click();
+      vi.mocked(closeCategoryPanel).mockClear(); // 排除 setOpen(true) 的重置调用
+      vi.mocked(isPanelSearchFocused).mockReturnValue(true);
+      fire(dom.menu, 'mouseleave');
+      await vi.advanceTimersByTimeAsync(150);
+      expect(closeCategoryPanel).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('点击一级项：pending 展开定时器被清理，菜单关闭后面板不弹出', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click();
+      fire(dom.item, 'mouseover'); // dom.item = promptTriggerBtn，pending show
+      dom.item.click(); // 点击 → 打开弹窗 + 菜单关（setOpen(false) 清理 timer）
+      await vi.advanceTimersByTimeAsync(250);
+      expect(openCategoryPanel).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('面板已开且同类别：重复 hover 不重复展开', async () => {
+    vi.useFakeTimers();
+    try {
+      panelState.open = true;
+      panelState.category = 'skills';
+      dom.btn.click();
+      fire(document.getElementById('addMenuSkillBtn'), 'mouseover');
+      await vi.advanceTimersByTimeAsync(250);
+      expect(openCategoryPanel).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('打开菜单时重置面板并同步 has-panel 类', () => {
+    dom.btn.click();
+    expect(closeCategoryPanel).toHaveBeenCalled();
+    expect(dom.menu.classList.contains('has-panel')).toBe(false);
   });
 });
