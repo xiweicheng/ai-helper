@@ -7584,6 +7584,15 @@ body {
   display: none !important;
 }
 
+/* 网页 Tab 下显示网页 ✚ 按钮（新开标签页，便于输入新 URL 打开新页面） */
+#agentAtDropdown[data-active-tab="pages"] #pageAddBtn {
+  display: inline-flex !important;
+}
+/* 非网页 Tab 下隐藏网页 ✚ 按钮 */
+#agentAtDropdown:not([data-active-tab="pages"]) #pageAddBtn {
+  display: none !important;
+}
+
 /* 技能选中指示器（多技能 chip 容器） */
 .skill-indicator {
   display: flex;

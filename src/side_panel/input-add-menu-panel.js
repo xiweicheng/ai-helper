@@ -11,7 +11,8 @@
 //      截图动作类无搜索需求（仅两个固定动作），该类别下隐藏搜索框；
 //      搜索框内置一键清除按钮（清空 + 恢复全量 + 回焦搜索框）；搜索框右侧为管理入口「＋」
 //      （对齐旧弹窗 ✚ 惯例：提示词打开管理模态框、技能/MCP 跳设置页 toolbox、知识库跳
-//      knowledge、助手打开新建/编辑、代理跳 agent；网页与工作目录无管理页则隐藏入口；
+//      knowledge、助手打开新建/编辑、代理跳 agent、网页新开标签页、工作目录打开侧边栏
+//      工作目录面板；无管理动作的类别隐藏入口；
 //      点击先收起菜单再执行）；
 //   3) 选择接线：普通点击与弹窗内行为一致（提示词发送、技能/MCP/知识库多选切换且保持展开、
 //      网页/助手/代理选中、工作目录附加到文件问答），Ctrl/Cmd+点击 = 选中并收起菜单；
@@ -37,7 +38,7 @@ import {
 import { getAllAgents } from './agent-store.js';
 import { openAgentEditor } from './agent-manager.js';
 import { getWorkspaceRoot, listDirectory, getFileIcon, formatFileSize } from './workspace-manager.js';
-import { attachFilesForQuestion } from './workspace-panel.js';
+import { attachFilesForQuestion, openWorkspacePanel } from './workspace-panel.js';
 import { captureFullPageScreenshot, captureRegionScreenshot } from './image-helpers.js';
 import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -82,14 +83,16 @@ const SCREENSHOT_ACTIONS = [
 // 无搜索需求的类别：截图动作类仅两个固定动作，隐藏搜索框
 const SEARCHLESS_CATEGORIES = new Set(['screenshot']);
 
-// 面板管理入口：对齐旧弹窗 ✚ 惯例的动作映射（网页/工作目录无管理页 → 隐藏入口）
+// 面板管理入口：对齐旧弹窗 ✚ 惯例的动作映射（无管理动作的类别 → 隐藏入口）
 const MANAGE_ACTIONS = {
   prompts: { titleKey: 'promptManager.title', action: () => showPromptManageModal() },
   skills: { titleKey: 'promptSelector.skillManageTitle', action: () => openOptionsPage('toolbox') },
   mcp: { titleKey: 'promptSelector.mcpManageTitle', action: () => openOptionsPage('toolbox') },
+  pages: { titleKey: 'pageSelector.openNewTab', action: () => chrome.tabs.create({}) },
   knowledge: { titleKey: 'header.manageKnowledge', action: () => openOptionsPage('knowledge') },
   agents: { titleKey: 'header.addEditAssistant', action: () => openAgentEditor(null) },
   proxies: { titleKey: 'header.addEditAgent', action: () => openOptionsPage('agent') },
+  workspace: { titleKey: 'workspace.openPanel', action: () => openWorkspacePanel() },
 };
 
 function openOptionsPage(hash) {

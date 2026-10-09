@@ -52,6 +52,7 @@ vi.mock('../../src/side_panel/workspace-manager.js', () => ({
 }));
 vi.mock('../../src/side_panel/workspace-panel.js', () => ({
   attachFilesForQuestion: vi.fn(async () => {}),
+  openWorkspacePanel: vi.fn(async () => {}),
 }));
 vi.mock('../../src/side_panel/image-helpers.js', () => ({
   captureFullPageScreenshot: vi.fn(async () => {}),
@@ -76,7 +77,7 @@ import {
 } from '../../src/side_panel/agent-at-selector.js';
 import { getAllAgents } from '../../src/side_panel/agent-store.js';
 import { getWorkspaceRoot, listDirectory } from '../../src/side_panel/workspace-manager.js';
-import { attachFilesForQuestion } from '../../src/side_panel/workspace-panel.js';
+import { attachFilesForQuestion, openWorkspacePanel } from '../../src/side_panel/workspace-panel.js';
 import { captureFullPageScreenshot, captureRegionScreenshot } from '../../src/side_panel/image-helpers.js';
 import state from '../../src/side_panel/state.js';
 import { registerTranslations } from '../../src/shared/i18n.js';
@@ -101,12 +102,18 @@ registerTranslations('zh', {
     mcpManageTitle: '管理 MCP 服务',
   },
   promptManager: { title: '提示词管理' },
+  pageSelector: { openNewTab: '新建标签页' },
+  workspace: { openPanel: '打开工作目录面板' },
   header: { manageKnowledge: '管理知识库', addEditAssistant: '新增/编辑助手', addEditAgent: '新增/编辑代理' },
 });
 
 // chrome.runtime.sendMessage：管理入口跳转断言（覆盖全局 setup 的 noop stub）
 const runtimeSendMessage = vi.fn();
 globalThis.chrome.runtime.sendMessage = runtimeSendMessage;
+
+// chrome.tabs.create：网页管理入口「新开标签页」断言
+const tabsCreate = vi.fn();
+globalThis.chrome.tabs.create = tabsCreate;
 
 let dom;
 let closeSpy;
@@ -601,13 +608,7 @@ describe('管理入口（搜索框右侧 ＋）', () => {
     expect(runtimeSendMessage).toHaveBeenCalledWith({ type: 'OPEN_OPTIONS_PAGE', hash: 'agent' });
   });
 
-  it('agents：点击打开新建助手编辑器（agentId=null）；网页/工作目录：无管理入口隐藏', async () => {
-    await openCategoryPanel('pages');
-    expect(dom.manage.style.display).toBe('none');
-
-    await openCategoryPanel('workspace');
-    expect(dom.manage.style.display).toBe('none');
-
+  it('agents：点击打开新建助手编辑器（agentId=null）', async () => {
     await openCategoryPanel('agents');
     expect(dom.manage.title).toBe('新增/编辑助手');
     dom.manage.click();
@@ -615,11 +616,31 @@ describe('管理入口（搜索框右侧 ＋）', () => {
     expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('pages：按钮显示（标题=新建标签页），点击先收起菜单再新开浏览器标签页', async () => {
+    await openCategoryPanel('pages');
+    expect(dom.manage.style.display).toBe('flex');
+    expect(dom.manage.title).toBe('新建标签页');
+
+    dom.manage.click();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(tabsCreate).toHaveBeenCalledWith({});
+  });
+
+  it('workspace：按钮显示（标题=打开工作目录面板），点击先收起菜单再打开工作目录面板', async () => {
+    await openCategoryPanel('workspace');
+    expect(dom.manage.style.display).toBe('flex');
+    expect(dom.manage.title).toBe('打开工作目录面板');
+
+    dom.manage.click();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(openWorkspacePanel).toHaveBeenCalledTimes(1);
+  });
+
   it('类别切换与面板收起时同步显隐', async () => {
     await openCategoryPanel('prompts');
     expect(dom.manage.style.display).toBe('flex');
 
-    await openCategoryPanel('pages');
+    await openCategoryPanel('screenshot');
     expect(dom.manage.style.display).toBe('none');
 
     await openCategoryPanel('knowledge');

@@ -213,6 +213,15 @@ function initAtEvents() {
       return;
     }
 
+    const pageAddBtn = e.target.closest('#pageAddBtn');
+    if (pageAddBtn) {
+      e.stopPropagation();
+      hideAgentAtSelector();
+      // 新开浏览器标签页（默认新标签页），便于用户输入新 URL 打开新页面
+      chrome.tabs.create({});
+      return;
+    }
+
     const editBtn = e.target.closest('.agent-edit-btn');
     if (editBtn) {
       e.stopPropagation();

@@ -1,7 +1,7 @@
 // side_panel/file-at-selector.js - $ 选择器（输入 $ 检索工作目录文件/目录并添加到文件问答）
 import state from './state.js';
 import { getWorkspaceRoot, listDirectory, searchFilesRemote, getFileIcon } from './workspace-manager.js';
-import { attachFilesForQuestion } from './workspace-panel.js';
+import { attachFilesForQuestion, openWorkspacePanel } from './workspace-panel.js';
 import { escapeHtml, adjustInputHeight, updateDropdownPosition } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -80,6 +80,17 @@ export async function showFileAtSelector(filterText = '') {
       if (e.target.closest('.prompt-item')) {
         e.preventDefault();
       }
+    });
+  }
+
+  // 提示栏 ✚：打开侧边栏工作目录面板（一次性绑定；与 @ 弹窗 ✚ 一致：先收起浮层再执行）
+  const workspaceOpenBtn = document.getElementById('fileAtWorkspaceOpenBtn');
+  if (workspaceOpenBtn && !workspaceOpenBtn.dataset.bound) {
+    workspaceOpenBtn.dataset.bound = '1';
+    workspaceOpenBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      hideFileAtSelector();
+      await openWorkspacePanel();
     });
   }
 

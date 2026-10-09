@@ -33,6 +33,7 @@ registerTranslations('zh', {
     closePanel: '关闭面板',
     embedMode: '嵌入模式',
     floatMode: '浮窗模式',
+    openPanel: '打开工作目录面板',
     narrowViewportHint: '视口过窄，已切回浮窗模式',
     switchWorkdir: '切换工作目录',
     backToParent: '返回上级目录',
@@ -257,6 +258,7 @@ registerTranslations('en', {
     closePanel: 'Close Panel',
     embedMode: 'Embed mode',
     floatMode: 'Floating mode',
+    openPanel: 'Open workspace panel',
     narrowViewportHint: 'Viewport too narrow, switched back to floating mode',
     switchWorkdir: 'Switch Working Directory',
     backToParent: 'Back to Parent Directory',
@@ -746,30 +748,10 @@ function bindEvents() {
 
   toggle.addEventListener('click', async (e) => {
     e.stopPropagation();
-    const isOpen = panel.classList.contains('expanded');
-    if (!isOpen) {
-      // 用户主动打开面板：取消“关闭预览自动收起面板”标记（面板不再因产物预览而展开）
-      previewAutoClosePanel = false;
-    }
-    if (isOpen) {
+    if (panel.classList.contains('expanded')) {
       closePanel();
-    } else if (embedPreference) {
-      // 偏好嵌入模式（点 × 收起不改变偏好）：打开时直接进入嵌入布局；宽度不足则回退浮窗
-      const mainRow = document.getElementById('mainRow');
-      const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
-      if (avail < EMBED_MIN_TOTAL_W) {
-        await openPanel();
-        showToast(t('workspace.narrowViewportHint'), 'error');
-        return;
-      }
-      await openPanel();
-      embedWidth = clampEmbedWidth(embedWidth);
-      applyEmbedMode();
-      embedMode = true;
-      pendingRestoreEmbed = false;
-      await persistEmbedState();
     } else {
-      await openPanel();
+      await openWorkspacePanel();
     }
   });
 
@@ -1277,6 +1259,36 @@ async function openPanel() {
   await updateWorkspaceAgentName();
   if (!currentPath) {
     await navigateToRoot();
+  }
+}
+
+/**
+ * 打开工作目录面板（外部入口：$ 弹窗提示栏加号、"+" 菜单二级面板加号复用）
+ * 与右侧文件夹图标 toggle 的打开分支同一逻辑：已展开则 no-op；
+ * 偏好嵌入模式时直接进入嵌入布局（宽度不足回退浮窗 + 提示）
+ */
+export async function openWorkspacePanel() {
+  const panel = document.getElementById('workspacePanel');
+  if (!panel || panel.classList.contains('expanded')) return;
+  // 用户主动打开面板：取消“关闭预览自动收起面板”标记（面板不再因产物预览而展开）
+  previewAutoClosePanel = false;
+  if (embedPreference) {
+    // 偏好嵌入模式（点 × 收起不改变偏好）：打开时直接进入嵌入布局；宽度不足则回退浮窗
+    const mainRow = document.getElementById('mainRow');
+    const avail = mainRow ? mainRow.clientWidth : window.innerWidth;
+    if (avail < EMBED_MIN_TOTAL_W) {
+      await openPanel();
+      showToast(t('workspace.narrowViewportHint'), 'error');
+      return;
+    }
+    await openPanel();
+    embedWidth = clampEmbedWidth(embedWidth);
+    applyEmbedMode();
+    embedMode = true;
+    pendingRestoreEmbed = false;
+    await persistEmbedState();
+  } else {
+    await openPanel();
   }
 }
 
