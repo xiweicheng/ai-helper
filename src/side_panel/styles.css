@@ -1119,6 +1119,16 @@ body {
   border-color: rgba(102, 126, 234, 0.5);
   color: #667eea;
 }
+/* "+" → "×" 旋转动效：菜单展开时图标旋转 45°（视觉上十字变叉），收起回旋 */
+.input-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.input-add-btn.open .input-add-icon {
+  transform: rotate(45deg);
+}
 .input-add-btn.has-active-switch::after {
   content: '';
   position: absolute;
@@ -1251,7 +1261,7 @@ body {
 .input-add-panel-search {
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 32px 7px 29px; /* 右侧让位一键清除按钮 */
+  padding: 7px 58px 7px 29px; /* 右侧让位一键清除 + 管理入口按钮 */
   border: 1px solid transparent;
   border-radius: 8px;
   background: #f3f4f7;
@@ -1272,7 +1282,7 @@ body {
 /* 一键清除：有输入时由 JS 切换为 flex */
 .input-add-panel-search-clear {
   position: absolute;
-  right: 6px;
+  right: 32px;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1289,6 +1299,28 @@ body {
 .input-add-panel-search-clear:hover {
   background: rgba(0, 0, 0, 0.06);
   color: #667eea;
+}
+/* 管理入口：搜索框右侧圆角方块按钮（对齐旧弹窗 ✚ 惯例；无管理动作的类别由 JS 隐藏） */
+.input-add-panel-manage {
+  position: absolute;
+  right: 5px;
+  display: none; /* JS 按类别切换为 flex */
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: transparent;
+  color: #5f6674;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.input-add-panel-manage:hover {
+  color: #667eea;
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.06);
 }
 /* 列表滚动区：细滚动条 */
 .input-add-panel-list {

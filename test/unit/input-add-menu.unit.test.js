@@ -126,12 +126,19 @@ beforeEach(() => {
 
 describe('input-add-menu', () => {
 
-  it('点击 "+" 切换开合', () => {
+  it('点击 "+" 切换开合（展开时进入 open 旋转态，收起还原）', () => {
     expect(dom.menu.style.display).toBe('none');
+    expect(dom.btn.classList.contains('open')).toBe(false);
+
     dom.btn.click();
     expect(dom.menu.style.display).not.toBe('none');
+    expect(dom.btn.classList.contains('open')).toBe(true);
+    expect(dom.btn.getAttribute('aria-expanded')).toBe('true');
+
     dom.btn.click();
     expect(dom.menu.style.display).toBe('none');
+    expect(dom.btn.classList.contains('open')).toBe(false);
+    expect(dom.btn.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('点击菜单外部关闭', () => {
@@ -139,6 +146,7 @@ describe('input-add-menu', () => {
     expect(dom.menu.style.display).not.toBe('none');
     document.getElementById('outside').click();
     expect(dom.menu.style.display).toBe('none');
+    expect(dom.btn.classList.contains('open')).toBe(false); // 外部关闭同样还原旋转态
   });
 
   it('菜单项自身 stopPropagation 时仍能关闭（capture 监听）', () => {
@@ -148,6 +156,7 @@ describe('input-add-menu', () => {
     expect(dom.menu.style.display).not.toBe('none');
     dom.item.click();
     expect(dom.menu.style.display).toBe('none');
+    expect(dom.btn.classList.contains('open')).toBe(false); // 菜单项关闭同样还原旋转态
   });
 
   it('蓝点：开关区内无开关时隐藏；移入已激活开关时显示；取消勾选后消失', async () => {

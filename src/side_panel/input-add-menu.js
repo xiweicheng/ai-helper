@@ -1,8 +1,8 @@
 // side_panel/input-add-menu.js - 底行 "+" 添加菜单
 //
 // 职责：
-//   1) 开合菜单：点击 "+" 切换；点击菜单项或菜单外部关闭；打开时互斥收起
-//      已打开的选择器弹窗（/ @ $ 三弹窗，避免浮层遮挡菜单）；
+//   1) 开合菜单：点击 "+" 切换（展开时图标旋转 45° 过渡为 "×"，收起回旋还原）；点击菜单项或菜单外部关闭；
+//      打开时互斥收起已打开的选择器弹窗（/ @ $ 三弹窗，避免浮层遮挡菜单）；
 //   2) "+" 蓝点：菜单开关区内存在已激活开关时显示（划词 ④ 级降级移入的场景）；
 //   3) 选择器直达：8 个菜单项打开对应弹窗并定位到目标 Tab/视图（/、@ 弹窗各 Tab
 //      与 $ 文件选择器的统一入口），每次打开菜单刷新可见性——不可用项自动隐藏
@@ -118,6 +118,9 @@ export function initInputAddMenu() {
 
   const setOpen = (open) => {
     menu.style.display = open ? '' : 'none';
+    // "+" → "×" 旋转动效状态（所有开合路径统一走 setOpen；aria-expanded 同步无障碍状态）
+    addBtn.classList.toggle('open', open);
+    addBtn.setAttribute('aria-expanded', String(open));
     if (open) {
       closeCategoryPanel(); // 每次打开从单栏开始
       syncPanelActive();

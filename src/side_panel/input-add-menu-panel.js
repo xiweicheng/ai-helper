@@ -7,7 +7,10 @@
 //      工作目录仅列根目录一层（本地过滤），深层递归搜索仍走点击一级项打开的 $ 弹窗通道；
 //   2) 搜索过滤：本地即时过滤（code/content、name/description、serverName/serverId、title/url、
 //      知识库 name/description、助手名/描述、代理名/url、文件/目录名）；
-//      搜索框内置一键清除按钮（清空 + 恢复全量 + 回焦搜索框）；
+//      搜索框内置一键清除按钮（清空 + 恢复全量 + 回焦搜索框）；搜索框右侧为管理入口「＋」
+//      （对齐旧弹窗 ✚ 惯例：提示词打开管理模态框、技能/MCP 跳设置页 toolbox、知识库跳
+//      knowledge、助手打开新建/编辑、代理跳 agent；网页与工作目录无管理页则隐藏入口；
+//      点击先收起菜单再执行）；
 //   3) 选择接线：普通点击与弹窗内行为一致（提示词发送、技能/MCP/知识库多选切换且保持展开、
 //      网页/助手/代理选中、工作目录附加到文件问答），Ctrl/Cmd+点击 = 选中并收起菜单；
 //      面板是独立于触发符的入口，技能/MCP/知识库/助手/代理均传 clearTrigger:false
@@ -20,7 +23,7 @@ import {
   getVisibleSkills, selectSkill, refreshSkillPickedState,
   getMcpServices, selectMcpService, refreshMcpPickedState,
 } from './skill-selector.js';
-import { sendPromptByCode, insertPromptToInputByCode, PROMPT_ICON_SVG } from './prompt-manager.js';
+import { sendPromptByCode, insertPromptToInputByCode, PROMPT_ICON_SVG, showPromptManageModal } from './prompt-manager.js';
 import { getOpenTabs, selectPage } from './page-selector.js';
 import {
   fetchKnowledgeCollections, getPairedAgents,
@@ -30,6 +33,7 @@ import {
   getProxyDotClass, getCachedProxyStatus, refreshProxyStatus,
 } from './agent-at-selector.js';
 import { getAllAgents } from './agent-store.js';
+import { openAgentEditor } from './agent-manager.js';
 import { getWorkspaceRoot, listDirectory, getFileIcon, formatFileSize } from './workspace-manager.js';
 import { attachFilesForQuestion } from './workspace-panel.js';
 import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
@@ -58,19 +62,57 @@ registerTranslations('en', {
 let panelEl = null;
 let searchEl = null;
 let clearEl = null;
+let manageEl = null;
 let listEl = null;
 let activeCategory = null;
 let dataset = [];   // 当前类别完整数据（渲染按搜索词过滤，选择动作传全量）
 let loadSeq = 0;    // 请求序号：连续切换类别时只应用最后一次响应
 let onRequestClose = () => {};
 
+// 面板管理入口：对齐旧弹窗 ✚ 惯例的动作映射（网页/工作目录无管理页 → 隐藏入口）
+const MANAGE_ACTIONS = {
+  prompts: { titleKey: 'promptManager.title', action: () => showPromptManageModal() },
+  skills: { titleKey: 'promptSelector.skillManageTitle', action: () => openOptionsPage('toolbox') },
+  mcp: { titleKey: 'promptSelector.mcpManageTitle', action: () => openOptionsPage('toolbox') },
+  knowledge: { titleKey: 'header.manageKnowledge', action: () => openOptionsPage('knowledge') },
+  agents: { titleKey: 'header.addEditAssistant', action: () => openAgentEditor(null) },
+  proxies: { titleKey: 'header.addEditAgent', action: () => openOptionsPage('agent') },
+};
+
+function openOptionsPage(hash) {
+  chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash });
+}
+
+// 管理入口按钮：按当前类别同步显隐与标题（无管理动作的类别隐藏）
+function syncManageButton() {
+  if (!manageEl) return;
+  const cfg = activeCategory ? MANAGE_ACTIONS[activeCategory] : null;
+  if (!cfg) {
+    manageEl.style.display = 'none';
+    return;
+  }
+  const label = t(cfg.titleKey);
+  manageEl.title = label;
+  manageEl.setAttribute('aria-label', label);
+  manageEl.style.display = 'flex';
+}
+
 export function initInputAddPanel(options = {}) {
   onRequestClose = typeof options.onRequestClose === 'function' ? options.onRequestClose : () => {};
   panelEl = document.getElementById('inputAddPanel');
   searchEl = document.getElementById('inputAddPanelSearch');
   clearEl = document.getElementById('inputAddPanelSearchClear');
+  manageEl = document.getElementById('inputAddPanelManage');
   listEl = document.getElementById('inputAddPanelList');
   if (!panelEl || !searchEl || !listEl) return;
+  if (manageEl) {
+    manageEl.addEventListener('click', () => {
+      const cfg = activeCategory ? MANAGE_ACTIONS[activeCategory] : null;
+      if (!cfg) return;
+      onRequestClose(); // 先收起菜单（对齐旧弹窗「收起浮层再打开管理界面」）
+      cfg.action();
+    });
+  }
   if (clearEl) {
     const label = t('input.addMenuPanelClear');
     clearEl.title = label;
@@ -111,6 +153,7 @@ export async function openCategoryPanel(category) {
   if (activeCategory === category && panelEl.style.display !== 'none') return;
 
   activeCategory = category;
+  syncManageButton();
   if (searchEl) {
     searchEl.value = '';
     searchEl.placeholder = t('input.addMenuPanelSearchPlaceholder');
@@ -135,6 +178,7 @@ export async function openCategoryPanel(category) {
 
 export function closeCategoryPanel() {
   activeCategory = null;
+  syncManageButton(); // 收起时隐藏管理入口
   dataset = [];
   loadSeq++; // 作废在途请求
   if (searchEl) {

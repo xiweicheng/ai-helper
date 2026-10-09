@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('../../src/side_panel/prompt-manager.js', () => ({
   sendPromptByCode: vi.fn(async () => {}),
   insertPromptToInputByCode: vi.fn(),
+  showPromptManageModal: vi.fn(),
   PROMPT_ICON_SVG: '<svg class="prompt-icon-stub"></svg>',
 }));
 vi.mock('../../src/side_panel/skill-selector.js', () => ({
@@ -40,6 +41,9 @@ vi.mock('../../src/side_panel/agent-at-selector.js', () => ({
 vi.mock('../../src/side_panel/agent-store.js', () => ({
   getAllAgents: vi.fn(async () => []),
 }));
+vi.mock('../../src/side_panel/agent-manager.js', () => ({
+  openAgentEditor: vi.fn(async () => {}),
+}));
 vi.mock('../../src/side_panel/workspace-manager.js', () => ({
   getWorkspaceRoot: vi.fn(async () => null),
   listDirectory: vi.fn(async () => ({ success: true, entries: [] })),
@@ -58,7 +62,8 @@ import {
   getVisibleSkills, getMcpServices, selectSkill, selectMcpService,
   refreshSkillPickedState, refreshMcpPickedState,
 } from '../../src/side_panel/skill-selector.js';
-import { sendPromptByCode, insertPromptToInputByCode } from '../../src/side_panel/prompt-manager.js';
+import { sendPromptByCode, insertPromptToInputByCode, showPromptManageModal } from '../../src/side_panel/prompt-manager.js';
+import { openAgentEditor } from '../../src/side_panel/agent-manager.js';
 import { getOpenTabs, selectPage } from '../../src/side_panel/page-selector.js';
 import {
   fetchKnowledgeCollections, getPairedAgents,
@@ -87,8 +92,16 @@ registerTranslations('zh', {
     inheritGlobal: '继承全局设置',
     toolCount: '{count} 个工具',
     unnamedProxy: '未命名代理',
+    skillManageTitle: '管理技能',
+    mcpManageTitle: '管理 MCP 服务',
   },
+  promptManager: { title: '提示词管理' },
+  header: { manageKnowledge: '管理知识库', addEditAssistant: '新增/编辑助手', addEditAgent: '新增/编辑代理' },
 });
+
+// chrome.runtime.sendMessage：管理入口跳转断言（覆盖全局 setup 的 noop stub）
+const runtimeSendMessage = vi.fn();
+globalThis.chrome.runtime.sendMessage = runtimeSendMessage;
 
 let dom;
 let closeSpy;
@@ -133,6 +146,7 @@ function setupDom() {
       <div class="input-add-panel-search-wrap">
         <input id="inputAddPanelSearch" type="text">
         <button class="input-add-panel-search-clear" id="inputAddPanelSearchClear" type="button" style="display:none;"></button>
+        <button class="input-add-panel-manage" id="inputAddPanelManage" type="button" style="display:none;"></button>
       </div>
       <div id="inputAddPanelList"></div>
     </div>`;
@@ -142,6 +156,7 @@ function setupDom() {
     panel: document.getElementById('inputAddPanel'),
     search: document.getElementById('inputAddPanelSearch'),
     clear: document.getElementById('inputAddPanelSearchClear'),
+    manage: document.getElementById('inputAddPanelManage'),
     list: document.getElementById('inputAddPanelList'),
     userInput: document.getElementById('userInput'),
   };
@@ -544,5 +559,67 @@ describe('状态查询与关闭重置', () => {
     expect(isPanelSearchFocused()).toBe(false);
     dom.search.focus();
     expect(isPanelSearchFocused()).toBe(true);
+  });
+});
+
+describe('管理入口（搜索框右侧 ＋）', () => {
+  it('prompts：按钮显示（标题=提示词管理），点击先收起菜单再打开管理模态框', async () => {
+    await openCategoryPanel('prompts');
+    expect(dom.manage.style.display).toBe('flex');
+    expect(dom.manage.title).toBe('提示词管理');
+    expect(dom.manage.getAttribute('aria-label')).toBe('提示词管理');
+
+    dom.manage.click();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(showPromptManageModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('skills/mcp/knowledge/proxies：按类别更新标题并跳转对应设置页', async () => {
+    await openCategoryPanel('skills');
+    expect(dom.manage.title).toBe('管理技能');
+    dom.manage.click();
+    expect(runtimeSendMessage).toHaveBeenCalledWith({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbox' });
+
+    await openCategoryPanel('mcp');
+    expect(dom.manage.title).toBe('管理 MCP 服务');
+    expect(dom.manage.style.display).toBe('flex');
+
+    await openCategoryPanel('knowledge');
+    expect(dom.manage.title).toBe('管理知识库');
+    dom.manage.click();
+    expect(runtimeSendMessage).toHaveBeenCalledWith({ type: 'OPEN_OPTIONS_PAGE', hash: 'knowledge' });
+
+    await openCategoryPanel('proxies');
+    expect(dom.manage.title).toBe('新增/编辑代理');
+    dom.manage.click();
+    expect(runtimeSendMessage).toHaveBeenCalledWith({ type: 'OPEN_OPTIONS_PAGE', hash: 'agent' });
+  });
+
+  it('agents：点击打开新建助手编辑器（agentId=null）；网页/工作目录：无管理入口隐藏', async () => {
+    await openCategoryPanel('pages');
+    expect(dom.manage.style.display).toBe('none');
+
+    await openCategoryPanel('workspace');
+    expect(dom.manage.style.display).toBe('none');
+
+    await openCategoryPanel('agents');
+    expect(dom.manage.title).toBe('新增/编辑助手');
+    dom.manage.click();
+    expect(openAgentEditor).toHaveBeenCalledWith(null);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('类别切换与面板收起时同步显隐', async () => {
+    await openCategoryPanel('prompts');
+    expect(dom.manage.style.display).toBe('flex');
+
+    await openCategoryPanel('pages');
+    expect(dom.manage.style.display).toBe('none');
+
+    await openCategoryPanel('knowledge');
+    expect(dom.manage.style.display).toBe('flex');
+
+    closeCategoryPanel();
+    expect(dom.manage.style.display).toBe('none');
   });
 });
