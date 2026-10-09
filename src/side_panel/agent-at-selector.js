@@ -1,4 +1,9 @@
 // side_panel/agent-at-selector.js - @ 选择器（输入 @ 快速切换 Agent / 选择网页 / 选择代理）
+//
+// 选择函数（selectKnowledgeByAt / selectAgentByAt / selectProxyByAt）同时服务于
+// "+" 菜单二级面板（input-add-menu-panel.js）：面板入口传 { clearTrigger: false }，
+// 不截断输入框中的 "@" 正文（面板是独立于 @ 触发的入口，@ 可能属于正文）；
+// 弹窗入口默认截断，行为不变。
 import state from './state.js';
 import { getAllAgents } from './agent-store.js';
 import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-manager.js';
@@ -331,14 +336,14 @@ function getAtFilterText(value) {
  * 解析 Agent 展示名称：内置默认 Agent 使用 i18n 翻译，其余使用原始 name。
  * 每次渲染实时查询，避免语言切换后仍显示旧语言（与 agent-manager.js 保持一致）。
  */
-function getAgentDisplayName(agent) {
+export function getAgentDisplayName(agent) {
   return agent.id === 'default' ? t('agentMgr.defaultAgentName') : agent.name;
 }
 
 /**
  * 解析 Agent 展示描述：内置默认 Agent 使用 i18n 翻译，其余使用原始 description。
  */
-function getAgentDisplayDesc(agent) {
+export function getAgentDisplayDesc(agent) {
   return agent.id === 'default' ? t('agentMgr.defaultAgentDesc') : agent.description;
 }
 
@@ -764,10 +769,23 @@ function focusUserInputAfterSelect() {
 }
 
 /**
- * 通过 @ 选择 Agent
+ * 面板场景（clearTrigger=false）：输入框中的 "@" 可能属于正文，不截断，仅回焦并置光标到末尾
  */
-async function selectAgentByAt(agentId) {
-  focusUserInputAfterSelect();
+function refocusUserInputOnly() {
+  const userInput = document.getElementById('userInput');
+  if (!userInput) return;
+  userInput.focus();
+  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+}
+
+/**
+ * 选择 Agent（弹窗 @ 入口与菜单面板入口复用）
+ * @param {string} agentId
+ * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 @ 触发文本（菜单面板场景）
+ */
+export async function selectAgentByAt(agentId, { clearTrigger = true } = {}) {
+  if (clearTrigger) focusUserInputAfterSelect();
+  else refocusUserInputOnly();
   hideAgentAtSelector();
   await switchAgent(agentId);
   adjustInputHeight();
@@ -798,7 +816,7 @@ function selectPageByAt(tabId) {
  * 更新知识库列表（合并视图与单独 Tab 视图）中已选知识库的标记
  * 多选时弹窗保持打开，选择后需手动刷新列表项标记（.picked 紫条+✓ 与 .agent-at-active 高亮）
  */
-function refreshKnowledgePickedState() {
+export function refreshKnowledgePickedState() {
   const refIds = new Set(state.knowledgeRefs.map(r => r.id));
   document.querySelectorAll('.prompt-item-knowledge').forEach(item => {
     const isRef = refIds.has(item.dataset.kbId);
@@ -808,11 +826,14 @@ function refreshKnowledgePickedState() {
 }
 
 /**
- * 通过 @ 选择/取消选择知识库（支持多选，再次选同一库为移除）
- * 多选时保持弹窗打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
+ * 选择/取消选择知识库（支持多选，再次选同一库为移除）
+ * 多选时保持弹窗/面板打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
+ * @param {{id: string, name: string, enabled?: boolean}} kb
+ * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 @ 触发文本（菜单面板场景）
  */
-export function selectKnowledgeByAt(kb) {
-  focusUserInputAfterSelect();
+export function selectKnowledgeByAt(kb, { clearTrigger = true } = {}) {
+  if (clearTrigger) focusUserInputAfterSelect();
+  else refocusUserInputOnly();
 
   const existsIndex = state.knowledgeRefs.findIndex(r => r.id === kb.id);
   if (existsIndex >= 0) {
@@ -982,10 +1003,13 @@ async function renderKnowledgeAtList(filterText = '') {
 }
 
 /**
- * 通过 @ 选择代理
+ * 选择代理（弹窗 @ 入口与菜单面板入口复用）
+ * @param {string} proxyId
+ * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 @ 触发文本（菜单面板场景）
  */
-async function selectProxyByAt(proxyId) {
-  focusUserInputAfterSelect();
+export async function selectProxyByAt(proxyId, { clearTrigger = true } = {}) {
+  if (clearTrigger) focusUserInputAfterSelect();
+  else refocusUserInputOnly();
 
   hideAgentAtSelector();
 

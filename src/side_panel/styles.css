@@ -1350,7 +1350,7 @@ body {
   text-overflow: ellipsis;
   text-align: right;
 }
-/* 双行项（提示词/网页）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
+/* 双行项（提示词/网页/知识库/助手/代理）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
 .input-add-panel-list .input-add-panel-item.input-add-panel-item-two-line {
   flex-direction: column;
   align-items: stretch;
@@ -1379,6 +1379,38 @@ body {
   flex-shrink: 0;
   color: #667eea;
   font-size: 12px;
+}
+/* 双行项的已选 ✓（全局 .picked::after 在列向布局下会另起一行 → 改为右侧居中覆盖） */
+.input-add-panel-list .input-add-panel-item-two-line.picked::after {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+}
+.input-add-panel-item-two-line.picked .input-add-panel-item-title,
+.input-add-panel-item-two-line.picked .input-add-panel-item-sub {
+  padding-right: 18px;
+}
+/* 面板项右侧状态标记（助手/代理激活 ✓）；双行布局下居中覆盖，避免占一行 */
+.input-add-panel-item .input-add-panel-item-mark {
+  flex-shrink: 0;
+  color: #667eea;
+  font-size: 12px;
+}
+.input-add-panel-item-two-line .input-add-panel-item-mark {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.input-add-panel-item-two-line:has(.input-add-panel-item-mark) .input-add-panel-item-title,
+.input-add-panel-item-two-line:has(.input-add-panel-item-mark) .input-add-panel-item-sub {
+  padding-right: 18px;
+}
+/* 面板内知识库停用项：标题同步降调（全局 .knowledge-item-disabled 只覆盖弹窗 .prompt-item-content） */
+.input-add-panel-list .knowledge-item-disabled .input-add-panel-item-title {
+  color: #666;
 }
 .memory-limit-dropdown {
   position: absolute;

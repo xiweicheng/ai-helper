@@ -227,3 +227,23 @@ describe('@ 选择器知识库列表：启用在前、停用在后', () => {
     expect(ids).toEqual(['kb-1', 'kb-2', 'kb-3']);
   });
 });
+
+describe('菜单面板入口（clearTrigger=false）：不截断输入框中的 @ 正文', () => {
+  test('selectKnowledgeByAt(kb, { clearTrigger: false }) 保留原文、回焦且光标置末', () => {
+    const input = document.getElementById('userInput');
+    input.value = '@知识 请参考这份资料';
+    selector.selectKnowledgeByAt({ id: 'kb-1', name: '知识库一' }, { clearTrigger: false });
+
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1']);
+    expect(input.value).toBe('@知识 请参考这份资料'); // 未被截断
+    expect(document.activeElement).toBe(input); // 仍回焦
+    expect(input.selectionStart).toBe(input.value.length); // 光标置末
+  });
+
+  test('默认（clearTrigger=true）仍截断 @ 触发文本（弹窗行为不变）', () => {
+    const input = document.getElementById('userInput');
+    input.value = '@知识';
+    selector.selectKnowledgeByAt({ id: 'kb-2', name: '知识库二' });
+    expect(input.value).toBe('');
+  });
+});

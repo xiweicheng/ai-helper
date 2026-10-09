@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // input-add-menu.unit.test.js - "+" 添加菜单：开合、外部点击关闭、菜单项点击关闭（含 capture 机制）、
-// 蓝点状态；选择器直达（7 项 tab 导航、打开时可见性刷新、stopPropagation 防外部点击误关）
+// 蓝点状态；选择器直达（8 项 tab 导航、打开时可见性刷新、stopPropagation 防外部点击误关）；
+// hover 二级面板状态机（防误触展开、非面板项/移出收起、8 类映射）
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initInputAddMenu } from '../../src/side_panel/input-add-menu.js';
 import { showPromptSelector, hidePromptSelector } from '../../src/side_panel/prompt-manager.js';
@@ -299,12 +300,31 @@ describe('hover 二级面板状态机', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('hover 非面板项 150ms 后收起面板', async () => {
+  it('hover 新增四类项（知识库/助手/代理/工作目录）→ 展开对应类别面板', async () => {
+    vi.useFakeTimers();
+    try {
+      dom.btn.click(); // 打开菜单；后续 hover 不关闭菜单
+      const cases = [
+        ['addMenuKnowledgeBtn', 'knowledge'],
+        ['addMenuAgentBtn', 'agents'],
+        ['addMenuProxyBtn', 'proxies'],
+        ['addMenuWorkspaceBtn', 'workspace'],
+      ];
+      for (const [id, category] of cases) {
+        vi.mocked(openCategoryPanel).mockClear();
+        fire(document.getElementById(id), 'mouseover');
+        await vi.advanceTimersByTimeAsync(200);
+        expect(openCategoryPanel, id).toHaveBeenCalledWith(category);
+      }
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('hover 非面板项（截图）150ms 后收起面板', async () => {
     vi.useFakeTimers();
     try {
       dom.btn.click();
       vi.mocked(closeCategoryPanel).mockClear(); // 排除 setOpen(true) 的重置调用
-      fire(document.getElementById('addMenuKnowledgeBtn'), 'mouseover');
+      fire(document.getElementById('screenshotBtn'), 'mouseover');
       await vi.advanceTimersByTimeAsync(149);
       expect(closeCategoryPanel).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
