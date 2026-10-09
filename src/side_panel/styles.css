@@ -1720,6 +1720,12 @@ body {
   border-radius: 7px;
   border: 1px solid #fff;
 }
+/* ③ 级：右侧助手/温度按钮同步紧凑化，与左组三胶囊等高
+   （19px = 13px 图标 + 2×2 上下 padding + 2×1 边框；图标行盒与左组 toggle-icon 同为 13px） */
+.input-container.switches-icon .agent-selector-btn { padding: 2px 6px; }
+.input-container.switches-icon .agent-selector-emoji { font-size: 13px; line-height: 1; }
+.input-container.switches-icon .temp-display { padding: 2px 7px; }
+.input-container.switches-icon .temp-display svg { width: 13px; height: 13px; }
 .temp-dropdown {
   position: absolute;
   bottom: calc(100% + 8px);
