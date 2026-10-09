@@ -1,7 +1,8 @@
 // 探针：真实浏览器加载构建后的侧边栏，验证输入区一体化容器改造：
 // 1) 宽度扫描（700→280）：底行四档降级按顺序触发、无水平溢出、信息带位置不受影响
-// 2) "+" 菜单：开合、外部点击关闭、菜单项点击关闭（capture 机制，模拟 stopPropagation）
-// 3) 组合键（尽力项）：Ctrl+单击提示词 → 网页选择器
+// 2) "+" 菜单：开合、外部点击关闭、菜单项点击关闭（capture 机制）
+// 3) 选择器直达：7 个菜单项打开对应弹窗并定位目标 Tab、不可用项自动隐藏、
+//    Ctrl+单击提示词的复合行为已移除（回归）
 // 用法：node test-results-probes/_input-bar-tiers.mjs
 //
 // （文件头部 http server + openPanel 的 addInitScript mock 从 _tools-popup-footer.mjs 复制）
@@ -192,41 +193,105 @@ const dotOn = await page.evaluate(() =>
 check('280px "+" 蓝点显示（菜单内开关已激活）', dotOn);
 
 // —— 2) "+" 菜单交互 ——
+const clickMenuItem = async (id) => {
+  await page.click('#inputAddBtn'); // 前置：菜单处于关闭态
+  await page.waitForTimeout(200); // 等待可见性刷新
+  await page.click(id);
+  await page.waitForTimeout(300);
+};
+const closePopups = async () => {
+  await page.click('body', { position: { x: 10, y: 10 } });
+  await page.waitForTimeout(150);
+};
+
 await page.setViewportSize({ width: 430, height: 900 });
 await page.waitForTimeout(120);
 await page.click('#inputAddBtn');
 check('点击 "+" 菜单打开', await page.evaluate(() => document.getElementById('inputAddMenu').style.display !== 'none'));
+await page.waitForTimeout(200);
 await page.screenshot({ path: path.join(__dirname, '_input-bar-menu-open.png') });
+
+// 菜单结构：/ 组（3）‖ @ 组（4）‖ 截图/附件，两组之间分隔线
+const menuStruct = await page.evaluate(() => {
+  const menu = document.getElementById('inputAddMenu');
+  const order = [...menu.querySelectorAll('.input-add-item, .input-add-divider')]
+    .map((el) => (el.classList.contains('input-add-divider') ? '|' : el.id));
+  const vis = {};
+  for (const id of ['promptTriggerBtn', 'addMenuSkillBtn', 'addMenuMcpBtn', 'addMenuPageBtn',
+    'addMenuKnowledgeBtn', 'addMenuAgentBtn', 'addMenuProxyBtn']) {
+    vis[id] = document.getElementById(id)?.style.display !== 'none';
+  }
+  return { order: order.join(','), vis };
+});
+const EXPECT_ORDER = 'promptTriggerBtn,addMenuSkillBtn,addMenuMcpBtn,|,addMenuPageBtn,addMenuKnowledgeBtn,addMenuAgentBtn,addMenuProxyBtn,|,screenshotBtn,fileAttachBtn';
+check('菜单顺序：/ 组 ‖ @ 组 ‖ 截图/附件', menuStruct.order === EXPECT_ORDER, menuStruct.order);
+check('不可用项自动隐藏（探针环境未连接：技能/MCP/知识库/代理）',
+  !menuStruct.vis.addMenuSkillBtn && !menuStruct.vis.addMenuMcpBtn
+  && !menuStruct.vis.addMenuKnowledgeBtn && !menuStruct.vis.addMenuProxyBtn,
+  JSON.stringify(menuStruct.vis));
+check('恒显项可见（提示词/网页/助手）',
+  menuStruct.vis.promptTriggerBtn && menuStruct.vis.addMenuPageBtn && menuStruct.vis.addMenuAgentBtn,
+  JSON.stringify(menuStruct.vis));
 await page.click('body', { position: { x: 10, y: 10 } });
 check('点击外部菜单关闭', await page.evaluate(() => document.getElementById('inputAddMenu').style.display === 'none'));
 
-// 菜单项点击关闭（真实菜单项业务 handler 会 stopPropagation，验证 capture 关闭仍生效）
-await page.click('#inputAddBtn');
-await page.evaluate(() => {
-  // 给菜单项注入一个 stopPropagation 监听，模拟真实按钮行为
-  document.getElementById('promptTriggerBtn').addEventListener('click', (e) => e.stopPropagation());
-});
-await page.click('#promptTriggerBtn');
-check('点击菜单项后菜单关闭（capture）', await page.evaluate(() => document.getElementById('inputAddMenu').style.display === 'none'));
-await page.keyboard.press('Escape');
+// 菜单项点击关闭（真实选择器 handler 会 stopPropagation，验证 capture 关闭仍生效；
+// 同时真实验证「提示词」项直达 / 弹窗）
+await clickMenuItem('#promptTriggerBtn');
+check('点击「提示词」项：菜单收起（capture）+ / 弹窗打开且 prompts tab 激活',
+  await page.evaluate(() => document.getElementById('inputAddMenu').style.display === 'none'
+    && document.getElementById('promptDropdown').classList.contains('show')
+    && document.querySelector('#promptDropdownTabs .prompt-tab.active')?.dataset.tab === 'prompts'));
+await closePopups();
 
-// —— 3) 组合键（尽力项）：Ctrl+单击提示词 → 网页选择器 ——
-try {
-  await page.click('#inputAddBtn');
-  await page.evaluate(() => {
-    const btn = document.getElementById('promptTriggerBtn');
-    btn.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-  });
-  await page.waitForTimeout(300);
-  const agentAtVisible = await page.evaluate(() => {
-    const sel = document.getElementById('agentAtSelector');
-    return !!sel && sel.style.display !== 'none';
-  });
-  check('Ctrl+单击提示词 → 网页选择器（尽力项）', agentAtVisible,
-    agentAtVisible ? '' : '未打开（可能依赖运行时数据，需人工复核）');
-} catch (e) {
-  check('Ctrl+单击提示词 → 网页选择器（尽力项）', false, `异常：${e.message}`);
-}
+// —— 3) 选择器直达：@ 弹窗目标 Tab + Ctrl+单击回归 ——
+// 「网页」项 → pages tab
+await clickMenuItem('#addMenuPageBtn');
+const pageTabState = await page.evaluate(() => ({
+  open: document.getElementById('agentAtDropdown').classList.contains('show'),
+  activeTab: document.querySelector('#agentAtTabs .prompt-tab.active')?.dataset.tab,
+  pageListVisible: document.getElementById('agentPageList')?.style.display !== 'none',
+}));
+check('「网页」项 → @ 弹窗打开且 pages tab 激活',
+  pageTabState.open && pageTabState.activeTab === 'pages' && pageTabState.pageListVisible,
+  JSON.stringify(pageTabState));
+await page.screenshot({ path: path.join(__dirname, '_input-bar-menu-page-tab.png') });
+await closePopups();
+
+// 「助手」项 → agents tab（验证同弹窗内不同 tab 直达）
+await clickMenuItem('#addMenuAgentBtn');
+const agentTabState = await page.evaluate(() => ({
+  activeTab: document.querySelector('#agentAtTabs .prompt-tab.active')?.dataset.tab,
+  agentListVisible: document.getElementById('agentAtList')?.style.display !== 'none',
+}));
+check('「助手」项 → @ 弹窗 agents tab 激活（列表切换）',
+  agentTabState.activeTab === 'agents' && agentTabState.agentListVisible, JSON.stringify(agentTabState));
+await closePopups();
+
+// 复访「网页」：上次停留在 agents，直达应回到 pages（菜单不做“记忆上次 Tab”）
+await clickMenuItem('#addMenuPageBtn');
+const revisit = await page.evaluate(() =>
+  document.querySelector('#agentAtTabs .prompt-tab.active')?.dataset.tab);
+check('「网页」项复访直达 pages（不受上次 agents 残留影响）', revisit === 'pages', revisit);
+await closePopups();
+
+// Ctrl+单击提示词 → 等同单击（复合行为已移除，仍为 / 弹窗 prompts tab）
+await page.click('#inputAddBtn');
+await page.waitForTimeout(200);
+await page.evaluate(() => {
+  document.getElementById('promptTriggerBtn')
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+});
+await page.waitForTimeout(300);
+const ctrlState = await page.evaluate(() => ({
+  promptOpen: document.getElementById('promptDropdown').classList.contains('show'),
+  agentOpen: document.getElementById('agentAtSelector').style.display !== 'none',
+  activeTab: document.querySelector('#promptDropdownTabs .prompt-tab.active')?.dataset.tab,
+}));
+check('Ctrl+单击提示词 → 仍为 / 弹窗（复合行为已移除）',
+  ctrlState.promptOpen && !ctrlState.agentOpen && ctrlState.activeTab === 'prompts',
+  JSON.stringify(ctrlState));
+await closePopups();
 
 // —— 页面错误 ——
 check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
