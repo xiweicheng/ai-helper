@@ -73,10 +73,8 @@ export function updateImagePreviewVisibility() {
 export function updateTextareaPadding() {
   const userInput = document.getElementById('userInput');
   if (!userInput) return;
-  let rightPadding = 44; // 发送按钮(32) + 右侧间距(8) + 内边距(4)
-  if (state.enableImageInput) rightPadding += 32; // 截图按钮(32)
-  if (state.enableFileInput) rightPadding += 32; // 文件上传按钮(32)
-  userInput.style.paddingRight = rightPadding + 'px';
+  // 一体化容器改造：发送/截图/附件已移出输入框，无需再为内嵌按钮动态让位
+  userInput.style.removeProperty('padding-right');
 }
 
 /**

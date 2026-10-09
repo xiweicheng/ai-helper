@@ -1062,22 +1062,131 @@ body {
   flex: 1;
   min-width: 30px;
 }
-.input-toolbar {
+/* === 输入区底行（一体化容器功能行） === */
+.input-bottom-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  order: 99; /* DOM 中位于容器首位（承接原工具栏位置），视觉置底 */
 }
-.input-toolbar-left {
+.input-bottom-left,
+.input-bottom-right {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.input-bottom-right {
+  margin-left: auto;
+}
+.input-bottom-left > *,
+.input-bottom-right > * {
+  flex-shrink: 0;
+}
+.input-bottom-row .toolbar-chip-group,
+.input-bottom-row .tool-toggle-wrapper {
+  padding: 2px 7px;
+}
+/* 记忆组作为定位参照：条数下拉与图标态角标都相对它定位 */
+.input-bottom-left #memoryGroup {
   position: relative;
 }
-.input-toolbar-right {
-  display: flex;
-  gap: 8px;
+
+/* "+" 按钮与添加菜单 */
+.input-add-wrapper {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.input-add-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #dcdfe6;
+  border-radius: 50%;
+  background: transparent;
+  color: #444;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s;
+}
+.input-add-btn:hover {
+  border-color: rgba(102, 126, 234, 0.5);
+  color: #667eea;
+}
+.input-add-btn.has-active-switch::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #667eea;
+  border: 1.5px solid #fff;
+}
+.input-add-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 210px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 6px;
+  z-index: 1000;
+}
+.input-add-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #333;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.input-add-item:hover {
+  background: rgba(102, 126, 234, 0.08);
+}
+.input-add-item svg {
+  flex-shrink: 0;
+}
+.input-add-item .add-item-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: #999;
+  white-space: nowrap;
+}
+.input-add-menu-switches {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  margin-top: 4px;
+  padding: 4px 4px 0;
+  display: none;
+}
+.input-add-menu-switches:has(.check-toggle) {
+  display: block;
+}
+.input-add-menu-switches .check-toggle {
+  padding: 5px 6px;
+  border-radius: 8px;
+  width: 100%;
+}
+.input-add-menu-switches-title {
+  font-size: 11px;
+  color: #999;
+  padding: 2px 6px 4px;
 }
 .memory-limit-dropdown {
   position: absolute;
@@ -1299,14 +1408,42 @@ body {
   font-weight: 500;
   min-width: 28px;
 }
-/* 输入工具栏溢出探测降级（由 toolbar-adapt.js 的 adaptInputToolbar 动态测量后添加）：
-   空间不足时逐级降级——① 隐藏温度数字仅留图标 ② 折叠助手名称为 emoji；
+/* 输入底行溢出探测降级（由 toolbar-adapt.js 的 adaptInputToolbar 动态测量后添加）：
+   空间不足时逐级降级——① 隐藏温度数字仅留图标 ② 折叠助手名称为 emoji
+   ③ 记忆/工具/划词图标化 ④ 划词开关整组收进 "+" 菜单；
    适配英文文案更长 / 自定义助手名过长的场景（固定断点无法按语言校准） */
 .input-container.temp-collapsed .temp-icon-value { display: none; }
 .input-container.temp-collapsed .temp-display { padding: 5px 7px; }
 .input-container.agent-collapsed .agent-selector-label { display: none; }
 .input-container.agent-collapsed .agent-selector-emoji { display: inline; }
 .input-container.agent-collapsed .agent-selector-btn { padding: 4px 6px; gap: 0; }
+/* ③ switches-icon：记忆/工具/划词图标化 */
+.toggle-icon { display: none; }
+.input-container.switches-icon .input-bottom-left .check-toggle .tool-toggle-label { display: none; }
+.input-container.switches-icon .input-bottom-left .check-toggle .toggle-icon { display: inline; font-size: 13px; line-height: 1; }
+.input-container.switches-icon .tool-toggle-wrapper { padding: 0; border-radius: 8px; }
+.input-container.switches-icon .tool-toggle-wrapper .check-toggle { padding: 3px 7px; }
+.input-container.switches-icon .tool-toggle-wrapper .tool-config-btn {
+  border-left: 1px solid rgba(102, 126, 234, 0.25);
+  border-radius: 0;
+  height: 26px;
+  padding: 0 6px;
+}
+.input-container.switches-icon .memory-limit-label {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  background: #667eea;
+  color: #fff;
+  border-radius: 7px;
+  border: 1.5px solid #fff;
+}
 .temp-dropdown {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -1873,16 +2010,16 @@ body {
 }
 
 /* === 文字标签样式 === */
-.input-toolbar-left .check-toggle {
+.input-bottom-left .check-toggle {
   user-select: none;
   gap: 0;
 }
 /* 隐藏复选框圆点 */
-.input-toolbar-left .check-toggle .checkmark {
+.input-bottom-left .check-toggle .checkmark {
   display: none;
 }
 /* 选中态：紫色文字 */
-.input-toolbar-left .check-toggle input:checked ~ .tool-toggle-label {
+.input-bottom-left .check-toggle input:checked ~ .tool-toggle-label {
   color: #667eea;
   font-weight: 500;
 }
@@ -4690,18 +4827,25 @@ body {
   position: relative;
   padding: 12px 16px 22px 16px;
   background: rgba(255, 255, 255, 0.85);
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   gap: 12px;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.input-container:focus-within {
+  border-color: rgba(102, 126, 234, 0.4);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 .input-container textarea {
   flex: 1;
-  padding: 12px 20px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 24px;
+  padding: 12px 4px;
+  border: none;
+  border-radius: 0;
   font-size: 13px;
   line-height: 1.4;
   resize: none;
@@ -4711,9 +4855,8 @@ body {
   min-height: 42px;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  background: rgba(255, 255, 255, 0.9);
+  background: transparent;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 .input-container textarea::placeholder {
   white-space: nowrap;
@@ -4725,10 +4868,7 @@ body {
 .input-container textarea::-webkit-scrollbar {
   display: none;
 }
-.input-container textarea:focus {
-  border-color: rgba(102, 126, 234, 0.4);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
-}
+/* 焦点视觉已由 .input-container:focus-within 承担（一体化容器改造） */
 .input-disclaimer {
   position: absolute;
   left: 0;
@@ -4995,8 +5135,6 @@ body {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
-  padding-left: 44px;
-  padding-right: 44px;
 }
 .input-wrapper.drag-over {
   outline: 2px dashed rgba(102, 126, 234, 0.5);
@@ -5017,14 +5155,6 @@ body {
   z-index: 10;
   pointer-events: none;
 }
-.input-right-buttons {
-  position: absolute;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  z-index: 1;
-}
 .input-inner-btn {
   width: 32px;
   height: 32px;
@@ -5036,17 +5166,6 @@ body {
   justify-content: center;
   transition: all 0.2s;
   flex-shrink: 0;
-}
-.prompt-inner-btn {
-  position: absolute;
-  left: 8px;
-  z-index: 1;
-  background: rgba(102, 126, 234, 0.06);
-  color: #888;
-}
-.prompt-inner-btn:hover {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
 }
 .send-inner-btn {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -5077,13 +5196,9 @@ body {
   box-shadow: none;
   transform: none;
 }
-.screenshot-inner-btn {
-  background: rgba(102, 126, 234, 0.06);
-  color: #888;
-}
-.screenshot-inner-btn:hover {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
+.input-bottom-row .send-inner-btn {
+  width: 30px;
+  height: 30px;
 }
 .image-preview-bar {
   display: flex;
@@ -5304,17 +5419,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* 文件按钮 */
-.file-attach-btn {
-  background: rgba(102, 126, 234, 0.06);
-  color: #888;
-  transition: color 0.2s, background 0.2s;
-}
-.file-attach-btn:hover {
-  color: #667eea;
-  background: rgba(102, 126, 234, 0.15);
 }
 
 .welcome-message {
