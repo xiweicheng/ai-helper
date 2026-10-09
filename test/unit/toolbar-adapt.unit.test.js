@@ -161,6 +161,58 @@ describe('adaptInputToolbar', () => {
     expect(container.classList.contains('selection-in-menu')).toBe(false);
     expect(selectionGroup.parentElement).toBe(left);
   });
+
+  it('测量期间容器带 measuring 类（禁用过渡保证同步测量读到终值），结束后移除', () => {
+    const { container, bar } = dom;
+    const measuredFlags = [];
+    Object.defineProperty(bar, 'scrollWidth', {
+      configurable: true,
+      get: () => {
+        measuredFlags.push(container.classList.contains('measuring'));
+        return 200;
+      },
+    });
+    Object.defineProperty(bar, 'clientWidth', { configurable: true, get: () => 100 });
+
+    adaptInputToolbar();
+
+    // 每次读取布局值时都处于 measuring 状态（.memory-limit-label 等带
+    // transition:all 会过渡 border-width 等布局属性，不禁用则读到过渡起点值）
+    expect(measuredFlags.length).toBeGreaterThan(0);
+    expect(measuredFlags.every(Boolean)).toBe(true);
+    // 结束后恢复（不影响浮层入场动画等正常过渡）
+    expect(container.classList.contains('measuring')).toBe(false);
+  });
+
+  it('空间充足提前返回同样移除 measuring', () => {
+    const { container, bar } = dom;
+    Object.defineProperty(bar, 'scrollWidth', { configurable: true, get: () => 100 });
+    Object.defineProperty(bar, 'clientWidth', { configurable: true, get: () => 200 });
+
+    adaptInputToolbar();
+
+    expect(container.classList.contains('measuring')).toBe(false);
+  });
+
+  it('降级态起点的重测：仅完整态应参与布局的绝对定位元素不被误收为浮层（收集在类清理之后）', () => {
+    const { container, bar, dropdown } = dom;
+    container.classList.add('switches-icon'); // 起点：上一轮降级态（真实场景：③ 态下角标为 absolute）
+    // 模拟：该元素在 ③ 降级态下脱离文档流（如 .memory-limit-label 变 absolute 角标），
+    // 完整态回到流内。jsdom 无法表达 CSS 级联 position 翻转，用可见性翻转等价模拟
+    // “收集资格翻转”：若在类清理前收集，它会被误当浮层隐藏——清理后它应回到流内
+    // 参与测量，却因内联 display:none 缺席导致测量低估宽度、误判“无需降级”。
+    const measuredDisplays = [];
+    makeBarOverflow(bar, dropdown, measuredDisplays);
+    // makeBarOverflow 会先设一个恒定实现，这里覆盖为动态版本以模拟“收集资格翻转”
+    dropdown.getClientRects = () =>
+      container.classList.contains('switches-icon') ? [{ width: 120, height: 80 }] : [];
+
+    adaptInputToolbar();
+
+    // 测量期间该元素必须不被隐藏（保持原 display），其宽度始终参与底行测量
+    expect(measuredDisplays.length).toBeGreaterThan(0);
+    expect(measuredDisplays.every((d) => d === 'none')).toBe(false);
+  });
 });
 
 describe('initToolbarAdaptive', () => {

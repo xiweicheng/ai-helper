@@ -4841,6 +4841,11 @@ body {
   border-color: rgba(102, 126, 234, 0.4);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
 }
+/* 自适应测量期间（toolbar-adapt.js 临时添加）：禁用过渡，保证同步测量读到终值布局 */
+.input-container.measuring,
+.input-container.measuring * {
+  transition: none !important;
+}
 .input-container textarea {
   flex: 1;
   padding: 12px 4px;

@@ -81,6 +81,31 @@ export function adaptInputToolbar() {
   const container = bar?.closest('.input-container') || null;
   if (!bar || !container) return;
 
+  // 测量期间禁用容器内过渡：.memory-limit-label / .tool-config-btn 等带
+  // transition:all，会过渡 border-width / padding 等布局属性——“移除降级类→
+  // 同帧读 scrollWidth”读到的是过渡起点值（仍接近降级态），空间恢复时会被
+  // 误判为“无需降级”，而布局稍后展开为溢出且不再自愈。测量全同步
+  // （scrollWidth 强制 reflow），同一帧内添加与移除，浏览器不渲染中间态。
+  container.classList.add('measuring');
+  try {
+    adaptMeasured(bar, container);
+  } finally {
+    container.classList.remove('measuring');
+  }
+}
+
+/** 测量主体：所有布局读取都发生在 container.measuring 生效期间 */
+function adaptMeasured(bar, container) {
+  // 先恢复完整状态再测量，保证空间恢复时能还原。此步必须在 collectOverlays
+  // 之前：③ 级降级态下 .memory-limit-label 是探出底行边界的绝对定位角标
+  // （可见）——若此时收集，它会被误当浮层内联 display:none 隐藏；随后清理
+  // 降级类本应让它回到文档流参与测量，却因仍为 display:none 缺席，测量宽度
+  // 被低估（实测 326 vs 345），空间恢复时被误判“无需降级”而清空全部降级类，
+  // 布局展开后溢出且不再自愈。清理后角标回到 static 流内，collectOverlays
+  // 只收集真正的浮层（打开的助手选择器 / 模型设置 / “+” 菜单等）。
+  container.classList.remove('temp-collapsed', 'agent-collapsed', 'switches-icon', 'selection-in-menu');
+  restoreSelectionGroup();
+
   const overlays = collectOverlays(bar);
   const overlayDisplays = overlays.map((el) => el.style.display);
   overlays.forEach((el) => { el.style.display = 'none'; });
@@ -89,9 +114,6 @@ export function adaptInputToolbar() {
     finishReplayedAnimations(overlays);
   };
 
-  // 先恢复完整状态再测量，保证空间恢复时能还原
-  container.classList.remove('temp-collapsed', 'agent-collapsed', 'switches-icon', 'selection-in-menu');
-  restoreSelectionGroup();
   if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
   container.classList.add('temp-collapsed');
   if (bar.scrollWidth <= bar.clientWidth) { restoreOverlays(); return; }
