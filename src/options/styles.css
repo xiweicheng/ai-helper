@@ -1175,16 +1175,19 @@ textarea {
   cursor: pointer;
 }
 
+/* 开关语言与侧边栏工具开关统一：未勾选=浅灰空槽（内描边+滑块阴影）；
+   已勾选=紫色轨道+白滑块内紫色 ✓ */
 .toggle-label input[type="checkbox"] {
   width: 40px;
   height: 22px;
   -webkit-appearance: none;
   appearance: none;
-  background: #e0e0e0;
+  background: #e8eaf0;
   border-radius: 11px;
   position: relative;
   cursor: pointer;
   transition: background 0.3s;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); /* 淡轨内描边：保持空槽轮廓 */
 }
 
 .toggle-label input[type="checkbox"]::before {
@@ -1196,8 +1199,16 @@ textarea {
   border-radius: 50%;
   top: 2px;
   left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 表单控件伪元素不继承页面字体（UA 默认 Arial），显式指定与 span 滑轨相同的字体栈，确保 ✓ 字形一致 */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px; /* 18px 旋钮配 12px：与 16px 旋钮（11px）的 ✓ 视觉比例一致 */
+  font-weight: 700;
+  line-height: 1;
   transition: transform 0.3s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); /* 滑块阴影：淡轨上保持立体可见 */
 }
 
 .toggle-label input[type="checkbox"]:checked {
@@ -1205,6 +1216,8 @@ textarea {
 }
 
 .toggle-label input[type="checkbox"]:checked::before {
+  content: '✓';
+  color: #667eea;
   transform: translateX(18px);
 }
 
@@ -2194,9 +2207,10 @@ textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: #e8eaf0;
   transition: .3s;
   border-radius: 20px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); /* 淡轨内描边：保持空槽轮廓 */
 }
 
 .reflection-toggle-slider:before {
@@ -2209,6 +2223,13 @@ textarea {
   background-color: white;
   transition: .3s;
   border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); /* 滑块阴影：淡轨上保持立体可见 */
 }
 
 .reflection-toggle-switch input:checked + .reflection-toggle-slider {
@@ -2216,10 +2237,12 @@ textarea {
 }
 
 .reflection-toggle-switch input:focus + .reflection-toggle-slider {
-  box-shadow: 0 0 1px #667eea;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 0 1px #667eea; /* 聚焦提示 + 保留空槽内描边 */
 }
 
 .reflection-toggle-switch input:checked + .reflection-toggle-slider:before {
+  content: "✓";
+  color: #667eea;
   transform: translateX(16px);
 }
 
@@ -2687,8 +2710,9 @@ textarea {
   position: relative;
   width: 40px;
   height: 22px;
-  background: #ccc;
+  background: #e8eaf0;
   border-radius: 11px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); /* 淡轨内描边：保持空槽轮廓 */
   transition: background 0.2s;
 }
 .global-toggle-slider::after {
@@ -2700,12 +2724,21 @@ textarea {
   height: 18px;
   background: white;
   border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px; /* 18px 旋钮配 12px：与 16px 旋钮（11px）的 ✓ 视觉比例一致 */
+  font-weight: 700;
+  line-height: 1;
   transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); /* 滑块阴影：淡轨上保持立体可见 */
 }
 .global-toggle input:checked + .global-toggle-slider {
   background: #667eea;
 }
 .global-toggle input:checked + .global-toggle-slider::after {
+  content: '✓';
+  color: #667eea;
   transform: translateX(18px);
 }
 .global-toggle-label {
@@ -3182,8 +3215,9 @@ textarea {
   left: 0;
   right: 0;
   bottom: 0;
-  background: #ccc;
+  background: #e8eaf0;
   border-radius: 20px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); /* 淡轨内描边：保持空槽轮廓 */
   transition: background 0.3s;
 }
 .toolbox-toggle-slider::before {
@@ -3195,13 +3229,21 @@ textarea {
   bottom: 2px;
   background: white;
   border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
   transition: transform 0.3s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.22); /* 滑块阴影：淡轨上保持立体可见 */
 }
 .toolbox-toggle input:checked + .toolbox-toggle-slider {
   background: #667eea;
 }
 .toolbox-toggle input:checked + .toolbox-toggle-slider::before {
+  content: '✓';
+  color: #667eea;
   transform: translateX(16px);
 }
 

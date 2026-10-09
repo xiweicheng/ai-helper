@@ -5814,10 +5814,11 @@ body {
   background: #5568d3;
 }
 
-/* 快捷键弹窗样式 */
+/* 快捷键弹窗样式：宽度跟随侧边栏伸缩（两侧至多 20px 边距，封顶 640px）；
+   窄屏取 90% 旧行为兜底，保证任何宽度下都不窄于修改前 */
 .shortcuts-container {
-  max-width: 460px !important;
-  width: 90%;
+  width: max(90%, calc(100% - 40px));
+  max-width: 640px !important;
 }
 
 .shortcuts-table-wrapper {
