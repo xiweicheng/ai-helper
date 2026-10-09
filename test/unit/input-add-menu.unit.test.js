@@ -55,8 +55,7 @@ function setupDom() {
         <div class="input-add-wrapper">
           <button id="inputAddBtn">+</button>
           <div class="input-add-menu" id="inputAddMenu" style="display:none;">
-            <div class="input-add-cols">
-              <div class="input-add-nav">
+            <div class="input-add-nav">
                 <button class="input-add-item" id="promptTriggerBtn">提示词</button>
                 <button class="input-add-item" id="addMenuSkillBtn">技能</button>
                 <button class="input-add-item" id="addMenuMcpBtn">MCP</button>
@@ -77,7 +76,6 @@ function setupDom() {
                 <input id="inputAddPanelSearch" type="text">
                 <div id="inputAddPanelList"></div>
               </div>
-            </div>
           </div>
         </div>
       </div>
@@ -363,9 +361,11 @@ describe('hover 二级面板状态机', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('打开菜单时重置面板并同步 has-panel 类', () => {
+  it('打开菜单时重置面板并清除类别高亮', () => {
+    // 模拟上一次展开残留的高亮，打开菜单后应被清除
+    document.getElementById('addMenuSkillBtn').classList.add('panel-active');
     dom.btn.click();
     expect(closeCategoryPanel).toHaveBeenCalled();
-    expect(dom.menu.classList.contains('has-panel')).toBe(false);
+    expect(dom.menu.querySelectorAll('.input-add-item.panel-active').length).toBe(0);
   });
 });

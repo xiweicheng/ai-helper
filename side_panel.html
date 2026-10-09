@@ -453,26 +453,29 @@
         <div class="input-add-wrapper">
           <button class="input-add-btn" id="inputAddBtn" type="button" data-i18n-title="input.addMenuTitle" title="添加内容">+</button>
           <div class="input-add-menu" id="inputAddMenu" style="display:none;">
-            <div class="input-add-cols">
             <div class="input-add-nav">
             <!-- 选择器直达组①（/ 弹窗）：提示词 / 技能 / MCP；点击直接打开弹窗并定位对应 Tab -->
             <button class="input-add-item" id="promptTriggerBtn" type="button">
               <svg viewBox="0 0 1024 1024" width="16" height="16" fill="currentColor"><path d="M274.090667 107.861333l43.235555 116.792889 116.792889 43.235556-116.792889 43.235555-43.235555 116.736-43.235556-116.792889-116.736-43.235555 116.736-43.235556 43.235556-116.736zM717.937778 532.138667l51.825778 140.117333 140.117333 51.882667-140.117333 51.882666-51.882667 140.117334-51.825778-140.117334-140.174222-51.882666 140.174222-51.882667 51.825778-140.117333zM699.278222 190.350222a36.977778 36.977778 0 1 0-64.056889-36.977778L219.192889 873.927111a36.977778 36.977778 0 1 0 64.056889 36.977778l416.028444-720.554667z"/></svg>
               <span class="add-item-label" data-i18n="input.addMenuPrompt">提示词</span>
+              <svg class="add-item-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             <button class="input-add-item" id="addMenuSkillBtn" type="button" style="display:none;">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>
               <span class="add-item-label" data-i18n="promptSelector.skills">技能</span>
+              <svg class="add-item-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             <button class="input-add-item" id="addMenuMcpBtn" type="button" style="display:none;">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
               <span class="add-item-label">MCP</span>
+              <svg class="add-item-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             <div class="input-add-divider" role="separator"></div>
             <!-- 选择器直达组②（@ 弹窗）：网页 / 知识库 / 助手 / 代理 -->
             <button class="input-add-item" id="addMenuPageBtn" type="button">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
               <span class="add-item-label" data-i18n="promptSelector.pages">网页</span>
+              <svg class="add-item-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
             </button>
             <button class="input-add-item" id="addMenuKnowledgeBtn" type="button" style="display:none;">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -505,9 +508,11 @@
             </div>
             </div>
             <div class="input-add-panel" id="inputAddPanel" style="display:none;">
-              <input class="input-add-panel-search" id="inputAddPanelSearch" type="text" placeholder="搜索…">
+              <div class="input-add-panel-search-wrap">
+                <svg class="input-add-panel-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                <input class="input-add-panel-search" id="inputAddPanelSearch" type="text" placeholder="搜索…">
+              </div>
               <div class="input-add-panel-list" id="inputAddPanelList"></div>
-            </div>
             </div>
           </div>
         </div>

@@ -1193,82 +1193,121 @@ body {
   color: #999;
   padding: 2px 6px 4px;
 }
-/* 双栏容器：单栏时仅左列可见；右列由 JS 控制 display 开关 */
-.input-add-cols {
-  display: flex;
-  align-items: stretch;
-}
+/* 左列一级菜单（二级面板为独立浮层卡片，不再共容器） */
 .input-add-nav {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
   min-width: 0;
 }
-/* 双栏展开态：菜单总宽受视口限制（侧边栏最窄 280px），超宽时右列自动收缩 */
-.input-add-menu.has-panel {
-  max-width: calc(100vw - 16px);
+/* 有二级面板的一级项：行尾 chevron 标识（指示可展开子菜单） */
+.input-add-item .add-item-chevron {
+  margin-left: auto;
+  color: #bbb;
+  transition: color 0.12s ease;
 }
-/* 双栏时收起截图项 hint，为左列让出宽度 */
-.input-add-menu.has-panel .add-item-hint {
-  display: none;
+.input-add-item:hover .add-item-chevron,
+.input-add-item.panel-active .add-item-chevron {
+  color: #667eea;
 }
-/* 当前展开面板对应的类别项保持高亮（鼠标移开后仍可辨识右列归属） */
+/* 当前展开面板对应的类别项保持高亮（鼠标移开后仍可辨识归属） */
 .input-add-item.panel-active {
   background: rgba(102, 126, 234, 0.08);
 }
+/* 二级面板：独立卡片浮层（贴一级菜单右侧 +8px、底边对齐），与一级菜单视觉分离；
+   窄屏越界时由 JS clamp 到视口内（clampPanelPosition，input-add-menu.js） */
 .input-add-panel {
   display: none; /* JS 展开时置为 flex */
-  flex: 1 1 210px;
-  min-width: 120px;
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 8px);
   flex-direction: column;
-  border-left: 1px solid rgba(0, 0, 0, 0.06);
-  margin-left: 6px;
-  padding-left: 6px;
-  animation: inputAddPanelIn 0.15s ease;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  animation: inputAddPanelIn 0.16s ease;
 }
 @keyframes inputAddPanelIn {
-  from { opacity: 0; transform: translateX(-4px); }
+  from { opacity: 0; transform: translateX(-6px); }
   to { opacity: 1; transform: none; }
 }
-.input-add-panel-search {
+/* 搜索框：浅灰底 + 左侧放大镜图标；聚焦时白底 + 主题色柔和描边 */
+.input-add-panel-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+}
+.input-add-panel-search-icon {
+  position: absolute;
+  left: 9px;
+  color: #a8aeb8;
+  pointer-events: none;
+}
+.input-add-panel-search {
   width: 100%;
   box-sizing: border-box;
-  padding: 5px 8px;
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
+  padding: 7px 10px 7px 29px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #f3f4f7;
   font-size: 12px;
   font-family: inherit;
   color: #333;
   outline: none;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.input-add-panel-search::placeholder {
+  color: #a8aeb8;
 }
 .input-add-panel-search:focus {
-  border-color: rgba(102, 126, 234, 0.6);
+  background: #fff;
+  border-color: rgba(102, 126, 234, 0.5);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
 }
+/* 列表滚动区：细滚动条 */
 .input-add-panel-list {
   flex: 1;
   min-height: 0;
   margin-top: 6px;
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
-/* 面板内列表项紧凑化（作用域覆盖弹窗样式） */
+.input-add-panel-list::-webkit-scrollbar {
+  width: 8px;
+}
+.input-add-panel-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.input-add-panel-list::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.24);
+}
+/* 面板内列表项：圆角 hover + 收紧内边距（作用域覆盖弹窗样式） */
 .input-add-panel-list .input-add-panel-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: 8px;
+  padding: 7px 9px;
   margin: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   min-width: 0;
+  transition: background 0.12s ease;
 }
 .input-add-panel-list .input-add-panel-item:hover {
   background: rgba(102, 126, 234, 0.08);
 }
 .input-add-panel-item-icon {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1;
 }
 .input-add-panel-item-title {
   flex: 0 1 auto;

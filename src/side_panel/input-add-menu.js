@@ -7,9 +7,10 @@
 //   3) 选择器直达：8 个菜单项打开对应弹窗并定位到目标 Tab/视图（/、@ 弹窗各 Tab
 //      与 $ 文件选择器的统一入口），每次打开菜单刷新可见性——不可用项自动隐藏
 //      （与弹窗内 Tab 的可见性判定一致）；
-//   4) 悬停二级面板：悬停提示词/技能/MCP/网页四项时在菜单右侧展开「搜索 + 列表」
-//      （防误触 200ms），可直接选择触发；鼠标移出菜单 150ms 后收起。与“点击
-//      打开弹窗”双通道并存（面板逻辑见 input-add-menu-panel.js）。
+//   4) 悬停二级面板：悬停提示词/技能/MCP/网页四项时在菜单右侧展开独立浮层卡片
+//      「搜索 + 列表」（防误触 200ms），可直接选择触发；鼠标移出菜单 150ms 后收起，
+//      窄屏越界由 clampPanelPosition 收敛到视口内。与“点击打开弹窗”双通道并存
+//      （面板逻辑见 input-add-menu-panel.js）。
 //
 // 选择器项 handler 会 stopPropagation，避免刚打开的弹窗被 document 冒泡层的“点击外部关闭”
 // 逻辑立即关闭；因此菜单收起使用 capture 阶段监听（先于 stopPropagation 执行）。截图/附件
@@ -82,10 +83,25 @@ export function initInputAddMenu() {
 
   const syncPanelActive = () => {
     const active = isCategoryPanelOpen() ? getPanelCategory() : null;
-    menu.classList.toggle('has-panel', !!active);
     menu.querySelectorAll('.input-add-item').forEach((el) => {
       el.classList.toggle('panel-active', !!active && PANEL_ITEMS[el.id] === active);
     });
+  };
+
+  // 面板默认贴菜单右侧 +8px（CSS），超出视口右缘时 clamp 到视口内（右缘留 8px）
+  const clampPanelPosition = () => {
+    const panel = document.getElementById('inputAddPanel');
+    if (!panel || panel.style.display === 'none') return;
+    panel.style.left = ''; // 先复位到 CSS 默认位置再测量
+    const menuRect = menu.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const gap = 8;
+    let left = menuRect.right + gap;
+    if (left + panelRect.width > window.innerWidth - gap) {
+      left = window.innerWidth - gap - panelRect.width;
+    }
+    if (left < gap) left = gap;
+    panel.style.left = `${Math.round(left - menuRect.left)}px`;
   };
 
   const setOpen = (open) => {
@@ -157,8 +173,10 @@ export function initInputAddMenu() {
       if (showTimer) clearTimeout(showTimer);
       showTimer = setTimeout(async () => {
         showTimer = null;
+        const loading = openCategoryPanel(category);
+        clampPanelPosition(); // display:flex 已置位（openCategoryPanel 同步段），先收敛位置再等数据
         try {
-          await openCategoryPanel(category);
+          await loading;
         } catch {
           // 面板内部已兜底（失败显示空态），此处仅防意外未处理拒绝
         }
@@ -183,6 +201,11 @@ export function initInputAddMenu() {
       if (!isPointerInMenu) scheduleHide();
     });
   }
+
+  // 面板展开期间窗口宽度变化（侧边栏拖宽/缩窄）→ 重新 clamp 位置
+  window.addEventListener('resize', () => {
+    if (isCategoryPanelOpen()) clampPanelPosition();
+  });
 
   // 选择器直达项：点击打开对应弹窗并定位目标 Tab（先互斥收起其他弹窗）
   const selectorItems = [

@@ -1,11 +1,11 @@
-// 探针：真实浏览器加载构建后的侧边栏，验证加号菜单二级面板（双栏联动）：
-// 1) hover 一级项 200ms 防误触后展开右列面板（搜索框 + 列表），has-panel 类同步
+// 探针：真实浏览器加载构建后的侧边栏，验证加号菜单二级面板（独立浮层卡片）：
+// 1) 一级项 chevron 标识（4 个面板项有、其余没有）；hover 200ms 防误触后展开浮层
 // 2) 面板四类渲染：技能（mock GET_SKILL_LIST）/ MCP（seed mcpTools）/ 网页（mock tabs.query）
 // 3) 搜索过滤：本地即时过滤与清空恢复
 // 4) 选择接线：普通点击技能 = 多选切换且面板保持；Cmd/Ctrl+点击 = 选中并收起
 // 5) 面板内鼠标移动不收起；移出菜单 150ms 后收起（仅收面板，菜单保持）
-// 6) 窄屏几何：280/430px 双栏展开无横向溢出、面板宽 ≥ 120px
-// 7) 回归：菜单外点击全关；重开菜单从单栏开始
+// 6) 几何：560px 并排（+8px 间隙）/ 430/280px clamp 到视口内；面板宽 260px
+// 7) 回归：菜单外点击全关；重开菜单面板收起
 // 用法：node test-results-probes/_input-add-menu-panel.mjs
 //
 // （文件头部 http server + openPanel 的 addInitScript mock 从 _input-bar-tiers.mjs 复制）
@@ -57,7 +57,7 @@ const MOCK_SKILLS = [
 
 // 打开侧边栏页面并注入 chrome API mock（storage 以 seed 为初始值，回调 + Promise 双形态）
 async function openPanel(seed) {
-  const page = await browser.newPage({ viewport: { width: 430, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 560, height: 900 } });
   const errors = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') errors.push(msg.text().slice(0, 200));
@@ -189,25 +189,42 @@ const menuVis = await page.evaluate(() => ({
 }));
 check('已连接环境：技能/MCP 菜单项可见', menuVis.skill && menuVis.mcp, JSON.stringify(menuVis));
 
+const chevrons = await page.evaluate(() => {
+  const withPanel = ['promptTriggerBtn', 'addMenuSkillBtn', 'addMenuMcpBtn', 'addMenuPageBtn'];
+  const withoutPanel = ['addMenuAgentBtn', 'screenshotBtn'];
+  return {
+    panelItems: withPanel.every((id) => !!document.querySelector(`#${id} .add-item-chevron`)),
+    plainItems: withoutPanel.every((id) => !document.querySelector(`#${id} .add-item-chevron`)),
+  };
+});
+check('一级项 chevron 标识：4 个面板项有、无面板项没有',
+  chevrons.panelItems && chevrons.plainItems, JSON.stringify(chevrons));
+
 await page.hover('#promptTriggerBtn');
 const immediateOpen = await panelVisible();
 check('hover 提示词项：立即断言面板不可见（200ms 防误触窗口内）', !immediateOpen);
-await page.waitForTimeout(250);
+await page.waitForTimeout(420); // 200ms 防误触 + 160ms 入场动画（几何断言需动画完成）
 const promptsPanel = await page.evaluate(() => {
   const panel = document.getElementById('inputAddPanel');
+  const menu = document.getElementById('inputAddMenu');
   const search = document.getElementById('inputAddPanelSearch');
   const list = document.getElementById('inputAddPanelList');
+  const mr = menu.getBoundingClientRect();
+  const pr = panel.getBoundingClientRect();
   return {
     visible: panel.getClientRects().length > 0,
     hasSearch: !!search && search.getClientRects().length > 0,
     listExists: !!list,
-    hasPanelClass: document.getElementById('inputAddMenu').classList.contains('has-panel'),
+    position: getComputedStyle(panel).position,
+    sideGap: +(pr.left - mr.right).toFixed(1),
+    panelW: +pr.width.toFixed(1),
     activeItem: document.querySelector('.input-add-item.panel-active')?.id,
   };
 });
-check('hover 提示词项 250ms 后：面板展开 + 搜索框可见 + has-panel + 项高亮',
+check('hover 提示词项：独立浮层展开（+8px 并排）+ 搜索框可见 + 项高亮',
   promptsPanel.visible && promptsPanel.hasSearch && promptsPanel.listExists
-  && promptsPanel.hasPanelClass && promptsPanel.activeItem === 'promptTriggerBtn',
+  && promptsPanel.position === 'absolute' && promptsPanel.sideGap >= 6 && promptsPanel.panelW >= 240
+  && promptsPanel.activeItem === 'promptTriggerBtn',
   JSON.stringify(promptsPanel));
 await page.screenshot({ path: path.join(__dirname, '_input-add-panel-prompts.png') });
 
@@ -317,19 +334,18 @@ await page.waitForTimeout(400);
 const afterLeave = await page.evaluate(() => ({
   panelOpen: document.getElementById('inputAddPanel').getClientRects().length > 0,
   menuOpen: document.getElementById('inputAddMenu').style.display !== 'none',
-  hasPanelClass: document.getElementById('inputAddMenu').classList.contains('has-panel'),
 }));
-check('鼠标移出菜单 400ms 后：面板收起且菜单保持打开（单栏）',
-  !afterLeave.panelOpen && afterLeave.menuOpen && !afterLeave.hasPanelClass,
+check('鼠标移出菜单 400ms 后：面板收起且菜单保持打开',
+  !afterLeave.panelOpen && afterLeave.menuOpen,
   JSON.stringify(afterLeave));
 
-// —— 8) 窄屏几何：双栏展开无横向溢出 + 面板宽 ≥ 120px ——
-for (const w of [430, 280]) {
+// —— 8) 几何：宽屏并排（+8px 间隙）；窄屏 clamp 到视口内（允许覆盖菜单） ——
+for (const w of [560, 430, 280]) {
   await page.setViewportSize({ width: w, height: 900 });
   await page.waitForTimeout(150);
   await ensureMenuOpen();
   await page.hover('#addMenuSkillBtn');
-  await page.waitForTimeout(320);
+  await page.waitForTimeout(420); // 含入场动画完成时间
   const geo = await page.evaluate(() => {
     const menu = document.getElementById('inputAddMenu');
     const panel = document.getElementById('inputAddPanel');
@@ -339,12 +355,16 @@ for (const w of [430, 280]) {
       menuRight: +mr.right.toFixed(1),
       menuLeft: +mr.left.toFixed(1),
       viewport: window.innerWidth,
+      panelLeft: +pr.left.toFixed(1),
+      panelRight: +pr.right.toFixed(1),
       panelW: +pr.width.toFixed(1),
       panelVisible: panel.getClientRects().length > 0,
     };
   });
-  check(`w=${w} 双栏展开：菜单在视口内 且 面板宽 ≥ 120px`,
-    geo.panelVisible && geo.menuRight <= geo.viewport + 1 && geo.menuLeft >= -1 && geo.panelW >= 120,
+  const inViewport = geo.panelVisible && geo.panelLeft >= 7 && geo.panelRight <= geo.viewport - 7;
+  const sideBySide = w === 560 ? geo.panelLeft >= geo.menuRight + 6 : true;
+  check(`w=${w} 独立浮层：视口内${w === 560 ? ' + 与菜单并排（+8px）' : '（clamp 覆盖菜单）'} 且面板宽 260px`,
+    inViewport && sideBySide && geo.panelW >= 240,
     JSON.stringify(geo));
   if (w === 280) await page.screenshot({ path: path.join(__dirname, '_input-add-panel-280.png') });
   await page.mouse.move(8, 8);
@@ -362,11 +382,27 @@ check('回归：菜单外点击 → 菜单与面板均关闭', allClosed.menu ==
 
 await page.click('#inputAddBtn');
 await page.waitForTimeout(250);
-const singleCol = await page.evaluate(() => ({
+const reopened = await page.evaluate(() => ({
   panel: document.getElementById('inputAddPanel').style.display,
-  hasPanel: document.getElementById('inputAddMenu').classList.contains('has-panel'),
 }));
-check('回归：重新打开菜单 → 单栏（面板不可见）', singleCol.panel === 'none' && !singleCol.hasPanel, JSON.stringify(singleCol));
+check('回归：重新打开菜单 → 面板收起（单栏）', reopened.panel === 'none', JSON.stringify(reopened));
+
+// —— 10) hover MCP 项：服务列表（用户截图场景回归） ——
+await ensureMenuOpen();
+await page.hover('#addMenuMcpBtn');
+await page.waitForTimeout(420);
+const mcpPanel = await page.evaluate(() => {
+  const items = [...document.querySelectorAll('#inputAddPanelList .mcp-list-item')];
+  return {
+    count: items.length,
+    names: items.map((el) => el.dataset.serverName),
+    activeItem: document.querySelector('.input-add-item.panel-active')?.id,
+  };
+});
+check('hover MCP 项：独立浮层 2 项（服务X/服务Y）+ 项高亮',
+  mcpPanel.count === 2 && mcpPanel.names.includes('服务X') && mcpPanel.names.includes('服务Y')
+  && mcpPanel.activeItem === 'addMenuMcpBtn',
+  JSON.stringify(mcpPanel));
 
 // —— 页面错误 ——
 check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
