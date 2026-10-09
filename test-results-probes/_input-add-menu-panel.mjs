@@ -403,6 +403,7 @@ check('hover MCP 项：独立浮层 2 项（服务X/服务Y）+ 项高亮',
   mcpPanel.count === 2 && mcpPanel.names.includes('服务X') && mcpPanel.names.includes('服务Y')
   && mcpPanel.activeItem === 'addMenuMcpBtn',
   JSON.stringify(mcpPanel));
+await page.screenshot({ path: path.join(__dirname, '_input-add-panel-mcp.png') });
 
 // —— 页面错误 ——
 check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
