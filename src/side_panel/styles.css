@@ -1447,6 +1447,29 @@ body {
 .input-add-panel-item-two-line:has(.input-add-panel-item-mark) .input-add-panel-item-sub {
   padding-right: 18px;
 }
+/* 二级面板项右侧快捷键键帽（截图动作项）：等宽小字 + 双层下边框拟键盘键；
+   与 mark 同一定位模式（右缘 9px 垂直居中），并预留右侧空间避免长文案压键帽 */
+.input-add-panel-item-kbd {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 5px;
+  border: 1px solid #e2e4ea;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #f7f8fa;
+  color: #8a8f99;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.input-add-panel-item-two-line:has(.input-add-panel-item-kbd) .input-add-panel-item-title,
+.input-add-panel-item-two-line:has(.input-add-panel-item-kbd) .input-add-panel-item-sub {
+  padding-right: 92px;
+}
 /* 面板内知识库停用项：标题同步降调（全局 .knowledge-item-disabled 只覆盖弹窗 .prompt-item-content） */
 .input-add-panel-list .knowledge-item-disabled .input-add-panel-item-title {
   color: #666;

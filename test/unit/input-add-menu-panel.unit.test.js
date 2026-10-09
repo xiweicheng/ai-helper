@@ -643,6 +643,13 @@ describe('截图面板（整页/区域）', () => {
     expect(items[1].textContent).toContain('拖拽框选页面区域');
   });
 
+  it('动作项右侧显示页面快捷键键帽（Alt+S / Alt+Shift+S）', async () => {
+    await openCategoryPanel('screenshot');
+    const items = dom.list.querySelectorAll('.input-add-panel-item');
+    const kbds = [...items].map((el) => el.querySelector('kbd.input-add-panel-item-kbd')?.textContent);
+    expect(kbds).toEqual(['Alt+S', 'Alt+Shift+S']);
+  });
+
   it('搜索按名称/描述过滤（「区域」→ 仅剩区域项）', async () => {
     await openCategoryPanel('screenshot');
     fireSearch('区域');

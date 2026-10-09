@@ -74,9 +74,10 @@ let loadSeq = 0;    // 请求序号：连续切换类别时只应用最后一次
 let onRequestClose = () => {};
 
 // 截图面板：动作项本地静态数据（名称/描述经 i18n 渲染，搜索按名称/描述过滤）
+// kbd 为页面焦点快捷键（content/index.js：Alt+S 整页 / Alt+Shift+S 区域），右侧键帽提示便于用户知悉
 const SCREENSHOT_ACTIONS = [
-  { action: 'full', icon: '📷', nameKey: 'input.addMenuScreenshotFull', descKey: 'input.addMenuScreenshotFullDesc' },
-  { action: 'region', icon: '✂️', nameKey: 'input.addMenuScreenshotRegion', descKey: 'input.addMenuScreenshotRegionDesc' },
+  { action: 'full', icon: '📷', nameKey: 'input.addMenuScreenshotFull', descKey: 'input.addMenuScreenshotFullDesc', kbd: 'Alt+S' },
+  { action: 'region', icon: '✂️', nameKey: 'input.addMenuScreenshotRegion', descKey: 'input.addMenuScreenshotRegionDesc', kbd: 'Alt+Shift+S' },
 ];
 // 无搜索需求的类别：截图动作类仅两个固定动作，隐藏搜索框
 const SEARCHLESS_CATEGORIES = new Set(['screenshot']);
@@ -397,6 +398,7 @@ function renderItem(item) {
       return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-shot-action="${item.action}">
         <span class="input-add-panel-item-title">${item.icon} ${escapeHtml(t(item.nameKey))}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(t(item.descKey))}</span>
+        <kbd class="input-add-panel-item-kbd">${escapeHtml(item.kbd)}</kbd>
       </div>`;
     }
     default:
