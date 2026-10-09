@@ -1,8 +1,9 @@
 // 探针：真实浏览器加载构建后的侧边栏，验证输入区一体化容器改造：
 // 1) 宽度扫描（700→280）：底行四档降级按顺序触发、无水平溢出、信息带位置不受影响
 // 2) "+" 菜单：开合、外部点击关闭、菜单项点击关闭（capture 机制）
-// 3) 选择器直达：7 个菜单项打开对应弹窗并定位目标 Tab、不可用项自动隐藏、
+// 3) 选择器直达：8 个菜单项打开对应弹窗并定位目标 Tab/视图、不可用项自动隐藏、
 //    Ctrl+单击提示词的复合行为已移除（回归）
+// 4) 场景二（mock 已连接 Agent）：工作目录项可见、$ 弹窗标题路径、头部 sticky 修复几何
 // 用法：node test-results-probes/_input-bar-tiers.mjs
 //
 // （文件头部 http server + openPanel 的 addInitScript mock 从 _tools-popup-footer.mjs 复制）
@@ -26,6 +27,17 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
+  // Agent mock 端点（场景二：工作目录状态 / 目录列表）
+  if (p === '/api/status/detail') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: true, workdir: '/probe/ws' }));
+    return;
+  }
+  if (p === '/api/fs/list') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ entries: [{ name: 'README.md', type: 'file', size: 1024, mtime: Date.now() }] }));
+    return;
+  }
   if (p === '/') p = '/side_panel.html';
   const file = path.join(DIST, p);
   if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
@@ -48,7 +60,7 @@ async function openPanel(seed) {
   page.on('console', (msg) => {
     if (msg.type() === 'error') errors.push(msg.text().slice(0, 200));
   });
-  page.on('pageerror', (err) => errors.push('pageerror: ' + err.message.slice(0, 200)));
+  page.on('pageerror', (err) => errors.push('pageerror: ' + String(err.stack || err.message).slice(0, 600)));
   await page.addInitScript((seedData) => {
     const noop = () => {};
     const store = { ...seedData };
@@ -218,16 +230,17 @@ const menuStruct = await page.evaluate(() => {
     .map((el) => (el.classList.contains('input-add-divider') ? '|' : el.id));
   const vis = {};
   for (const id of ['promptTriggerBtn', 'addMenuSkillBtn', 'addMenuMcpBtn', 'addMenuPageBtn',
-    'addMenuKnowledgeBtn', 'addMenuAgentBtn', 'addMenuProxyBtn']) {
+    'addMenuKnowledgeBtn', 'addMenuAgentBtn', 'addMenuProxyBtn', 'addMenuWorkspaceBtn']) {
     vis[id] = document.getElementById(id)?.style.display !== 'none';
   }
   return { order: order.join(','), vis };
 });
-const EXPECT_ORDER = 'promptTriggerBtn,addMenuSkillBtn,addMenuMcpBtn,|,addMenuPageBtn,addMenuKnowledgeBtn,addMenuAgentBtn,addMenuProxyBtn,|,screenshotBtn,fileAttachBtn';
-check('菜单顺序：/ 组 ‖ @ 组 ‖ 截图/附件', menuStruct.order === EXPECT_ORDER, menuStruct.order);
-check('不可用项自动隐藏（探针环境未连接：技能/MCP/知识库/代理）',
+const EXPECT_ORDER = 'promptTriggerBtn,addMenuSkillBtn,addMenuMcpBtn,|,addMenuPageBtn,addMenuKnowledgeBtn,addMenuAgentBtn,addMenuProxyBtn,addMenuWorkspaceBtn,|,screenshotBtn,fileAttachBtn';
+check('菜单顺序：/ 组 ‖ @ 组（含工作目录）‖ 截图/附件', menuStruct.order === EXPECT_ORDER, menuStruct.order);
+check('不可用项自动隐藏（探针环境未连接：技能/MCP/知识库/代理/工作目录）',
   !menuStruct.vis.addMenuSkillBtn && !menuStruct.vis.addMenuMcpBtn
-  && !menuStruct.vis.addMenuKnowledgeBtn && !menuStruct.vis.addMenuProxyBtn,
+  && !menuStruct.vis.addMenuKnowledgeBtn && !menuStruct.vis.addMenuProxyBtn
+  && !menuStruct.vis.addMenuWorkspaceBtn,
   JSON.stringify(menuStruct.vis));
 check('恒显项可见（提示词/网页/助手）',
   menuStruct.vis.promptTriggerBtn && menuStruct.vis.addMenuPageBtn && menuStruct.vis.addMenuAgentBtn,
@@ -292,6 +305,52 @@ check('Ctrl+单击提示词 → 仍为 / 弹窗（复合行为已移除）',
   ctrlState.promptOpen && !ctrlState.agentOpen && ctrlState.activeTab === 'prompts',
   JSON.stringify(ctrlState));
 await closePopups();
+
+// —— 4) 场景二：已连接 Agent（mock 工作目录）→ 工作目录项可见 + $ 弹窗标题路径 + 头部几何 ——
+// 注：代理 id 用真实格式 `pa_` 前缀（generateAgentId）——agent-store 迁移逻辑会把
+// 不以 pa_ 开头的 activeAgentId 当作遗留 key 迁移删除；name 为配对数据必填字段
+// （Header 指示器渲染 activeAgent.name.length）
+const second = await openPanel({
+  pairedAgents: [{ id: 'pa_probe1', name: 'Probe Agent', url: `http://127.0.0.1:${port}`, token: 't' }],
+  activeAgentId: 'pa_probe1',
+});
+const page2 = second.page;
+await page2.setViewportSize({ width: 430, height: 900 });
+await page2.click('#inputAddBtn');
+await page2.waitForTimeout(400); // 等可见性刷新（storage + fetch mock）
+const wsVisible = await page2.evaluate(() => {
+  const btn = document.getElementById('addMenuWorkspaceBtn');
+  return !!btn && btn.style.display !== 'none';
+});
+check('场景二：已连接 Agent 时工作目录项可见', wsVisible);
+await page2.screenshot({ path: path.join(__dirname, '_input-bar-menu-workspace.png') });
+
+await page2.click('#addMenuWorkspaceBtn');
+await page2.waitForTimeout(700); // 等 $ 弹窗渲染（status/detail + fs/list mock）
+const wsState = await page2.evaluate(() => {
+  const sel = document.getElementById('fileAtSelector');
+  const header = document.querySelector('#fileAtSelector .prompt-dropdown-header');
+  const title = document.getElementById('fileAtTitlePath');
+  const list = document.getElementById('fileAtList');
+  const hr = header.getBoundingClientRect();
+  const firstItem = list.querySelector('.prompt-item');
+  const ir = firstItem ? firstItem.getBoundingClientRect() : null;
+  return {
+    open: !!sel && sel.style.display !== 'none',
+    titlePath: title ? title.textContent : null,
+    headerStickyTop: getComputedStyle(header).top,
+    headerBottom: +hr.bottom.toFixed(1),
+    firstItemTop: ir ? +ir.top.toFixed(1) : null,
+  };
+});
+check('场景二：点击「工作目录」项 → $ 弹窗打开', wsState.open);
+check('场景二：标题路径显示工作目录（/probe/ws）', wsState.titlePath === '/probe/ws', String(wsState.titlePath));
+check('场景二：头部 sticky 吸附位置为 0（无 Tab 栏修复生效）', wsState.headerStickyTop === '0px', wsState.headerStickyTop);
+check('场景二：头部与列表首项无重叠（防回归几何断言）',
+  wsState.firstItemTop !== null && wsState.headerBottom <= wsState.firstItemTop + 1,
+  `headerBottom=${wsState.headerBottom} firstItemTop=${wsState.firstItemTop}`);
+await page2.screenshot({ path: path.join(__dirname, '_input-bar-workspace-dropdown.png') });
+check('场景二：页面无 JS 错误', second.errors.length === 0, second.errors.slice(0, 3).join(' | '));
 
 // —— 页面错误 ——
 check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
