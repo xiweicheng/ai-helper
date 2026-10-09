@@ -2318,8 +2318,10 @@ body {
   color: #667eea;
   background: rgba(102, 126, 234, 0.1);
 }
-/* 记忆总开关开启时高亮；关闭时置灰（与工具按钮 .active 逻辑一致） */
-#memoryGroup:has(#isolateChatBtn:checked) .memory-limit-label {
+/* 记忆总开关开启时高亮；关闭时置灰（与工具按钮 .active 逻辑一致）。
+   仅限非图标态：③ 级图标态角标是蓝底白字徽标，套用蓝字高亮会与背景
+   #667eea 同色致文字隐形（本条 ID 特异性高于 ③ 级块，必须在此收窄范围） */
+.input-container:not(.switches-icon) #memoryGroup:has(#isolateChatBtn:checked) .memory-limit-label {
   color: #667eea;
 }
 /* 包裹容器，内部没有 gap */
