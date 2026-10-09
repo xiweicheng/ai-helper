@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 vi.mock('../../src/side_panel/prompt-manager.js', () => ({
   sendPromptByCode: vi.fn(async () => {}),
   insertPromptToInputByCode: vi.fn(),
+  PROMPT_ICON_SVG: '<svg class="prompt-icon-stub"></svg>',
 }));
 vi.mock('../../src/side_panel/skill-selector.js', () => ({
   getVisibleSkills: vi.fn(async () => []),
@@ -27,6 +28,14 @@ vi.mock('../../src/side_panel/agent-at-selector.js', () => ({
   selectProxyByAt: vi.fn(async () => {}),
   getAgentDisplayName: vi.fn((a) => (a && a.id === 'default' ? '默认助手' : a.name)),
   getAgentDisplayDesc: vi.fn((a) => (a && a.id === 'default' ? '' : a.description)),
+  // 代理状态圆点：默认无缓存（初次渲染按离线处理），后续异步刷新由 refreshProxyStatus 承担
+  getCachedProxyStatus: vi.fn(() => null),
+  getProxyDotClass: vi.fn((proxy, online) => {
+    if (proxy.isDisabled) return 'disabled';
+    if (proxy.isActive) return online ? 'connected' : 'disconnected';
+    return online ? 'online' : 'offline';
+  }),
+  refreshProxyStatus: vi.fn(async () => {}),
 }));
 vi.mock('../../src/side_panel/agent-store.js', () => ({
   getAllAgents: vi.fn(async () => []),
@@ -54,7 +63,7 @@ import { getOpenTabs, selectPage } from '../../src/side_panel/page-selector.js';
 import {
   fetchKnowledgeCollections, getPairedAgents,
   selectKnowledgeByAt, refreshKnowledgePickedState,
-  selectAgentByAt, selectProxyByAt,
+  selectAgentByAt, selectProxyByAt, refreshProxyStatus,
 } from '../../src/side_panel/agent-at-selector.js';
 import { getAllAgents } from '../../src/side_panel/agent-store.js';
 import { getWorkspaceRoot, listDirectory } from '../../src/side_panel/workspace-manager.js';
@@ -93,7 +102,7 @@ const SERVICES = [
   { serverId: 'srv-y', serverName: '服务Y', toolCount: 1, effectiveOpen: false },
 ];
 const TABS = [
-  { id: 1, title: '页面一', url: 'https://a.com', active: true, favIconUrl: '' },
+  { id: 1, title: '页面一', url: 'https://a.com', active: true, favIconUrl: 'https://a.com/favicon.ico' },
   { id: 2, title: '页面二', url: 'https://b.com', active: false, favIconUrl: '' },
 ];
 const KNOWLEDGE = [
@@ -168,13 +177,14 @@ beforeEach(() => {
 });
 
 describe('渲染', () => {
-  it('prompts：渲染全部提示词项（data-code + code/content）', async () => {
+  it('prompts：渲染全部提示词项（data-code + code/content + 行内图标）', async () => {
     await openCategoryPanel('prompts');
     const items = dom.list.querySelectorAll('.input-add-panel-item');
     expect(items).toHaveLength(2);
     expect(items[0].dataset.code).toBe('p1');
     expect(items[0].textContent).toContain('/p1');
     expect(items[0].textContent).toContain('发送内容一');
+    expect(items[0].querySelector('.input-add-panel-item-inline-icon svg')).toBeTruthy();
     expect(dom.panel.style.display).not.toBe('none');
   });
 
@@ -202,27 +212,35 @@ describe('渲染', () => {
     expect(items[0].querySelector('.input-add-panel-item-sub')).toBeNull();
   });
 
-  it('mcp：未开放服务带「未开放」徽标', async () => {
+  it('mcp：双行渲染（名称+服务 ID），未开放服务带「未开放」徽标', async () => {
     await openCategoryPanel('mcp');
     const items = dom.list.querySelectorAll('.mcp-list-item.input-add-panel-item');
     expect(items).toHaveLength(2);
+    expect(items[0].classList.contains('input-add-panel-item-two-line')).toBe(true);
+    expect(items[0].textContent).toContain('服务X');
+    expect(items[0].querySelector('.input-add-panel-item-sub').textContent).toBe('srv-x');
     expect(items[1].classList.contains('mcp-list-item-inactive')).toBe(true);
+    expect(items[1].querySelector('.input-add-panel-item-sub').textContent).toBe('srv-y');
     expect(items[1].textContent).toContain('未开放');
   });
 
-  it('pages：当前已选网页带 ✓ 标记', async () => {
+  it('pages：当前已选网页带 ✓ 标记；favicon 优先、无 favicon 回退 🌐', async () => {
     state.selectedPage = { id: 2, title: '页面二', url: 'https://b.com' };
     await openCategoryPanel('pages');
     const items = dom.list.querySelectorAll('.prompt-item.input-add-panel-item');
     expect(items).toHaveLength(2);
     expect(items[0].dataset.tabId).toBe('1');
+    expect(items[0].querySelector('img.favicon-img').src).toBe('https://a.com/favicon.ico');
+    expect(items[1].querySelector('.input-add-panel-item-inline-icon').textContent).toBe('🌐');
     expect(items[1].querySelector('.page-selected-mark')).toBeTruthy();
   });
 
-  it('prompts/skills/pages 项带 two-line 类（标题整行 + 副文本第二行，不被长副文本挤压）', async () => {
+  it('prompts/skills/mcp/pages 项带 two-line 类（标题整行 + 副文本第二行，不被长副文本挤压）', async () => {
     await openCategoryPanel('prompts');
     expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
     await openCategoryPanel('skills');
+    expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
+    await openCategoryPanel('mcp');
     expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
     await openCategoryPanel('pages');
     expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
@@ -259,7 +277,7 @@ describe('渲染', () => {
     expect(items[0].querySelector('.input-add-panel-item-mark')).toBeNull();
   });
 
-  it('proxies：渲染代理项（双行 name/url），激活 ✓、禁用灰显', async () => {
+  it('proxies：渲染代理项（双行 name/url + 状态圆点），激活 ✓、禁用灰显', async () => {
     await openCategoryPanel('proxies');
     const items = dom.list.querySelectorAll('.input-add-panel-item');
     expect(items).toHaveLength(2);
@@ -267,8 +285,13 @@ describe('渲染', () => {
     expect(items[0].textContent).toContain('本地代理');
     expect(items[0].textContent).toContain('ws://127.0.0.1:9222');
     expect(items[0].querySelector('.input-add-panel-item-mark')).toBeTruthy();
+    // 状态圆点：先按缓存（缺省离线）渲染，激活项 disconnected、禁用项 disabled
+    expect(items[0].querySelector('.agent-at-dot.agent-at-dot-disconnected')).toBeTruthy();
+    expect(items[1].querySelector('.agent-at-dot.agent-at-dot-disabled')).toBeTruthy();
     expect(items[1].classList.contains('agent-disabled')).toBe(true);
     expect(items[1].querySelector('.input-add-panel-item-mark')).toBeNull();
+    // 渲染后逐项触发异步状态刷新（复用 @ 弹窗链路）
+    expect(refreshProxyStatus).toHaveBeenCalledTimes(2);
   });
 
   it('workspace：根目录条目排序（mtime 降序 → 目录优先 → 名称序），目录带 /、文件显大小', async () => {

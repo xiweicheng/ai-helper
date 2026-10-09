@@ -20,13 +20,14 @@ import {
   getVisibleSkills, selectSkill, refreshSkillPickedState,
   getMcpServices, selectMcpService, refreshMcpPickedState,
 } from './skill-selector.js';
-import { sendPromptByCode, insertPromptToInputByCode } from './prompt-manager.js';
+import { sendPromptByCode, insertPromptToInputByCode, PROMPT_ICON_SVG } from './prompt-manager.js';
 import { getOpenTabs, selectPage } from './page-selector.js';
 import {
   fetchKnowledgeCollections, getPairedAgents,
   selectKnowledgeByAt, refreshKnowledgePickedState,
   selectAgentByAt, selectProxyByAt,
   getAgentDisplayName, getAgentDisplayDesc,
+  getProxyDotClass, getCachedProxyStatus, refreshProxyStatus,
 } from './agent-at-selector.js';
 import { getAllAgents } from './agent-store.js';
 import { getWorkspaceRoot, listDirectory, getFileIcon, formatFileSize } from './workspace-manager.js';
@@ -235,6 +236,12 @@ function renderList() {
   listEl.querySelectorAll('.input-add-panel-item').forEach((el) => {
     el.addEventListener('click', (e) => handleItemClick(e, el));
   });
+  // 网页 favicon 加载失败时隐藏（替代内联 onerror，避免 MV3 CSP 拦截；与 @ 弹窗一致）
+  listEl.querySelectorAll('img.favicon-img').forEach((img) => {
+    img.addEventListener('error', () => { img.style.display = 'none'; });
+  });
+  // 代理在线状态：先按缓存渲染圆点，再异步 ping 刷新（复用 @ 弹窗链路，圆点经 prompt-item-proxy 同步更新）
+  if (activeCategory === 'proxies') items.forEach((p) => refreshProxyStatus(p));
   // 技能/MCP/知识库已选标记：复用全局刷新函数（面板项带相同 class + data 属性即被覆盖）
   if (activeCategory === 'skills') refreshSkillPickedState();
   if (activeCategory === 'mcp') refreshMcpPickedState();
@@ -245,7 +252,7 @@ function renderItem(item) {
   switch (activeCategory) {
     case 'prompts':
       return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-code="${escapeHtml(item.code)}" title="${escapeAttr(item.content || '')}">
-        <span class="input-add-panel-item-title">/${escapeHtml(item.code)}</span>
+        <span class="input-add-panel-item-title"><span class="input-add-panel-item-inline-icon">${PROMPT_ICON_SVG}</span>/${escapeHtml(item.code)}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(item.content || '')}</span>
       </div>`;
     case 'skills': {
@@ -260,17 +267,20 @@ function renderItem(item) {
     case 'mcp': {
       const inactive = item.effectiveOpen === false;
       const title = inactive ? `${item.serverName}\n${t('skillSelector.mcpInactiveTooltip')}` : item.serverName;
-      return `<div class="mcp-list-item input-add-panel-item${inactive ? ' mcp-list-item-inactive' : ''}" data-server-id="${escapeHtml(item.serverId)}" data-server-name="${escapeHtml(item.serverName)}" title="${escapeAttr(title)}">
-        <span class="input-add-panel-item-icon">🔌</span>
-        <span class="input-add-panel-item-title">${escapeHtml(item.serverName)}</span>
-        ${inactive ? `<span class="mcp-list-item-badge mcp-badge-inactive">${t('skillSelector.mcpInactiveBadge')}</span>` : ''}
+      return `<div class="mcp-list-item input-add-panel-item input-add-panel-item-two-line${inactive ? ' mcp-list-item-inactive' : ''}" data-server-id="${escapeHtml(item.serverId)}" data-server-name="${escapeHtml(item.serverName)}" title="${escapeAttr(title)}">
+        <span class="input-add-panel-item-title">🔌 ${escapeHtml(item.serverName)}${inactive ? ` <span class="mcp-list-item-badge mcp-badge-inactive">${t('skillSelector.mcpInactiveBadge')}</span>` : ''}</span>
+        <span class="input-add-panel-item-sub" title="${escapeAttr(item.serverId || '')}">${escapeHtml(item.serverId || '')}</span>
       </div>`;
     }
     case 'pages': {
       const title = item.title || item.url || '';
       const selected = !!(state.selectedPage && state.selectedPage.id === item.id);
+      // 图标与 @ 弹窗一致：favicon 优先，无则 🌐 兜底（加载失败由 renderList 统一隐藏）
+      const favIcon = item.favIconUrl
+        ? `<img src="${escapeAttr(item.favIconUrl)}" width="14" height="14" class="favicon-img" alt="">`
+        : '<span class="input-add-panel-item-inline-icon">🌐</span>';
       return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-tab-id="${item.id}">
-        <span class="input-add-panel-item-title">${escapeHtml(title)}</span>
+        <span class="input-add-panel-item-title">${favIcon}${escapeHtml(title)}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(item.url || '')}</span>
         ${selected ? '<span class="page-selected-mark">✓</span>' : ''}
       </div>`;
@@ -297,8 +307,11 @@ function renderItem(item) {
     }
     case 'proxies': {
       const name = item.name || t('promptSelector.unnamedProxy');
-      return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line${item.isDisabled ? ' agent-disabled' : ''}" data-proxy-id="${escapeHtml(item.id)}">
-        <span class="input-add-panel-item-title">${escapeHtml(name)}</span>
+      const cached = getCachedProxyStatus(item);
+      const isOnline = cached ? cached.online : false;
+      // prompt-item-proxy + data-proxy-id：让 @ 弹窗的 refreshProxyStatus 异步刷新时同步更新面板圆点
+      return `<div class="prompt-item prompt-item-proxy input-add-panel-item input-add-panel-item-two-line${item.isDisabled ? ' agent-disabled' : ''}" data-proxy-id="${escapeHtml(item.id)}">
+        <span class="input-add-panel-item-title"><span class="agent-at-dot agent-at-dot-${getProxyDotClass(item, isOnline)}"></span>${escapeHtml(name)}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(item.url || '')}</span>
         ${item.isActive ? '<span class="input-add-panel-item-mark">✓</span>' : ''}
       </div>`;

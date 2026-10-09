@@ -1350,7 +1350,7 @@ body {
   text-overflow: ellipsis;
   text-align: right;
 }
-/* 双行项（提示词/网页/技能/知识库/助手/代理）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
+/* 双行项（提示词/网页/技能/MCP/知识库/助手/代理）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
 .input-add-panel-list .input-add-panel-item.input-add-panel-item-two-line {
   flex-direction: column;
   align-items: stretch;
@@ -1360,6 +1360,18 @@ body {
 .input-add-panel-item-two-line .input-add-panel-item-title,
 .input-add-panel-item-two-line .input-add-panel-item-sub {
   width: 100%;
+}
+/* 标题行内嵌图标（提示词 SVG / 网页 favicon 或 🌐）：inline 上下文行内对齐 */
+.input-add-panel-item-inline-icon,
+.input-add-panel-item-title .favicon-img {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+/* 标题行内代理状态圆点：inline 上下文需显式 inline-block 宽高才生效 */
+.input-add-panel-item-title .agent-at-dot {
+  display: inline-block;
+  vertical-align: middle;
 }
 .input-add-panel-item-two-line .input-add-panel-item-sub {
   text-align: left;

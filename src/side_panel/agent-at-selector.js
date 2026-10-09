@@ -433,7 +433,7 @@ const PROXY_STATUS_TTL = 10000;
 /**
  * 获取代理状态缓存（过期返回 null）
  */
-function getCachedProxyStatus(proxy) {
+export function getCachedProxyStatus(proxy) {
   const cached = proxyStatusCache.get(proxy.id);
   if (cached && Date.now() - cached.ts < PROXY_STATUS_TTL) return cached;
   return null;
@@ -442,7 +442,7 @@ function getCachedProxyStatus(proxy) {
 /**
  * 计算代理状态圆点的 class
  */
-function getProxyDotClass(proxy, online) {
+export function getProxyDotClass(proxy, online) {
   if (proxy.isDisabled) return 'disabled';
   if (proxy.isActive) return online ? 'connected' : 'disconnected';
   return online ? 'online' : 'offline';
@@ -451,7 +451,7 @@ function getProxyDotClass(proxy, online) {
 /**
  * 异步刷新代理在线状态：ping 完成后仅更新对应项的圆点，不重渲染列表
  */
-async function refreshProxyStatus(proxy) {
+export async function refreshProxyStatus(proxy) {
   // TTL 内已有缓存则跳过，避免输入过程中重复请求
   if (getCachedProxyStatus(proxy)) return;
   const pingResult = await pingAgent(proxy);
