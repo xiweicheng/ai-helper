@@ -2240,6 +2240,7 @@ body {
   min-width: 18px;
   height: 18px;
   padding: 0 2px;
+  position: relative; /* 作为右上角状态点（absolute）的定位参照 */
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -2264,6 +2265,34 @@ body {
 /* 工具总开关开启且存在启用工具时高亮；关闭或为 0 时保持置灰 */
 .tool-config-btn.active {
   color: #667eea;
+}
+/* 开关状态角标：白底小胶囊挂在按钮右上角，内含两段状态色块——
+   左=工具预筛选（琥珀）、右=敏感操作确认（绿），与弹窗开关滑轨颜色一一对应；
+   开启显示对应色、关闭浅灰（常驻显示）；absolute 定位不占布局 */
+.tool-config-btn .tools-config-flags {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: flex;
+  gap: 1px;
+  padding: 1px;
+  background: #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.10);
+  pointer-events: none; /* 装饰层不参与交互，避免按钮边缘悬停抖动 */
+}
+.tool-config-btn .tools-config-flag {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #d4d9e2; /* 关闭=浅灰常驻显示（与开关空槽同调） */
+  transition: background 0.2s;
+}
+.tool-config-btn .flag-preselect.on {
+  background: #f59e0b;
+}
+.tool-config-btn .flag-confirm.on {
+  background: #22c55e;
 }
 .chat-container {
   flex: 1;
@@ -5682,8 +5711,9 @@ body {
   position: relative;
   width: 36px;
   height: 20px;
-  background: #ccc;
+  background: #e8eaf0; /* 未勾选=浅灰空槽，与开启的琥珀/绿对比更强 */
   border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); /* 淡轨内描边：保持空槽轮廓 */
   transition: background 0.2s;
   flex-shrink: 0;
 }
@@ -5696,10 +5726,34 @@ body {
   height: 16px;
   background: white;
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); /* 白滑块阴影：在淡轨道上保持立体可见 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
   transition: transform 0.2s;
 }
 .tool-preselect-toggle input:checked ~ .toggle-switch {
   background: #667eea;
+}
+/* 工具弹窗底部两个开关开启时的滑轨配色 = 按钮角标颜色
+   （建立颜色对应：琥珀=工具预筛选、绿=敏感操作确认）；
+   已勾选滑块内显示同色 ✓，与未勾选（浅灰空槽）一眼区分 */
+#toolsPreselectToggleLabel input:checked ~ .toggle-switch {
+  background: #f59e0b;
+}
+#toolsPreselectToggleLabel input:checked ~ .toggle-switch::after {
+  content: '✓';
+  color: #f59e0b;
+}
+#toolConfirmToggleLabel input:checked ~ .toggle-switch {
+  background: #22c55e;
+}
+#toolConfirmToggleLabel input:checked ~ .toggle-switch::after {
+  content: '✓';
+  color: #22c55e;
 }
 .tool-preselect-toggle input:checked ~ .toggle-switch::after {
   transform: translateX(16px);

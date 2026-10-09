@@ -18,6 +18,9 @@ registerTranslations('zh', {
     mcpServiceExpand: '展开/收起工具列表',
     mcpExcludedByAgent: '已被当前助手排除，可在助手编辑中调整',
     categorySelectAllHint: '对该分类下可见项全选/取消全选',
+    stateOn: '已开启',
+    stateOff: '已关闭',
+    stateLine: '{name}：{state}',
   },
 });
 registerTranslations('en', {
@@ -33,6 +36,9 @@ registerTranslations('en', {
     mcpServiceExpand: 'Show/hide tool list',
     mcpExcludedByAgent: 'Excluded by current assistant; adjust in assistant editor',
     categorySelectAllHint: 'Select/deselect all visible items in this category',
+    stateOn: 'On',
+    stateOff: 'Off',
+    stateLine: '{name}: {state}',
   },
 });
 
@@ -130,6 +136,15 @@ async function loadMcpServiceStateFromStorage() {
   } catch { /* ignore */ }
 }
 
+// 工具预筛选 / 敏感操作确认开关状态（驱动工具栏配置按钮右上角状态点与悬停提示）
+let preselectEnabled = false;
+let confirmEnabled = true;
+chrome.storage.local.get(['enableToolPreselect', 'toolConfirmationEnabled'], (result) => {
+  preselectEnabled = result.enableToolPreselect === true;
+  confirmEnabled = result.toolConfirmationEnabled !== false;
+  updateToolsConfigIndicators();
+});
+
 // 监听 MCP 工具更新和全局开关变化，实时同步
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
@@ -155,6 +170,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
     logger.debug('[SidePanel] Skill global toggle changed:', globalSkillsEnabled);
     needsRefresh = true;
   }
+
+  // 两个开关状态变化（弹窗切换/保存、options 页修改均会触发）→ 刷新按钮状态点与悬停提示
+  let flagsChanged = false;
+  if (changes.enableToolPreselect) {
+    preselectEnabled = changes.enableToolPreselect.newValue === true;
+    flagsChanged = true;
+  }
+  if (changes.toolConfirmationEnabled) {
+    confirmEnabled = changes.toolConfirmationEnabled.newValue !== false;
+    flagsChanged = true;
+  }
+  if (flagsChanged) updateToolsConfigIndicators();
 
   // 如果工具弹窗当前是打开状态，实时刷新列表
   if (needsRefresh) {
@@ -932,6 +959,33 @@ function updateToolsToggleState() {
   }
 }
 
+/**
+ * 刷新工具栏「工具配置」按钮的开关状态感知：
+ * 右上角状态角标（白底胶囊内两粒色块：工具预筛选=琥珀 / 敏感操作确认=绿，
+ * 开启显对应色、关闭浅灰常驻，与弹窗开关滑轨颜色一一对应）
+ * 与悬停提示（基础提示 + 两行开关状态，跟随语言切换）
+ * 数据源：模块级 preselectEnabled / confirmEnabled（启动读取 + storage.onChanged 实时更新）
+ */
+function updateToolsConfigIndicators() {
+  const btn = document.getElementById('toolsConfigBtn');
+  if (!btn) return;
+  const flagPreselect = document.getElementById('toolsConfigFlagPreselect');
+  const flagConfirm = document.getElementById('toolsConfigFlagConfirm');
+  if (flagPreselect) flagPreselect.classList.toggle('on', preselectEnabled);
+  if (flagConfirm) flagConfirm.classList.toggle('on', confirmEnabled);
+
+  // 悬停提示的唯一写入方（HTML 不挂 data-i18n-title，避免 applyI18n 覆盖状态行）
+  const stateLine = (name, on) => t('toolPanel.stateLine', {
+    name,
+    state: t(on ? 'toolPanel.stateOn' : 'toolPanel.stateOff'),
+  });
+  btn.title = [
+    t('toolPanel.configBtnTitle'),
+    stateLine(t('toolPanel.preselect'), preselectEnabled),
+    stateLine(t('react.toolConfirmation'), confirmEnabled),
+  ].join('\n');
+}
+
 export {
   openToolsPopup,
   closeToolsPopup,
@@ -944,6 +998,7 @@ export {
   updateToolsPopupTitle,
   saveToolsFromPopup,
   updateToolsToggleState,
+  updateToolsConfigIndicators,
   getAgentFilteredTools,
   setVisibleMcpServicesOpen,
   refreshToolPopupIfOpen,

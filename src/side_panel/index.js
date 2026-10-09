@@ -250,7 +250,7 @@ import {
 import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
-  updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState,
+  updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState, updateToolsConfigIndicators,
   setVisibleMcpServicesOpen,
   refreshToolPopupIfOpen, applyRagToolIntroduction
 } from './tool-panel.js';
@@ -1670,7 +1670,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 初始化国际化（读取语言偏好 + 跨环境同步监听）
     initI18n().then(() => {
       applyI18n();
-      subscribe(() => applyI18n());
+      // 语言就绪后（重）排工具配置按钮悬停提示：状态行文案跟随语言
+      updateToolsConfigIndicators();
+      subscribe(() => {
+        applyI18n();
+        updateToolsConfigIndicators();
+      });
     }),
     // 获取当前激活的 Tab ID
     getCurrentActiveTabId(),

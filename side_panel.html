@@ -485,8 +485,14 @@
             <span class="checkmark"></span>
             <span class="tool-toggle-label" data-i18n="toggle.tools">工具</span>
           </label>
-          <button class="tool-config-btn" id="toolsConfigBtn" data-i18n-title="toolPanel.configBtnTitle" title="点击打开工具详细配置">
+          <!-- 悬停提示由 tool-panel.js 动态组合（基础提示 + 两行开关状态），不挂 data-i18n-title 以免被 applyI18n 覆盖 -->
+          <button class="tool-config-btn" id="toolsConfigBtn" title="点击打开工具详细配置">
             <span class="tools-config-count" id="toolsConfigCount">0</span>
+            <!-- 右上角状态角标：白底胶囊内两粒色块（左=预筛选/右=确认），由 updateToolsConfigIndicators 切换 .on（开显色/关浅灰） -->
+            <span class="tools-config-flags" id="toolsConfigFlags" aria-hidden="true">
+              <span class="tools-config-flag flag-preselect" id="toolsConfigFlagPreselect"></span>
+              <span class="tools-config-flag flag-confirm" id="toolsConfigFlagConfirm"></span>
+            </span>
           </button>
         </div>
         <div class="toolbar-chip-group">
