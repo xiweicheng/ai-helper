@@ -1,7 +1,8 @@
 // 探针：真实浏览器加载构建后的侧边栏，验证加号菜单二级面板（独立浮层卡片）：
 // 1) 一级项 chevron 标识（4 个面板项有、其余没有）；hover 200ms 防误触后展开浮层
-// 2) 面板四类渲染：技能（mock GET_SKILL_LIST）/ MCP（seed mcpTools）/ 网页（mock tabs.query）
-// 3) 搜索过滤：本地即时过滤与清空恢复
+// 2) 面板四类渲染：技能（mock GET_SKILL_LIST）/ MCP（seed mcpTools）/ 网页（mock tabs.query，
+//    网页项标题/网址双行布局：标题占整行、网址第二行，不被长网址挤压）
+// 3) 搜索过滤：本地即时过滤 + 一键清除按钮（出现/清空/恢复/回焦/隐藏）
 // 4) 选择接线：普通点击技能 = 多选切换且面板保持；Cmd/Ctrl+点击 = 选中并收起
 // 5) 面板内鼠标移动不收起；移出菜单 150ms 后收起（仅收面板，菜单保持）
 // 6) 几何：560px 并排（+8px 间隙）/ 430/280px clamp 到视口内；面板宽 260px；
@@ -129,7 +130,8 @@ async function openPanel(seed) {
       tabs: {
         query: (q, cb) => {
           const tabs = [
-            { id: 101, title: '探针页面一', url: 'https://one.example', active: true, favIconUrl: '' },
+            // url 故意长串：验证双行布局下标题不被网址挤压（用户反馈场景）
+            { id: 101, title: '探针页面一', url: 'https://one.example/very/long/path/to/some/deep/page?query=alpha&beta=gamma', active: true, favIconUrl: '' },
             { id: 102, title: '探针页面二', url: 'https://two.example', active: false, favIconUrl: '' },
           ];
           if (typeof cb === 'function') { setTimeout(() => cb(tabs), 0); return; }
@@ -250,18 +252,27 @@ check('hover 技能项：面板切换为技能列表（2 项含技能甲）',
   JSON.stringify(skillsPanel));
 await page.screenshot({ path: path.join(__dirname, '_input-add-panel-skills.png') });
 
-// —— 3) 搜索过滤 ——
+// —— 3) 搜索过滤 + 一键清除按钮 ——
 await page.fill('#inputAddPanelSearch', '甲');
 await page.waitForTimeout(120);
-const filteredCount = await page.evaluate(() =>
-  document.querySelectorAll('#inputAddPanelList .skill-list-item').length);
-check('搜索「甲」→ 列表降为 1 项', filteredCount === 1, String(filteredCount));
+const filteredState = await page.evaluate(() => ({
+  count: document.querySelectorAll('#inputAddPanelList .skill-list-item').length,
+  clearVisible: document.getElementById('inputAddPanelSearchClear').getClientRects().length > 0,
+}));
+check('搜索「甲」→ 列表降为 1 项 + 清除按钮出现',
+  filteredState.count === 1 && filteredState.clearVisible, JSON.stringify(filteredState));
 await page.screenshot({ path: path.join(__dirname, '_input-add-panel-search.png') });
-await page.fill('#inputAddPanelSearch', '');
+await page.click('#inputAddPanelSearchClear');
 await page.waitForTimeout(120);
-const restoredCount = await page.evaluate(() =>
-  document.querySelectorAll('#inputAddPanelList .skill-list-item').length);
-check('清空搜索 → 恢复 2 项', restoredCount === 2, String(restoredCount));
+const afterClear = await page.evaluate(() => ({
+  value: document.getElementById('inputAddPanelSearch').value,
+  count: document.querySelectorAll('#inputAddPanelList .skill-list-item').length,
+  clearHidden: document.getElementById('inputAddPanelSearchClear').getClientRects().length === 0,
+  focused: document.activeElement === document.getElementById('inputAddPanelSearch'),
+}));
+check('点击一键清除：输入清空 + 列表恢复 2 项 + 按钮隐藏 + 焦点回搜索框',
+  afterClear.value === '' && afterClear.count === 2 && afterClear.clearHidden && afterClear.focused,
+  JSON.stringify(afterClear));
 
 // —— 4) 选择接线：普通点击技能 = 多选切换且保持展开 ——
 await page.click('#inputAddPanelList .skill-list-item[data-skill-name="技能甲"]');
@@ -299,17 +310,33 @@ check('修饰键+点击技能项：选中技能乙 + 菜单与面板收起',
   afterCtrl.secondPicked && !afterCtrl.menuOpen && !afterCtrl.panelOpen,
   JSON.stringify(afterCtrl));
 
-// —— 6) 网页面板：渲染 + 点击选中并收起 ——
+// —— 6) 网页面板：双行布局（标题整行 + 网址第二行）+ 渲染 + 点击选中并收起 ——
 await ensureMenuOpen();
 await page.hover('#addMenuPageBtn');
 await page.waitForTimeout(320);
 const pagesPanel = await page.evaluate(() => {
   const items = [...document.querySelectorAll('#inputAddPanelList .prompt-item')];
-  return { count: items.length, texts: items.map((el) => el.textContent) };
+  const first = items[0];
+  if (!first) return { count: 0, texts: [], stacked: false, titleWide: false };
+  const title = first.querySelector('.input-add-panel-item-title');
+  const sub = first.querySelector('.input-add-panel-item-sub');
+  const ir = first.getBoundingClientRect();
+  const tr = title.getBoundingClientRect();
+  const sr = sub.getBoundingClientRect();
+  return {
+    count: items.length,
+    texts: items.map((el) => el.textContent),
+    stacked: sr.top >= tr.bottom - 1,       // 网址在标题下方（两行）
+    titleWide: tr.width >= ir.width * 0.7,  // 标题占行宽大比例（不被长网址挤压）
+    titleW: +tr.width.toFixed(1),
+    itemW: +ir.width.toFixed(1),
+  };
 });
-check('hover 网页项：面板 2 项（探针页面一/二）',
-  pagesPanel.count === 2 && pagesPanel.texts.some((t) => t.includes('探针页面一')),
+check('hover 网页项：面板 2 项（探针页面一/二）+ 标题/网址双行布局（标题不被挤压）',
+  pagesPanel.count === 2 && pagesPanel.texts.some((t) => t.includes('探针页面一'))
+  && pagesPanel.stacked && pagesPanel.titleWide,
   JSON.stringify(pagesPanel));
+await page.screenshot({ path: path.join(__dirname, '_input-add-panel-pages.png') });
 
 await page.click('#inputAddPanelList .prompt-item');
 await page.waitForTimeout(250);

@@ -1251,7 +1251,7 @@ body {
 .input-add-panel-search {
   width: 100%;
   box-sizing: border-box;
-  padding: 7px 10px 7px 29px;
+  padding: 7px 32px 7px 29px; /* 右侧让位一键清除按钮 */
   border: 1px solid transparent;
   border-radius: 8px;
   background: #f3f4f7;
@@ -1268,6 +1268,27 @@ body {
   background: #fff;
   border-color: rgba(102, 126, 234, 0.5);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12);
+}
+/* 一键清除：有输入时由 JS 切换为 flex */
+.input-add-panel-search-clear {
+  position: absolute;
+  right: 6px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #a8aeb8;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.input-add-panel-search-clear:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #667eea;
 }
 /* 列表滚动区：细滚动条 */
 .input-add-panel-list {
@@ -1328,6 +1349,31 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: right;
+}
+/* 双行项（提示词/网页）：标题整行 + 副文本第二行，避免长副文本把标题挤到一个字 */
+.input-add-panel-list .input-add-panel-item.input-add-panel-item-two-line {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  position: relative;
+}
+.input-add-panel-item-two-line .input-add-panel-item-title,
+.input-add-panel-item-two-line .input-add-panel-item-sub {
+  width: 100%;
+}
+.input-add-panel-item-two-line .input-add-panel-item-sub {
+  text-align: left;
+}
+.input-add-panel-item-two-line .page-selected-mark {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+/* 选中态：右侧 ✓ 占位，避免文字被压在 ✓ 下方 */
+.input-add-panel-item-two-line:has(.page-selected-mark) .input-add-panel-item-title,
+.input-add-panel-item-two-line:has(.page-selected-mark) .input-add-panel-item-sub {
+  padding-right: 18px;
 }
 .input-add-panel-item .page-selected-mark {
   flex-shrink: 0;

@@ -61,7 +61,10 @@ function setupDom() {
   document.body.innerHTML = `
     <textarea id="userInput"></textarea>
     <div class="input-add-panel" id="inputAddPanel" style="display:none;">
-      <input id="inputAddPanelSearch" type="text">
+      <div class="input-add-panel-search-wrap">
+        <input id="inputAddPanelSearch" type="text">
+        <button class="input-add-panel-search-clear" id="inputAddPanelSearchClear" type="button" style="display:none;"></button>
+      </div>
       <div id="inputAddPanelList"></div>
     </div>`;
   closeSpy = vi.fn();
@@ -69,6 +72,7 @@ function setupDom() {
   return {
     panel: document.getElementById('inputAddPanel'),
     search: document.getElementById('inputAddPanelSearch'),
+    clear: document.getElementById('inputAddPanelSearchClear'),
     list: document.getElementById('inputAddPanelList'),
     userInput: document.getElementById('userInput'),
   };
@@ -131,6 +135,13 @@ describe('渲染', () => {
     expect(items[0].dataset.tabId).toBe('1');
     expect(items[1].querySelector('.page-selected-mark')).toBeTruthy();
   });
+
+  it('prompts/pages 项带 two-line 类（标题整行 + 网址第二行，不被长副文本挤压）', async () => {
+    await openCategoryPanel('prompts');
+    expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
+    await openCategoryPanel('pages');
+    expect(dom.list.querySelectorAll('.input-add-panel-item-two-line')).toHaveLength(2);
+  });
 });
 
 describe('搜索过滤', () => {
@@ -154,6 +165,35 @@ describe('搜索过滤', () => {
     fireSearch('内容一');
     await openCategoryPanel('skills');
     expect(dom.search.value).toBe('');
+  });
+});
+
+describe('搜索一键清除', () => {
+  it('有输入时显示、点击后清空恢复全量并回焦搜索框、按钮隐藏', async () => {
+    await openCategoryPanel('prompts');
+    expect(dom.clear.style.display).toBe('none');
+    fireSearch('内容一');
+    expect(dom.clear.style.display).not.toBe('none');
+    dom.clear.click();
+    expect(dom.search.value).toBe('');
+    expect(document.activeElement).toBe(dom.search);
+    expect(dom.clear.style.display).toBe('none');
+    expect(dom.list.querySelectorAll('.input-add-panel-item')).toHaveLength(2);
+  });
+
+  it('切换类别重置搜索时按钮同步隐藏', async () => {
+    await openCategoryPanel('prompts');
+    fireSearch('内容一');
+    expect(dom.clear.style.display).not.toBe('none');
+    await openCategoryPanel('skills');
+    expect(dom.clear.style.display).toBe('none');
+  });
+
+  it('closeCategoryPanel 后按钮隐藏', async () => {
+    await openCategoryPanel('prompts');
+    fireSearch('内容一');
+    closeCategoryPanel();
+    expect(dom.clear.style.display).toBe('none');
   });
 });
 

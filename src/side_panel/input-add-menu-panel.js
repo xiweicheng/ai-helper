@@ -5,6 +5,7 @@
 //   1) openCategoryPanel(category)：加载该类数据并渲染（技能强制刷新，与弹窗一致）；
 //      同类别重复调用 no-op；切换类别清空搜索框；请求序号丢弃过期响应；
 //   2) 搜索过滤：本地即时过滤（code/content、name/description、serverName/serverId、title/url）；
+//      搜索框内置一键清除按钮（清空 + 恢复全量 + 回焦搜索框）；
 //   3) 选择接线：普通点击与弹窗内行为一致（提示词发送、技能/MCP 多选切换、网页选中），
 //      Ctrl/Cmd+点击 = 选中并收起菜单；技能/MCP 传 clearTrigger:false 防止误删输入框中的 "/" 正文；
 //   4) closeCategoryPanel()：收起并重置（供菜单模块在关闭/移出时调用）。
@@ -24,6 +25,7 @@ import logger from '../shared/logger.js';
 registerTranslations('zh', {
   input: {
     addMenuPanelSearchPlaceholder: '搜索…',
+    addMenuPanelClear: '清除',
     addMenuPanelLoading: '加载中…',
     addMenuPanelEmpty: '暂无可用内容',
     addMenuPanelNoMatch: '没有匹配项',
@@ -32,6 +34,7 @@ registerTranslations('zh', {
 registerTranslations('en', {
   input: {
     addMenuPanelSearchPlaceholder: 'Search…',
+    addMenuPanelClear: 'Clear',
     addMenuPanelLoading: 'Loading…',
     addMenuPanelEmpty: 'No items available',
     addMenuPanelNoMatch: 'No matches',
@@ -40,6 +43,7 @@ registerTranslations('en', {
 
 let panelEl = null;
 let searchEl = null;
+let clearEl = null;
 let listEl = null;
 let activeCategory = null;
 let dataset = [];   // 当前类别完整数据（渲染按搜索词过滤，选择动作传全量）
@@ -50,9 +54,29 @@ export function initInputAddPanel(options = {}) {
   onRequestClose = typeof options.onRequestClose === 'function' ? options.onRequestClose : () => {};
   panelEl = document.getElementById('inputAddPanel');
   searchEl = document.getElementById('inputAddPanelSearch');
+  clearEl = document.getElementById('inputAddPanelSearchClear');
   listEl = document.getElementById('inputAddPanelList');
   if (!panelEl || !searchEl || !listEl) return;
-  searchEl.addEventListener('input', () => renderList());
+  if (clearEl) {
+    const label = t('input.addMenuPanelClear');
+    clearEl.title = label;
+    clearEl.setAttribute('aria-label', label);
+    clearEl.addEventListener('click', () => {
+      searchEl.value = '';
+      renderList();
+      syncSearchClear();
+      searchEl.focus();
+    });
+  }
+  searchEl.addEventListener('input', () => {
+    renderList();
+    syncSearchClear();
+  });
+}
+
+// 一键清除按钮：有输入才显示
+function syncSearchClear() {
+  if (clearEl && searchEl) clearEl.style.display = searchEl.value ? 'flex' : 'none';
 }
 
 export function isCategoryPanelOpen() {
@@ -76,6 +100,7 @@ export async function openCategoryPanel(category) {
   if (searchEl) {
     searchEl.value = '';
     searchEl.placeholder = t('input.addMenuPanelSearchPlaceholder');
+    syncSearchClear();
   }
   panelEl.style.display = 'flex';
   const seq = ++loadSeq;
@@ -98,7 +123,10 @@ export function closeCategoryPanel() {
   activeCategory = null;
   dataset = [];
   loadSeq++; // 作废在途请求
-  if (searchEl) searchEl.value = '';
+  if (searchEl) {
+    searchEl.value = '';
+    syncSearchClear();
+  }
   if (listEl) listEl.innerHTML = '';
   if (panelEl) panelEl.style.display = 'none';
 }
@@ -156,7 +184,7 @@ function renderList() {
 function renderItem(item) {
   switch (activeCategory) {
     case 'prompts':
-      return `<div class="prompt-item input-add-panel-item" data-code="${escapeHtml(item.code)}" title="${escapeAttr(item.content || '')}">
+      return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-code="${escapeHtml(item.code)}" title="${escapeAttr(item.content || '')}">
         <span class="input-add-panel-item-title">/${escapeHtml(item.code)}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(item.content || '')}</span>
       </div>`;
@@ -180,7 +208,7 @@ function renderItem(item) {
     case 'pages': {
       const title = item.title || item.url || '';
       const selected = !!(state.selectedPage && state.selectedPage.id === item.id);
-      return `<div class="prompt-item input-add-panel-item" data-tab-id="${item.id}">
+      return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line" data-tab-id="${item.id}">
         <span class="input-add-panel-item-title">${escapeHtml(title)}</span>
         <span class="input-add-panel-item-sub">${escapeHtml(item.url || '')}</span>
         ${selected ? '<span class="page-selected-mark">✓</span>' : ''}
