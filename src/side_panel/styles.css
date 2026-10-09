@@ -1193,6 +1193,107 @@ body {
   color: #999;
   padding: 2px 6px 4px;
 }
+/* 双栏容器：单栏时仅左列可见；右列由 JS 控制 display 开关 */
+.input-add-cols {
+  display: flex;
+  align-items: stretch;
+}
+.input-add-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* 双栏展开态：菜单总宽受视口限制（侧边栏最窄 280px），超宽时右列自动收缩 */
+.input-add-menu.has-panel {
+  max-width: calc(100vw - 16px);
+}
+/* 双栏时收起截图项 hint，为左列让出宽度 */
+.input-add-menu.has-panel .add-item-hint {
+  display: none;
+}
+/* 当前展开面板对应的类别项保持高亮（鼠标移开后仍可辨识右列归属） */
+.input-add-item.panel-active {
+  background: rgba(102, 126, 234, 0.08);
+}
+.input-add-panel {
+  display: none; /* JS 展开时置为 flex */
+  flex: 1 1 210px;
+  min-width: 120px;
+  flex-direction: column;
+  border-left: 1px solid rgba(0, 0, 0, 0.06);
+  margin-left: 6px;
+  padding-left: 6px;
+  animation: inputAddPanelIn 0.15s ease;
+}
+@keyframes inputAddPanelIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.input-add-panel-search {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #333;
+  outline: none;
+}
+.input-add-panel-search:focus {
+  border-color: rgba(102, 126, 234, 0.6);
+}
+.input-add-panel-list {
+  flex: 1;
+  min-height: 0;
+  margin-top: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+/* 面板内列表项紧凑化（作用域覆盖弹窗样式） */
+.input-add-panel-list .input-add-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+.input-add-panel-list .input-add-panel-item:hover {
+  background: rgba(102, 126, 234, 0.08);
+}
+.input-add-panel-item-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.input-add-panel-item-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.input-add-panel-item-sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.input-add-panel-item .page-selected-mark {
+  flex-shrink: 0;
+  color: #667eea;
+  font-size: 12px;
+}
 .memory-limit-dropdown {
   position: absolute;
   bottom: calc(100% + 8px);

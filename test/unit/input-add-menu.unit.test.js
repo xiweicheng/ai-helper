@@ -43,20 +43,28 @@ function setupDom() {
         <div class="input-add-wrapper">
           <button id="inputAddBtn">+</button>
           <div class="input-add-menu" id="inputAddMenu" style="display:none;">
-            <button class="input-add-item" id="promptTriggerBtn">提示词</button>
-            <button class="input-add-item" id="addMenuSkillBtn">技能</button>
-            <button class="input-add-item" id="addMenuMcpBtn">MCP</button>
-            <div class="input-add-divider"></div>
-            <button class="input-add-item" id="addMenuPageBtn">网页</button>
-            <button class="input-add-item" id="addMenuKnowledgeBtn">知识库</button>
-            <button class="input-add-item" id="addMenuAgentBtn">助手</button>
-            <button class="input-add-item" id="addMenuProxyBtn">代理</button>
-            <button class="input-add-item" id="addMenuWorkspaceBtn" style="display:none;">工作目录</button>
-            <div class="input-add-divider"></div>
-            <button class="input-add-item" id="screenshotBtn">截图</button>
-            <button class="input-add-item" id="fileAttachBtn">附件</button>
-            <div class="input-add-menu-switches" id="inputAddMenuSwitches">
-              <div class="input-add-menu-switches-title">开关</div>
+            <div class="input-add-cols">
+              <div class="input-add-nav">
+                <button class="input-add-item" id="promptTriggerBtn">提示词</button>
+                <button class="input-add-item" id="addMenuSkillBtn">技能</button>
+                <button class="input-add-item" id="addMenuMcpBtn">MCP</button>
+                <div class="input-add-divider"></div>
+                <button class="input-add-item" id="addMenuPageBtn">网页</button>
+                <button class="input-add-item" id="addMenuKnowledgeBtn">知识库</button>
+                <button class="input-add-item" id="addMenuAgentBtn">助手</button>
+                <button class="input-add-item" id="addMenuProxyBtn">代理</button>
+                <button class="input-add-item" id="addMenuWorkspaceBtn" style="display:none;">工作目录</button>
+                <div class="input-add-divider"></div>
+                <button class="input-add-item" id="screenshotBtn">截图</button>
+                <button class="input-add-item" id="fileAttachBtn">附件</button>
+                <div class="input-add-menu-switches" id="inputAddMenuSwitches">
+                  <div class="input-add-menu-switches-title">开关</div>
+                </div>
+              </div>
+              <div class="input-add-panel" id="inputAddPanel" style="display:none;">
+                <input id="inputAddPanelSearch" type="text">
+                <div id="inputAddPanelList"></div>
+              </div>
             </div>
           </div>
         </div>
