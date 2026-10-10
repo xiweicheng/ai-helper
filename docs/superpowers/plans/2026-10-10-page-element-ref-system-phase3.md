@@ -114,7 +114,7 @@ describe('renderSnapshot - 单帧与阶段二逐字节一致', () => {
     const lines = r.content.split('\n');
     expect(lines).toContain('[打开层]');
     expect(lines).toContain('[页面主体]');
-    expect(lines.indexOf('  button "OK" [ref 3]')).toBeGreaterThan(lines.indexOf('[打开层]'));
+    expect(lines.indexOf(' button "OK" [ref 3]')).toBeGreaterThan(lines.indexOf('[打开层]'));
     expect(lines.indexOf('button "Body" [ref 9]')).toBeGreaterThan(lines.indexOf('[页面主体]'));
   });
 
