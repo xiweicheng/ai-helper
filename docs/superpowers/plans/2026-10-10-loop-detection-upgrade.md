@@ -24,7 +24,7 @@
 - **阈值集中**：全部数值只在 `LOOP_DETECTOR_CONFIG`（loop-detector.js 顶部），代码中不得散落魔法数。
 - **合规**：仅借鉴 WebBrain 设计思想（GPL-3.0），**不复制任何代码**（本项目 MIT）。
 - **实现语言**：模块无 `window` / `chrome` 引用（纯 Node 可单测）；注释与 commit 用中文，模型面向的提醒文案用英文（沿用既有先例）。
-- **删除与接线同一 commit**：Task 4 中旧指纹块删除与新检测器接线必须同一 commit（否则双检测器并行双注入）。【执行时修正，最终审查】行为回退单元非单 commit：回退需按 9226e9e → bb6fb37 → 23fa207 → 5aa2144 逆序（后三者均改 react-loop.js，单独 revert 早期 commit 会冲突；一次性 `git revert --no-commit 9226e9e bb6fb37 23fa207 5aa2144` 后提交亦可）。
+- **删除与接线同一 commit**：Task 4 中旧指纹块删除与新检测器接线必须同一 commit（否则双检测器并行双注入）。【执行时修正，最终审查】行为回退单元非单 commit：回退需按 9226e9e → bb6fb37 → 23fa207 → 5aa2144 逆序（其中 9226e9e / 23fa207 / 5aa2144 三处同改 react-loop.js，单独 revert 早期 commit 会冲突；bb6fb37 改 loop-detector.js 行为——nullish 兜底，不回退则残留检测器行为差异；一次性 `git revert --no-commit 9226e9e bb6fb37 23fa207 5aa2144` 后提交亦可）。
 
 ---
 
