@@ -18,7 +18,7 @@ Chrome / Chromium 用户请看下方 [30 秒上手](#30-秒上手) 里的开发�
 
 ---
 
-![AI Helper 演示](docs/images/ai-helper-promo.gif)
+![AI Helper 演示](docs/images/ai-helper-promo-zh.gif)
 
 <p align="center"><sub>一句话让 AI 帮你读网页、填表单、传文件、跑命令。</sub></p>
 

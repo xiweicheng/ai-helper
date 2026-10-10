@@ -18,7 +18,7 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 
 ---
 
-![AI Helper demo](docs/images/ai-helper-promo.gif)
+![AI Helper demo](docs/images/ai-helper-promo-en.gif)
 
 <p align="center"><sub>One sentence to make AI read pages, fill forms, upload files, and run commands.</sub></p>
 
