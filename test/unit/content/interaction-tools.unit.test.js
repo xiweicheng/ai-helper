@@ -10,6 +10,7 @@ import {
   manageStorage,
   clickElement,
 } from '../../../src/content/interaction-tools.js';
+import { queryInteractiveElements } from '../../../src/content/page-interaction.js';
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -52,6 +53,15 @@ describe('fillForm - 表单批量填充', () => {
     document.body.innerHTML = '<select id="s"><option value="a">A</option></select>';
     const r = fillForm([{ selector: '#s', value: 'z', fieldType: 'select' }]);
     expect(r.details[0].success).toBe(false);
+  });
+
+  test('field.ref 定位优先于 selector', () => {
+    document.body.innerHTML = '<input id="i1"><input id="i2">';
+    const snapshot = queryInteractiveElements({});
+    const refs = [...snapshot.content.matchAll(/\[ref (\d+)\]/g)].map(m => Number(m[1]));
+    const r = fillForm([{ ref: refs[0], value: 'via-ref' }]);
+    expect(r.success).toBe(true);
+    expect(document.getElementById('i1').value).toBe('via-ref');
   });
 });
 

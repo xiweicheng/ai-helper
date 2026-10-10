@@ -2,6 +2,7 @@
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
+import { getElementByRef } from './page-interaction.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -159,11 +160,17 @@ export function fillForm(fields, waitTime = 500) {
   try {
     const results = [];
     fields.forEach(field => {
-      const { selector, value, fieldType = 'text' } = field;
-      const element = deepQuerySelector(selector);
-      
+      const { selector, ref, value, fieldType = 'text' } = field;
+      const fieldId = selector || `ref=${ref}`;
+      let element = null;
+      if (ref != null) {
+        element = getElementByRef(ref);
+      } else if (selector) {
+        element = deepQuerySelector(selector);
+      }
+
       if (!element) {
-        results.push({ selector, success: false, error: t('interactionTools.elementNotFound') });
+        results.push({ selector: fieldId, success: false, error: t('interactionTools.elementNotFound') });
         return;
       }
       
@@ -172,7 +179,7 @@ export function fillForm(fields, waitTime = 500) {
           // 检测 contenteditable / 富文本编辑器
           if (isContentEditableElement(element)) {
             const ok = fillContentEditable(element, value);
-            results.push({ selector, success: ok, value });
+            results.push({ selector: fieldId, success: ok, value });
             return;
           }
 
@@ -182,7 +189,7 @@ export function fillForm(fields, waitTime = 500) {
           element.dispatchEvent(new Event('change', { bubbles: true }));
         } else if (fieldType === 'contenteditable') {
           const ok = fillContentEditable(element, value);
-          results.push({ selector, success: ok, value });
+          results.push({ selector: fieldId, success: ok, value });
           return;
         } else if (fieldType === 'select') {
           const option = element.querySelector(`option[value="${value}"]`) || 
@@ -191,7 +198,7 @@ export function fillForm(fields, waitTime = 500) {
             element.value = option.value;
             element.dispatchEvent(new Event('change', { bubbles: true }));
           } else {
-            results.push({ selector, success: false, error: t('interactionTools.optionNotFound') });
+            results.push({ selector: fieldId, success: false, error: t('interactionTools.optionNotFound') });
             return;
           }
         } else if (fieldType === 'checkbox') {
@@ -203,13 +210,13 @@ export function fillForm(fields, waitTime = 500) {
             radio.checked = true;
             radio.dispatchEvent(new Event('change', { bubbles: true }));
           } else {
-            results.push({ selector, success: false, error: t('interactionTools.radioButtonNotFound') });
+            results.push({ selector: fieldId, success: false, error: t('interactionTools.radioButtonNotFound') });
             return;
           }
         }
-        results.push({ selector, success: true, value });
+        results.push({ selector: fieldId, success: true, value });
       } catch (e) {
-        results.push({ selector, success: false, error: e.message });
+        results.push({ selector: fieldId, success: false, error: e.message });
       }
     });
     
