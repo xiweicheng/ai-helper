@@ -11,8 +11,9 @@ registerTranslations('zh', {
     snapshotHeader: '可交互元素快照：{count} 个元素',
     snapshotTruncated: '（共 {total} 个，已截断，请用 filterByText 缩小范围）',
     snapshotFooter: '（ref 编号仅当前快照有效；页面变化后请重新调用 query_elements）',
-    invalidRefError: '无效的元素编号 ref={ref}。ref 仅当前页面有效，页面导航/刷新或切换 tab 后需重新 query_elements',
-    elementStaleError: '元素 ref={ref} 已失效（页面可能已变化），请重新调用 query_elements 获取最新元素',
+    invalidRefSuggest: '无效或已过期的元素引用 ref={ref}。',
+    invalidRefSuggestions: '最近快照中的有效引用：{list}。',
+    invalidRefTail: '如页面已变化，请重新调用 query_elements 获取最新快照',
     elementNotVisibleError: '元素 ref={ref}（{tag}）当前不可见，可能被隐藏或折叠',
     navChangeHint: '（检测到导航变化，已等待 {ms}ms）',
     domChangeHint: '（检测到DOM变化，已等待 {ms}ms）',
@@ -30,8 +31,9 @@ registerTranslations('en', {
     snapshotHeader: 'Interactive elements snapshot: {count} element(s)',
     snapshotTruncated: ' (of {total} total; truncated — narrow down with filterByText)',
     snapshotFooter: '(ref numbers are valid only for this snapshot; re-run query_elements after the page changes)',
-    invalidRefError: 'Invalid element ref={ref}. ref is only valid for the current page; re-run query_elements after navigation/refresh or tab switch',
-    elementStaleError: 'Element ref={ref} is stale (page may have changed); please call query_elements again to get the latest elements',
+    invalidRefSuggest: 'Invalid or stale element ref={ref}. ',
+    invalidRefSuggestions: 'Nearest valid refs from the latest snapshot: {list}. ',
+    invalidRefTail: 'If the page has changed, re-run query_elements',
     elementNotVisibleError: 'Element ref={ref} ({tag}) is not visible; it may be hidden or collapsed',
     navChangeHint: ' (navigation change detected, waited {ms}ms)',
     domChangeHint: ' (DOM change detected, waited {ms}ms)',
@@ -65,12 +67,58 @@ function registerElement(el, role, name) {
 }
 
 /**
+ * 统一 ref 解析：注册表命中 + isConnected 检查 + selector 兜底重查
+ * 失败时返回带"附近有效引用"建议的错误信息，引导模型自我纠错
+ */
+export function resolveByRef(ref) {
+  const refNum = parseInt(ref, 10);
+  if (!refNum || !elementRegistry.has(refNum)) {
+    return { error: buildInvalidRefMessage(refNum) };
+  }
+  const entry = elementRegistry.get(refNum);
+  if (entry.element && entry.element.isConnected) {
+    return { entry, element: entry.element };
+  }
+  const found = entry.selector ? deepQuerySelector(entry.selector) : null;
+  if (found) {
+    entry.element = found;
+    return { entry, element: found };
+  }
+  return { error: buildInvalidRefMessage(refNum) };
+}
+
+/**
+ * 构造失效 ref 的错误文案：附当前注册表中编号最接近的 ≤3 个有效引用
+ */
+function buildInvalidRefMessage(refNum) {
+  let msg = t('pageInteraction.invalidRefSuggest', { ref: refNum });
+  const alive = [...elementRegistry.entries()]
+    .sort((a, b) => Math.abs(a[0] - refNum) - Math.abs(b[0] - refNum))
+    .slice(0, 3);
+  if (alive.length) {
+    const list = alive
+      .map(([r, e]) => `ref ${r} (${e.role || (e.tag && e.tag.toLowerCase()) || '?'}${e.name ? ` "${e.name}"` : ''})`)
+      .join(', ');
+    msg += t('pageInteraction.invalidRefSuggestions', { list });
+  }
+  msg += t('pageInteraction.invalidRefTail');
+  return msg;
+}
+
+/**
  * 按 ref 获取元素的 selector（供 select_dropdown 等工具复用 ref 定位）
  */
 export function getSelectorByRef(ref) {
-  const refNum = parseInt(ref, 10);
-  if (!refNum || !elementRegistry.has(refNum)) return null;
-  return elementRegistry.get(refNum).selector;
+  const resolved = resolveByRef(ref);
+  return resolved.element ? resolved.entry.selector : null;
+}
+
+/**
+ * 按 ref 获取元素（供 fill_form 等工具复用 ref 定位）
+ */
+export function getElementByRef(ref) {
+  const resolved = resolveByRef(ref);
+  return resolved.element || null;
 }
 
 // ==================== 遍历判定 ====================
@@ -548,28 +596,11 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   const { waitTime = 300, timeout = 2000 } = options;
 
   const refNum = parseInt(ref, 10);
-  if (!refNum || !elementRegistry.has(refNum)) {
-    return {
-      success: false,
-      error: t('pageInteraction.invalidRefError', { ref }),
-    };
+  const resolved = resolveByRef(refNum);
+  if (resolved.error) {
+    return { success: false, error: resolved.error };
   }
-
-  const entry = elementRegistry.get(refNum);
-  let element = entry.element;
-
-  // 检查缓存的 element 是否仍在 DOM 中
-  if (!element.isConnected) {
-    // 兜底：用 selector 重新查找
-    element = deepQuerySelector(entry.selector);
-    if (!element) {
-      // selector 也失效，提示模型重新查询
-      return {
-        success: false,
-        error: t('pageInteraction.elementStaleError', { ref }),
-      };
-    }
-  }
+  const { entry, element } = resolved;
 
   // 可见性检查（点击不可见元素通常无意义）
   const style = window.getComputedStyle(element);
@@ -588,7 +619,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     const changeHint = wait.changed
       ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
       : '';
-    return { success: true, message: t('pageInteraction.hoveredByRef', { ref, tag: entry.tag, hint: changeHint }), selector: entry.selector, ...wait };
+    return { success: true, message: t('pageInteraction.hoveredByRef', { ref, tag: entry.tag, hint: changeHint }), ...wait };
   }
 
   // 默认 click
@@ -602,7 +633,6 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   return {
     success: true,
     message: t('pageInteraction.clickedByRef', { ref, tag: entry.tag, hint: changeHint }),
-    selector: entry.selector,
     ...wait,
   };
 }

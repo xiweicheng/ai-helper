@@ -5,6 +5,7 @@ import {
   queryInteractiveElements,
   getElementCount,
   getSelectorByRef,
+  getElementByRef,
   interactByRef,
   scrollToText,
 } from '../../../src/content/page-interaction.js';
@@ -178,7 +179,6 @@ describe('interactByRef - ref 元素操作', () => {
     const r = await interactByRef(firstRef(r0.content), 'click', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(true);
     expect(clicked).toBe(true);
-    expect(r.selector).toBe('#b1'); // Task 3 将删除此断言（返回值收敛）
   });
 
   test('无效 ref 返回失败并提示重新查询', async () => {
@@ -196,6 +196,29 @@ describe('interactByRef - ref 元素操作', () => {
     const r = await interactByRef(firstRef(r0.content), 'hover', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(true);
     expect(hovered).toBe(true);
+  });
+});
+
+describe('resolveByRef / 失效建议', () => {
+  test('失效 ref 报错含附近有效引用建议', async () => {
+    document.body.innerHTML = '<button>A</button><button>B</button>';
+    queryInteractiveElements({});
+    // 用超前的 ref 模拟过期（单调递增保证未注册）
+    const r = await interactByRef(999999, 'click', { waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('无效');
+    expect(r.error).toContain('有效引用');
+    expect(r.error).toContain('query_elements');
+  });
+
+  test('getElementByRef 返回有效元素', () => {
+    document.body.innerHTML = '<input id="i1">';
+    const r = queryInteractiveElements({});
+    const ref = Number(r.content.match(/\[ref (\d+)\]/)[1]);
+    const el = getElementByRef(ref);
+    expect(el).toBeTruthy();
+    expect(el.tagName).toBe('INPUT');
+    expect(getElementByRef(999999)).toBeNull();
   });
 });
 
