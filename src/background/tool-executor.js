@@ -13,6 +13,7 @@ import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './stat
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
+import { shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 
 // 注册 toolExecutor 命名空间翻译
@@ -2106,6 +2107,16 @@ CONTENT_PAYLOADS.search_in_page = a => ({
 });
 
 /**
+ * ref 跨帧路由分派（阶段三）：上次快照含可见 iframe（mode=global）时，
+ * 把带 ref 的交互工具按全局编号定向发送到元素所属帧；其余情况返回 null 走 legacy 直通。
+ */
+async function maybeRouteRefTool(toolName, args, toolCallId, targetTabId) {
+  if (!shouldRouteRefTool(toolName, args, targetTabId)) return null;
+  if (toolName === 'fill_form') return routeFillForm(args, toolCallId, targetTabId);
+  return routeSingleRefTool(toolName, args, toolCallId, targetTabId);
+}
+
+/**
  * 执行工具调用
  */
 export async function executeTool(toolCall, tabId, sessionId = null) {
@@ -2171,7 +2182,11 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
       // 比 getActiveTabId() 更贴近模型意图；都没有则取当前活动 tab。
       const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
       const targetTabId = args.tabId || lastOperatedTab || await getActiveTabId();
-      if (targetTabId) {
+      // ref 跨帧路由（阶段三）：上次快照含可见 iframe（mode=global）时，ref 工具定向发送到所属帧
+      const routed = targetTabId ? await maybeRouteRefTool(toolName, args, toolCallId, targetTabId) : null;
+      if (routed) {
+        result = routed;
+      } else if (targetTabId) {
         result = await sendToContentScriptWithRetry(targetTabId, { type: messageType, ...messagePayload }, toolCallId);
       } else {
         result = { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };

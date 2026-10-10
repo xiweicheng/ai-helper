@@ -506,3 +506,158 @@ export async function executeSnapshotQuery(args, toolCallId, sessionId) {
     return { success: false, error: t('snapshotQuery.collectFailed'), tool_call_id: toolCallId };
   }
 }
+
+// ==================== ref 工具跨帧路由（阶段三） ====================
+
+/** 路由判定：上次快照含可见 iframe（mode=global）且工具带 ref → 走跨帧路由，否则 legacy 直通 */
+export function shouldRouteRefTool(toolName, args, targetTabId) {
+  if (getTabQueryMode(targetTabId) !== 'global') return false;
+  if (toolName === 'interact_element') return args.ref != null;
+  // triggerSelector 存在时 ref 被 content 侧忽略 → legacy 直通
+  if (toolName === 'select_dropdown') return args.ref != null && !args.triggerSelector;
+  if (toolName === 'fill_form') return Array.isArray(args.fields) && args.fields.some(f => f && f.ref != null);
+  return false;
+}
+
+/**
+ * 单 ref 工具（interact_element / select_dropdown）跨帧路由：
+ * 全局编号 → resolve → 定向发送（本地编号 + _frameRouted）→ 结果翻译
+ */
+export async function routeSingleRefTool(toolName, args, toolCallId, targetTabId) {
+  const mapping = resolveGlobalRef(targetTabId, args.ref);
+  if (!mapping) {
+    return { success: false, error: t('snapshotQuery.invalidRef', { ref: args.ref }), tool_call_id: toolCallId };
+  }
+
+  const message = toolName === 'select_dropdown'
+    ? {
+        type: 'SELECT_DROPDOWN',
+        ref: mapping.localRef,
+        optionText: args.optionText,
+        optionSelector: args.optionSelector,
+        timeout: args.timeout,
+        _frameRouted: true,
+      }
+    : {
+        type: 'INTERACT_ELEMENT',
+        ref: mapping.localRef,
+        action: args.action,
+        value: args.value,
+        clear: args.clear,
+        submit: args.submit,
+        waitTime: args.waitTime,
+        timeout: args.timeout,
+        _frameRouted: true,
+      };
+
+  const response = await sendDirectedMessage(targetTabId, mapping.frameId, message, toolCallId);
+  return translateRoutedResult(response, mapping, targetTabId);
+}
+
+/**
+ * 翻译 routed 结果：仅当失败响应带非空 suggestions（ref 失效，建议为本地编号）时，
+ * 用全局编号重建错误文案；其余情况原样返回。
+ */
+export function translateRoutedResult(response, mapping, targetTabId) {
+  if (!response || response.success !== false) return response;
+  if (!Array.isArray(response.suggestions) || !response.suggestions.length) return response;
+
+  const { suggestions, ...rest } = response;
+  const translated = translateRefSuggestions(targetTabId, mapping.frameId, suggestions);
+  let error = t('snapshotQuery.invalidRefSuggest', { ref: mapping.globalRef });
+  if (translated.length) {
+    const list = translated
+      .map(s => `ref ${s.ref} (${s.role}${s.name ? ` "${s.name}"` : ''})`)
+      .join(', ');
+    error += t('snapshotQuery.invalidRefSuggestions', { list });
+  }
+  error += t('snapshotQuery.invalidRefTail');
+  return { ...rest, error };
+}
+
+/**
+ * fill_form 跨帧路由：fields 按 ref 归属帧分组（无 ref 字段归顶层 frameId=0），
+ * 逐组定向发送（组序 = 首现序），合并成功统计、失败清单与详情。
+ * 归属解析失败的字段不发送，直接计入失败。
+ */
+export async function routeFillForm(args, toolCallId, targetTabId) {
+  const rawFields = Array.isArray(args.fields) ? args.fields.filter(f => f && typeof f === 'object') : [];
+  const groups = new Map(); // frameId → [{ local: 本地化字段, globalRef: 原全局编号 | null }]
+  const groupOrder = [];
+  const failures = []; // { selector, error, frameId }
+  const details = [];   // 全量字段结果（含 frameId 标注）
+
+  for (const field of rawFields) {
+    if (field.ref == null) {
+      if (!groups.has(0)) { groups.set(0, []); groupOrder.push(0); }
+      groups.get(0).push({ local: field, globalRef: null });
+      continue;
+    }
+    const mapping = resolveGlobalRef(targetTabId, field.ref);
+    if (!mapping) {
+      const msg = t('snapshotQuery.invalidRefField', { ref: field.ref });
+      failures.push({ selector: `ref=${field.ref}`, error: msg, frameId: null });
+      details.push({ selector: `ref=${field.ref}`, success: false, error: msg, frameId: null });
+      continue;
+    }
+    if (!groups.has(mapping.frameId)) { groups.set(mapping.frameId, []); groupOrder.push(mapping.frameId); }
+    groups.get(mapping.frameId).push({ local: { ...field, ref: mapping.localRef }, globalRef: mapping.globalRef });
+  }
+
+  let successCount = 0;
+
+  for (const frameId of groupOrder) {
+    const groupFields = groups.get(frameId);
+    const response = await sendDirectedMessage(targetTabId, frameId, {
+      type: 'FILL_FORM',
+      fields: groupFields.map(g => g.local),
+      waitTime: args.waitTime,
+      _frameRouted: true,
+    }, toolCallId);
+
+    // 展示用 selector：带 ref 字段回显全局编号；纯 selector 字段用响应/原值
+    const displayOf = (g, d) => (g.globalRef != null ? `ref=${g.globalRef}` : (d && d.selector) || g.local.selector || '?');
+
+    if (!response || response.success === false || !Array.isArray(response.details)) {
+      const errMsg = (response && response.error) || t('snapshotQuery.directedSendFailed');
+      for (const g of groupFields) {
+        const selector = displayOf(g, null);
+        failures.push({ selector, error: errMsg, frameId });
+        details.push({ selector, success: false, error: errMsg, frameId });
+      }
+      continue;
+    }
+
+    // details 与发送 fields 下标对齐（fillForm 按序 push）
+    for (let i = 0; i < groupFields.length; i += 1) {
+      const g = groupFields[i];
+      const d = response.details[i];
+      const selector = displayOf(g, d);
+      if (d && d.success) {
+        successCount += 1;
+        details.push({ selector, success: true, value: d.value, frameId });
+      } else {
+        const errMsg = (d && d.error) || '';
+        failures.push({ selector, error: errMsg, frameId });
+        details.push({ selector, success: false, ...(errMsg ? { error: errMsg } : {}), frameId });
+      }
+    }
+  }
+
+  const total = rawFields.length;
+  let message = t('snapshotQuery.formFillMerged', { success: successCount, total });
+  if (failures.length) {
+    const list = failures
+      .map(f => `${f.selector || '?'}${f.frameId != null ? `（frame ${f.frameId}）` : ''}`)
+      .join('；');
+    message += ' ' + t('snapshotQuery.formFillFailures', { list });
+  }
+
+  return {
+    success: successCount === total,
+    message,
+    ...(failures.length && failures[0].error ? { error: failures[0].error } : {}),
+    details,
+    tool_call_id: toolCallId,
+  };
+}
