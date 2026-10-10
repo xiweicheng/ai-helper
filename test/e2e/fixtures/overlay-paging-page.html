@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Overlay Paging Fixture</title></head>
+<body>
+  <h1>Overlay &amp; Paging Fixture</h1>
+  <button id="b1" onclick="this.dataset.clicked='1'">Alpha</button>
+  <button id="b2">Bravo</button>
+  <button id="b3">Charlie</button>
+  <button id="b4">Delta</button>
+  <button id="b5">Echo</button>
+  <button id="b6">Foxtrot</button>
+
+  <dialog id="dlg" open aria-labelledby="dlg-title">
+    <h2 id="dlg-title">Confirm Dialog</h2>
+    <input id="dlg-input" type="text" placeholder="dlg input">
+    <button id="dlg-ok" onclick="this.dataset.clicked='1'">Dialog OK</button>
+  </dialog>
+
+  <button id="pop-trigger" popovertarget="pop1">Show Popover</button>
+  <div id="pop1" popover>
+    <button id="pop-action">Popover Action</button>
+  </div>
+</body>
+</html>

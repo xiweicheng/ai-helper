@@ -3,9 +3,15 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { getContentBundle, callTool } from './helpers/load-module.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pageUrl = 'file://' + join(__dirname, '../../docs/demo/form-autofill/product-form.html');
+
+let bundle;
+test.beforeAll(async () => {
+  bundle = await getContentBundle();
+});
 
 async function fillStep1(page) {
   await page.fill('#product-name', '无线蓝牙降噪耳机');
@@ -94,5 +100,45 @@ test.describe('商品录入 Demo 页面', () => {
     await page.click('#clear-records');
     await expect(page.locator('#recorded-tbody tr')).toHaveCount(1); // 空态行
     await expect(page.locator('#recorded-tbody')).toContainText('暂无数据');
+  });
+
+  test('叠加层：模态框提升到 [打开层] 且 ref 可操作', async ({ page }) => {
+    await page.addInitScript({ content: bundle });
+    await page.goto(pageUrl);
+    await fillStep1(page);
+    await page.click('#btn-next');
+    await fillStep2(page);
+    await page.click('#btn-next');
+    await fillStep3(page);
+    await page.click('#btn-next');
+    await page.click('#open-confirm-modal');
+    // 等模态框淡入动画结束（过渡期间 opacity 检查会视作不可见）
+    await page.waitForFunction(() => {
+      const card = document.querySelector('.modal-card');
+      return card && getComputedStyle(card).opacity === '1';
+    });
+    const snap = await callTool(page, 'queryInteractiveElements', {});
+    const lines = snap.content.split('\n');
+    const overlayIdx = lines.indexOf('[打开层]');
+    const bodyIdx = lines.indexOf('[页面主体]');
+    expect(overlayIdx).toBeGreaterThan(-1);
+    expect(bodyIdx).toBeGreaterThan(overlayIdx);
+
+    // 模态框确认钮位于打开层区块内且只出现一次（主体去重）
+    const confirmIdx = lines.findIndex(l => l.includes('确认提交') && l.includes('[ref '));
+    expect(confirmIdx).toBeGreaterThan(overlayIdx);
+    expect(confirmIdx).toBeLessThan(bodyIdx);
+    expect(lines.filter(l => l.includes('确认提交') && l.includes('[ref ')).length).toBe(1);
+
+    // ref 操作：勾选条款 → 返回修改关闭模态框
+    const agreeLine = lines.find(l => l.includes('我已阅读并同意') && l.includes('[ref '));
+    const agreeRef = Number(agreeLine.match(/\[ref (\d+)\]/)[1]);
+    await callTool(page, 'interactByRef', agreeRef, 'click', { waitTime: 0, timeout: 0 });
+    expect(await page.isChecked('#agree-terms')).toBe(true);
+
+    const cancelLine = lines.find(l => l.includes('返回修改') && l.includes('[ref '));
+    const cancelRef = Number(cancelLine.match(/\[ref (\d+)\]/)[1]);
+    await callTool(page, 'interactByRef', cancelRef, 'click', { waitTime: 100, timeout: 500 });
+    await expect(page.locator('#confirm-modal')).toBeHidden();
   });
 });
