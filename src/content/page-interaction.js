@@ -2,12 +2,15 @@
 // 从 page-tools.js 拆分，包含交互元素查询、相似元素查找、元素计数、滚动收集、无障碍树读取等
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
-import { generateUniqueSelector, getElementText, getElementValue, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
   pageInteraction: {
     refHint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements',
+    snapshotHeader: '可交互元素快照：{count} 个元素',
+    snapshotTruncated: '（共 {total} 个，已截断，请用 filterByText 缩小范围）',
+    snapshotFooter: '（ref 编号仅当前快照有效；页面变化后请重新调用 query_elements）',
     invalidRefError: '无效的元素编号 ref={ref}。ref 仅当前页面有效，页面导航/刷新或切换 tab 后需重新 query_elements',
     elementStaleError: '元素 ref={ref} 已失效（页面可能已变化），请重新调用 query_elements 获取最新元素',
     elementNotVisibleError: '元素 ref={ref}（{tag}）当前不可见，可能被隐藏或折叠',
@@ -24,6 +27,9 @@ registerTranslations('zh', {
 registerTranslations('en', {
   pageInteraction: {
     refHint: 'ref numbers are only valid for the current query; re-run query_elements after page navigation/refresh or tab switch',
+    snapshotHeader: 'Interactive elements snapshot: {count} element(s)',
+    snapshotTruncated: ' (of {total} total; truncated — narrow down with filterByText)',
+    snapshotFooter: '(ref numbers are valid only for this snapshot; re-run query_elements after the page changes)',
     invalidRefError: 'Invalid element ref={ref}. ref is only valid for the current page; re-run query_elements after navigation/refresh or tab switch',
     elementStaleError: 'Element ref={ref} is stale (page may have changed); please call query_elements again to get the latest elements',
     elementNotVisibleError: 'Element ref={ref} ({tag}) is not visible; it may be hidden or collapsed',
@@ -39,10 +45,24 @@ registerTranslations('en', {
 
 // ==================== 元素注册表（ref → element 映射） ====================
 //
-// query_elements 返回结果时给每个元素分配一个 ref 编号，模型可用 ref 直接操作元素
-// （interact_by_ref），免去编写脆弱的 CSS selector。注册表只保留最近一次查询结果，
-// 页面变化导致 element 失效时会用 selector 兜底重新查找；selector 也失效则提示重新查询。
-const elementRegistry = new Map();
+// query_elements 返回树快照时给每个输出元素分配一个 ref 编号，模型可用 ref 直接操作元素，
+// 免去编写脆弱的 CSS selector。注册表只保留最近一次快照结果（每次查询重建），实体（element）
+// 失效时会用内部 selector 兜底重新查找；编号跨快照单调递增、不复用——旧 ref 明确失效而非
+// 静默指向新元素。selector 仅供内部兜底，不输出给模型。
+let refCounter = 0;
+const elementRegistry = new Map(); // ref → { element, selector, tag, role, name }
+
+/**
+ * 注册元素并返回 ref（输出即注册：只有真正输出到快照的元素才占用编号）
+ */
+function registerElement(el, role, name) {
+  refCounter += 1;
+  const ref = refCounter;
+  let selector = '';
+  try { selector = generateUniqueSelector(el); } catch { selector = ''; }
+  elementRegistry.set(ref, { element: el, selector, tag: el.tagName, role, name });
+  return ref;
+}
 
 /**
  * 按 ref 获取元素的 selector（供 select_dropdown 等工具复用 ref 定位）
@@ -53,99 +73,337 @@ export function getSelectorByRef(ref) {
   return elementRegistry.get(refNum).selector;
 }
 
+// ==================== 遍历判定 ====================
+
+const INTERACTIVE_ROLES = new Set([
+  'button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem',
+  'menuitemcheckbox', 'menuitemradio', 'option', 'combobox', 'listbox',
+  'searchbox', 'slider', 'spinbutton', 'textbox', 'treeitem',
+]);
+
+// 语义容器：进树、不分配 ref（仅提供上下文）
+const CONTAINER_ROLES = new Set([
+  'dialog', 'form', 'navigation', 'main', 'banner', 'contentinfo', 'table', 'row', 'heading',
+]);
+
 /**
- * 查询可交互元素（推荐优先使用）
+ * 获取元素角色：显式 role 属性优先，否则按标签/类型推导隐式角色
+ */
+function getRole(el) {
+  const explicit = el.getAttribute('role');
+  const role = explicit ? explicit.trim().split(/\s+/)[0] : '';
+  if (role) return role;
+  const tag = el.tagName;
+  if (tag === 'BUTTON') return 'button';
+  if (tag === 'A') return el.hasAttribute('href') ? 'link' : '';
+  if (tag === 'SELECT') return (el.multiple || el.size > 1) ? 'listbox' : 'combobox';
+  if (tag === 'TEXTAREA') return 'textbox';
+  if (tag === 'SUMMARY') return 'button';
+  if (/^H[1-6]$/.test(tag)) return 'heading';
+  if (tag === 'NAV') return 'navigation';
+  if (tag === 'MAIN') return 'main';
+  if (tag === 'DIALOG') return 'dialog';
+  if (tag === 'FORM') return 'form';
+  if (tag === 'TABLE') return 'table';
+  if (tag === 'TR') return 'row';
+  if (tag === 'INPUT') {
+    const type = (el.type || 'text').toLowerCase();
+    if (type === 'hidden') return '';
+    if (type === 'checkbox') return 'checkbox';
+    if (type === 'radio') return 'radio';
+    if (type === 'submit' || type === 'button' || type === 'reset') return 'button';
+    if (type === 'search') return 'searchbox';
+    if (type === 'range') return 'slider';
+    if (type === 'number') return 'spinbutton';
+    return 'textbox';
+  }
+  return '';
+}
+
+/**
+ * 剪枝判定：返回 true 时整棵子树跳过
+ * （display:none / hidden / aria-hidden / inert 均不可被子元素覆盖）
+ */
+function isSubtreePruned(el) {
+  if (el.hasAttribute('hidden') || el.hasAttribute('inert')) return true;
+  if (el.getAttribute('aria-hidden') === 'true') return true;
+  if (el.style && el.style.display === 'none') return true;
+  const style = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+  return !!style && style.display === 'none';
+}
+
+/**
+ * 输出级可见性检查：不可见元素跳过自身（不剪子树——visibility 可被子元素覆盖）
+ */
+function isElementHidden(el) {
+  if (typeof el.checkVisibility === 'function') {
+    return !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+  }
+  const style = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+  if (!style) return false;
+  return style.display === 'none' || style.visibility === 'hidden';
+}
+
+function isInteractiveElement(el, role) {
+  if (INTERACTIVE_ROLES.has(role)) return true;
+  if (el.tagName === 'A' && el.hasAttribute('href')) return true;
+  if (el.hasAttribute('contenteditable')) {
+    const v = el.getAttribute('contenteditable');
+    if (v === '' || v === 'true' || v === 'plaintext-only') return true;
+  }
+  const ti = el.getAttribute('tabindex');
+  if (ti !== null && parseInt(ti, 10) >= 0) return true;
+  if (el.hasAttribute('onclick')) return true;
+  return false;
+}
+
+function getElementChildren(el) {
+  const children = [];
+  if (el.shadowRoot) children.push(...el.shadowRoot.children);
+  children.push(...el.children);
+  return children;
+}
+
+// ==================== 名称解析 ====================
+
+/**
+ * 无障碍名称解析链（取第一个非空），对未标记表单容错
+ * 顺序：select 选中项 → aria-labelledby → aria-label → label[for]/包裹 label →
+ *       placeholder → title → alt → 按钮类 value → 直接文本 → 前兄弟文本
+ */
+function resolveAccessibleName(el, role) {
+  const trim = (s, max = 80) => {
+    if (!s) return '';
+    const text = String(s).replace(/\s+/g, ' ').trim();
+    return text.length > max ? text.slice(0, max - 1) + '…' : text;
+  };
+  const textOf = (node) => trim(node ? node.textContent : '');
+
+  // 1. select 选中项文本
+  if (el.tagName === 'SELECT') {
+    const opt = el.options && el.options[el.selectedIndex];
+    if (opt && opt.text) return trim(opt.text);
+  }
+  // 2. aria-labelledby（拼接引用元素文本）
+  const labelledby = el.getAttribute('aria-labelledby');
+  if (labelledby) {
+    const joined = labelledby.split(/\s+/)
+      .map(id => document.getElementById(id))
+      .filter(Boolean).map(n => textOf(n)).filter(Boolean).join(' ');
+    if (joined) return joined;
+  }
+  // 3. aria-label
+  const ariaLabel = el.getAttribute('aria-label');
+  if (ariaLabel) return trim(ariaLabel);
+  // 4. 关联 label（label[for] 或包裹 label）
+  if (el.id) {
+    try {
+      const forLabel = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (forLabel) {
+        const t4 = textOf(forLabel);
+        if (t4) return t4;
+      }
+    } catch { /* 忽略无效 id 选择器 */ }
+  }
+  const wrapLabel = el.closest && el.closest('label');
+  if (wrapLabel) {
+    const t4b = textOf(wrapLabel);
+    if (t4b) return t4b;
+  }
+  // 5. placeholder
+  if (el.getAttribute('placeholder')) return trim(el.getAttribute('placeholder'));
+  // 6. title
+  if (el.getAttribute('title')) return trim(el.getAttribute('title'));
+  // 7. alt
+  if (el.getAttribute('alt')) return trim(el.getAttribute('alt'));
+  // 8. input 按钮类 value
+  if (el.tagName === 'INPUT') {
+    const type = (el.type || '').toLowerCase();
+    if ((type === 'submit' || type === 'button' || type === 'reset') && el.value) return trim(el.value);
+  }
+  // 9. 元素直接文本（取直接子文本节点，避免吞掉深层交互元素文本）
+  let ownText = '';
+  for (const node of el.childNodes) {
+    if (node.nodeType === 3) ownText += node.textContent;
+  }
+  if (!ownText.trim()) ownText = el.textContent || '';
+  const t9 = trim(ownText);
+  if (t9) return t9;
+  // 10. 前兄弟文本（未标记表单场景；前兄弟自身不含交互元素才采用）
+  let prev = el.previousElementSibling;
+  while (prev && !(prev.textContent || '').trim()) prev = prev.previousElementSibling;
+  if (prev && !prev.querySelector('button, a[href], input, select, textarea')) {
+    const t10 = textOf(prev);
+    if (t10) return t10;
+  }
+  return '';
+}
+
+// ==================== 属性序列化 ====================
+
+function buildAttributeText(el, role) {
+  const parts = [];
+  const clip = (s, max) => (s && s.length > max ? s.slice(0, max - 1) + '…' : s);
+  if (role === 'link' && el.getAttribute('href')) {
+    parts.push(`href="${clip(el.getAttribute('href'), 150)}"`);
+  }
+  if (el.tagName === 'INPUT') {
+    const type = (el.type || 'text').toLowerCase();
+    if (type !== 'text' && type !== 'checkbox' && type !== 'radio') parts.push(`type="${type}"`);
+  }
+  const placeholder = el.getAttribute('placeholder');
+  if (placeholder) parts.push(`placeholder="${clip(placeholder, 60)}"`);
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+    if (el.value) parts.push(`value="${clip(el.value, 60)}"`);
+  }
+  if (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio') && el.checked) {
+    parts.push('checked="true"');
+  }
+  if (el.tagName === 'OPTION' && el.selected) parts.push('selected="true"');
+  return parts.join(' ');
+}
+
+// ==================== 树序列化与查询 ====================
+
+function matchesTypeFilter(el, role, types) {
+  if (!types || !types.length) return true;
+  const tag = el.tagName.toLowerCase();
+  const inputType = el.tagName === 'INPUT' ? (el.type || '').toLowerCase() : '';
+  return types.some(x => x === tag || x === inputType || x === role);
+}
+
+function matchesTextFilter(el, name, filterText) {
+  if (!filterText) return true;
+  const hay = `${name} ${el.textContent || ''} ${el.value || ''}`.toLowerCase();
+  return hay.includes(String(filterText).toLowerCase());
+}
+
+/**
+ * 查询可交互元素并输出树形快照（推荐优先使用）
+ * 每个输出元素分配 [ref N] 编号（单调递增），供 interact_element / fill_form 引用
+ *
+ * @param {object} options
+ * @param {string} options.filterByText - 按文本过滤（不区分大小写）
+ * @param {string[]|null} options.elementTypes - 限定类型（tag 名 / input type / role 任一匹配）
+ * @param {number} options.maxResults - 输出元素数上限（默认 100）
+ * @param {number} options.maxChars - 快照字符预算（默认 6000），超限截断并提示
+ * @param {boolean} options.countOnly - 只返回计数（不生成快照）
  */
 export function queryInteractiveElements(options = {}) {
-  const { filterByText, elementTypes, maxResults = 100 } = options;
+  const {
+    filterByText = '',
+    elementTypes = null,
+    maxResults = 100,
+    maxChars = 6000,
+    countOnly = false,
+  } = options;
 
-  const elements = [];
-  const seenSelectors = new Set();
-  // 清空注册表，只保留本次查询结果
-  elementRegistry.clear();
+  try {
+    // 只保留本次快照结果（ref 编号单调递增，不重置）
+    elementRegistry.clear();
 
-  // 定义可交互元素的选择器
-  const selectors = {
-    button: 'button, [role="button"], input[type="submit"], input[type="button"], input[type="reset"]',
-    input: 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"])',
-    select: 'select',
-    textarea: 'textarea',
-    a: 'a[href]',
-    checkbox: 'input[type="checkbox"]',
-    radio: 'input[type="radio"]',
-    menuitem: '[role="menuitem"], [role="menu"], [role="menuitemcheckbox"], [role="menuitemradio"]'
-  };
+    // 阶段 A：完整遍历收集匹配的交互元素（有序）
+    const matched = [];
+    collectMatches(document.body, { matched, filterByText, elementTypes });
 
-  // 确定要查询的选择器
-  let querySelectors = [];
-  if (elementTypes && elementTypes.length > 0) {
-    elementTypes.forEach(type => {
-      if (selectors[type]) querySelectors.push(selectors[type]);
-    });
-  } else {
-    querySelectors = Object.values(selectors);
+    if (countOnly) {
+      return { success: true, content: '', count: matched.length, total: matched.length, truncated: false, hint: '' };
+    }
+
+    // 阶段 B：输出集（maxResults 上限）
+    const selected = new Set(matched.slice(0, maxResults).map(m => m.el));
+    const tooMany = matched.length > maxResults;
+
+    // 阶段 C：序列化（预算 maxChars，输出即注册）
+    const ctx = { selected, budget: maxChars, truncated: false, count: 0 };
+    const lines = [];
+    renderTree(document.body, 0, lines, ctx);
+
+    const truncated = ctx.truncated || tooMany;
+    const header = t('pageInteraction.snapshotHeader', { count: ctx.count })
+      + (truncated ? t('pageInteraction.snapshotTruncated', { total: matched.length }) : '');
+    lines.unshift(header);
+    lines.push(t('pageInteraction.snapshotFooter'));
+
+    return {
+      success: true,
+      content: lines.join('\n'),
+      count: ctx.count,
+      total: matched.length,
+      truncated,
+      hint: t('pageInteraction.refHint'),
+    };
+  } catch (error) {
+    console.error('[PageInteraction] queryInteractiveElements failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 遍历收集匹配的交互元素（DOM 有序）
+ */
+function collectMatches(root, { matched, filterByText, elementTypes }) {
+  if (isSubtreePruned(root)) return;
+  const role = getRole(root);
+  if (isInteractiveElement(root, role) && !isElementHidden(root) && matchesTypeFilter(root, role, elementTypes)) {
+    const effectiveRole = role || root.tagName.toLowerCase();
+    const name = resolveAccessibleName(root, effectiveRole);
+    if (matchesTextFilter(root, name, filterByText)) {
+      matched.push({ el: root, role: effectiveRole, name });
+    }
+  }
+  for (const child of getElementChildren(root)) {
+    collectMatches(child, { matched, filterByText, elementTypes });
+  }
+}
+
+/**
+ * 递归渲染树行；返回本子树是否产生输出行
+ * 缩进 = 有效深度：交互元素/语义容器 +1，一般容器透传
+ */
+function renderTree(el, depth, lines, ctx) {
+  if (isSubtreePruned(el)) return false;
+  const role = getRole(el);
+  const interactive = isInteractiveElement(el, role);
+  const container = !interactive && CONTAINER_ROLES.has(role) ? role : null;
+  const childDepth = depth + ((interactive || container) ? 1 : 0);
+
+  const childLines = [];
+  let childProduced = false;
+  for (const child of getElementChildren(el)) {
+    if (renderTree(child, childDepth, childLines, ctx)) childProduced = true;
   }
 
-  // 查询元素（穿透 Shadow DOM）
-  querySelectors.forEach(selector => {
-    try {
-      deepQuerySelectorAll(selector).forEach(el => {
-        // 生成唯一选择器
-        const uniqueSelector = generateUniqueSelector(el);
-        if (seenSelectors.has(uniqueSelector)) return;
-        seenSelectors.add(uniqueSelector);
+  if (interactive && ctx.selected.has(el) && !isElementHidden(el)) {
+    if (ctx.budget <= 0) { ctx.truncated = true; return childProduced; }
+    const effectiveRole = role || el.tagName.toLowerCase();
+    const name = resolveAccessibleName(el, effectiveRole);
+    const attrs = buildAttributeText(el, effectiveRole);
+    // 估算行长度（含 [ref NNNNN] 上限 12 字符）后再注册，保证输出=注册
+    const estimate = depth + effectiveRole.length + (name ? name.length + 2 : 0) + (attrs ? attrs.length + 1 : 0) + 12;
+    if (ctx.budget - estimate < 0) { ctx.truncated = true; return childProduced; }
+    const ref = registerElement(el, effectiveRole, name);
+    const line = `${' '.repeat(depth)}${effectiveRole}${name ? ` "${name}"` : ''} [ref ${ref}]${attrs ? ' ' + attrs : ''}`;
+    ctx.budget -= line.length + 1;
+    ctx.count += 1;
+    lines.push(line, ...childLines); // DOM 顺序：父行在子行前
+    return true;
+  }
 
-        const tagName = el.tagName.toLowerCase();
-        const text = getElementText(el);
-        const value = getElementValue(el);
+  if (container && childProduced) {
+    const cname = (container === 'dialog' || container === 'heading')
+      ? resolveAccessibleName(el, role) : '';
+    const line = `${' '.repeat(depth)}${container}${cname ? ` "${cname}"` : ''}`;
+    ctx.budget -= line.length + 1;
+    lines.push(line, ...childLines);
+    return true;
+  }
 
-        // 过滤文本
-        if (filterByText && !text.toLowerCase().includes(filterByText.toLowerCase())) {
-          return;
-        }
-
-        // 构建元素信息
-        const elementInfo = {
-          tag: tagName,
-          selector: uniqueSelector,
-          text: text.substring(0, 100)
-        };
-
-        // 根据类型添加特定属性
-        if (tagName === 'a') {
-          elementInfo.href = el.href;
-        } else if (tagName === 'input' || tagName === 'select' || tagName === 'textarea') {
-          elementInfo.name = el.name;
-          elementInfo.type = el.type || 'text';
-          elementInfo.value = value;
-          elementInfo.placeholder = el.placeholder;
-        }
-
-        // 添加属性
-        if (el.id) elementInfo.id = el.id;
-        if (el.className && typeof el.className === 'string') {
-          elementInfo.className = el.className.split(' ').filter(c => c).slice(0, 3).join(' ');
-        }
-
-        // 分配 ref 编号，存入注册表供 interact_by_ref 使用
-        const ref = elements.length + 1;
-        elementInfo.ref = ref;
-        elementRegistry.set(ref, { element: el, selector: uniqueSelector, tag: tagName });
-
-        elements.push(elementInfo);
-      });
-    } catch (e) {
-      // 忽略无效选择器
-    }
-  });
-
-  return {
-    success: true,
-    count: Math.min(elements.length, maxResults),
-    total: elements.length,
-    elements: elements.slice(0, maxResults),
-    hint: t('pageInteraction.refHint')
-  };
+  if (childProduced) {
+    lines.push(...childLines);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -270,114 +528,6 @@ export function scrollAndCollect(args = {}) {
       resolve({ success: false, error: error.message });
     }
   });
-}
-
-/**
- * 读取无障碍树信息
- */
-export function readAccessibilityTree(maxResults = 100) {
-  try {
-    const semanticRoles = {
-      'nav': 'navigation',
-      'main': 'main',
-      'header': 'banner',
-      'footer': 'contentinfo',
-      'aside': 'complementary',
-      'section': 'region',
-      'article': 'article',
-      'form': 'form',
-      'search': 'search',
-      'figure': 'figure',
-      'figcaption': 'figcaption',
-      'summary': 'button',
-      'dialog': 'dialog',
-      'table': 'table',
-      'img': 'img',
-      'button': 'button',
-      'a': 'link',
-      'input': 'textbox',
-      'select': 'combobox',
-      'textarea': 'textbox',
-      'h1': 'heading',
-      'h2': 'heading',
-      'h3': 'heading',
-      'h4': 'heading',
-      'h5': 'heading',
-      'h6': 'heading'
-    };
-
-    const elements = [];
-    const seen = new Set();
-
-    const querySelector = [
-      '[aria-label]',
-      '[aria-labelledby]',
-      '[role]',
-      ...Object.keys(semanticRoles).map(tag => tag)
-    ].join(',');
-
-    document.querySelectorAll(querySelector).forEach(el => {
-      if (elements.length >= maxResults) return;
-
-      const uniqueKey = el.id || generateUniqueSelector(el);
-      if (seen.has(uniqueKey)) return;
-      seen.add(uniqueKey);
-
-      const tag = el.tagName.toLowerCase();
-      const role = el.getAttribute('role') || semanticRoles[tag] || '';
-      const label = el.getAttribute('aria-label')
-        || el.textContent?.trim().substring(0, 100)
-        || '';
-
-      const props = {};
-
-      if (el.getAttribute('aria-expanded') !== null) {
-        props['aria-expanded'] = el.getAttribute('aria-expanded');
-      }
-      if (el.getAttribute('aria-selected') !== null) {
-        props['aria-selected'] = el.getAttribute('aria-selected');
-      }
-      if (el.getAttribute('aria-checked') !== null) {
-        props['aria-checked'] = el.getAttribute('aria-checked');
-      }
-      if (el.getAttribute('aria-disabled') !== null) {
-        props['aria-disabled'] = el.getAttribute('aria-disabled');
-      }
-      if (el.getAttribute('aria-hidden') !== null) {
-        props['aria-hidden'] = el.getAttribute('aria-hidden');
-      }
-      if (el.getAttribute('aria-haspopup') !== null) {
-        props['aria-haspopup'] = el.getAttribute('aria-haspopup');
-      }
-      if (el.getAttribute('aria-level') !== null) {
-        props['aria-level'] = el.getAttribute('aria-level');
-      }
-      if (el.getAttribute('tabindex') !== null) {
-        props['tabindex'] = el.getAttribute('tabindex');
-      }
-
-      const entry = {
-        tag,
-        selector: generateUniqueSelector(el),
-        role,
-        label
-      };
-
-      if (Object.keys(props).length > 0) {
-        entry.properties = props;
-      }
-
-      elements.push(entry);
-    });
-
-    return {
-      success: true,
-      elements,
-      total: elements.length
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
 }
 
 // ==================== P0/P1: 索引引用 & 文本滚动 ====================

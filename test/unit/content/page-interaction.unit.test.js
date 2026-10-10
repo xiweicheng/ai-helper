@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-// page-interaction 单元测试：query_elements / ref 注册表 / 计数 / 无障碍树（jsdom 环境）
+// page-interaction 单元测试：query_elements 树快照 / ref 注册表 / 计数 / 交互（jsdom 环境）
 import { describe, test, expect, beforeEach, beforeAll } from 'vitest';
 import {
   queryInteractiveElements,
   getElementCount,
   getSelectorByRef,
-  readAccessibilityTree,
   interactByRef,
   scrollToText,
 } from '../../../src/content/page-interaction.js';
@@ -26,59 +25,116 @@ beforeEach(() => {
   document.body.innerHTML = '';
 });
 
-describe('queryInteractiveElements - 可交互元素查询', () => {
-  test('返回所有可交互元素并分配 ref', () => {
+// 从树快照文本中提取首个 ref（ref 编号跨测试单调递增，测试不硬编码）
+function firstRef(content) {
+  return Number(content.match(/\[ref (\d+)\]/)[1]);
+}
+
+describe('queryInteractiveElements - 树快照', () => {
+  test('发现原生交互元素并输出树文本', () => {
     document.body.innerHTML = `
-      <button id="b1">Save</button>
+      <div><button id="b1">Save</button></div>
       <a href="/x">Link</a>
-      <input type="text" name="q">
+      <input type="text" placeholder="q">
     `;
     const r = queryInteractiveElements({});
     expect(r.success).toBe(true);
-    expect(r.elements.length).toBe(3);
-    expect(r.elements[0].ref).toBe(1);
-    expect(r.elements[1].ref).toBe(2);
-    expect(r.hint).toContain('query_elements');
+    expect(r.count).toBe(3);
+    expect(r.total).toBe(3);
+    expect(r.content.split('\n')[0]).toContain('3');       // 统计行
+    expect(r.content).toContain('button "Save" [ref ');
+    expect(r.content).toContain('link "Link" [ref ');
+    expect(r.content).toContain('textbox');
+    expect(r.content).toContain('placeholder="q"');
+    expect(r.content).toContain('query_elements');          // 尾行提示
   });
 
-  test('filterByText 过滤', () => {
+  test('ARIA 角色/tabindex/contenteditable/summary 均被发现', () => {
     document.body.innerHTML = `
-      <button>Save</button>
-      <button>Cancel</button>
+      <div role="tab"></div>
+      <div role="treeitem"></div>
+      <div tabindex="0"></div>
+      <div contenteditable="true"></div>
+      <details><summary>More</summary></details>
     `;
+    const r = queryInteractiveElements({});
+    expect(r.count).toBe(5);
+    expect(r.content).toContain('tab');
+    expect(r.content).toContain('treeitem');
+    expect(r.content).toContain('button "More"');           // summary 推导为 button
+  });
+
+  test('display:none 与 aria-hidden 子树被剪枝', () => {
+    document.body.innerHTML = `
+      <div><button id="b1">A</button></div>
+      <div style="display:none"><button id="b2">B</button></div>
+      <div aria-hidden="true"><button id="b3">C</button></div>
+    `;
+    const r = queryInteractiveElements({});
+    expect(r.count).toBe(1);
+    expect(r.content).toContain('"A"');
+  });
+
+  test('div 透传不占缩进，语义容器占缩进', () => {
+    document.body.innerHTML = `
+      <div><div><button id="b1">Deep</button></div></div>
+      <form id="f1"><button id="b2">InForm</button></form>
+    `;
+    const r = queryInteractiveElements({});
+    const lines = r.content.split('\n');
+    // 两层 div 均透传 → button 有效深度 0（无前导空格）
+    expect(lines.some(l => l.startsWith('button "Deep"'))).toBe(true);
+    expect(lines.some(l => l.startsWith('form'))).toBe(true);
+    // form 是语义容器 → 其中的 button 缩进 1
+    expect(lines.some(l => l.startsWith(' button "InForm"'))).toBe(true);
+  });
+
+  test('ref 编号跨快照单调递增不复用', () => {
+    document.body.innerHTML = '<button id="b1">Go</button>';
+    const r1 = queryInteractiveElements({});
+    const ref1 = firstRef(r1.content);
+    const r2 = queryInteractiveElements({});
+    const ref2 = firstRef(r2.content);
+    expect(ref2).toBeGreaterThan(ref1);
+  });
+
+  test('filterByText 与 elementTypes 过滤', () => {
+    document.body.innerHTML = `<button>Save</button><button>Cancel</button><a href="/">x</a>`;
     const r = queryInteractiveElements({ filterByText: 'save' });
     expect(r.count).toBe(1);
-    expect(r.elements[0].text.toLowerCase()).toContain('save');
+    const r2 = queryInteractiveElements({ elementTypes: ['a'] });
+    expect(r2.count).toBe(1);
+    expect(r2.content).toContain('link');
   });
 
-  test('elementTypes 限定查询类型', () => {
-    document.body.innerHTML = `
-      <button>btn</button>
-      <a href="/">link</a>
-      <input type="text">
-    `;
-    const r = queryInteractiveElements({ elementTypes: ['a'] });
-    expect(r.elements.length).toBe(1);
-    expect(r.elements[0].tag).toBe('a');
+  test('maxChars 字符预算截断并提示', () => {
+    document.body.innerHTML = Array.from({ length: 50 },
+      (_, i) => `<button>Button ${i} with some longer text content</button>`).join('');
+    const r = queryInteractiveElements({ maxChars: 200 });
+    expect(r.truncated).toBe(true);
+    expect(r.content.length).toBeLessThan(400);
+    expect(r.content).toContain('截断');
+    expect(r.total).toBe(50);
+    expect(r.count).toBeLessThan(50);
   });
 
-  test('maxResults 限制返回数量', () => {
-    document.body.innerHTML = '<button>1</button><button>2</button><button>3</button>';
-    const r = queryInteractiveElements({ maxResults: 2 });
+  test('countOnly 只返回计数', () => {
+    document.body.innerHTML = '<button>A</button><button>B</button>';
+    const r = queryInteractiveElements({ countOnly: true });
     expect(r.count).toBe(2);
-    expect(r.total).toBe(3);
+    expect(r.content).toBe('');
   });
 });
 
 describe('getSelectorByRef - ref 注册表查询', () => {
   test('query 后 ref 命中', () => {
     document.body.innerHTML = '<button id="b1">Go</button>';
-    queryInteractiveElements({});
-    expect(getSelectorByRef(1)).toBe('#b1');
+    const r = queryInteractiveElements({});
+    expect(getSelectorByRef(firstRef(r.content))).toBe('#b1');
   });
 
   test('未注册的 ref 返回 null', () => {
-    expect(getSelectorByRef(999)).toBeNull();
+    expect(getSelectorByRef(999999)).toBeNull();
     expect(getSelectorByRef(0)).toBeNull();
     expect(getSelectorByRef('abc')).toBeNull();
   });
@@ -113,34 +169,20 @@ describe('getElementCount - 元素计数', () => {
   });
 });
 
-describe('readAccessibilityTree - 无障碍树', () => {
-  test('提取语义角色', () => {
-    document.body.innerHTML = `
-      <nav><a href="/">home</a></nav>
-      <main><button>OK</button></main>
-    `;
-    const r = readAccessibilityTree(100);
-    expect(r.success).toBe(true);
-    expect(r.elements.length).toBeGreaterThan(0);
-    const nav = r.elements.find(e => e.tag === 'nav');
-    expect(nav.role).toBe('navigation');
-  });
-});
-
 describe('interactByRef - ref 元素操作', () => {
   test('点击 ref 对应元素', async () => {
     document.body.innerHTML = '<button id="b1">Click</button>';
     let clicked = false;
     document.getElementById('b1').addEventListener('click', () => { clicked = true; });
-    queryInteractiveElements({});
-    const r = await interactByRef(1, 'click', { waitTime: 0, timeout: 0 });
+    const r0 = queryInteractiveElements({});
+    const r = await interactByRef(firstRef(r0.content), 'click', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(true);
     expect(clicked).toBe(true);
-    expect(r.selector).toBe('#b1');
+    expect(r.selector).toBe('#b1'); // Task 3 将删除此断言（返回值收敛）
   });
 
   test('无效 ref 返回失败并提示重新查询', async () => {
-    const r = await interactByRef(999, 'click', { waitTime: 0, timeout: 0 });
+    const r = await interactByRef(999999, 'click', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(false);
     expect(r.error).toContain('无效');
     expect(r.error).toContain('query_elements');
@@ -150,8 +192,8 @@ describe('interactByRef - ref 元素操作', () => {
     document.body.innerHTML = '<button id="b1">Hover</button>';
     let hovered = false;
     document.getElementById('b1').addEventListener('mouseover', () => { hovered = true; });
-    queryInteractiveElements({});
-    const r = await interactByRef(1, 'hover', { waitTime: 0, timeout: 0 });
+    const r0 = queryInteractiveElements({});
+    const r = await interactByRef(firstRef(r0.content), 'hover', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(true);
     expect(hovered).toBe(true);
   });
