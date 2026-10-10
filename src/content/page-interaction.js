@@ -2,7 +2,7 @@
 // 从 page-tools.js 拆分，包含交互元素查询、相似元素查找、元素计数、滚动收集、无障碍树读取等
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
-import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement } from './page-utils.js';
+import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -19,6 +19,10 @@ registerTranslations('zh', {
     domChangeHint: '（检测到DOM变化，已等待 {ms}ms）',
     hoveredByRef: '已悬停元素 ref={ref}（{tag}）{hint}',
     clickedByRef: '已点击元素 ref={ref}（{tag}）{hint}',
+    typedByRef: '已向元素 ref={ref}（{tag}）输入文本{hint}',
+    typeNotSupported: '元素 {tag} 不支持文本输入（checkbox/radio 请用 fill_form 或 click）',
+    valueRequired: 'action=type 时 value 不能为空',
+    typeFailed: '文本输入失败',
     textRequired: 'text 不能为空',
     scrolledToText: '已滚动到包含"{text}"的元素',
     scrollTextNotFound: '滚动 {count} 次未找到包含"{text}"的文本',
@@ -39,6 +43,10 @@ registerTranslations('en', {
     domChangeHint: ' (DOM change detected, waited {ms}ms)',
     hoveredByRef: 'Hovered element ref={ref} ({tag}){hint}',
     clickedByRef: 'Clicked element ref={ref} ({tag}){hint}',
+    typedByRef: 'Typed text into element ref={ref} ({tag}){hint}',
+    typeNotSupported: 'Element {tag} does not support text input (use fill_form or click for checkbox/radio)',
+    valueRequired: 'value is required when action=type',
+    typeFailed: 'Text input failed',
     textRequired: 'text cannot be empty',
     scrolledToText: 'Scrolled to element containing "{text}"',
     scrollTextNotFound: 'Scrolled {count} times but did not find text containing "{text}"',
@@ -587,10 +595,13 @@ export function scrollAndCollect(args = {}) {
  * 容错：element 失效时用 selector 兜底重新查找；selector 也失效则提示重新 query_elements
  *
  * @param {number} ref - query_elements 返回的元素编号
- * @param {string} action - 'click' | 'hover'（暂只支持点击和悬停）
+ * @param {string} action - 'click' | 'hover' | 'type'
  * @param {object} options
  * @param {number} options.waitTime - 点击后最小等待 ms
  * @param {number} options.timeout - 点击后最大等待 ms
+ * @param {string} options.value - action=type 时要输入的文本
+ * @param {boolean} options.clear - action=type 时是否先清空原内容
+ * @param {boolean} options.submit - action=type 时输入后是否按 Enter 提交
  */
 export async function interactByRef(ref, action = 'click', options = {}) {
   const { waitTime = 300, timeout = 2000 } = options;
@@ -608,6 +619,23 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     return {
       success: false,
       error: t('pageInteraction.elementNotVisibleError', { ref, tag: entry.tag }),
+    };
+  }
+
+  if (action === 'type') {
+    const sigBefore = getDomSignature();
+    const typeResult = typeIntoElement(element, options.value, options);
+    if (!typeResult.success) {
+      return { success: false, error: typeResult.error };
+    }
+    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+    const changeHint = wait.changed
+      ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
+      : '';
+    return {
+      success: true,
+      message: t('pageInteraction.typedByRef', { ref: refNum, tag: entry.tag, hint: changeHint }),
+      ...wait,
     };
   }
 
@@ -635,6 +663,48 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     message: t('pageInteraction.clickedByRef', { ref, tag: entry.tag, hint: changeHint }),
     ...wait,
   };
+}
+
+/**
+ * 原子输入：聚焦 + 可选清空 + 设值/富文本写入 + 事件 + 可选 Enter 提交
+ */
+function typeIntoElement(el, value, { clear = false, submit = false } = {}) {
+  if (value == null || value === '') {
+    return { success: false, error: t('pageInteraction.valueRequired') };
+  }
+  const tag = el.tagName;
+  const editable = isContentEditableElement(el);
+  if (tag === 'INPUT') {
+    const type = (el.type || 'text').toLowerCase();
+    if (['checkbox', 'radio', 'file', 'submit', 'button', 'reset', 'image'].includes(type)) {
+      return { success: false, error: t('pageInteraction.typeNotSupported', { tag: `<input type="${type}">` }) };
+    }
+  } else if (tag !== 'TEXTAREA' && !editable) {
+    return { success: false, error: t('pageInteraction.typeNotSupported', { tag: `<${tag.toLowerCase()}>` }) };
+  }
+  try { el.focus(); } catch { /* 忽略聚焦失败 */ }
+
+  const isRich = editable && tag !== 'INPUT' && tag !== 'TEXTAREA';
+  if (isRich) {
+    if (clear) fillContentEditable(el, '');
+    const ok = fillContentEditable(el, value);
+    if (!ok) return { success: false, error: t('pageInteraction.typeFailed') };
+  } else {
+    if (clear) {
+      setNativeValue(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    setNativeValue(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  if (submit) {
+    const keyOpts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+    el.dispatchEvent(new KeyboardEvent('keydown', keyOpts));
+    el.dispatchEvent(new KeyboardEvent('keypress', keyOpts));
+    el.dispatchEvent(new KeyboardEvent('keyup', keyOpts));
+  }
+  return { success: true };
 }
 
 /**

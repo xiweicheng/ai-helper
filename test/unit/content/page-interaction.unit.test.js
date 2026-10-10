@@ -222,6 +222,66 @@ describe('resolveByRef / 失效建议', () => {
   });
 });
 
+describe('interactByRef - type 原子输入', () => {
+  const refOf = () => firstRef(queryInteractiveElements({}).content);
+
+  test('输入文本并派发 input/change 事件', async () => {
+    document.body.innerHTML = '<input id="i1" type="text">';
+    const ref = refOf();
+    const events = [];
+    const el = document.getElementById('i1');
+    el.addEventListener('input', () => events.push('input'));
+    el.addEventListener('change', () => events.push('change'));
+    const r = await interactByRef(ref, 'type', { value: 'hello', waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(el.value).toBe('hello');
+    expect(events).toContain('input');
+    expect(events).toContain('change');
+  });
+
+  test('clear=true 先清空再输入', async () => {
+    document.body.innerHTML = '<input id="i1" value="old">';
+    const ref = refOf();
+    const r = await interactByRef(ref, 'type', { value: 'new', clear: true, waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(document.getElementById('i1').value).toBe('new');
+  });
+
+  test('submit=true 派发 Enter 序列', async () => {
+    document.body.innerHTML = '<input id="i1">';
+    const ref = refOf();
+    const keys = [];
+    document.getElementById('i1').addEventListener('keydown', e => keys.push(e.key));
+    const r = await interactByRef(ref, 'type', { value: 'x', submit: true, waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(keys).toContain('Enter');
+  });
+
+  test('checkbox 拒绝文本输入', async () => {
+    document.body.innerHTML = '<input id="c1" type="checkbox">';
+    const ref = refOf();
+    const r = await interactByRef(ref, 'type', { value: 'x', waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('不支持');
+  });
+
+  test('value 为空报错', async () => {
+    document.body.innerHTML = '<input id="i1">';
+    const ref = refOf();
+    const r = await interactByRef(ref, 'type', { waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('value');
+  });
+
+  test('contenteditable 走富文本路径', async () => {
+    document.body.innerHTML = '<div id="ce" contenteditable="true"></div>';
+    const ref = refOf();
+    const r = await interactByRef(ref, 'type', { value: 'rich', waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(document.getElementById('ce').textContent).toBe('rich');
+  });
+});
+
 describe('scrollToText - 文本滚动查找', () => {
   test('当前视口存在文本直接定位', async () => {
     document.body.innerHTML = '<div style="height:100px"></div><p id="t">FindMe</p>';
