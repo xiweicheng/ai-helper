@@ -62,6 +62,15 @@ describe('循环检测器接线守卫', () => {
     expect(SRC).toMatch(/role: 'user',\s*\n\s*content: `\[System Notice\] \$\{warnings\.join/);
   });
 
+  test('硬停错误携带 loopStop 标记；子任务汇总按标记切换文案（恢复语义不外溢到子任务）', () => {
+    // throw 前打结构化标记（非文案字符串匹配），子任务聚合点据此区分循环停止与普通失败
+    expect(SRC).toMatch(/\.loopStop = outcome\.reason/);
+    expect(SRC).toMatch(/error\.loopStop \? t\('reactLoop\.subtaskStoppedLoop'/);
+    // 新文案 zh/en 双字典均存在（只增不改）
+    const count = (SRC.match(/subtaskStoppedLoop/g) || []).length;
+    expect(count).toBeGreaterThanOrEqual(3); // zh + en + 聚合点引用
+  });
+
   // —— 位置/序号型断言：计数型断言无法发现“push 被挪到早退 return 之后”类回归 ——
 
   test('记录锚点均带声明序号 order（反向断言：不存在无 order 形态，无 [^;] 截断盲区）', () => {

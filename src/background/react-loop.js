@@ -32,6 +32,7 @@ registerTranslations('zh', {
     subtaskNode: '子任务 {index}: {name}',
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
+    subtaskStoppedLoop: '子任务 {index}: {name} (已停止：检测到循环；父任务将按失败策略重试或跳过，主任务暂停后可补充指导)',
     userCancelled: '用户取消',
     skippedAfterPlanTask: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
     toolError: '错误: {message}',
@@ -69,6 +70,7 @@ registerTranslations('en', {
     subtaskNode: 'Subtask {index}: {name}',
     subtaskCompleted: 'Subtask {index}: {name} (completed)',
     subtaskFailed: 'Subtask {index}: {name} (failed)',
+    subtaskStoppedLoop: 'Subtask {index}: {name} (stopped by loop detection; the parent task will retry or skip per its failure strategy. You can add guidance when the main task pauses)',
     skippedAfterPlanTask: 'Skipped (plan_task has decomposed subtasks, other tool calls in this round are no longer executed)',
     toolError: 'Error: {message}',
     loopTimeout: 'ReAct loop total timeout ({timeout}ms, excluding clarification wait time)',
@@ -513,7 +515,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       if (outcome.kind === 'stop') {
         const msgKey = LOOP_STOP_I18N[outcome.reason] || 'infiniteLoopDetected';
         logger.warn(`[Background] loop detector stopped run (${outcome.reason}): ${JSON.stringify(outcome.params)}`);
-        throw createErrorWithLog(t(`reactLoop.${msgKey}`, outcome.params), executionLog);
+        const stopError = createErrorWithLog(t(`reactLoop.${msgKey}`, outcome.params), executionLog);
+        // 结构化标记：子任务聚合点据此区分循环停止与普通失败（子任务内不存 checkpoint，恢复语义属主任务侧）
+        stopError.loopStop = outcome.reason;
+        throw stopError;
       }
       if (outcome.kind === 'nudge' && outcome.warning) {
         warnings.push(outcome.warning);
@@ -2371,8 +2376,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
             };
           }
           
-          // 发送子任务失败状态
-          sendSubtaskStatusUpdate(t('reactLoop.subtaskFailed', { index: subtaskIndex + 1, name: subtask.name }), 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+          // 发送子任务失败状态（循环停止与普通失败文案区分：恢复语义仅适用于主任务侧）
+          sendSubtaskStatusUpdate(error.loopStop ? t('reactLoop.subtaskStoppedLoop', { index: subtaskIndex + 1, name: subtask.name }) : t('reactLoop.subtaskFailed', { index: subtaskIndex + 1, name: subtask.name }), 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           
           return {
             success: false,
