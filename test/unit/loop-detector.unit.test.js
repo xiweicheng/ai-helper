@@ -421,3 +421,25 @@ describe('全局机制', () => {
     expect(LOOP_DETECTOR_CONFIG.repeat.stopAt).toBe(8); // 默认常量不被污染
   });
 });
+
+describe('nullish result 入参兜底（record 入口防御）', () => {
+  test('null/undefined result 不抛异常（query_elements 路径使用兜底后对象）', () => {
+    const d = createLoopDetector();
+    expect(() => d.record(1, 'query_elements', { page: 1 }, null)).not.toThrow();
+    expect(() => d.record(1, 'interact_element', { ref: 1, action: 'click' }, undefined)).not.toThrow();
+    expect(d.record(1, 'query_elements', { page: 2 }, null).kind).toBe('none');
+  });
+
+  test('nullish result 不视为成功导航（isNavResetSignal 仍读原始值，不触发重置）', () => {
+    // 防过度修正：若入口对 isNavResetSignal 也使用 result||{} 兜底，
+    // wait_navigation + null result 会被误判为成功导航→失败计数被清，永远到不了 stop
+    const d = createLoopDetector();
+    const fail = { success: false, error: 'x' };
+    d.record(1, 'interact_element', { ref: 9, action: 'click' }, fail);      // 失败 1
+    d.record(1, 'wait_navigation', {}, null);                               // null 不得触发重置
+    const second = d.record(1, 'interact_element', { ref: 9, action: 'click' }, fail);
+    expect(second.kind).toBe('nudge');                                      // 第 2 次失败 → 提醒（若被重置则为 none）
+    const third = d.record(1, 'interact_element', { ref: 9, action: 'click' }, fail);
+    expect(third.kind).toBe('stop');                                        // 第 3 次 → 硬停（计数未被中途重置）
+  });
+});

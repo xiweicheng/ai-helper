@@ -64,13 +64,12 @@ describe('循环检测器接线守卫', () => {
 
   // —— 位置/序号型断言：计数型断言无法发现“push 被挪到早退 return 之后”类回归 ——
 
-  test('记录锚点均带声明序号 order（并行路径 push 顺序 = 完成顺序，必须可重排）', () => {
-    const pushes = (SRC.match(/loopRecords\.push\(\{[^;]*?\}\);/g) || []);
+  test('记录锚点均带声明序号 order（反向断言：不存在无 order 形态，无 [^;] 截断盲区）', () => {
+    // 并行路径 push 顺序 = 完成顺序，必须可重排；首个键即 name/args/result 的 push 即回归
+    expect(SRC).not.toMatch(/loopRecords\.push\(\{\s*(name|args|result):/);
+    const count = (SRC.match(/loopRecords\.push\(/g) || []).length;
     // 5 个生命周期锚点（被拒/plan_task/跳过/常规/错误）+ 1 个缓存命中锚点
-    expect(pushes.length).toBeGreaterThanOrEqual(6);
-    for (const p of pushes) {
-      expect(p, `push 应带 order：${p.slice(0, 70)}`).toMatch(/\border:/);
-    }
+    expect(count).toBeGreaterThanOrEqual(6);
   });
 
   test('flush 前按声明序号稳定排序（消除并行完成顺序抖动）', () => {

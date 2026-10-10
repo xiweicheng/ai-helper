@@ -308,12 +308,15 @@ export function createLoopDetector(config = {}) {
   function record(tabId, toolName, args, result) {
     const bucket = getBucket(tabId);
     const safeArgs = args || {};
+    // 导航判定读原始 result：nullish result 不是成功导航的证据
     const isNav = isNavResetSignal(toolName, safeArgs, result);
     if (isNav) resetPageScopedState(bucket);
 
+    // 入参兜底：壳侧 normalizeToolResult 保证对象，此处防御 nullish 避免 updateRefEnum 等访问抛 TypeError
+    const safeResult = result || {};
     const aKey = argsKeyOf(toolName, safeArgs);
-    const fKey = fullKeyOf(toolName, safeArgs, result);
-    const skipped = !!(result && result.skipped);
+    const fKey = fullKeyOf(toolName, safeArgs, safeResult);
+    const skipped = !!safeResult.skipped;
 
     let stop = null;
     const warnings = [];
@@ -343,8 +346,8 @@ export function createLoopDetector(config = {}) {
 
       // ⑤ ref 枚举（query_elements 专用；失败读不更新；skipped 不计入）
       if (toolName === 'query_elements') {
-        if (!skipped && !(result && result.success === false)) {
-          if (updateRefEnum(bucket, safeArgs, result, cfg)) patternHit = true;
+        if (!skipped && safeResult.success !== false) {
+          if (updateRefEnum(bucket, safeArgs, safeResult, cfg)) patternHit = true;
           const st = bucket.refEnum;
           if (st.suspicious >= cfg.refEnum.stopSuspicious || st.nonSeq >= cfg.refEnum.stopNonSeq) {
             stop = stop || { reason: 'refEnum', params: { count: Math.max(st.suspicious, st.nonSeq) } };
@@ -365,7 +368,7 @@ export function createLoopDetector(config = {}) {
       if (!skipped && FAILURE_SCOPE_TOOLS.has(toolName)) {
         const scope = failureScopeOf(toolName, safeArgs);
         if (scope) {
-          if (isFailedResult(result)) {
+          if (isFailedResult(safeResult)) {
             const c = (bucket.failureScopes.get(scope) || 0) + 1;
             bucket.failureScopes.set(scope, c);
             trimMap(bucket.failureScopes, cfg.failureScope.maxScopes);
@@ -387,7 +390,7 @@ export function createLoopDetector(config = {}) {
       // ⑦ 无进展滚动（静态判定 moved:false；成功滚动即清零）
       if (!skipped && toolName === 'scroll_to') {
         const sKey = scrollKeyOf(safeArgs, cfg.noProgressScroll.coordGrid);
-        const notMoved = result && result.moved === false;
+        const notMoved = safeResult.moved === false;
         if (sKey && notMoved) {
           if (bucket.scroll.key !== sKey) { bucket.scroll.key = sKey; bucket.scroll.count = 0; }
           bucket.scroll.count += 1;
@@ -400,7 +403,7 @@ export function createLoopDetector(config = {}) {
               `No-progress scrolling detected: scroll_to(${sKey}) reports no movement (already at boundary) ${bucket.scroll.count} times.`,
               warnings);
           }
-        } else if (!notMoved && !(result && result.success === false)) {
+        } else if (!notMoved && safeResult.success !== false) {
           bucket.scroll = { key: null, count: 0 };
         }
       }
