@@ -155,7 +155,8 @@ heading "订单列表"
 
 **`interact_element` 工具**：
 - `action` enum 扩展为 `['click', 'hover', 'type']`
-- 新增参数：`text`（type 时必填）、`clear`（boolean，默认 false，输入前清空）、
+- 新增参数：`value`（type 时必填，输入内容；因 `text` 已被文本定位占用，
+  输入内容命名为 `value`）、`clear`（boolean，默认 false，输入前先清空）、
   `submit`（boolean，默认 false，输入后派发 Enter）
 - type 分支（在 `interactByRef` 内实现，复用 ref 解析/可见性基建）：
   1. 解析校验元素（同 click）；拒绝 `checkbox/radio/submit/file` 等非文本输入类型（明确报错）
@@ -184,7 +185,8 @@ heading "订单列表"
   - `query_elements`：描述重写——输出为树形快照、`[ref N]` 用法、失效后重查、
     filterByText/maxChars；新增 `maxChars` 参数
   - `interact_element`：action 枚举更新 + 每值附参数提示
-    （"click: ...; hover: ...; type: enter text (requires text; optional clear/submit)"）
+    （"click: ...; hover: ...; type: enter text into field (requires value; optional clear/submit)"）；
+    `selector` 参数描述删除 "prefer selector returned by query_elements"（树输出不再返回 selector）
   - `fill_form`：fields 说明 ref/selector 二选一
 - `shared/locales/zh.js` + `en.js`（`tool.*` 命名空间，UI 展示）：同步三处描述
 - `agent-defaults.js`：现有"优先 query_elements"表述保留，不改（表述已通用）
