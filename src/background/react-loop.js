@@ -12,6 +12,7 @@ import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { wrapUntrusted, applyUntrustedContract, getContractText } from '../shared/untrusted-content.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
+import { createLoopDetector } from './loop-detector.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -111,6 +112,16 @@ const TOOL_DISPLAY_NAME_KEYS = {
   agent_file: 'sensitiveTool.agent_file',
   debug_page: 'sensitiveTool.debug_page',
 };
+
+/**
+ * 防御性解析 tool_call 参数（流式模式下 arguments 可能是 string 或已解析 object）
+ */
+function parseToolCallArgs(toolCall) {
+  const rawArgs = toolCall.function?.arguments;
+  if (!rawArgs) return {};
+  if (typeof rawArgs === 'object') return rawArgs;
+  try { return JSON.parse(rawArgs || '{}'); } catch { return {}; }
+}
 
 /**
  * 请求用户确认敏感操作
@@ -472,13 +483,48 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const CACHE_TTL_MS = 60000; // 缓存条目 60 秒过期，同一轮对话内有效
   const MAX_CACHE_SIZE = 30; // 缓存上限，防止大结果无限增长
 
-  // 死循环检测：入参和返参完全相同才算死循环
-  // 仅比较入参会误判（如轮询场景：相同入参但返回值不同属于正常行为），
-  // 同时比较入参+返参可精准识别真正的死循环
-  const REPEATED_CALL_WARN_THRESHOLD = 5; // 连续相同调用（入参+返参）达到此次数时注入警告
-  const REPEATED_CALL_HARD_LIMIT = 8;     // 连续相同调用（入参+返参）达到此次数时强制终止
-  let lastCombinedFingerprint = null;     // 上一轮工具调用的组合指纹（入参+返参）
-  let repeatedCallCount = 0;              // 连续相同调用的计数
+  // 多模式循环检测器（独立纯逻辑模块；本文件只在轮末喂入记录并接入提醒/终止）
+  // 设计文档：docs/superpowers/specs/2026-10-10-loop-detection-upgrade-design.md
+  const loopDetector = createLoopDetector();
+  const loopRecords = []; // 本轮工具调用记录（轮末统一喂入检测器后清空）
+
+  // stop reason → i18n key 映射（检测器保持纯逻辑，用户可见文案在壳侧生成）
+  const LOOP_STOP_I18N = {
+    repeat: 'loopStoppedRepeat',
+    refEnum: 'loopStoppedRefEnum',
+    oscillation: 'loopStoppedOscillation',
+    failureScope: 'loopStoppedFailureScope',
+    noProgressScroll: 'loopStoppedNoProgressScroll',
+    budget: 'loopStoppedBudget',
+  };
+
+  // 轮末喂入本轮工具调用记录：软提醒合并为一条注入；遇硬停立即抛出
+  // （硬停走既有 catch → saveCheckpointNow('error', force) 恢复链路）
+  // 注：executionLog 定义在更下方，但调用点全部在工具轮末，闭包引用安全
+  const flushLoopRecords = () => {
+    if (loopRecords.length === 0) return;
+    const pending = loopRecords.splice(0, loopRecords.length);
+    const warnings = [];
+    for (const rec of pending) {
+      const outcome = loopDetector.record(tabId, rec.name, rec.args, rec.result);
+      if (outcome.kind === 'stop') {
+        const msgKey = LOOP_STOP_I18N[outcome.reason] || 'infiniteLoopDetected';
+        logger.warn(`[Background] loop detector stopped run (${outcome.reason}): ${JSON.stringify(outcome.params)}`);
+        throw createErrorWithLog(t(`reactLoop.${msgKey}`, outcome.params), executionLog);
+      }
+      if (outcome.kind === 'nudge' && outcome.warning) {
+        warnings.push(outcome.warning);
+        logger.debug(`[Background] loop detector nudge: ${outcome.warning}`);
+      }
+    }
+    if (warnings.length > 0) {
+      // 合并为一条提醒注入（沿用 role:'user' 约定，避免破坏 filterApiMessages 配对检测）
+      currentMessages.push({
+        role: 'user',
+        content: `[System Notice] ${warnings.join('\n')}\nPlease switch to a different strategy immediately and do not repeat this operation. If the current approach cannot make progress, try alternative methods, or provide a conclusion based on the information already available.`
+      });
+    }
+  };
   
   // 增量对话摘要：累积已摘要的轮次文本，token 超标时注入上下文替代原始消息
   let summarizedAccumulator = null;       // 累积摘要文本，null 表示尚未摘要过
@@ -1321,6 +1367,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   content: 'The user declined this operation.',
                   tool_call_id: toolCallId
                 });
+                loopRecords.push({ name: toolName, args: toolArgs, result: { success: false, declined: true } });
                 await trimMessages();
                 return {
                   toolCall,
@@ -1524,6 +1571,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 content: planTaskContent,
                 tool_call_id: toolCallId
               });
+              loopRecords.push({ name: toolName, args: toolArgs, result: toolResult });
               await trimMessages();
               
               // 更新工具执行日志
@@ -1564,6 +1612,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                     content: JSON.stringify({ success: false, message: 'Skipped: plan_task has decomposed subtasks; other tool calls in this round will not be executed.' }),
                     tool_call_id: skippedId
                   });
+                  loopRecords.push({ name: skippedName, args: parseToolCallArgs(skippedCall), result: { skipped: true } });
                   // 补发 STREAM_TOOL_RESULT 让前端卡片从"执行中"变为"已跳过"
                   if (!isSubtask) {
                     chrome.runtime.sendMessage({
@@ -1637,6 +1686,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
+            loopRecords.push({ name: toolName, args: toolArgs, result: toolResult });
             await trimMessages();
             
             logger.debug('[Background] toolexec result length:', toolResultStr.length, 'content preview:', toolResultStr.substring(0, 200));
@@ -1700,6 +1750,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
+            loopRecords.push({ name: toolName, args: toolArgs, result: { success: false, error: toolError.message || 'Tool execution error' } });
             await trimMessages();
             
             // 更新工具执行日志为失败
@@ -1859,6 +1910,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           await processPendingReflections();
 
           if (planTaskHandled) {
+            flushLoopRecords();
             await saveCheckpointNow('plan_task_completed');
             continue;
           }
@@ -1883,61 +1935,15 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           await processPendingReflections();
 
           if (planTaskHandled) {
+            flushLoopRecords();
             await saveCheckpointNow('plan_task_completed');
             continue;
           }
         }
 
-        // 死循环检测：入参+返参完全相同才算死循环
-        // 从 currentMessages 中提取本轮工具调用的返参（最近的 assistant(tool_calls) 之后的 tool 消息），
-        // 与入参组合后构建指纹，与上一轮组合指纹比较。
-        // 仅比较入参会误判（如轮询场景：相同入参但返回值变化属于正常行为），
-        // 入参和返参完全相同才说明工具调用毫无进展，判定为死循环。
-        const _toolResults = [];
-        for (let j = currentMessages.length - 1; j >= 0; j--) {
-          const msg = currentMessages[j];
-          if (msg.role === 'tool') {
-            _toolResults.unshift(msg.content); // 按原始顺序插入到头部
-          } else if (msg.role === 'assistant' && msg.tool_calls) {
-            break; // 到达本轮的 assistant 消息，停止扫描
-          }
-        }
-        const currentCombinedFingerprint = JSON.stringify(
-          assistantMessage.tool_calls.map((tc, idx) => ({
-            name: tc.function?.name || tc.name,
-            args: typeof tc.function?.arguments === 'string'
-              ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return tc.function.arguments; } })()
-              : tc.function?.arguments || {},
-            result: _toolResults[idx] || ''
-          }))
-        );
-
-        if (currentCombinedFingerprint === lastCombinedFingerprint) {
-          repeatedCallCount++;
-          const _toolNames = assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name).join(', ');
-          logger.warn(`[Background] detected infiniteloop:input and outputidentical (${repeatedCallCount} consecutive repeats): ${_toolNames}`);
-
-          if (repeatedCallCount >= REPEATED_CALL_HARD_LIMIT) {
-            throw createErrorWithLog(
-              t('reactLoop.infiniteLoopDetected', { count: repeatedCallCount }),
-              executionLog
-            );
-          }
-
-          if (repeatedCallCount >= REPEATED_CALL_WARN_THRESHOLD) {
-            // 注入警告消息，提示模型更换策略
-            // 使用 role: 'user' 而非 'system'，避免插入中间的 system 消息破坏 filterApiMessages 的 assistant/tool 配对检测
-            const warnMsg = {
-              role: 'user',
-              content: `[System Notice] You have called the exact same tool with the same parameters ${repeatedCallCount} times in a row and received identical results, which indicates the current strategy is making no progress. Please switch to a different strategy or tool immediately and do not repeat this operation. If the current tool cannot obtain the required data, try alternative approaches, or directly provide a conclusion based on the information already available.`
-            };
-            currentMessages.push(warnMsg);
-            logger.debug('[Background] inject infinite loopwarningmessage');
-          }
-        } else {
-          lastCombinedFingerprint = currentCombinedFingerprint;
-          repeatedCallCount = 1;
-        }
+        // 多模式循环检测：轮末按序喂入本轮全部工具调用记录
+        // （软提醒合并为一条注入 / 硬停直接 throw，详见 loop-detector.js）
+        flushLoopRecords();
 
         // 工具执行完毕，保存 checkpoint（覆盖 plan_task 子任务执行后的状态）
         await saveCheckpointNow('tools_completed');
