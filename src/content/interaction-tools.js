@@ -205,7 +205,22 @@ export function fillForm(fields, waitTime = 500) {
           element.checked = value === 'true' || value === true;
           element.dispatchEvent(new Event('change', { bubbles: true }));
         } else if (fieldType === 'radio') {
-          const radio = deepQuerySelector(`${selector}[value="${value}"]`);
+          // selector 模式：selector[value=x] 组合查找；ref 模式：元素自身命中直接用，
+          // value 不匹配时按其 name 在同根（含 shadow root）内查找同组的 radio
+          let radio = selector ? deepQuerySelector(`${selector}[value="${value}"]`) : null;
+          if (!radio && !selector && element.tagName === 'INPUT' && element.type === 'radio') {
+            if (element.value === String(value)) {
+              radio = element;
+            } else {
+              const name = element.getAttribute('name');
+              if (name) {
+                // 用属性过滤而非拼接选择器，规避 CSS.escape 在 jsdom 不可用与特殊字符转义问题
+                const root = element.getRootNode();
+                radio = Array.from(root.querySelectorAll('input[type="radio"]'))
+                  .find(r => r.name === name && r.value === String(value)) || null;
+              }
+            }
+          }
           if (radio) {
             radio.checked = true;
             radio.dispatchEvent(new Event('change', { bubbles: true }));

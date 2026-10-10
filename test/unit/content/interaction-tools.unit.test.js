@@ -63,6 +63,25 @@ describe('fillForm - 表单批量填充', () => {
     expect(r.success).toBe(true);
     expect(document.getElementById('i1').value).toBe('via-ref');
   });
+
+  test('field.ref 定位 radio：同组按 value 匹配', () => {
+    document.body.innerHTML = `
+      <input type="radio" name="r" value="a" id="ra">
+      <input type="radio" name="r" value="b" id="rb">
+    `;
+    const snapshot = queryInteractiveElements({});
+    const refs = [...snapshot.content.matchAll(/\[ref (\d+)\]/g)].map(m => Number(m[1]));
+    // ref 指向组内第一个 radio（value=a），value=b → 应选中同组 value=b 的 radio
+    const r = fillForm([{ ref: refs[0], value: 'b', fieldType: 'radio' }]);
+    expect(r.details[0].success).toBe(true);
+    expect(document.getElementById('rb').checked).toBe(true);
+    expect(document.getElementById('ra').checked).toBe(false);
+
+    // ref 直接命中目标 radio
+    const r2 = fillForm([{ ref: refs[1], value: 'b', fieldType: 'radio' }]);
+    expect(r2.details[0].success).toBe(true);
+    expect(document.getElementById('rb').checked).toBe(true);
+  });
 });
 
 describe('scrollToPosition - 滚动定位', () => {
