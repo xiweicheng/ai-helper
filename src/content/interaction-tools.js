@@ -1,7 +1,7 @@
 // content/interaction-tools.js - 页面交互与操作工具
 
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
-import { generateUniqueSelector, getDomSignature, autoWaitAfterAction } from './page-utils.js';
+import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -149,63 +149,6 @@ export async function clickElement(selector, waitTime = 300, timeout = 2000) {
     };
   } catch (error) {
     return { success: false, error: error.message };
-  }
-}
-
-/**
- * 检测元素是否为 contenteditable（自身或祖先节点）
- */
-function isContentEditableElement(el) {
-  return el.isContentEditable || el.getAttribute('contenteditable') === 'true';
-}
-
-/**
- * 使用原型链 native setter 设置 input/textarea 的 value
- * 绕过 React 的 inputValueTracking 托管，确保受控组件能感知到值变化
- * 对非 React 的原生表单同样有效，无回归风险
- */
-function setNativeValue(element, value) {
-  const proto = element.tagName === 'TEXTAREA'
-    ? HTMLTextAreaElement.prototype
-    : HTMLInputElement.prototype;
-  const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value');
-  if (nativeSetter && nativeSetter.set) {
-    nativeSetter.set.call(element, value);
-  } else {
-    element.value = value;
-  }
-}
-
-/**
- * 填充 contenteditable / 富文本编辑器
- */
-function fillContentEditable(element, value) {
-  try {
-    // 聚焦元素
-    element.focus();
-
-    // 尝试 execCommand('insertText') —— 大多数富文本编辑器兼容
-    const supported = document.execCommand('insertText', false, value);
-
-    if (!supported) {
-      // execCommand 不支持时，直接设置 textContent
-      element.textContent = value;
-    }
-
-    // 触发 input 事件，让框架/编辑器感知内容变化
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
-
-    return true;
-  } catch (e) {
-    // 最后的 fallback：直接操作 textContent
-    try {
-      element.textContent = value;
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
-    } catch {
-      return false;
-    }
   }
 }
 
