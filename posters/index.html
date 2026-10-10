@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>AI Helper Marketing Posters</title>
+<style>
+  :root {
+    --violet: #7c5cff;
+    --cyan: #34d5ff;
+    --pink: #ff5ca8;
+    --dark: #0b1020;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #e8eaf0; font-family: "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif; }
+  .poster {
+    width: 1080px; height: 1350px;
+    margin: 40px auto; position: relative; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+  .brand-foot {
+    position: absolute; left: 64px; right: 64px; bottom: 44px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 24px; opacity: .85;
+  }
+  .logo-dot {
+    display: inline-block; width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    margin-right: 12px; vertical-align: -6px;
+  }
+  .grid-bg {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 54px 54px;
+  }
+  .glow { position: absolute; border-radius: 50%; filter: blur(120px); }
+
+  /* ---------- P1 Hero ---------- */
+  .p1 { background: linear-gradient(160deg, #0b1020 0%, #151b3b 45%, #241a4d 100%); color: #fff; }
+  .p1 .eyebrow {
+    position: absolute; top: 90px; left: 64px;
+    font-size: 28px; letter-spacing: 6px; color: var(--cyan); font-weight: 600;
+  }
+  .p1 h1 { position: absolute; top: 140px; left: 64px; font-size: 130px; font-weight: 800; line-height: 1.05; }
+  .p1 h1 span { background: linear-gradient(90deg, var(--violet), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .p1 .sub { position: absolute; top: 350px; left: 64px; width: 540px; font-size: 40px; line-height: 1.55; color: #cdd4f4; font-weight: 500; }
+  .p1 .sub b { color: #fff; }
+  .p1 .badges { position: absolute; left: 64px; bottom: 160px; display: flex; gap: 18px; flex-wrap: wrap; width: 660px; }
+  .p1 .badge {
+    padding: 14px 28px; border-radius: 999px; font-size: 26px; font-weight: 600;
+    border: 2px solid rgba(124,92,255,.6); background: rgba(124,92,255,.14); color: #d6cdff;
+  }
+  .p1 .badge.c { border-color: rgba(52,213,255,.6); background: rgba(52,213,255,.12); color: #bdeeff; }
+  .p1 .mock {
+    position: absolute; right: -40px; top: 560px; width: 560px; height: 560px;
+    border-radius: 28px; background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.18);
+    backdrop-filter: blur(6px); padding: 26px;
+  }
+  .p1 .mock .bar { height: 20px; border-radius: 10px; background: rgba(255,255,255,.16); margin-bottom: 22px; }
+  .p1 .mock .bar.s { width: 60%; }
+  .p1 .mock .bar.m { width: 82%; }
+  .p1 .mock .panel {
+    position: absolute; right: 26px; top: 90px; bottom: 26px; width: 200px;
+    border-radius: 18px; background: linear-gradient(180deg, rgba(124,92,255,.35), rgba(52,213,255,.2));
+    border: 2px solid rgba(124,92,255,.7); padding: 20px 16px;
+  }
+  .p1 .mock .panel .line { height: 14px; border-radius: 8px; background: rgba(255,255,255,.5); margin-bottom: 16px; }
+  .p1 .mock .panel .orb {
+    width: 64px; height: 64px; border-radius: 50%; margin: 6px auto 18px;
+    background: radial-gradient(circle at 32% 30%, #fff, var(--cyan) 42%, var(--violet) 80%);
+    box-shadow: 0 0 40px rgba(52,213,255,.9);
+  }
+  .p1 .cursor { position: absolute; left: 150px; bottom: 150px; font-size: 56px; filter: drop-shadow(0 0 14px rgba(52,213,255,.9)); }
+
+  /* ---------- P2 Pain point ---------- */
+  .p2 { background: #fdfbf7; color: #171430; }
+  .p2 .top {
+    height: 500px; background: linear-gradient(160deg, #171430, #2b1e56);
+    color: #fff; padding: 78px 64px 0; position: relative;
+    border-radius: 0 0 60px 60px;
+  }
+  .p2 .hook { font-size: 34px; color: #ffd76e; letter-spacing: 3px; font-weight: 700; margin-bottom: 28px; }
+  .p2 .q { font-size: 68px; font-weight: 800; line-height: 1.3; }
+  .p2 .q em { font-style: normal; background: linear-gradient(transparent 62%, rgba(255,215,110,.55) 62%); }
+  .p2 .vs { padding: 0 64px; margin-top: 44px; display: flex; flex-direction: column; gap: 26px; }
+  .p2 .row { display: flex; align-items: stretch; gap: 22px; }
+  .p2 .old, .p2 .new {
+    flex: 1; border-radius: 22px; padding: 26px 30px; font-size: 30px; line-height: 1.45; font-weight: 600;
+  }
+  .p2 .old { background: #f1eee6; color: #6f6a58; border: 2px dashed #cfc8b4; }
+  .p2 .old s { color: #b2a98e; }
+  .p2 .new { background: linear-gradient(120deg, var(--violet), #5a3de0); color: #fff; box-shadow: 0 14px 34px rgba(124,92,255,.35); }
+  .p2 .arrow { align-self: center; font-size: 40px; color: var(--violet); font-weight: 800; }
+  .p2 .cta {
+    margin: 48px 64px 0; text-align: center; font-size: 40px; font-weight: 800; color: #171430;
+  }
+  .p2 .cta span { color: var(--violet); }
+
+  /* ---------- P3 Feature grid ---------- */
+  .p3 { background: linear-gradient(200deg, #0e1230, #1c1445 60%, #101a3c); color: #fff; padding: 88px 64px 0; }
+  .p3 h2 { font-size: 66px; font-weight: 800; margin-bottom: 10px; }
+  .p3 h2 span { background: linear-gradient(90deg, var(--cyan), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .p3 .lead { font-size: 30px; color: #aab3dd; margin-bottom: 48px; }
+  .p3 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .p3 .card {
+    border-radius: 26px; padding: 34px 34px 30px; background: rgba(255,255,255,.06);
+    border: 1.5px solid rgba(255,255,255,.14); min-height: 300px; position: relative;
+  }
+  .p3 .card .ic { font-size: 58px; margin-bottom: 18px; }
+  .p3 .card b { display: block; font-size: 34px; margin-bottom: 12px; }
+  .p3 .card p { font-size: 25px; color: #b9c1e8; line-height: 1.5; }
+  .p3 .card.hl { background: linear-gradient(140deg, rgba(124,92,255,.35), rgba(52,213,255,.18)); border-color: rgba(124,92,255,.8); }
+
+  /* ---------- P4 Developer ---------- */
+  .p4 { background: #0d1117; color: #e6edf3; padding: 92px 70px 0; }
+  .p4 .term {
+    border-radius: 20px; background: #161b22; border: 1.5px solid #30363d; padding: 28px 34px;
+    font-family: "SF Mono", Menlo, monospace; font-size: 26px; line-height: 1.85; margin-bottom: 40px;
+  }
+  .p4 .term .dots span { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
+  .p4 .cmd { color: #3fb950; }
+  .p4 .out { color: #8b949e; }
+  .p4 h3 { font-size: 72px; font-weight: 800; line-height: 1.22; margin-bottom: 26px; }
+  .p4 h3 i { font-style: normal; color: #ff7b72; }
+  .p4 h3 u { text-decoration: none; color: #79c0ff; }
+  .p4 .meta { display: flex; flex-direction: column; gap: 20px; font-family: "SF Mono", Menlo, monospace; font-size: 27px; }
+  .p4 .meta .k { color: #d2a8ff; }
+  .p4 .pill-row { margin-top: 36px; display: flex; gap: 16px; flex-wrap: wrap; }
+  .p4 .star { margin-top: 90px; font-family: "SF Mono", Menlo, monospace; font-size: 30px; color: #8b949e; }
+  .p4 .star b { color: #e3b341; font-weight: 400; }
+  .p4 .pill {
+    font-family: "SF Mono", Menlo, monospace; font-size: 24px; padding: 12px 22px;
+    border-radius: 8px; background: #161b22; border: 1.5px solid #30363d; color: #7ee787;
+  }
+
+  /* ---------- P5 Scenario ---------- */
+  .p5 { background: #fff7f0; color: #2b1a0e; padding: 84px 60px 0; }
+  .p5 .stamp {
+    display: inline-block; background: #ff5c2b; color: #fff; font-size: 28px; font-weight: 800;
+    padding: 12px 30px; border-radius: 999px; letter-spacing: 2px; margin-bottom: 26px; transform: rotate(-2deg);
+  }
+  .p5 h2 { font-size: 72px; font-weight: 900; line-height: 1.25; margin-bottom: 14px; }
+  .p5 h2 mark { background: #ffe08a; padding: 0 10px; border-radius: 8px; }
+  .p5 .lead { font-size: 29px; color: #8a6a4e; margin-bottom: 44px; }
+  .p5 .list { display: flex; flex-direction: column; gap: 24px; }
+  .p5 .item {
+    display: flex; gap: 26px; align-items: flex-start; background: #fff;
+    border-radius: 24px; padding: 30px 32px; box-shadow: 0 10px 28px rgba(180,110,50,.14);
+    border-left: 12px solid #ff8a4d;
+  }
+  .p5 .item:nth-child(2) { border-left-color: #7c5cff; }
+  .p5 .item:nth-child(3) { border-left-color: #2bb673; }
+  .p5 .item:nth-child(4) { border-left-color: #34a1ff; }
+  .p5 .num { font-size: 46px; font-weight: 900; color: #ffb08a; line-height: 1.1; min-width: 64px; }
+  .p5 .item b { display: block; font-size: 33px; margin-bottom: 8px; }
+  .p5 .item p { font-size: 24px; color: #7d6a58; line-height: 1.5; }
+  .p5 .say { margin-top: 34px; font-size: 30px; font-weight: 800; color: #ff5c2b; text-align: center; }
+
+  /* ---------- P6 Curiosity (X / Twitter) ---------- */
+  .p6 { background: #0a0a12; color: #fff; }
+  .p6 .glow.a { width: 700px; height: 700px; background: rgba(124,92,255,.4); top: -220px; left: -180px; }
+  .p6 .glow.b { width: 620px; height: 620px; background: rgba(52,213,255,.28); bottom: -200px; right: -160px; }
+  .p6 .center { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 84px; }
+  .p6 .small { font-size: 34px; color: #8f96c7; letter-spacing: 4px; margin-bottom: 34px; font-weight: 600; }
+  .p6 h1 { font-size: 82px; font-weight: 900; line-height: 1.3; }
+  .p6 h1 .fade { color: #4a5178; }
+  .p6 h1 .hi { background: linear-gradient(90deg, var(--violet), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .p6 .dots-loading { margin-top: 56px; display: flex; gap: 18px; align-items: center; }
+  .p6 .dots-loading i { width: 22px; height: 22px; border-radius: 50%; background: var(--cyan); display: block; opacity: .9; }
+  .p6 .dots-loading i:nth-child(2) { background: var(--violet); opacity: .6; }
+  .p6 .dots-loading i:nth-child(3) { background: var(--pink); opacity: .35; }
+  .p6 .dots-loading span { font-size: 28px; color: #8f96c7; margin-left: 12px; font-family: Menlo, monospace; }
+  .p6 .link { position: absolute; bottom: 130px; left: 84px; font-size: 30px; color: #cfd5ff; font-family: Menlo, monospace; }
+  /* ---------- EN variants: reuse styles via id mapping ---------- */
+  #p1e .eyebrow, #p1e h1, #p1e .sub, #p1e .sub b, #p1e .badges, #p1e .badge, #p1e .badge.c, #p1e .mock, #p1e .mock .bar, #p1e .mock .bar.s, #p1e .mock .bar.m, #p1e .mock .panel, #p1e .mock .panel .line, #p1e .mock .panel .orb, #p1e .cursor { display: block; }
+  #p1e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: linear-gradient(160deg, #0b1020 0%, #151b3b 45%, #241a4d 100%); color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p1e .eyebrow { position: absolute; top: 90px; left: 64px; font-size: 28px; letter-spacing: 6px; color: var(--cyan); font-weight: 600; }
+  #p1e h1 { position: absolute; top: 150px; left: 64px; font-size: 116px; font-weight: 800; line-height: 1.05; white-space: nowrap; }
+  #p1e h1 span { background: linear-gradient(90deg, var(--violet), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #p1e .sub { position: absolute; top: 330px; left: 64px; width: 560px; font-size: 34px; line-height: 1.45; color: #cdd4f4; font-weight: 500; }
+  #p1e .sub b { color: #fff; }
+  #p1e .badges { position: absolute; left: 64px; bottom: 160px; display: flex; gap: 18px; flex-wrap: wrap; width: 680px; }
+  #p1e .badge { padding: 14px 28px; border-radius: 999px; font-size: 26px; font-weight: 600; border: 2px solid rgba(124,92,255,.6); background: rgba(124,92,255,.14); color: #d6cdff; }
+  #p1e .badge.c { border-color: rgba(52,213,255,.6); background: rgba(52,213,255,.12); color: #bdeeff; }
+  #p1e .mock { position: absolute; right: -40px; top: 560px; width: 560px; height: 560px; border-radius: 28px; background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.18); padding: 26px; }
+  #p1e .mock .bar { height: 20px; border-radius: 10px; background: rgba(255,255,255,.16); margin-bottom: 22px; }
+  #p1e .mock .bar.s { width: 60%; }
+  #p1e .mock .bar.m { width: 82%; }
+  #p1e .mock .panel { position: absolute; right: 26px; top: 90px; bottom: 26px; width: 200px; border-radius: 18px; background: linear-gradient(180deg, rgba(124,92,255,.35), rgba(52,213,255,.2)); border: 2px solid rgba(124,92,255,.7); padding: 20px 16px; }
+  #p1e .mock .panel .line { height: 14px; border-radius: 8px; background: rgba(255,255,255,.5); margin-bottom: 16px; }
+  #p1e .mock .panel .orb { width: 64px; height: 64px; border-radius: 50%; margin: 6px auto 18px; background: radial-gradient(circle at 32% 30%, #fff, var(--cyan) 42%, var(--violet) 80%); box-shadow: 0 0 40px rgba(52,213,255,.9); }
+  #p1e .cursor { position: absolute; left: 150px; bottom: 150px; font-size: 56px; filter: drop-shadow(0 0 14px rgba(52,213,255,.9)); }
+  #p2e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: #fdfbf7; color: #171430; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p2e .top { height: 500px; background: linear-gradient(160deg, #171430, #2b1e56); color: #fff; padding: 78px 64px 0; border-radius: 0 0 60px 60px; }
+  #p2e .hook { font-size: 32px; color: #ffd76e; letter-spacing: 2px; font-weight: 700; margin-bottom: 28px; }
+  #p2e .q { font-size: 62px; font-weight: 800; line-height: 1.32; }
+  #p2e .q em { font-style: normal; background: linear-gradient(transparent 62%, rgba(255,215,110,.55) 62%); }
+  #p2e .vs { padding: 0 64px; margin-top: 44px; display: flex; flex-direction: column; gap: 26px; }
+  #p2e .row { display: flex; align-items: stretch; gap: 22px; }
+  #p2e .old, #p2e .new { flex: 1; border-radius: 22px; padding: 24px 26px; font-size: 27px; line-height: 1.45; font-weight: 600; }
+  #p2e .old { background: #f1eee6; color: #6f6a58; border: 2px dashed #cfc8b4; }
+  #p2e .old s { color: #b2a98e; }
+  #p2e .new { background: linear-gradient(120deg, var(--violet), #5a3de0); color: #fff; box-shadow: 0 14px 34px rgba(124,92,255,.35); }
+  #p2e .arrow { align-self: center; font-size: 40px; color: var(--violet); font-weight: 800; }
+  #p2e .cta { margin: 48px 64px 0; text-align: center; font-size: 40px; font-weight: 800; color: #171430; }
+  #p2e .cta span { color: var(--violet); }
+  #p3e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: linear-gradient(200deg, #0e1230, #1c1445 60%, #101a3c); color: #fff; padding: 88px 64px 0; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p3e h2 { font-size: 64px; font-weight: 800; margin-bottom: 10px; }
+  #p3e h2 span { background: linear-gradient(90deg, var(--cyan), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #p3e .lead { font-size: 30px; color: #aab3dd; margin-bottom: 48px; }
+  #p3e .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  #p3e .card { border-radius: 26px; padding: 26px 30px 24px; background: rgba(255,255,255,.06); border: 1.5px solid rgba(255,255,255,.14); position: relative; }
+  #p3e .card .ic { font-size: 50px; margin-bottom: 14px; }
+  #p3e .card b { display: block; font-size: 32px; margin-bottom: 10px; }
+  #p3e .card p { font-size: 23px; color: #b9c1e8; line-height: 1.45; }
+  #p3e .card.hl { background: linear-gradient(140deg, rgba(124,92,255,.35), rgba(52,213,255,.18)); border-color: rgba(124,92,255,.8); }
+  #p4e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: #0d1117; color: #e6edf3; padding: 92px 70px 0; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p4e .term { border-radius: 20px; background: #161b22; border: 1.5px solid #30363d; padding: 28px 34px; font-family: "SF Mono", Menlo, monospace; font-size: 26px; line-height: 1.85; margin-bottom: 40px; }
+  #p4e .term .dots span { display: inline-block; width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
+  #p4e .cmd { color: #3fb950; }
+  #p4e .out { color: #8b949e; }
+  #p4e h3 { font-size: 72px; font-weight: 800; line-height: 1.22; margin-bottom: 26px; }
+  #p4e h3 i { font-style: normal; color: #ff7b72; }
+  #p4e h3 u { text-decoration: none; color: #79c0ff; }
+  #p4e .meta { display: flex; flex-direction: column; gap: 20px; font-family: "SF Mono", Menlo, monospace; font-size: 27px; }
+  #p4e .meta .k { color: #d2a8ff; }
+  #p4e .pill-row { margin-top: 36px; display: flex; gap: 16px; flex-wrap: wrap; }
+  #p4e .pill { font-family: "SF Mono", Menlo, monospace; font-size: 24px; padding: 12px 22px; border-radius: 8px; background: #161b22; border: 1.5px solid #30363d; color: #7ee787; }
+  #p4e .star { margin-top: 150px; font-family: "SF Mono", Menlo, monospace; font-size: 30px; color: #8b949e; }
+  #p4e .star b { color: #e3b341; font-weight: 400; }
+  #p4e .star2 { margin-top: 26px; font-family: "SF Mono", Menlo, monospace; font-size: 26px; color: #8b949e; }
+  #p4e .star2 em { font-style: normal; color: #8b949e; }
+  #p5e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: #fff7f0; color: #2b1a0e; padding: 84px 60px 0; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p5e .stamp { display: inline-block; background: #ff5c2b; color: #fff; font-size: 28px; font-weight: 800; padding: 12px 30px; border-radius: 999px; letter-spacing: 2px; margin-bottom: 26px; transform: rotate(-2deg); }
+  #p5e h2 { font-size: 54px; font-weight: 900; line-height: 1.2; margin-bottom: 12px; }
+  #p5e h2 mark { background: #ffe08a; padding: 0 10px; border-radius: 8px; }
+  #p5e .lead { font-size: 27px; color: #8a6a4e; margin-bottom: 30px; }
+  #p5e .list { display: flex; flex-direction: column; gap: 20px; }
+  #p5e .item { display: flex; gap: 26px; align-items: flex-start; background: #fff; border-radius: 24px; padding: 24px 30px; box-shadow: 0 10px 28px rgba(180,110,50,.14); border-left: 12px solid #ff8a4d; }
+  #p5e .item:nth-child(2) { border-left-color: #7c5cff; }
+  #p5e .item:nth-child(3) { border-left-color: #2bb673; }
+  #p5e .item:nth-child(4) { border-left-color: #34a1ff; }
+  #p5e .num { font-size: 42px; font-weight: 900; color: #ffb08a; line-height: 1.1; min-width: 64px; }
+  #p5e .item b { display: block; font-size: 31px; margin-bottom: 6px; }
+  #p5e .item p { font-size: 23px; color: #7d6a58; line-height: 1.45; }
+  #p5e .say { margin-top: 26px; font-size: 29px; font-weight: 800; color: #ff5c2b; text-align: center; }
+  #p6e { position: relative; width: 1080px; height: 1350px; margin: 40px auto; overflow: hidden; background: #0a0a12; color: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  #p6e .glow { position: absolute; border-radius: 50%; filter: blur(120px); }
+  #p6e .glow.a { width: 700px; height: 700px; background: rgba(124,92,255,.4); top: -220px; left: -180px; }
+  #p6e .glow.b { width: 620px; height: 620px; background: rgba(52,213,255,.28); bottom: -200px; right: -160px; }
+  #p6e .center { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 84px; }
+  #p6e .small { font-size: 34px; color: #8f96c7; letter-spacing: 4px; margin-bottom: 34px; font-weight: 600; }
+  #p6e h1 { font-size: 62px; font-weight: 900; line-height: 1.26; }
+  #p6e h1 .fade { color: #4a5178; }
+  #p6e h1 .hi { background: linear-gradient(90deg, var(--violet), var(--cyan)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #p6e .dots-loading { margin-top: 44px; display: flex; gap: 18px; align-items: center; }
+  #p6e .dots-loading i { width: 22px; height: 22px; border-radius: 50%; background: var(--cyan); display: block; opacity: .9; }
+  #p6e .dots-loading i:nth-child(2) { background: var(--violet); opacity: .6; }
+  #p6e .dots-loading i:nth-child(3) { background: var(--pink); opacity: .35; }
+  #p6e .dots-loading span { font-size: 28px; color: #8f96c7; margin-left: 12px; font-family: Menlo, monospace; }
+  #p6e .link { position: absolute; bottom: 130px; left: 84px; font-size: 30px; color: #cfd5ff; font-family: Menlo, monospace; }
+</style>
+</head>
+<body>
+
+<!-- P1 · 品牌发布型 -->
+<div class="poster p1" id="p1">
+  <div class="grid-bg"></div>
+  <div class="glow" style="width:560px;height:560px;background:rgba(124,92,255,.35);top:-160px;right:-120px;filter:blur(140px)"></div>
+  <div class="eyebrow">OPEN SOURCE · MIT</div>
+  <h1>AI <span>Helper</span></h1>
+  <div class="sub">不止聊天，<b>真正替你操作网页</b><br>一句话填表 · 总结 · 盯页面</div>
+  <div class="mock">
+    <div class="bar m"></div><div class="bar s"></div><div class="bar" style="width:70%"></div><div class="bar s"></div>
+    <div class="panel"><div class="orb"></div><div class="line"></div><div class="line" style="width:75%"></div><div class="line" style="width:55%"></div></div>
+    <div class="cursor">🖱️</div>
+  </div>
+  <div class="badges">
+    <div class="badge">40+ 内置工具</div><div class="badge c">MCP 扩展</div>
+    <div class="badge">本地知识库 RAG</div><div class="badge c">多智能体协作</div>
+  </div>
+  <div class="brand-foot" style="color:#aab3dd"><span><i class="logo-dot"></i>AI Helper</span><span>Chrome / Edge 免费安装</span></div>
+</div>
+
+<!-- P2 · 痛点共鸣型 -->
+<div class="poster p2" id="p2">
+  <div class="top">
+    <div class="hook">每天 8 小时，你在重复点第 100 次「提交」？</div>
+    <div class="q">还在<em>手动填表、复制、粘贴</em><br>给 AI 当打下手？</div>
+  </div>
+  <div class="vs">
+    <div class="row">
+      <div class="old">❌ 传统 AI 侧边栏<br><s>只会回答，不会动手</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ AI Helper<br>点击 · 填表 · 上传</div>
+    </div>
+    <div class="row">
+      <div class="old">❌ 自动化脚本框架<br><s>要先会写 Python / JS</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ 装好即用<br>说一句话就能派活</div>
+    </div>
+    <div class="row">
+      <div class="old">❌ 闭源商业插件<br><s>订阅收费 · 数据不透明</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ 开源 MIT<br>数据留在你自己的机器</div>
+    </div>
+  </div>
+  <div class="cta">把重复的活，交给 <span>会动手的 AI</span></div>
+  <div class="brand-foot" style="color:#8a8470"><span><i class="logo-dot"></i>AI Helper</span><span>github.com/xiweicheng/ai-helper</span></div>
+</div>
+
+<!-- P3 · 功能清单型 -->
+<div class="poster p3" id="p3">
+  <div class="grid-bg"></div>
+  <h2>一个扩展，<span>顶一支团队</span></h2>
+  <div class="lead">31 项功能 · 40+ 工具 · 全部开源免费</div>
+  <div class="cards">
+    <div class="card hl"><div class="ic">📝</div><b>一句话自动填表</b><p>Shadow DOM、React 受控组件照样填，附件也能传</p></div>
+    <div class="card"><div class="ic">📄</div><b>页面秒总结</b><p>B 站 / YouTube / PDF / 长文一键总结，导出 Word、PDF</p></div>
+    <div class="card"><div class="ic">⏰</div><b>定时盯页面</b><p>Cron 定时重跑任务，结果写进指定会话，完成桌面提醒</p></div>
+    <div class="card"><div class="ic">📚</div><b>问自己的知识库</b><p>导入 PDF / Word / Excel，混合检索 + 可点击引用溯源</p></div>
+    <div class="card"><div class="ic">🖥️</div><b>本地文件 + 终端</b><p>可选 Agent 服务，三级命令安全 + 7 天回收站兜底</p></div>
+    <div class="card hl"><div class="ic">🔌</div><b>任意模型无缝切换</b><p>OpenAI 兼容多提供商档案，面板里两次点击就换</p></div>
+  </div>
+  <div class="brand-foot" style="color:#aab3dd"><span><i class="logo-dot"></i>AI Helper</span><span>Ctrl+Shift+Y 随时唤起</span></div>
+</div>
+
+<!-- P4 · 极客开发者型 -->
+<div class="poster p4" id="p4">
+  <div class="term">
+    <div class="dots"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
+    <div style="margin-top:18px"><span class="cmd">$</span> npm install -g ai-helper-agent</div>
+    <div><span class="cmd">$</span> aha start -b</div>
+    <div class="out">✓ Agent ready · paste 6-digit code in Options</div>
+  </div>
+  <h3><i>ReAct</i> loop. <u>MCP</u> tools.<br>Your browser, wired in.</h3>
+  <div class="meta">
+    <div><span class="k">"stack"</span>: MV3 · Side Panel · vanilla JS</div>
+    <div><span class="k">"tools"</span>: 40+ built-in, extend via MCP</div>
+    <div><span class="k">"safety"</span>: 3-tier reflection + audit logs</div>
+    <div><span class="k">"privacy"</span>: index & files stay local</div>
+  </div>
+  <div class="pill-row">
+    <div class="pill">MIT License</div><div class="pill">PRs Welcome</div>
+    <div class="pill">DeepSeek Preset</div><div class="pill">OpenAI-compatible</div>
+  </div>
+  <div class="star"><span class="cmd">$</span> git clone <b>and it just works.</b></div>
+  <div class="brand-foot" style="color:#8b949e"><span><i class="logo-dot"></i>ai-helper</span><span>github.com/xiweicheng/ai-helper</span></div>
+</div>
+
+<!-- P5 · 场景故事型 -->
+<div class="poster p5" id="p5">
+  <div class="stamp">打工人真香现场</div>
+  <h2>上班最不想干的 4 件事，<br>我全都<mark>一句话甩给了 AI</mark></h2>
+  <div class="lead">亲测一周，它真的在浏览器里替我打工👇</div>
+  <div class="list">
+    <div class="item"><div class="num">01</div><div><b>批量录表单</b><p>挂上 Excel 说一句「逐行填写提交」，它一行行填完还截图核对</p></div></div>
+    <div class="item"><div class="num">02</div><div><b>长视频 / 长文总结</b><p>@ 选中标签页 → 要摘要 → 导出 PDF，开周会前 30 秒搞定</p></div></div>
+    <div class="item"><div class="num">03</div><div><b>每天盯竞品页面</b><p>定时任务每天 9 点重跑，价格变了直接发消息提醒我</p></div></div>
+    <div class="item"><div class="num">04</div><div><b>翻自己的旧文档</b><p>丢进本地知识库，「报销标准是啥」秒答还带出处引用</p></div></div>
+  </div>
+  <div class="say">开源免费 · Edge 商店一键安装</div>
+  <div class="brand-foot" style="color:#8a6a4e"><span><i class="logo-dot"></i>AI Helper</span><span>你的网页智能助手</span></div>
+</div>
+
+<!-- P6 · 好奇悬念型 -->
+<div class="poster p6" id="p6">
+  <div class="grid-bg"></div>
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="center">
+    <div class="small">NEXT DAY AT THE OFFICE</div>
+    <h1>我让 AI <span class="hi">自己打开网页</span>、<br>填完 47 张表单、<br>再自己点了提交。<br><span class="fade">而我，去倒了杯咖啡。</span></h1>
+    <div class="dots-loading"><i></i><i></i><i></i><span>AI Helper is working…</span></div>
+  </div>
+  <div class="link">它是怎么做到的？ → github.com/xiweicheng/ai-helper</div>
+  <div class="brand-foot" style="color:#8f96c7"><span><i class="logo-dot"></i>AI Helper</span><span>Open Source · MIT</span></div>
+</div>
+
+<!-- ================= EN versions ================= -->
+
+<!-- P1 EN · Brand launch -->
+<div class="poster" id="p1e">
+  <div class="grid-bg"></div>
+  <div class="glow" style="width:560px;height:560px;background:rgba(124,92,255,.35);top:-160px;right:-120px;filter:blur(140px)"></div>
+  <div class="eyebrow">OPEN SOURCE · MIT</div>
+  <h1>AI <span>Helper</span></h1>
+  <div class="sub">Not just chat —<br><b>it actually drives your browser</b><br>Fill · summarize · watch pages</div>
+  <div class="mock">
+    <div class="bar m"></div><div class="bar s"></div><div class="bar" style="width:70%"></div><div class="bar s"></div>
+    <div class="panel"><div class="orb"></div><div class="line"></div><div class="line" style="width:75%"></div><div class="line" style="width:55%"></div></div>
+    <div class="cursor">🖱️</div>
+  </div>
+  <div class="badges">
+    <div class="badge">40+ Built-in Tools</div><div class="badge c">MCP Extensions</div>
+    <div class="badge">Local RAG Knowledge Base</div><div class="badge c">Multi-Agent</div>
+  </div>
+  <div class="brand-foot" style="color:#aab3dd"><span><i class="logo-dot"></i>AI Helper</span><span>Free on Chrome / Edge</span></div>
+</div>
+
+<!-- P2 EN · Pain point -->
+<div class="poster" id="p2e">
+  <div class="top">
+    <div class="hook">Clicking "Submit" for the 100th time today?</div>
+    <div class="q">Still doing <em>forms &amp; copy-paste</em><br>by hand — for AI?</div>
+  </div>
+  <div class="vs">
+    <div class="row">
+      <div class="old">❌ Chat-only sidebar<br><s>Answers, but never acts</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ AI Helper<br>Clicks · fills · uploads</div>
+    </div>
+    <div class="row">
+      <div class="old">❌ Automation frameworks<br><s>You still write the code</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ Install &amp; go<br>One sentence = one task done</div>
+    </div>
+    <div class="row">
+      <div class="old">❌ Closed-source plugins<br><s>Subscriptions · opaque data</s></div>
+      <div class="arrow">→</div>
+      <div class="new">✅ Open source, MIT<br>Your data stays on your machine</div>
+    </div>
+  </div>
+  <div class="cta">Hand the busywork to <span>an AI that acts</span></div>
+  <div class="brand-foot" style="color:#8a8470"><span><i class="logo-dot"></i>AI Helper</span><span>github.com/xiweicheng/ai-helper</span></div>
+</div>
+
+<!-- P3 EN · Feature list -->
+<div class="poster" id="p3e">
+  <div class="grid-bg"></div>
+  <h2>One extension,<span> a whole team</span></h2>
+  <div class="lead">31 features · 40+ tools · all open source &amp; free</div>
+  <div class="cards">
+    <div class="card hl"><div class="ic">📝</div><b>One-liner form filling</b><p>Shadow DOM &amp; React controlled inputs included — attachments too</p></div>
+    <div class="card"><div class="ic">📄</div><b>Instant page summaries</b><p>YouTube / PDF / long articles → one click → export Word or PDF</p></div>
+    <div class="card"><div class="ic">⏰</div><b>Scheduled page watch</b><p>Cron re-runs write results into any session, with desktop alerts</p></div>
+    <div class="card"><div class="ic">📚</div><b>Ask your own docs</b><p>PDF / Word / Excel with hybrid search &amp; citations</p></div>
+    <div class="card"><div class="ic">🖥️</div><b>Local files + terminal</b><p>Optional Agent service, 3-tier command safety, 7-day trash bin</p></div>
+    <div class="card hl"><div class="ic">🔌</div><b>Any model, two clicks</b><p>OpenAI-compatible profiles, switch right in the panel</p></div>
+  </div>
+  <div class="brand-foot" style="color:#aab3dd"><span><i class="logo-dot"></i>AI Helper</span><span>Ctrl+Shift+Y anytime</span></div>
+</div>
+
+<!-- P4 EN · Developer (mirror of P4, kept English-native) -->
+<div class="poster" id="p4e">
+  <div class="term">
+    <div class="dots"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
+    <div style="margin-top:18px"><span class="cmd">$</span> npm install -g ai-helper-agent</div>
+    <div><span class="cmd">$</span> aha start -b</div>
+    <div class="out">✓ Agent ready · paste 6-digit code in Options</div>
+  </div>
+  <h3><i>ReAct</i> loop. <u>MCP</u> tools.<br>Your browser, wired in.</h3>
+  <div class="meta">
+    <div><span class="k">"stack"</span>: MV3 · Side Panel · vanilla JS</div>
+    <div><span class="k">"tools"</span>: 40+ built-in, extend via MCP</div>
+    <div><span class="k">"safety"</span>: 3-tier reflection + audit logs</div>
+    <div><span class="k">"privacy"</span>: index &amp; files stay local</div>
+  </div>
+  <div class="pill-row">
+    <div class="pill">MIT License</div><div class="pill">PRs Welcome</div>
+    <div class="pill">DeepSeek Preset</div><div class="pill">OpenAI-compatible</div>
+  </div>
+  <div class="star"><span class="cmd">$</span> git clone <b>and it just works.</b></div>
+  <div class="star2"><span class="cmd">#</span> every issue answered within 24h</div>
+  <div class="brand-foot" style="color:#8b949e"><span><i class="logo-dot"></i>ai-helper</span><span>github.com/xiweicheng/ai-helper</span></div>
+</div>
+
+<!-- P5 EN · Scenario story -->
+<div class="poster" id="p5e">
+  <div class="stamp">A WEEK AT WORK</div>
+  <h2>The 4 chores I refused to do this week —<br><mark>all delegated in one sentence</mark></h2>
+  <div class="lead">Tested for a week. It genuinely works for me in the browser👇</div>
+  <div class="list">
+    <div class="item"><div class="num">01</div><div><b>Bulk form entry</b><p>Attach a spreadsheet, say "fill row by row &amp; submit" — done, with screenshot checks</p></div></div>
+    <div class="item"><div class="num">02</div><div><b>Long video / article recaps</b><p>@ the tab → ask for a summary → export PDF. 30 seconds before the meeting</p></div></div>
+    <div class="item"><div class="num">03</div><div><b>Watching competitor pages</b><p>A 9am cron re-runs my prompt and pings me the moment prices change</p></div></div>
+    <div class="item"><div class="num">04</div><div><b>Digging through old docs</b><p>Drop files into a local knowledge base — instant answers with source citations</p></div></div>
+  </div>
+  <div class="say">Open source &amp; free · one-click install on Edge</div>
+  <div class="brand-foot" style="color:#8a6a4e"><span><i class="logo-dot"></i>AI Helper</span><span>Your web smart assistant</span></div>
+</div>
+
+<!-- P6 EN · Curiosity hook -->
+<div class="poster" id="p6e">
+  <div class="grid-bg"></div>
+  <div class="glow a"></div><div class="glow b"></div>
+  <div class="center">
+    <div class="small">NEXT DAY AT THE OFFICE</div>
+    <h1>I told an AI to <span class="hi">open pages,</span><br><span class="hi">fill 47 forms,</span><br>and hit submit — itself.<br><span class="fade">I went to get coffee.</span></h1>
+    <div class="dots-loading"><i></i><i></i><i></i><span>AI Helper is working…</span></div>
+  </div>
+  <div class="link">How? → github.com/xiweicheng/ai-helper</div>
+  <div class="brand-foot" style="color:#8f96c7"><span><i class="logo-dot"></i>AI Helper</span><span>Open Source · MIT</span></div>
+</div>
+
+</body>
+</html>
