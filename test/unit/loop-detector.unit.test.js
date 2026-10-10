@@ -144,23 +144,31 @@ describe('② ref 枚举（query_elements）', () => {
 
   test('非 query 已执行调用 → 枚举状态整体清零', () => {
     const det = d();
-    det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
-    det.record(1, 'query_elements', qArgs(2), qRes(2, 'b'));
-    det.record(1, 'query_elements', qArgs(1), qRes(1, 'a')); // s1
-    det.record(1, 'query_elements', qArgs(2), qRes(2, 'b')); // s2
-    det.record(1, 'browser_info', { probe: 1 }, ok('h1')); // 非 query → 清零
-    det.record(1, 'browser_info', { probe: 2 }, ok('h2')); // 稀释窗口（防 repeat 噪音）
+    // 固定 page=1 重读 ×6：s 累计到 5（未达 stop 阈值 6）
+    for (let i = 0; i < 6; i++) {
+      det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
+    }
+    // 6 个互不相同的非 query 调用：清零枚举状态 + 稀释 repeat 窗口 + 完成健康重武装
+    for (let i = 0; i < 6; i++) {
+      det.record(1, 'browser_info', { probe: i }, ok(`h${i}`));
+    }
     const r = det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
-    expect(r.kind).toBe('none'); // 已清零：p1 作为新作用域首页中性（未清零则 s3 → nudge）
+    expect(r.kind).toBe('none'); // 已清零 → p1 视为新作用域首页中性；未清零则 s=6 → stop(refEnum)
   });
 
   test('失败读不更新枚举状态', () => {
     const det = d();
-    det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
-    det.record(1, 'query_elements', qArgs(2), qRes(2, 'b'));
-    det.record(1, 'query_elements', qArgs(1), qRes(1, 'a')); // s1
-    const r = det.record(1, 'query_elements', qArgs(1), { success: false, error: 'frame gone' });
-    expect(r.kind).toBe('none'); // 失败读既不计可疑也不清零
+    // 固定 page=1 重读 ×6：s 累计到 5
+    for (let i = 0; i < 6; i++) {
+      det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
+    }
+    // 失败读若被计可疑则 s=6 → 立即 stop，此处 none 断言会被击穿
+    const rFail = det.record(1, 'query_elements', qArgs(1), { success: false, error: 'frame gone' });
+    expect(rFail.kind).toBe('none'); // 既不计可疑也不清零
+    // 状态保留：下一次重读 → s=6 → stop(refEnum)（若失败读清了状态则表现为新首页中性）
+    const r = det.record(1, 'query_elements', qArgs(1), qRes(1, 'a'));
+    expect(r.kind).toBe('stop');
+    expect(r.reason).toBe('refEnum');
   });
 });
 
@@ -168,7 +176,7 @@ describe('③ ABAB 振荡', () => {
   test('正例·A,B,A,B → nudge；8 条全交替 → stop（导航乒乓同链路）', () => {
     const det = d();
     const A = (i) => det.record(1, 'interact_element', { ref: 1, action: 'click' }, ok(`a${i}`));
-    const B = () => det.record(1, 'manage_tab', { action: 'back' }, { success: true });
+    const B = () => det.record(1, 'manage_tab', { action: 'navigate', direction: 'back' }, { success: true });
     const r = [A(0), B(), A(1), B(), A(2), B(), A(3), B()];
     expect(r[0].kind).toBe('none');
     expect(r[1].kind).toBe('none');
@@ -195,7 +203,7 @@ describe('③ ABAB 振荡', () => {
   test('反例·交替被第三调用打断后重新计数', () => {
     const det = d();
     const A = (i) => det.record(1, 'interact_element', { ref: 1, action: 'click' }, ok(`a${i}`));
-    const B = () => det.record(1, 'manage_tab', { action: 'back' }, { success: true });
+    const B = () => det.record(1, 'manage_tab', { action: 'navigate', direction: 'back' }, { success: true });
     const X = () => det.record(1, 'interact_element', { ref: 99, action: 'click' }, ok('x'));
     const rs = [A(0), B(), A(1), X(), B(), A(2), B()];
     for (const r of rs) expect(r.kind).toBe('none');
@@ -255,7 +263,7 @@ describe('④ 失败作用域', () => {
 });
 
 describe('⑤ 导航处理', () => {
-  test('manage_tab back 成功 → 清失败计数（窗口保留）', () => {
+  test('manage_tab navigate back 成功 → 清失败计数（窗口保留）', () => {
     const det = d();
     const F = () => det.record(1, 'interact_element', { ref: 5, action: 'click' }, { success: false, error: 'nf' });
     F(); F(); // count=2（已 nudge）
@@ -263,7 +271,7 @@ describe('⑤ 导航处理', () => {
     det.record(1, 'browser_info', { d: 2 }, ok('h2'));
     det.record(1, 'browser_info', { d: 3 }, ok('h3'));
     det.record(1, 'browser_info', { d: 4 }, ok('h4'));
-    det.record(1, 'manage_tab', { action: 'back' }, { success: true }); // 导航重置
+    det.record(1, 'manage_tab', { action: 'navigate', direction: 'back' }, { success: true }); // 历史导航重置
     const r = F();
     expect(r.kind).toBe('none'); // 未重置则 count=3 → stop(failureScope)
   });
@@ -285,9 +293,20 @@ describe('⑤ 导航处理', () => {
     const det = d();
     const F = () => det.record(1, 'interact_element', { ref: 8, action: 'click' }, { success: false, error: 'nf8' });
     F(); F();
-    det.record(1, 'manage_tab', { action: 'back' }, { success: false, error: 'nav failed' });
+    det.record(1, 'manage_tab', { action: 'navigate', direction: 'back' }, { success: false, error: 'nav failed' });
     const r = F();
     expect(r.kind).toBe('stop');
+    expect(r.reason).toBe('failureScope');
+  });
+
+  test('反例·open/switch（非历史导航）不重置失败计数', () => {
+    const det = d();
+    const F = () => det.record(1, 'interact_element', { ref: 7, action: 'click' }, { success: false, error: 'nf7' });
+    F(); F(); // count=2（已 nudge）
+    det.record(1, 'manage_tab', { action: 'open', url: 'https://example.com' }, { success: true });
+    det.record(1, 'manage_tab', { action: 'switch', tabId: 2 }, { success: true });
+    const r = F();
+    expect(r.kind).toBe('stop'); // 未重置：count=3 → stop(failureScope)
     expect(r.reason).toBe('failureScope');
   });
 });
@@ -383,7 +402,7 @@ describe('全局机制', () => {
       ['interact_element', { ref: 12, action: 'type', value: 'hi' }, ok('typed')],
       ['scroll_to', { target: 'top' }, { success: true, message: 'm', moved: false }],
       ['scroll_to', { target: 'bottom' }, { success: true, message: 'm' }],
-      ['manage_tab', { action: 'back' }, { success: true }],
+      ['manage_tab', { action: 'navigate', direction: 'back' }, { success: true }],
       ['query_elements', qArgs(1, { filterByText: 'login' }), qRes(1, 'L', false, 1)],
       ['wait_navigation', {}, { success: true }],
     ];

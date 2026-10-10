@@ -114,10 +114,15 @@ function isFailedResult(result) {
 }
 
 // 导航重置信号：back/forward/reload 成功、wait_navigation 成功（= 进展证据）
+// 真实工具契约：manage_tab action∈['open','switch','close','reload','navigate']，
+// history back/forward 为 action:'navigate' + direction:'back'|'forward'（见 tools/tab-tools.js）
 function isNavResetSignal(toolName, args, result) {
   if (!result || result.success === false) return false;
   if (toolName === 'wait_navigation') return true;
-  if (toolName === 'manage_tab' && ['back', 'forward', 'reload'].includes(args?.action)) return true;
+  if (toolName === 'manage_tab') {
+    if (args?.action === 'reload') return true;
+    if (args?.action === 'navigate' && ['back', 'forward'].includes(args?.direction)) return true;
+  }
   return false;
 }
 
@@ -174,12 +179,24 @@ function mergeConfig(base, override) {
 function evalAbab(bucket, cfg) {
   const tail = bucket.ababTail;
   const out = { hit: false, fullAlternate: false, pairKey: null, nameA: null, nameB: null };
-  const last = tail.slice(-4);
-  if (last.length === 4 && last[0].key === last[2].key && last[1].key === last[3].key && last[0].key !== last[1].key) {
-    out.hit = true;
-    out.pairKey = [last[0].key, last[1].key].sort().join('|');
-    out.nameA = last[0].name;
-    out.nameB = last[1].name;
+  const n = cfg.oscillation.nudgeTail;
+  const last = tail.slice(-n);
+  if (last.length === n) {
+    const odd = last[0];
+    const even = last[1];
+    let alt = !!even && odd.key !== even.key;
+    if (alt) {
+      for (let i = 0; i < last.length; i++) {
+        const expected = i % 2 === 0 ? odd : even;
+        if (last[i].key !== expected.key) { alt = false; break; }
+      }
+    }
+    if (alt) {
+      out.hit = true;
+      out.pairKey = [odd.key, even.key].sort().join('|');
+      out.nameA = odd.name;
+      out.nameB = even.name;
+    }
   }
   const st = cfg.oscillation.stopTail;
   if (tail.length >= st) {
