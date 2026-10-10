@@ -688,7 +688,7 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 |------|-------------|
 | `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
 | `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
-| `query_elements` | Extract interactive elements as a tree snapshot (recommended; returns ref ids for interact_element / fill_form, re-query after page changes, supports countOnly mode) |
+| `query_elements` | Extract interactive elements as a tree snapshot (recommended; returns stable ref ids for interact_element / fill_form — open overlays lifted to the top, paginate with page/hasMore, re-query after page changes, supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |

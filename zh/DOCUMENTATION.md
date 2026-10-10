@@ -679,7 +679,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `page_content` | 获取页面内容（text/html 格式，支持跨标签页提取） |
 | `extract_data` | 提取结构化数据（table/links/forms/images/metadata，支持跨标签页） |
-| `query_elements` | 提取可交互元素并输出树形快照（推荐优先使用，返回 ref 编号供 interact_element / fill_form 使用，页面变化后需重新查询，支持 countOnly 模式） |
+| `query_elements` | 提取可交互元素并输出树形快照（推荐优先使用，返回稳定 ref 编号供 interact_element / fill_form 使用；打开的弹窗/菜单提升到 [打开层]，大页面用 page/hasMore 分页；页面变化后需重新查询，支持 countOnly 模式） |
 | `search_in_page` | 正则搜索页面文本（支持高亮） |
 | `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_collect` | 滚动收集长内容（去重聚合） |
