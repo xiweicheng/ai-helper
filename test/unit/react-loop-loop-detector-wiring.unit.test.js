@@ -61,4 +61,42 @@ describe('循环检测器接线守卫', () => {
     expect(count).toBe(1);
     expect(SRC).toMatch(/role: 'user',\s*\n\s*content: `\[System Notice\] \$\{warnings\.join/);
   });
+
+  // —— 位置/序号型断言：计数型断言无法发现“push 被挪到早退 return 之后”类回归 ——
+
+  test('记录锚点均带声明序号 order（并行路径 push 顺序 = 完成顺序，必须可重排）', () => {
+    const pushes = (SRC.match(/loopRecords\.push\(\{[^;]*?\}\);/g) || []);
+    // 5 个生命周期锚点（被拒/plan_task/跳过/常规/错误）+ 1 个缓存命中锚点
+    expect(pushes.length).toBeGreaterThanOrEqual(6);
+    for (const p of pushes) {
+      expect(p, `push 应带 order：${p.slice(0, 70)}`).toMatch(/\border:/);
+    }
+  });
+
+  test('flush 前按声明序号稳定排序（消除并行完成顺序抖动）', () => {
+    expect(SRC).toMatch(/pending\.sort\(\(a, b\) => \(a\.order \?\? 0\) - \(b\.order \?\? 0\)\)/);
+  });
+
+  test('缓存命中路径同样记录（旧指纹逻辑不依赖 tool 消息，不得回退）', () => {
+    expect(SRC).toMatch(
+      /loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: cached\.toolResult \?\? \{ fromCache: true \} \}\);\n\s*return \{ \.\.\.cached, fromCache: true \};/
+    );
+  });
+
+  test('flush 位置守卫：2 个 planTaskHandled 分支首行即 flush（防移出分支）', () => {
+    const count = (SRC.match(/if \(planTaskHandled\) \{\n\s*flushLoopRecords\(\);/g) || []).length;
+    expect(count).toBe(2);
+  });
+
+  test('锚点邻接守卫：push 紧随 currentMessages.push 块、在 trimMessages 之前（防挪位成死代码）', () => {
+    // result: toolResult 形态共 2 处（plan_task 先行响应 + 常规执行）
+    const plain = (SRC.match(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: toolResult \}\);\n\s*await trimMessages\(\);/g) || []).length;
+    expect(plain).toBe(2);
+    // 被拒锚点
+    expect(SRC).toMatch(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: \{ success: false, declined: true \} \}\);\n\s*await trimMessages\(\);/);
+    // 错误锚点
+    expect(SRC).toMatch(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: \{ success: false, error: toolError\.message \|\| 'Tool execution error' \} \}\);\n\s*await trimMessages\(\);/);
+    // 跳过锚点（无 trimMessages，用循环变量 j 作序号）
+    expect(SRC).toMatch(/loopRecords\.push\(\{ order: j, name: skippedName, args: parseToolCallArgs\(skippedCall\), result: \{ skipped: true \} \}\);/);
+  });
 });

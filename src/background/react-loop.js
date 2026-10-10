@@ -504,6 +504,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const flushLoopRecords = () => {
     if (loopRecords.length === 0) return;
     const pending = loopRecords.splice(0, loopRecords.length);
+    // 并行路径下 push 顺序 = 协程完成顺序；检测器的 refEnum 步进与振荡尾迹判定依赖
+    // 声明顺序，故按 order 稳定排序后喂入（Array.sort 稳定：同序保持插入顺序）
+    pending.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const warnings = [];
     for (const rec of pending) {
       const outcome = loopDetector.record(tabId, rec.name, rec.args, rec.result);
@@ -1272,7 +1275,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
         logger.debug('[Background] recei to tool call:', assistantMessage.tool_calls);
         
-        // 计算本轮工具调用的入参指纹（仅用于日志，死循环判定在工具执行完毕后结合返参进行）
+        // 计算本轮工具调用的入参指纹（仅用于日志排查；循环判定由 loop-detector 在轮末基于记录完成）
         const currentInputFingerprint = JSON.stringify(
           assistantMessage.tool_calls.map(tc => ({
             name: tc.function?.name || tc.name,
@@ -1312,6 +1315,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           })();
           // 防御：流式模式下 tool_call.id 可能为空，用 index 生成回退 id
           const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
+          // 本轮 tool_calls 中的声明序号：并行路径下 loopRecords 的 push 顺序 = 协程完成顺序，
+          // 而检测器的 refEnum 步进 / 振荡尾迹判定依赖声明顺序，flush 前须按此序号重排
+          const callOrder = assistantMessage.tool_calls.indexOf(toolCall);
           
           // 检查是否需要用户确认（敏感操作 + 开关开启）
           // 1. 工具级确认（requiresConfirmation: true）
@@ -1367,7 +1373,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   content: 'The user declined this operation.',
                   tool_call_id: toolCallId
                 });
-                loopRecords.push({ name: toolName, args: toolArgs, result: { success: false, declined: true } });
+                loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: { success: false, declined: true } });
                 await trimMessages();
                 return {
                   toolCall,
@@ -1394,6 +1400,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             const cached = toolResultCache.get(cacheKey);
             if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
               if (PARALLELIZABLE_TOOLS.has(toolName)) {
+                // 缓存命中同样喂入检测器：被替换的旧指纹逻辑不依赖 tool 消息即可识别重复调用，
+                // 若不记录则 TTL 内模型重发同一调用将完全不可见（重复检测能力回退）
+                loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: cached.toolResult ?? { fromCache: true } });
                 return { ...cached, fromCache: true };
               }
               // 非并行工具：清空缓存
@@ -1571,7 +1580,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 content: planTaskContent,
                 tool_call_id: toolCallId
               });
-              loopRecords.push({ name: toolName, args: toolArgs, result: toolResult });
+              loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: toolResult });
               await trimMessages();
               
               // 更新工具执行日志
@@ -1612,7 +1621,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                     content: JSON.stringify({ success: false, message: 'Skipped: plan_task has decomposed subtasks; other tool calls in this round will not be executed.' }),
                     tool_call_id: skippedId
                   });
-                  loopRecords.push({ name: skippedName, args: parseToolCallArgs(skippedCall), result: { skipped: true } });
+                  loopRecords.push({ order: j, name: skippedName, args: parseToolCallArgs(skippedCall), result: { skipped: true } });
                   // 补发 STREAM_TOOL_RESULT 让前端卡片从"执行中"变为"已跳过"
                   if (!isSubtask) {
                     chrome.runtime.sendMessage({
@@ -1686,7 +1695,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
-            loopRecords.push({ name: toolName, args: toolArgs, result: toolResult });
+            loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: toolResult });
             await trimMessages();
             
             logger.debug('[Background] toolexec result length:', toolResultStr.length, 'content preview:', toolResultStr.substring(0, 200));
@@ -1750,7 +1759,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
             });
-            loopRecords.push({ name: toolName, args: toolArgs, result: { success: false, error: toolError.message || 'Tool execution error' } });
+            loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: { success: false, error: toolError.message || 'Tool execution error' } });
             await trimMessages();
             
             // 更新工具执行日志为失败
