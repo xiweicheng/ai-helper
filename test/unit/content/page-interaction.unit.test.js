@@ -330,3 +330,89 @@ describe('scrollToText - 文本滚动查找', () => {
     expect(r.scrolls).toBe(2);
   });
 });
+
+describe('queryInteractiveElements - 分页', () => {
+  const mkButtons = (n) => Array.from({ length: n }, (_, i) => `<button id="b${i}">B${i}</button>`).join('');
+  const refsOf = (content) => [...content.matchAll(/\[ref (\d+)\]/g)].map(m => Number(m[1]));
+
+  test('分页切片：页间无重叠、并集完整、字段正确', () => {
+    document.body.innerHTML = mkButtons(5);
+    const all = queryInteractiveElements({});
+    const allRefs = refsOf(all.content);
+    expect(allRefs.length).toBe(5);
+
+    const p1 = queryInteractiveElements({ maxResults: 2, page: 1 });
+    expect(p1.total).toBe(5);
+    expect(p1.totalPages).toBe(3);
+    expect(p1.hasMore).toBe(true);
+    expect(p1.page).toBe(1);
+    expect(p1.content).toContain('第 1/3 页');
+    expect(p1.content).toContain('page=2');
+    expect(p1.hint).toContain('page=2');
+
+    const p2 = queryInteractiveElements({ maxResults: 2, page: 2 });
+    const refs1 = refsOf(p1.content);
+    const refs2 = refsOf(p2.content);
+    expect(refs1.length).toBe(2);
+    expect(refs2.length).toBe(2);
+    // 稳定编号：页并集 == 全量编号前 4 个
+    expect([...refs1, ...refs2].sort()).toEqual(allRefs.slice(0, 4).sort());
+
+    const p3 = queryInteractiveElements({ maxResults: 2, page: 3 });
+    expect(p3.hasMore).toBe(false);
+    expect(refsOf(p3.content).length).toBe(1);
+    expect(p3.content).not.toContain('还有更多元素');
+  });
+
+  test('翻页后上一页 ref 仍可交互（稳定编号核心收益）', async () => {
+    document.body.innerHTML = mkButtons(3);
+    const p1 = queryInteractiveElements({ maxResults: 2, page: 1 });
+    const ref0 = refsOf(p1.content)[0];
+    let clicked = false;
+    document.getElementById('b0').addEventListener('click', () => { clicked = true; });
+    // 翻页重建注册表
+    queryInteractiveElements({ maxResults: 2, page: 2 });
+    const r = await interactByRef(ref0, 'click', { waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(clicked).toBe(true);
+  });
+
+  test('非法 page 按 1 处理', () => {
+    document.body.innerHTML = mkButtons(3);
+    const r1 = queryInteractiveElements({ maxResults: 2, page: 1 });
+    for (const bad of [0, -3, 2.5, 'abc']) {
+      const r = queryInteractiveElements({ maxResults: 2, page: bad });
+      expect(r.page).toBe(1);
+      expect(refsOf(r.content)).toEqual(refsOf(r1.content));
+    }
+  });
+
+  test('越界 page 返回范围提示且不报错', () => {
+    document.body.innerHTML = mkButtons(3);
+    const r = queryInteractiveElements({ maxResults: 2, page: 99 });
+    expect(r.success).toBe(true);
+    expect(r.page).toBe(99);
+    expect(r.totalPages).toBe(2);
+    expect(r.hasMore).toBe(false);
+    expect(r.content).toContain('超出范围');
+    expect(r.content).toContain('query_elements'); // 尾行照常
+  });
+
+  test('容器行跨页重复出现（结构上下文）', () => {
+    document.body.innerHTML = `<form>${mkButtons(4)}</form>`;
+    const p1 = queryInteractiveElements({ maxResults: 2, page: 1 });
+    const p2 = queryInteractiveElements({ maxResults: 2, page: 2 });
+    const hasForm = (c) => c.split('\n').some(l => l.startsWith('form'));
+    expect(hasForm(p1.content)).toBe(true);
+    expect(hasForm(p2.content)).toBe(true);
+  });
+
+  test('分页 + 页内字符截断同时生效', () => {
+    document.body.innerHTML = Array.from({ length: 5 },
+      (_, i) => `<button>Very long button label number ${i} padding padding</button>`).join('');
+    const r = queryInteractiveElements({ maxResults: 2, maxChars: 80 });
+    expect(r.hasMore).toBe(true);
+    expect(r.truncated).toBe(true);
+    expect(r.content).toContain('截断');
+  });
+});

@@ -10,6 +10,9 @@ registerTranslations('zh', {
     refHint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements',
     snapshotHeader: '可交互元素快照：{count} 个元素',
     snapshotTruncated: '（共 {total} 个，已截断，请用 filterByText 缩小范围）',
+    snapshotPageInfo: '（第 {page}/{totalPages} 页，本次输出 {count} 个）',
+    snapshotHasMore: '还有更多元素：调用 query_elements 时带 page={next} 查看',
+    snapshotPageOutOfRange: 'page={page} 超出范围（共 {totalPages} 页）',
     snapshotFooter: '（ref 编号仅当前快照有效；页面变化后请重新调用 query_elements）',
     invalidRefSuggest: '无效或已过期的元素引用 ref={ref}。',
     invalidRefSuggestions: '最近快照中的有效引用：{list}。',
@@ -34,6 +37,9 @@ registerTranslations('en', {
     refHint: 'ref numbers are only valid for the current query; re-run query_elements after page navigation/refresh or tab switch',
     snapshotHeader: 'Interactive elements snapshot: {count} element(s)',
     snapshotTruncated: ' (of {total} total; truncated — narrow down with filterByText)',
+    snapshotPageInfo: ' (page {page}/{totalPages}, {count} shown)',
+    snapshotHasMore: 'More elements available: call query_elements with page={next}',
+    snapshotPageOutOfRange: 'page={page} is out of range (only {totalPages} page(s))',
     snapshotFooter: '(ref numbers are valid only for this snapshot; re-run query_elements after the page changes)',
     invalidRefSuggest: 'Invalid or stale element ref={ref}. ',
     invalidRefSuggestions: 'Nearest valid refs from the latest snapshot: {list}. ',
@@ -351,12 +357,13 @@ function matchesTextFilter(el, name, filterText) {
 
 /**
  * 查询可交互元素并输出树形快照（推荐优先使用）
- * 每个输出元素分配 [ref N] 编号（单调递增），供 interact_element / fill_form 引用
+ * 每个发现的元素分配 [ref N] 编号（WeakMap 跨快照稳定复用），供 interact_element / fill_form 引用
  *
  * @param {object} options
  * @param {string} options.filterByText - 按文本过滤（不区分大小写）
  * @param {string[]|null} options.elementTypes - 限定类型（tag 名 / input type / role 任一匹配）
- * @param {number} options.maxResults - 输出元素数上限（默认 100）
+ * @param {number} options.page - 页码（1 起，默认 1；非法值按 1 处理）
+ * @param {number} options.maxResults - 每页元素数（默认 100）
  * @param {number} options.maxChars - 快照字符预算（默认 6000），超限截断并提示
  * @param {boolean} options.countOnly - 只返回计数（不生成快照）
  */
@@ -364,10 +371,12 @@ export function queryInteractiveElements(options = {}) {
   const {
     filterByText = '',
     elementTypes = null,
+    page = 1,
     maxResults = 100,
     maxChars = 6000,
     countOnly = false,
   } = options;
+  const pageNum = Number.isInteger(page) && page >= 1 ? page : 1;
 
   try {
     // 只保留本次快照结果（编号经 WeakMap 跨快照稳定复用）
@@ -386,19 +395,36 @@ export function queryInteractiveElements(options = {}) {
       m.ref = registerElement(m.el, m.role, m.name);
     }
 
-    // 阶段 C：输出集（maxResults 上限；分页在 Task 2 改为按页切片）
-    const selected = new Set(matched.slice(0, maxResults).map(m => m.el));
-    const tooMany = matched.length > maxResults;
+    // 阶段 C：分页切片（页大小 = maxResults；输出序暂为 DOM 序，Task 3 改为分区序）
+    const pageSize = Math.max(1, maxResults);
+    const totalPages = Math.ceil(matched.length / pageSize);
+    const outputOrder = matched;
 
-    // 阶段 D：序列化（预算 maxChars）
-    const ctx = { selected, budget: maxChars, truncated: false, count: 0 };
+    // 越界页：不渲染，返回范围提示（模型可自我纠正）
+    if (matched.length > 0 && pageNum > totalPages) {
+      const content = [
+        t('pageInteraction.snapshotHeader', { count: matched.length }),
+        t('pageInteraction.snapshotPageOutOfRange', { page: pageNum, totalPages }),
+        t('pageInteraction.snapshotFooter'),
+      ].join('\n');
+      return { success: true, content, count: 0, total: matched.length, page: pageNum, totalPages, hasMore: false, truncated: false, hint: '' };
+    }
+
+    const pageStart = (pageNum - 1) * pageSize;
+    const pageSlice = outputOrder.slice(pageStart, pageStart + pageSize);
+    const hasMore = pageNum < totalPages;
+
+    // 阶段 D：序列化（本页元素集合 + 预算 maxChars）
+    const ctx = { selected: new Set(pageSlice.map(m => m.el)), budget: maxChars, truncated: false, count: 0 };
     const lines = [];
     renderTree(document.body, 0, lines, ctx);
 
-    const truncated = ctx.truncated || tooMany;
-    const header = t('pageInteraction.snapshotHeader', { count: ctx.count })
-      + (truncated ? t('pageInteraction.snapshotTruncated', { total: matched.length }) : '');
+    const paged = totalPages > 1;
+    const header = t('pageInteraction.snapshotHeader', { count: paged ? matched.length : ctx.count })
+      + (paged ? t('pageInteraction.snapshotPageInfo', { page: pageNum, totalPages, count: ctx.count }) : '')
+      + (ctx.truncated ? t('pageInteraction.snapshotTruncated', { total: matched.length }) : '');
     lines.unshift(header);
+    if (hasMore) lines.push(t('pageInteraction.snapshotHasMore', { next: pageNum + 1 }));
     lines.push(t('pageInteraction.snapshotFooter'));
 
     return {
@@ -406,8 +432,11 @@ export function queryInteractiveElements(options = {}) {
       content: lines.join('\n'),
       count: ctx.count,
       total: matched.length,
-      truncated,
-      hint: t('pageInteraction.refHint'),
+      page: pageNum,
+      totalPages,
+      hasMore,
+      truncated: ctx.truncated,
+      hint: hasMore ? t('pageInteraction.snapshotHasMore', { next: pageNum + 1 }) : t('pageInteraction.refHint'),
     };
   } catch (error) {
     console.error('[PageInteraction] queryInteractiveElements failed:', error);
