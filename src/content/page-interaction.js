@@ -13,6 +13,8 @@ registerTranslations('zh', {
     snapshotPageInfo: '（第 {page}/{totalPages} 页，本次输出 {count} 个）',
     snapshotHasMore: '还有更多元素：调用 query_elements 时带 page={next} 查看',
     snapshotPageOutOfRange: 'page={page} 超出范围（共 {totalPages} 页）',
+    snapshotOverlayBlock: '[打开层]',
+    snapshotBodyBlock: '[页面主体]',
     snapshotFooter: '（ref 编号仅当前快照有效；页面变化后请重新调用 query_elements）',
     invalidRefSuggest: '无效或已过期的元素引用 ref={ref}。',
     invalidRefSuggestions: '最近快照中的有效引用：{list}。',
@@ -40,6 +42,8 @@ registerTranslations('en', {
     snapshotPageInfo: ' (page {page}/{totalPages}, {count} shown)',
     snapshotHasMore: 'More elements available: call query_elements with page={next}',
     snapshotPageOutOfRange: 'page={page} is out of range (only {totalPages} page(s))',
+    snapshotOverlayBlock: '[Open overlays]',
+    snapshotBodyBlock: '[Page body]',
     snapshotFooter: '(ref numbers are valid only for this snapshot; re-run query_elements after the page changes)',
     invalidRefSuggest: 'Invalid or stale element ref={ref}. ',
     invalidRefSuggestions: 'Nearest valid refs from the latest snapshot: {list}. ',
@@ -221,6 +225,40 @@ function isElementHidden(el) {
   return style.display === 'none' || style.visibility === 'hidden';
 }
 
+/**
+ * 预收集 aria-expanded 触发的弹层目标 id 集合（触发源反查，供叠加层检测）
+ */
+function collectExpandedTargets() {
+  const ids = new Set();
+  try {
+    for (const trg of document.querySelectorAll('[aria-expanded="true"][aria-controls]')) {
+      ids.add(trg.getAttribute('aria-controls'));
+    }
+  } catch { /* 忽略查询异常 */ }
+  return ids;
+}
+
+/**
+ * 叠加层根判定：打开的 dialog/popover/menu/listbox 等悬浮层
+ * 调用方保证 el 可见；嵌套层由 collectMatches 按"最外层优先"处理
+ */
+function isOpenOverlayRoot(el, role, expandedTargets) {
+  if (el.tagName === 'DIALOG' && el.hasAttribute('open')) return true;
+  if (el.hasAttribute('popover')) {
+    try { if (el.matches(':popover-open')) return true; } catch { /* 浏览器不支持该伪类时跳过 */ }
+  }
+  // 原生表单控件的隐式角色（如 select multiple → listbox）不算叠加层
+  if (el.tagName === 'SELECT' || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false;
+  const active = document.activeElement;
+  if (role === 'dialog' || role === 'alertdialog') {
+    if (el.getAttribute('aria-modal') === 'true') return true;
+    if (active && el.contains(active)) return true;
+  }
+  if ((role === 'menu' || role === 'listbox') && active && el.contains(active)) return true;
+  if (el.id && expandedTargets.has(el.id)) return true;
+  return false;
+}
+
 function isInteractiveElement(el, role) {
   if (INTERACTIVE_ROLES.has(role)) return true;
   if (el.tagName === 'A' && el.hasAttribute('href')) return true;
@@ -382,9 +420,11 @@ export function queryInteractiveElements(options = {}) {
     // 只保留本次快照结果（编号经 WeakMap 跨快照稳定复用）
     elementRegistry.clear();
 
-    // 阶段 A：完整遍历收集匹配的交互元素（有序）
+    // 阶段 A：完整遍历收集叠加层根与匹配的交互元素（有序）
+    const expandedTargets = collectExpandedTargets();
+    const overlayRoots = [];
     const matched = [];
-    collectMatches(document.body, { matched, filterByText, elementTypes });
+    collectMatches(document.body, { matched, filterByText, elementTypes, overlayRoots, expandedTargets });
 
     if (countOnly) {
       return { success: true, content: '', count: matched.length, total: matched.length, truncated: false, hint: '' };
@@ -395,10 +435,10 @@ export function queryInteractiveElements(options = {}) {
       m.ref = registerElement(m.el, m.role, m.name);
     }
 
-    // 阶段 C：分页切片（页大小 = maxResults；输出序暂为 DOM 序，Task 3 改为分区序）
+    // 阶段 C：分页切片（页大小 = maxResults；输出序 = 叠加层子树 + 主体，均 DOM 序）
     const pageSize = Math.max(1, maxResults);
     const totalPages = Math.ceil(matched.length / pageSize);
-    const outputOrder = matched;
+    const outputOrder = matched.filter(m => m.inOverlay).concat(matched.filter(m => !m.inOverlay));
 
     // 越界页：不渲染，返回范围提示（模型可自我纠正）
     if (matched.length > 0 && pageNum > totalPages) {
@@ -414,9 +454,27 @@ export function queryInteractiveElements(options = {}) {
     const pageSlice = outputOrder.slice(pageStart, pageStart + pageSize);
     const hasMore = pageNum < totalPages;
 
-    // 阶段 D：序列化（本页元素集合 + 预算 maxChars）
-    const ctx = { selected: new Set(pageSlice.map(m => m.el)), budget: maxChars, truncated: false, count: 0 };
+    // 阶段 D：分区序列化（打开层优先 → [页面主体] 标记 → 主体；skipRoots 去重）
+    const ctx = {
+      selected: new Set(pageSlice.map(m => m.el)),
+      budget: maxChars,
+      truncated: false,
+      count: 0,
+      skipRoots: new Set(overlayRoots),
+    };
     const lines = [];
+    if (overlayRoots.length) {
+      const overlayLines = [];
+      const savedSkip = ctx.skipRoots;
+      ctx.skipRoots = null; // 渲染叠加层根自身时不做跳过判定
+      for (const root of overlayRoots) {
+        renderTree(root, 0, overlayLines, ctx);
+      }
+      ctx.skipRoots = savedSkip;
+      if (overlayLines.length) {
+        lines.push(t('pageInteraction.snapshotOverlayBlock'), ...overlayLines, t('pageInteraction.snapshotBodyBlock'));
+      }
+    }
     renderTree(document.body, 0, lines, ctx);
 
     const paged = totalPages > 1;
@@ -445,20 +503,26 @@ export function queryInteractiveElements(options = {}) {
 }
 
 /**
- * 遍历收集匹配的交互元素（DOM 有序）
+ * 遍历收集匹配的交互元素（DOM 有序）与叠加层根（最外层优先）
  */
-function collectMatches(root, { matched, filterByText, elementTypes }) {
+function collectMatches(root, { matched, filterByText, elementTypes, overlayRoots, expandedTargets, inOverlay = false }) {
   if (isSubtreePruned(root)) return;
   const role = getRole(root);
+  // 叠加层根收集：可见性门控；inOverlay 已标记时不再重复判定（嵌套取最外层）
+  let insideOverlay = inOverlay;
+  if (!insideOverlay && !isElementHidden(root) && isOpenOverlayRoot(root, role, expandedTargets)) {
+    overlayRoots.push(root);
+    insideOverlay = true;
+  }
   if (isInteractiveElement(root, role) && !isElementHidden(root) && matchesTypeFilter(root, role, elementTypes)) {
     const effectiveRole = role || root.tagName.toLowerCase();
     const name = resolveAccessibleName(root, effectiveRole);
     if (matchesTextFilter(root, name, filterByText)) {
-      matched.push({ el: root, role: effectiveRole, name });
+      matched.push({ el: root, role: effectiveRole, name, inOverlay: insideOverlay });
     }
   }
   for (const child of getElementChildren(root)) {
-    collectMatches(child, { matched, filterByText, elementTypes });
+    collectMatches(child, { matched, filterByText, elementTypes, overlayRoots, expandedTargets, inOverlay: insideOverlay });
   }
 }
 
@@ -468,6 +532,7 @@ function collectMatches(root, { matched, filterByText, elementTypes }) {
  */
 function renderTree(el, depth, lines, ctx) {
   if (isSubtreePruned(el)) return false;
+  if (ctx.skipRoots && ctx.skipRoots.has(el)) return false;
   const role = getRole(el);
   const interactive = isInteractiveElement(el, role);
   const container = !interactive && CONTAINER_ROLES.has(role) ? role : null;

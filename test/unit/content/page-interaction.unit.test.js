@@ -416,3 +416,111 @@ describe('queryInteractiveElements - 分页', () => {
     expect(r.content).toContain('截断');
   });
 });
+
+describe('queryInteractiveElements - 叠加层提升', () => {
+  test('dialog[open] 提升到 [打开层] 且主体不重复输出', () => {
+    document.body.innerHTML = `
+      <button id="main1">Main</button>
+      <dialog id="dlg" open><button id="in1">Confirm</button></dialog>
+    `;
+    const r = queryInteractiveElements({});
+    const lines = r.content.split('\n');
+    const overlayIdx = lines.indexOf('[打开层]');
+    const bodyIdx = lines.indexOf('[页面主体]');
+    expect(overlayIdx).toBeGreaterThan(-1);
+    expect(bodyIdx).toBeGreaterThan(overlayIdx);
+    const confirmIdx = lines.findIndex(l => /"Confirm" \[ref \d+\]/.test(l));
+    const mainIdx = lines.findIndex(l => l.includes('"Main"'));
+    expect(confirmIdx).toBeGreaterThan(overlayIdx);
+    expect(confirmIdx).toBeLessThan(bodyIdx);
+    expect(mainIdx).toBeGreaterThan(bodyIdx);
+    // 去重：弹窗元素行只出现一次（容器行 dialog "Confirm" 属阶段一既有命名，不计入）
+    expect(lines.filter(l => /"Confirm" \[ref \d+\]/.test(l)).length).toBe(1);
+  });
+
+  test('role=dialog + aria-modal=true 提升', () => {
+    document.body.innerHTML = `
+      <button>Main</button>
+      <div role="dialog" aria-modal="true"><button>ModalBtn</button></div>
+    `;
+    const r = queryInteractiveElements({});
+    expect(r.content).toContain('[打开层]');
+    expect(r.content).toContain('[页面主体]');
+  });
+
+  test('role=menu 包含焦点元素时提升', () => {
+    document.body.innerHTML = '<button>Main</button><div role="menu"><button id="mi1">Item</button></div>';
+    document.getElementById('mi1').focus();
+    expect(document.activeElement.id).toBe('mi1');
+    const r = queryInteractiveElements({});
+    expect(r.content).toContain('[打开层]');
+  });
+
+  test('aria-expanded+aria-controls 触发源反查提升', () => {
+    document.body.innerHTML = `
+      <button aria-expanded="true" aria-controls="pop1">Trigger</button>
+      <div id="pop1"><button>PopItem</button></div>
+    `;
+    const r = queryInteractiveElements({});
+    const lines = r.content.split('\n');
+    const bodyIdx = lines.indexOf('[页面主体]');
+    expect(lines.indexOf('[打开层]')).toBeGreaterThan(-1);
+    // 弹层目标在打开层内、触发按钮自身仍留在页面主体
+    expect(lines.findIndex(l => l.includes('"PopItem"'))).toBeLessThan(bodyIdx);
+    expect(lines.findIndex(l => l.includes('"Trigger"'))).toBeGreaterThan(bodyIdx);
+  });
+
+  test('aria-expanded=false 不提升', () => {
+    document.body.innerHTML = `
+      <button aria-expanded="false" aria-controls="pop1">Trigger</button>
+      <div id="pop1"><button>PopItem</button></div>
+    `;
+    const r = queryInteractiveElements({});
+    expect(r.content).not.toContain('[打开层]');
+  });
+
+  test('嵌套叠加层只标记最外层', () => {
+    document.body.innerHTML = `
+      <dialog open><div role="dialog" aria-modal="true"><button>Inner</button></div></dialog>
+    `;
+    const r = queryInteractiveElements({});
+    expect(r.content.split('[打开层]').length - 1).toBe(1);
+    expect(r.content.split('[页面主体]').length - 1).toBe(1);
+    // 元素行只出现一次（容器行 dialog "Inner" 属阶段一既有命名，不计入）
+    expect((r.content.match(/"Inner" \[ref \d+\]/g) || []).length).toBe(1);
+  });
+
+  test('select multiple 聚焦不视为叠加层（原生控件隐式角色护栏）', () => {
+    document.body.innerHTML = '<select multiple><option>a</option><option>b</option></select>';
+    document.querySelector('select').focus();
+    const r = queryInteractiveElements({});
+    expect(r.content).not.toContain('[打开层]');
+  });
+
+  test('无叠加层时输出无任何标记（回归）', () => {
+    document.body.innerHTML = '<button>Only</button><input placeholder="x">';
+    const r = queryInteractiveElements({});
+    expect(r.content).not.toContain('[打开层]');
+    expect(r.content).not.toContain('[页面主体]');
+  });
+
+  test('弹窗内容优先于 maxChars 截断（核心收益）', () => {
+    // 弹窗按钮名称与填充按钮同量级：旧实现（DOM 序）下预算被填充元素耗尽后弹窗必然被截断，
+    // 新实现（叠加层优先渲染）下弹窗先占用预算，必然在快照中
+    document.body.innerHTML = Array.from({ length: 30 },
+      (_, i) => `<button>Filler button number ${i} with long padding text</button>`).join('')
+      + '<dialog open><button>Critical overlay action needs a long label text</button></dialog>';
+    const r = queryInteractiveElements({ maxChars: 300 });
+    expect(r.truncated).toBe(true);
+    expect(r.content).toContain('Critical overlay action');
+  });
+
+  test('分页第 1 页总是先含弹窗内容', () => {
+    document.body.innerHTML = Array.from({ length: 5 },
+      (_, i) => `<button id="p${i}">PageBtn ${i}</button>`).join('')
+      + '<dialog open><button>FirstOverlayBtn</button></dialog>';
+    const p1 = queryInteractiveElements({ maxResults: 2, page: 1 });
+    expect(p1.content).toContain('FirstOverlayBtn');
+    expect(p1.content).toContain('[打开层]');
+  });
+});
