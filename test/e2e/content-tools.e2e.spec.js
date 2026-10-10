@@ -24,8 +24,8 @@ test.describe('query_elements → interact_element', () => {
     await page.goto(fixtureUrl('form-page.html'));
     const result = await callTool(page, 'queryInteractiveElements', { filterByText: 'submit' });
     expect(result.success).toBe(true);
-    expect(result.elements.length).toBeGreaterThan(0);
-    const ref = result.elements[0].ref;
+    expect(result.content).toContain('[ref ');
+    const ref = Number(result.content.match(/\[ref (\d+)\]/)[1]);
 
     const clickResult = await callTool(page, 'interactByRef', ref, 'click', { waitTime: 0, timeout: 0 });
     expect(clickResult.success).toBe(true);
@@ -37,6 +37,16 @@ test.describe('query_elements → interact_element', () => {
     await page.goto(fixtureUrl('form-page.html'));
     const r = await callTool(page, 'interactByRef', 999, 'click', { waitTime: 0, timeout: 0 });
     expect(r.success).toBe(false);
+  });
+
+  test('type 输入链路', async ({ page }) => {
+    await page.goto(fixtureUrl('form-page.html'));
+    const snapshot = await callTool(page, 'queryInteractiveElements', { filterByText: 'username' });
+    expect(snapshot.content).toContain('[ref ');
+    const ref = Number(snapshot.content.match(/\[ref (\d+)\]/)[1]);
+    const r = await callTool(page, 'interactByRef', ref, 'type', { value: 'bob', waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(true);
+    expect(await page.inputValue('#username')).toBe('bob');
   });
 });
 
@@ -98,8 +108,8 @@ test.describe('Shadow DOM 穿透', () => {
     await page.goto(fixtureUrl('shadow-dom-page.html'));
     const r = await callTool(page, 'queryInteractiveElements', { filterByText: 'inner' });
     expect(r.success).toBe(true);
-    expect(r.elements.length).toBeGreaterThan(0);
-    expect(r.elements[0].text).toContain('Inner');
+    expect(r.content).toContain('[ref ');
+    expect(r.content).toContain('Inner');
   });
 
   test('clickByText 点击 shadow 内按钮', async ({ page }) => {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pageUrl = 'file://' + join(__dirname, '../../demo/form-autofill/product-form.html');
+const pageUrl = 'file://' + join(__dirname, '../../docs/demo/form-autofill/product-form.html');
 
 async function fillStep1(page) {
   await page.fill('#product-name', '无线蓝牙降噪耳机');
