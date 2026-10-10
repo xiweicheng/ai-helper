@@ -3,6 +3,8 @@
 import { describe, test, expect, beforeEach, beforeAll } from 'vitest';
 import {
   queryInteractiveElements,
+  collectSnapshotOps,
+  resolveByRef,
   getElementCount,
   getSelectorByRef,
   getElementByRef,
@@ -522,5 +524,113 @@ describe('queryInteractiveElements - 叠加层提升', () => {
     const p1 = queryInteractiveElements({ maxResults: 2, page: 1 });
     expect(p1.content).toContain('FirstOverlayBtn');
     expect(p1.content).toContain('[打开层]');
+  });
+});
+
+describe('collectSnapshotOps - 结构化 ops（阶段三数据源）', () => {
+  test('基本结构：frameInfo 自报 + 嵌套 el/container 树', () => {
+    document.body.innerHTML = `
+      <form><button>Save</button></form>
+      <button>Cancel</button>
+    `;
+    const ops = collectSnapshotOps({});
+    expect(ops.success).toBe(true);
+    expect(ops.frameInfo.url).toBe(window.location.href);
+    expect(typeof ops.frameInfo.loadId).toBe('string');
+    expect(ops.frameInfo.loadId.length).toBeGreaterThan(0);
+    // form 容器包裹 Save；顶层 Cancel 为根级 el
+    const form = ops.bodyTree.find(n => n.t === 'container' && n.role === 'form');
+    expect(form).toBeTruthy();
+    expect(form.children[0].t).toBe('el');
+    expect(form.children[0].role).toBe('button');
+    expect(form.children[0].name).toBe('Save');
+    expect(typeof form.children[0].localRef).toBe('number');
+    expect(form.children[0].depth).toBe(1);
+    const cancel = ops.bodyTree.find(n => n.t === 'el' && n.name === 'Cancel');
+    expect(cancel).toBeTruthy();
+    expect(cancel.depth).toBe(0);
+  });
+
+  test('打开层独立分区：overlayTrees 含 dialog 子树，bodyTree 跳过叠加层根', () => {
+    document.body.innerHTML = `
+      <button id="outside">Out</button>
+      <dialog open><button id="inside">In</button></dialog>
+    `;
+    const ops = collectSnapshotOps({});
+    expect(ops.overlayTrees.length).toBeGreaterThan(0);
+    const dlg = ops.overlayTrees.find(n => n.t === 'container' && n.role === 'dialog');
+    expect(dlg).toBeTruthy();
+    expect(dlg.children.some(c => c.t === 'el' && c.name === 'In')).toBe(true);
+    // 主体树不含叠加层内部元素（去重）
+    expect(JSON.stringify(ops.bodyTree)).toContain('Out');
+    expect(JSON.stringify(ops.bodyTree)).not.toContain('"In"');
+  });
+
+  test('无产出的容器不采集（空 form 剔除，main 保留）', () => {
+    document.body.innerHTML = `
+      <form><div>text only</div></form>
+      <main><button>Go</button></main>
+    `;
+    const ops = collectSnapshotOps({});
+    const json = JSON.stringify(ops.bodyTree);
+    expect(json).not.toContain('"form"');
+    expect(json).toContain('"main"');
+  });
+
+  test('frames=auto → iframe 变 frame 节点；frames=none → 无 frame 节点', () => {
+    document.body.innerHTML = `
+      <iframe title="Pay" src="https://b.example/x"></iframe>
+      <button>After</button>
+    `;
+    const auto = collectSnapshotOps({ frames: 'auto' });
+    const frame = auto.bodyTree.find(n => n.t === 'frame');
+    expect(frame).toBeTruthy();
+    expect(frame.title).toBe('Pay');
+    expect(frame.depth).toBe(0);
+    expect(frame.srcUrl).toContain('b.example');
+    expect(typeof frame.orderInParent).toBe('number');
+    const none = collectSnapshotOps({ frames: 'none' });
+    expect(none.bodyTree.some(n => n.t === 'frame')).toBe(false);
+  });
+
+  test('filterByText 在 ops 层生效（与阶段二一致）', () => {
+    document.body.innerHTML = '<button>Save</button><button>Cancel</button>';
+    const ops = collectSnapshotOps({ filterByText: 'save' });
+    const json = JSON.stringify(ops.bodyTree);
+    expect(json).toContain('Save');
+    expect(json).not.toContain('Cancel');
+  });
+});
+
+describe('resolveByRef - 结构化建议（阶段三路由翻译输入）', () => {
+  test('失效 ref 返回 suggestions 结构（≤3，含 role/name）', () => {
+    document.body.innerHTML = '<button>A</button><button>B</button>';
+    queryInteractiveElements({});
+    const bad = resolveByRef(999999);
+    expect(bad.error).toBeTruthy();
+    expect(Array.isArray(bad.suggestions)).toBe(true);
+    expect(bad.suggestions.length).toBe(2);
+    expect(bad.suggestions[0]).toEqual({
+      ref: expect.any(Number),
+      role: 'button',
+      name: expect.any(String),
+    });
+  });
+
+  test('有效 ref 正常解析、无 suggestions 字段', () => {
+    document.body.innerHTML = '<button id="ok">Go</button>';
+    const r = queryInteractiveElements({});
+    const ok = resolveByRef(firstRef(r.content));
+    expect(ok.element).toBe(document.getElementById('ok'));
+    expect(ok.suggestions).toBeUndefined();
+  });
+
+  test('interactByRef 失效时透传 suggestions 字段', async () => {
+    document.body.innerHTML = '<button>A</button>';
+    queryInteractiveElements({});
+    const r = await interactByRef(999999, 'click', { waitTime: 0, timeout: 0 });
+    expect(r.success).toBe(false);
+    expect(Array.isArray(r.suggestions)).toBe(true);
+    expect(r.suggestions.length).toBe(1);
   });
 });

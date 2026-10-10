@@ -4,18 +4,11 @@
 import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { renderSnapshot } from '../shared/page-snapshot-renderer.js';
 
+// 快照展示类 i18n 键已迁入 page-snapshot-renderer.js（Task 1），此处不得重复注册
 registerTranslations('zh', {
   pageInteraction: {
-    refHint: 'ref 编号仅本次查询有效，页面导航/刷新或切换 tab 后需重新 query_elements',
-    snapshotHeader: '可交互元素快照：{count} 个元素',
-    snapshotTruncated: '（共 {total} 个，已截断，请用 filterByText 缩小范围）',
-    snapshotPageInfo: '（第 {page}/{totalPages} 页，本次输出 {count} 个）',
-    snapshotHasMore: '还有更多元素：调用 query_elements 时带 page={next} 查看',
-    snapshotPageOutOfRange: 'page={page} 超出范围（共 {totalPages} 页）',
-    snapshotOverlayBlock: '[打开层]',
-    snapshotBodyBlock: '[页面主体]',
-    snapshotFooter: '（ref 编号仅当前快照有效；页面变化后请重新调用 query_elements）',
     invalidRefSuggest: '无效或已过期的元素引用 ref={ref}。',
     invalidRefSuggestions: '最近快照中的有效引用：{list}。',
     invalidRefTail: '如页面已变化，请重新调用 query_elements 获取最新快照',
@@ -34,17 +27,9 @@ registerTranslations('zh', {
   },
 });
 
+// Snapshot display i18n keys moved to page-snapshot-renderer.js (Task 1); do not re-register here
 registerTranslations('en', {
   pageInteraction: {
-    refHint: 'ref numbers are only valid for the current query; re-run query_elements after page navigation/refresh or tab switch',
-    snapshotHeader: 'Interactive elements snapshot: {count} element(s)',
-    snapshotTruncated: ' (of {total} total; truncated — narrow down with filterByText)',
-    snapshotPageInfo: ' (page {page}/{totalPages}, {count} shown)',
-    snapshotHasMore: 'More elements available: call query_elements with page={next}',
-    snapshotPageOutOfRange: 'page={page} is out of range (only {totalPages} page(s))',
-    snapshotOverlayBlock: '[Open overlays]',
-    snapshotBodyBlock: '[Page body]',
-    snapshotFooter: '(ref numbers are valid only for this snapshot; re-run query_elements after the page changes)',
     invalidRefSuggest: 'Invalid or stale element ref={ref}. ',
     invalidRefSuggestions: 'Nearest valid refs from the latest snapshot: {list}. ',
     invalidRefTail: 'If the page has changed, re-run query_elements',
@@ -99,12 +84,12 @@ function ensureSelector(entry) {
 
 /**
  * 统一 ref 解析：注册表命中 + isConnected 检查 + selector 兜底重查
- * 失败时返回带"附近有效引用"建议的错误信息，引导模型自我纠错
+ * 失败时返回 { error, suggestions }（结构化附近引用），供跨帧路由翻译
  */
 export function resolveByRef(ref) {
   const refNum = parseInt(ref, 10);
   if (!refNum || !elementRegistry.has(refNum)) {
-    return { error: buildInvalidRefMessage(refNum) };
+    return { error: buildInvalidRefMessage(refNum), suggestions: collectRefSuggestions(refNum) };
   }
   const entry = elementRegistry.get(refNum);
   if (entry.element && entry.element.isConnected) {
@@ -117,7 +102,21 @@ export function resolveByRef(ref) {
     entry.element = found;
     return { entry, element: found };
   }
-  return { error: buildInvalidRefMessage(refNum) };
+  return { error: buildInvalidRefMessage(refNum), suggestions: collectRefSuggestions(refNum) };
+}
+
+/**
+ * 附近有效引用列表（编号最接近优先，≤3）：结构化返回供跨帧路由翻译成全局编号
+ */
+function collectRefSuggestions(refNum) {
+  return [...elementRegistry.entries()]
+    .sort((a, b) => Math.abs(a[0] - refNum) - Math.abs(b[0] - refNum))
+    .slice(0, 3)
+    .map(([r, e]) => ({
+      ref: r,
+      role: e.role || (e.tag && e.tag.toLowerCase()) || '?',
+      name: e.name || '',
+    }));
 }
 
 /**
@@ -125,12 +124,10 @@ export function resolveByRef(ref) {
  */
 function buildInvalidRefMessage(refNum) {
   let msg = t('pageInteraction.invalidRefSuggest', { ref: refNum });
-  const alive = [...elementRegistry.entries()]
-    .sort((a, b) => Math.abs(a[0] - refNum) - Math.abs(b[0] - refNum))
-    .slice(0, 3);
+  const alive = collectRefSuggestions(refNum);
   if (alive.length) {
     const list = alive
-      .map(([r, e]) => `ref ${r} (${e.role || (e.tag && e.tag.toLowerCase()) || '?'}${e.name ? ` "${e.name}"` : ''})`)
+      .map(s => `ref ${s.ref} (${s.role}${s.name ? ` "${s.name}"` : ''})`)
       .join(', ');
     msg += t('pageInteraction.invalidRefSuggestions', { list });
   }
@@ -380,6 +377,18 @@ function buildAttributeText(el, role) {
 
 // ==================== 树序列化与查询 ====================
 
+// 帧文档身份：模块加载（=文档加载）时生成一次，随 frameInfo 上报；
+// orchestrator 用它检测子帧导航——重载后 loadId 变化，该帧旧编号映射整体作废
+const FRAME_LOAD_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/**
+ * 帧可见性（仅尺寸判据，spec §4.1）：display:none / 零尺寸 iframe 的子帧视口为 0
+ * 仅由子帧自身调用（顶层帧不适用）
+ */
+export function isFrameVisible() {
+  return window.innerWidth > 0 && window.innerHeight > 0;
+}
+
 function matchesTypeFilter(el, role, types) {
   if (!types || !types.length) return true;
   const tag = el.tagName.toLowerCase();
@@ -395,15 +404,8 @@ function matchesTextFilter(el, name, filterText) {
 
 /**
  * 查询可交互元素并输出树形快照（推荐优先使用）
- * 每个发现的元素分配 [ref N] 编号（WeakMap 跨快照稳定复用），供 interact_element / fill_form 引用
- *
- * @param {object} options
- * @param {string} options.filterByText - 按文本过滤（不区分大小写）
- * @param {string[]|null} options.elementTypes - 限定类型（tag 名 / input type / role 任一匹配）
- * @param {number} options.page - 页码（1 起，默认 1；非法值按 1 处理）
- * @param {number} options.maxResults - 每页元素数（默认 100）
- * @param {number} options.maxChars - 快照字符预算（默认 6000），超限截断并提示
- * @param {boolean} options.countOnly - 只返回计数（不生成快照）
+ * 薄包装（阶段三）：collectSnapshotOps（本帧结构化采集）+ renderSnapshot（唯一渲染出口）
+ * frames='none'：iframe 元素透传 fallback 子节点 → 输出与阶段二逐字节一致
  */
 export function queryInteractiveElements(options = {}) {
   const {
@@ -414,90 +416,160 @@ export function queryInteractiveElements(options = {}) {
     maxChars = 6000,
     countOnly = false,
   } = options;
-  const pageNum = Number.isInteger(page) && page >= 1 ? page : 1;
+  try {
+    const ops = collectSnapshotOps({ filterByText, elementTypes, frames: 'none' });
+    if (!ops.success) return ops;
+    return renderSnapshot({
+      frames: [{
+        frameIndex: 0,
+        depth: 0,
+        isTop: true,
+        frameInfo: ops.frameInfo,
+        overlayTrees: ops.overlayTrees,
+        bodyTree: ops.bodyTree,
+      }],
+      page,
+      maxResults,
+      maxChars,
+      countOnly,
+    });
+  } catch (error) {
+    console.error('[PageInteraction] queryInteractiveElements failed:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * iframe 元素 → frame 节点（orchestrator 与 webNavigation 帧树做三重对应的输入）
+ * srcUrl 取 IDL 属性（已绝对化）；sameOriginHref 仅同源时可读（跨源访问抛异常 → null）
+ */
+function buildFrameNode(el, depth, ctx) {
+  const title = el.getAttribute('title') || '';
+  let srcUrl = '';
+  try { srcUrl = el.src || ''; } catch { /* 忽略 */ }
+  if (!srcUrl) srcUrl = el.getAttribute('src') || '';
+  let sameOriginHref = null;
+  try {
+    const href = el.contentWindow && el.contentWindow.location.href;
+    if (typeof href === 'string') sameOriginHref = href;
+  } catch { /* 跨源：不可读 */ }
+  const orderInParent = ctx.iframeOrder.has(el) ? ctx.iframeOrder.get(el) : -1;
+  return { t: 'frame', title, srcUrl, sameOriginHref, orderInParent, depth };
+}
+
+/**
+ * 构建树节点（复刻阶段二 renderTree 的产出判定，仅保留可产出节点）：
+ * - 匹配元素（matchedSet）→ el 节点（带 localRef 与 children）；未匹配 → 透传子节点
+ * - 语义容器（dialog/heading 带名）→ 仅子树产出时输出
+ * - iframe（frames='auto'）→ frame 节点（不深入 fallback 内容）
+ * 返回本子树是否产出节点
+ */
+function buildTree(el, depth, nodes, ctx) {
+  if (isSubtreePruned(el)) return false;
+  if (ctx.skipRoots && ctx.skipRoots.has(el)) return false;
+
+  const role = getRole(el);
+  const interactive = isInteractiveElement(el, role);
+  const container = !interactive && CONTAINER_ROLES.has(role) ? role : null;
+  const childDepth = depth + ((interactive || container) ? 1 : 0);
+
+  // iframe：auto 模式构建 frame 节点（内容由子帧采集；fallback 子节点丢弃）
+  if (ctx.frames === 'auto' && el.tagName === 'IFRAME') {
+    nodes.push(buildFrameNode(el, depth, ctx));
+    return true;
+  }
+
+  const childNodes = [];
+  let childProduced = false;
+  for (const child of getElementChildren(el)) {
+    if (buildTree(child, childDepth, childNodes, ctx)) childProduced = true;
+  }
+
+  if (interactive && ctx.matchedSet.has(el)) {
+    const effectiveRole = role || el.tagName.toLowerCase();
+    const name = resolveAccessibleName(el, effectiveRole);
+    nodes.push({
+      t: 'el',
+      localRef: elementRefMap.get(el) ?? registerElement(el, effectiveRole, name),
+      role: effectiveRole,
+      name,
+      attrs: buildAttributeText(el, effectiveRole),
+      depth,
+      children: childNodes,
+    });
+    return true;
+  }
+
+  if (container && childProduced) {
+    const cname = (container === 'dialog' || container === 'heading')
+      ? resolveAccessibleName(el, role) : '';
+    nodes.push({ t: 'container', role: container, name: cname, depth, children: childNodes });
+    return true;
+  }
+
+  if (childProduced) {
+    nodes.push(...childNodes);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 采集本帧快照 ops（结构化树，不渲染；阶段三 query_elements 数据源）
+ * frames='none'（默认）：iframe 元素透传 fallback 子节点——与阶段二完全一致
+ * frames='auto'：iframe 元素 → frame 节点（orchestrator 汇总各帧后统一渲染）
+ */
+export function collectSnapshotOps(options = {}) {
+  const {
+    filterByText = '',
+    elementTypes = null,
+    frames = 'none',
+  } = options;
 
   try {
-    // 只保留本次快照结果（编号经 WeakMap 跨快照稳定复用）
     elementRegistry.clear();
 
-    // 阶段 A：完整遍历收集叠加层根与匹配的交互元素（有序）
+    // 阶段 A：收集叠加层根与匹配元素（复用阶段二 collectMatches，判定零差异）
     const expandedTargets = collectExpandedTargets();
     const overlayRoots = [];
     const matched = [];
     collectMatches(document.body, { matched, filterByText, elementTypes, overlayRoots, expandedTargets });
 
-    if (countOnly) {
-      return { success: true, content: '', count: matched.length, total: matched.length, truncated: false, hint: '' };
-    }
-
-    // 阶段 B：发现即注册（全部匹配元素分配稳定编号，翻页/重查后 ref 仍可解析）
+    // 阶段 B：发现即注册（编号经 WeakMap 跨快照稳定；countOnly 路径也注册，属阶段三行为增强）
     for (const m of matched) {
-      m.ref = registerElement(m.el, m.role, m.name);
+      registerElement(m.el, m.role, m.name);
     }
 
-    // 阶段 C：分页切片（页大小 = maxResults；输出序 = 叠加层子树 + 主体，均 DOM 序）
-    const pageSize = Math.max(1, maxResults);
-    const totalPages = Math.ceil(matched.length / pageSize);
-    const outputOrder = matched.filter(m => m.inOverlay).concat(matched.filter(m => !m.inOverlay));
-
-    // 越界页：不渲染，返回范围提示（模型可自我纠正）
-    if (matched.length > 0 && pageNum > totalPages) {
-      const content = [
-        t('pageInteraction.snapshotHeader', { count: matched.length }),
-        t('pageInteraction.snapshotPageOutOfRange', { page: pageNum, totalPages }),
-        t('pageInteraction.snapshotFooter'),
-      ].join('\n');
-      return { success: true, content, count: 0, total: matched.length, page: pageNum, totalPages, hasMore: false, truncated: false, hint: '' };
+    // 阶段 C：构建嵌套树（打开层子树独立分区；主体树跳过打开层根，避免重复）
+    const iframeOrder = new Map();
+    try {
+      document.querySelectorAll('iframe').forEach((el, i) => iframeOrder.set(el, i));
+    } catch { /* 忽略 */ }
+    const ctx = { matchedSet: new Set(matched.map(m => m.el)), frames, iframeOrder, skipRoots: null };
+    const overlayTrees = [];
+    for (const root of overlayRoots) {
+      const nodes = [];
+      buildTree(root, 0, nodes, ctx);
+      overlayTrees.push(...nodes);
     }
-
-    const pageStart = (pageNum - 1) * pageSize;
-    const pageSlice = outputOrder.slice(pageStart, pageStart + pageSize);
-    const hasMore = pageNum < totalPages;
-
-    // 阶段 D：分区序列化（打开层优先 → [页面主体] 标记 → 主体；skipRoots 去重）
-    const ctx = {
-      selected: new Set(pageSlice.map(m => m.el)),
-      budget: maxChars,
-      truncated: false,
-      count: 0,
-      skipRoots: new Set(overlayRoots),
-    };
-    const lines = [];
-    if (overlayRoots.length) {
-      const overlayLines = [];
-      const savedSkip = ctx.skipRoots;
-      ctx.skipRoots = null; // 渲染叠加层根自身时不做跳过判定
-      for (const root of overlayRoots) {
-        renderTree(root, 0, overlayLines, ctx);
-      }
-      ctx.skipRoots = savedSkip;
-      if (overlayLines.length) {
-        lines.push(t('pageInteraction.snapshotOverlayBlock'), ...overlayLines, t('pageInteraction.snapshotBodyBlock'));
-      }
-    }
-    renderTree(document.body, 0, lines, ctx);
-
-    const paged = totalPages > 1;
-    const header = t('pageInteraction.snapshotHeader', { count: paged ? matched.length : ctx.count })
-      + (paged ? t('pageInteraction.snapshotPageInfo', { page: pageNum, totalPages, count: ctx.count }) : '')
-      + (ctx.truncated ? t('pageInteraction.snapshotTruncated', { total: matched.length }) : '');
-    lines.unshift(header);
-    if (hasMore) lines.push(t('pageInteraction.snapshotHasMore', { next: pageNum + 1 }));
-    lines.push(t('pageInteraction.snapshotFooter'));
+    ctx.skipRoots = new Set(overlayRoots);
+    const bodyTree = [];
+    buildTree(document.body, 0, bodyTree, ctx);
 
     return {
       success: true,
-      content: lines.join('\n'),
-      count: ctx.count,
-      total: matched.length,
-      page: pageNum,
-      totalPages,
-      hasMore,
-      truncated: ctx.truncated,
-      hint: hasMore ? t('pageInteraction.snapshotHasMore', { next: pageNum + 1 }) : t('pageInteraction.refHint'),
+      frameInfo: {
+        url: location.href,
+        title: document.title || '',
+        width: window.innerWidth,
+        height: window.innerHeight,
+        loadId: FRAME_LOAD_ID,
+      },
+      overlayTrees,
+      bodyTree,
     };
   } catch (error) {
-    console.error('[PageInteraction] queryInteractiveElements failed:', error);
+    console.error('[PageInteraction] collectSnapshotOps failed:', error);
     return { success: false, error: error.message };
   }
 }
@@ -724,7 +796,11 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   const refNum = parseInt(ref, 10);
   const resolved = resolveByRef(refNum);
   if (resolved.error) {
-    return { success: false, error: resolved.error };
+    return {
+      success: false,
+      error: resolved.error,
+      ...(resolved.suggestions && resolved.suggestions.length ? { suggestions: resolved.suggestions } : {}),
+    };
   }
   const { entry, element } = resolved;
 
