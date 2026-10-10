@@ -7,8 +7,8 @@ import {
 } from './page-tools.js';
 
 import {
-  queryInteractiveElements, scrollAndCollect,
-  interactByRef, scrollToText, getSelectorByRef
+  queryInteractiveElements, collectSnapshotOps, isFrameVisible, scrollAndCollect,
+  interactByRef, scrollToText, resolveByRef
 } from './page-interaction.js';
 
 import {
@@ -94,6 +94,13 @@ const HANDLERS = {
   GET_PAGE_TEXT:             (msg) => getPageText(msg),
   GET_FULL_HTML:             (msg) => getFullHtml(msg),
   QUERY_ELEMENTS:            (msg) => queryInteractiveElements(msg),
+  // 阶段三：子帧快照采集（orchestrator 定向发送；子帧不可见时早退不采集）
+  SNAPSHOT_COLLECT:          (msg) => {
+    if (window.top !== window && !isFrameVisible()) {
+      return { success: true, visible: false };
+    }
+    return collectSnapshotOps({ filterByText: msg.filterByText, elementTypes: msg.elementTypes, frames: msg.frames === 'none' ? 'none' : 'auto' });
+  },
   GET_SELECTED_CONTENT:      (msg) => getSelectedContent(msg.format),
 
   // ── 页面交互 ──
@@ -149,10 +156,15 @@ const HANDLERS = {
   SELECT_DROPDOWN:           (msg) => {
     let triggerSelector = msg.triggerSelector;
     if (msg.ref != null && !triggerSelector) {
-      triggerSelector = getSelectorByRef(msg.ref);
-      if (!triggerSelector) {
-        return { success: false, error: t('contentIndex.invalidRef', { ref: msg.ref }) };
+      const resolved = resolveByRef(msg.ref);
+      if (!resolved.element) {
+        return {
+          success: false,
+          error: t('contentIndex.invalidRef', { ref: msg.ref }),
+          ...(resolved.suggestions && resolved.suggestions.length ? { suggestions: resolved.suggestions } : {}),
+        };
       }
+      triggerSelector = resolved.entry.selector;
     }
     return selectDropdown(triggerSelector, msg.optionText, msg.optionSelector, msg.timeout);
   },
@@ -216,7 +228,8 @@ const TOP_FRAME_ONLY_TYPES = new Set([
 if (isExtensionValid()) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 页面级内容获取工具：只在顶层 frame 响应，避免 iframe 响应覆盖主页面内容
-  if (TOP_FRAME_ONLY_TYPES.has(message.type) && window.top !== window) {
+  // 例外：orchestrator 定向跨帧路由的消息（_frameRouted）需子帧处理 ref
+  if (TOP_FRAME_ONLY_TYPES.has(message.type) && window.top !== window && !message._frameRouted) {
     return;
   }
 
