@@ -590,10 +590,16 @@ function isFailedResult(result) {
 }
 
 // 导航重置信号：back/forward/reload 成功、wait_navigation 成功（= 进展证据）
+// 真实工具契约：manage_tab action∈['open','switch','close','reload','navigate']，
+// history back/forward 为 action:'navigate' + direction:'back'|'forward'（见 tools/tab-tools.js）
+// 【执行时修正】原计划文本的 `['back','forward','reload'].includes(args?.action)` 与真实契约不符（Task 1 审查轮 Critical#1，commit 71e948f）
 function isNavResetSignal(toolName, args, result) {
   if (!result || result.success === false) return false;
   if (toolName === 'wait_navigation') return true;
-  if (toolName === 'manage_tab' && ['back', 'forward', 'reload'].includes(args?.action)) return true;
+  if (toolName === 'manage_tab') {
+    if (args?.action === 'reload') return true;
+    if (args?.action === 'navigate' && ['back', 'forward'].includes(args?.direction)) return true;
+  }
   return false;
 }
 
@@ -650,12 +656,25 @@ function mergeConfig(base, override) {
 function evalAbab(bucket, cfg) {
   const tail = bucket.ababTail;
   const out = { hit: false, fullAlternate: false, pairKey: null, nameA: null, nameB: null };
-  const last = tail.slice(-4);
-  if (last.length === 4 && last[0].key === last[2].key && last[1].key === last[3].key && last[0].key !== last[1].key) {
-    out.hit = true;
-    out.pairKey = [last[0].key, last[1].key].sort().join('|');
-    out.nameA = last[0].name;
-    out.nameB = last[1].name;
+  // 【执行时修正】原计划文本此处硬编码 4；实现改为读 cfg.oscillation.nudgeTail（默认 4 时行为严格等值，消除死配置，Task 1 审查轮 Minor#4）
+  const n = cfg.oscillation.nudgeTail;
+  const last = tail.slice(-n);
+  if (last.length === n) {
+    const odd = last[0];
+    const even = last[1];
+    let alt = !!even && odd.key !== even.key;
+    if (alt) {
+      for (let i = 0; i < last.length; i++) {
+        const expected = i % 2 === 0 ? odd : even;
+        if (last[i].key !== expected.key) { alt = false; break; }
+      }
+    }
+    if (alt) {
+      out.hit = true;
+      out.pairKey = [odd.key, even.key].sort().join('|');
+      out.nameA = odd.name;
+      out.nameB = even.name;
+    }
   }
   const st = cfg.oscillation.stopTail;
   if (tail.length >= st) {
@@ -1001,8 +1020,10 @@ Expected: FAIL —— 新 3 个用例失败（`expected undefined to be false`�
       alreadyAtBoundary = (window.scrollY || 0) <= 0 && (document.documentElement.scrollTop || 0) <= 0;
       window.scrollTo({ top: 0, left: 0, behavior });
     } else if (target === 'bottom') {
-      const scrollHeight = document.documentElement.scrollHeight || 0;
-      alreadyAtBoundary = (window.scrollY || 0) + (window.innerHeight || 0) >= scrollHeight - 1;
+      // 【执行时修正】原计划文本读 documentElement.scrollHeight；quirks 模式真实滚动容器为 body
+      // （其 documentElement.scrollHeight 塌缩为视口高→系统性误报 moved:false），改用 scrollingElement（Task 2 审查轮 Critical，commit e632cbb）
+      const scrollingEl = document.scrollingElement || document.documentElement;
+      alreadyAtBoundary = (window.scrollY || 0) + (window.innerHeight || 0) >= scrollingEl.scrollHeight - 1;
       window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior });
     } else if (target === 'coordinates') {
       alreadyAtBoundary = Math.abs((window.scrollY || 0) - y) < 1 && Math.abs((window.scrollX || 0) - x) < 1;
@@ -1163,7 +1184,7 @@ git commit -m "feat: 循环检测硬停文案 i18n（zh/en 各 6 条，只增不
 - E4 的 old 文本中 `'The user declined this operation.'` 与返回对象里的同名字符串无关——必须用下方 6 行完整块匹配（唯一）。
 - E13 的 old 块（50 行）含原文拼写 `infiniteloop:input and outputidentical`、`inject infinite loopwarningmessage`（**无空格**），必须逐字复制。
 - 5 个工具记录锚点与题 6 的 flush 调用点之所以这样选：并行/顺序两条执行路径在 E13 处汇合（常规出口）；两个 `planTaskHandled` 分支（E11）在汇合前 `continue` 提前跳过，必须各自 flush——两处文本完全相同，用 replace_all 处理。
-- 缓存命中路径（L1334-1339 提前 return）**不新增记录**：该路径既有行为不产生 tool 消息，不属于检测范围（本次不改无关代码）。
+- 缓存命中路径（提前 return）**同样必须记录**【执行时修正】：原计划文本“不新增记录”的论证前提不成立——被删旧指纹取自 `assistantMessage.tool_calls`（result 缺省 ''），不依赖 tool 消息即可识别重复调用；缓存命中不记录即构成重复检测能力回退（Task 4 审查轮 Important#2，commit 23fa207）。早退前补 `loopRecords.push({ order: callOrder, name: toolName, args: toolArgs, result: cached.toolResult ?? { fromCache: true } });`，守卫同步增加缓存锚点断言。
 
 - [ ] **Step 1: 追加接线守卫测试**
 
@@ -1205,6 +1226,45 @@ describe('循环检测器接线守卫', () => {
     const count = (SRC.match(/\[System Notice\]/g) || []).length;
     expect(count).toBe(1);
     expect(SRC).toMatch(/role: 'user',\s*\n\s*content: `\[System Notice\] \$\{warnings\.join/);
+  });
+
+  // —— 【执行时修正】以下为审查修复轮新增的位置/序号型断言（原计划仅 7 条计数型，
+  // 对锚点位置无鉴别力——Task 4 审查轮 Minor#5，commit 23fa207）——
+
+  test('记录锚点均带声明序号 order（并行路径 push 顺序 = 完成顺序，必须可重排）', () => {
+    const pushes = (SRC.match(/loopRecords\.push\(\{[^;]*?\}\);/g) || []);
+    // 5 个生命周期锚点（被拒/plan_task/跳过/常规/错误）+ 1 个缓存命中锚点
+    expect(pushes.length).toBeGreaterThanOrEqual(6);
+    for (const p of pushes) {
+      expect(p, `push 应带 order：${p.slice(0, 70)}`).toMatch(/\border:/);
+    }
+  });
+
+  test('flush 前按声明序号稳定排序（消除并行完成顺序抖动）', () => {
+    expect(SRC).toMatch(/pending\.sort\(\(a, b\) => \(a\.order \?\? 0\) - \(b\.order \?\? 0\)\)/);
+  });
+
+  test('缓存命中路径同样记录（旧指纹逻辑不依赖 tool 消息，不得回退）', () => {
+    expect(SRC).toMatch(
+      /loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: cached\.toolResult \?\? \{ fromCache: true \} \}\);\n\s*return \{ \.\.\.cached, fromCache: true \};/
+    );
+  });
+
+  test('flush 位置守卫：2 个 planTaskHandled 分支首行即 flush（防移出分支）', () => {
+    const count = (SRC.match(/if \(planTaskHandled\) \{\n\s*flushLoopRecords\(\);/g) || []).length;
+    expect(count).toBe(2);
+  });
+
+  test('锚点邻接守卫：push 紧随 currentMessages.push 块、在 trimMessages 之前（防挪位成死代码）', () => {
+    // result: toolResult 形态共 2 处（plan_task 先行响应 + 常规执行）
+    const plain = (SRC.match(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: toolResult \}\);\n\s*await trimMessages\(\);/g) || []).length;
+    expect(plain).toBe(2);
+    // 被拒锚点
+    expect(SRC).toMatch(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: \{ success: false, declined: true \} \}\);\n\s*await trimMessages\(\);/);
+    // 错误锚点
+    expect(SRC).toMatch(/\}\);\n\s*loopRecords\.push\(\{ order: callOrder, name: toolName, args: toolArgs, result: \{ success: false, error: toolError\.message \|\| 'Tool execution error' \} \}\);\n\s*await trimMessages\(\);/);
+    // 跳过锚点（无 trimMessages，用循环变量 j 作序号）
+    expect(SRC).toMatch(/loopRecords\.push\(\{ order: j, name: skippedName, args: parseToolCallArgs\(skippedCall\), result: \{ skipped: true \} \}\);/);
   });
 });
 ```
@@ -1634,7 +1694,8 @@ const qRes = (page, tag, hasMore, totalPages = 10) => ({
     ['select_dropdown', { ref: 12, option: 'x' }, ok('selected')],
     ['interact_element', { ref: 15, action: 'click' }, ok('submit')],
     ['read_page', {}, { success: true, content: 'page text' }],
-    ['manage_tab', { action: 'back' }, ok('navigated')],
+    // 【执行时修正】真实契约：back/forward 为 action:'navigate'+direction（见 isNavResetSignal）
+    ['manage_tab', { action: 'navigate', direction: 'back' }, ok('navigated')],
   ];
   const kinds = seq.map(([name, args, res]) => d.record(1, name, args, res).kind);
   check('12 步全 none（零提醒零硬停）', kinds.every(k => k === 'none'), JSON.stringify(kinds));
@@ -1694,15 +1755,23 @@ const qRes = (page, tag, hasMore, totalPages = 10) => ({
 // 场景 6：导航处理（⑤）
 {
   console.log('\n[场景 6] 导航处理：成功 back 重置页面作用域；连续相同导航不自触发');
+  // 【执行时修正】导航形态按真实契约 {action:'navigate',direction:'back'}转录；
+  // 第二断言改用干净实例：共享实例下 click失败⇄back 第 4 条已命中 ABAB 尾迹（spec §5.3 导航乒乓设计内行为）
   const d = createLoopDetector();
+  const navBack = { action: 'navigate', direction: 'back' };
   const failRes = () => ({ success: false, error: 'not found' });
   d.record(1, 'interact_element', { ref: 9, action: 'click' }, failRes());
-  d.record(1, 'manage_tab', { action: 'back' }, ok('nav'));
+  d.record(1, 'manage_tab', navBack, ok('nav'));
   const after = d.record(1, 'interact_element', { ref: 9, action: 'click' }, failRes());
   check('导航后失败计数清零（第 2 次失败仍 none）', after.kind === 'none');
 
+  const pingpong = d.record(1, 'manage_tab', navBack, ok('nav-same'));
+  check('click⇄back 交替第 4 条触发 oscillation nudge（导航入尾迹乒乓检测）',
+    pingpong.kind === 'nudge' && /Oscillation/.test(pingpong.warning));
+
+  const d2 = createLoopDetector();
   const navs = [];
-  for (let i = 0; i < 5; i++) navs.push(d.record(1, 'manage_tab', { action: 'back' }, ok('nav-same')));
+  for (let i = 0; i < 5; i++) navs.push(d2.record(1, 'manage_tab', navBack, ok('nav-same')));
   check('连续 5 次相同 back 成功全 none（导航不入重复窗口）', navs.every(x => x.kind === 'none'));
 }
 
@@ -1744,12 +1813,12 @@ process.exit(fail === 0 ? 0 : 1);
 - [ ] **Step 2: 运行探针**
 
 Run: `node test-results-probes/_loop-detector-probe.mjs`
-Expected: `22 通过 / 0 失败`，进程退出码 0
+Expected: `23 通过 / 0 失败`，进程退出码 0（【执行时修正】原计划 22 项；场景 6 共享实例下 click失败⇄back 第 4 条命中 ABAB 尾迹是 spec §5.3 设计内正确行为，探针第二断言改用干净实例并新增该乒乓钉住断言，22→23）
 
 - [ ] **Step 3: 全量单测（基线不漂移 + 新增全绿）**
 
 Run: `npm run test:unit`
-Expected: PASS —— **1049 通过**（基线 1004 + 新增 45：Task 1 33 + Task 2 3 + Task 3 2 + Task 4 7），0 failed
+Expected: PASS —— **1057 通过**（【执行上修】原计划预估 1049；三个审查修复轮增加用例后实际为基线 1004 + 53：Task 1 34 / Task 2 5 / Task 3 2 / Task 4 12），0 failed（另：exit=1 为既有 apply-rag 测试文件的模块级 DOM 副作用，与本次改动无因果，Task 5 已钉住）
 
 - [ ] **Step 4: 构建验证**
 

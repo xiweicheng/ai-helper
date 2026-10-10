@@ -98,10 +98,10 @@ ref 枚举走马灯、ABAB 振荡、失败重试、无进展滚动、导航乒�
 | 调用环形窗口 | `[{ argsKey, fullKey, name }]`（最近 6 条） | 固定 6 | **否（ABAB 依赖）** |
 | ABAB 交替尾迹 | `argsKey[]`（最近 8 条） | 固定 8 | **否** |
 | 重复累计计数 | `Map<fullKey, count>` | 32 上限（丢最旧） | 是 |
-| ref 枚举状态 | `{ lastScope, lastPage, lastHasMore, seenByScope:Map, suspicious, nonSeq, warned }` | 单状态（seenByScope ≤ 8 scope） | 是 |
+| ref 枚举状态 | `{ lastScope, lastPage, lastHasMore, seenByScope:Map, suspicious, nonSeq }` | 单状态（seenByScope ≤ 8 scope，超出丢最旧——实现显式 `maxScopes: 8`） | 是 |
 | 失败作用域 | `Map<scope, count>` | 32 上限 | 是 |
-| 无进展滚动 | `{ key, count, warned }` | 单键 | 是 |
-| 提醒片段标记 | `Set<warnKey>`（repeat/abab/failure/scroll/refEnum 各自 key） | 有限 | 是 |
+| 无进展滚动 | `{ key, count }` | 单键 | 是 |
+| 提醒片段标记 | 实际拆为两个 Set（【执行时修正】原表将 warned 画在 refEnum/滚动子状态内，实现统一为桶级）：`warned`（repeat/refEnum/failure/scroll 共用，导航重置清）+ `flowWarned`（ABAB 专用，**导航不清**——导航乒乓需跨导航保持尾迹内仅 1 条的节流语义） | 有限 | warned 是 / flowWarned 否 |
 | 健康迟滞 | `healthyStreak`（连续健康调用数） | 单值 | 否 |
 | 全局提醒预算 | `nudges`（累计，实例级不按 tab） | 单值 | 否 |
 
@@ -206,7 +206,7 @@ const outcome = detector.record(tabId, toolName, args, result);
 
 | 项 | 规则 |
 |---|---|
-| 重置触发 | `manage_tab` 的 `back` / `forward` / `reload` 且成功；`wait_navigation` 成功 → 清该 tab 的**页面作用域状态**（重复累计/ref 枚举/失败作用域/滚动/提醒片段标记） |
+| 重置触发 | `manage_tab` 的 `back` / `forward` / `reload` 且成功；`wait_navigation` 成功 → 清该 tab 的**页面作用域状态**（重复累计/ref 枚举/失败作用域/滚动/提醒片段标记 warned）。【执行时修正】真实工具契约：history back/forward 为 `action:'navigate' + direction:'back'\|'forward'`（见 tools/tab-tools.js），`reload` 为 `action:'reload'`；检测器按此契约识别（Task 1 审查轮 Critical#1，commit 71e948f）。例外：`flowWarned`（ABAB 节流集）不随导航重置清，见 §3.2 |
 | 窗口/尾迹不清 | ABAB 与重复的窗口保留（导航乒乓检测依赖） |
 | `open` / `switch` | 不重置（per-tab 分桶语义天然隔离：切换回旧 tab 保留旧 tab 状态） |
 | 健康认定 | 导航成功计健康调用（参与迟滞） |
@@ -281,7 +281,7 @@ const outcome = detector.record(tabId, toolName, args, result);
 | target | 判定（滚动前即时求值） | moved:false 条件 |
 |---|---|---|
 | `top` | `window.scrollY <= 0 && document.documentElement.scrollTop <= 0` | 已在顶部 |
-| `bottom` | `window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1` | 已在底部 |
+| `bottom` | `window.scrollY + window.innerHeight >= scrollEl.scrollHeight - 1`（`scrollEl = document.scrollingElement || document.documentElement`。【执行时修正】原公式读 documentElement；quirks 模式真实滚动容器为 body，其 documentElement.scrollHeight 塌缩为视口高→系统性误报 moved:false，Task 2 审查轮 Critical，commit e632cbb） | 已在底部 |
 | `coordinates` | `Math.abs(window.scrollY - y) < 1 && Math.abs(window.scrollX - x) < 1` | 已在目标位置 |
 | `selector` / `text` | 不判定 | 不产生该字段 |
 
@@ -298,7 +298,7 @@ export const LOOP_DETECTOR_CONFIG = {
   ababTailSize: 8,          // ABAB 尾迹
   repeat:    { nudgeAt: 3, stopAt: 8, maxKeys: 32 },
   oscillation: { nudgeTail: 4, stopTail: 8 },
-  refEnum:   { nudgeAt: 3, stopSuspicious: 6, stopNonSeq: 12 },
+  refEnum:   { nudgeAt: 3, stopSuspicious: 6, stopNonSeq: 12, maxScopes: 8 },
   failureScope: { nudgeAt: 2, stopAt: 3, maxScopes: 32 },
   noProgressScroll: { nudgeAt: 2, stopAt: 3, coordGrid: 5 },
   hysteresis: { healthyToRearm: 2 },
