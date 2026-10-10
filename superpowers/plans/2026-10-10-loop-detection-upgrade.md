@@ -24,7 +24,7 @@
 - **阈值集中**：全部数值只在 `LOOP_DETECTOR_CONFIG`（loop-detector.js 顶部），代码中不得散落魔法数。
 - **合规**：仅借鉴 WebBrain 设计思想（GPL-3.0），**不复制任何代码**（本项目 MIT）。
 - **实现语言**：模块无 `window` / `chrome` 引用（纯 Node 可单测）；注释与 commit 用中文，模型面向的提醒文案用英文（沿用既有先例）。
-- **删除与接线同一 commit**：Task 4 中旧指纹块删除与新检测器接线必须同一 commit（否则双检测器并行双注入）；回退方式 = revert 该 commit。
+- **删除与接线同一 commit**：Task 4 中旧指纹块删除与新检测器接线必须同一 commit（否则双检测器并行双注入）。【执行时修正，最终审查】行为回退单元非单 commit：回退需按 9226e9e → bb6fb37 → 23fa207 → 5aa2144 逆序（后三者均改 react-loop.js，单独 revert 早期 commit 会冲突；一次性 `git revert --no-commit 9226e9e bb6fb37 23fa207 5aa2144` 后提交亦可）。
 
 ---
 
@@ -1179,7 +1179,7 @@ git commit -m "feat: 循环检测硬停文案 i18n（zh/en 各 6 条，只增不
 - Produces: 运行时行为——每轮工具调用记录进 `loopRecords`；轮末 `flushLoopRecords()` 喂入检测器；nudge 合并为一条 `[System Notice]` 消息注入 `currentMessages`；stop 经 `createErrorWithLog` 抛出（走既有 checkpoint 恢复链路）
 
 **背景与注意（执行前必读）：**
-- **删除与接线必须同一 commit**（否则新旧双检测器并行双注入）；回退 = revert 该 commit。
+- **删除与接线必须同一 commit**（否则新旧双检测器并行双注入）；回退单元见文件头全局约束【执行时修正】（后续修复轮同改 react-loop.js，单 commit revert 会冲突）。
 - `flushLoopRecords` 定义处引用 `executionLog`（定义在更下方 L673）——闭包引用安全：flush 的**调用点全部在 L1849 之后**，调用时 `executionLog` 已初始化，不存在 TDZ 问题。
 - E4 的 old 文本中 `'The user declined this operation.'` 与返回对象里的同名字符串无关——必须用下方 6 行完整块匹配（唯一）。
 - E13 的 old 块（50 行）含原文拼写 `infiniteloop:input and outputidentical`、`inject infinite loopwarningmessage`（**无空格**），必须逐字复制。
@@ -1634,7 +1634,7 @@ git add src/background/react-loop.js test/unit/react-loop-loop-detector-wiring.u
 git commit -m "feat: react-loop 接入多模式循环检测器（替换旧指纹块，5 记录锚点 + 轮末统一喂入 + 接线守卫）"
 ```
 
-**回退说明**：本 commit 是唯一行为性改动；revert 即完整恢复旧指纹逻辑（Task 1/2/3 独立无害）。
+**回退说明**【执行时修正，最终审查 Important#1】：原计划文本“本 commit 是唯一行为性改动；revert 即完整恢复”已失真——审查修复轮 23fa207 与 Task 6 的 9226e9e 同样修改 react-loop.js 行为代码。行为回退链：逆序 9226e9e → bb6fb37 → 23fa207 → 5aa2144（或合并区间一次性回退）；Task 1/2/3 独立无害。
 
 ---
 
