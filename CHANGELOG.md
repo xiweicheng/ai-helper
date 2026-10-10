@@ -5,20 +5,23 @@
 ## 2026-10-10
 
 ### 新增
-- **页面引用系统（ref 树快照）**：`query_elements` 输出从扁平 JSON 升级为紧凑缩进树文本（`{role} "{name}" [ref N] {attr}`，content 字段直通模型，不再向模型暴露 selector）；元素发现升级为全树遍历 + 可交互判定（原生交互标签 / 17 类 ARIA 角色 / `tabindex>=0` / `onclick` / `contenteditable`；`display:none` 与 `aria-hidden` 子树剪枝、`visibility:hidden` 仅跳过自身、通用 div/span 透传不占缩进）；名称解析升级为多级优先级链（含 label[for] / 包裹 label / 前兄弟文本，覆盖未标记表单）；ref 编号单调递增跨快照不复用（旧 ref 明确失效），失效报错附「最近快照中的有效引用」（最近 ≤3 个）引导自我纠错；截断改为字符预算 `maxChars`（默认 6000）+ 输出上限 `maxResults`（默认 100）。
+- **页面引用系统（ref 树快照）**：`query_elements` 输出从扁平 JSON 升级为紧凑缩进树文本（`{role} "{name}" [ref N] {attr}`，content 字段直通模型，不再向模型暴露 selector）；元素发现升级为全树遍历 + 可交互判定（原生交互标签 / 17 类 ARIA 角色 / `tabindex>=0` / `onclick` / `contenteditable`；`display:none` 与 `aria-hidden` 子树剪枝、`visibility:hidden` 仅跳过自身、通用 div/span 透传不占缩进）；名称解析升级为多级优先级链（含 label[for] / 包裹 label / 前兄弟文本，覆盖未标记表单）；失效报错附「最近快照中的有效引用」（最近 ≤3 个）引导自我纠错；截断改为字符预算 `maxChars`（默认 6000）+ 输出上限 `maxResults`（默认 100）。
 - **`interact_element` 新增 `action=type` 原子输入**：一次调用完成聚焦 +（可选）清空 + 设值 + input/change 事件 +（可选）Enter 提交（`value` / `clear` / `submit` 参数）；native setter 绕过 React/Vue 受控组件，contenteditable 走富文本路径；checkbox/radio/file 等非文本类型明确拒绝并报错。
 - **`fill_form` 字段支持 `ref` 定位**：`fields.items` 新增 `ref` 属性（优先于 selector）；radio 场景按 name 在同组内匹配 value。
+- **页面引用系统阶段二（叠加层提升 + 分页 + WeakMap 稳定编号）**：`query_elements` 打开的叠加层（`dialog[open]` / 展开的 popover / 含焦点的 menu·listbox / `aria-modal` 弹窗 / `aria-expanded` 触发源反查）提升到快照顶部 `[打开层]` 区块优先输出——打开层先于 `maxChars` 预算消耗、天然避开截断，主体区以 `[页面主体]` 标记并去重；无叠加层页面输出零变化。新增 `page` 分页（页大小 = `maxResults`，默认 100），返回 `page` / `totalPages` / `hasMore` 字段，`hasMore` 时尾行提示 `page=N+1`；非法 page 按 1 处理、越界返回范围提示不报错。ref 编号改为 WeakMap 跨快照稳定复用：同一元素编号不变（重查 / 翻页后旧 ref 仍可操作）、新元素才递增、编号永不转给不同元素；注册改为「发现即注册」（含未展示元素，翻页后前页 ref 可解析），selector 懒生成。
 
 ### 优化
 - **ref 解析统一为 `resolveByRef`**：`getSelectorByRef` / `getElementByRef` 收敛为薄封装，供下拉选择 / 表单填写 / 元素交互统一复用；`interactByRef` 成功返回值移除 `selector` 字段（避免长选择器诱导模型抄写）。
+- **`query_elements` 工具描述与 zh/en 文案同步**：模型侧 description 与 `page` / `maxResults`（改为「每页元素数」）/ `maxChars`（改为「每页字符预算」）参数描述同步分页、`[打开层]` 提升与稳定编号语义。
+- **demo 商品录入页模态框补齐标准 ARIA**：`.modal-card` 增加 `role="dialog"` / `aria-modal="true"` / `aria-labelledby`（无障碍改进，同时使模态框命中叠加层提升检测路径）。
 
 ### 修复
 - **`page-tools.js` 残留导出导致构建失败**：删除已随重构移除的 `readAccessibilityTree` 重导出。
 - **`demo-product-form` e2e 路径失效**：文档目录迁移后用例仍引用旧路径 `demo/`，修正指向 `docs/demo/`。
 
 ### 工程质量与测试
-- 新增/扩展单测：`page-interaction`（树输出 / 发现范围 / 剪枝 / 编号单调性 / 失效建议 / type 原子输入）、`interaction-tools`（fill_form ref 定位，含 radio 同组匹配）、`tool-definitions`；e2e 断言迁移至 `content` 树文本并新增 type 链路用例；真实页冒烟探针 `test-results-probes/_ref-system-smoke.mjs` 10 项断言通过。
-- 设计 spec 与实施计划：`docs/superpowers/specs/2026-10-10-page-element-ref-system-design.md`、`docs/superpowers/plans/2026-10-10-page-element-ref-system.md`。
+- 新增/扩展单测：`page-interaction`（树输出 / 发现范围 / 剪枝 / 编号稳定 / 失效建议 / type 原子输入 / 分页 / 叠加层）、`interaction-tools`（fill_form ref 定位，含 radio 同组匹配）、`tool-definitions`（分页与叠加层 schema 断言）；全量 966 通过。e2e 断言迁移至 `content` 树文本并新增 type 链路与分页 / 叠加层用例（全量 25 通过）；真实页冒烟探针 `test-results-probes/_ref-system-smoke.mjs` 扩展至 19 项断言通过。
+- 设计 spec 与实施计划：阶段一 `docs/superpowers/specs/2026-10-10-page-element-ref-system-design.md`、`docs/superpowers/plans/2026-10-10-page-element-ref-system.md`；阶段二 `docs/superpowers/specs/2026-10-10-page-element-ref-system-phase2-design.md`、`docs/superpowers/plans/2026-10-10-page-element-ref-system-phase2.md`。
 
 ## 2026-10-09
 
