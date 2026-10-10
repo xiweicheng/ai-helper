@@ -26,7 +26,7 @@ beforeEach(() => {
   document.body.innerHTML = '';
 });
 
-// 从树快照文本中提取首个 ref（ref 编号跨测试单调递增，测试不硬编码）
+// 从树快照文本中提取首个 ref（ref 编号跨测试持续递增，测试不硬编码具体数字）
 function firstRef(content) {
   return Number(content.match(/\[ref (\d+)\]/)[1]);
 }
@@ -90,13 +90,39 @@ describe('queryInteractiveElements - 树快照', () => {
     expect(lines.some(l => l.startsWith(' button "InForm"'))).toBe(true);
   });
 
-  test('ref 编号跨快照单调递增不复用', () => {
+  test('ref 编号跨快照稳定：同一元素复用、新元素递增、编号不转给别元素', () => {
     document.body.innerHTML = '<button id="b1">Go</button>';
     const r1 = queryInteractiveElements({});
     const ref1 = firstRef(r1.content);
+
+    // 同一元素再次快照 → 编号复用（阶段二 WeakMap 稳定编号）
     const r2 = queryInteractiveElements({});
-    const ref2 = firstRef(r2.content);
-    expect(ref2).toBeGreaterThan(ref1);
+    expect(firstRef(r2.content)).toBe(ref1);
+
+    // 移除旧元素、新增元素 → 新元素获得递增新号，不复用旧号
+    document.body.innerHTML = '<button id="b2">New</button>';
+    const r3 = queryInteractiveElements({});
+    expect(firstRef(r3.content)).toBeGreaterThan(ref1);
+  });
+
+  test('发现即注册：maxResults 截断外的元素重查仍可解析', () => {
+    document.body.innerHTML = '<button id="a">A</button><button id="b">B</button><button id="c">C</button>';
+    const full = queryInteractiveElements({});
+    const refs = [...full.content.matchAll(/\[ref (\d+)\]/g)].map(m => Number(m[1]));
+    expect(refs.length).toBe(3);
+    // 第二次快照只输出 1 个元素，但全部匹配元素都会重新注册
+    const r = queryInteractiveElements({ maxResults: 1 });
+    expect(r.content).not.toContain('"C"');
+    expect(getElementByRef(refs[2])).toBe(document.getElementById('c'));
+  });
+
+  test('元素断开后按 selector 兜底重查同 id 新节点', () => {
+    document.body.innerHTML = '<div id="wrap"><button id="b1">Go</button></div>';
+    const r = queryInteractiveElements({});
+    const ref = firstRef(r.content);
+    // 同结构重建（原节点断开）；selector 懒生成后应兜底找到新节点
+    document.body.innerHTML = '<div id="wrap"><button id="b1">Go2</button></div>';
+    expect(getElementByRef(ref)).toBe(document.getElementById('b1'));
   });
 
   test('filterByText 与 elementTypes 过滤', () => {

@@ -55,23 +55,36 @@ registerTranslations('en', {
 
 // ==================== 元素注册表（ref → element 映射） ====================
 //
-// query_elements 返回树快照时给每个输出元素分配一个 ref 编号，模型可用 ref 直接操作元素，
-// 免去编写脆弱的 CSS selector。注册表只保留最近一次快照结果（每次查询重建），实体（element）
-// 失效时会用内部 selector 兜底重新查找；编号跨快照单调递增、不复用——旧 ref 明确失效而非
-// 静默指向新元素。selector 仅供内部兜底，不输出给模型。
+// query_elements 返回树快照时给每个发现的元素分配一个 ref 编号，模型可用 ref 直接操作元素，
+// 免去编写脆弱的 CSS selector。编号经 WeakMap 跨快照复用：同一元素编号稳定、新元素递增、
+// 编号永不转给不同元素（元素被 GC 后编号退役，计数器单调不回收）。注册表只保留最近一次
+// 快照结果（每次查询重建）。selector 懒生成：仅兜底重查/消费方需要时生成，注册阶段零成本。
 let refCounter = 0;
-const elementRegistry = new Map(); // ref → { element, selector, tag, role, name }
+const elementRefMap = new WeakMap(); // Element → ref（跨快照复用编号）
+const elementRegistry = new Map();   // ref → { element, selector, tag, role, name }
 
 /**
- * 注册元素并返回 ref（输出即注册：只有真正输出到快照的元素才占用编号）
+ * 注册元素并返回 ref（发现即注册：全部匹配元素占用编号，分页/重查后 ref 仍可解析）
  */
 function registerElement(el, role, name) {
-  refCounter += 1;
-  const ref = refCounter;
-  let selector = '';
-  try { selector = generateUniqueSelector(el); } catch { selector = ''; }
-  elementRegistry.set(ref, { element: el, selector, tag: el.tagName, role, name });
+  let ref = elementRefMap.get(el);
+  if (ref == null) {
+    refCounter += 1;
+    ref = refCounter;
+    elementRefMap.set(el, ref);
+  }
+  elementRegistry.set(ref, { element: el, selector: null, tag: el.tagName, role, name });
   return ref;
+}
+
+/**
+ * selector 懒生成并回填 entry（元素断开后的兜底重查、getSelectorByRef 消费方均走此路径）
+ */
+function ensureSelector(entry) {
+  if (entry.selector == null) {
+    try { entry.selector = generateUniqueSelector(entry.element); } catch { entry.selector = ''; }
+  }
+  return entry.selector;
 }
 
 /**
@@ -85,9 +98,11 @@ export function resolveByRef(ref) {
   }
   const entry = elementRegistry.get(refNum);
   if (entry.element && entry.element.isConnected) {
+    ensureSelector(entry); // 成功返回前回填，供 getSelectorByRef 消费方使用
     return { entry, element: entry.element };
   }
-  const found = entry.selector ? deepQuerySelector(entry.selector) : null;
+  const selector = ensureSelector(entry);
+  const found = selector ? deepQuerySelector(selector) : null;
   if (found) {
     entry.element = found;
     return { entry, element: found };
@@ -355,7 +370,7 @@ export function queryInteractiveElements(options = {}) {
   } = options;
 
   try {
-    // 只保留本次快照结果（ref 编号单调递增，不重置）
+    // 只保留本次快照结果（编号经 WeakMap 跨快照稳定复用）
     elementRegistry.clear();
 
     // 阶段 A：完整遍历收集匹配的交互元素（有序）
@@ -366,11 +381,16 @@ export function queryInteractiveElements(options = {}) {
       return { success: true, content: '', count: matched.length, total: matched.length, truncated: false, hint: '' };
     }
 
-    // 阶段 B：输出集（maxResults 上限）
+    // 阶段 B：发现即注册（全部匹配元素分配稳定编号，翻页/重查后 ref 仍可解析）
+    for (const m of matched) {
+      m.ref = registerElement(m.el, m.role, m.name);
+    }
+
+    // 阶段 C：输出集（maxResults 上限；分页在 Task 2 改为按页切片）
     const selected = new Set(matched.slice(0, maxResults).map(m => m.el));
     const tooMany = matched.length > maxResults;
 
-    // 阶段 C：序列化（预算 maxChars，输出即注册）
+    // 阶段 D：序列化（预算 maxChars）
     const ctx = { selected, budget: maxChars, truncated: false, count: 0 };
     const lines = [];
     renderTree(document.body, 0, lines, ctx);
@@ -435,10 +455,11 @@ function renderTree(el, depth, lines, ctx) {
     const effectiveRole = role || el.tagName.toLowerCase();
     const name = resolveAccessibleName(el, effectiveRole);
     const attrs = buildAttributeText(el, effectiveRole);
-    // 估算行长度（含 [ref NNNNN] 上限 12 字符）后再注册，保证输出=注册
+    // 估算行长度（含 [ref NNNNN] 上限 12 字符）后再输出，控制字符预算
     const estimate = depth + effectiveRole.length + (name ? name.length + 2 : 0) + (attrs ? attrs.length + 1 : 0) + 12;
     if (ctx.budget - estimate < 0) { ctx.truncated = true; return childProduced; }
-    const ref = registerElement(el, effectiveRole, name);
+    // 编号已在阶段 B 分配（发现即注册）；渲染仅取用
+    const ref = elementRefMap.get(el) ?? registerElement(el, effectiveRole, name);
     const line = `${' '.repeat(depth)}${effectiveRole}${name ? ` "${name}"` : ''} [ref ${ref}]${attrs ? ' ' + attrs : ''}`;
     ctx.budget -= line.length + 1;
     ctx.count += 1;
