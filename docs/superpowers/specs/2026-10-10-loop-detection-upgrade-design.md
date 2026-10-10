@@ -286,6 +286,7 @@ const outcome = detector.record(tabId, toolName, args, result);
 | `selector` / `text` | 不判定 | 不产生该字段 |
 
 - 输出形态：**已在边界** → `{ success: true, message: <不变>, moved: false }`；**正常滚动** → 与今天逐字节一致（无 `moved` 字段）
+- 已知限制（最终审查登记）：`moved:false` 语义是「**窗口滚动容器**未位移」而非「本次调用无进展」——coordinates 超出可滚范围被钳制、或页面滚动发生在内层容器（窗口不可滚）时，合法重复滚动可能被误判无进展至硬停；缓解：硬停前必经 2 次软提醒且硬停可带指导恢复（R2 顺序不破）。后续加固候选：alreadyAtBoundary 增加可滚范围前置条件/坐标钳制到上界后比较
 - 滚动行为本身零改动（仍 fire-and-forget + smooth）
 
 ---
