@@ -34,7 +34,7 @@
 ```
 ┌─ content 侧（每帧，含顶层）───────────────────────────────┐
 │  collectSnapshotOps(options)                               │
-│    ├─ 帧可见性自检（innerSize + IntersectionObserver）      │
+│    ├─ 帧可见性自检（window.innerWidth/Height > 0）         │
 │    ├─ 遍历：叠加层根收集 + matched（阶段二既有逻辑复用）     │
 │    ├─ 注册 pass：本地 WeakMap 编号（阶段二语义原样保留）    │
 │    └─ ops 采集：结构化渲染数据（不渲染文本）                │
@@ -128,17 +128,19 @@ content 侧 `collectSnapshotOps(options)` 返回纯数据（**不渲染文本**�
 
 ```js
 {
-  frameInfo: { url, title, innerSize: {w, h}, ioVisible: true | false | null },
-  ops: [
-    { t: 'interactive', localRef, role, name, attrs, depth, inOverlay },
-    { t: 'container', role, name, depth, inOverlay },        // 子树有输出才采集（阶段二渲染判定前移）
-    { t: 'frame-placeholder', title, srcUrl, sameOriginHref, orderInParent, depth },
-  ],
+  success: true,
+  frameInfo: { url, title, width, height },   // width/height = window.innerWidth/innerHeight（可见性判据）
+  overlayTrees: [ /* treeNode…（叠加层根子树，DOM 序）*/ ],
+  bodyTree: /* treeNode（主体树，skipRoots 去重后）*/,
 }
+// treeNode 三种形态（嵌套结构，父行先于子行）：
+{ t: 'el',        localRef, role, name, attrs, depth, children: [] }
+{ t: 'container', role, name, depth, children: [] }            // 仅子树有输出才采集（阶段二渲染判定前移）
+{ t: 'frame',     title, srcUrl, sameOriginHref, orderInParent, depth }
 ```
 
-- `depth` = 阶段二"有效深度"语义；`inOverlay` 标记沿用；容器行的 childProduced 判定在采集期完成的预渲染遍历中计算
-- `frame-placeholder` 项由**顶层帧**在遍历到 iframe 元素时采集：`sameOriginHref`（同源帧可读 `contentWindow.location.href`，跨域置 null）、`orderInParent`（该 iframe 在父帧全部 iframe 元素中的出现序号）
+- `depth` = 阶段二"有效深度"语义；容器行的 childProduced 判定在采集期完成的预渲染遍历中计算
+- `frame` 节点由所在帧在遍历到 iframe 元素时采集：`sameOriginHref`（同源帧可读 `contentWindow.location.href`，跨域置 null）、`orderInParent`（该 iframe 在所在帧全部 iframe 元素中的出现序号）；编排器收集后回填 `status`（`ok`/`unreachable`/`hidden`/`excluded`/`off`）与 `frameIndex`
 - 新消息类型 `SNAPSHOT_COLLECT`：`content/index.js` HANDLERS 注册直通 `collectSnapshotOps`；bg 逐帧定向发送（`tabs.sendMessage` + `{frameId}`），复用 `sendToContentScriptWithRetry` 的注入重试（扩展为支持 `frameIds` 定向注入）
 - 帧自报不可见时返回轻响应 `{ visible: false }`，不携带 ops
 
@@ -158,16 +160,16 @@ content 侧 `collectSnapshotOps(options)` 返回纯数据（**不渲染文本**�
 
 ```js
 renderSnapshot({
-  frames: [ { frameId, frameInfo, ops, isTopFrame } ],  // 已完成合并与全局编号替换
-  page, maxResults, maxChars, frameCount, unreachableFrames,
+  frames: [ { frameIndex, depth, frameInfo, overlayTrees, bodyTree, isTop } ],  // 序=顶层+区块先序；已完成全局编号替换与 frame 节点标记
+  page, maxResults, maxChars, countOnly, frameCount,
 }) → { content, count, total, page, totalPages, hasMore, truncated, hint }
 ```
 
-渲染器职责（唯一渲染出口）：在全局 matched 流上分页切片、预算消耗、占位行/区块头/容器/元素行生成、header/footer 组装、越界页提示。编排器与薄包装均只调用它。
+渲染器职责（唯一渲染出口）：在全局 matched 流（顶层 打开层→主体 → 各区块 打开层→主体）上分页切片并标记选中位，按区块递归渲染（容器行 / 预算 / 截断语义逐条复刻阶段二）、header/footer 组装、越界页提示。编排器与薄包装均只调用它。
 
 ### 3.7 交互路由
 
-- `interact_element`（ref）/ `select_dropdown`（ref）/ `scroll_to`（target=ref）：bg 查全局表 → 定向 `frameId` 发送，消息内携带**本地 ref**；帧内 `resolveByRef` 原样工作（含断开重查兜底）
+- `interact_element`（ref）/ `select_dropdown`（ref）：bg 查全局表 → 定向 `frameId` 发送（消息带 `_frameRouted: true`，豁免帧内顶层护栏），消息内携带**本地 ref**；帧内 `resolveByRef` 原样工作（含断开重查兜底）。`scroll_to` 无 ref 参数（target 枚举 selector/top/bottom/coordinates/text），维持现状不在路由范围
 - `fill_form`（fields[].ref）：bg 按字段归属帧分组 → 每帧一次子调用 → 结果合并（成功字段数 + 失败明细注明所属 frame）；同一次调用混合多帧字段自动拆分，模型无感知
 - **非 ref 路径不变**：text 模式查找、`wait_element` 等维持顶层 frame 语义
 - **路由失败统一错误**：无映射（过期 / SW 重启）→"ref 无效，请重新 query_elements"；目标 frame 已消失 → 同类提示附"该 frame 已不可用"
@@ -184,9 +186,7 @@ renderSnapshot({
 
 ### 4.1 帧可见性判定（子帧自报，无父子握手）
 
-- 同步基线：`innerWidth/innerHeight > 0`（`display:none` / 零尺寸 → 0 排除）
-- 被动 `IntersectionObserver`（观察自身 documentElement）持续更新，快照零延迟读取最近状态
-- 未知态 **fail-open**（宁可多含不可漏真实内容）
+- 判据：`window.innerWidth/innerHeight > 0`（`display:none` / 零尺寸 frame → 0 排除）；不回退其它信号（评估过 IntersectionObserver：视口相交随滚动变化，会把"滚出视口的 frame"错误排除，与主体元素不按视口过滤的既有语义冲突，故弃用）
 - **已知局限（文档化）**：父级 `visibility:hidden`/`opacity:0` 的 iframe 子帧无法自检 → 可能被纳入（低频边缘）
 - 隐藏帧完全不参与：无匹配、无占位行、无区块（占位行仅对应参与收集的可见帧）
 
