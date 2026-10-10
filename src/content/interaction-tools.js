@@ -253,11 +253,17 @@ export function scrollToPosition(options) {
   try {
     const { target = 'selector', selector, x = 0, y = 0, behavior = 'smooth', align = 'center' } = options;
     
+    // 静态边界判定（仅影响输出形态，不影响滚动行为；用于无进展滚动检测）
+    let alreadyAtBoundary = false;
     if (target === 'top') {
+      alreadyAtBoundary = (window.scrollY || 0) <= 0 && (document.documentElement.scrollTop || 0) <= 0;
       window.scrollTo({ top: 0, left: 0, behavior });
     } else if (target === 'bottom') {
+      const scrollHeight = document.documentElement.scrollHeight || 0;
+      alreadyAtBoundary = (window.scrollY || 0) + (window.innerHeight || 0) >= scrollHeight - 1;
       window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior });
     } else if (target === 'coordinates') {
+      alreadyAtBoundary = Math.abs((window.scrollY || 0) - y) < 1 && Math.abs((window.scrollX || 0) - x) < 1;
       window.scrollTo({ top: y, left: x, behavior });
     } else if (target === 'selector' && selector) {
       const element = deepQuerySelector(selector);
@@ -269,7 +275,11 @@ export function scrollToPosition(options) {
       return { success: false, error: t('interactionTools.invalidScrollTarget') };
     }
     
-    return { success: true, message: t('interactionTools.scrollComplete') };
+    const result = { success: true, message: t('interactionTools.scrollComplete') };
+    if (alreadyAtBoundary) {
+      result.moved = false; // 已在边界：供循环检测器判定无进展（正常滚动不输出该字段）
+    }
+    return result;
   } catch (error) {
     return { success: false, error: error.message };
   }

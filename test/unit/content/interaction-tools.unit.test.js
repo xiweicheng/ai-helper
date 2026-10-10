@@ -260,3 +260,45 @@ describe('clickElement - 选择器点击', () => {
     expect(r.success).toBe(false);
   });
 });
+
+describe('scrollToPosition - 无进展静态判定（moved:false）', () => {
+  // jsdom 默认 scrollY/innerHeight/scrollHeight 不可靠，显式桩后再断言
+  const stub = ({ scrollY = 0, scrollX = 0, innerHeight = 768, scrollHeight = 2000, scrollTop = 0 } = {}) => {
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: scrollY });
+    Object.defineProperty(window, 'scrollX', { configurable: true, value: scrollX });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: innerHeight });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: scrollHeight });
+    Object.defineProperty(document.documentElement, 'scrollTop', { configurable: true, value: scrollTop });
+  };
+
+  test('top：已在顶部 → moved:false；不在顶部 → 无 moved 字段（逐字节形态）', () => {
+    stub({ scrollY: 0, scrollTop: 0 });
+    const atTop = scrollToPosition({ target: 'top' });
+    expect(atTop.success).toBe(true);
+    expect(atTop.moved).toBe(false);
+
+    stub({ scrollY: 500, scrollTop: 500 });
+    const notTop = scrollToPosition({ target: 'top' });
+    expect(notTop.success).toBe(true);
+    expect('moved' in notTop).toBe(false);
+    expect(Object.keys(notTop)).toEqual(['success', 'message']); // 与改造前形态一致
+  });
+
+  test('bottom：已在底部 → moved:false；未到底 → 无 moved', () => {
+    stub({ scrollY: 500, innerHeight: 768, scrollHeight: 800 }); // 500+768 >= 800-1
+    expect(scrollToPosition({ target: 'bottom' }).moved).toBe(false);
+
+    stub({ scrollY: 0, innerHeight: 768, scrollHeight: 2000 });
+    const notBottom = scrollToPosition({ target: 'bottom' });
+    expect('moved' in notBottom).toBe(false);
+  });
+
+  test('coordinates：已在目标位置（<1px 容差）→ moved:false；否则无 moved', () => {
+    stub({ scrollY: 100, scrollX: 0 });
+    expect(scrollToPosition({ target: 'coordinates', x: 0, y: 100 }).moved).toBe(false);
+
+    stub({ scrollY: 100, scrollX: 0 });
+    const elsewhere = scrollToPosition({ target: 'coordinates', x: 0, y: 500 });
+    expect('moved' in elsewhere).toBe(false);
+  });
+});
