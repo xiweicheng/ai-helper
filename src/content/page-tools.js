@@ -47,7 +47,7 @@ export {
 } from './page-extract.js';
 // 重导出交互查询类工具
 export {
-  queryInteractiveElements, readAccessibilityTree
+  queryInteractiveElements
 } from './page-interaction.js';
 
 /**

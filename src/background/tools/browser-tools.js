@@ -10,16 +10,19 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'interact_element',
-      description: 'Click or hover on a page element. Locate via ref (recommended, from query_elements), text, or CSS selector',
+      description: 'Interact with a page element. Locate via ref (recommended, from query_elements), text, or CSS selector. action=click/hover/type; type enters text into an input field (requires value, optional clear/submit)',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['click', 'hover'] },
+          action: { type: 'string', enum: ['click', 'hover', 'type'] },
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          ref: { type: 'integer', description: 'Index returned by query_elements (recommended); valid only on current page, re-query after navigation' },
+          ref: { type: 'integer', description: 'Index returned by query_elements (recommended); valid only for the latest snapshot, re-query after page changes' },
+          value: { type: 'string', description: 'Text to enter into the field (required for action=type)' },
+          clear: { type: 'boolean', description: 'Clear existing value before typing (action=type)' },
+          submit: { type: 'boolean', description: 'Press Enter after typing (action=type)' },
           text: { type: 'string', description: 'Match element by text (e.g. "Login"), click on first match' },
           tag: { type: 'string', description: 'Restrict tag with text, e.g. button/a' },
-          selector: { type: 'string', description: 'CSS selector (used when neither ref nor text provided); avoid long nth-child chains, prefer selector returned by query_elements' },
+          selector: { type: 'string', description: 'CSS selector (used when neither ref nor text provided); avoid long nth-child chains' },
           waitTime: { type: 'integer' },
           timeout: { type: 'integer' }
         },
@@ -158,11 +161,12 @@ export const BROWSER_TOOLS = [
             items: {
               type: 'object',
               properties: {
-                selector: { type: 'string' },
+                ref: { type: 'integer', description: 'ref from query_elements; takes priority over selector' },
+                selector: { type: 'string', description: 'CSS selector (alternative to ref)' },
                 value: { type: 'string' },
                 fieldType: { type: 'string', enum: ['text', 'select', 'checkbox', 'radio', 'contenteditable'] }
               },
-              required: ['selector', 'value']
+              required: ['value']
             }
           },
           waitTime: { type: 'integer' }
@@ -301,17 +305,18 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'query_elements',
-      description: 'Query interactive elements (buttons, inputs, links, etc). Returns ref numbers for use in interact_element/fill_form. Recommended as the primary element locating method',
+      description: 'Query interactive elements and return a tree-formatted snapshot with [ref N] numbers for interact_element/fill_form. Recommended as the primary element locating method. The snapshot is valid only for the current page state — re-query after the page changes. Use filterByText to narrow results when truncated',
       parameters: {
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          filterByText: { type: 'string' },
+          filterByText: { type: 'string', description: 'Only include elements whose text matches (case-insensitive)' },
           elementTypes: {
             type: 'array',
-            items: { type: 'string', enum: ['button', 'input', 'select', 'textarea', 'a', 'checkbox', 'radio', 'menuitem'] }
+            items: { type: 'string', enum: ['button', 'a', 'input', 'select', 'textarea', 'checkbox', 'radio', 'tab', 'menuitem', 'option', 'link'] }
           },
-          maxResults: { type: 'integer' },
+          maxResults: { type: 'integer', description: 'Max elements to output (default 100)' },
+          maxChars: { type: 'integer', description: 'Character budget of the snapshot (default 6000)' },
           countOnly: { type: 'boolean' }
         },
         required: []

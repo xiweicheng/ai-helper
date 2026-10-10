@@ -100,7 +100,10 @@ const HANDLERS = {
   // interact_element 支持 3 种定位：ref（优先）> text > selector
   INTERACT_ELEMENT:           (msg) => {
     if (msg.ref != null) {
-      return interactByRef(msg.ref, msg.action, { waitTime: msg.waitTime, timeout: msg.timeout });
+      return interactByRef(msg.ref, msg.action, {
+        waitTime: msg.waitTime, timeout: msg.timeout,
+        value: msg.value, clear: msg.clear, submit: msg.submit,
+      });
     }
     if (msg.text) {
       return clickByText(msg.text, { tag: msg.tag, action: msg.action, waitTime: msg.waitTime, timeout: msg.timeout });
