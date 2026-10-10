@@ -3186,3 +3186,25 @@ git commit -m "docs: 同步页面引用系统阶段三描述（CHANGELOG / DOCUM
 3. File Structure 探针行：`_iframe-ref-system-smoke.mjs` → 双探针文件名
 4. Task 1 Step 4/5 预期：`（全部用例）` / `966 + 新增` → 精确 `13 条` / `979 通过`
 5. Task 5 Step 4 预期：`6 条用例` → `7 条用例`（与 test() 实际数对齐）
+
+---
+
+## 执行记录（executing-plans 期间发现并修正的计划缺陷）
+
+采用 inline executing-plans 逐任务 TDD 执行（Task 1-11）。以下为执行期间发现的计划与实现/spec 不一致处，均已修正并通过验证。
+
+**已单独提交（计划文件修正）**：Task 1 测试断言缩进笔误（overlay 内 el 期望 2 空格，实际阶段二实现为 1 空格/层）→ commit `dbdfd63`。
+
+**执行时修正（以代码/测试为准，计划文档保持原样）**：
+
+| # | 任务 | 缺陷 | 修正 |
+|---|---|---|---|
+| 1 | Task 3 | 修改 1 的导入行照抄会删除 `scrollAndCollect`，但 `SCROLL_COLLECT` handler 仍在 HANDLERS 中使用（ReferenceError） | 导入行保留 `scrollAndCollect` |
+| 2 | Task 5 | `markFrameNodes` 的 `childInfos` 直接取 webNavigation 原始帧对象（无 `orderInParent` 字段），s3 条件 `0 === undefined` 永不成立 → hidden 用例 tc-4 将失败 | `childInfos` 注入 `plan.effective.get(f.frameId).orderInParent`（spec §3.5 s3 语义） |
+| 3 | Task 6 | 测试 tc-6 期望 `'1/2'`；实际两字段均失败（子帧 details success:false + 无效 ref 未发送）→ successCount=0 | 期望改为 `'0/2'` |
+| 4 | Task 6 | 测试 fixture `CHILD_BODY` 为模块级共享数组，`replaceRefsWithGlobals` 原地改写 localRef 跨用例累积污染（生产无此问题：chrome 消息结构化克隆产生新对象） | fixture 改工厂函数 `CHILD_BODY()` |
+| 5 | Task 8 | e2e 断言 display:none iframe 产生 frame 节点并标 hidden——与 `isSubtreePruned` 剪枝矛盾（spec §4.1：隐藏帧完全不参与，无节点可标） | display:none 断言 `toBeNull()`（剪枝实证）；零尺寸帧保留节点标 hidden（渲染移除）；`zero.orderInParent === 2` 验证「DOM 全量 iframe 序」语义 |
+| 6 | Task 9 | 探针区块头期望混淆 title 来源；渲染器既定语义为「占位行 title = iframe 元素属性；区块头 title = 子帧文档 title（frameInfo.title）」 | srcdoc 帧加 `<title>Src Doc</title>`，断言 `[frame #1 "Src Doc" · srcdoc]` / `[frame #2 "Cross Child" · 127.0.0.1]`（同时验证两种 title 来源差异化） |
+| 7 | Task 9/10 | 探针 check 数记录为 18，实际 26（e2e 修正后不变） | CHANGELOG 用实际值 26 |
+
+**执行最终验证（Task 10 全量回归）**：单测 64 文件 / 1004 通过（0 failed）；构建 BUILD_SUCCESS；e2e 31 通过（既有 25 零改写 + 新增 6）；探针三本 SMOKE_PASS（19 + 26 + 2 项）；无 iframe 逐字节兼容三锁复核通过（渲染器断言平移 / 45 条既有单测零改写 / Phase A `r8.content === direct.content`）。
