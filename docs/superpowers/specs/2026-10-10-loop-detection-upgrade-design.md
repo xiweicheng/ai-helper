@@ -98,7 +98,7 @@ ref 枚举走马灯、ABAB 振荡、失败重试、无进展滚动、导航乒�
 | 调用环形窗口 | `[{ argsKey, fullKey, name }]`（最近 6 条） | 固定 6 | **否（ABAB 依赖）** |
 | ABAB 交替尾迹 | `argsKey[]`（最近 8 条） | 固定 8 | **否** |
 | 重复累计计数 | `Map<fullKey, count>` | 32 上限（丢最旧） | 是 |
-| ref 枚举状态 | `{ scopeKey, lastPage, seenPages:Set, suspicious, nonSeq, warned }` | 单作用域 | 是 |
+| ref 枚举状态 | `{ lastScope, lastPage, lastHasMore, seenByScope:Map, suspicious, nonSeq, warned }` | 单状态（seenByScope ≤ 8 scope） | 是 |
 | 失败作用域 | `Map<scope, count>` | 32 上限 | 是 |
 | 无进展滚动 | `{ key, count, warned }` | 单键 | 是 |
 | 提醒片段标记 | `Set<warnKey>`（repeat/abab/failure/scroll/refEnum 各自 key） | 有限 | 是 |
@@ -166,11 +166,11 @@ const outcome = detector.record(tabId, toolName, args, result);
 | 项 | 规则 |
 |---|---|
 | 作用域 key | 稳定哈希 `{maxResults, maxChars, filterByText, frames}`（不含 page） |
-| 顺序推进 = 健康 | `page === lastPage + 1` 且上次结果 `hasMore === true` → 合法步进：记 seenPages、不增可疑 |
-| 重读 | page ∈ seenPages 或 `page === lastPage` 且上次 `hasMore !== true` → `suspicious++` |
-| 乱序新页 | 非 lastPage+1 且未见过 → `nonSeq++`（不计可疑——随机访问可能合法） |
+| 顺序推进 = 健康 | 同 scope 下 `page === lastPage + 1` 且上次结果 `hasMore === true` → 合法步进、不增可疑 |
+| 重读 | 同 scope 该页已读过**且结果未变化** → `suspicious++`（结果有变化视为推进，不计——与①重复的轮询豁免同哲学） |
+| 乱序新页 | 非同 scope 顺序推进、非重读、且非新 scope 首页 → `nonSeq++`（随机访问可能合法；新 scope 首页中性不计） |
 | 非法页 | `page > totalPages` → `suspicious++` |
-| 作用域切换 | 仅更新 scopeKey/lastPage，**不清累计**（防"两个 scope 来回切"逃逸） |
+| 作用域切换 | 各 scope 独立记已读页（seenByScope：scope→页号→结果哈希）；累计计数**不清**（防"两个 scope 来回切"逃逸）；连续多搜索（不同 filter 各自首页）不产生可疑 |
 | 非 query 调用（已执行） | 状态**整体清零**（WebBrain 同款：其他调用 = 进展证据；skipped 不计入） |
 | 软提醒 | `suspicious ≥ 3` → 提醒（一次性，迟滞重新武装） |
 | 硬停 | `suspicious ≥ 6` 或 `nonSeq ≥ 12`（顺序步进不计 nonSeq） |
@@ -336,6 +336,7 @@ export const LOOP_DETECTOR_CONFIG = {
 | ①反例 | **轮询：同参变果（结果不同）任意次 → 恒 none**；穿插其他调用断窗后累计仍致停 | 防误报铁证 |
 | ②正例 | 重读同页 ×3 → nudge；×6 → stop；乱序新页 ×12 → stop；非法页计可疑 | |
 | ②反例/豁免 | **合法顺序翻页 1→N（hasMore 链）任意长 → 恒 none**；非 query 调用清零；scope 切换不清累计 | 防误报铁证 |
+| ②反例·多搜索/轮询 | **不同 filterByText 连续各自首页 ×4 → 恒 none**（新 scope 首页中性）；**同页重读但结果变化（轮询）→ 恒 none**；同页重读且结果未变（等待型）→ 计可疑 | 防误报铁证 |
 | ③正例 | A,B,A,B → nudge；8 条全交替 → stop | |
 | ③反例 | AAAA（单调用重复）不触发；ABAB 中插第三个调用中断后重新计数 | |
 | ④正例 | 同 ref 失败 ×2 → nudge；×3 → stop；ref 与 text 打到同一目标不逃逸（按目标归一）；declined 计失败 | |
