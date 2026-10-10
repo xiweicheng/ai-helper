@@ -10,6 +10,7 @@ import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './strea
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { wrapUntrusted, applyUntrustedContract, getContractText } from '../shared/untrusted-content.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 
 // 注册 reactLoop 命名空间翻译
@@ -893,6 +894,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       let response;
       const apiCallStartTime = Date.now();
       
+      // 动态提示注入防御：消息历史中存在不可信包装内容时，向 system 注入安全合约
+      // （幂等 + 会话粘性；无包装内容时零开销返回原引用）
+      currentMessages = applyUntrustedContract(currentMessages, getContractText());
+
       // 过滤消息中的内部字段，确保消息格式符合 API 要求
       let filteredMessages = filterApiMessages(currentMessages);
       
@@ -1612,9 +1617,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             }
             
             // 添加工具结果到消息历史（不附加反思备注，反思在优先级队列处理后统一附加）
+            // 注入防御：外部可写数据包装（UI/日志通道用原文，仅模型消息包装）
             currentMessages.push({
               role: 'tool',
-              content: toolResultStr,
+              content: wrapUntrusted(toolName, toolResultStr, sessionId),
               tool_call_id: toolCallId,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
