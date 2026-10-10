@@ -301,4 +301,26 @@ describe('scrollToPosition - 无进展静态判定（moved:false）', () => {
     const elsewhere = scrollToPosition({ target: 'coordinates', x: 0, y: 500 });
     expect('moved' in elsewhere).toBe(false);
   });
+
+  test('selector：不判定、不产生 moved', () => {
+    stub({ scrollY: 500, scrollTop: 500 });
+    document.body.innerHTML = '<div id="t">x</div>';
+    const el = document.getElementById('t');
+    el.scrollIntoView = () => {}; // jsdom 未实现 scrollIntoView
+    const r = scrollToPosition({ target: 'selector', selector: '#t' });
+    expect(r.success).toBe(true);
+    expect('moved' in r).toBe(false);
+  });
+
+  test('bottom：quirks 模式（scrollingElement=body、documentElement 塌缩）以真实滚动容器判定', () => {
+    // 模拟 quirks 模式：body 脱离文档流时 documentElement.scrollHeight 塌缩为视口高
+    Object.defineProperty(document, 'scrollingElement', { configurable: true, value: document.body });
+    Object.defineProperty(document.body, 'scrollHeight', { configurable: true, value: 5000 });
+    stub({ scrollY: 0, innerHeight: 768, scrollHeight: 657 }); // documentElement 塌缩值
+    const r = scrollToPosition({ target: 'bottom' });
+    // 0+768 < 5000-1 → 未到底（若错读 documentElement 塌缩值 657：0+768 >= 656 会误报 moved:false）
+    expect('moved' in r).toBe(false);
+    delete document.scrollingElement; // 恢复原型 getter
+    delete document.body.scrollHeight; // 恢复原型 getter
+  });
 });

@@ -259,8 +259,9 @@ export function scrollToPosition(options) {
       alreadyAtBoundary = (window.scrollY || 0) <= 0 && (document.documentElement.scrollTop || 0) <= 0;
       window.scrollTo({ top: 0, left: 0, behavior });
     } else if (target === 'bottom') {
-      const scrollHeight = document.documentElement.scrollHeight || 0;
-      alreadyAtBoundary = (window.scrollY || 0) + (window.innerHeight || 0) >= scrollHeight - 1;
+      // 以真实滚动容器为准（quirks 模式为 body；其 documentElement.scrollHeight 会塌缩为视口高）
+      const scrollingEl = document.scrollingElement || document.documentElement;
+      alreadyAtBoundary = (window.scrollY || 0) + (window.innerHeight || 0) >= scrollingEl.scrollHeight - 1;
       window.scrollTo({ top: document.body.scrollHeight, left: 0, behavior });
     } else if (target === 'coordinates') {
       alreadyAtBoundary = Math.abs((window.scrollY || 0) - y) < 1 && Math.abs((window.scrollX || 0) - x) < 1;
