@@ -688,7 +688,7 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 |------|-------------|
 | `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
 | `extract_data` | Extract structured data (table/links/forms/images/metadata, supports cross-tab) |
-| `query_elements` | Extract interactive elements (recommended, returns ref/selector for interact_element etc., supports countOnly mode) |
+| `query_elements` | Extract interactive elements as a tree snapshot (recommended; returns ref ids for interact_element / fill_form, re-query after page changes, supports countOnly mode) |
 | `search_in_page` | Regex search page text (with highlight support) |
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
@@ -696,7 +696,7 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 ### Page Interaction (6)
 | Tool | Description |
 |------|-------------|
-| `interact_element` | Page element interaction (click/hover, supports ref/text/selector positioning, ref preferred) |
+| `interact_element` | Page element interaction (click/hover/type input, supports ref/text/selector positioning, ref preferred) |
 | `drag_drop` | Drag-and-drop operation (⚠️ experimental, may not work on most pages, use click instead) |
 | `scroll_to` | Scroll to position/element/text (with alignment options) |
 | `wait_element` | Wait for element appear/disappear (strict visibility check) |
@@ -706,7 +706,7 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 ### Form & Input (4)
 | Tool | Description |
 |------|-------------|
-| `fill_form` | Batch form filling (supports rich text editor/contenteditable) |
+| `fill_form` | Batch form filling (fields accept ref/selector locating, supports rich text editor/contenteditable) |
 | `keyboard_input` | Keyboard input (bypasses React controlled components) |
 | `file_upload` | File upload (DataTransfer injection) |
 | `select_dropdown` | Dropdown selection (native select + custom components, supports ref positioning) |
