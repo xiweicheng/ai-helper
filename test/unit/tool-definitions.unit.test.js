@@ -132,3 +132,24 @@ describe('debug_page 调试工具约定', () => {
       .forEach(field => expect(props[field], `缺少参数 ${field}`).toBeDefined());
   });
 });
+
+describe('query_elements 分页与叠加层 schema', () => {
+  const qe = BROWSER_TOOLS.find(t => t.id === 'query_elements');
+
+  test('定义存在且含 page 参数', () => {
+    expect(qe).toBeTruthy();
+    expect(qe.function.parameters.properties.page).toBeDefined();
+    expect(qe.function.parameters.properties.page.type).toBe('integer');
+  });
+
+  test('描述覆盖 hasMore / 叠加层 / 稳定编号', () => {
+    expect(qe.function.description).toContain('hasMore');
+    expect(qe.function.description).toContain('page=N');
+    expect(qe.function.description).toContain('Open overlays');
+    expect(qe.function.description).toContain('stable');
+  });
+
+  test('maxResults 描述为每页元素数', () => {
+    expect(qe.function.parameters.properties.maxResults.description).toContain('per page');
+  });
+});

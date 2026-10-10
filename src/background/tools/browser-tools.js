@@ -305,7 +305,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'query_elements',
-      description: 'Query interactive elements and return a tree-formatted snapshot with [ref N] numbers for interact_element/fill_form. Recommended as the primary element locating method. The snapshot is valid only for the current page state — re-query after the page changes. Use filterByText to narrow results when truncated',
+      description: 'Query interactive elements and return a tree-formatted snapshot with [ref N] numbers for interact_element/fill_form. Recommended as the primary element locating method. Open overlays (dialogs/menus/popups) are lifted to the top under [Open overlays]. ref numbers are stable for the same element while the page state is unchanged - re-query after the page changes. Results include hasMore: fetch the next page with page=N; use filterByText when a page is truncated',
       parameters: {
         type: 'object',
         properties: {
@@ -315,8 +315,9 @@ export const BROWSER_TOOLS = [
             type: 'array',
             items: { type: 'string', enum: ['button', 'a', 'input', 'select', 'textarea', 'checkbox', 'radio', 'tab', 'menuitem', 'option', 'link'] }
           },
-          maxResults: { type: 'integer', description: 'Max elements to output (default 100)' },
-          maxChars: { type: 'integer', description: 'Character budget of the snapshot (default 6000)' },
+          page: { type: 'integer', description: '1-based page number (default 1); use with hasMore to fetch the next page' },
+          maxResults: { type: 'integer', description: 'Page size: max elements per page (default 100)' },
+          maxChars: { type: 'integer', description: 'Character budget per page (default 6000)' },
           countOnly: { type: 'boolean' }
         },
         required: []
