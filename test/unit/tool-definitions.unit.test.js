@@ -152,4 +152,16 @@ describe('query_elements 分页与叠加层 schema', () => {
   test('maxResults 描述为每页元素数', () => {
     expect(qe.function.parameters.properties.maxResults.description).toContain('per page');
   });
+
+  test('execution=background（由快照编排器接管）且含 frames 参数', () => {
+    expect(qe.execution).toBe('background');
+    const frames = qe.function.parameters.properties.frames;
+    expect(frames).toBeDefined();
+    expect(frames.enum).toEqual(['auto', 'none']);
+  });
+
+  test('描述覆盖 [frame #N] 区块与全局编号', () => {
+    expect(qe.function.description).toContain('[frame #N]');
+    expect(qe.function.description).toContain('globally');
+  });
 });

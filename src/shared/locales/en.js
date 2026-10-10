@@ -642,7 +642,7 @@ export default {
     select_dropdown: 'Dropdown selection (supports custom components)',
     page_content: 'Get page text or HTML content',
     extract_data: 'Extract structured data (tables/links/images/forms/metadata)',
-    query_elements: 'Query interactive elements, returns tree snapshot with ref numbers (open overlays lifted under [Open overlays]; refs stable for the same element; re-query after page changes; use page to paginate when hasMore)',
+    query_elements: 'Query interactive elements, returns tree snapshot with ref numbers (open overlays lifted under [Open overlays]; visible iframes included as [frame #N] blocks with globally valid refs; refs stable for the same element; re-query after page changes; use page to paginate when hasMore)',
     search_in_page: 'Find text in current page content',
     iframe_content: 'Get content of an iframe in the page',
     scroll_collect: 'Scroll and collect content from infinite scroll/lazy-loaded pages',

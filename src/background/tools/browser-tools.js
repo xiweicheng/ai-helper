@@ -299,13 +299,13 @@ export const BROWSER_TOOLS = [
   {
     id: 'query_elements',
     category: 'content_extraction',
-    execution: 'content_script',
+    execution: 'background',
     parallelizable: true,
     requiresConfirmation: false,
     type: 'function',
     function: {
       name: 'query_elements',
-      description: 'Query interactive elements and return a tree-formatted snapshot with [ref N] numbers for interact_element/fill_form. Recommended as the primary element locating method. Open overlays (dialogs/menus/popups) are lifted to the top under [Open overlays]. ref numbers are stable for the same element while the page state is unchanged - re-query after the page changes. Results include hasMore: fetch the next page with page=N; use filterByText when a page is truncated',
+      description: 'Query interactive elements and return a tree-formatted snapshot with [ref N] numbers for interact_element/fill_form. Recommended as the primary element locating method. Open overlays (dialogs/menus/popups) are lifted to the top under [Open overlays]. Visible iframes are included as [frame #N] blocks and their refs are valid globally; set frames to "none" to query only the top frame. ref numbers are stable for the same element while the page state is unchanged - re-query after the page changes. Results include hasMore: fetch the next page with page=N; use filterByText when a page is truncated',
       parameters: {
         type: 'object',
         properties: {
@@ -318,7 +318,8 @@ export const BROWSER_TOOLS = [
           page: { type: 'integer', description: '1-based page number (default 1); use with hasMore to fetch the next page' },
           maxResults: { type: 'integer', description: 'Page size: max elements per page (default 100)' },
           maxChars: { type: 'integer', description: 'Character budget per page (default 6000)' },
-          countOnly: { type: 'boolean' }
+          countOnly: { type: 'boolean' },
+          frames: { type: 'string', enum: ['auto', 'none'], description: 'auto (default): include visible iframes as [frame #N] blocks; none: only the top frame' }
         },
         required: []
       }

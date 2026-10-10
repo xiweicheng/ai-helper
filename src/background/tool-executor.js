@@ -13,7 +13,7 @@ import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './stat
 import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
-import { shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
+import { executeSnapshotQuery, shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 
 // 注册 toolExecutor 命名空间翻译
@@ -2068,6 +2068,7 @@ const TOOL_HANDLERS = {
   agent_trash: executeAgentTrash,
   manage_agent: executeManageAiAgent,
   exec_log: executeExtractExecutionLog,
+  query_elements: executeSnapshotQuery,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）

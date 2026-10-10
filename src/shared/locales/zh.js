@@ -642,7 +642,7 @@ export default {
     select_dropdown: '下拉框选择（支持自定义组件）',
     page_content: '获取页面文本或 HTML 内容',
     extract_data: '提取结构化数据（表格/链接/图片/表单/元信息）',
-    query_elements: '查询可交互元素，返回树形快照与 ref 编号（打开的弹窗/菜单提升到 [打开层]；同一元素编号稳定，页面变化后需重新查询；hasMore 为真时用 page 翻页）',
+    query_elements: '查询可交互元素，返回树形快照与 ref 编号（打开的弹窗/菜单提升到 [打开层]；可见 iframe 以 [frame #N] 区块纳入，其 ref 全局有效；同一元素编号稳定，页面变化后需重新查询；hasMore 为真时用 page 翻页）',
     search_in_page: '在当前页面中查找文本',
     iframe_content: '获取页面中 iframe 的内容',
     scroll_collect: '滚动并收集内容，适用于无限滚动/懒加载页面',
