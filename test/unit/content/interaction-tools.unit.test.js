@@ -303,7 +303,8 @@ describe('scrollToPosition - 无进展静态判定（moved:false）', () => {
   });
 
   test('selector：不判定、不产生 moved', () => {
-    stub({ scrollY: 500, scrollTop: 500 });
+    // 桩值使 top/bottom/coordinates 三种公式均求值为 true——若重构时误把边界判定推广到 selector 分支，本断言必被击穿
+    stub({ scrollY: 0, scrollTop: 0, innerHeight: 768, scrollHeight: 768 });
     document.body.innerHTML = '<div id="t">x</div>';
     const el = document.getElementById('t');
     el.scrollIntoView = () => {}; // jsdom 未实现 scrollIntoView
@@ -318,9 +319,10 @@ describe('scrollToPosition - 无进展静态判定（moved:false）', () => {
     Object.defineProperty(document.body, 'scrollHeight', { configurable: true, value: 5000 });
     stub({ scrollY: 0, innerHeight: 768, scrollHeight: 657 }); // documentElement 塌缩值
     const r = scrollToPosition({ target: 'bottom' });
+    expect(r.success).toBe(true);
     // 0+768 < 5000-1 → 未到底（若错读 documentElement 塌缩值 657：0+768 >= 656 会误报 moved:false）
     expect('moved' in r).toBe(false);
-    delete document.scrollingElement; // 恢复原型 getter
+    delete document.scrollingElement; // 删除即恢复初始态（jsdom 本无该属性，经 || 兜底行为等价）
     delete document.body.scrollHeight; // 恢复原型 getter
   });
 });
