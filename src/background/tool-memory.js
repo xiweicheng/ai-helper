@@ -5,6 +5,7 @@ import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 import { makeResult } from './tool-helpers.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { calcMemoryValue } from './memory-injection.js';
 
 // 注册 toolMemory 命名空间翻译
 registerTranslations('zh', {
@@ -191,25 +192,6 @@ function generateMemoryId(type) {
   const timestamp = Date.now().toString(36);
   const random = Math.random().toString(36).substring(2, 6);
   return `${prefix}_${timestamp}_${random}`;
-}
-
-/**
- * 计算记忆价值分数（用于淘汰判断）
- */
-function calcMemoryValue(memory, now) {
-  const importance = memory.importance || 5;
-  const accessCount = memory.accessCount || 0;
-  const createdAt = new Date(memory.createdAt).getTime();
-  const ageDays = (now - createdAt) / (1000 * 60 * 60 * 24);
-
-  // 时间衰减因子
-  let decay;
-  if (ageDays <= 7) decay = 1.0;
-  else if (ageDays <= 30) decay = 0.8;
-  else if (ageDays <= 90) decay = 0.5;
-  else decay = 0.2;
-
-  return importance * (1 + Math.log(accessCount + 1)) * decay;
 }
 
 /**

@@ -14,6 +14,7 @@ import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
 import { readMemoryFile } from './tool-memory.js';
+import { selectMemoriesForInjection } from './memory-injection.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
@@ -1475,16 +1476,22 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     readMemoryFile()
       .then((result) => {
         if (!result.success) {
-          sendResponse({ success: false, facts: [], error: result.error });
+          sendResponse({ success: false, facts: [], remainingCount: 0, remainingTags: [], error: result.error });
           return;
         }
-        // 只返回 fact 类型记忆（永久注意事项），按重要性降序排列
-        const facts = (result.data.facts || [])
-          .sort((a, b) => (b.importance || 0) - (a.importance || 0));
-        sendResponse({ success: true, facts });
+        // 分级筛选：Tier1 常驻（importance≥8）+ Tier2 预算内；未注入的转按需召回索引
+        const facts = result.data.facts || [];
+        const summaries = result.data.summaries || [];
+        const selection = selectMemoriesForInjection(facts, summaries);
+        sendResponse({
+          success: true,
+          facts: selection.injected,
+          remainingCount: selection.remainingCount,
+          remainingTags: selection.remainingTags,
+        });
       })
       .catch((err) => {
-        sendResponse({ success: false, facts: [], error: err.message });
+        sendResponse({ success: false, facts: [], remainingCount: 0, remainingTags: [], error: err.message });
       });
     return true;
   }

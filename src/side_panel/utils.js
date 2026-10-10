@@ -29,10 +29,12 @@ registerTranslations('zh', {
     taskPlanningTitle: '## 任务拆解',
     taskPlanningDesc: '复杂任务（多步骤、有依赖）拆解为2-5个子任务，简单任务直接执行。使用 plan_task(taskDescription, subtasks) 提交方案。重要：调用 plan_task 时必须单独调用，同一轮响应中不要同时返回其他工具调用；其他想执行的动作请编入子任务描述，由子任务执行。',
     memoryTitle: '## 记忆',
-    memoryRules: '- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)\n- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**\n- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit\n- manage: subAction=review审查价值，compact清理低价值\n- 存长期价值信息，加tags和importance(1-10)便于检索',
+    memoryRules: '- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)\n- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**\n- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit\n- manage: subAction=review审查价值，compact清理低价值\n- 存长期价值信息，加tags和importance(1-10)便于检索\n- importance语义：8-10=跨对话高频相关（环境约束/技术偏好/工作习惯），会常驻系统提示词；5-7=窄场景重要信息（项目详情/配置记录），按需召回；1-4=低价值\n- 不存凭据原文（密码/授权码/密钥），只存位置指针（如"授权码存于 xxx/.env"）',
     importanceLabel: '重要性',
     tagsLabel: '标签',
     permanentNotesTitle: '## 永久注意事项',
+    permanentNotesMore: '> 另有 {count} 条历史记忆（涵盖：{topics} 等主题）。回答涉及本机环境、已装工具/技能、历史项目、个人偏好或过往记录的问题前，先调用 agent_memory 检索（action=recall）再作答；不确定时宁可多召回一次。',
+    permanentNotesMoreNoTopics: '> 另有 {count} 条历史记忆。回答涉及本机环境、已装工具/技能、历史项目、个人偏好或过往记录的问题前，先调用 agent_memory 检索（action=recall）再作答；不确定时宁可多召回一次。',
     currentEnvTitle: '## 当前环境',
     currentTimeLabel: '当前时间：',
     browserLabel: '浏览器：Chrome 扩展 (Side Panel)',
@@ -69,10 +71,12 @@ registerTranslations('en', {
     taskPlanningTitle: '## Task Decomposition',
     taskPlanningDesc: 'Break down complex tasks (multi-step, with dependencies) into 2-5 subtasks; execute simple tasks directly. Use plan_task(taskDescription, subtasks) to submit the plan. Important: when calling plan_task, call it alone — do not return other tool calls in the same turn; put any other intended actions into the subtask descriptions for the subtasks to execute.',
     memoryTitle: '## Memory',
-    memoryRules: '- Unified tool agent_memory, distinguished by action: store (add/update/delete) / recall (retrieve) / manage (review/cleanup)\n- store: subAction=add requires type+content, update requires memoryId+type, **delete only requires memoryId (no type)**. **Always recall first to find the id before deleting**\n- recall: use keywords for query (e.g. "exam"), not full sentences. Optional memoryType and limit\n- manage: subAction=review to assess value, compact to clean up low-value entries\n- Store long-term valuable information; add tags and importance (1-10) for easier retrieval',
+    memoryRules: '- Unified tool agent_memory, distinguished by action: store (add/update/delete) / recall (retrieve) / manage (review/cleanup)\n- store: subAction=add requires type+content, update requires memoryId+type, **delete only requires memoryId (no type)**. **Always recall first to find the id before deleting**\n- recall: use keywords for query (e.g. "exam"), not full sentences. Optional memoryType and limit\n- manage: subAction=review to assess value, compact to clean up low-value entries\n- Store long-term valuable information; add tags and importance (1-10) for easier retrieval\n- importance semantics: 8-10 = relevant across most conversations (environment constraints / tech preferences / work habits), always injected into the system prompt; 5-7 = important but narrow-scope info (project details / config records), retrieved on demand; 1-4 = low value\n- Never store raw credentials (passwords / auth codes / keys); store only a location pointer (e.g. "auth code lives in xxx/.env")',
     importanceLabel: 'Importance',
     tagsLabel: 'Tags',
     permanentNotesTitle: '## Permanent Notes',
+    permanentNotesMore: '> There are {count} more historical memories (covering: {topics}, etc.). Before answering questions about the local environment, installed tools/skills, past projects, personal preferences, or prior records, retrieve them first via agent_memory (action=recall); when unsure, recall once more rather than skip.',
+    permanentNotesMoreNoTopics: '> There are {count} more historical memories. Before answering questions about the local environment, installed tools/skills, past projects, personal preferences, or prior records, retrieve them first via agent_memory (action=recall); when unsure, recall once more rather than skip.',
     currentEnvTitle: '## Current Environment',
     currentTimeLabel: 'Current time: ',
     browserLabel: 'Browser: Chrome Extension (Side Panel)',
@@ -748,6 +752,8 @@ ${t('util.taskPlanningDesc')}` : '';
   // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
   const memoryTools = ['agent_memory'];
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
+  // 按需召回能力：记忆工具可用时才能引导 recall，否则提示会指向不存在的工具
+  const canRecallMemory = state.useTools && hasAnyMemoryTool;
   const memoryRules = (state.useTools && state.agentPlatform?.connected && hasAnyMemoryTool) ? `
 
 ${t('util.memoryTitle')}
@@ -755,19 +761,34 @@ ${t('util.memoryRules')}` : '';
 
   // 获取永久记忆（注意事项），注入系统提示词
   // 仅当本地 Agent 已连接时才获取（永久记忆存储在 Agent 本地文件系统中）
+  // 分级注入：后台按 Tier1（importance≥8 常驻）+ Tier2（预算内）筛选，
+  // 未注入的记忆仅保留一行按需召回索引（受 canRecallMemory 门控）
   let permanentNotesSection = '';
   if (state.agentPlatform?.connected) {
     try {
       const notes = await fetchPermanentNotes();
-      if (notes && notes.length > 0) {
-        const notesText = notes
-          .map((n, i) => `${i + 1}. [${t('util.importanceLabel')}: ${n.importance || 5}] ${n.content}${n.tags && n.tags.length ? ` (${t('util.tagsLabel')}: ${n.tags.join(', ')})` : ''}`)
-          .join('\n');
-        permanentNotesSection = `
+      const facts = notes.facts || [];
+      const remainingCount = notes.remainingCount || 0;
+      const hasFacts = facts.length > 0;
+      const hasRecallHint = remainingCount > 0 && canRecallMemory;
+      if (hasFacts || hasRecallHint) {
+        let section = `
 
 ${t('util.permanentNotesTitle')}
-${notesText}
 `;
+        if (hasFacts) {
+          section += facts
+            .map((n, i) => `${i + 1}. [${t('util.importanceLabel')}: ${n.importance || 5}] ${n.content}${n.tags && n.tags.length ? ` (${t('util.tagsLabel')}: ${n.tags.join(', ')})` : ''}`)
+            .join('\n') + '\n';
+        }
+        if (hasRecallHint) {
+          const topics = notes.remainingTags || [];
+          const topicsText = topics.join(getLanguage() === 'zh' ? '、' : ', ');
+          section += '\n' + (topics.length > 0
+            ? t('util.permanentNotesMore', { count: remainingCount, topics: topicsText })
+            : t('util.permanentNotesMoreNoTopics', { count: remainingCount })) + '\n';
+        }
+        permanentNotesSection = section;
       }
     } catch { /* 获取失败不影响主流程 */ }
   }
@@ -877,20 +898,26 @@ async function fetchAgentSkillPrompts(agentToolIds, agentSkillIds) {
 
 /**
  * 从后台获取永久记忆（注意事项），用于注入系统提示词
- * @returns {Promise<Array<{id, content, tags, importance}>>}
+ * 后台已完成分级筛选：facts 为选中注入项，remainingCount/remainingTags 为按需召回索引
+ * @returns {Promise<{facts: Array<{id, content, tags, importance}>, remainingCount: number, remainingTags: string[]}>}
  */
 async function fetchPermanentNotes() {
   return new Promise((resolve) => {
+    const empty = { facts: [], remainingCount: 0, remainingTags: [] };
     try {
       chrome.runtime.sendMessage({ type: 'GET_PERMANENT_NOTES' }, (response) => {
         if (chrome.runtime.lastError || !response?.success) {
-          resolve([]);
+          resolve(empty);
           return;
         }
-        resolve(response.facts || []);
+        resolve({
+          facts: response.facts || [],
+          remainingCount: response.remainingCount || 0,
+          remainingTags: response.remainingTags || [],
+        });
       });
     } catch {
-      resolve([]);
+      resolve(empty);
     }
   });
 }
