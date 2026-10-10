@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>Iframe Visible Page</title>
+</head>
+<body>
+  <h1>Top page</h1>
+  <button id="top-btn">Top Button</button>
+  <iframe id="child-frame" name="child-frame" title="Child" width="320" height="200"
+    srcdoc="<html><head><title>Child Doc</title></head><body><button id='child-btn'>Child Button</button><input id='child-input' placeholder='child-input'></body></html>"></iframe>
+  <iframe id="hidden-frame" name="hidden-frame" title="Hidden" style="display:none"
+    srcdoc="<button id='hidden-btn'>Hidden Button</button>"></iframe>
+  <iframe id="zero-frame" name="zero-frame" title="Zero" width="0" height="0"
+    srcdoc="<button id='zero-btn'>Zero Button</button>"></iframe>
+  <button id="bottom-btn">Bottom Button</button>
+</body>
+</html>

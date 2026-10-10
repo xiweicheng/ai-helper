@@ -17,7 +17,8 @@ import * as ShadowDomUtils from './src/content/shadow-dom-utils.js';
 import * as PageInteraction from './src/content/page-interaction.js';
 import * as PageExtract from './src/content/page-extract.js';
 import * as InteractionTools from './src/content/interaction-tools.js';
-window.__tools = Object.assign({}, PageUtils, ShadowDomUtils, PageInteraction, PageExtract, InteractionTools);
+import * as Renderer from './src/shared/page-snapshot-renderer.js';
+window.__tools = Object.assign({}, PageUtils, ShadowDomUtils, PageInteraction, PageExtract, InteractionTools, Renderer);
 `;
   const result = await build({
     stdin: { contents: entry, resolveDir: ROOT },
@@ -34,4 +35,11 @@ window.__tools = Object.assign({}, PageUtils, ShadowDomUtils, PageInteraction, P
 // 在已注入 bundle 的 page 上调用工具函数，返回其结果
 export async function callTool(page, fnName, ...args) {
   return page.evaluate(({ fn, a }) => window.__tools[fn](...a), { fn: fnName, a: args });
+}
+
+// 在指定 iframe（按 name 属性匹配）的上下文中调用工具函数（addInitScript 对子帧同样注入）
+export async function callToolInFrame(page, frameName, fnName, ...args) {
+  const frame = page.frames().find(f => f.name() === frameName);
+  if (!frame) throw new Error(`frame not found: ${frameName}`);
+  return frame.evaluate(({ fn, a }) => window.__tools[fn](...a), { fn: fnName, a: args });
 }
