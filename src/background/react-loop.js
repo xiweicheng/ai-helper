@@ -1372,6 +1372,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         );
         logger.debug('[Background] this roundtool callinput fingerprint:', currentInputFingerprint.substring(0, 200));
         
+        // 快照本轮 tool_calls 声明顺序（id→序号）。trimMessages 的兜底权重裁剪在删除孤立
+        // tool 消息后会原地 `delete assistant.tool_calls`，而 rest 数组元素与 assistantMessage
+        // 是同一引用；若到轮末重排时再实时读 assistantMessage.tool_calls 会拿到 undefined 崩溃。
+        // 此处在可能被裁剪前先把声明顺序固化，供重排使用
+        const roundToolCallOrder = assistantMessage.tool_calls.map((tc, i) => [tc.id, i]);
         currentMessages.push(assistantMessage);
         await trimMessages();
         
@@ -1939,9 +1944,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 边界快照已失效，此时新消息按完成顺序追加在尾部且配对由压缩逻辑维护，跳过重排以保证安全
         if (msgCountBefore <= currentMessages.length) {
           const newMessages = currentMessages.splice(msgCountBefore);
-          const toolCallOrder = new Map(
-            assistantMessage.tool_calls.map((tc, i) => [tc.id, i])
-          );
+          // 使用 trim 前固化的声明顺序快照，避免 assistantMessage.tool_calls 已被兜底裁剪删除
+          const toolCallOrder = new Map(roundToolCallOrder);
           const toolMessages = newMessages.filter(m => m.role === 'tool');
           const nonToolMessages = newMessages.filter(m => m.role !== 'tool');
           toolMessages.sort((a, b) => {

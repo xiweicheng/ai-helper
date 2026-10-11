@@ -396,6 +396,16 @@ describe('P1-8 修复回归：轮内重排后的 assistant(tool_calls)+tool 配�
     expect(REACT_LOOP_SRC).not.toMatch(/^\s*currentMessages = \[\.\.\.systemMsg, \.\.\.rest\];/m);
     // msgCountBefore 收缩守卫
     expect(REACT_LOOP_SRC).toMatch(/if \(msgCountBefore <= currentMessages\.length\)/);
+    // 极端小窗口回归：trimMessages 兜底权重裁剪会原地 delete 共享引用的 assistant.tool_calls，
+    // 轮末重排必须读 trim 前固化的 roundToolCallOrder 快照，而非再次实时读 assistantMessage.tool_calls.map
+    expect(REACT_LOOP_SRC).toMatch(/const roundToolCallOrder = assistantMessage\.tool_calls\.map\(\(tc, i\) => \[tc\.id, i\]\);/);
+    expect(REACT_LOOP_SRC).toMatch(/new Map\(roundToolCallOrder\)/);
+    // 快照声明必须早于 push+trimMessages，重排处不得再出现 assistantMessage.tool_calls.map((tc, i) => [tc.id, i])
+    const snapIdx = REACT_LOOP_SRC.indexOf('const roundToolCallOrder = assistantMessage.tool_calls.map');
+    const trimIdx = REACT_LOOP_SRC.indexOf('await trimMessages();', REACT_LOOP_SRC.indexOf('currentMessages.push(assistantMessage);'));
+    expect(snapIdx).toBeGreaterThan(-1);
+    expect(snapIdx).toBeLessThan(trimIdx);
+    expect(REACT_LOOP_SRC).not.toMatch(/new Map\(\s*assistantMessage\.tool_calls\.map\(\(tc, i\) => \[tc\.id, i\]\)/);
     // 锚点/收敛注入位于压力裁剪之后
     const clipIdx = REACT_LOOP_SRC.indexOf('const trimmed = trimMessagesByBudget(currentMessages');
     const anchorIdx = REACT_LOOP_SRC.indexOf('const anchorMsg = buildPlanAnchorMessage();');
