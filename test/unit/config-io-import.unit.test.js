@@ -194,3 +194,35 @@ describe('confirmImport（厂商配置合并导入）', () => {
     expect(store.activeProfileId).toBe('x');
   });
 });
+
+describe('confirmImport（剥离已下线的工具级反思配置）', () => {
+  test('导入含旧 reflectionConfig.toolReflection 的文件时，剥离死字段并保留其余反思配置', async () => {
+    mockLocal();
+    setupDom({
+      version: 1,
+      config: {
+        modelProfiles: localProfiles.map(p => ({ ...p })),
+        activeProfileId: 'b',
+        apiBase: 'https://b.example.com',
+        apiKey: 'sk-b',
+        modelName: 'm-b',
+        customModels: [],
+        reflectionConfig: {
+          enabled: true,
+          postReflection: { enabled: true, maxRounds: 1 },
+          toolReflection: { enabled: true, maxPerIteration: 2 },
+          subtaskReflection: { enabled: false },
+        },
+      },
+    }, { replace: true });
+
+    await confirmImport();
+
+    expect(store.reflectionConfig).toBeDefined();
+    expect('toolReflection' in store.reflectionConfig).toBe(false);
+    // 保留其余反思配置不受影响
+    expect(store.reflectionConfig.postReflection.enabled).toBe(true);
+    expect(store.reflectionConfig.subtaskReflection.enabled).toBe(false);
+    expect(store.reflectionConfig.enabled).toBe(true);
+  });
+});

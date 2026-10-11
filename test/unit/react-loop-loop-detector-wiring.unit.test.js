@@ -41,9 +41,11 @@ describe('循环检测器接线守卫', () => {
     expect(count).toBeGreaterThanOrEqual(5);
   });
 
-  test('轮末 flush 共 3 处（2 个 plan_task 分支 + 汇合点）', () => {
+  test('轮末 flush 共 2 处（单一汇合点 + plan_task 分支）', () => {
+    // P1-8 轮内部分并行后，旧“全并行/顺序”两分支合并为单一分组汇合点，
+    // flush 仍覆盖所有轮末出口：planTaskHandled 分支首行 + 普通汇合点
     const count = (SRC.match(/flushLoopRecords\(\)/g) || []).length;
-    expect(count).toBeGreaterThanOrEqual(3);
+    expect(count).toBeGreaterThanOrEqual(2);
   });
 
   test('旧指纹逻辑已完全移除（无双检测器并行）', () => {
@@ -56,8 +58,10 @@ describe('循环检测器接线守卫', () => {
     expect(SRC).toMatch(/createErrorWithLog\(t\(`reactLoop\.\$\{msgKey\}/);
   });
 
-  test('提醒注入为唯一 System Notice 注入点（role: user）', () => {
-    const count = (SRC.match(/\[System Notice\]/g) || []).length;
+  test('提醒注入为唯一 warnings 拼接 System Notice 注入点（role: user）', () => {
+    // 检测器软提醒注入点必须存在且唯一（按 warnings.join 形态识别）；
+    // 另有任务进度锚点（buildPlanAnchorMessage）也使用 [System Notice] 前缀，不计入本守卫
+    const count = (SRC.match(/\$\{warnings\.join/g) || []).length;
     expect(count).toBe(1);
     expect(SRC).toMatch(/role: 'user',\s*\n\s*content: `\[System Notice\] \$\{warnings\.join/);
   });
@@ -91,9 +95,10 @@ describe('循环检测器接线守卫', () => {
     );
   });
 
-  test('flush 位置守卫：2 个 planTaskHandled 分支首行即 flush（防移出分支）', () => {
+  test('flush 位置守卫：planTaskHandled 分支首行即 flush（防移出分支）', () => {
+    // P1-8 后单一汇合点：分组循环结束后统一处理 planTaskHandled，分支首行 flush 仍在
     const count = (SRC.match(/if \(planTaskHandled\) \{\n\s*flushLoopRecords\(\);/g) || []).length;
-    expect(count).toBe(2);
+    expect(count).toBe(1);
   });
 
   test('锚点邻接守卫：push 紧随 currentMessages.push 块、在 trimMessages 之前（防挪位成死代码）', () => {

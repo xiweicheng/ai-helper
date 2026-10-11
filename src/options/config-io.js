@@ -44,6 +44,21 @@ const EXPORT_KEYS = [
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
 const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
 
+/**
+ * 剥离已下线的反思配置字段（工具级反思 toolReflection 已移除）。
+ * 旧用户的 storage 或旧导出文件可能仍携带 reflectionConfig.toolReflection，
+ * 导出/导入时统一清理，避免死配置被长期携带与回灌。
+ * @param {Object} config - 含 reflectionConfig 的配置对象（就地安全：命中时替换为新引用）
+ */
+function stripRetiredReflectionKeys(config) {
+  const rc = config && config.reflectionConfig;
+  if (rc && typeof rc === 'object' && 'toolReflection' in rc) {
+    const clean = { ...rc };
+    delete clean.toolReflection;
+    config.reflectionConfig = clean;
+  }
+}
+
 async function collectConfig(includeSecrets) {
   const allKeys = includeSecrets ? [...EXPORT_KEYS, ...SECRET_KEYS] : EXPORT_KEYS;
   
@@ -69,6 +84,8 @@ async function collectConfig(includeSecrets) {
       if (!includeSecrets && Array.isArray(config.modelProfiles)) {
         config.modelProfiles = stripProfileSecrets(config.modelProfiles);
       }
+      // 剥离已下线的工具级反思配置，避免导出文件携带死字段
+      stripRetiredReflectionKeys(config);
       resolve(config);
     });
   });
@@ -242,6 +259,8 @@ export async function confirmImport() {
   try {
     const importData = JSON.parse(importDataStr);
     const config = importData.config || importData;
+    // 清理旧导出文件中可能仍存在的已下线反思配置（工具级反思），避免回灌进 storage
+    stripRetiredReflectionKeys(config);
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';
 
     // 合并导入 + 新格式文件：厂商配置按 ID 对齐合并

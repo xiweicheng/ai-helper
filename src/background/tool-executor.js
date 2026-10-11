@@ -2822,10 +2822,27 @@ export async function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 /**
+ * 解析 Retry-After 响应头（支持秒数与 HTTP-date 两种格式），返回毫秒数或 null
+ * （导出供单元测试验证两种格式与边界行为）
+ */
+export function parseRetryAfterMs(value) {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) {
+    // 负数显式拒绝（Date.parse 会把 '-5' 当成年份解析，不能落入 date 分支）
+    return seconds >= 0 ? seconds * 1000 : null;
+  }
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+/**
  * 带重试的 fetch 请求
  * 可重试的错误：网络错误、超时、5xx、429（Rate Limit）
  * 不重试的错误：4xx（除429外）、取消
- * 使用指数退避策略：baseDelay * 2^attempt
+ * 退避策略：baseDelay * 2^attempt 叠加 ±20% 随机抖动（防并发重试惊群）；
+ * 服务端返回 Retry-After 时作为延迟下限（封顶 60s，避免长时间挂起）
  *
  * @param {string} url
  * @param {Object} options - fetch options
@@ -2838,6 +2855,16 @@ export async function fetchWithTimeout(url, options, timeoutMs) {
 export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, baseDelay = 1000, onRetry = null) {
   let lastError;
 
+  // 指数退避 + ±20% jitter；Retry-After（已解析毫秒）作为下限，封顶 60s
+  const computeDelay = (attempt, retryAfterMs = null) => {
+    const backoff = baseDelay * Math.pow(2, attempt);
+    const jittered = Math.round(backoff * (0.8 + Math.random() * 0.4));
+    if (retryAfterMs != null) {
+      return Math.max(jittered, Math.min(retryAfterMs, 60000));
+    }
+    return jittered;
+  };
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetchWithTimeout(url, options, timeoutMs);
@@ -2846,7 +2873,11 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
       if ((response.status >= 500 || response.status === 429) && attempt < maxRetries) {
         const errorText = await response.text().catch(() => '');
         lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
-        const delay = baseDelay * Math.pow(2, attempt);
+        // 429 尊重服务端 Retry-After 头（秒/HTTP-date），与退避 jitter 取大
+        const retryAfterMs = response.status === 429
+          ? parseRetryAfterMs(response.headers?.get?.('Retry-After'))
+          : null;
+        const delay = computeDelay(attempt, retryAfterMs);
         console.log(`[Background] API returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
         if (onRetry) onRetry(attempt + 1, lastError, delay);
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -2864,8 +2895,8 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
         break;
       }
 
-      const delay = baseDelay * Math.pow(2, attempt);
-      console.log(`[Background] API call failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries}):`, error.message);
+      const delay = computeDelay(attempt);
+      console.log('[Background] API call failed, retrying in ' + delay + 'ms (attempt ' + (attempt + 1) + '/' + maxRetries + '):', error.message);
       if (onRetry) onRetry(attempt + 1, error, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -3387,9 +3418,32 @@ export function executeManageCookies(args, toolCallId) {
  * 任务规划工具执行函数
  */
 export function executePlanTask(args, toolCallId) {
-  const { taskDescription, subtasks = [], isComplex = true, strategy = 'sequential' } = args;
+  const {
+    taskDescription,
+    subtasks = [],
+    isComplex = true,
+    strategy = 'sequential',
+    failureStrategy = 'continue',
+    maxRetries = 1,
+    maxParallel = 3
+  } = args;
   
   console.log('[Background] exec task planningtool:', JSON.stringify(args));
+  
+  // 验证执行策略：与 executeSubtasks 实现的策略集保持一致（sequential/parallel/dependency），
+  // 未知策略不再静默降级，直接返回明确错误让模型重选
+  const VALID_STRATEGIES = ['sequential', 'parallel', 'dependency'];
+  if (!VALID_STRATEGIES.includes(strategy)) {
+    return Promise.resolve({
+      success: false,
+      error: `Unknown execution strategy "${strategy}". Valid values: ${VALID_STRATEGIES.join(' / ')}. Use "dependency" to schedule subtasks by their dependencies ("conditional" is not supported; express conditional intent in the subtask descriptions).`,
+      tool_call_id: toolCallId
+    });
+  }
+  const VALID_FAILURE_STRATEGIES = ['stop', 'continue', 'skip'];
+  const effectiveFailureStrategy = VALID_FAILURE_STRATEGIES.includes(failureStrategy) ? failureStrategy : 'continue';
+  const effectiveMaxRetries = Math.max(0, Math.min(3, parseInt(maxRetries, 10) || 0));
+  const effectiveMaxParallel = Math.max(1, Math.min(8, parseInt(maxParallel, 10) || 3));
   
   // 验证必要参数
   if (!taskDescription) {
@@ -3423,6 +3477,9 @@ export function executePlanTask(args, toolCallId) {
     taskDescription: taskDescription,
     isComplex: isComplex,
     strategy: strategy,
+    failureStrategy: effectiveFailureStrategy,
+    maxRetries: effectiveMaxRetries,
+    maxParallel: effectiveMaxParallel,
     totalSubtasks: subtasks.length,
     estimatedTotalSteps: subtasks.reduce((sum, st) => sum + (st.estimatedSteps || 1), 0),
     subtasks: subtasks.map(st => ({
@@ -3442,7 +3499,7 @@ export function executePlanTask(args, toolCallId) {
     let result = `📋 任务规划完成\n\n`;
     result += `**原始任务**: ${taskDescription}\n\n`;
     result += `**任务复杂度**: ${isComplex ? '复杂任务（已拆解）' : '简单任务'}\n`;
-    result += `**执行策略**: ${strategy === 'sequential' ? '顺序执行' : strategy === 'parallel' ? '并行执行' : '条件执行'}\n`;
+    result += `**执行策略**: ${({ sequential: '顺序执行', parallel: '并行执行', dependency: '依赖拓扑执行' })[strategy] || strategy}\n`;
     result += `**子任务数量**: ${subtasks.length}\n\n`;
     result += `**子任务列表**:\n`;
     

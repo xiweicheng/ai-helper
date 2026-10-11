@@ -435,14 +435,6 @@
             <span class="reflection-toggle-slider"></span>
           </label>
         </div>
-        <div class="reflection-toggle-row" id="toolReflectionSection">
-          <span class="reflection-row-icon">🔧</span>
-          <span class="reflection-row-text"><span data-i18n="reflection.toolReflection">工具级反思</span><span class="reflection-row-hint" data-i18n="reflection.toolReflectionHint">（工具执行后评估结果）</span></span>
-          <label class="reflection-toggle-switch">
-            <input type="checkbox" id="toolReflectionEnabled" checked>
-            <span class="reflection-toggle-slider"></span>
-          </label>
-        </div>
         <div class="reflection-toggle-row" id="subtaskReflectionSection">
           <span class="reflection-row-icon">📋</span>
           <span class="reflection-row-text"><span data-i18n="reflection.subtaskReflection">子任务反思</span><span class="reflection-row-hint" data-i18n="reflection.subtaskReflectionHint">（高级功能，默认关闭）</span></span>
@@ -457,7 +449,6 @@
         <h3 data-i18n="reflection.configGuide">💡 反思配置说明</h3>
         <p>
           <strong data-i18n="reflection.guidePostReflection">后置反思</strong><span data-i18n="reflection.guidePostReflectionDesc">：在推理循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。</span><br>
-          <strong data-i18n="reflection.guideToolReflection">工具级反思</strong><span data-i18n="reflection.guideToolReflectionDesc">：在每次工具调用后，AI 会自动检查执行结果是否符合预期，遇到错误或异常时调整策略。</span><br>
           <strong data-i18n="reflection.guideSubtaskReflection">子任务反思</strong><span data-i18n="reflection.guideSubtaskReflectionDesc">：对于复杂任务拆解后的子任务进行单独评估，默认关闭（高级功能）。</span><br>
           <span data-i18n="reflection.guideTip">• 启用反思会增加 API 调用次数，建议根据需求权衡</span>
         </p>

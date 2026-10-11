@@ -1,10 +1,9 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
-import { getTools, executeTool, fetchWithTimeout, fetchWithRetry, getSessionForcedMcpServers, getMcpToolIdsForServers } from './tool-executor.js';
+import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
-import { preselectTools } from './tool-preselector.js';
-import { estimateTokens, estimateMessagesTokens, estimateToolsTokens, truncateByTokens, truncateContentSmart, getMessageBudget, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
+import { estimateTokens, estimateMessagesTokens, truncateByTokens, truncateContentSmart, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
@@ -13,6 +12,7 @@ import { t, registerTranslations } from '../shared/i18n.js';
 import { wrapUntrusted, applyUntrustedContract, getContractText } from '../shared/untrusted-content.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { createLoopDetector } from './loop-detector.js';
+import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -28,7 +28,6 @@ registerTranslations('zh', {
     subtaskRolledBack: '子任务 {name} (已回滚)',
     subtaskRollbackFailed: '子任务 {name} (回滚失败)',
     subtaskCount: '已拆解为 {count} 个子任务',
-    toolReflection: '工具反思: {name}',
     subtaskNode: '子任务 {index}: {name}',
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
@@ -45,6 +44,7 @@ registerTranslations('zh', {
     loopStoppedFailureScope: '检测到同一操作连续失败（{scope}），任务已暂停。可补充指导后恢复任务。',
     loopStoppedNoProgressScroll: '检测到无进展滚动（{key} 方向已到边界仍反复滚动），任务已暂停。可补充指导后恢复任务。',
     loopStoppedBudget: '检测到多轮无进展操作（累计提醒 {nudges} 次），任务已暂停。可补充指导后恢复任务。',
+    unknownStrategy: '未知的执行策略 "{strategy}"，有效值：sequential / parallel / dependency。请修正策略后重新调用 plan_task。',
     maxIterationsExceeded: 'ReAct 循环超过最大迭代次数 ({maxIterations})',
     toolTimeout: '工具执行超时 ({timeout}ms): {tool}',
     toolAborted: '工具执行已被用户终止: {tool}',
@@ -66,7 +66,6 @@ registerTranslations('en', {
     subtaskRolledBack: 'Subtask {name} (rolled back)',
     subtaskRollbackFailed: 'Subtask {name} (rollback failed)',
     subtaskCount: 'Broken down into {count} subtasks',
-    toolReflection: 'Tool Reflection: {name}',
     subtaskNode: 'Subtask {index}: {name}',
     subtaskCompleted: 'Subtask {index}: {name} (completed)',
     subtaskFailed: 'Subtask {index}: {name} (failed)',
@@ -82,6 +81,7 @@ registerTranslations('en', {
     loopStoppedFailureScope: 'The same operation failed repeatedly ({scope}). Task paused; you can add guidance before resuming.',
     loopStoppedNoProgressScroll: 'No-progress scrolling detected ({key}: already at boundary). Task paused; you can add guidance before resuming.',
     loopStoppedBudget: 'Multiple no-progress patterns detected ({nudges} warnings). Task paused; you can add guidance before resuming.',
+    unknownStrategy: 'Unknown execution strategy "{strategy}". Valid values: sequential / parallel / dependency. Please fix the strategy and call plan_task again.',
     maxIterationsExceeded: 'ReAct loop exceeded maximum iterations ({maxIterations})',
     toolTimeout: 'Tool execution timed out ({timeout}ms): {tool}',
     toolAborted: 'Tool execution was aborted by user: {tool}',
@@ -89,13 +89,13 @@ registerTranslations('en', {
     streamIdleTimeout: 'Stream idle timeout (no data received for {seconds}s), automatically interrupted. This may be caused by an unstable network or provider, please retry.',
   },
 });
-import { summarizeRound } from './context-summarizer.js';
+import { summarizeRoundsBatch, extractAllRounds } from './context-summarizer.js';
 // 反思机制相关函数已拆分到 react-reflection.js
 import {
   MAX_REFLECTION_ROUNDS,
-  shouldReflect, getToolReflectionPriority, shouldTriggerToolReflection,
+  shouldReflect,
   buildReflectionPrompt, parseReflectionResult,
-  reflectOnResult, reflectOnToolResult, reflectOnSubtask
+  reflectOnResult, reflectOnSubtask
 } from './react-reflection.js';
 
 // 活跃的 ReAct 循环 sessionId 集合，用于检测 SW 静默重启
@@ -462,7 +462,8 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     null,  // onLogUpdate
     checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
     checkpoint.executionLog || [],
-    resumeCallId || checkpoint.callId || null  // 优先使用新的 resumeCallId
+    resumeCallId || checkpoint.callId || null,  // 优先使用新的 resumeCallId
+    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null }  // 回灌计划锚点，恢复后进度不丢
   );
 
   // 恢复成功后清理 checkpoint
@@ -474,7 +475,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
  * ReAct 推理循环
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
-export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null) {
+export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null) {
   // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
   if (sessionId) activeReactLoops.add(sessionId);
 
@@ -566,12 +567,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   };
 
   /**
-   * 工具结果截断：单条工具结果最大 token 数
-   * 避免 page_content / fetch_url 等大结果撑爆上下文
-   */
-  const MAX_TOOL_RESULT_TOKENS = 6000;
-
-  /**
    * 执行日志 observation 最大字符数
    * 注意：日志中的 observation 会被产物提取（artifacts-manager）用于解析
    * find / ls -R 等列表输出中动态生成的文件路径，截断过小会导致产物缺失。
@@ -581,19 +576,53 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const MAX_LOG_OBSERVATION_CHARS = 50000;
 
   /**
-   * 基于 Token 总量的消息裁剪，替代原来的条数限制
+   * 大工具结果卸载（offloading，Manus 文件系统记忆实践）：
+   * Agent 已配对时把全文写入 workspace 的 tool-results/{id}.txt，
+   * 对话内仅保留前 2K token 预览 + 完整内容路径，模型可用 agent_file read 回读；
+   * 未配对或写入失败时返回 null，调用方回退普通截断。
+   * @param {string} fullContentStr - 未截断的完整工具结果
+   * @param {string} toolName - 工具名（路径命名用）
+   * @param {string} toolCallId - 工具调用 ID（唯一文件名）
+   * @returns {Promise<string|null>} 卸载后的替换文本，失败返回 null
+   */
+  const offloadLargeToolResult = async (fullContentStr, toolName, toolCallId) => {
+    try {
+      if (!(await isAgentPaired())) return null;
+      const safeToolName = String(toolName || 'tool').replace(/[^a-zA-Z0-9_-]/g, '_');
+      // toolCallId 来自模型响应，可能含 / 或 ../，须同样清洗，防止越出 tool-results/ 目录写入 workspace
+      const safeCallId = String(toolCallId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filePath = `tool-results/${safeToolName}_${safeCallId}.txt`;
+      const writeResult = await writeAgentFile(filePath, fullContentStr);
+      if (!writeResult?.success) {
+        logger.debug(`[Background] tool result offload write failed: ${writeResult?.error || 'unknown'}`);
+        return null;
+      }
+      const preview = truncateByTokens(fullContentStr, 2000);
+      logger.debug(`[Background] tool result offloaded to agent workspace: ${filePath}`);
+      return `[Tool result too large, offloaded to agent workspace file: ${filePath} (${estimateTokens(fullContentStr)} tokens total).\nPreview (first ~2000 tokens):\n${preview}\n\nUse agent_file action=read with path "${filePath}" to load the full content when needed.]`;
+    } catch (err) {
+      logger.debug('[Background] tool result offload exception:', err.message);
+      return null;
+    }
+  };
+
+  /**
+   * 基于 Token 阈值触发的批量压缩 + 兜底裁剪
    * 保留 system message，确保 tool_calls/tool 配对
    *
    * 策略（分层递进）：
-   *   1. 摘要模式：Token 超标时，将最旧的完整轮次通过 LLM 压缩为一句话摘要，
-   *      注入回上下文（role: 'user'），保留历史信息而非直接丢弃。
-   *   2. 兜底裁剪：摘要失败或仍超标时，使用权重裁剪（反思 > 工具结果 > 普通消息）直接删除。
+   *   1. 阈值触发：Token 超过预算 80% 即开始压缩，避免逼近上限才被动处理（400 风险 + 性能拖尾）。
+   *   2. 批量压缩：一次 LLM 调用把所有待压旧轮次（保留最近 2 轮原文）压缩为结构化摘要
+   *      （目标/已完成/关键事实/未决问题），替代旧版逐轮串行摘要（最多 3 次调用）。
+   *   3. 兜底裁剪：压缩失败或仍超标时，使用权重裁剪（反思 > 工具结果 > 普通消息）直接删除。
    */
   const trimMessages = async () => {
     const budget = getReactTokenBudget(model || 'default');
+    // 压缩触发阈值：预算的 80%
+    const compactionThreshold = Math.floor(budget * 0.8);
     // 使用校准后的 token 估算：经过至少 3 次 API 调用的实际 prompt_tokens 对比修正
     let totalTokens = getCalibratedTokens(estimateMessagesTokens(currentMessages));
-    if (totalTokens <= budget) return;
+    if (totalTokens <= compactionThreshold) return;
 
     const oldLen = currentMessages.length;
     const oldTokens = totalTokens;
@@ -605,83 +634,53 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       const stripped = msgs.map(m => ({ ...m, content: stripImagesFromContent(m.content) }));
       return getCalibratedTokens(estimateMessagesTokens(stripped));
     };
-
+    
     // ============================================================
-    // 阶段一：增量摘要 —— 将旧轮次压缩为一句话，保留信息
+    // 阶段一：阈值触发的批量压缩 —— 一次 LLM 调用压缩所有待压旧轮次
     // ============================================================
-    const SUMMARY_MAX_ROUNDS_PER_CALL = 3; // 单次 trimMessages 最多摘要 3 轮，避免摘要 API 耗时过长
-
-    for (let summaryRoundCount = 0; summaryRoundCount < SUMMARY_MAX_ROUNDS_PER_CALL; summaryRoundCount++) {
-      totalTokens = est([...systemMsg, ...rest]);
-      if (totalTokens <= budget) break;
-
-      // 找到最旧的一轮完整对话（assistant(tool_calls) + 后续 tool 消息）
-      let roundStart = -1;
-      let roundEnd = -1;
-      for (let i = 0; i < rest.length; i++) {
-        if (rest[i].role === 'assistant' && Array.isArray(rest[i].tool_calls) && rest[i].tool_calls.length > 0) {
-          roundStart = i;
-          roundEnd = i + 1;
-          while (roundEnd < rest.length && rest[roundEnd].role === 'tool') {
-            roundEnd++;
+    totalTokens = est([...systemMsg, ...rest]);
+    if (totalTokens > compactionThreshold) {
+      // 提取完整轮次（assistant(tool_calls)+tool），保留最近 2 轮原文不动，其余批量压缩
+      const rounds = extractAllRounds(rest);
+      const compressRounds = rounds.slice(0, Math.max(0, rounds.length - 2));
+      if (compressRounds.length > 0) {
+        // 待压消息集合 = 压缩范围内轮次的成员 + 范围内的孤立消息（assistant 文本/user 追问等）
+        const maxEndIdx = compressRounds[compressRounds.length - 1].endIdx;
+        const toCompress = rest.filter((m, i) => i < maxEndIdx && !m._isSummary);
+        const priorSummary = summarizedAccumulator ? summarizedAccumulator.trim() : '';
+        const batchSummary = await summarizeRoundsBatch(toCompress, priorSummary, config, model, {
+          signal: abortSignal,
+          timeout: 30000
+        });
+    
+        if (batchSummary) {
+          summarizedAccumulator = batchSummary;
+          // 移除旧摘要消息与待压消息（从后往前删，索引不失效）；
+          // 保留首条用户问题（原始任务目标），避免压缩后逐字目标丢失
+          const firstUserIdx = rest.findIndex(m => m.role === 'user');
+          for (let i = rest.length - 1; i >= 0; i--) {
+            if ((i < maxEndIdx && i !== firstUserIdx) || rest[i]._isSummary) rest.splice(i, 1);
           }
-          break;
+          // 摘要插入到（被保留的）首条用户问题之后，保持对话开头语义
+          const insertIdx = rest.findIndex(m => m.role === 'user');
+          rest.splice(insertIdx + 1, 0, {
+            role: 'user',
+            content: `[History Summary] The following is a structured summary of the compacted earlier conversation:\n${batchSummary}`,
+            _isSummary: true
+          });
+          logger.debug(`[Background] batch compaction complete: ${toCompress.length} messages → 1 structured summary, ${est([...systemMsg, ...rest])} tokens`);
+        } else {
+          logger.debug('[Background] batch compaction failed,downgraded to weight-based trimming');
         }
       }
-      if (roundStart === -1) break; // 没有可摘要的轮次
-
-      const roundMessages = rest.slice(roundStart, roundEnd);
-      logger.debug(`[Background] attemptsummarystep ${summaryRoundCount + 1} round (message ${roundStart}-${roundEnd - 1})`);
-
-      const summary = await summarizeRound(roundMessages, config, model, {
-        signal: abortSignal,
-        timeout: 15000
-      });
-
-      if (!summary) {
-        logger.debug('[Background] summary failed,downgraded to weight-based trimming');
-        break; // 摘要失败，退出摘要循环，进入兜底裁剪
-      }
-
-      // 注入累积摘要（在用户问题之后）
-      const roundNum = (summarizedAccumulator?.match(/Round \d+:/g)?.length || 0) + 1;
-      summarizedAccumulator = (summarizedAccumulator || '') + `Round ${roundNum}: ${summary}\n`;
-
-      // 查找用户问题位置，摘要插入其后
-      const userMsgIdx = rest.findIndex(m => m.role === 'user');
-      const summaryMsg = {
-        role: 'user',
-        content: `[History Summary] The following is a summary of previous steps:\n${summarizedAccumulator.trim()}`,
-        _isSummary: true
-      };
-
-      // 移除旧摘要消息（如果存在）
-      const oldSummaryIdx = rest.findIndex(m => m._isSummary);
-      if (oldSummaryIdx >= 0) {
-        rest.splice(oldSummaryIdx, 1);
-        // 摘要被删除了，重算摘要插入位置
-        const adjustedUserIdx = rest.findIndex(m => m.role === 'user');
-        rest.splice(adjustedUserIdx + 1, 0, summaryMsg);
-      } else {
-        rest.splice(userMsgIdx + 1, 0, summaryMsg);
-      }
-
-      // 删除原始轮次消息（因为上面插入了摘要，索引需要重新定位）
-      const newRoundStart = rest.findIndex(m => m === roundMessages[0]);
-      if (newRoundStart >= 0) {
-        rest.splice(newRoundStart, roundMessages.length);
-      }
-
-      const newTokensAfterSummary = est([...systemMsg, ...rest]);
-      logger.debug(`[Background] summary complete: ${oldTokens} → ${newTokensAfterSummary} tokens (${roundMessages.length} → 1summary)`);
     }
 
     // ============================================================
-    // 阶段二：兜底权重裁剪 —— 摘要后仍超标时，直接删除
+    // 阶段二：兜底权重裁剪 —— 压缩后仍超硬预算时，直接删除
     // ============================================================
     totalTokens = est([...systemMsg, ...rest]);
     if (totalTokens > budget) {
-      logger.debug(`[Background] still exceeding after summary (${totalTokens} > ${budget}),enablefallbacktrimming`);
+      logger.debug(`[Background] still exceeding budget after compaction (${totalTokens} > ${budget}),enablefallbacktrimming`);
 
       // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
       const getWeight = (msg) => {
@@ -731,7 +730,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       }
     }
 
-    currentMessages = [...systemMsg, ...rest];
+    // 原地改写而非重新绑定：currentMessages 被 executeSingleToolCall 以同名形参捕获，
+    // 若在工具执行中途（如 plan_task 汇总后）重新赋值，会让协程后续 push 落到已丢弃的旧数组
+    // 造成消息丢失（含 tool 结果与子任务汇总），故保持数组引用恒定
+    currentMessages.splice(0, currentMessages.length, ...systemMsg, ...rest);
     const newTokens = est(currentMessages);
     logger.debug(`[Background] ReAct Token trimming: ${oldTokens} → ${newTokens} tokens (${oldLen} → ${currentMessages.length} )`);
   };
@@ -739,6 +741,27 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   const executionLog = [...initialLog];
   let currentSubtaskIndex = null;
   let subtaskPlan = null;
+  // 任务状态锚点：plan_task 拆解后维护，每次 API 调用前回灌计划进度，
+  // 防止长任务上下文被压缩/摘要后模型丢失目标与进度（业界 todo 锚点实践）
+  // 恢复时从 resumeState 回灌 checkpoint 中的计划状态
+  let taskState = resumeState?.taskState || null;
+  if (resumeState?.subtaskPlan) subtaskPlan = resumeState.subtaskPlan;
+
+  /**
+   * 构建任务进度锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
+   */
+  const buildPlanAnchorMessage = () => {
+    // checkpoint 回灌的 taskState 可能损坏/旧版：无有效 subtasks 时返回 null，
+    // 由调用处判空跳过注入，避免恢复流程因结构异常抛错终止整个循环
+    if (!taskState || !Array.isArray(taskState.subtasks) || taskState.subtasks.length === 0) return null;
+    const doneCount = taskState.subtasks.filter(s => s.status === 'done').length;
+    const lines = taskState.subtasks.map(s => `${s.index}. ${s.name} — ${s.status}`).join('\n');
+    const desc = String(taskState.taskDescription || '').slice(0, 300);
+    return {
+      role: 'user',
+      content: `[System Notice] Current task plan progress (system-maintained state; if earlier context was compacted, trust this as the source of truth. Strategy: ${taskState.strategy}, ${doneCount}/${taskState.subtasks.length} completed):\nOverall task: ${desc}\n${lines}\nDo not repeat steps already completed; continue with the pending ones.`
+    };
+  };
 
   /**
    * 保存当前 ReAct 循环状态为 checkpoint
@@ -783,6 +806,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       iteration,
       globalIteration: { value: globalIteration?.value || iteration },
       subtaskPlan,
+      taskState,
       currentSubtaskIndex,
       totalReflectionRounds,
       model: model || config?.modelName,
@@ -814,9 +838,16 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   }
   
   const reactConfig = config.reactConfig;
-  const maxIterations = reactConfig.maxIterations;
+  // 子任务迭代预算：由父任务通过 apiParams.subtaskMaxIterations 注入剩余轮次上限，防止单个子任务烧完整份预算
+  const maxIterations = apiParams.subtaskMaxIterations
+    ? Math.min(reactConfig.maxIterations, apiParams.subtaskMaxIterations)
+    : reactConfig.maxIterations;
   const apiTimeout = reactConfig.apiTimeout;
-  const loopTimeout = reactConfig.loopTimeout;
+  // 子任务/子代理整体超时：不超过 SUBTASK_LOOP_TIMEOUT_MS；若父任务经 apiParams.subtaskLoopTimeoutMs
+  // 注入了更紧的预算（父任务实时剩余时间），则再取其 min，防止顺序子任务累计耗时冲破父任务时限
+  const loopTimeout = taskContext
+    ? Math.min(reactConfig.loopTimeout, SUBTASK_LOOP_TIMEOUT_MS, apiParams.subtaskLoopTimeoutMs || SUBTASK_LOOP_TIMEOUT_MS)
+    : reactConfig.loopTimeout;
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
   
@@ -938,6 +969,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 任务是否正常完成（用于 finally 决定是否清理 checkpoint）
   let taskCompleted = false;
 
+  // 上下文超限（400）自愈标记：整个循环仅允许一次强制裁剪重发，防止重试风暴
+  let contextOverflowHealed = false;
+
   try {
     while (iteration < maxIterations) {
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
@@ -972,6 +1006,8 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       for (let i = 0; i < filteredMessages.length - 1; i++) {
         filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
       }
+
+      // 任务锚点/收敛提示注入已移到上下文压力裁剪之后（防止被 filterApiMessages 重建覆盖）
       
       // 添加 API 调用开始的日志节点（状态为 processing）
       const apiLogId = crypto.randomUUID();
@@ -1022,6 +1058,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         }
       }
       
+      // 任务状态锚点与收敛提示：瞬态注入到 filteredMessages 末尾（append 在最后不破坏
+      // assistant(tool_calls)+tool 配对）。必须在上下文压力裁剪块之后注入，否则 pressure
+      // critical 分支的 filterApiMessages 重建会覆盖掉注入（恰好在最需要保留进度的轮次失效）
+      if (taskState && !isSubtask) {
+        const anchorMsg = buildPlanAnchorMessage();
+        if (anchorMsg) filteredMessages = [...filteredMessages, anchorMsg];
+      }
+      const convergeAt = Math.ceil(maxIterations * 0.8);
+      if (iteration >= convergeAt && (iteration - convergeAt) % 10 === 0) {
+        filteredMessages = [...filteredMessages, {
+          role: 'user',
+          content: `[System Notice] Iteration budget warning: ${iteration}/${maxIterations} rounds used. Start converging now: stop exploratory tool calls and produce the best possible final answer based on the information already gathered. If the goal cannot be fully reached, summarize the completed parts and clearly state what remains.`
+        }];
+      }
+
       executionLog.push({
         id: apiLogId,
         iteration: iteration,
@@ -1181,6 +1232,36 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         // 区分用户取消（AbortError）、流式空闲超时（StreamIdleTimeout）和真正的 API 错误
         const isAborted = error.name === 'AbortError';
         const isIdleTimeout = error.name === 'StreamIdleTimeout';
+
+        // 上下文超限自愈：400 且错误信息含 context/token/too long 特征时，
+        // 强制激进裁剪（预算 60%）后重试本轮，而非直接终止整个循环；仅自愈一次
+        if (!isAborted && !isIdleTimeout && !contextOverflowHealed) {
+          const msgText = String(error.message || '');
+          if (/status: 400/.test(msgText) && /context|token|too long|length/i.test(msgText)) {
+            const reactBudget = getReactTokenBudget(model || 'default');
+            const healTarget = Math.max(Math.floor(reactBudget * 0.6), 2000);
+            const healTrim = trimMessagesByBudget(currentMessages, healTarget);
+            if (healTrim.trimmedCount > 0) {
+              contextOverflowHealed = true;
+              currentMessages = healTrim.messages;
+              logger.warn(`[Background] context overflow detected on HTTP 400: force-trimmed ${healTrim.trimmedCount} messages to ${healTarget} tokens, retrying this round`);
+              // 收尾本轮 API 日志节点（避免前端卡在“执行中”）后重试
+              const healIdx = executionLog.findIndex(l => l.id === apiLogId);
+              if (healIdx !== -1) {
+                executionLog[healIdx] = {
+                  ...executionLog[healIdx],
+                  duration: Date.now() - apiCallStartTime,
+                  status: 'success',
+                  selfHeal: 'context_overflow_trim'
+                };
+              }
+              sendExecutionStatusUpdate(t('reactLoop.apiCallNode', { count: currentCount, subtask: taskContext ? t('reactLoop.apiCallSubtask', { iteration }) : '' }), 'success');
+              iteration--; // 以同一轮次号重试
+              continue;
+            }
+          }
+        }
+
         if (isAborted) {
           logger.debug('[Background] API call with by usercancel');
         } else if (isIdleTimeout) {
@@ -1294,7 +1375,6 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         currentMessages.push(assistantMessage);
         await trimMessages();
         
-        const pendingReflections = [];
         const reflectionConfig = reactConfig.reflection;
         
         /**
@@ -1467,32 +1547,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                 logger.debug('[Background] send CLARIFY_END message failed:', err.message);
               });
               
-              // 澄清后重新预筛选工具：用户补充了新信息，工具集需要同步更新
-              logger.debug('[Background] clarification complete,re-filteringtool...');
-              try {
-                // 手动指定的 MCP 服务（/ 触发器）在重筛后仍需强制保留
-                const forcedServerIds = getSessionForcedMcpServers(sessionId);
-                const fullTools = await getTools(null, null, null, forcedServerIds);
-                const config = await getStoredConfig();
-                const enableToolPreselect = config.reactConfig.enableToolPreselect;
-                const preselectMinToolCount = config.reactConfig.preselectMinToolCount || 3;
-                if (enableToolPreselect && fullTools.length > preselectMinToolCount) {
-                  const reSelection = await preselectTools(currentMessages, model, fullTools, apiParams, 1, getMcpToolIdsForServers(forcedServerIds));
-                  if (reSelection.type === 'tools') {
-                    tools = reSelection.tools;
-                    reactTokenBudget = null; // 工具集变更，重置 Token 预算缓存
-                    logger.debug('[Background] clarification after toolre-filtercomplete:', tools.map(t => t.function.name));
-                  }
-                  // 合并重新筛选的执行日志
-                  if (reSelection.executionLog) {
-                    executionLog.push(...reSelection.executionLog);
-                  }
-                } else if (!enableToolPreselect) {
-                  logger.debug('[Background] toolpre-filterclosed,after clarification, notre-filter');
-                }
-              } catch (rePreselectErr) {
-                logger.warn('[Background] clarification after toolre-filter failed, continue withcurrenttoolset:', rePreselectErr.message);
-              }
+              // P2-10：clarify 后不再重新预筛选工具集 —— 保持工具集任务级稳定，
+              // 避免每轮 tools 参数变化打爆 KV cache/提示缓存（预筛选本就默认关闭，
+              // 重筛收益存疑而缓存代价明确）；新信息已通过用户补充消息本身传达给模型
             }
             
             // 格式化工具结果（normalizeToolResult 已保证 content 字段为字符串）
@@ -1513,12 +1570,21 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
             let toolResultTruncated = false;
             let toolResultForDisplay = toolResultStr;
             if (resultTokens > MAX_TOOL_RESULT_TOKENS) {
-              // 自动检测内容类型，智能截断
-              const truncated = truncateContentSmart(toolResultStr, MAX_TOOL_RESULT_TOKENS);
-              logger.debug(`[Background] tool ${toolName} result truncated: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
-              toolResultTruncated = true;
-              toolResultForDisplay = truncated;
-              toolResultStr = truncated;
+              // 优先尝试卸载到 Agent workspace（保留完整信息可回读），失败时回退智能截断
+              const offloaded = await offloadLargeToolResult(toolResultStr, toolName, toolCallId);
+              if (offloaded) {
+                logger.debug(`[Background] tool ${toolName} result offloaded: ${resultTokens} → ${estimateTokens(offloaded)} tokens`);
+                toolResultTruncated = true;
+                toolResultForDisplay = offloaded;
+                toolResultStr = offloaded;
+              } else {
+                // 自动检测内容类型，智能截断
+                const truncated = truncateContentSmart(toolResultStr, MAX_TOOL_RESULT_TOKENS);
+                logger.debug(`[Background] tool ${toolName} result truncated: ${resultTokens} → ${estimateTokens(truncated)} tokens`);
+                toolResultTruncated = true;
+                toolResultForDisplay = truncated;
+                toolResultStr = truncated;
+              }
             }
 
             // 发送工具结果到 Side Panel 展示（使用截断后的内容）
@@ -1539,40 +1605,33 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }).catch(() => {});
             }
 
-            // 计算真正"连续"的失败数（从最近一次成功往后数）
-            const allToolEntries = executionLog
-              .filter(e => e.nodeType === 'tool_exec' && e.iteration === iteration)
-              .sort((a, b) => executionLog.indexOf(a) - executionLog.indexOf(b));
-            let consecutiveFailCount = 0;
-            for (let i = allToolEntries.length - 1; i >= 0; i--) {
-              if (allToolEntries[i].status === 'failed') {
-                consecutiveFailCount++;
-              } else {
-                break;
-              }
-            }
+            // 统计本轮已落定的失败数（含失败分支先行落定的当前调用）。
+            // 不用"连续失败"口径：并行组内同轮其它工具可能尚未落定/乱序 push，
+            // 从尾部回溯会因 processing 提前 break 导致少计（#11）
+            const roundFailCount = executionLog
+              .filter(e => e.nodeType === 'tool_exec' && e.iteration === iteration && e.status === 'failed')
+              .length;
             
-            const toolReflectionCount = executionLog.filter(
-              e => e.nodeType === 'reflection' && e.reflectionType === 'tool'
-            ).length;
-            const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
-            const withinFrequencyLimit = toolReflectionCount < maxPerIteration;
-
-            // 收集待处理的反思，而非立即执行（优先级队列）
-            if (withinFrequencyLimit && shouldTriggerToolReflection(toolResultStr, consecutiveFailCount, reflectionConfig)) {
-              pendingReflections.push({
-                toolName,
-                toolResultStr,
-                toolCallParams: toolArgs,
-                toolCallId: toolCallId,
-                priority: getToolReflectionPriority(toolName, toolResultStr, consecutiveFailCount)
-              });
-            }
+            // 工具级观察提示（P2-9：替代独立 LLM 调用的工具级反思，零成本规则内联）
+            const observationHint = getToolObservationHint({
+              success: isToolSuccess,
+              roundFailCount,
+              resultTokens,
+              truncated: toolResultTruncated,
+              resultStr: toolResultStr
+            });
             
             // 处理任务规划工具的结果，提取子任务列表
             if (toolName === 'plan_task' && toolResult && toolResult.success && toolResult.data) {
               subtaskPlan = toolResult.data;
               logger.debug('[Background] received taskplanresult:', JSON.stringify(subtaskPlan));
+
+              // 初始化任务状态锚点（父循环被 executeSubtasks 阻塞，完成后按结果更新）
+              taskState = {
+                taskDescription: subtaskPlan.taskDescription || '',
+                strategy: subtaskPlan.strategy || 'sequential',
+                subtasks: subtaskPlan.subtasks.map((st, i) => ({ id: st.id, index: i + 1, name: st.name, status: 'pending' }))
+              };
               
               // 先添加 plan_task 工具的响应消息（必须先响应工具调用）
               const planTaskContent = JSON.stringify({
@@ -1649,8 +1708,17 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               // 开始执行子任务
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
-                reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal
+                reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,
+                { remainingIterations: Math.max(1, maxIterations - iteration), getRemainingTimeMs: () => getRemainingTime(), historySummary: summarizedAccumulator || '' }
               );
+
+              // 按子任务完成结果更新锚点状态
+              if (taskState) {
+                for (const r of subtaskResults) {
+                  const st = taskState.subtasks.find(s => s.id === r.subtaskId || s.name === r.subtaskName);
+                  if (st) st.status = r.success ? 'done' : 'failed';
+                }
+              }
               
               // 子任务执行完毕后检查是否已被取消
               if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
@@ -1691,11 +1759,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               return { planTaskHandled: true };
             }
             
-            // 添加工具结果到消息历史（不附加反思备注，反思在优先级队列处理后统一附加）
+            // 添加工具结果到消息历史（附规则观察提示）
             // 注入防御：外部可写数据包装（UI/日志通道用原文，仅模型消息包装）
             currentMessages.push({
               role: 'tool',
-              content: wrapUntrusted(toolName, toolResultStr, sessionId),
+              content: wrapUntrusted(toolName, toolResultStr, sessionId) + observationHint,
               tool_call_id: toolCallId,
               subtaskId: currentSubtaskIndex !== null ? `subtask_${currentSubtaskIndex}` : null,
               subtaskName: subtaskPlan?.subtasks[currentSubtaskIndex]?.name || null
@@ -1815,144 +1883,84 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
           }
         }
         
-        /**
-         * 处理待处理的反思队列（按优先级排序后处理前 N 个）
-         */
-        async function processPendingReflections() {
-          if (pendingReflections.length === 0) return;
-          if (totalReflectionRounds >= MAX_REFLECTION_ROUNDS) {
-            logger.warn('[Background] reflectiontotal roundsreached limit,skip toolreflection');
-            return;
+        // 轮内工具部分并行：连续的 parallelizable 工具合并为一组并发执行，
+        // 非并行工具（含 plan_task/clarify_question 的独占语义）单独按序执行；
+        // tool 消息最终仍按 tool_calls 声明顺序重排写回
+        const isParallelizableTc = tc => PARALLELIZABLE_TOOLS.has(tc.function?.name || tc.name);
+        const tcGroups = [];
+        for (const tc of assistantMessage.tool_calls) {
+          const parallel = isParallelizableTc(tc);
+          const last = tcGroups[tcGroups.length - 1];
+          if (last && last.parallel === parallel && parallel) {
+            last.calls.push(tc);
+          } else {
+            tcGroups.push({ parallel, calls: [tc] });
           }
-          
-          // 按优先级降序排序
-          pendingReflections.sort((a, b) => b.priority - a.priority);
-          const maxPerIteration = reflectionConfig?.toolReflection?.maxPerIteration || 2;
-          
-          for (const ref of pendingReflections.slice(0, maxPerIteration)) {
-            if (totalReflectionRounds >= MAX_REFLECTION_ROUNDS) break;
-            totalReflectionRounds++;
-            const toolReflection = await reflectOnToolResult(
-              ref.toolName, ref.toolResultStr, ref.toolCallParams,
-              config, model, reflectionConfig, executionLog, iteration, sessionId, abortSignal
-            );
-            
-            if (toolReflection) {
-              const toolReflectionId = crypto.randomUUID();
-              const toolReflectionEntry = {
-                id: toolReflectionId,
-                iteration,
-                timestamp: new Date().toISOString(),
-                status: toolReflection.useful ? 'success' : 'failed',
-                nodeType: 'reflection',
-                nodeName: t('reactLoop.toolReflection', { name: ref.toolName }),
-                reflectionType: 'tool',
-                useful: toolReflection.useful,
-                reasoning: toolReflection.reasoning,
-                suggestion: toolReflection.suggestion
-              };
-              executionLog.push(toolReflectionEntry);
-              logger.debug(`[Background] toolreflection: ${ref.toolName} - ${toolReflection.useful ? ' has  with ' : 'invalid'} - ${toolReflection.reasoning}`);
-              
-              // 将反思建议附加到工具结果消息中
-              if (!toolReflection.useful && toolReflection.suggestion) {
-                const note = `\n\n[Reflection Notice] The result returned by tool "${ref.toolName}" was assessed as unhelpful (${toolReflection.reasoning}). Suggestion: ${toolReflection.suggestion}. Please consider adjusting your strategy in subsequent steps.`;
-                // 查找并更新对应的工具消息
-                for (let j = currentMessages.length - 1; j >= 0; j--) {
-                  if (currentMessages[j].role === 'tool' && currentMessages[j].tool_call_id === ref.toolCallId) {
-                    currentMessages[j] = {
-                      ...currentMessages[j],
-                      content: currentMessages[j].content + note
-                    };
-                    break;
-                  }
-                }
+        }
+
+        // 记录分组执行前的消息数量，用于后续按 tool_calls 顺序重排 tool 消息
+        const msgCountBefore = currentMessages.length;
+        let planTaskHandled = false;
+
+        for (const group of tcGroups) {
+          if (group.parallel && group.calls.length > 1) {
+            // 同组并发执行；单个工具抛异常（如用户取消）时 Promise.all 直接传播，
+            // 与原全并行路径语义一致
+            logger.debug('[Background] parallel group exec tool calls:', group.calls.map(tc => tc.function?.name || tc.name));
+            const parallelResults = await Promise.all(group.calls.map(toolCall =>
+              executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages)
+                .catch(err => ({ error: err.message }))
+            ));
+            for (const result of parallelResults) {
+              if (result.error) {
+                logger.warn(`[Background] parallel tool execution failed: ${result.error}`);
+              }
+              if (result.planTaskHandled) {
+                planTaskHandled = true;
+              }
+            }
+          } else {
+            // 非并行工具（或组内仅 1 个）：按序单独执行
+            for (const toolCall of group.calls) {
+              const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
+              if (result.planTaskHandled) {
+                // plan_task 处理了子任务，同轮剩余工具不再执行（跳过补发已在内部完成）
+                planTaskHandled = true;
+                break;
               }
             }
           }
+          if (planTaskHandled) break;
         }
-        
-        // 检查是否所有工具都可并行执行
-        const allParallelizable = assistantMessage.tool_calls.every(
-          tc => PARALLELIZABLE_TOOLS.has(tc.function?.name || tc.name)
-        );
-        
-        if (allParallelizable && assistantMessage.tool_calls.length > 1) {
-          // 并行执行路径
-          logger.debug('[Background] parallel exectool call:', assistantMessage.tool_calls.map(tc => tc.function?.name || tc.name));
-          
-          // 记录并行执行前的消息数量，用于后续按 tool_calls 顺序重排 tool 消息
-          const msgCountBefore = currentMessages.length;
-          
-          const parallelPromises = assistantMessage.tool_calls.map(toolCall =>
-            executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages)
-              .catch(err => ({ error: err.message }))
-          );
-          const parallelResults = await Promise.all(parallelPromises);
-          
-          // 按 tool_calls 原始顺序重排 currentMessages 中新追加的 tool 消息，
-          // 确保 tool 消息顺序与 assistant(tool_calls) 中的 tool_calls 顺序一致
+
+        // 按 tool_calls 原始顺序重排本轮新追加的 tool 消息，
+        // 确保 tool 消息顺序与 assistant(tool_calls) 中的声明顺序一致
+        // 守卫：若执行中途 trimMessages 触发使数组收缩（currentMessages.length < msgCountBefore），
+        // 边界快照已失效，此时新消息按完成顺序追加在尾部且配对由压缩逻辑维护，跳过重排以保证安全
+        if (msgCountBefore <= currentMessages.length) {
           const newMessages = currentMessages.splice(msgCountBefore);
           const toolCallOrder = new Map(
             assistantMessage.tool_calls.map((tc, i) => [tc.id, i])
           );
           const toolMessages = newMessages.filter(m => m.role === 'tool');
           const nonToolMessages = newMessages.filter(m => m.role !== 'tool');
-          // 按 tool_calls 声明顺序排序 tool 消息
           toolMessages.sort((a, b) => {
             const orderA = toolCallOrder.get(a.tool_call_id) ?? 999;
             const orderB = toolCallOrder.get(b.tool_call_id) ?? 999;
             return orderA - orderB;
           });
-          // 非 tool 消息（如 plan_task 的 system 消息）保持在 tool 消息之前
-          currentMessages.push(...nonToolMessages, ...toolMessages);
-          
-          // 按原始顺序处理结果，检查错误和 plan_task
-          let planTaskHandled = false;
-          for (let i = 0; i < assistantMessage.tool_calls.length; i++) {
-            const result = parallelResults[i];
-            if (result.error) {
-              logger.warn(`[Background] parallel toolsexecution failed: ${assistantMessage.tool_calls[i].function?.name || assistantMessage.tool_calls[i].name} - ${result.error}`);
-            }
-            if (result.planTaskHandled) {
-              planTaskHandled = true;
-            }
-          }
-          // 并行工具失败不终止循环，让模型在下一轮根据错误信息调整策略
-          
-          // 处理反思优先级队列
-          await processPendingReflections();
+          // tool 消息必须紧跟 assistant(tool_calls)（OpenAI 兼容 API 的配对前提），
+          // 故先 push toolMessages，再把非 tool 消息（如 plan_task 子任务汇总的 user 消息）追加其后；
+          // 若反向把非 tool 提到 tool 前，会破坏相邻性 → 下一请求 400
+          currentMessages.push(...toolMessages, ...nonToolMessages);
+        }
 
-          if (planTaskHandled) {
-            flushLoopRecords();
-            await saveCheckpointNow('plan_task_completed');
-            continue;
-          }
-        } else {
-          // 顺序执行路径
-          let planTaskHandled = false;
-          for (let toolIdx = 0; toolIdx < assistantMessage.tool_calls.length; toolIdx++) {
-            const toolCall = assistantMessage.tool_calls[toolIdx];
-            const result = await executeSingleToolCall(toolCall, tabId, toolTimeout, loopTimeout, clarifyTimeout, sessionId, iteration, executionLog, currentMessages);
+        // 分组工具失败不终止循环，让模型在下一轮根据错误信息调整策略
 
-            if (result.planTaskHandled) {
-              // plan_task 处理了子任务，跳出当前 for 循环，由外层 while 重新迭代
-              // 注意：同轮中剩余工具的 STREAM_TOOL_RESULT 补发已在 executeSingleToolCall 内部
-              // （executeSubtasks 调用之前）完成，此处无需重复处理
-              planTaskHandled = true;
-              await processPendingReflections();
-              break;
-            }
-          }
-
-          // 所有工具执行完毕后，处理反思优先级队列
-          await processPendingReflections();
-
-          if (planTaskHandled) {
-            flushLoopRecords();
-            await saveCheckpointNow('plan_task_completed');
-            continue;
-          }
+        if (planTaskHandled) {
+          flushLoopRecords();
+          await saveCheckpointNow('plan_task_completed');
+          continue;
         }
 
         // 多模式循环检测：轮末按序喂入本轮全部工具调用记录
@@ -2041,15 +2049,62 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
 const SUBTASK_CONFIG = {
   DEFAULT_FAILURE_STRATEGY: 'continue',
   DEFAULT_MAX_RETRIES: 1,
-  DEFAULT_MAX_PARALLEL: 3
+  DEFAULT_MAX_PARALLEL: 3,
+  DEFAULT_MAX_ITERATIONS: 20   // 单个子任务的迭代预算上限（与父任务剩余轮次取小）
 };
+
+// 子任务/子代理整体超时上限（ms）：防止单个子任务占用父任务全部时间预算
+const SUBTASK_LOOP_TIMEOUT_MS = 900000; // 15 分钟
+
+// 工具结果截断：单条工具结果最大 token 数，避免 page_content / fetch_url 等大结果撑爆上下文。
+// 模块级：截断/卸载与观察提示（getToolObservationHint）同源引用，防止阈值漂移
+const MAX_TOOL_RESULT_TOKENS = 6000;
+
+/**
+ * 计算子任务的整体超时预算（ms）：在 SUBTASK_LOOP_TIMEOUT_MS 之外，
+ * 再受父任务实时剩余时间约束。预留 10s 缓冲，并设 60s 下限，
+ * 避免父任务末期子任务被即刻杀停。父剩余时间无效时回退到上限。
+ * @param {number|undefined} parentRemainMs - 父任务当前剩余时间（ms）
+ * @returns {number}
+ */
+export function computeSubtaskLoopTimeoutMs(parentRemainMs) {
+  const remain = Number.isFinite(parentRemainMs) ? parentRemainMs : SUBTASK_LOOP_TIMEOUT_MS;
+  return Math.max(60000, Math.min(SUBTASK_LOOP_TIMEOUT_MS, remain - 10000));
+}
+
+/**
+ * 工具级观察提示（替代独立 LLM 调用的工具级反思，零成本内联规则）：
+ * 失败/连续失败/空结果/超大结果时生成规则提示，追加到 tool 结果后引导模型自我调整。
+ * 模型面文本固定英文（与工具 schema 语言一致）。
+ * @param {Object} ctx
+ * @param {boolean} ctx.success - 工具执行是否成功
+ * @param {number} ctx.roundFailCount - 本轮已落定的失败数（含当前调用，若失败分支已先行落定）
+ * @param {number} ctx.resultTokens - 截断前的结果 token 数
+ * @param {boolean} ctx.truncated - 结果是否被截断/卸载
+ * @param {string} ctx.resultStr - 结果文本（用于空结果判断）
+ * @returns {string} 提示文本，无命中时返回空串
+ */
+export function getToolObservationHint({ success, roundFailCount = 0, resultTokens = 0, truncated = false, resultStr = '' }) {
+  const hints = [];
+  if (!success) {
+    // 阈值与截断/卸载同源（MAX_TOOL_RESULT_TOKENS）：超过即已被压缩，旧 24000 硬编码
+    // 会让 6000~24000 区间被截断的结果拿不到提示（#11）
+    const failSuffix = roundFailCount >= 1 ? ` (this is failure #${roundFailCount + 1} in this round)` : '';
+    hints.push(`the tool returned a failure${failSuffix}. Do NOT retry the exact same call — change arguments, pick a different tool, or state the limitation in your conclusion`);
+  } else if (!String(resultStr).trim()) {
+    hints.push('the result is empty. The target may not exist or the query was too narrow — try alternative keywords or a different data source');
+  } else if (truncated && resultTokens > MAX_TOOL_RESULT_TOKENS) {
+    hints.push(`the original result was very large (${resultTokens} tokens) and has been condensed. If you need full details, narrow the next query (e.g. by range/filter) or read the offloaded file if one is referenced`);
+  }
+  return hints.length > 0 ? `\n\n[Observation Hint] ${hints.join('; ')}.` : '';
+}
 
 /**
  * 执行子任务序列
- * 支持顺序执行、并行执行和条件执行策略
+ * 支持顺序执行、并行执行和依赖拓扑执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null, signal = null) {
+export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null, signal = null, parentBudget = null) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -2197,11 +2252,28 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       try {
         logger.debug(`[Background] execute subtask ${subtaskIndex + 1}/${sortedSubtasks.length}: ${subtask.name} (attempt ${retry + 1}/${maxRetries + 1})`);
         
+        // 子任务上下文交接（Cognition 原则：关键决策信息向下游共享，避免独立上下文产生不一致决策）
+        // 顺序/依赖策略携带前序已完成子任务结果；并行策略子任务间无先后语义，只携带父任务历史摘要
+        const inheritedParts = [];
+        if (parentBudget?.historySummary) {
+          inheritedParts.push(`### Parent conversation history summary\n${truncateByTokens(parentBudget.historySummary, 1000)}`);
+        }
+        if (strategy !== 'parallel') {
+          const priorDone = results.filter(r => r && r.success);
+          if (priorDone.length > 0) {
+            const priorLines = priorDone.map(r => `- [done] ${r.subtaskName}: ${truncateByTokens(String(r.result || ''), 400)}`);
+            inheritedParts.push(`### Completed preceding subtasks\n${priorLines.join('\n')}`);
+          }
+        }
+        const inheritedContext = inheritedParts.length > 0
+          ? `\n\n## Inherited Context\nInformation shared from the parent task and preceding subtasks. Keep your output consistent with it; do not redo completed work.\n${inheritedParts.join('\n\n')}`
+          : '';
+
         // 为子任务创建独立的消息上下文
         const subtaskMessages = [
           {
             role: 'system',
-            content: `You are executing a subtask. Focus on completing this task and do not ask the user any questions.\n\nTask context: ${taskDescription}\n\nCurrent subtask: ${subtask.description}\n\nYou may use all available tools to complete the task. Choose the appropriate tools based on the actual situation.`
+            content: `You are executing a subtask. Focus on completing this task and do not ask the user any questions.\n\nTask context: ${taskDescription}\n\nCurrent subtask: ${subtask.description}\n\nYou may use all available tools to complete the task. Choose the appropriate tools based on the actual situation.${inheritedContext}`
           },
           {
             role: 'user',
@@ -2209,13 +2281,26 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           }
         ];
         
+        // 子任务迭代预算：min(默认上限 20, 父任务剩余轮次)，地板 5 轮避免父任务末期子任务无法启动
+        const subtaskMaxIterations = Math.min(
+          SUBTASK_CONFIG.DEFAULT_MAX_ITERATIONS,
+          Math.max(5, parentBudget?.remainingIterations ?? SUBTASK_CONFIG.DEFAULT_MAX_ITERATIONS)
+        );
+
+        // 子任务整体超时预算：逐子任务实时读父任务剩余时间（父以 getRemainingTimeMs 注入取值函数），
+        // 使顺序策略下后启动的子任务不会各享满额 15 分钟而冲破父任务时限
+        const parentRemainMs = typeof parentBudget?.getRemainingTimeMs === 'function'
+          ? parentBudget.getRemainingTimeMs()
+          : undefined;
+        const subtaskLoopTimeoutMs = computeSubtaskLoopTimeoutMs(parentRemainMs);
+
         // 调用子任务的ReAct循环（使用派生 sessionId 隔离流式消息）
         const subtaskResult = await reactLoop(
           subtaskMessages, 
           model, 
           subtaskTools, 
           tabId, 
-          apiParams,
+          { ...apiParams, subtaskMaxIterations, subtaskLoopTimeoutMs },
           subtaskSessionId,
           { subtaskId: subtask.id, subtaskName: subtask.name },
           (subtaskLog) => {
@@ -2484,9 +2569,10 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       await rollbackCompletedTasks();
     }
   } else {
-    // 未知策略，降级为顺序执行
-    logger.warn(`[Background]  not knownexec strategy: ${strategy},downgraded to sequentialexec `);
-    return executeSubtasks({ ...subtaskPlan, strategy: 'sequential' }, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration, reflectionConfig, config, lastSentLogSnapshot, callId, signal);
+    // 未知策略：不再静默降级为顺序执行，抛出明确错误让模型重选
+    //（executeSingleToolCall 的 catch 会将其转为 tool 错误消息回传模型，循环继续）
+    logger.error(`[Background]  not knownexec strategy: ${strategy}`);
+    throw createErrorWithLog(t('reactLoop.unknownStrategy', { strategy }), parentExecutionLog);
   }
   
   return results;
@@ -2759,7 +2845,8 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
 // ============================================================
 // 反思机制（Reflection）- 已拆分到 react-reflection.js
 // ============================================================
-// shouldReflect / getToolReflectionPriority / shouldTriggerToolReflection
-// / buildReflectionPrompt / parseReflectionResult
-// / reflectOnResult / reflectOnToolResult / reflectOnSubtask
+// 工具级反思（reflectOnToolResult / shouldTriggerToolReflection / getToolReflectionPriority）
+// 已移除：改为 getToolObservationHint 规则内联提示（零额外 LLM 调用）。
+// shouldReflect / buildReflectionPrompt / parseReflectionResult
+// / reflectOnResult / reflectOnSubtask 仍用于后置与子任务反思，
 // 已通过顶部 import 引入本模块

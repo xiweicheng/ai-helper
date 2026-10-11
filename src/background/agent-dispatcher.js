@@ -7,6 +7,7 @@ import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { truncateByTokens } from '../shared/token-counter.js';
 
 // 注册 agentDispatcher 命名空间翻译
 registerTranslations('zh', {
@@ -94,6 +95,7 @@ ${task}
 - You are a sub-agent; only complete the task assigned to you
 - Use your available tools to complete the task efficiently
 - Return the result directly after completion; no extra confirmation is needed
+- Structure your final answer as: **Conclusion** (the direct answer/result), **Key evidence** (facts, data, links found along the way), **Unfinished items** (anything not completed and why); omit sections that do not apply
 - Current time: ${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -202,11 +204,15 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
       result = apiResult.content !== undefined ? apiResult.content : apiResult;
     }
 
-    // 限制返回结果长度
-    const maxResultLen = 4000;
-    const trimmedResult = typeof result === 'string' && result.length > maxResultLen
-      ? result.substring(0, maxResultLen) + '\n\n... (result truncated)'
-      : result;
+    // 限制返回结果长度：按 token 预算截断（保留头尾，避免硬字符截断切掉尾部结论）
+    const MAX_RESULT_TOKENS = 2000;
+    let trimmedResult = result;
+    if (typeof result === 'string') {
+      const truncated = truncateByTokens(result, MAX_RESULT_TOKENS);
+      if (truncated !== result) {
+        trimmedResult = truncated + '\n\n... (result truncated to token budget; the sub-agent output exceeded the limit)';
+      }
+    }
 
     logger.debug('[AgentDispatcher] sub Agent execution complete:', agent.name, 'result length:', typeof trimmedResult === 'string' ? trimmedResult.length : 'N/A');
 

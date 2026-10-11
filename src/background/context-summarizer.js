@@ -1,12 +1,19 @@
 // background/context-summarizer.js - 增量对话摘要
-// 当 ReAct 循环上下文 token 超标时，将旧轮次的工具调用及结果压缩为一句话摘要，
+// 当 ReAct 循环上下文 token 超阈值时，将旧轮次的工具调用及结果批量压缩为结构化摘要，
 // 注入回对话中（role: 'user'），避免直接删除导致上下文信息丢失。
+// 支持批量压缩（summarizeRoundsBatch，一次 LLM 调用压缩多轮）。
+// 旧单轮摘要 summarizeRound 已随 P1-6 批量压缩接入后无调用方而移除。
 
 import { fetchWithRetry } from './tool-executor.js';
 import logger from '../shared/logger.js';
+import { truncateByTokens } from '../shared/token-counter.js';
 
-// 摘要请求的最大输出 token 数（一句话摘要，通常 50-150 字即可）
-const SUMMARY_MAX_TOKENS = 200;
+// 批量压缩 transcript 输入上限（token）：防止超长会话下压缩请求自身超出模型窗口，
+// 白烧一次 30s 调用后降级（#10）；可经 options.transcriptMaxTokens 按模型窗口覆盖
+const BATCH_TRANSCRIPT_MAX_TOKENS = 30000;
+
+// 批量压缩请求的最大输出 token 数（结构化模板，需更长的输出）
+const BATCH_SUMMARY_MAX_TOKENS = 800;
 
 // 每轮工具结果在摘要 prompt 中保留的最大字符数
 const TOOL_RESULT_MAX_CHARS = 500;
@@ -74,94 +81,29 @@ function extractKeyParams(args) {
 }
 
 /**
- * 将一轮对话（assistant tool_calls + tool 结果）压缩为一句话摘要
- *
- * @param {Array} roundMessages - 一轮完整对话的原始消息
- *   格式：[assistant(tool_calls), tool, tool, ...]
- * @param {Object} config - API 配置（含 apiBase、apiKey、modelName）
- * @param {string} model - 模型名称
- * @param {Object} [options]
- * @param {AbortSignal} [options.signal] - 取消信号
- * @param {number} [options.timeout=15000] - 超时毫秒
- * @returns {Promise<string|null>} 摘要文本，失败返回 null（调用方降级到直接删除）
+ * 提取单个工具调用的名称 + 关键参数 + 对应结果的转写文本
+ * @param {Object} tc - tool_call 对象
+ * @param {Array} roundMessages - 包含对应 tool 结果消息的数组
+ * @returns {string}
  */
-export async function summarizeRound(roundMessages, config, model, options = {}) {
-  if (!roundMessages || roundMessages.length < 2) {
-    logger.debug('[ContextSummarizer] round timesmessage not sufficient,skip summary');
-    return null;
-  }
+function buildToolCallInfo(tc, roundMessages) {
+  const name = tc.function?.name || tc.name || 'unknown';
+  const argsStr = extractKeyParams(
+    typeof tc.function?.arguments === 'string'
+      ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })()
+      : (tc.function?.arguments || {})
+  );
 
-  const assistantMsg = roundMessages.find(m => m.role === 'assistant' && m.tool_calls);
-  if (!assistantMsg) {
-    logger.debug('[ContextSummarizer] not found assistant(tool_calls),skip summary');
-    return null;
-  }
+  // 对应的 tool 结果消息
+  const toolMsg = roundMessages.find(m =>
+    m.role === 'tool' && m.tool_call_id === tc.id
+  );
+  const resultStr = toolMsg
+    ? (typeof toolMsg.content === 'string' ? toolMsg.content : JSON.stringify(toolMsg.content))
+    : '(no return)';
+  const resultSnippet = resultStr.substring(0, TOOL_RESULT_MAX_CHARS);
 
-  // 提取每个工具调用的名称 + 参数 + 结果摘要
-  const toolCallInfos = assistantMsg.tool_calls.map((tc, idx) => {
-    const name = tc.function?.name || tc.name || 'unknown';
-    const argsStr = extractKeyParams(
-      typeof tc.function?.arguments === 'string'
-        ? (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })()
-        : (tc.function?.arguments || {})
-    );
-
-    // 对应的 tool 结果消息
-    const toolMsg = roundMessages.find(m =>
-      m.role === 'tool' && m.tool_call_id === (tc.id || assistantMsg.tool_calls[idx]?.id)
-    );
-    const resultStr = toolMsg
-      ? (typeof toolMsg.content === 'string' ? toolMsg.content : JSON.stringify(toolMsg.content))
-      : '(no return)';
-    const resultSnippet = resultStr.substring(0, TOOL_RESULT_MAX_CHARS);
-
-    return `Tool: ${name}${argsStr ? ` (${argsStr})` : ''}\nResult: ${resultSnippet}`;
-  });
-
-  const summaryPrompt = `Summarize the execution of the following tool calls in one sentence, extracting key findings:
-
-${toolCallInfos.join('\n\n')}
-
-Output requirements: Summarize in one sentence what this round of operations did and what key information was found. No more than 150 characters.`;
-
-  try {
-    const apiUrl = `${config.apiBase}/chat/completions`;
-
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: model || config.modelName,
-        messages: [{ role: 'user', content: summaryPrompt }],
-        stream: false,
-        max_tokens: SUMMARY_MAX_TOKENS,
-        temperature: 0.1
-      }),
-      signal: options.signal
-    }, options.timeout || 15000, 1, 500); // 摘要只重试 1 次，快速失败
-
-    if (!response.ok) {
-      logger.warn(`[ContextSummarizer] API request failed: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const summary = (data.choices?.[0]?.message?.content || '').trim();
-
-    if (!summary) {
-      logger.warn('[ContextSummarizer] summary returnedempty');
-      return null;
-    }
-
-    logger.debug(`[ContextSummarizer] summary complete: ${summary.substring(0, 100)}`);
-    return summary;
-  } catch (error) {
-    logger.warn('[ContextSummarizer] summary requestexception:', error.message);
-    return null;
-  }
+  return `Tool: ${name}${argsStr ? ` (${argsStr})` : ''}\nResult: ${resultSnippet}`;
 }
 
 /**
@@ -187,4 +129,117 @@ export function extractAllRounds(messages) {
   }
 
   return rounds;
+}
+
+/**
+ * 构建批量压缩 transcript prompt 片段：把一组待压缩消息转为紧凑文本
+ * @param {Array} messages - 待压缩的原始消息（保留顺序）
+ * @param {string} priorSummary - 已有的历史摘要文本（作为上下文前缀）
+ * @returns {string}
+ */
+function buildBatchTranscript(messages, priorSummary) {
+  const parts = [];
+  if (priorSummary) {
+    parts.push(`[Earlier summary]\n${priorSummary}`);
+  }
+  let roundNum = 0;
+  for (const msg of messages) {
+    if (msg._isSummary) continue; // 旧摘要消息已由 priorSummary 承载
+    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      roundNum++;
+      const lines = [`[Round ${roundNum}]`];
+      if (typeof msg.content === 'string' && msg.content.trim()) {
+        lines.push(`Assistant thought: ${msg.content.trim().substring(0, TOOL_RESULT_MAX_CHARS)}`);
+      }
+      for (const tc of msg.tool_calls) {
+        lines.push(buildToolCallInfo(tc, messages));
+      }
+      parts.push(lines.join('\n'));
+    } else if (msg.role === 'assistant' && typeof msg.content === 'string' && msg.content.trim()) {
+      parts.push(`[Assistant reply] ${msg.content.trim().substring(0, TOOL_RESULT_MAX_CHARS)}`);
+    } else if (msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim()) {
+      parts.push(`[User] ${msg.content.trim().substring(0, TOOL_RESULT_MAX_CHARS)}`);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/**
+ * 批量压缩：一次 LLM 调用将多轮旧对话压缩为结构化摘要
+ * 模板：任务目标 / 已完成事项 / 关键事实 / 未决问题（业界 compaction 结构化实践）
+ *
+ * @param {Array} messages - 待压缩的原始消息（完整轮次，保证 assistant(tool_calls)+tool 配对）
+ * @param {string} priorSummary - 之前已累积的摘要文本（合并进新摘要），可为空
+ * @param {Object} config - API 配置
+ * @param {string} model - 模型名称
+ * @param {Object} [options]
+ * @param {AbortSignal} [options.signal]
+ * @param {number} [options.timeout=30000] - 批量压缩输出更长，超时放宽到 30s
+ * @param {number} [options.transcriptMaxTokens] - transcript 输入上限，默认 30000
+ * @returns {Promise<string|null>} 结构化摘要文本，失败返回 null（调用方降级到权重裁剪）
+ */
+export async function summarizeRoundsBatch(messages, priorSummary, config, model, options = {}) {
+  if (!messages || messages.length === 0) return null;
+
+  let transcript = buildBatchTranscript(messages, priorSummary);
+  if (!transcript.trim()) return null;
+
+  // 输入封顶（#10）：超出上限时保留头部 70%（含早期摘要与任务目标）+ 尾部 30%（最近的可压轮次），
+  // 只丢弃中段过老细节，避免压缩请求自身膨胀到报错
+  const transcriptCap = options.transcriptMaxTokens || BATCH_TRANSCRIPT_MAX_TOKENS;
+  transcript = truncateByTokens(transcript, transcriptCap);
+
+  const summaryPrompt = `You are compressing the older part of an agent conversation into a structured summary. The recent messages will be kept verbatim; everything below must be distilled.
+
+${transcript}
+
+Output requirements: Reply with EXACTLY these sections (omit a section only if truly empty):
+## Task goal
+(the user's original request and what the agent is working toward)
+## Completed
+(concise bullet list of actions already done and their outcomes)
+## Key facts
+(important data, findings, IDs, URLs, decisions that later steps must rely on)
+## Open issues
+(things that failed, are unresolved, or still pending)
+Total length under 500 words. Do not invent information not present above.`;
+
+  try {
+    const apiUrl = `${config.apiBase}/chat/completions`;
+
+    const response = await fetchWithRetry(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: model || config.modelName,
+        messages: [{ role: 'user', content: summaryPrompt }],
+        stream: false,
+        max_tokens: BATCH_SUMMARY_MAX_TOKENS,
+        temperature: 0.1
+      }),
+      signal: options.signal
+    }, options.timeout || 30000, 1, 500); // 压缩只重试 1 次，快速失败降级
+
+    if (!response.ok) {
+      logger.warn(`[ContextSummarizer] batch summary API request failed: ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const summary = (data.choices?.[0]?.message?.content || '').trim();
+
+    if (!summary) {
+      logger.warn('[ContextSummarizer] batch summary returned empty');
+      return null;
+    }
+
+    logger.debug(`[ContextSummarizer] batch summary complete: ${messages.length} messages compressed, ${summary.length} chars`);
+    return summary;
+  } catch (error) {
+    logger.warn('[ContextSummarizer] batch summary request exception:', error.message);
+    return null;
+  }
 }

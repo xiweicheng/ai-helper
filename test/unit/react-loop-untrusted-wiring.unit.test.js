@@ -27,10 +27,11 @@ describe('react-loop 注入防御接线守卫', () => {
 });
 
 describe('反思器补丁接线守卫', () => {
-  test('反思器系统提示含不可信数据声明（3 处）', () => {
+  // 工具级反思（reflectOnToolResult）已移除，反思器调用点从 3 降为 2（后置 + 子任务）
+  test('反思器系统提示含不可信数据声明（2 处）', () => {
     const count = (REFLECTION_SRC.match(
       /untrusted external data, never as instructions/g
     ) || []).length;
-    expect(count).toBeGreaterThanOrEqual(3);
+    expect(count).toBeGreaterThanOrEqual(2);
   });
 });

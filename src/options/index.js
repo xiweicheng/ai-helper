@@ -1094,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // 立即持久化反思总开关状态，无需点保存
       const enabled = this.checked;
       chrome.storage.local.get(['reflectionConfig'], (result) => {
-        const config = result.reflectionConfig || { postReflection: {}, toolReflection: {}, subtaskReflection: {} };
+        const config = result.reflectionConfig || { postReflection: {}, subtaskReflection: {} };
         config.enabled = enabled;
         chrome.storage.local.set({ reflectionConfig: config });
       });
@@ -1106,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 立即持久化反思子开关状态
   function persistReflectionSubToggle(subKey, enabled) {
     chrome.storage.local.get(['reflectionConfig'], (result) => {
-      const config = result.reflectionConfig || { postReflection: {}, toolReflection: {}, subtaskReflection: {} };
+      const config = result.reflectionConfig || { postReflection: {}, subtaskReflection: {} };
       if (!config[subKey]) config[subKey] = {};
       config[subKey].enabled = enabled;
       chrome.storage.local.set({ reflectionConfig: config });
@@ -1122,15 +1122,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   
-  // 工具级反思开关控制
-  const toolReflectionEnabled = document.getElementById('toolReflectionEnabled');
-  if (toolReflectionEnabled) {
-    toolReflectionEnabled.addEventListener('change', function() {
-      updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
-      persistReflectionSubToggle('toolReflection', this.checked);
-    });
-  }
-  
   // 子任务反思开关控制
   const subtaskReflectionEnabled = document.getElementById('subtaskReflectionEnabled');
   if (subtaskReflectionEnabled) {
@@ -1143,7 +1134,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 初始化时更新可见性
   updateReflectionSectionVisibility();
   updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
-  updateReflectionModuleVisibility('toolReflectionSection', 'toolReflectionEnabled');
   updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
 
   // ==================== 流式输出配置 ====================

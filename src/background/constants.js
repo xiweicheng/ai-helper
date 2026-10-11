@@ -38,15 +38,6 @@ export const DEFAULT_REFLECTION_CONFIG = {
     model: null,
     temperature: 0.3,
     maxTokens: 1024
-  },
-  toolReflection: {
-    enabled: true,            // 工具级反思
-    triggerOnError: true,     // 工具返回错误时触发
-    triggerOnEmpty: true,     // 工具返回空结果时触发
-    triggerOnOversized: true, // 工具返回结果过大时触发
-    oversizeThreshold: 50000, // 结果大小阈值（字符）
-    triggerOnConsecutiveFails: 3, // 连续 N 次工具失败触发
-    maxPerIteration: 2        // 每轮迭代最多触发工具反思次数
   }
 };
 

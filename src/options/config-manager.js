@@ -1028,7 +1028,6 @@ export function loadConfig() {
     const reflection = result.reflectionConfig || DEFAULT_REFLECTION_CONFIG;
     document.getElementById('reflectionEnabled').checked = reflection.enabled !== false;
     document.getElementById('postReflectionEnabled').checked = reflection.postReflection?.enabled !== false;
-    document.getElementById('toolReflectionEnabled').checked = reflection.toolReflection?.enabled !== false;
     document.getElementById('subtaskReflectionEnabled').checked = reflection.subtaskReflection?.enabled === true;
     
     document.getElementById('streamEnabled').checked =
@@ -1074,7 +1073,6 @@ export function loadConfig() {
       }
       
       updateModule('postReflectionSection', 'postReflectionEnabled');
-      updateModule('toolReflectionSection', 'toolReflectionEnabled');
       updateModule('subtaskReflectionSection', 'subtaskReflectionEnabled');
     }
 
@@ -1203,10 +1201,6 @@ export function saveConfig() {
     postReflection: {
       ...DEFAULT_REFLECTION_CONFIG.postReflection,
       enabled: document.getElementById('postReflectionEnabled').checked
-    },
-    toolReflection: {
-      ...DEFAULT_REFLECTION_CONFIG.toolReflection,
-      enabled: document.getElementById('toolReflectionEnabled').checked
     },
     subtaskReflection: {
       ...DEFAULT_REFLECTION_CONFIG.subtaskReflection,

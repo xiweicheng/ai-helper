@@ -73,7 +73,10 @@ export const AI_TOOLS = [
             }
           },
           isComplex: { type: 'boolean' },
-          strategy: { type: 'string', enum: ['sequential', 'parallel', 'conditional'] }
+          strategy: { type: 'string', enum: ['sequential', 'parallel', 'dependency'], description: 'Execution strategy: sequential = run subtasks in listed order; parallel = run independent subtasks concurrently; dependency = run subtasks in topological order derived from their dependencies' },
+          failureStrategy: { type: 'string', enum: ['stop', 'continue', 'skip'], description: 'What to do when a subtask fails after retries: stop = halt remaining subtasks and roll back; continue/skip = keep executing the rest (default continue)' },
+          maxRetries: { type: 'integer', description: 'Max retries per failed subtask (default 1, clamped to 0-3)' },
+          maxParallel: { type: 'integer', description: 'Max concurrent subtasks when strategy is parallel (default 3, clamped to 1-8)' }
         },
         required: ['taskDescription', 'subtasks']
       }
