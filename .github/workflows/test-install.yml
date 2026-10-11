@@ -23,55 +23,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 1. 全新安装（含开机自启）
+      - name: 1. Fresh install (with autostart)
         run: |
           & .\install.ps1
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 退出码 $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited with code $LASTEXITCODE" }
 
-      - name: 2. 校验安装产物
+      - name: 2. Verify install artifacts
         run: |
           $root = Join-Path $env:USERPROFILE ".ai-helper-agent"
           foreach ($p in @("runtime\node.exe", "runtime\npm.cmd", "app\node_modules\ai-helper-agent\bin\agent.js", "bin\aha.cmd", "INSTALL_MANIFEST.json", "mirrors.json")) {
-            if (-not (Test-Path (Join-Path $root $p))) { throw "缺少安装产物: $p" }
+            if (-not (Test-Path (Join-Path $root $p))) { throw "missing artifact: $p" }
           }
           Write-Host "mirrors.json:"; Get-Content (Join-Path $root "mirrors.json")
           Write-Host "manifest:"; Get-Content (Join-Path $root "INSTALL_MANIFEST.json")
 
-      - name: 3. aha status + API 连通性
+      - name: 3. aha status + API connectivity
         run: |
           $aha = Join-Path $env:USERPROFILE ".ai-helper-agent\bin\aha.cmd"
           & $aha status
-          if ($LASTEXITCODE -ne 0) { throw "aha status 退出码 $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "aha status exited with code $LASTEXITCODE" }
           $r = Invoke-RestMethod -Uri "http://127.0.0.1:18910/api/status" -TimeoutSec 10
           $r | ConvertTo-Json
-          if (-not $r.success -or -not $r.running) { throw "API status 异常" }
-          if ($r.nodeVersion -notmatch "v22") { throw "内嵌 Node 版本异常: $($r.nodeVersion)" }
+          if (-not $r.success -or -not $r.running) { throw "API status not running" }
+          if ($r.nodeVersion -notmatch "v22") { throw "embedded node version wrong: $($r.nodeVersion)" }
 
       - name: 4. install.ps1 -Status
         run: |
           & .\install.ps1 -Status
-          if ($LASTEXITCODE -ne 0) { throw "-Status 退出码 $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "-Status exited with code $LASTEXITCODE" }
 
-      - name: 5. install.ps1 -Update（更新检查）
+      - name: 5. install.ps1 -Update (update check)
         run: |
           & .\install.ps1 -Update
-          if ($LASTEXITCODE -ne 0) { throw "-Update 退出码 $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "-Update exited with code $LASTEXITCODE" }
 
-      - name: 6. install.ps1 -Uninstall（非交互，保留数据）
+      - name: 6. install.ps1 -Uninstall (non-interactive, keep data)
         run: |
           & .\install.ps1 -Uninstall
-          if ($LASTEXITCODE -ne 0) { throw "-Uninstall 退出码 $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "-Uninstall exited with code $LASTEXITCODE" }
 
-      - name: 7. 校验卸载残留
+      - name: 7. Verify uninstall residue
         run: |
           $root = Join-Path $env:USERPROFILE ".ai-helper-agent"
           foreach ($p in @("runtime", "app", "bin")) {
-            if (Test-Path (Join-Path $root $p)) { throw "卸载后仍残留目录: $p" }
+            if (Test-Path (Join-Path $root $p)) { throw "dir not removed: $p" }
           }
-          if (-not (Test-Path $root)) { throw "用户数据目录被误删（应保留）" }
-          Write-Host "✓ runtime/app/bin 已清除，用户数据目录保留"
+          if (-not (Test-Path $root)) { throw "user data dir wrongly removed (should keep)" }
+          Write-Host "OK: runtime/app/bin removed, user data kept"
 
-      - name: 失败时收集 Agent 日志
+      - name: Collect agent logs on failure
         if: failure()
         run: |
           $logDir = Join-Path $env:USERPROFILE ".ai-helper-agent\logs"
