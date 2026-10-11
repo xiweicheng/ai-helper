@@ -41,6 +41,13 @@ function Write-Warn  { Write-Host "[AI Helper] $args" -ForegroundColor Yellow }
 function Write-Err   { Write-Host "[AI Helper] $args" -ForegroundColor Red }
 function Die([string]$Msg) { Write-Err $Msg; exit 1 }
 
+# 容忍原生命令的 stderr 输出：PS 5.1 + ErrorActionPreference=Stop 会把原生命令 stderr 升级为终止错误（PS7 无此问题）
+function Invoke-Tolerant([scriptblock]$Block) {
+    $bak = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Block } catch { } finally { $ErrorActionPreference = $bak }
+}
+
 function Test-Url($Url) {
     try {
         $r = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec $ProbeTimeout -UseBasicParsing -ErrorAction Stop
@@ -258,7 +265,7 @@ function Start-AgentService {
 
     Write-Info "正在启动 AI Helper Agent..."
     $ahaCmd = Join-Path $BinDir "aha.cmd"
-    & $ahaCmd start -b 2>&1 | ForEach-Object { Write-Host "  $_" }
+    Invoke-Tolerant { & $ahaCmd start -b 2>&1 | ForEach-Object { Write-Host "  $_" } }
 
     Start-Sleep -Seconds 2
     Write-Host ""
@@ -276,17 +283,21 @@ function Setup-Autostart {
     $taskName = "AIHelperAgent"
     $ahaCmd = Join-Path $BinDir "aha.cmd"
 
-    # 先删旧任务（幂等）
-    schtasks /Delete /TN $taskName /F 2>$null | Out-Null
+    # 先删旧任务（幂等；任务不存在时 schtasks 会写 stderr，需容忍）
+    Invoke-Tolerant { schtasks /Delete /TN $taskName /F 2>$null | Out-Null }
 
     # 创建新任务：登录时运行
-    schtasks /Create /TN $taskName /TR "`"$ahaCmd`" _autostart-guard" /SC ONLOGON /RL LIMITED /F | Out-Null
+    Invoke-Tolerant { schtasks /Create /TN $taskName /TR "`"$ahaCmd`" _autostart-guard" /SC ONLOGON /RL LIMITED /F | Out-Null }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "开机自启设置失败（受限环境可忽略）；可稍后在任务计划程序中手动配置"
+        return
+    }
 
     Write-Ok "已设置 Windows 开机自启（任务计划程序）"
 }
 
 function Remove-Autostart {
-    schtasks /Delete /TN "AIHelperAgent" /F 2>$null | Out-Null
+    Invoke-Tolerant { schtasks /Delete /TN "AIHelperAgent" /F 2>$null | Out-Null }
 }
 
 # ==================== 卸载 ====================
@@ -295,7 +306,7 @@ function Do-Uninstall {
 
     # 停止
     $ahaCmd = Join-Path $BinDir "aha.cmd"
-    if (Test-Path $ahaCmd) { & $ahaCmd stop 2>$null }
+    if (Test-Path $ahaCmd) { Invoke-Tolerant { & $ahaCmd stop 2>$null } }
 
     # 移除自启
     Remove-Autostart
@@ -346,16 +357,20 @@ function Do-Update {
     # 查最新
     $registryArg = if ($net.Registry -ne $RegOfficial) { "--registry=$($net.Registry)" } else { "" }
     $npmCli = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js"
-    $latest = if (Test-Path $npmCli) {
-        & $nodeExe $npmCli view $NodePackage version $registryArg 2>$null
-    } else {
-        & (Join-Path $RuntimeDir "npm.cmd") view $NodePackage version $registryArg 2>$null
+    # npm 的 notice 信息走 stderr，PS5.1+Stop 会误判为终止错误，需容忍
+    $latest = Invoke-Tolerant {
+        if (Test-Path $npmCli) {
+            & $nodeExe $npmCli view $NodePackage version $registryArg 2>$null
+        } else {
+            & (Join-Path $RuntimeDir "npm.cmd") view $NodePackage version $registryArg 2>$null
+        }
     }
+    $latest = "$latest".Trim()
 
     if ($latest -eq $current) { Write-Ok "已是最新版本 v$current"; return }
 
     Write-Info "正在从 v$current 更新到 v$latest..."
-    & (Join-Path $BinDir "aha.cmd") stop 2>$null
+    Invoke-Tolerant { & (Join-Path $BinDir "aha.cmd") stop 2>$null }
     Install-Agent $net
     Start-AgentService
     Write-Ok "更新完成: v$current → v$latest"
