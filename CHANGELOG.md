@@ -2,6 +2,32 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-11
+
+### 新增（ReAct 循环工程优化）
+- **任务状态锚点**：`plan_task` 拆解后在内存维护 `taskState`，每次 API 调用前瞬态回灌计划进度到上下文（不写入消息、不被 trim），长任务被压缩/摘要后模型仍不丢失目标与进度；与 checkpoint（chrome.storage）恢复链路打通。
+- **大工具结果卸载（offloading）**：超阈值工具结果优先卸载到 Agent workspace 文件（`tool-results/{tool}_{callId}.txt`）保留全文可回读，无代理/写失败时回退智能截断。
+- **阈值批量压缩**：上下文超阈值时一次 LLM 调用将多旧轮次批量压缩为结构化摘要（任务目标/已完成/关键事实/未决问题），保留首条原始用户问题，失败降级权重裁剪。
+- **轮内工具部分并行**：同一轮 `tool_calls` 按可并行性连续分组、`Promise.all` 并发，结果按声明顺序回写并保持 `assistant(tool_calls)+tool` 邻接。
+- **收敛提示与子任务预算**：迭代预算近 80% 时注入收敛提示；子任务迭代轮次与整体超时均受父任务实时剩余约束。
+- **429 Retry-After + jitter / 400 超限自愈**：重试退避尊重服务端 `Retry-After`；命中上下文超限 400 时自动压缩重试。
+
+### 变更（工具级反思下线）
+- **移除工具级反思**（原为独立 LLM 调用，成本收益不匹配），改由零成本内联规则「工具观察提示」（`[Observation Hint]`）承担：工具失败/空结果/超大结果被压缩时追加规则提示引导模型自我调整。同步删除 Options「反思」Tab 的工具级反思开关、`DEFAULT_REFLECTION_CONFIG.toolReflection`、`react-reflection.js` 相关函数与 zh/en i18n；配置导入/导出两侧剥离历史遗留的 `reflectionConfig.toolReflection` 死字段。反思层级文档表述由「三级」改为「二级反思（子任务 + 后置）+ 工具观察提示」。
+
+### 修复（代码评审驱动的回归与缺陷）
+- 轮内消息重排将 `plan_task` 的子任务汇总 `user` 消息提到 `tool` 前，破坏 `assistant(tool_calls)+tool` 配对导致下一请求 400（Blocker）。
+- `trimMessages` 以同名形参遮蔽外层引用、阈值压缩下重新绑定致消息丢失（高危），改为原地 `splice` + 数组收缩守卫。
+- 任务锚点/收敛提示被上下文压力 `critical` 分支的 `filterApiMessages` 重建覆盖，调整为在压力裁剪之后注入。
+- 批量压缩误删首条原始用户问题、摘要插入位置漂移；卸载路径 `toolCallId` 未清洗存在路径越界。
+- 观察提示超大结果阈值与截断阈值同源（`MAX_TOOL_RESULT_TOKENS=6000` 上提为模块级常量，取代旧硬编码 24000）；并行下失败计数改为本轮总数口径避免少计。
+- 批量压缩 transcript 输入封顶（默认 30000 token，可覆盖），防超长会话下压缩请求自身超窗白烧一次调用。
+- 锚点回灌的 `taskState` 无结构校验（损坏/旧版 checkpoint 恢复会抛错终止循环），加 `Array.isArray` 守卫并调用处判空；清理 react-loop 死导入与 `context-summarizer` 死导出 `summarizeRound`。
+
+### 工程质量与测试
+- `npm run build:silent` BUILD_SUCCESS；全量 vitest 68 文件 / 1110 用例通过（2 个预先存在的 `document is not defined` 报错不变）。新增/更新回归：配对行为用例（真实 `filterApiMessages` 验证）、`#7` 子任务超时纯函数、`#8`/`#9` 锚点结构守卫与死导入/死导出清理、`#10`/`#11` 压缩封顶与阈值同源、`config-io` 导入剥离；移除随功能下线的 `summarizeRound` 及其用例。
+- 文档同步（Tier A）：`docs/zh|en/DOCUMENTATION.md`、`README.md`、`README.zh-CN.md`、`docs/AI-Helper-作品介绍文档.md`。
+
 ## 2026-10-10
 
 ### 新增

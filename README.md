@@ -62,13 +62,13 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 | Built-in knowledge base (RAG) with citations | Partial | DIY | No | **Yes (optional Agent)** |
 | Multi-agent collaboration / sub-task dispatch | No | DIY | No | **Yes** |
 | Tool preselection + token-budget savings | No | DIY | No | **Yes** |
-| Three-tier reflection quality assurance | No | DIY | No | **Yes** |
+| Reflection quality assurance | No | DIY | No | **Yes** |
 | Scheduled tasks + checkpoint resume | Few | DIY | No | **Yes** |
 | Data stays local / under your control | No | Yes | Partial | **Yes** |
 
 ## Why not just use another AI sidebar?
 
-- **Three-tier reflection quality assurance.** Preselection → tool-level reflection → sub-task reflection → post-reflection. Every final answer is scored on 7 dimensions; below-threshold runs get revised or re-executed automatically.
+- **Reflection quality assurance.** Preselection → zero-cost tool observation hint → sub-task reflection → post-reflection. Every final answer is scored on 7 dimensions; below-threshold runs get revised or re-executed automatically.
 - **Tool preselection saves tokens.** 40+ tool definitions would blow up every call. A lightweight API pre-pass narrows them down to the 5–10 that actually matter before the main model runs.
 - **Token-budget management.** Truncation is by token count, not message count, so `tool_calls` / `tool` message pairs never get split apart.
 - **Long-quote auto-compression.** Big page selections are summarized instead of squatting in your context forever.
