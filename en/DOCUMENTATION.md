@@ -110,7 +110,7 @@ User Input → Side Panel (Agent Selection, optional image/file, optional Skill/
           ├── Content Script (Page interaction, content extraction, etc.)
           ├── Local Agent (File R/W, command exec, MCP tools, etc.)
           └── Offscreen Document (Clipboard R/W)
-        → Tool Reflection → Result Cache → Feed back to LLM
+        → Tool Observation Hint (zero-cost inline rule) → Result Cache → Feed back to LLM
       → Task Decomposition & Parallel Execution (plan_task, sub-agent dispatch)
       → Post Reflection: Multi-dimensional Quality Assessment → Pass/Revise/Retry
     → chrome.runtime.sendMessage('API_COMPLETE')
@@ -185,8 +185,8 @@ ai-helper/
 ├── src/                                 # Extension source code
 │   ├── background/                      # Background Service Worker
 │   │   ├── index.js                     # Entry: message routing, session mgmt, agent health
-│   │   ├── react-loop.js               # ReAct inference loop (core, with 3-tier reflection)
-│   │   ├── react-reflection.js         # 3-tier reflection (post / tool-level / sub-task)
+│   │   ├── react-loop.js               # ReAct inference loop (core, with 2-tier reflection + tool observation hint)
+│   │   ├── react-reflection.js         # Reflection system (post / sub-task) + tool observation hint rules
 │   │   ├── context-summarizer.js       # Incremental context summarization (long chats)
 │   │   ├── context-compactor.js        # Manual context compaction (history digest)
 │   │   ├── tool-executor.js            # Tool registration, execution dispatch, MCP injection
@@ -390,11 +390,12 @@ The project uses the ReAct (Reasoning + Acting) pattern as its core inference en
 
 | Level | Description | Trigger Condition |
 |-------|-------------|-------------------|
-| **Tool-Level** | Quick assessment of tool result usefulness post-execution | Tool returns error / empty result / oversized result (>50000 chars) / 3 consecutive failures |
 | **Sub-task Reflection** | Evaluates sub-task result completeness and relevance | Only complex-marked sub-tasks (configurable) |
 | **Post-Reflection** | Final answer 7-dimension quality scoring | Auto-executes after each inference cycle |
 
 Post-reflection scoring dimensions: Completeness, Accuracy, Relevance, Tool Usage, Clarity, Safety, Efficiency. Based on score threshold, decides to: pass (≥7), revise (5-7), or re-execute (<5).
+
+> Tool-result quality feedback no longer issues a separate LLM reflection call; it is handled by a zero-cost inline rule, the "Tool Observation Hint" (`[Observation Hint]`): when a tool fails / returns empty / its oversized result is condensed, a one-line rule-based hint is appended to the result to guide the model to self-adjust.
 
 ### 5. Context Compression & Token Budget Management
 
@@ -982,7 +983,7 @@ The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, 
 1. Right-click extension icon → **Options**
 2. **Basic**: Pick UI language and provider profile, enter API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
 3. **ReAct**: Adjust inference loop parameters and streaming output
-4. **Reflection**: Configure the three-tier reflection strategy
+4. **Reflection**: Configure post- and sub-task reflection
 5. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
 6. **Agent**: Pair with the local agent service
 7. **Toolbox**: Manage MCP servers and Skills
@@ -1033,8 +1034,9 @@ Note: user clarification time does not count toward the loop timeout (timer paus
 |-------|---------|-------------|
 | Reflection Master Switch | On | Globally controls all reflection |
 | Post-Reflection | On | Assesses final result quality after the loop; auto-revise or re-execute below threshold |
-| Tool-Level Reflection | On | Checks tool results after each call, adjusts strategy on errors/exceptions |
 | Sub-task Reflection | Off | Independent assessment of decomposed sub-tasks (advanced feature) |
+
+> The tool-level reflection toggle has been removed; tool-result quality feedback is now handled automatically by the zero-cost inline "Tool Observation Hint" rule, with no configuration needed.
 
 ### Chat Settings (in the side panel)
 
