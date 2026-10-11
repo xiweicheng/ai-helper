@@ -1,0 +1,79 @@
+name: Test Installer
+
+# 触发方式：手动触发（Actions → Test Installer → Run workflow）
+# 用途：在真实 Windows Runner 上对 install.ps1 做全生命周期验证：
+#   安装 → 状态/API 校验 → 更新检查 → 卸载 → 残留检查
+# 双 shell 矩阵：powershell (Windows PowerShell 5.1，即 irm | iex 的真实路径) + pwsh (PS7)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-lifecycle:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    name: install.ps1 全流程 (${{ matrix.shell }})
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 1. 全新安装（含开机自启）
+        run: |
+          & .\install.ps1
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 退出码 $LASTEXITCODE" }
+
+      - name: 2. 校验安装产物
+        run: |
+          $root = Join-Path $env:USERPROFILE ".ai-helper-agent"
+          foreach ($p in @("runtime\node.exe", "runtime\npm.cmd", "app\node_modules\ai-helper-agent\bin\agent.js", "bin\aha.cmd", "INSTALL_MANIFEST.json", "mirrors.json")) {
+            if (-not (Test-Path (Join-Path $root $p))) { throw "缺少安装产物: $p" }
+          }
+          Write-Host "mirrors.json:"; Get-Content (Join-Path $root "mirrors.json")
+          Write-Host "manifest:"; Get-Content (Join-Path $root "INSTALL_MANIFEST.json")
+
+      - name: 3. aha status + API 连通性
+        run: |
+          $aha = Join-Path $env:USERPROFILE ".ai-helper-agent\bin\aha.cmd"
+          & $aha status
+          if ($LASTEXITCODE -ne 0) { throw "aha status 退出码 $LASTEXITCODE" }
+          $r = Invoke-RestMethod -Uri "http://127.0.0.1:18910/api/status" -TimeoutSec 10
+          $r | ConvertTo-Json
+          if (-not $r.success -or -not $r.running) { throw "API status 异常" }
+          if ($r.nodeVersion -notmatch "v22") { throw "内嵌 Node 版本异常: $($r.nodeVersion)" }
+
+      - name: 4. install.ps1 -Status
+        run: |
+          & .\install.ps1 -Status
+          if ($LASTEXITCODE -ne 0) { throw "-Status 退出码 $LASTEXITCODE" }
+
+      - name: 5. install.ps1 -Update（更新检查）
+        run: |
+          & .\install.ps1 -Update
+          if ($LASTEXITCODE -ne 0) { throw "-Update 退出码 $LASTEXITCODE" }
+
+      - name: 6. install.ps1 -Uninstall（非交互，保留数据）
+        run: |
+          & .\install.ps1 -Uninstall
+          if ($LASTEXITCODE -ne 0) { throw "-Uninstall 退出码 $LASTEXITCODE" }
+
+      - name: 7. 校验卸载残留
+        run: |
+          $root = Join-Path $env:USERPROFILE ".ai-helper-agent"
+          foreach ($p in @("runtime", "app", "bin")) {
+            if (Test-Path (Join-Path $root $p)) { throw "卸载后仍残留目录: $p" }
+          }
+          if (-not (Test-Path $root)) { throw "用户数据目录被误删（应保留）" }
+          Write-Host "✓ runtime/app/bin 已清除，用户数据目录保留"
+
+      - name: 失败时收集 Agent 日志
+        if: failure()
+        run: |
+          $logDir = Join-Path $env:USERPROFILE ".ai-helper-agent\logs"
+          if (Test-Path $logDir) { Get-ChildItem $logDir | ForEach-Object { Write-Host "== $($_.Name) =="; Get-Content $_.FullName -Tail 100 } }
+          Get-Content (Join-Path $env:USERPROFILE ".ai-helper-agent\mirrors.json") -ErrorAction SilentlyContinue

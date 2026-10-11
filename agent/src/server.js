@@ -1,7 +1,7 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, createWriteStream, createReadStream, statSync, existsSync, watch } from 'fs';
+import { readFileSync, writeFileSync, createWriteStream, createReadStream, statSync, existsSync, watch } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
 import { join, dirname, basename, resolve, isAbsolute, relative } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -525,6 +525,8 @@ export function startServer() {
       agentOperationInProgress = true;
       lastOperationTime = Date.now();
       logSystem('shutdown', { reason: 'api_request', local: isLocal, remote: remoteIp });
+      // 写入主动停止标记，阻止 autostart 自动拉起
+      try { writeFileSync(join(homedir(), '.ai-helper-agent', '.stopped'), new Date().toISOString()); } catch {}
       jsonResponse(res, 200, { success: true, message: t('message.shuttingDown') });
       // 延迟 200ms 再关闭，确保响应数据已送达客户端（res.end() 仅写入缓冲区，不保证客户端已接收）
       setTimeout(() => shutdown(), 200);

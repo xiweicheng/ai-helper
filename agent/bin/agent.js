@@ -237,6 +237,9 @@ function printHelp() {
   console.log(t('cmdPaircode'));
   console.log(t('cmdConfig'));
   console.log(t('cmdRag'));
+  console.log(t('cmdUpdate'));
+  console.log(t('cmdUninstall'));
+  console.log(t('cmdAutostart'));
   console.log(t('cmdHelp'));
   console.log('');
   console.log(t('startupOptions'));
@@ -299,6 +302,9 @@ if (command === '--version' || command === '-v') {
 // ==================== start ====================
 if (command === 'start') {
   const isBg = process.argv.includes('--background') || process.argv.includes('-b');
+
+  // 用户主动启动时清除 .stopped 标记（否则 autostart guard 会阻止启动）
+  try { const stopped = join(AGENT_DIR, '.stopped'); if (existsSync(stopped)) unlinkSync(stopped); } catch {}
 
   if (isBg) {
     ensureAgentDir();
@@ -676,6 +682,150 @@ if (command === 'start') {
   console.log(`[Agent] ${t('currentConfig')}`);
   console.log(JSON.stringify(config, null, 2));
   console.log(`[Agent] ${t('configFileLocation', { path: CONFIG_FILE })}`);
+
+// ==================== update ====================
+} else if (command === 'update') {
+  const checkOnly = rawArgs.includes('--check');
+  const { getRegistryUrl, getNpmPath, isEmbedded, getAgentPackageRoot } = await import('../src/install-mode.js');
+  const { spawnSync } = await import('child_process');
+
+  const npmPath = getNpmPath();
+  const registry = getRegistryUrl();
+  const registryArg = registry ? [`--registry=${registry}`] : [];
+  const pkgRoot = getAgentPackageRoot();
+
+  // 当前版本
+  const pkgJson = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf-8'));
+  const currentVersion = pkgJson.version;
+
+  // 查询最新版
+  const viewArgs = ['view', 'ai-helper-agent', 'version', ...registryArg];
+  const viewResult = spawnSync(npmPath, viewArgs, { encoding: 'utf-8', shell: process.platform === 'win32' });
+  const latestVersion = (viewResult.stdout || '').trim().split('\n').pop();
+
+  if (!latestVersion || latestVersion === currentVersion) {
+    console.log(`[Agent] ${t('updateLatest', { version: currentVersion })}`);
+    process.exit(0);
+  }
+
+  if (checkOnly) {
+    console.log(`[Agent] ${t('updateAvailable', { current: currentVersion, latest: latestVersion })}`);
+    process.exit(0);
+  }
+
+  console.log(`[Agent] ${t('updateInstalling', { current: currentVersion, latest: latestVersion })}`);
+
+  // 停止服务
+  const config = readAgentConfig();
+  if (await isRunning(config)) {
+    try { await fetch(`http://${config.host}:${config.port}/api/shutdown`, { method: 'POST' }); } catch {}
+    await waitForExit(config, 5000);
+  }
+
+  // 执行更新
+  let installArgs;
+  if (isEmbedded()) {
+    // 内嵌模式：更新到 app/ 目录
+    const appDir = join(AGENT_DIR, 'app');
+    installArgs = ['install', 'ai-helper-agent@latest', ...registryArg, '--no-audit', '--no-fund', '--prefix', appDir];
+  } else {
+    // npm -g 模式：全局更新
+    installArgs = ['install', '-g', 'ai-helper-agent@latest', ...registryArg, '--no-audit', '--no-fund'];
+  }
+
+  const installResult = spawnSync(npmPath, installArgs, { stdio: 'inherit', shell: process.platform === 'win32' });
+  if (installResult.status !== 0) {
+    console.error(`[Agent] ${t('updateFailed')}`);
+    process.exit(1);
+  }
+
+  // 重启
+  console.log(`[Agent] ${t('updateSuccess', { version: latestVersion })}`);
+  const agentScript = resolve(process.argv[1]);
+  spawn(process.execPath, [agentScript, 'start', '-b'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+
+// ==================== uninstall ====================
+} else if (command === 'uninstall') {
+  const isWin = process.platform === 'win32';
+
+  // 停止服务
+  const config = readAgentConfig();
+  if (await isRunning(config)) {
+    try { await fetch(`http://${config.host}:${config.port}/api/shutdown`, { method: 'POST' }); } catch {}
+    await waitForExit(config, 5000);
+  }
+  const pid = getPidFromFile();
+  if (pid) { killByPid(pid); removePidFile(); }
+
+  // 移除自启
+  const { homedir } = await import('os');
+  if (!isWin) {
+    const plist = join(homedir(), 'Library', 'LaunchAgents', 'com.ai-helper.agent.plist');
+    if (existsSync(plist)) {
+      spawnSync('launchctl', ['unload', plist], { stdio: 'ignore' });
+      try { unlinkSync(plist); } catch {}
+    }
+    const service = join(homedir(), '.config', 'systemd', 'user', 'ai-helper-agent.service');
+    if (existsSync(service)) {
+      spawnSync('systemctl', ['--user', 'disable', 'ai-helper-agent'], { stdio: 'ignore' });
+      try { unlinkSync(service); } catch {}
+    }
+  } else {
+    spawnSync('schtasks', ['/Delete', '/TN', 'AIHelperAgent', '/F'], { windowsHide: true, stdio: 'ignore' });
+  }
+
+  console.log(`[Agent] ${t('uninstallAutostartRemoved')}`);
+
+  // 移除 runtime/ app/ bin/ (保留数据)
+  const { rmSync } = await import('fs');
+  const dirsToRemove = [join(AGENT_DIR, 'runtime'), join(AGENT_DIR, 'app'), join(AGENT_DIR, 'bin')];
+  for (const dir of dirsToRemove) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+  try { unlinkSync(join(AGENT_DIR, 'INSTALL_MANIFEST.json')); } catch {}
+  try { unlinkSync(join(AGENT_DIR, 'mirrors.json')); } catch {}
+  try { unlinkSync(join(AGENT_DIR, '.stopped')); } catch {}
+
+  console.log(`[Agent] ${t('uninstallComplete', { dataDir: AGENT_DIR })}`);
+  process.exit(0);
+
+// ==================== autostart ====================
+} else if (command === 'autostart') {
+  const sub = rawArgs[1]; // 'on' | 'off'
+  const isWin = process.platform === 'win32';
+  const { homedir } = await import('os');
+
+  if (sub === 'off') {
+    if (!isWin && process.platform === 'darwin') {
+      const plist = join(homedir(), 'Library', 'LaunchAgents', 'com.ai-helper.agent.plist');
+      spawnSync('launchctl', ['unload', plist], { stdio: 'ignore' });
+      try { unlinkSync(plist); } catch {}
+    } else if (!isWin) {
+      spawnSync('systemctl', ['--user', 'disable', 'ai-helper-agent'], { stdio: 'ignore' });
+      const service = join(homedir(), '.config', 'systemd', 'user', 'ai-helper-agent.service');
+      try { unlinkSync(service); } catch {}
+    } else {
+      spawnSync('schtasks', ['/Delete', '/TN', 'AIHelperAgent', '/F'], { windowsHide: true, stdio: 'ignore' });
+    }
+    console.log(`[Agent] ${t('autostartDisabled')}`);
+  } else {
+    console.log(`[Agent] ${t('autostartUseScript')}`);
+  }
+  process.exit(0);
+
+// ==================== _autostart-guard (internal, autostart wrapper) ====================
+} else if (command === '_autostart-guard') {
+  // 检查 .stopped 标记：用户主动停止后不自启
+  const stoppedFile = join(AGENT_DIR, '.stopped');
+  if (existsSync(stoppedFile)) {
+    process.exit(0);
+  }
+  // 正常启动
+  const agentScript = resolve(process.argv[1]);
+  spawn(process.execPath, [agentScript, 'start', '-b'], {
+    detached: true, stdio: 'ignore', windowsHide: true
+  }).unref();
+  process.exit(0);
 
 // ==================== rag ====================
 } else if (command === 'rag') {

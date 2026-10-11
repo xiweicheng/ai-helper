@@ -6,11 +6,27 @@ AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweic
 
 ## 安装
 
+### 一键安装（推荐）
+
+自动检测网络环境、下载 Node.js 运行时、安装 Agent 并配置开机自启——无需任何 Node.js 知识。
+
+**macOS / Linux：**
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash
+```
+
+**Windows（PowerShell）：**
+```powershell
+irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex
+```
+
+### 手动安装（npm）
+
 ```bash
 npm install -g ai-helper-agent
 ```
 
-要求 Node.js >= 18.0.0。
+要求 Node.js >= 18.0.0（知识库/RAG 功能要求 >= 22.13.0）。
 
 ## 快速开始
 
@@ -40,6 +56,9 @@ ai-helper-agent start --workdir /path/to/your/project --port 18911
 | `paircode` | 查看配对码提示 |
 | `config` | 查看当前配置 |
 | `rag status` / `rag install` | 检测 RAG 依赖可用性 / 一键安装 RAG 依赖 |
+| `update` | 检查并更新到最新版本（`--check` 仅查看） |
+| `uninstall` | 一键卸载（保留用户数据） |
+| `autostart off` | 关闭开机自启 |
 | `help` | 显示帮助信息 |
 | `--version` / `-v` | 显示版本号 |
 

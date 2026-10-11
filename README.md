@@ -91,7 +91,7 @@ Chrome / Chromium users: see the developer-mode load step in the [30-second quic
 1. **Install** — one click from the [Microsoft Edge Add-ons store](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl), or download the auto-built package (`ai-helper-*.zip`) from [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest), extract it, then enable developer mode on `chrome://extensions/` and load the extracted folder. Developers can run `npm install && npm run build` and load `dist/` instead.
 2. **Open the side panel** — press `Ctrl+Shift+Y` / `Cmd+Shift+Y`, or click the extension icon.
 3. **Add your API key** — Options → Basic Settings. Any OpenAI-compatible endpoint works; DeepSeek presets ship by default. Save several providers as profiles and switch anytime.
-4. **(Optional) Unlock local files, terminal commands, MCP, Skills, and the local knowledge base** — run `npm install -g ai-helper-agent && aha start -b`, then paste the 6-digit pairing code into Options → Agent.
+4. **(Optional) Unlock local files, terminal commands, MCP, Skills, and the local knowledge base** — one-click install: `curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash` (Windows: `irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex`), or manually `npm install -g ai-helper-agent && aha start -b`, then paste the 6-digit pairing code into Options → Agent.
 
 Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 

@@ -6,11 +6,27 @@ AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Ex
 
 ## Installation
 
+### One-click install (recommended)
+
+Automatically detects network environment, downloads Node.js runtime, installs Agent, and configures auto-start — no Node.js knowledge required.
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex
+```
+
+### Manual install (npm)
+
 ```bash
 npm install -g ai-helper-agent
 ```
 
-Requires Node.js >= 18.0.0.
+Requires Node.js >= 18.0.0 (>= 22.13.0 for Knowledge Base / RAG features).
 
 ## Quick Start
 
@@ -40,6 +56,9 @@ After startup, the terminal will display a 6-digit pairing code. Enter it in the
 | `paircode` | Show pairing code |
 | `config` | View current configuration |
 | `rag status` / `rag install` | Check RAG dependency availability / one-click install |
+| `update` | Check and update to latest version (`--check` for info only) |
+| `uninstall` | One-click uninstall (keeps user data) |
+| `autostart off` | Disable auto-start at boot |
 | `help` | Show help information |
 | `--version` / `-v` | Show version number |
 

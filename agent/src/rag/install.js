@@ -27,6 +27,7 @@ import { resetRagDetection, detectRagAvailable, getLastRagProbeError, isNodeVers
 import { stopProcessTree } from '../process-tree.js';
 import { logSystem } from '../logger.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
+import { getRegistryUrl } from '../install-mode.js';
 
 // ---- 安装清单（单一事实来源：包自身 package.json 的 ragDependencies 字段） ----
 //
@@ -95,7 +96,10 @@ export function buildRagInstallCommand(opts = {}) {
     // 包损坏/被裁剪：拒绝构建（无包名参数的 npm install 会按依赖树重算包目录，不可接受）
     throw new Error('ragDependencies missing in package.json');
   }
+  // 如果有探测出的镜像 registry，自动注入（npm -g 用户无 mirrors.json 时此值为 undefined）
+  const registryUrl = opts.registry ?? getRegistryUrl();
   const baseArgs = ['install', '--no-save', '--no-audit', '--no-fund'];
+  if (registryUrl) baseArgs.push(`--registry=${registryUrl}`);
   const cwd = getAgentRoot();
   if (isWin) {
     const npmCli = findWinNpmCli(execPath);
