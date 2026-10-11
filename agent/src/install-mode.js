@@ -65,7 +65,9 @@ export function readMirrors() {
   try {
     const mirrorsFile = join(EMBEDDED_ROOT, 'mirrors.json');
     if (!existsSync(mirrorsFile)) return null;
-    return JSON.parse(readFileSync(mirrorsFile, 'utf-8'));
+    // 剥 BOM：Windows PowerShell 5.1 的 Set-Content -Encoding UTF8 会写入 BOM，导致 JSON.parse 抛错
+    const text = readFileSync(mirrorsFile, 'utf-8').replace(/^\uFEFF/, '');
+    return JSON.parse(text);
   } catch {
     return null;
   }
@@ -111,7 +113,8 @@ export function readInstallManifest() {
   try {
     const file = join(EMBEDDED_ROOT, 'INSTALL_MANIFEST.json');
     if (!existsSync(file)) return null;
-    return JSON.parse(readFileSync(file, 'utf-8'));
+    const text = readFileSync(file, 'utf-8').replace(/^\uFEFF/, '');
+    return JSON.parse(text);
   } catch {
     return null;
   }

@@ -1,4 +1,4 @@
-# AI Helper Agent - Windows 一键安装脚本
+﻿# AI Helper Agent - Windows 一键安装脚本
 # Usage: powershell -ExecutionPolicy Bypass -File install.ps1
 #        irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex
 param(
@@ -48,6 +48,19 @@ function Test-Url($Url) {
     } catch { return $false }
 }
 
+# 多源回退下载：依次尝试候选 URL，全部失败才终止
+function Download-File($Urls, $Dest) {
+    foreach ($u in $Urls) {
+        try {
+            Invoke-WebRequest -Uri $u -OutFile $Dest -UseBasicParsing -TimeoutSec 600
+            return
+        } catch {
+            Write-Warn "下载失败: $u`n  原因: $($_.Exception.Message)，尝试下一个源..."
+        }
+    }
+    Die "所有下载源均失败，请检查网络后重试"
+}
+
 # ==================== 平台检测 ====================
 function Detect-Platform {
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
@@ -87,7 +100,9 @@ function Detect-Network {
         registry    = $regSrc
         huggingface = $hfSrc
     }
-    $mirrors | ConvertTo-Json | Set-Content -Path $MirrorsFile -Encoding UTF8
+    # 无 BOM UTF8 写出（PS 5.1 的 Set-Content -Encoding UTF8 会写 BOM，Node JSON.parse 无法解析）
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::WriteAllText($MirrorsFile, ($mirrors | ConvertTo-Json), $utf8NoBom)
 
     if ($nodeSrc -eq "mirror" -or $regSrc -eq "mirror") {
         Write-Ok "已自动切换至国内镜像源"
@@ -115,16 +130,22 @@ function Install-Node($Net) {
     }
 
     $filename = "node-v$NodeVersion-win-$($Net.Arch)"
-    $url = "$($Net.NodeBase)/v$NodeVersion/$filename.zip"
+    $altBase = if ($Net.NodeBase -eq $NodeOfficial) { $NodeMirror } else { $NodeOfficial }
 
     Write-Info "正在下载 Node.js v$NodeVersion..."
     $tmpZip = Join-Path $env:TEMP "ai-helper-node.zip"
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
+    Download-File @("$($Net.NodeBase)/v$NodeVersion/$filename.zip", "$altBase/v$NodeVersion/$filename.zip") $tmpZip
 
-    # SHA256 完整性校验（与 install.sh 对齐；获取失败则降级警告）
-    try {
-        $shasums = (Invoke-WebRequest -Uri "$($Net.NodeBase)/v$NodeVersion/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 15).Content
+    # SHA256 完整性校验（与 install.sh 对齐；双源获取，失败则降级警告）
+    $shasums = $null
+    foreach ($base in @($Net.NodeBase, $altBase)) {
+        try {
+            $shasums = (Invoke-WebRequest -Uri "$base/v$NodeVersion/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 15).Content
+            break
+        } catch { }
+    }
+    if ($shasums) {
         $expected = (($shasums -split "`n" | Where-Object { $_ -match [regex]::Escape("$filename.zip") } | Select-Object -First 1) -split '\s+') | Select-Object -First 1
         if ($expected) {
             $actual = (Get-FileHash -Path $tmpZip -Algorithm SHA256).Hash.ToLower()
@@ -133,7 +154,7 @@ function Install-Node($Net) {
         } else {
             Write-Warn "无法获取 SHA256 校验值，跳过验证"
         }
-    } catch {
+    } else {
         Write-Warn "校验值获取失败，跳过验证"
     }
 
@@ -193,7 +214,8 @@ function Install-Agent($Net) {
         os          = "win32"
         arch        = $Net.Arch
     }
-    $manifest | ConvertTo-Json | Set-Content -Path $ManifestFile -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::WriteAllText($ManifestFile, ($manifest | ConvertTo-Json), $utf8NoBom)
 
     Write-Ok "AI Helper Agent v$agentVer 安装完成"
 }
