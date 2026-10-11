@@ -62,8 +62,12 @@ function Download-File($Urls, $Dest) {
 }
 
 # ==================== 平台检测 ====================
+function Get-Arch {
+    if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+}
+
 function Detect-Platform {
-    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+    $arch = Get-Arch
     Write-Info "平台: win32-$arch"
     return @{ OS = "win32"; Arch = $arch }
 }
@@ -113,6 +117,7 @@ function Detect-Network {
     return @{
         NodeBase   = if ($nodeSrc -eq "mirror") { $NodeMirror } else { $NodeOfficial }
         Registry   = if ($regSrc -eq "mirror") { $RegMirror } else { $RegOfficial }
+        Arch       = Get-Arch
     }
 }
 
@@ -188,7 +193,8 @@ function Install-Agent($Net) {
 
     $pkgJson = Join-Path $AppDir "package.json"
     if (-not (Test-Path $pkgJson)) {
-        '{"name":"ai-helper-agent-host","private":true}' | Set-Content $pkgJson
+        # 无 BOM 写入，避免 npm 解析 package.json 失败
+        [IO.File]::WriteAllText($pkgJson, '{"name":"ai-helper-agent-host","private":true}', (New-Object System.Text.UTF8Encoding $false))
     }
 
     $registryArg = if ($Net.Registry -ne $RegOfficial) { "--registry=$($Net.Registry)" } else { "" }
