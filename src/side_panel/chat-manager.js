@@ -121,6 +121,7 @@ registerTranslations('zh', {
     stopTask: '停止任务',
     viewExecutionLog: '查看执行日志',
     preparing: '准备中...',
+    emptyModelReply: '模型未返回任何内容。若你发送了图片，请确认所选模型支持视觉识别（图片识别需选择支持多模态视觉的模型），或更换模型后重试。',
     stopping: '停止中...',
     retrying: '连接异常，正在重试 ({attempt}/{max})...',
     copyCode: '复制代码',
@@ -187,6 +188,7 @@ registerTranslations('en', {
     stopTask: 'Stop task',
     viewExecutionLog: 'View execution log',
     preparing: 'Preparing...',
+    emptyModelReply: 'The model returned no content. If you sent an image, make sure the selected model supports vision (image recognition requires a multimodal vision model), or switch model and retry.',
     stopping: 'Stopping...',
     retrying: 'Connection unstable, retrying ({attempt}/{max})...',
     copyCode: 'Copy code',
@@ -3695,8 +3697,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       }
       
       if (message.type === 'API_COMPLETE') {
-        if (_se() && message.content) {
-          finalizeStreamingMessage(_se(), message.content, message.executionLog || [], message.reflectionScore, message.reasoningContent, message.wasRevised);
+        // 空内容兜底：模型可能不支持当前输入（如给非视觉模型发图片）而返回空。
+        // 必须无条件 finalize 流式元素——否则其“思考中”占位不会被清除，
+        // 任务已结束却永远卡在“思考中”；content 为空时用兜底文案填充，避免空白气泡并让历史记录可读
+        const finalContent = (message.content && String(message.content).trim())
+          ? message.content
+          : t('chatMsg.emptyModelReply');
+        if (_se()) {
+          finalizeStreamingMessage(_se(), finalContent, message.executionLog || [], message.reflectionScore, message.reasoningContent, message.wasRevised);
         }
         const streamingEl = _se();
         const wasStreamed = !!streamingEl;
@@ -3706,7 +3714,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         cleanupCallApi();
         console.log('[callApi API_COMPLETE] wasStreamed:', wasStreamed, '| message.executionLog entries:', message.executionLog?.length || 0, '| local executionLog entries:', executionLog.length, '| agent_file entries:', (message.executionLog || executionLog)?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length || 0);
         resolve({ 
-          content: message.content, 
+          content: finalContent, 
           executionLog: message.executionLog || executionLog,
           reflectionScore: message.reflectionScore,
           wasStreamed,
