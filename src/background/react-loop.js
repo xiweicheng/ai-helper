@@ -2114,6 +2114,48 @@ export function getToolObservationHint({ success, roundFailCount = 0, resultToke
 }
 
 /**
+ * 并行子任务派发（并发受限池）。
+ *
+ * 修复背景：旧实现在 executeSubtasks 内联用 `executing.indexOf(Promise.race 解出的结果值)`
+ * 定位待移除元素——数组存的是 Promise 对象、race 解出的是结果值，引用永不相等，
+ * indexOf 恒 -1 → splice 从不执行 → 首个子任务完成后并发上限彻底失效，
+ * 剩余子任务瞬间全量并发（同 tab 多路互踩 + API 429 风暴）。
+ * 改为 Set + 完成自移除：size 恒等于真实在途并发数。
+ *
+ * 保留旧语义：
+ * - beforeDispatch 返回 true（如用户取消）→ 停止派发并返回 true，不等待在途任务
+ *   （与旧提前 return 一致：在途子任务会因各自会话的取消检查自行终止）；
+ * - 任务 rejection 直接向调用方传播（保留 AbortError/取消直传路径）。
+ *
+ * @param {Array} items 待派发列表
+ * @param {number} maxParallel 并发上限（非法值兜底 1，旧实现 Promise.race([]) 会永久挂起）
+ * @param {(item, index) => Promise<any>} executeOne 单项执行器
+ * @param {() => boolean} [beforeDispatch] 派发前检查，返回 true 停止整体派发
+ * @returns {Promise<boolean>} 是否因 beforeDispatch 提前停止派发
+ */
+export async function dispatchSubtasksParallel(items, maxParallel, executeOne, beforeDispatch = null) {
+  const cap = Math.max(1, Number(maxParallel) || 1);
+  const inFlight = new Set();
+  for (let i = 0; i < items.length; i++) {
+    if (beforeDispatch && beforeDispatch()) return true;
+
+    // 满额时等待：race 只会观测在途 promise；每个 promise 完成时自移除，size 恒为真实并发数
+    if (inFlight.size >= cap) {
+      await Promise.race(inFlight);
+    }
+
+    let tracked;
+    tracked = executeOne(items[i], i).finally(() => inFlight.delete(tracked));
+    inFlight.add(tracked);
+    // 预挂 catch 处理器：避免提前停止派发后，无人等待的 rejection 产生 unhandledrejection 噪声；
+    // race/all 观察的仍是 tracked 本体，传播语义不变
+    tracked.catch(() => {});
+  }
+  await Promise.all(inFlight);
+  return false;
+}
+
+/**
  * 执行子任务序列
  * 支持顺序执行、并行执行和依赖拓扑执行策略
  * 支持失败策略、重试机制和回滚机制
@@ -2540,39 +2582,28 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       }
     }
   } else if (strategy === 'parallel') {
-    // 并行执行
+    // 并行执行（并发受限池 dispatchSubtasksParallel；修复旧内联 race+indexOf 永不匹配导致上限失效的 Bug）
     logger.debug('[Background] parallel executing subtask,max concurrency:', maxParallel);
     
-    const executing = [];
     const resultsMap = new Map();
     
-    for (let i = 0; i < sortedSubtasks.length; i++) {
-      // 在每个子任务执行前检查是否已取消
-      if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
-        logger.debug('[Background] subtaskparallel execby usercancel');
-        return results;
-      }
-      
-      // 如果达到最大并行数，等待一个完成
-      if (executing.length >= maxParallel) {
-        const completed = await Promise.race(executing);
-        const idx = executing.indexOf(completed);
-        if (idx > -1) executing.splice(idx, 1);
-      }
-      
-      const subtask = sortedSubtasks[i];
-      const subtaskTools = toolSets[subtask.id] || [];
-      
-      const promise = executeSingleSubtask(subtask, subtaskTools, i).then(result => {
-        resultsMap.set(subtask.id, result);
-        return result;
-      });
-      
-      executing.push(promise);
+    const stoppedEarly = await dispatchSubtasksParallel(
+      sortedSubtasks,
+      maxParallel,
+      (subtask, i) => {
+        const subtaskTools = toolSets[subtask.id] || [];
+        return executeSingleSubtask(subtask, subtaskTools, i).then(result => {
+          resultsMap.set(subtask.id, result);
+          return result;
+        });
+      },
+      // 在每个子任务执行前检查是否已取消（保持旧“派发前检查”时机）
+      () => isCancelled(tabId) || (sessionId && isCancelled(sessionId))
+    );
+    if (stoppedEarly) {
+      logger.debug('[Background] subtaskparallel execby usercancel');
+      return results;
     }
-    
-    // 等待所有任务完成
-    await Promise.all(executing);
     
     // 按原始顺序返回结果
     let hasFailed = false;
