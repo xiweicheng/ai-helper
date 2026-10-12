@@ -255,11 +255,39 @@ function autoScrollToBottom(chatContainer, options = {}) {
   _isProgramScroll = true;
   if (smooth) {
     chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-  } else {
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    // 平滑滚动自身会持续动画到底，无需补帧；下一帧复位标志
+    requestAnimationFrame(() => { _isProgramScroll = false; });
+    return;
   }
-  // 下一帧复位标志（scroll 事件通常在同步或下一帧触发）
-  requestAnimationFrame(() => { _isProgramScroll = false; });
+
+  chatContainer.scrollTop = chatContainer.scrollHeight;
+
+  // 流式每块用 innerHTML 重渲染整段内容（含代码块/图片/思考指示器折叠），其真实高度
+  // 常在下一帧才最终确定。单帧按当时的 scrollHeight 滚动会"差一点没到底"，最新内容被
+  // 底部遮挡。补滚一帧：若期间用户未上滚，用稳定后的高度再滚到位（保持 _isProgramScroll
+  // 跨越补滚帧，避免把程序滚动误判为用户上滚而停跟随）。
+  requestAnimationFrame(() => {
+    if (!_userScrolledUp) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+    // 补滚完成后再下一帧复位标志（scroll 事件通常在同步或下一帧触发）
+    requestAnimationFrame(() => { _isProgramScroll = false; });
+  });
+}
+
+/**
+ * 流式消息底部新增内容后补滚到位。
+ * 用于"尚未产生 STREAM_CHUNK、但底部刚刚追加了新元素"的场景：后续 ReAct 轮次的
+ * 新"思考中"指示器、以及预筛选卡片插入。这些插入增加了高度，却要等到下一个 token
+ * 才由 updateStreamingMessage 触发滚动，导致新"思考中"在思考阶段下半部被遮挡。
+ * 这里按智能滚动（尊重用户上滚）立即补一次到底。
+ * @param {HTMLElement} element - 流式消息元素（脱离 DOM 或后台会话时不滚动）
+ */
+function scrollStreamingToBottom(element) {
+  if (!element || !element.isConnected) return;
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return;
+  autoScrollToBottom(chatContainer);
 }
 
 /** 重置滚动状态（新对话开始时调用） */
@@ -2143,4 +2171,4 @@ export function finalizeCancelledStream(element) {
   element.querySelectorAll('.tool-call-terminate-btn').forEach(el => el.style.display = 'none');
 }
 
-export { initScrollToBottomBtn, updateScrollButtonState, resetScrollState, notifyNonStreamContentArrived, autoScrollToBottom };
+export { initScrollToBottomBtn, updateScrollButtonState, resetScrollState, notifyNonStreamContentArrived, autoScrollToBottom, scrollStreamingToBottom };

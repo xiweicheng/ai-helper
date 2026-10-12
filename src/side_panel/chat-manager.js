@@ -76,6 +76,7 @@ import {
   bindProcessHeaderClick,
   notifyNonStreamContentArrived,
   autoScrollToBottom,
+  scrollStreamingToBottom,
 } from './chat-streaming.js';
 // 重导出保持对外接口不变（其他模块可能通过 chat-manager 导入）
 export { reconnectStreamingElement, cancelStreamingTask };
@@ -3594,6 +3595,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         setStreamedContent(mySessionId, '');
         setThinkingStartTime(Date.now());
         setReasoningContent('');
+        // 新一轮"思考中"指示器 / 预筛选卡片刚插入到流式消息底部，增加了高度，
+        // 但要等下一个 STREAM_CHUNK 才由 updateStreamingMessage 触发滚动，导致思考阶段
+        // "思考中"下半部被遮挡。此处按智能滚动立即补一次到底。
+        scrollStreamingToBottom(_se());
         return false;
       }
 
