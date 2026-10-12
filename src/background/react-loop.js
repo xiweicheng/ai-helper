@@ -893,10 +893,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   }
   
   const reactConfig = config.reactConfig;
-  // 子任务迭代预算：由父任务通过 apiParams.subtaskMaxIterations 注入剩余轮次上限，防止单个子任务烧完整份预算
-  const maxIterations = apiParams.subtaskMaxIterations
-    ? Math.min(reactConfig.maxIterations, apiParams.subtaskMaxIterations)
-    : reactConfig.maxIterations;
+  // 轮次上限只承担"防单个循环无限执行"职责：子任务与主任务沿用同一份设置页配置，
+  // 总量失控由时限兜底（子任务超时实时读父任务剩余时间，见 subtaskLoopTimeoutMs）+ 循环检测器
+  const maxIterations = reactConfig.maxIterations;
   const apiTimeout = reactConfig.apiTimeout;
   // 子任务/子代理整体超时：不超过 SUBTASK_LOOP_TIMEOUT_MS；若父任务经 apiParams.subtaskLoopTimeoutMs
   // 注入了更紧的预算（父任务实时剩余时间），则再取其 min，防止顺序子任务累计耗时冲破父任务时限
@@ -2142,7 +2141,6 @@ const SUBTASK_CONFIG = {
   DEFAULT_FAILURE_STRATEGY: 'continue',
   DEFAULT_MAX_RETRIES: 1,
   DEFAULT_MAX_PARALLEL: 3,
-  DEFAULT_MAX_ITERATIONS: 20   // 单个子任务的迭代预算上限（与父任务剩余轮次取小）
 };
 
 // 子任务/子代理整体超时上限（ms）：防止单个子任务占用父任务全部时间预算
@@ -2452,11 +2450,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           }
         ];
         
-        // 子任务迭代预算：min(默认上限 20, 父任务剩余轮次)，地板 5 轮避免父任务末期子任务无法启动
-        const subtaskMaxIterations = Math.min(
-          SUBTASK_CONFIG.DEFAULT_MAX_ITERATIONS,
-          Math.max(5, parentBudget?.remainingIterations ?? SUBTASK_CONFIG.DEFAULT_MAX_ITERATIONS)
-        );
+        // 子任务迭代预算直接沿用设置页的 maxIterations（包装器内层自然读取同一配置），
+        // 不再另加 20 轮钳制：轮次限制的职责是防单循环无限执行，总量保护由下方时限钳制承担
 
         // 子任务整体超时预算：逐子任务实时读父任务剩余时间（父以 getRemainingTimeMs 注入取值函数），
         // 使顺序策略下后启动的子任务不会各享满额 15 分钟而冲破父任务时限
@@ -2471,7 +2466,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           model, 
           subtaskTools, 
           tabId, 
-          { ...apiParams, subtaskMaxIterations, subtaskLoopTimeoutMs },
+          { ...apiParams, subtaskLoopTimeoutMs },
           subtaskSessionId,
           { subtaskId: subtask.id, subtaskName: subtask.name },
           (subtaskLog) => {

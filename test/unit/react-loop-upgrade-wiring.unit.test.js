@@ -283,10 +283,12 @@ describe('P0-2/P0-3 锚点与预算接线守卫', () => {
   test('收敛提示按 80% 预算触发', () => {
     expect(REACT_LOOP_SRC).toMatch(/Math\.ceil\(maxIterations \* 0\.8\)/);
   });
-  test('子任务迭代预算取 min(默认 20, 父剩余轮次)，超时 15 分钟封顶', () => {
-    expect(REACT_LOOP_SRC).toMatch(/subtaskMaxIterations/);
+  test('子任务迭代预算沿用设置页配置次数（20 轮钳制已移除），超时仍 15 分钟封顶', () => {
+    // 轮次上限只承担"防单个循环无限执行"；总量失控由时限（子任务超时实时读父剩余）+ 循环检测兜底
+    expect(REACT_LOOP_SRC).not.toMatch(/subtaskMaxIterations/);
+    expect(REACT_LOOP_SRC).not.toMatch(/DEFAULT_MAX_ITERATIONS/);
+    expect(REACT_LOOP_SRC).toMatch(/const maxIterations = reactConfig\.maxIterations;/);
     expect(REACT_LOOP_SRC).toMatch(/SUBTASK_LOOP_TIMEOUT_MS = 900000/);
-    expect(REACT_LOOP_SRC).toMatch(/DEFAULT_MAX_ITERATIONS: 20/);
   });
   test('400 上下文超限阶梯多次自愈：计数器 + 递减裁剪比例后重试本轮', () => {
     // 已从一次性布尔标记改为次数计数器（见 subagent-depth-and-context-heal 专测）
@@ -436,7 +438,7 @@ describe('P1-8 #7 修复回归：子任务超时受父任务实时剩余时间�
   test('react-loop 接线：loopTimeout 纳入 subtaskLoopTimeoutMs，父传实时 getter', () => {
     expect(REACT_LOOP_SRC).toMatch(/Math\.min\(reactConfig\.loopTimeout, SUBTASK_LOOP_TIMEOUT_MS, apiParams\.subtaskLoopTimeoutMs \|\| SUBTASK_LOOP_TIMEOUT_MS\)/);
     expect(REACT_LOOP_SRC).toMatch(/getRemainingTimeMs: \(\) => getRemainingTime\(\)/);
-    expect(REACT_LOOP_SRC).toMatch(/subtaskMaxIterations, subtaskLoopTimeoutMs/);
+    expect(REACT_LOOP_SRC).toMatch(/\{ \.\.\.apiParams, subtaskLoopTimeoutMs \}/);
     // 旧的静态快照字段已移除（改为 getter）
     expect(REACT_LOOP_SRC).not.toMatch(/remainingTimeMs: getRemainingTime\(\)/);
   });
