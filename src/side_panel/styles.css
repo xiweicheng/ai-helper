@@ -4031,6 +4031,21 @@ body {
   font-size: 12px;
   color: #ef4444;
 }
+/* 部分完成：内层循环抛异常但多数节点成功（classifySubtaskOutcome 分类），区别于红色失败 */
+.subtask-status-partial {
+  margin-left: auto;
+  font-size: 12px;
+  color: #f59e0b;
+}
+/* 中断原因（真实终止异常文本）：弱化灰色小字，单行省略 */
+.subtask-fail-reason {
+  color: #9ca3af;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
 /* 子任务进度行：显示当前执行节点 + 节点统计 */
 .subtask-progress-line {
   display: flex;

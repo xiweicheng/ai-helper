@@ -9,10 +9,11 @@ import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import { restoreDetachWindowId } from './detach-window.js';
-import { initNotifier, notifyTaskFeedback } from './notifier.js';
+import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResumeExhausted } from './notifier.js';
 import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
 import * as AgentClient from './local-agent-client.js';
-import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints } from '../storage/db.js';
+import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
+import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { readMemoryFile } from './tool-memory.js';
 import { selectMemoriesForInjection } from './memory-injection.js';
 import { generateCompactionSummary } from './context-compactor.js';
@@ -55,6 +56,30 @@ initI18n();
 
 // 启动时重建定时任务闹钟（SW 空闲被回收后由 chrome.alarms 唤醒，需从 DB 恢复）
 rehydrateAlarms();
+
+// 【方案 B：长任务自动续跑】主任务执行期由 reactLoop 包装器注册 30s 周期闹钟（auto-resume.js）；
+// SW 被系统回收后闹钟唤醒 SW，本处理扫描残留 checkpoint 自动续跑：
+// - 终态（user_cancelled/error）不自动续，保持人工确认语义；执行中会话跳过（防双执行）；
+// - 续跑前先回写递增计数（即使本次又抛错也不会形成无限重试风暴）；
+// - 刚耗尽的当拍桌面通知一次人工介入（后续拍静默，防通知风暴）。
+// 子任务写操作不会二次执行：子任务级 subtaskProgress 防重放机制已保证恢复只跑剩余子任务。
+registerAutoResumeAlarmHandler(async () => {
+  const checkpoints = await getAllReactCheckpoints();
+  const { targets, justExhausted } = decideAutoResume(checkpoints, activeReactLoops);
+  for (const cp of justExhausted) {
+    logger.warn(`[Background] auto-resume exhausted for session ${cp.sessionId} (${AUTO_RESUME_MAX_ATTEMPTS} attempts), manual intervention required`);
+    notifyAutoResumeExhausted({ sessionId: cp.sessionId, count: AUTO_RESUME_MAX_ATTEMPTS });
+  }
+  for (const { checkpoint, nextAttempts } of targets) {
+    logger.info(`[Background] 🔄 auto-resume session ${checkpoint.sessionId} (attempt ${nextAttempts}/${AUTO_RESUME_MAX_ATTEMPTS}, reason=${checkpoint.interruptedReason})`);
+    await saveReactCheckpoint({ ...checkpoint, autoResumeAttempts: nextAttempts });
+    try {
+      await resumeReactLoopFromCheckpoint(checkpoint.sessionId);
+    } catch (e) {
+      logger.warn(`[Background] auto-resume failed for session ${checkpoint.sessionId}:`, e?.message || e);
+    }
+  }
+});
 
 // SW 启动时清理过期的 ReAct checkpoint（TTL: 7 天）
 // 同时作为 DB 自检：验证 reactCheckpoints store 可访问（若 store 不存在会触发 retry 重建连接）
@@ -160,6 +185,11 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     port.onDisconnect.addListener(() => {
       unregisterKeepalivePort(sessionId, port);
       logger.debug('[Background] keepalive port disconnected, sessionId:', sessionId);
+      // 【面板关闭提醒】任务仍在执行中才弹：心跳/自动续跑已尽力保住任务，
+      // 通知的职责是"知情"——告诉用户任务还在跑，真被系统中断可在面板「继续执行」恢复
+      if (activeReactLoops.has(sessionId)) {
+        notifyPanelDetached({ sessionId });
+      }
     });
   }
 });

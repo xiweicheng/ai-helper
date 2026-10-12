@@ -20,6 +20,10 @@ registerTranslations('zh', {
     confirmMsg: '敏感操作「{tool}」等待你确认，请打开侧边栏处理',
     clarifyTitle: 'AI 需要你的澄清',
     clarifyMsg: 'AI 在等待你的回答：{question}',
+    panelLostTitle: '面板已关闭',
+    panelLostMsg: '任务仍在后台执行中；若被系统中断，可在面板点「继续执行」恢复',
+    autoResumeExhaustedTitle: '任务自动续跑失败',
+    autoResumeExhaustedMsg: '已自动续跑 {count} 次仍失败，请打开侧边栏手动处理',
   },
 });
 registerTranslations('en', {
@@ -34,6 +38,10 @@ registerTranslations('en', {
     confirmMsg: 'Sensitive action "{tool}" is waiting for your confirmation. Open the side panel to proceed',
     clarifyTitle: 'AI needs your clarification',
     clarifyMsg: 'AI is waiting for your answer: {question}',
+    panelLostTitle: 'Side panel closed',
+    panelLostMsg: 'Task is still running in the background. If interrupted, click Resume in the panel to continue',
+    autoResumeExhaustedTitle: 'Task auto-resume failed',
+    autoResumeExhaustedMsg: 'Task still failed after {count} auto-resume attempts. Please open the side panel to handle it',
   },
 });
 
@@ -236,4 +244,50 @@ export function clearInteractionNotification(sessionId) {
   const key = sessionId || 'global';
   _clear(ID_PREFIX + 'interaction|confirm|' + key);
   _clear(ID_PREFIX + 'interaction|clarify|' + key);
+}
+
+/**
+ * 面板关闭但任务仍在执行中的桌面通知（问题②提醒半边）
+ * 仅在 keepalive port 断开且 activeReactLoops 命中时由 index.js 调用：
+ * 心跳/自动续跑已尽力保住任务，本通知的职责是"知情"——告诉用户任务仍在跑，
+ * 若真被系统中断可通过面板「继续执行」恢复。不做可见性抑制（面板此刻已关闭）。
+ * @param {Object} opts
+ * @param {string|null} [opts.sessionId] 会话 id（通知 id 去重键）
+ */
+export async function notifyPanelDetached({ sessionId = null } = {}) {
+  try {
+    const key = sessionId || 'global';
+    _create(ID_PREFIX + 'panel-lost|' + key, {
+      type: 'basic',
+      iconUrl: _iconUrl(),
+      title: t('notify.panelLostTitle'),
+      message: t('notify.panelLostMsg'),
+      priority: 1,
+    });
+  } catch (err) {
+    logger.debug('[Notifier] notify panel detached failed:', err?.message || err);
+  }
+}
+
+/**
+ * 自动续跑次数耗尽通知（方案 B 安全阀）：
+ * 由闹钟处理在"刚耗尽"的当拍调用一次（decideAutoResume.justExhausted），后续拍静默防风暴
+ * @param {Object} opts
+ * @param {string|null} [opts.sessionId] 会话 id
+ * @param {number} [opts.count] 已尝试次数（展示用）
+ */
+export async function notifyAutoResumeExhausted({ sessionId = null, count = 3 } = {}) {
+  try {
+    const key = sessionId || 'global';
+    _create(ID_PREFIX + 'auto-resume-exhausted|' + key, {
+      type: 'basic',
+      iconUrl: _iconUrl(),
+      title: t('notify.autoResumeExhaustedTitle'),
+      message: t('notify.autoResumeExhaustedMsg', { count }),
+      // 需人工介入：保留在通知中心直到手动关闭
+      requireInteraction: true,
+    });
+  } catch (err) {
+    logger.debug('[Notifier] notify auto-resume exhausted failed:', err?.message || err);
+  }
 }

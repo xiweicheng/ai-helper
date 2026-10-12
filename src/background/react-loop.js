@@ -15,6 +15,7 @@ import { createLoopDetector } from './loop-detector.js';
 import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
+import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -233,6 +234,31 @@ function createErrorWithLog(message, executionLog) {
   const error = new Error(message);
   error.executionLog = executionLog;
   return error;
+}
+
+/**
+ * 子任务失败时从内层执行日志构建"已完成产出摘要"（纯函数，可单测）：
+ * 子任务判失败的唯一路径是内层循环抛异常且重试耗尽——往往大部分节点已成功
+ * （如 98/101）。失败上报若只有 error.message，父模型对已有产出零知情，
+ * "带着失败继续"实为盲续。附最近若干个成功产出节点（各自截断）供父模型基于
+ * 既有工作继续，控制规模避免挤占上下文。
+ * @param {Array} executionLog 内层执行日志（error.executionLog）
+ * @param {{maxNodes?: number, maxCharsPerNode?: number}} [opts]
+ * @returns {string} 摘要文本（无有效产出时空串）
+ */
+export function buildSubtaskPartialSummary(executionLog, { maxNodes = 5, maxCharsPerNode = 300 } = {}) {
+  if (!Array.isArray(executionLog) || executionLog.length === 0) return '';
+  const done = executionLog.filter((e) => {
+    if (!e || e.status !== 'success' || e.result == null) return false;
+    const s = typeof e.result === 'string' ? e.result : JSON.stringify(e.result);
+    return s != null && String(s).trim() !== '';
+  });
+  return done.slice(-maxNodes).map((e) => {
+    let s = typeof e.result === 'string' ? e.result : JSON.stringify(e.result);
+    s = String(s).replace(/\s+/g, ' ').trim();
+    if (s.length > maxCharsPerNode) s = s.slice(0, maxCharsPerNode - 1) + '\u2026';
+    return `- ${e.nodeName || e.nodeType || 'node'}: ${s}`;
+  }).join('\n');
 }
 
 /**
@@ -482,10 +508,15 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
  * 内部所有调用点走本包装器，实现体为 reactLoopImpl。
  */
 export async function reactLoop(...args) {
+  // 顶层主任务判定：有 sessionId（args[5]）且无 taskContext（args[6]）——
+  // 子任务/子代理不另起续跑闹钟（它们随主任务的 checkpoint 整体恢复）
+  const isTopLevelTask = !args[6] && !!args[5];
   startSwHeartbeat();
+  if (isTopLevelTask) startAutoResumeWatch();
   try {
     return await reactLoopImpl(...args);
   } finally {
+    if (isTopLevelTask) stopAutoResumeWatch();
     stopSwHeartbeat();
   }
 }
@@ -2613,11 +2644,14 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           // 发送子任务失败状态（循环停止与普通失败文案区分：恢复语义仅适用于主任务侧）
           sendSubtaskStatusUpdate(error.loopStop ? t('reactLoop.subtaskStoppedLoop', { index: subtaskIndex + 1, name: subtask.name }) : t('reactLoop.subtaskFailed', { index: subtaskIndex + 1, name: subtask.name }), 'failed', parentExecutionLog, { taskGroup: taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
           
+          // 附已完成产出摘要：内层抛异常时多数节点可能已成功（如 98/101），
+          // 让父模型基于既有工作继续而非盲续（防重放进度只记 success，不受影响）
+          const partialSummary = buildSubtaskPartialSummary(error.executionLog);
           return {
             success: false,
             subtaskId: subtask.id,
             subtaskName: subtask.name,
-            result: error.message,
+            result: partialSummary ? `${error.message}\n\n[Partial progress before failure]\n${partialSummary}` : error.message,
             executionLog: error.executionLog || [],
             retryCount: retry + 1,
             error: error

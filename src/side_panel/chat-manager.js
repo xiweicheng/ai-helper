@@ -140,6 +140,8 @@ registerTranslations('zh', {
     selectedContextLabel: '📌 已选中: {text}',
     subtaskDone: '完成',
     subtaskFailed: '失败',
+    subtaskPartial: '部分完成',
+    subtaskFailReason: '中断原因：{error}',
     subtaskExecuting: '执行中...',
     subtaskAllDone: '✓ 全部完成 · ✓{success} 成功 ✗{fail} 失败',
     subtaskPartialFail: '✗ {success}/{total} 完成，{fail} 个节点失败',
@@ -207,6 +209,8 @@ registerTranslations('en', {
     selectedContextLabel: '📌 Selected: {text}',
     subtaskDone: 'Done',
     subtaskFailed: 'Failed',
+    subtaskPartial: 'Partial',
+    subtaskFailReason: 'Interrupted: {error}',
     subtaskExecuting: 'Executing...',
     subtaskAllDone: '✓ All done · ✓{success} succeeded ✗{fail} failed',
     subtaskPartialFail: '✗ {success}/{total} done, {fail} nodes failed',
@@ -728,6 +732,19 @@ export function renderKnowledgeContextBubbles(refs, failed = false) {
  * @param {string} [errMsg] - 原始错误消息（如 errorResult.message）
  * @returns {string} 用户可见文案
  */
+/**
+ * 子任务展示状态三态分类（纯函数，可单测）
+ * 子任务被标 'failed' 的唯一路径是内层 ReAct 循环整体抛异常且重试耗尽——与"途中几个
+ * 节点失败"没有直接因果关系，且往往大部分工作已完成（如 98/101 节点成功）。
+ * 成功率达标时按「部分完成」（橙色）展示，避免红色"失败"让用户误以为全部白做；
+ * 完成证据不足的真实失败维持 failed 不粉饰。
+ */
+export function classifySubtaskOutcome(status, succeedNodes, totalNodes, threshold = 0.8) {
+  if (status !== 'failed') return status;
+  if (!totalNodes || totalNodes <= 0) return 'failed';
+  return succeedNodes / totalNodes >= threshold ? 'partial' : 'failed';
+}
+
 export function mapApiErrorToUserMessage(errMsg) {
   const msg = errMsg || t('chatResume.unknownError');
   const lower = msg.toLowerCase();
@@ -3347,10 +3364,23 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               
               const isRunning = message.status !== 'success' && message.status !== 'failed';
               
+              // 计算节点统计 & 当前执行节点（状态判定前需要：「部分完成」分类依据）
+              const allSubtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+              const totalNodes = allSubtaskNodes.length;
+              const succeedNodes = allSubtaskNodes.filter(n => n.status === 'success').length;
+              const failedNodes = allSubtaskNodes.filter(n => n.status === 'failed').length;
+              const currentNode = allSubtaskNodes.find(n => n.status === 'processing');
+              // 展示三态分类：内层循环抛异常判 failed，但节点多数成功 → 「部分完成」（橙）
+              const outcome = classifySubtaskOutcome(message.status, succeedNodes, totalNodes);
+              
               let statusHtml = '';
               if (message.status === 'success') {
                 statusHtml = `<span class="subtask-status-done">${t('chatMsg.subtaskDone')}</span>`;
                 progressEl.classList.add('subtask-progress-done');
+                progressEl.classList.remove('subtask-progress-active');
+              } else if (outcome === 'partial') {
+                statusHtml = `<span class="subtask-status-partial">${t('chatMsg.subtaskPartial')}</span>`;
+                progressEl.classList.add('subtask-progress-failed');
                 progressEl.classList.remove('subtask-progress-active');
               } else if (message.status === 'failed') {
                 statusHtml = `<span class="subtask-status-failed">${t('chatMsg.subtaskFailed')}</span>`;
@@ -3360,13 +3390,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 statusHtml = `<span class="subtask-status-label"><span class="subtask-spinner"></span>${t('chatMsg.subtaskExecuting')}</span>`;
                 progressEl.classList.add('subtask-progress-active');
               }
-              
-              // 计算节点统计 & 当前执行节点
-              const allSubtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
-              const totalNodes = allSubtaskNodes.length;
-              const succeedNodes = allSubtaskNodes.filter(n => n.status === 'success').length;
-              const failedNodes = allSubtaskNodes.filter(n => n.status === 'failed').length;
-              const currentNode = allSubtaskNodes.find(n => n.status === 'processing');
               
               // 进度行：运行时显示当前执行节点 + 统计，完成后显示摘要
               let progressLineHtml = '';
@@ -3394,8 +3417,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     <span>${t('chatMsg.subtaskAllDone', { success: succeedNodes, fail: failedNodes })}</span>
                   </div>`;
                 } else if (message.status === 'failed') {
+                  // 真实中断原因：子任务主日志行的 error（内层循环终止异常），
+                  // 不再让用户只看到"2 个节点失败"误猜因果
+                  const subtaskMainLog = executionLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');
+                  const failErrText = subtaskMainLog && subtaskMainLog.error ? String(subtaskMainLog.error).replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+                  const failReasonHtml = failErrText ? `<span class="subtask-fail-reason">${escapeHtml(t('chatMsg.subtaskFailReason', { error: failErrText }))}</span>` : '';
                   progressLineHtml = `<div class="subtask-progress-line failed">
-                    <span>${t('chatMsg.subtaskPartialFail', { success: succeedNodes, total: totalNodes, fail: failedNodes })}</span>
+                    <span>${t('chatMsg.subtaskPartialFail', { success: succeedNodes, total: totalNodes, fail: failedNodes })}</span>${failReasonHtml}
                   </div>`;
                 }
               }
