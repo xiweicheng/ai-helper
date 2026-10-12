@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/fix-build.js",
     "build:silent": "node scripts/silent-build.js",
+    "package": "node scripts/package.js",
     "release:agent": "bash agent/publish.sh",
     "push:all": "bash scripts/push-all.sh",
     "sync:wiki": "bash scripts/sync-wiki-to-gitee.sh",

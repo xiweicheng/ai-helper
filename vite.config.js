@@ -10,7 +10,8 @@ export default defineConfig({
       targets: [
         { src: 'libs', dest: '.' },
         { src: 'styles', dest: '.' },
-        { src: 'icons', dest: '.' }
+        { src: 'icons', dest: '.' },
+        { src: '_locales', dest: '.' }
       ]
     })
   ],
