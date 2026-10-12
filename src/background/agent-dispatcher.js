@@ -3,6 +3,7 @@ import { callApiNonStream, reactLoop } from './react-loop.js';
 import { getTools } from './tool-executor.js';
 import { getStoredConfig } from './config.js';
 import { incrementDialogApiCallCount, getDialogApiCallCount } from './state.js';
+import { MAX_SUBAGENT_DEPTH, getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
@@ -21,28 +22,10 @@ registerTranslations('en', {
   },
 });
 
-/**
- * dispatch_task 子代理嵌套深度上限
- * 0 = 主任务，1 = 一级子代理，2 = 二级子代理（到此为止，不能再 dispatch）
- * 防止子代理内部又 dispatch_task 导致递归 ReAct，token/超时爆炸
- */
-const MAX_DISPATCH_DEPTH = 2;
-
-/**
- * 记录每个派生 sessionId 对应的 dispatch 深度
- *
- * 为什么不从 sessionId 字符串解析深度？
- *   子代理 sessionId 派生规则为 `${parent}_sub_${subAgentId}`，
- *   但 subAgentId 来自 agent 定义（内置 generateAgentId 或用户导入的自定义配置），
- *   理论上可能包含 "_sub_" 子串，字符串匹配会导致深度误判；
- *   且 sessionId 为空时派生为 `sub_${subAgentId}`（前缀 sub_ 而非 _sub_），
- *   字符串匹配会少算一层。
- *   因此改用显式 Map 记录，派发时写入、执行结束后清理，不依赖 id 命名约定。
- *
- * 递归栈保证正确性：executeDispatchSubAgent 内 await reactLoop 是同步阻塞的，
- * 外层派发在 await 期间不会执行 finally 清理，内层派发能查到自己的深度。
- */
-const sessionDepthMap = new Map();
+// 嵌套深度状态统一收敛到 subagent-depth.js 的共享计数器：
+// dispatch_task 子代理与 plan_task 子任务登记/查询同一份深度数据，
+// 杜绝“在 plan 子任务里再 dispatch_task”从深度 0 重新起算导致的多层失控。
+// MAX_SUBAGENT_DEPTH = 2：主任务 0，一级子代理 1，二级子代理 2（到此不能再 dispatch）。
 
 /**
  * 从浏览器存储中读取 Agent 定义
@@ -116,13 +99,13 @@ ${task}
  */
 export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   // 嵌套深度检查：防止子代理内部又 dispatch_task 导致递归 ReAct 爆炸
-  // 主任务 sessionId 不在 Map 中，默认深度 0
-  const currentDepth = sessionDepthMap.get(sessionId) ?? 0;
-  if (currentDepth >= MAX_DISPATCH_DEPTH) {
-    logger.warn(`[AgentDispatcher] dispatch depth limit reached: depth=${currentDepth}, max=${MAX_DISPATCH_DEPTH}, sessionId=${sessionId}`);
+  // 主任务 sessionId 不在共享 Map 中，默认深度 0
+  const currentDepth = getSubagentDepth(sessionId);
+  if (currentDepth >= MAX_SUBAGENT_DEPTH) {
+    logger.warn(`[AgentDispatcher] dispatch depth limit reached: depth=${currentDepth}, max=${MAX_SUBAGENT_DEPTH}, sessionId=${sessionId}`);
     return {
       success: false,
-      error: t('agentDispatcher.depthLimitReached', { max: MAX_DISPATCH_DEPTH, current: currentDepth }),
+      error: t('agentDispatcher.depthLimitReached', { max: MAX_SUBAGENT_DEPTH, current: currentDepth }),
       tool_call_id: toolCallId,
     };
   }
@@ -169,7 +152,7 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
 
   // 注册子代理深度 = 当前深度 + 1，供子代理内部再派发时查询
   // 必须在 await reactLoop 之前写入；执行结束后在 finally 清理，避免 Map 泄漏
-  sessionDepthMap.set(subSessionId, currentDepth + 1);
+  setSubagentDepth(subSessionId, currentDepth + 1);
 
   const apiParams = {
     temperature: agent.temperature !== null && agent.temperature !== undefined
@@ -230,6 +213,6 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
     };
   } finally {
     // 子代理执行结束，清理深度记录，避免 Map 无限增长
-    sessionDepthMap.delete(subSessionId);
+    clearSubagentDepth(subSessionId);
   }
 }

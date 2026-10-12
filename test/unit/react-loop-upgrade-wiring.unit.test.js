@@ -288,8 +288,11 @@ describe('P0-2/P0-3 锚点与预算接线守卫', () => {
     expect(REACT_LOOP_SRC).toMatch(/SUBTASK_LOOP_TIMEOUT_MS = 900000/);
     expect(REACT_LOOP_SRC).toMatch(/DEFAULT_MAX_ITERATIONS: 20/);
   });
-  test('400 上下文超限单次自愈：trim 到预算 60% 后重试本轮', () => {
-    expect(REACT_LOOP_SRC).toMatch(/contextOverflowHealed/);
+  test('400 上下文超限阶梯多次自愈：计数器 + 递减裁剪比例后重试本轮', () => {
+    // 已从一次性布尔标记改为次数计数器（见 subagent-depth-and-context-heal 专测）
+    expect(REACT_LOOP_SRC).not.toMatch(/let contextOverflowHealed = false/);
+    expect(REACT_LOOP_SRC).toMatch(/let contextHealAttempts = 0/);
+    expect(REACT_LOOP_SRC).toMatch(/contextHealAttempts < CONTEXT_HEAL_MAX_ATTEMPTS/);
     expect(REACT_LOOP_SRC).toMatch(/trimMessagesByBudget/);
     expect(REACT_LOOP_SRC).toMatch(/context_overflow_trim/);
   });

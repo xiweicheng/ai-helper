@@ -13,6 +13,7 @@ import { wrapUntrusted, applyUntrustedContract, getContractText } from '../share
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { createLoopDetector } from './loop-detector.js';
 import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client.js';
+import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -969,8 +970,9 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 任务是否正常完成（用于 finally 决定是否清理 checkpoint）
   let taskCompleted = false;
 
-  // 上下文超限（400）自愈标记：整个循环仅允许一次强制裁剪重发，防止重试风暴
-  let contextOverflowHealed = false;
+  // 上下文超限（400）自愈计数：至多允许 CONTEXT_HEAL_MAX_ATTEMPTS 次强制裁剪重发，
+  // 逐档更激进；防止重试风暴，同时避免一次性自愈复发即猝死
+  let contextHealAttempts = 0;
 
   try {
     while (iteration < maxIterations) {
@@ -1234,17 +1236,19 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
         const isIdleTimeout = error.name === 'StreamIdleTimeout';
 
         // 上下文超限自愈：400 且错误信息含 context/token/too long 特征时，
-        // 强制激进裁剪（预算 60%）后重试本轮，而非直接终止整个循环；仅自愈一次
-        if (!isAborted && !isIdleTimeout && !contextOverflowHealed) {
+        // 强制裁剪后重试本轮，而非直接终止整个循环；至多 CONTEXT_HEAL_MAX_ATTEMPTS 次，
+        // 每次按 CONTEXT_HEAL_RATIOS 逐档更激进（无法再裁时 trimmedCount=0 → 落到下方抛错）
+        if (!isAborted && !isIdleTimeout && contextHealAttempts < CONTEXT_HEAL_MAX_ATTEMPTS) {
           const msgText = String(error.message || '');
           if (/status: 400/.test(msgText) && /context|token|too long|length/i.test(msgText)) {
             const reactBudget = getReactTokenBudget(model || 'default');
-            const healTarget = Math.max(Math.floor(reactBudget * 0.6), 2000);
+            const healRatio = CONTEXT_HEAL_RATIOS[Math.min(contextHealAttempts, CONTEXT_HEAL_RATIOS.length - 1)];
+            const healTarget = Math.max(Math.floor(reactBudget * healRatio), 2000);
             const healTrim = trimMessagesByBudget(currentMessages, healTarget);
             if (healTrim.trimmedCount > 0) {
-              contextOverflowHealed = true;
+              contextHealAttempts++;
               currentMessages = healTrim.messages;
-              logger.warn(`[Background] context overflow detected on HTTP 400: force-trimmed ${healTrim.trimmedCount} messages to ${healTarget} tokens, retrying this round`);
+              logger.warn(`[Background] context overflow detected on HTTP 400: force-trimmed ${healTrim.trimmedCount} messages to ${healTarget} tokens (heal ${contextHealAttempts}/${CONTEXT_HEAL_MAX_ATTEMPTS}), retrying this round`);
               // 收尾本轮 API 日志节点（避免前端卡在“执行中”）后重试
               const healIdx = executionLog.findIndex(l => l.id === apiLogId);
               if (healIdx !== -1) {
@@ -2064,6 +2068,12 @@ const SUBTASK_LOOP_TIMEOUT_MS = 900000; // 15 分钟
 // 模块级：截断/卸载与观察提示（getToolObservationHint）同源引用，防止阈值漂移
 const MAX_TOOL_RESULT_TOKENS = 6000;
 
+// 上下文超限（400）自愈：允许至多 CONTEXT_HEAL_MAX_ATTEMPTS 次强制裁剪，
+// 每次按 CONTEXT_HEAL_RATIOS 逐档更激进（60% → 45% → 30%），防止一次性
+// 自愈后复发直接抛错导致长任务猝死；次数封顶避免无法再裁时的重试风暴。
+const CONTEXT_HEAL_MAX_ATTEMPTS = 3;
+const CONTEXT_HEAL_RATIOS = [0.6, 0.45, 0.3];
+
 /**
  * 计算子任务的整体超时预算（ms）：在 SUBTASK_LOOP_TIMEOUT_MS 之外，
  * 再受父任务实时剩余时间约束。预留 10s 缓冲，并设 60s 下限，
@@ -2224,7 +2234,13 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
     
     // 为子任务创建派生 sessionId，隔离流式消息（避免干扰主任务的流式输出状态）
     const subtaskSessionId = sessionId ? `${sessionId}_subtask_${subtaskIndex}` : null;
-    
+
+    // 登记 plan 子任务嵌套深度（与 dispatch_task 通道共享同一计数器）：
+    // 使子任务内部再调用 dispatch_task 时从「父深度+1」起算，而非从 0 重新计数，
+    // 杜绝跨通道叠加出 3~4 层嵌套。执行结束在 finally 统一清理，防止 Map 泄漏。
+    setSubagentDepth(subtaskSessionId, getSubagentDepth(sessionId) + 1);
+
+    try {
     // 添加子任务开始日志（包含任务组信息）
     parentExecutionLog.push({
       id: subtaskLogId,
@@ -2482,6 +2498,10 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         // 等待一段时间后重试
         await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retry)));
       }
+    }
+    } finally {
+      // 子任务结束（成功/失败/取消）统一清理深度登记，防止共享计数器泄漏
+      clearSubagentDepth(subtaskSessionId);
     }
   }
   
