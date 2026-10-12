@@ -143,7 +143,9 @@ registerTranslations('zh', {
     subtaskPartial: '部分完成',
     subtaskFailReason: '中断原因：{error}',
     subtaskExecuting: '执行中...',
-    subtaskAllDone: '✓ 全部完成 · ✓{success} 成功 ✗{fail} 失败',
+    subtaskAllDone: '✓ 全部完成',
+    subtaskFilterEmpty: '当前过滤下无匹配节点',
+    subtaskFilterHint: '点击按此状态过滤节点，再点取消',
     subtaskPartialFail: '✗ {success}/{total} 完成，{fail} 个节点失败',
     unknownNode: '未知',
     stopGeneration: '停止生成',
@@ -212,7 +214,9 @@ registerTranslations('en', {
     subtaskPartial: 'Partial',
     subtaskFailReason: 'Interrupted: {error}',
     subtaskExecuting: 'Executing...',
-    subtaskAllDone: '✓ All done · ✓{success} succeeded ✗{fail} failed',
+    subtaskAllDone: '✓ All done',
+    subtaskFilterEmpty: 'No nodes match this filter',
+    subtaskFilterHint: 'Click to filter nodes by this status, click again to clear',
     subtaskPartialFail: '✗ {success}/{total} done, {fail} nodes failed',
     unknownNode: 'Unknown',
     stopGeneration: 'Stop generation',
@@ -743,6 +747,25 @@ export function classifySubtaskOutcome(status, succeedNodes, totalNodes, thresho
   if (status !== 'failed') return status;
   if (!totalNodes || totalNodes <= 0) return 'failed';
   return succeedNodes / totalNodes >= threshold ? 'partial' : 'failed';
+}
+
+/**
+ * 节点过滤点击语义（纯函数，可单测）：点击 ✓N/✗N 统计切换过滤状态——
+ * 同一状态再点一次取消过滤，点击另一状态切换过滤，非过滤目标维持原状。
+ */
+export function toggleNodeFilter(current, clicked) {
+  if (clicked !== 'success' && clicked !== 'failed') return current || null;
+  return current === clicked ? null : clicked;
+}
+
+/**
+ * 按过滤状态筛选执行节点列表（纯函数）：'success'/'failed' 只留对应状态节点
+ * （processing 不属于任一过滤），无效/空过滤返回原列表。
+ */
+export function applyNodeFilter(nodes, filter) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  if (filter !== 'success' && filter !== 'failed') return list;
+  return list.filter((n) => n && n.status === filter);
 }
 
 export function mapApiErrorToUserMessage(errMsg) {
@@ -3407,14 +3430,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                   <span class="subtask-current-node"><span class="subtask-current-spinner"></span><span class="node-label">${nodeTypeIcon} ${currentNodeName}</span>${cmdHtml}</span>
                   <span class="subtask-node-stats">
                     <span class="subtask-stat-total">${totalNodes}</span>
-                    <span class="subtask-stat-done">✓${succeedNodes}</span>
-                    ${failedNodes > 0 ? `<span class="subtask-stat-fail">✗${failedNodes}</span>` : ''}
+                    <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓${succeedNodes}</span>
+                    ${failedNodes > 0 ? `<span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗${failedNodes}</span>` : ''}
                   </span>
                 </div>`;
               } else if (!isRunning) {
                 if (message.status === 'success') {
+                  // 数字拆成可点击 span：点击按成功/失败过滤节点列表，再点取消
                   progressLineHtml = `<div class="subtask-progress-line done">
-                    <span>${t('chatMsg.subtaskAllDone', { success: succeedNodes, fail: failedNodes })}</span>
+                    <span>${t('chatMsg.subtaskAllDone')}</span>
+                    <span class="subtask-node-stats">
+                      <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓ ${succeedNodes}</span>
+                      <span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗ ${failedNodes}</span>
+                    </span>
                   </div>`;
                 } else if (message.status === 'failed') {
                   // 真实中断原因：子任务主日志行的 error（内层循环终止异常），
@@ -3423,7 +3451,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                   const failErrText = subtaskMainLog && subtaskMainLog.error ? String(subtaskMainLog.error).replace(/\s+/g, ' ').trim().slice(0, 120) : '';
                   const failReasonHtml = failErrText ? `<span class="subtask-fail-reason">${escapeHtml(t('chatMsg.subtaskFailReason', { error: failErrText }))}</span>` : '';
                   progressLineHtml = `<div class="subtask-progress-line failed">
-                    <span>${t('chatMsg.subtaskPartialFail', { success: succeedNodes, total: totalNodes, fail: failedNodes })}</span>${failReasonHtml}
+                    <span>${t('chatMsg.subtaskPartialFail', { success: succeedNodes, total: totalNodes, fail: failedNodes })}</span>
+                    <span class="subtask-node-stats">
+                      <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓ ${succeedNodes}</span>
+                      <span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗ ${failedNodes}</span>
+                    </span>${failReasonHtml}
                   </div>`;
                 }
               }
@@ -3444,10 +3476,18 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               
               // 填充执行节点详情
               const detailBody = progressEl.querySelector('.subtask-detail-body');
-              if (detailBody) {
+              // 节点列表渲染抽函数：点击 ✓N/✗N 切换过滤后可局部重绘（每次流式更新都会刷新闭包）
+              progressEl._renderNodes = () => {
+                if (!detailBody) return;
                 const subtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
-                if (subtaskNodes.length > 0) {
-                  detailBody.innerHTML = subtaskNodes.map(node => {
+                // 点击 ✓N/✗N 后只显示对应状态节点；过滤后为空时给出提示而非空白
+                const filteredNodes = applyNodeFilter(subtaskNodes, progressEl._nodeFilter);
+                if (subtaskNodes.length > 0 && filteredNodes.length === 0) {
+                  detailBody.innerHTML = `<div class="subtask-node-empty">${escapeHtml(t('chatMsg.subtaskFilterEmpty'))}</div>`;
+                  return;
+                }
+                if (filteredNodes.length > 0) {
+                  detailBody.innerHTML = filteredNodes.map(node => {
                     const icon = node.nodeType === 'tool_exec' ? '🔧' : node.nodeType === 'api_call' ? '📡' : node.nodeType === 'reflection' ? '🎯' : node.nodeType === 'preselect' ? '🔍' : '○';
                     const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗' : '○';
                     const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
@@ -3469,12 +3509,24 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     </div>`;
                   }).join('');
                 }
-              }
+              };
+              progressEl._renderNodes();
               
               // 绑定折叠头部点击事件（事件委托，避免 innerHTML 重建丢失）
               if (!progressEl._clickDelegated) {
                 progressEl._clickDelegated = true;
                 progressEl.addEventListener('click', (e) => {
+                  const stat = e.target.closest('[data-node-filter]');
+                  if (stat) {
+                    // 点击 ✓N/✗N：切换过滤（再点取消）；激活时自动展开节点列表
+                    e.stopPropagation();
+                    progressEl._nodeFilter = toggleNodeFilter(progressEl._nodeFilter || null, stat.dataset.nodeFilter);
+                    if (progressEl._nodeFilter) {
+                      progressEl.classList.add('subtask-expanded');
+                    }
+                    progressEl._renderNodes?.();
+                    return;
+                  }
                   const header = e.target.closest('.subtask-header');
                   if (header) {
                     progressEl.classList.toggle('subtask-expanded');

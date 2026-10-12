@@ -4098,6 +4098,7 @@ body {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
   font-size: 11px;
 }
 .subtask-stat-total {
@@ -4111,6 +4112,30 @@ body {
 }
 .subtask-stat-fail {
   color: #ef4444;
+}
+/* 统计数字可点击过滤节点列表：悬停/选中反馈 */
+.subtask-stat-done[data-node-filter],
+.subtask-stat-fail[data-node-filter] {
+  cursor: pointer;
+  user-select: none;
+  padding: 1px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.subtask-stat-done[data-node-filter]:hover,
+.subtask-stat-fail[data-node-filter]:hover {
+  background: rgba(120, 120, 120, 0.12);
+}
+.subtask-stat-active {
+  background: rgba(139, 92, 246, 0.16);
+  outline: 1px solid rgba(139, 92, 246, 0.4);
+}
+/* 过滤后无匹配节点的空提示 */
+.subtask-node-empty {
+  padding: 6px 0;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
 }
 /* 完成/失败时的进度行 */
 .subtask-progress-line.done {
