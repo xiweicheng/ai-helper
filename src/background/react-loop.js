@@ -14,6 +14,7 @@ import { notifyInteractionRequired, clearInteractionNotification } from './notif
 import { createLoopDetector } from './loop-detector.js';
 import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
+import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -32,6 +33,7 @@ registerTranslations('zh', {
     subtaskNode: '子任务 {index}: {name}',
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
+    subtaskSkippedReplay: '子任务 {index}: {name}（中断前已完成，跳过重放）',
     subtaskStoppedLoop: '子任务 {index}: {name} (已停止：检测到循环；父任务将按失败策略重试或跳过，主任务暂停后可补充指导)',
     userCancelled: '用户取消',
     skippedAfterPlanTask: '已跳过（plan_task 已拆分子任务，本轮其他工具调用不再执行）',
@@ -70,6 +72,7 @@ registerTranslations('en', {
     subtaskNode: 'Subtask {index}: {name}',
     subtaskCompleted: 'Subtask {index}: {name} (completed)',
     subtaskFailed: 'Subtask {index}: {name} (failed)',
+    subtaskSkippedReplay: 'Subtask {index}: {name} (already completed before interruption; replay skipped)',
     subtaskStoppedLoop: 'Subtask {index}: {name} (stopped by loop detection; the parent task will retry or skip per its failure strategy. You can add guidance when the main task pauses)',
     skippedAfterPlanTask: 'Skipped (plan_task has decomposed subtasks, other tool calls in this round are no longer executed)',
     toolError: 'Error: {message}',
@@ -464,7 +467,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
     checkpoint.executionLog || [],
     resumeCallId || checkpoint.callId || null,  // 优先使用新的 resumeCallId
-    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null }  // 回灌计划锚点，恢复后进度不丢
+    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null }  // 回灌计划锚点与子任务完成进度，恢复后防重放
   );
 
   // 恢复成功后清理 checkpoint
@@ -473,10 +476,25 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
 }
 
 /**
- * ReAct 推理循环
+ * ReAct 推理循环（对外入口 = 心跳包装器）。
+ * 任务执行窗口内开启 SW 保活心跳，覆盖静默间隙（等首 token/澄清等待/超长 fetch），
+ * 结束（含抛错）在 finally 停跳；引用计数支持嵌套（子任务/子代理各自成对）。
+ * 内部所有调用点走本包装器，实现体为 reactLoopImpl。
+ */
+export async function reactLoop(...args) {
+  startSwHeartbeat();
+  try {
+    return await reactLoopImpl(...args);
+  } finally {
+    stopSwHeartbeat();
+  }
+}
+
+/**
+ * ReAct 推理循环实现体
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
-export async function reactLoop(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null) {
+async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null) {
   // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
   if (sessionId) activeReactLoops.add(sessionId);
 
@@ -747,6 +765,10 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
   // 恢复时从 resumeState 回灌 checkpoint 中的计划状态
   let taskState = resumeState?.taskState || null;
   if (resumeState?.subtaskPlan) subtaskPlan = resumeState.subtaskPlan;
+  // 子任务完成进度（键 = String(subtask.id)）：每个子任务成功即实时记录并强制落 checkpoint，
+  // 中断恢复后 executeSubtasks 据此跳过已完成子任务，防止写操作子任务被二次执行（防重放）。
+  // 恢复时从 checkpoint 回灌；键经 JSON 序列化恒为字符串，查询处用 String(subtask.id) 归一化
+  const subtaskProgress = new Map(Object.entries(resumeState?.subtaskProgress || {}));
 
   /**
    * 构建任务进度锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
@@ -808,6 +830,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
       globalIteration: { value: globalIteration?.value || iteration },
       subtaskPlan,
       taskState,
+      subtaskProgress: Object.fromEntries(subtaskProgress),
       currentSubtaskIndex,
       totalReflectionRounds,
       model: model || config?.modelName,
@@ -1715,10 +1738,36 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               }
 
               // 开始执行子任务
+              // 单子任务结果入进度/汇总的统一截断阈值（先声明供进度钩子 onDone 与下方汇总消息共用）
+              const SUBTASK_RESULT_MAX_TOKENS = 3000;
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,
-                { remainingIterations: Math.max(1, maxIterations - iteration), getRemainingTimeMs: () => getRemainingTime(), historySummary: summarizedAccumulator || '' }
+                { remainingIterations: Math.max(1, maxIterations - iteration), getRemainingTimeMs: () => getRemainingTime(), historySummary: summarizedAccumulator || '' },
+                {
+                  progress: subtaskProgress,
+                  onDone: async (r) => {
+                    if (!r || !r.success) return;
+                    // 成功子任务即时记入防重放进度（不存 executionLog，控制 checkpoint 体积；键归一化字符串）
+                    const rawResult = typeof r.result === 'string' ? r.result : JSON.stringify(r.result ?? '');
+                    subtaskProgress.set(String(r.subtaskId), {
+                      success: true,
+                      subtaskId: r.subtaskId,
+                      subtaskName: r.subtaskName,
+                      result: estimateTokens(rawResult) > SUBTASK_RESULT_MAX_TOKENS
+                        ? truncateByTokens(rawResult, SUBTASK_RESULT_MAX_TOKENS)
+                        : rawResult,
+                      retryCount: r.retryCount || 0,
+                    });
+                    // 锚点同步标 done：恢复后的进度回灌提示模型不重复已完成步骤
+                    if (taskState && Array.isArray(taskState.subtasks)) {
+                      const st = taskState.subtasks.find(s => String(s.id) === String(r.subtaskId));
+                      if (st) st.status = 'done';
+                    }
+                    // 强制立即落 checkpoint：SW 若在下一个子任务执行中被杀，进度已持久化
+                    await saveCheckpointNow('subtask_completed', true);
+                  },
+                }
               );
 
               // 按子任务完成结果更新锚点状态
@@ -1728,6 +1777,11 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
                   if (st) st.status = r.success ? 'done' : 'failed';
                 }
               }
+              
+              // plan_task 整轮完成：汇总消息已入 currentMessages，清空防重放进度，
+              // 防止后续新一轮 plan_task 的同 id 子任务误复用旧结果；
+              // 随后 saveCheckpointNow('plan_task_completed') 将以空进度落盘
+              subtaskProgress.clear();
               
               // 子任务执行完毕后检查是否已被取消
               if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
@@ -1739,8 +1793,7 @@ export async function reactLoop(messages, model, tools, tabId, apiParams = {}, s
               //   1. OpenAI 兼容 API 规范要求 system 消息在开头，中间插入 system 可能被某些提供商拒绝
               //   2. trimMessages 的 systemMsg 提取逻辑（L502）只认第一条 system，中间的 system 会被当作普通消息裁剪
               //   3. user 消息在中间插入是合法的对话流，表示"系统提供的上下文信息"
-              // 每个子任务结果截断至合理大小，避免汇总消息过大
-              const SUBTASK_RESULT_MAX_TOKENS = 3000;
+              // 每个子任务结果截断至合理大小，避免汇总消息过大（阈值已在进度记录处声明）
               const subtaskSummary = subtaskResults.map((result, idx) => {
                 const resultStr = typeof result.result === 'string' ? result.result : JSON.stringify(result.result);
                 const truncated = estimateTokens(resultStr) > SUBTASK_RESULT_MAX_TOKENS
@@ -2160,7 +2213,7 @@ export async function dispatchSubtasksParallel(items, maxParallel, executeOne, b
  * 支持顺序执行、并行执行和依赖拓扑执行策略
  * 支持失败策略、重试机制和回滚机制
  */
-export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null, signal = null, parentBudget = null) {
+export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParams, sessionId, parentExecutionLog, globalIteration = { value: 0 }, reflectionConfig = null, config = null, lastSentLogSnapshot = new Map(), callId = null, signal = null, parentBudget = null, progressHooks = null) {
   const { 
     subtasks = [], 
     strategy = 'sequential', 
@@ -2270,6 +2323,31 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
    * 执行单个子任务（带重试逻辑）
    */
   async function executeSingleSubtask(subtask, subtaskTools, subtaskIndex) {
+    // 防重放跳过分支：中断前已成功完成的子任务直接返回 checkpoint 记录结果，不重新执行
+    // （写操作子任务二次执行有副作用；失败记录 success!==true 不命中，恢复后正常重跑）
+    const recorded = progressHooks?.progress?.get(String(subtask.id));
+    if (recorded && recorded.success) {
+      logger.debug(`[Background] subtask ${subtask.name} already completed before interruption, skipping replay`);
+      parentExecutionLog.push({
+        id: crypto.randomUUID(),
+        iteration: 0,
+        timestamp: new Date().toISOString(),
+        status: 'success',
+        nodeType: 'subtask',
+        nodeName: t('reactLoop.subtaskSkippedReplay', { index: subtaskIndex + 1, name: subtask.name }),
+        subtaskId: subtask.id,
+        subtaskName: subtask.name,
+        subtaskIndex: subtaskIndex,
+        skippedReplay: true,
+      });
+      sendSubtaskStatusUpdate(
+        t('reactLoop.subtaskSkippedReplay', { index: subtaskIndex + 1, name: subtask.name }),
+        'success', parentExecutionLog,
+        { subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name }
+      );
+      return { ...recorded, executionLog: [], skippedReplay: true };
+    }
+
     const subtaskLogId = crypto.randomUUID();
     const taskGroup = `subtask_group_${subtaskIndex}`;
     let lastError = null;
@@ -2476,7 +2554,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           }
         }
         
-        return {
+        const doneResult = {
           success: true,
           subtaskId: subtask.id,
           subtaskName: subtask.name,
@@ -2485,6 +2563,15 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           retryCount: retry,
           reflectionScore: subtaskReflectionScore
         };
+        
+        // 防重放进度回写：成功子任务即时记入父 checkpoint（onDone 内强制保存）；
+        // 回写失败不得影响子任务结果本身，try/catch 吞掉防止误入重试分支
+        if (progressHooks?.onDone) {
+          try { await progressHooks.onDone(doneResult); } catch (e) {
+            logger.warn('[Background] subtask progress onDone failed:', e.message);
+          }
+        }
+        return doneResult;
         
       } catch (error) {
         // 用户取消：直接传播 AbortError，不触发子任务重试
