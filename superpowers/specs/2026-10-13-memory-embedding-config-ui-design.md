@@ -53,7 +53,7 @@
 | `src/options/memory-panel.js` | 新建。导出 `initMemoryPanel()` / `refreshMemoryPanel()`，与 `knowledge-panel.js` 同构（`initialized` 幂等标志 + 事件绑定 + 缓存态渲染） |
 | `src/options/index.js` | 在知识库 init 之后追加 `initMemoryPanel()` 与切 tab 时 `refreshMemoryPanel()`（两行，与 1266-1270 现有写法同构） |
 | `src/shared/locales/zh.js` / `en.js` | 新增 `memoryPanel:` 命名空间，**双语齐补**（仓库无 i18n parity 测试，靠自查） |
-| `styles/styles.css` | 复用 knowledge / toolbox 现有类，不新造视觉语言 |
+| `src/options/styles.css` | 状态卡与徽标的少量新增类（`memory-status-*`）。注意：options 页**只加载这一个样式文件**（`options.html:824`），写进根 `styles/styles.css` 不会生效；其余复用 knowledge / toolbox / `form-group` 现有类，不新造视觉语言 |
 
 数据流：进 tab → 并行 `GET embedding-config` + `GET vector-status` → 渲染；「保存」→ `POST embedding-config` → 成功后重新拉状态；「重建向量索引」→ 确认弹窗 → `POST reindex` → 展示 `indexed/total/failedBatches/overWindow` 并刷新状态卡。请求失败统一走 `showToast(..., 'error')`，不静默。
 
