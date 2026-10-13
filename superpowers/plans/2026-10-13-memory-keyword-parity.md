@@ -408,7 +408,7 @@ CHANGELOG 与 README 的文档同步、以及「融合公式改排名主导（RR
 >
 > `full` 的定义：命中了一个**完整单元**——拉丁词（词边界已保证是整词）或整个中文连续段（`seg.length === 最长命中片段长度`）。即「整词命中一次」比「碎块命中两次」更有资格单独成立。
 >
-> **Step 4 旧断言逐条处置**（`memory-tokens.unit.test.js` 整体重写：7 条 → 11 条）：
+> **Step 4 旧断言逐条处置**（`memory-tokens.unit.test.js` 整体重写：7 条 → 12 条）：
 >
 > | 原断言 | 处置 | 为什么这是预期的行为改变 |
 > |---|---|---|
@@ -419,6 +419,8 @@ CHANGELOG 与 README 的文档同步、以及「融合公式改排名主导（RR
 > | `关键词数量封顶 30` | **删** | 封顶不再是查询侧拆词个数，而是每条记忆每字段的**单元数**封顶 `KEYWORD_MAX_HITS=3` |
 > | `超过 200 字符只取前 200 参提` | **删** | 截断是为了限制 bigram 膨胀，碎块取消后无意义 |
 > | `空输入与假值输入返回空数组` | **改写** | 改为「空输入不抛错且计分为 0」，假值保护下移到计分链路 |
+>
+> 新增一条「超长查询不再只取前 200 字」：`SNIPPET_MAX_LENGTH` 随碎块方案一同删除后，旧实现会丢弃 200 字之后的查询片段；实测最坏情形（1852 字真实记忆原文当查询 × 41 条候选）切段+df 23ms、计分 23ms，无截断代价——该用例同时钉住这个删除是有意的。
 >
 > `memory-service.unit.test.js` 的既有 A 档用例**一条未改全绿**（含 `关键词命中按 content 计分并排前`、`无命中返回 noMatch`），只新增 2 条：`单个中文短词仍能命中`（门槛不得误杀短查询）与 `只碰到 2 字碎块的条目不当成命中`（噪声出口）。`memory-routes`/`memory-vectors`/`memory-tier`/`memory-embedding-config` 未受涉及。
 >
@@ -434,5 +436,5 @@ CHANGELOG 与 README 的文档同步、以及「融合公式改排名主导（RR
 >
 > 噪声总量 43 条 → 3 条。**必须说清的代价**：前 4 条查询旧实现下目标也全不在 top1（只在候选堆里），新实现把它们从候选里移走了——词面只沾 2 字碎块的条目在 A 档不再被返。「换个说法也能找到记忆」从来不是关键词通道能兑现的，它是向量通道（计划四）的责任；本计划只负责不再把无关项当成命中。
 >
-> **Step 6 回归**：agent 单测 **305 passed / fail 0**（Task 1 后 298 → +7）；记忆相关分文件实测：tokens 11 / service 45 / recall-eval 1（内部逐条跑 10 条查询）/ vectors 12 / tier 9 / embedding-config 14 / routes 12 / injection 18 / keyword-match 8；`node --test test/unit/memory-*.unit.test.js` 全绿；冒烟 `memory-pushdown.smoke.mjs` **21/21**；`npx vitest run` 81 文件 / 1271 用例全过（2 个既有 `document is not defined` 环内错误不变）；`npm run build:silent` BUILD_SUCCESS；`npx eslint` 对改动文件 0 error；用户真实目录复查：`grep -c memoryEmbedding ~/.ai-helper-agent/config.json` = **0**，`~/.ai-helper-agent/memory/` 下仍无 `memory-vectors.json`。
+> **Step 6 回归**：agent 单测 **306 passed / fail 0**（Task 1 后 298 → +8）；记忆相关分文件实测：tokens 12 / service 45 / recall-eval 1（内部逐条跑 10 条查询）/ vectors 12 / tier 9 / embedding-config 14 / routes 12 / injection 18 / keyword-match 8；`node --test test/unit/memory-*.unit.test.js` 全绿；冒烟 `memory-pushdown.smoke.mjs` **21/21**；`npx vitest run` 81 文件 / 1271 用例全过（2 个既有 `document is not defined` 环内错误不变）；`npm run build:silent` BUILD_SUCCESS；`npx eslint` 对改动文件 0 error；用户真实目录复查：`grep -c memoryEmbedding ~/.ai-helper-agent/config.json` = **0**，`~/.ai-helper-agent/memory/` 下仍无 `memory-vectors.json`。
 
