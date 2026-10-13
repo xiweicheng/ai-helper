@@ -339,6 +339,12 @@
     "memoryItemTitle": "   Title: {title}",
     "memoryItemTags": "   Tags: {tags}",
     "memoryItemStats": "   Importance: {importance}/10 | Access: {accessCount} times | Created: {createdAt}",
-    "reviewItemCreated": "   Created: {createdAt} | Last access: {lastAccess} | Access: {accessCount} times"
+    "reviewItemCreated": "   Created: {createdAt} | Last access: {lastAccess} | Access: {accessCount} times",
+    "invalidEmbeddingMode": "Unsupported embedding mode, only openai-compat or local is allowed",
+    "embeddingDisabled": "Semantic recall is off, keyword channel only",
+    "embeddingTimeout": "Embedding service timed out, fell back to keyword recall",
+    "tierLabelNone": "keyword",
+    "tierLabelRemote": "remote vector + keyword",
+    "tierLabelLocal": "local vector + keyword"
   }
 }

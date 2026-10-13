@@ -153,6 +153,14 @@ git commit -m "refactor(memory): 关键词提取独立为 memory/tokens.js（行
   - `export function maskMemoryEmbeddingConfig(cfg): object`（`apiKey: ''` + `hasApiKey: boolean`）
   - `export async function saveMemoryEmbeddingConfig(input): Promise<object>`（空白 apiKey 保留旧值）
   - 端点：`GET /api/memory/embedding-config`、`POST /api/memory/embedding-config`、`POST /api/memory/test-embedding`
+  - 另导出 `MEMORY_EMBEDDING_MODES`（mode 白名单）与 `resolveMemoryEmbeddingConfig(override)`（探活/向量派生用的合并配置，明文 key 缺省回落已存值）
+
+> **Task 2 执行结果（已实施）**：新增 `memory-embedding-config` 12 条 + `config-update-field` 6 条，agent 全量 227 → **245/245**。实施中发现并修掉两个既有缺陷（都不在本计划预期内）：
+>
+> 1. **`updateConfigField` 自我死锁**：它在 `withWriteLock` 内又调 `saveConfig`（同一把锁），后者排队等前者持有的锁 → **调用方永久挂起**。此前它零生产调用方（server.js 走 `saveConfig`），从未暴露；本 Task 是第一个调用方，症状是"测试跑完不退出"。修法：把 `saveConfig` 的写入体抽成**不加锁**的 `writeConfigBody(config)`，两者各自取锁后复用；`updateConfigField` 同时改浅拷贝再赋值（原 `loadConfig()[key]=value` 会就地改调用方已持有的缓存对象）。
+> 2. **`withWriteLock` 隐含"fn 必须返回 Promise"契约**：`fn().finally(release)` 遇到同步写入体直接 TypeError 且**锁永不释放**。改为 `Promise.resolve(fn())` 兜住，并保证失败路径一定放锁（新增回归：写入失败后仍须能继续写）。
+>
+> 与计划的其余差异：① 临时 HOME 必须在 import **之前**设置（`config.js` 的 `AGENT_DIR` 在模块加载时求值，且 `loadConfig()` 首次会写默认 config.json），照抄本 Task 测试里的 `USERPROFILE` + `const { os } = await import('os')` 会污染真实 HOME；② `test-embedding` 增加 `options.createProvider` / `options.embeddingTimeoutMs` 测试接缝（沿用既有 `options.service` 模式），单测绝不真连外部 embedding；③ `withTimeout` 必须 `clearTimeout`（计划版本每次调用漏挂一个 8s 定时器，daemon 里是隐性唤醒源，测试进程还会延迟退出）；④ mode 校验错误经 `t('memory.invalidEmbeddingMode')` 渲染双语，其余错误原样透出。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -360,7 +368,10 @@ function withTimeout(promise, ms) {
 
 `agent/src/locales/zh.json` 的 `memory` 命名空间追加（`en.json` 对应英文）：
 
+追加时顺手补了校验文案 `invalidEmbeddingMode`（放在 `memory` 命名空间末尾、紧跟 `reviewItemCreated`）：
+
 ```json
+    "invalidEmbeddingMode": "不支持的 embedding 模式，仅支持 openai-compat 或 local",
     "embeddingDisabled": "未启用语义召回，当前仅关键词通道",
     "embeddingTimeout": "向量服务响应超时，本次已回落关键词召回",
     "tierLabelNone": "关键词",
@@ -371,12 +382,12 @@ function withTimeout(promise, ms) {
 - [ ] **Step 7: 运行测试 + 全量**
 
 Run: `cd agent && node --test test/unit/memory-embedding-config.unit.test.js test/unit/memory-routes.unit.test.js && node --test test/unit/*.unit.test.js`
-Expected: 新测试 4 条 PASS；routes 8 条仍 PASS；全量 `fail 0`。
+Expected: embedding 配置 12 条 + 配置锁回归 6 条 PASS；routes 8 条仍 PASS；全量 `fail 0`（245）。
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add agent/src/config.js agent/src/memory/embedding-config.js agent/src/memory/routes.js agent/src/locales/zh.json agent/src/locales/en.json agent/test/unit/memory-embedding-config.unit.test.js
+git add agent/src/config.js agent/src/memory/embedding-config.js agent/src/memory/routes.js agent/src/locales/zh.json agent/src/locales/en.json agent/test/unit/memory-embedding-config.unit.test.js agent/test/unit/config-update-field.unit.test.js
 git commit -m "feat(memory): 记忆语义召回的 embedding 配置端点（默认关闭、apiKey 脱敏）"
 ```
 

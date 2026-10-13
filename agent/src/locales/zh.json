@@ -339,6 +339,12 @@
     "memoryItemTitle": "   标题: {title}",
     "memoryItemTags": "   标签: {tags}",
     "memoryItemStats": "   重要性: {importance}/10 | 访问: {accessCount}次 | 创建: {createdAt}",
-    "reviewItemCreated": "   创建: {createdAt} | 最后访问: {lastAccess} | 访问: {accessCount}次"
+    "reviewItemCreated": "   创建: {createdAt} | 最后访问: {lastAccess} | 访问: {accessCount}次",
+    "invalidEmbeddingMode": "不支持的 embedding 模式，仅支持 openai-compat 或 local",
+    "embeddingDisabled": "未启用语义召回，当前仅关键词通道",
+    "embeddingTimeout": "向量服务响应超时，本次已回落关键词召回",
+    "tierLabelNone": "关键词",
+    "tierLabelRemote": "远端向量+关键词",
+    "tierLabelLocal": "本地向量+关键词"
   }
 }

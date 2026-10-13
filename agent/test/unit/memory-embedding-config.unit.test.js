@@ -1,0 +1,144 @@
+// agent/test/unit/memory-embedding-config.unit.test.js
+// 记忆语义召回的 embedding 配置读写/脱敏 + 两个配置端点的 HTTP 语义。
+// 注意：config.js 的 AGENT_DIR 在模块加载时用 homedir() 求值，且 loadConfig() 首次会写默认
+// config.json —— 因此必须在 import 之前把 HOME 指向临时目录（沿用 rag-detect-probe 的做法），
+// 绝不写用户真实的 ~/.ai-helper-agent/config.json。
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const home = mkdtempSync(join(tmpdir(), 'aha-memcfg-'));
+process.env.HOME = home;
+
+const {
+  DEFAULT_MEMORY_EMBEDDING_CONFIG,
+  getMemoryEmbeddingConfig,
+  maskMemoryEmbeddingConfig,
+  saveMemoryEmbeddingConfig,
+} = await import('../../src/memory/embedding-config.js');
+
+const { memoryDispatch } = await import('../../src/memory/routes.js');
+
+const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
+
+function mkReq(method = 'POST') {
+  return { method, headers: { origin: 'chrome-extension://test-ext' } };
+}
+
+function mkRes() {
+  const res = {
+    statusCode: 0,
+    headers: null,
+    body: null,
+    writeHead(status, headers) { res.statusCode = status; res.headers = headers; },
+    end(body) { res.body = JSON.parse(body); }
+  };
+  return res;
+}
+
+// 配置端点会走 loadConfig/updateConfigField，与 routes 单例共享临时 HOME 即可
+function callRoute(method, pathname, body = {}, options = {}) {
+  const req = mkReq(method);
+  const res = mkRes();
+  res.req = req;
+  return memoryDispatch(req, res, pathname, new URL('http://127.0.0.1' + pathname), T, body, options)
+    .then(() => res);
+}
+
+after(() => {
+  rmSync(home, { recursive: true, force: true });
+});
+
+// ==================== 配置模块 ====================
+
+test('导出默认值为关闭态', () => {
+  assert.equal(DEFAULT_MEMORY_EMBEDDING_CONFIG.enabled, false);
+  assert.equal(DEFAULT_MEMORY_EMBEDDING_CONFIG.mode, 'openai-compat');
+  assert.equal(getMemoryEmbeddingConfig().enabled, false);
+});
+
+test('脱敏不回显明文 key，并给出 hasApiKey', () => {
+  const masked = maskMemoryEmbeddingConfig({ ...DEFAULT_MEMORY_EMBEDDING_CONFIG, apiKey: 'sk-secret' });
+  assert.equal(masked.apiKey, '');
+  assert.equal(masked.hasApiKey, true);
+  assert.ok(!JSON.stringify(masked).includes('sk-secret'));
+});
+
+test('未配置过 key 时 hasApiKey 为 false', () => {
+  assert.equal(maskMemoryEmbeddingConfig(DEFAULT_MEMORY_EMBEDDING_CONFIG).hasApiKey, false);
+});
+
+test('空白 apiKey 视为不修改，其余字段照常更新', async () => {
+  await saveMemoryEmbeddingConfig({ enabled: true, modelName: 'text-embedding-3-small', apiKey: 'sk-keep' });
+  const saved = await saveMemoryEmbeddingConfig({ apiKey: '   ', modelName: 'text-embedding-3-large' });
+  assert.equal(getMemoryEmbeddingConfig().apiKey, 'sk-keep');
+  assert.equal(saved.modelName, 'text-embedding-3-large');
+  assert.equal(saved.enabled, true);
+  assert.equal(saved.apiKey, '');
+});
+
+test('非法 mode 被拒绝且不落盘', async () => {
+  await assert.rejects(() => saveMemoryEmbeddingConfig({ mode: 'magic' }));
+  assert.equal(getMemoryEmbeddingConfig().mode, 'openai-compat');
+});
+
+test('enabled 只认真 true，dimensions 规整为非负整数', async () => {
+  const a = await saveMemoryEmbeddingConfig({ enabled: 'yes', dimensions: 1536.7 });
+  assert.equal(a.enabled, false);
+  assert.equal(a.dimensions, 1536);
+  const b = await saveMemoryEmbeddingConfig({ enabled: true, dimensions: -3 });
+  assert.equal(b.enabled, true);
+  assert.equal(b.dimensions, 0);
+});
+
+// ==================== 配置端点 ====================
+
+test('GET /embedding-config 返回脱敏配置', async () => {
+  await saveMemoryEmbeddingConfig({ apiKey: 'sk-endpoint-secret', modelName: 'm1' });
+  const res = await callRoute('GET', '/api/memory/embedding-config');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.config.apiKey, '');
+  assert.equal(res.body.config.hasApiKey, true);
+  assert.equal(res.body.config.modelName, 'm1');
+  assert.ok(!JSON.stringify(res.body).includes('sk-endpoint-secret'));
+});
+
+test('POST /embedding-config 非法 mode 返回 400', async () => {
+  const res = await callRoute('POST', '/api/memory/embedding-config', { mode: 'nope' });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.success, false);
+});
+
+test('POST /embedding-config 用 GET 以外的未知方法返回 404', async () => {
+  const res = await callRoute('PUT', '/api/memory/embedding-config', {});
+  assert.equal(res.statusCode, 404);
+});
+
+test('POST /test-embedding 成功时回报维度，不含明文 key', async () => {
+  const fake = { embedQuery: async () => [0.1, 0.2, 0.3] };
+  const res = await callRoute('POST', '/api/memory/test-embedding', { modelName: 'm1' }, { createProvider: () => fake });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.dimensions, 3);
+});
+
+test('POST /test-embedding 失败回落 400 而不抛给调用方', async () => {
+  const fake = { embedQuery: async () => { throw new Error('boom'); } };
+  const res = await callRoute('POST', '/api/memory/test-embedding', {}, { createProvider: () => fake });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.success, false);
+  assert.equal(res.body.error, 'boom');
+});
+
+test('POST /test-embedding 超时保护返回 400 embedding_timeout', async () => {
+  const fake = { embedQuery: () => new Promise(() => {}) };
+  const res = await callRoute('POST', '/api/memory/test-embedding', {}, {
+    createProvider: () => fake,
+    embeddingTimeoutMs: 20,
+  });
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, 'embedding_timeout');
+});
