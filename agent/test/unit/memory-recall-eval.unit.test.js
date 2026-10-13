@@ -25,6 +25,8 @@ function withFixtures(fn) {
   writeFileSync(filePath, JSON.stringify({ version: 1, facts, summaries }), 'utf8');
   const svc = createMemoryService({
     filePath,
+    // A 档不写缓存，但路径也得指回临时目录：少了这一项时 facade 默认落在用户真实缓存文件上
+    vectorsFilePath: join(dir, 'memory-vectors.json'),
     // A 档：绝不触碰向量侧（本评测集不联网，也不允许联网）
     embeddingConfigProvider: () => ({ enabled: false }),
     tierResolver: () => 'none',

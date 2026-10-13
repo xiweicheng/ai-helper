@@ -32,7 +32,15 @@ function mkRes() {
 
 function withRouter(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'mem-route-'));
-  const service = createMemoryService({ filePath: join(dir, 'global-memory.json') });
+  // 与 memory-service 的 withService 同一隔离口径：不供这四个注入点就会读用户真实
+  // config.json、拿真 key 联网、写他真实的向量缓存（缘由见那个夹具的注释块）。
+  const service = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath: join(dir, 'memory-vectors.json'),
+    embeddingConfigProvider: () => ({ enabled: false }),
+    tierResolver: () => 'none',
+    embedderFactory: () => { throw new Error('路由夹具不得创建 embedding provider'); }
+  });
   const call = (req, res, pathname, body) => {
     // 真实 ServerResponse 由 Node 原生挂接 res.req，mock 需显式补齐（getAllowedOrigin 依赖）
     res.req = req;
@@ -158,6 +166,7 @@ describe('reindex 端点', () => {
 // vector-status 夹具：同时隔离向量缓存路径、配置来源与嵌入工厂。
 // 三者缺一不可：复用 withRouter 会读真实 ~/.ai-helper-agent/memory/memory-vectors.json（碍用户数据且断言不可控），
 // 不供 embedderFactory 则 store 的懒补会拿真 provider 联网/下载模型。
+// 注：withRouter 本身已于 2026-10-13 补上同口径隔离，不再依赖本夹具单独兜底。
 function withStatusRoute(cfg, fn) {
   const dir = mkdtempSync(join(tmpdir(), 'mem-status-route-'));
   const vectorsFilePath = join(dir, 'memory-vectors.json');

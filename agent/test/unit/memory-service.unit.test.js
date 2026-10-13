@@ -2,6 +2,7 @@
  * memory-service.unit.test.js
  * agent 端记忆 service 行为测试（自扩展端 tool-memory.js 迁移，行为不变）
  * 通过 filePath 注入临时目录，t 用占位 stub（断言依赖结构字段而非文案）
+ * 向量侧一律靠注入关掉（见 withService），测试不读用户 config.json、不联网、不碰他真实缓存
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,9 +14,22 @@ import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
 
+/**
+ * 关键词通道用的 service 夹具：四个注入点缺一不可。
+ * 只给 filePath 时，service 会回落去读用户真实 config.json：一旦本机开过记忆向量，
+ * store 的懒补向量与 recall 的语义路就会拿真 key 联网，并把向量写进用户真实的
+ * ~/.ai-helper-agent/memory/memory-vectors.json（实测覆盖过他 41 条缓存），
+ * 断言同时从「纯词面通道」漂成「词面 + 语义」双通道——本文件的碎块噪声用例就这样变红。
+ */
 function withService(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'mem-test-'));
-  const svc = createMemoryService({ filePath: join(dir, 'global-memory.json') });
+  const svc = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath: join(dir, 'memory-vectors.json'),
+    embeddingConfigProvider: () => ({ enabled: false }),
+    tierResolver: () => 'none',
+    embedderFactory: () => { throw new Error('A 档夹具不得创建 embedding provider'); }
+  });
   return Promise.resolve(fn(svc)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
@@ -273,6 +287,9 @@ function withVectorService(opts, fn) {
     embeddingConfigProvider: () => ({ ...EMBED_CFG, ...(opts.embeddingConfig || {}) }),
     tierResolver: () => 'remote',
     embedTimeoutMs: 200,
+    // 默认工厂直接抛：用例忘了供假 provider 时应当当场炸，而不是静默回落去拿真 provider 联网
+    // （写在 ...opts 之前，用例自带的 embedderFactory 照旧覆盖它）
+    embedderFactory: () => { throw new Error('向量夹具必须自带假 embedderFactory'); },
     ...opts
   });
   return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
