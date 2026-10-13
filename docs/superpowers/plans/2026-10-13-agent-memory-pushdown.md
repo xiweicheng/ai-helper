@@ -598,8 +598,10 @@ handler 体改为：
 
 - [ ] **Step 5: i18n 与旧文件清理**
 
-- `src/shared/locales/zh.js`/`en.js`：`toolMemory` 命名空间收缩为仅 `missingAction` 一条（转发层用）；`agentClient` 命名空间新增 `memoryEndpointMissing`：zh `'长期记忆服务不可用：请升级 Agent 到与插件匹配的版本'`，en `'Long-term memory service unavailable: please upgrade the Agent to the version matching this extension'`。
-- 删除 `src/background/memory-injection.js` 与 `test/unit/memory-injection.unit.test.js`（行为测试已在 Task 1 迁至 agent）。
+- **执行修正**：`toolMemory` 命名空间并不在 `src/shared/locales/*.js`，而是在 `tool-memory.js` 文件内 `registerTranslations` 注册的（因此文案已随业务逻辑迁至 agent 端 `src/locales/{zh,en}.json` 的 `memory` 命名空间）。转发层只保留自己渲染的 6 条：`missingAction`、`unsupportedMemoryAction`、`storeMissingSubAction`、`manageMissingSubAction`、`memoryEndpointMissing`、`requestFailed`。
+- `memoryEndpointMissing` 不放到 `agentClient` 命名空间：该文案仅由 tool-memory.js 渲染，放在本模块自己的命名空间可保证单测（mock 掉 local-agent-client.js 后）仍能解析真实文案，不依赖被 mock 模块的副作用。
+- 删除 `src/background/memory-injection.js` 与 `test/unit/memory-injection.unit.test.js`（行为测试已在 Task 1 迁至 agent）；其中仍有意义的“接线守卫”（index.js handler / side_panel utils.js 渲染门控）改写后并入 `tool-memory-forward.unit.test.js`。
+- **纠正旧实现的 `makeResult` 误用**：旧代码将 `toolCallId` 直传第三参（应形为 `extra` 对象），字符串展开会在结果上产生 `"0":"t"` 类垃圾键；转发层统一改为 `makeResult(success, content, { tool_call_id })`。
 
 - [ ] **Step 6: 运行扩展全量单测 + 构建**
 

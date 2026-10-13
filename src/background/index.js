@@ -14,8 +14,6 @@ import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
-import { readMemoryFile } from './tool-memory.js';
-import { selectMemoriesForInjection } from './memory-injection.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
@@ -1520,22 +1518,19 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   }
 
   // 获取永久记忆（注意事项），用于注入系统提示词
+  // 分级筛选逻辑在 agent 端（/api/memory/inject），本处只转发并整形
   if (message.type === 'GET_PERMANENT_NOTES') {
-    readMemoryFile()
-      .then((result) => {
-        if (!result.success) {
-          sendResponse({ success: false, facts: [], remainingCount: 0, remainingTags: [], error: result.error });
+    AgentClient.agentRequest('/api/memory/inject', {}, 'POST', 15000)
+      .then((resp) => {
+        if (!resp || !resp.success) {
+          sendResponse({ success: false, facts: [], remainingCount: 0, remainingTags: [], error: resp?.error });
           return;
         }
-        // 分级筛选：Tier1 常驻（importance≥8）+ Tier2 预算内；未注入的转按需召回索引
-        const facts = result.data.facts || [];
-        const summaries = result.data.summaries || [];
-        const selection = selectMemoriesForInjection(facts, summaries);
         sendResponse({
           success: true,
-          facts: selection.injected,
-          remainingCount: selection.remainingCount,
-          remainingTags: selection.remainingTags,
+          facts: resp.injected || [],
+          remainingCount: resp.remainingCount || 0,
+          remainingTags: resp.remainingTags || [],
         });
       })
       .catch((err) => {
