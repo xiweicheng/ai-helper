@@ -22,6 +22,10 @@ const {
 
 const { memoryDispatch } = await import('../../src/memory/routes.js');
 
+// 真实的 rag/embedding 工厂：queryPrefix 的回落权丢失只能在「配置出口 → provider」的接缝上才会显形，
+// 注入假工厂的 service 单测永远看不到（与 baseUrl ⇄ endpoint 错位同一类盲区）。
+const { EmbeddingProvider } = await import('../../src/rag/embedding/index.js');
+
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
 
 function mkReq(method = 'POST') {
@@ -105,6 +109,29 @@ test('provider 配置出口把 baseUrl 映射成 rag/embedding 读取的 endpoin
   assert.equal(out.apiKey, 'sk-x');
   assert.equal(out.modelName, 'm1');
   assert.equal(out.dimensions, 1536);
+});
+
+test('空 queryPrefix 不交出键：本地档才能拿到 provider 的 BGE 查询前缀', () => {
+  // 记忆配置面缺省是空串（不是 undefined），而 provider 用 `??` 判空——空串不是 nullish。
+  // 原样传出会让 mode:'local' 的查询前缀永远是 ''（实测日志 queryPrefix: off）。
+  const out = toEmbeddingProviderConfig({ mode: 'local', modelName: 'Xenova/bge-small-zh-v1.5', queryPrefix: '' });
+  assert.ok(!('queryPrefix' in out), '空串不得作为 queryPrefix 传给 provider');
+  assert.ok(!('queryPrefix' in toEmbeddingProviderConfig({ mode: 'local', queryPrefix: '   ' })), '纯空白等同未设置');
+});
+
+test('显式 queryPrefix 原样透传（用户自己定的前缀不得被回落逻辑抹掉）', () => {
+  const prefix = '为这个句子生成表示以用于检索相关文章：';
+  assert.equal(toEmbeddingProviderConfig({ mode: 'local', queryPrefix: prefix }).queryPrefix, prefix);
+});
+
+test('接缝：记忆缺省配置经出口给到真实 provider 时，本地档必须拿到非空前缀', () => {
+  // 这一条钉的是跨模块契约本身——上面的字段级断言全绿也可能被 provider 侧的判空口径推翻。
+  const cfg = { ...DEFAULT_MEMORY_EMBEDDING_CONFIG, mode: 'local', enabled: true };
+  const localProvider = new EmbeddingProvider(toEmbeddingProviderConfig(cfg));
+  assert.ok(localProvider.queryPrefix, '本地档 provider 的查询前缀不得为空');
+  // 远端档不受影响：非 local 本就该无前缀（BGE 前缀对远端模型是噪声）
+  const remoteProvider = new EmbeddingProvider(toEmbeddingProviderConfig({ ...cfg, mode: 'openai-compat', apiKey: 'k', modelName: 'm' }));
+  assert.equal(remoteProvider.queryPrefix, '');
 });
 
 // ==================== 配置端点 ====================

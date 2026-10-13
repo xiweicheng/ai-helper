@@ -447,6 +447,48 @@ describe('recall 向量通道', () => {
     }).finally(() => rmSync(dir, { recursive: true, force: true }));
   });
 
+  // EMBED_BATCH_SIZE = 10，故第 11 条落在第二批。只对含标记词的那批报错，模拟真实厂商端点的
+  // 「局部批 400、其余成功」——那种情况下旧实现只报 failedBatches 计数，原因既不入响应也不入日志。
+  it('backfillVectors 部分批失败：原因进响应也进日志（不能只给一个计数）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => {
+        if (texts.some(s => String(s).includes('BOOM'))) throw new Error('400 {"code":20015}');
+        return texts.map(() => [0.98, 0.2, 0]);
+      }
+    })
+  }, async (svc) => {
+    for (let i = 0; i < 10; i++) {
+      await svc.store({ action: 'add', type: 'fact', content: `条目${i} alpha`, tags: [], importance: 5 }, T);
+    }
+    await svc.store({ action: 'add', type: 'fact', content: 'BOOM 那条长记忆', tags: [], importance: 5 }, T);
+
+    const warns = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => { warns.push(args.join(' ')); };
+    let r;
+    try {
+      r = await svc.backfillVectors(T);
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(r.success, true, '部分失败不得把整体报成失败');
+    assert.equal(r.indexed, 10);
+    assert.equal(r.total, 11);
+    assert.equal(r.failedBatches, 1);
+    assert.equal(r.lastError, '400 {"code":20015}', '有失败批时必须带出首条原因');
+    assert.ok(warns.some(w => w.includes('400 {"code":20015}')), '完整原因要落进程日志');
+  }));
+
+  it('backfillVectors 全成功时不凭空造 lastError', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.failedBatches, 0);
+    assert.ok(!('lastError' in r), '无失败时不得多出 lastError 字段');
+  }));
+
   it('delete 淘汰记忆后不再被召回（向量缓存中的孤儿不影响结果）', () => withVectorService({
     embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
   }, async (svc) => {

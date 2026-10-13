@@ -81,5 +81,11 @@ export function resolveMemoryEmbeddingConfig(override = {}) {
 export function toEmbeddingProviderConfig(cfg = {}) {
   const baseUrl = cfg.baseUrl || '';
   const endpoint = cfg.endpoint || '';
-  return { ...cfg, endpoint: endpoint || baseUrl, baseUrl: baseUrl || endpoint };
+  const out = { ...cfg, endpoint: endpoint || baseUrl, baseUrl: baseUrl || endpoint };
+  // 空串在本配置面表示「未设置」（DEFAULT_MEMORY_EMBEDDING_CONFIG.queryPrefix 就是 ''），
+  // 而 provider 用 `??` 判回落——空串不是 nullish，原样交出会让本地 BGE 的查询前缀永远加不上
+  // （实测：mode=local 时 provider 日志 queryPrefix: off）。非对称检索漏前缀对中文召回是实质质量损失，
+  // 所以这里交出「不带这个键」，把回落权还给 provider。显式非空前缀照常透传。
+  if (!String(out.queryPrefix || '').trim()) delete out.queryPrefix;
+  return out;
 }

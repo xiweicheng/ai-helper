@@ -739,15 +739,25 @@ export function createMemoryService({
           if (Array.isArray(vecs) && Array.isArray(vecs[j]) && vecs[j].length) pairs.push([m.id, vecs[j]]);
         });
       } catch (err) {
-        // 单批失败不中断整体：能建多少算多少，剩余条目后续 recall 时再补
+        // 单批失败不中断整体：能建多少算多少，剩余条目后续 recall 时再补。
+        // daemon 的 stdout 不可见，原因必须同时落日志与响应：只报 failedBatches 计数的话，
+        // 用户看到「8 批失败」仍然无从判断是长度、限流还是模型不可达。
         errors.push(err.message);
+        console.warn('[Memory] reindex batch failed:', err.message);
       }
     }
     if (!pairs.length) {
       return { success: false, indexed: 0, error: errors[0] || 'no_vectors' };
     }
     await vectors.upsertVectors(pairs, memoryModelKey(cfg));
-    return { success: true, indexed: pairs.length, total: items.length, failedBatches: errors.length };
+    // 响应只留首条原因（不把端点报错串堆成一片）；全量原因看进程日志
+    return {
+      success: true,
+      indexed: pairs.length,
+      total: items.length,
+      failedBatches: errors.length,
+      ...(errors.length ? { lastError: errors[0] } : {})
+    };
   }
 
   return {
