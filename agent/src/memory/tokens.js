@@ -1,74 +1,127 @@
-// agent/src/memory/tokens.js - 记忆召回的关键词提取（单一来源）
-// 逐字平移自 service.js（其原件为扩展端 tool-memory.js:407-465），语义不得变更：
-// CJK ≤4 字连续段整段保留、>4 字拆 bigram，同时把清洗后的整段作为 fallback 关键词；
-// 英文/数字整词（长度 ≥2）；过滤停用词；最多 KEYWORD_CAP 个。
-// 拆成独立模块是为了让后续的向量通道（embedding/tier）与 recall 复用同一份分词，避免两边漂移。
+// agent/src/memory/tokens.js - 记忆关键词通道的分词与计分（单一来源）
+//
+// 2026-10-13 口径变更：从「把 query 炸成最多 30 个碎 bigram、每个命中 +3」改为
+// 「最长命中片段的单元制」，并与知识库共用同一份匹配实现（rag/keyword-match.js）。
+// 变更动机（实测于真实记忆库，见 2026-10-13-memory-keyword-parity.md）：
+//   碎 bigram 下「写网」「个国」「我查」这类随机 2 字块几乎必然命中某些长条目，
+//   于是任何 query 都能捞回一堆无关记忆；且命中 4 个随机碎块（+12）高于命中一个
+//   4 字整词（+3），排序方向是反的。知识库侧 2026-09 已修掉这两点。
+// 停用词表随之删除：单元数按命中长度分层后，虚词无法单独构成足够长的片段，
+// 而两侧共用一份切段口径比记忆侧再叠一层词表更不容易漂移。
 
-export const KEYWORD_CAP = 30;
+import { extractQueryTerms, matchLatin, matchCjk, KEYWORD_MAX_HITS } from '../rag/keyword-match.js';
 
-// 截断长度：避免超长输入的 bigram 膨胀
-export const SNIPPET_MAX_LENGTH = 200;
+/** 字段权重：正文 > 标题 = 标签（整数刻度，与向量分融合时同为「分」这一单位） */
+export const FIELD_WEIGHT = { content: 3, title: 2, tags: 2 };
 
-// 停用词列表：常见中英文虚词，避免噪音匹配（迁移自 tool-memory.js:407-419）
-export const STOP_WORDS = new Set([
-  '的', '是', '了', '在', '我', '你', '他', '她', '它', '们', '这', '那', '不', '也', '就',
-  '都', '会', '要', '能', '可', '把', '被', '让', '给', '对', '从', '到', '和', '与', '或',
-  '但', '而', '还', '又', '只', '很', '更', '最', '有', '没', '吗', '呢', '吧', '啊',
-  '什么', '怎么', '为什么', '哪里', '哪个', '多少',
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-  'may', 'might', 'can', 'shall', 'must', 'need', 'dare',
-  'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
-  'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'into',
-  'and', 'or', 'not', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
-  'so', 'no', 'up', 'out', 'just', 'now', 'here', 'there', 'all', 'each', 'every'
-]);
+/** 整句原样命中的额外加分：正文 +5、标题 +3（沿用迁移前的权重） */
+export const ORIGINAL_QUERY_CONTENT_BONUS = 5;
+export const ORIGINAL_QUERY_TITLE_BONUS = 3;
+export const ORIGINAL_QUERY_MIN_LENGTH = 2;
+
+/** 高频单元剔除：与知识库同参数——命中过半条目的单元无区分度，df ≤ 2 恒保留 */
+export const KEYWORD_MAX_DF_RATIO = 0.5;
+export const KEYWORD_DF_EXEMPT = 2;
 
 /**
- * 中英文混合关键词提取（迁移自 tool-memory.js:427-465）
- * - CJK 短文本（≤4字）：整段作为关键词保留，如"考试"→["考试"]
- * - CJK 长文本（>4字）：bigram 提取 + 整段作为 fallback 关键词
- * - 英文/数字：保持完整单词
+ * 命中门槛：单元数 ≥ 2，或存在一个「完整单元」命中。
+ * 实测于 Task 2 评测集（计划 Task 3 Step 3）：只看 score > 0 时 3 条零重叠查询仍会
+ * 捣回仅命中 2 字碎块的长条目；纯要求 units ≥ 2 能抹平噪声，但会把「单个英文词」
+ * 「单个 2 字中文词」这类短查询误杀。加 full 分支后两者兼得，10/10 全绿。
  */
-export function extractKeywords(text) {
-  // 原实现依赖调用方（recall）先判空，独立成模块后补一道假值保护：不改变任何现有可达行为
-  if (!text) return [];
-  const clean = String(text).toLowerCase().trim();
-  if (!clean) return [];
-  // 取前 200 字符避免 bigram 膨胀
-  const snippet = clean.length > SNIPPET_MAX_LENGTH ? clean.slice(0, SNIPPET_MAX_LENGTH) : clean;
-  // 按语义边界拆分：CJK 连续块 | 字母连续块 | 数字连续块 | 分隔符
-  const segments = snippet.split(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+|[a-z]+|\d+|[^a-z\d\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)/i);
+export const KEYWORD_MIN_UNITS = 2;
 
-  const tokens = [];
-  // 先将整段作为 fallback 关键词加入
-  if (snippet.length >= 2) {
-    tokens.push(snippet);
+/** 参与词面匹配的字段面（也是参与 embedding 的字段面，两侧口径必须一致） */
+export function memorySearchText(m) {
+  return [m?.content, m?.title, (m?.tags || []).join(' ')].filter(Boolean).join('\n');
+}
+
+/** 逐字段文本（小写）：字段权重按此分别计算 */
+function fieldTexts(m) {
+  return {
+    content: String(m?.content || '').toLowerCase(),
+    title: String(m?.title || '').toLowerCase(),
+    tags: (m?.tags || []).join(' ').toLowerCase()
+  };
+}
+
+/** 查询拆段：拉丁整词 + 中文连续段（与知识库同一实现） */
+export function extractMemoryTerms(query) {
+  return extractQueryTerms(query);
+}
+
+/** 单字段内的命中单元数：词边界拉丁命中 + 中文最长片段，按 KEYWORD_MAX_HITS 封顶 */
+function fieldUnits(text, terms, dfFilter) {
+  if (!text) return { units: 0, full: false };
+  let units = 0;
+  let full = false;
+  for (const term of matchLatin(text, terms.latin)) {
+    if (!dfFilter(term)) continue;
+    units += 1;
+    // 拉丁命中本身就是整词命中（词边界已保证），不是碎块
+    full = true;
   }
+  for (const seg of terms.cjk) {
+    const hit = matchCjk(text, seg);
+    if (!hit || !hit.keys.some(k => dfFilter(k))) continue;
+    units += hit.units;
+    if (seg.length === hit.keys[0].length) full = true;
+  }
+  return { units: Math.min(units, KEYWORD_MAX_HITS), full };
+}
 
-  for (const seg of segments) {
-    if (!seg || seg.trim().length === 0) continue;
-
-    if (/^[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(seg)) {
-      // CJK 字符块
-      if (seg.length <= 4) {
-        // 短文本：整段作为关键词
-        tokens.push(seg);
-      } else {
-        // 长文本：滑动窗口取二元组
-        for (let i = 0; i <= seg.length - 2; i++) {
-          tokens.push(seg.substring(i, i + 2));
-        }
-      }
-    } else if (/^[a-z\d]+$/.test(seg)) {
-      // 英文/数字：保持完整单词
-      if (seg.length >= 2) {
-        tokens.push(seg);
-      }
+/**
+ * 构建文档频率过滤器：统计每个命中单元出现在多少条候选里，过半者判为无区分度。
+ * 必须在计分前对全候选扫一遍——单条记忆自身无法判断某词是否常见。
+ * @param {Array} candidates 本次召回的候选记忆
+ * @param {{latin: string[], cjk: string[]}} terms
+ * @returns {(key: string) => boolean} 该单元是否具备区分度
+ */
+export function buildDocFreqFilter(candidates = [], terms = { latin: [], cjk: [] }) {
+  const df = new Map();
+  for (const m of candidates) {
+    const hay = memorySearchText(m).toLowerCase();
+    if (!hay) continue;
+    for (const term of matchLatin(hay, terms.latin)) df.set(term, (df.get(term) || 0) + 1);
+    for (const seg of terms.cjk) {
+      const hit = matchCjk(hay, seg);
+      if (hit) for (const k of hit.keys) df.set(k, (df.get(k) || 0) + 1);
     }
   }
-  // 去重、过滤停用词、限制最多 30 个关键词（避免膨胀）
-  return [...new Set(tokens)]
-    .filter(k => k.length >= 1 && !STOP_WORDS.has(k))
-    .slice(0, KEYWORD_CAP);
+  const limit = Math.max(KEYWORD_DF_EXEMPT, candidates.length * KEYWORD_MAX_DF_RATIO);
+  // d > 0：未被任何候选碰过的单元不参与判定；d ≤ limit：过半者剔除
+  return (key) => {
+    const d = df.get(key);
+    return d > 0 && d <= limit;
+  };
+}
+
+/**
+ * 记忆关键词分：单元数 × 字段权重，另加整句原样命中分。
+ * 与旧实现的差别即本次变更的目的——碎块不再与整词等价，长命中不再被拆成多次加分。
+ * full 标识「命中了某个完整单元」（整个拉丁词或整个中文连续段），供调用方区分
+ * 「整词命中」与「只碰了 2 字碎块」——后者的分数必须过 KEYWORD_MIN_UNITS 门槛才能算命中。
+ * @param {object} m 记忆条目
+ * @param {{latin: string[], cjk: string[]}} terms extractMemoryTerms 的结果
+ * @param {string} originalQuery 原始查询（小写 trim 后传入）
+ * @param {(key: string) => boolean} [dfFilter] buildDocFreqFilter 的结果，默认全通过
+ * @returns {{score: number, units: number, full: boolean}} units 为命中强度，0 表示词面不沾
+ */
+export function keywordScore(m, terms, originalQuery, dfFilter = () => true) {
+  const texts = fieldTexts(m);
+  let score = 0;
+  let units = 0;
+  let full = false;
+  for (const field of Object.keys(FIELD_WEIGHT)) {
+    const hit = fieldUnits(texts[field], terms, dfFilter);
+    units += hit.units;
+    full = full || hit.full;
+    score += FIELD_WEIGHT[field] * hit.units;
+  }
+  const query = String(originalQuery || '');
+  if (query.length >= ORIGINAL_QUERY_MIN_LENGTH) {
+    if (texts.content.includes(query)) score += ORIGINAL_QUERY_CONTENT_BONUS;
+    if (texts.title.includes(query)) score += ORIGINAL_QUERY_TITLE_BONUS;
+  }
+  return { score, units, full };
 }

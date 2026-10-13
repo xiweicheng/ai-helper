@@ -1,5 +1,6 @@
-// agent/src/memory/service.js - 长期记忆业务逻辑（自扩展端 tool-memory.js 下推，行为不变）
-// 召回有两条通道：关键词通道（缺省即全部，行为与下推时逐字一致）+ 可选向量通道（memoryEmbedding.enabled）。
+// agent/src/memory/service.js - 长期记忆业务逻辑（自扩展端 tool-memory.js 下推）
+// 召回有两条通道：关键词通道（缺省即全部）+ 可选向量通道（memoryEmbedding.enabled）。
+// 关键词通道自 2026-10-13 起与知识库共用 rag/keyword-match.js 的片段化匹配（见 memory/tokens.js）。
 // 逻辑与数据文件同进程：fs 直接读写 MEMORY_DIR/global-memory.json，互斥锁进程内生效。
 // store/recall/manage 按 action 分发；文案经调用方传入的请求语言 t 闭包渲染。
 
@@ -7,7 +8,7 @@ import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { MEMORY_DIR } from '../config.js';
 import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
-import { extractKeywords } from './tokens.js';
+import { extractMemoryTerms, keywordScore, buildDocFreqFilter, memorySearchText, KEYWORD_MIN_UNITS } from './tokens.js';
 import { getMemoryEmbeddingConfig, toEmbeddingProviderConfig } from './embedding-config.js';
 import { createVectorStoreFacade, memoryModelKey, cosine } from './vectors.js';
 import { resolveMemoryTier, isVectorTier, MEMORY_VECTOR_THRESHOLD } from './tier.js';
@@ -38,39 +39,21 @@ function generateMemoryId(type) {
 // 查询向量的一次嵌入上限（与 embedding 探活端点同口径）：超时即降级到关键词单通道
 const MEMORY_EMBED_TIMEOUT_MS = 8000;
 
-// 向量命中折算到记忆侧整数分值上的加分。记忆关键词分是「content+3 / title+2 / tags+2 / 全文精确 +5+3」
-// 的整数累加，RAG searcher 用的是 [0,1] 余弦 + 0.1 加分，两把尺子不可比：把 searcher 的常量搬过来
-// 等于改写关键词档的计分，违反「未启用向量时行为逐字不变」的硬约束。因此向量分落在同一把整数尺子上：
+// 向量命中折算到记忆侧整数分值上的加分。记忆关键词分是 tokens.js 的「单元数 × 字段权重（content 3 /
+// title 2 / tags 2）+ 整句原样命中 +5+3」整数累加，RAG searcher 用的是 [0,1] 余弦 + 0.1 加分，
+// 两把尺子不可比：把 searcher 的常量搬过来等于改写关键词档的计分。因此向量分落在同一把整数尺子上：
 // 达阈值先保底一次 content 命中的权重，相似度满值再折 4 分（合计 7 ≈ content+title+tags 同时命中）。
 const VECTOR_HIT_BONUS = 3;
 const VECTOR_SCALE_POINTS = 4;
 
 /**
- * 关键词通道计分（自 recall 内联代码原样抽出，权重与判定顺序逐字不变）
- * @returns {number} 整数分，0 表示词面完全不沾
+ * 词面命中门槛：整词/整段命中可直接成命中；只碰碎块时需单元素 ≥ 2 才算。
+ * 这一条是碎 bigram 噪声的真正出口（旧实现里「写网」「个国」这类随机 2 字块也能凑出分）。
+ * 门槛只看 units/full 不看 score：整句原样命中的 +5 不能单独救回一条无区分度的条目
+ *（否则 query 'rag' 又会因 'storage' 的子串包含而误伤）。
  */
-function keywordScore(m, keywords, originalQuery) {
-  let score = 0;
-  const content = (m.content || '').toLowerCase();
-  const title = (m.title || '').toLowerCase();
-  const memTags = (m.tags || []).map(tg => tg.toLowerCase());
-  for (const kw of keywords) {
-    if (content.includes(kw)) score += 3;
-    if (title.includes(kw)) score += 2;
-    if (memTags.some(tg => tg.includes(kw))) score += 2;
-  }
-  if (originalQuery.length >= 2) {
-    if (content.includes(originalQuery)) score += 5;
-    if (title.includes(originalQuery)) score += 3;
-  }
-  return score;
-}
-
-/** 参与 embedding 的文本：与关键词通道同一字段面（content + title + tags） */
-function memorySearchText(m) {
-  return [m.content, m.title, (m.tags || []).join(' ')]
-    .filter(Boolean)
-    .join('\n');
+function isKeywordHit(s) {
+  return s.full || s.units >= KEYWORD_MIN_UNITS;
 }
 
 /**
@@ -421,58 +404,65 @@ export function createMemoryService({
       // 按关键词搜索
       let vectorMatched = 0;
       if (query && query.trim()) {
-        const keywords = extractKeywords(query);
+        const terms = extractMemoryTerms(query);
         const originalQuery = query.toLowerCase().trim();
 
-        if (keywords.length > 0 && !fused) {
-          // 关键词单通道：A 档（未启用向量）走这条，向量档但本次查询向量不可用时也退回这条，
-          // 因此融合失败的最坏情况就是今天的行为，不会更差。
-          const scored = candidates.map(m => ({ memory: m, score: keywordScore(m, keywords, originalQuery) }));
+        if (terms.latin.length > 0 || terms.cjk.length > 0) {
+          // df 过滤必须在计分前对全候选扫一遍：单条记忆自身无法判断某个单元是否无区分度
+          const dfFilter = buildDocFreqFilter(candidates, terms);
 
-          // 有匹配关键词的才返回，按分数排序
-          candidates = scored
-            .filter(s => s.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .map(s => s.memory);
+          if (!fused) {
+            // 关键词单通道：A 档（未启用向量）走这条，向量档但本次查询向量不可用时也退回这条，
+            // 因此融合失败的最坏情况就是今天的行为，不会更差。
+            const scored = candidates.map(m => ({ memory: m, ...keywordScore(m, terms, originalQuery, dfFilter) }));
 
-          // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
-          // 上一行赋值清空的 candidates 数组，恒返回空，属死代码，未随迁——行为等价。
-        } else if (fused) {
-          // 双通道融合：词面分照算，语义达阈值的条目在其词面分之上叠加整数向量分。
-          // 关键词零命中但语义达阈值的条目由此能被召回——这是 A 档拿不到的增量。
-          const vecMap = (await vectors.read()).vectors;
+            // 只留下过了命中门槛的条目，按分数排序
+            candidates = scored
+              .filter(isKeywordHit)
+              .sort((a, b) => b.score - a.score)
+              .map(s => s.memory);
 
-          const missing = candidates.filter(m => m.id && !(m.id in vecMap));
-          if (missing.length) {
-            // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义分，不影响正确性
-            try {
-              const { provider, cfg } = getProvider();
-              const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
-              const pairs = missing.map((m, i) => [m.id, Array.isArray(vecs) ? vecs[i] : undefined]).filter(([, v]) => Array.isArray(v) && v.length);
-              if (pairs.length) {
-                await vectors.upsertVectors(pairs, memoryModelKey(cfg));
-                for (const [id, v] of pairs) vecMap[id] = v;
+            // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
+            // 上一行赋值清空的 candidates 数组，恒返回空，属死代码，未随迁——行为等价。
+          } else {
+            // 双通道融合：词面分照算，语义达阈值的条目在其词面分之上叠加整数向量分。
+            // 关键词零命中但语义达阈值的条目由此能被召回——这是 A 档拿不到的增量。
+            const vecMap = (await vectors.read()).vectors;
+
+            const missing = candidates.filter(m => m.id && !(m.id in vecMap));
+            if (missing.length) {
+              // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义分，不影响正确性
+              try {
+                const { provider, cfg } = getProvider();
+                const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
+                const pairs = missing.map((m, i) => [m.id, Array.isArray(vecs) ? vecs[i] : undefined]).filter(([, v]) => Array.isArray(v) && v.length);
+                if (pairs.length) {
+                  await vectors.upsertVectors(pairs, memoryModelKey(cfg));
+                  for (const [id, v] of pairs) vecMap[id] = v;
+                }
+              } catch (err) {
+                console.warn('[Memory] vector backfill skipped:', err.message);
               }
-            } catch (err) {
-              console.warn('[Memory] vector backfill skipped:', err.message);
             }
+
+            const scored = candidates.map(m => {
+              const { score, units, full } = keywordScore(m, terms, originalQuery, dfFilter);
+              const vec = m.id ? vecMap[m.id] : null;
+              const cos = vec ? cosine(queryVec, vec) : 0;
+              const vectorHit = cos >= MEMORY_VECTOR_THRESHOLD;
+              if (vectorHit) {
+                vectorMatched++;
+                return { memory: m, score: score + VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS), units, full, vectorHit };
+              }
+              return { memory: m, score, units, full, vectorHit };
+            });
+
+            // 语义达阈值的条目不受词面门槛限制——「关键词零命中但语义命中」正是向量通道的全部价值
+            candidates = scored
+              .filter(s => s.vectorHit || isKeywordHit(s))
+              .sort((a, b) => b.score - a.score)
+              .map(s => s.memory);
           }
-
-          const scored = candidates.map(m => {
-            const score = keywordScore(m, keywords, originalQuery);
-            const vec = m.id ? vecMap[m.id] : null;
-            const cos = vec ? cosine(queryVec, vec) : 0;
-            if (cos >= MEMORY_VECTOR_THRESHOLD) {
-              vectorMatched++;
-              return { memory: m, score: score + VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS) };
-            }
-            return { memory: m, score };
-          });
-
-          candidates = scored
-            .filter(s => s.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .map(s => s.memory);
         }
       }
 

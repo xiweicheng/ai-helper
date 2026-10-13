@@ -101,6 +101,21 @@ describe('recall', () => {
     assert.ok(r.results[0].content.includes('pnpm'));
   }));
 
+  it('单个中文短词仍能命中（整段命中不受单元门槛限制）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '用户偏好 pnpm 管理依赖' }, T);
+    const r = await svc.recall({ query: '依赖' }, null, T);
+    assert.equal(r.total, 1);
+  }));
+
+  it('只碰到 2 字碎块的条目不当成命中（碎 bigram 噪声的出口）', () => withService(async (svc) => {
+    // 目标：与查询共享 3 字片段「界面库」；噪声：只共享 2 字碎块「网页」
+    await svc.store({ action: 'add', type: 'fact', content: '前端界面库偏好：选 Vue 3' }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '这个网页的框架选型还在讨论' }, T);
+    const r = await svc.recall({ query: '他习惯用哪种界面库' }, null, T);
+    assert.equal(r.total, 1, '旧实现下噪声条目会因「网页」碎块而被捣回');
+    assert.ok(r.results[0].content.includes('界面库'));
+  }));
+
   it('无命中返回 noMatch 且 results 为空', () => withService(async (svc) => {
     await svc.store({ action: 'add', type: 'fact', content: 'AAAA' }, T);
     const r = await svc.recall({ query: 'zzzzz不存在的词xyz' }, null, T);

@@ -1,54 +1,116 @@
-// agent/test/unit/memory-tokens.unit.test.js - 记忆关键词提取（Task 1 搬迁的行为安全网）
-// 这些断言锁的是 service.js 里那份实现的真实行为（含「整段 fallback token」），
-// 搬迁后必须逐条通过，否则说明语义被改动。
-import { test } from 'node:test';
+/**
+ * memory-tokens.unit.test.js
+ * 记忆关键词通道的计分口径测试。
+ *
+ * 本文件在 2026-10-13 被整体重写，原因是记忆侧从「碎 bigram 累加」改为
+ * 「最长命中片段的单元制」，并与知识库共用同一份匹配实现（rag/keyword-match.js）。
+ * 旧用例钉住的正是本次要消除的缺陷，逐条处置记录在计划文档
+ * docs/superpowers/plans/2026-10-13-memory-keyword-parity.md 的 Task 3「执行结果」。
+ */
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractKeywords, STOP_WORDS, KEYWORD_CAP } from '../../src/memory/tokens.js';
+import { keywordScore, buildDocFreqFilter, extractMemoryTerms, FIELD_WEIGHT } from '../../src/memory/tokens.js';
 
-test('导出常量存在', () => {
-  assert.ok(STOP_WORDS instanceof Set);
-  assert.equal(KEYWORD_CAP, 30);
-  assert.ok(STOP_WORDS.has('的'));
-  assert.ok(STOP_WORDS.has('the'));
+const T = (m) => extractMemoryTerms(m);
+
+describe('分词与计分常量', () => {
+  it('字段权重为 content>title=tags 的整数刻度', () => {
+    assert.equal(FIELD_WEIGHT.content, 3);
+    assert.equal(FIELD_WEIGHT.title, 2);
+    assert.equal(FIELD_WEIGHT.tags, 2);
+  });
+
+  it('查询按类型拆段（拉丁整词、中文连续段），不再拆成 bigram', () => {
+    const { latin, cjk } = T('RAG 混合检索 的 方案');
+    assert.deepEqual(latin, ['rag']);
+    assert.deepEqual(cjk, ['混合检索', '方案']);
+  });
+
+  it('空输入与假值输入不抛错且计分为 0', () => {
+    for (const q of ['', '   ', null, undefined]) {
+      const terms = T(q);
+      assert.equal(keywordScore({ content: '任何内容', title: '', tags: [] }, terms, String(q || ''), () => true).score, 0);
+    }
+  });
 });
 
-test('英文与数字按整词切分、停用词过滤', () => {
-  const kws = extractKeywords('use npm 12 to run the test');
-  assert.ok(kws.includes('npm'));
-  assert.ok(kws.includes('12'));
-  assert.ok(!kws.includes('the'));
+// 以下三条用例把 originalQuery 传空串，是为了隔离「单元数 → 分值」这一条轴；
+// 整句原样命中加分是另一条轴，单独在「整句原样命中额外加分」里钉。
+describe('单元制计分（本次行为改变的核心）', () => {
+  it('命中 4 字整词高于命中同词的两个碎块，且为 3 倍关系', () => {
+    const terms = T('混合检索');
+    const whole = { content: '本文介绍混合检索方案与落地', title: '', tags: [] };
+    const scattered = { content: '这里的检索很快，概念也很混合', title: '', tags: [] };
+    const w = keywordScore(whole, terms, '', () => true);
+    const s = keywordScore(scattered, terms, '', () => true);
+    assert.equal(w.units, 3, 'L=4 → 顶格 3 单元');
+    assert.equal(s.units, 1, '只命中 2 字片段 → 1 单元（不再因两处命中累加）');
+    assert.equal(w.score, FIELD_WEIGHT.content * 3);
+    assert.equal(w.score, s.score * 3, '整词分恰为碎块的 3 倍');
+  });
+
+  it('同字段单元数封顶，长查询不会把分数无限推高', () => {
+    const terms = T('混合检索 方案 落地 评估');
+    const m = { content: '混合检索方案落地评估报告', title: '', tags: [] };
+    assert.equal(keywordScore(m, terms, '混合检索 方案 落地 评估', () => true).units, 3);
+  });
+
+  it('标题与标签命中按各自权重计分', () => {
+    const terms = T('知乎发文');
+    const inTitle = { content: '', title: '知乎发文经验', tags: [] };
+    const inTags = { content: '', title: '', tags: ['知乎发文'] };
+    assert.equal(keywordScore(inTitle, terms, '', () => true).score, FIELD_WEIGHT.title * 3);
+    assert.equal(keywordScore(inTags, terms, '', () => true).score, FIELD_WEIGHT.tags * 3);
+  });
+
+  it('整句原样命中额外加分：正文 +5、标题 +3', () => {
+    const terms = T('知乎发文');
+    const body = { content: '关于知乎发文的记录', title: '无关', tags: [] };
+    const head = { content: '关于知乎发文的记录', title: '知乎发文', tags: [] };
+    assert.equal(keywordScore(body, terms, '知乎发文', () => true).score, FIELD_WEIGHT.content * 3 + 5);
+    assert.equal(
+      keywordScore(head, terms, '知乎发文', () => true).score,
+      FIELD_WEIGHT.content * 3 + 5 + FIELD_WEIGHT.title * 3 + 3
+    );
+  });
 });
 
-test('短中文连续段整段保留', () => {
-  assert.ok(extractKeywords('用户偏好').includes('用户偏好'));
-});
+describe('与知识库同口径的两条硬性质', () => {
+  it('英文按词边界：rag 不命中 storage', () => {
+    const terms = T('rag 框架');
+    const m = { content: 'storage persistence 层的设计', title: '', tags: [] };
+    assert.equal(keywordScore(m, terms, 'rag 框架', () => true).score, 0);
+  });
 
-test('长中文连续段既拆 bigram，也保留整段 fallback', () => {
-  const kws = extractKeywords('请在后续回复中使用中文说明');
-  // >4 字的 CJK 块拆二元组
-  assert.ok(kws.includes('后续'));
-  assert.ok(kws.includes('回复'));
-  // 实现会把整段（清洗后的 snippet）作为 fallback 关键词一并加入，评分依赖这条，不得丢
-  assert.ok(kws.some((k) => k.length > 4), '整段 fallback token 应存在');
-});
+  it('CJK 相邻构成边界：中文rag混排应命中 rag', () => {
+    const terms = T('rag');
+    const m = { content: '中文rag混排的写法', title: '', tags: [] };
+    assert.ok(keywordScore(m, terms, 'rag', () => true).score > 0);
+  });
 
-test('关键词数量封顶 30', () => {
-  // 40 个互不相同的汉字 → 39 个 unique bigram + 1 个整段 fallback = 40 条，必须被截到 30
-  const run = Array.from({ length: 40 }, (_, i) => String.fromCharCode(0x4e00 + i)).join('');
-  const kws = extractKeywords(run);
-  assert.ok(kws.length <= KEYWORD_CAP, `实际 ${kws.length} 条应 ≤ ${KEYWORD_CAP}`);
-  assert.equal(kws.length, KEYWORD_CAP);
-});
+  it('高频单元不参与计分（df 过半剔除），低频命中保留', () => {
+    const terms = T('项目文档');
+    const candidates = Array.from({ length: 9 }, (_, i) => ({
+      content: i === 0 ? '项目文档模板' : '项目笔记与项目计划',
+      title: '', tags: []
+    }));
+    const dfFilter = buildDocFreqFilter(candidates, terms);
+    // “项目”在 8 条里被碰到（过半）→ 失去区分度；4 字整词 “项目文档” 只在 1 条 → 保留
+    assert.equal(dfFilter('项目'), false);
+    assert.equal(dfFilter('项目文档'), true);
+    const noisy = { content: '项目笔记与项目计划', title: '', tags: [] };
+    const real = { content: '项目文档模板', title: '', tags: [] };
+    assert.equal(keywordScore(noisy, terms, '项目文档', dfFilter).score, 0);
+    assert.ok(keywordScore(real, terms, '项目文档', dfFilter).score > 0);
+  });
 
-test('超过 200 字符只取前 200 字符参与提取', () => {
-  const tail = '独特结尾';
-  const long = '甲'.repeat(300) + tail;
-  assert.ok(!extractKeywords(long).includes(tail));
-});
-
-test('空输入与假值输入返回空数组', () => {
-  assert.deepEqual(extractKeywords(''), []);
-  assert.deepEqual(extractKeywords('   '), []);
-  assert.deepEqual(extractKeywords(null), []);
-  assert.deepEqual(extractKeywords(undefined), []);
+  it('df 全砍后词面单元得 0 分，整句原样命中加分仍保留', () => {
+    const terms = T('混合检索');
+    const hit = { content: '混合检索方案', title: '', tags: [] };
+    // 空 originalQuery：只看单元通道，确认 df 剔除能把分数压到 0
+    assert.equal(keywordScore(hit, terms, '', () => false).score, 0);
+    assert.equal(keywordScore(hit, terms, '', () => true).score, FIELD_WEIGHT.content * 3);
+    // 整句原样命中是独立信号，不受 df 影响（迁移前即如此，本计划不动它）
+    assert.equal(keywordScore(hit, terms, '混合检索', () => false).score, 5);
+  });
 });
