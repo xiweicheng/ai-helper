@@ -409,6 +409,8 @@ git commit -m "feat(memory): 记忆语义召回的 embedding 配置端点（默�
   - `export async function dropVectors(ids: string[]): Promise<void>`
   - `export function cosine(a: number[], b: number[]): number`
   - `export function createVectorStoreFacade({ filePath } = {})`（供 service 注入自定义路径做测试）
+  - `export function clearVectors(): Promise<void>`（执行时补：Task 6 的 reindex 端点需要「整体作废但不删文件」，删文件会让下次写落在不存在的目录上多一次 mkdir）
+  - `export const VECTORS_FILE`（默认缓存路径，Task 7 冒烟与文档引用）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -563,7 +565,7 @@ export function createVectorStoreFacade({ filePath = VECTORS_FILE } = {}) {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `cd agent && node --test test/unit/memory-vectors.unit.test.js`
-Expected: 6 条 PASS。
+Expected: 12 条 PASS（实测 12/12）。
 
 - [ ] **Step 5: Commit**
 
@@ -571,6 +573,16 @@ Expected: 6 条 PASS。
 git add agent/src/memory/vectors.js agent/test/unit/memory-vectors.unit.test.js
 git commit -m "feat(memory): 记忆向量派生缓存（模型变更整体作废、损坏即回落）"
 ```
+
+> **执行结果（已实施）。计划在此处有 5 处需要修正／加固，按实测行为改写：**
+> 1. **计划的清理会在测试自己落盘前把目录删掉**：`node:test` 的 `test()` 只是登记用例，模块体会先同步跑完，因此计划结尾的顶层 `rmSync(dir)` 在实际执行时先于异步用例的写盘发生。改为 `after(() => rmSync(dir, ...))`（新用 `node:test` 的 `after` 钩子）。
+> 2. **计划第 5 条用例含两行无效代码**：`await store.constructor;`（对函数取属性再 await，无意义）与用例内 `await import('fs')`，已删；`writeFileSync` 改到文件头统一 import。
+> 3. **计划的「落盘失败」用例本身跑不通**：原写法先 `mkdirSync(blocked)` 再 `writeFileSync(blocked, ...)` —— 对目录写文件是 EISDIR，报错发生在准备阶段而不是被测代码里。改为把父路径占成普通文件（`blocker.txt/vectors.json`），让 `mkdir(dirname)` 得到 ENOTDIR，才是真正的写失败路径。
+> 4. **`cosine` 按计划实现会算出 `0.9999999999999998` 的自相似度**：`dot / (Math.sqrt(na) * Math.sqrt(nb))` 中 `Math.sqrt(2) * Math.sqrt(2) = 2.0000000000000004`。合并成 `dot / Math.sqrt(na * nb)` 后 `cosine([1,1],[1,1]) === 1` 严格成立。这不是美化——Task 5 的相似度阈值比较和 Tier 展示都依赖它。
+> 5. **两处纯加固**（计划外的输入由实现兜住）：`memoryModelKey` 的 `dimensions` 用 `Number(...) > 0` 归一（字符串 `'512'` 与数字 512 必须得到同一个键，否则改一次配置就误作废全部向量）；`upsertVectors` 只接受「非空 + 全有限数」的向量，NaN/Infinity 不入库（一个 NaN 会让整批记忆的相似度全变 NaN，排序彻底失效）。
+> 实际用例数按计划是 6 条，落地为 **12 条**：补了并发不丢写、文件不存在/结构不合法/只有 modelKey 三种空缓存形态、drop 不存在的 id 不产生写入、`clear` 整体作废、非有限数过滤。
+
+**Agent 全量单测：245 → 257 passed / fail 0。**`vectors.js` 尚未被 `service.js` 引用（Task 5 才接入召回），因此本 Task 对既有行为零影响。
 
 ---
 
