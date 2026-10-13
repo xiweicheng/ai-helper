@@ -634,7 +634,7 @@ git commit -m "refactor(memory): extension background forwards memory ops to age
 cd agent && node bin/agent.js start -b && sleep 2 && node bin/agent.js status
 ```
 
-（`-b` 后台守护——前台模式重启会丢进程，既有陷阱。）用一次性脚本 `test-results-probes/_memory-pushdown/smoke.mjs` 读取 agent 配置中的端口与 token（agent 本地配置文件），依次 POST `/api/memory/store`（add）→ `/api/memory/recall` → `/api/memory/inject` → `/api/memory/manage(review)`，断言四条响应 `success:true` 且 inject 的 `injected` 含刚写入的高重要性记忆（`importance:9`）。脚本跑完保留输出记录。
+（`-b` 后台守护——前台模式重启会丢进程，既有陷阱。）用冒烟脚本 `agent/test/smoke/memory-pushdown.smoke.mjs`（执行时从 `test-results-probes/` 临时探针提升为受版本控制的产物，因为 CHANGELOG 需引用它），在临时 HOME + 独立端口下进程内拉起真实 server，依次 POST `/api/memory/store`（add）→ `/api/memory/recall` → `/api/memory/inject` → `/api/memory/manage(review)`，断言四条响应 `success:true` 且 inject 的 `injected` 含刚写入的高重要性记忆，并校验落盘位置与 400/404 语义（脚本跑完保留输出记录，12/12 通过）。
 
 - [x] **Step 2: 扩展真机验证**
 
