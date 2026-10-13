@@ -4,6 +4,7 @@ import {
   selectHistoryForSend,
   computeContextUsage,
   appendCompactionToSystemPrompt,
+  applyCompactionInjection,
   assembleCompactionMaterial,
   HISTORY_BUDGET_RATIO,
   SAFETY_MARGIN,
@@ -118,6 +119,45 @@ describe('appendCompactionToSystemPrompt', () => {
     const out = appendCompactionToSystemPrompt('SYS', compactionAt50);
     expect(out.startsWith('SYS')).toBe(true);
     expect(out).toContain('S1旧摘要内容');
+  });
+});
+
+describe('applyCompactionInjection', () => {
+  const compaction = { summary: 'S-INJECT', upToMessageId: 'm50', compressedCount: 3 };
+
+  test('selection.compactionApplied 时将摘要注入 system', () => {
+    const messages = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'U' }];
+    const out = applyCompactionInjection(messages, { compactionApplied: true }, compaction);
+    expect(out).toBe(messages);
+    expect(out[0].content).toContain('S-INJECT');
+    expect(out[1].content).toBe('U');
+  });
+
+  test('压缩点失效时不注入并告警', () => {
+    const warns = [];
+    const messages = [{ role: 'system', content: 'SYS' }];
+    const out = applyCompactionInjection(
+      messages, { compactionApplied: false }, compaction,
+      { warn: (m) => warns.push(m) }
+    );
+    expect(out[0].content).toBe('SYS');
+    expect(warns.length).toBe(1);
+  });
+
+  test('无压缩对象时静默原样返回（不告警）', () => {
+    const warns = [];
+    const messages = [{ role: 'system', content: 'SYS' }];
+    const out = applyCompactionInjection(
+      messages, { compactionApplied: false }, null,
+      { warn: (m) => warns.push(m) }
+    );
+    expect(out[0].content).toBe('SYS');
+    expect(warns.length).toBe(0);
+  });
+
+  test('未传入 logger 时不抛异常', () => {
+    const messages = [{ role: 'system', content: 'SYS' }];
+    expect(() => applyCompactionInjection(messages, { compactionApplied: false }, compaction)).not.toThrow();
   });
 });
 

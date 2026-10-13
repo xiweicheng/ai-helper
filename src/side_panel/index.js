@@ -4,7 +4,7 @@ import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
 import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent, formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
-import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
+import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
 import { initContextIndicator } from './context-indicator.js';
@@ -819,11 +819,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
       });
 
       // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
-      if (selection.compactionApplied) {
-        messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, state.activeCompaction) };
-      } else if (state.activeCompaction) {
-        logger.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
-      }
+      applyCompactionInjection(messages, selection, state.activeCompaction, logger);
       // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
       if (selection.historySummaryText) {
         messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };

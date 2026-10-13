@@ -124,6 +124,27 @@ export function appendCompactionToSystemPrompt(systemContent, compaction) {
 }
 
 /**
+ * 将压缩摘要注入待发送消息的 system 位（发送链路唯一出口）。
+ *
+ * 侧边栏有多条发送链路（主链路 / 提示词一键发送 / 兼容入口），
+ * 内联重复此段会导致任一侧改动静默漂移，因此统一收敛到这里。
+ *
+ * @param {Array<{role: string, content: string}>} messages - 已含 system 头的待发送消息（就地修改并返回同一引用）
+ * @param {{compactionApplied: boolean}} selection - selectHistoryForSend 结果
+ * @param {{summary?: string}} [compaction] - state.activeCompaction
+ * @param {{warn?: Function}} [logger] - 压缩点失效时的告警出口
+ * @returns {Array<{role: string, content: string}>} 同一 messages 引用
+ */
+export function applyCompactionInjection(messages, selection, compaction, logger) {
+  if (selection?.compactionApplied && compaction?.summary) {
+    messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, compaction) };
+  } else if (compaction?.summary) {
+    logger?.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
+  }
+  return messages;
+}
+
+/**
  * 计算上下文占用（指示器预览；与发送路径同源）
  *
  * 与发送路径同序：先用原始 system 算预算 → 选择历史 → 注入摘要后再算最终 system 分解。

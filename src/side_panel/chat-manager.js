@@ -13,7 +13,7 @@ import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext } from '../shared/token-counter.js';
-import { selectHistoryForSend, appendCompactionToSystemPrompt } from '../shared/context-usage.js';
+import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { renderCompactionDivider } from './context-indicator.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
@@ -1080,11 +1080,7 @@ export async function sendMessage() {
       });
 
       // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
-      if (selection.compactionApplied) {
-        messages[0] = { ...messages[0], content: appendCompactionToSystemPrompt(messages[0].content, state.activeCompaction) };
-      } else if (state.activeCompaction) {
-        logger.warn('[SidePanel] contextCompaction invalid (upToMessageId not found), ignored this send');
-      }
+      applyCompactionInjection(messages, selection, state.activeCompaction, logger);
       // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
       if (selection.historySummaryText) {
         messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };
