@@ -243,6 +243,10 @@ Results are returned in reverse chronological order (newest first).
 | POST | `/api/fs/delete` | Delete file/directory |
 | POST | `/api/fs/search_files` | Search files by name pattern (glob) |
 | POST | `/api/fs/search_content` | Search file content (rg preferred, Node.js fallback) |
+| POST | `/api/memory/store` | Write long-term memory (action: add / update / delete) |
+| POST | `/api/memory/recall` | Recall long-term memory by keyword scoring (with per-session dedup) |
+| POST | `/api/memory/manage` | Memory review (`action: review`) / compaction (`action: compact`) |
+| POST | `/api/memory/inject` | Three-tier injection selection for the system prompt |
 | POST | `/api/exec` | Execute system command |
 | POST | `/api/exec/stop` | Stop command execution |
 | GET | `/api/exec/running` | List running processes |
@@ -380,6 +384,56 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 3. Auto-discover tools provided by MCP servers
 4. Tool call requests are forwarded to MCP servers via the agent
 5. Tool results are returned to the extension
+
+## Long-term Memory
+
+Cross-session long-term memory is owned by the agent: the storage file, the read-modify-write lock, recall scoring, review/compaction and injection selection all run in this process. The extension only forwards tool calls to the endpoints below — no generic file-API round-trips, no dependency on the extension Service Worker staying alive.
+
+- **Data location** — `~/.ai-helper-agent/memory/global-memory.json` (facts + summaries + stats)
+- **Concurrency** — an in-process promise-chain lock serializes every read-modify-write; the per-session recall cache (which memories were already surfaced in this conversation) lives in agent memory
+- **i18n** — response text is rendered from the request's `Accept-Language`
+
+### Record schema
+
+```json
+{
+  "id": "fact_a1b2c3d4_xxxx",
+  "type": "fact | summary",
+  "category": "custom",
+  "content": "...",
+  "tags": ["..."],
+  "importance": 5,
+  "accessCount": 0,
+  "lastAccessAt": null,
+  "createdAt": "2026-01-15T10:30:00.000Z",
+  "updatedAt": "2026-01-15T10:30:00.000Z",
+  "sourceSessionId": null
+}
+```
+
+### Recall scoring
+
+| Signal | Score |
+|--------|-------|
+| keyword hit in `content` | +3 |
+| keyword hit in `title` | +2 |
+| keyword hit in `tags` | +2 |
+| full query (≥ 2 chars) found in `content` | +5 |
+| full query (≥ 2 chars) found in `title` | +3 |
+
+Keywords are extracted with zero dependencies: a CJK run of ≤ 4 characters is kept whole, longer runs split into bigrams, latin/digit runs become word tokens, stop words filtered, capped at 30 keywords.
+
+### Injection tiers (system prompt)
+
+| Tier | Rule |
+|------|------|
+| 1 — resident | `importance >= 8` is always injected |
+| 2 — budgeted | ranked by value, capped at 1500 characters and 12 items |
+| 3 — index only | remaining memories surface as tag index lines; the model pulls them with a recall call |
+
+Memory value = `importance x (1 + ln(accessCount + 1)) x timeDecay`; entries whose value falls below 10 are evicted by compaction (`/api/memory/manage` with `action: "compact"`).
+
+> Long-term memory needs an agent build that ships the `/api/memory/*` endpoints. The extension deliberately does **not** fall back to the generic file API — a missing endpoint is reported as a version-mismatch hint instead.
 
 ## Knowledge Base (RAG)
 

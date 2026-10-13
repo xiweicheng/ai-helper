@@ -243,6 +243,10 @@ GET /api/logs/dates
 | POST | `/api/fs/delete` | 删除文件/目录 |
 | POST | `/api/fs/search_files` | 按文件名模式搜索（glob） |
 | POST | `/api/fs/search_content` | 搜索文件内容（rg 优先，Node.js 回退） |
+| POST | `/api/memory/store` | 写入长期记忆（action：add / update / delete） |
+| POST | `/api/memory/recall` | 关键词计分召回长期记忆（含会话级去重） |
+| POST | `/api/memory/manage` | 记忆审查（`action: review`）/ 压缩淘汰（`action: compact`） |
+| POST | `/api/memory/inject` | 为系统提示词执行三级注入筛选 |
 | POST | `/api/exec` | 执行系统命令 |
 | POST | `/api/exec/stop` | 停止命令执行 |
 | GET | `/api/exec/running` | 运行中的进程列表 |
@@ -380,6 +384,56 @@ enabled: true
 3. 自动发现 MCP Server 提供的工具
 4. 工具调用请求通过 Agent 转发到 MCP Server
 5. 工具结果返回给扩展
+
+## 长期记忆
+
+跨会话长期记忆由 Agent 全权托管：存储文件、读写互斥锁、召回计分、审查/淘汰、注入筛选全部在本进程内完成。插件只向下表端点转发工具调用——不再走通用文件 API 往返，也不依赖插件 Service Worker 是否存活。
+
+- **数据位置** — `~/.ai-helper-agent/memory/global-memory.json`（facts + summaries + stats）
+- **并发** — 进程内 Promise 链互斥锁串行化每一次读-改-写；会话级召回缓存（本对话已呈现过哪些记忆）常驻 Agent 内存
+- **国际化** — 响应文案根据请求 `Accept-Language` 渲染
+
+### 记录结构
+
+```json
+{
+  "id": "fact_a1b2c3d4_xxxx",
+  "type": "fact | summary",
+  "category": "custom",
+  "content": "...",
+  "tags": ["..."],
+  "importance": 5,
+  "accessCount": 0,
+  "lastAccessAt": null,
+  "createdAt": "2026-01-15T10:30:00.000Z",
+  "updatedAt": "2026-01-15T10:30:00.000Z",
+  "sourceSessionId": null
+}
+```
+
+### 召回计分
+
+| 命中信号 | 分值 |
+|----------|------|
+| 命中 `content`（关键词） | +3 |
+| 命中 `title`（关键词） | +2 |
+| 命中 `tags`（关键词） | +2 |
+| 查询原文（≥ 2 字）出现在 `content` 中 | +5 |
+| 查询原文（≥ 2 字）出现在 `title` 中 | +3 |
+
+关键词提取零依赖：不超过 4 字的中文连续段整段保留，更长则拆为 bigram；英文/数字连续段整词；停用词过滤；最多 30 个关键词。
+
+### 三级注入策略（系统提示词）
+
+| 层级 | 规则 |
+|------|------|
+| 1 — 常驻 | `importance >= 8` 总是注入 |
+| 2 — 预算 | 按价值排序，上限 1500 字符 + 12 条 |
+| 3 — 仅索引 | 其余记忆只以标签索引行呈现，由模型主动 recall 拉取 |
+
+记忆价值 = `importance x (1 + ln(accessCount + 1)) x 时间衰减`；价值降到 10 以下的条目由压缩淘汰（`/api/memory/manage` 的 `action: "compact"`）。
+
+> 长期记忆需要带 `/api/memory/*` 端点的 Agent 版本。插件**不会**回退到通用文件 API——端点缺失时直接提示版本不匹配。
 
 ## 知识库（RAG）
 
