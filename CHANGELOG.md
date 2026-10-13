@@ -2,6 +2,21 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-13
+
+### 变更（长期记忆逻辑下推 Agent 端）
+- **架构错位消除**：长期记忆的全部业务逻辑（存储、召回计分、会话去重、审查/淘汰、三级注入筛选）从扩展端 background 整体迁至 agent 包（`agent/src/memory/{injection,service,routes}.js`），与数据文件 `~/.ai-helper-agent/memory/global-memory.json` 同进程；agent 新增 `POST /api/memory/{store,recall,manage,inject}` 四个业务端点（签名与 i18n 沿用 rag 路由模式，零外部依赖、静态加载）。
+- **扩展端瘦身为转发层**：`src/background/tool-memory.js` 由 752 行降至 85 行（只做 `subAction → action` 映射、`sessionId` 透传与结果整形）；`GET_PERMANENT_NOTES` 改为请求 `/api/memory/inject`；删除 `src/background/memory-injection.js`（纯函数已迁 agent）与 `tool-executor.js`/`index.js` 的 `readMemoryFile` 死导入。
+- **原子性与生命周期修复**：记忆 read-modify-write 的互斥锁从扩展 SW 内存锁改为 agent 进程内 Promise 链锁，不再受 MV3 Service Worker 重启影响，也不再存在“跨 HTTP 两次文件 API 调用非原子”的丢写风险；会话召回缓存（`sessionRecalledMemoryIds`）随逻辑常驻 agent 内存，不再因 SW 休眠丢失；`manage compact` 淘汰的记忆同步从会话召回缓存摘除。
+- **不兼容提示**：不做新旧版本兼容（插件与 Agent 对应发布）。插件遇到旧版 Agent 无记忆端点（HTTP 404）时直接返回升级指引（`toolMemory.memoryEndpointMissing`），**不再回退通用文件 API 读写记忆**；Agent 未连接时记忆能力整体不可用（不建本地双存储）。文案由 agent 按请求 `Accept-Language` 渲染，转发层仅保留 6 条本地校验文案。
+- 行为保持：记忆数据结构、三级注入参数（常驻阈值 importance≥8 / 预算 1500 字符 + 12 条）、召回计分（content+3 / title+2 / tags+2 / 原句+5）、价值公式与淘汰线（value<10）均逐字平移，未新增功能；`recall` 响应中的 `accessCount` 仍为召回前副本（与原实现一致，递增值以落盘为准）。
+
+### 工程质量与测试
+- agent 新增 `memory-service`（25 例）/`memory-routes`（8 例）/`memory-injection`（18 例）单测，`node --test test/unit/*.unit.test.js` 220/220 通过（原 169）。
+- 扩展端新增 `test/unit/tool-memory-forward.unit.test.js`（12 例，含将旧“接线守卫”按新架构改写后保留的4 条源码断言）；全量 vitest 78 文件 / 1227 用例通过（2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
+- 端到端冒烟 `test-results-probes/_memory-pushdown/smoke.mjs`（12 项全通）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
+- 实施计划：`docs/superpowers/plans/2026-10-13-agent-memory-pushdown.md`（含执行时的 5 处偏差修正记录）。版本号未手动修正：由 `npm run release:agent` 统一同步（单一版本流惯例）。
+
 ## 2026-10-11
 
 ### 新增（ReAct 循环工程优化）

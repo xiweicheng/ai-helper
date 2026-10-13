@@ -64,22 +64,22 @@ test/unit/tool-memory-forward.unit.test.js     # 新增：转发行为测试
 - Consumes: 无
 - Produces: `export { MEMORY_INJECTION_CONFIG, calcMemoryValue, selectMemoriesForInjection }`（签名与 `src/background/memory-injection.js` 完全一致），Task 4/5 依赖。
 
-- [ ] **Step 1: 迁移源文件**
+- [x] **Step 1: 迁移源文件**
 
 将 `src/background/memory-injection.js` 全文（118 行，零依赖纯函数）原样复制为 `agent/src/memory/injection.js`，仅把首行注释中的路径说明改为 `agent/src/memory/injection.js - 记忆分级注入策略`。
 
-- [ ] **Step 2: 迁移测试**
+- [x] **Step 2: 迁移测试**
 
 将 `test/unit/memory-injection.unit.test.js` 复制为 `agent/test/unit/memory-injection.unit.test.js`，做两处适配：
 1. import 路径改为 `../../src/memory/injection.js`；
 2. **删除文件末尾的"接线守卫"describe 块**（原第 ~220-244 行，用 `readFileSync` 断言扩展端源码 import 关系的三个 `it`——这些守卫针对扩展端接线，由 Task 6 的扩展测试替代），保留 `calcMemoryValue` 与 `selectMemoriesForInjection` 的全部行为用例。
 
-- [ ] **Step 3: 运行验证**
+- [x] **Step 3: 运行验证**
 
 Run: `cd agent && node --test test/unit/memory-injection.unit.test.js`
 Expected: 全部 PASS（行为未变，直接绿；此 Task 是纯搬运，无红灯阶段）
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add agent/src/memory/injection.js agent/test/unit/memory-injection.unit.test.js
@@ -101,7 +101,7 @@ git commit -m "refactor(memory): port injection tier-selection pure functions to
   - `createMemoryService({ filePath, t })` → 服务实例（`filePath` 可注入便于测试；缺省 `join(MEMORY_DIR, 'global-memory.json')`，`MEMORY_DIR` import 自 `../config.js`；`t` 为请求语言翻译闭包）
   - 实例方法 `store(args)`：args 即工具参数（`action` 字段为 store 内部子动作 add/update/delete，即扩展端映射后的 `subAction→action`），返回 `{success, message, memory?, removed?, action, stats}`（无 `tool_call_id`——由扩展转发层附加）
 
-- [ ] **Step 1: 写失败测试（store 三行为）**
+- [x] **Step 1: 写失败测试（store 三行为）**
 
 ```js
 // agent/test/unit/memory-service.unit.test.js
@@ -162,12 +162,12 @@ describe('store', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: FAIL（`Cannot find module '../../src/memory/service.js'`）
 
-- [ ] **Step 3: 实现 service.js 存储核心 + store**
+- [x] **Step 3: 实现 service.js 存储核心 + store**
 
 从 `src/background/tool-memory.js` 按下表搬运，**只改标注的适配点，其余逐行等价**：
 
@@ -194,16 +194,16 @@ function withMemoryLock(task) {
 }
 ```
 
-- [ ] **Step 4: locales 增加 memory 命名空间**
+- [x] **Step 4: locales 增加 memory 命名空间**
 
 `agent/src/locales/zh.json` 与 `en.json` 各新增顶层 `"memory": { ... }`，key 与 `tool-memory.js` 注册的 `toolMemory.*` 全量一致（zh 值照搬 :12-56，en 值照搬 :61-105），`nearLimitWarning`/`foundResults` 等 `{占位符}` 原样保留。两文件 key 集合必须相同（对照 `rag` 命名空间的中英对齐方式）。
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: store 组全部 PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add agent/src/memory/service.js agent/src/locales/zh.json agent/src/locales/en.json agent/test/unit/memory-service.unit.test.js
@@ -222,7 +222,7 @@ git commit -m "refactor(memory): add agent-side memory service with store action
 - Consumes: Task 2 的 `createMemoryService`、`withMemoryLock`、`readMemoryFile/writeMemoryFile`
 - Produces: 实例方法 `recall(args, sessionId)` → `{success, message, results[], total, query}`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `memory-service.unit.test.js`：
 
@@ -272,21 +272,21 @@ describe('recall', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: recall 组 FAIL（`svc.recall is not a function`）
 
-- [ ] **Step 3: 实现 recall**
+- [x] **Step 3: 实现 recall**
 
 从 `tool-memory.js` 搬运，逐段对应：`STOP_WORDS`（:407-419）、`extractKeywords`（:427-465，含整段 fallback、CJK ≤4 整段 / >4 bigram、英文数字整词、去停用词、30 上限）、标签筛选（:397-402）、计分（:471-496，content+3/title+2/tags+2、原句命中 content+5/title+3）、全文 fallback（:498-513，**注意源码 :500 在已清空的 `candidates` 上 filter 是既有失效路径——行为保持照搬，不修复**，加注释 `// 保持与旧实现一致` 即可，后续优化另行立项）、去重 limit（:518-523）、session 缓存（:350-364 + :525-551，Map 常驻 agent 进程，SW 重启丢失问题自然消失）、accessCount 写回（:564-582，失败 warn 不阻塞——agent 端用 `console.warn`）、结果格式化（:585-594，`t('memory.*')`）。删除 `results.map` 中的 `tool_call_id` 字段。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: recall 组全部 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agent/src/memory/service.js agent/test/unit/memory-service.unit.test.js
@@ -305,7 +305,7 @@ git commit -m "refactor(memory): port recall logic (keyword scoring, session ded
 - Consumes: Task 1 `selectMemoriesForInjection` / `calcMemoryValue`（`../memory/injection.js`）；Task 2 存储核心
 - Produces: 实例方法 `manage(args, t)` → `{success, message, scored?, candidates?, stats, removedFacts?, removedSummaries?}`（`args.action` 取值 `review|compact`，与 store 一致由转发层做 subAction→action 映射）；`injectSelect(t)` → `{success, injected, remainingCount, remainingTags}`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 describe('manage + injectSelect', () => {
@@ -340,22 +340,22 @@ describe('manage + injectSelect', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: FAIL（`svc.manage is not a function`）
 
-- [ ] **Step 3: 实现 manage 与 injectSelect**
+- [x] **Step 3: 实现 manage 与 injectSelect**
 
 `manage(args)`：搬运 `executeAgentMemoryManage`（:613-720），review 报告拼装（:652-671，`t('memory.*')`；淘汰线 `lowValueThreshold = 10` 与 compact `threshold = 10` 数值不变）、`_source` 剥离逻辑不变；同样去掉 `tool_call_id`、经 `withMemoryLock` 互斥。
 `injectSelect()`：`readMemoryFile()` 后调用 `selectMemoriesForInjection(data.facts, data.summaries)`（import 自 `./injection.js`，默认 `MEMORY_INJECTION_CONFIG` 不覆盖），返回 `{success:true, injected: selection.injected, remainingCount: selection.remainingCount, remainingTags: selection.remainingTags}`。
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
 Expected: 全部 PASS；顺带跑 `node --test test/unit/` 确认无模块求值冲突
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add agent/src/memory/service.js agent/test/unit/memory-service.unit.test.js
@@ -375,7 +375,7 @@ git commit -m "refactor(memory): port manage and injection selection to agent se
 - Consumes: Task 2-4 的 `createMemoryService`；server 注入的 `t / requestBody`（形状同 ragRouter：`(req, res, pathname, url, t, requestBody)`）
 - Produces: HTTP 端点契约（见文档头部表格）；扩展 Task 6 依赖这 4 个路径。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 路由层测试只测分发（业务已由 service 测试覆盖）：
 
@@ -404,12 +404,12 @@ test('store 分发到 service 并回 200 契约形状', async () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `cd agent && node --test test/unit/memory-routes.unit.test.js`
 Expected: FAIL（模块不存在）
 
-- [ ] **Step 3: 实现 routes.js**
+- [x] **Step 3: 实现 routes.js**
 
 模式对齐 `rag/routes.js`（本地 `jsonResponse`/`getAllowedOrigin` 直接抄其 :39-63，依赖 Node 原生挂接的 `res.req`）。service 方法签名为 `(args, t)`，因此路由层必须把请求级 `t` 透传下去；末位加 `options` 供测试注入 tmp 目录实例（避免读写真实 `~/.ai-helper-agent` 记忆文件）：
 
@@ -453,7 +453,7 @@ export async function memoryRouter(req, res, pathname, url, t, requestBody) {
 
 注意：`service.recall(args, sessionId, t)` 的第二参数在路由层从 `requestBody.sessionId` 取出（扩展转发层负责把会话 ID 放进 body）。service 各方法内部失败返回 `{success:false,error}` 时统一回 HTTP 400（与 rag 惯例一致），而扩展端仍以 `body.success` 为准判断业务结果；404 只用于旧版本 agent 无该端点的探测，两者语义互不干扰。
 
-- [ ] **Step 4: server.js 接线**
+- [x] **Step 4: server.js 接线**
 
 在 `agent/src/server.js` 的 RAG 块（:2043-2058）之后、404 兜底（:2061）之前加入。**执行时改为静态 import**（记忆层零外部依赖，无需像 RAG 那样按可用性动态加载，也省掉每请求 import 开销）：文件头加 `import { memoryRouter } from './memory/routes.js';`，路由块为：
 
@@ -466,12 +466,12 @@ export async function memoryRouter(req, res, pathname, url, t, requestBody) {
 
 （放置点处于认证通过后的处理段内，`t/requestBody` 与其他业务路由同源。）
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run: `cd agent && node --test test/unit/`
 Expected: agent 全量 unit PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add agent/src/memory/routes.js agent/src/server.js agent/test/unit/memory-routes.unit.test.js
@@ -494,7 +494,7 @@ git commit -m "refactor(memory): expose /api/memory/* endpoints and wire into se
 - Consumes: Task 5 端点契约；`AgentClient.agentRequest`（已导出，返回体附 `httpStatus`）
 - Produces: `executeAgentMemory(args, toolCallId, sessionId)` 与 `makeResult` 形状不变（tool-executor 路由 :2060 无感知）；`GET_PERMANENT_NOTES` 响应形状不变（side_panel `fetchPermanentNotes` 无感知）。
 
-- [ ] **Step 1: 写失败测试（转发层）**
+- [x] **Step 1: 写失败测试（转发层）**
 
 ```js
 // test/unit/tool-memory-forward.unit.test.js（Vitest）
@@ -538,12 +538,12 @@ describe('executeAgentMemory 转发', () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run test/unit/tool-memory-forward.unit.test.js`
 Expected: FAIL（现实现不发 `/api/memory/*`）
 
-- [ ] **Step 3: 重写 tool-memory.js**
+- [x] **Step 3: 重写 tool-memory.js**
 
 保留文件骨架注释与导出名，函数体替换为：
 
@@ -575,7 +575,7 @@ export async function executeAgentMemory(args, toolCallId, sessionId) {
 
 （`missingAction` 文案复用扩展端 i18n 中保留的一条 `toolMemory` key；删除本地 `subAction→action` 映射——body 同时携带 `action` 与 `subAction`，agent 端 store/manage 按 `subAction` 分发。执行前将 tool-memory.js 的 store/manage 内部签名核对一次：agent service 的 `store(args)` 接收 `action` 字段为 add/update/delete，因此**转发层需做最小适配**：`const body = { ...args, action: args.subAction ?? args.action }`（store/manage）；recall 保持 `action:'recall'`。以 Task 5 契约测试为准。）
 
-- [ ] **Step 4: 改造 GET_PERMANENT_NOTES（index.js:1523-1545）**
+- [x] **Step 4: 改造 GET_PERMANENT_NOTES（index.js:1523-1545）**
 
 handler 体改为：
 
@@ -596,19 +596,19 @@ handler 体改为：
 
 同时删除 index.js 顶部 `readMemoryFile`（:17）与 `selectMemoriesForInjection`（:18）两条 import；`tool-executor.js:10` 去掉 `readMemoryFile`。
 
-- [ ] **Step 5: i18n 与旧文件清理**
+- [x] **Step 5: i18n 与旧文件清理**
 
 - **执行修正**：`toolMemory` 命名空间并不在 `src/shared/locales/*.js`，而是在 `tool-memory.js` 文件内 `registerTranslations` 注册的（因此文案已随业务逻辑迁至 agent 端 `src/locales/{zh,en}.json` 的 `memory` 命名空间）。转发层只保留自己渲染的 6 条：`missingAction`、`unsupportedMemoryAction`、`storeMissingSubAction`、`manageMissingSubAction`、`memoryEndpointMissing`、`requestFailed`。
 - `memoryEndpointMissing` 不放到 `agentClient` 命名空间：该文案仅由 tool-memory.js 渲染，放在本模块自己的命名空间可保证单测（mock 掉 local-agent-client.js 后）仍能解析真实文案，不依赖被 mock 模块的副作用。
 - 删除 `src/background/memory-injection.js` 与 `test/unit/memory-injection.unit.test.js`（行为测试已在 Task 1 迁至 agent）；其中仍有意义的“接线守卫”（index.js handler / side_panel utils.js 渲染门控）改写后并入 `tool-memory-forward.unit.test.js`。
 - **纠正旧实现的 `makeResult` 误用**：旧代码将 `toolCallId` 直传第三参（应形为 `extra` 对象），字符串展开会在结果上产生 `"0":"t"` 类垃圾键；转发层统一改为 `makeResult(success, content, { tool_call_id })`。
 
-- [ ] **Step 6: 运行扩展全量单测 + 构建**
+- [x] **Step 6: 运行扩展全量单测 + 构建**
 
 Run: `npx vitest run` → 全绿（如有其他测试 mock/引用 `tool-memory` 内部函数，按其意图改为断言转发调用，逐个修复后重跑）
 Run: `npm run build:silent` → BUILD SUCCESS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/background/tool-memory.js src/background/index.js src/background/tool-executor.js src/background/memory-injection.js src/shared/locales/zh.js src/shared/locales/en.js test/unit/
@@ -628,7 +628,7 @@ git commit -m "refactor(memory): extension background forwards memory ops to age
 - Consumes: 全部前序 Task
 - Produces: 可用的真机链路验证记录
 
-- [ ] **Step 1: 启动 agent 并直连冒烟**
+- [x] **Step 1: 启动 agent 并直连冒烟**
 
 ```bash
 cd agent && node bin/agent.js start -b && sleep 2 && node bin/agent.js status
@@ -636,21 +636,21 @@ cd agent && node bin/agent.js start -b && sleep 2 && node bin/agent.js status
 
 （`-b` 后台守护——前台模式重启会丢进程，既有陷阱。）用一次性脚本 `test-results-probes/_memory-pushdown/smoke.mjs` 读取 agent 配置中的端口与 token（agent 本地配置文件），依次 POST `/api/memory/store`（add）→ `/api/memory/recall` → `/api/memory/inject` → `/api/memory/manage(review)`，断言四条响应 `success:true` 且 inject 的 `injected` 含刚写入的高重要性记忆（`importance:9`）。脚本跑完保留输出记录。
 
-- [ ] **Step 2: 扩展真机验证**
+- [x] **Step 2: 扩展真机验证**
 
 `chrome://extensions` 重新加载 `dist/`，侧边栏对话让模型执行：存一条 importance 8+ 记忆 → 验证工具返回正常、下一轮系统提示词出现"永久注意事项"区块、manage review 可用。断开 agent → 验证记忆区块消失且触发工具时得到未配对/升级指引文案（无未处理异常）。
 
-- [ ] **Step 3: CHANGELOG 同步**
+- [x] **Step 3: CHANGELOG 同步**
 
 `CHANGELOG.md` 记录架构迁移条目（含行为不变声明与旧 agent 不兼容提示，提醒需通过 `npm run release:agent` 对应发布）。同步更新 `agent/docs/` 或 Wiki 中涉及记忆实现的描述（如有）。
 
-- [ ] **Step 4: 最终回归**
+- [x] **Step 4: 最终回归**
 
 Run: `cd agent && node --test test/unit/` → PASS
 Run: `npx vitest run` → PASS
 Run: `npm run build:silent` → BUILD SUCCESS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CHANGELOG.md
