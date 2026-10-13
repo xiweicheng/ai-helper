@@ -1138,6 +1138,9 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 - ~~既有债：agent 代码从未被 eslint 覆盖、2 条既有集成失败、main 上多个提交未推送、wiki 未同步~~
   → eslint 覆盖与集成失败已在**第三轮收口**解决；未推送 / wiki / 版本号（仓库 2.2.0 vs 全局 2.1.0）仍在等用户发话
 - ~~`toolbox` / `knowledge` 的 hash 直达不刷新缺口~~ → 已在第三轮收进注册表
+- **D1（报告第一项，需用户先定检索取向）**：tags 是打分前的硬过滤，之后词面还要过 `isKeywordHit`、
+  语义还要过 0.48 地板 —— 两个硬门槛 AND 叠加。是否让标签从「硬过滤」降为「加分项」属检索哲学选择，
+  未经用户发话不动。
 - **新发现且需用户动作**：`api.integration.test.js` 曾硬编码本机真实配对 token 并已进 git 历史（源码已改，
   但历史仍在，且 token 本身需重新配对才算彻底失效）；`api.integration` 会打 `/api/config/workdir`、
   `/api/exec`、`/api/fs/delete`，未经用户同意不得跑
@@ -1276,3 +1279,62 @@ rag 集成（隔离部分）**24/24**；`npm run lint` 干净；`npm run build:s
 
 本轮未动（需用户发话）：`api.integration` 实跑、token 重新配对/历史改写、推送与 wiki 同步、版本号对齐、
 以及语义层三项（碎块 vs top1 取向、地板重标定、分段索引）。
+
+## 执行记录第四轮（2026-10-13 深夜：侧边栏记忆报告的 D2/D3/D4 收口）
+
+### 0. 报告核对与两处对报告的纠正
+
+用户在侧边栏让 AI 自测永久记忆后产出「长期记忆能力验证报告（第二轮）」，9 条用例 + 4 个已知缺陷 D1~D4。
+逐条对代码核验后采纳 D2/D3/D4（本轮修），D1 挂起等用户定检索取向。两处报告本身的归因不准确：
+
+- D1 被归因为「多标签才触发」：实际 tags 是打分前的硬过滤（`service.js` 候选集阶段），之后词面过
+  `isKeywordHit`、语义过 0.48 地板——**两个硬门槛 AND 叠加，单标签也能触发**。
+- 报告未涉及但严重度更高的事实：扩展端工具 schema 的 `enum` **从未被任何代码执行**
+  （`tool-executor.js` 直接 `JSON.parse(arguments)` 交给 handler，全仓无 schema 校验器），
+  所以模型在普通对话里给出 `type: "note"` 就能落到写盘路径——不是「手工构造请求才能触发」。
+
+另外报告首轮读数被我自己的脚本弄错过：按错误结构读 `global-memory.json` 报「41 条全是孤儿」，
+真值是 41 真源 / 41 向量 / 0 孤儿 / 0 未索引，报告的「零残留」结论成立。
+
+### 1. D3：`type` 白名单（旧实现有兜底数组）
+
+旧代码 `const targetArray = type === 'fact' ? memoryData.facts : memoryData.summaries;` — 任何非 `fact`
+的值（`note` / `Fact` / `fact1`）都被当摘要写进 `summaries`，并挤占 `maxSummaries = 20` 的配额。
+现取 `MEMORY_TYPES = ['fact','summary']` 显式白名单，只在校验层拒；`delete` 按全局唯一 id 查找，
+照旧不要求 `type`；未知 `action` 仍由 `unsupportedAction` 先报错，不让类型校验把错误换成误导性的 `invalidType`。
+
+### 2. D4：`memoryType` 白名单，且校验必须早于嵌入请求
+
+旧代码无效 `memoryType` 使 `candidates` 为空 → 返回「记忆库为空」文案，把参数错误伪装成数据状态。
+现在 `RECALL_MEMORY_TYPES = ['all','fact','summary']` 之外直接返回 `memory.invalidMemoryType`。
+校验点放在档位判定与 `embedQuery` **之前**：否则一次坏参数的检索会白打一发远端嵌入。
+钉：新增用例断言注入的 `embedQuery` 调用次数为 0。
+
+### 3. D2：`importance` 三条路径收到同一处
+
+旧代码同一字段三套口径——add 用 `importance || 5`（传 0 静默变 5）、去重分支用
+`importance || duplicate.importance`（吞掉低值）、update 用 `!== undefined`（0 原样写入）。
+现在统一 `normalizeImportance()`：可解析的数字钳到 `1..10`（四舍五入），不可解析**报错而非写 NaN**
+（NaN 会毁掉价值排序与注入选择）。区间依据取自代码而非猜测：locales 展示口径是 `{importance}/10`，
+注入侧 Tier1 常驻阈值 8、摘要默认 6、缺省 5 全落在 1..10 内。
+
+### 4. schema 侧补边界（并说明它不会被执行）
+
+`src/background/tools/memory-tools.js` 的 `importance` 原先只有描述文字写着 1-10，没有
+`minimum` / `maximum`（同仓 `media-tools.js` 有，属既有惯例）。补上后新增钉：schema 声明的区间必须与
+service 钳制口径一致，且描述里的数字与 `minimum`/`maximum` 不矛盾——否则模型被引导写出的值正是被服务端拒掉的值。
+
+### 5. 本轮自己的假绿灯（如实记录）
+
+落盘脚本把模板串 `${QJ}` 的一个 `$` 写丢，导致 6 行 locale 文案里进了字面量 `{QJ}`，
+而当时 **agent 单测 66/66 全绿**。根因不是脚本运气好没被抓到，而是**文案层完全没有测试覆盖**：
+`memory-service.unit.test.js` 的 `t` 是 stub（返回 key），所以校验分支只被验了「拒不拒」。
+补 `agent/test/unit/memory-validation-messages.unit.test.js`：真实 i18n 渲染 + service 注入真实 `t`
+（断言拒绝信息里能看到模型传来的原始值、渲染后不残留任何 `{xxx}` 占位符）+ 两份语言包
+**327 个叶子键的键集合一致**与**同名键占位符集合一致**。先跑出 4 红再修，修后 6/6。
+
+### 本轮收口计数（全部实测）
+
+根 vitest **1306/1306**（86 文件，+3）；agent 单测 **387/387**（+17）；rag 集成（隔离部分）**24/24**；
+`npm run lint` 干净；`npm run build:silent` BUILD_SUCCESS。
+`api.integration.test.js` 经静态核对**不涉及 `/api/memory/*`**，因此本轮校验改动与它无关，仍未实跑。
