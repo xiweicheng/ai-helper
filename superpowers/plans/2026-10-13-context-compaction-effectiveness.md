@@ -656,12 +656,15 @@ git commit -m "feat(compaction): 上下文占用阈值触发半自动压缩（�
 ### Task 4: 压缩摘要沉淀为长期记忆
 
 **Files:**
-- Modify: `src/background/index.js:948-961`（`COMPACT_CONTEXT_SUMMARY` 处理）
-- Modify: `src/storage/session-store.js:146`（`memoryId` 随 `contextCompaction` 一起持久化——已包含在对象内，无需额外字段）
-- Test: `test/unit/compaction-memory-persist.unit.test.js`
+- Create: `src/background/compaction-memory.js`（沉淀转发层；独立模块而非塞进 2200 行的 `background/index.js`，避免单一职责膨胀与测试加载巨型入口的副作用）
+- Modify: `src/background/index.js`（`COMPACT_CONTEXT_SUMMARY` 处理 + import）
+- Modify: `src/side_panel/context-indicator.js`（请求体与 `activeCompaction` 带 `memoryId`/`revision`/`compressedCount`，Task 3 已铺）
+- Modify: `side_panel.html` + `src/side_panel/styles.css` + `src/shared/locales/zh.js`/`en.js`（`#persistSummaryBtn` 开关行与文案）
+- Test: `test/unit/compaction-memory-persist.unit.test.js`、`test/unit/compaction-injection-wiring.unit.test.js`（链路守卫）
+- 说明：`memoryId` 随 `contextCompaction` 对象一起持久化（`src/storage/session-store.js` 无需新增字段）
 
 **Interfaces:**
-- Consumes: `AgentClient.agentRequest(path, body, method, timeoutMs)`；`POST /api/memory/store` 的 `{ action: 'add'|'update', type: 'summary', content, title, tags, importance, sourceSessionId, memoryId? }`；add 响应 `memory.id`
+- Consumes: `agentRequest(path, body, method, timeoutMs)`（具名导出，见 `local-agent-client.js`）；`POST /api/memory/store` 的 `{ action: 'add'|'update', type: 'summary', content, title, tags, importance, sourceSessionId, memoryId? }`；add 响应 `memory.id`
 - Produces: `persistCompactionSummary({ summary, sessionId, memoryId, compressedCount, revision }) => Promise<{ memoryId: string|null, ok: boolean }>`
 
 - [ ] **Step 1: 写失败测试**
@@ -675,7 +678,7 @@ vi.mock('../../src/background/local-agent-client.js', () => ({ agentRequest: vi.
 vi.mock('../../src/shared/logger.js', () => ({ default: { debug: vi.fn(), warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 import { agentRequest } from '../../src/background/local-agent-client.js';
-import { persistCompactionSummary } from '../../src/background/index.js';
+import { persistCompactionSummary } from '../../src/background/compaction-memory.js';
 
 const T = (s) => s;
 
@@ -724,6 +727,8 @@ describe('persistCompactionSummary', () => {
 });
 ```
 
+> 实施注记：落地的测试用 `test(...)` 而非 `it(...)`（与既有测试文件导入一致），并多一条「无 sessionId 时 tags 不含 `session:null`」用例，共 6 条。
+
 - [ ] **Step 2: 运行确认失败**
 
 Run: `npx vitest run test/unit/compaction-memory-persist.unit.test.js`
@@ -731,9 +736,31 @@ Expected: FAIL（`persistCompactionSummary` 未导出）。
 
 - [ ] **Step 3: 实现沉淀函数**
 
-`src/background/index.js` 在 `COMPACT_CONTEXT_SUMMARY` 处理块**之前**新增导出函数（放模块内合适位置，保持与既有工具函数一致的注释风格）：
+新建 `src/background/compaction-memory.js`（与 `tool-memory.js` 同层同构：只做整形与转发，业务逻辑在 agent 端）。文案走 `registerTranslations` 而非硬编码中文，跟随背景 SW 的 i18n 语言：
 
 ```js
+// background/compaction-memory.js
+import { agentRequest } from './local-agent-client.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+import logger from '../shared/logger.js';
+
+registerTranslations('zh', {
+  compactionMemory: {
+    contentHeader: '[会话压缩摘要 r{revision} · 已压缩 {count} 条]',
+    title: '会话摘要 {date}',
+  },
+});
+registerTranslations('en', {
+  compactionMemory: {
+    contentHeader: '[Session compaction summary r{revision} · {count} messages compacted]',
+    title: 'Session summary {date}',
+  },
+});
+
+// 摘要属于"决策/结论"类记忆：importance 6（Tier2 按需注入，不常驻系统提示词）
+const SUMMARY_IMPORTANCE = 6;
+const STORE_TIMEOUT_MS = 30000;
+
 /**
  * 把会话压缩摘要沉淀为跨会话长期记忆（Agent 端存储）。
  * 同一会话重复压缩用同一 memoryId 走 update，避免每次 revision 堆一条摘要。
@@ -744,32 +771,28 @@ export async function persistCompactionSummary({ summary, sessionId, memoryId = 
   const text = (summary || '').trim();
   if (!text) return { ok: false, memoryId: memoryId ?? null };
 
-  const content = [
-    `[会话压缩摘要 r${revision} · 已压缩 ${compressedCount} 条]`,
-    text
-  ].join('\n');
-
   const body = {
     action: memoryId ? 'update' : 'add',
     type: 'summary',
     category: 'decision',
-    content,
-    title: `会话摘要 ${new Date().toISOString().slice(0, 10)}`,
-    tags: ['compaction', `session:${sessionId}`].filter(Boolean),
-    importance: 6,
+    content: `${t('compactionMemory.contentHeader', { revision, count: compressedCount })}\n${text}`,
+    title: t('compactionMemory.title', { date: new Date().toISOString().slice(0, 10) }),
+    tags: ['compaction', ...(sessionId ? [`session:${sessionId}`] : [])],
+    importance: SUMMARY_IMPORTANCE,
     sourceSessionId: sessionId || null
   };
   if (memoryId) body.memoryId = memoryId;
 
   try {
-    const resp = await AgentClient.agentRequest('/api/memory/store', body, 'POST', 30000);
+    const resp = await agentRequest('/api/memory/store', body, 'POST', STORE_TIMEOUT_MS);
     if (!resp?.success) {
-      logger.warn('[Background] persist compaction summary rejected:', resp?.error || resp?.httpStatus);
+      // Agent 未连接 / 旧版本缺端点：静默降级，压缩摘要仍在会话内可用
+      logger.warn('[CompactionMemory] store failed:', resp?.error || resp?.httpStatus || 'unknown');
       return { ok: false, memoryId: memoryId ?? null };
     }
     return { ok: true, memoryId: resp.memory?.id || memoryId || null };
   } catch (err) {
-    logger.warn('[Background] persist compaction summary failed:', err?.message);
+    logger.warn('[CompactionMemory] store exception:', err?.message);
     return { ok: false, memoryId: memoryId ?? null };
   }
 }
@@ -809,12 +832,12 @@ export async function persistCompactionSummary({ summary, sessionId, memoryId = 
 - [ ] **Step 5: 运行测试 + 全量 + 构建**
 
 Run: `npx vitest run test/unit/compaction-memory-persist.unit.test.js && npx vitest run && npm run build:silent`
-Expected: 5 条 PASS；全量与基线一致；`BUILD_SUCCESS`。
+Expected: 沉淀转发 6 条 + 链路守卫 3 条 PASS；全量与基线一致；`BUILD_SUCCESS`。
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/background/index.js src/side_panel/context-indicator.js test/unit/compaction-memory-persist.unit.test.js
+git add src/background/compaction-memory.js src/background/index.js side_panel.html src/side_panel/styles.css src/shared/locales/zh.js src/shared/locales/en.js test/unit/compaction-memory-persist.unit.test.js test/unit/compaction-injection-wiring.unit.test.js
 git commit -m "feat(memory): 会话压缩摘要按 memoryId 去重沉淀为跨会话长期记忆"
 ```
 
