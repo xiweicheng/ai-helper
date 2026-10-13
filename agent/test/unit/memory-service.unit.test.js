@@ -189,11 +189,14 @@ describe('recall', () => {
     assert.equal(l.results.length, 1);
   }));
 
-  it('tags 筛选：命中任一标签才保留', () => withService(async (svc) => {
+  // 2026-10-14 口径变更：本用例原先钉的是「命中任一标签才保留」（旧断言 r.total === 1）。
+  // 旧实现把标签过滤放在任何打分之前，于是「标签 + 词面门槛 + 语义地板」构成三个硬门槛 AND 叠加，
+  // 一条内容正确但没打标签的记忆会被整条抹掉。现在标签只上抬名次，所以两条都要在，且标签项在前。
+  it('tags 降为加分：两条都保留，标签命中项上抬到第一', () => withService(async (svc) => {
     await svc.store({ action: 'add', type: 'fact', content: '标签目标内容', tags: ['Vue'] }, T);
     await svc.store({ action: 'add', type: 'fact', content: '标签目标其它内容' }, T);
     const r = await svc.recall({ query: '标签', tags: ['vue'] }, null, T);
-    assert.equal(r.total, 1);
+    assert.equal(r.total, 2, '无标签但词面命中的条目不得被抹掉');
     assert.deepEqual(r.results[0].tags, ['Vue']);
   }));
 });
@@ -914,4 +917,79 @@ describe('store / recall 入参校验', () => {
       assert.equal(queryCalls, 0, '参数非法时不得发起查询嵌入');
     });
   });
+});
+
+// 追加：标签从「打分前硬过滤」降为「名次加成」（2026-10-14，用户定的检索取向，报告 D1）。
+// 机制层的重叠比例与上抬强度在 memory-tag-rank.unit.test.js，这里只钉接线后的端到端行为。
+describe('recall 标签口径：加分而非剔除', () => {
+
+  it('有 query 时不抹掉无标签条目，标签命中项按重叠比例上抬名次', () => withService(async (svc) => {
+    // df 剔除线是 max(2, N × 0.5)：6 条库 × 0.5 = 3，df(quark) = 3 恰好不过半，
+    // 保证本用例测的是标签行为，而不是被 df 抢先决定
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 无标签但先写', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 乙', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关一', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关二', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关三', tags: [] }, T);
+
+    const r = await svc.recall({ query: 'quark', tags: ['proj'] }, null, T);
+    // 基线名次（词面同分按写入序）：无标签, 甲, 乙；上抬 2 位后期望 甲, 乙, 无标签
+    assert.deepEqual(
+      r.results.map(m => m.content),
+      ['quark 甲', 'quark 乙', 'quark 无标签但先写']
+    );
+    assert.equal(r.total, 3, '旧实现这里只会返回两条带标签的');
+  }));
+
+  // 这一条是 df 统计池的护栏：df 判据是 `d > 0 && d <= limit`，若把统计池换成标签子集，
+  // 一个只出现在无标签条目里的词 d 就是 undefined 而被直接拒——那等于被捞回的条目
+  // 只能靠与标签子集共享的词才能命中，与硬过滤差不了多少。
+  it('df 仍走全候选池：只出现在无标签条目里的词照样有区分度', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 带标签但与查询词无关', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'beta 无标签但是唯一命中', tags: [] }, T);
+    const r = await svc.recall({ query: 'beta', tags: ['proj'] }, null, T);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, 'beta 无标签但是唯一命中');
+  }));
+
+  // 本次口径变更的已知代价，就地钉住而不是等哪天当成怪事：词面通道只能在全库尺度上判区分度。
+  // 旧实现靠标签把池子缩到 2 条，df ≤ 2 豁免恰好放行；解除硬过滤后同一个词在全库过半，
+  // 于是被判无区分度剔除，即使标签完全匹配也返回空。这是同一把尺子（已与知识库/评测集标定）的必然结果。
+  it('已知代价：查询词在全库过半时判无区分度，标签全命中也返回空', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 乙', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 丙', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 丁', tags: [] }, T);
+    const r = await svc.recall({ query: 'zeta', tags: ['proj'] }, null, T);
+    assert.equal(r.total, 0, '前置条件：df(zeta)=4 > max(2, 4×0.5)=2，该词已被判为无区分度');
+    assert.match(r.message, /memory\.noMatch/, '应说「无匹配」而不是谎称空库');
+  }));
+
+  it('无 query 时标签仍是硬筛选（枚举语义，行为不变）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '枚举甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '枚举乙', tags: [] }, T);
+    const r = await svc.recall({ tags: ['proj'] }, null, T);
+    assert.equal(r.total, 1, '无查询词时标签是唯一选择器，不得退化成全库返回');
+    assert.equal(r.results[0].content, '枚举甲');
+  }));
+
+  it('向量档同样只上抬名次：不抹掉无标签条目，也不让标签项白抬', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      // 用内容里的标记区分两条：memorySearchText 包含标签字段，按 alpha 判会两条同向量。
+      // 故意让无标签那条在两条通道上都第一，这样「标签项落到第一」只能由上抬产生
+      embedDocuments: async (texts) => texts.map(s => (s.includes('无标签') ? [0.98, 0.2, 0] : [0, 1, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 带标签', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha beta 无标签', tags: [] }, T);
+    const r = await svc.recall({ query: 'alpha beta', tags: ['proj'] }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 2, '无标签条目不得被整条抹掉');
+    assert.equal(r.tier, 'remote');
+    assert.equal(r.vectorMatched, 1, '只有无标签那条的向量过地板');
+    assert.equal(r.results[1].content, 'alpha beta 无标签', '基线名次：词面与语义双第一的条目原本在前');
+    assert.equal(r.results[0].content, 'alpha 带标签', '标签命中把第二名上抬 2 位到第一（上抬强度为 0 时本断言必须红）');
+  }));
 });

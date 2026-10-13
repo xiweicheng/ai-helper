@@ -13,6 +13,7 @@ import { getMemoryEmbeddingConfig, toEmbeddingProviderConfig } from './embedding
 import { createVectorStoreFacade, memoryModelKey, cosine } from './vectors.js';
 import { resolveMemoryTier, isVectorTier } from './tier.js';
 import { selectSemanticHits, rrfFuse } from './fusion.js';
+import { hasTagRequest, filterByTags, applyTagRankLift } from './tags.js';
 import { isRagAvailable } from '../rag/detect.js';
 import { EMBED_BATCH_SIZE } from '../rag/config.js';
 import { createEmbeddingProvider } from '../rag/embedding/index.js';
@@ -427,12 +428,13 @@ export function createMemoryService({
         };
       }
 
-      // 按标签筛选
-      if (tags && tags.length > 0) {
-        candidates = candidates.filter(m => {
-          const memTags = (m.tags || []).map(tg => tg.toLowerCase());
-          return tags.some(tg => memTags.includes(tg.toLowerCase()));
-        });
+      // 标签的角色（2026-10-14 口径变更，动机见 memory/tags.js 文件头）：无 query 时标签是唯一
+      // 选择器（枚举语义），保持硬过滤；有 query 时不再剔除候选，只在最后按重叠比例上抬名次，
+      // 以免「标签 + 词面门槛 + 语义地板」构成三个硬门槛的 AND 叠加把正确条目整条抹掉。
+      const tagRequested = hasTagRequest(tags);
+      const hasQuery = Boolean(query && query.trim());
+      if (tagRequested && !hasQuery) {
+        candidates = filterByTags(candidates, tags);
       }
 
       // 按关键词搜索
@@ -503,6 +505,12 @@ export function createMemoryService({
             ]).map(([id]) => byId.get(id)).filter(Boolean);
           }
         }
+      }
+
+      // 标签名次加成：作用于两条通道的最终序（词面单通道序或 RRF 融合序），只上抬不删除。
+      // df 统计池保持全候选不变：标签不得改变词形区分度的分母（判据含 d > 0，缩池会误杀）。
+      if (tagRequested && hasQuery) {
+        candidates = applyTagRankLift(candidates, tags);
       }
 
       // 去重（同一记忆 id 全局唯一，但仍处理一下）
