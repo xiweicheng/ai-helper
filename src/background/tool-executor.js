@@ -7,7 +7,7 @@ import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
-import { readMemoryFile, executeAgentMemory } from './tool-memory.js';
+import { executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './state.js';
 import { logger } from '../shared/logger.js';

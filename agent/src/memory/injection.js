@@ -1,4 +1,4 @@
-// background/memory-injection.js - 记忆分级注入策略（纯函数、零依赖，便于单测）
+// agent/src/memory/injection.js - 记忆分级注入策略（纯函数、零依赖，便于单测）
 // 三级加载：
 //   Tier1 常驻   importance ≥ alwaysInjectImportance 无条件注入（不占预算）
 //   Tier2 预算内 其余按 calcMemoryValue 降序在预算内填充（装不下的跳过继续尝试）

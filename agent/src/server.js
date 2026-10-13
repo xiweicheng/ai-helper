@@ -19,6 +19,7 @@ import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
 import { startRagInstall, getRagInstallStatus, stopRagInstall, maybeAutoRestoreRagDeps } from './rag/install.js';
+import { memoryRouter } from './memory/routes.js';
 import { stopProcessTree } from './process-tree.js';
 import {
   initializeMcpRegistry,
@@ -2055,6 +2056,11 @@ export function startServer() {
         return jsonResponse(res, 500, { success: false, error: t('error.ragLoadFailed', { message: err.message }) });
       }
       return ragRouter(req, res, pathname, url, t, requestBody);
+    }
+
+    // 长期记忆业务端点（逻辑与数据文件同侧；零外部依赖，静态加载）
+    if (pathname.startsWith('/api/memory/')) {
+      return memoryRouter(req, res, pathname, url, t, requestBody);
     }
 
     // 404
