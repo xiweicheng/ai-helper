@@ -38,6 +38,7 @@
       <button class="tab-nav-btn" data-tab="agent" data-i18n="settings.tabAgent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox" data-i18n="settings.tabToolbox">扩展</button>
       <button class="tab-nav-btn" data-tab="knowledge" data-i18n="knowledge.tabTitle">知识库</button>
+      <button class="tab-nav-btn" data-tab="memory" data-i18n="memoryPanel.tabTitle">记忆</button>
     </div>
 
     <div class="tab-panel active" data-tab="basic">
@@ -731,6 +732,84 @@
         </div>
       </div>
     </div><!-- /tab-knowledge -->
+
+    <!-- 记忆：语义召回向量配置（数据在 agent 端 config.json 的 memoryEmbedding） -->
+    <div class="tab-panel" data-tab="memory">
+      <div class="knowledge-header">
+        <div class="knowledge-title-row">
+          <h2 class="knowledge-title" data-i18n="memoryPanel.title">记忆向量</h2>
+        </div>
+        <div style="display:flex; align-items:center; gap:16px; flex-shrink:0;">
+          <label class="global-toggle">
+            <input type="checkbox" id="memoryEnabled">
+            <span class="global-toggle-slider"></span>
+            <span class="global-toggle-label" id="memoryEnabledLabel" data-i18n="memoryPanel.disabled">已停用</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="memoryGate" style="display:none;"></div>
+
+      <div id="memoryMain">
+        <!-- 状态卡：条数 + 指纹陈旧（stale 是本次设计的核心收益） -->
+        <div class="form-group">
+          <label data-i18n="memoryPanel.statusTitle">向量索引状态</label>
+          <div id="memoryStatus" class="memory-status"></div>
+        </div>
+
+        <div class="form-group">
+          <label data-i18n="memoryPanel.modeLabel">嵌入来源</label>
+          <label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px;">
+            <input type="radio" name="memoryEmbeddingMode" value="openai-compat" style="width:auto;">
+            <span data-i18n="memoryPanel.modeRemote">远端 API</span>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:6px;">
+            <input type="radio" name="memoryEmbeddingMode" value="local" style="width:auto;">
+            <span data-i18n="memoryPanel.modeLocal">本地模型</span>
+          </label>
+        </div>
+
+        <div class="form-group" id="memoryRemoteGroup">
+          <label data-i18n="memoryPanel.baseUrlLabel">服务地址</label>
+          <input type="text" id="memoryBaseUrlInput" data-i18n-placeholder="memoryPanel.baseUrlPlaceholder" placeholder="https://api.openai.com/v1">
+        </div>
+
+        <div class="form-group">
+          <label data-i18n="memoryPanel.modelLabel">模型名称</label>
+          <input type="text" id="memoryModelInput" data-i18n-placeholder="memoryPanel.modelPlaceholder" placeholder="BAAI/bge-m3">
+        </div>
+
+        <div class="form-group" id="memoryApiKeyGroup">
+          <label data-i18n="memoryPanel.apiKeyLabel">API Key</label>
+          <input type="password" id="memoryApiKeyInput" data-i18n-placeholder="memoryPanel.apiKeyPlaceholder" placeholder="">
+        </div>
+
+        <div class="form-group" id="memoryDimsGroup">
+          <label data-i18n="memoryPanel.dimsLabel">向量维度（可留空，测试时自动探测）</label>
+          <div class="kb-vec-test-row" id="memoryTestRow">
+            <input type="number" id="memoryDimsInput" min="1" max="8192" placeholder="">
+            <button class="kb-action-btn" type="button" id="memoryTestBtn" data-i18n="memoryPanel.testBtn">测试连通性</button>
+            <span class="kb-vec-test-result" id="memoryTestResult"></span>
+          </div>
+        </div>
+
+        <div class="form-group" id="memoryPrefixGroup">
+          <label data-i18n="memoryPanel.prefixLabel">查询前缀（queryPrefix，可留空）</label>
+          <input type="text" id="memoryPrefixInput" placeholder="">
+        </div>
+
+        <div class="form-group" id="memoryLocalNotice" style="display:none;">
+          <span data-i18n="memoryPanel.localNotice">本地档无需测试连通性：保存后直接重建向量索引（首次使用需下载模型，可能数十分钟）。嵌入在 512 token 处静默截断，超长条目只有前部进入向量。</span>
+        </div>
+
+        <div class="form-group" style="display:flex; gap:12px; align-items:center;">
+          <button class="toolbox-add-btn" type="button" id="memorySaveBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="memoryPanel.saveBtn">保存配置</button>
+          <button class="toolbox-add-btn" type="button" id="memoryReindexBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="memoryPanel.reindexBtn">重建向量索引</button>
+        </div>
+
+        <div id="memoryResult" class="memory-status" style="display:none;"></div>
+      </div>
+    </div><!-- /tab-memory -->
 
     <!-- 全局保存按钮（所有 tab 可见；内容超出一屏时吸附在视口底部，保证按钮始终可见） -->
     <div class="save-bar" id="saveBar">

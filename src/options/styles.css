@@ -3742,3 +3742,19 @@ textarea {
   overflow: hidden;
   cursor: pointer;
 }
+
+/* ===== 记忆面板（options.html 记忆标签页）===== */
+/* 状态卡：陈旧用红标强调，指纹用等宽小字（长 modelKey 常见） */
+.memory-status { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #666; }
+.memory-status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.memory-status-keys { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.memory-status-keys code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.memory-status-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.memory-status-badge.stale { background: #fed7d7; color: #c53030; }
+.memory-status-badge.fresh { background: #e6fffa; color: #2c7a7b; }
+.memory-status-hint { color: #c53030; font-size: 12px; }
+.memory-status-muted { color: #999; font-size: 12px; }
+/* 门控引导区（未连接 / 本地档缺 RAG 依赖） */
+.memory-gate { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #e0e0e0; border-radius: 8px; background: #f7fafc; }
+.memory-gate-title { font-size: 14px; font-weight: 600; }
+.memory-gate-body { font-size: 13px; color: #666; }

@@ -25,6 +25,7 @@ import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
+import { initMemoryPanel, refreshMemoryPanel } from './memory-panel.js';
 import { initSaveBarSticky } from './save-bar.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
@@ -1268,6 +1269,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 切换到知识库 Tab 时刷新（Agent 连接状态 / RAG 总开关可能已变化）
   document.querySelector('[data-tab="knowledge"]')?.addEventListener('click', () => {
     refreshKnowledgePanel();
+  });
+
+  // 初始化记忆向量面板（配置与状态都来自 agent，需连接后才有内容）
+  initMemoryPanel();
+
+  document.querySelector('[data-tab="memory"]')?.addEventListener('click', () => {
+    refreshMemoryPanel();
   });
 });
 
