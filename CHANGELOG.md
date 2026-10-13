@@ -4,6 +4,30 @@
 
 ## 2026-10-13
 
+### 新增（记忆向量配置界面）
+- **options 页新增「记忆」Tab**（`src/options/memory-panel.js`）：开关语义召回、远端/本地单选、读写 `memoryEmbedding` 配置、探活并自动回填维度、保存、重建向量索引。配置真值仍只在 agent 的 `config.json`，扩展端全部经 HTTP 打既有端点（`/api/memory/embedding-config`、`/api/memory/test-embedding`、`/api/memory/reindex`），**agent 业务逻辑零改动**。
+- **新只读端点 `GET /api/memory/vector-status`**（`service.vectorStatus()` + `handleEmbeddingEndpoints` 分支）：`{ indexed, total, storedModelKey, currentModelKey, stale, tier }`。`stale = Boolean(storedModelKey) && storedModelKey !== currentModelKey`，**空库不算陈旧**（首次启用是正常态）；`tier === 'none'` 照返 200（「关着但有陈旧残留」是要看到的状态）。走 GET 而非 `ROUTE_METHODS`（后者只收 POST 业务动作）。路由上非 GET 落回通用分发（404），不新增业务路由。
+- **刻意不含 `overWindow`**：拿超窗计数要 `await _getPipeline()`，那会**触发模型下载**——一个只读状态查询不得有这种副作用，所以 `overWindow` 仍只在 `reindex` 响应里给。
+- **本地档隐藏探活按钮**：探活上限恒 `DEFAULT_EMBEDDING_TIMEOUT_MS = 8000`，而本地档首次调用要先加载模型（实测首批冷启动 106 秒）——与其给一个必定红色的「超时」，不如不给按钮，改由说明文案指路「保存后直接重建」。
+- **提交体守「缺席」语义**（表单核心规则，`collectPayload()`）：看不见的字段从请求体里**缺席**，绝不交空值或 `0`。因为 `memoryModelKey = mode|modelName|dimensions` 且 dimensions 取 `Number(d) > 0 ? floor : 0` —— 把已存 512 覆盖成 0 会改变指纹、界面冒报 `stale`、逼用户做一次无谓重建；`apiKey` 留空同理（agent 语义：不传即不改，且明文 key 永不回显）。
+- **重建走确认弹窗**（`showCustomConfirm`），提示里写实测耗时（本地档 41 条约 23 分钟 / 远端约 2 分钟）——`agentApi` 是裸 fetch 无超时，长任务期间不锁按钮会并发两个全量重建。结果区如实展示 `indexed/total`、`failedBatches`、`overWindow`（藏掉批失败与超窗等于骗人），`skipped` 说成「向量档未启用」而不是报错。
+- **i18n 中英各 45 键齐补**（`memoryPanel:`）；面板沿用 knowledge 的既有类（`tab-panel`/`form-group`/`global-toggle`/`kb-vec-test-row`/`toolbox-add-btn`），新增 `.memory-status*` 与 `.memory-gate*` 写在 `src/options/styles.css`（options.html 只引用该文件，写根 `styles/styles.css` 不生效）。
+
+### 新增（结构契约钉：弥补仓库无 i18n parity 测试）
+- `test/unit/memory-panel-structure.unit.test.js`（4 例）直接读 `options.html` 与两份语言包文本：Tab 已挂载、面板所需 15 个 id 逐个存在、mode 单选两个值与 agent 白名单逐字一致、`memoryPanel:` **中英键集完全相等**。行为测试用的是自拷 DOM 夹具，真实页面漏 id 它看不见；中英漏键仓库历史上没有 parity 测试，本例就地补上这一类风险。
+
+### 工程质量与测试（记忆向量配置界面）
+- 新增 20 例：agent `memory-service` +3（条数与换模型 stale、空库不算陈旧、向量档关着照返统计）、agent `memory-routes` +3（GET 合法 200、stale 透传、非 GET 落 404）、扩展端结构钉 4 + 行为钉 10。
+- 计数（均实测）：`memory-service` **56/56**（基线 53 + 3）、`memory-routes` **15/15**（基线 12 + 3）、agent 全量单测 **336/336**、冒烟 **21/21**、根 vitest **1285/1285**（83 文件，本次 +14）、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对新增/修改的扩展端文件零输出。
+- **反向验证**：Task 1/2 分别 `git stash` 退回 `service.js` / `routes.js` 实现后见红（3 红 / 2 红）且红因准确（`svc.vectorStatus is not a function` / `statusCode 404 ≠ 200`），pop 后转绿；Task 4 stash 退回 `memory-panel.js` 空壳后 10 例全红。全部 agent 测试用 `mkdtempSync` 临时目录 + 注入 `embeddingConfigProvider` / `tierResolver` / `embedderFactory`，**零联网、零下载模型、不碰 `~/.ai-helper-agent`**。
+- **tab 栏溢出探针**（用完即删）：第 8 个 Tab 加入后，静态复刻真实 `styles.css` 跑 8 个宽度 × 中英，`tab-nav` 无溢出、页面无横向滚动、无一个按钮文案被省略号截断（沿用上一轮 `min-width:0` + 窄屏断点的修复，本次无需再改）。
+- **未跑项如实记录**：`agent/test/integration/*.test.js` 本次未运行——它需连一个真实在跑的 agent（`127.0.0.1:18910` + token），会打到用户正在运行的进程上；新端点的影响面已由 `memory-routes` 单测 + 冒烟覆盖。
+
+### 更正（记忆向量配置界面：spec 自审抓到的错话）
+- **「用户改模型只能改文件再重启 agent」不成立**：`agent/src/config.js:116-119` 的 `loadConfig()` 按文件 **mtime** 缓存，手改 `config.json` 即时生效；`service.js:73 getProvider()` 又以 `memoryModelKey(cfg)` 为缓存键，改模型会自动重建 provider。因此这个界面的价值是**可发现、可验证、防填错、防漏重建**，不是「免重启」（spec 已就地改写）。
+- **样式文件归属**：spec 初稿写 `styles/styles.css`，而 `options.html:824` 只加载 `src/options/styles.css`，写错位置不会生效。
+- **计划执行偏差（详见 `docs/superpowers/plans/2026-10-13-memory-embedding-config-ui.md` 末尾「执行记录」）**：Task 1 基线实测 **53 例**（计划写的 71 为错定）；Task 1 第二条用例前提修正——向量档开着时 `store()` 会 fire-and-forget **懒补一个向量**，所以「开启态空库」在真实系统里不存在，该用例必须同时供上 `tierResolver: () => 'none'`；Task 4 实现去掉了两个只写不读的模块变量（`busy` / `cachedConfig`，锁按钮以 DOM 状态为准）；新增样式改用项目实际调色板（options 页无 CSS 变量也无暗色模式，`var(--text-secondary, #666)` 这类写法只会退成硬编码值）。
+
 ### 新增（本地档嵌入静默截断转为可见）
 - **真缺陷：本地档在 512 token 处静默截断**。`feature-extraction` pipeline 内部带 `truncation: true`，而 `Xenova/bge-small-zh-v1.5` 的 `tokenizer.model_max_length = 512`：超出部分**根本不进向量且原先零信号**。走真实接缝（`toEmbeddingProviderConfig` → `EmbeddingProvider.tokenCounter` → `memorySearchText`）实测真实库 41 条：**13 条超窗**，最大一条 1111 token 只吃进 512（**覆盖率 46%，599 token 直接丢弃**），全库 token 中位数 385。知识库侧不受影响（默认 `chunkSize: 400` 已在窗口内）。
 - **本轮只赢在「可见」**：`agent/src/rag/embedding/local.js` 新增 `countTokens(texts)` → `{ counts, window }`（关键：必须带 `truncation: false`，跟着 pipeline 的口径只会永远数到 512）；`EmbeddingProvider` 以 `tokenCounter` 暴露能力，**远端档置 null**（厂商截断行为从返回的向量里看不出来，不得臆造一个窗口）；`backfillVectors` 响应新增 `overWindow: { count, window, ids }` 并向进程日志点名（`[Memory] N items exceed embedding context window ...`）。检测按能力探测而非 tier 判；计数抛错/超时一律不报，**不得因此把索引报成失败**；零超窗时报 `count: 0`（与「无从判断」区分）。`POST /api/memory/reindex` 原样透传，扩展端零改动。

@@ -252,6 +252,7 @@ GET /api/logs/dates
 | GET | `/api/memory/embedding-config` | 读取语义召回通道配置（明文 key 永不回显，附 `hasApiKey`） |
 | POST | `/api/memory/embedding-config` | 保存语义召回通道配置 |
 | POST | `/api/memory/test-embedding` | 探活 embedding 端点（成功回报向量维度） |
+| GET | `/api/memory/vector-status` | 只读向量索引状态：`indexed` / `total`、已存指纹与当前指纹（`storedModelKey` / `currentModelKey`）、`stale`、`tier`。不构造 provider，因此查状态不会触发模型下载 |
 | POST | `/api/exec` | 执行系统命令 |
 | POST | `/api/exec/stop` | 停止命令执行 |
 | GET | `/api/exec/running` | 运行中的进程列表 |
@@ -456,6 +457,8 @@ enabled: true
 - **本地档只索引前 512 token（超出部分静默不进向量）** — 本地 `Xenova/bge-small-zh-v1.5` 的 tokenizer 窗口为 512 token，推理时**不报错地**砍掉尾部（实测真实库 41 条中 13 条超窗，最大一条只吃进 46% 的内容）。影响面有限：语义路看不到尾部，而**词面路拿的是全文**。知识库侧不受影响（默认 `chunkSize: 400` 已在窗口内）。远端模型窗口普遍大得多，且厂商截断行为从返回向量里看不出来，所以远端档不报该字段。本轮不改向量内容，只把超窗变成可见：`reindex` 响应带 `overWindow: { count, window, ids }`，进程日志点名是哪几条。
 - **向量会随分批组合轻微漂移（已知噪声，非缺陷）** — 同一条记忆逐条嵌 vs 同批嵌的 cos 在 0.9940~0.9974（实测），源于 `q8` 量化核的数值差异，与批内文本长短无关；对名次融合无可观测影响，不影响召回结果。
 - **运维入口** — 首次启用或更换模型后调一次 `POST /api/memory/reindex` 把存量记忆补进缓存（未启用时返回 `skipped`，端点不可达则明确 400 而非 500）。部分批失败时响应仍为成功但带 `failedBatches` 与 `lastError`（首条原因），全量原因进进程日志；本地档还会带 `overWindow`（超窗条数与点名）。
+- **配置界面** — 扩展 options 页新增「记忆」Tab：读写本通道（`/api/memory/embedding-config`）、探活（`/api/memory/test-embedding`，**仅远端档**——本地档首次调用要先加载模型，必定击穿 8s 超时，所以那里直接隐藏按钮而不是给个骗人的失败）、重建缓存（`/api/memory/reindex`，执行前弹确认并写明实测耗时）、展示 `GET /api/memory/vector-status`——其中 `stale` 才是把「改了模型但没人重建」从静默退化变成可见的那个信号。注意这个界面不是为「免重启」而做的：`loadConfig()` 按文件 mtime 缓存、provider 缓存又按指纹取键，手改 `config.json` 同样即时生效。它的真实价值是可发现、可验证、防填错。表单硬守一条规则——用户看不见的字段从请求体里**缺席**，绝不交空值或 `0`：交 `dimensions: 0` 会把已存的 512 覆盖掉、改变指纹、冒报 `stale`，逼用户做一次无谓重建。
+- **指纹陈旧只报告不改数据** — `vector-status` 只告诉你已存向量是由另一个 `mode|modelName|dimensions` 生成的，不删除也不重写：`stale` 且 `indexed > 0` 本身就是要看到的状态（而空库永不判为陈旧——首次启用是正常态）。
 
 ### 三级注入策略（系统提示词）
 

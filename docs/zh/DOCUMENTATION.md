@@ -276,6 +276,7 @@ ai-helper/
 │   │   ├── profile-manager.js          # 厂商配置管理（新建/复制/重命名/切换）
 │   │   ├── model-fetcher.js            # 模型列表自动拉取
 │   │   ├── knowledge-panel.js          # 知识库管理面板（创建/导入/停用）
+│   │   ├── memory-panel.js             # 记忆向量配置面板（探活/保存/重建/状态）
 │   │   ├── toolbar-config.js           # 工具栏配置（拖拽排序、域名屏蔽）
 │   │   ├── toolbox-config.js           # 工具箱配置入口
 │   │   ├── toolbox-shared.js           # 工具箱共享状态与辅助函数
