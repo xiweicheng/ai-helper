@@ -38,3 +38,6 @@ dist/
 .wiki-check/
 # Brainstorm 视觉伴侣过程产物（mockup 会话目录）
 .superpowers/
+
+# git worktrees（隔离开发工作区）
+.worktrees/
