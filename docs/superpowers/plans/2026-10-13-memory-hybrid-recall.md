@@ -688,7 +688,7 @@ export function isVectorTier(tier) {
 - [ ] **Step 5: 运行测试 + 全量**
 
 Run: `cd agent && node --test test/unit/memory-tier.unit.test.js test/unit/rag*.unit.test.js && node --test test/unit/*.unit.test.js`
-Expected: 新 7 条 PASS；RAG 现有测试不受影响（只加了 `export`）；全量 `fail 0`。
+Expected: 新 9 条 PASS（实测 9/9）；RAG 现有测试不受影响（只加了 `export`）；全量 266 passed / fail 0。
 
 - [ ] **Step 6: Commit**
 
@@ -696,6 +696,13 @@ Expected: 新 7 条 PASS；RAG 现有测试不受影响（只加了 `export`）�
 git add agent/src/memory/tier.js agent/src/rag/searcher.js agent/test/unit/memory-tier.unit.test.js
 git commit -m "feat(memory): 召回通道分级决策器并复用 RAG 计分常量"
 ```
+
+> **执行结果（已实施）。3 处与计划不同，均已在代码注释里写明缘由：**
+> 1. **`MEMORY_VECTOR_THRESHOLD` 不复制数值，改成真同源**：计划写「自定 `0.3` + 注释取自 RAG 默认阈值」。执行前核实：`searcher.js` 里并不存在 `VECTOR_THRESHOLD` 常量（grep 无命中），真正的默认阈值在 `agent/src/rag/config.js:49` 的 `DEFAULT_SEARCH_CONFIG.threshold`。该模块是纯常量（只有 `join/homedir/process.env`，无 fs 读写），所以直接 `import` 它而不抄数字——RAG 侧调参时记忆侧自动跟随，不会静默漂移。
+> 2. **计划的远端判定会把「全是空格的 apiKey」放行**：原式 `cfg.apiKey && String(cfg.modelName || "").trim()` 中 `'   '` 为真 → 判成 `'remote'`，随后每次召回都拿空 key 去请求远端并必然失败。改为 key 与 model 都 trim 后判空。`saveMemoryEmbeddingConfig` 本身会 trim，但用户直接编辑 `config.json` 不经过它，故决策侧必须自带这道校验。
+> 3. **`ragAvailable` 用真值判断而非 `=== true`（计划同义写法保留）**：调用方 `isRagAvailable()` 返回布尔，但严格比较会让包装层传回的任何真值被误降级成 `'none'`——降级必须是静默的，静默的假阴性最难查。
+
+searcher 侧只导出计划点名的 4 个常量、值逐字不变；`KEYWORD_MIN_LEN`／`KEYWORD_MAX_HITS`／`KEYWORD_SCAN_LIMIT` 仍为私有（记忆侧不复用，导出它们只会扩大可被误用的面）。用例按计划是 7 条，落地 **9 条**：补了 `enabled` 假值（`'true'`／`1`／`undefined`）一律 none、无参/`null` 不抛、`isVectorTier` 非法值、以及阈值同源断言。
 
 ---
 
