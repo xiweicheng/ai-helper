@@ -555,13 +555,23 @@
               <input type="number" id="memoryLimitInput" min="1" max="400" placeholder="1-400" class="memory-limit-input">
               <span class="memory-limit-custom-unit" data-i18n="memory.unit">条</span>
             </div>
-            <div class="auto-compact-row">
-              <label class="check-toggle" for="autoCompactBtn">
-                <input type="checkbox" id="autoCompactBtn">
-                <span class="checkmark"></span>
-                <span class="tool-toggle-label" data-i18n="memory.autoCompactLabel">自动压缩</span>
-              </label>
-              <span class="memory-limit-info-icon" data-i18n-title="memory.autoCompactHint" title="上下文占用达到 85% 时，发送前自动压缩一次为摘要（会额外产生一次摘要调用）。">ⓘ</span>
+            <div class="memory-extra-rows">
+              <div class="auto-compact-row">
+                <label class="check-toggle" for="autoCompactBtn">
+                  <input type="checkbox" id="autoCompactBtn">
+                  <span class="checkmark"></span>
+                  <span class="tool-toggle-label" data-i18n="memory.autoCompactLabel">自动压缩</span>
+                </label>
+                <span class="memory-limit-info-icon" data-i18n-title="memory.autoCompactHint" title="上下文占用达到 85% 时，发送前自动压缩一次为摘要（会额外产生一次摘要调用）。">ⓘ</span>
+              </div>
+              <div class="auto-compact-row">
+                <label class="check-toggle" for="persistSummaryBtn">
+                  <input type="checkbox" id="persistSummaryBtn">
+                  <span class="checkmark"></span>
+                  <span class="tool-toggle-label" data-i18n="memory.persistSummaryLabel">摘要存入记忆</span>
+                </label>
+                <span class="memory-limit-info-icon" data-i18n-title="memory.persistSummaryHint" title="压缩时把摘要沉淀为跨会话长期记忆；同一会话重复压缩只更新同一条。">ⓘ</span>
+              </div>
             </div>
           </div>
         </div>

@@ -565,6 +565,8 @@ export default {
     unit: 'entries',
     autoCompactLabel: 'Auto-compact',
     autoCompactHint: 'Compact history into a summary once before sending when context usage reaches 85% (adds one summarization call).',
+    persistSummaryLabel: 'Save summary to memory',
+    persistSummaryHint: 'Store the compaction summary as cross-session long-term memory; repeated compaction in one session updates the same entry.',
   },
 
   // Toggle items

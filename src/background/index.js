@@ -15,6 +15,7 @@ import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { generateCompactionSummary } from './context-compactor.js';
+import { persistCompactionSummary } from './compaction-memory.js';
 import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
 
@@ -945,11 +946,22 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     return false;
   }
 
-  // 生成会话上下文压缩摘要（用户手动触发"压缩上下文"）
+  // 生成会话上下文压缩摘要（用户手动触发或发送前阈值自动触发），成功后按需沉淀长期记忆
   if (message.type === 'COMPACT_CONTEXT_SUMMARY') {
-    const { material, model, sessionId } = message;
+    const { material, model, sessionId, persistSummaryToMemory, memoryId, compressedCount, revision } = message;
     generateCompactionSummary({ material, model, sessionId })
-      .then(result => {
+      .then(async result => {
+        if (result.success && persistSummaryToMemory !== false) {
+          // 沉淀失败不影响已生成的摘要（persistCompactionSummary 内部已吞异常）
+          const persisted = await persistCompactionSummary({
+            summary: result.summary,
+            sessionId,
+            memoryId: memoryId || null,
+            compressedCount,
+            revision,
+          });
+          result.memoryId = persisted.memoryId;
+        }
         sendResponse(result);
       })
       .catch(err => {

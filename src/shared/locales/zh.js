@@ -565,6 +565,8 @@ export default {
     unit: '条',
     autoCompactLabel: '自动压缩',
     autoCompactHint: '上下文占用达到 85% 时，发送前自动压缩一次为摘要（会额外产生一次摘要调用）。',
+    persistSummaryLabel: '摘要存入记忆',
+    persistSummaryHint: '压缩时把摘要沉淀为跨会话长期记忆；同一会话重复压缩只更新同一条。',
   },
 
   // 开关项
