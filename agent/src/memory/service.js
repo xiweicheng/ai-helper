@@ -225,7 +225,7 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
     });
   }
 
-  // ==================== 会话召回缓存（recall 使用；迁移自 tool-memory.js:350-364） ====================
+  // ==================== 会话召回缓存（迁移自 tool-memory.js:350-364） ====================
   // 每 session 已召回的记忆 ID 集合，防止同一对话重复返回相同记忆
   const sessionRecalledMemoryIds = new Map();
 
@@ -240,8 +240,239 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
     }
   }
 
+  // 停用词列表：常见中英文虚词，避免噪音匹配（迁移自 tool-memory.js:407-419）
+  const STOP_WORDS = new Set([
+    '的', '是', '了', '在', '我', '你', '他', '她', '它', '们', '这', '那', '不', '也', '就',
+    '都', '会', '要', '能', '可', '把', '被', '让', '给', '对', '从', '到', '和', '与', '或',
+    '但', '而', '还', '又', '只', '很', '更', '最', '有', '没', '吗', '呢', '吧', '啊',
+    '什么', '怎么', '为什么', '哪里', '哪个', '多少',
+    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+    'may', 'might', 'can', 'shall', 'must', 'need', 'dare',
+    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'into',
+    'and', 'or', 'not', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
+    'so', 'no', 'up', 'out', 'just', 'now', 'here', 'there', 'all', 'each', 'every'
+  ]);
+
+  /**
+   * 中英文混合关键词提取（迁移自 tool-memory.js:427-465）
+   * - CJK 短文本（≤4字）：整段作为关键词保留，如"考试"→["考试"]
+   * - CJK 长文本（>4字）：bigram 提取 + 整段作为 fallback 关键词
+   * - 英文/数字：保持完整单词
+   */
+  function extractKeywords(text) {
+    const clean = text.toLowerCase().trim();
+    // 取前 200 字符避免 bigram 膨胀
+    const snippet = clean.length > 200 ? clean.slice(0, 200) : clean;
+    // 按语义边界拆分：CJK 连续块 | 字母连续块 | 数字连续块 | 分隔符
+    const segments = snippet.split(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+|[a-z]+|\d+|[^a-z\d\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)/i);
+
+    const tokens = [];
+    // 先将整段作为 fallback 关键词加入
+    if (snippet.length >= 2) {
+      tokens.push(snippet);
+    }
+
+    for (const seg of segments) {
+      if (!seg || seg.trim().length === 0) continue;
+
+      if (/^[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(seg)) {
+        // CJK 字符块
+        if (seg.length <= 4) {
+          // 短文本：整段作为关键词
+          tokens.push(seg);
+        } else {
+          // 长文本：滑动窗口取二元组
+          for (let i = 0; i <= seg.length - 2; i++) {
+            tokens.push(seg.substring(i, i + 2));
+          }
+        }
+      } else if (/^[a-z\d]+$/.test(seg)) {
+        // 英文/数字：保持完整单词
+        if (seg.length >= 2) {
+          tokens.push(seg);
+        }
+      }
+    }
+    // 去重、过滤停用词、限制最多 30 个关键词（避免膨胀）
+    return [...new Set(tokens)]
+      .filter(k => k.length >= 1 && !STOP_WORDS.has(k))
+      .slice(0, 30);
+  }
+
+  /**
+   * recall：从长期记忆中检索相关信息（迁移自 executeAgentMemoryRecall tool-memory.js:369-608）
+   * @param {object} args { query, tags, memoryType='all', limit=10 }
+   * @param {string|null} sessionId 会话 ID，用于 session 级召回去重
+   * @param {Function} t 请求语言翻译函数
+   */
+  async function recall(args, sessionId, t) {
+    const { query, tags, memoryType = 'all', limit = 10 } = args;
+
+    return withMemoryLock(async () => {
+      const readResult = await readMemoryFile();
+      if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
+
+      const memoryData = readResult.data;
+
+      // 收集所有记忆
+      let candidates = [];
+      if (memoryType === 'all' || memoryType === 'fact') {
+        candidates.push(...memoryData.facts.map(m => ({ ...m, _source: 'facts' })));
+      }
+      if (memoryType === 'all' || memoryType === 'summary') {
+        candidates.push(...memoryData.summaries.map(m => ({ ...m, _source: 'summaries' })));
+      }
+
+      if (candidates.length === 0) {
+        return {
+          success: true,
+          message: t('memory.memoryEmpty'),
+          results: [],
+          total: 0,
+          query
+        };
+      }
+
+      // 按标签筛选
+      if (tags && tags.length > 0) {
+        candidates = candidates.filter(m => {
+          const memTags = (m.tags || []).map(tg => tg.toLowerCase());
+          return tags.some(tg => memTags.includes(tg.toLowerCase()));
+        });
+      }
+
+      // 按关键词搜索
+      if (query && query.trim()) {
+        const keywords = extractKeywords(query);
+        const originalQuery = query.toLowerCase().trim();
+
+        if (keywords.length > 0) {
+          const scored = candidates.map(m => {
+            let score = 0;
+            const content = (m.content || '').toLowerCase();
+            const title = (m.title || '').toLowerCase();
+            const memTags = (m.tags || []).map(tg => tg.toLowerCase());
+
+            for (const kw of keywords) {
+              if (content.includes(kw)) score += 3;
+              if (title.includes(kw)) score += 2;
+              if (memTags.some(tg => tg.includes(kw))) score += 2;
+            }
+
+            // 全文精确匹配加分
+            if (originalQuery.length >= 2) {
+              if (content.includes(originalQuery)) score += 5;
+              if (title.includes(originalQuery)) score += 3;
+            }
+
+            return { memory: m, score };
+          });
+
+          // 有匹配关键词的才返回，按分数排序
+          candidates = scored
+            .filter(s => s.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(s => s.memory);
+
+          // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
+          // 上一行赋值清空的 candidates 数组，恒返回空，属死代码，未随迁——行为等价。
+        }
+      }
+
+      // 去重（同一记忆 id 全局唯一，但仍处理一下）
+      const seen = new Set();
+      let results = candidates.filter(m => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      }).slice(0, limit);
+
+      // Session 级去重：优先返回本对话未召回过的记忆
+      let recallNote = '';
+      if (sessionId) {
+        const recalledSet = sessionRecalledMemoryIds.get(sessionId);
+        if (recalledSet && recalledSet.size > 0) {
+          const newResults = [];
+          const oldResults = [];
+          for (const m of results) {
+            if (recalledSet.has(m.id)) {
+              oldResults.push(m);
+            } else {
+              newResults.push(m);
+            }
+          }
+
+          // 优先返回新记忆；如果没有新记忆，但有旧记忆，则返回旧记忆并提示
+          if (newResults.length === 0 && oldResults.length > 0) {
+            recallNote = t('memory.recallNoteAllOld');
+            results = oldResults;
+          } else if (newResults.length > 0) {
+            if (oldResults.length > 0) {
+              recallNote = t('memory.recallNoteMixed', { oldCount: oldResults.length, newCount: newResults.length });
+            }
+            results = newResults;
+          }
+        }
+      }
+
+      // 记录本次召回的记忆 ID
+      if (sessionId && results.length > 0) {
+        if (!sessionRecalledMemoryIds.has(sessionId)) {
+          sessionRecalledMemoryIds.set(sessionId, new Set());
+        }
+        const recalledSet = sessionRecalledMemoryIds.get(sessionId);
+        for (const m of results) {
+          recalledSet.add(m.id);
+        }
+      }
+
+      // 更新访问计数
+      for (const m of results) {
+        const source = m._source === 'facts' ? memoryData.facts : memoryData.summaries;
+        const found = source.find(sm => sm.id === m.id);
+        if (found) {
+          found.accessCount = (found.accessCount || 0) + 1;
+          found.lastAccessAt = new Date().toISOString();
+        }
+      }
+
+      // 写回更新后的访问计数（非关键操作，失败不阻塞返回）
+      try {
+        await writeMemoryFile(memoryData);
+      } catch (e) {
+        console.warn('[Memory] update visitcount failed:', e.message);
+      }
+
+      // 格式化输出
+      const resultText = results.length === 0
+        ? t('memory.noMatch')
+        : t('memory.foundResults', { count: results.length, note: recallNote }) + '\n\n' + results.map((m, i) => {
+            let text = t('memory.memoryItemHeader', { index: i + 1, type: m.type === 'fact' ? t('memory.factLabel') : t('memory.summaryLabel'), id: m.id }) + '\n';
+            text += t('memory.memoryItemContent', { content: m.content }) + '\n';
+            if (m.title) text += t('memory.memoryItemTitle', { title: m.title }) + '\n';
+            if (m.tags && m.tags.length > 0) text += t('memory.memoryItemTags', { tags: m.tags.join(', ') }) + '\n';
+            text += t('memory.memoryItemStats', { importance: m.importance, accessCount: m.accessCount, createdAt: m.createdAt });
+            return text;
+          }).join('\n\n');
+
+      return {
+        success: true,
+        message: resultText,
+        results: results.map(m => {
+          const { _source, ...rest } = m;
+          return rest;
+        }),
+        total: results.length,
+        query
+      };
+    });
+  }
+
   return {
     store,
+    recall,
     // 读全部记忆数据对象（失败抛错；仅供测试与内部逻辑使用，业务方法内部用 readMemoryFile）
     readAll: async () => {
       const r = await readMemoryFile();
