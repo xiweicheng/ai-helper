@@ -828,6 +828,10 @@ Q4 目标第 2：前面是 mv607bck（视频降噪「…安装**成功**…」�
 
 ## Task 5: 本地档真正可用（长文本、queryPrefix、失败可见性）
 
+> **⚠ 本 Task 的立论在 Step 1 实测被推翻**：本地档不存在「超长报 400 静默丢失」（41/41 与 1900 字全部成功），
+> Step 2/3 的截断**不实施**。下文 Step 1–3 保留原文作为错定的记录，**结论见「Task 5 执行结果」**；
+> Step 4（queryPrefix）与 Step 5（lastError）经代码与实测确认成立，已实现。
+
 远端档已被真机证明能全量建索引（41/41），本 Task 只处理**本地档**的两个实测缺陷：
 换 `Xenova/bge-small-zh-v1.5` 时 30/41 条因长度报 `400 {"code":20015}` 而静默丢失；
 以及 `queryPrefix` 空串把 provider 的 BGE 前缀回落权吃掉。
@@ -934,6 +938,82 @@ git add agent/src/memory/tokens.js agent/src/memory/service.js agent/src/memory/
         agent/test/unit/memory-tokens.unit.test.js agent/test/unit/memory-embedding-config.unit.test.js
 git commit -m "fix(memory): 本地档嵌入长度上限、查询前缀回落与重建失败原因可见"
 ```
+
+---
+
+### Task 5 执行结果（2026-10-13，提交 `56c6c1a`）
+
+#### 1. Step 1 实测：本地档根本不会因长度失败 —— 计划的立论错了
+
+一次性脚本（`agent/.tmp-local-*.mjs` × 4，已全部删除）。模型缓存在 `/tmp` 副本上跑
+（`AI_HELPER_RAG_ROOT` 重定向），**真实 `~/.ai-helper-agent/` 未被写入**（目录 mtime 仍为 9/27），
+且只直调 `provider.embedDocuments`，不经过 memory service → 不碰任何向量缓存文件。
+
+| 测项 | 实测结果 |
+|---|---|
+| 真实库 41 条逐条嵌入（最长 1901 字） | **成功 41 / 失败 0**，均返回 512 维 |
+| 合成阶梯 200/400/480/500/510/512/520/600/800/1200/1900 字 | **全部成功**，无一失败 |
+| 批内混长（1 短 + 1 条 1200 字） | 整批成功，两条各 512 维 |
+
+**错误来源已查到**：本计划前言写的「换 `Xenova/bge-small-zh-v1.5` 时 30/41 报 `400 {"code":20015}`」
+是引用计划三 §3 的结论时引用错了主体——那条证据原文（`2026-10-13-memory-hybrid-recall.md:1169`）是
+**远端** `BAAI/bge-large-zh-v1.5` 只有 11/41 建索引（HTTP 400 是厂商端点报的）。
+本地 transformers 路径不发 HTTP，不可能出现 400。
+
+#### 2. 400 字截断会损害本地向量（所以 Step 2/3 不实施）
+
+最长条目（1901 字）全文向量 vs 不同截断长度向量的 cos：
+
+```
+前 300 字 0.8770   前 400 字 0.9105   前 480 字 0.9307   前 512 字 0.9352
+前 600 字 0.9498   前 700 字 0.9630   前 900 字 0.9862   前 1200 字 1.0000（及以后均 1.0000）
+```
+
+即模型的有效信息窗口约到 1200 字。按计划常量 400 截断会把向量拉偏 0.09，
+还要本地档用户重建一次索引，**换来的收益是「避免一个不存在的失败」**。耗时也不是理由：
+单条推理 100 字 16ms / 300 字 43ms / 512 字 73ms / 800 字 75ms / 1200 字 76ms / 1900 字 75ms（各取 3 次中位数），
+超出有效窗口部分几乎不花钱。
+
+**用户已拍板**：取消截断，Task 5 只做 queryPrefix 回落 + lastError 可见；
+下述两个新发现的 provider 缺陷转入计划五，本计划不动 `rag/embedding/local.js`。
+
+#### 3. 顺带实测出两个计划未写对的真实缺陷（转计划五）
+
+1. **position id 越界**：`tokenizer_config.model_max_length = 512`、`config.max_position_embeddings = 512`，
+   而 `local.js` 调 pipeline 时没开 truncation —— 实测 1900 字被原样切成 **1902 token** 喂进模型
+   （100/512/800/1200/1900 字 → 102/514/802/1202/1902 token）。超出 512 位置的表征已不在模型训练区间内，
+   1200 字之后才完全不起作用。
+2. **批内 padding 不进 mask**：同一条 13 字记忆，单独嵌 vs 与长文本同批的 cos 只有 **0.9959**（100/400/800/1900 字同伴：
+   0.996985 / 0.996627 / 0.995869 / 0.995869）。全库 41 条「逐条 vs 10 条/批」比对：最低 cos **0.9883**，
+   仅 **1/41** 逐位一致——**同一条记忆的向量会随分批组合漂移**（`pooling: 'mean'` 未使用 attention mask）。
+   全批统一截到 400 字也治不好（仍 0.996627）。该缺陷知识库侧同样命中，不只记忆。
+3. 计划三 §3 遗留的「recall 按需补齐每次都对必然失败的长文本重打请求」仍成立，但它是远端小上下文模型的问题，
+   与本地档截断无关，一并转计划五。
+
+#### 4. 已实现的两项（先红后绿 + 反向验证）
+
+- **queryPrefix 回落权**（`toEmbeddingProviderConfig`）：缺陷实测确认 —— 交出
+  `{ queryPrefix: "" }` → `new EmbeddingProvider(...).queryPrefix === ""` → provider 日志 `queryPrefix: off`；
+  显式前缀则正常透传。修后：空白（含纯空白）时删除该键，把回落权还给 provider。
+- **reindex 失败原因可见**（`backfillVectors`）：代码确认 `errors.push(err.message)` 有存但不入响应也不打日志，
+  只有**全部**批失败时才从 747 行露出首条。修后：`lastError`（仅首条）+ `console.warn`（全量）。
+  冒烟路径已实证该日志生效：`[Memory] reindex batch failed: fetch failed`。
+- **新增 5 条单测**：其中 1 条是走真实 `EmbeddingProvider` 的**接缝钉**（沿计划三教训：
+  注入假工厂的 service 单测看不见配置字段错位）；另有 2 条是守卫（显式前缀透传 / 全成功不造 lastError）。
+- **反向验证**：`git stash push -- src/memory/embedding-config.js src/memory/service.js` 退回旧实现
+  → **66 例中 3 红**（正好是 3 条新钉），恢复后 66/66。
+- **回归**：`memory-*.unit.test.js` **150/150**；agent 全量 unit **325/325**；冒烟 **21/21**；`BUILD_SUCCESS`。
+
+#### 5. 与计划的偏差（3 处）
+
+1. **Step 2/3（截断）整块不实施**，理由见上；commit 文案相应改为
+   `fix(memory): 查询前缀回落权交还 provider，向量重建失败原因进响应与日志`；`tokens.js` 本轮未改。
+2. Step 1 用「直调 provider + `/tmp` 模型缓存副本」代替「临时 HOME + 真实记忆只读副本」：
+   只读不写，不进入 `upsertVectors` 路径，比计划做法更少一个可变因子（也无需担心作废真向量缓存）。
+3. Step 6 命令的路径写错了：冒烟实际在 `test/smoke/memory-pushdown.smoke.mjs`（不是 `test/` 根）。
+   另：`npx eslint src/memory/...` 在 agent 目录下是**空跑**——根 `eslint.config.js` 的 `ignores` 包含 `agent/**`，
+   且 agent 无自己的 eslint 配置（Task 6 Step 3 需相应更正，不得把「4 条 File ignored 警告」当作 lint 通过）。
+
 
 ---
 
