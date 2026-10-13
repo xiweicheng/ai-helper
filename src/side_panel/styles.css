@@ -1566,6 +1566,17 @@ body {
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
 }
+.auto-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+.auto-compact-row .tool-toggle-label {
+  font-size: 11px;
+}
 .memory-limit-custom-label {
   font-size: 11px;
   color: #666;

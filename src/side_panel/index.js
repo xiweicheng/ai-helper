@@ -7,7 +7,8 @@ import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCusto
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
-import { initContextIndicator } from './context-indicator.js';
+import { initContextIndicator, runCompaction, computeCurrentUsage } from './context-indicator.js';
+import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initSearchPanel } from './search-panel.js';
@@ -269,6 +270,17 @@ import {
 
 // 监听配置变化，实时更新记忆限制标签
 chrome.storage.onChanged.addListener((changes, areaName) => {
+  // 自动压缩开关：任意入口改动后同步面板状态与下拉里的勾选
+  if (areaName === 'local' && changes.chatAutoCompaction) {
+    state.chatConfig.autoCompaction = changes.chatAutoCompaction.newValue === true;
+    syncAutoCompactToggle();
+    logger.debug('[SidePanel] auto-compaction config updated:', state.chatConfig.autoCompaction);
+  }
+  if (areaName === 'local' && changes.chatPersistSummaryToMemory) {
+    state.chatConfig.persistSummaryToMemory = changes.chatPersistSummaryToMemory.newValue !== false;
+    syncPersistSummaryToggle();
+    logger.debug('[SidePanel] persist-summary config updated:', state.chatConfig.persistSummaryToMemory);
+  }
   if (areaName === 'local' && changes.chatMaxMemoryMessages) {
     state.chatConfig.maxMemoryMessages = changes.chatMaxMemoryMessages.newValue;
     updateMemoryLimitLabel();
@@ -289,6 +301,18 @@ function updateMemoryLimitLabel() {
     // 徽标样式统一由 styles.css 控制，避免内联样式覆盖 flex 布局
     label.title = t('sidePanel.memoryLimitTitle');
   }
+}
+
+/** 同步「自动压缩」勾选状态到记忆下拉里的开关（配置是唯一真源） */
+function syncAutoCompactToggle() {
+  const btn = document.getElementById('autoCompactBtn');
+  if (btn) btn.checked = state.chatConfig.autoCompaction === true;
+}
+
+/** 同步「摘要存入记忆」勾选状态 */
+function syncPersistSummaryToggle() {
+  const btn = document.getElementById('persistSummaryBtn');
+  if (btn) btn.checked = state.chatConfig.persistSummaryToMemory !== false;
 }
 
 function toggleMemoryLimitDropdown(e) {
@@ -329,6 +353,31 @@ function initMemoryLimitDropdown() {
   updateMemoryLimitLabel();
 
   label.addEventListener('click', toggleMemoryLimitDropdown);
+
+  // 自动压缩 / 摘要存入记忆开关：切换即持久化（遵循开关立即持久化规范）
+  const autoCompactBtn = document.getElementById('autoCompactBtn');
+  if (autoCompactBtn) {
+    autoCompactBtn.checked = state.chatConfig.autoCompaction === true;
+    autoCompactBtn.addEventListener('change', () => {
+      const enabled = autoCompactBtn.checked;
+      chrome.storage.local.set({ chatAutoCompaction: enabled }, () => {
+        state.chatConfig.autoCompaction = enabled;
+        showToast(t('sidePanel.configUpdated'), 'success');
+      });
+    });
+  }
+
+  const persistSummaryBtn = document.getElementById('persistSummaryBtn');
+  if (persistSummaryBtn) {
+    persistSummaryBtn.checked = state.chatConfig.persistSummaryToMemory !== false;
+    persistSummaryBtn.addEventListener('change', () => {
+      const enabled = persistSummaryBtn.checked;
+      chrome.storage.local.set({ chatPersistSummaryToMemory: enabled }, () => {
+        state.chatConfig.persistSummaryToMemory = enabled;
+        showToast(t('sidePanel.configUpdated'), 'success');
+      });
+    });
+  }
 
   const options = dropdown.querySelectorAll('.memory-limit-option');
   options.forEach(opt => {
@@ -752,6 +801,13 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     logger.debug('[SidePanel] generating,please wait...');
     return;
   }
+
+  // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
+  await runAutoCompactionBeforeSend({
+    state,
+    getRatio: () => computeCurrentUsage().usage?.ratio ?? 0,
+    compact: runCompaction,
+  });
 
   state.selectedContextText = selectedText;
 

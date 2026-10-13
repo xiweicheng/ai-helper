@@ -33,4 +33,20 @@ describe('压缩注入单点收敛', () => {
       expect(src, `${file} 仍内联拼接压缩摘要`).not.toContain('appendCompactionToSystemPrompt');
     }
   });
+
+  test('三条发送链路都挂自动压缩前置钩子（复用同一压缩内核）', () => {
+    for (const file of SEND_CHAINS) {
+      const src = read(file);
+      expect(src, `${file} 缺 runAutoCompactionBeforeSend`).toContain('runAutoCompactionBeforeSend({');
+      expect(src, `${file} 缺占用比取值器`).toContain('computeCurrentUsage().usage?.ratio');
+      expect(src, `${file} 未复用 runCompaction`).toContain('compact: runCompaction');
+    }
+  });
+
+  test('手动与自动压缩共用单一内核（triggerCompaction 仅薄壳）', () => {
+    const src = read('src/side_panel/context-indicator.js');
+    expect(src).toContain('export async function runCompaction(');
+    expect(src).toContain('export async function triggerCompaction()');
+    expect(src).toContain('await runCompaction({ silent: false })');
+  });
 });

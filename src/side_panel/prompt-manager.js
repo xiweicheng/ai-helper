@@ -5,6 +5,8 @@ import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFro
 import { markSessionCompleted } from './session-manager.js';
 import { compressQuotedContext, getMessageBudget } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
+import { runCompaction, computeCurrentUsage } from './context-indicator.js';
+import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs } from './agent-at-selector.js';
@@ -628,6 +630,13 @@ export async function sendPromptByCode(code) {
     logger.debug('[SidePanel] generating,please wait...');
     return;
   }
+
+  // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
+  await runAutoCompactionBeforeSend({
+    state,
+    getRatio: () => computeCurrentUsage().usage?.ratio ?? 0,
+    compact: runCompaction,
+  });
 
   // 隐藏提示词选择器
   hidePromptSelector();

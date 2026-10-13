@@ -7,6 +7,7 @@ import { getSystemPrompt, formatTokenCount, formatTokenFull, showToast } from '.
 import { getCurrentAgentPrompt } from './agent-manager.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
+import { resetAutoCompactionBackoff } from './auto-compaction.js';
 import { formatMarkdown, addCodeCopyButtons } from './markdown-render.js';
 
 registerTranslations('zh', {
@@ -24,6 +25,7 @@ registerTranslations('zh', {
     compactDone: '压缩完成，节约约 {saved} tokens',
     compactErrConfig: '无法压缩：API 配置缺失',
     compactErrFailed: '压缩失败，请稍后重试',
+    autoCompactedToast: '上下文接近上限，已自动压缩（预计省 {saved} tokens）',
     undoTitle: '撤销压缩',
     undoMessage: '撤销后，发送将恢复携带完整历史。确定撤销吗？',
     undoOk: '撤销',
@@ -70,6 +72,7 @@ registerTranslations('en', {
     compactDone: 'Compaction complete, saved ~{saved} tokens',
     compactErrConfig: 'Cannot compact: API configuration missing',
     compactErrFailed: 'Compaction failed, please try again later',
+    autoCompactedToast: 'Context is near its limit; auto-compacted (est. {saved} tokens saved)',
     undoTitle: 'Undo Compaction',
     undoMessage: 'After undo, sending will include the full history again. Undo?',
     undoOk: 'Undo',
@@ -277,20 +280,27 @@ function showCompactingModal() {
   return { close: () => overlay.remove() };
 }
 
-/** 入口：收集素材 → 确认 → 调 background 生成摘要 → 持久化 */
-export async function triggerCompaction() {
+/**
+ * 执行一次上下文压缩：收集素材 → （可选）确认 → 调 background 生成摘要 → 持久化
+ *
+ * options.silent = true 时不弹确认框、不弹进行中模态，仅一条轻量 toast ——
+ * 供发送链路的半自动压缩复用，与手动入口共用同一内核（避免两套流程漂移）。
+ * @param {{ silent?: boolean }} [options]
+ * @returns {Promise<{ success: boolean, reason?: string, savedTokens?: number }>}
+ */
+export async function runCompaction({ silent = false } = {}) {
   if (!state.isolateChat) {
-    showToast(t('contextUsage.memoryOffToast'), 'warning');
-    return;
+    if (!silent) showToast(t('contextUsage.memoryOffToast'), 'warning');
+    return { success: false, reason: 'memory_off' };
   }
   if (state.isGenerating) {
-    showToast(t('contextUsage.generatingToast'), 'warning');
-    return;
+    if (!silent) showToast(t('contextUsage.generatingToast'), 'warning');
+    return { success: false, reason: 'generating' };
   }
   const history = state.messageHistory;
   if (!history.length) {
-    showToast(t('contextUsage.nothingToCompactToast'), 'warning');
-    return;
+    if (!silent) showToast(t('contextUsage.nothingToCompactToast'), 'warning');
+    return { success: false, reason: 'nothing_to_compact' };
   }
 
   const old = state.activeCompaction;
@@ -299,35 +309,44 @@ export async function triggerCompaction() {
     compaction: old,
   });
   if (includedCount === 0) {
-    showToast(t('contextUsage.nothingToCompactToast'), 'warning');
-    return;
+    if (!silent) showToast(t('contextUsage.nothingToCompactToast'), 'warning');
+    return { success: false, reason: 'nothing_to_compact' };
   }
 
   const materialTokens = estimateMessagesTokens(material.map(m => ({ role: m.role, content: m.content })));
-  const confirmed = await showConfirmDialog({
-    title: t('contextUsage.confirmTitle'),
-    message: t('contextUsage.confirmMessage', {
-      count: includedCount,
-      tokens: formatTokenCount(materialTokens),
-      summaryHint: hasOldSummary ? t('contextUsage.confirmWithOldSummary') : '',
-    }),
-    okText: t('contextUsage.confirmOk'),
-  });
-  if (!confirmed) return;
+  if (!silent) {
+    const confirmed = await showConfirmDialog({
+      title: t('contextUsage.confirmTitle'),
+      message: t('contextUsage.confirmMessage', {
+        count: includedCount,
+        tokens: formatTokenCount(materialTokens),
+        summaryHint: hasOldSummary ? t('contextUsage.confirmWithOldSummary') : '',
+      }),
+      okText: t('contextUsage.confirmOk'),
+    });
+    if (!confirmed) return { success: false, reason: 'cancelled' };
+  }
 
-  // 进行中模态：请求期间遮挡界面、防止误操作（完成/失败后自动关闭）
-  const loadingModal = showCompactingModal();
+  // 进行中模态：请求期间遮挡界面、防止误操作（完成/失败后自动关闭）；静默模式不弹窗
+  const loadingModal = silent ? null : showCompactingModal();
   try {
     const resp = await chrome.runtime.sendMessage({
       type: 'COMPACT_CONTEXT_SUMMARY',
       material,
       model: state.currentModel,
       sessionId: state.activeSessionId,
+      // 摘要沉淀长期记忆的去重锚点：memoryId 为空则由 background 首次 add 后回填
+      persistSummaryToMemory: state.chatConfig?.persistSummaryToMemory !== false,
+      compressedCount: (old?.compressedCount || 0) + includedCount,
+      revision: (old?.revision || 0) + 1,
+      memoryId: old?.memoryId || null,
     });
     if (!resp?.success || !resp.summary) {
-      const errKey = resp?.error === 'config_missing' ? 'contextUsage.compactErrConfig' : 'contextUsage.compactErrFailed';
-      showToast(t(errKey), 'error');
-      return;
+      if (!silent) {
+        const errKey = resp?.error === 'config_missing' ? 'contextUsage.compactErrConfig' : 'contextUsage.compactErrFailed';
+        showToast(t(errKey), 'error');
+      }
+      return { success: false, reason: resp?.error || 'failed' };
     }
 
     // 压缩点 = 被压缩素材的最后一条消息（历史最后一条）
@@ -342,20 +361,34 @@ export async function triggerCompaction() {
       model: state.currentModel,
       createdAt: Date.now(),
       revision: (old?.revision || 0) + 1,
+      // 长期记忆去重锚点：background 首次沉淀返回 memoryId，后续 revision 走 update
+      memoryId: resp.memoryId || old?.memoryId || null,
     };
 
     await saveCurrentSession();
     renderCompactionDivider();
     updateContextIndicator();
-    showToast(t('contextUsage.compactDone', { saved: formatTokenCount(state.activeCompaction.savedTokens) }), 'success');
+    // 自动压缩成功也清零退避，避免手动/自动两套状态互相遗漏
+    resetAutoCompactionBackoff();
+    if (silent) {
+      showToast(t('contextUsage.autoCompactedToast', { saved: formatTokenCount(state.activeCompaction.savedTokens) }), 'info');
+    } else {
+      showToast(t('contextUsage.compactDone', { saved: formatTokenCount(state.activeCompaction.savedTokens) }), 'success');
+    }
+    return { success: true, savedTokens: state.activeCompaction.savedTokens };
   } catch (err) {
     logger.warn('[ContextIndicator] compaction failed:', err?.message);
-    showToast(t('contextUsage.compactErrFailed'), 'error');
+    if (!silent) showToast(t('contextUsage.compactErrFailed'), 'error');
+    return { success: false, reason: 'exception' };
   } finally {
-    loadingModal.close();
+    loadingModal?.close();
   }
 }
 
+/** 入口：手动压缩（保留原语义：确认框 + 进行中模态） */
+export async function triggerCompaction() {
+  await runCompaction({ silent: false });
+}
 /** 压缩点之后是否已有新消息（有则撤销窗口关闭；压缩点失效时返回 false） */
 function hasNewMessagesAfterCompaction() {
   const c = state.activeCompaction;

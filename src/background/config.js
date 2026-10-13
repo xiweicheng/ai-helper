@@ -57,14 +57,22 @@ export function getChatConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
       'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels',
-      'streamExpandTools', 'showMessageTimestamp'
+      'streamExpandTools', 'showMessageTimestamp',
+      'chatAutoCompaction', 'chatAutoCompactionThreshold', 'chatPersistSummaryToMemory'
     ], (result) => {
       resolve({
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
         enableExecutionLog: result.enableExecutionLog !== undefined ? result.enableExecutionLog : DEFAULT_CHAT_CONFIG.enableExecutionLog,
         customModelMap: normalizeCustomModels(result.customModels || []),
         streamExpandTools: result.streamExpandTools === true,
-        showMessageTimestamp: result.showMessageTimestamp !== false
+        showMessageTimestamp: result.showMessageTimestamp !== false,
+        // 自动压缩：开关默认关（额外调用），阈值越界回落默认，摘要沉淀默认开
+        autoCompaction: result.chatAutoCompaction === true,
+        autoCompactionThreshold: typeof result.chatAutoCompactionThreshold === 'number'
+          && result.chatAutoCompactionThreshold > 0 && result.chatAutoCompactionThreshold <= 1
+          ? result.chatAutoCompactionThreshold
+          : DEFAULT_CHAT_CONFIG.autoCompactionThreshold,
+        persistSummaryToMemory: result.chatPersistSummaryToMemory !== false
       });
     });
   });

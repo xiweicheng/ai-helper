@@ -61,7 +61,11 @@ export let agentPlatform = {
 export let chatConfig = {
   maxMemoryMessages: 20,
   enableExecutionLog: false,
-  showMessageTimestamp: true
+  showMessageTimestamp: true,
+  // 上下文压缩：自动压缩默认关（额外调用），摘要沉淀默认开
+  autoCompaction: false,
+  autoCompactionThreshold: 0.85,
+  persistSummaryToMemory: true
 };
 
 // 温度设置

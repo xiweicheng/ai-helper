@@ -563,6 +563,8 @@ export default {
     recent2: '最近2条',
     custom: '自定义:',
     unit: '条',
+    autoCompactLabel: '自动压缩',
+    autoCompactHint: '上下文占用达到 85% 时，发送前自动压缩一次为摘要（会额外产生一次摘要调用）。',
   },
 
   // 开关项

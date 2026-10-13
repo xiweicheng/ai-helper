@@ -563,6 +563,8 @@ export default {
     recent2: 'Last 2',
     custom: 'Custom:',
     unit: 'entries',
+    autoCompactLabel: 'Auto-compact',
+    autoCompactHint: 'Compact history into a summary once before sending when context usage reaches 85% (adds one summarization call).',
   },
 
   // Toggle items

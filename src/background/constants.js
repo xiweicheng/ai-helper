@@ -51,7 +51,10 @@ export const DEFAULT_STREAM_CONFIG = {
 // 对话配置默认值
 export const DEFAULT_CHAT_CONFIG = {
   maxMemoryMessages: 20,      // 记忆历史限制条数，默认20条
-  enableExecutionLog: true    // 执行日志默认开启
+  enableExecutionLog: true,   // 执行日志默认开启
+  autoCompaction: false,      // 阈值驱动的自动压缩默认关闭（会额外产生一次摘要调用）
+  autoCompactionThreshold: 0.85, // 上下文占用达到 85% 时发送前自动压缩一次
+  persistSummaryToMemory: true   // 压缩摘要自动沉淀为长期记忆（不新增 LLM 调用）
 };
 
 // ==================== 工具定义（按类别拆分到 tools/ 目录） ====================

@@ -14,7 +14,8 @@ import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPOR
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
-import { renderCompactionDivider } from './context-indicator.js';
+import { renderCompactionDivider, runCompaction, computeCurrentUsage } from './context-indicator.js';
+import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 
@@ -880,6 +881,13 @@ export async function sendMessage() {
   _clearResumableFlagsForSession(state.activeSessionId);
   // 同时删除后台存储的 checkpoint（IndexedDB + chrome.storage.local）
   chrome.runtime.sendMessage({ type: 'DELETE_CHECKPOINT', sessionId: state.activeSessionId });
+
+  // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
+  await runAutoCompactionBeforeSend({
+    state,
+    getRatio: () => computeCurrentUsage().usage?.ratio ?? 0,
+    compact: runCompaction,
+  });
   
   const welcomeMessage = chatContainer.querySelector('.welcome-message');
   if (welcomeMessage) {
