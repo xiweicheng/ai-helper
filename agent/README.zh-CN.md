@@ -156,6 +156,7 @@ Agent 通过 PID 文件（`~/.ai-helper-agent/agent.pid`）管理进程生命周
 | `pairCodeTTL` | 配对码有效期（秒） | 30 |
 | `commandTimeout` | 命令执行超时（毫秒） | 300000（5分钟） |
 | `fileMaxSize` | 文件读写最大字节数 | 52428800（50MB） |
+| `memoryEmbedding` | 记忆语义召回通道配置，详见[语义召回通道](#语义召回通道tier)；推荐通过 `/api/memory/embedding-config` 读写，`enabled: false` 时 recall 只走关键词 | 关闭 |
 
 ## 文件搜索
 
@@ -247,6 +248,10 @@ GET /api/logs/dates
 | POST | `/api/memory/recall` | 关键词计分召回长期记忆（含会话级去重） |
 | POST | `/api/memory/manage` | 记忆审查（`action: review`）/ 压缩淘汰（`action: compact`） |
 | POST | `/api/memory/inject` | 为系统提示词执行三级注入筛选 |
+| POST | `/api/memory/reindex` | 按当前 embedding 配置重建全部记忆向量缓存 |
+| GET | `/api/memory/embedding-config` | 读取语义召回通道配置（明文 key 永不回显，附 `hasApiKey`） |
+| POST | `/api/memory/embedding-config` | 保存语义召回通道配置 |
+| POST | `/api/memory/test-embedding` | 探活 embedding 端点（成功回报向量维度） |
 | POST | `/api/exec` | 执行系统命令 |
 | POST | `/api/exec/stop` | 停止命令执行 |
 | GET | `/api/exec/running` | 运行中的进程列表 |
@@ -423,6 +428,22 @@ enabled: true
 | 查询原文（≥ 2 字）出现在 `title` 中 | +3 |
 
 关键词提取零依赖：不超过 4 字的中文连续段整段保留，更长则拆为 bigram；英文/数字连续段整词；停用词过滤；最多 30 个关键词。
+
+### 语义召回通道（Tier）
+
+关键词之外可以叠加一路向量召回，分三档，**缺省永远是 A 档**：
+
+| 档位 | 条件 | 行为 |
+|------|------|------|
+| A `none` | 未配置或 `enabled: false`（缺省） | 只走上表的关键词计分，不产生任何新的网络调用 |
+| B `remote` | `mode: "openai-compat"` 且 apiKey 与 modelName 都已填 | 远端 embedding + 进程内余弦比对 |
+| C `local` | `mode: "local"` 且本机已具备 RAG 依赖 | 本地 transformers 模型出向量 |
+
+- **向量是派生缓存** — `~/.ai-helper-agent/memory/memory-vectors.json` 可随时整删重建；`global-memory.json` 是唯一真源。缓存缺失或损坏一律当空处理，并在召回命中时按需补齐，绝不抛错。
+- **模型一变即整体作废** — 缓存键是 `mode|modelName|dimensions`，任一变化都不再复用旧向量（维度不同无法比对），无需手工清理。
+- **失败即降级，不拖垮记忆** — embedding 端点报错或超时（上限 8s）时，该次召回自动退回 A 档且响应仍是 200。`recall` 响应里的 `tier` 与 `vectorMatched` 说明这次实际走了哪一档、有几条是语义命中的。
+- **两路同尺** — 语义命中在关键词整数分之上叠加 `+3 + round(cos × 4)`，余弦阈值与知识库检索默认值同源；关键词计分本身逐字不变。
+- **运维入口** — 首次启用或更换模型后调一次 `POST /api/memory/reindex` 把存量记忆补进缓存（未启用时返回 `skipped`，端点不可达则明确 400 而非 500）。
 
 ### 三级注入策略（系统提示词）
 

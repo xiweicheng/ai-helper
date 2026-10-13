@@ -4,6 +4,22 @@
 
 ## 2026-10-13
 
+### 新增（长期记忆语义召回通道）
+- **三档降级召回**：`recall` 在既有关键词计分之上可叠加一路向量召回。Tier A `none`（缺省，`memoryEmbedding.enabled: false`）行为与计分逐字不变、零新增网络调用；Tier B `remote` 走 OpenAI 兼容 embedding + 进程内余弦比对（≤ 70 条量级 brute-force，不引入向量库依赖）；Tier C `local` 需本机具备 RAG 依赖，依赖缺失静默降回 A。档位由纯函数 `agent/src/memory/tier.js` 判定，apiKey / modelName 均 trim 后判空（空白不得误判为已启用远端）。
+- **向量是派生缓存**：新增 `agent/src/memory/vectors.js`，`~/.ai-helper-agent/memory/memory-vectors.json` 可整删、可损坏、缺失一律当空且不抛错；`global-memory.json` 仍是唯一真源。缓存键 `mode|modelName|dimensions` 任一变化即整体作废（维度不同无法比对），字符串 `'512'` 与数字 `512` 归一为同键。
+- **两路计分同尺**：语义命中在整数关键词分之上叠加 `+3 + round(cos × 4)`，余弦阈值直接复用知识库默认值（`DEFAULT_SEARCH_CONFIG.threshold`）而不复制常数。未做归一化：关键词分是 content+3/title+2/tags+2 的整数刻度，RAG 检索是 `[0,1]` 余弦刻度，两套刻度不可比——归一会改写 A 档计分、破坏零漂移硬约束。
+- **嵌入调用移出记忆互斥锁**：档位判定与查询向量在取锁之前完成（锁是进程内 Promise 链、无超时逃生口，一次 8s 挂起会堵死同进程所有写入），锁内只做纯计算与向量缓存读写；嵌入报错/超时该次召回静默退回关键词通道且仍返回 200。
+- **生命周期对齐**：store 的新增、去重命中改写、update 成功后以 microtask 懒补向量（绝不 `await`——那等于给每次写入多加一个网络往返；去重分支也会改 tags，而 tags 参与 embedding 文本，不重算即留陈旧向量）；delete 与 compact 淘汰的条目同步 `dropVectors`，不残留陈旧向量。
+- **三个新端点**：`POST /api/memory/reindex`（按当前配置全量重建缓存：未启用返回 `skipped` 且仍 200，嵌入整体失败才 400）、`GET|POST /api/memory/embedding-config`（明文 key 永不回显，附 `hasApiKey`）、`POST /api/memory/test-embedding`（探活，8s 超时保护）。`recall` 响应新增 `tier` 与 `vectorMatched`，扩展端转发层经 `...rest` 原样透传，**零改动**。
+- **修复配置字段名错位**：`memoryEmbedding` 存的是 `baseUrl`，而 `rag/embedding` 的 OpenAI 兼容后端读 `endpoint`——缺这一映射时远端档永远请求 `/embeddings`（报 `Failed to parse URL`），对任何真实端点都 100% 不可用。现由 `toEmbeddingProviderConfig()` 单点映射，service 与 routes 两个 provider 创建点都过它。该缺陷只在真链路上暴露：单测注入的是假工厂，只有冒烟走真实 provider 才炸出来。
+- 附带修复：`updateConfigField` 自锁（保存配置时死锁）；记忆关键词提取从 service 内联抽出为 `agent/src/memory/tokens.js`（纯搬迁锁行为，为向量文本口径留出单点）。
+
+### 工程质量与测试（记忆语义召回）
+- 新增 `memory-tokens`（7）/`memory-vectors`（12）/`memory-tier`（9）/`memory-embedding-config`（14）单测，`memory-service` 追加向量通道 17 例（recall 融合 9 + 生命周期 8）、`memory-routes` 追加 reindex 4 例；记忆相关合计 115 例。Agent 全量 `node --test test/unit/*.unit.test.js` 220 → 290 passed / fail 0，原有 25 条 A 档记忆用例一条未改、一条未红（零漂移护栏）。
+- 端到端冒烟 `memory-pushdown.smoke.mjs` 16 → 21 项：预置「已启用但端点不可达」的 embedding 配置（`http://127.0.0.1:1/v1`，不真联网），断言配置脱敏、不可达时 `recall` 仍 200 且 `tier=remote`/`vectorMatched=0`、不留半成品向量文件、`reindex` 与 `test-embedding` 明确 400 而非 500，并断言错误文案不是 `Failed to parse URL`（证明配置的 baseUrl 真到了 fetch 层）。真连 provider 的正向验证由单测的假 provider 承担。
+- 文档：`agent/README.md` / `README.zh-CN.md` 中英对称补「语义召回通道（Tier）」小节与三个新端点行，配置表加 `memoryEmbedding`。扩展端代码未改动，`npm run build:silent` BUILD_SUCCESS。版本号未手动修正（由 `npm run release:agent` 统一同步）。
+- 实施计划：`docs/superpowers/plans/2026-10-13-memory-hybrid-recall.md`（每个 Task 附「执行结果（已实施）」，记录融合刻度不可比、searcher 导出回退、reindex 不可走通用分发、冒烟期望从 `success: true` 更正为 400 等偏差）。
+
 ### 新增（会话上下文压缩增强）
 - **结构化双语摘要模板**：`src/shared/compaction-prompt.js` 由自由段落改为固定四小节（任务目标 / 已完成与关键结论 / 关键标识符 / 未决问题与下一步），修复既有 i18n 缺陷——指令块随背景语言走 `getLanguage()` 渲染中英两套，素材限量与总量保留逻辑不变。`【已有摘要】` 标记与语言无关，增量压缩仍可识别。
 - **注入链路单点收敛**：新增 `applyCompactionInjection()` 到 `src/shared/context-usage.js`，三条发送链路（`chat-manager.sendMessage` / `side_panel/index.js` 划词提示词 / `prompt-manager.sendPromptByCode`）改为同一出口，删除三处内联重复；锚点失效（`upToMessageId` 找不到）时只告警忽略、不污染系统提示词。以源码扫描守卫测试锁定三条链路不再各自漂移。

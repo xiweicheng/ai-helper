@@ -156,6 +156,7 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 | `pairCodeTTL` | Pairing code validity (seconds) | 30 |
 | `commandTimeout` | Command execution timeout (ms) | 300000 (5 min) |
 | `fileMaxSize` | Max file read/write size (bytes) | 52428800 (50 MB) |
+| `memoryEmbedding` | Semantic memory recall channel config — see [Semantic recall channel](#semantic-recall-channel-tiers). Managed through `/api/memory/embedding-config`; `enabled: false` keeps recall keyword-only | disabled |
 
 ## File Search
 
@@ -247,6 +248,10 @@ Results are returned in reverse chronological order (newest first).
 | POST | `/api/memory/recall` | Recall long-term memory by keyword scoring (with per-session dedup) |
 | POST | `/api/memory/manage` | Memory review (`action: review`) / compaction (`action: compact`) |
 | POST | `/api/memory/inject` | Three-tier injection selection for the system prompt |
+| POST | `/api/memory/reindex` | Rebuild the memory vector cache for every entry using the current embedding config |
+| GET | `/api/memory/embedding-config` | Read the semantic recall channel config (plain key never echoed; `hasApiKey` included) |
+| POST | `/api/memory/embedding-config` | Save the semantic recall channel config |
+| POST | `/api/memory/test-embedding` | Probe the embedding endpoint (returns vector dimensions on success) |
 | POST | `/api/exec` | Execute system command |
 | POST | `/api/exec/stop` | Stop command execution |
 | GET | `/api/exec/running` | List running processes |
@@ -423,6 +428,22 @@ Cross-session long-term memory is owned by the agent: the storage file, the read
 | full query (≥ 2 chars) found in `title` | +3 |
 
 Keywords are extracted with zero dependencies: a CJK run of ≤ 4 characters is kept whole, longer runs split into bigrams, latin/digit runs become word tokens, stop words filtered, capped at 30 keywords.
+
+### Semantic recall channel (tiers)
+
+A vector channel can be layered on top of keyword scoring. It runs at one of three tiers and **the default is always Tier A**:
+
+| Tier | Condition | Behaviour |
+|------|-----------|-----------|
+| A `none` | Unconfigured or `enabled: false` (default) | Keyword scoring only, exactly as above; no new network calls |
+| B `remote` | `mode: "openai-compat"` with both apiKey and modelName set | Remote embeddings + in-process cosine comparison |
+| C `local` | `mode: "local"` and RAG dependencies present locally | Vectors from a local transformers model |
+
+- **Vectors are a derived cache** — `~/.ai-helper-agent/memory/memory-vectors.json` can be deleted at any time; `global-memory.json` is the single source of truth. A missing or corrupt cache is treated as empty and refilled on demand during recall — it never throws.
+- **Changing the model invalidates everything** — the cache key is `mode|modelName|dimensions`; if any part changes the old vectors are dropped rather than compared (mismatched dimensions cannot be compared). No manual cleanup needed.
+- **Failure degrades, it does not break memory** — when the embedding endpoint errors or exceeds its 8s timeout, that recall falls back to Tier A and still answers 200. `tier` and `vectorMatched` in the recall response say which tier actually ran and how many hits were semantic.
+- **One scale for both channels** — a semantic hit adds `+3 + round(cos × 4)` on top of the integer keyword score, with the cosine threshold shared with the knowledge-base default; keyword scoring itself is unchanged to the letter.
+- **Operations entry point** — after first enabling the channel or switching models, call `POST /api/memory/reindex` once to backfill existing memories (it returns `skipped` when the channel is off, and a clear 400 — not 500 — when the endpoint is unreachable).
 
 ### Injection tiers (system prompt)
 
